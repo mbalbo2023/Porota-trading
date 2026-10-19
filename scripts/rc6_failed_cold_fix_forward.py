@@ -76,17 +76,37 @@ def checked(directory,shadow):
     if h.hexdigest()!=manifest['pack_sha256']:
         raise ValueError('COLD_PACK_HASH_CHANGED')
     pointer=enveloped(shadow/'CURRENT.json')
-    cut=enveloped_gzip(shadow/('cut-'+CUT+'.json.gz'))
+    generation=pointer.get('generation_id')
+    name=pointer.get('file')
+    if (type(generation) is not str or not re.fullmatch('[0-9a-f]{64}',generation) or
+            name!='cut-'+generation+'.json.gz'):
+        raise ValueError('COLD_CURRENT_POINTER_INVALID')
+    current=enveloped_gzip(shadow/name)
+    current_manifest=current.get('manifest',{})
+    if (type(current_manifest) is not dict or
+            digest(current_manifest)!=pointer.get('manifest_sha256') or
+            current_manifest.get('generation_id')!=generation or
+            current_manifest.get('sequence')!=pointer.get('sequence') or
+            current.get('status',{}).get('real_orders_sent')!=0 or
+            current.get('status',{}).get('real_routes')!='NOT_CALLED'):
+        raise ValueError('COLD_CURRENT_CUT_INVALID')
+    old_cut_path=shadow/('cut-'+CUT+'.json.gz')
+    if old_cut_path.exists():
+        old_cut=enveloped_gzip(old_cut_path)
+        if old_cut.get('report',{}).get('computed_report',{}).get('snapshot_id')!=IDENT:
+            raise ValueError('COLD_OLD_CUT_IDENTITY_MISMATCH')
     live=enveloped(shadow/'status.json')
-    if (pointer.get('generation_id')!=CUT or pointer.get('file')!='cut-'+CUT+'.json.gz' or
-            cut.get('report',{}).get('computed_report',{}).get('snapshot_id')!=IDENT or
+    current_snapshot=current.get('report',{}).get('computed_report',{}).get('snapshot_id')
+    if (not current_snapshot or (generation==CUT and not old_cut_path.exists()) or
+            (generation!=CUT and current_snapshot==IDENT) or
             live.get('status')!='FAIL_CLOSED' or type(live.get('real_orders_sent')) is not int or
             live['real_orders_sent']!=0):
         raise ValueError('COLD_LIVE_PRECONDITION_CHANGED')
     return {'pack_sha256':h.hexdigest(),'pack_bytes':info.st_size,
             'manifest_sha256':MANIFEST_SHA,'snapshot_id':IDENT,
             'failed_at':receipt['failed_at'],'deadline_at':manifest['deadline_at'],
-            'revoked_cut':CUT}
+            'revoked_cut':CUT,'current_cut':generation,
+            'old_cut_gc_complete':not old_cut_path.exists()}
 
 
 def enveloped_gzip(path):
@@ -118,6 +138,27 @@ def sync_directory(path):
     finally:os.close(fd)
 
 
+def original_location(source,archive):
+    """An archived ID may coexist with a live namespace for other IDs.
+
+    The archive still goes through checked(), including pack inode and hash,
+    before a receipt is recorded. Never touch unrelated active COLD records.
+    """
+    if not archive.exists():return source
+    if source.exists():
+        info=source.lstat()
+        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)&0o077:
+            raise ValueError('COLD_DIRECTORY_UNSAFE')
+        names={p.name for p in source.iterdir()}
+        if names & (FILES-{'queue.json'}):
+            raise ValueError('COLD_AMBIGUOUS_ARCHIVE')
+        if 'queue.json' in names:
+            regular(source/'queue.json')
+            if enveloped(source/'queue.json',cold=True).get('snapshot_id')==IDENT:
+                raise ValueError('COLD_AMBIGUOUS_ARCHIVE')
+    return archive
+
+
 def run(candidate):
     if not re.fullmatch('[0-9a-f]{40}',candidate) or candidate==OLD_SHA:
         raise ValueError('COLD_NEW_CANDIDATE_REQUIRED')
@@ -145,8 +186,7 @@ def run(candidate):
             '{{.Id}}|{{.State.Status}}|{{.Image}}',name],text=True,timeout=10).strip()
         if raw!=original['id']+'|exited|'+original['image']:
             raise ValueError('COLD_CONTAINER_NOT_STOPPED_OR_CHANGED')
-    if source.exists() and archive.exists():raise ValueError('COLD_AMBIGUOUS_ARCHIVE')
-    where=source if source.exists() else archive
+    where=original_location(source,archive)
     if not where.exists():raise ValueError('COLD_ORIGINAL_MISSING')
     evidence=checked(where,shadow)
     if where==source:
@@ -154,7 +194,12 @@ def run(candidate):
             'state':'VALIDATED_FOR_ARCHIVE','old_sha':OLD_SHA,'candidate_sha':candidate,**evidence})
         os.rename(source,archive)
         sync_directory(shadow);sync_directory(deploy)
-    assert not source.exists()
+    if source.exists() and source!=where:
+        # A concurrent reintroduction of this ID must fail before certification.
+        if original_location(source,archive)!=archive:
+            raise ValueError('COLD_AMBIGUOUS_ARCHIVE')
+    elif source.exists():
+        raise ValueError('COLD_ARCHIVE_INCOMPLETE')
     checked(archive,shadow)
     write(receipt_path,{'schema':'rc6.issue624.failed-cold-fix-forward.v1',
         'state':'ARCHIVED_OLD_CUT_STILL_REVOKED','old_sha':OLD_SHA,

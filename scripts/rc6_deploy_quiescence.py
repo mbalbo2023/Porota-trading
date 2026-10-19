@@ -8,6 +8,7 @@ import argparse
 from contextlib import closing
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ import time
 
 ROOT = Path('/opt/porota-trading')
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
+FAILED_INSTALL_CANDIDATE = '38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
 
 
 def command(args):
@@ -88,6 +90,56 @@ def admit(*, stopped=False):
             # Missing schemas and unknown state fail rather than imply zero.
             if c.execute('SELECT 1 FROM ' + table + ' WHERE status=? LIMIT 1', (state,)).fetchone():
                 raise ValueError('QUIESCENCE_OPEN_POSITION')
+        return process
+
+
+def adopt_stopped_after_failed_install(candidate, folder, originals):
+    """One exact fail-closed continuation; never start the prior image."""
+    if candidate == FAILED_INSTALL_CANDIDATE:
+        raise ValueError('QUIESCENCE_NEW_CANDIDATE_REQUIRED')
+    previous_path = folder / ('quiescence-' + FAILED_INSTALL_CANDIDATE + '.json')
+    if previous_path.is_symlink() or not previous_path.is_file():
+        raise ValueError('QUIESCENCE_PRIOR_RECEIPT_MISSING')
+    raw = previous_path.read_bytes()
+    if len(raw) > 64 * 1024:
+        raise ValueError('QUIESCENCE_PRIOR_RECEIPT_BOUND')
+    previous = json.loads(raw)
+    if (previous.get('candidate_sha') != FAILED_INSTALL_CANDIDATE or
+            previous.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            previous.get('installation_started') is not True or
+            previous.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+            type(previous.get('real_orders_sent')) is not int or previous['real_orders_sent'] != 0 or
+            previous.get('ppi_watch_accessed') is not False or
+            set(previous.get('stop_attempted', [])) != set(OWNED) or
+            set(previous.get('stop_evidence', {})) != set(OWNED) or
+            set(previous.get('containers', {})) != set(OWNED)):
+        raise ValueError('QUIESCENCE_PRIOR_RECEIPT_INVALID')
+    for name in OWNED:
+        value = originals[name]
+        old = previous['containers'][name]
+        proof = previous['stop_evidence'][name]
+        state = lifecycle(value)
+        if (value['Id'] != old['id'] or value['Image'] != old['image'] or
+                state['Status'] != 'exited' or type(state['ExitCode']) is not int or
+                state['ExitCode'] != 0 or
+                proof.get('after') != state or
+                proof.get('classification') not in {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'}):
+            raise ValueError('QUIESCENCE_PRIOR_STOP_IDENTITY_CHANGED')
+    critical = inspect('porota_critical_approval_rc6')
+    if (critical['State']['Status'] != 'running' or
+            critical['State'].get('Health', {}).get('Status') != 'healthy' or
+            critical['State']['OOMKilled'] is not False or
+            critical['Image'] != originals[OWNED[0]]['Image']):
+        raise ValueError('QUIESCENCE_CRITICAL_UNHEALTHY')
+    if admit(stopped=True) != 'STOPPED':
+        raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
+    return {'candidate_sha': candidate, 'status': 'DRAINED',
+            'installation_started': False, 'stop_attempted': list(OWNED),
+            'stop_evidence': previous['stop_evidence'],
+            'containers': previous['containers'], 'real_orders_sent': 0,
+            'ppi_watch_accessed': False, 'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
+            'fix_forward_from': FAILED_INSTALL_CANDIDATE,
+            'prior_receipt_sha256': hashlib.sha256(raw).hexdigest()}
 
 
 def persist(path, value):
@@ -116,30 +168,34 @@ def run(candidate, action):
         receipt = json.loads(path.read_text()) if path.exists() else None
         if action == 'drain':
             if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
-            admit()
+            process = admit(stopped=True)
+            if process == 'WAITING_MARKET': admit()
             originals = {name: inspect(name) for name in OWNED}
-            if any(v['State']['Status'] != 'running' for v in originals.values()):
-                raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING')
-            receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
-                       'installation_started': False, 'stop_attempted': [],
-                       'stop_evidence': {},
-                       'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
-                       'real_orders_sent': 0, 'ppi_watch_accessed': False}
-            persist(path, receipt)
-            for name in OWNED:
-                # Durable intent precedes the command: a client timeout may
-                # occur after Docker actually stopped the container.
-                receipt['stop_attempted'].append(name); persist(path, receipt)
-                command(['docker', 'stop', '--time', '45', name])
-                value = inspect(name)
-                receipt['stop_evidence'][name] = {'before': lifecycle(originals[name]), 'after': lifecycle(value)}
+            if process == 'STOPPED' and all(v['State']['Status'] == 'exited' for v in originals.values()):
+                receipt = adopt_stopped_after_failed_install(candidate, folder, originals)
                 persist(path, receipt)
-                print(json.dumps({'container': name, 'stop_evidence': receipt['stop_evidence'][name]}), flush=True)
-                classification = clean_stop(originals[name], value)
-                receipt['stop_evidence'][name]['classification'] = classification
+            else:
+                if process != 'WAITING_MARKET' or any(v['State']['Status'] != 'running' for v in originals.values()):
+                    raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
+                receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
+                           'installation_started': False, 'stop_attempted': [],
+                           'stop_evidence': {},
+                           'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
+                           'real_orders_sent': 0, 'ppi_watch_accessed': False}
                 persist(path, receipt)
-            admit(stopped=True)
-            receipt.update(status='DRAINED', inflight='ABSENT_OWNED_RUNTIME_STOPPED')
+                for name in OWNED:
+                    # Durable intent precedes stop: timeout may follow daemon effect.
+                    receipt['stop_attempted'].append(name); persist(path, receipt)
+                    command(['docker', 'stop', '--time', '45', name])
+                    value = inspect(name)
+                    receipt['stop_evidence'][name] = {'before': lifecycle(originals[name]), 'after': lifecycle(value)}
+                    persist(path, receipt)
+                    print(json.dumps({'container': name, 'stop_evidence': receipt['stop_evidence'][name]}), flush=True)
+                    classification = clean_stop(originals[name], value)
+                    receipt['stop_evidence'][name]['classification'] = classification
+                    persist(path, receipt)
+                admit(stopped=True)
+                receipt.update(status='DRAINED', inflight='ABSENT_OWNED_RUNTIME_STOPPED')
         elif action == 'install':
             if not receipt or receipt['status'] != 'DRAINED': raise ValueError('QUIESCENCE_NOT_DRAINED')
             for name, expected in receipt['containers'].items():
