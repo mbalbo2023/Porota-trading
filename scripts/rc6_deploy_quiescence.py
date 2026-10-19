@@ -17,10 +17,39 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+from zoneinfo import ZoneInfo
 
 ROOT = Path('/opt/porota-trading')
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
 FAILED_INSTALL_CANDIDATE = '38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
+ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+
+
+def admin_issue624_target(c):
+    """The one observed SUPV PAPER EOD position, never a general bypass."""
+    opened = c.execute("SELECT * FROM paper_positions WHERE status='OPEN'").fetchall()
+    if not opened:
+        return None
+    if len(opened) != 1:
+        raise ValueError('QUIESCENCE_ADMIN_EXACT_ONE_REQUIRED')
+    p = opened[0]
+    opened_at = datetime.fromisoformat(p['opened_at'])
+    if opened_at.tzinfo is None:
+        raise ValueError('QUIESCENCE_ADMIN_CLOCK_UNVERIFIED')
+    local = opened_at.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+    identity = tuple(str(p[k]) for k in ('symbol', 'asset_class', 'market',
+                                          'currency', 'settlement', 'quantity'))
+    intent = c.execute('SELECT state,cause FROM paper_exit_intents WHERE paper_id=?',
+                       (p['paper_id'],)).fetchone()
+    if (identity != ('SUPV', 'ACCIONES', 'BYMA', 'ARS', 'A-24HS', '9')
+            or local.date().isoformat() != '2026-10-19'
+            or (local.hour, local.minute) != (15, 51)
+            or not intent or intent['cause'] != 'EOD_PAPER'
+            or intent['state'] != 'EXIT_PENDING_MARKET_CLOSED'
+            or c.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                         (p['paper_id'],)).fetchone()):
+        raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED')
+    return p['paper_id']
 
 
 def command(args):
@@ -66,9 +95,10 @@ def clean_stop(before, after):
     raise ValueError('QUIESCENCE_STOP_OOM_NEW_OR_UNVERIFIED')
 
 
-def admit(*, stopped=False):
+def admit(*, stopped=False, allow_admin_issue624=False):
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
         c.execute('PRAGMA busy_timeout=200')
         end = time.monotonic() + 2
@@ -89,8 +119,20 @@ def admit(*, stopped=False):
                              ('paper_future_positions', 'ACTIVE')):
             # Missing schemas and unknown state fail rather than imply zero.
             if c.execute('SELECT 1 FROM ' + table + ' WHERE status=? LIMIT 1', (state,)).fetchone():
+                if table == 'paper_positions' and allow_admin_issue624:
+                    admin_issue624_target(c)
+                    continue
                 raise ValueError('QUIESCENCE_OPEN_POSITION')
         return process
+
+
+def admin_target_on_host():
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.row_factory = sqlite3.Row
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        return admin_issue624_target(c)
 
 
 def adopt_stopped_after_failed_install(candidate, folder, originals):
@@ -156,7 +198,7 @@ def persist(path, value):
         if os.path.exists(temporary): os.unlink(temporary)
 
 
-def run(candidate, action):
+def run(candidate, action, *, allow_admin_issue624=False):
     if not re.fullmatch('[0-9a-f]{40}', candidate):
         raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
     folder = ROOT / 'data/deploy'
@@ -168,10 +210,13 @@ def run(candidate, action):
         receipt = json.loads(path.read_text()) if path.exists() else None
         if action == 'drain':
             if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
-            process = admit(stopped=True)
-            if process == 'WAITING_MARKET': admit()
+            process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624)
+            admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
+            if process == 'WAITING_MARKET':
+                admit(allow_admin_issue624=bool(admin_paper_id))
             originals = {name: inspect(name) for name in OWNED}
-            if process == 'STOPPED' and all(v['State']['Status'] == 'exited' for v in originals.values()):
+            if (process == 'STOPPED' and not admin_paper_id
+                    and all(v['State']['Status'] == 'exited' for v in originals.values())):
                 receipt = adopt_stopped_after_failed_install(candidate, folder, originals)
                 persist(path, receipt)
             else:
@@ -181,7 +226,8 @@ def run(candidate, action):
                            'installation_started': False, 'stop_attempted': [],
                            'stop_evidence': {},
                            'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
-                           'real_orders_sent': 0, 'ppi_watch_accessed': False}
+                    'real_orders_sent': 0, 'ppi_watch_accessed': False,
+                    'admin_cancel_paper_id': admin_paper_id}
                 persist(path, receipt)
                 for name in OWNED:
                     # Durable intent precedes stop: timeout may follow daemon effect.
@@ -194,8 +240,55 @@ def run(candidate, action):
                     classification = clean_stop(originals[name], value)
                     receipt['stop_evidence'][name]['classification'] = classification
                     persist(path, receipt)
-                admit(stopped=True)
-                receipt.update(status='DRAINED', inflight='ABSENT_OWNED_RUNTIME_STOPPED')
+                admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
+                if admin_paper_id and admin_target_on_host() != admin_paper_id:
+                    raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED_AFTER_STOP')
+                receipt.update(status='ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
+                               inflight='ABSENT_OWNED_RUNTIME_STOPPED')
+        elif action == 'admin-begin':
+            if (not allow_admin_issue624 or not receipt
+                    or receipt['status'] != 'ADMIN_DRAINED_PENDING'
+                    or not receipt.get('admin_cancel_paper_id')):
+                raise ValueError('QUIESCENCE_ADMIN_NOT_DRAINED')
+            for name in OWNED:
+                value = inspect(name)
+                expected = receipt['containers'][name]
+                if (value['Id'] != expected['id'] or value['Image'] != expected['image']
+                        or value['State']['Status'] != 'exited'):
+                    raise ValueError('QUIESCENCE_ADMIN_RUNTIME_CHANGED')
+            admit(stopped=True, allow_admin_issue624=True)
+            if admin_target_on_host() != receipt['admin_cancel_paper_id']:
+                raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED')
+            # A failed capacity check leaves the old runtime recoverable.
+            available = next(int(line.split()[1]) * 1024 for line in
+                Path('/proc/meminfo').read_text().splitlines()
+                if line.startswith('MemAvailable:'))
+            pressure = next(float(part.split('=')[1]) for part in
+                Path('/proc/pressure/io').read_text().splitlines()[0].split()
+                if part.startswith('avg10='))
+            if available < 128 * 1024 * 1024 or pressure > 5:
+                raise ValueError('QUIESCENCE_ADMIN_RESOURCE_ADMISSION_RED')
+            receipt.update(status='ADMIN_WRITE_AUTHORIZED', installation_started=True)
+        elif action == 'admin-commit':
+            if (not allow_admin_issue624 or not receipt
+                    or receipt['status'] != 'ADMIN_WRITE_AUTHORIZED'
+                    or receipt['installation_started'] is not True):
+                raise ValueError('QUIESCENCE_ADMIN_WRITE_NOT_AUTHORIZED')
+            admit(stopped=True)
+            db = ROOT / 'data/paper_v17/observer_v17.db'
+            with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+                c.execute('PRAGMA query_only=ON')
+                c.execute('PRAGMA busy_timeout=200')
+                row = c.execute('''SELECT p.status,p.close_reason,p.exit_price,p.net_pnl,
+                  a.authority FROM paper_positions p JOIN paper_admin_cancellations a
+                  USING(paper_id) WHERE p.paper_id=?''',
+                  (receipt['admin_cancel_paper_id'],)).fetchone()
+                if (row != ('CANCELLED_ADMIN', ADMIN_CANCEL_REASON, None, None,
+                            'ISSUE624_OPERATOR_REQUEST_20261019')
+                        or c.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                                     (receipt['admin_cancel_paper_id'],)).fetchone()):
+                    raise ValueError('QUIESCENCE_ADMIN_LEDGER_NOT_RECONCILED')
+            receipt.update(status='DRAINED', admin_cancel_status='APPLIED_NO_MARKET_SALE')
         elif action == 'install':
             if not receipt or receipt['status'] != 'DRAINED': raise ValueError('QUIESCENCE_NOT_DRAINED')
             for name, expected in receipt['containers'].items():
@@ -232,13 +325,20 @@ def run(candidate, action):
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
-    parser.add_argument('--action', choices=['drain', 'install', 'recover'], required=True)
+    parser.add_argument('--action', choices=['drain', 'admin-begin', 'admin-commit',
+                                            'install', 'recover'], required=True)
+    parser.add_argument('--admin-cancel-issue624', action='store_true')
     parser.add_argument('--allow-validation-pending',action='store_true',
                         help='classify installed validation pending during failure cleanup; never validates runtime')
     args = parser.parse_args(argv)
     if args.allow_validation_pending and args.action!='recover':
         parser.error('--allow-validation-pending requires --action recover')
-    receipt = run(args.candidate_sha, args.action)
+    if args.admin_cancel_issue624 and args.action not in {'drain', 'admin-begin', 'admin-commit'}:
+        parser.error('--admin-cancel-issue624 only for controlled admin actions')
+    if args.admin_cancel_issue624:
+        receipt = run(args.candidate_sha, args.action, allow_admin_issue624=True)
+    else:
+        receipt = run(args.candidate_sha, args.action)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
     return 0

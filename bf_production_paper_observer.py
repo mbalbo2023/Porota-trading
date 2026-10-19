@@ -57,6 +57,13 @@ READINESS_CHECK_SECONDS = max(
 COMPLEMENTARY_RECONCILE_SECONDS = max(
     60, int(os.getenv("PAPER_COMPLEMENTARY_RECONCILE_SECONDS", "300"))
 )
+# CLOSED has no market execution. Full catalog reconciliation allocates a
+# large temporary working set and writes SQLite even when the market is shut.
+# PREOPEN retains its shorter cadence before entry admission resumes.
+OFFHOURS_RECONCILE_SECONDS = max(
+    COMPLEMENTARY_RECONCILE_SECONDS,
+    int(os.getenv("PAPER_OFFHOURS_RECONCILE_SECONDS", "3600")),
+)
 CAUCION_LIVE_REFRESH_SECONDS = max(30, int(os.getenv("PAPER_CAUCION_LIVE_REFRESH_SECONDS", "60")))
 COMPLEMENTARY_CONTRACT_TTL_SECONDS = max(
     300, int(os.getenv("PAPER_COMPLEMENTARY_CONTRACT_TTL_SECONDS", "86400"))
@@ -903,10 +910,48 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     Existing identities retain their normal freshness and admission checks;
     missing complements remain unavailable.
     """
-    if phase == "OPEN" or time.time() - last_completed < COMPLEMENTARY_RECONCILE_SECONDS:
+    interval = (OFFHOURS_RECONCILE_SECONDS if phase == "CLOSED"
+                else COMPLEMENTARY_RECONCILE_SECONDS)
+    if phase == "OPEN" or time.time() - last_completed < interval:
         return last_completed
     _reconcile_complementary_catalog(store)
+    if phase == "CLOSED":
+        memory = _release_idle_catalog_heap()
+        store.event("CLOSED_CATALOG_HEAP_RELEASE", json.dumps(memory, sort_keys=True))
     return time.time()
+
+
+def _release_idle_catalog_heap():
+    """Return free catalog allocations to Linux after the closed-session pass.
+
+    Live broker/reader objects remain untouched. Report the actual RSS change:
+    an allocator trim does not imply that memory was reclaimed.
+    """
+    def rss_kib():
+        try:
+            with open("/proc/self/status", encoding="ascii") as status:
+                for line in status:
+                    if line.startswith("VmRSS:"):
+                        return int(line.split()[1])
+        except (OSError, ValueError, IndexError):
+            pass
+        return None
+
+    before = rss_kib()
+    import gc
+    gc.collect()
+    available = False
+    try:
+        import ctypes
+        trim = ctypes.CDLL(None).malloc_trim
+        trim.argtypes = [ctypes.c_size_t]
+        trim.restype = ctypes.c_int
+        trim(0)
+        available = True
+    except (AttributeError, OSError):
+        pass
+    return {"rss_before_kib": before, "rss_after_kib": rss_kib(),
+            "allocator_trim_available": available}
 
 
 def _eligible_symbols(store):

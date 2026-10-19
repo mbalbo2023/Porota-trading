@@ -45,6 +45,64 @@ def test_periodic_reconcile_defers_open_market_writer_and_runs_after_close(
           WHERE event_type='COMPLEMENTARY_CATALOG_RECONCILIATION'""").fetchone()[0] == 1
 
 
+def test_closed_scanner_skips_repeated_full_catalog_but_preopen_refreshes(monkeypatch):
+    now = [10_000.0]
+    calls = []
+    heap_calls = []
+    events = []
+    monkeypatch.setattr(observer.time, "time", lambda: now[0])
+    monkeypatch.setattr(observer, "COMPLEMENTARY_RECONCILE_SECONDS", 300)
+    monkeypatch.setattr(observer, "OFFHOURS_RECONCILE_SECONDS", 3600)
+    monkeypatch.setattr(observer, "_reconcile_complementary_catalog",
+                        lambda store: calls.append(store))
+    monkeypatch.setattr(observer, "_release_idle_catalog_heap",
+                        lambda: heap_calls.append(True) or {"rss_before_kib": 100,
+                                                            "rss_after_kib": 80})
+
+    class Store:
+        def event(self, kind, detail):
+            events.append((kind, json.loads(detail)))
+
+    store = Store()
+    completed = observer._periodic_complementary_reconcile(store, "CLOSED", 0)
+    assert calls == [store]
+    assert len(heap_calls) == 1
+    assert events == [("CLOSED_CATALOG_HEAP_RELEASE",
+                       {"rss_before_kib": 100, "rss_after_kib": 80})]
+    now[0] += 300
+    assert observer._periodic_complementary_reconcile(store, "CLOSED", completed) == completed
+    assert calls == [store]
+    assert observer._periodic_complementary_reconcile(store, "PREOPEN", completed) == now[0]
+    assert calls == [store, store]
+    assert len(heap_calls) == 1
+    now[0] += 300
+    assert observer._periodic_complementary_reconcile(store, "OPEN", now[0]-300) == now[0]-300
+    assert calls == [store, store]
+    now[0] += 3600
+    assert observer._periodic_complementary_reconcile(store, "CLOSED", completed) == now[0]
+    assert calls == [store, store, store]
+    assert len(heap_calls) == 2
+
+
+def test_closed_catalog_heap_release_preserves_live_objects_and_reports_rss(monkeypatch):
+    monkeypatch.setattr("gc.collect", lambda: 0)
+    class Allocator:
+        def __init__(self):
+            self.argtypes = None
+            self.restype = None
+
+        def __call__(self, pad):
+            assert pad == 0
+            return 1
+
+    allocator = Allocator()
+    monkeypatch.setattr("ctypes.CDLL", lambda _: type("Lib", (), {"malloc_trim": allocator})())
+    result = observer._release_idle_catalog_heap()
+    assert result["allocator_trim_available"] is True
+    assert isinstance(result["rss_before_kib"], int)
+    assert isinstance(result["rss_after_kib"], int)
+
+
 def test_reconcile_matches_legacy_on_alias_without_discovery_marker(tmp_path, monkeypatch):
     store = _store(tmp_path)
     with store.connect() as c:

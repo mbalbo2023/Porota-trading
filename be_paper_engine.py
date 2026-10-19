@@ -570,9 +570,16 @@ class PaperStore:
         opened, invalid = [], []
         with self.connect() as c:
             c.execute('BEGIN')
-            # Un estado desconocido tampoco puede desaparecer de la vigilancia
-            # como si fuera un cierre; sólo CLOSED queda fuera de este reloj.
-            for row in c.execute("SELECT * FROM paper_positions WHERE status<>'CLOSED' ORDER BY opened_at,paper_id"):
+            # Un estado desconocido tampoco puede desaparecer de la vigilancia.
+            # CANCELLED_ADMIN exige recibo validado por positions_at, pero no
+            # vuelve a entrar al reloj de salidas sin ejecución de mercado.
+            for row in c.execute("SELECT * FROM paper_positions WHERE status='CANCELLED_ADMIN'"):
+                try:
+                    if spot_ledger.partition(c, row) != (None, []):
+                        raise ValueError('Anulación PAPER conserva exposición')
+                except (ValueError, TypeError, ArithmeticError) as exc:
+                    invalid.append((dict(row), f'SPOT_ADMIN_CANCEL_INVALID: {type(exc).__name__}: {exc}'[:240]))
+            for row in c.execute("SELECT * FROM paper_positions WHERE status NOT IN ('CLOSED','CANCELLED_ADMIN') ORDER BY opened_at,paper_id"):
                 try:
                     remaining = spot_ledger.partition(c,row)[0]
                     if remaining is None:

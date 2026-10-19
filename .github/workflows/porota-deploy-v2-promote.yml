@@ -406,7 +406,7 @@ jobs:
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --admin-cancel-issue624" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -495,7 +495,57 @@ jobs:
 
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
+          python3 - "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,sys
+          bundle,manifest=sys.argv[1:]
+          data=json.load(open(manifest,encoding='utf-8'))
+          assert data.get('status')=='GREEN' and data.get('bundle_sha256')
+          h=hashlib.sha256()
+          with open(bundle,'rb') as stream:
+              for chunk in iter(lambda:stream.read(1024*1024),b''):h.update(chunk)
+          assert h.hexdigest()==data['bundle_sha256'], 'FROZEN_BUNDLE_TRANSFER_HASH_MISMATCH'
+          PY
           tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" -C "$STAGE"
+
+          # Verify the entire staged bundle before executing its administrative
+          # transition. No product file is installed and no position is changed
+          # until this candidate's source bytes match the frozen manifest.
+          python3 - "$STAGE" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          stage,manifest=map(Path,sys.argv[1:])
+          data=json.loads(manifest.read_text())
+          assert data.get('status')=='GREEN' and data.get('files')
+          observed=set()
+          for row in data['files']:
+              rel=Path(row['path'])
+              assert not rel.is_absolute() and '..' not in rel.parts and str(rel) not in observed
+              observed.add(str(rel))
+              src=stage/rel
+              assert src.is_file() and not src.is_symlink()
+              assert hashlib.sha256(src.read_bytes()).hexdigest()==row['sha256'], rel
+          assert {'cd_spot_ledger.py','scripts/rc6_paper_admin_cancel.py',
+                  'scripts/rc6_deploy_quiescence.py'} <= observed
+          print(f"RC6_STAGED_BUNDLE_HASHES=GREEN|files={len(observed)}")
+          PY
+
+          ADMIN_STATE="$(sudo -n python3 - "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert value.get('candidate_sha')==sys.argv[1].split('quiescence-')[-1].removesuffix('.json')
+          assert value.get('status') in {'ADMIN_DRAINED_PENDING','DRAINED'}
+          print(value['status'])
+          PY
+          )"
+          if [ "$ADMIN_STATE" = ADMIN_DRAINED_PENDING ]; then
+            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action admin-begin --admin-cancel-issue624
+            sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_paper_admin_cancel.py" \
+              --candidate-sha "$CANDIDATE_SHA" \
+              --receipt "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" --apply
+            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action admin-commit --admin-cancel-issue624
+          fi
 
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.

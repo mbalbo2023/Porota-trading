@@ -131,6 +131,8 @@ def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
     source = Path('.github/workflows/porota-deploy-v2-promote.yml').read_text()
     assert source.index('id: drain') < source.index('id: transfer')
     assert source.index('--action install') < source.index('shutil.copy2(src,dst)')
+    assert source.index('RC6_STAGED_BUNDLE_HASHES=GREEN') < source.index('--action admin-begin')
+    assert source.index('--action admin-begin') < source.index('--apply') < source.index('--action admin-commit') < source.index('--action install')
     assert '--action recover' in source
     assert source.index('RC6_DISK_OFFLINE_PRECLEAN_REQUIRED=RED') < source.index("<<'PRECLEAN_REMOTE'")
 
