@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   replay:
-    if: github.head_ref == 'diagnostic/rc6-624-637-cold-readonly-20261019'
+    if: false # Historical replay completed; disabled during market window
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
