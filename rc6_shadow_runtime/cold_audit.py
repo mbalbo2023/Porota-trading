@@ -636,11 +636,13 @@ class _StoredValue(CanonicalJSONStream):
         yield from _expand(self.directory, m['pack'], m['root'], m['segments'], check=self.check)
 
 
-def _drain(files):
+def _drain(files, phase):
     """Materialize/replay one original snapshot, under the caller's writer lock."""
+    phase[0] = 'NAMESPACE'
     with Directory(files, create=True) as directory:
         # Always reconcile manifest-before-queue crash gaps, including a new
         # seal beside the previous COMPLETE queue, before looking at state.
+        phase[0] = 'BACKLOG_RECONCILE'
         try:
             ensure_idle(files, directory=directory)
         except ValueError as exc:
@@ -651,6 +653,7 @@ def _drain(files):
             return None
         if queue.get('state') == 'FAILED':
             raise ValueError('SHADOW_COLD_FAILED_BACKLOG_REQUIRES_FIX_FORWARD')
+        phase[0] = 'MANIFEST'
         manifest = _manifest(directory, queue)
         reference = {'schema': 'rc6.computed-audit-reference.v2', 'state': 'PENDING',
                      'snapshot_id': manifest['snapshot_id'], 'manifest_sha256': p.digest(manifest),
@@ -661,6 +664,7 @@ def _drain(files):
         if prior is not None:
             # Crash after COMPLETE receipt fsync, before queue transition or
             # snapshot cleanup: retain the actual original completion time.
+            phase[0] = 'PRIOR_RECEIPT'
             validated = resolve(files, reference)
             if queue.get('state') != 'COMPLETE':
                 directory.write('queue.json', {**queue, 'state': 'COMPLETE'})
@@ -671,6 +675,7 @@ def _drain(files):
             return validated
         if queue.get('state') == 'COMPLETE':
             raise ValueError('SHADOW_COLD_COMPLETE_RECEIPT_MISSING')
+        phase[0] = 'NATIVE'
         _native()
         if queue.get('state') != 'PENDING':
             raise ValueError('SHADOW_COLD_QUEUE_STATE')
@@ -683,12 +688,16 @@ def _drain(files):
             if time.monotonic()-checked_at[0] >= .25:
                 _guard(files.root)
                 checked_at[0] = time.monotonic()
+        phase[0] = 'INPUT_CHECK'
         check()
         _pack_identity(directory, manifest)
+        phase[0] = 'PACK_HASH'
         with directory.open(manifest['pack']) as stream:
             if _hash(stream, guard=check) != manifest['pack_sha256']:
                 raise ValueError('SHADOW_COLD_PACK_HASH')
+        phase[0] = 'REPORT_WRITE'
         computed = files.write_streamed_report(_StoredValue(directory, manifest, check))
+        phase[0] = 'REPORT_VERIFY'
         _pack_identity(directory, manifest)
         identity = _verified_report(files, computed, check)
         check()
@@ -698,10 +707,13 @@ def _drain(files):
                    'computed_report': computed, 'computed_identity': identity,
                    'completed_at': time.time(), 'wall_seconds': time.monotonic()-wall,
                    'cpu_seconds': time.process_time()-cpu}
+        phase[0] = 'RECEIPT_COMMIT'
         directory.write('receipt-'+manifest['snapshot_id']+'.json', receipt)
+        phase[0] = 'QUEUE_COMMIT'
         directory.write('queue.json', {**queue, 'state': 'COMPLETE'})
         # Receipt+report are durable and independently verified. No reader
         # needs the snapshot once it resolves this COMPLETE attestation.
+        phase[0] = 'PACK_CLEANUP'
         directory.remove(manifest['pack'])
         return receipt
 
@@ -718,8 +730,9 @@ def drain(files):
     """All failed transitions leave durable first-failure evidence, including
     invalid manifests, missing native APIs and COMPLETE receipt corruption.
     """
+    phase = ['ENTRY']
     try:
-        return _drain(files)
+        return _drain(files, phase)
     except Exception as exc:
         with Directory(files, create=True) as directory:
             queue = directory.read('queue.json')
@@ -732,7 +745,7 @@ def drain(files):
                                'snapshot_id': queue['snapshot_id'],
                                'manifest_sha256': queue.get('manifest_sha256'),
                                'failed_at': time.time(), 'error_class': type(exc).__name__,
-                               'error_code': _failure_code(exc)}
+                               'error_code': _failure_code(exc), 'error_phase': phase[0]}
                     if prior is not None:
                         failure['previous_receipt'] = prior
                     directory.write(name, failure)
