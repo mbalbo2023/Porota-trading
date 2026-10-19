@@ -1,4 +1,4 @@
-name: RC6 624 PR641 post-RED journal capacity cleanup
+name: RC6 624 COLD2 safe post-RED capacity cleanup
 
 on:
   pull_request:
@@ -117,7 +117,9 @@ jobs:
               memory=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
               return {'free':shutil.disk_usage('/').free,'inodes_percent':100*stat.f_ffree/stat.f_files,
                   'mem_available':memory,'owned':owned,'all_containers':allc,
-                  'ppi_watch':watch(),'backups':backups(),'quiescence':q}
+                  'ppi_watch':watch(),'backups':backups(),'quiescence':q,
+                  'images':sorted(json.loads(x) for x in cmd('docker','image','ls','--no-trunc','--format','{{json .}}',timeout=20).splitlines()),
+                  'docker_df':cmd('docker','system','df',timeout=30)[-2500:]}
           with promotion_lock():
               before=snapshot()
               assert before['free']<4923227373 and before['mem_available']>128*1024*1024 and before['inodes_percent']>=10
@@ -127,12 +129,16 @@ jobs:
                        'journal_vacuum':cmd('journalctl','--vacuum-size=16M',timeout=90)[-2500:]}
               if shutil.disk_usage('/').free<4923227373:
                   actions['apt_clean']=cmd('apt-get','clean',timeout=90)[-2500:]
+              if shutil.disk_usage('/').free<4923227373:
+                  # Docker prunes only unreferenced builder cache; never images/volumes/containers.
+                  actions['builder_prune']=cmd('docker','builder','prune','--force',timeout=180)[-2500:]
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
               assert before['ppi_watch']==after['ppi_watch'] and before['backups']==after['backups']
+              assert before['images']==after['images']
               assert before['quiescence']==after['quiescence']
               assert after['mem_available']>128*1024*1024 and after['inodes_percent']>=10
-          result={'schema':'rc6.issue624.pr641.postred-journal-cleanup.v1',
+          result={'schema':'rc6.issue624.cold2.postred-safe-cleanup.v1',
               'status':'GREEN' if after['free']>=4923227373 else 'RED_SPACE',
               'before':before,'after':after,'actions':actions,
               'required_bytes_prior_artifact':4923227373,'space_recovered':after['free']-before['free'],
