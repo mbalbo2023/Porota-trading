@@ -1,0 +1,102 @@
+name: RC6 624 passive PAPER health during market
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-paper-passive-health.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.head_ref == 'diagnostic/rc6-624-637-cold-readonly-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Exact production identity and bounded passive probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/key"' EXIT
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=12 "$DO_USER@$DO_HOST" 'sudo -n timeout 60 python3 -B -' <<'PY' > evidence/passive-health.json
+          import datetime as dt,json,os,re,shutil,sqlite3,subprocess,time
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          names=('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
+          ids=('4ce69d798f17a9086ec5ce0d2b523a89c2cf460aa5c17921d3c6fd962ba5defa',
+               '29cc182672ea21ea3ceb0a892421f1e48998faf5f51ecf2f2872cb7672bf4ff5',
+               'c494558d1661b5c76149fe35ad8bd6ad4dfeaff102e7b0234687faa03e3e58ec')
+          images=('sha256:2a12960d9ba5523bc494ac90dd3b7317e48a55ea54179353618246a248ea3280',
+                  'sha256:2a12960d9ba5523bc494ac90dd3b7317e48a55ea54179353618246a248ea3280',
+                  'sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098')
+          def command(*args):
+              return subprocess.check_output(args,text=True,timeout=8)
+          owned={}
+          for n in names:
+              x=json.loads(command('docker','inspect',n))[0]
+              owned[n]={'id':x['Id'],'image':x['Image'],'state':x['State']['Status'],
+                        'health':(x['State'].get('Health') or {}).get('Status'),
+                        'oom':x['State']['OOMKilled'],'restarts':x['RestartCount'],
+                        'daemon_error_present':bool(x['State'].get('Error'))}
+          conn=sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
+                               uri=True,timeout=.2)
+          try:
+              conn.execute('PRAGMA query_only=ON')
+              conn.execute('PRAGMA busy_timeout=200')
+              limit=time.monotonic()+2
+              conn.set_progress_handler(lambda:int(time.monotonic()>limit),1000)
+              mode,orders,process,session,stamp=conn.execute(
+                  'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                  'FROM observer_state WHERE id=1').fetchone()
+          finally:conn.close()
+          now=dt.datetime.now(dt.timezone.utc)
+          try:age=(now-dt.datetime.fromisoformat(stamp)).total_seconds()
+          except (TypeError,ValueError):age=None
+          status_path=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/status.json'
+          fd=os.open(status_path,os.O_RDONLY|os.O_NOFOLLOW)
+          try:raw=os.read(fd,131073)
+          finally:os.close(fd)
+          assert len(raw)<=131072
+          wrapper=json.loads(raw)
+          payload=wrapper['payload']
+          code=payload.get('error_code')
+          code=code if isinstance(code,str) and re.fullmatch(r'SHADOW_[A-Z0-9_]{1,80}',code) else None
+          mem=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()
+                   if line.startswith('MemAvailable:'))
+          v=os.statvfs('/')
+          all_ids=command('docker','ps','-aq','--no-trunc').splitlines()
+          stable=([owned[n]['id'] for n in names]==list(ids) and
+                  [owned[n]['image'] for n in names]==list(images) and set(all_ids)==set(ids) and
+                  all(x['state']=='running' and not x['oom'] and x['restarts']==0 for x in owned.values()))
+          paper=(mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0)
+          print(json.dumps({'schema':'rc6.issue624.passive-health.v1','time_utc':now.isoformat(),
+              'status':'OBSERVED' if stable and paper else 'RED',
+              'owned':owned,'mode':mode,'real_orders_sent':orders,'process':process,'session':session,
+              'heartbeat_age_seconds':age,'heartbeat_fresh_180s':age is not None and 0<=age<=180,
+              'shadow_status':payload.get('status'),'shadow_error_code':code,
+              'disk_free_bytes':shutil.disk_usage('/').free,'inode_free_percent':100*v.f_ffree/v.f_files,
+              'mem_available_bytes':mem,'container_count':len(all_ids),'ppi_watch_accessed':False},
+              sort_keys=True,separators=(',',':')))
+          PY
+          python3 -m json.tool evidence/passive-health.json >/dev/null
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-624-passive-health-${{ github.run_id }}
+          path: evidence
+          if-no-files-found: warn
+          retention-days: 14
