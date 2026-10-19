@@ -1,0 +1,91 @@
+name: RC6 624 PAPER position bounded read-only diagnosis
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-paper-position-readonly.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  position:
+    if: github.head_ref == 'diagnostic/rc6-624-paper-position-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d52e45fe85ed184a76d35120ca543f5d63f38b2c
+      - name: Confirm product SHA and diagnose one PAPER position without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = d52e45fe85ed184a76d35120ca543f5d63f38b2c
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/key"' EXIT
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 25 python3 -B -' <<'PY'
+          import datetime as dt, json, os, sqlite3, time
+          from pathlib import Path
+
+          mem = next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines()
+                     if line.startswith('MemAvailable:'))
+          io = next(float(s.split('=',1)[1]) for s in Path('/proc/pressure/io').read_text().splitlines()[0].split()
+                    if s.startswith('avg10='))
+          assert mem > 128*1024**2 and io <= 5, 'RESOURCE_ADMISSION_RED'
+          path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          now = dt.datetime.now(dt.timezone.utc)
+          with sqlite3.connect(path.as_uri()+'?mode=ro', uri=True, timeout=.2) as c:
+              c.row_factory = sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=200')
+              deadline = time.monotonic()+2
+              c.set_progress_handler(lambda: int(time.monotonic()>deadline), 1000)
+              state = dict(c.execute('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                                     'FROM observer_state WHERE id=1').fetchone())
+              assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int
+              assert state['real_orders_sent']==0 and state['process_state']=='WAITING_MARKET'
+              heartbeat=dt.datetime.fromisoformat(state['heartbeat_at'])
+              assert heartbeat.tzinfo and 0 <= (now-heartbeat).total_seconds() <= 180
+              rows=[dict(r) for r in c.execute('SELECT paper_id,symbol,asset_class,settlement,status,quantity,'
+                                               'opened_at,currency,market FROM paper_positions '
+                                               "WHERE status='OPEN' LIMIT 2")]
+              assert len(rows)<=1, 'MULTIPLE_OPEN_POSITIONS'
+              result={'schema':'rc6.624.paper-position-readonly.v1','at_utc':now.isoformat(),
+                      'mode':state['mode'],'real_orders_sent':0,'process':state['process_state'],
+                      'session':state['session_state'],'mem_available_bytes':mem,'io_some_avg10':io,
+                      'open_count_bounded':len(rows)}
+              if rows:
+                  row=rows[0]
+                  pid=row.pop('paper_id')
+                  # PAPER only. No account keys, environment, credentials or DB copy.
+                  row['opened_age_minutes']=round((now-dt.datetime.fromisoformat(row['opened_at'])).total_seconds()/60,1)
+                  intent=c.execute('SELECT state,cause,due_at,blocked_reason,supervised_at,attempts '
+                                   'FROM paper_exit_intents WHERE paper_id=?',(pid,)).fetchone()
+                  fills=[dict(f) for f in c.execute('SELECT side,filled_at,quantity FROM paper_fills '
+                                                    'WHERE paper_id=? ORDER BY id DESC LIMIT 8',(pid,))]
+                  quote=c.execute('SELECT observed_at,asset_class,settlement,bid_size,bid,ask '
+                                  'FROM market_snapshots WHERE symbol=? ORDER BY id DESC LIMIT 1',(row['symbol'],)).fetchone()
+                  supervisor=c.execute('SELECT heartbeat_at,state,detail FROM paper_supervisor_state WHERE id=1').fetchone()
+                  reader=c.execute('SELECT heartbeat_at,state,detail FROM paper_exit_reader_state WHERE id=1').fetchone()
+                  result.update(position=row,intent=dict(intent) if intent else None,
+                                fills=fills,latest_snapshot=dict(quote) if quote else None,
+                                supervisor=dict(supervisor) if supervisor else None,
+                                reader=dict(reader) if reader else None)
+          print('RC6_624_POSITION_DIAG='+json.dumps(result,sort_keys=True,ensure_ascii=True))
+          PY
