@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import pytest
-import rc6_cold2_quarantine as q
+from scripts import rc6_cold2_quarantine as q
 
 
 def put(path, payload, *, cold=False, zipped=False):
