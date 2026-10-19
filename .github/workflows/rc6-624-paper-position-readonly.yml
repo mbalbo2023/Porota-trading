@@ -47,6 +47,9 @@ jobs:
                      if line.startswith('MemAvailable:'))
           io = next(float(s.split('=',1)[1]) for s in Path('/proc/pressure/io').read_text().splitlines()[0].split()
                     if s.startswith('avg10='))
+          print('RC6_624_RESOURCE_ADMISSION='+json.dumps({'mem_available_bytes':mem,
+                'io_some_avg10':io,'mem_min_exclusive':128*1024**2,'io_max_inclusive':5},
+                sort_keys=True),flush=True)
           assert mem > 128*1024**2 and io <= 5, 'RESOURCE_ADMISSION_RED'
           path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
           now = dt.datetime.now(dt.timezone.utc)
