@@ -1,4 +1,4 @@
-name: RC6 624 PR641 post-RED unused image cleanup
+name: RC6 624 PR641 post-RED journal capacity cleanup
 
 on:
   pull_request:
@@ -41,7 +41,7 @@ jobs:
           assert run['status']=='completed' and run['conclusion']=='failure'
           print('RC6_641_EXACT_RED=GREEN')
           PY
-      - name: Remove only unreferenced exact prior candidate image and disposable build cache
+      - name: Recover journal space under exact PAPER and container guards
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -121,22 +121,22 @@ jobs:
           with promotion_lock():
               before=snapshot()
               assert before['free']<4923227373 and before['mem_available']>128*1024*1024 and before['inodes_percent']>=10
-              assert all(cmd('docker','image','inspect','-f','{{.Id}}',tag,timeout=15).strip()==old for tag in tags)
-              actions={'image_rm':cmd('docker','image','rm',*tags,timeout=180)[-2500:]}
-              assert subprocess.run(['docker','image','inspect',old],capture_output=True,timeout=15).returncode!=0
-              actions['builder_prune']=cmd('docker','builder','prune','-af',timeout=180)[-2500:]
-              if subprocess.run(['docker','buildx','version'],capture_output=True,timeout=15).returncode==0:
-                  actions['buildx_prune']=cmd('docker','buildx','prune','-af',timeout=180)[-2500:]
+              assert all(subprocess.run(['docker','image','inspect',tag],
+                  capture_output=True,timeout=15).returncode!=0 for tag in tags)
+              actions={'journal_rotate':cmd('journalctl','--rotate',timeout=40)[-2500:],
+                       'journal_vacuum':cmd('journalctl','--vacuum-size=16M',timeout=90)[-2500:]}
+              if shutil.disk_usage('/').free<4923227373:
+                  actions['apt_clean']=cmd('apt-get','clean',timeout=90)[-2500:]
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
               assert before['ppi_watch']==after['ppi_watch'] and before['backups']==after['backups']
               assert before['quiescence']==after['quiescence']
               assert after['mem_available']>128*1024*1024 and after['inodes_percent']>=10
-          result={'schema':'rc6.issue624.pr641.postred-image-cleanup.v1',
+          result={'schema':'rc6.issue624.pr641.postred-journal-cleanup.v1',
               'status':'GREEN' if after['free']>=4923227373 else 'RED_SPACE',
               'before':before,'after':after,'actions':actions,
               'required_bytes_prior_artifact':4923227373,'space_recovered':after['free']-before['free'],
-              'removed_image_id':old,'current_image_id':current,'critical_image_id':critical,
+              'previous_image_already_absent':old,'current_image_id':current,'critical_image_id':critical,
               'real_orders_sent':0,'ppi_watch_changed':False}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           if result['status']!='GREEN':raise SystemExit(42)
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-624-641-postred-image-cleanup-${{ github.run_id }}
+          name: rc6-624-641-postred-journal-cleanup-${{ github.run_id }}
           path: evidence
           if-no-files-found: warn
           retention-days: 14
