@@ -720,8 +720,9 @@ def _drain(files, phase):
 
 def _failure_code(exc):
     """Persist only bounded internal error identifiers; never exception text."""
-    code = str(exc)
-    if isinstance(exc, ValueError) and re.fullmatch(r'SHADOW_[A-Z0-9_]{1,120}', code):
+    args = exc.args
+    code = args[0] if len(args) == 1 and type(args[0]) is str else None
+    if isinstance(exc, ValueError) and code is not None and re.fullmatch(r'SHADOW_[A-Z0-9_]{1,120}', code):
         return code
     return 'UNCLASSIFIED'
 
