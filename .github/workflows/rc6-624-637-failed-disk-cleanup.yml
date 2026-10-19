@@ -55,10 +55,9 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 650 python3 -B -' <<'PY' > evidence/cleanup.json
-          import hashlib,json,os,shutil,subprocess,sys,time
+          import datetime as dt,hashlib,json,os,shutil,sqlite3,subprocess,sys,time
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
-          from scripts.rc6_deploy_quiescence import admit
           from scripts.rc6_deploy_failure_cleanup import promotion_lock
           root=Path('/opt/porota-trading')
           candidate='2601a910f2997bd6a9d59dee81af2c3818c25a6c'
@@ -115,7 +114,20 @@ jobs:
                       removed.append((group,name,size))
               return removed
           def snapshot():
-              assert admit(stopped=False)=='WAITING_MARKET'
+              # The deploy admission correctly rejects MARKET_OPEN. Inventory
+              # uses its own bounded read-only PAPER/OPEN observation instead.
+              with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
+                                   uri=True,timeout=.2) as connection:
+                  connection.execute('PRAGMA query_only=ON')
+                  connection.execute('PRAGMA busy_timeout=200')
+                  limit=time.monotonic()+2
+                  connection.set_progress_handler(lambda:int(time.monotonic()>limit),1000)
+                  mode,orders,process,session,stamp=connection.execute(
+                      'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                      'FROM observer_state WHERE id=1').fetchone()
+              age=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(stamp)).total_seconds()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+              assert process=='RUNNING' and session=='MARKET_OPEN' and 0<=age<=180
               qpath=root/'data/deploy'/('quiescence-'+candidate+'.json')
               assert not qpath.is_symlink()
               q=json.loads(qpath.read_text())
@@ -133,8 +145,11 @@ jobs:
               assert cmd('docker','image','inspect','-f','{{.Id}}','porota-trading-bot:17.0.0-rc6',timeout=15).strip()==current
               stat=os.statvfs('/')
               memory=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
+              assert memory>128*1024**2
               return {'free':shutil.disk_usage('/').free,'inodes_percent':100*stat.f_ffree/stat.f_files,
-                  'mem_available':memory,'owned':owned,'all_containers':allc,
+                  'mem_available':memory,'mode':mode,'real_orders_sent':orders,
+                  'process':process,'session':session,'heartbeat_age_seconds':age,
+                  'owned':owned,'all_containers':allc,
                   'ppi_watch':watch(),'backups':backups(),'quiescence':q,
                   'images':sorted((json.loads(x) for x in cmd('docker','image','ls','--no-trunc','--format','{{json .}}',timeout=20).splitlines()),key=lambda row:(row.get('ID',''),row.get('Repository',''),row.get('Tag',''))),
                   'docker_df':cmd('docker','system','df',timeout=30)[-2500:]}
