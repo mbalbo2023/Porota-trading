@@ -267,13 +267,13 @@ jobs:
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m700 -d "$HOME/.ssh"
-          printf '%s\\n' "$SSH_KEY" > "$HOME/.ssh/key"
-          printf '%s\\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
           trap 'rm -f "$HOME/.ssh/key"' EXIT
           mkdir -p evidence
-          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \\
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \\
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' <<'PY' > evidence/cold-historical-logs.json
           import json,re,subprocess
           from datetime import datetime,timezone
