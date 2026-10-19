@@ -93,9 +93,27 @@ jobs:
                   for p in Path(cfg['root']).glob(cfg['glob']):
                       assert p.is_file() and not p.is_symlink()
                       st=p.stat();rows.append((p.name,st.st_size,st.st_mtime_ns,st.st_ino))
-                  assert len(rows)>=2 and len(rows)<=3
+                  assert len(rows)<=32
                   result[group]=sorted(rows)
               return result
+          def prune_backup_excess(before):
+              policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
+              removed=[]
+              for group in ('general','paper','history'):
+                  cfg=policy['backups'][group]
+                  rows=sorted(before[group],key=lambda row:(row[2],row[0]),reverse=True)
+                  keep={row[0] for row in rows[:cfg['keep_newest']]}|set(cfg.get('pinned_names',[]))
+                  base=Path(cfg['root'])
+                  for name,size,mtime,ino in rows:
+                      if name in keep:continue
+                      path=base/name
+                      st=path.lstat()
+                      assert path.is_file() and not path.is_symlink() and st.st_nlink==1
+                      assert (st.st_size,st.st_mtime_ns,st.st_ino)==(size,mtime,ino)
+                      assert name not in cfg.get('pinned_names',[])
+                      path.unlink()
+                      removed.append((group,name,size))
+              return removed
           def snapshot():
               assert admit(stopped=False)=='WAITING_MARKET'
               qpath=root/'data/deploy'/('quiescence-'+candidate+'.json')
@@ -125,7 +143,8 @@ jobs:
               assert before['free']<4923227373 and before['mem_available']>128*1024*1024 and before['inodes_percent']>=10
               assert all(subprocess.run(['docker','image','inspect',tag],
                   capture_output=True,timeout=15).returncode!=0 for tag in tags)
-              actions={'journal_rotate':cmd('journalctl','--rotate',timeout=40)[-2500:],
+              actions={'backup_retention_excess':prune_backup_excess(before['backups']),
+                       'journal_rotate':cmd('journalctl','--rotate',timeout=40)[-2500:],
                        'journal_vacuum':cmd('journalctl','--vacuum-size=16M',timeout=90)[-2500:]}
               if shutil.disk_usage('/').free<4923227373:
                   actions['apt_clean']=cmd('apt-get','clean',timeout=90)[-2500:]
@@ -134,7 +153,9 @@ jobs:
                   actions['builder_prune']=cmd('docker','builder','prune','--force',timeout=180)[-2500:]
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
-              assert before['ppi_watch']==after['ppi_watch'] and before['backups']==after['backups']
+              assert before['ppi_watch']==after['ppi_watch']
+              removed={(g,n) for g,n,_ in actions['backup_retention_excess']}
+              assert all(after['backups'][g]==[row for row in before['backups'][g] if (g,row[0]) not in removed] for g in ('general','paper','history'))
               assert before['images']==after['images']
               assert before['quiescence']==after['quiescence']
               assert after['mem_available']>128*1024*1024 and after['inodes_percent']>=10
