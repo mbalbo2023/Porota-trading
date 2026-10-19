@@ -203,9 +203,38 @@ jobs:
                   logs.append({'path':str(p),'bytes':st.st_size,'mtime_ns':st.st_mtime_ns})
           logs=sorted(logs,key=lambda row:row['bytes'],reverse=True)[:25]
           journal=subprocess.check_output(['journalctl','--disk-usage'],text=True,timeout=20)
+          foreign_id='7dc99ccd8f7c47849ca3705ae1cb2c49'
+          foreign={}
+          for name in (foreign_id+'.pack','manifest-'+foreign_id+'.json',
+                       'receipt-'+foreign_id+'.json','queue.json'):
+              path=source/name
+              st=path.lstat()
+              assert path.is_file() and not path.is_symlink() and st.st_nlink==1
+              row={'bytes':st.st_size,'sha256':sha(path),'inode':st.st_ino,
+                   'device':st.st_dev,'mtime_ns':st.st_mtime_ns,'ctime_ns':st.st_ctime_ns}
+              if name!='queue.json' and not name.endswith('.pack') or name=='queue.json':
+                  envelope_value=json.loads(path.read_text())
+                  payload=envelope_value['payload']
+                  encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
+                      ensure_ascii=True,allow_nan=False).encode('ascii')
+                  row['envelope_valid']=hashlib.sha256(encoded).hexdigest()==envelope_value['sha256']
+                  row['payload']=payload
+              foreign[name]=row
+          import gzip
+          with gzip.open(shadow/current['file'],'rb') as stream:cut_bytes=stream.read(4*1024*1024+1)
+          assert len(cut_bytes)<=4*1024*1024
+          cut_envelope=json.loads(cut_bytes)
+          cut_payload=cut_envelope['payload']
+          encoded=json.dumps(cut_payload,sort_keys=True,separators=(',',':'),default=str,
+              ensure_ascii=True,allow_nan=False).encode('ascii')
+          foreign_cut={'valid':hashlib.sha256(encoded).hexdigest()==cut_envelope['digest'],
+                       'manifest':cut_payload.get('manifest'),
+                       'computed_report':cut_payload.get('report',{}).get('computed_report'),
+                       'status':cut_payload.get('status')}
           result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
               'source':directory(source),'archive':directory(archive),
+              'foreign_failed':foreign,'foreign_current_cut':foreign_cut,
               'live':{'pointer':envelope(shadow/'CURRENT.json'),
                   'status':envelope(shadow/'status.json'),
                   'publication':envelope(shadow/'publication.json'),
