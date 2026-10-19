@@ -74,6 +74,7 @@ jobs:
               if not path.is_dir() or path.is_symlink():return out
               actual={p.name for p in path.iterdir()}
               out['names']=sorted(actual)
+              out['mode']=oct(path.lstat().st_mode&0o777)
               out['exact_expected_names']=actual==names
               out['files']={}
               for name in sorted(actual&names):
@@ -82,6 +83,14 @@ jobs:
                   out['files'][name]={'bytes':st.st_size,'sha256':sha(p) if p.is_file() and not p.is_symlink() else None,
                       'inode':st.st_ino,'device':st.st_dev,'mtime_ns':st.st_mtime_ns,'ctime_ns':st.st_ctime_ns,
                       'mode':oct(st.st_mode&0o777),'nlink':st.st_nlink}
+              qpath=path/'queue.json'
+              if qpath.is_file() and not qpath.is_symlink() and qpath.stat().st_size<=256*1024:
+                  envelope=json.loads(qpath.read_text())
+                  payload=envelope.get('payload',{})
+                  encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
+                      ensure_ascii=True,allow_nan=False).encode('ascii')
+                  out['queue']={'envelope_valid':hashlib.sha256(encoded).hexdigest()==envelope.get('sha256'),
+                      'snapshot_id':payload.get('snapshot_id'),'state':payload.get('state')}
               return out
           def inspect(name):
               x=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=15))[0]
