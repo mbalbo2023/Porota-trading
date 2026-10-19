@@ -1,4 +1,4 @@
-name: RC6 624 failed promotion safe disk cleanup
+name: RC6 624 PR641 post-RED unused image cleanup
 
 on:
   pull_request:
@@ -25,23 +25,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ee938348e6486900dcd595275e25440a3983021c
-      - name: Exact RED and product identity
+          ref: d52e45fe85ed184a76d35120ca543f5d63f38b2c
+      - name: Confirm exact RED and product identity
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = ee938348e6486900dcd595275e25440a3983021c
+          test "$(git rev-parse HEAD)" = d52e45fe85ed184a76d35120ca543f5d63f38b2c
           python3 - <<'PY'
           import json,os,urllib.request
-          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39180374877',
+          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39185545107',
               headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
           with urllib.request.urlopen(req,timeout=15) as response: run=json.load(response)
-          assert run['head_sha']=='ee938348e6486900dcd595275e25440a3983021c'
+          assert run['head_sha']=='d52e45fe85ed184a76d35120ca543f5d63f38b2c'
           assert run['status']=='completed' and run['conclusion']=='failure'
-          print('EXACT_FAILED_DEPLOY=GREEN')
+          print('RC6_641_EXACT_RED=GREEN')
           PY
-      - name: Clean only disposable cache behind stopped-runtime gate
+      - name: Remove only unreferenced exact prior candidate image and disposable build cache
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -54,18 +54,23 @@ jobs:
           mkdir -p evidence
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 600 python3 -B -' <<'PY' > evidence/cleanup.json
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n timeout 650 python3 -B -' <<'PY' > evidence/cleanup.json
           import json,os,shutil,subprocess,sys
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_deploy_quiescence import admit
           from scripts.rc6_deploy_failure_cleanup import promotion_lock
-          from scripts.rc6_disk_housekeeping import all_backup_plans
           root=Path('/opt/porota-trading')
-          candidate='38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
-          stable='sha256:084a73ba235d6bbaae2ebe0754bde68f122e6624f0332aceda63aad7aaa0523d'
-          previous='sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098'
+          candidate='2601a910f2997bd6a9d59dee81af2c3818c25a6c'
+          current='sha256:2a12960d9ba5523bc494ac90dd3b7317e48a55ea54179353618246a248ea3280'
+          critical='sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098'
+          old='sha256:084a73ba235d6bbaae2ebe0754bde68f122e6624f0332aceda63aad7aaa0523d'
+          tags=('porota-predeploy-v2:38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1',
+              'porota-trading-bot:17.0.0-rc6-candidate-38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1')
           names=('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
+          expected_ids=('4ce69d798f17a9086ec5ce0d2b523a89c2cf460aa5c17921d3c6fd962ba5defa',
+              '29cc182672ea21ea3ceb0a892421f1e48998faf5f51ecf2f2872cb7672bf4ff5',
+              'c494558d1661b5c76149fe35ad8bd6ad4dfeaff102e7b0234687faa03e3e58ec')
           def cmd(*args,timeout=120):
               return subprocess.check_output(args,text=True,stderr=subprocess.STDOUT,timeout=timeout)
           def inspect(name):
@@ -73,87 +78,81 @@ jobs:
               return {'id':row['Id'],'image':row['Image'],'status':row['State']['Status'],
                   'health':(row['State'].get('Health') or {}).get('Status'),
                   'oom':row['State']['OOMKilled'],'restarts':row['RestartCount']}
-          def all_containers():
-              return {cid:inspect(cid) for cid in cmd('docker','ps','-aq','--no-trunc',timeout=15).splitlines()}
           def watch():
               lines=cmd('systemctl','list-unit-files','--no-legend',timeout=10).splitlines()
               return {line.split()[0]:(
                   subprocess.run(['systemctl','is-active',line.split()[0]],capture_output=True,text=True,timeout=5).stdout.strip(),
                   subprocess.run(['systemctl','is-enabled',line.split()[0]],capture_output=True,text=True,timeout=5).stdout.strip())
                   for line in lines if 'ppi' in line.split()[0].lower() and 'watch' in line.split()[0].lower()}
-          def backups(policy):
-              plans=all_backup_plans(policy)
-              assert all(len(p['delete'])==0 for p in plans.values()), 'BACKUP_RETENTION_EXCESS_UNEXPECTED'
-              assert all(len(p['kept'])>=3 for p in plans.values()), 'BACKUP_KEEP3_MISSING'
-              return {group:sorted((r.path,r.size_bytes,r.mtime) for r in plan['kept'])
-                  for group,plan in plans.items()}
-          def snapshot(policy):
-              admit(stopped=True)
-              q=json.loads((root/'data/deploy'/('quiescence-'+candidate+'.json')).read_text())
+          def backups():
+              policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
+              result={}
+              for group in ('general','paper','history'):
+                  cfg=policy['backups'][group]
+                  rows=[]
+                  for p in Path(cfg['root']).glob(cfg['glob']):
+                      assert p.is_file() and not p.is_symlink()
+                      st=p.stat();rows.append((p.name,st.st_size,st.st_mtime_ns,st.st_ino))
+                  assert len(rows)>=2 and len(rows)<=3
+                  result[group]=sorted(rows)
+              return result
+          def snapshot():
+              assert admit(stopped=False)=='WAITING_MARKET'
+              qpath=root/'data/deploy'/('quiescence-'+candidate+'.json')
+              assert not qpath.is_symlink()
+              q=json.loads(qpath.read_text())
               assert q['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and q['installation_started'] is True
               assert q['candidate_sha']==candidate and q['real_orders_sent']==0 and q['ppi_watch_accessed'] is False
               owned={name:inspect(name) for name in names}
-              for name in names[:2]:
-                  assert owned[name]['id']==q['containers'][name]['id']
-                  assert owned[name]['image']==q['containers'][name]['image']==previous
-                  assert owned[name]['status']=='exited' and not owned[name]['oom']
-              assert owned[names[2]]['status']=='running' and owned[names[2]]['health']=='healthy'
-              assert owned[names[2]]['image']==previous and not owned[names[2]]['oom']
-              assert cmd('docker','image','inspect','-f','{{.Id}}','porota-trading-bot:17.0.0-rc6',timeout=15).strip()==stable
-              allc=all_containers()
-              assert len(allc)==3 and all(x['image']==previous for x in allc.values())
-              free=shutil.disk_usage('/').free
+              assert [owned[n]['id'] for n in names]==list(expected_ids)
+              assert [owned[n]['image'] for n in names]==[current,current,critical]
+              assert all(owned[n]['status']=='running' and not owned[n]['oom'] and owned[n]['restarts']==0 for n in names)
+              assert owned[names[1]]['health']=='healthy' and owned[names[2]]['health']=='healthy'
+              all_ids=cmd('docker','ps','-aq','--no-trunc',timeout=15).splitlines()
+              allc={cid:inspect(cid) for cid in all_ids}
+              assert len(allc)==3 and {v['id'] for v in allc.values()}==set(expected_ids)
+              assert old not in {v['image'] for v in allc.values()}
+              assert cmd('docker','image','inspect','-f','{{.Id}}','porota-trading-bot:17.0.0-rc6',timeout=15).strip()==current
               stat=os.statvfs('/')
-              mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()
-                  if x.startswith('MemAvailable:'))
-              return {'free':free,'inodes':100*stat.f_ffree/stat.f_files,
-                  'mem_available':mem,'owned':owned,'all_containers':allc,
-                  'ppi_watch':watch(),'backups':backups(policy),'quiescence':q}
-          policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
-          assert policy['backups']['general']['keep_newest']==3
-          assert policy['backups']['paper']['keep_newest']==3
-          assert policy['backups']['history']['keep_newest']==3
-          assert policy['journal']['max_bytes']==536870912
+              memory=next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
+              return {'free':shutil.disk_usage('/').free,'inodes_percent':100*stat.f_ffree/stat.f_files,
+                  'mem_available':memory,'owned':owned,'all_containers':allc,
+                  'ppi_watch':watch(),'backups':backups(),'quiescence':q}
           with promotion_lock():
-              before=snapshot(policy)
-              actions={}
-              actions['docker_image_prune']=cmd('docker','image','prune','-f',timeout=90)[-2000:]
-              actions['docker_builder_prune']=cmd('docker','builder','prune','-af',timeout=180)[-2000:]
+              before=snapshot()
+              assert before['free']<4923227373 and before['mem_available']>128*1024*1024 and before['inodes_percent']>=10
+              assert all(cmd('docker','image','inspect','-f','{{.Id}}',tag,timeout=15).strip()==old for tag in tags)
+              actions={'image_rm':cmd('docker','image','rm',*tags,timeout=180)[-2500:]}
+              assert subprocess.run(['docker','image','inspect',old],capture_output=True,timeout=15).returncode!=0
+              actions['builder_prune']=cmd('docker','builder','prune','-af',timeout=180)[-2500:]
               if subprocess.run(['docker','buildx','version'],capture_output=True,timeout=15).returncode==0:
-                  actions['docker_buildx_prune']=cmd('docker','buildx','prune','-af',timeout=180)[-2000:]
-              actions['apt_clean']=cmd('apt-get','clean',timeout=90)[-2000:]
-              for p in Path('/var/lib/apt/lists').iterdir():
-                  if p.name in {'lock','partial','auxfiles'}:continue
-                  if p.is_dir() and not p.is_symlink():shutil.rmtree(p)
-                  else:p.unlink()
-              actions['journal_vacuum']=cmd('journalctl','--vacuum-size=536870912',timeout=120)[-2000:]
-              after=snapshot(policy)
+                  actions['buildx_prune']=cmd('docker','buildx','prune','-af',timeout=180)[-2500:]
+              after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
-              assert before['ppi_watch']==after['ppi_watch']
-              assert before['backups']==after['backups']
+              assert before['ppi_watch']==after['ppi_watch'] and before['backups']==after['backups']
               assert before['quiescence']==after['quiescence']
-              assert after['mem_available']>128*1024*1024 and after['inodes']>=10
-          result={'schema':'rc6.issue624.failed-disk-safe-cache.v1','status':'GREEN',
+              assert after['mem_available']>128*1024*1024 and after['inodes_percent']>=10
+          result={'schema':'rc6.issue624.pr641.postred-image-cleanup.v1',
+              'status':'GREEN' if after['free']>=4923227373 else 'RED_SPACE',
               'before':before,'after':after,'actions':actions,
-              'required_prior_artifact_bytes':4923067348,
-              'required_next_artifact_bytes':'RECALCULATE_FROM_NEW_CERTIFICATE',
-              'space_recovered':after['free']-before['free'],
-              'candidate_image_tag':'PRESERVED','backups':'PRESERVED_KEEP3',
-              'ppi_watch_accessed':'READ_ONLY_STATE_ONLY','real_orders_sent':0}
+              'required_bytes_prior_artifact':4923227373,'space_recovered':after['free']-before['free'],
+              'removed_image_id':old,'current_image_id':current,'critical_image_id':critical,
+              'real_orders_sent':0,'ppi_watch_changed':False}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
+          if result['status']!='GREEN':raise SystemExit(42)
           PY
           python -m json.tool evidence/cleanup.json >/dev/null
           python - <<'PY'
           import json
           x=json.load(open('evidence/cleanup.json'))
           assert x['status']=='GREEN'
-          print('RC6_624_SAFE_CACHE_CLEANUP=GREEN|before='+str(x['before']['free'])+
+          print('RC6_641_POSTRED_DISK_CLEANUP=GREEN|before='+str(x['before']['free'])+
               '|after='+str(x['after']['free'])+'|recovered='+str(x['space_recovered']))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-624-637-failed-disk-cleanup-${{ github.run_id }}
+          name: rc6-624-641-postred-image-cleanup-${{ github.run_id }}
           path: evidence
           if-no-files-found: warn
           retention-days: 14
