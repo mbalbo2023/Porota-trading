@@ -45,6 +45,42 @@ def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,mo
     archive=deploy/('rc6-failed-cold-'+old['snapshot_id'])
     assert archive.is_dir() and not (shadow/'cold-audit').exists()
     assert json.loads((deploy/('rc6-cold-fix-forward-'+new_sha+'.json')).read_text())['state']=='ARCHIVED_OLD_CUT_STILL_REVOKED'
+    # A later snapshot can legitimately recreate the active namespace while
+    # the failed ID remains archived. This was the real Droplet state in #624.
+    active=shadow/'cold-audit';active.mkdir(mode=0o700)
+    foreign='a'*32
+    (active/('manifest-'+foreign+'.json')).write_text('foreign record retained')
+    queue={'snapshot_id':foreign,'state':'FAILED'}
+    queue_path=active/'queue.json'
+    queue_path.write_text(json.dumps({'payload':queue,'sha256':p.digest(queue)}))
+    queue_path.chmod(0o600)
+    recovery.run(new_sha)
+    assert (active/('manifest-'+foreign+'.json')).read_text()=='foreign record retained'
+    assert archive.is_dir()
+    (active/('manifest-'+old['snapshot_id']+'.json')).write_text('conflict')
+    with pytest.raises(ValueError,match='COLD_AMBIGUOUS_ARCHIVE'):
+        recovery.run(new_sha)
+    (active/('manifest-'+old['snapshot_id']+'.json')).unlink()
+    conflicting_queue={'snapshot_id':old['snapshot_id'],'state':'FAILED'}
+    queue_path.write_text(json.dumps({'payload':conflicting_queue,
+        'sha256':p.digest(conflicting_queue)}))
+    with pytest.raises(ValueError,match='COLD_AMBIGUOUS_ARCHIVE'):
+        recovery.run(new_sha)
+    queue_path.write_text(json.dumps({'payload':queue,'sha256':p.digest(queue)}))
+    with p.EvidenceFiles(shadow) as files:
+        report={'as_of':'2026-10-05T13:20:10+00:00','status':'SHADOW_OBSERVING',
+            'real_orders_sent':0,'real_routes':'NOT_CALLED',
+            'computed_report':{'snapshot_id':foreign,'state':'PENDING'}}
+        status={'as_of':report['as_of'],'status':'SHADOW_OBSERVING',
+            'configuration_fingerprint':'fixed','real_orders_sent':0,
+            'real_routes':'NOT_CALLED','report_digest':p.digest(report)}
+        files.publish_generation(report,status)
+        files.write('status.json',{'status':'FAIL_CLOSED','real_orders_sent':0})
+    (shadow/('cut-'+old_cut+'.json.gz')).unlink(missing_ok=True)
+    recovery.run(new_sha)  # New pointer and bounded GC must not resurrect old ID.
+    assert json.loads((deploy/('rc6-cold-fix-forward-'+new_sha+'.json')).read_text())['old_cut_gc_complete']
+    (active/('manifest-'+foreign+'.json')).unlink()
+    queue_path.unlink();active.rmdir()
     with pytest.raises(ValueError):p.read_committed_generation(shadow)
     with p.EvidenceFiles(shadow) as files:
         with c.Snapshot(files) as snapshot:
