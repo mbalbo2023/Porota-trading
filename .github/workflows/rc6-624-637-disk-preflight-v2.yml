@@ -102,17 +102,78 @@ jobs:
               probe > "$RUNNER_TEMP/after-housekeeping.json"
             fi
           fi
+          capacity="$(probe)"
+          if [ "$(python -c 'import json,sys; print(json.loads(sys.argv[1])["disk_free"])' "$capacity")" -lt 4923067348 ]; then
+            # Identical preclean reconciliation from canonical Deploy V2: the
+            # critical service alone still pins the previous candidate image.
+            # It moves onto the already running stable image after compatibility
+            # checks. This is not a candidate promotion.
+            "${SSH[@]}" "$target" 'bash -s' <<'CRITICAL_PRECLEAN' > "$RUNNER_TEMP/critical-preclean.json"
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+          test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+          CURRENT_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          test "$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)" = "$CURRENT_IMAGE"
+          CRIT_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_critical_approval_rc6)"
+          STABLE_IMAGE=porota-trading-bot:17.0.0-rc6
+          test "$(sudo -n docker image inspect -f '{{.Id}}' "$STABLE_IMAGE")" = "$CURRENT_IMAGE"
+          test "$CRIT_IMAGE" != "$CURRENT_IMAGE"
+          sudo -n python3 -B - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CURRENT_IMAGE" <<'PY'
+          import json,sys
+          state=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert state.get('validation_status')=='DEPLOYED_VALIDATION_PENDING'
+          assert state.get('image_id')==sys.argv[2]
+          assert state.get('mode')=='PRODUCTION_PAPER'
+          assert type(state.get('real_orders_sent')) is int and state['real_orders_sent']==0
+          assert state.get('real_order_routes')=='NOT_CALLED'
+          PY
+          UNIT_TEXT="$(sudo -n systemctl cat porota-critical-approval-rc6.service)"
+          grep -Fq "$STABLE_IMAGE" <<<"$UNIT_TEXT"
+          grep -Fq '/opt/porota-control-plane-rc6/current:/code:ro' <<<"$UNIT_TEXT"
+          sudo -n docker run --rm --pull never --read-only --user botuser \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 32 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code \
+            -v /opt/porota-control-plane-rc6/current:/code:ro \
+            --entrypoint python "$STABLE_IMAGE" \
+            -c 'import fm_critical_approval_unix_runtime_rc6' >/dev/null
+          sudo -n systemctl restart porota-critical-approval-rc6.service
+          CRIT_READY=0
+          for _ in $(seq 1 40); do
+            CRIT_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6 2>/dev/null || true)"
+            if [ "$CRIT_STATUS" = "running|healthy|0|$CURRENT_IMAGE" ]; then CRIT_READY=1; break; fi
+            sleep 2
+          done
+          test "$CRIT_READY" -eq 1
+          sudo -n docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only"'
+          OLD_IMAGE_USERS=0
+          for cid in $(sudo -n docker ps -aq); do
+            if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$CRIT_IMAGE" ]; then OLD_IMAGE_USERS=1; fi
+          done
+          test "$OLD_IMAGE_USERS" -eq 0
+          printf '{"status":"CRITICAL_STABLE_IMAGE_RECONCILED","old_image_users":0,"stable_image":"%s"}\n' "$CURRENT_IMAGE"
+          CRITICAL_PRECLEAN
+            "${SSH[@]}" "$target" 'sudo -n python3 -B -' < scripts/rc6_pretransfer_image_cleanup.py > "$RUNNER_TEMP/post-critical-image-cleanup.json"
+            python -c 'import json,sys; assert json.load(open(sys.argv[1]))["status"]=="GREEN"' "$RUNNER_TEMP/post-critical-image-cleanup.json"
+            "${SSH[@]}" "$target" 'sudo -n docker image prune -f >/dev/null'
+            probe > "$RUNNER_TEMP/after-critical.json"
+          fi
           probe > "$RUNNER_TEMP/final.json"
           python - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/final.json" <<'PY'
           import json,sys
           before,after=(json.load(open(p)) for p in sys.argv[1:])
           assert before['status']==after['status']=='CLOSED_PAPER_ADMITTED'
-          assert before['containers']==after['containers'], 'RUNTIME_IDENTITY_CHANGED'
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              assert before['containers'][name]==after['containers'][name], 'RUNTIME_IDENTITY_CHANGED'
+          critical=after['containers']['porota_critical_approval_rc6']
+          assert critical['image']==after['containers']['porota_production_observer']['image']
+          assert critical['restarts']==0
           assert before['ppi_watch']==after['ppi_watch'], 'PPI_WATCH_CHANGED'
           assert after['mem_available'] > 128*1024*1024, 'RAM_RESERVE_RED'
           assert after['disk_free'] >= 4923067348, 'PRETRANSFER_DISK_RED'
           assert after['inode_free_percent'] >= 10, 'INODE_RESERVE_RED'
-          print(f"RC6_637_PREMERGE_PREFLIGHT=GREEN|before={before['disk_free']}|after={after['disk_free']}|required=4923067348|mem={after['mem_available']}|inode={after['inode_free_percent']:.2f}|runtime_same=true|ppi_watch_same=true")
+          print(f"RC6_637_PREMERGE_PREFLIGHT=GREEN|before={before['disk_free']}|after={after['disk_free']}|required=4923067348|mem={after['mem_available']}|inode={after['inode_free_percent']:.2f}|observer_dashboard_same=true|critical_stable=true|ppi_watch_same=true")
           PY
       - name: Emit sanitized evidence
         if: always()
@@ -120,7 +181,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p evidence
-          for x in before after-image after-housekeeping final image-cleanup housekeeping-output; do
+          for x in before after-image after-housekeeping after-critical final image-cleanup housekeeping-output critical-preclean post-critical-image-cleanup; do
             test ! -f "$RUNNER_TEMP/$x.json" || cp "$RUNNER_TEMP/$x.json" "evidence/$x.json"
           done
       - uses: actions/upload-artifact@v4
