@@ -121,18 +121,19 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'cold-image'
-          f=json.loads((root/'porota-frozen-candidate.json').read_text())
+          f=json.loads(next(root.rglob('porota-frozen-candidate.json')).read_text())
           assert f['candidate_sha']=='97361c1ce3476465d267e9216e6bcc065696e72f'
           assert f['paper_mode_required']=='PRODUCTION_PAPER' and f['real_orders_sent_required']==0
-          image=root/'porota-predeploy-image.tar.gz'
+          image=next(root.rglob('porota-predeploy-image.tar.gz'))
           h=hashlib.sha256()
           with image.open('rb') as stream:
               while b:=stream.read(1024*1024):h.update(b)
           assert h.hexdigest()==f['image_tar_sha256']
           print('HISTORICAL_IMAGE_BYTES=GREEN|image_id='+f['image_id'])
           PY
-          gzip -dc "$RUNNER_TEMP/cold-image/porota-predeploy-image.tar.gz" | docker load >/dev/null
-          image_id="$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/cold-image/porota-frozen-candidate.json"))["image_id"])')"
+          image_path="$(find "$RUNNER_TEMP/cold-image" -name porota-predeploy-image.tar.gz -print -quit)"
+          gzip -dc "$image_path" | docker load >/dev/null
+          image_id="$(python3 -c 'import json,os,pathlib;print(json.loads(next((pathlib.Path(os.environ["RUNNER_TEMP"])/"cold-image").rglob("porota-frozen-candidate.json")).read_text())["image_id"])')"
           test "$(docker image inspect -f '{{.Id}}' "$image_id")" = "$image_id"
           test "${image_id:0:18}" = 'sha256:687af03ef'
           echo "EXACT_OLD_IMAGE_AND_ABI=GREEN"
@@ -140,7 +141,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          image_id="$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/cold-image/porota-frozen-candidate.json"))["image_id"])')"
+          image_id="$(python3 -c 'import json,os,pathlib;print(json.loads(next((pathlib.Path(os.environ["RUNNER_TEMP"])/"cold-image").rglob("porota-frozen-candidate.json")).read_text())["image_id"])')"
           mkdir -p "$RUNNER_TEMP/cold-replay"
           cp "$RUNNER_TEMP/cold-original/meta.json" "$RUNNER_TEMP/cold-replay/meta.json"
           cp "$RUNNER_TEMP/cold-original/original-manifest.json" "$RUNNER_TEMP/cold-replay/original-manifest.json"
