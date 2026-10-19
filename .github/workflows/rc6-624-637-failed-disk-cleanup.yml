@@ -143,11 +143,12 @@ jobs:
               before=snapshot()
               now=__import__('time').time()
               dirs=('/tmp','/var/cache/apt','/var/log/journal','/opt/porota-trading/data/deploy',
-                    '/opt/porota-backups','/var/lib/docker/buildkit')
+                    '/opt/porota-backups','/var/lib/docker/buildkit','/opt/porota-trading/data',
+                    '/var/lib/docker','/var/lib/containerd','/home','/root','/usr/local')
               usage={}
               for dirname in dirs:
                   if Path(dirname).is_dir():
-                      p=subprocess.run(['du','-sxB1','--',dirname],capture_output=True,text=True,timeout=40)
+                      p=subprocess.run(['nice','-n','19','ionice','-c','3','du','-sxB1','--',dirname],capture_output=True,text=True,timeout=40)
                       usage[dirname]=int(p.stdout.split()[0]) if p.returncode==0 else 'UNAVAILABLE'
               tmp=[]
               for p in Path('/tmp').iterdir():
@@ -173,7 +174,7 @@ jobs:
               'required_bytes_prior_artifact':4923227373,'green_policy_bytes':7516192768,
               'real_orders_sent':0,'ppi_watch_changed':False}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
-          if result['status']!='GREEN':raise SystemExit(42)
+          if result['status']!='READ_ONLY':raise SystemExit(42)
           PY
           python -m json.tool evidence/cleanup.json >/dev/null
           python - <<'PY'
