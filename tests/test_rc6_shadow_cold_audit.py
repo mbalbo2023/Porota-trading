@@ -175,6 +175,24 @@ def test_failed_receipt_retains_only_safe_first_reason(tmp_path,monkeypatch):
 
 
 
+
+def test_failure_code_does_not_call_untrusted_exception_string(tmp_path,monkeypatch):
+    class Unprintable:
+        def __str__(self):
+            raise RuntimeError('unsafe stringification')
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        ref=seal(files)
+        monkeypatch.setattr(c,'_guard',
+            lambda *a,**k:(_ for _ in ()).throw(ValueError(Unprintable())))
+        with pytest.raises(ValueError):
+            c.drain(files)
+        with c.Directory(files) as directory:
+            receipt=directory.read('receipt-'+ref['snapshot_id']+'.json')
+            assert receipt['state']=='FAILED'
+            assert receipt['error_code']=='UNCLASSIFIED'
+            assert receipt['error_phase']=='INPUT_CHECK'
+
+
 def test_streamed_report_failure_records_phase_without_secret_and_keeps_pack(tmp_path,monkeypatch):
     secret='broker-account-private-value'
     with p.EvidenceFiles(tmp_path/'shadow') as files:
