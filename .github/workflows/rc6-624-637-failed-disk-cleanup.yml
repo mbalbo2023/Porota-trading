@@ -138,32 +138,39 @@ jobs:
                   'ppi_watch':watch(),'backups':backups(),'quiescence':q,
                   'images':sorted((json.loads(x) for x in cmd('docker','image','ls','--no-trunc','--format','{{json .}}',timeout=20).splitlines()),key=lambda row:(row.get('ID',''),row.get('Repository',''),row.get('Tag',''))),
                   'docker_df':cmd('docker','system','df',timeout=30)[-2500:]}
+          # Bounded inventory only; no host deletion while the market window changes.
           with promotion_lock():
               before=snapshot()
-              assert before['free']<4923227373 and before['mem_available']>128*1024*1024 and before['inodes_percent']>=10
-              assert all(subprocess.run(['docker','image','inspect',tag],
-                  capture_output=True,timeout=15).returncode!=0 for tag in tags)
-              actions={'backup_retention_excess':prune_backup_excess(before['backups']),
-                       'journal_rotate':cmd('journalctl','--rotate',timeout=40)[-2500:],
-                       'journal_vacuum':cmd('journalctl','--vacuum-size=16M',timeout=90)[-2500:]}
-              if shutil.disk_usage('/').free<4923227373:
-                  actions['apt_clean']=cmd('apt-get','clean',timeout=90)[-2500:]
-              if shutil.disk_usage('/').free<4923227373:
-                  # Docker prunes only unreferenced builder cache; never images/volumes/containers.
-                  actions['builder_prune']=cmd('docker','builder','prune','--force',timeout=180)[-2500:]
+              now=__import__('time').time()
+              dirs=('/tmp','/var/cache/apt','/var/log/journal','/opt/porota-trading/data/deploy',
+                    '/opt/porota-backups','/var/lib/docker/buildkit')
+              usage={}
+              for dirname in dirs:
+                  if Path(dirname).is_dir():
+                      p=subprocess.run(['du','-sxB1','--',dirname],capture_output=True,text=True,timeout=40)
+                      usage[dirname]=int(p.stdout.split()[0]) if p.returncode==0 else 'UNAVAILABLE'
+              tmp=[]
+              for p in Path('/tmp').iterdir():
+                  if not p.name.startswith(('porota','rc6')) or p.is_symlink():continue
+                  st=p.stat()
+                  if now-st.st_mtime<7*86400:continue
+                  tmp.append({'name':p.name,'kind':'dir' if p.is_dir() else 'file',
+                              'bytes':st.st_size,'age_days':int((now-st.st_mtime)/86400),
+                              'inode':st.st_ino})
+              deploy=[]
+              for p in Path('/opt/porota-trading/data/deploy').iterdir():
+                  if p.is_symlink():continue
+                  st=p.stat()
+                  deploy.append({'name':p.name,'kind':'dir' if p.is_dir() else 'file',
+                                 'bytes':st.st_size,'age_days':int((now-st.st_mtime)/86400)})
               after=snapshot()
               assert before['owned']==after['owned'] and before['all_containers']==after['all_containers']
               assert before['ppi_watch']==after['ppi_watch']
-              removed={(g,n) for g,n,_ in actions['backup_retention_excess']}
-              assert all(after['backups'][g]==[row for row in before['backups'][g] if (g,row[0]) not in removed] for g in ('general','paper','history'))
-              assert before['images']==after['images']
-              assert before['quiescence']==after['quiescence']
-              assert after['mem_available']>128*1024*1024 and after['inodes_percent']>=10
-          result={'schema':'rc6.issue624.cold2.postred-safe-cleanup.v1',
-              'status':'GREEN' if after['free']>=4923227373 else 'RED_SPACE',
-              'before':before,'after':after,'actions':actions,
-              'required_bytes_prior_artifact':4923227373,'space_recovered':after['free']-before['free'],
-              'previous_image_already_absent':old,'current_image_id':current,'critical_image_id':critical,
+          result={'schema':'rc6.issue624.cold2.capacity-inventory.v1',
+              'status':'READ_ONLY','before':before,'after':after,
+              'inventory':{'directory_bytes':usage,'tmp_old':sorted(tmp,key=lambda x:x['bytes'],reverse=True)[:100],
+                           'deploy_entries':sorted(deploy,key=lambda x:x['bytes'],reverse=True)[:100]},
+              'required_bytes_prior_artifact':4923227373,'green_policy_bytes':7516192768,
               'real_orders_sent':0,'ppi_watch_changed':False}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           if result['status']!='GREEN':raise SystemExit(42)
@@ -172,8 +179,8 @@ jobs:
           python - <<'PY'
           import json
           x=json.load(open('evidence/cleanup.json'))
-          assert x['status']=='GREEN'
-          print('RC6_641_POSTRED_DISK_CLEANUP=GREEN|before='+str(x['before']['free'])+
+          assert x['status']=='READ_ONLY'
+          print('RC6_624_CAPACITY_INVENTORY=READ_ONLY|before='+str(x['before']['free'])+
               '|after='+str(x['after']['free'])+'|recovered='+str(x['space_recovered']))
           PY
       - uses: actions/upload-artifact@v4
