@@ -1,0 +1,137 @@
+name: RC6 624 PR637 failed COLD archive read-only inventory
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-637-cold-readonly.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: github.head_ref == 'diagnostic/rc6-624-637-cold-readonly-20261019'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ee938348e6486900dcd595275e25440a3983021c
+      - name: Confirm exact failed promotion and diagnostic source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = ee938348e6486900dcd595275e25440a3983021c
+          python3 - <<'PY'
+          import json,os,urllib.request
+          req=urllib.request.Request('https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/39180374877',
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req,timeout=15) as response: run=json.load(response)
+          assert run['head_sha']=='ee938348e6486900dcd595275e25440a3983021c'
+          assert run['status']=='completed' and run['conclusion']=='failure'
+          print('RC6_637_EXACT_RED_DEPLOY=GREEN')
+          PY
+      - name: Inspect only exact namespace and current safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/key"' EXIT
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 "$DO_USER@$DO_HOST" 'sudo -n python3 -B -' <<'PY' > evidence/inventory.json
+          import hashlib,json,os,shutil,sqlite3,subprocess,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          ident='89e7f81dbc9b4a628bdc30edf86a17b0'
+          source=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
+          archive=root/'data/deploy'/('rc6-failed-cold-'+ident)
+          names={ident+'.pack','manifest-'+ident+'.json','receipt-'+ident+'.json','queue.json'}
+          def sha(path):
+              h=hashlib.sha256()
+              with path.open('rb') as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b''):h.update(chunk)
+              return h.hexdigest()
+          def directory(path):
+              out={'exists':path.exists(),'symlink':path.is_symlink()}
+              if not path.is_dir() or path.is_symlink():return out
+              actual={p.name for p in path.iterdir()}
+              out['names']=sorted(actual)
+              out['exact_expected_names']=actual==names
+              out['files']={}
+              for name in sorted(actual&names):
+                  p=path/name
+                  st=p.lstat()
+                  out['files'][name]={'bytes':st.st_size,'sha256':sha(p) if p.is_file() and not p.is_symlink() else None,
+                      'inode':st.st_ino,'device':st.st_dev,'mtime_ns':st.st_mtime_ns,'ctime_ns':st.st_ctime_ns,
+                      'mode':oct(st.st_mode&0o777),'nlink':st.st_nlink}
+              return out
+          def inspect(name):
+              x=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=15))[0]
+              return {'id':x['Id'],'image':x['Image'],'status':x['State']['Status'],
+                  'health':(x['State'].get('Health') or {}).get('Status'),'restarts':x['RestartCount'],
+                  'oom':x['State']['OOMKilled']}
+          db=root/'data/paper_v17/observer_v17.db'
+          con=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2)
+          con.execute('PRAGMA query_only=ON')
+          mode,orders,process,session,heartbeat=con.execute(
+              'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          con.close()
+          qpath=root/'data/deploy/quiescence-38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1.json'
+          q=json.loads(qpath.read_text())
+          q={k:q.get(k) for k in ('status','candidate_sha','installation_started','inflight','real_orders_sent','ppi_watch_accessed','containers')}
+          units=subprocess.check_output(['systemctl','list-unit-files','--no-legend'],text=True,timeout=10).splitlines()
+          ppi={}
+          for line in units:
+              name=line.split()[0]
+              if 'ppi' in name.lower() and 'watch' in name.lower():
+                  ppi[name]=[subprocess.run(['systemctl',cmd,name],capture_output=True,text=True,timeout=5).stdout.strip()
+                             for cmd in ('is-active','is-enabled')]
+          mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()
+                   if x.startswith('MemAvailable:'))
+          result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
+              'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
+              'source':directory(source),'archive':directory(archive),
+              'quiescence':q,'observer_db':{'mode':mode,'real_orders_sent':orders,'process_state':process,
+                  'session_state':session,'heartbeat_at':heartbeat},
+              'containers':{n:inspect(n) for n in ('porota_production_observer',
+                  'porota_production_dashboard','porota_critical_approval_rc6')},
+              'ppi_watch':ppi,'disk_free_bytes':shutil.disk_usage('/').free,
+              'mem_available_bytes':mem}
+          print(json.dumps(result,sort_keys=True,separators=(',',':')))
+          PY
+          python -m json.tool evidence/inventory.json >/dev/null
+          python - <<'PY'
+          import json
+          x=json.load(open('evidence/inventory.json'))
+          assert x['read_only'] and x['observer_db']['mode']=='PRODUCTION_PAPER' and x['observer_db']['real_orders_sent']==0
+          print('RC6_637_DUAL_NAMESPACE_READONLY=GREEN')
+          print('SOURCE_PRESENT='+str(x['source']['exists'])+'|ARCHIVE_PRESENT='+str(x['archive']['exists']))
+          print('CONTAINERS='+','.join(n+':'+v['status'] for n,v in x['containers'].items()))
+          print('DISK_FREE_BYTES='+str(x['disk_free_bytes']))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-624-637-cold-inventory-${{ github.run_id }}
+          path: evidence
+          if-no-files-found: warn
+          retention-days: 14
