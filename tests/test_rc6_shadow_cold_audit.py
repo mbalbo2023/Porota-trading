@@ -311,6 +311,44 @@ def test_existing_worker_consumes_cold_inside_poll_period_and_failure_waits(tmp_
         assert len(calls)==(1 if failed else 2)
 
 
+@pytest.mark.parametrize('hot_seconds,cold_seconds,expected_wait', [
+    (10, 12, 8), (50, 5, 0), (75, 20, 0),
+])
+def test_worker_poll_is_minimum_start_to_start_and_cold_precedes_next_tick(
+        tmp_path, monkeypatch, hot_seconds, cold_seconds, expected_wait):
+    from rc6_shadow_runtime import worker as runtime
+    clock=[100.0]; calls=[]; waits=[]
+    class Worker:
+        defer_audit=True
+        pointer_committed_monotonic=None
+        files=p.EvidenceFiles(tmp_path/'shadow')
+        last_sqlite_diagnostics={}
+        def tick(self, _at):
+            assert calls == ['pre-drain']
+            clock[0]+=hot_seconds
+            self.pointer_committed_monotonic=clock[0]
+            calls.append('published')
+            return {'status':'SHADOW_OBSERVING','phase':'CLOSED'}
+    def drain(_files):
+        if not calls: calls.append('pre-drain')
+        else:
+            assert calls == ['pre-drain','published']
+            calls.append('cold-complete')
+            clock[0]+=cold_seconds
+    class Stop:
+        def is_set(self):return bool(waits)
+        def wait(self,seconds):waits.append(seconds)
+    monkeypatch.setattr(runtime,'ShadowRuntime',lambda *a,**k:Worker())
+    monkeypatch.setattr(runtime.os,'nice',lambda _:None)
+    monkeypatch.setattr(runtime.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(runtime.cold_audit,'drain',drain)
+    monkeypatch.setattr(runtime.cold_audit,'prune_completed',lambda _:None)
+    monkeypatch.setattr(runtime,'release_idle_heap',lambda:{})
+    runtime.run_worker(tmp_path/'paper.db',Stop(),clock_fn=lambda:'2026-10-05T13:20:00+00:00')
+    assert calls == ['pre-drain','published','cold-complete']
+    assert waits == [expected_wait]
+
+
 @pytest.mark.parametrize('case',['unknown_reference','unknown_contract','missing_contract'])
 def test_reader_cannot_downgrade_unknown_or_missing_cold_contract(tmp_path,case):
     with p.EvidenceFiles(tmp_path) as files:
