@@ -185,6 +185,13 @@ jobs:
               stat=p.lstat()
               tmp.append({'name':p.name,'mode':oct(stat.st_mode&0o777),
                   'mtime_ns':stat.st_mtime_ns,'size':du(str(p))})
+          logs=[]
+          for p in Path('/var/log').rglob('*'):
+              if p.is_file() and not p.is_symlink():
+                  st=p.stat()
+                  logs.append({'path':str(p),'bytes':st.st_size,'mtime_ns':st.st_mtime_ns})
+          logs=sorted(logs,key=lambda row:row['bytes'],reverse=True)[:25]
+          journal=subprocess.check_output(['journalctl','--disk-usage'],text=True,timeout=20)
           result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
               'source':directory(source),'archive':directory(archive),
@@ -199,7 +206,8 @@ jobs:
               'ppi_watch':ppi,'disk_free_bytes':shutil.disk_usage('/').free,
               'mem_available_bytes':mem,'disk_inventory':{'images':images,
                   'containers':all_containers,'backups':backup,'cache_usage':usage,
-                  'docker_df':disk_df,'selected_du':selected,'tmp':tmp}}
+                  'docker_df':disk_df,'selected_du':selected,'tmp':tmp,
+                  'large_logs':logs,'journal_usage':journal}}
           print(json.dumps(result,sort_keys=True,separators=(',',':')))
           PY
           python -m json.tool evidence/inventory.json >/dev/null
