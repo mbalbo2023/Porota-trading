@@ -63,6 +63,7 @@ jobs:
           ident='89e7f81dbc9b4a628bdc30edf86a17b0'
           source=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
           archive=root/'data/deploy'/('rc6-failed-cold-'+ident)
+          shadow=source.parent
           names={ident+'.pack','manifest-'+ident+'.json','receipt-'+ident+'.json','queue.json'}
           def sha(path):
               h=hashlib.sha256()
@@ -97,6 +98,16 @@ jobs:
               return {'id':x['Id'],'image':x['Image'],'status':x['State']['Status'],
                   'health':(x['State'].get('Health') or {}).get('Status'),'restarts':x['RestartCount'],
                   'oom':x['State']['OOMKilled']}
+          def envelope(path):
+              raw=path.read_bytes()
+              assert len(raw)<=256*1024
+              value=json.loads(raw)
+              payload=value['payload']
+              encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
+                  ensure_ascii=True,allow_nan=False).encode('ascii')
+              return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],
+                  'generation_id':payload.get('generation_id'),'file':payload.get('file'),
+                  'status':payload.get('status'),'real_orders_sent':payload.get('real_orders_sent')}
           db=root/'data/paper_v17/observer_v17.db'
           con=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2)
           con.execute('PRAGMA query_only=ON')
@@ -119,6 +130,8 @@ jobs:
           result={'schema':'rc6.issue624.cold-dual-namespace-readonly.v1',
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
               'source':directory(source),'archive':directory(archive),
+              'live':{'pointer':envelope(shadow/'CURRENT.json'),
+                  'status':envelope(shadow/'status.json')},
               'quiescence':q,'observer_db':{'mode':mode,'real_orders_sent':orders,'process_state':process,
                   'session_state':session,'heartbeat_at':heartbeat},
               'containers':{n:inspect(n) for n in ('porota_production_observer',
