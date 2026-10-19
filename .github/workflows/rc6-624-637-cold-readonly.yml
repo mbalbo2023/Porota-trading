@@ -112,11 +112,10 @@ jobs:
           assert list(map(int,(d,i,size)))==x['pack_identity'][:3]
           print('ORIGINAL_PACK_TRANSFER_HASH_AND_INODE=GREEN')
           PY
-      - name: Stream actual historical image and native ABI to runner without host writes
+      - name: Verify historical source and ABI against frozen artifact
         shell: bash
         run: |
           set -Eeuo pipefail
-          image_id=sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098
           install -m700 -d "$HOME/.ssh" "$RUNNER_TEMP/cold-image"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
@@ -124,29 +123,35 @@ jobs:
           unset SSH_KEY KNOWN_HOSTS
           trap 'rm -f "$HOME/.ssh/key"' EXIT
           remote() { ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15 "$DO_USER@$DO_HOST" "$@"; }
-          test "$(remote "sudo -n docker image inspect -f '{{.Id}}' $image_id")" = "$image_id"
-          remote "sudo -n nice -n 10 sh -c 'docker save $image_id | gzip -1'" > "$RUNNER_TEMP/cold-image/historical.tar.gz"
-          test "$(remote "sudo -n docker image inspect -f '{{.Id}}' $image_id")" = "$image_id"
-          gzip -t "$RUNNER_TEMP/cold-image/historical.tar.gz"
-          echo "HISTORICAL_IMAGE_STREAM_BYTES=$(stat -c %s "$RUNNER_TEMP/cold-image/historical.tar.gz")"
+          live_id="$(remote "sudo -n docker inspect -f '{{.Image}}' porota_critical_approval_rc6")"
+          test "$live_id" = sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098
+          for item in cold_audit.py persistence.py _rc6_json_bound.so; do
+            remote "sudo -n docker cp porota_critical_approval_rc6:/app/rc6_shadow_runtime/$item - | tar -xOf - | sha256sum" | cut -d' ' -f1 >> "$RUNNER_TEMP/cold-image/live-hashes.txt"
+          done
+          gh run download 39151289967 --repo mbalbo2023/Porota-trading --name porota-predeploy-v2-97361c1ce3476465d267e9216e6bcc065696e72f --dir "$RUNNER_TEMP/cold-image"
           python3 - <<'PY'
-          import json,os,tarfile,pathlib
-          archive=pathlib.Path(os.environ['RUNNER_TEMP'])/'cold-image/historical.tar.gz'
-          with tarfile.open(archive,'r:gz') as stream:
-              rows=json.load(stream.extractfile('manifest.json'))
-              ids=['sha256:'+pathlib.PurePosixPath(r['Config']).stem for r in rows]
-          print('STREAM_CONFIG_IDS='+','.join(ids))
-          assert 'sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098' in ids
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'cold-image'
+          f=json.loads(next(root.rglob('porota-frozen-candidate.json')).read_text())
+          assert f['candidate_sha']=='97361c1ce3476465d267e9216e6bcc065696e72f'
+          assert f['image_id']=='sha256:d83ab03030be37b6265f1cc691ceae2ebf36f45f2b61a4e4c6c269c05c52e07c'
+          assert f['paper_mode_required']=='PRODUCTION_PAPER' and f['real_orders_sent_required']==0
+          image=next(root.rglob('porota-predeploy-image.tar.gz'))
+          h=hashlib.sha256()
+          with image.open('rb') as stream:
+              while b:=stream.read(1024*1024):h.update(b)
+          assert h.hexdigest()==f['image_tar_sha256']
+          print('FROZEN_IMAGE_BYTES=GREEN|image_id='+f['image_id'])
           PY
-          docker image ls -aq --no-trunc | sort -u > "$RUNNER_TEMP/cold-image/before.txt"
-          gzip -dc "$RUNNER_TEMP/cold-image/historical.tar.gz" | docker load
-          docker image ls -aq --no-trunc | sort -u > "$RUNNER_TEMP/cold-image/after.txt"
-          loaded_id="$(comm -13 "$RUNNER_TEMP/cold-image/before.txt" "$RUNNER_TEMP/cold-image/after.txt" | head -1)"
-          test -n "$loaded_id"
-          echo "LOADED_IMAGE_ID=$loaded_id"
-          docker run --rm --network none --read-only --entrypoint python "$loaded_id" -B -c \
-            'import hashlib,pathlib,os;from rc6_shadow_runtime import cold_audit,persistence;assert persistence._native_json_bound is not None;d=lambda p: hashlib.sha1(("blob "+str(len(p.read_bytes()))+"\0").encode()+p.read_bytes()).hexdigest();print("HISTORICAL_SOURCE_ABI=GREEN|build_sha="+str(os.environ.get("POROTA_BUILD_SHA"))+"|cold_blob="+d(pathlib.Path(cold_audit.__file__))+"|persistence_blob="+d(pathlib.Path(persistence.__file__)))'
-          echo "$loaded_id" > "$RUNNER_TEMP/cold-image/loaded-id.txt"
+          image_path="$(find "$RUNNER_TEMP/cold-image" -name porota-predeploy-image.tar.gz -print -quit)"
+          gzip -dc "$image_path" | docker load >/dev/null
+          image_id=sha256:d83ab03030be37b6265f1cc691ceae2ebf36f45f2b61a4e4c6c269c05c52e07c
+          test "$(docker image inspect -f '{{.Id}}' "$image_id")" = "$image_id"
+          docker run --rm --network none --read-only --entrypoint python "$image_id" -B -c \
+            'import hashlib,pathlib;from rc6_shadow_runtime import cold_audit,persistence;assert persistence._native_json_bound is not None;root=pathlib.Path(cold_audit.__file__).parent;print("\n".join(hashlib.sha256((root/name).read_bytes()).hexdigest() for name in ("cold_audit.py","persistence.py","_rc6_json_bound.so")))' > "$RUNNER_TEMP/cold-image/frozen-hashes.txt"
+          diff -u "$RUNNER_TEMP/cold-image/live-hashes.txt" "$RUNNER_TEMP/cold-image/frozen-hashes.txt"
+          echo 'HISTORICAL_SOURCE_NATIVE_ABI_BYTE_PARITY=GREEN'
+          echo "$image_id" > "$RUNNER_TEMP/cold-image/loaded-id.txt"
       - name: Finite isolated replay at original occupancy and empty occupancy
         shell: bash
         run: |
