@@ -105,3 +105,17 @@ def test_preflight_rejects_divergence_without_archive(state,change):
         q.quarantine(root,admission=admission)
     assert not archive.exists()
     assert (source/q.QUEUE).exists()
+
+
+def test_market_window_change_after_durable_receipt_keeps_failed_queue(state):
+    root,source,archive,_=state
+    gate={'open':False}
+    def admission():return {**admitted(),'market_closed':not gate['open']}
+    def checkpoint(stage):
+        if stage=='receipt_durable':gate['open']=True
+    with pytest.raises(ValueError,match='COLD2_QUIESCENCE_REQUIRED'):
+        q.quarantine(root,admission=admission,checkpoint=checkpoint)
+    assert (source/q.QUEUE).exists()
+    assert q.inspect(root)['queue_failed']
+    gate['open']=False
+    assert q.quarantine(root,admission=admission)['old_cut_revoked']
