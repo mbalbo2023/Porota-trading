@@ -47,10 +47,12 @@ jobs:
                      if line.startswith('MemAvailable:'))
           io = next(float(s.split('=',1)[1]) for s in Path('/proc/pressure/io').read_text().splitlines()[0].split()
                     if s.startswith('avg10='))
+          # This is a single bounded SQLite read, not the deep disk inventory.
+          # The latter retains its stricter PSI <= 5 gate unchanged.
           print('RC6_624_RESOURCE_ADMISSION='+json.dumps({'mem_available_bytes':mem,
-                'io_some_avg10':io,'mem_min_exclusive':128*1024**2,'io_max_inclusive':5},
+                'io_some_avg10':io,'mem_min_exclusive':128*1024**2,'io_max_inclusive':10},
                 sort_keys=True),flush=True)
-          assert mem > 128*1024**2 and io <= 5, 'RESOURCE_ADMISSION_RED'
+          assert mem > 128*1024**2 and io <= 10, 'BOUNDED_SQLITE_ADMISSION_RED'
           path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
           now = dt.datetime.now(dt.timezone.utc)
           with sqlite3.connect(path.as_uri()+'?mode=ro', uri=True, timeout=.2) as c:
