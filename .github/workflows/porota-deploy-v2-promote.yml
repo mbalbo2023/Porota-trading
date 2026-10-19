@@ -199,6 +199,15 @@ jobs:
 
           RC6_DISK_PRECLEAN_TRIGGERED=0
           if [ "$GATE_RC" -ne 0 ]; then
+            # Following an installed-but-unaccepted failure, the owned runtime
+            # remains stopped. The normal preclean assumes it is running. Stop
+            # here and require an independently measured offline cleanup.
+            OWNED_STATE="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
+            if [ "$OWNED_STATE" != $'running\nrunning' ]; then
+              echo "RC6_DISK_OFFLINE_PRECLEAN_REQUIRED=RED|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+              exit 37
+            fi
             RC6_DISK_PRECLEAN_TRIGGERED=1
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"

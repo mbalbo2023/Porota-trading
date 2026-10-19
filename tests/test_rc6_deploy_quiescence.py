@@ -24,6 +24,9 @@ def installation(tmp_path, monkeypatch):
             c.execute('CREATE TABLE ' + table + '(status)')
     states = {name: {'Id': name + '_id', 'Image': 'old_image',
                     'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0}} for name in q.OWNED}
+    states['porota_critical_approval_rc6'] = {'Id': 'critical_id', 'Image': 'old_image',
+        'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0,
+                  'Health': {'Status': 'healthy'}}}
     calls = []
     def command(args):
         calls.append(args)
@@ -82,6 +85,41 @@ def test_recovery_never_restarts_old_runtime_after_install_boundary(installation
     assert calls == []
 
 
+def test_exact_failed_install_continues_stopped_without_starting_prior_image(installation,monkeypatch):
+    root,db,states,calls,_=installation
+    monkeypatch.setattr(q,'FAILED_INSTALL_CANDIDATE',SHA)
+    q.run(SHA,'drain');q.run(SHA,'install');q.run(SHA,'recover')
+    calls.clear()
+    successor='b'*40
+    receipt=q.run(successor,'drain')
+    assert receipt['status']=='DRAINED' and receipt['fix_forward_from']==SHA
+    assert receipt['inflight']=='ABSENT_OWNED_RUNTIME_STOPPED'
+    assert len(receipt['prior_receipt_sha256'])==64
+    assert not any(c[1] in ('start','stop') for c in calls)
+    assert all(states[n]['State']['Status']=='exited' for n in q.OWNED)
+    assert q.run(successor,'install')['status']=='HOST_INSTALLATION_STARTED'
+
+
+@pytest.mark.parametrize('change',['prior_receipt','image','exit_code','critical','position','mixed'])
+def test_failed_install_continuation_rejects_changed_proof(installation,monkeypatch,change):
+    root,db,states,calls,_=installation
+    monkeypatch.setattr(q,'FAILED_INSTALL_CANDIDATE',SHA)
+    q.run(SHA,'drain');q.run(SHA,'install');q.run(SHA,'recover')
+    old=root/'data/deploy'/('quiescence-'+SHA+'.json')
+    if change=='prior_receipt':
+        receipt=json.loads(old.read_text());receipt['inflight']='UNKNOWN';old.write_text(json.dumps(receipt))
+    elif change=='image':states[q.OWNED[0]]['Image']='changed'
+    elif change=='exit_code':states[q.OWNED[0]]['State']['ExitCode']=137
+    elif change=='critical':states['porota_critical_approval_rc6']['State']['Health']['Status']='unhealthy'
+    elif change=='position':
+        with sqlite3.connect(db) as c:c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+    else:states[q.OWNED[0]]['State']['Status']='running'
+    calls.clear()
+    with pytest.raises((ValueError,sqlite3.Error)):q.run('b'*40,'drain')
+    assert not (root/'data/deploy'/('quiescence-'+'b'*40+'.json')).exists()
+    assert not any(c[1] in ('start','stop') for c in calls)
+
+
 def test_restart_between_drain_and_install_blocks_candidate_write(installation):
     root, db, states, calls, _ = installation
     q.run(SHA, 'drain')
@@ -94,6 +132,7 @@ def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
     assert source.index('id: drain') < source.index('id: transfer')
     assert source.index('--action install') < source.index('shutil.copy2(src,dst)')
     assert '--action recover' in source
+    assert source.index('RC6_DISK_OFFLINE_PRECLEAN_REQUIRED=RED') < source.index("<<'PRECLEAN_REMOTE'")
 
 
 def test_preexisting_historical_oom_flag_with_new_clean_exit_is_not_a_new_oom(installation, monkeypatch):
