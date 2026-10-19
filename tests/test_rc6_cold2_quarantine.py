@@ -162,7 +162,12 @@ def test_resource_reserve_blocks_before_archive(state,monkeypatch,resource):
         monkeypatch.setattr(q.shutil,'disk_usage',lambda path:SimpleNamespace(free=q.RESERVE))
         code='COLD2_DISK_RESERVE_BREACHED'
     elif resource=='inodes':
-        monkeypatch.setattr(q.os,'statvfs',lambda path:SimpleNamespace(f_favail=15))
+        original_statvfs=q.os.statvfs
+        def low_inodes(path):
+            st=original_statvfs(path)
+            return SimpleNamespace(f_favail=15,f_bavail=st.f_bavail,
+                f_bfree=st.f_bfree,f_frsize=st.f_frsize,f_blocks=st.f_blocks)
+        monkeypatch.setattr(q.os,'statvfs',low_inodes)
         code='COLD2_INODE_RESERVE_BREACHED'
     else:
         original_open=builtins.open
