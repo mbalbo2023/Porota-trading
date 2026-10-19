@@ -129,15 +129,29 @@ jobs:
           test "$(remote "sudo -n docker image inspect -f '{{.Id}}' $image_id")" = "$image_id"
           gzip -t "$RUNNER_TEMP/cold-image/historical.tar.gz"
           echo "HISTORICAL_IMAGE_STREAM_BYTES=$(stat -c %s "$RUNNER_TEMP/cold-image/historical.tar.gz")"
-          gzip -dc "$RUNNER_TEMP/cold-image/historical.tar.gz" | docker load >/dev/null
-          test "$(docker image inspect -f '{{.Id}}' "$image_id")" = "$image_id"
-          docker run --rm --network none --read-only --entrypoint python "$image_id" -B -c \
+          python3 - <<'PY'
+          import json,os,tarfile,pathlib
+          archive=pathlib.Path(os.environ['RUNNER_TEMP'])/'cold-image/historical.tar.gz'
+          with tarfile.open(archive,'r:gz') as stream:
+              rows=json.load(stream.extractfile('manifest.json'))
+              ids=['sha256:'+pathlib.PurePosixPath(r['Config']).stem for r in rows]
+          print('STREAM_CONFIG_IDS='+','.join(ids))
+          assert 'sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098' in ids
+          PY
+          docker image ls -aq --no-trunc | sort -u > "$RUNNER_TEMP/cold-image/before.txt"
+          gzip -dc "$RUNNER_TEMP/cold-image/historical.tar.gz" | docker load
+          docker image ls -aq --no-trunc | sort -u > "$RUNNER_TEMP/cold-image/after.txt"
+          loaded_id="$(comm -13 "$RUNNER_TEMP/cold-image/before.txt" "$RUNNER_TEMP/cold-image/after.txt" | head -1)"
+          test -n "$loaded_id"
+          echo "LOADED_IMAGE_ID=$loaded_id"
+          docker run --rm --network none --read-only --entrypoint python "$loaded_id" -B -c \
             'import hashlib,pathlib,os;from rc6_shadow_runtime import cold_audit,persistence;assert persistence._native_json_bound is not None;d=lambda p: hashlib.sha1(("blob "+str(len(p.read_bytes()))+"\0").encode()+p.read_bytes()).hexdigest();print("HISTORICAL_SOURCE_ABI=GREEN|build_sha="+str(os.environ.get("POROTA_BUILD_SHA"))+"|cold_blob="+d(pathlib.Path(cold_audit.__file__))+"|persistence_blob="+d(pathlib.Path(persistence.__file__)))'
+          echo "$loaded_id" > "$RUNNER_TEMP/cold-image/loaded-id.txt"
       - name: Finite isolated replay at original occupancy and empty occupancy
         shell: bash
         run: |
           set -Eeuo pipefail
-          image_id=sha256:687af03ef0cd81c992d604d5ae391105229b7102b7fbca4d0c8582e973ad5098
+          image_id="$(cat "$RUNNER_TEMP/cold-image/loaded-id.txt")"
           mkdir -p "$RUNNER_TEMP/cold-replay"
           cp "$RUNNER_TEMP/cold-original/meta.json" "$RUNNER_TEMP/cold-replay/meta.json"
           cp "$RUNNER_TEMP/cold-original/original-manifest.json" "$RUNNER_TEMP/cold-replay/original-manifest.json"
