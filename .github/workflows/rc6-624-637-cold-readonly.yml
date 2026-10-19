@@ -108,6 +108,20 @@ jobs:
               return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],
                   'generation_id':payload.get('generation_id'),'file':payload.get('file'),
                   'status':payload.get('status'),'real_orders_sent':payload.get('real_orders_sent')}
+          def cut_summary(name):
+              import gzip
+              assert name.startswith('cut-') and name.endswith('.json.gz') and '/' not in name
+              with gzip.open(shadow/name,'rb') as stream:raw=stream.read(4*1024*1024+1)
+              assert len(raw)<=4*1024*1024
+              value=json.loads(raw);payload=value['payload']
+              encoded=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,
+                  ensure_ascii=True,allow_nan=False).encode('ascii')
+              report=payload.get('report',{}).get('computed_report',{})
+              return {'valid':hashlib.sha256(encoded).hexdigest()==value['digest'],
+                  'generation_id':payload.get('generation_id'),
+                  'snapshot_id':report.get('snapshot_id'),
+                  'state':report.get('state'),
+                  'status':payload.get('status')}
           db=root/'data/paper_v17/observer_v17.db'
           con=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2)
           con.execute('PRAGMA query_only=ON')
@@ -118,6 +132,9 @@ jobs:
           qpath=root/'data/deploy/quiescence-38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1.json'
           q=json.loads(qpath.read_text())
           q={k:q.get(k) for k in ('status','candidate_sha','installation_started','inflight','real_orders_sent','ppi_watch_accessed','containers')}
+          current=json.loads((shadow/'CURRENT.json').read_text())['payload']
+          current_cut=cut_summary(current['file'])
+          old_cut=cut_summary('cut-b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8.json.gz')
           units=subprocess.check_output(['systemctl','list-unit-files','--no-legend'],text=True,timeout=10).splitlines()
           ppi={}
           for line in units:
@@ -131,7 +148,8 @@ jobs:
               'observed_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
               'source':directory(source),'archive':directory(archive),
               'live':{'pointer':envelope(shadow/'CURRENT.json'),
-                  'status':envelope(shadow/'status.json')},
+                  'status':envelope(shadow/'status.json'),
+                  'current_cut':current_cut,'old_cut':old_cut},
               'quiescence':q,'observer_db':{'mode':mode,'real_orders_sent':orders,'process_state':process,
                   'session_state':session,'heartbeat_at':heartbeat},
               'containers':{n:inspect(n) for n in ('porota_production_observer',
