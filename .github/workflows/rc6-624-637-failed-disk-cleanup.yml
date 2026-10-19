@@ -118,7 +118,7 @@ jobs:
               return {'free':shutil.disk_usage('/').free,'inodes_percent':100*stat.f_ffree/stat.f_files,
                   'mem_available':memory,'owned':owned,'all_containers':allc,
                   'ppi_watch':watch(),'backups':backups(),'quiescence':q,
-                  'images':sorted(json.loads(x) for x in cmd('docker','image','ls','--no-trunc','--format','{{json .}}',timeout=20).splitlines()),
+                  'images':sorted((json.loads(x) for x in cmd('docker','image','ls','--no-trunc','--format','{{json .}}',timeout=20).splitlines()),key=lambda row:(row.get('ID',''),row.get('Repository',''),row.get('Tag',''))),
                   'docker_df':cmd('docker','system','df',timeout=30)[-2500:]}
           with promotion_lock():
               before=snapshot()
