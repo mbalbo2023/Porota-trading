@@ -80,6 +80,22 @@ def test_plan_then_archive_preserves_original_bytes_and_revocation(state):
     assert q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)['state']=='ALREADY_QUARANTINED'
 
 
+def test_existing_worker_backpressure_is_removed_only_after_durable_archive(state):
+    from rc6_shadow_runtime import cold_audit
+    from rc6_shadow_runtime.persistence import EvidenceFiles
+    root,source,archive,_=state
+    shadow=source.parent
+    with EvidenceFiles(shadow) as files:
+        with pytest.raises(ValueError,match='SHADOW_COLD_FAILED_BACKLOG_REQUIRES_FIX_FORWARD'):
+            cold_audit.ensure_idle(files)
+    assert (source/q.QUEUE).exists()
+    q.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    with EvidenceFiles(shadow) as files:
+        assert cold_audit.ensure_idle(files) is None
+    assert q.envelope(shadow/'status.json')['status']=='FAIL_CLOSED'
+    assert q.envelope(archive/q.RECEIPT,cold=True)['state']=='FAILED'
+
+
 @pytest.mark.parametrize('stage',['archive_'+name for name in q.FILES]+[
     'pack_moved','source_'+q.MANIFEST+'_removed','source_'+q.RECEIPT+'_removed',
     'receipt_durable','queue_removed'])
