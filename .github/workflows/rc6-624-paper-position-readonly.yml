@@ -82,12 +82,15 @@ jobs:
                                    'FROM paper_exit_intents WHERE paper_id=?',(pid,)).fetchone()
                   fills=[dict(f) for f in c.execute('SELECT side,filled_at,quantity FROM paper_fills '
                                                     'WHERE paper_id=? ORDER BY id DESC LIMIT 8',(pid,))]
+                  events=[dict(e) for e in c.execute('SELECT event_at,event_type,substr(detail,1,240) AS detail '
+                                                     'FROM paper_events WHERE paper_id=? '
+                                                     'ORDER BY id DESC LIMIT 30',(pid,))]
                   quote=c.execute('SELECT observed_at,asset_class,settlement,bid_size,bid,ask '
                                   'FROM market_snapshots WHERE symbol=? ORDER BY id DESC LIMIT 1',(row['symbol'],)).fetchone()
                   supervisor=c.execute('SELECT heartbeat_at,state,detail FROM paper_supervisor_state WHERE id=1').fetchone()
                   reader=c.execute('SELECT heartbeat_at,state,detail FROM paper_exit_reader_state WHERE id=1').fetchone()
                   result.update(position=row,intent=dict(intent) if intent else None,
-                                fills=fills,latest_snapshot=dict(quote) if quote else None,
+                                fills=fills,events=events,latest_snapshot=dict(quote) if quote else None,
                                 supervisor=dict(supervisor) if supervisor else None,
                                 reader=dict(reader) if reader else None)
           print('RC6_624_POSITION_DIAG='+json.dumps(result,sort_keys=True,ensure_ascii=True))
