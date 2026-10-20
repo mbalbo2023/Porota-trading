@@ -1,5 +1,7 @@
 {
-  "anomalies": [],
+  "anomalies": [
+    "open_over_max_hold=1"
+  ],
   "caucion_readiness": {
     "complete_offers": 0,
     "declared": 1,
@@ -44,7 +46,7 @@
   ],
   "coherence": {
     "closed_without_sell": 0,
-    "open_over_max_hold": 0,
+    "open_over_max_hold": 1,
     "open_without_buy": 0,
     "open_without_exit_intent": 0,
     "orphan_fills": 0
@@ -360,7 +362,7 @@
     "branch": "runtime-observability",
     "day": "2026-10-19",
     "detail": null,
-    "recorded_at": "2026-10-19T23:42:43.951655+00:00",
+    "recorded_at": "2026-10-20T00:42:54.983006+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -419,7 +421,7 @@
     "unchanged": 29
   },
   "observer": {
-    "heartbeat_at": "2026-10-20T00:35:16.552217+00:00",
+    "heartbeat_at": "2026-10-20T01:34:58.616751+00:00",
     "http_allowed": 4235,
     "http_blocked": 0,
     "last_market_data_at": "2026-10-19T18:52:35.111352+00:00",
@@ -449,18 +451,18 @@
     "unmapped_positions": 1
   },
   "storage": {
-    "database_bytes": 1798070272,
-    "filesystem_free": 4350808064,
+    "database_bytes": 1798356992,
+    "filesystem_free": 4371529728,
     "filesystem_total": 24883167232,
-    "filesystem_used": 20515581952,
-    "filesystem_used_pct": 82.45,
-    "wal_bytes": 56967272
+    "filesystem_used": 20494860288,
+    "filesystem_used_pct": 82.36,
+    "wal_bytes": 4231272
   },
   "telegram": {
     "SENT": 500,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-10-19T21:35:17-03:00",
+  "timestamp": "2026-10-19T22:35:03-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 1,
@@ -469,38 +471,38 @@
     "open": 1,
     "sells_1h": 0
   },
-  "verdict": "OK",
+  "verdict": "CRITICAL",
   "version": "17.0.0-rc6",
   "warnings": [],
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-20T00:35:20.491742+00:00",
+      "heartbeat_at": "2026-10-20T01:35:07.625580+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 0.531593,
-      "heartbeat_at": "2026-10-20T00:35:17.382445+00:00",
+      "heartbeat_age_seconds": 11.596691,
+      "heartbeat_at": "2026-10-20T01:34:51.829794+00:00",
       "state": "WAITING_WINDOW"
     },
     "exit_reader": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-20T00:35:21.159687+00:00",
+      "heartbeat_at": "2026-10-20T01:35:04.359237+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 6.755567,
-      "heartbeat_at": "2026-10-20T00:35:11.158471+00:00",
+      "heartbeat_age_seconds": 11.443328,
+      "heartbeat_at": "2026-10-20T01:34:51.983157+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-20T00:35:21.462874+00:00",
+      "heartbeat_at": "2026-10-20T01:35:03.635071+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-20T00:35:20.521922+00:00",
+      "heartbeat_at": "2026-10-20T01:35:08.530204+00:00",
       "state": "RUNNING"
     }
   }
