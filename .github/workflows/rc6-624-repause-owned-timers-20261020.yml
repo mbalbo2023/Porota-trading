@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     env:
-      RECEIPT_SHA: b60c88ce49174d2c41eca73dd58eb50bb8d973b3
+      RECEIPT_SHA: 55014f3ae503eade77e7027ed8898fd953b0bcd3
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -24,7 +24,7 @@ jobs:
       - name: Checkout exact installed candidate source
         uses: actions/checkout@v4
         with:
-          ref: ddd632779add5e79386dcb484c3a6dd782358081
+          ref: f31393fdced65f6e2362e69c9ed1df934897296d
       - name: Prepare strict SSH
         run: |
           set -Eeuo pipefail
