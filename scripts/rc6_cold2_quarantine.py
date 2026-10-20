@@ -168,6 +168,72 @@ def inspect(root):
             'archive_complete':all(name in archived for name in FILES+(PACK,'quarantine.json'))}
 
 
+def verify_original_archive(root):
+    """Attest the historical FAILED cut after later COLD generations exist.
+
+    The original archive is immutable, while CURRENT and the source namespace
+    legitimately advance after observer restart. Never use this check to
+    dismiss a *new* failed queue; the successor guard handles that separately.
+    """
+    shadow, source, archive = paths(root)
+    if not archive.exists() or {p.name for p in archive.iterdir()} != set(FILES) | {PACK, 'quarantine.json'}:
+        raise ValueError('COLD2_ORIGINAL_ARCHIVE_INCOMPLETE')
+    for name in FILES:
+        regular(archive/name)
+        if sha(archive/name) != ORIGINAL_SHA[name]:
+            raise ValueError('COLD2_ORIGINAL_BYTES_CHANGED')
+    manifest = envelope(archive/MANIFEST, cold=True)
+    receipt = envelope(archive/RECEIPT, cold=True)
+    queue = envelope(archive/QUEUE, cold=True)
+    archived_receipt = envelope(archive/'quarantine.json')
+    if (manifest.get('snapshot_id') != IDENT or digest(manifest) != MANIFEST_SHA or
+            manifest.get('pack_sha256') != PACK_SHA or
+            receipt.get('state') != 'FAILED' or receipt.get('manifest_sha256') != MANIFEST_SHA or
+            queue.get('snapshot_id') != IDENT or queue.get('state') != 'FAILED' or
+            archived_receipt.get('state') != 'QUARANTINED_FAILED' or
+            archived_receipt.get('snapshot_id') != IDENT or
+            archived_receipt.get('manifest_sha256') != MANIFEST_SHA or
+            archived_receipt.get('pack_sha256') != PACK_SHA or
+            archived_receipt.get('revoked_cut') != CUT or
+            archived_receipt.get('old_cut_revoked') is not True or
+            type(archived_receipt.get('real_orders_sent')) is not int or
+            archived_receipt['real_orders_sent'] != 0 or
+            any((source/name).exists() or (source/name).is_symlink()
+                for name in (MANIFEST, RECEIPT, PACK))):
+        raise ValueError('COLD2_ORIGINAL_ARCHIVE_CHANGED')
+    pack_info = regular(archive/PACK)
+    if (pack_info.st_size != PACK_BYTES or
+            [pack_info.st_dev, pack_info.st_ino, pack_info.st_size] != manifest['pack_identity'][:3] or
+            sha(archive/PACK) != PACK_SHA):
+        raise ValueError('COLD2_ORIGINAL_PACK_CHANGED')
+    old_cut = shadow/('cut-'+CUT+'.json.gz')
+    if old_cut.exists() or old_cut.is_symlink():
+        cut = envelope(old_cut, zipped=True)
+        if (cut.get('report',{}).get('computed_report',{}).get('snapshot_id') != IDENT or
+                cut['report']['computed_report'].get('state') != 'PENDING' or
+                type(cut.get('status',{}).get('real_orders_sent')) is not int or
+                cut.get('status',{}).get('real_orders_sent') != 0 or
+                cut.get('status',{}).get('real_routes') != 'NOT_CALLED'):
+            raise ValueError('COLD2_ORIGINAL_CUT_CHANGED')
+    else:
+        # The normal publisher retains only two immutable cuts. After three
+        # later generations, the historical failed cut is legitimately GC'd;
+        # the archived manifest/receipt/queue/pack remain its durable proof.
+        pointer = envelope(shadow/'CURRENT.json')
+        name = pointer.get('file')
+        if (pointer.get('generation_id') == CUT or not isinstance(name, str) or
+                re.fullmatch(r'cut-[a-f0-9]{64}\.json\.gz', name) is None or
+                pointer.get('generation_id') != name[4:-8]):
+            raise ValueError('COLD2_ORIGINAL_CUT_MISSING_WHILE_CURRENT')
+        latest = envelope(shadow/name, zipped=True)
+        if (type(latest.get('status',{}).get('real_orders_sent')) is not int or
+                latest.get('status',{}).get('real_orders_sent') != 0 or
+                latest.get('status',{}).get('real_routes') != 'NOT_CALLED'):
+            raise ValueError('COLD2_ORIGINAL_SUCCESSOR_UNSAFE')
+    return {'state':'ALREADY_QUARANTINED','old_cut_revoked':True,
+            'pack_sha256':PACK_SHA,'manifest_sha256':MANIFEST_SHA}
+
+
 def _atomic_copy(source, target):
     if target.exists():
         regular(target)

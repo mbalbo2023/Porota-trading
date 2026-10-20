@@ -63,6 +63,26 @@ def test_new_capture_cold_replays_original_ascii_without_native_reencoding(tmp_p
         assert gzip.open(files.root/receipt['computed_report']['file'],'rb').read()==expected
         assert receipt['computed_report']['sha256']==hashlib.sha256(expected).hexdigest()
 
+
+def test_sealed_pack_global_hash_replaces_redundant_cold_segment_rereads(tmp_path,monkeypatch):
+    """The host had only 30 seconds to hash, write and verify 214 MiB."""
+    value={'rows':[{'ticker':str(i),'value':'x'*128} for i in range(2400)]}
+    expected=b''.join(p.canonical_ascii_chunks(value))
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        with c.Snapshot(files) as snapshot:
+            rows=snapshot.stage('rows',value['rows'])
+            reference=snapshot.seal({'rows':rows},source_as_of='original',configuration='fixed')
+        original_hash=c._hash
+        calls=[]
+        def measured(stream,*args,**kwargs):
+            calls.append((args,os.fstat(stream.fileno()).st_size))
+            return original_hash(stream,*args,**kwargs)
+        monkeypatch.setattr(c,'_hash',measured)
+        receipt=c.drain(files)
+        assert len(calls)==1 and calls[0][0]==()
+        assert gzip.open(files.root/receipt['computed_report']['file'],'rb').read()==expected
+        assert c.resolve(files,reference)==receipt
+
 def test_snapshot_is_durable_before_pointer_and_queue_blocks_replacement(tmp_path):
     with p.EvidenceFiles(tmp_path) as files:
         ref = seal(files)

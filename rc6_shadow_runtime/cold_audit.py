@@ -444,12 +444,17 @@ class _Cursor:
         return value
 
 
-def _expand(directory, name, desc, segments, *, depth=0, check=None, source_fd=None):
+def _expand(directory, name, desc, segments, *, depth=0, check=None,
+            source_fd=None, pack_prevalidated=False):
     if depth > 32:
         raise ValueError('SHADOW_COLD_REFERENCE_DEPTH')
     with (directory.open(name) if source_fd is None else _Cursor(source_fd)) as stream:
         _descriptor(desc, os.fstat(stream.fileno()).st_size)
-        if _hash(stream, desc['offset'], desc['length'], guard=check) != desc['sha256']:
+        # COLD has already hashed the *entire sealed pack* against its durable
+        # manifest before opening the report temp file. Rehashing each segment
+        # here rereads ~200 MiB while competing with gzip on the 1 GiB host.
+        # HOT/unsealed expansion still verifies each segment independently.
+        if not pack_prevalidated and _hash(stream, desc['offset'], desc['length'], guard=check) != desc['sha256']:
             raise ValueError('SHADOW_COLD_SEGMENT_HASH')
         stream.seek(desc['offset'])
         end = desc['offset']+desc['length']
@@ -475,7 +480,9 @@ def _expand(directory, name, desc, segments, *, depth=0, check=None, source_fd=N
                 if start+count > desc['offset'] or not any(
                         all(s.get(k) == v for k, v in child.items()) for s in segments):
                     raise ValueError('SHADOW_COLD_REFERENCE_NOT_BACKWARD')
-                yield from _expand(directory, name, child, segments, depth=depth+1, check=check, source_fd=source_fd)
+                yield from _expand(directory, name, child, segments, depth=depth+1,
+                                   check=check, source_fd=source_fd,
+                                   pack_prevalidated=pack_prevalidated)
             elif kind == b'J':
                 if not raw.isascii():
                     raise ValueError('SHADOW_COLD_LITERAL_ASCII')
@@ -633,7 +640,10 @@ class _StoredValue(CanonicalJSONStream):
 
     def iter_bytes(self):
         m = self.manifest
-        yield from _expand(self.directory, m['pack'], m['root'], m['segments'], check=self.check)
+        # _drain verified manifest.pack_sha256 and its inode before this call.
+        # Frame hashes and persisted report verification remain mandatory.
+        yield from _expand(self.directory, m['pack'], m['root'], m['segments'],
+                           check=self.check, pack_prevalidated=True)
 
 
 def _drain(files, phase):
