@@ -1155,7 +1155,7 @@ jobs:
           # performed by rc6_preopen.py.
           for phase in T_MINUS_45 T_MINUS_10; do
             set +e
-            PREOPEN_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" 2>&1)"
+            PREOPEN_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" --deploy-scheduler-candidate "$CANDIDATE_SHA" 2>&1)"
             PREOPEN_RC=$?
             set -e
             echo "$PREOPEN_OUTPUT"
