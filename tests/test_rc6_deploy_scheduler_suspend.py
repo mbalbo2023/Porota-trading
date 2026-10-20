@@ -47,10 +47,19 @@ class SuspendTests(unittest.TestCase):
                 self.assertEqual({action for action, _ in mutations}, {'stop'})
                 self.assertEqual(suspend.run('a'*40, 'suspend', self.policy())['status'], 'SUSPENDED')
                 self.assertEqual(len(mutations), 2)
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_RESTORE_RECEIPT_MISSING'):
+                    suspend.run('a'*40, 'verify', self.policy())
+                self.assertEqual(len(mutations), 2)
                 result = suspend.run('a'*40, 'restore', self.policy())
                 self.assertEqual(result['status'], 'RESTORED')
                 self.assertEqual({action for action, _ in mutations}, {'stop', 'start'})
                 self.assertEqual(len(mutations), 4)
+                verified = suspend.run('a'*40, 'verify', self.policy())
+                self.assertEqual(verified['status'], 'RESTORED')
+                self.assertEqual(len(mutations), 4)
+                states['porota-preopen-rc6.timer'] = 'inactive'
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_NOT_RESTORED'):
+                    suspend.run('a'*40, 'verify', self.policy())
 
     def test_adopt_latest_paused_candidate_without_restarting_timer(self):
         names = {'porota-runtime-evidence-rc6.timer', 'porota-preopen-rc6.timer'}
