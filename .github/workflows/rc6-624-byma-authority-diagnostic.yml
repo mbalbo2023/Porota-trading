@@ -100,3 +100,33 @@ jobs:
           print('PROCESS_RSS_TOP',*p.stdout.splitlines()[:18],sep='\n')
           PY
           REMOTE
+      - name: Read contract timeout progress without mutating ledger
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          timeout 35 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'sudo -n python3 -' <<'PY'
+          import json, sqlite3, time, subprocess
+          from pathlib import Path
+          path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          c=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2)
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=200')
+          def query(label,sql,args=()):
+              deadline=time.monotonic()+4
+              c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+              try: print(label,json.dumps([list(x) for x in c.execute(sql,args).fetchall()],default=str))
+              except sqlite3.Error as exc: print(label+'_ERROR',type(exc).__name__,str(exc)[:100])
+              finally: c.set_progress_handler(None,0)
+          query('OBSERVER','SELECT mode,process_state,session_state,real_orders_sent FROM observer_state WHERE id=1')
+          query('AVAILABLE_BY_FAMILY',"SELECT instrument_type,count(*) FROM financial_instrument_catalog WHERE status='AVAILABLE' GROUP BY instrument_type ORDER BY instrument_type")
+          query('V1_PROGRESS_SINCE_0656',"SELECT instrument_type,count(*),min(checked_at),max(checked_at) FROM contract_evidence WHERE checked_at >= '2026-10-20T06:56:00' GROUP BY instrument_type ORDER BY instrument_type")
+          query('V1_LAST_RUNS','SELECT started_at,finished_at,total,verified,blocked_porota,blocked_provider FROM contract_evidence_runs ORDER BY finished_at DESC LIMIT 3')
+          query('V2_LAST_RUNS','SELECT job_key,state,records,changed,finished_at FROM contract_evidence_v2_runs ORDER BY finished_at DESC LIMIT 3')
+          c.close()
+          p=subprocess.run(['journalctl','-k','--since','2026-10-20 06:55:00 UTC','--until','2026-10-20 07:53:00 UTC','--no-pager','-o','cat'],capture_output=True,text=True,timeout=6)
+          lines=[x[:200] for x in p.stdout.splitlines() if 'oom' in x.lower() or 'out of memory' in x.lower()]
+          print('KERNEL_OOM_LINES',json.dumps(lines[-12:]))
+          PY
