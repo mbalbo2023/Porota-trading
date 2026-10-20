@@ -186,8 +186,10 @@ def run(candidate, action, policy_b64):
                 if code or command('systemctl', 'is-active', name)[0] != 'active':
                     raise ValueError('SCHEDULER_RESTORE_FAILED:' + name)
         elif action == 'verify':
-            if receipt.get('status') != 'SUSPENDED':
-                raise ValueError('SCHEDULER_NOT_SUSPENDED')
+            # The preceding restore action durably transitions the exact
+            # receipt before this independent verification step runs.
+            if receipt.get('status') != 'RESTORED':
+                raise ValueError('SCHEDULER_RESTORE_RECEIPT_MISSING')
             for name in names:
                 if command('systemctl', 'is-active', name)[0] != 'active':
                     raise ValueError('SCHEDULER_NOT_RESTORED:' + name)
