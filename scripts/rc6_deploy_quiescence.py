@@ -198,6 +198,48 @@ def persist(path, value):
         if os.path.exists(temporary): os.unlink(temporary)
 
 
+def admin_resource_sample():
+    """Read both host gates without allocating a second monitor process."""
+    try:
+        available = next(int(line.split()[1]) * 1024 for line in
+            Path('/proc/meminfo').read_text().splitlines()
+            if line.startswith('MemAvailable:'))
+        pressure = next(float(part.split('=')[1]) for part in
+            Path('/proc/pressure/io').read_text().splitlines()[0].split()
+            if part.startswith('avg10='))
+    except (OSError, StopIteration, IndexError, ValueError) as exc:
+        raise ValueError('QUIESCENCE_ADMIN_RESOURCE_READ_FAILED') from exc
+    return available, pressure
+
+
+def wait_for_admin_resources(*, sample=None, clock=None, pause=None):
+    """Let stop/transfer I/O settle, then demand two consecutive green samples.
+
+    This never lowers the resource thresholds or writes the PAPER ledger. If
+    pressure persists for 90 seconds, recovery starts the original runtime.
+    """
+    sample = sample or admin_resource_sample
+    clock = clock or time.monotonic
+    pause = pause or time.sleep
+    deadline = clock() + 90
+    green = 0
+    while True:
+        available, pressure = sample()
+        admitted = available >= 128 * 1024 * 1024 and pressure <= 5
+        green = green + 1 if admitted else 0
+        print(json.dumps({'event': 'QUIESCENCE_ADMIN_RESOURCE_SAMPLE',
+                          'mem_available_bytes': available, 'io_psi_avg10': pressure,
+                          'consecutive_green': green, 'admitted': admitted},
+                         sort_keys=True), flush=True)
+        if green >= 2:
+            return available, pressure
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise ValueError('QUIESCENCE_ADMIN_RESOURCE_ADMISSION_RED:'
+                             f'mem_available_bytes={available}:io_psi_avg10={pressure}')
+        pause(min(5, remaining))
+
+
 def run(candidate, action, *, allow_admin_issue624=False):
     if not re.fullmatch('[0-9a-f]{40}', candidate):
         raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
@@ -260,14 +302,7 @@ def run(candidate, action, *, allow_admin_issue624=False):
             if admin_target_on_host() != receipt['admin_cancel_paper_id']:
                 raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED')
             # A failed capacity check leaves the old runtime recoverable.
-            available = next(int(line.split()[1]) * 1024 for line in
-                Path('/proc/meminfo').read_text().splitlines()
-                if line.startswith('MemAvailable:'))
-            pressure = next(float(part.split('=')[1]) for part in
-                Path('/proc/pressure/io').read_text().splitlines()[0].split()
-                if part.startswith('avg10='))
-            if available < 128 * 1024 * 1024 or pressure > 5:
-                raise ValueError('QUIESCENCE_ADMIN_RESOURCE_ADMISSION_RED')
+            wait_for_admin_resources()
             receipt.update(status='ADMIN_WRITE_AUTHORIZED', installation_started=True)
         elif action == 'admin-commit':
             if (not allow_admin_issue624 or not receipt

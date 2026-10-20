@@ -199,3 +199,33 @@ def test_failure_cleanup_wires_explicit_pending_classification_and_keeps_failure
     assert '--action recover --allow-validation-pending' in block
     assert 'original_failure_preserved=true' in block
     assert 'rc6_deploy_failure_cleanup.py' in block and 'test "$RECOVERY_RC" -eq 0' in block
+
+
+def test_admin_resource_admission_waits_for_two_stable_samples(capsys):
+    now = [0]
+    samples = iter([(140 * 1024 * 1024, 21.09),
+                    (140 * 1024 * 1024, 4.0),
+                    (140 * 1024 * 1024, 6.0),
+                    (140 * 1024 * 1024, 3.0),
+                    (140 * 1024 * 1024, 2.0)])
+    result = q.wait_for_admin_resources(sample=lambda: next(samples),
+        clock=lambda: now[0], pause=lambda seconds: now.__setitem__(0, now[0] + seconds))
+    assert result == (140 * 1024 * 1024, 2.0)
+    assert now[0] == 20
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [event['consecutive_green'] for event in events] == [0, 1, 0, 1, 2]
+
+
+@pytest.mark.parametrize('available,pressure', [(127 * 1024 * 1024, 1.0),
+                                                 (140 * 1024 * 1024, 20.0)])
+def test_admin_resource_admission_persistent_red_expires_without_relaxing_gate(
+        available, pressure, capsys):
+    now = [0]
+    with pytest.raises(ValueError, match='QUIESCENCE_ADMIN_RESOURCE_ADMISSION_RED'):
+        q.wait_for_admin_resources(sample=lambda: (available, pressure),
+            clock=lambda: now[0], pause=lambda seconds: now.__setitem__(0, now[0] + seconds))
+    assert now[0] == 90
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert all(not event['admitted'] for event in events)
+    assert events[-1]['mem_available_bytes'] == available
+    assert events[-1]['io_psi_avg10'] == pressure
