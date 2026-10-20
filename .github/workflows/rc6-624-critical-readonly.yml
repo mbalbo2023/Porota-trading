@@ -64,6 +64,50 @@ jobs:
           ssh -i "$HOME/.ssh/rc6_probe" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "sudo -n docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get(\"status\")==\"ok\" and h.get(\"capability\")==\"issues_only\"; print(\"RC6_CRITICAL_ISSUES_ONLY=GREEN\")'"
+      - name: Bounded read-only disk attribution under resource admission
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/rc6_probe" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'REMOTE'
+          import json, os, subprocess
+          mem=int(next(line.split()[1] for line in open('/proc/meminfo') if line.startswith('MemAvailable:')))*1024
+          psi=float(next(part.split('=')[1] for part in open('/proc/pressure/io').readline().split() if part.startswith('avg10=')))
+          stat=os.statvfs('/')
+          print(json.dumps({'event':'RC6_DISK_ADMISSION','mem_available':mem,
+                            'io_psi_avg10':psi,'root_free_bytes':stat.f_bavail*stat.f_frsize,
+                            'root_total_bytes':stat.f_blocks*stat.f_frsize}),flush=True)
+          if mem<256*1024*1024 or psi>5:
+              print('RC6_DISK_INVENTORY=DEFER_RESOURCE_ADMISSION',flush=True)
+              raise SystemExit(0)
+          def probe(label, args, timeout=25):
+              try:
+                  r=subprocess.run(['nice','-n','10','ionice','-c3']+args,
+                                   capture_output=True,text=True,timeout=timeout)
+                  print(json.dumps({'event':label,'exit':r.returncode,
+                                    'stdout':r.stdout[:12000],
+                                    'stderr':r.stderr[:1000]}),flush=True)
+              except subprocess.TimeoutExpired:
+                  print(json.dumps({'event':label,'status':'TIMEOUT_BOUNDED'}),flush=True)
+          probe('DOCKER_SYSTEM_DF',['docker','system','df'],20)
+          probe('DOCKER_REFERENCED_IMAGES',['docker','ps','-a','--format',
+                '{{.Names}}|{{.Image}}|{{.Status}}'],15)
+          probe('JOURNAL_USAGE',['journalctl','--disk-usage'],10)
+          for name,path in (('DOCKER_DISK_TREE','/var/lib/docker'),
+                            ('CONTAINERD_DISK_TREE','/var/lib/containerd'),
+                            ('POROTA_DISK_TREE','/opt/porota-trading'),
+                            ('LOG_DISK_TREE','/var/log'),
+                            ('TMP_DISK_TREE','/tmp')):
+              if os.path.isdir(path):
+                  probe(name,['du','-x','-d','1','-B','1',path],25)
+          stat=os.statvfs('/')
+          print(json.dumps({'event':'RC6_DISK_INVENTORY_DONE',
+                            'root_free_bytes':stat.f_bavail*stat.f_frsize}),flush=True)
+          REMOTE
       - name: Remove runner key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_probe"
