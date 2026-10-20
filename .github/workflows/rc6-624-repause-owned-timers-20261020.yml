@@ -1,4 +1,4 @@
-name: RC6 624 re-pause owned timers after installed COLD2 gate
+name: RC6 624 persist exact timer pause for temporary capacity
 on:
   push:
     branches:
@@ -42,6 +42,71 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$RECEIPT_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
+      - name: Persist exact RC6 timer pause through CPU RAM resize
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          timeout 150 ssh -i "$HOME/.ssh/rc6_repause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
+          import hashlib,json,sqlite3,subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          receipt_sha='e86bdb6a9fe5ac21b93bc26e70af9844945e1407'
+          image='sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
+          expected={'porota_production_observer':'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
+                    'porota_production_dashboard':'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570'}
+          def run(*args):
+              p=subprocess.run(args,capture_output=True,text=True,timeout=15)
+              return p.returncode,p.stdout.strip(),p.stderr.strip()
+          policy_path=root/'ops/policy/host-control-plane-reconciliation-v2.json'
+          raw=policy_path.read_bytes()
+          policy=json.loads(raw)
+          names=sorted(Path(p).name for p,v in policy['units'].items()
+                       if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          receipt=json.loads((root/'data/deploy'/('scheduler-suspend-'+receipt_sha+'.json')).read_text())
+          assert len(names)==20 and receipt['candidate_sha']==receipt_sha and receipt['status']=='SUSPENDED'
+          assert receipt['timers']==names and set(receipt['attempted'])==set(names)
+          assert receipt['policy_sha256']==hashlib.sha256(raw).hexdigest()
+          current=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          assert current['candidate_sha']=='d96cb68d177199317ee23239553517e04ee0a255'
+          assert current['validation_status']=='DEPLOYED_VALIDATION_PENDING' and current['image_id']==image
+          for name,ident in expected.items():
+              rc,out,_=run('docker','inspect',name)
+              assert rc==0
+              row=json.loads(out)[0]
+              assert row['Id']==ident and row['Image']==image
+              assert row['State']['Status']=='exited' and row['State']['ExitCode']==0
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as db:
+              mode,orders=db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              spots=db.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0 and spots==2
+          def watch():
+              units=run('systemctl','list-unit-files','--no-legend')[1].splitlines()
+              names=sorted(x.split()[0] for x in units if x.split() and 'ppi' in x.split()[0].lower() and 'watch' in x.split()[0].lower())
+              return {n:(run('systemctl','is-enabled',n)[1],run('systemctl','is-active',n)[1]) for n in names}
+          before=watch()
+          for name in names:
+              assert run('systemctl','is-enabled',name)[1]=='enabled'
+              assert run('systemctl','is-active',name)[1]=='inactive'
+          for name in names:
+              rc,_,err=run('systemctl','disable',name)
+              assert rc==0,(name,err)
+          for name in names:
+              assert run('systemctl','is-enabled',name)[1]=='disabled'
+              assert run('systemctl','is-active',name)[1]=='inactive'
+          assert watch()==before
+          marker=root/'data/deploy/rc6-resize-timer-guard-20261020.json'
+          assert not marker.exists() and not marker.is_symlink()
+          value={'schema':'rc6.resize-timer-guard.v1','receipt_sha':receipt_sha,
+                 'candidate_sha':current['candidate_sha'],'policy_sha256':hashlib.sha256(raw).hexdigest(),
+                 'timers':names,'state':'DISABLED_FOR_REBOOT','paper_open':spots,
+                 'real_orders_sent':0,'ppi_watch_changed':False}
+          temp=marker.with_suffix('.tmp')
+          temp.write_text(json.dumps(value,sort_keys=True)+'\n')
+          temp.replace(marker)
+          print('RC6_REBOOT_TIMER_GUARD='+json.dumps(value,sort_keys=True))
+          PY
       - name: Read-only state of owned containers and PAPER ledger
         run: |
           set -Eeuo pipefail
