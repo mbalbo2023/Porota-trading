@@ -112,13 +112,16 @@ def test_current_provenance_owns_stopped_successor_over_historical_receipt(
     for name in q.OWNED: states[name]['Image'] = image
     q.run(SHA, 'drain'); q.run(SHA, 'install'); q.run(SHA, 'recover')
     historical = root/'data/deploy'/('quiescence-'+'f'*40+'.json')
-    historical.write_text(json.dumps({'candidate_sha':'f'*40, 'status':'FIX_FORWARD_VALIDATION_REQUIRED'}))
+    historical.write_text(json.dumps({'candidate_sha':'f'*40,
+                                      'recorded_at':'2020-01-01T00:00:00+00:00',
+                                      'status':'FIX_FORWARD_VALIDATION_REQUIRED'}))
     monkeypatch.setattr(q, 'FAILED_COLD2_CANDIDATE', 'f'*40)
-    state = {'candidate_sha':SHA,'image_id':image,
+    state = {'candidate_sha':'9'*40,'image_id':image,
+             'recorded_at':'2020-01-02T00:00:00+00:00',
              'validation_status':'DEPLOYED_VALIDATION_PENDING',
              'mode':'PRODUCTION_PAPER','real_orders_sent':0,'real_order_routes':'NOT_CALLED'}
     if change == 'wrong_image': state['image_id'] = 'sha256:'+'d'*64
-    if change == 'wrong_candidate': state['candidate_sha'] = 'e'*40
+    if change == 'wrong_candidate': state['candidate_sha'] = 'invalid'
     if change == 'real_orders': state['real_orders_sent'] = 1
     (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps(state))
     if change == 'old_receipt':

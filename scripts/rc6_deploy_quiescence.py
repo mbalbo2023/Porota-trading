@@ -169,24 +169,53 @@ def critical_admission():
 
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None):
     """One exact fail-closed continuation; never start the prior image."""
-    # Once a candidate has been installed, CURRENT_STATE_V2 names the exact
-    # predecessor. A historical receipt may still exist but cannot own this
-    # stopped generation. Retain the legacy path only for pre-provenance hosts.
+    # CURRENT_STATE_V2 identifies the installed image, but a subsequent
+    # failed pre-install COLD2 has its own newer stop receipt. Select the
+    # latest receipt that proves ownership of the exact stopped containers.
     current_path = folder / 'CURRENT_STATE_V2.json'
     current_provenance = current_path.exists() or current_path.is_symlink()
     if current_provenance:
         if current_path.is_symlink() or not current_path.is_file() or current_path.stat().st_size > 65536:
             raise ValueError('QUIESCENCE_CURRENT_STATE_UNSAFE')
         current = json.loads(current_path.read_bytes())
-        previous_candidate = current.get('candidate_sha')
-        if (not isinstance(previous_candidate, str) or
-                not re.fullmatch('[0-9a-f]{40}', previous_candidate) or
+        state_candidate = current.get('candidate_sha')
+        if (not isinstance(state_candidate, str) or
+                not re.fullmatch('[0-9a-f]{40}', state_candidate) or
                 current.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
                 current.get('mode') != 'PRODUCTION_PAPER' or
                 type(current.get('real_orders_sent')) is not int or current['real_orders_sent'] != 0 or
                 current.get('real_order_routes') != 'NOT_CALLED' or
                 not all(v['Image'] == current.get('image_id') for v in originals.values())):
             raise ValueError('QUIESCENCE_CURRENT_PROVENANCE_RED')
+        state_time = datetime.fromisoformat(current['recorded_at'])
+        if state_time.tzinfo is None:
+            raise ValueError('QUIESCENCE_CURRENT_CLOCK_UNVERIFIED')
+        paths = list(folder.glob('quiescence-*.json'))
+        if len(paths) > 128:
+            raise ValueError('QUIESCENCE_RECEIPT_INVENTORY_BOUND')
+        eligible = []
+        for path in paths:
+            old_candidate = path.name.removeprefix('quiescence-').removesuffix('.json')
+            if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
+                    not re.fullmatch('[0-9a-f]{40}', old_candidate)):
+                raise ValueError('QUIESCENCE_RECEIPT_INVENTORY_UNSAFE')
+            row = json.loads(path.read_bytes())
+            if row.get('candidate_sha') != old_candidate:
+                raise ValueError('QUIESCENCE_RECEIPT_INVENTORY_PROVENANCE_RED')
+            if old_candidate == candidate:
+                continue
+            stamp = datetime.fromisoformat(row['recorded_at'])
+            if stamp.tzinfo is None:
+                raise ValueError('QUIESCENCE_RECEIPT_CLOCK_UNVERIFIED')
+            eligible.append((stamp, old_candidate))
+        if not eligible:
+            raise ValueError('QUIESCENCE_CURRENT_STOP_RECEIPT_MISSING')
+        eligible.sort()
+        if len(eligible) > 1 and eligible[-1][0] == eligible[-2][0]:
+            raise ValueError('QUIESCENCE_CURRENT_STOP_RECEIPT_AMBIGUOUS')
+        if eligible[-1][0] < state_time:
+            raise ValueError('QUIESCENCE_CURRENT_STOP_RECEIPT_STALE')
+        previous_candidate = eligible[-1][1]
     else:
         historical_admin = (folder / ('quiescence-' + FAILED_COLD2_CANDIDATE + '.json')).exists()
         previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id else
