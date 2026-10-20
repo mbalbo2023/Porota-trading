@@ -30,7 +30,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
           timeout 40 ssh -i "$HOME/.ssh/rc6_readonly" -o BatchMode=yes             -o ConnectTimeout=10 -o IdentitiesOnly=yes             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             "$DO_USER@$DO_HOST" "sudo -n timeout 25 python3 -" <<'PY'
-          import hashlib,json,sqlite3,time
+          import hashlib,json,sqlite3,time,subprocess
           from pathlib import Path
           from datetime import datetime,timezone
           db=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
@@ -56,6 +56,7 @@ jobs:
           for name in sorted(tables & {'paper_exit_intents','paper_fills','paper_orders','paper_admin_cancellations'}):
               result['tables'][name]={'columns':[r[1] for r in c.execute('PRAGMA table_info('+name+')')]}
           c.close()
+          result['owned_containers']={name:subprocess.check_output(['docker','inspect','-f','{{.State.Status}}|{{.State.Restarting}}|{{.RestartCount}}',name],text=True,timeout=3).strip() for name in ('porota_production_observer','porota_production_dashboard')}
           print(json.dumps(result,sort_keys=True))
           PY
           rm -f "$HOME/.ssh/rc6_readonly"
