@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   inspect:
@@ -30,7 +31,7 @@ jobs:
           timeout 75 ssh -i "$HOME/.ssh/porota_rc6_cold2_diag" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' | tee "$RUNNER_TEMP/cold2-probe.log"
           import json, os, pathlib, sqlite3, stat
           root=pathlib.Path('/opt/porota-trading')
           db=root/'data/paper_v17/observer_v17.db'
@@ -123,6 +124,30 @@ jobs:
           print('RC6_OFFLINE_IMAGES_READONLY='+json.dumps({'owned':owned,
               'images':images,'paper':paper,'disk_free':free},sort_keys=True))
           PY
+      - name: Publish bounded queue state to issue 624
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 - "$RUNNER_TEMP/cold2-probe.log" > "$RUNNER_TEMP/cold2-queue-comment.md" <<'PY'
+          import json,sys
+          lines=open(sys.argv[1],encoding='utf-8').read().splitlines()
+          def tagged(tag):
+              return json.loads(next(line.split('=',1)[1] for line in lines if line.startswith(tag+'=')))
+          source=tagged('COLD2_SOURCE_READONLY')
+          provenance=tagged('COLD2_SOURCE_PROVENANCE')
+          current=tagged('COLD2_CURRENT_REFERENCE')
+          queue=[row for row in provenance['envelopes'] if row['file']=='queue.json']
+          print('RC6 #624 — sonda COLD2 posterior a deploy #39411525125, sólo lectura; PAPER/0 admitido.\\n')
+          print('```json')
+          print(json.dumps({'queue':queue,'current':current,'paper':source['paper'],
+                            'unexpected':source['unexpected'],'root_free':source['root_free'],
+                            'mem_available':source['mem_available']},sort_keys=True))
+          print('```')
+          PY
+          gh issue comment 624 --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/cold2-queue-comment.md"
       - name: Runner key cleanup
         if: always()
         run: rm -f "$HOME/.ssh/porota_rc6_cold2_diag"
