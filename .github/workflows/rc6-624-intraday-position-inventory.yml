@@ -1,0 +1,59 @@
+name: RC6 624 intraday PAPER ledger read-only inventory
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-intraday-position-inventory.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Read bounded PAPER ledger and container identity
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_readonly"
+          chmod 600 "$HOME/.ssh/rc6_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          timeout 40 ssh -i "$HOME/.ssh/rc6_readonly" -o BatchMode=yes             -o ConnectTimeout=10 -o IdentitiesOnly=yes             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"             "$DO_USER@$DO_HOST" "sudo -n timeout 25 python3 -" <<'PY'
+          import hashlib,json,sqlite3,time
+          from pathlib import Path
+          from datetime import datetime,timezone
+          db=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          c=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.5)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=300')
+          end=time.monotonic()+12
+          c.set_progress_handler(lambda:int(time.monotonic()>end),1000)
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'paper_%'")}
+          result={'schema':'RC6_INTRADAY_PAPER_RO_V1','at':datetime.now(timezone.utc).isoformat(),
+                  'observer_state':dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()),
+                  'tables':{}}
+          for name,status in [('paper_positions','OPEN'),('paper_cauciones','OPEN'),('paper_future_positions','ACTIVE')]:
+              if name not in tables: raise RuntimeError('REQUIRED_PAPER_TABLE_MISSING:'+name)
+              cols=[r[1] for r in c.execute('PRAGMA table_info('+name+')')]
+              rows=c.execute('SELECT * FROM '+name+' WHERE status=? LIMIT 129',(status,)).fetchall()
+              if len(rows)>128: raise RuntimeError('OPEN_POSITION_BOUND:'+name)
+              digest=hashlib.sha256(json.dumps([dict(r) for r in rows],sort_keys=True,default=str).encode()).hexdigest()
+              result['tables'][name]={'columns':cols,'open_count':len(rows),'open_rows_sha256':digest}
+          for name in sorted(tables & {'paper_exit_intents','paper_fills','paper_orders','paper_admin_cancellations'}):
+              result['tables'][name]={'columns':[r[1] for r in c.execute('PRAGMA table_info('+name+')')]}
+          c.close()
+          print(json.dumps(result,sort_keys=True))
+          PY
+          rm -f "$HOME/.ssh/rc6_readonly"
