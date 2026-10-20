@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import sys
 import sqlite3
 import stat
 import subprocess
@@ -72,7 +73,8 @@ def admission():
         raise ValueError('OFFLINE_CURRENT_STATE_UNSAFE')
     state=json.loads(state_path.read_text())
     expected=state.get('image_id')
-    if (state.get('validation_status')!='DEPLOYED_VALIDATION_PENDING' or
+    validation = state.get('validation_status')
+    if (validation not in {'DEPLOYED_VALIDATION_PENDING', 'VALIDATED_RUNTIME'} or
             state.get('mode')!='PRODUCTION_PAPER' or
             type(state.get('real_orders_sent')) is not int or state['real_orders_sent']!=0 or
             state.get('real_order_routes')!='NOT_CALLED' or
@@ -94,22 +96,40 @@ def admission():
         "print('RC6_CRITICAL_ISSUES_ONLY=GREEN')")
     if capability!='RC6_CRITICAL_ISSUES_ONLY=GREEN':
         raise ValueError('OFFLINE_CURRENT_CRITICAL_CAPABILITY')
-    db=ROOT/'data/paper_v17/observer_v17.db'
-    with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
-        c.execute('PRAGMA query_only=ON')
-        c.execute('PRAGMA busy_timeout=200')
-        row=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
-        if (not row or row[0]!='PRODUCTION_PAPER' or type(row[1]) is not int or row[1]!=0 or
-                row[2] not in {'STOPPED','WAITING_MARKET'} or row[3] not in {'CLOSED','MARKET_CLOSED'}):
-            raise ValueError('OFFLINE_CURRENT_PAPER_RED')
-        for table, value in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
-                             ('paper_future_positions','ACTIVE')):
-            if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(value,)).fetchone():
-                raise ValueError('OFFLINE_CURRENT_POSITION_OPEN')
+    intraday = None
+    if validation == 'VALIDATED_RUNTIME':
+        # An install can fail before CURRENT_STATE is advanced. The exact
+        # stopped fix-forward receipt, not the stale SQLite RUNNING marker,
+        # proves this old validated image and its unchanged PAPER carryover.
+        sys.path.insert(0, str(ROOT))
+        from scripts import rc6_deploy_quiescence as drain
+        drain.ROOT = ROOT
+        witness = drain.adopt_stopped_after_failed_install(
+            state['candidate_sha'], ROOT/'data/deploy', owned,
+            allow_market_open_suspend=True, allow_open_paper_carryover=True)
+        carry = witness.get('spot_carryover')
+        if (type(carry) is not dict or type(carry.get('open_count')) is not int or
+                not 0 < carry['open_count'] <= 16):
+            raise ValueError('OFFLINE_CURRENT_CARRYOVER_RED')
+        intraday = (witness['fix_forward_from'], carry['sha256'])
+    else:
+        db=ROOT/'data/paper_v17/observer_v17.db'
+        with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+            c.execute('PRAGMA query_only=ON')
+            c.execute('PRAGMA busy_timeout=200')
+            row=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+            if (not row or row[0]!='PRODUCTION_PAPER' or type(row[1]) is not int or row[1]!=0 or
+                    row[2] not in {'STOPPED','WAITING_MARKET'} or row[3] not in {'CLOSED','MARKET_CLOSED'}):
+                raise ValueError('OFFLINE_CURRENT_PAPER_RED')
+            for table, value in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                                 ('paper_future_positions','ACTIVE')):
+                if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(value,)).fetchone():
+                    raise ValueError('OFFLINE_CURRENT_POSITION_OPEN')
     return {'current_image':expected,'owned':{name:(row['Id'],row['Image'],
             row['State']['Status'],row['State']['ExitCode']) for name,row in owned.items()},
             'critical':(critical['Id'],critical['Image'],critical['State']['Status']),
-            'candidate_sha':state['candidate_sha'],'ppi':ppi_units()}
+            'candidate_sha':state['candidate_sha'],'ppi':ppi_units(),
+            'intraday_proof':intraday}
 
 
 def cleanup():
