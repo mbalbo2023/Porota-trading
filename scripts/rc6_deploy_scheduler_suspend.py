@@ -41,7 +41,8 @@ def timer_policy(raw):
                    if spec['role'] == 'ACTIVE_TIMER' and spec['active'] is True)
     if (not names or len(names) != len(set(names)) or
             any(not re.fullmatch(r'porota-[a-z0-9-]+\.timer', name)
-                for name in names)):
+                or {'ppi', 'watch'} <= set(name.split('-'))
+                or 'critical' in name.split('-') for name in names)):
         raise ValueError('SCHEDULER_POLICY_UNSAFE')
     return names
 
