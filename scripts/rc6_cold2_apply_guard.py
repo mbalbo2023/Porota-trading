@@ -83,6 +83,65 @@ def receipt_for(root, candidate):
     return value, ids
 
 
+
+def verify_complete_queue(root):
+    """Attest a later COMPLETE generation without moving or revoking it."""
+    shadow, source, _ = cold.paths(root)
+    names = {entry.name for entry in source.iterdir()}
+    ids = {name[9:-5] for name in names if name.startswith('manifest-')}
+    paired = {'queue.json'} | {name for ident in ids
+        for name in ('manifest-'+ident+'.json', 'receipt-'+ident+'.json')}
+    if (len(names) > 128 or not ids or names != paired or
+            any(re.fullmatch('[a-f0-9]{32}', ident) is None for ident in ids)):
+        raise ValueError('COLD2_COMPLETE_NAMESPACE_UNSAFE')
+    queue = cold.envelope(source/'queue.json', cold=True)
+    ident = queue.get('snapshot_id')
+    if (queue.get('state') != 'COMPLETE' or ident not in ids or
+            type(queue.get('manifest_sha256')) is not str):
+        raise ValueError('COLD2_COMPLETE_QUEUE_UNSAFE')
+    selected = None
+    for other in ids:
+        manifest = cold.envelope(source/('manifest-'+other+'.json'), cold=True)
+        receipt = cold.envelope(source/('receipt-'+other+'.json'), cold=True)
+        digest = cold.digest(manifest)
+        if (manifest.get('snapshot_id') != other or
+                manifest.get('pack') != other+'.pack' or
+                type(manifest.get('pack_bytes')) is not int or
+                not 0 < manifest['pack_bytes'] <= 512*1024**2 or
+                re.fullmatch('[a-f0-9]{64}', str(manifest.get('pack_sha256'))) is None or
+                receipt.get('snapshot_id') != other or
+                receipt.get('state') != 'COMPLETE' or
+                receipt.get('manifest_sha256') != digest):
+            raise ValueError('COLD2_COMPLETE_PAIR_UNSAFE')
+        if other == ident:
+            selected = manifest
+            if queue['manifest_sha256'] != digest:
+                raise ValueError('COLD2_COMPLETE_QUEUE_BINDING')
+    pointer = cold.envelope(shadow/'CURRENT.json')
+    cut_name = pointer.get('file')
+    if (not isinstance(cut_name, str) or
+            re.fullmatch('cut-[a-f0-9]{64}\\.json\\.gz', cut_name) is None or
+            pointer.get('generation_id') != cut_name[4:-8]):
+        raise ValueError('COLD2_COMPLETE_CURRENT_UNSAFE')
+    cut = cold.envelope(shadow/cut_name, zipped=True)
+    reference = cut.get('report', {}).get('computed_report', {})
+    if (reference.get('schema') != 'rc6.computed-audit-reference.v2' or
+            reference.get('state') != 'PENDING' or
+            reference.get('snapshot_id') != ident or
+            reference.get('manifest_sha256') != queue['manifest_sha256'] or
+            reference.get('deadline_at') != selected.get('deadline_at') or
+            reference.get('source_as_of') != selected.get('source_as_of') or
+            reference.get('configuration_fingerprint') !=
+                selected.get('configuration_fingerprint') or
+            type(cut.get('status', {}).get('real_orders_sent')) is not int or
+            cut['status']['real_orders_sent'] != 0 or
+            cut['status'].get('real_routes') != 'NOT_CALLED'):
+        raise ValueError('COLD2_COMPLETE_CUT_UNSAFE')
+    return {'state':'COMPLETE_UNTOUCHED','snapshot_id':ident,
+            'manifest_sha256':queue['manifest_sha256'],
+            'old_cut_revoked':True,'complete_pairs':len(ids)}
+
+
 def apply(root, candidate):
     if re.fullmatch('[a-f0-9]{40}', candidate) is None:
         raise ValueError('COLD2_CANDIDATE_INVALID')
@@ -146,9 +205,12 @@ def apply(root, candidate):
         queue_path = source/'queue.json'
         if queue_path.exists() or queue_path.is_symlink():
             queue = cold.envelope(queue_path, cold=True)
-            if queue.get('state') != 'FAILED' or queue.get('snapshot_id') == cold.IDENT:
+            if queue.get('state') == 'COMPLETE':
+                later = verify_complete_queue(root)
+            elif queue.get('state') == 'FAILED' and queue.get('snapshot_id') != cold.IDENT:
+                later = successor.quarantine(root, admission=admission, expected_owned_ids=ids)
+            else:
                 raise ValueError('COLD2_SUCCESSOR_QUEUE_UNEXPECTED')
-            later = successor.quarantine(root, admission=admission, expected_owned_ids=ids)
         else:
             later = {'state':'NO_ACTIVE_FAILED_SUCCESSOR','old_cut_revoked':True}
         admission()
