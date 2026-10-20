@@ -78,9 +78,12 @@ jobs:
                       cpu=int(rest[11])+int(rest[12])
                       kib=lambda key:int(status.get(key,'0 kB').split()[0])*1024
                       name=status.get('Name','').strip()[:40]
+                      scripts=sorted({pathlib.PurePosixPath(part.decode('utf-8','replace')).name[:80]
+                          for part in cmd.split(b'\0') if part.endswith(b'.py')})[:3]
                       rows[pid]={'pid':pid,'name':name,'rss':kib('VmRSS'),
                           'swap':kib('VmSwap'),'anon':kib('RssAnon'),
                           'file':kib('RssFile'),'cgroup':(group[-1].split(':')[-1] if group else '')[-160:],
+                          'script_names':scripts,
                           'ppi_watch_candidate':b'ppi' in cmd and b'watch' in cmd,
                           '_cpu':cpu}
                   except (OSError,ValueError,IndexError):
@@ -98,6 +101,14 @@ jobs:
           top_rss=sorted(second.values(),key=lambda x:x['rss'],reverse=True)[:20]
           top_cpu=sorted(second.values(),key=lambda x:x['cpu_one_core_pct'] or 0,reverse=True)[:20]
           candidates=[x for x in second.values() if x['ppi_watch_candidate']]
+          cgroups={}
+          for row in second.values():
+              key=row['cgroup']
+              item=cgroups.setdefault(key,{'rss_sum':0,'anon_sum':0,'swap_sum':0,'pids':0})
+              item['rss_sum']+=row['rss'];item['anon_sum']+=row['anon']
+              item['swap_sum']+=row['swap'];item['pids']+=1
+          cgroup_top=sorted(({'cgroup':key,**value} for key,value in cgroups.items()),
+                            key=lambda item:item['anon_sum'],reverse=True)[:20]
           # Peripheral enumeration may stall under host load. Preserve the
           # primary /proc measurement and report UNKNOWN instead of absence.
           units=[];watch_units=[];named_containers=[]
@@ -123,7 +134,7 @@ jobs:
           except (subprocess.TimeoutExpired,subprocess.CalledProcessError):
               unit_inventory_status='NO_VERIFICADO_TIMEOUT_OR_ERROR'
           try:
-              docker_names=bounded_command(['docker','ps','-a','--format','{{.Names}}'],seconds=12).splitlines()
+              docker_names=bounded_command(['docker','ps','-a','--no-trunc','--format','{{.ID}} {{.Names}}'],seconds=12).splitlines()
               if len(docker_names)>128: raise ValueError('DOCKER_BOUND')
               named_containers=[x for x in docker_names if 'ppi' in x.lower() or 'watch' in x.lower()]
               container_inventory_status='COMPLETE'
@@ -137,6 +148,8 @@ jobs:
               'unit_inventory_status':unit_inventory_status,
               'container_inventory_status':container_inventory_status,
               'ppi_watch_process_candidates':candidates[:16],
+              'docker_container_id_name':docker_names[:128] if container_inventory_status=='COMPLETE' else [],
+              'top_cgroups_by_anon_sum':cgroup_top,
               'top_rss':top_rss,'top_cpu':top_cpu,
               'ppi_watch_mutation_attempted':False},sort_keys=True))
           PY
