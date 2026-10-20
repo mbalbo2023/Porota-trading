@@ -310,7 +310,13 @@ jobs:
           run_native_proof() {
             rc6_label="$1"; shift
             rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"
-            docker create --name "$rc6_name" --pull never --memory 512m --memory-swap 512m --cpus .75 \
+            # The full session must prove the same 256 MiB cap used by the
+            # Droplet stress governor. Other native sizing stages retain 512 MiB.
+            rc6_memory=(--memory 512m --memory-swap 512m)
+            if test "$rc6_label" = session; then
+              rc6_memory=(--memory 256m --memory-swap 256m)
+            fi
+            docker create --name "$rc6_name" --pull never "${rc6_memory[@]}" --cpus .75 \
               --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
               --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
               -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/proof/tmp \
