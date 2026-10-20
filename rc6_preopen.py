@@ -10,6 +10,8 @@ RC6-native runtime state.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 from datetime import date, datetime
 import json
 import shutil
@@ -234,13 +236,44 @@ def blocked_history_timers():
             'policy': 'RC6_HISTORY_QUARANTINE'}
 
 
-def required_timers():
+def required_timers(deploy_scheduler_candidate=None):
     values = {}
     ok = True
-    for unit in REQUIRED_TIMERS:
+    units = REQUIRED_TIMERS
+    if deploy_scheduler_candidate is not None:
+        # A canonical intraday deployment intentionally pauses its exact
+        # versioned timer set until runtime acceptance. Daily preopen calls
+        # without this explicit candidate retain the active-timer contract.
+        try:
+            from scripts import rc6_deploy_scheduler_suspend as suspend
+            if re.fullmatch(r'[0-9a-f]{40}', deploy_scheduler_candidate) is None:
+                raise ValueError('PREOPEN_DEPLOY_CANDIDATE_INVALID')
+            raw = (ROOT/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
+            units = tuple(suspend.timer_policy(raw))
+            path = ROOT/'data/deploy'/('scheduler-suspend-'+deploy_scheduler_candidate+'.json')
+            if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
+                    len(units) != 20 or not set(REQUIRED_TIMERS) <= set(units)):
+                raise ValueError('PREOPEN_DEPLOY_RECEIPT_UNSAFE')
+            receipt = json.loads(path.read_bytes())
+            if (receipt.get('candidate_sha') != deploy_scheduler_candidate or
+                    receipt.get('status') != 'SUSPENDED' or
+                    receipt.get('policy_sha256') != hashlib.sha256(raw).hexdigest() or
+                    receipt.get('timers') != list(units) or
+                    set(receipt.get('attempted', [])) != set(units) or
+                    receipt.get('ppi_before') != suspend.ppi_snapshot()):
+                raise ValueError('PREOPEN_DEPLOY_RECEIPT_CHANGED')
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            return {'state':'RED','units':values,'reason':type(exc).__name__}
+    for unit in units:
         rc1, enabled, _ = cmd(['systemctl','is-enabled',unit])
         rc2, active, _ = cmd(['systemctl','is-active',unit])
-        good = rc1 == 0 and enabled == 'enabled' and rc2 == 0 and active == 'active'
+        if deploy_scheduler_candidate is None:
+            good = rc1 == 0 and enabled == 'enabled' and rc2 == 0 and active == 'active'
+        else:
+            service_rc, service, _ = cmd(['systemctl','show',unit,'-p','Unit','--value'])
+            service_state = cmd(['systemctl','is-active',service])[1] if service_rc == 0 and service.endswith('.service') else 'unknown'
+            good = (rc1 == 0 and enabled == 'enabled' and rc2 == 3 and active == 'inactive'
+                    and service_state not in {'unknown','active','activating','reloading','deactivating'})
         values[unit] = {'state':'GREEN' if good else 'RED','enabled':enabled,'active':active}
         ok = ok and good
     return {'state':'GREEN' if ok else 'RED','units':values}
@@ -354,7 +387,7 @@ def foreign_market_policy(today):
             'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_CEDEAR_OPENINGS_WHILE_US_MARKET_CLOSED'}
 
 
-def main(phase_override=None):
+def main(phase_override=None, deploy_scheduler_candidate=None):
     now = datetime.now(TZ)
     today = now.date()
     if not byma.es_dia_habil_operativo(today):
@@ -375,7 +408,7 @@ def main(phase_override=None):
                  'blocking_minimum':BLOCKING_MIN_FREE_BYTES,
                  'target':TARGET_FREE_BYTES,
                  'reason':'RUNTIME_RESERVE_BELOW_TARGET' if disk_state == 'AMBER' else None},
-        'required_rc6_timers': required_timers(),
+        'required_rc6_timers': required_timers(deploy_scheduler_candidate),
         'byma_morning_watch': byma_morning_watch(
             today, allow_latest_safe=phase_override is not None),
         'iol_reference_fallback': iol_reference_state(today),
@@ -395,5 +428,6 @@ def main(phase_override=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--phase', choices=('T_MINUS_45','T_MINUS_10'))
+    parser.add_argument('--deploy-scheduler-candidate')
     args = parser.parse_args()
-    raise SystemExit(main(args.phase))
+    raise SystemExit(main(args.phase, args.deploy_scheduler_candidate))
