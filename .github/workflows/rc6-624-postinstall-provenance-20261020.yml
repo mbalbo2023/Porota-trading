@@ -36,9 +36,10 @@ jobs:
           root=Path('/opt/porota-trading')
           shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
           def doc(p, zipped=False):
-              if p.is_symlink() or not p.is_file() or p.stat().st_size>1048576: return None
+              if p.is_symlink() or not p.is_file() or p.stat().st_size>4194304: return None
               try:
-                  with (gzip.open(p,'rt') if zipped else p.open()) as f: return json.load(f)
+                  with (gzip.open(p,'rt') if zipped else p.open()) as f: value=json.load(f)
+                  return value.get('payload',value) if isinstance(value,dict) else value
               except (OSError,ValueError): return None
           def choose(d,keys):
               return {k:d.get(k) for k in keys} if isinstance(d,dict) else None
