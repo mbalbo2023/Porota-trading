@@ -90,7 +90,10 @@ jobs:
               caucions=c.execute("SELECT status,COUNT(*) FROM paper_cauciones GROUP BY status").fetchall()
               futures=c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'").fetchone()[0]
               assert futures==0
-              assert c.execute('PRAGMA quick_check(1)').fetchone()[0]=='ok'
+              over_hold=c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN' AND (julianday('now')-julianday(opened_at))*1440 > 360").fetchone()[0]
+              exits=c.execute("SELECT state,cause,COUNT(*) FROM paper_exit_intents WHERE paper_id IN (SELECT paper_id FROM paper_positions WHERE status='OPEN') GROUP BY state,cause").fetchall()
+              supervisor=c.execute('SELECT state,heartbeat_at FROM paper_supervisor_state WHERE id=1').fetchone()
+              reader=c.execute('SELECT state,heartbeat_at FROM paper_exit_reader_state WHERE id=1').fetchone()
           try:
               with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5) as response:
                   http=response.status
@@ -141,6 +144,12 @@ jobs:
                   'mode':mode,'real_orders_sent':orders,'real_order_routes':state['real_order_routes'],
                   'observer_process':process,'observer_session':session,'heartbeat_age_seconds':round(age,3),
                   'paper_spot_status_counts':spots,'paper_caucion_status_counts':caucions,'paper_future_active':futures,
+                  'open_over_360_wall_minutes':over_hold,'open_exit_intent_counts':exits,
+                  'exit_supervisor_state':supervisor[0] if supervisor else 'MISSING',
+                  'exit_supervisor_heartbeat_age_seconds':round((datetime.now(timezone.utc)-datetime.fromisoformat(supervisor[1])).total_seconds(),2) if supervisor else None,
+                  'exit_reader_state':reader[0] if reader else 'MISSING',
+                  'exit_reader_heartbeat_age_seconds':round((datetime.now(timezone.utc)-datetime.fromisoformat(reader[1])).total_seconds(),2) if reader else None,
+                  'database_full_integrity':'DEFERRED_TO_CANONICAL_HOST_AUDIT',
                   'dashboard_health_http':http,'managed_timers_active_enabled':len(timers),
                   'ppi_watch_unit_discovery':'NOT_PRESENT' if not ppi else 'CANDIDATES_UNVERIFIED',
                   'ppi_watch_units':ppi_state,'disk_free_bytes':free,'inode_free_percent':round(inode_percent,2),
