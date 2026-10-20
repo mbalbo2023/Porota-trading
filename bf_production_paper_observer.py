@@ -1728,18 +1728,25 @@ def _background_ingest_due(store, now=None):
     if local_now.hour * 60 + local_now.minute < close_minute:
         return False
     with store.connect() as connection:
-        row = connection.execute("""SELECT last_attempt_at FROM source_sync
+        source = connection.execute("""SELECT last_attempt_at FROM source_sync
           WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
-    if not row or not row[0]:
-        return True
-    try:
-        last = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=TZ)
-        local_last = last.astimezone(TZ)
-        return local_last.date() < local_now.date()
-    except (TypeError, ValueError):
-        return True
+        background = connection.execute("""SELECT checked_at FROM api_health
+          WHERE component='PPI_BACKGROUND_INGEST'""").fetchone()
+    # A blocked history migration cannot advance source_sync. Its own health
+    # timestamp still records the attempt, including a failed one, so CLOSED
+    # does not retry and write another event every scanner poll (~5 seconds).
+    for row in (source, background):
+        if not row or not row[0]:
+            continue
+        try:
+            last = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=TZ)
+            if last.astimezone(TZ).date() >= local_now.date():
+                return False
+        except (TypeError, ValueError):
+            continue
+    return True
 
 def _background_ingest(reader, store, *, force=False):
     """Completa históricos una vez por rueda después del cierre; force no salta el límite."""
