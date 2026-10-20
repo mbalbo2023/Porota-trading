@@ -1,0 +1,73 @@
+name: RC6 624 exact image 256 MiB offhost proof
+
+on:
+  push:
+    branches: [diagnostic/rc6-624-postdeploy-resource-20261020]
+    paths: [.github/workflows/rc6-624-exact-256-proof.yml]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Download frozen exact image, never rebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: porota-predeploy-v2-4f305e094c7d19c4ffa04f6ff936c8a191610d7a
+          run-id: 39414859752
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/frozen
+      - name: Verify frozen source, digest and execute entire session at 256 MiB
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$RUNNER_TEMP/frozen"
+          python - <<'PY'
+          import hashlib,json,pathlib
+          root=pathlib.Path('.')
+          f=json.loads((root/'porota-frozen-candidate.json').read_text())
+          assert f['candidate_sha']=='4f305e094c7d19c4ffa04f6ff936c8a191610d7a'
+          assert f['candidate_tree_sha']=='982fc6c5027d72b1ec1b751ff69db3450c742971'
+          assert f['image_id']=='sha256:afed86ba62b3dc880823ddfe52c2571a4ad74fe38f6a6ff18140b92ff481abcd'
+          tar=root/'porota-predeploy-image.tar.gz'
+          assert hashlib.file_digest(tar.open('rb'),'sha256').hexdigest()==f['image_tar_sha256']
+          print('EXACT_FROZEN_ARTIFACT=GREEN')
+          PY
+          gzip -dc porota-predeploy-image.tar.gz | docker load
+          IMAGE='sha256:afed86ba62b3dc880823ddfe52c2571a4ad74fe38f6a6ff18140b92ff481abcd'
+          test "$(docker image inspect -f '{{.Id}}' "$IMAGE")" = "$IMAGE"
+          mkdir -p "$RUNNER_TEMP/proof"
+          chmod 777 "$RUNNER_TEMP/proof"
+          docker create --name rc6-exact-256-proof --pull never --memory 256m --memory-swap 256m --cpus .75 \
+            --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 96 \
+            -e TMPDIR=/proof -e RC6_STRESS_EXECUTION_CONTEXT=DROPLET_ISOLATED_CONTAINER \
+            -v "$RUNNER_TEMP/proof:/proof" "$IMAGE" \
+            python -B /app/scripts/rc6_postdeploy_stress.py --output /proof/session
+          set +e
+          timeout 900 docker start -a rc6-exact-256-proof
+          RESULT=$?
+          set -e
+          STATE="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' rc6-exact-256-proof)"
+          echo "RC6_EXACT_256_SESSION=exit:$RESULT|container:$STATE"
+          test "$RESULT" -eq 0
+          test "$STATE" = '0|false'
+          python - <<'PY'
+          import json,pathlib
+          f=json.loads(pathlib.Path(__import__('os').environ['RUNNER_TEMP'],'proof/session/stress.json').read_text())
+          assert f['status']=='GREEN' and f['smoke'] is False
+          assert f['session']['real_orders_sent']==0 and f['full_catalog']['real_orders_sent']==0
+          print('RC6_EXACT_256_FULL_SESSION=GREEN|self_peak_rss_kib='+str(f['self_peak_rss_kib']))
+          PY
+      - name: Preserve bounded result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-624-exact-256-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/proof/session/stress.json
+          if-no-files-found: warn
+          retention-days: 14
