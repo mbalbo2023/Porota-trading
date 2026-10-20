@@ -93,7 +93,7 @@ def build_legacy_retire_plan(policy: dict) -> list[str]:
     return result
 
 
-def apply(root: Path, policy: dict, systemd_root: Path) -> dict:
+def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_paused: bool = False) -> dict:
     plan=build_plan(policy)
     legacy_retire=build_legacy_retire_plan(policy)
     changed=[]
@@ -135,7 +135,13 @@ def apply(root: Path, policy: dict, systemd_root: Path) -> dict:
         role=item["role"]
         if role=="ACTIVE_TIMER":
             _run("systemctl","unmask",name,check=False)
-            _run("systemctl","enable","--now",name)
+            if keep_active_timers_paused:
+                # The deploy owns an exact scheduler suspension receipt. Unit
+                # reconciliation must not fire these timers during COLD2 or
+                # contract evidence materialization.
+                _run("systemctl","enable",name)
+            else:
+                _run("systemctl","enable","--now",name)
         elif role=="QUARANTINED_TIMER":
             _run("systemctl","mask",name)
             _run("systemctl","stop",name,check=False)
@@ -149,9 +155,10 @@ def apply(root: Path, policy: dict, systemd_root: Path) -> dict:
         if role=="ACTIVE_TIMER":
             enabled=_run("systemctl","is-enabled",name).stdout.strip()
             active=_run("systemctl","is-active",name).stdout.strip()
-            if enabled!="enabled" or active!="active":
+            expected_active = "inactive" if keep_active_timers_paused else "active"
+            if enabled!="enabled" or active!=expected_active:
                 raise RuntimeError(f"ACTIVE_TIMER_VERIFY_FAILED:{name}:{enabled}:{active}")
-            verification.append({"unit":name,"state":"enabled|active"})
+            verification.append({"unit":name,"state":f"enabled|{expected_active}"})
         elif role=="QUARANTINED_TIMER":
             enabled=_run("systemctl","is-enabled",name,check=False).stdout.strip()
             active=_run("systemctl","is-active",name,check=False).stdout.strip()
@@ -193,10 +200,12 @@ def main() -> int:
     ap.add_argument("--policy",default="ops/policy/host-control-plane-reconciliation-v2.json")
     ap.add_argument("--systemd-root",default="/etc/systemd/system")
     ap.add_argument("--json-out")
+    ap.add_argument("--keep-active-timers-paused", action="store_true")
     args=ap.parse_args()
     root=Path(args.root).resolve()
     policy=json.loads((root / args.policy).read_text(encoding="utf-8"))
-    result=apply(root,policy,Path(args.systemd_root))
+    result=apply(root,policy,Path(args.systemd_root),
+                 keep_active_timers_paused=args.keep_active_timers_paused)
     payload=json.dumps(result,indent=2,sort_keys=True)
     print(payload)
     if args.json_out:
