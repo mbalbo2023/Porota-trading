@@ -213,14 +213,14 @@ jobs:
 
           RC6_DISK_PRECLEAN_TRIGGERED=0
           if [ "$GATE_RC" -ne 0 ]; then
-            # The exact failed COLD2 may leave the owned runtime stopped and
-            # its loaded image unreferenced. Admit that identity before cleanup.
+            # COLD2 can leave the owned runtime stopped and the stable tag on
+            # an older, unreferenced image. Reconcile only under PAPER admission.
             OWNED_STATE="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
               "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
             if [ "$OWNED_STATE" != $'running\nrunning' ]; then
               RC6_DISK_PRECLEAN_TRIGGERED=1
               "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 -" \
-                < scripts/rc6_offline_failed_image_cleanup.py
+                < scripts/rc6_offline_current_image_cleanup.py
               mapfile -t METRICS < <(probe_disk)
               test "${#METRICS[@]}" -eq 2
               AVAILABLE_BYTES="${METRICS[0]}"
