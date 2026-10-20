@@ -46,7 +46,10 @@ jobs:
               return {k:int(v.split()[0])*1024 for line in open('/proc/meminfo')
                       for k,v in [line.split(':',1)] if k in
                       {'MemTotal','MemFree','MemAvailable','Cached','Buffers','Slab',
-                       'SReclaimable','Shmem','SwapTotal','SwapFree'}}
+                       'SReclaimable','SUnreclaim','Shmem','SwapTotal','SwapFree',
+                       'AnonPages','Active(anon)','Inactive(anon)','Active(file)',
+                       'Inactive(file)','PageTables','KernelStack','Unevictable',
+                       'Dirty','Writeback','Zswap','Zswapped'}}
           mem=meminfo()
           stat=os.statvfs('/')
           free=stat.f_bavail*stat.f_frsize
@@ -80,10 +83,14 @@ jobs:
                       name=status.get('Name','').strip()[:40]
                       scripts=sorted({pathlib.PurePosixPath(part.decode('utf-8','replace')).name[:80]
                           for part in cmd.split(b'\0') if part.endswith(b'.py')})[:3]
+                      roles=[label for label in ('--dynamic-shadow-worker','--performance-worker',
+                          '--exit-reader','--notification-worker','--candle-worker',
+                          '--intraday-scalping-worker','--caucion-cash-sweep-worker')
+                          if label.encode() in cmd.split(b'\0')]
                       rows[pid]={'pid':pid,'name':name,'rss':kib('VmRSS'),
                           'swap':kib('VmSwap'),'anon':kib('RssAnon'),
                           'file':kib('RssFile'),'cgroup':(group[-1].split(':')[-1] if group else '')[-160:],
-                          'script_names':scripts,
+                          'script_names':scripts,'role':roles[0] if roles else None,
                           'ppi_watch_candidate':b'ppi' in cmd and b'watch' in cmd,
                           '_cpu':cpu}
                   except (OSError,ValueError,IndexError):
@@ -109,6 +116,27 @@ jobs:
               item['swap_sum']+=row['swap'];item['pids']+=1
           cgroup_top=sorted(({'cgroup':key,**value} for key,value in cgroups.items()),
                             key=lambda item:item['anon_sum'],reverse=True)[:20]
+          for group in cgroup_top:
+              path=group['cgroup']
+              if not path.startswith('/system.slice/') or '/' in path[len('/system.slice/'):]:
+                  continue
+              base=pathlib.Path('/sys/fs/cgroup')/path.lstrip('/')
+              try:
+                  group['memory_current']=int((base/'memory.current').read_text().strip())
+                  stats=dict(line.split() for line in (base/'memory.stat').read_text().splitlines())
+                  group['memory_anon']=int(stats.get('anon','0'))
+                  group['memory_file']=int(stats.get('file','0'))
+                  group['memory_slab']=int(stats.get('slab','0'))
+              except (OSError,ValueError):
+                  group['memory_current']='NO_VERIFICADO'
+          for row in top_rss[:12]:
+              try:
+                  rollup=(pathlib.Path('/proc')/str(row['pid'])/'smaps_rollup').read_text()[:8192]
+                  stats=dict(line.split(':',1) for line in rollup.splitlines() if ':' in line)
+                  row['pss']=int(stats['Pss'].split()[0])*1024
+                  row['private_dirty']=int(stats['Private_Dirty'].split()[0])*1024
+              except (OSError,KeyError,ValueError):
+                  row['pss']='NO_VERIFICADO'
           # Peripheral enumeration may stall under host load. Preserve the
           # primary /proc measurement and report UNKNOWN instead of absence.
           units=[];watch_units=[];named_containers=[]
