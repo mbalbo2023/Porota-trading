@@ -1,0 +1,70 @@
+name: RC6 624 COLD2 source metadata read only
+
+on:
+  push:
+    branches: [diagnostic/rc6-624-cold2-source-20261020]
+    paths: [.github/workflows/rc6-624-cold2-source-readonly-probe.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bounded PAPER admission and cold source names
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cold2_diag"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_cold2_diag" "$HOME/.ssh/known_hosts"
+          timeout 75 ssh -i "$HOME/.ssh/porota_rc6_cold2_diag" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, os, pathlib, sqlite3, stat
+          root=pathlib.Path('/opt/porota-trading')
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True,timeout=1) as c:
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=200')
+              paper=c.execute('SELECT mode,process_state,session_state,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          if not paper or paper[0]!='PRODUCTION_PAPER' or type(paper[3]) is not int or paper[3]!=0:
+              raise SystemExit('COLD2_DIAG_PAPER_ADMISSION_RED')
+          mem=int(next(line.split()[1] for line in open('/proc/meminfo') if line.startswith('MemAvailable:')))*1024
+          v=os.statvfs('/')
+          free=v.f_bavail*v.f_frsize
+          if mem<128*1024*1024 or free<2*1024**3:
+              raise SystemExit('COLD2_DIAG_RESOURCE_ADMISSION_RED')
+          source=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
+          mode=source.lstat().st_mode
+          if not stat.S_ISDIR(mode) or source.is_symlink():
+              raise SystemExit('COLD2_DIAG_SOURCE_UNSAFE')
+          names=sorted(p.name for p in source.iterdir())
+          if len(names)>128 or any(len(n)>160 or n in ('.','..') for n in names):
+              raise SystemExit('COLD2_DIAG_BOUND_RED')
+          ident='7dc99ccd8f7c47849ca3705ae1cb2c49'
+          allowed={ident+'.pack','manifest-'+ident+'.json','receipt-'+ident+'.json','queue.json'}
+          for old in ('87f18ab0f25749c0bf3f0b3ad73a164b','b024ef43497d4108af829947f8855701'):
+              allowed.update(('manifest-'+old+'.json','receipt-'+old+'.json'))
+          entries=[]
+          for name in names:
+              st=(source/name).lstat()
+              kind='regular' if stat.S_ISREG(st.st_mode) else 'directory' if stat.S_ISDIR(st.st_mode) else 'other'
+              entries.append({'name':name,'kind':kind,'bytes':st.st_size,'allowed_original':name in allowed})
+          print('COLD2_SOURCE_READONLY='+json.dumps({'schema':'rc6-624-cold2-source-metadata-v1',
+              'paper':paper,'mem_available':mem,'root_free':free,'entries':entries,
+              'unexpected':[e['name'] for e in entries if not e['allowed_original']]},sort_keys=True))
+          PY
+      - name: Runner key cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/porota_rc6_cold2_diag"
