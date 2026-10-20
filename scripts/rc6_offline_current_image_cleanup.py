@@ -104,14 +104,42 @@ def admission():
         sys.path.insert(0, str(ROOT))
         from scripts import rc6_deploy_quiescence as drain
         drain.ROOT = ROOT
-        witness = drain.adopt_stopped_after_failed_install(
-            state['candidate_sha'], ROOT/'data/deploy', owned,
-            allow_market_open_suspend=True, allow_open_paper_carryover=True)
-        carry = witness.get('spot_carryover')
-        if (type(carry) is not dict or type(carry.get('open_count')) is not int or
+        folder = ROOT/'data/deploy'
+        paths = list(folder.glob('quiescence-*.json'))
+        if len(paths) > 128 or any(p.is_symlink() or p.stat().st_size > 65536 for p in paths):
+            raise ValueError('OFFLINE_CURRENT_RECEIPT_INVENTORY_UNSAFE')
+        eligible = []
+        for path in paths:
+            prior = json.loads(path.read_text())
+            if (path.name != 'quiescence-' + str(prior.get('candidate_sha')) + '.json' or
+                    not re.fullmatch(r'[a-f0-9]{40}', str(prior.get('candidate_sha')))):
+                raise ValueError('OFFLINE_CURRENT_RECEIPT_IDENTITY_RED')
+            if (prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+                    prior.get('installation_started') is not True or
+                    prior.get('market_open_suspended') is not True or
+                    prior.get('open_paper_carryover') is not True or
+                    set(prior.get('containers', {})) != set(OWNED) or
+                    any(prior['containers'][name].get('id') != owned[name]['Id'] or
+                        prior['containers'][name].get('image') != owned[name]['Image']
+                        for name in OWNED)):
+                continue
+            eligible.append((prior['recorded_at'], prior))
+        eligible.sort(key=lambda row:row[0])
+        if (not eligible or eligible[-1][0] < state.get('recorded_at', '') or
+                len(eligible) > 1 and eligible[-1][0] == eligible[-2][0]):
+            raise ValueError('OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING')
+        prior = eligible[-1][1]
+        drain.exact_clean_stopped(prior)
+        observed = drain.admit(stopped=True, allow_market_open_suspend=True,
+                               allow_open_paper_carryover=True,
+                               stopped_receipt=prior)
+        carry = drain.spot_carryover_snapshot()
+        if (observed not in {'STOPPED', 'RUNNING'} or
+                carry != prior.get('spot_carryover') or
+                type(carry.get('open_count')) is not int or
                 not 0 < carry['open_count'] <= 16):
             raise ValueError('OFFLINE_CURRENT_CARRYOVER_RED')
-        intraday = (witness['fix_forward_from'], carry['sha256'])
+        intraday = (prior['candidate_sha'], carry['sha256'])
     else:
         db=ROOT/'data/paper_v17/observer_v17.db'
         with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
