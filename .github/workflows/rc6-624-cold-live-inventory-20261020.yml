@@ -104,7 +104,7 @@ jobs:
                   'live_real_orders_sent':live.get('real_orders_sent'),
                   'cold_active_names':sorted(p.name for p in cold.iterdir()) if cold.exists() else [],
                   'cold_archive_exists':archive.is_dir(),'cold_fix_receipt_exists':receipt.exists(),
-                  'prior_cold_receipt':{k:prior.get(k) for k in ('schema','state','candidate_sha','archive','snapshot_id','manifest_sha256','pack_sha256','revoked_cut','current_cut','old_cut_gc_complete')} if prior else None,
+                  'prior_cold_receipt':{k:prior.get(k) for k in ('schema','state','candidate_sha','archive','old_sha','snapshot_id','manifest_sha256','pack_sha256','pack_bytes','failed_at','deadline_at','revoked_cut','current_cut','old_cut_gc_complete')} if prior else None,
                   'archive_names':sorted(p.name for p in archive.iterdir()) if archive.is_dir() else [],
                   'quiescence_status':q.get('status'),'installation_started':q.get('installation_started'),
                   'current_state':{k:state.get(k) for k in ('candidate_sha','deploy_sha','image_id','validation_status','mode','real_orders_sent','real_order_routes')},
