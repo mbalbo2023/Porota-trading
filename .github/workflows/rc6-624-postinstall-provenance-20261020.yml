@@ -106,6 +106,22 @@ jobs:
           print('RC6_POSTFAIL_STOPPED_BOOK='+json.dumps(spot_carryover_snapshot(),sort_keys=True))
           PY
           timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker inspect -f '{{.Id}}|{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}' porota_critical_approval_rc6"
+          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
+          import json,subprocess,shutil
+          def d(*args):
+              p=subprocess.run(['docker',*args],capture_output=True,text=True)
+              return p.returncode,p.stdout.strip()
+          ids=d('ps','-aq','--no-trunc')[1].splitlines()
+          refs={}
+          for cid in ids:
+              row=json.loads(d('inspect',cid)[1])[0]
+              refs.setdefault(row['Image'],[]).append((row['Name'],cid))
+          targets={}
+          for image in ('sha256:1fa027ec87b1b8166bd1431d24b1690ddb40ab582fe49ee2b58b5c9ca05aeadf','sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'):
+              rc,out=d('image','inspect',image)
+              targets[image]={'present':rc==0,'tags':json.loads(out)[0].get('RepoTags') if rc==0 else [],'references':refs.get(image,[])}
+          print('RC6_IMAGE_REF_DIAG='+json.dumps({'free':shutil.disk_usage('/').free,'images':targets},sort_keys=True))
+          PY
           rm -f "$HOME/.ssh/rc6_read"
 
 # Inventory after preopen contract failure and exact clean stop.
