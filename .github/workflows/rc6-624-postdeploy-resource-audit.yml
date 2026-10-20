@@ -61,21 +61,6 @@ jobs:
               result=subprocess.run(args,check=True,capture_output=True,text=True,timeout=seconds)
               if len(result.stdout)>262144: raise ValueError('COMMAND_OUTPUT_BOUND')
               return result.stdout
-          unit_lines=bounded_command(['systemctl','list-unit-files','--no-legend','--no-pager']).splitlines()
-          units=sorted({line.split()[0] for line in unit_lines if line.split()
-                        and 'ppi' in line.split()[0].lower()})
-          if len(units)>32: raise ValueError('PPI_UNIT_BOUND')
-          watch_units=[]
-          for name in units:
-              if 'watch' in name.lower():
-                  watch_units.append({'unit':name,'active':subprocess.run(
-                      ['systemctl','is-active',name],capture_output=True,text=True,
-                      timeout=3).stdout.strip()[:32], 'enabled':subprocess.run(
-                      ['systemctl','is-enabled',name],capture_output=True,text=True,
-                      timeout=3).stdout.strip()[:32]})
-          docker_names=bounded_command(['docker','ps','-a','--format','{{.Names}}']).splitlines()
-          if len(docker_names)>128: raise ValueError('DOCKER_BOUND')
-          named_containers=[x for x in docker_names if 'ppi' in x.lower() or 'watch' in x.lower()]
           hz=os.sysconf('SC_CLK_TCK')
           def processes():
               pids=[int(p) for p in os.listdir('/proc') if p.isdigit()]
@@ -113,11 +98,44 @@ jobs:
           top_rss=sorted(second.values(),key=lambda x:x['rss'],reverse=True)[:20]
           top_cpu=sorted(second.values(),key=lambda x:x['cpu_one_core_pct'] or 0,reverse=True)[:20]
           candidates=[x for x in second.values() if x['ppi_watch_candidate']]
+          # Peripheral enumeration may stall under host load. Preserve the
+          # primary /proc measurement and report UNKNOWN instead of absence.
+          units=[];watch_units=[];named_containers=[]
+          unit_inventory_status='NO_VERIFICADO'
+          container_inventory_status='NO_VERIFICADO'
+          try:
+              unit_lines=bounded_command(['systemctl','list-unit-files','--no-legend','--no-pager'],seconds=12).splitlines()
+              units=sorted({line.split()[0] for line in unit_lines if line.split()
+                            and 'ppi' in line.split()[0].lower()})
+              if len(units)>32: raise ValueError('PPI_UNIT_BOUND')
+              unit_inventory_status='COMPLETE'
+              for name in units:
+                  if 'watch' in name.lower():
+                      try:
+                          active=bounded_command(['systemctl','is-active',name],seconds=3).strip()[:32]
+                      except (subprocess.TimeoutExpired,subprocess.CalledProcessError):
+                          active='NO_VERIFICADO'
+                      try:
+                          enabled=bounded_command(['systemctl','is-enabled',name],seconds=3).strip()[:32]
+                      except (subprocess.TimeoutExpired,subprocess.CalledProcessError):
+                          enabled='NO_VERIFICADO'
+                      watch_units.append({'unit':name,'active':active,'enabled':enabled})
+          except (subprocess.TimeoutExpired,subprocess.CalledProcessError):
+              unit_inventory_status='NO_VERIFICADO_TIMEOUT_OR_ERROR'
+          try:
+              docker_names=bounded_command(['docker','ps','-a','--format','{{.Names}}'],seconds=12).splitlines()
+              if len(docker_names)>128: raise ValueError('DOCKER_BOUND')
+              named_containers=[x for x in docker_names if 'ppi' in x.lower() or 'watch' in x.lower()]
+              container_inventory_status='COMPLETE'
+          except (subprocess.TimeoutExpired,subprocess.CalledProcessError):
+              container_inventory_status='NO_VERIFICADO_TIMEOUT_OR_ERROR'
           print(json.dumps({'schema':'rc6-624-postdeploy-resource-v1','status':'READ_ONLY',
               'admission':admission,'meminfo':mem,'meminfo_after':meminfo(),
               'sample_seconds':round(elapsed,3),'observed_pids':len(second),
               'ppi_named_units':units,'ppi_watch_units':watch_units,
               'ppi_named_containers':named_containers,
+              'unit_inventory_status':unit_inventory_status,
+              'container_inventory_status':container_inventory_status,
               'ppi_watch_process_candidates':candidates[:16],
               'top_rss':top_rss,'top_cpu':top_cpu,
               'ppi_watch_mutation_attempted':False},sort_keys=True))
