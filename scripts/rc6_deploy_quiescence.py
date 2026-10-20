@@ -99,7 +99,14 @@ def clean_stop(before, after):
 
 def admit(*, stopped=False, allow_admin_issue624=False,
           allow_market_open_suspend=False, allow_open_paper_carryover=False,
-          initial=False, stopped_receipt=None):
+          allow_postclose_pending=False, initial=False, stopped_receipt=None):
+    if allow_postclose_pending:
+        local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+        if (not stopped or not allow_market_open_suspend or
+                not allow_open_paper_carryover or stopped_receipt is None or
+                local.date().isoformat() != '2026-10-20' or
+                not 17 <= local.hour < 23):
+            raise ValueError('QUIESCENCE_POSTCLOSE_WINDOW_OR_STOP_RED')
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
         c.row_factory = sqlite3.Row
@@ -148,6 +155,8 @@ def admit(*, stopped=False, allow_admin_issue624=False,
             if c.execute('SELECT 1 FROM ' + table + ' WHERE status=? LIMIT 1', (state,)).fetchone():
                 if table == 'paper_positions' and allow_open_paper_carryover and allow_market_open_suspend:
                     continue
+                if table == 'paper_cauciones' and allow_postclose_pending:
+                    continue
                 if table == 'paper_positions' and allow_admin_issue624:
                     admin_issue624_target(c)
                     continue
@@ -191,6 +200,27 @@ def spot_carryover_snapshot():
             raise ValueError('QUIESCENCE_CARRYOVER_SNAPSHOT_BOUND')
         return {'open_count': len(rows), 'paper_ids': ids, 'identities': identities,
                 'sha256': hashlib.sha256(raw).hexdigest()}
+
+
+def pending_caucion_snapshot():
+    """Bind the one observed overnight PAPER caucion to its complete ledger row."""
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.row_factory = sqlite3.Row
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        deadline = time.monotonic() + 2
+        c.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+        rows = c.execute("SELECT * FROM paper_cauciones WHERE status='OPEN' ORDER BY paper_id LIMIT 2").fetchall()
+        if len(rows) != 1:
+            raise ValueError('QUIESCENCE_PENDING_CAUCION_COUNT_CHANGED')
+        row = dict(rows[0])
+        raw = json.dumps(row, sort_keys=True, default=str, separators=(',', ':')).encode()
+        if len(raw) > 16384:
+            raise ValueError('QUIESCENCE_PENDING_CAUCION_BOUND')
+        return {'open_count': 1, 'sha256': hashlib.sha256(raw).hexdigest(),
+                'paper_id_sha256': hashlib.sha256(str(row['paper_id']).encode()).hexdigest(),
+                'maturity_at': row['maturity_at']}
 
 
 def verify_spot_carryover(receipt):
@@ -276,16 +306,17 @@ def critical_admission():
             'restart_count': 0, 'capability': 'issues_only'}
 
 
-def adopt_exact_pending_intraday_stop(candidate, folder, originals):
-    """Continue the 20/10 installed PAPER runtime after its exact clean stop."""
-    prior_candidate = 'f31393fdced65f6e2362e69c9ed1df934897296d'
-    prior_deploy = '55014f3ae503eade77e7027ed8898fd953b0bcd3'
-    image = 'sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'
+def adopt_exact_pending_intraday_stop(candidate, folder, originals, *, postclose=False):
+    """Continue the installed PAPER runtime after its exact clean stop."""
+    prior_candidate = 'd96cb68d177199317ee23239553517e04ee0a255'
+    prior_deploy = 'e86bdb6a9fe5ac21b93bc26e70af9844945e1407'
+    image = 'sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
     ids = {'porota_production_observer':
-           'b4b1fb7b8cbe25c6b9d00b0fb01407b169ffe705629e0d015fa0b50cc4b27b63',
+           'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
            'porota_production_dashboard':
-           '0badcadf46eb5b13c341da7f0e528a44732948a6689f37c627fa9ccfad2f7d65'}
-    expected_book = '8a02ac16743e872c14e28663025069358517317c0f566580d63df8f626d033c2'
+           'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570'}
+    expected_book = 'e7fa20929b6aa4c26a534db6554fd95a22f1734c0fc91175d6f20f05067af13e'
+    expected_caucion = 'bf6d2e347850e951c12141bd1d785868b6691da0cc878d17bfe429ac73c9c8a7'
     state_path = folder/'CURRENT_STATE_V2.json'
     prior_path = folder/('quiescence-'+prior_candidate+'.json')
     if (candidate == prior_candidate or state_path.is_symlink() or prior_path.is_symlink() or
@@ -327,10 +358,14 @@ def adopt_exact_pending_intraday_stop(candidate, folder, originals):
                'stop_attempted': list(OWNED), 'stop_evidence': proof}
     exact_clean_stopped(stopped)
     process = admit(stopped=True, allow_market_open_suspend=True,
-                    allow_open_paper_carryover=True, stopped_receipt=stopped)
+                    allow_open_paper_carryover=True, allow_postclose_pending=postclose,
+                    stopped_receipt=stopped)
     carry = spot_carryover_snapshot()
-    if (process not in {'STOPPED','RUNNING'} or carry.get('open_count') != 3 or
-            carry.get('sha256') != expected_book):
+    caucion = pending_caucion_snapshot() if postclose else None
+    if (process not in {'STOPPED','RUNNING'} or carry.get('open_count') != 2 or
+            carry.get('sha256') != expected_book or
+            (postclose and (caucion.get('sha256') != expected_caucion or
+                            caucion.get('maturity_at') != '2026-10-21T17:00:00-03:00'))):
         raise ValueError('QUIESCENCE_PENDING_BOOK_CHANGED')
     critical = critical_admission()
     return dict(stopped, candidate_sha=candidate, status='DRAINED',
@@ -338,13 +373,15 @@ def adopt_exact_pending_intraday_stop(candidate, folder, originals):
                 real_orders_sent=0, ppi_watch_accessed=False,
                 admin_cancel_paper_id=None, market_open_suspended=True,
                 open_paper_carryover=True, spot_carryover=carry,
+                paused_postclose=postclose, caucion_carryover=caucion,
                 critical_admission=critical, fix_forward_from=prior_candidate,
                 prior_receipt_sha256=hashlib.sha256(prior_path.read_bytes()).hexdigest())
 
 
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None,
                                        allow_market_open_suspend=False,
-                                       allow_open_paper_carryover=False):
+                                       allow_open_paper_carryover=False,
+                                       allow_postclose_pending=False):
     """One exact fail-closed continuation; never start the prior image."""
     # CURRENT_STATE_V2 identifies the installed image, but a subsequent
     # failed pre-install COLD2 has its own newer stop receipt. Select the
@@ -354,7 +391,10 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     if (current_provenance and allow_market_open_suspend and allow_open_paper_carryover and
             current_path.is_file() and not current_path.is_symlink() and
             json.loads(current_path.read_bytes()).get('validation_status') == 'DEPLOYED_VALIDATION_PENDING'):
-        return adopt_exact_pending_intraday_stop(candidate, folder, originals)
+        return adopt_exact_pending_intraday_stop(candidate, folder, originals,
+                                                 postclose=allow_postclose_pending)
+    if allow_postclose_pending:
+        raise ValueError('QUIESCENCE_POSTCLOSE_EXACT_PENDING_REQUIRED')
     if current_provenance:
         if current_path.is_symlink() or not current_path.is_file() or current_path.stat().st_size > 65536:
             raise ValueError('QUIESCENCE_CURRENT_STATE_UNSAFE')
@@ -546,9 +586,14 @@ def wait_for_admin_resources(*, sample=None, clock=None, pause=None):
 
 
 def run(candidate, action, *, allow_admin_issue624=False,
-        allow_market_open_suspend=False, allow_open_paper_carryover=False):
+        allow_market_open_suspend=False, allow_open_paper_carryover=False,
+        allow_postclose_pending=False):
     if allow_open_paper_carryover and (not allow_market_open_suspend or allow_admin_issue624):
         raise ValueError('QUIESCENCE_CARRYOVER_MODE_INVALID')
+    if allow_postclose_pending and (not allow_market_open_suspend or
+                                  not allow_open_paper_carryover or
+                                  action not in {'drain', 'install'}):
+        raise ValueError('QUIESCENCE_POSTCLOSE_MODE_INVALID')
     if not re.fullmatch('[0-9a-f]{40}', candidate):
         raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
     folder = ROOT / 'data/deploy'
@@ -563,14 +608,18 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 if (receipt.get('candidate_sha') != candidate or receipt.get('status') != 'DRAINED' or
                         receipt.get('installation_started') is not False or
                         receipt.get('market_open_suspended') != allow_market_open_suspend or
-                        receipt.get('open_paper_carryover') != allow_open_paper_carryover):
+                        receipt.get('open_paper_carryover') != allow_open_paper_carryover or
+                        receipt.get('paused_postclose', False) != allow_postclose_pending):
                     raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
                 exact_clean_stopped(receipt)
                 admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
+                      allow_postclose_pending=allow_postclose_pending,
                       stopped_receipt=receipt)
                 if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
                     raise ValueError('QUIESCENCE_PAUSED_LEDGER_CHANGED')
+                if allow_postclose_pending and pending_caucion_snapshot() != receipt.get('caucion_carryover'):
+                    raise ValueError('QUIESCENCE_PAUSED_CAUCION_CHANGED')
                 print(json.dumps({'status': 'DRAINED', 'candidate_sha': candidate,
                                   'prepaused_runtime_adopted': True, 'real_orders_sent': 0,
                                   'ppi_watch_accessed': False}), flush=True)
@@ -594,7 +643,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 receipt = adopt_stopped_after_failed_install(
                     candidate, folder, originals, admin_paper_id=admin_paper_id,
                     allow_market_open_suspend=allow_market_open_suspend,
-                    allow_open_paper_carryover=allow_open_paper_carryover)
+                    allow_open_paper_carryover=allow_open_paper_carryover,
+                    allow_postclose_pending=allow_postclose_pending)
                 persist(path, receipt)
             else:
                 if process != ('RUNNING' if allow_market_open_suspend else 'WAITING_MARKET') or any(v['State']['Status'] != 'running' for v in originals.values()):
@@ -678,16 +728,25 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 raise ValueError('QUIESCENCE_INSTALL_SESSION_MODE_CHANGED')
             if bool(receipt.get('open_paper_carryover', False)) != allow_open_paper_carryover:
                 raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_MODE_CHANGED')
+            if bool(receipt.get('paused_postclose', False)) != allow_postclose_pending:
+                raise ValueError('QUIESCENCE_INSTALL_POSTCLOSE_MODE_CHANGED')
             admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
                   allow_open_paper_carryover=allow_open_paper_carryover,
+                  allow_postclose_pending=allow_postclose_pending,
                   stopped_receipt=receipt)
             if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
                 raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_CHANGED')
+            if allow_postclose_pending and pending_caucion_snapshot() != receipt.get('caucion_carryover'):
+                raise ValueError('QUIESCENCE_INSTALL_CAUCION_CHANGED')
             receipt.update(status='HOST_INSTALLATION_STARTED', installation_started=True)
         elif action == 'verify-carryover':
             if not receipt or receipt.get('installation_started') is not True or not receipt.get('open_paper_carryover'):
                 raise ValueError('QUIESCENCE_CARRYOVER_NOT_INSTALLED')
             receipt['carryover_verified_count'] = verify_spot_carryover(receipt)
+            if receipt.get('paused_postclose') is True:
+                if pending_caucion_snapshot() != receipt.get('caucion_carryover'):
+                    raise ValueError('QUIESCENCE_CAUCION_CARRYOVER_CHANGED')
+                receipt['caucion_verified_count'] = 1
             receipt['carryover_verified_at'] = datetime.now(timezone.utc).isoformat()
         elif action == 'recover':
             if not receipt: return {'status': 'NO_DRAIN_RECEIPT'}
@@ -722,6 +781,7 @@ def main(argv=None):
     parser.add_argument('--admin-cancel-issue624', action='store_true')
     parser.add_argument('--market-open-suspend', action='store_true')
     parser.add_argument('--carry-open-paper-spots', action='store_true')
+    parser.add_argument('--paused-postclose', action='store_true')
     parser.add_argument('--allow-validation-pending',action='store_true',
                         help='classify installed validation pending during failure cleanup; never validates runtime')
     args = parser.parse_args(argv)
@@ -734,6 +794,10 @@ def main(argv=None):
     if args.carry_open_paper_spots and (not args.market_open_suspend or
                                         args.admin_cancel_issue624 or args.action not in {'drain', 'install'}):
         parser.error('--carry-open-paper-spots requires intraday drain/install without admin cancel')
+    if args.paused_postclose and (not args.market_open_suspend or
+                                  not args.carry_open_paper_spots or
+                                  args.action not in {'drain','install'}):
+        parser.error('--paused-postclose requires suspended carryover drain/install')
     options = {}
     if args.admin_cancel_issue624:
         options['allow_admin_issue624'] = True
@@ -741,6 +805,8 @@ def main(argv=None):
         options['allow_market_open_suspend'] = True
     if args.carry_open_paper_spots:
         options['allow_open_paper_carryover'] = True
+    if args.paused_postclose:
+        options['allow_postclose_pending'] = True
     receipt = run(args.candidate_sha, args.action, **options)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2

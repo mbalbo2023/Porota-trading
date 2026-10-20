@@ -170,12 +170,16 @@ def apply(root, candidate):
                 drain.exact_clean_stopped(receipt)
                 state = drain.admit(stopped=True, allow_market_open_suspend=True,
                                     allow_open_paper_carryover=True,
+                                    allow_postclose_pending=receipt.get('paused_postclose') is True,
                                     stopped_receipt=receipt)
                 carry = drain.spot_carryover_snapshot()
                 if (carry != receipt.get('spot_carryover') or
                         type(carry.get('open_count')) is not int or
                         not 0 < carry['open_count'] <= 16):
                     raise ValueError('COLD2_INTRADAY_CARRYOVER_CHANGED')
+                if receipt.get('paused_postclose') is True and (
+                        drain.pending_caucion_snapshot() != receipt.get('caucion_carryover')):
+                    raise ValueError('COLD2_POSTCLOSE_CAUCION_CHANGED')
                 if state not in {'STOPPED', 'RUNNING'}:
                     raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
             else:

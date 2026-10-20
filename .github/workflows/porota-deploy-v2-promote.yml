@@ -152,16 +152,24 @@ jobs:
               decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
           print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
           print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
-          intraday = require_exact_owner_authorization(
+          postclose = require_exact_owner_authorization(
               os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
               os.environ['CANDIDATE_TREE'],
-              decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY')
-          print(f'RC6_624_INTRADAY_SUSPEND_BY_OWNER=GREEN|comment={intraday}')
-          carryover = require_exact_owner_authorization(
-              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
-              os.environ['CANDIDATE_TREE'],
-              decision='RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER')
-          print(f'RC6_624_INTRADAY_PAPER_CARRYOVER_BY_OWNER=GREEN|comment={carryover}')
+              decision='RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION')
+          print(f'RC6_624_PAUSED_POSTCLOSE_CAUCION_BY_OWNER=GREEN|comment={postclose}')
+          PY
+
+      - name: Admit bounded postclose maintenance window before host work
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          if local.date().isoformat() != '2026-10-20' or not 17 <= local.hour < 23:
+              raise SystemExit('RC6_POSTCLOSE_WINDOW=RED')
+          print('RC6_POSTCLOSE_WINDOW=GREEN|stored_market_session_is_prior_stopped_snapshot')
           PY
 
       - name: Prepare strict SSH
@@ -423,7 +431,7 @@ jobs:
             "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
-      - name: Admit true MARKET_OPEN PAPER and drain RC6 before host installation
+      - name: Admit stopped PAPER snapshot after market close and drain RC6
         id: drain
         timeout-minutes: 3
         shell: bash
@@ -433,7 +441,7 @@ jobs:
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --market-open-suspend --carry-open-paper-spots" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --market-open-suspend --carry-open-paper-spots --paused-postclose" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -577,7 +585,7 @@ jobs:
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
           sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
-            --candidate-sha "$CANDIDATE_SHA" --action install --market-open-suspend --carry-open-paper-spots
+            --candidate-sha "$CANDIDATE_SHA" --action install --market-open-suspend --carry-open-paper-spots --paused-postclose
 
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
           import hashlib,json,os,shutil,sys

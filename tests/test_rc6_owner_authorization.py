@@ -108,3 +108,19 @@ class OwnerAuthorizationTests(unittest.TestCase):
                 'owner/repo', candidate, tree,
                 decision='RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER',
                 get_page=page([dict(row, updated_at='t2')]))
+
+    def test_postclose_caucion_requires_its_own_exact_unedited_comment(self):
+        candidate, tree = 'a' * 40, 'b' * 40
+        body = (f'RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION '
+                f'candidate={candidate} tree={tree}')
+        row = dict(id=5, body=body, user={'login': 'mbalbo2023'},
+                   created_at='t1', updated_at='t1')
+        page = lambda rows: lambda _: json.dumps(rows).encode()
+        self.assertEqual(require_exact_owner_authorization(
+            'owner/repo', candidate, tree,
+            decision='RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION',
+            get_page=page([row])), 5)
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo', candidate, tree,
+                decision='RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION',
+                get_page=page([dict(row, user={'login':'other'})]))

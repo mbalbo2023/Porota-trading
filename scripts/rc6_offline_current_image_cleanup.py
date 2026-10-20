@@ -131,6 +131,7 @@ def admission():
         drain.exact_clean_stopped(prior)
         observed = drain.admit(stopped=True, allow_market_open_suspend=True,
                                allow_open_paper_carryover=True,
+                               allow_postclose_pending=prior.get('paused_postclose') is True,
                                stopped_receipt=prior)
         carry = drain.spot_carryover_snapshot()
         if (observed not in {'STOPPED', 'RUNNING'} or
@@ -138,6 +139,9 @@ def admission():
                 type(carry.get('open_count')) is not int or
                 not 0 < carry['open_count'] <= 16):
             raise ValueError('OFFLINE_CURRENT_CARRYOVER_RED')
+        if prior.get('paused_postclose') is True and (
+                drain.pending_caucion_snapshot() != prior.get('caucion_carryover')):
+            raise ValueError('OFFLINE_CURRENT_CAUCION_CARRYOVER_RED')
         intraday = (prior['candidate_sha'], carry['sha256'])
     else:
         db=ROOT/'data/paper_v17/observer_v17.db'
