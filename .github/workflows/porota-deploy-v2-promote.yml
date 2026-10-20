@@ -140,29 +140,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           python - <<'PY'
-          import json, os, subprocess, tempfile
-          candidate=os.environ['CANDIDATE_SHA']
-          tree=os.environ['CANDIDATE_TREE']
-          expected=f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
-          matches=[]
-          for page in range(1,6):
-              url=(f'repos/{os.environ["GITHUB_REPOSITORY"]}'
-                   f'/issues/624/comments?per_page=100&page={page}')
-              with tempfile.TemporaryFile() as output:
-                  subprocess.run(['gh','api',url],stdout=output,
-                                 stderr=subprocess.DEVNULL,timeout=25,check=True)
-                  output.seek(0)
-                  raw=output.read(512*1024+1)
-              if len(raw)>512*1024:raise ValueError('AUTHORIZATION_PAGE_BOUND')
-              rows=json.loads(raw)
-              if type(rows) is not list:raise ValueError('AUTHORIZATION_RESPONSE_INVALID')
-              matches.extend(row for row in rows if
-                  (row.get('user') or {}).get('login')=='mbalbo2023' and
-                  row.get('body','').strip()==expected and
-                  row.get('created_at')==row.get('updated_at'))
-              if len(rows)<100:break
-          if len(matches)!=1:raise ValueError('EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED')
-          print('RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment='+str(matches[0]['id']))
+          import os
+          from scripts.rc6_owner_authorization import require_exact_owner_authorization
+          comment = require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'])
+          print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
           PY
 
       - name: Prepare strict SSH
