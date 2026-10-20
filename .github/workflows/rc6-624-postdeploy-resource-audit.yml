@@ -1,0 +1,133 @@
+name: RC6 624 postdeploy resource and PPI Watch read only
+
+on:
+  push:
+    branches: [diagnostic/rc6-624-postdeploy-resource-20261020]
+    paths: [.github/workflows/rc6-624-postdeploy-resource-audit.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Bounded host read only attribution after promotion mutex
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_audit" "$HOME/.ssh/known_hosts"
+          timeout 65 ssh -i "$HOME/.ssh/rc6_audit" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY' | tee "$RUNNER_TEMP/resource-audit.json"
+          import json, os, pathlib, sqlite3, subprocess, time
+          root=pathlib.Path('/opt/porota-trading')
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True,timeout=1) as conn:
+              conn.execute('PRAGMA query_only=ON')
+              conn.execute('PRAGMA busy_timeout=200')
+              paper=conn.execute('SELECT mode,process_state,session_state,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          def meminfo():
+              return {k:int(v.split()[0])*1024 for line in open('/proc/meminfo')
+                      for k,v in [line.split(':',1)] if k in
+                      {'MemTotal','MemFree','MemAvailable','Cached','Buffers','Slab',
+                       'SReclaimable','Shmem','SwapTotal','SwapFree'}}
+          mem=meminfo()
+          stat=os.statvfs('/')
+          free=stat.f_bavail*stat.f_frsize
+          admission={'paper':paper,'mem_available':mem['MemAvailable'],'root_free':free}
+          if (not paper or paper[0]!='PRODUCTION_PAPER' or
+                  paper[2]!='MARKET_CLOSED' or type(paper[3]) is not int or paper[3]!=0 or
+                  mem['MemAvailable']<128*1024**2 or free<2*1024**3):
+              print(json.dumps({'schema':'rc6-624-postdeploy-resource-v1',
+                  'status':'DEFERRED_ADMISSION','admission':admission},sort_keys=True))
+              raise SystemExit(0)
+          def bounded_command(args, seconds=5):
+              result=subprocess.run(args,check=True,capture_output=True,text=True,timeout=seconds)
+              if len(result.stdout)>262144: raise ValueError('COMMAND_OUTPUT_BOUND')
+              return result.stdout
+          unit_lines=bounded_command(['systemctl','list-unit-files','--no-legend','--no-pager']).splitlines()
+          units=sorted({line.split()[0] for line in unit_lines if line.split()
+                        and 'ppi' in line.split()[0].lower()})
+          if len(units)>32: raise ValueError('PPI_UNIT_BOUND')
+          watch_units=[]
+          for name in units:
+              if 'watch' in name.lower():
+                  watch_units.append({'unit':name,'active':subprocess.run(
+                      ['systemctl','is-active',name],capture_output=True,text=True,
+                      timeout=3).stdout.strip()[:32], 'enabled':subprocess.run(
+                      ['systemctl','is-enabled',name],capture_output=True,text=True,
+                      timeout=3).stdout.strip()[:32]})
+          docker_names=bounded_command(['docker','ps','-a','--format','{{.Names}}']).splitlines()
+          if len(docker_names)>128: raise ValueError('DOCKER_BOUND')
+          named_containers=[x for x in docker_names if 'ppi' in x.lower() or 'watch' in x.lower()]
+          hz=os.sysconf('SC_CLK_TCK')
+          def processes():
+              pids=[int(p) for p in os.listdir('/proc') if p.isdigit()]
+              if len(pids)>4096: raise ValueError('PID_BOUND')
+              rows={}
+              for pid in pids:
+                  base=pathlib.Path('/proc')/str(pid)
+                  try:
+                      fields=(base/'status').read_text()[:8192].splitlines()
+                      status=dict(line.split(':',1) for line in fields if ':' in line)
+                      raw=(base/'stat').read_text()[:1024]
+                      rest=raw[raw.rfind(')')+2:].split()
+                      cmd=(base/'cmdline').read_bytes()[:512].lower()
+                      group=(base/'cgroup').read_text()[:2048].splitlines()
+                      cpu=int(rest[11])+int(rest[12])
+                      kib=lambda key:int(status.get(key,'0 kB').split()[0])*1024
+                      name=status.get('Name','').strip()[:40]
+                      rows[pid]={'pid':pid,'name':name,'rss':kib('VmRSS'),
+                          'swap':kib('VmSwap'),'anon':kib('RssAnon'),
+                          'file':kib('RssFile'),'cgroup':(group[-1].split(':')[-1] if group else '')[-160:],
+                          'ppi_watch_candidate':b'ppi' in cmd and b'watch' in cmd,
+                          '_cpu':cpu}
+                  except (OSError,ValueError,IndexError):
+                      continue
+              return rows
+          first=processes()
+          before=time.monotonic()
+          time.sleep(3)
+          second=processes()
+          elapsed=time.monotonic()-before
+          for pid,row in second.items():
+              previous=first.get(pid)
+              row['cpu_one_core_pct']=round(100*max(0,row['_cpu']-previous['_cpu'])/hz/elapsed,2) if previous else None
+              del row['_cpu']
+          top_rss=sorted(second.values(),key=lambda x:x['rss'],reverse=True)[:20]
+          top_cpu=sorted(second.values(),key=lambda x:x['cpu_one_core_pct'] or 0,reverse=True)[:20]
+          candidates=[x for x in second.values() if x['ppi_watch_candidate']]
+          print(json.dumps({'schema':'rc6-624-postdeploy-resource-v1','status':'READ_ONLY',
+              'admission':admission,'meminfo':mem,'meminfo_after':meminfo(),
+              'sample_seconds':round(elapsed,3),'observed_pids':len(second),
+              'ppi_named_units':units,'ppi_watch_units':watch_units,
+              'ppi_named_containers':named_containers,
+              'ppi_watch_process_candidates':candidates[:16],
+              'top_rss':top_rss,'top_cpu':top_cpu,
+              'ppi_watch_mutation_attempted':False},sort_keys=True))
+          PY
+
+      - name: Upload bounded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-624-postdeploy-resource-${{ github.run_id }}
+          path: ${{ runner.temp }}/resource-audit.json
+          if-no-files-found: warn
+          retention-days: 14
