@@ -118,7 +118,7 @@ def test_stopped_successor_accepts_independent_healthy_issues_broker(installatio
     assert not any(c[1] in ('start', 'stop') for c in calls)
 
 
-@pytest.mark.parametrize('change', ['restarts', 'capability'])
+@pytest.mark.parametrize('change', ['restarts', 'missing_restarts', 'capability'])
 def test_stopped_successor_rejects_unhealthy_independent_broker(
         installation, monkeypatch, change):
     root, db, states, calls, original_command = installation
@@ -127,6 +127,8 @@ def test_stopped_successor_rejects_unhealthy_independent_broker(
     states['porota_critical_approval_rc6']['Image'] = 'independent_critical_image'
     if change == 'restarts':
         states['porota_critical_approval_rc6']['RestartCount'] = 1
+    elif change == 'missing_restarts':
+        del states['porota_critical_approval_rc6']['RestartCount']
     else:
         def no_issues_capability(args):
             if args[1] == 'exec': return 'capability=orders\n'

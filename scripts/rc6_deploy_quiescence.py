@@ -147,13 +147,13 @@ def critical_admission():
     if (state['Status'] != 'running' or
             state.get('Health', {}).get('Status') != 'healthy' or
             state['OOMKilled'] is not False or
-            type(critical['RestartCount']) is not int or
+            type(critical.get('RestartCount')) is not int or
             critical['RestartCount'] != 0):
         raise ValueError('QUIESCENCE_CRITICAL_UNHEALTHY:' + json.dumps({
             'status': state['Status'],
             'health': state.get('Health', {}).get('Status'),
             'oom': state['OOMKilled'],
-            'restart_count': critical['RestartCount']}, sort_keys=True))
+            'restart_count': critical.get('RestartCount')}, sort_keys=True))
     result = command(['docker', 'exec', 'porota_critical_approval_rc6',
                       'python', '-c',
                       "from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; "
