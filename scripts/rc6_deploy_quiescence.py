@@ -117,8 +117,16 @@ def admit(*, stopped=False, allow_admin_issue624=False,
             # A stopped observer must acknowledge SIGTERM as STOPPED; a stale
             # RUNNING row is never proof of quiescence.
             allowed_processes = ({'RUNNING', 'STOPPED'} if initial else {'STOPPED'}) if stopped else {'RUNNING'}
-            if session != 'MARKET_OPEN' or process not in allowed_processes:
-                raise ValueError('QUIESCENCE_OPEN_SUSPEND_STATE_REQUIRED')
+            # The scanner also writes the calendar phase OPEN while renewing
+            # its read-only PPI session. The initial running admission must be
+            # fresh RUNNING/MARKET_OPEN; after a clean SIGTERM, STOPPED/OPEN
+            # is an exact transitional state, not evidence of market closure.
+            allowed_sessions = ({'MARKET_OPEN', 'OPEN'} if stopped and process == 'STOPPED'
+                                else {'MARKET_OPEN'})
+            if session not in allowed_sessions or process not in allowed_processes:
+                observed_process = process if process in {'RUNNING', 'STOPPED', 'DEGRADED', 'STARTING'} else 'UNKNOWN'
+                observed_session = session if session in {'MARKET_OPEN', 'OPEN', 'MARKET_CLOSED', 'CLOSED', 'CHECKING'} else 'UNKNOWN'
+                raise ValueError('QUIESCENCE_OPEN_SUSPEND_STATE_REQUIRED:' + observed_process + ':' + observed_session)
         else:
             allowed_processes = {'WAITING_MARKET', 'STOPPED'} if stopped else {'WAITING_MARKET'}
             if process not in allowed_processes or session not in {'CLOSED', 'MARKET_CLOSED'}:
