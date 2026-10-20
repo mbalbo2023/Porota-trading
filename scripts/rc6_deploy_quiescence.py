@@ -502,9 +502,12 @@ def main(argv=None):
         parser.error('--admin-cancel-issue624 only for controlled admin actions')
     if args.market_open_suspend and args.action not in {'drain', 'install'}:
         parser.error('--market-open-suspend only for drain and install')
-    receipt = run(args.candidate_sha, args.action,
-                  allow_admin_issue624=args.admin_cancel_issue624,
-                  allow_market_open_suspend=args.market_open_suspend)
+    options = {}
+    if args.admin_cancel_issue624:
+        options['allow_admin_issue624'] = True
+    if args.market_open_suspend:
+        options['allow_market_open_suspend'] = True
+    receipt = run(args.candidate_sha, args.action, **options)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
     return 0
