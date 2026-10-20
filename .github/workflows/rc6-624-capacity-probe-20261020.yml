@@ -1,0 +1,137 @@
+name: RC6 624 bounded temporary-capacity native probe
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-capacity-probe-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_capacity"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_capacity" "$HOME/.ssh/known_hosts"
+      - name: Probe same pending image with exact owned runtime and restore stopped state
+        timeout-minutes: 13
+        run: |
+          set -Eeuo pipefail
+          timeout 720 ssh -i "$HOME/.ssh/rc6_capacity" -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -u -" <<'PY'
+          import json,os,sqlite3,subprocess,time,shutil
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          image='sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
+          candidate='d96cb68d177199317ee23239553517e04ee0a255'
+          tree='dd4f6ecf2bc80dc8b45ad1cd3e1cd9f7f8678707'
+          owned={'porota_production_observer':'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
+                 'porota_production_dashboard':'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570'}
+          def cmd(*args,timeout=15):
+              p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+              return p.returncode,p.stdout.strip(),p.stderr.strip()
+          def inspect(name):
+              rc,out,err=cmd('docker','inspect',name)
+              assert rc==0,(name,err)
+              return json.loads(out)[0]
+          def book():
+              with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True,timeout=3) as db:
+                  mode,orders,process=db.execute('SELECT mode,real_orders_sent,process_state FROM observer_state WHERE id=1').fetchone()
+                  spots=db.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+              return {'mode':mode,'orders':orders,'process':process,'spots':spots}
+          def watch():
+              units=cmd('systemctl','list-unit-files','--no-legend')[1].splitlines()
+              names=sorted(x.split()[0] for x in units if x.split() and 'ppi' in x.split()[0].lower() and 'watch' in x.split()[0].lower())
+              return {n:(cmd('systemctl','is-enabled',n)[1],cmd('systemctl','is-active',n)[1]) for n in names}
+          guard=json.loads((root/'data/deploy/rc6-resize-timer-guard-20261020.json').read_text())
+          assert guard['candidate_sha']==candidate and guard['state']=='DISABLED_FOR_REBOOT'
+          assert len(guard['timers'])==20
+          def timers():
+              return all(cmd('systemctl','is-enabled',n)[1]=='disabled' and
+                         cmd('systemctl','is-active',n)[1]=='inactive' for n in guard['timers'])
+          assert timers()
+          state=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          assert state['candidate_sha']==candidate and state['image_id']==image
+          assert state['validation_status']=='DEPLOYED_VALIDATION_PENDING'
+          assert os.cpu_count()==2 and 1900*1024**2<=os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')<=2100*1024**2
+          assert shutil.disk_usage('/').total < 30*1024**3
+          critical=inspect('porota_critical_approval_rc6')
+          assert critical['State']['Status']=='running' and (critical['State'].get('Health') or {}).get('Status')=='healthy'
+          for name,ident in owned.items():
+              row=inspect(name)
+              assert row['Id']==ident and row['Image']==image and row['State']['Status']=='exited' and row['State']['ExitCode']==0
+          baseline=watch()
+          before=book()
+          assert before['spots']==2
+          print('RC6_CAPACITY_PROBE_ADMISSION='+json.dumps({'cpu':os.cpu_count(),'memory_total':os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES'),'disk_total':shutil.disk_usage('/').total,'paper':before,'timers_disabled':20,'ppi_watch_units':baseline,'critical_healthy':True},sort_keys=True),flush=True)
+          started=[]
+          probe_ok=False
+          try:
+              for name in ('porota_production_dashboard','porota_production_observer'):
+                  rc,out,err=cmd('docker','start',name,timeout=70)
+                  assert rc==0,(name,err)
+                  started.append(name)
+              shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+              def payload(p):
+                  raw=json.loads(p.read_text())
+                  return raw.get('payload',raw)
+              for i in range(8):
+                  time.sleep(30 if i else 20)
+                  row={}
+                  for name,ident in owned.items():
+                      c=inspect(name)
+                      assert c['Id']==ident and c['Image']==image and c['State']['Status']=='running'
+                      assert c['State']['OOMKilled'] is False and c['RestartCount']==0
+                      row[name]={'status':c['State']['Status'],'restarts':c['RestartCount']}
+                  assert timers() and watch()==baseline
+                  paper=book()
+                  status=payload(shadow/'status.json')
+                  pointer=payload(shadow/'CURRENT.json')
+                  mem=next(int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:'))
+                  print('RC6_CAPACITY_SAMPLE='+json.dumps({'index':i+1,'at':time.time(),'available_memory_bytes':mem,
+                    'shadow':status.get('status'),'as_of':status.get('as_of'),'error_class':status.get('error_class'),
+                    'error_module':status.get('error_module'),'error_line':status.get('error_line'),
+                    'sequence':pointer.get('sequence'),'paper':paper,'containers':row,'ppi_changed':False},sort_keys=True),flush=True)
+              p=subprocess.run(['docker','exec','porota_production_dashboard','timeout','195','python',
+                '/app/scripts/rc6_deploy_generation_gate.py','--expected-sha',candidate,
+                '--expected-tree',tree,'--output','/app/data/deploy/native-capacity-probe-20261020.json'],
+                capture_output=True,text=True,timeout=210)
+              try: gate=json.loads(p.stdout.strip().splitlines()[-1])
+              except (ValueError,IndexError): gate={'status':'UNKNOWN','stderr_class':p.stderr[:100]}
+              print('RC6_CAPACITY_NATIVE_GATE='+json.dumps({'exit':p.returncode,'status':gate.get('status'),
+                'reason':gate.get('reason'),'error_reason':gate.get('error_reason'),
+                'rejections':gate.get('rejection_count'),'generations':len(gate.get('generations',[]))},sort_keys=True),flush=True)
+              probe_ok=p.returncode==0 and gate.get('status')=='GREEN'
+          finally:
+              for name in reversed(started):
+                  c=inspect(name)
+                  assert c['Id']==owned[name] and c['Image']==image
+                  if c['State']['Status']=='running':
+                      rc,_,err=cmd('docker','stop','-t','60',name,timeout=70)
+                      assert rc==0,(name,err)
+                  c=inspect(name)
+                  assert c['State']['Status']=='exited' and c['State']['ExitCode']==0
+              assert timers() and watch()==baseline
+              after=book()
+              print('RC6_CAPACITY_PROBE_FINAL='+json.dumps({'gate_green':probe_ok,'paper_before':before,
+                'paper_after':after,'orders':0,'timers_disabled':20,'owned_stopped_clean':True,
+                'ppi_changed':False},sort_keys=True),flush=True)
+          assert probe_ok,'NATIVE_CAPACITY_PROBE_RED'
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_capacity"
