@@ -53,6 +53,9 @@ jobs:
               result['tables'][name]={'columns':cols,'open_count':len(rows),'open_rows_sha256':digest}
           result['open_spot_fill_sides']=[dict(r) for r in c.execute("SELECT f.side,COUNT(*) AS count FROM paper_fills f JOIN paper_positions p ON p.paper_id=f.paper_id WHERE p.status='OPEN' GROUP BY f.side ORDER BY f.side")]
           result['open_spots_without_fills']=c.execute("SELECT COUNT(*) FROM paper_positions p WHERE p.status='OPEN' AND NOT EXISTS(SELECT 1 FROM paper_fills f WHERE f.paper_id=p.paper_id)").fetchone()[0]
+          caucion_rows=[dict(r) for r in c.execute("SELECT * FROM paper_cauciones WHERE status='OPEN' ORDER BY paper_id LIMIT 3")]
+          if len(caucion_rows)>2: raise RuntimeError('OPEN_CAUCION_BOUND')
+          result['open_caucion_summary']=[{'paper_id_sha256':hashlib.sha256(str(x['paper_id']).encode()).hexdigest(),'instrument_id':x['instrument_id'],'opened_at':x['opened_at'],'maturity_at':x['maturity_at'],'status':x['status'],'settled_at':x['settled_at'],'row_sha256':hashlib.sha256(json.dumps(x,sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()} for x in caucion_rows]
           for name in sorted(tables & {'paper_exit_intents','paper_fills','paper_orders','paper_admin_cancellations'}):
               result['tables'][name]={'columns':[r[1] for r in c.execute('PRAGMA table_info('+name+')')]}
           c.close()
@@ -63,7 +66,9 @@ jobs:
           import json,subprocess,os,re
           from pathlib import Path
           def run(argv,timeout=4):
-              try: return subprocess.check_output(argv,text=True,stderr=subprocess.DEVNULL,timeout=timeout).strip()
+              try:
+                  r=subprocess.run(argv,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=timeout)
+                  return r.stdout.strip() or ('UNVERIFIED_EXIT_'+str(r.returncode))
               except Exception as e: return 'UNVERIFIED:'+type(e).__name__
           mem={}
           for line in Path('/proc/meminfo').read_text().splitlines():
