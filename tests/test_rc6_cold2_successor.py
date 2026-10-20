@@ -129,3 +129,35 @@ def test_divergence_refuses_without_archive(successor,change):
         new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
     assert not archive.exists()
     assert (source/'queue.json').exists()
+
+
+def test_memory_reserve_failed_successor_archives_with_exact_pack_binding(successor):
+    root,source,archive,raw=successor
+    path=source/('receipt-'+ID+'.json')
+    receipt=old.envelope(path,cold=True)
+    receipt['error_code']='SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED'
+    receipt['error_phase']='PACK_HASH'
+    receipt['failed_at']=1792485190.2664664+5
+    put(path,receipt,cold=True)
+    assert new.inspect(root)['snapshot_id']==ID
+    result=new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    assert result['state']=='QUARANTINED_FAILED'
+    assert (archive/(ID+'.pack')).read_bytes()==raw
+    assert not (source/'queue.json').exists()
+
+
+@pytest.mark.parametrize('error_code,error_phase',[
+    ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED','REPORT_WRITE'),
+    ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED','PACK_HASH'),
+    ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED','OTHER'),
+])
+def test_successor_rejects_unpaired_failure_reason(successor,error_code,error_phase):
+    root,source,archive,_=successor
+    path=source/('receipt-'+ID+'.json')
+    receipt=old.envelope(path,cold=True)
+    receipt['error_code']=error_code
+    receipt['error_phase']=error_phase
+    put(path,receipt,cold=True)
+    with pytest.raises(ValueError,match='COLD2_SUCCESSOR_BINDING'):
+        new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    assert not archive.exists()
