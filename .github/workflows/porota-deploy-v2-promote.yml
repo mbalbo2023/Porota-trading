@@ -23,6 +23,7 @@ jobs:
     # to two bounded20-minute observation windows; freshness gates stay120s.
     timeout-minutes: 150
     env:
+      RC6_HOST_STRESS_MODE: DEFERRED_BY_EXACT_OWNER_20261020
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -145,7 +146,12 @@ jobs:
           comment = require_exact_owner_authorization(
               os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
               os.environ['CANDIDATE_TREE'])
+          deferred = require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'],
+              decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
           print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
+          print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
           PY
 
       - name: Prepare strict SSH
@@ -1437,7 +1443,10 @@ jobs:
 
       - name: Postdeploy full-session stress in the exact installed image
         id: stress
-        if: success()
+        # This one candidate has a separate, exact, later owner deferral
+        # verified before any host action. Keep the phase available for a
+        # future candidate; do not run it during this promotion.
+        if: ${{ success() && env.RC6_HOST_STRESS_MODE == 'RUN' }}
         timeout-minutes: 40
         shell: bash
         run: |
@@ -1534,6 +1543,9 @@ jobs:
             echo '- PRODUCTION_PAPER: required'
             echo '- real_orders_sent: 0 required'
             echo '- PPI Watch: untouched'
+            echo '- Host stress 405 virtual minutes: DEFERRED_BY_EXACT_OWNER (NOT EXECUTED)'
+            echo '- Poststress restoration and native postrestore gates: NOT EXECUTED'
+            echo '- Mission #624 E09/E10: NO_VERIFICADO; no global completion claim'
             echo '- Strategy: FIX-FORWARD ONLY'
           } >> "$GITHUB_STEP_SUMMARY"
 
