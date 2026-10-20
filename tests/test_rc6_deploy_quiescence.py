@@ -106,6 +106,44 @@ def test_intraday_four_paper_spots_carry_across_install_and_restart(carry_instal
     assert q.run(SHA, 'verify-carryover')['carryover_verified_count'] == 4
 
 
+def test_intraday_poststop_calendar_open_is_admitted_only_after_live_market_proof(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET session_state='OPEN'")
+    with pytest.raises(ValueError, match='STATE_REQUIRED:RUNNING:OPEN'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert not any(call[1] == 'stop' for call in calls)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+    def transitional_stop(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET session_state='OPEN'")
+        return result
+    monkeypatch.setattr(q, 'command', transitional_stop)
+    assert q.run(SHA, 'drain', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['status'] == 'DRAINED'
+    assert q.run(SHA, 'install', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['installation_started'] is True
+
+
+def test_intraday_poststop_closed_phase_still_blocks_install(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    def closed_stop(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET session_state='MARKET_CLOSED'")
+        return result
+    monkeypatch.setattr(q, 'command', closed_stop)
+    with pytest.raises(ValueError, match='STATE_REQUIRED:STOPPED:MARKET_CLOSED'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
+
+
 def test_intraday_carryover_rejects_ledger_drift_before_install(carry_installation):
     root, db, states, calls, _ = carry_installation
     q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
