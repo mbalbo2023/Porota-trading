@@ -252,14 +252,22 @@ def test_failed_admin_continues_exact_stopped_paper_without_old_image_restart(
     states = {n: {'Id': n, 'Image': 'old-image', 'State': {
         'Status': 'exited', 'StartedAt': None, 'FinishedAt': None,
         'ExitCode': 0, 'OOMKilled': False}} for n in quiescence.OWNED}
-    states['porota_critical_approval_rc6'] = {'Id': 'critical', 'Image': 'old-image',
+    # Reproduce the observed host split after run 39364292916: the stopped
+    # RC6 pair references one image, while the healthy issues broker retains
+    # an independent image until the later promotion reconciliation.
+    states['porota_critical_approval_rc6'] = {'Id': 'critical',
+        'Image': 'independent-critical-image',
+        'RestartCount': 0,
         'State': {'Status': 'running', 'Health': {'Status': 'healthy'},
                   'ExitCode': 0, 'OOMKilled': False}}
     if change == 'image': states[quiescence.OWNED[0]]['Image'] = 'other-image'
     if change == 'critical': states['porota_critical_approval_rc6']['State']['Health']['Status'] = 'unhealthy'
     monkeypatch.setattr(quiescence, 'ROOT', root)
     monkeypatch.setattr(quiescence, 'inspect', lambda n: states[n])
-    monkeypatch.setattr(quiescence, 'command', lambda _: pytest.fail('stopped continuation must not start or stop'))
+    def read_only_broker(args):
+        if args[1] == 'exec': return 'RC6_CRITICAL_ISSUES_ONLY=GREEN\n'
+        pytest.fail('stopped continuation must not start or stop')
+    monkeypatch.setattr(quiescence, 'command', read_only_broker)
     successor = 'b' * 40
     if change != 'none':
         with pytest.raises(ValueError):
@@ -270,5 +278,7 @@ def test_failed_admin_continues_exact_stopped_paper_without_old_image_restart(
     assert receipt['status'] == 'ADMIN_DRAINED_PENDING'
     assert receipt['admin_cancel_paper_id'] == p['paper_id']
     assert receipt['fix_forward_from'] == quiescence.FAILED_ADMIN_CANDIDATE
+    assert receipt['critical_admission']['image'] != receipt['containers'][quiescence.OWNED[0]]['image']
+    assert receipt['critical_admission']['capability'] == 'issues_only'
     monkeypatch.setattr(quiescence, 'wait_for_admin_resources', lambda: (512*1024*1024, 2.0))
     assert quiescence.run(successor, 'admin-begin', allow_admin_issue624=True)['status'] == 'ADMIN_WRITE_AUTHORIZED'

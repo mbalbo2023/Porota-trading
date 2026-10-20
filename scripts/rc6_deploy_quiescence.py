@@ -136,6 +136,36 @@ def admin_target_on_host():
         return admin_issue624_target(c)
 
 
+def critical_admission():
+    """Verify the independent issues-only broker before adopting a stopped runtime.
+
+    The critical container can retain its own image until promotion reconciles
+    it. Its image is not proof of observer identity or health.
+    """
+    critical = inspect('porota_critical_approval_rc6')
+    state = critical['State']
+    if (state['Status'] != 'running' or
+            state.get('Health', {}).get('Status') != 'healthy' or
+            state['OOMKilled'] is not False or
+            type(critical.get('RestartCount')) is not int or
+            critical['RestartCount'] != 0):
+        raise ValueError('QUIESCENCE_CRITICAL_UNHEALTHY:' + json.dumps({
+            'status': state['Status'],
+            'health': state.get('Health', {}).get('Status'),
+            'oom': state['OOMKilled'],
+            'restart_count': critical.get('RestartCount')}, sort_keys=True))
+    result = command(['docker', 'exec', 'porota_critical_approval_rc6',
+                      'python', '-c',
+                      "from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; "
+                      "h=UnixGithubIssuesClient().health(); "
+                      "assert h.get('status')=='ok' and h.get('capability')=='issues_only'; "
+                      "print('RC6_CRITICAL_ISSUES_ONLY=GREEN')"])
+    if result.strip() != 'RC6_CRITICAL_ISSUES_ONLY=GREEN':
+        raise ValueError('QUIESCENCE_CRITICAL_CAPABILITY_UNVERIFIED')
+    return {'image': critical['Image'], 'status': 'healthy',
+            'restart_count': 0, 'capability': 'issues_only'}
+
+
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None):
     """One exact fail-closed continuation; never start the prior image."""
     previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id
@@ -171,12 +201,7 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
                 proof.get('after') != state or
                 proof.get('classification') not in {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'}):
             raise ValueError('QUIESCENCE_PRIOR_STOP_IDENTITY_CHANGED')
-    critical = inspect('porota_critical_approval_rc6')
-    if (critical['State']['Status'] != 'running' or
-            critical['State'].get('Health', {}).get('Status') != 'healthy' or
-            critical['State']['OOMKilled'] is not False or
-            critical['Image'] != originals[OWNED[0]]['Image']):
-        raise ValueError('QUIESCENCE_CRITICAL_UNHEALTHY')
+    critical = critical_admission()
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
     if process not in ({'WAITING_MARKET', 'STOPPED'} if admin_paper_id else {'STOPPED'}):
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
@@ -187,6 +212,7 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             'containers': previous['containers'], 'real_orders_sent': 0,
             'ppi_watch_accessed': False, 'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
             'admin_cancel_paper_id': admin_paper_id,
+            'critical_admission': critical,
             'fix_forward_from': previous_candidate,
             'prior_receipt_sha256': hashlib.sha256(raw).hexdigest()}
 
