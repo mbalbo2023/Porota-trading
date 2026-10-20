@@ -87,8 +87,10 @@ def inspect(root, *, hash_pack=True):
             receipt.get('snapshot_id') != ident or receipt.get('state') != 'FAILED' or
             receipt.get('manifest_sha256') != manifest_sha or
             receipt.get('error_class') != 'ValueError' or
-            receipt.get('error_code') != 'SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED' or
-            receipt.get('error_phase') != 'REPORT_WRITE' or
+            (receipt.get('error_code'), receipt.get('error_phase')) not in {
+                ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_WRITE'),
+                ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'PACK_HASH'),
+            } or
             type(receipt.get('failed_at')) not in (float, int) or
             not manifest['sealed_at'] <= receipt['failed_at'] <= manifest['deadline_at']+5 or
             queue.get('snapshot_id') != ident or queue.get('state') != 'FAILED' or
