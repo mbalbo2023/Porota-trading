@@ -74,6 +74,76 @@ def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installat
     assert q.run(SHA, 'install', allow_market_open_suspend=True)['installation_started'] is True
 
 
+@pytest.fixture
+def carry_installation(installation):
+    root, db, states, calls, command = installation
+    with sqlite3.connect(db) as c:
+        c.execute('DROP TABLE paper_positions')
+        c.execute('CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,status TEXT,'
+                  'symbol TEXT,quantity REAL,entry_price REAL,opened_at TEXT)')
+        c.execute('CREATE TABLE paper_fills(id INTEGER PRIMARY KEY,paper_id TEXT,side TEXT)')
+        c.execute('CREATE TABLE paper_exit_intents(paper_id TEXT,state TEXT)')
+        for i in range(4):
+            c.execute('INSERT INTO paper_positions VALUES(?,?,?,?,?,?)',
+                      (f"paper-{i}", 'OPEN', f"SYM{i}", 1.0, 10.0, '2026-10-20T13:00:00Z'))
+            c.execute("INSERT INTO paper_fills(paper_id,side) VALUES(?,'BUY_SIMULATED')", (f"paper-{i}",))
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+    return installation
+
+
+def test_intraday_four_paper_spots_carry_across_install_and_restart(carry_installation):
+    root, db, states, calls, _ = carry_installation
+    receipt = q.run(SHA, 'drain', allow_market_open_suspend=True,
+                    allow_open_paper_carryover=True)
+    assert receipt['spot_carryover']['open_count'] == 4
+    assert receipt['installation_started'] is False
+    assert q.run(SHA, 'install', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['installation_started'] is True
+    assert q.run(SHA, 'verify-carryover')['carryover_verified_count'] == 4
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_positions SET status='CLOSED' WHERE paper_id='paper-0'")
+        c.execute("INSERT INTO paper_fills(paper_id,side) VALUES('paper-0','SELL_SIMULATED')")
+    assert q.run(SHA, 'verify-carryover')['carryover_verified_count'] == 4
+
+
+def test_intraday_carryover_rejects_ledger_drift_before_install(carry_installation):
+    root, db, states, calls, _ = carry_installation
+    q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_positions SET quantity=2 WHERE paper_id='paper-1'")
+    with pytest.raises(ValueError, match='INSTALL_CARRYOVER_CHANGED'):
+        q.run(SHA, 'install', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
+
+
+def test_intraday_carryover_requires_exact_mode_and_retains_future_guard(carry_installation):
+    root, db, states, calls, _ = carry_installation
+    with pytest.raises(ValueError, match='OPEN_POSITION'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True)
+    assert not any(call[1] == 'stop' for call in calls)
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+    with pytest.raises(ValueError, match='OPEN_POSITION'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert not any(call[1] == 'stop' for call in calls)
+
+
+def test_intraday_carryover_detects_unbacked_close_and_identity_change(carry_installation):
+    root, db, states, calls, _ = carry_installation
+    q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    q.run(SHA, 'install', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_positions SET status='CLOSED' WHERE paper_id='paper-2'")
+    with pytest.raises(ValueError, match='CLOSE_UNBACKED'):
+        q.run(SHA, 'verify-carryover')
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_positions SET status='OPEN',symbol='ALTERED' WHERE paper_id='paper-2'")
+    with pytest.raises(ValueError, match='IDENTITY_CHANGED'):
+        q.run(SHA, 'verify-carryover')
+
+
 @pytest.mark.parametrize('change', ['stale', 'position', 'closed', 'real'])
 def test_intraday_suspend_rejects_unsafe_admission_before_stop(installation, change):
     root, db, states, calls, _ = installation
