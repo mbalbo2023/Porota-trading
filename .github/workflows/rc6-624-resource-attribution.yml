@@ -1,0 +1,155 @@
+name: RC6 624 one-shot resource attribution
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-resource-attribution.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  profile:
+    if: github.head_ref == 'diagnostic/rc6-624-resource-attribution-20261020'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Verify isolated diagnostic head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Bounded read-only CLOSED process census
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-resource-census"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota-resource-census" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/porota-resource-census"' EXIT
+          mkdir -p evidence
+          timeout 45 ssh -i "$HOME/.ssh/porota-resource-census" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 35 python3 -B -' <<'PY' > evidence/resources.json
+          import datetime,json,os,sqlite3,subprocess,time
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          root=Path('/opt/porota-trading')
+          proc=Path('/proc')
+          def bounded(path,limit=4096):
+              value=path.read_bytes()
+              if len(value)>limit:raise ValueError('PROC_READ_BOUND')
+              return value.decode('utf-8','replace')
+          def mem():
+              return int(next(line.split()[1] for line in bounded(proc/'meminfo',8192).splitlines()
+                  if line.startswith('MemAvailable:')))*1024
+          def pressure():
+              line=bounded(proc/'pressure/io').splitlines()[0]
+              return float(next(v.split('=')[1] for v in line.split() if v.startswith('avg10=')))
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
+                               uri=True,timeout=.2) as db:
+              db.execute('PRAGMA query_only=ON')
+              db.execute('PRAGMA busy_timeout=200')
+              cutoff=time.monotonic()+2
+              db.set_progress_handler(lambda:int(time.monotonic()>cutoff),1000)
+              mode,orders,process,session,stamp=db.execute(
+                  'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                  'FROM observer_state WHERE id=1').fetchone()
+          heartbeat=datetime.datetime.fromisoformat(stamp)
+          age=(datetime.datetime.now(datetime.timezone.utc)-heartbeat).total_seconds()
+          available,io=mem(),pressure()
+          if (mode!='PRODUCTION_PAPER' or type(orders) is not int or orders!=0
+                  or process!='WAITING_MARKET' or session!='MARKET_CLOSED'
+                  or heartbeat.tzinfo is None or not 0<=age<=180):
+              raise ValueError('RESOURCE_CENSUS_PAPER_CLOSED_REQUIRED')
+          # This is procfs-only and never writes or traverses disk. Its read-only
+          # admission is distinct from the stricter DB-write deploy gate.
+          if available<96*1024*1024 or io>60:
+              print(json.dumps({'status':'RESOURCE_READ_ADMISSION_RED',
+                  'mem_available_bytes':available,'io_psi_avg10':io,'paper_mode':mode,
+                  'real_orders_sent':orders},sort_keys=True))
+              raise SystemExit(0)
+          names=('porota_production_observer','porota_production_dashboard',
+                 'porota_critical_approval_rc6')
+          docker=json.loads(subprocess.check_output(['docker','inspect',*names],
+              timeout=8,stderr=subprocess.DEVNULL))
+          ids={row['Id']:row['Name'].lstrip('/') for row in docker}
+          def read_process(pid):
+              base=proc/str(pid)
+              line=bounded(base/'stat',4096)
+              after=line.rsplit(')',1)[1].split()
+              status=bounded(base/'status',8192)
+              fields={k.strip():v.strip() for k,v in
+                  (line.split(':',1) for line in status.splitlines() if ':' in line)}
+              io_fields={k.strip():int(v.strip()) for k,v in
+                  (line.split(':',1) for line in bounded(base/'io').splitlines() if ':' in line)}
+              cgroup=bounded(base/'cgroup',4096).splitlines()
+              group=cgroup[0].split(':',2)[-1] if cgroup else ''
+              owner=next((name for cid,name in ids.items() if cid in group),None)
+              return {'pid':pid,'ppid':int(after[1]),'name':fields.get('Name','')[:64],
+                  'start_ticks':int(after[19]),'cpu_ticks':int(after[11])+int(after[12]),
+                  'rss_bytes':int(fields.get('VmRSS','0 kB').split()[0])*1024,
+                  'swap_bytes':int(fields.get('VmSwap','0 kB').split()[0])*1024,
+                  'read_bytes':io_fields.get('read_bytes',0),
+                  'write_bytes':io_fields.get('write_bytes',0),
+                  'systemd_cgroup':group[:180], 'owned_container':owner}
+          def snapshot():
+              pids=[int(p.name) for p in proc.iterdir() if p.name.isdigit()]
+              if len(pids)>256:raise ValueError('PROC_PID_COUNT_BOUND')
+              result={}
+              for pid in pids:
+                  try:result[pid]=read_process(pid)
+                  except (OSError,IndexError,ValueError,StopIteration):pass
+              return result
+          before=snapshot()
+          time.sleep(5)
+          after=snapshot()
+          hz=os.sysconf('SC_CLK_TCK')
+          rows=[]
+          for pid,post in after.items():
+              pre=before.get(pid)
+              if not pre or pre['start_ticks']!=post['start_ticks']:continue
+              row={k:post[k] for k in ('pid','ppid','name','rss_bytes','swap_bytes',
+                  'systemd_cgroup','owned_container')}
+              row.update(cpu_percent_one_core=round(max(0,post['cpu_ticks']-pre['cpu_ticks'])/hz/5*100,2),
+                  read_bytes_delta=max(0,post['read_bytes']-pre['read_bytes']),
+                  write_bytes_delta=max(0,post['write_bytes']-pre['write_bytes']))
+              rows.append(row)
+          by_memory=sorted(rows,key=lambda x:x['rss_bytes'],reverse=True)[:20]
+          by_cpu=sorted(rows,key=lambda x:x['cpu_percent_one_core'],reverse=True)[:20]
+          by_read=sorted(rows,key=lambda x:x['read_bytes_delta'],reverse=True)[:15]
+          by_write=sorted(rows,key=lambda x:x['write_bytes_delta'],reverse=True)[:15]
+          print(json.dumps({'schema':'rc6.issue624.resource-attribution.v1',
+              'status':'READ_ONLY','at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'duration_seconds':5,'observed_pid_count':len(rows),'mode':mode,
+              'real_orders_sent':orders,'heartbeat_age_seconds':round(age,2),
+              'memory_before_bytes':available,'memory_after_bytes':mem(),
+              'io_psi_before':io,'io_psi_after':pressure(),
+              'owned_containers':ids,'top_cpu':by_cpu,'top_rss':by_memory,
+              'top_read':by_read,'top_write':by_write,'ppi_watch_mutated':False},sort_keys=True))
+          PY
+          python3 - <<'PY'
+          import json
+          value=json.load(open('evidence/resources.json'))
+          print('RC6_624_RESOURCE_ATTRIBUTION='+value['status'])
+          print('RC6_624_IO_PSI='+str(value['io_psi_avg10'] if value['status']!='READ_ONLY' else value['io_psi_after']))
+          PY
+      - name: Preserve one-shot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-624-resource-attribution-${{ github.run_id }}
+          path: evidence/resources.json
+          if-no-files-found: error
+          retention-days: 14
