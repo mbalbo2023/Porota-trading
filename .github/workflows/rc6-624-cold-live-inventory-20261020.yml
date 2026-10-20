@@ -74,6 +74,18 @@ jobs:
               assert p.returncode==0
               x=json.loads(p.stdout)[0]
               rows[n]={'id':x['Id'],'image':x['Image'],'status':x['State']['Status'],'exit_code':x['State']['ExitCode'],'restart_count':x['RestartCount'],'health':(x['State'].get('Health') or {}).get('Status')}
+          images={}
+          for tag in ('porota-trading-bot:17.0.0-rc6','porota-predeploy-v2:638d5f73f43c5837752d3044f45da91317ffc7f4','porota-trading-bot:17.0.0-rc6-candidate-638d5f73f43c5837752d3044f45da91317ffc7f4'):
+              p=subprocess.run(['docker','image','inspect',tag],capture_output=True,text=True,timeout=10)
+              images[tag]=None if p.returncode else {k:json.loads(p.stdout)[0].get(k) for k in ('Id','RepoTags','RepoDigests','Size')}
+          ids=subprocess.run(['docker','ps','-aq','--no-trunc'],capture_output=True,text=True,timeout=10)
+          assert ids.returncode==0 and len(ids.stdout.splitlines())<=128
+          refs=[]
+          for ident in ids.stdout.splitlines():
+              p=subprocess.run(['docker','inspect',ident],capture_output=True,text=True,timeout=10)
+              assert p.returncode==0
+              row=json.loads(p.stdout)[0]
+              refs.append({'name':row['Name'],'image':row['Image'],'status':row['State']['Status']})
           db=root/'data/paper_v17/observer_v17.db'
           with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
               c.execute('PRAGMA query_only=ON')
@@ -96,7 +108,7 @@ jobs:
                   'archive_names':sorted(p.name for p in archive.iterdir()) if archive.is_dir() else [],
                   'quiescence_status':q.get('status'),'installation_started':q.get('installation_started'),
                   'current_state':{k:state.get(k) for k in ('candidate_sha','deploy_sha','image_id','validation_status','mode','real_orders_sent','real_order_routes')},
-                  'containers':rows,'paper_mode':mode,'paper_orders':orders,'paper_process':process,'paper_session':session,
+                  'containers':rows,'images':images,'image_references':refs,'paper_mode':mode,'paper_orders':orders,'paper_process':process,'paper_session':session,
                   'open_spots':spots,'open_caucions':caucions,'timers':timer_states,'disk_free_bytes':free_bytes,
                   'ppi_watch_accessed':False}
           print('RC6_624_COLD_LIVE_INVENTORY='+json.dumps(result,sort_keys=True))
