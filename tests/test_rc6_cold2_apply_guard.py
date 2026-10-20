@@ -168,6 +168,7 @@ def test_intraday_cold2_rechecks_exact_paper_book_at_archive_boundary(tmp_path):
         current[0] = dict(carry, sha256='d'*64)
         with pytest.raises(ValueError, match='COLD2_INTRADAY_CARRYOVER_CHANGED'):
             admission()
+        current[0] = carry.copy()
         return {'state':'QUARANTINED_FAILED'}
     with (patch.object(guard, 'ppi_units', return_value={}),
           patch.object(guard.drain, 'exact_clean_stopped'),
