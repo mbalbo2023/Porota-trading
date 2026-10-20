@@ -102,8 +102,8 @@ def admit(*, stopped=False, allow_admin_issue624=False,
           allow_postclose_pending=False, initial=False, stopped_receipt=None):
     if allow_postclose_pending:
         local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-        if (not stopped or not allow_market_open_suspend or
-                not allow_open_paper_carryover or stopped_receipt is None or
+        if (not allow_market_open_suspend or not allow_open_paper_carryover or
+                (stopped and not initial and stopped_receipt is None) or
                 local.date().isoformat() != '2026-10-20' or
                 not 17 <= local.hour < 23):
             raise ValueError('QUIESCENCE_POSTCLOSE_WINDOW_OR_STOP_RED')
@@ -119,7 +119,17 @@ def admit(*, stopped=False, allow_admin_issue624=False,
             'FROM observer_state WHERE id=1').fetchone()
         if mode != 'PRODUCTION_PAPER' or type(orders) is not int or orders != 0:
             raise ValueError('QUIESCENCE_PAPER_REQUIRED')
-        if allow_market_open_suspend:
+        if allow_postclose_pending and (not stopped or
+                (stopped_receipt or {}).get('postclose_live_closed') is True):
+            # Postclose is a distinct authorized window. Demand a fresh
+            # closed-session observer before stop, then its stopped ack or
+            # exact clean Docker stop proof when the DB ack is stale.
+            allowed_processes = {'WAITING_MARKET', 'STOPPED'} if stopped else {'WAITING_MARKET'}
+            if stopped and not initial and process == 'WAITING_MARKET':
+                exact_clean_stopped(stopped_receipt)
+            if process not in allowed_processes or session not in {'CLOSED', 'MARKET_CLOSED'}:
+                raise ValueError('QUIESCENCE_POSTCLOSE_STATE_REQUIRED')
+        elif allow_market_open_suspend:
             # Operator-authorized intraday pause: retain the true market session.
             # A stopped observer must acknowledge SIGTERM as STOPPED; a stale
             # RUNNING row is never proof of quiescence.
@@ -632,9 +642,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 admin_paper_id = None
                 process = None
             else:
-                process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624,
+                process = admit(stopped=not allow_postclose_pending, allow_admin_issue624=allow_admin_issue624,
                                 allow_market_open_suspend=allow_market_open_suspend,
-                                allow_open_paper_carryover=allow_open_paper_carryover, initial=True)
+                                allow_open_paper_carryover=allow_open_paper_carryover,
+                                allow_postclose_pending=allow_postclose_pending, initial=True)
                 admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
             if allow_market_open_suspend and admin_paper_id:
                 raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
@@ -647,11 +658,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     allow_postclose_pending=allow_postclose_pending)
                 persist(path, receipt)
             else:
-                if process != ('RUNNING' if allow_market_open_suspend else 'WAITING_MARKET') or any(v['State']['Status'] != 'running' for v in originals.values()):
+                required_process = ('WAITING_MARKET' if allow_postclose_pending else
+                                    'RUNNING' if allow_market_open_suspend else 'WAITING_MARKET')
+                if process != required_process or any(v['State']['Status'] != 'running' for v in originals.values()):
                     raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
                 admit(allow_admin_issue624=bool(admin_paper_id),
                       allow_market_open_suspend=allow_market_open_suspend,
-                      allow_open_paper_carryover=allow_open_paper_carryover)
+                      allow_open_paper_carryover=allow_open_paper_carryover,
+                      allow_postclose_pending=allow_postclose_pending)
                 receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
                            'installation_started': False, 'stop_attempted': [],
                            'stop_evidence': {},
@@ -659,7 +673,9 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     'real_orders_sent': 0, 'ppi_watch_accessed': False,
                     'admin_cancel_paper_id': admin_paper_id,
                     'market_open_suspended': allow_market_open_suspend,
-                    'open_paper_carryover': allow_open_paper_carryover}
+                    'open_paper_carryover': allow_open_paper_carryover,
+                    'paused_postclose': allow_postclose_pending,
+                    'postclose_live_closed': allow_postclose_pending}
                 persist(path, receipt)
                 for name in OWNED:
                     # Durable intent precedes stop: timeout may follow daemon effect.
@@ -675,12 +691,16 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
                       allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
+                      allow_postclose_pending=allow_postclose_pending,
                       stopped_receipt=receipt)
                 if admin_paper_id and admin_target_on_host() != admin_paper_id:
                     raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED_AFTER_STOP')
                 receipt.update(status='ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
                                inflight='ABSENT_OWNED_RUNTIME_STOPPED',
-                               spot_carryover=spot_carryover_snapshot() if allow_open_paper_carryover else None)
+                               spot_carryover=spot_carryover_snapshot() if allow_open_paper_carryover else None,
+                               caucion_carryover=pending_caucion_snapshot() if allow_postclose_pending else None)
+                if allow_postclose_pending and receipt['spot_carryover']['open_count'] != 2:
+                    raise ValueError('QUIESCENCE_POSTCLOSE_SPOT_COUNT_CHANGED')
         elif action == 'admin-begin':
             if (not allow_admin_issue624 or not receipt
                     or receipt['status'] != 'ADMIN_DRAINED_PENDING'
