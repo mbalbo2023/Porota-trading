@@ -22,7 +22,8 @@ def require_exact_owner_authorization(repo, candidate, tree, *,
                                       decision='RC6_624_APPROVE_DEPLOY_AND_COLD2',
                                       get_page=github_issue_page):
     if decision not in {'RC6_624_APPROVE_DEPLOY_AND_COLD2',
-                        'RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED'}:
+                        'RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED',
+                        'RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY'}:
         raise ValueError('AUTHORIZATION_DECISION_INVALID')
     expected = f'{decision} candidate={candidate} tree={tree}'
     matches = []
