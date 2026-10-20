@@ -276,6 +276,72 @@ def critical_admission():
             'restart_count': 0, 'capability': 'issues_only'}
 
 
+def adopt_exact_pending_intraday_stop(candidate, folder, originals):
+    """Continue the 20/10 installed PAPER runtime after its exact clean stop."""
+    prior_candidate = 'f31393fdced65f6e2362e69c9ed1df934897296d'
+    prior_deploy = '55014f3ae503eade77e7027ed8898fd953b0bcd3'
+    image = 'sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'
+    ids = {'porota_production_observer':
+           'b4b1fb7b8cbe25c6b9d00b0fb01407b169ffe705629e0d015fa0b50cc4b27b63',
+           'porota_production_dashboard':
+           '0badcadf46eb5b13c341da7f0e528a44732948a6689f37c627fa9ccfad2f7d65'}
+    expected_book = '8a02ac16743e872c14e28663025069358517317c0f566580d63df8f626d033c2'
+    state_path = folder/'CURRENT_STATE_V2.json'
+    prior_path = folder/('quiescence-'+prior_candidate+'.json')
+    if (candidate == prior_candidate or state_path.is_symlink() or prior_path.is_symlink() or
+            not state_path.is_file() or not prior_path.is_file() or
+            max(state_path.stat().st_size, prior_path.stat().st_size) > 65536):
+        raise ValueError('QUIESCENCE_PENDING_SOURCE_UNSAFE')
+    current = json.loads(state_path.read_bytes())
+    previous = json.loads(prior_path.read_bytes())
+    if (current.get('candidate_sha') != prior_candidate or
+            current.get('deploy_sha') != prior_deploy or
+            current.get('image_id') != image or
+            current.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+            current.get('mode') != 'PRODUCTION_PAPER' or
+            type(current.get('real_orders_sent')) is not int or current['real_orders_sent'] != 0 or
+            current.get('real_order_routes') != 'NOT_CALLED' or
+            previous.get('candidate_sha') != prior_candidate or
+            previous.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            previous.get('installation_started') is not True or
+            previous.get('market_open_suspended') is not True or
+            previous.get('open_paper_carryover') is not True or
+            type(previous.get('real_orders_sent')) is not int or previous['real_orders_sent'] != 0 or
+            previous.get('ppi_watch_accessed') is not False):
+        raise ValueError('QUIESCENCE_PENDING_PROVENANCE_RED')
+    failed_at = datetime.fromisoformat(previous['recorded_at'])
+    if failed_at.tzinfo is None or datetime.fromisoformat(current['recorded_at']) > failed_at:
+        raise ValueError('QUIESCENCE_PENDING_CLOCK_RED')
+    proof = {}
+    for name in OWNED:
+        row = originals[name]
+        after = lifecycle(row)
+        finished = datetime.fromisoformat(after['FinishedAt'].replace('Z','+00:00'))
+        if (row['Id'] != ids[name] or row['Image'] != image or
+                after['Status'] != 'exited' or type(after['ExitCode']) is not int or
+                after['ExitCode'] != 0 or after['OOMKilled'] is not False or
+                finished.tzinfo is None or not failed_at <= finished <= datetime.now(timezone.utc)):
+            raise ValueError('QUIESCENCE_PENDING_STOP_CHANGED')
+        proof[name] = {'after': after, 'classification': 'CLEAN_EXIT'}
+    stopped = {'containers': {name:{'id':ids[name], 'image':image} for name in OWNED},
+               'stop_attempted': list(OWNED), 'stop_evidence': proof}
+    exact_clean_stopped(stopped)
+    process = admit(stopped=True, allow_market_open_suspend=True,
+                    allow_open_paper_carryover=True, stopped_receipt=stopped)
+    carry = spot_carryover_snapshot()
+    if (process not in {'STOPPED','RUNNING'} or carry.get('open_count') != 3 or
+            carry.get('sha256') != expected_book):
+        raise ValueError('QUIESCENCE_PENDING_BOOK_CHANGED')
+    critical = critical_admission()
+    return dict(stopped, candidate_sha=candidate, status='DRAINED',
+                installation_started=False, inflight='ABSENT_OWNED_RUNTIME_STOPPED',
+                real_orders_sent=0, ppi_watch_accessed=False,
+                admin_cancel_paper_id=None, market_open_suspended=True,
+                open_paper_carryover=True, spot_carryover=carry,
+                critical_admission=critical, fix_forward_from=prior_candidate,
+                prior_receipt_sha256=hashlib.sha256(prior_path.read_bytes()).hexdigest())
+
+
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None,
                                        allow_market_open_suspend=False,
                                        allow_open_paper_carryover=False):
@@ -285,6 +351,10 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     # latest receipt that proves ownership of the exact stopped containers.
     current_path = folder / 'CURRENT_STATE_V2.json'
     current_provenance = current_path.exists() or current_path.is_symlink()
+    if (current_provenance and allow_market_open_suspend and allow_open_paper_carryover and
+            current_path.is_file() and not current_path.is_symlink() and
+            json.loads(current_path.read_bytes()).get('validation_status') == 'DEPLOYED_VALIDATION_PENDING'):
+        return adopt_exact_pending_intraday_stop(candidate, folder, originals)
     if current_provenance:
         if current_path.is_symlink() or not current_path.is_file() or current_path.stat().st_size > 65536:
             raise ValueError('QUIESCENCE_CURRENT_STATE_UNSAFE')
