@@ -64,6 +64,25 @@ jobs:
           print('COLD2_SOURCE_READONLY='+json.dumps({'schema':'rc6-624-cold2-source-metadata-v1',
               'paper':paper,'mem_available':mem,'root_free':free,'entries':entries,
               'unexpected':[e['name'] for e in entries if not e['allowed_original']]},sort_keys=True))
+          def summary(path):
+              st=path.lstat()
+              if not stat.S_ISREG(st.st_mode) or st.st_size>65536 or st.st_nlink!=1 or path.is_symlink():
+                  return {'file':path.name,'status':'UNSAFE'}
+              outer=json.loads(path.read_bytes())
+              payload=outer.get('payload',{})
+              import hashlib
+              canonical=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,ensure_ascii=True,allow_nan=False).encode('ascii')
+              key='sha256' if path.name.startswith(('manifest-','receipt-','queue.')) else 'digest'
+              valid=hashlib.sha256(canonical).hexdigest()==outer.get(key)
+              fields=('snapshot_id','state','manifest_sha256','pack_sha256','pack_bytes','pack','failed_at','sealed_at','deadline_at','generation_id','file','status','real_orders_sent')
+              return {'file':path.name,'hash_valid':valid,'fields':{k:payload.get(k) for k in fields if k in payload}}
+          selected=[source/n for n in names if n=='queue.json' or n.startswith(('manifest-','receipt-'))]
+          shadow=source.parent
+          selected += [shadow/'CURRENT.json',shadow/'status.json']
+          archive=root/'data/deploy/rc6-failed-cold-7dc99ccd8f7c47849ca3705ae1cb2c49'
+          archived=sorted(p.name for p in archive.iterdir()) if archive.is_dir() and not archive.is_symlink() else []
+          print('COLD2_SOURCE_PROVENANCE='+json.dumps({'envelopes':[summary(p) for p in selected],
+              'original_archive_names':archived},sort_keys=True))
           PY
       - name: Runner key cleanup
         if: always()
