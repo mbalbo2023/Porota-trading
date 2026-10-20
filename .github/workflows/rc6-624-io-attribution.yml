@@ -1,0 +1,159 @@
+name: RC6 624 one-shot VM and cgroup I/O attribution
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-io-attribution.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  profile:
+    if: github.head_ref == 'diagnostic/rc6-624-io-attribution-20261020'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Bounded read-only VM and owned cgroup counter delta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-io-census"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota-io-census" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/porota-io-census"' EXIT
+          mkdir -p evidence
+          timeout 45 ssh -i "$HOME/.ssh/porota-io-census" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 35 python3 -B -' <<'PY' > evidence/io.json
+          import datetime,json,sqlite3,subprocess,time
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          def read(path,limit=8192):
+              raw=path.read_bytes()
+              if len(raw)>limit:raise ValueError('CENSUS_READ_BOUND')
+              return raw.decode('ascii','replace')
+          def kv(path,limit=8192):
+              return {line.split()[0]:int(line.split()[1]) for line in
+                  read(path,limit).splitlines() if len(line.split())==2 and line.split()[1].isdigit()}
+          def mem_value(name):
+              return int(next(line.split()[1] for line in read(Path('/proc/meminfo')).splitlines()
+                  if line.startswith(name+':')))*1024
+          def psi(path):
+              return {line.split()[0]:{item.split('=')[0]:float(item.split('=')[1])
+                  for item in line.split()[1:] if item.startswith(('avg10=','avg60=','avg300='))}
+                  for line in read(path).splitlines()}
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
+                               uri=True,timeout=.2) as db:
+              db.execute('PRAGMA query_only=ON')
+              db.execute('PRAGMA busy_timeout=200')
+              cutoff=time.monotonic()+2
+              db.set_progress_handler(lambda:int(time.monotonic()>cutoff),1000)
+              mode,orders,process,session,stamp=db.execute(
+                  'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                  'FROM observer_state WHERE id=1').fetchone()
+          heartbeat=datetime.datetime.fromisoformat(stamp)
+          age=(datetime.datetime.now(datetime.timezone.utc)-heartbeat).total_seconds()
+          available=mem_value('MemAvailable')
+          host_io=psi(Path('/proc/pressure/io'))['some']['avg10']
+          if (mode!='PRODUCTION_PAPER' or type(orders) is not int or orders!=0
+                  or process!='WAITING_MARKET' or session!='MARKET_CLOSED'
+                  or heartbeat.tzinfo is None or not 0<=age<=180):
+              raise ValueError('IO_CENSUS_PAPER_CLOSED_REQUIRED')
+          if available<96*1024*1024 or host_io>60:
+              print(json.dumps({'status':'RESOURCE_READ_ADMISSION_RED',
+                  'mem_available_bytes':available,'io_psi_avg10':host_io,
+                  'real_orders_sent':orders},sort_keys=True))
+              raise SystemExit(0)
+          names=('porota_production_observer','porota_production_dashboard',
+                 'porota_critical_approval_rc6')
+          docker=json.loads(subprocess.check_output(['docker','inspect',*names],
+              timeout=8,stderr=subprocess.DEVNULL))
+          groups={row['Name'].lstrip('/'):
+              Path('/sys/fs/cgroup/system.slice/docker-'+row['Id']+'.scope') for row in docker}
+          if any(not path.is_dir() for path in groups.values()):
+              raise ValueError('OWNED_CGROUP_IDENTITY_CHANGED')
+          def iostat(path):
+              rows={}
+              for line in read(path,8192).splitlines():
+                  fields=line.split()
+                  rows[fields[0]]={item.split('=')[0]:int(item.split('=')[1])
+                      for item in fields[1:] if '=' in item}
+              return rows
+          def diskstats():
+              rows={}
+              for line in read(Path('/proc/diskstats'),16384).splitlines():
+                  f=line.split()
+                  if f[2].startswith(('vd','sd','nvme','dm-')):
+                      rows[f[2]]={'read_sectors':int(f[5]),'read_ms':int(f[6]),
+                                  'write_sectors':int(f[9]),'write_ms':int(f[10]),
+                                  'busy_ms':int(f[12]),'weighted_ms':int(f[13])}
+              return rows
+          def snapshot():
+              return {'mem_available_bytes':mem_value('MemAvailable'),
+                'swap_free_bytes':mem_value('SwapFree'),
+                'vm':{k:v for k,v in kv(Path('/proc/vmstat'),65536).items() if k in
+                    {'pswpin','pswpout','pgmajfault','pgscan_kswapd','pgscan_direct','pgsteal_kswapd','pgsteal_direct','oom_kill'}},
+                'host_io_psi':psi(Path('/proc/pressure/io')),
+                'host_mem_psi':psi(Path('/proc/pressure/memory')),
+                'disk':diskstats(),
+                'cgroups':{name:{'memory_current':int(read(path/'memory.current').strip()),
+                    'swap_current':int(read(path/'memory.swap.current').strip()),
+                    'io_psi':psi(path/'io.pressure'),'memory_psi':psi(path/'memory.pressure'),
+                    'io':iostat(path/'io.stat')} for name,path in groups.items()}}
+          before=snapshot()
+          time.sleep(10)
+          after=snapshot()
+          def delta(a,b):
+              return {k:b[k]-a.get(k,0) for k in b}
+          cg={}
+          for name,current in after['cgroups'].items():
+              prior=before['cgroups'][name]
+              cg[name]={'memory_current_before':prior['memory_current'],
+                  'memory_current_after':current['memory_current'],
+                  'swap_current_before':prior['swap_current'],
+                  'swap_current_after':current['swap_current'],
+                  'io_psi_before':prior['io_psi'],'io_psi_after':current['io_psi'],
+                  'memory_psi_before':prior['memory_psi'],'memory_psi_after':current['memory_psi'],
+                  'io_delta':{device:delta(prior['io'].get(device,{}),values)
+                              for device,values in current['io'].items()}}
+          result={'schema':'rc6.issue624.io-attribution.v1','status':'READ_ONLY',
+              'at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'seconds':10,'mode':mode,'real_orders_sent':orders,
+              'heartbeat_age_seconds':round(age,2),
+              'host_before':{k:before[k] for k in ('mem_available_bytes','swap_free_bytes','host_io_psi','host_mem_psi')},
+              'host_after':{k:after[k] for k in ('mem_available_bytes','swap_free_bytes','host_io_psi','host_mem_psi')},
+              'vm_delta':delta(before['vm'],after['vm']),
+              'disk_delta':{dev:delta(before['disk'].get(dev,{}),values)
+                  for dev,values in after['disk'].items()},
+              'owned_cgroups':cg,'ppi_watch_mutated':False}
+          print(json.dumps(result,sort_keys=True))
+          PY
+          python3 - <<'PY'
+          import json
+          value=json.load(open('evidence/io.json'))
+          print('RC6_624_IO_ATTRIBUTION='+value['status'])
+          PY
+      - name: Preserve one-shot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-624-io-attribution-${{ github.run_id }}
+          path: evidence/io.json
+          if-no-files-found: error
+          retention-days: 14
