@@ -52,6 +52,37 @@ class SuspendTests(unittest.TestCase):
                 self.assertEqual({action for action, _ in mutations}, {'stop', 'start'})
                 self.assertEqual(len(mutations), 4)
 
+    def test_adopt_latest_paused_candidate_without_restarting_timer(self):
+        names = {'porota-runtime-evidence-rc6.timer', 'porota-preopen-rc6.timer'}
+        states = dict.fromkeys(names, 'active')
+        jobs = dict.fromkeys((name.removesuffix('.timer')+'.service' for name in names), 'inactive')
+        mutations = []
+        def command(*args):
+            if args[:2] == ('systemctl', 'list-unit-files'):
+                return ('other-ppi-watch.service enabled\n', 0)
+            unit = args[2]
+            if args[1] == 'is-enabled': return ('enabled', 0)
+            if args[1] == 'is-active':
+                if unit == 'other-ppi-watch.service': return ('active', 0)
+                return (states.get(unit, jobs.get(unit, 'inactive')), 0)
+            if args[1] == 'show':
+                return (unit.removesuffix('.timer')+'.service', 0)
+            if args[1] == 'stop':
+                mutations.append(unit)
+                states[unit] = 'inactive'
+                return ('', 0)
+            raise AssertionError(args)
+        with TemporaryDirectory() as directory:
+            with patch.object(suspend, 'ROOT', Path(directory)), patch.object(suspend, 'command', command):
+                suspend.run('a'*40, 'suspend', self.policy())
+                adopted = suspend.run('b'*40, 'suspend', self.policy())
+                self.assertEqual(adopted['paused_from'], 'a'*40)
+                self.assertEqual(len(mutations), 2)
+                jobs['porota-preopen-rc6.service'] = 'active'
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_PREPAUSE_JOB_ACTIVE'):
+                    suspend.run('c'*40, 'suspend', self.policy())
+                self.assertFalse((Path(directory)/('scheduler-suspend-'+'c'*40+'.json')).exists())
+
     def test_invalid_policy_never_mutates_systemd(self):
         bad = base64.b64encode(json.dumps({'units': {
             'systemd/porota-ppi-watch-rc6.timer': {'role': 'ACTIVE_TIMER', 'active': True},
