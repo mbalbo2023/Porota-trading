@@ -100,3 +100,5 @@ jobs:
             'archive_names':sorted(p.name for p in archive.iterdir()) if archive.exists() else []},sort_keys=True))
           PY
           rm -f "$HOME/.ssh/rc6_read"
+
+# Inventory after preopen contract failure and exact clean stop.
