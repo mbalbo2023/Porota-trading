@@ -1,0 +1,94 @@
+name: RC6 624 bounded pending-image disk reconciliation
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-pending-image-disk-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_disk"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_disk" "$HOME/.ssh/known_hosts"
+      - name: Reconcile exact critical image and reclaim old unreferenced candidate
+        timeout-minutes: 4
+        run: |
+          set -Eeuo pipefail
+          timeout 210 ssh -i "$HOME/.ssh/rc6_disk" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          STABLE=porota-trading-bot:17.0.0-rc6
+          CURRENT=sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553
+          OLD=sha256:1fa027ec87b1b8166bd1431d24b1690ddb40ab582fe49ee2b58b5c9ca05aeadf
+          OLD_TAG=porota-trading-bot:17.0.0-rc6-candidate-4f305e094c7d19c4ffa04f6ff936c8a191610d7a
+          BEFORE_FREE="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          PPI_BEFORE="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
+          python3 - <<'PY'
+          import hashlib,json,sqlite3,subprocess,sys
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          sys.path.insert(0,str(root))
+          from scripts.rc6_deploy_quiescence import spot_carryover_snapshot
+          state=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          assert state['candidate_sha']=='f31393fdced65f6e2362e69c9ed1df934897296d'
+          assert state['validation_status']=='DEPLOYED_VALIDATION_PENDING'
+          assert state['image_id']=='sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'
+          assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+          assert spot_carryover_snapshot()['sha256']=='8a02ac16743e872c14e28663025069358517317c0f566580d63df8f626d033c2'
+          names={'porota_production_observer':'b4b1fb7b8cbe25c6b9d00b0fb01407b169ffe705629e0d015fa0b50cc4b27b63','porota_production_dashboard':'0badcadf46eb5b13c341da7f0e528a44732948a6689f37c627fa9ccfad2f7d65'}
+          for name,ident in names.items():
+              row=json.loads(subprocess.check_output(['docker','inspect',name]))[0]
+              assert row['Id']==ident and row['Image']==state['image_id'] and row['State']['Status']=='exited' and row['State']['ExitCode']==0
+          policy=(root/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
+          timers=sorted(Path(p).name for p,v in json.loads(policy)['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          receipt=json.loads((root/'data/deploy/scheduler-suspend-55014f3ae503eade77e7027ed8898fd953b0bcd3.json').read_text())
+          assert len(timers)==20 and receipt['status']=='SUSPENDED' and receipt['timers']==timers and receipt['policy_sha256']==hashlib.sha256(policy).hexdigest()
+          for timer in timers:
+              assert subprocess.run(['systemctl','is-active',timer],capture_output=True,text=True).stdout.strip()=='inactive'
+          PY
+          test "$(docker image inspect -f '{{.Id}}' "$STABLE")" = "$CURRENT"
+          test "$(docker inspect -f '{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}' porota_critical_approval_rc6)" = "$OLD|running|healthy|0"
+          test "$(systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+          test "$(systemctl is-active porota-critical-approval-rc6.service)" = active
+          UNIT_TEXT="$(systemctl cat porota-critical-approval-rc6.service)"
+          grep -Fq "$STABLE" <<<"$UNIT_TEXT"
+          grep -Fq '/opt/porota-control-plane-rc6/current:/code:ro' <<<"$UNIT_TEXT"
+          docker run --rm --pull never --read-only --user botuser --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 32 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=16m -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code -v /opt/porota-control-plane-rc6/current:/code:ro --entrypoint python "$STABLE" -c 'import fm_critical_approval_unix_runtime_rc6; print("CRITICAL_COMPATIBILITY=GREEN")'
+          systemctl restart porota-critical-approval-rc6.service
+          READY=0
+          for _ in $(seq 1 40); do
+            STATUS="$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6 2>/dev/null || true)"
+            if [ "$STATUS" = "running|healthy|0|$CURRENT" ]; then READY=1; break; fi
+            sleep 2
+          done
+          test "$READY" -eq 1
+          docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only"'
+          for cid in $(docker ps -aq --no-trunc); do test "$(docker inspect -f '{{.Image}}' "$cid")" != "$OLD"; done
+          test "$(docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$OLD")" = "$OLD_TAG"
+          docker image rm "$OLD_TAG"
+          docker image prune -f
+          PPI_AFTER="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          AFTER_FREE="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "RC6_PENDING_DISK_RECONCILED=GREEN|free_before=$BEFORE_FREE|free_after=$AFTER_FREE|critical_image=$CURRENT|ppi_watch_changed=false"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_disk"
