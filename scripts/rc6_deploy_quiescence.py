@@ -97,7 +97,8 @@ def clean_stop(before, after):
     raise ValueError('QUIESCENCE_STOP_OOM_NEW_OR_UNVERIFIED')
 
 
-def admit(*, stopped=False, allow_admin_issue624=False):
+def admit(*, stopped=False, allow_admin_issue624=False,
+          allow_market_open_suspend=False, initial=False):
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
         c.row_factory = sqlite3.Row
@@ -110,10 +111,18 @@ def admit(*, stopped=False, allow_admin_issue624=False):
             'FROM observer_state WHERE id=1').fetchone()
         if mode != 'PRODUCTION_PAPER' or type(orders) is not int or orders != 0:
             raise ValueError('QUIESCENCE_PAPER_REQUIRED')
-        allowed_processes = {'WAITING_MARKET', 'STOPPED'} if stopped else {'WAITING_MARKET'}
-        if process not in allowed_processes or session not in {'CLOSED', 'MARKET_CLOSED'}:
-            raise ValueError('QUIESCENCE_CLOSED_REQUIRED')
-        if not stopped:
+        if allow_market_open_suspend:
+            # Operator-authorized intraday pause: retain the true market session.
+            # A stopped observer must acknowledge SIGTERM as STOPPED; a stale
+            # RUNNING row is never proof of quiescence.
+            allowed_processes = ({'RUNNING', 'STOPPED'} if initial else {'STOPPED'}) if stopped else {'RUNNING'}
+            if session != 'MARKET_OPEN' or process not in allowed_processes:
+                raise ValueError('QUIESCENCE_OPEN_SUSPEND_STATE_REQUIRED')
+        else:
+            allowed_processes = {'WAITING_MARKET', 'STOPPED'} if stopped else {'WAITING_MARKET'}
+            if process not in allowed_processes or session not in {'CLOSED', 'MARKET_CLOSED'}:
+                raise ValueError('QUIESCENCE_CLOSED_REQUIRED')
+        if not stopped or (allow_market_open_suspend and initial and process == 'RUNNING'):
             heartbeat = datetime.fromisoformat(stamp)
             if heartbeat.tzinfo is None or not 0 <= (datetime.now(timezone.utc) - heartbeat).total_seconds() <= 180:
                 raise ValueError('QUIESCENCE_HEARTBEAT_UNVERIFIED')
@@ -167,7 +176,8 @@ def critical_admission():
             'restart_count': 0, 'capability': 'issues_only'}
 
 
-def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None):
+def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None,
+                                       allow_market_open_suspend=False):
     """One exact fail-closed continuation; never start the prior image."""
     # CURRENT_STATE_V2 identifies the installed image, but a subsequent
     # failed pre-install COLD2 has its own newer stop receipt. Select the
@@ -273,7 +283,10 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
                 proof.get('classification') not in {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'}):
             raise ValueError('QUIESCENCE_PRIOR_STOP_IDENTITY_CHANGED')
     critical = critical_admission()
-    process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
+    if bool(previous.get('market_open_suspended', False)) != allow_market_open_suspend:
+        raise ValueError('QUIESCENCE_PRIOR_SESSION_MODE_CHANGED')
+    process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
+                    allow_market_open_suspend=allow_market_open_suspend)
     if process not in ({'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
                        else {'STOPPED'}):
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
@@ -284,6 +297,7 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             'containers': previous['containers'], 'real_orders_sent': 0,
             'ppi_watch_accessed': False, 'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
             'admin_cancel_paper_id': admin_paper_id,
+            'market_open_suspended': allow_market_open_suspend,
             'critical_admission': critical,
             'fix_forward_from': previous_candidate,
             'prior_receipt_sha256': hashlib.sha256(raw).hexdigest()}
@@ -345,7 +359,8 @@ def wait_for_admin_resources(*, sample=None, clock=None, pause=None):
         pause(min(5, remaining))
 
 
-def run(candidate, action, *, allow_admin_issue624=False):
+def run(candidate, action, *, allow_admin_issue624=False,
+        allow_market_open_suspend=False):
     if not re.fullmatch('[0-9a-f]{40}', candidate):
         raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
     folder = ROOT / 'data/deploy'
@@ -357,24 +372,30 @@ def run(candidate, action, *, allow_admin_issue624=False):
         receipt = json.loads(path.read_text()) if path.exists() else None
         if action == 'drain':
             if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
-            process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624)
+            process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624,
+                            allow_market_open_suspend=allow_market_open_suspend, initial=True)
             admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
+            if allow_market_open_suspend and admin_paper_id:
+                raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
             originals = {name: inspect(name) for name in OWNED}
             if (process in {'STOPPED', 'WAITING_MARKET'}
                     and all(v['State']['Status'] == 'exited' for v in originals.values())):
                 receipt = adopt_stopped_after_failed_install(
-                    candidate, folder, originals, admin_paper_id=admin_paper_id)
+                    candidate, folder, originals, admin_paper_id=admin_paper_id,
+                    allow_market_open_suspend=allow_market_open_suspend)
                 persist(path, receipt)
             else:
-                if process != 'WAITING_MARKET' or any(v['State']['Status'] != 'running' for v in originals.values()):
+                if process != ('RUNNING' if allow_market_open_suspend else 'WAITING_MARKET') or any(v['State']['Status'] != 'running' for v in originals.values()):
                     raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
-                admit(allow_admin_issue624=bool(admin_paper_id))
+                admit(allow_admin_issue624=bool(admin_paper_id),
+                      allow_market_open_suspend=allow_market_open_suspend)
                 receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
                            'installation_started': False, 'stop_attempted': [],
                            'stop_evidence': {},
                            'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
                     'real_orders_sent': 0, 'ppi_watch_accessed': False,
-                    'admin_cancel_paper_id': admin_paper_id}
+                    'admin_cancel_paper_id': admin_paper_id,
+                    'market_open_suspended': allow_market_open_suspend}
                 persist(path, receipt)
                 for name in OWNED:
                     # Durable intent precedes stop: timeout may follow daemon effect.
@@ -387,7 +408,8 @@ def run(candidate, action, *, allow_admin_issue624=False):
                     classification = clean_stop(originals[name], value)
                     receipt['stop_evidence'][name]['classification'] = classification
                     persist(path, receipt)
-                admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
+                admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
+                      allow_market_open_suspend=allow_market_open_suspend)
                 if admin_paper_id and admin_target_on_host() != admin_paper_id:
                     raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED_AFTER_STOP')
                 receipt.update(status='ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
@@ -435,7 +457,9 @@ def run(candidate, action, *, allow_admin_issue624=False):
                 value = inspect(name)
                 if value['Id'] != expected['id'] or value['State']['Status'] != 'exited':
                     raise ValueError('QUIESCENCE_CHANGED_BEFORE_INSTALL')
-            admit(stopped=True)
+            if bool(receipt.get('market_open_suspended', False)) != allow_market_open_suspend:
+                raise ValueError('QUIESCENCE_INSTALL_SESSION_MODE_CHANGED')
+            admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend)
             receipt.update(status='HOST_INSTALLATION_STARTED', installation_started=True)
         elif action == 'recover':
             if not receipt: return {'status': 'NO_DRAIN_RECEIPT'}
@@ -468,6 +492,7 @@ def main(argv=None):
     parser.add_argument('--action', choices=['drain', 'admin-begin', 'admin-commit',
                                             'install', 'recover'], required=True)
     parser.add_argument('--admin-cancel-issue624', action='store_true')
+    parser.add_argument('--market-open-suspend', action='store_true')
     parser.add_argument('--allow-validation-pending',action='store_true',
                         help='classify installed validation pending during failure cleanup; never validates runtime')
     args = parser.parse_args(argv)
@@ -475,10 +500,11 @@ def main(argv=None):
         parser.error('--allow-validation-pending requires --action recover')
     if args.admin_cancel_issue624 and args.action not in {'drain', 'admin-begin', 'admin-commit'}:
         parser.error('--admin-cancel-issue624 only for controlled admin actions')
-    if args.admin_cancel_issue624:
-        receipt = run(args.candidate_sha, args.action, allow_admin_issue624=True)
-    else:
-        receipt = run(args.candidate_sha, args.action)
+    if args.market_open_suspend and args.action not in {'drain', 'install'}:
+        parser.error('--market-open-suspend only for drain and install')
+    receipt = run(args.candidate_sha, args.action,
+                  allow_admin_issue624=args.admin_cancel_issue624,
+                  allow_market_open_suspend=args.market_open_suspend)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
     return 0
