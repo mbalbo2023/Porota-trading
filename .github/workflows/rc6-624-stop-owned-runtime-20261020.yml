@@ -1,0 +1,87 @@
+name: RC6 624 stop exact owned runtime after intraday preopen gate
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-stop-owned-runtime-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  stop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_stop"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_stop" "$HOME/.ssh/known_hosts"
+      - name: Verify paused receipt and stop exact two owned containers
+        timeout-minutes: 4
+        run: |
+          set -Eeuo pipefail
+          timeout 200 ssh -i "$HOME/.ssh/rc6_stop" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
+          import hashlib,json,sqlite3,subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          candidate='55014f3ae503eade77e7027ed8898fd953b0bcd3'
+          image='sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'
+          expected={'porota_production_observer':'b4b1fb7b8cbe25c6b9d00b0fb01407b169ffe705629e0d015fa0b50cc4b27b63',
+                    'porota_production_dashboard':'0badcadf46eb5b13c341da7f0e528a44732948a6689f37c627fa9ccfad2f7d65'}
+          def cmd(*args):
+              p=subprocess.run(args,capture_output=True,text=True,timeout=70)
+              return p.returncode,p.stdout.strip()
+          policy=(root/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
+          names=sorted(Path(p).name for p,v in json.loads(policy)['units'].items()
+                       if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          receipt=json.loads((root/'data/deploy'/('scheduler-suspend-'+candidate+'.json')).read_text())
+          assert len(names)==20 and receipt['candidate_sha']==candidate
+          assert receipt['status']=='SUSPENDED' and receipt['timers']==names
+          assert set(receipt['attempted'])==set(names)
+          assert receipt['policy_sha256']==hashlib.sha256(policy).hexdigest()
+          for name in names:
+              assert cmd('systemctl','is-enabled',name)[1]=='enabled'
+              assert cmd('systemctl','is-active',name)[1]=='inactive'
+          def watch():
+              lines=cmd('systemctl','list-unit-files','--no-legend')[1].splitlines()
+              names=sorted(x.split()[0] for x in lines if 'ppi' in x.split()[0].lower() and 'watch' in x.split()[0].lower())
+              return [(n,cmd('systemctl','is-enabled',n)[1],cmd('systemctl','is-active',n)[1]) for n in names]
+          ppi=watch()
+          def book():
+              with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as db:
+                  mode,orders=db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+                  spots=db.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+              return spots
+          before=book()
+          for name,ident in expected.items():
+              rc,out=cmd('docker','inspect',name)
+              assert rc==0
+              row=json.loads(out)[0]
+              assert row['Id']==ident and row['Image']==image and row['State']['Status']=='running'
+          for name in expected:
+              p=subprocess.run(['docker','stop','-t','60',name],capture_output=True,text=True,timeout=70)
+              assert p.returncode==0,(name,p.stderr)
+          result={}
+          for name,ident in expected.items():
+              row=json.loads(cmd('docker','inspect',name)[1])[0]
+              assert row['Id']==ident and row['Image']==image and row['State']['Status']=='exited'
+              result[name]={'status':row['State']['Status'],'exit_code':row['State']['ExitCode'],'id':ident,'image':image}
+          after=book()
+          assert watch()==ppi
+          print('RC6_EXACT_OWNED_RUNTIME_STOP='+json.dumps({'status':'STOPPED','containers':result,'paper_open_before':before,'paper_open_after':after,'real_orders_sent':0,'ppi_watch_changed':False},sort_keys=True))
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_stop"
