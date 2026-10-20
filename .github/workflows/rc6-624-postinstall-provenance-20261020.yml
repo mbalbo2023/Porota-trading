@@ -70,9 +70,17 @@ jobs:
           with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as db:
               mode,orders,process=db.execute('SELECT mode,real_orders_sent,process_state FROM observer_state WHERE id=1').fetchone()
               spots=db.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
-          report={'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
+          mem={}
+          for line in Path('/proc/meminfo').read_text().splitlines():
+              if line.startswith(('MemTotal:','MemAvailable:','SwapTotal:','SwapFree:')):
+                  key,value,*_=line.split()
+                  mem[key[:-1]]=int(value)*1024
+          ps=subprocess.run(['ps','-eo','pid,comm,rss,args','--sort=-rss'],capture_output=True,text=True,timeout=10)
+          top=[{'pid':int(row.split(None,3)[0]),'comm':row.split(None,3)[1],'rss_kib':int(row.split(None,3)[2])}
+               for row in ps.stdout.splitlines()[1:9] if len(row.split(None,3))>=3]
+          report={'memory':mem,'top_rss':top,'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
                   'containers':containers,'paper':{'mode':mode,'orders':orders,'process':process,'spots':spots},
-                  'shadow_status':choose(status,('status','as_of','error_code','error_module','error_line','failure_reason','generation_timing','runtime_sql_diagnostics')),
+                  'shadow_status':choose(status,('status','as_of','error_class','error_module','error_line','generation_timing','runtime_sql_diagnostics')),
                   'health':choose(health,('source_sha','candidate_tree_sha','status','as_of','error_code')),
                   'pointer':choose(current,('generation_id','sequence','file')),
                   'cut_status':choose(cut.get('status') if isinstance(cut,dict) else None,('status','as_of','error_code','error_module','error_line')),
