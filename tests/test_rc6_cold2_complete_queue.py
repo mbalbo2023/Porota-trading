@@ -93,3 +93,35 @@ def test_changed_or_failed_successor_cannot_be_accepted(tmp_path, change, reason
         write_envelope(shadow/('cut-'+CUT+'.json.gz'),cut,zipped=True)
     with pytest.raises(ValueError, match=reason):
         guard.verify_complete_queue(root)
+
+def test_apply_preserves_complete_queue_under_exact_stopped_admission(tmp_path):
+    from unittest.mock import patch
+    root, source, shadow, _, _ = fixture(tmp_path)
+    archive = root/'data/deploy'/('rc6-failed-cold-'+cold.IDENT)
+    archive.mkdir(mode=0o700)
+    (archive/'quarantine.json').write_bytes(b'previously verified archive')
+    write_envelope(shadow/'status.json',
+                   {'status':'FAIL_CLOSED','real_routes':'NOT_CALLED',
+                    'real_orders_sent':0})
+    candidate = 'f'*40
+    ids = {name:str(index+1)*64 for index,name in enumerate(guard.OWNED)}
+    receipt = {'containers':{name:{'image':'sha256:'+'a'*64}
+                             for name in guard.OWNED}}
+    rows = {name:{'Id':ids[name],'Image':'sha256:'+'a'*64,
+                  'State':{'Status':'exited','ExitCode':0}}
+            for name in guard.OWNED}
+    rows['porota_critical_approval_rc6'] = {
+        'State':{'Status':'running','OOMKilled':False,
+                 'Health':{'Status':'healthy'}}}
+    with (patch.object(guard,'receipt_for',return_value=(receipt,ids)),
+          patch.object(guard,'ppi_units',return_value={}),
+          patch.object(guard.drain,'admit',return_value='STOPPED'),
+          patch.object(guard.drain,'inspect',side_effect=lambda name:rows[name]),
+          patch.object(guard.cold,'verify_original_archive',
+                       return_value={'state':'ALREADY_QUARANTINED','old_cut_revoked':True}),
+          patch.object(guard.successor,'quarantine') as quarantine):
+        result = guard.apply(root,candidate)
+    assert result['successor']['state'] == 'COMPLETE_UNTOUCHED'
+    assert result['successor']['snapshot_id'] == LATEST
+    quarantine.assert_not_called()
+    assert (source/'queue.json').exists()
