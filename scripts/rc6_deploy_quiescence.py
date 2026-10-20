@@ -98,7 +98,8 @@ def clean_stop(before, after):
 
 
 def admit(*, stopped=False, allow_admin_issue624=False,
-          allow_market_open_suspend=False, initial=False):
+          allow_market_open_suspend=False, allow_open_paper_carryover=False,
+          initial=False):
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
         c.row_factory = sqlite3.Row
@@ -130,11 +131,79 @@ def admit(*, stopped=False, allow_admin_issue624=False,
                              ('paper_future_positions', 'ACTIVE')):
             # Missing schemas and unknown state fail rather than imply zero.
             if c.execute('SELECT 1 FROM ' + table + ' WHERE status=? LIMIT 1', (state,)).fetchone():
+                if table == 'paper_positions' and allow_open_paper_carryover and allow_market_open_suspend:
+                    continue
                 if table == 'paper_positions' and allow_admin_issue624:
                     admin_issue624_target(c)
                     continue
                 raise ValueError('QUIESCENCE_OPEN_POSITION')
         return process
+
+
+def spot_carryover_snapshot():
+    """Bounded, read-only committed PAPER spot book after observer SIGTERM."""
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.row_factory = sqlite3.Row
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        end = time.monotonic() + 2
+        c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
+        rows = c.execute("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT 17").fetchall()
+        if len(rows) > 16:
+            raise ValueError('QUIESCENCE_CARRYOVER_POSITION_BOUND')
+        ids = [row['paper_id'] for row in rows]
+        if any(type(value) is not str or not value for value in ids) or len(set(ids)) != len(ids):
+            raise ValueError('QUIESCENCE_CARRYOVER_IDENTITY_INVALID')
+        payload = []
+        identities = []
+        for row in rows:
+            identity = {key: row[key] for key in ('paper_id', 'symbol', 'quantity',
+                                                   'entry_price', 'opened_at')}
+            identities.append(identity)
+            fills = c.execute("SELECT * FROM paper_fills WHERE paper_id=? ORDER BY id LIMIT 65",
+                              (row['paper_id'],)).fetchall()
+            if (len(fills) > 64 or any(fill['side'] == 'SELL_SIMULATED' for fill in fills)):
+                raise ValueError('QUIESCENCE_CARRYOVER_FILLS_INVALID')
+            intents = c.execute("SELECT * FROM paper_exit_intents WHERE paper_id=? LIMIT 2",
+                                (row['paper_id'],)).fetchall()
+            if len(intents) > 1:
+                raise ValueError('QUIESCENCE_CARRYOVER_INTENTS_INVALID')
+            payload.append({'position': dict(row), 'fills': [dict(x) for x in fills],
+                            'intents': [dict(x) for x in intents]})
+        raw = json.dumps(payload, sort_keys=True, default=str, separators=(',', ':')).encode()
+        if len(raw) > 128 * 1024:
+            raise ValueError('QUIESCENCE_CARRYOVER_SNAPSHOT_BOUND')
+        return {'open_count': len(rows), 'paper_ids': ids, 'identities': identities,
+                'sha256': hashlib.sha256(raw).hexdigest()}
+
+
+def verify_spot_carryover(receipt):
+    expected = receipt.get('spot_carryover')
+    if (not isinstance(expected, dict) or not isinstance(expected.get('paper_ids'), list)
+            or not isinstance(expected.get('identities'), list)
+            or len(expected['paper_ids']) != len(expected['identities'])):
+        raise ValueError('QUIESCENCE_CARRYOVER_RECEIPT_MISSING')
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        mode, orders = c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+        if mode != 'PRODUCTION_PAPER' or type(orders) is not int or orders != 0:
+            raise ValueError('QUIESCENCE_CARRYOVER_PAPER_REQUIRED')
+        c.row_factory = sqlite3.Row
+        for paper_id, identity in zip(expected['paper_ids'], expected['identities']):
+            row = c.execute('SELECT status,symbol,quantity,entry_price,opened_at '
+                            'FROM paper_positions WHERE paper_id=?', (paper_id,)).fetchone()
+            if not row or row['status'] not in {'OPEN', 'CLOSED'}:
+                raise ValueError('QUIESCENCE_CARRYOVER_POSITION_LOST')
+            if {key: row[key] if key != 'paper_id' else paper_id for key in identity} != identity:
+                raise ValueError('QUIESCENCE_CARRYOVER_IDENTITY_CHANGED')
+            if row['status'] == 'CLOSED' and not c.execute(
+                    "SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                    (paper_id,)).fetchone():
+                raise ValueError('QUIESCENCE_CARRYOVER_CLOSE_UNBACKED')
+    return len(expected['paper_ids'])
 
 
 def admin_target_on_host():
@@ -177,7 +246,8 @@ def critical_admission():
 
 
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None,
-                                       allow_market_open_suspend=False):
+                                       allow_market_open_suspend=False,
+                                       allow_open_paper_carryover=False):
     """One exact fail-closed continuation; never start the prior image."""
     # CURRENT_STATE_V2 identifies the installed image, but a subsequent
     # failed pre-install COLD2 has its own newer stop receipt. Select the
@@ -286,11 +356,17 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     if bool(previous.get('market_open_suspended', False)) != allow_market_open_suspend:
         raise ValueError('QUIESCENCE_PRIOR_SESSION_MODE_CHANGED')
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
-                    allow_market_open_suspend=allow_market_open_suspend)
+                    allow_market_open_suspend=allow_market_open_suspend,
+                    allow_open_paper_carryover=allow_open_paper_carryover)
     if process not in ({'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
                        else {'STOPPED'}):
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
+    carryover = spot_carryover_snapshot() if allow_open_paper_carryover else None
+    if allow_open_paper_carryover and previous.get('spot_carryover') != carryover:
+        raise ValueError('QUIESCENCE_PRIOR_CARRYOVER_CHANGED')
     return {'candidate_sha': candidate,
+            'spot_carryover': carryover,
+            'open_paper_carryover': allow_open_paper_carryover,
             'status': 'ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
             'installation_started': False, 'stop_attempted': list(OWNED),
             'stop_evidence': previous['stop_evidence'],
@@ -360,7 +436,9 @@ def wait_for_admin_resources(*, sample=None, clock=None, pause=None):
 
 
 def run(candidate, action, *, allow_admin_issue624=False,
-        allow_market_open_suspend=False):
+        allow_market_open_suspend=False, allow_open_paper_carryover=False):
+    if allow_open_paper_carryover and (not allow_market_open_suspend or allow_admin_issue624):
+        raise ValueError('QUIESCENCE_CARRYOVER_MODE_INVALID')
     if not re.fullmatch('[0-9a-f]{40}', candidate):
         raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
     folder = ROOT / 'data/deploy'
@@ -373,7 +451,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
         if action == 'drain':
             if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
             process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624,
-                            allow_market_open_suspend=allow_market_open_suspend, initial=True)
+                            allow_market_open_suspend=allow_market_open_suspend,
+                            allow_open_paper_carryover=allow_open_paper_carryover, initial=True)
             admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
             if allow_market_open_suspend and admin_paper_id:
                 raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
@@ -382,20 +461,23 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     and all(v['State']['Status'] == 'exited' for v in originals.values())):
                 receipt = adopt_stopped_after_failed_install(
                     candidate, folder, originals, admin_paper_id=admin_paper_id,
-                    allow_market_open_suspend=allow_market_open_suspend)
+                    allow_market_open_suspend=allow_market_open_suspend,
+                    allow_open_paper_carryover=allow_open_paper_carryover)
                 persist(path, receipt)
             else:
                 if process != ('RUNNING' if allow_market_open_suspend else 'WAITING_MARKET') or any(v['State']['Status'] != 'running' for v in originals.values()):
                     raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
                 admit(allow_admin_issue624=bool(admin_paper_id),
-                      allow_market_open_suspend=allow_market_open_suspend)
+                      allow_market_open_suspend=allow_market_open_suspend,
+                      allow_open_paper_carryover=allow_open_paper_carryover)
                 receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
                            'installation_started': False, 'stop_attempted': [],
                            'stop_evidence': {},
                            'containers': {n: {'id': v['Id'], 'image': v['Image']} for n, v in originals.items()},
                     'real_orders_sent': 0, 'ppi_watch_accessed': False,
                     'admin_cancel_paper_id': admin_paper_id,
-                    'market_open_suspended': allow_market_open_suspend}
+                    'market_open_suspended': allow_market_open_suspend,
+                    'open_paper_carryover': allow_open_paper_carryover}
                 persist(path, receipt)
                 for name in OWNED:
                     # Durable intent precedes stop: timeout may follow daemon effect.
@@ -409,11 +491,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     receipt['stop_evidence'][name]['classification'] = classification
                     persist(path, receipt)
                 admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
-                      allow_market_open_suspend=allow_market_open_suspend)
+                      allow_market_open_suspend=allow_market_open_suspend,
+                      allow_open_paper_carryover=allow_open_paper_carryover)
                 if admin_paper_id and admin_target_on_host() != admin_paper_id:
                     raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED_AFTER_STOP')
                 receipt.update(status='ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
-                               inflight='ABSENT_OWNED_RUNTIME_STOPPED')
+                               inflight='ABSENT_OWNED_RUNTIME_STOPPED',
+                               spot_carryover=spot_carryover_snapshot() if allow_open_paper_carryover else None)
         elif action == 'admin-begin':
             if (not allow_admin_issue624 or not receipt
                     or receipt['status'] != 'ADMIN_DRAINED_PENDING'
@@ -459,8 +543,18 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     raise ValueError('QUIESCENCE_CHANGED_BEFORE_INSTALL')
             if bool(receipt.get('market_open_suspended', False)) != allow_market_open_suspend:
                 raise ValueError('QUIESCENCE_INSTALL_SESSION_MODE_CHANGED')
-            admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend)
+            if bool(receipt.get('open_paper_carryover', False)) != allow_open_paper_carryover:
+                raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_MODE_CHANGED')
+            admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
+                  allow_open_paper_carryover=allow_open_paper_carryover)
+            if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
+                raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_CHANGED')
             receipt.update(status='HOST_INSTALLATION_STARTED', installation_started=True)
+        elif action == 'verify-carryover':
+            if not receipt or receipt.get('installation_started') is not True or not receipt.get('open_paper_carryover'):
+                raise ValueError('QUIESCENCE_CARRYOVER_NOT_INSTALLED')
+            receipt['carryover_verified_count'] = verify_spot_carryover(receipt)
+            receipt['carryover_verified_at'] = datetime.now(timezone.utc).isoformat()
         elif action == 'recover':
             if not receipt: return {'status': 'NO_DRAIN_RECEIPT'}
             if receipt['installation_started']:
@@ -490,9 +584,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['drain', 'admin-begin', 'admin-commit',
-                                            'install', 'recover'], required=True)
+                                            'install', 'verify-carryover', 'recover'], required=True)
     parser.add_argument('--admin-cancel-issue624', action='store_true')
     parser.add_argument('--market-open-suspend', action='store_true')
+    parser.add_argument('--carry-open-paper-spots', action='store_true')
     parser.add_argument('--allow-validation-pending',action='store_true',
                         help='classify installed validation pending during failure cleanup; never validates runtime')
     args = parser.parse_args(argv)
@@ -502,11 +597,16 @@ def main(argv=None):
         parser.error('--admin-cancel-issue624 only for controlled admin actions')
     if args.market_open_suspend and args.action not in {'drain', 'install'}:
         parser.error('--market-open-suspend only for drain and install')
+    if args.carry_open_paper_spots and (not args.market_open_suspend or
+                                        args.admin_cancel_issue624 or args.action not in {'drain', 'install'}):
+        parser.error('--carry-open-paper-spots requires intraday drain/install without admin cancel')
     options = {}
     if args.admin_cancel_issue624:
         options['allow_admin_issue624'] = True
     if args.market_open_suspend:
         options['allow_market_open_suspend'] = True
+    if args.carry_open_paper_spots:
+        options['allow_open_paper_carryover'] = True
     receipt = run(args.candidate_sha, args.action, **options)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
