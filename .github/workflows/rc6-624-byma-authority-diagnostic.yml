@@ -81,6 +81,19 @@ jobs:
           for name in ('porota_production_observer','porota_production_dashboard'):
               p=subprocess.run(['sudo','-n','docker','inspect','-f','{{.State.Running}}|{{.State.OOMKilled}}|{{.State.RestartCount}}|{{.Id}}',name],capture_output=True,text=True,timeout=5)
               print('CONTAINER',name,p.stdout.strip() if p.returncode==0 else 'UNAVAILABLE:'+p.stderr.strip()[:160])
+          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              p=subprocess.run(['sudo','-n','docker','inspect','-f','{{.Id}}|{{.Image}}|{{.State.Status}}|{{.RestartCount}}',name],capture_output=True,text=True,timeout=5)
+              print('RUNTIME_IMAGE',name,p.stdout.strip() if p.returncode==0 else p.stderr.strip()[:160])
+          p=subprocess.run(['sudo','-n','docker','image','ls','--no-trunc','--format','{{.ID}}|{{.Repository}}:{{.Tag}}|{{.Size}}'],capture_output=True,text=True,timeout=8)
+          print('IMAGE_INVENTORY',p.stdout.strip() if p.returncode==0 else p.stderr.strip()[:160])
+          import shutil
+          print('DISK_FREE',shutil.disk_usage('/').free)
+          state=Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          if state.exists():
+              try:
+                  s=json.loads(state.read_text())
+                  print('DEPLOY_STATE',json.dumps({k:s.get(k) for k in ('candidate_sha','validation_status','image_id','mode','real_orders_sent')},sort_keys=True))
+              except (OSError,ValueError): print('DEPLOY_STATE_INVALID')
           p=subprocess.run(['sudo','-n','docker','stats','--no-stream','--format','{{.Name}}|{{.MemUsage}}|{{.CPUPerc}}','porota_production_observer','porota_production_dashboard'],capture_output=True,text=True,timeout=12)
           print('DOCKER_STATS',p.stdout.strip() if p.returncode==0 else p.stderr.strip()[:160])
           p=subprocess.run(['ps','-eo','pid,ppid,rss,%cpu,comm','--sort=-rss'],capture_output=True,text=True,timeout=5)
