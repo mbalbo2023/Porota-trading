@@ -213,15 +213,28 @@ jobs:
 
           RC6_DISK_PRECLEAN_TRIGGERED=0
           if [ "$GATE_RC" -ne 0 ]; then
-            # Following an installed-but-unaccepted failure, the owned runtime
-            # remains stopped. The normal preclean assumes it is running. Stop
-            # here and require an independently measured offline cleanup.
+            # The exact failed COLD2 may leave the owned runtime stopped and
+            # its loaded image unreferenced. Admit that identity before cleanup.
             OWNED_STATE="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
               "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
             if [ "$OWNED_STATE" != $'running\nrunning' ]; then
-              echo "RC6_DISK_OFFLINE_PRECLEAN_REQUIRED=RED|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
-              exit 37
-            fi
+              RC6_DISK_PRECLEAN_TRIGGERED=1
+              "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 -" \
+                < scripts/rc6_offline_failed_image_cleanup.py
+              mapfile -t METRICS < <(probe_disk)
+              test "${#METRICS[@]}" -eq 2
+              AVAILABLE_BYTES="${METRICS[0]}"
+              INODE_FREE_PERCENT="${METRICS[1]}"
+              set +e
+              GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
+              GATE_RC=$?
+              set -e
+              echo "$GATE_OUTPUT"
+              if [ "$GATE_RC" -ne 0 ]; then
+                echo "RC6_DISK_OFFLINE_PRECLEAN_INSUFFICIENT=RED|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+                exit 37
+              fi
+            else
             RC6_DISK_PRECLEAN_TRIGGERED=1
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
@@ -363,6 +376,7 @@ jobs:
             GATE_RC=$?
             set -e
             echo "$GATE_OUTPUT"
+            fi
           fi
 
           test "$GATE_RC" -eq 0

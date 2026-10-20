@@ -23,6 +23,7 @@ ROOT = Path('/opt/porota-trading')
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
 FAILED_INSTALL_CANDIDATE = '38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
 FAILED_ADMIN_CANDIDATE = '7ae4d088d8cf90f670f8675d220244638f35d7f6'
+FAILED_COLD2_CANDIDATE = '48a981cf327a637c0c074879fcdcd17475de8111'
 ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
 
 
@@ -168,9 +169,13 @@ def critical_admission():
 
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None):
     """One exact fail-closed continuation; never start the prior image."""
-    previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id
-                          else FAILED_INSTALL_CANDIDATE)
-    if candidate in {FAILED_INSTALL_CANDIDATE, FAILED_ADMIN_CANDIDATE}:
+    closed_admin_prior = (admin_paper_id is None and
+        (folder / ('quiescence-' + FAILED_COLD2_CANDIDATE + '.json')).exists())
+    previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id else
+                          FAILED_COLD2_CANDIDATE if closed_admin_prior else
+                          FAILED_INSTALL_CANDIDATE)
+    if candidate in {FAILED_INSTALL_CANDIDATE, FAILED_ADMIN_CANDIDATE,
+                     FAILED_COLD2_CANDIDATE}:
         raise ValueError('QUIESCENCE_NEW_CANDIDATE_REQUIRED')
     previous_path = folder / ('quiescence-' + previous_candidate + '.json')
     if previous_path.is_symlink() or not previous_path.is_file():
@@ -183,13 +188,30 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             previous.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
             previous.get('installation_started') is not True or
             previous.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
-            previous.get('admin_cancel_paper_id') != admin_paper_id or
+            (not closed_admin_prior and previous.get('admin_cancel_paper_id') != admin_paper_id) or
             type(previous.get('real_orders_sent')) is not int or previous['real_orders_sent'] != 0 or
             previous.get('ppi_watch_accessed') is not False or
             set(previous.get('stop_attempted', [])) != set(OWNED) or
             set(previous.get('stop_evidence', {})) != set(OWNED) or
             set(previous.get('containers', {})) != set(OWNED)):
         raise ValueError('QUIESCENCE_PRIOR_RECEIPT_INVALID')
+    if closed_admin_prior:
+        paper_id = previous.get('admin_cancel_paper_id')
+        if (type(paper_id) is not str or not paper_id or
+                previous.get('admin_cancel_status') != 'APPLIED_NO_MARKET_SALE'):
+            raise ValueError('QUIESCENCE_PRIOR_ADMIN_CLOSE_UNVERIFIED')
+        db = ROOT / 'data/paper_v17/observer_v17.db'
+        with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+            c.execute('PRAGMA query_only=ON')
+            c.execute('PRAGMA busy_timeout=200')
+            row = c.execute('''SELECT p.status,p.close_reason,p.exit_price,p.net_pnl,
+              a.authority FROM paper_positions p JOIN paper_admin_cancellations a
+              USING(paper_id) WHERE p.paper_id=?''', (paper_id,)).fetchone()
+            if (row != ('CANCELLED_ADMIN', ADMIN_CANCEL_REASON, None, None,
+                        'ISSUE624_OPERATOR_REQUEST_20261019') or
+                    c.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                              (paper_id,)).fetchone()):
+                raise ValueError('QUIESCENCE_PRIOR_ADMIN_LEDGER_CHANGED')
     for name in OWNED:
         value = originals[name]
         old = previous['containers'][name]
@@ -203,7 +225,8 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             raise ValueError('QUIESCENCE_PRIOR_STOP_IDENTITY_CHANGED')
     critical = critical_admission()
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
-    if process not in ({'WAITING_MARKET', 'STOPPED'} if admin_paper_id else {'STOPPED'}):
+    if process not in ({'WAITING_MARKET', 'STOPPED'} if admin_paper_id or closed_admin_prior
+                       else {'STOPPED'}):
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
     return {'candidate_sha': candidate,
             'status': 'ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',

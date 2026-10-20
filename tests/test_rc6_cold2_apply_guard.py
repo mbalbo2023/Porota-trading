@@ -1,5 +1,6 @@
 """A future authorization cannot bypass exact quiescence at archive boundaries."""
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
@@ -91,3 +92,56 @@ def test_missing_exclusive_lock_refuses_before_archive(tmp_path):
         with pytest.raises(ValueError, match='COLD2_QUIESCENCE_LOCK_MISSING'):
             guard.apply(tmp_path, CANDIDATE)
         archive.assert_not_called()
+
+
+@pytest.mark.parametrize('position_status,expected', [
+    ('CANCELLED_ADMIN', 'DRAINED'),
+    ('OPEN', 'QUIESCENCE_OPEN_POSITION'),
+])
+def test_observed_stopped_host_waiting_market_after_admin_cancel(
+        tmp_path, position_status, expected):
+    """Replay the failed run: durable WAITING_MARKET, stopped Docker, CLOSED."""
+    value = receipt()
+    folder(tmp_path, value)
+    db = tmp_path/'data/paper_v17/observer_v17.db'
+    db.parent.mkdir(parents=True)
+    with sqlite3.connect(db) as c:
+        c.executescript('''
+          CREATE TABLE observer_state (id INTEGER PRIMARY KEY, mode TEXT,
+            real_orders_sent INTEGER, process_state TEXT, session_state TEXT,
+            heartbeat_at TEXT);
+          INSERT INTO observer_state VALUES
+            (1,'PRODUCTION_PAPER',0,'WAITING_MARKET','CLOSED',
+             '2026-10-20T04:34:28+00:00');
+          CREATE TABLE paper_positions (status TEXT);
+          CREATE TABLE paper_cauciones (status TEXT);
+          CREATE TABLE paper_future_positions (status TEXT);
+        ''')
+        c.execute('INSERT INTO paper_positions VALUES (?)', (position_status,))
+    ids = {name: value['containers'][name]['id'] for name in NAMES}
+    live = {name: {'Id': ids[name], 'Image': 'sha256:'+'a'*64,
+                   'State': {'Status': 'exited', 'ExitCode': 0}} for name in NAMES}
+    live['porota_critical_approval_rc6'] = {
+        'State': {'Status': 'running', 'Health': {'Status': 'healthy'},
+                  'OOMKilled': False}}
+    reached = []
+
+    def archive(root, *, admission, expected_owned_ids):
+        reached.append(admission())
+        return {'state': 'QUARANTINED_FAILED', 'old_cut_revoked': True}
+
+    with (patch.object(guard.drain, 'ROOT', tmp_path),
+          patch.object(guard, 'ppi_units', return_value={}),
+          patch.object(guard.drain, 'inspect', side_effect=lambda name: live[name]),
+          patch.object(guard.cold, 'envelope', return_value={
+              'status': 'FAIL_CLOSED', 'real_routes': 'NOT_CALLED'}),
+          patch.object(guard.cold, 'quarantine', side_effect=archive)):
+        if expected == 'DRAINED':
+            assert guard.apply(tmp_path, CANDIDATE)['old_cut_revoked'] is True
+            assert len(reached) == 1
+            assert reached[0]['status'] == 'DRAINED'
+            assert reached[0]['owned_ids'] == ids
+        else:
+            with pytest.raises(ValueError, match=expected):
+                guard.apply(tmp_path, CANDIDATE)
+            assert not reached
