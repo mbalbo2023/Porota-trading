@@ -1,0 +1,112 @@
+name: RC6 624 one-shot artifact and DB inventory
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-artifact-db-inventory.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: github.head_ref == 'diagnostic/rc6-624-artifact-db-inventory-20261020'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Bounded read-only artifact and SQLite allocation inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-artifact-inventory"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota-artifact-inventory" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/porota-artifact-inventory"' EXIT
+          timeout 55 ssh -i "$HOME/.ssh/porota-artifact-inventory" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 40 python3 -B -' <<'PY'
+          import datetime,json,os,sqlite3,time
+          from pathlib import Path
+          from collections import defaultdict
+          root=Path('/opt/porota-trading/data')
+          mem=int(next(x.split()[1] for x in Path('/proc/meminfo').read_text().splitlines()
+              if x.startswith('MemAvailable:')))*1024
+          psi=float(next(x.split('=')[1] for x in Path('/proc/pressure/io').read_text().splitlines()[0].split()
+              if x.startswith('avg10=')))
+          v=os.statvfs('/');free=v.f_bavail*v.f_frsize
+          if mem<256*1024**2 or psi>10 or free<2*1024**3:
+              print(json.dumps({'status':'DEFERRED_RESOURCE_ADMISSION','mem_available':mem,
+                  'io_psi_avg10':psi,'free_bytes':free}))
+              raise SystemExit(2)
+          def inventory(path,limit=100000,seconds=5):
+              start=time.monotonic();stack=[path];groups=defaultdict(lambda:{'allocated':0,'logical':0,'files':0,'newest':0})
+              largest=[];scanned=0;links=0
+              while stack:
+                  if time.monotonic()-start>seconds or scanned>limit:raise RuntimeError('INVENTORY_BOUND')
+                  base=stack.pop()
+                  if not base.exists():continue
+                  with os.scandir(base) as entries:
+                      for entry in entries:
+                          scanned+=1
+                          if entry.is_symlink():links+=1;continue
+                          if entry.is_dir(follow_symlinks=False):stack.append(Path(entry.path));continue
+                          if not entry.is_file(follow_symlinks=False):continue
+                          st=entry.stat(follow_symlinks=False)
+                          rel=Path(entry.path).relative_to(path)
+                          group=rel.parts[0] if len(rel.parts)>1 else '(root)'
+                          g=groups[group]
+                          g['allocated']+=st.st_blocks*512;g['logical']+=st.st_size
+                          g['files']+=1;g['newest']=max(g['newest'],int(st.st_mtime))
+                          largest.append((st.st_blocks*512,str(rel)))
+              return {'allocated_by_first_component':dict(sorted(groups.items(),
+                  key=lambda item:-item[1]['allocated'])[:25]),
+                  'largest_regular_files':sorted(largest,reverse=True)[:15],
+                  'entries_scanned':scanned,'symlinks_skipped':links}
+          def database(path):
+              uri=path.as_uri()+'?mode=ro'
+              with sqlite3.connect(uri,uri=True,timeout=.2) as c:
+                  c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=200')
+                  pages=c.execute('PRAGMA page_count').fetchone()[0]
+                  freepages=c.execute('PRAGMA freelist_count').fetchone()[0]
+                  page_size=c.execute('PRAGMA page_size').fetchone()[0]
+                  tables=c.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
+                  by_table='NO_VERIFICADO_BOUNDED'
+                  deadline=time.monotonic()+3
+                  try:
+                      c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                      by_table=c.execute('SELECT name,sum(pgsize) bytes FROM dbstat '
+                          'GROUP BY name ORDER BY bytes DESC LIMIT 15').fetchall()
+                  except sqlite3.Error:pass
+                  finally:c.set_progress_handler(None,0)
+              return {'bytes':path.stat().st_size,'page_count':pages,'page_size':page_size,
+                  'freelist_pages':freepages,'freelist_bytes':freepages*page_size,
+                  'tables':tables,'top_dbstat':by_table}
+          paths={'paper_artifacts':root/'paper_v17/artifacts',
+              'general_backups':Path('/opt/porota-backups'),
+              'data_backups':root/'backups'}
+          result={'schema':'rc6.624.artifact-db-inventory.v1','time_utc':datetime.datetime.now(
+              datetime.timezone.utc).isoformat(),'read_only':True,'free_bytes':free,
+              'mem_available':mem,'io_psi_avg10':psi,
+              'directories':{name:inventory(path) for name,path in paths.items()},
+              'databases':{name:database(path) for name,path in {
+                  'observer':root/'paper_v17/observer_v17.db',
+                  'history':root/'market_history.db',
+                  'performance':root/'paper_v17/observer_v17.db.performance.sqlite'
+                  }.items() if path.is_file()}}
+          print(json.dumps(result,sort_keys=True))
+          PY
