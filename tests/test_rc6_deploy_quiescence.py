@@ -233,7 +233,7 @@ def test_intraday_suspend_rejects_unsafe_admission_before_stop(installation, cha
     assert not any(call[1] == 'stop' for call in calls)
 
 
-def test_intraday_stop_without_database_ack_is_not_drained(installation, monkeypatch):
+def test_intraday_stale_database_ack_without_clean_stop_is_not_drained(installation, monkeypatch):
     root, db, states, calls, command = installation
     with sqlite3.connect(db) as c:
         c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
@@ -242,9 +242,10 @@ def test_intraday_stop_without_database_ack_is_not_drained(installation, monkeyp
         if args[1] == 'stop':
             with sqlite3.connect(db) as c:
                 c.execute("UPDATE observer_state SET process_state='RUNNING'")
+            states[args[-1]]['State']['ExitCode'] = 1
         return result
     monkeypatch.setattr(q, 'command', no_ack)
-    with pytest.raises(ValueError, match='OPEN_SUSPEND_STATE_REQUIRED'):
+    with pytest.raises(ValueError, match='STOP_NONZERO_OR_UNKNOWN_EXIT'):
         q.run(SHA, 'drain', allow_market_open_suspend=True)
     assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
 
