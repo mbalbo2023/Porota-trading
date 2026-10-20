@@ -157,6 +157,11 @@ jobs:
               os.environ['CANDIDATE_TREE'],
               decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY')
           print(f'RC6_624_INTRADAY_SUSPEND_BY_OWNER=GREEN|comment={intraday}')
+          carryover = require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'],
+              decision='RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER')
+          print(f'RC6_624_INTRADAY_PAPER_CARRYOVER_BY_OWNER=GREEN|comment={carryover}')
           PY
 
       - name: Prepare strict SSH
@@ -428,7 +433,7 @@ jobs:
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --admin-cancel-issue624 --market-open-suspend" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --market-open-suspend --carry-open-paper-spots" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -572,7 +577,7 @@ jobs:
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
           sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
-            --candidate-sha "$CANDIDATE_SHA" --action install --market-open-suspend
+            --candidate-sha "$CANDIDATE_SHA" --action install --market-open-suspend --carry-open-paper-spots
 
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
           import hashlib,json,os,shutil,sys
@@ -1427,6 +1432,17 @@ jobs:
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
 
+      - name: Verify preserved PAPER spots after runtime restart
+        id: carryover
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action verify-carryover"
+
       - name: Verify RC6 schedulers restored after promotion
         id: timers_restored
         if: success()
@@ -1441,7 +1457,7 @@ jobs:
             < scripts/rc6_deploy_scheduler_suspend.py
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.carryover.outcome == 'failure' || steps.carryover.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |
