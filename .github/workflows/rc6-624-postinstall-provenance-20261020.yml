@@ -122,6 +122,7 @@ jobs:
               targets[image]={'present':rc==0,'tags':json.loads(out)[0].get('RepoTags') if rc==0 else [],'references':refs.get(image,[])}
           print('RC6_IMAGE_REF_DIAG='+json.dumps({'free':shutil.disk_usage('/').free,'images':targets},sort_keys=True))
           PY
+          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}'"
           rm -f "$HOME/.ssh/rc6_read"
 
 # Inventory after preopen contract failure and exact clean stop.
