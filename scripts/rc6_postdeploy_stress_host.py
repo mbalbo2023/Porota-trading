@@ -28,7 +28,7 @@ from scripts.rc6_deploy_quiescence import clean_stop,lifecycle
 
 OWNED=('porota_production_observer','porota_production_dashboard')
 RESERVE=2*1024**3
-MEMORY=512*1024**2
+MEMORY=256*1024**2
 
 
 def command(args, *, timeout=30):
@@ -146,8 +146,8 @@ def run(candidate, run_id):
         if memory_available()<MEMORY+128*1024**2:raise ValueError('STRESS_MEMORY_ADMISSION_BLOCKED')
         args=['docker','run','--name',name,'--network','none','--read-only',
               '--cap-drop','ALL','--security-opt','no-new-privileges','--user','1000:1000',
-              '--memory','512m','--memory-swap','512m','--cpus','.75','--pids-limit','96',
-              '--tmpfs','/tmp:rw,nosuid,nodev,size=512m',
+              '--memory','256m','--memory-swap','256m','--cpus','.75','--pids-limit','96',
+              '--tmpfs','/tmp:rw,nosuid,nodev,size=256m',
               '--mount','type=bind,src='+str(work)+',dst=/work',
               '--env','TMPDIR=/work',
               '--env','RC6_STRESS_EXECUTION_CONTEXT=DROPLET_ISOLATED_CONTAINER',
