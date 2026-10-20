@@ -10,7 +10,7 @@ RC6-native runtime state.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import date, datetime
 import json
 import shutil
 import sqlite3
@@ -25,6 +25,7 @@ TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
 DB = ROOT / 'data/paper_v17/observer_v17.db'
 BYMA_MORNING_WATCH = ROOT / 'data/market/byma_morning_watch_latest.json'
+BYMA_AUTHORITY_REVIEW = ROOT / 'ops/policy/rc6-byma-reviewed-authority-v1.json'
 IOL_FAMILY_REFERENCE = ROOT / 'data/market/iol_family_reference_latest.json'
 EXPECTED_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 BLOCKING_MIN_FREE_BYTES = 2 * 1024**3
@@ -263,6 +264,33 @@ def byma_morning_watch(today, *, allow_latest_safe=False):
         age = (datetime.now(TZ) - observed.astimezone(TZ)).total_seconds()
         state=str(payload.get('state') or '').upper()
         changed={str(x).upper() for x in payload.get('changed_components',[]) if x}
+        pending=payload.get('pending_review') or {}
+        if not isinstance(pending,dict):
+            return {'state':'RED','reason':'BYMA_PENDING_REVIEW_INVALID'}
+        critical=(changed & {'HOURS','CALENDAR'} if state == 'CHANGED_REVIEW_REQUIRED' else set()) | (set(pending) & {'HOURS','CALENDAR'})
+        if critical and state != 'DEGRADED':
+            try:
+                review=json.loads(BYMA_AUTHORITY_REVIEW.read_text(encoding='utf-8'))
+                assert review.get('schema') == 'porota-byma-authority-review-v1'
+                assert review.get('decision_effect') == 'OBSERVE_ONLY'
+                assert review.get('real_money_authorized') is False
+                assert today <= date.fromisoformat(str(review.get('valid_through_ar') or ''))
+                pages=payload.get('pages') or {}
+                approved=review.get('pages') or {}
+                for name in critical:
+                    page=pages.get(name) or {}
+                    expected=approved.get(name) or {}
+                    digest=page.get('sha256')
+                    assert page.get('status') == 'OK' and page.get('scope') == 'h1-to-footer-v2'
+                    assert page.get('url') == expected.get('url')
+                    assert isinstance(digest,str) and len(digest) == 64
+                    assert digest == expected.get('sha256')
+                    if name in pending:
+                        assert pending[name].get('sha256') == digest
+            except (OSError,ValueError,TypeError,KeyError,AssertionError,AttributeError):
+                return {'state':'RED','reason':'BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED',
+                        'critical_components':sorted(critical),
+                        'changed_components':sorted(changed)}
         if local.date() != today and not allow_latest_safe:
             return {'state':'RED','reason':'BYMA_WATCH_NOT_TODAY',
                     'observed_at':payload.get('observed_at')}
@@ -278,16 +306,16 @@ def byma_morning_watch(today, *, allow_latest_safe=False):
             return {'state':'RED','reason':'BYMA_WATCH_DEGRADED',
                     'changed_components':sorted(changed),'errors':payload.get('errors',[])}
         if state == 'CHANGED_REVIEW_REQUIRED':
-            critical=changed & {'HOURS','CALENDAR'}
             if critical:
-                return {'state':'RED','reason':'BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED',
+                return {'state':'AMBER','reason':'BYMA_CRITICAL_REVIEWED_EXACT',
                         'critical_components':sorted(critical),
                         'changed_components':sorted(changed)}
             return {'state':'AMBER','reason':'BYMA_CHANGE_REVIEW_REQUIRED',
                     'changed_components':sorted(changed)}
         if state in {'NO_CHANGE','BASELINE_CREATED'}:
             return {'state':'GREEN','reason':state,
-                    'changed_components':sorted(changed)}
+                    'changed_components':sorted(changed),
+                    'reviewed_critical_components':sorted(critical)}
         return {'state':'RED','reason':'BYMA_WATCH_STATE_UNKNOWN','watch_state':state}
     except Exception as exc:
         return {'state':'RED','reason':'BYMA_WATCH_UNAVAILABLE',

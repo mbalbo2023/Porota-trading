@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 
 import rc6_preopen as preopen
+import scripts.rc6_byma_morning_watch as watch
 
 
 TODAY=date(2026,9,25)
@@ -33,6 +34,81 @@ def test_hours_or_calendar_change_blocks_preopen_until_review(tmp_path, monkeypa
     row=preopen.byma_morning_watch(TODAY)
     assert row["state"]=="RED"
     assert row["critical_components"]==["HOURS"]
+
+
+def test_exact_official_review_accepts_changed_page_and_pending_repeat(tmp_path, monkeypatch):
+    path=write(tmp_path,state="CHANGED_REVIEW_REQUIRED",changed=["HOURS"])
+    payload=json.loads(path.read_text())
+    payload["pages"]={"HOURS":{"status":"OK","scope":"h1-to-footer-v2",
+        "url":"https://www.byma.com.ar/mercado/horarios","sha256":"a"*64}}
+    payload["pending_review"]={"HOURS":{"sha256":"a"*64}}
+    path.write_text(json.dumps(payload))
+    review=tmp_path/"review.json"
+    review.write_text(json.dumps({"schema":"porota-byma-authority-review-v1",
+        "decision_effect":"OBSERVE_ONLY","real_money_authorized":False,
+        "valid_through_ar":"2026-12-31","pages":{"HOURS":{
+            "url":"https://www.byma.com.ar/mercado/horarios","sha256":"a"*64}}}))
+    monkeypatch.setattr(preopen,"BYMA_MORNING_WATCH",path)
+    monkeypatch.setattr(preopen,"BYMA_AUTHORITY_REVIEW",review)
+    assert preopen.byma_morning_watch(TODAY)["reason"]=="BYMA_CRITICAL_REVIEWED_EXACT"
+    payload["state"]="NO_CHANGE"
+    payload["changed_components"]=[]
+    path.write_text(json.dumps(payload))
+    assert preopen.byma_morning_watch(TODAY)["reviewed_critical_components"]==["HOURS"]
+    payload["pages"]["HOURS"]["sha256"]="b"*64
+    path.write_text(json.dumps(payload))
+    assert preopen.byma_morning_watch(TODAY)["reason"]=="BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED"
+
+
+def test_review_expiry_or_missing_scope_fails_closed(tmp_path,monkeypatch):
+    path=write(tmp_path,state="CHANGED_REVIEW_REQUIRED",changed=["CALENDAR"])
+    payload=json.loads(path.read_text())
+    payload["pages"]={"CALENDAR":{"status":"OK","scope":"legacy",
+        "url":"https://www.byma.com.ar/mercado/calendario-bursatil","sha256":"c"*64}}
+    path.write_text(json.dumps(payload))
+    review=tmp_path/"review.json"
+    review.write_text(json.dumps({"schema":"porota-byma-authority-review-v1",
+        "decision_effect":"OBSERVE_ONLY","real_money_authorized":False,
+        "valid_through_ar":"2026-09-24","pages":{"CALENDAR":{
+            "url":"https://www.byma.com.ar/mercado/calendario-bursatil","sha256":"c"*64}}}))
+    monkeypatch.setattr(preopen,"BYMA_MORNING_WATCH",path)
+    monkeypatch.setattr(preopen,"BYMA_AUTHORITY_REVIEW",review)
+    assert preopen.byma_morning_watch(TODAY)["state"]=="RED"
+
+
+def test_observed_20261020_host_transition_requires_exact_review(tmp_path,monkeypatch):
+    """Replays the actual failed latest (06:10) into the scoped v2 capture."""
+    host={"schema":watch.SCHEMA,"observed_at":"2026-10-20T06:10:44+00:00",
+        "state":"CHANGED_REVIEW_REQUIRED",
+        "changed_components":["CALENDAR","COMMUNICATIONS","HOURS","OPTIONS","OPEN_DATA"],
+        "pages":{
+            "HOURS":{"status":"OK","sha256":"5c9bcc216deb0e41b3568715acbbed486ec2d5c2a6facc5b5edca48d8d4f9bf4"},
+            "CALENDAR":{"status":"OK","sha256":"3c9e72292230bd608a4ed38ef58b5e3384c42c024413745b8b543a7997a6c054"}},
+        "structured_byma":{"status":"SCRAPED_PUBLIC_DATA","identity_count":3236,
+                          "identity_sha256":"da091eb72b5d1d83ed0fd738690d685be562cb29312a9de93493b004644b8f91"},
+        "signature":"13b7f68835ad538059e0e2bba73cf03c27f401ac1ed111b614118c0632937fad",
+        "errors":[]}
+    latest=tmp_path/"byma_morning_watch_latest.json"
+    latest.write_text(json.dumps(host))
+    review=json.loads(Path("ops/policy/rc6-byma-reviewed-authority-v1.json").read_text())
+    current=dict(host, observed_at="2026-10-20T06:25:30+00:00",
+                 pages={name:{"status":"OK","scope":"h1-to-footer-v2",
+                    "url":review["pages"][name]["url"],
+                    "sha256":review["pages"][name]["sha256"]}
+                    for name in ("HOURS","CALENDAR")})
+    result=watch.persist(tmp_path,current)
+    assert result["pending_review"].keys()=={"HOURS","CALENDAR"}
+    monkeypatch.setattr(preopen,"BYMA_MORNING_WATCH",latest)
+    monkeypatch.setattr(preopen,"BYMA_AUTHORITY_REVIEW",
+                        Path("ops/policy/rc6-byma-reviewed-authority-v1.json").resolve())
+    today=date(2026,10,20)
+    assert preopen.byma_morning_watch(today)["reason"]=="BYMA_CRITICAL_REVIEWED_EXACT"
+    replay=watch.persist(tmp_path,dict(current,observed_at="2026-10-20T06:30:00+00:00"))
+    assert replay["state"]=="NO_CHANGE"
+    assert preopen.byma_morning_watch(today)["reviewed_critical_components"]==["CALENDAR","HOURS"]
+    current["pages"]["CALENDAR"]["sha256"]="d"*64
+    watch.persist(tmp_path,dict(current,observed_at="2026-10-20T06:31:00+00:00"))
+    assert preopen.byma_morning_watch(today)["reason"]=="BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED"
 
 
 def test_non_clock_official_change_is_visible_without_global_block(tmp_path, monkeypatch):
