@@ -21,6 +21,7 @@ IDENT='89e7f81dbc9b4a628bdc30edf86a17b0'
 MANIFEST_SHA='4d8e93f529e4c7385710dbcff58c52bea764762eafc0190907b63b1b214f1c6d'
 CUT='b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8'
 OLD_SHA='b346fcc8ae6edc51be20ac7325cd068cdeb60832'
+PRIOR_ARCHIVE_SHA='d96cb68d177199317ee23239553517e04ee0a255'
 FILES={IDENT+'.pack','manifest-'+IDENT+'.json','receipt-'+IDENT+'.json','queue.json'}
 
 
@@ -47,7 +48,7 @@ def regular(path):
     return info
 
 
-def checked(directory,shadow):
+def checked(directory,shadow, *, archived_recovery=False):
     info=directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)&0o077:
         raise ValueError('COLD_DIRECTORY_UNSAFE')
@@ -99,14 +100,43 @@ def checked(directory,shadow):
     current_snapshot=current.get('report',{}).get('computed_report',{}).get('snapshot_id')
     if (not current_snapshot or (generation==CUT and not old_cut_path.exists()) or
             (generation!=CUT and current_snapshot==IDENT) or
-            live.get('status')!='FAIL_CLOSED' or type(live.get('real_orders_sent')) is not int or
-            live['real_orders_sent']!=0):
+            type(live.get('real_orders_sent')) is not int or live['real_orders_sent']!=0):
+        raise ValueError('COLD_LIVE_PRECONDITION_CHANGED')
+    if archived_recovery:
+        # The earlier candidate already archived the failed input. A later
+        # genuine cut can replace FAIL_CLOSED without rehabilitating that input.
+        if (generation==CUT or old_cut_path.exists() or current_snapshot==IDENT or
+                live.get('status')!='SHADOW_OBSERVING' or
+                live.get('real_routes')!='NOT_CALLED'):
+            raise ValueError('COLD_ARCHIVED_RECOVERY_NOT_PROVEN')
+    elif live.get('status')!='FAIL_CLOSED':
         raise ValueError('COLD_LIVE_PRECONDITION_CHANGED')
     return {'pack_sha256':h.hexdigest(),'pack_bytes':info.st_size,
             'manifest_sha256':MANIFEST_SHA,'snapshot_id':IDENT,
             'failed_at':receipt['failed_at'],'deadline_at':manifest['deadline_at'],
             'revoked_cut':CUT,'current_cut':generation,
             'old_cut_gc_complete':not old_cut_path.exists()}
+
+
+def prior_archive_receipt(deploy,archive,evidence):
+    path=deploy/('rc6-cold-fix-forward-'+PRIOR_ARCHIVE_SHA+'.json')
+    if path.is_symlink() or not path.is_file() or path.stat().st_size>65536:
+        raise ValueError('COLD_PRIOR_ARCHIVE_RECEIPT_MISSING')
+    raw=path.read_bytes()
+    prior=json.loads(raw)
+    if (prior.get('schema')!='rc6.issue624.failed-cold-fix-forward.v1' or
+            prior.get('state')!='ARCHIVED_OLD_CUT_STILL_REVOKED' or
+            prior.get('candidate_sha')!=PRIOR_ARCHIVE_SHA or
+            prior.get('archive')!=str(archive) or prior.get('snapshot_id')!=IDENT or
+            prior.get('old_sha')!=OLD_SHA or
+            prior.get('manifest_sha256')!=MANIFEST_SHA or
+            prior.get('pack_sha256')!=evidence['pack_sha256'] or
+            prior.get('pack_bytes')!=evidence['pack_bytes'] or
+            prior.get('failed_at')!=evidence['failed_at'] or
+            prior.get('deadline_at')!=evidence['deadline_at'] or
+            prior.get('revoked_cut')!=CUT or prior.get('old_cut_gc_complete') is not True):
+        raise ValueError('COLD_PRIOR_ARCHIVE_RECEIPT_CHANGED')
+    return hashlib.sha256(raw).hexdigest()
 
 
 def enveloped_gzip(path):
@@ -188,7 +218,10 @@ def run(candidate):
             raise ValueError('COLD_CONTAINER_NOT_STOPPED_OR_CHANGED')
     where=original_location(source,archive)
     if not where.exists():raise ValueError('COLD_ORIGINAL_MISSING')
-    evidence=checked(where,shadow)
+    recovered_archive=where==archive and candidate!=PRIOR_ARCHIVE_SHA
+    evidence=checked(where,shadow,archived_recovery=recovered_archive)
+    prior_receipt_sha=(prior_archive_receipt(deploy,archive,evidence)
+                       if recovered_archive else None)
     if where==source:
         write(receipt_path,{'schema':'rc6.issue624.failed-cold-fix-forward.v1',
             'state':'VALIDATED_FOR_ARCHIVE','old_sha':OLD_SHA,'candidate_sha':candidate,**evidence})
@@ -200,11 +233,13 @@ def run(candidate):
             raise ValueError('COLD_AMBIGUOUS_ARCHIVE')
     elif source.exists():
         raise ValueError('COLD_ARCHIVE_INCOMPLETE')
-    checked(archive,shadow)
+    checked(archive,shadow,archived_recovery=recovered_archive)
     write(receipt_path,{'schema':'rc6.issue624.failed-cold-fix-forward.v1',
         'state':'ARCHIVED_OLD_CUT_STILL_REVOKED','old_sha':OLD_SHA,
         'candidate_sha':candidate,'archive':str(archive),
-        'recorded_at':datetime.now(timezone.utc).isoformat(),**evidence})
+        'recorded_at':datetime.now(timezone.utc).isoformat(),
+        'adopted_prior_receipt_sha256':prior_receipt_sha,
+        'archived_recovery':recovered_archive,**evidence})
     print(json.dumps({'status':'GREEN','candidate_sha':candidate,'archive':str(archive),
         'original_pack_sha256':evidence['pack_sha256'],'old_cut_revoked':True,
         'ppi_watch_accessed':False,'real_orders_sent':0},sort_keys=True))

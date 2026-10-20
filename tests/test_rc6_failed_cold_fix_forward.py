@@ -27,7 +27,7 @@ def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,mo
     monkeypatch.setattr(recovery,'CUT',old_cut)
     monkeypatch.setattr(recovery,'FILES',{old['snapshot_id']+'.pack',
         'manifest-'+old['snapshot_id']+'.json','receipt-'+old['snapshot_id']+'.json','queue.json'})
-    new_sha='f'*40
+    new_sha=recovery.PRIOR_ARCHIVE_SHA
     containers={name:{'id':name+'-id','image':'sha256:'+('a'*64)} for name in
                 ('porota_production_observer','porota_production_dashboard')}
     (deploy/('quiescence-'+new_sha+'.json')).write_text(json.dumps({
@@ -79,6 +79,33 @@ def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,mo
     (shadow/('cut-'+old_cut+'.json.gz')).unlink(missing_ok=True)
     recovery.run(new_sha)  # New pointer and bounded GC must not resurrect old ID.
     assert json.loads((deploy/('rc6-cold-fix-forward-'+new_sha+'.json')).read_text())['old_cut_gc_complete']
+    successor='f'*40
+    (deploy/('quiescence-'+successor+'.json')).write_text(json.dumps({
+        'status':'HOST_INSTALLATION_STARTED','candidate_sha':successor,'real_orders_sent':0,
+        'stop_evidence':{name:{} for name in containers},'containers':containers}))
+    with p.EvidenceFiles(shadow) as files:
+        files.write('status.json',{'status':'SHADOW_OBSERVING',
+            'real_orders_sent':0,'real_routes':'NOT_CALLED'})
+    prior_path=deploy/('rc6-cold-fix-forward-'+new_sha+'.json')
+    prior_bytes=prior_path.read_bytes()
+    recovery.run(successor)
+    adopted=json.loads((deploy/('rc6-cold-fix-forward-'+successor+'.json')).read_text())
+    assert adopted['archived_recovery'] is True
+    assert adopted['adopted_prior_receipt_sha256']==recovery.hashlib.sha256(prior_bytes).hexdigest()
+    assert adopted['current_cut']!=old_cut and adopted['old_cut_gc_complete'] is True
+    assert (active/('manifest-'+foreign+'.json')).read_text()=='foreign record retained'
+    prior=json.loads(prior_bytes);prior['state']='UNVERIFIED'
+    prior_path.write_text(json.dumps(prior))
+    with pytest.raises(ValueError,match='COLD_PRIOR_ARCHIVE_RECEIPT_CHANGED'):
+        recovery.run(successor)
+    prior_path.write_bytes(prior_bytes)
+    with p.EvidenceFiles(shadow) as files:
+        files.write('status.json',{'status':'FAIL_CLOSED','real_orders_sent':0})
+    with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
+        recovery.run(successor)
+    with p.EvidenceFiles(shadow) as files:
+        files.write('status.json',{'status':'SHADOW_OBSERVING',
+            'real_orders_sent':0,'real_routes':'NOT_CALLED'})
     (active/('manifest-'+foreign+'.json')).unlink()
     queue_path.unlink();active.rmdir()
     with pytest.raises(ValueError):p.read_committed_generation(shadow)
