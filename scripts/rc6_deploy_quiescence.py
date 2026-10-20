@@ -278,14 +278,14 @@ def critical_admission():
 
 def adopt_exact_pending_intraday_stop(candidate, folder, originals):
     """Continue the 20/10 installed PAPER runtime after its exact clean stop."""
-    prior_candidate = 'f31393fdced65f6e2362e69c9ed1df934897296d'
-    prior_deploy = '55014f3ae503eade77e7027ed8898fd953b0bcd3'
-    image = 'sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'
+    prior_candidate = 'd96cb68d177199317ee23239553517e04ee0a255'
+    prior_deploy = 'e86bdb6a9fe5ac21b93bc26e70af9844945e1407'
+    image = 'sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
     ids = {'porota_production_observer':
-           'b4b1fb7b8cbe25c6b9d00b0fb01407b169ffe705629e0d015fa0b50cc4b27b63',
+           'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
            'porota_production_dashboard':
-           '0badcadf46eb5b13c341da7f0e528a44732948a6689f37c627fa9ccfad2f7d65'}
-    expected_book = '8a02ac16743e872c14e28663025069358517317c0f566580d63df8f626d033c2'
+           'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570'}
+    expected_book = 'e7fa20929b6aa4c26a534db6554fd95a22f1734c0fc91175d6f20f05067af13e'
     state_path = folder/'CURRENT_STATE_V2.json'
     prior_path = folder/('quiescence-'+prior_candidate+'.json')
     if (candidate == prior_candidate or state_path.is_symlink() or prior_path.is_symlink() or
@@ -329,7 +329,7 @@ def adopt_exact_pending_intraday_stop(candidate, folder, originals):
     process = admit(stopped=True, allow_market_open_suspend=True,
                     allow_open_paper_carryover=True, stopped_receipt=stopped)
     carry = spot_carryover_snapshot()
-    if (process not in {'STOPPED','RUNNING'} or carry.get('open_count') != 3 or
+    if (process not in {'STOPPED','RUNNING'} or carry.get('open_count') != 2 or
             carry.get('sha256') != expected_book):
         raise ValueError('QUIESCENCE_PENDING_BOOK_CHANGED')
     critical = critical_admission()
