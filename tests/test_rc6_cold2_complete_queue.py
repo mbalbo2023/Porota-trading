@@ -24,6 +24,7 @@ def write_envelope(path, payload, *, cold_file=False, zipped=False):
 def fixture(tmp_path):
     root = tmp_path/'host'
     (root/'data/deploy').mkdir(parents=True)
+    (root/'data/deploy/.deploy-quiescence.lock').touch()
     shadow = root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
     source = shadow/'cold-audit'
     source.mkdir(parents=True, mode=0o700)
