@@ -82,7 +82,7 @@ def test_each_archive_boundary_rechecks_live_stopped_identity_and_ppi(tmp_path):
           patch.object(guard.cold, 'envelope', return_value={
               'status': 'FAIL_CLOSED', 'real_routes': 'NOT_CALLED'}),
           patch.object(guard.cold, 'quarantine', side_effect=archive)):
-        assert guard.apply(tmp_path, CANDIDATE)['state'] == 'QUARANTINED_FAILED'
+        assert guard.apply(tmp_path, CANDIDATE)['original']['state'] == 'QUARANTINED_FAILED'
 
 
 def test_missing_exclusive_lock_refuses_before_archive(tmp_path):

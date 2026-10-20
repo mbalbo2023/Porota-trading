@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts import rc6_cold2_quarantine as cold
+from scripts import rc6_cold2_successor as successor
 from scripts import rc6_deploy_quiescence as drain
 
 ROOT = Path('/opt/porota-trading')
@@ -133,11 +134,27 @@ def apply(root, candidate):
                     'critical_healthy': True, 'owned_ids': current_ids,
                     'ppi_watch_accessed': False}
 
-        result = cold.quarantine(root, admission=admission, expected_owned_ids=ids)
+        original_archive = root/'data/deploy'/('rc6-failed-cold-'+cold.IDENT)
+        if (original_archive.is_dir() and not original_archive.is_symlink() and
+                (original_archive/'quarantine.json').exists() and
+                not (root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+                     /'cold-audit'/cold.PACK).exists()):
+            original = cold.verify_original_archive(root)
+        else:
+            original = cold.quarantine(root, admission=admission, expected_owned_ids=ids)
+        source = root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
+        queue_path = source/'queue.json'
+        if queue_path.exists() or queue_path.is_symlink():
+            queue = cold.envelope(queue_path, cold=True)
+            if queue.get('state') != 'FAILED' or queue.get('snapshot_id') == cold.IDENT:
+                raise ValueError('COLD2_SUCCESSOR_QUEUE_UNEXPECTED')
+            later = successor.quarantine(root, admission=admission, expected_owned_ids=ids)
+        else:
+            later = {'state':'NO_ACTIVE_FAILED_SUCCESSOR','old_cut_revoked':True}
         admission()
         if ppi_units() != baseline:
             raise ValueError('COLD2_PPI_UNIT_CHANGED')
-        return result
+        return {'original':original,'successor':later,'old_cut_revoked':True}
 
 
 def main():
