@@ -91,3 +91,20 @@ class OwnerAuthorizationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'AUTHORIZATION_DECISION_INVALID'):
             require_exact_owner_authorization('owner/repo', candidate, tree,
                 decision='ARBITRARY', get_page=page([]))
+
+    def test_paper_carryover_needs_distinct_exact_owner_decision(self):
+        candidate, tree = 'a' * 40, 'b' * 40
+        body = (f'RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER '
+                f'candidate={candidate} tree={tree}')
+        row = dict(id=4, body=body, user={'login': 'mbalbo2023'},
+                   created_at='t1', updated_at='t1')
+        page = lambda rows: lambda _: json.dumps(rows).encode()
+        self.assertEqual(require_exact_owner_authorization(
+            'owner/repo', candidate, tree,
+            decision='RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER',
+            get_page=page([row])), 4)
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization(
+                'owner/repo', candidate, tree,
+                decision='RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER',
+                get_page=page([dict(row, updated_at='t2')]))
