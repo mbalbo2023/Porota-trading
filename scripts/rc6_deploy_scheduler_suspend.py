@@ -82,7 +82,24 @@ def run(candidate, action, policy_b64):
     receipt = json.loads(path.read_text()) if path.exists() else None
     if action == 'suspend':
         if receipt is not None:
-            raise ValueError('SCHEDULER_RECEIPT_EXISTS')
+            if (receipt.get('candidate_sha') != candidate or
+                    receipt.get('policy_sha256') != digest or
+                    receipt.get('timers') != names or
+                    receipt.get('ppi_before') != before or
+                    receipt.get('status') != 'SUSPENDED' or
+                    set(receipt.get('attempted', [])) != set(names)):
+                raise ValueError('SCHEDULER_RECEIPT_EXISTS')
+            for name in names:
+                if command('systemctl', 'is-active', name)[0] != 'inactive':
+                    raise ValueError('SCHEDULER_PREPAUSE_TIMER_CHANGED:' + name)
+                service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+                if code or not service.endswith('.service') or command('systemctl', 'is-active', service)[0] in (
+                        'active', 'activating', 'reloading', 'deactivating'):
+                    raise ValueError('SCHEDULER_PREPAUSE_JOB_ACTIVE:' + name)
+            print(json.dumps({'status': 'SUSPENDED', 'candidate_sha': candidate,
+                              'timer_count': len(names), 'prepaused_timers_adopted': True,
+                              'ppi_watch_mutated': False, 'ppi_watch_observed_read_only': True}, sort_keys=True))
+            return receipt
         for name in names:
             active, _ = command('systemctl', 'is-active', name)
             enabled, _ = command('systemctl', 'is-enabled', name)
@@ -146,8 +163,7 @@ def run(candidate, action, policy_b64):
     if ppi_snapshot() != before:
         raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
     print(json.dumps({'status': receipt['status'], 'candidate_sha': candidate,
-                      'timer_count': len(names), 'ppi_watch_mutated': False,
-                      'ppi_watch_observed_read_only': True}, sort_keys=True))
+                      'timer_count': len(names), 'ppi_watch_accessed': False}, sort_keys=True))
     return receipt
 
 
