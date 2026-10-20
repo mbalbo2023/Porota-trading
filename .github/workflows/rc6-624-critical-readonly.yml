@@ -144,6 +144,28 @@ jobs:
                     '-xdev','-type','f','-mtime','-5','-size','+50M',
                     '-printf','%s %TY-%Tm-%TdT%TH:%TM %p\\n'],25)
           REMOTE
+      - name: Read-only bounded process and PPI Watch inventory
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/rc6_probe" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'REMOTE'
+          import json, subprocess
+          def read(label,args):
+              r=subprocess.run(args,capture_output=True,text=True,timeout=10)
+              print(json.dumps({'event':label,'exit':r.returncode,
+                                'stdout':r.stdout[:9000],'stderr':r.stderr[:300]}),flush=True)
+          read('PROCESS_RSS_CPU',['ps','-eo','pid,comm,rss,pcpu,etime','--sort=-rss'])
+          r=subprocess.run(['systemctl','list-unit-files','--no-legend','--no-pager'],
+                           capture_output=True,text=True,timeout=10)
+          units=[line for line in r.stdout.splitlines() if 'ppi' in line.lower() and 'watch' in line.lower()]
+          print(json.dumps({'event':'PPI_WATCH_UNIT_NAMES','exit':r.returncode,
+                            'units':units[:30]}),flush=True)
+          REMOTE
       - name: Remove runner key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_probe"
