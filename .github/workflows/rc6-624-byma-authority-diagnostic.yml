@@ -19,9 +19,13 @@ jobs:
         run: |
           python3 - <<'PY'
           import re
+          from html.parser import HTMLParser
           from scripts.rc6_byma_morning_watch import URLS,KEYWORDS,_default_fetch,_visible_text,_stable_page_signature
           for name,url in URLS.items():
               body=_default_fetch(url)
+              raw=body.decode('utf-8','replace')
+              print('PAGE_STRUCTURE',name,'main_tags',len(re.findall(r'<main(?:\s|>)',raw,re.I)),'article_tags',len(re.findall(r'<article(?:\s|>)',raw,re.I)))
+              for m in list(re.finditer(r'<main(?:\s|>)',raw,re.I))[:2]: print('MAIN_TAG',name,raw[m.start():m.start()+220])
               text=' '.join(_visible_text(body).split())
               sentences=re.split(r'(?<=[.!?])\s+|\s{2,}',text)
               relevant=sorted(set(item.strip()[:500] for item in sentences if item.strip() and any(word in item.lower() for word in KEYWORDS)))
