@@ -1,0 +1,137 @@
+name: RC6 624 exact postfailure pause of owned timers
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-postfail-repause-20261020
+    paths:
+      - .github/workflows/rc6-624-postfail-repause-20261020.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  repause:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout exact policy and verify failed deploy
+        uses: actions/checkout@v4
+        with:
+          ref: 33586f8805ad658042050ad81a8d96df235de0f8
+      - name: Verify provenance and SSH
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^{tree})" = b389cbe88b0c915bda9b3d0ceebb7ad5ef7aca9d
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)" = 33586f8805ad658042050ad81a8d96df235de0f8
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39498542923" --jq '[.head_sha,.status,.conclusion] | join("|")' | \
+            grep -Fx '33586f8805ad658042050ad81a8d96df235de0f8|completed|failure'
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_repause"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_repause" "$HOME/.ssh/known_hosts"
+      - name: Stop only exact 20 managed timers after full PAPER admission
+        timeout-minutes: 4
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 180 ssh -i "$HOME/.ssh/rc6_repause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - '$POLICY_B64'" <<'PY'
+          import base64,hashlib,json,os,re,sqlite3,subprocess,sys,time
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          if not __debug__: raise RuntimeError('ASSERTIONS_REQUIRED')
+          local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          assert local.date().isoformat()=='2026-10-20' and 17<=local.hour<23
+          root=Path('/opt/porota-trading'); folder=root/'data/deploy'
+          def load(p):
+              assert p.is_file() and not p.is_symlink() and p.stat().st_size<65536
+              return json.loads(p.read_bytes())
+          def run(*args):
+              p=subprocess.run(args,text=True,capture_output=True,timeout=10)
+              return p.returncode,p.stdout.strip()
+          raw=base64.b64decode(sys.argv[1],validate=True)
+          policy=json.loads(raw); digest=hashlib.sha256(raw).hexdigest()
+          names=sorted(Path(p).name for p,v in policy['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          assert len(names)==20 and len(set(names))==20
+          current=load(folder/'CURRENT_STATE_V2.json')
+          old=load(folder/'scheduler-suspend-e86bdb6a9fe5ac21b93bc26e70af9844945e1407.json')
+          new=load(folder/'scheduler-suspend-638d5f73f43c5837752d3044f45da91317ffc7f4.json')
+          q=load(folder/'quiescence-638d5f73f43c5837752d3044f45da91317ffc7f4.json')
+          image='sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
+          ids={'porota_production_observer':'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
+               'porota_production_dashboard':'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570'}
+          assert current['candidate_sha']=='d96cb68d177199317ee23239553517e04ee0a255'
+          assert current['validation_status']=='DEPLOYED_VALIDATION_PENDING' and current['image_id']==image
+          assert current['mode']=='PRODUCTION_PAPER' and type(current['real_orders_sent']) is int and current['real_orders_sent']==0
+          assert current['real_order_routes']=='NOT_CALLED'
+          assert old['status']=='SUSPENDED' and new['status']=='RESTORED'
+          for receipt in (old,new):
+              assert receipt['policy_sha256']==digest and receipt['timers']==names and set(receipt['attempted'])==set(names)
+          assert q['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and q['candidate_sha']=='638d5f73f43c5837752d3044f45da91317ffc7f4'
+          assert q['installation_started'] is True and q['paused_postclose'] is True and q['real_orders_sent']==0
+          for n,ident in ids.items():
+              rc,out=run('docker','inspect',n); assert rc==0
+              row=json.loads(out)[0]
+              assert row['Id']==ident and row['Image']==image and row['State']['Status']=='exited'
+              assert row['State']['ExitCode']==0 and row['State']['OOMKilled'] is False and row['RestartCount']==0
+          rc,out=run('docker','inspect','porota_critical_approval_rc6');assert rc==0
+          critical=json.loads(out)[0]
+          assert critical['State']['Status']=='running' and critical['State']['Health']['Status']=='healthy'
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=200')
+              deadline=time.monotonic()+2;c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+              mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+              spots=c.execute("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT 17").fetchall()
+              assert len(spots)==2
+              payload=[]
+              for row in spots:
+                  fills=c.execute('SELECT * FROM paper_fills WHERE paper_id=? ORDER BY id LIMIT 65',(row['paper_id'],)).fetchall()
+                  intents=c.execute('SELECT * FROM paper_exit_intents WHERE paper_id=? LIMIT 2',(row['paper_id'],)).fetchall()
+                  assert len(fills)<=64 and len(intents)<=1 and not any(f['side']=='SELL_SIMULATED' for f in fills)
+                  payload.append({'position':dict(row),'fills':[dict(f) for f in fills],'intents':[dict(i) for i in intents]})
+              assert hashlib.sha256(json.dumps(payload,sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()=='e7fa20929b6aa4c26a534db6554fd95a22f1734c0fc91175d6f20f05067af13e'
+              caucion=c.execute("SELECT * FROM paper_cauciones WHERE status='OPEN' ORDER BY paper_id LIMIT 2").fetchall()
+              assert len(caucion)==1
+              assert hashlib.sha256(json.dumps(dict(caucion[0]),sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()=='bf6d2e347850e951c12141bd1d785868b6691da0cc878d17bfe429ac73c9c8a7'
+              assert not c.execute("SELECT 1 FROM paper_future_positions WHERE status='ACTIVE' LIMIT 1").fetchone()
+          def state(n,verb):return run('systemctl',verb,n)[1]
+          def ppi_snapshot():
+              rc,out=run('systemctl','list-unit-files','--no-legend','--no-pager');assert rc==0
+              ppi=sorted(line.split()[0] for line in out.splitlines() if line.split() and {'ppi','watch'}<=set(re.split(r'[-_.@]',line.split()[0].lower())))
+              return [(n,state(n,'is-enabled'),state(n,'is-active')) for n in ppi]
+          before=ppi_snapshot();assert before==[tuple(x) for x in new['ppi_before']]
+          for n in names:
+              assert state(n,'is-enabled')=='enabled' and state(n,'is-active')=='active'
+              rc,service=run('systemctl','show',n,'-p','Unit','--value')
+              assert rc==0 and service.endswith('.service')
+              assert state(service,'is-active') not in {'active','activating','reloading','deactivating'}
+          changed=[]
+          try:
+              for n in names:
+                  changed.append(n)
+                  rc,_=run('systemctl','stop',n)
+                  if rc or state(n,'is-active')!='inactive':raise RuntimeError('TIMER_STOP_FAILED:'+n)
+              assert all(state(n,'is-enabled')=='enabled' and state(n,'is-active')=='inactive' for n in names)
+              assert ppi_snapshot()==before
+          except Exception:
+              for n in reversed(changed):run('systemctl','start',n)
+              raise
+          print('RC6_624_POSTFAIL_REPAUSE=GREEN|count=20|enabled_inactive=true|paper=1|orders=0|spot=2|caucion=1|ppi_watch_unchanged=true')
+          PY
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_repause"
