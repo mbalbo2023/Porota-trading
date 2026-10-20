@@ -120,7 +120,7 @@ def verify_complete_queue(root):
     pointer = cold.envelope(shadow/'CURRENT.json')
     cut_name = pointer.get('file')
     if (not isinstance(cut_name, str) or
-            re.fullmatch(r'cut-[a-f0-9]{64}\\.json\\.gz', cut_name) is None or
+            re.fullmatch(r'cut-[a-f0-9]{64}\.json\.gz', cut_name) is None or
             pointer.get('generation_id') != cut_name[4:-8]):
         raise ValueError('COLD2_COMPLETE_CURRENT_UNSAFE')
     cut = cold.envelope(shadow/cut_name, zipped=True)
