@@ -81,6 +81,20 @@ jobs:
           selected += [shadow/'CURRENT.json',shadow/'status.json']
           archive=root/'data/deploy/rc6-failed-cold-7dc99ccd8f7c47849ca3705ae1cb2c49'
           archived=sorted(p.name for p in archive.iterdir()) if archive.is_dir() and not archive.is_symlink() else []
+          import gzip
+          current=json.loads((shadow/'CURRENT.json').read_bytes())['payload']
+          cut_path=shadow/current['file']
+          if cut_path.lstat().st_size>4*1024**2 or cut_path.is_symlink():
+              raise SystemExit('COLD2_CUT_BOUND_RED')
+          with gzip.open(cut_path,'rb') as stream:
+              raw=stream.read(4*1024**2+1)
+          if len(raw)>4*1024**2:
+              raise SystemExit('COLD2_CUT_DECOMPRESSED_BOUND_RED')
+          cut=json.loads(raw)['payload']
+          print('COLD2_CURRENT_REFERENCE='+json.dumps({'generation_id':current['generation_id'],
+              'computed_report':cut.get('report',{}).get('computed_report'),
+              'real_orders_sent':cut.get('status',{}).get('real_orders_sent'),
+              'real_routes':cut.get('status',{}).get('real_routes')},sort_keys=True))
           print('COLD2_SOURCE_PROVENANCE='+json.dumps({'envelopes':[summary(p) for p in selected],
               'original_archive_names':archived},sort_keys=True))
           PY
