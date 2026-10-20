@@ -286,9 +286,28 @@ def _admit(root, admission, expected_owned_ids):
             or any(type(value) is not str or re.fullmatch('[a-f0-9]{64}',value) is None
                    for value in expected_owned_ids.values())):
         raise ValueError('COLD2_EXPECTED_OWNED_IDS_REQUIRED')
+    # Intraday COLD archive is allowed only with the operator-authorized,
+    # immutable PAPER carryover witness rechecked by the caller at every
+    # boundary. CLOSED/no-position remains the default admission.
+    carry = state.get('spot_carryover') if type(state) is dict else None
+    intraday = (type(state) is dict and
+                state.get('market_open_suspended') is True and
+                state.get('open_paper_carryover') is True and
+                state.get('market_closed') is False and
+                state.get('no_positions') is False and
+                type(carry) is dict and
+                type(carry.get('open_count')) is int and 0 < carry['open_count'] <= 16 and
+                type(carry.get('sha256')) is str and
+                re.fullmatch('[a-f0-9]{64}', carry['sha256']) is not None and
+                type(carry.get('paper_ids')) is list and
+                len(carry['paper_ids']) == carry['open_count'])
+    closed = (type(state) is dict and state.get('market_closed') is True and
+              state.get('no_positions') is True and
+              state.get('market_open_suspended') is not True and
+              state.get('open_paper_carryover') is not True)
     if (type(state) is not dict or state.get('status') != 'DRAINED' or
-            state.get('owned_stopped') is not True or state.get('market_closed') is not True or
-            state.get('no_positions') is not True or state.get('lock_held') is not True or
+            state.get('owned_stopped') is not True or not (closed or intraday) or
+            state.get('lock_held') is not True or
             state.get('mode') != 'PRODUCTION_PAPER' or
             state.get('real_routes') != 'NOT_CALLED' or
             state.get('order_routing_blocked') is not True or
