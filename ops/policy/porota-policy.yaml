@@ -54,6 +54,7 @@ deployment:
   droplet_disk_pretransfer_min_free_bytes: dynamic
   droplet_disk_pretransfer_formula: image_tar_bytes + 2 * image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes
   droplet_disk_guard_must_run_before_transfer: true
+  failed_host_transition_replay_required: true
 
 predeploy_gates:
   required:
@@ -64,10 +65,11 @@ predeploy_gates:
     - IMPORT_CLOSURE
     - UNIT_TESTS
     - INTEGRATION_TESTS
+    - FAILED_HOST_TRANSITION_REPLAY
     - RUNTIME_SMOKE
     - PAPER_SAFETY
     - SECRET_SCAN
-  rule: "Any failure reproducible without the droplet MUST fail before the droplet is modified."
+  rule: "Any failure reproducible without the droplet MUST fail before the droplet is modified. Incident fixtures must reproduce the observed host state and the whole affected transition, including prior receipt, Docker identities, PAPER ledger and critical control plane."
 
 promotion:
   healthy_runtime_must_remain_untouched_until_candidate_green: true
@@ -80,6 +82,8 @@ failure_learning:
   failure_signature_required: true
   root_cause_required: true
   permanent_regression_guard_required: true
+  incident_fixture_provenance_required: true
+  guard_fixture_contract_drift_must_fail_predeploy: true
   repeated_known_failure_class_allowed: false
   fix_forward_required: true
 

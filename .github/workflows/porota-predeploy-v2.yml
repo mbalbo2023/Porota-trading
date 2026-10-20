@@ -41,6 +41,8 @@ jobs:
           grep -Fq 'manual_partial_runtime_file_lists_allowed: false' ops/policy/porota-policy.yaml
           grep -Fq 'droplet_disk_pretransfer_gate_required: true' ops/policy/porota-policy.yaml
           grep -Fq 'droplet_disk_guard_must_run_before_transfer: true' ops/policy/porota-policy.yaml
+          grep -Fq 'failed_host_transition_replay_required: true' ops/policy/porota-policy.yaml
+          grep -Fq 'guard_fixture_contract_drift_must_fail_predeploy: true' ops/policy/porota-policy.yaml
           grep -Fq 'paper_backup_keep_newest: 3' ops/policy/porota-policy.yaml
           grep -Fq 'history_backup_keep_newest: 3' ops/policy/porota-policy.yaml
           python - <<'PY'
@@ -59,6 +61,11 @@ jobs:
           assert p['deploy']['canonical_workflow'] == '.github/workflows/porota-deploy-v2-promote.yml'
           print('POROTA_DISK_POLICY_GATE=GREEN')
           PY
+          grep -Fq '    host_transition_required: true' ops/policy/test-policy.yaml
+          grep -Fq '    observed_state_provenance_required: true' ops/policy/test-policy.yaml
+          grep -Fq '    cross_module_guard_fixture_consistency_required: true' ops/policy/test-policy.yaml
+          grep -Fq '    zero_failures_errors_skips_required: true' ops/policy/test-policy.yaml
+          echo 'POROTA_INCIDENT_REPLAY_POLICY=GREEN'
           echo 'POROTA_POLICY_GATE=GREEN'
 
       - name: Python syntax gate

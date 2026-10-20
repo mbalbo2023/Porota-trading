@@ -252,7 +252,11 @@ def test_failed_admin_continues_exact_stopped_paper_without_old_image_restart(
     states = {n: {'Id': n, 'Image': 'old-image', 'State': {
         'Status': 'exited', 'StartedAt': None, 'FinishedAt': None,
         'ExitCode': 0, 'OOMKilled': False}} for n in quiescence.OWNED}
-    states['porota_critical_approval_rc6'] = {'Id': 'critical', 'Image': 'old-image',
+    # Reproduce the observed host split after run 39364292916: the stopped
+    # RC6 pair references one image, while the healthy issues broker retains
+    # an independent image until the later promotion reconciliation.
+    states['porota_critical_approval_rc6'] = {'Id': 'critical',
+        'Image': 'independent-critical-image',
         'RestartCount': 0,
         'State': {'Status': 'running', 'Health': {'Status': 'healthy'},
                   'ExitCode': 0, 'OOMKilled': False}}
@@ -274,5 +278,7 @@ def test_failed_admin_continues_exact_stopped_paper_without_old_image_restart(
     assert receipt['status'] == 'ADMIN_DRAINED_PENDING'
     assert receipt['admin_cancel_paper_id'] == p['paper_id']
     assert receipt['fix_forward_from'] == quiescence.FAILED_ADMIN_CANDIDATE
+    assert receipt['critical_admission']['image'] != receipt['containers'][quiescence.OWNED[0]]['image']
+    assert receipt['critical_admission']['capability'] == 'issues_only'
     monkeypatch.setattr(quiescence, 'wait_for_admin_resources', lambda: (512*1024*1024, 2.0))
     assert quiescence.run(successor, 'admin-begin', allow_admin_issue624=True)['status'] == 'ADMIN_WRITE_AUTHORIZED'
