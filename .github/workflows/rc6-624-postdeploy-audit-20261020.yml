@@ -32,7 +32,7 @@ jobs:
           test "$(git rev-parse HEAD^{tree})" = 78266c5c04d0556066f691ecec327289a1bac5b3
           # Fill the exact two-parent merge SHA after the canonical promotion.
           CURRENT="$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)"
-          test "$CURRENT" = ce16c19309d530b99b157c1a6d4cee6d3641b9a7
+          test "$CURRENT" = 678f66f557357c3c967a44534e4178799d38f535
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_postdeploy_audit"
