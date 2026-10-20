@@ -26,6 +26,10 @@ jobs:
               raw=body.decode('utf-8','replace')
               print('PAGE_STRUCTURE',name,'main_tags',len(re.findall(r'<main(?:\s|>)',raw,re.I)),'article_tags',len(re.findall(r'<article(?:\s|>)',raw,re.I)))
               for m in list(re.finditer(r'<main(?:\s|>)',raw,re.I))[:2]: print('MAIN_TAG',name,raw[m.start():m.start()+220])
+              for tag in ('h1','footer'):
+                  print('TAG_COUNT',name,tag,len(re.findall(fr'<{tag}(?:\s|>)',raw,re.I)))
+              title={'HOURS':'Horarios de negociación, liquidación y Mesa de Entradas','CALENDAR':'Calendario bursátil','COMMUNICATIONS':'Circulares y Comunicados','OPTIONS':'Contratos que otorgan derecho'}[name]
+              for m in list(re.finditer(re.escape(title),raw,re.I))[-2:]: print('TITLE_CONTEXT',name,raw[max(0,m.start()-300):m.start()+300].replace('\n',' ')[:600])
               text=' '.join(_visible_text(body).split())
               sentences=re.split(r'(?<=[.!?])\s+|\s{2,}',text)
               relevant=sorted(set(item.strip()[:500] for item in sentences if item.strip() and any(word in item.lower() for word in KEYWORDS)))
