@@ -124,7 +124,7 @@ jobs:
           print('RC6_OFFLINE_IMAGES_READONLY='+json.dumps({'owned':owned,
               'images':images,'paper':paper,'disk_free':free},sort_keys=True))
           PY
-      - name: Publish bounded queue state to issue 624
+      - name: Publish bounded COLD2 envelopes to issue 624
         if: success()
         shell: bash
         env:
@@ -142,7 +142,7 @@ jobs:
           queue=[row for row in provenance['envelopes'] if row['file']=='queue.json']
           print('RC6 #624 — sonda COLD2 posterior a deploy #39411525125, sólo lectura; PAPER/0 admitido.\\n')
           print('```json')
-          print(json.dumps({'queue':queue,'current':current,'paper':source['paper'],
+          print(json.dumps({'queue':queue,'envelopes':provenance['envelopes'],'current':current,'paper':source['paper'],
                             'unexpected':source['unexpected'],'root_free':source['root_free'],
                             'mem_available':source['mem_available']},sort_keys=True))
           print('```')
