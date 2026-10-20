@@ -59,6 +59,55 @@ def test_unsafe_or_unknown_cannot_stop_runtime(installation, change):
     assert not any(call[1] in ('stop', 'start') for call in calls)
 
 
+def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installation):
+    root, db, states, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+    receipt = q.run(SHA, 'drain', allow_market_open_suspend=True)
+    assert receipt['market_open_suspended'] is True
+    assert receipt['inflight'] == 'ABSENT_OWNED_RUNTIME_STOPPED'
+    with sqlite3.connect(db) as c:
+        assert c.execute('SELECT session_state,process_state FROM observer_state').fetchone() == (
+            'MARKET_OPEN', 'STOPPED')
+    with pytest.raises(ValueError, match='INSTALL_SESSION_MODE_CHANGED'):
+        q.run(SHA, 'install')
+    assert q.run(SHA, 'install', allow_market_open_suspend=True)['installation_started'] is True
+
+
+@pytest.mark.parametrize('change', ['stale', 'position', 'closed', 'real'])
+def test_intraday_suspend_rejects_unsafe_admission_before_stop(installation, change):
+    root, db, states, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        if change == 'stale':
+            c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+        elif change == 'position':
+            c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+        elif change == 'closed':
+            c.execute("UPDATE observer_state SET session_state='MARKET_CLOSED'")
+        else:
+            c.execute("UPDATE observer_state SET real_orders_sent=1")
+    with pytest.raises(ValueError):
+        q.run(SHA, 'drain', allow_market_open_suspend=True)
+    assert not any(call[1] == 'stop' for call in calls)
+
+
+def test_intraday_stop_without_database_ack_is_not_drained(installation, monkeypatch):
+    root, db, states, calls, command = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+    def no_ack(args):
+        result = command(args)
+        if args[1] == 'stop':
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET process_state='RUNNING'")
+        return result
+    monkeypatch.setattr(q, 'command', no_ack)
+    with pytest.raises(ValueError, match='OPEN_SUSPEND_STATE_REQUIRED'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True)
+    assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
+
+
 def test_drain_proves_exited_then_rechecks_ledgers_before_install(installation):
     root, db, states, calls, _ = installation
     receipt = q.run(SHA, 'drain')
