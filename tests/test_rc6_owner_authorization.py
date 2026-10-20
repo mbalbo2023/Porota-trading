@@ -49,3 +49,29 @@ class OwnerAuthorizationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'AUTHORIZATION_PAGE_BOUND'):
             require_exact_owner_authorization('owner/repo', 'a' * 40, 'b' * 40,
                                               get_page=lambda _: b'x' * (MAX_PAGE_BYTES + 1))
+
+    def test_host_stress_deferral_needs_distinct_exact_unedited_owner_decision(self):
+        candidate, tree = 'c' * 40, 'd' * 40
+        default = f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
+        deferred = (f'RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED '
+                    f'candidate={candidate} tree={tree}')
+        def row(number, body, *, login='mbalbo2023', updated='t1'):
+            return dict(id=number, body=body, user={'login': login},
+                        created_at='t1', updated_at=updated)
+        def page(rows):
+            return lambda _: json.dumps(rows).encode()
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo', candidate, tree,
+                decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED',
+                get_page=page([row(1, default)]))
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo', candidate, tree,
+                decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED',
+                get_page=page([row(1, deferred, updated='t2')]))
+        self.assertEqual(require_exact_owner_authorization(
+            'owner/repo', candidate, tree,
+            decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED',
+            get_page=page([row(1, default), row(2, deferred)])), 2)
+        with self.assertRaisesRegex(ValueError, 'AUTHORIZATION_DECISION_INVALID'):
+            require_exact_owner_authorization('owner/repo', candidate, tree,
+                decision='ARBITRARY', get_page=page([]))
