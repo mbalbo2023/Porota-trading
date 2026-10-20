@@ -108,6 +108,42 @@ jobs:
           print(json.dumps({'event':'RC6_DISK_INVENTORY_DONE',
                             'root_free_bytes':stat.f_bavail*stat.f_frsize}),flush=True)
           REMOTE
+      - name: Bounded read-only Docker and data attribution
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/rc6_probe" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'REMOTE'
+          import json, os, subprocess
+          mem=int(next(line.split()[1] for line in open('/proc/meminfo') if line.startswith('MemAvailable:')))*1024
+          psi=float(next(part.split('=')[1] for part in open('/proc/pressure/io').readline().split() if part.startswith('avg10=')))
+          if mem<256*1024*1024 or psi>5:
+              print(json.dumps({'event':'RC6_DETAIL_DEFERRED','mem_available':mem,'io_psi_avg10':psi}),flush=True)
+              raise SystemExit(0)
+          def probe(label,args,seconds=25):
+              try:
+                  r=subprocess.run(['nice','-n','10','ionice','-c3']+args,
+                                   capture_output=True,text=True,timeout=seconds)
+                  print(json.dumps({'event':label,'exit':r.returncode,
+                                    'stdout':r.stdout[:20000],
+                                    'stderr':r.stderr[:1000]}),flush=True)
+              except subprocess.TimeoutExpired:
+                  print(json.dumps({'event':label,'status':'TIMEOUT_BOUNDED'}),flush=True)
+          probe('DOCKER_SYSTEM_DF_DETAIL',['docker','system','df','-v'],20)
+          probe('POROTA_DATA_DETAIL',['du','-x','-d','2','-B','1',
+                                     '/opt/porota-trading/data'],30)
+          probe('POROTA_RECENT_LARGE_FILES',['find','/opt/porota-trading/data',
+                    '-xdev','-type','f','-mtime','-5','-size','+50M',
+                    '-printf','%s %TY-%Tm-%TdT%TH:%TM %p\\n'],25)
+          probe('CONTAINERD_RECENT_LARGE_BLOBS',['find',
+                    '/var/lib/containerd/io.containerd.content.v1.content/blobs',
+                    '-xdev','-type','f','-mtime','-5','-size','+50M',
+                    '-printf','%s %TY-%Tm-%TdT%TH:%TM %p\\n'],25)
+          REMOTE
       - name: Remove runner key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_probe"
