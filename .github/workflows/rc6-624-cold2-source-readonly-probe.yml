@@ -97,6 +97,31 @@ jobs:
               'real_routes':cut.get('status',{}).get('real_routes')},sort_keys=True))
           print('COLD2_SOURCE_PROVENANCE='+json.dumps({'envelopes':[summary(p) for p in selected],
               'original_archive_names':archived},sort_keys=True))
+          import subprocess
+          def docker(*args):
+              result=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=10,check=True)
+              if len(result.stdout)>1024*1024:raise SystemExit('DOCKER_BOUND_RED')
+              return result.stdout.strip()
+          owned={}
+          for name in ('porota_production_observer','porota_production_dashboard',
+                       'porota_critical_approval_rc6'):
+              row=json.loads(docker('inspect',name))[0]
+              owned[name]={'id':row['Id'],'image_id':row['Image'],
+                           'status':row['State']['Status'],
+                           'exit_code':row['State']['ExitCode'],
+                           'healthy':(row['State'].get('Health') or {}).get('Status')}
+          container_ids=docker('ps','-aq','--no-trunc').splitlines()
+          image_ids=docker('image','ls','-aq','--no-trunc').splitlines()
+          if len(container_ids)>128 or len(image_ids)>64:raise SystemExit('DOCKER_INVENTORY_BOUND_RED')
+          refs={json.loads(docker('inspect',cid))[0]['Image'] for cid in container_ids}
+          images=[]
+          for iid in sorted(set(image_ids)):
+              row=json.loads(docker('image','inspect',iid))[0]
+              images.append({'id':iid,'tags':row.get('RepoTags') or [],
+                             'digests':row.get('RepoDigests') or [],
+                             'referenced':iid in refs})
+          print('RC6_OFFLINE_IMAGES_READONLY='+json.dumps({'owned':owned,
+              'images':images,'paper':paper,'disk_free':free},sort_keys=True))
           PY
       - name: Runner key cleanup
         if: always()
