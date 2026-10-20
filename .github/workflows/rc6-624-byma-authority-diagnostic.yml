@@ -1,0 +1,60 @@
+name: RC6 624 BYMA authority one-shot read only
+
+on:
+  push:
+    branches: [diagnostic/rc6-624-byma-authority-20261020]
+    paths: ['.github/workflows/rc6-624-byma-authority-diagnostic.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read bounded watch history and host resource truth
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          timeout 50 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading/data/market')
+          latest=root/'byma_morning_watch_latest.json'
+          history=root/'byma_morning_watch_history.jsonl'
+          print('LATEST_EXISTS',latest.exists(),'HISTORY_EXISTS',history.exists())
+          if latest.exists():
+              p=json.loads(latest.read_text())
+              print('LATEST',json.dumps({k:p.get(k) for k in ('observed_at','state','changed_components','signature','errors','authority_errors','complementary_errors')},sort_keys=True))
+              print('PAGES',json.dumps(p.get('pages'),sort_keys=True))
+              print('STRUCTURED',json.dumps({k:v for k,v in p.get('structured_byma',{}).items() if k in ('status','identity_count','identity_sha256','record_count','errors')},sort_keys=True))
+          if history.exists():
+              from collections import deque
+              with history.open() as f: rows=list(deque(f,maxlen=12))
+              print('HISTORY_TAIL',*[row.strip() for row in rows],sep='\n')
+          for name in ('MemTotal','MemAvailable','MemFree','Cached','SReclaimable','SwapTotal','SwapFree'):
+              line=next((l for l in Path('/proc/meminfo').read_text().splitlines() if l.startswith(name+':')),None)
+              print('MEM',line)
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              p=subprocess.run(['sudo','-n','docker','inspect','-f','{{.State.Running}}|{{.State.OOMKilled}}|{{.State.RestartCount}}|{{.Id}}',name],capture_output=True,text=True,timeout=5)
+              print('CONTAINER',name,p.stdout.strip() if p.returncode==0 else 'UNAVAILABLE')
+          PY
+          REMOTE
