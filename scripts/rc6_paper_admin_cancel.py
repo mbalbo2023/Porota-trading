@@ -54,13 +54,17 @@ def verify_receipt(path, candidate):
     return receipt
 
 
-def _exact_open(c):
+def _exact_open(c, *, stopped_host_verified=False):
     state = c.execute('''SELECT mode,real_orders_sent,process_state,session_state
       FROM observer_state WHERE id=1''').fetchone()
     if (not state or state['mode'] != 'PRODUCTION_PAPER'
             or type(state['real_orders_sent']) is not int
             or state['real_orders_sent'] != 0
-            or state['process_state'] != 'STOPPED'
+            # Docker can stop the scanner without changing its last persisted
+            # WAITING_MARKET state. That state is safe only after independent
+            # inspection proves both owned containers are still stopped.
+            or state['process_state'] not in
+                ({'STOPPED', 'WAITING_MARKET'} if stopped_host_verified else {'STOPPED'})
             or state['session_state'] not in {'CLOSED', 'MARKET_CLOSED'}):
         raise ValueError('ADMIN_STOPPED_PAPER_ONLY')
     positions = c.execute("SELECT * FROM paper_positions WHERE status='OPEN'").fetchall()
@@ -113,7 +117,8 @@ def execute(db, receipt, candidate, *, apply=False):
     db = Path(db)
     if db.is_symlink() or not db.is_file():
         raise ValueError('ADMIN_DB_PATH_INVALID')
-    if apply and db.resolve() == DATABASE:
+    stopped_host_verified = apply and db.resolve() == DATABASE
+    if stopped_host_verified:
         verify_host_stopped(proof)
     mode = 'rw' if apply else 'ro'
     with closing(sqlite3.connect(db.as_uri() + f'?mode={mode}', uri=True,
@@ -127,7 +132,7 @@ def execute(db, receipt, candidate, *, apply=False):
         c.set_progress_handler(lambda: int(time.monotonic() > deadline), 200)
         c.execute('BEGIN IMMEDIATE' if apply else 'BEGIN')
         try:
-            p = _exact_open(c)
+            p = _exact_open(c, stopped_host_verified=stopped_host_verified)
             if p['paper_id'] != proof.get('admin_cancel_paper_id'):
                 raise ValueError('ADMIN_RECEIPT_POSITION_CHANGED')
             if not apply:

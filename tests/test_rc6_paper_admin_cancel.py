@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 import json
 import sqlite3
+import subprocess
 import pytest
 
 import cd_spot_ledger as ledger
@@ -154,6 +155,39 @@ def test_admin_cli_plan_then_apply_exact_identity(partial_spot, tmp_path):
         assert c.execute("SELECT COUNT(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 0
 
 
+def test_admin_waiting_market_requires_actual_stopped_docker_and_remains_paper(
+        partial_spot, tmp_path, monkeypatch):
+    broker, p, _, _ = partial_spot(settlement='A-24HS')
+    _pending(broker, p)
+    broker.store.state(process_state='WAITING_MARKET', session_state='MARKET_CLOSED')
+    with broker.store.connect() as c:
+        stamp = '2026-10-19T18:51:58+00:00'
+        c.execute("UPDATE paper_positions SET symbol='SUPV',quantity='9',opened_at=? WHERE paper_id=?",
+                  (stamp, p['paper_id']))
+        c.execute("UPDATE paper_fills SET quantity='9',filled_at=? WHERE paper_id=?",
+                  (stamp, p['paper_id']))
+    receipt = _receipt(tmp_path, p['paper_id'])
+    monkeypatch.setattr(admin, 'DATABASE', admin.Path(broker.store.path).resolve())
+    running = [True]
+
+    def inspect(args, **kwargs):
+        name = args[-1]
+        state = {'Status': 'running' if running[0] else 'exited',
+                 'ExitCode': 0}
+        value = {'Id': name, 'Image': 'paper-image', 'State': state}
+        return subprocess.CompletedProcess(args, 0, json.dumps([value]), '')
+
+    monkeypatch.setattr(admin.subprocess, 'run', inspect)
+    with pytest.raises(ValueError, match='ADMIN_RUNTIME_CHANGED_AFTER_DRAIN'):
+        admin.execute(broker.store.path, receipt, 'a' * 40, apply=True)
+    running[0] = False
+    result = admin.execute(broker.store.path, receipt, 'a' * 40, apply=True)
+    assert result['status'] == 'CANCELLED_ADMIN' and not result['sell_simulated_created']
+    with broker.store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 0
+
+
 def test_exceptional_admission_is_exact_and_normal_gate_remains_closed(partial_spot, tmp_path, monkeypatch):
     broker, p, _, _ = partial_spot(settlement='A-24HS')
     _pending(broker, p)
@@ -178,3 +212,63 @@ def test_exceptional_admission_is_exact_and_normal_gate_remains_closed(partial_s
         c.execute("UPDATE paper_positions SET quantity='8' WHERE paper_id=?", (p['paper_id'],))
     with pytest.raises(ValueError, match='QUIESCENCE_ADMIN_TARGET_CHANGED'):
         quiescence.admit(stopped=True, allow_admin_issue624=True)
+
+
+@pytest.mark.parametrize('change', ['none', 'prior_position', 'prior_receipt', 'image', 'critical'])
+def test_failed_admin_continues_exact_stopped_paper_without_old_image_restart(
+        partial_spot, tmp_path, monkeypatch, change):
+    broker, p, _, _ = partial_spot(settlement='A-24HS')
+    _pending(broker, p)
+    broker.store.state(process_state='WAITING_MARKET', session_state='MARKET_CLOSED')
+    with broker.store.connect() as c:
+        stamp = '2026-10-19T18:51:58+00:00'
+        c.execute("UPDATE paper_positions SET symbol='SUPV',quantity='9',opened_at=? WHERE paper_id=?",
+                  (stamp, p['paper_id']))
+        c.execute("UPDATE paper_fills SET quantity='9',filled_at=? WHERE paper_id=?",
+                  (stamp, p['paper_id']))
+    root = tmp_path / 'host'
+    target = root / 'data/paper_v17/observer_v17.db'
+    target.parent.mkdir(parents=True)
+    with sqlite3.connect(broker.store.path) as src, sqlite3.connect(target) as dest:
+        src.backup(dest)
+    folder = root / 'data/deploy'
+    folder.mkdir()
+    prior = {
+        'candidate_sha': quiescence.FAILED_ADMIN_CANDIDATE,
+        'status': 'FIX_FORWARD_VALIDATION_REQUIRED',
+        'installation_started': True,
+        'admin_cancel_paper_id': p['paper_id'],
+        'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
+        'ppi_watch_accessed': False, 'real_orders_sent': 0,
+        'stop_attempted': list(quiescence.OWNED),
+        'containers': {n: {'id': n, 'image': 'old-image'} for n in quiescence.OWNED},
+        'stop_evidence': {n: {'classification': 'CLEAN_EXIT', 'after': {
+            'Status': 'exited', 'StartedAt': None, 'FinishedAt': None,
+            'ExitCode': 0, 'OOMKilled': False}} for n in quiescence.OWNED},
+    }
+    if change == 'prior_receipt': prior['inflight'] = 'UNKNOWN'
+    if change == 'prior_position': prior['admin_cancel_paper_id'] = 'other'
+    (folder / ('quiescence-' + quiescence.FAILED_ADMIN_CANDIDATE + '.json')).write_text(json.dumps(prior))
+    states = {n: {'Id': n, 'Image': 'old-image', 'State': {
+        'Status': 'exited', 'StartedAt': None, 'FinishedAt': None,
+        'ExitCode': 0, 'OOMKilled': False}} for n in quiescence.OWNED}
+    states['porota_critical_approval_rc6'] = {'Id': 'critical', 'Image': 'old-image',
+        'State': {'Status': 'running', 'Health': {'Status': 'healthy'},
+                  'ExitCode': 0, 'OOMKilled': False}}
+    if change == 'image': states[quiescence.OWNED[0]]['Image'] = 'other-image'
+    if change == 'critical': states['porota_critical_approval_rc6']['State']['Health']['Status'] = 'unhealthy'
+    monkeypatch.setattr(quiescence, 'ROOT', root)
+    monkeypatch.setattr(quiescence, 'inspect', lambda n: states[n])
+    monkeypatch.setattr(quiescence, 'command', lambda _: pytest.fail('stopped continuation must not start or stop'))
+    successor = 'b' * 40
+    if change != 'none':
+        with pytest.raises(ValueError):
+            quiescence.run(successor, 'drain', allow_admin_issue624=True)
+        assert not (folder / ('quiescence-' + successor + '.json')).exists()
+        return
+    receipt = quiescence.run(successor, 'drain', allow_admin_issue624=True)
+    assert receipt['status'] == 'ADMIN_DRAINED_PENDING'
+    assert receipt['admin_cancel_paper_id'] == p['paper_id']
+    assert receipt['fix_forward_from'] == quiescence.FAILED_ADMIN_CANDIDATE
+    monkeypatch.setattr(quiescence, 'wait_for_admin_resources', lambda: (512*1024*1024, 2.0))
+    assert quiescence.run(successor, 'admin-begin', allow_admin_issue624=True)['status'] == 'ADMIN_WRITE_AUTHORIZED'
