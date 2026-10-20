@@ -1,8 +1,8 @@
-name: RC6 624 intraday PAPER ledger read-only inventory
+name: RC6 624 continuity host read-only inventory
 on:
   push:
     branches:
-      - diagnostic/rc6-624-intraday-position-inventory-20261020
+      - diagnostic/rc6-624-continuity-inventory-20261020
     paths:
       - .github/workflows/rc6-624-intraday-position-inventory.yml
 permissions:
@@ -58,5 +58,43 @@ jobs:
           c.close()
           result['owned_containers']={name:subprocess.check_output(['docker','inspect','-f','{{.State.Status}}|{{.State.Restarting}}|{{.RestartCount}}',name],text=True,timeout=3).strip() for name in ('porota_production_observer','porota_production_dashboard')}
           print(json.dumps(result,sort_keys=True))
+          PY
+          timeout 45 ssh -i "$HOME/.ssh/rc6_readonly" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n timeout 30 python3 -" <<'PY'
+          import json,subprocess,os,re
+          from pathlib import Path
+          def run(argv,timeout=4):
+              try: return subprocess.check_output(argv,text=True,stderr=subprocess.DEVNULL,timeout=timeout).strip()
+              except Exception as e: return 'UNVERIFIED:'+type(e).__name__
+          mem={}
+          for line in Path('/proc/meminfo').read_text().splitlines():
+              m=re.match(r'^(MemTotal|MemAvailable|SwapTotal|SwapFree):\s+(\d+) kB',line)
+              if m: mem[m[1]]=int(m[2])*1024
+          disk={}
+          for mount in ('/','/opt/porota-trading'):
+              s=os.statvfs(mount)
+              disk[mount]={'available_bytes':s.f_bavail*s.f_frsize,'free_inodes':s.f_favail}
+          units=run(['systemctl','list-unit-files','--no-legend','--no-pager'],8)
+          related=[line.split()[0] for line in units.splitlines() if re.search(r'ppi.*watch|watch.*ppi',line,re.I)][:30]
+          ppi_units={u:{'active':run(['systemctl','is-active',u]),'enabled':run(['systemctl','is-enabled',u])} for u in related}
+          timers=run(['systemctl','list-unit-files','--type=timer','--no-legend','--no-pager'],8)
+          rc6_timers=[line.split()[0] for line in timers.splitlines() if re.search(r'rc6|porota',line,re.I)][:80]
+          timer_states={u:{'active':run(['systemctl','is-active',u]),'enabled':run(['systemctl','is-enabled',u])} for u in rc6_timers}
+          docker=run(['docker','ps','-a','--format','{{.Names}}|{{.ID}}|{{.Status}}'],8).splitlines()[:50]
+          comm=[]
+          for p in Path('/proc').iterdir():
+              if not p.name.isdigit(): continue
+              try:
+                  name=(p/'comm').read_text().strip()
+                  if re.search(r'ppi|watch',name,re.I): comm.append({'pid':int(p.name),'comm':name})
+              except (OSError,PermissionError): pass
+          root=Path('/opt/porota-trading/data/deploy')
+          receipts={}
+          for name in ('CURRENT_STATE_V2.json','quiescence-d96cb68d177199317ee23239553517e04ee0a255.json','rc6-resize-timer-guard-20261020.json'):
+              p=root/name
+              if p.is_file() and not p.is_symlink() and p.stat().st_size<65536:
+                  obj=json.loads(p.read_text())
+                  receipts[name]={k:obj.get(k) for k in ('candidate_sha','deploy_sha','image_id','validation_status','mode','real_orders_sent','real_order_routes','status','installation_started','market_open_suspended','open_paper_carryover','recorded_at') if k in obj}
+              else: receipts[name]='UNVERIFIED_OR_ABSENT'
+          print(json.dumps({'schema':'RC6_624_CONTINUITY_RO_V1','mem':mem,'disk':disk,'ppi_units':ppi_units,'ppi_process_comm':comm[:30],'rc6_timer_states':timer_states,'docker_names_id_status':docker,'receipts':receipts},sort_keys=True))
           PY
           rm -f "$HOME/.ssh/rc6_readonly"
