@@ -145,3 +145,55 @@ def test_observed_stopped_host_waiting_market_after_admin_cancel(
             with pytest.raises(ValueError, match=expected):
                 guard.apply(tmp_path, CANDIDATE)
             assert not reached
+
+
+def test_intraday_cold2_rechecks_exact_paper_book_at_archive_boundary(tmp_path):
+    value = receipt()
+    carry = {'open_count':4, 'paper_ids':['a','b','c','d'],
+             'sha256':'c'*64}
+    value.update(market_open_suspended=True, open_paper_carryover=True,
+                 spot_carryover=carry)
+    folder(tmp_path, value)
+    ids = {name:value['containers'][name]['id'] for name in NAMES}
+    live = {name:{'Id':ids[name], 'Image':'sha256:'+'a'*64,
+                  'State':{'Status':'exited','ExitCode':0}} for name in NAMES}
+    live['porota_critical_approval_rc6'] = {
+        'State':{'Status':'running','Health':{'Status':'healthy'},
+                 'OOMKilled':False}}
+    current = [carry.copy()]
+    def archive(root, *, admission, expected_owned_ids):
+        state = admission()
+        assert state['market_open_suspended'] is True
+        assert state['spot_carryover'] == carry
+        current[0] = dict(carry, sha256='d'*64)
+        with pytest.raises(ValueError, match='COLD2_INTRADAY_CARRYOVER_CHANGED'):
+            admission()
+        current[0] = carry.copy()
+        return {'state':'QUARANTINED_FAILED'}
+    with (patch.object(guard, 'ppi_units', return_value={}),
+          patch.object(guard.drain, 'exact_clean_stopped'),
+          patch.object(guard.drain, 'admit', return_value='RUNNING') as admit,
+          patch.object(guard.drain, 'spot_carryover_snapshot', side_effect=lambda:current[0]),
+          patch.object(guard.drain, 'inspect', side_effect=lambda name:live[name]),
+          patch.object(guard.cold, 'envelope', return_value={
+              'status':'FAIL_CLOSED','real_routes':'NOT_CALLED'}),
+          patch.object(guard.cold, 'quarantine', side_effect=archive)):
+        assert guard.apply(tmp_path, CANDIDATE)['old_cut_revoked'] is True
+        assert admit.call_args.kwargs['stopped_receipt'] == value
+
+
+def test_intraday_cold2_rejects_incomplete_carryover_admission(tmp_path):
+    from scripts import rc6_cold2_quarantine as cold
+    ids = {name:hex(i+1)[2:]*64 for i,name in enumerate(NAMES)}
+    state = {'status':'DRAINED', 'owned_stopped':True,
+             'market_closed':False, 'no_positions':False,
+             'market_open_suspended':True, 'open_paper_carryover':True,
+             'spot_carryover':{'open_count':4, 'paper_ids':['a'], 'sha256':'c'*64},
+             'lock_held':True, 'mode':'PRODUCTION_PAPER',
+             'real_orders_sent':0, 'real_routes':'NOT_CALLED',
+             'order_routing_blocked':True, 'inflight_absent':True,
+             'critical_healthy':True, 'owned_ids':ids, 'ppi_watch_accessed':False}
+    with pytest.raises(ValueError, match='COLD2_QUIESCENCE_REQUIRED'):
+        cold._admit(tmp_path, lambda:state, ids)
+    state['spot_carryover']['paper_ids'] = ['a','b','c','d']
+    cold._admit(tmp_path, lambda:state, ids)

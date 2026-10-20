@@ -160,12 +160,31 @@ def apply(root, candidate):
             latest, current_ids = receipt_for(root, candidate)
             if latest != receipt or current_ids != ids:
                 raise ValueError('COLD2_QUIESCENCE_RECEIPT_CHANGED')
-            # The observer can retain WAITING_MARKET in its durable ledger
-            # after Docker stopped it. drain.admit(stopped=True) independently
-            # verifies CLOSED/PAPER/0 and absence of open positions; the exact
-            # stopped container identities are checked below on every boundary.
-            if drain.admit(stopped=True) not in {'STOPPED', 'WAITING_MARKET'}:
-                raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
+            # Archive while the exact owned runtime remains stopped. The
+            # intraday path must preserve the full PAPER book byte-for-byte;
+            # a stale RUNNING SQLite marker is accepted only with the
+            # receipt's clean Docker stop proof.
+            intraday = (receipt.get('market_open_suspended') is True and
+                        receipt.get('open_paper_carryover') is True)
+            if intraday:
+                drain.exact_clean_stopped(receipt)
+                state = drain.admit(stopped=True, allow_market_open_suspend=True,
+                                    allow_open_paper_carryover=True,
+                                    stopped_receipt=receipt)
+                carry = drain.spot_carryover_snapshot()
+                if (carry != receipt.get('spot_carryover') or
+                        type(carry.get('open_count')) is not int or
+                        not 0 < carry['open_count'] <= 16):
+                    raise ValueError('COLD2_INTRADAY_CARRYOVER_CHANGED')
+                if state not in {'STOPPED', 'RUNNING'}:
+                    raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
+            else:
+                if (receipt.get('market_open_suspended') is True or
+                        receipt.get('open_paper_carryover') is True):
+                    raise ValueError('COLD2_SESSION_MODE_CHANGED')
+                if drain.admit(stopped=True) not in {'STOPPED', 'WAITING_MARKET'}:
+                    raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
+                carry = None
             for name in OWNED:
                 row = drain.inspect(name)
                 if (row['Id'] != ids[name] or
@@ -186,7 +205,10 @@ def apply(root, candidate):
             if ppi_units() != baseline:
                 raise ValueError('COLD2_PPI_UNIT_CHANGED')
             return {'status': 'DRAINED', 'owned_stopped': True,
-                    'market_closed': True, 'no_positions': True,
+                    'market_closed': not intraday, 'no_positions': not intraday,
+                    'market_open_suspended': intraday,
+                    'open_paper_carryover': intraday,
+                    'spot_carryover': carry,
                     'lock_held': True, 'mode': 'PRODUCTION_PAPER',
                     'real_orders_sent': 0, 'real_routes': 'NOT_CALLED',
                     'order_routing_blocked': True, 'inflight_absent': True,

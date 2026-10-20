@@ -125,3 +125,28 @@ def test_apply_retires_only_exact_legacy_allowlist(tmp_path, monkeypatch):
     assert ("systemctl","reset-failed","porota-preopen.timer") in calls
     assert not any("critical-approval" in " ".join(call) for call in calls)
     assert not any("ppi-watch" in " ".join(call) for call in calls)
+
+
+def test_intraday_reconcile_keeps_exact_active_timer_paused(tmp_path, monkeypatch):
+    source = tmp_path/'systemd'
+    source.mkdir()
+    (source/'porota-preopen-rc6.timer').write_text('[Timer]\nOnCalendar=*-*-* 09:00:00\n')
+    installed = tmp_path/'installed'
+    installed.mkdir()
+    calls = []
+    def fake_run(*args, check=True):
+        calls.append(args)
+        if args[:2] == ('systemctl','is-enabled'):
+            return SimpleNamespace(stdout='enabled\n')
+        if args[:2] == ('systemctl','is-active'):
+            return SimpleNamespace(stdout='inactive\n')
+        return SimpleNamespace(stdout='')
+    monkeypatch.setattr(host_control, '_run', fake_run)
+    policy = {'units':{'systemd/porota-preopen-rc6.timer':{
+        'role':'ACTIVE_TIMER','install':True,'enabled':True,'active':True}}}
+    result = host_control.apply(tmp_path, policy, installed,
+                                keep_active_timers_paused=True)
+    assert result['verification'] == [{
+        'unit':'porota-preopen-rc6.timer','state':'enabled|inactive'}]
+    assert ('systemctl','enable','porota-preopen-rc6.timer') in calls
+    assert not any('--now' in command for command in calls)

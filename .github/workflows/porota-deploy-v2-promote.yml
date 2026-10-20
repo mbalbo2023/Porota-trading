@@ -649,6 +649,7 @@ jobs:
           sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py" \
             --root "$REPO" \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
+            --keep-active-timers-paused \
             --json-out "$REMOTE_DIR/host-control-plane-applied.json"
 
           # Shared /app/data/market is writable only by the unprivileged RC6
@@ -1443,6 +1444,19 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "sudo -n python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action verify-carryover"
 
+      - name: Restore RC6 schedulers only after successful promotion
+        id: timers_restore
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+
       - name: Verify RC6 schedulers restored after promotion
         id: timers_restored
         if: success()
@@ -1457,7 +1471,7 @@ jobs:
             < scripts/rc6_deploy_scheduler_suspend.py
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.carryover.outcome == 'failure' || steps.carryover.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.carryover.outcome == 'failure' || steps.carryover.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |

@@ -100,10 +100,45 @@ def run(candidate, action, policy_b64):
                               'timer_count': len(names), 'prepaused_timers_adopted': True,
                               'ppi_watch_mutated': False, 'ppi_watch_observed_read_only': True}, sort_keys=True))
             return receipt
-        for name in names:
-            active, _ = command('systemctl', 'is-active', name)
-            enabled, _ = command('systemctl', 'is-enabled', name)
-            if (active, enabled) != ('active', 'enabled'):
+        states = [(command('systemctl', 'is-active', name)[0],
+                   command('systemctl', 'is-enabled', name)[0]) for name in names]
+        if all(state == ('inactive', 'enabled') for state in states):
+            # A failed installation can leave the exact owned timers paused
+            # under a prior candidate receipt. Adopt only its latest durable
+            # proof after checking every timer and already-running job.
+            paths = list(ROOT.glob('scheduler-suspend-*.json'))
+            if len(paths) > 128 or any(p.is_symlink() or p.stat().st_size > 65536 for p in paths):
+                raise ValueError('SCHEDULER_PRIOR_RECEIPT_INVENTORY_UNSAFE')
+            eligible = []
+            for prior_path in paths:
+                prior = json.loads(prior_path.read_text())
+                if (prior.get('status') == 'SUSPENDED' and
+                        prior.get('policy_sha256') == digest and
+                        prior.get('timers') == names and
+                        prior.get('ppi_before') == before and
+                        set(prior.get('attempted', [])) == set(names) and
+                        prior_path.name == 'scheduler-suspend-' + str(prior.get('candidate_sha')) + '.json'):
+                    eligible.append((prior['recorded_at'], prior_path, prior))
+            eligible.sort(key=lambda row: row[0])
+            if not eligible or (len(eligible) > 1 and eligible[-1][0] == eligible[-2][0]):
+                raise ValueError('SCHEDULER_PRIOR_PAUSE_UNVERIFIED')
+            for name in names:
+                service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+                if code or not service.endswith('.service') or command('systemctl', 'is-active', service)[0] in (
+                        'active', 'activating', 'reloading', 'deactivating'):
+                    raise ValueError('SCHEDULER_PREPAUSE_JOB_ACTIVE:' + name)
+            prior_path = eligible[-1][1]
+            receipt = dict(eligible[-1][2], candidate_sha=candidate,
+                           paused_from=eligible[-1][2]['candidate_sha'],
+                           prior_receipt_sha256=hashlib.sha256(prior_path.read_bytes()).hexdigest(),
+                           recorded_at=datetime.now(timezone.utc).isoformat())
+            persist(path, receipt)
+            print(json.dumps({'status':'SUSPENDED','candidate_sha':candidate,
+                              'timer_count':len(names),'prepaused_timers_adopted':True,
+                              'ppi_watch_mutated':False},sort_keys=True))
+            return receipt
+        for name, state in zip(names, states):
+            if state != ('active', 'enabled'):
                 raise ValueError('SCHEDULER_EXPECTED_TIMER_NOT_ACTIVE:' + name)
         receipt = {'candidate_sha': candidate, 'policy_sha256': digest,
                    'timers': names, 'ppi_before': before, 'attempted': [],

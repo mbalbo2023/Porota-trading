@@ -543,3 +543,44 @@ def test_admin_resource_admission_persistent_red_expires_without_relaxing_gate(
     assert all(not event['admitted'] for event in events)
     assert events[-1]['mem_available_bytes'] == available
     assert events[-1]['io_psi_avg10'] == pressure
+
+
+def test_intraday_failed_install_adopts_latest_exact_stopped_receipt(carry_installation):
+    root, db, states, calls, _ = carry_installation
+    q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    q.run(SHA, 'install', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    q.run(SHA, 'recover')
+    current = {'candidate_sha':'9'*40, 'image_id':'old_image',
+               'recorded_at':'2026-10-20T12:23:38+00:00',
+               'validation_status':'VALIDATED_RUNTIME', 'mode':'PRODUCTION_PAPER',
+               'real_orders_sent':0, 'real_order_routes':'NOT_CALLED'}
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps(current))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='OPEN'")
+    calls.clear()
+    successor = 'b'*40
+    row = q.run(successor, 'drain', allow_market_open_suspend=True,
+                allow_open_paper_carryover=True)
+    assert row['fix_forward_from'] == SHA and row['spot_carryover']['open_count'] == 4
+    assert not any(call[1] in ('start', 'stop') for call in calls)
+    assert q.run(successor, 'install', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['installation_started'] is True
+
+
+def test_intraday_failed_install_refuses_changed_book(carry_installation):
+    root, db, states, calls, _ = carry_installation
+    q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    q.run(SHA, 'install', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    q.run(SHA, 'recover')
+    current = {'candidate_sha':'9'*40, 'image_id':'old_image',
+               'recorded_at':'2026-10-20T12:23:38+00:00',
+               'validation_status':'VALIDATED_RUNTIME', 'mode':'PRODUCTION_PAPER',
+               'real_orders_sent':0, 'real_order_routes':'NOT_CALLED'}
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps(current))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='OPEN'")
+        c.execute("UPDATE paper_positions SET quantity=99 WHERE paper_id='paper-1'")
+    with pytest.raises(ValueError, match='PRIOR_CARRYOVER_CHANGED'):
+        q.run('b'*40, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert not any(call[1] == 'start' for call in calls)

@@ -292,7 +292,7 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
         state_candidate = current.get('candidate_sha')
         if (not isinstance(state_candidate, str) or
                 not re.fullmatch('[0-9a-f]{40}', state_candidate) or
-                current.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+                current.get('validation_status') not in {'DEPLOYED_VALIDATION_PENDING', 'VALIDATED_RUNTIME'} or
                 current.get('mode') != 'PRODUCTION_PAPER' or
                 type(current.get('real_orders_sent')) is not int or current['real_orders_sent'] != 0 or
                 current.get('real_order_routes') != 'NOT_CALLED' or
@@ -313,7 +313,13 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             row = json.loads(path.read_bytes())
             if row.get('candidate_sha') != old_candidate:
                 raise ValueError('QUIESCENCE_RECEIPT_INVENTORY_PROVENANCE_RED')
-            if old_candidate == candidate:
+            if old_candidate == candidate or row.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED':
+                continue
+            if (row.get('installation_started') is not True or
+                    set(row.get('containers', {})) != set(OWNED) or
+                    any(row['containers'][name].get('id') != originals[name]['Id'] or
+                        row['containers'][name].get('image') != originals[name]['Image']
+                        for name in OWNED)):
                 continue
             stamp = datetime.fromisoformat(row['recorded_at'])
             if stamp.tzinfo is None:
@@ -388,9 +394,12 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
         raise ValueError('QUIESCENCE_PRIOR_SESSION_MODE_CHANGED')
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
                     allow_market_open_suspend=allow_market_open_suspend,
-                    allow_open_paper_carryover=allow_open_paper_carryover)
-    if process not in ({'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
-                       else {'STOPPED'}):
+                    allow_open_paper_carryover=allow_open_paper_carryover,
+                    stopped_receipt=previous)
+    allowed = ({'RUNNING', 'STOPPED'} if allow_market_open_suspend else
+               {'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
+               else {'STOPPED'})
+    if process not in allowed:
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
     carryover = spot_carryover_snapshot() if allow_open_paper_carryover else None
     if allow_open_paper_carryover and previous.get('spot_carryover') != carryover:
@@ -496,15 +505,22 @@ def run(candidate, action, *, allow_admin_issue624=False,
                                   'prepaused_runtime_adopted': True, 'real_orders_sent': 0,
                                   'ppi_watch_accessed': False}), flush=True)
                 return receipt
-            process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624,
-                            allow_market_open_suspend=allow_market_open_suspend,
-                            allow_open_paper_carryover=allow_open_paper_carryover, initial=True)
-            admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
+            originals = {name: inspect(name) for name in OWNED}
+            stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
+            # After an installed intraday failure SQLite may still say RUNNING.
+            # Select the exact previous stop receipt before reading that marker.
+            if stopped_owned and allow_market_open_suspend and allow_open_paper_carryover:
+                admin_paper_id = None
+                process = None
+            else:
+                process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624,
+                                allow_market_open_suspend=allow_market_open_suspend,
+                                allow_open_paper_carryover=allow_open_paper_carryover, initial=True)
+                admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
             if allow_market_open_suspend and admin_paper_id:
                 raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
-            originals = {name: inspect(name) for name in OWNED}
-            if (process in {'STOPPED', 'WAITING_MARKET'}
-                    and all(v['State']['Status'] == 'exited' for v in originals.values())):
+            if (stopped_owned and (process in {'STOPPED', 'WAITING_MARKET'} or
+                                   allow_market_open_suspend and allow_open_paper_carryover)):
                 receipt = adopt_stopped_after_failed_install(
                     candidate, folder, originals, admin_paper_id=admin_paper_id,
                     allow_market_open_suspend=allow_market_open_suspend,

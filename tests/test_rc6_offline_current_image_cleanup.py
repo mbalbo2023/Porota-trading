@@ -131,3 +131,37 @@ def test_workflow_wires_current_identity_helper():
     assert '< scripts/rc6_offline_current_image_cleanup.py' in step
     assert '< scripts/rc6_offline_failed_image_cleanup.py' not in step
     assert subprocess.run(['bash','-n'], input=step, text=True, capture_output=True).returncode == 0
+
+
+def test_intraday_validated_state_requires_exact_stopped_receipt(tmp_path, monkeypatch):
+    from scripts import rc6_deploy_quiescence as drain
+    root = tmp_path/'porota'
+    folder = root/'data/deploy'
+    folder.mkdir(parents=True)
+    (folder/'CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':NEW_SHA, 'image_id':CURRENT, 'validation_status':'VALIDATED_RUNTIME',
+        'mode':'PRODUCTION_PAPER', 'real_orders_sent':0, 'real_order_routes':'NOT_CALLED'}))
+    monkeypatch.setattr(clean, 'ROOT', root)
+    owned = {name:{'Id':name, 'Image':CURRENT,
+                   'State':{'Status':'exited','ExitCode':0}} for name in clean.OWNED}
+    owned[clean.CRITICAL] = {'Id':'critical','Image':CURRENT,'RestartCount':0,
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    monkeypatch.setattr(clean, 'inspect', lambda name:owned[name])
+    monkeypatch.setattr(clean, 'docker', lambda *args:'RC6_CRITICAL_ISSUES_ONLY=GREEN')
+    monkeypatch.setattr(clean, 'ppi_units', lambda:{})
+    carry = {'open_count':4,'sha256':'e'*64}
+    (folder/('quiescence-'+OLD_SHA+'.json')).write_text(json.dumps({
+        'candidate_sha':OLD_SHA, 'recorded_at':'2026-10-20T16:00:00+00:00',
+        'status':'FIX_FORWARD_VALIDATION_REQUIRED','installation_started':True,
+        'market_open_suspended':True,'open_paper_carryover':True,
+        'containers':{name:{'id':owned[name]['Id'],'image':CURRENT}
+                      for name in clean.OWNED}, 'spot_carryover':carry}))
+    monkeypatch.setattr(drain, 'exact_clean_stopped', lambda receipt:None)
+    monkeypatch.setattr(drain, 'admit', lambda **kwargs:'RUNNING')
+    monkeypatch.setattr(drain, 'spot_carryover_snapshot', lambda:carry)
+    result = clean.admission()
+    assert result['intraday_proof'] == (OLD_SHA, 'e'*64)
+    monkeypatch.setattr(drain, 'spot_carryover_snapshot',
+                        lambda:dict(carry,sha256='f'*64))
+    with pytest.raises(ValueError, match='OFFLINE_CURRENT_CARRYOVER_RED'):
+        clean.admission()
