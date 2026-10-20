@@ -48,7 +48,35 @@ def regular(path):
     return info
 
 
-def checked(directory,shadow, *, archived_recovery=False):
+def proven_stop_cancellation(live, quiescence):
+    """Recognize only the worker's COLD capture cancellation during SIGTERM.
+
+    The worker records a fail-closed status immediately before its Docker clean
+    exit. The immutable old cut still stays revoked; any other failure must
+    keep blocking the archived recovery path.
+    """
+    if (not isinstance(quiescence, dict) or quiescence.get('paused_postclose') is not True or
+            live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
+            live.get('error_module')!='cold_audit' or
+            type(live.get('error_line')) is not int or live['error_line']!=360):
+        return False
+    proof=(quiescence.get('stop_evidence') or {}).get('porota_production_observer')
+    if not isinstance(proof,dict) or proof.get('classification')!='CLEAN_EXIT':return False
+    before,after=proof.get('before'),proof.get('after')
+    if (not isinstance(before,dict) or not isinstance(after,dict) or
+            before.get('Status')!='running' or after.get('Status')!='exited' or
+            type(after.get('ExitCode')) is not int or after['ExitCode']!=0 or
+            after.get('OOMKilled') is not False):return False
+    try:
+        stamp=datetime.fromisoformat(live['as_of'].replace('Z','+00:00'))
+        started=datetime.fromisoformat(before['StartedAt'].replace('Z','+00:00'))
+        finished=datetime.fromisoformat(after['FinishedAt'].replace('Z','+00:00'))
+        return (all(value.tzinfo is not None for value in (stamp,started,finished)) and
+                started<=stamp<=finished and 0<=(finished-stamp).total_seconds()<=15)
+    except (KeyError,AttributeError,TypeError,ValueError):return False
+
+
+def checked(directory,shadow, *, archived_recovery=False, quiescence=None):
     info=directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)&0o077:
         raise ValueError('COLD_DIRECTORY_UNSAFE')
@@ -105,8 +133,11 @@ def checked(directory,shadow, *, archived_recovery=False):
     if archived_recovery:
         # The earlier candidate already archived the failed input. A later
         # genuine cut can replace FAIL_CLOSED without rehabilitating that input.
+        # During the exact clean stop, a live COLD capture publishes its own
+        # fail-closed cancellation; this is bound to the stop receipt/time.
         if (generation==CUT or old_cut_path.exists() or current_snapshot==IDENT or
-                live.get('status')!='SHADOW_OBSERVING' or
+                (live.get('status')!='SHADOW_OBSERVING' and
+                 not proven_stop_cancellation(live,quiescence)) or
                 live.get('real_routes')!='NOT_CALLED'):
             raise ValueError('COLD_ARCHIVED_RECOVERY_NOT_PROVEN')
     elif live.get('status')!='FAIL_CLOSED':
@@ -219,7 +250,8 @@ def run(candidate):
     where=original_location(source,archive)
     if not where.exists():raise ValueError('COLD_ORIGINAL_MISSING')
     recovered_archive=where==archive and candidate!=PRIOR_ARCHIVE_SHA
-    evidence=checked(where,shadow,archived_recovery=recovered_archive)
+    evidence=checked(where,shadow,archived_recovery=recovered_archive,
+                     quiescence=quiescence)
     prior_receipt_sha=(prior_archive_receipt(deploy,archive,evidence)
                        if recovered_archive else None)
     if where==source:
@@ -233,7 +265,8 @@ def run(candidate):
             raise ValueError('COLD_AMBIGUOUS_ARCHIVE')
     elif source.exists():
         raise ValueError('COLD_ARCHIVE_INCOMPLETE')
-    checked(archive,shadow,archived_recovery=recovered_archive)
+    checked(archive,shadow,archived_recovery=recovered_archive,
+            quiescence=quiescence)
     write(receipt_path,{'schema':'rc6.issue624.failed-cold-fix-forward.v1',
         'state':'ARCHIVED_OLD_CUT_STILL_REVOKED','old_sha':OLD_SHA,
         'candidate_sha':candidate,'archive':str(archive),
