@@ -74,6 +74,37 @@ def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installat
     assert q.run(SHA, 'install', allow_market_open_suspend=True)['installation_started'] is True
 
 
+def test_paused_postclose_admits_only_exact_stopped_paper_caucion(installation, monkeypatch):
+    root, db, states, calls, _ = installation
+    class Postclose(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 20, 17, 40, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Postclose)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='STOPPED',session_state='MARKET_OPEN'")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT,principal TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T17:00:00-03:00','100')")
+    with pytest.raises(ValueError, match='QUIESCENCE_OPEN_POSITION'):
+        q.admit(stopped=True, allow_market_open_suspend=True,
+                allow_open_paper_carryover=True, stopped_receipt={})
+    assert q.admit(stopped=True, allow_market_open_suspend=True,
+                   allow_open_paper_carryover=True, allow_postclose_pending=True,
+                   stopped_receipt={}) == 'STOPPED'
+    caucion=q.pending_caucion_snapshot()
+    assert caucion['open_count']==1 and caucion['maturity_at']=='2026-10-21T17:00:00-03:00'
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_cauciones SET principal='999'")
+    assert q.pending_caucion_snapshot()['sha256'] != caucion['sha256']
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+    with pytest.raises(ValueError, match='QUIESCENCE_OPEN_POSITION'):
+        q.admit(stopped=True, allow_market_open_suspend=True,
+                allow_open_paper_carryover=True, allow_postclose_pending=True,
+                stopped_receipt={})
+
+
 @pytest.fixture
 def carry_installation(installation):
     root, db, states, calls, command = installation
