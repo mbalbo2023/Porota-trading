@@ -22,6 +22,7 @@ from urllib.request import Request, urlopen
 
 
 SCHEMA = "porota-byma-morning-watch-v1"
+SIGNATURE_SCOPE = "h1-to-footer-v2"
 DEFAULT_ROOT = Path("/opt/porota-trading/data/market")
 URLS = {
     "COMMUNICATIONS": "https://www.byma.com.ar/mercado/regulacion/circulares-y-comunicados",
@@ -71,8 +72,23 @@ def _visible_text(body: bytes) -> str:
     return " ".join(parser.parts)
 
 
+def _decision_body(body: bytes) -> bytes:
+    """Exclude BYMA's shared navigation and footer from authority decisions.
+
+Both boundaries are mandatory. A missing heading/footer means a page redesign
+and must fail closed instead of silently accepting a partial page.
+    """
+    raw = body.decode("utf-8", errors="replace")
+    heading = re.search(r"<h1(?:\s|>)", raw, re.I)
+    footer = re.search(r"<footer(?:\s|>)", raw[heading.start():], re.I) if heading else None
+    if not heading or not footer:
+        raise ValueError("BYMA_DECISION_BOUNDARY_MISSING")
+    return raw[heading.start():heading.start() + footer.start()].encode("utf-8")
+
+
 def _stable_page_signature(body: bytes) -> dict:
-    text = html.unescape(_visible_text(body))
+    decision = _decision_body(body)
+    text = html.unescape(_visible_text(decision))
     normalized = " ".join(text.split())
     communication_numbers = sorted(
         set(re.findall(r"(?<!\d)(?:18|19)\d{3}(?!\d)", normalized)),
@@ -87,9 +103,16 @@ def _stable_page_signature(body: bytes) -> dict:
     stable = json.dumps({
         "communications": communication_numbers[:80],
         "relevant": relevant[:250],
+        # The negotiation schedule is a linked PDF. Changing that target is
+        # material even when the visible link label remains the same.
+        "decision_pdf_links": sorted(set(re.findall(
+            r'''href=["']([^"']+\.pdf(?:\?[^"']*)?)["']''',
+            decision.decode("utf-8"), re.I,
+        ))),
     }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return {
         "sha256": _sha(stable),
+        "scope": SIGNATURE_SCOPE,
         "communication_numbers": communication_numbers[:80],
         "relevant_excerpt_count": len(relevant[:250]),
     }
@@ -260,6 +283,24 @@ def persist(root: Path, current: dict) -> dict:
             previous = None
     verdict = compare(previous, current)
     payload = dict(current, **verdict)
+    # A second collection can be NO_CHANGE relative to the overwritten latest;
+    # that does not constitute review of a previously detected authority shift.
+    pending = {}
+    if previous:
+        for name, item in (previous.get("pending_review") or {}).items():
+            if name in {"HOURS", "CALENDAR"} and isinstance(item, dict):
+                pending[name] = item
+        if previous.get("state") == "CHANGED_REVIEW_REQUIRED":
+            for name in set(previous.get("changed_components") or []) & {"HOURS", "CALENDAR"}:
+                if name not in pending:
+                    page = (previous.get("pages") or {}).get(name) or {}
+                    pending[name] = {"sha256": page.get("sha256"),
+                                     "detected_at": previous.get("observed_at")}
+    for name in set(verdict["changed_components"]) & {"HOURS", "CALENDAR"}:
+        page = (current.get("pages") or {}).get(name) or {}
+        pending[name] = {"sha256": page.get("sha256"),
+                         "detected_at": current.get("observed_at")}
+    payload["pending_review"] = pending
     tmp = latest.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     tmp.replace(latest)
@@ -270,6 +311,7 @@ def persist(root: Path, current: dict) -> dict:
             "changed_components": payload["changed_components"],
             "signature": payload["signature"],
             "errors": payload.get("errors", []),
+            "pending_review": payload["pending_review"],
             "decision_effect": "OBSERVE_ONLY",
         }, ensure_ascii=False, sort_keys=True) + "\n")
     return payload

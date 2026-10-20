@@ -3,7 +3,9 @@ name: RC6 624 BYMA authority one-shot read only
 on:
   push:
     branches: [diagnostic/rc6-624-byma-authority-20261020]
-    paths: ['.github/workflows/rc6-624-byma-authority-diagnostic.yml']
+    paths:
+      - '.github/workflows/rc6-624-byma-authority-diagnostic.yml'
+      - 'scripts/rc6_byma_morning_watch.py'
 
 permissions:
   contents: read
