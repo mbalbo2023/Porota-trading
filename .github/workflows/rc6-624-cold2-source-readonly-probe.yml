@@ -126,3 +126,5 @@ jobs:
       - name: Runner key cleanup
         if: always()
         run: rm -f "$HOME/.ssh/porota_rc6_cold2_diag"
+
+# One-shot post-39411525125 queue provenance probe; read-only.
