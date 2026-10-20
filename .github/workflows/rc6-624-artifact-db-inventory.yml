@@ -53,6 +53,12 @@ jobs:
               print(json.dumps({'status':'DEFERRED_RESOURCE_ADMISSION','mem_available':mem,
                   'io_psi_avg10':psi,'free_bytes':free}))
               raise SystemExit(2)
+          observer_db=root/'paper_v17/observer_v17.db'
+          with sqlite3.connect(observer_db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          if mode!='PRODUCTION_PAPER' or orders!=0:
+              raise RuntimeError('PAPER_INVARIANT_RED')
           def inventory(path,limit=100000,seconds=5):
               start=time.monotonic();stack=[path];groups=defaultdict(lambda:{'allocated':0,'logical':0,'files':0,'newest':0})
               largest=[];scanned=0;links=0
@@ -104,7 +110,7 @@ jobs:
               'mem_available':mem,'io_psi_avg10':psi,
               'directories':{name:inventory(path) for name,path in paths.items()},
               'databases':{name:database(path) for name,path in {
-                  'observer':root/'paper_v17/observer_v17.db',
+                  'observer':observer_db,
                   'history':root/'market_history.db',
                   'performance':root/'paper_v17/observer_v17.db.performance.sqlite'
                   }.items() if path.is_file()}}
