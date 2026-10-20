@@ -149,18 +149,19 @@ def test_intraday_validated_state_requires_exact_stopped_receipt(tmp_path, monke
     monkeypatch.setattr(clean, 'inspect', lambda name:owned[name])
     monkeypatch.setattr(clean, 'docker', lambda *args:'RC6_CRITICAL_ISSUES_ONLY=GREEN')
     monkeypatch.setattr(clean, 'ppi_units', lambda:{})
-    called = []
-    def witness(candidate, folder, originals, **options):
-        called.append((candidate, options))
-        return {'fix_forward_from':OLD_SHA,
-                'spot_carryover':{'open_count':4,'sha256':'e'*64}}
-    monkeypatch.setattr(drain, 'adopt_stopped_after_failed_install', witness)
+    carry = {'open_count':4,'sha256':'e'*64}
+    (folder/('quiescence-'+OLD_SHA+'.json')).write_text(json.dumps({
+        'candidate_sha':OLD_SHA, 'recorded_at':'2026-10-20T16:00:00+00:00',
+        'status':'FIX_FORWARD_VALIDATION_REQUIRED','installation_started':True,
+        'market_open_suspended':True,'open_paper_carryover':True,
+        'containers':{name:{'id':owned[name]['Id'],'image':CURRENT}
+                      for name in clean.OWNED}, 'spot_carryover':carry}))
+    monkeypatch.setattr(drain, 'exact_clean_stopped', lambda receipt:None)
+    monkeypatch.setattr(drain, 'admit', lambda **kwargs:'RUNNING')
+    monkeypatch.setattr(drain, 'spot_carryover_snapshot', lambda:carry)
     result = clean.admission()
     assert result['intraday_proof'] == (OLD_SHA, 'e'*64)
-    assert called[0][1] == {'allow_market_open_suspend':True,
-                            'allow_open_paper_carryover':True}
-    def changed(*args, **kwargs):
-        raise ValueError('QUIESCENCE_PRIOR_CARRYOVER_CHANGED')
-    monkeypatch.setattr(drain, 'adopt_stopped_after_failed_install', changed)
-    with pytest.raises(ValueError, match='PRIOR_CARRYOVER_CHANGED'):
+    monkeypatch.setattr(drain, 'spot_carryover_snapshot',
+                        lambda:dict(carry,sha256='f'*64))
+    with pytest.raises(ValueError, match='OFFLINE_CURRENT_CARRYOVER_RED'):
         clean.admission()
