@@ -52,7 +52,7 @@ class SuspendTests(unittest.TestCase):
 
     def test_invalid_policy_never_mutates_systemd(self):
         bad = base64.b64encode(json.dumps({'units': {
-            'systemd/other-ppi-watch.timer': {'role': 'ACTIVE_TIMER', 'active': True},
+            'systemd/porota-ppi-watch-rc6.timer': {'role': 'ACTIVE_TIMER', 'active': True},
         }}).encode()).decode()
         with patch.object(suspend, 'command', side_effect=AssertionError('systemctl called')):
             with self.assertRaisesRegex(ValueError, 'SCHEDULER_POLICY_UNSAFE'):
