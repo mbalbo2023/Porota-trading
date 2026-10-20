@@ -13,6 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v4
+      - name: Inspect public decision text on runner
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from scripts.rc6_byma_morning_watch import URLS,KEYWORDS,_default_fetch,_visible_text,_stable_page_signature
+          for name,url in URLS.items():
+              body=_default_fetch(url)
+              text=' '.join(_visible_text(body).split())
+              sentences=re.split(r'(?<=[.!?])\s+|\s{2,}',text)
+              relevant=sorted(set(item.strip()[:500] for item in sentences if item.strip() and any(word in item.lower() for word in KEYWORDS)))
+              print('PUBLIC_PAGE',name,'bytes',len(body),'text_length',len(text),'signature',_stable_page_signature(body))
+              for item in relevant[:24]: print('RELEVANT',name,repr(item[:500]))
+          PY
       - name: Strict SSH
         shell: bash
         env:
@@ -55,6 +70,10 @@ jobs:
               print('MEM',line)
           for name in ('porota_production_observer','porota_production_dashboard'):
               p=subprocess.run(['sudo','-n','docker','inspect','-f','{{.State.Running}}|{{.State.OOMKilled}}|{{.State.RestartCount}}|{{.Id}}',name],capture_output=True,text=True,timeout=5)
-              print('CONTAINER',name,p.stdout.strip() if p.returncode==0 else 'UNAVAILABLE')
+              print('CONTAINER',name,p.stdout.strip() if p.returncode==0 else 'UNAVAILABLE:'+p.stderr.strip()[:160])
+          p=subprocess.run(['sudo','-n','docker','stats','--no-stream','--format','{{.Name}}|{{.MemUsage}}|{{.CPUPerc}}','porota_production_observer','porota_production_dashboard'],capture_output=True,text=True,timeout=12)
+          print('DOCKER_STATS',p.stdout.strip() if p.returncode==0 else p.stderr.strip()[:160])
+          p=subprocess.run(['ps','-eo','pid,ppid,rss,%cpu,comm','--sort=-rss'],capture_output=True,text=True,timeout=5)
+          print('PROCESS_RSS_TOP',*p.stdout.splitlines()[:18],sep='\n')
           PY
           REMOTE
