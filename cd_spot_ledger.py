@@ -11,6 +11,8 @@ from bs_instrument_contracts import aware_datetime, decimal_value, cash_currency
 from cf_sale_settlement import validated_sale_settlement
 
 ZERO = Decimal(0)
+ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+ADMIN_CANCEL_AUTHORITY = 'ISSUE624_OPERATOR_REQUEST_20261019'
 
 
 def init_schema(store):
@@ -22,7 +24,12 @@ def init_schema(store):
           net_proceeds TEXT NOT NULL, available_at TEXT, basis TEXT NOT NULL,
           reason TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS idx_spot_sales_position ON paper_spot_sales(paper_id);
-          CREATE INDEX IF NOT EXISTS idx_spot_fills_position_side ON paper_fills(paper_id,side);''')
+          CREATE INDEX IF NOT EXISTS idx_spot_fills_position_side ON paper_fills(paper_id,side);
+          CREATE TABLE IF NOT EXISTS paper_admin_cancellations(
+            paper_id TEXT PRIMARY KEY REFERENCES paper_positions(paper_id),
+            cancelled_at TEXT NOT NULL, authority TEXT NOT NULL,
+            original_quantity TEXT NOT NULL, original_entry_price TEXT NOT NULL,
+            original_entry_cost TEXT NOT NULL, reason TEXT NOT NULL);''')
 
 
 def sales(c, paper_id):
@@ -95,15 +102,133 @@ def single_close_proceeds(p, fills):
     return price*qty*factor-fee
 
 
+def _admin_cancel_partition(c, p, at):
+    """An administrative PAPER void has no sale, settlement or trade label."""
+    receipt = c.execute('SELECT * FROM paper_admin_cancellations WHERE paper_id=?',
+                        (p['paper_id'],)).fetchone()
+    if (not receipt or receipt['reason'] != ADMIN_CANCEL_REASON
+            or receipt['authority'] != ADMIN_CANCEL_AUTHORITY):
+        raise ValueError('Anulación PAPER sin autoridad/recibo')
+    start, end = aware_datetime(p['opened_at']), aware_datetime(p['closed_at'])
+    if (end < start or aware_datetime(receipt['cancelled_at']) != end
+            or p['close_reason'] != ADMIN_CANCEL_REASON
+            or any(p[field] is not None for field in
+                   ('exit_price', 'exit_cost', 'gross_pnl', 'net_pnl'))):
+        raise ValueError('Anulación PAPER incompatible con la posición')
+    qty, cost, price, _ = entry_terms(p)
+    if (decimal_value(receipt['original_quantity'], 'cantidad anulada', positive=True) != qty
+            or decimal_value(receipt['original_entry_price'], 'precio original', positive=True) != price
+            or decimal_value(receipt['original_entry_cost'], 'costo original', nonnegative=True) != cost):
+        raise ValueError('Anulación PAPER alteró los términos originales')
+    fills = c.execute('SELECT * FROM paper_fills WHERE paper_id=?',
+                      (p['paper_id'],)).fetchall()
+    if (len(fills) != 1 or fills[0]['side'] != 'BUY_SIMULATED'
+            or fills[0]['source'] != p['source']
+            or decimal_value(fills[0]['quantity'], 'cantidad comprada', positive=True) != qty
+            or decimal_value(fills[0]['price'], 'precio comprado', positive=True) != price
+            or decimal_value(fills[0]['costs'], 'costo comprado', nonnegative=True) != cost
+            or aware_datetime(fills[0]['filled_at']) != start
+            or sales(c, p['paper_id'])
+            or c.execute('SELECT 1 FROM paper_sale_receivables WHERE paper_id=?',
+                         (p['paper_id'],)).fetchone()):
+        raise ValueError('Anulación PAPER con venta o compra no conciliada')
+    label = c.execute('SELECT label_timestamp FROM paper_learning_samples WHERE paper_id=?',
+                      (p['paper_id'],)).fetchone()
+    if label and label[0] is not None:
+        raise ValueError('Anulación PAPER no puede borrar etiqueta de aprendizaje')
+    intent = c.execute('SELECT state,cause FROM paper_exit_intents WHERE paper_id=?',
+                       (p['paper_id'],)).fetchone()
+    if not intent or intent['state'] != 'CANCELLED_ADMIN' or intent['cause'] != 'EOD_PAPER':
+        raise ValueError('Anulación PAPER sin intención EOD conciliada')
+    events = c.execute('''SELECT detail FROM paper_events
+      WHERE paper_id=? AND event_type='PAPER_ADMIN_CANCELLED_NO_MARKET' ''',
+      (p['paper_id'],)).fetchall()
+    if len(events) != 1 or receipt['authority'] not in events[0]['detail']:
+        raise ValueError('Anulación PAPER sin evento auditable')
+    if at is None or at >= end:
+        return None, []
+    if at < start:
+        return None, []
+    return dict(p, status='OPEN', closed_at=None, close_reason=None), []
+
+
+def cancel_open_paper_position(c, paper_id, at, authority):
+    """Void one unfilled PAPER entry atomically; never synthesize a sell fill.
+
+    The caller owns BEGIN IMMEDIATE and must independently prove that the old
+    runtime is stopped before using this against a running environment.
+    """
+    if not c.in_transaction or authority != ADMIN_CANCEL_AUTHORITY:
+        raise ValueError('Anulación PAPER requiere transacción y autoridad exacta')
+    at = aware_datetime(at)
+    row = c.execute('SELECT * FROM paper_positions WHERE paper_id=?', (paper_id,)).fetchone()
+    if not row or row['status'] != 'OPEN':
+        raise ValueError('Posición PAPER no está abierta')
+    p = dict(row)
+    remaining, realized = partition(c, p)
+    if not remaining or realized or remaining['quantity'] != p['quantity']:
+        raise ValueError('Anulación PAPER rechaza ventas parciales')
+    if at < aware_datetime(p['opened_at']):
+        raise ValueError('Reloj de anulación anterior a apertura')
+    intent = c.execute('SELECT cause,state FROM paper_exit_intents WHERE paper_id=?',
+                       (paper_id,)).fetchone()
+    if (not intent or intent['cause'] != 'EOD_PAPER'
+            or intent['state'] != 'EXIT_PENDING_MARKET_CLOSED'):
+        raise ValueError('Anulación PAPER exige intención EOD pendiente')
+    if (c.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side!='BUY_SIMULATED'",
+                  (paper_id,)).fetchone() or sales(c, paper_id)
+            or c.execute('SELECT 1 FROM paper_sale_receivables WHERE paper_id=?',
+                         (paper_id,)).fetchone()):
+        raise ValueError('Anulación PAPER rechaza venta/recibo existente')
+    buy = c.execute('SELECT * FROM paper_fills WHERE paper_id=?', (paper_id,)).fetchall()
+    if (len(buy) != 1 or buy[0]['side'] != 'BUY_SIMULATED'
+            or buy[0]['source'] != p['source']
+            or aware_datetime(buy[0]['filled_at']) != aware_datetime(p['opened_at'])
+            or Decimal(buy[0]['quantity']) != Decimal(p['quantity'])
+            or Decimal(buy[0]['price']) != Decimal(p['entry_price'])
+            or Decimal(buy[0]['costs']) != Decimal(p['entry_cost'])):
+        raise ValueError('Anulación PAPER exige compra original íntegra')
+    sample = c.execute('SELECT label_timestamp FROM paper_learning_samples WHERE paper_id=?',
+                       (paper_id,)).fetchone()
+    if sample and sample[0] is not None:
+        raise ValueError('Anulación PAPER no borra muestra etiquetada')
+    when = at.isoformat()
+    c.execute('''INSERT INTO paper_admin_cancellations
+      (paper_id,cancelled_at,authority,original_quantity,original_entry_price,
+       original_entry_cost,reason) VALUES(?,?,?,?,?,?,?)''',
+      (paper_id, when, authority, p['quantity'], p['entry_price'],
+       p['entry_cost'], ADMIN_CANCEL_REASON))
+    c.execute('''UPDATE paper_positions SET status='CANCELLED_ADMIN',closed_at=?,
+      close_reason=?,exit_price=NULL,exit_cost=NULL,gross_pnl=NULL,net_pnl=NULL
+      WHERE paper_id=? AND status='OPEN' ''', (when, ADMIN_CANCEL_REASON, paper_id))
+    if c.execute('SELECT changes()').fetchone()[0] != 1:
+        raise ValueError('Posición PAPER cambió durante anulación')
+    c.execute('''UPDATE paper_exit_intents SET state='CANCELLED_ADMIN',
+      blocked_reason='OPERATOR_ADMIN_CANCELLATION_NO_EXECUTION',supervised_at=?
+      WHERE paper_id=?''', (when, paper_id))
+    c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
+              (when, 'PRODUCTION_PAPER', 'PAPER_ADMIN_CANCELLED_NO_MARKET', paper_id,
+               f'{authority}; no SELL_SIMULATED, no market price, no realized PnL'))
+    after = c.execute('SELECT * FROM paper_positions WHERE paper_id=?',
+                      (paper_id,)).fetchone()
+    if partition(c, after) != (None, []):
+        raise ValueError('Anulación PAPER no conciliada')
+    return {'paper_id': paper_id, 'state': 'CANCELLED_ADMIN', 'at': when,
+            'authority': authority, 'real_orders_sent': 0,
+            'sell_simulated_created': False}
+
+
 def partition(c, p, at=None):
     """Retorna remanente y realizaciones; no cambia filas ni etiqueta parciales."""
     p = dict(p)
+    at = aware_datetime(at) if at is not None else None
+    if p['status'] == 'CANCELLED_ADMIN':
+        return _admin_cancel_partition(c, p, at)
     start = aware_datetime(p['opened_at'])
     end = aware_datetime(p['closed_at']) if p['closed_at'] else None
     if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)
             or (end and end < start)):
         raise ValueError('Cronología de posición inválida')
-    at = aware_datetime(at) if at is not None else None
     original_qty, original_cost, entry_price, factor = entry_terms(p)
     rows = sales(c,p['paper_id'])
     fills = c.execute("SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(p['paper_id'],)).fetchall()

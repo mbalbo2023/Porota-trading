@@ -14,6 +14,7 @@ import inspect
 import os
 import sqlite3
 from zoneinfo import ZoneInfo
+from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_REASON
 
 TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 DEFAULT_DB = os.environ.get("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
@@ -63,6 +64,7 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
         "paper_ids": set(),
         "opened": 0,
         "closed": 0,
+        "cancelled_admin": 0,
         "decisions": 0,
         "fills": 0,
         "realized_by_currency": defaultdict(lambda: Decimal("0")),
@@ -90,13 +92,28 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
                 by_day[opened]["opened"] += 1
                 by_day[opened]["paper_ids"].add(str(row["paper_id"]))
             closed = _as_ar_day(row["closed_at"])
-            if closed:
+            if row["status"] == "CANCELLED_ADMIN":
+                if not closed or row["net_pnl"] is not None:
+                    raise OperationalDailyEvidenceError("ADMIN_CANCEL_ROW_UNVERIFIED")
+                marker = conn.execute("""SELECT authority,reason,cancelled_at
+                    FROM paper_admin_cancellations WHERE paper_id=?""",
+                    (row["paper_id"],)).fetchone() if conn.execute("""SELECT 1 FROM sqlite_master
+                    WHERE type='table' AND name='paper_admin_cancellations'""").fetchone() else None
+                if (not marker or marker["authority"] != ADMIN_CANCEL_AUTHORITY
+                        or marker["reason"] != ADMIN_CANCEL_REASON
+                        or marker["cancelled_at"] != row["closed_at"]):
+                    raise OperationalDailyEvidenceError("ADMIN_CANCEL_RECEIPT_UNVERIFIED")
+                by_day[closed]["cancelled_admin"] += 1
+                by_day[closed]["paper_ids"].add(str(row["paper_id"]))
+            elif closed and row["status"] == "CLOSED":
                 by_day[closed]["closed"] += 1
                 by_day[closed]["paper_ids"].add(str(row["paper_id"]))
                 currency = str(row["currency"] or "").upper()
                 if not currency:
                     raise OperationalDailyEvidenceError("CLOSED_CURRENCY_UNVERIFIED")
                 by_day[closed]["realized_by_currency"][currency] += _decimal(row["net_pnl"])
+            elif closed:
+                raise OperationalDailyEvidenceError("UNKNOWN_POSITION_STATE_WITH_CLOSED_AT")
 
         for row in conn.execute("SELECT decided_at FROM paper_decisions ORDER BY decided_at DESC LIMIT ?", (event_limit,)):
             day = _as_ar_day(row["decided_at"])
@@ -121,6 +138,7 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
             "paper_positions": len(slot["paper_ids"]),
             "opened": int(slot["opened"]),
             "closed": int(slot["closed"]),
+            "cancelled_admin": int(slot["cancelled_admin"]),
             "decisions": int(slot["decisions"]),
             "fills": int(slot["fills"]),
             "realized_by_currency": {currency: str(pnl) for currency,pnl in

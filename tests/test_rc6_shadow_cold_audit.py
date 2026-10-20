@@ -100,6 +100,9 @@ def test_expired_original_input_is_failed_and_never_replaced_by_probe(tmp_path,m
         with c.Directory(files) as directory:
             first = directory.read('receipt-'+ref['snapshot_id']+'.json')
             assert first['state']=='FAILED'
+            assert first['error_class']=='ValueError'
+            assert first['error_code']=='SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED'
+            assert first['error_phase']=='INPUT_CHECK'
         with pytest.raises(ValueError,match='REVOKED'):c.resolve(files,ref)
         for action in (lambda:c.drain(files),lambda:seal(files)):
             with pytest.raises(ValueError,match='FIX_FORWARD'):action()
@@ -152,6 +155,61 @@ def test_pack_quota_does_not_grow_with_literal_delimiters(tmp_path,monkeypatch):
         monkeypatch.setattr(c,'PACK_LIMIT',200)
         with pytest.raises(ValueError,match='QUOTA'):seal(files,{'values':list(range(1000))})
         assert not list((tmp_path/'cold-audit').glob('*.pack'))
+
+def test_failed_receipt_retains_only_safe_first_reason(tmp_path,monkeypatch):
+    secret='broker-access-token=must-not-persist'
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        ref=seal(files)
+        monkeypatch.setattr(c,'_guard',
+            lambda *a,**k:(_ for _ in ()).throw(ValueError(secret)))
+        with pytest.raises(ValueError,match='must-not-persist'):c.drain(files)
+        with c.Directory(files) as directory:
+            first=directory.read('receipt-'+ref['snapshot_id']+'.json')
+            assert first['error_class']=='ValueError'
+            assert first['error_code']=='UNCLASSIFIED'
+            assert first['error_phase']=='INPUT_CHECK'
+            assert secret not in (directory.root/('receipt-'+ref['snapshot_id']+'.json')).read_text()
+        with pytest.raises(ValueError,match='FIX_FORWARD'):c.drain(files)
+        with c.Directory(files) as directory:
+            assert directory.read('receipt-'+ref['snapshot_id']+'.json')==first
+
+
+
+
+def test_failure_code_does_not_call_untrusted_exception_string(tmp_path,monkeypatch):
+    class Unprintable:
+        def __str__(self):
+            raise RuntimeError('unsafe stringification')
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        ref=seal(files)
+        monkeypatch.setattr(c,'_guard',
+            lambda *a,**k:(_ for _ in ()).throw(ValueError(Unprintable())))
+        with pytest.raises(ValueError):
+            c.drain(files)
+        with c.Directory(files) as directory:
+            receipt=directory.read('receipt-'+ref['snapshot_id']+'.json')
+            assert receipt['state']=='FAILED'
+            assert receipt['error_code']=='UNCLASSIFIED'
+            assert receipt['error_phase']=='INPUT_CHECK'
+
+
+def test_streamed_report_failure_records_phase_without_secret_and_keeps_pack(tmp_path,monkeypatch):
+    secret='broker-account-private-value'
+    with p.EvidenceFiles(tmp_path/'shadow') as files:
+        ref=seal(files)
+        monkeypatch.setattr(files,'write_streamed_report',
+            lambda *a,**k:(_ for _ in ()).throw(ValueError(secret)))
+        with pytest.raises(ValueError,match='private-value'):c.drain(files)
+        with c.Directory(files) as directory:
+            receipt=directory.read('receipt-'+ref['snapshot_id']+'.json')
+            assert receipt['state']=='FAILED'
+            assert receipt['error_class']=='ValueError'
+            assert receipt['error_code']=='UNCLASSIFIED'
+            assert receipt['error_phase']=='REPORT_WRITE'
+            assert secret not in (directory.root/('receipt-'+ref['snapshot_id']+'.json')).read_text()
+            assert (directory.root/(ref['snapshot_id']+'.pack')).exists()
+        with pytest.raises(ValueError,match='REVOKED'):c.resolve(files,ref)
+
 
 def test_reserve_failure_rejects_before_complete_and_keeps_original_snapshot(tmp_path,monkeypatch):
     with p.EvidenceFiles(tmp_path) as files:

@@ -132,12 +132,14 @@ def _instalaciones_pip_fuera_del_lock(dockerfile):
     """Devuelve comandos pip que no instalan exclusivamente el lock vigente."""
     invalidas = []
     for instalacion in (l.strip() for l in dockerfile.splitlines() if "pip install" in l):
-        tokens = shlex.split(instalacion)
+        # Docker's line continuation is syntax, not another pip argument.
+        tokens = shlex.split(instalacion.rstrip('\\').strip())
         if tokens[:3] != ["RUN", "pip", "install"]:
             invalidas.append(instalacion)
             continue
-        args = [t for t in tokens[3:] if t != "--no-cache-dir"]
-        if args != ["-r", "requirements.lock.txt"]:
+        args = [t for t in tokens[3:] if t not in {"--no-cache-dir", "--no-compile"}]
+        if args not in (["-r", "requirements.lock.txt"],
+                        ["-r", "/app/requirements.lock.txt"]):
             invalidas.append(instalacion)
     return invalidas
 

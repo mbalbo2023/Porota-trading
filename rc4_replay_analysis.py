@@ -56,7 +56,7 @@ def analyze(db_path=DB_DEFAULT, history_path=None):
             }
         if 'paper_positions' in tables:
             mins=[]
-            for r in c.execute("SELECT opened_at,closed_at FROM paper_positions WHERE closed_at IS NOT NULL"):
+            for r in c.execute("SELECT opened_at,closed_at FROM paper_positions WHERE status='CLOSED' AND closed_at IS NOT NULL"):
                 a,b=_dt(r['opened_at']),_dt(r['closed_at'])
                 if a and b and b>=a: mins.append((b-a).total_seconds()/60)
             out['durations']=_percentiles(mins) or {'n':0}
