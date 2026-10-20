@@ -101,8 +101,11 @@ def _stable_page_signature(body: bytes) -> dict:
         if item.strip() and any(word in item.lower() for word in KEYWORDS)
     ))
     stable = json.dumps({
+        "scope": SIGNATURE_SCOPE,
+        # Fingerprint every visible character inside the content boundary.
+        # The old 500-character sentence cap could miss a later calendar row.
+        "decision_text": normalized,
         "communications": communication_numbers[:80],
-        "relevant": relevant[:250],
         # The negotiation schedule is a linked PDF. Changing that target is
         # material even when the visible link label remains the same.
         "decision_pdf_links": sorted(set(re.findall(
