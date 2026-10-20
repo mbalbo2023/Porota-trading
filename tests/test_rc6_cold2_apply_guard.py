@@ -1,5 +1,6 @@
 """A future authorization cannot bypass exact quiescence at archive boundaries."""
 import json
+import hashlib
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch
@@ -212,6 +213,58 @@ def test_postclose_cold2_rejects_caucion_drift_before_archive(tmp_path):
               'real_routes':'NOT_CALLED'}),
           patch.object(guard.cold,'quarantine',side_effect=archive)):
         assert guard.apply(tmp_path,CANDIDATE)['old_cut_revoked'] is True
+
+
+def test_archived_cold2_accepts_only_complete_successor_and_exact_prior_receipt(tmp_path):
+    value=receipt()
+    carry={'open_count':2,'paper_ids':['a','b'],'sha256':'c'*64}
+    caucion={'open_count':1,'sha256':'d'*64}
+    value.update(market_open_suspended=True,open_paper_carryover=True,
+                 paused_postclose=True,spot_carryover=carry,caucion_carryover=caucion)
+    deploy=folder(tmp_path,value)
+    shadow=tmp_path/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+    source=shadow/'cold-audit';source.mkdir(parents=True)
+    (source/'queue.json').write_text('bounded fixture')
+    archive=deploy/('rc6-failed-cold-'+guard.cold.IDENT);archive.mkdir()
+    (archive/'quarantine.json').write_text('bounded fixture')
+    prior_path=deploy/('rc6-cold-fix-forward-'+guard.archive_fix.PRIOR_ARCHIVE_SHA+'.json')
+    prior_path.write_text(json.dumps({'state':'ARCHIVED_OLD_CUT_STILL_REVOKED'}))
+    fix_path=deploy/('rc6-cold-fix-forward-'+CANDIDATE+'.json')
+    fix={'state':'ARCHIVED_OLD_CUT_STILL_REVOKED','candidate_sha':CANDIDATE,
+         'archived_recovery':True,'adopted_prior_receipt_sha256':hashlib.sha256(prior_path.read_bytes()).hexdigest(),
+         'revoked_cut':guard.archive_fix.CUT,'snapshot_id':guard.archive_fix.IDENT,
+         'old_cut_gc_complete':True,'current_cut':'f'*64}
+    fix_path.write_text(json.dumps(fix))
+    ids={name:value['containers'][name]['id'] for name in NAMES}
+    live={name:{'Id':ids[name],'Image':'sha256:'+'a'*64,
+                'State':{'Status':'exited','ExitCode':0}} for name in NAMES}
+    live['porota_critical_approval_rc6']={'State':{'Status':'running',
+        'Health':{'Status':'healthy'},'OOMKilled':False}}
+    complete={'state':'COMPLETE_UNTOUCHED','snapshot_id':'e'*32,'old_cut_revoked':True}
+    def read(path,*args,**kwargs):
+        if Path(path).name=='CURRENT.json':return {'generation_id':'f'*64}
+        if Path(path).name=='queue.json':return {'state':'COMPLETE','snapshot_id':'e'*32}
+        return {'status':'SHADOW_OBSERVING','real_routes':'NOT_CALLED','real_orders_sent':0}
+    with (patch.object(guard,'ppi_units',return_value={}),
+          patch.object(guard.drain,'exact_clean_stopped'),
+          patch.object(guard.drain,'admit',return_value='RUNNING'),
+          patch.object(guard.drain,'spot_carryover_snapshot',return_value=carry),
+          patch.object(guard.drain,'pending_caucion_snapshot',return_value=caucion),
+          patch.object(guard.drain,'inspect',side_effect=lambda name:live[name]),
+          patch.object(guard.cold,'paths',return_value=(shadow,source,archive)),
+          patch.object(guard.cold,'verify_original_archive',return_value={'state':'ALREADY_QUARANTINED'}),
+          patch.object(guard,'verify_complete_queue',return_value=complete),
+          patch.object(guard.cold,'envelope',side_effect=read)):
+        assert guard.apply(tmp_path,CANDIDATE)['successor']==complete
+        fix['adopted_prior_receipt_sha256']='0'*64
+        fix_path.write_text(json.dumps(fix))
+        with pytest.raises(ValueError,match='COLD2_ARCHIVED_RECOVERY_CHANGED'):
+            guard.apply(tmp_path,CANDIDATE)
+        fix['adopted_prior_receipt_sha256']=hashlib.sha256(prior_path.read_bytes()).hexdigest()
+        fix_path.write_text(json.dumps(fix))
+        with patch.object(guard,'verify_complete_queue',return_value={'state':'NO_ACTIVE_FAILED_SUCCESSOR'}):
+            with pytest.raises(ValueError,match='COLD2_SHADOW_SAFETY_CHANGED'):
+                guard.apply(tmp_path,CANDIDATE)
 
 
 def test_intraday_cold2_rejects_incomplete_carryover_admission(tmp_path):

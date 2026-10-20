@@ -6,6 +6,7 @@ candidate against a later owner authorization before reaching the host.
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts import rc6_cold2_quarantine as cold
 from scripts import rc6_cold2_successor as successor
 from scripts import rc6_deploy_quiescence as drain
+from scripts import rc6_failed_cold_fix_forward as archive_fix
 
 ROOT = Path('/opt/porota-trading')
 OWNED = drain.OWNED
@@ -156,7 +158,7 @@ def apply(root, candidate):
         baseline = ppi_units()
         receipt, ids = receipt_for(root, candidate)
 
-        def admission():
+        def admission(archived_complete=None):
             latest, current_ids = receipt_for(root, candidate)
             if latest != receipt or current_ids != ids:
                 raise ValueError('COLD2_QUIESCENCE_RECEIPT_CHANGED')
@@ -203,9 +205,35 @@ def apply(root, candidate):
                 raise ValueError('COLD2_CRITICAL_UNHEALTHY')
             status = cold.envelope(root/'data/paper_v17/artifacts/observer_v17.db'
                                    /'dynamic-shadow/status.json')
-            if (status.get('status') != 'FAIL_CLOSED' or
-                    status.get('real_routes') != 'NOT_CALLED'):
+            if status.get('real_routes') != 'NOT_CALLED':
                 raise ValueError('COLD2_SHADOW_SAFETY_CHANGED')
+            if status.get('status') != 'FAIL_CLOSED':
+                # The original failed COLD2 input was already quarantined.
+                # Only a proven COMPLETE successor permits the later healthy
+                # SHADOW status; fresh failed queues still require FAIL_CLOSED.
+                if (not isinstance(archived_complete, dict) or
+                        archived_complete.get('state') != 'COMPLETE_UNTOUCHED' or
+                        status.get('status') != 'SHADOW_OBSERVING' or
+                        type(status.get('real_orders_sent')) is not int or
+                        status['real_orders_sent'] != 0):
+                    raise ValueError('COLD2_SHADOW_SAFETY_CHANGED')
+                prior_path = folder/('rc6-cold-fix-forward-'+archive_fix.PRIOR_ARCHIVE_SHA+'.json')
+                prior = bounded_json(prior_path)
+                candidate_fix = bounded_json(folder/('rc6-cold-fix-forward-'+candidate+'.json'))
+                pointer = cold.envelope(root/'data/paper_v17/artifacts/observer_v17.db'
+                                        /'dynamic-shadow/CURRENT.json')
+                if (prior.get('state') != 'ARCHIVED_OLD_CUT_STILL_REVOKED' or
+                        candidate_fix.get('state') != 'ARCHIVED_OLD_CUT_STILL_REVOKED' or
+                        candidate_fix.get('candidate_sha') != candidate or
+                        candidate_fix.get('archived_recovery') is not True or
+                        candidate_fix.get('adopted_prior_receipt_sha256') !=
+                            hashlib.sha256(prior_path.read_bytes()).hexdigest() or
+                        candidate_fix.get('revoked_cut') != archive_fix.CUT or
+                        candidate_fix.get('snapshot_id') != archive_fix.IDENT or
+                        candidate_fix.get('old_cut_gc_complete') is not True or
+                        candidate_fix.get('current_cut') != pointer.get('generation_id') or
+                        candidate_fix.get('current_cut') == archive_fix.CUT):
+                    raise ValueError('COLD2_ARCHIVED_RECOVERY_CHANGED')
             if ppi_units() != baseline:
                 raise ValueError('COLD2_PPI_UNIT_CHANGED')
             return {'status': 'DRAINED', 'owned_stopped': True,
@@ -239,7 +267,9 @@ def apply(root, candidate):
                 raise ValueError('COLD2_SUCCESSOR_QUEUE_UNEXPECTED')
         else:
             later = {'state':'NO_ACTIVE_FAILED_SUCCESSOR','old_cut_revoked':True}
-        admission()
+        archived_complete = (later if original.get('state') == 'ALREADY_QUARANTINED'
+                             and later.get('state') == 'COMPLETE_UNTOUCHED' else None)
+        admission(archived_complete)
         if ppi_units() != baseline:
             raise ValueError('COLD2_PPI_UNIT_CHANGED')
         return {'original':original,'successor':later,'old_cut_revoked':True}
