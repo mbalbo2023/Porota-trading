@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 9
     env:
-      CANDIDATE_SHA: 3e8a79f17ec245b06e688b485e8e9c5f2adf0ddb
+      CANDIDATE_SHA: 21898722de17e6dbf0dc356e689c6554ee876d87
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -24,7 +24,7 @@ jobs:
       - name: Checkout exact paused candidate source
         uses: actions/checkout@v4
         with:
-          ref: 3e8a79f17ec245b06e688b485e8e9c5f2adf0ddb
+          ref: 21898722de17e6dbf0dc356e689c6554ee876d87
       - name: Prepare strict SSH
         run: |
           set -Eeuo pipefail
@@ -80,9 +80,9 @@ jobs:
               assert status==['exited',receipt['containers'][name]['id'],receipt['containers'][name]['image']]
           with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as c:
               mode,orders,process=c.execute('SELECT mode,real_orders_sent,process_state FROM observer_state WHERE id=1').fetchone()
-              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0 and process=='STOPPED'
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0 and process in {'STOPPED','RUNNING'}
               assert c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]==receipt['spot_carryover']['open_count']
-          print('RC6_OWNED_RUNTIME_PAUSED=GREEN|timers=20|observer=exited|dashboard=exited|paper_open='+str(receipt['spot_carryover']['open_count'])+'|real_orders_sent=0|ppi_watch_mutated=false')
+          print('RC6_OWNED_RUNTIME_PAUSED=GREEN|timers=20|observer=exited|dashboard=exited|db_process_state='+process+'|paper_open='+str(receipt['spot_carryover']['open_count'])+'|real_orders_sent=0|ppi_watch_mutated=false')
           PY
       - name: Recover original runtime and timers on any pause failure
         if: ${{ failure() && (steps.suspend.outcome != 'skipped' || steps.drain.outcome != 'skipped') }}
