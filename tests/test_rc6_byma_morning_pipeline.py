@@ -38,7 +38,7 @@ def test_authority_watcher_reuses_exact_structured_scraper_snapshot(tmp_path):
 
 def test_authority_watcher_keeps_missing_shared_scraper_scoped_as_complementary(tmp_path):
     def fake_fetch(_url):
-        return b"<html><body><p>Horarios de negociacion comunicado 19024</p></body></html>"
+        return b"<html><body><h1>Horarios de negociacion</h1><p>comunicado 19024</p><footer>Fin</footer></body></html>"
     current=watch.collect(
         fetch=fake_fetch,
         structured_snapshot=tmp_path/"missing.json",
