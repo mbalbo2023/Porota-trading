@@ -32,7 +32,22 @@ def docker(*args, allow_missing=False):
 
 
 def inspect(name, *, allow_missing=False):
-    raw = docker('inspect', name, allow_missing=allow_missing)
+    try:
+        raw = docker('inspect', name, allow_missing=allow_missing)
+    except RuntimeError:
+        if not allow_missing or not re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name):
+            raise
+        # An --rm writer can disappear between the attached CLI exit and our
+        # inspect. Docker's not-found wording is not a stable API; require a
+        # second successful daemon inventory proving the exact name absent.
+        listing = docker('ps', '-a', '--no-trunc', '--format', '{{.Names}}|{{.ID}}')
+        rows = listing.splitlines()
+        if (len(rows) > 128 or any(len(row.split('|')) != 2 or
+                                   not re.fullmatch(r'[0-9a-f]{12,64}', row.split('|')[1])
+                                   for row in rows) or
+                name in {row.split('|')[0] for row in rows}):
+            raise RuntimeError('CONTRACT_WRITER_INVENTORY_UNVERIFIED')
+        return None
     if raw is None:
         return None
     rows = json.loads(raw)

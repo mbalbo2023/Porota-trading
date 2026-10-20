@@ -81,3 +81,26 @@ def test_paper_or_provisional_identity_change_rejected_before_stop(host):
     with pytest.raises(RuntimeError,match='CONTRACT_PAPER_UNVERIFIED'):
         lifecycle.stop(CANDIDATE)
     assert not any(x[0]=='stop' for x in calls)
+
+
+@pytest.mark.parametrize('inventory,expected', [
+    ('porota_production_observer|'+'1'*64, 'ABSENT'),
+    (NAME+'|'+ORPHAN_ID, 'CONTRACT_WRITER_INVENTORY_UNVERIFIED'),
+    ('BROKEN_INVENTORY', 'CONTRACT_WRITER_INVENTORY_UNVERIFIED'),
+])
+def test_auto_removed_writer_requires_second_docker_inventory(host, monkeypatch, inventory, expected):
+    records, calls, _, _ = host
+    records.pop(NAME)
+    original = lifecycle.docker
+    def inspect_failure(*args, allow_missing=False):
+        if args == ('inspect', NAME):
+            raise RuntimeError('CONTRACT_DOCKER_INSPECT_FAILED')
+        if args == ('ps', '-a', '--no-trunc', '--format', '{{.Names}}|{{.ID}}'):
+            return inventory
+        return original(*args, allow_missing=allow_missing)
+    monkeypatch.setattr(lifecycle, 'docker', inspect_failure)
+    if expected == 'ABSENT':
+        assert lifecycle.stop(CANDIDATE)['writer'] == 'ABSENT'
+    else:
+        with pytest.raises(RuntimeError, match=expected): lifecycle.stop(CANDIDATE)
+    assert not any(x[0] == 'stop' for x in calls)
