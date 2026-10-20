@@ -106,6 +106,77 @@ def test_intraday_four_paper_spots_carry_across_install_and_restart(carry_instal
     assert q.run(SHA, 'verify-carryover')['carryover_verified_count'] == 4
 
 
+def test_intraday_poststop_calendar_open_is_admitted_only_after_live_market_proof(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET session_state='OPEN'")
+    with pytest.raises(ValueError, match='STATE_REQUIRED:RUNNING:OPEN'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert not any(call[1] == 'stop' for call in calls)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+    def transitional_stop(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET session_state='OPEN'")
+        return result
+    monkeypatch.setattr(q, 'command', transitional_stop)
+    assert q.run(SHA, 'drain', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['status'] == 'DRAINED'
+    assert q.run(SHA, 'install', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['installation_started'] is True
+
+
+def test_intraday_clean_docker_stop_admits_stale_running_and_adopts_prepause(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    def stale_stop(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        return result
+    monkeypatch.setattr(q, 'command', stale_stop)
+    receipt = q.run(SHA, 'drain', allow_market_open_suspend=True,
+                    allow_open_paper_carryover=True)
+    assert receipt['status'] == 'DRAINED'
+    assert q.run(SHA, 'drain', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['status'] == 'DRAINED'
+    assert q.run(SHA, 'install', allow_market_open_suspend=True,
+                 allow_open_paper_carryover=True)['installation_started'] is True
+
+
+def test_intraday_stale_running_requires_exact_clean_stopped_container(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    def stale_stop(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c: c.execute("UPDATE observer_state SET process_state='RUNNING'")
+        return result
+    monkeypatch.setattr(q, 'command', stale_stop)
+    q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
+    states[q.OWNED[0]]['State']['Status'] = 'running'
+    with pytest.raises(ValueError, match='STOP_PROOF_CHANGED'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+
+
+def test_intraday_poststop_closed_phase_still_blocks_install(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    def closed_stop(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET session_state='MARKET_CLOSED'")
+        return result
+    monkeypatch.setattr(q, 'command', closed_stop)
+    with pytest.raises(ValueError, match='STATE_REQUIRED:STOPPED:MARKET_CLOSED'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True)
+    assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
+
+
 def test_intraday_carryover_rejects_ledger_drift_before_install(carry_installation):
     root, db, states, calls, _ = carry_installation
     q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)
@@ -162,7 +233,7 @@ def test_intraday_suspend_rejects_unsafe_admission_before_stop(installation, cha
     assert not any(call[1] == 'stop' for call in calls)
 
 
-def test_intraday_stop_without_database_ack_is_not_drained(installation, monkeypatch):
+def test_intraday_stale_database_ack_without_clean_stop_is_not_drained(installation, monkeypatch):
     root, db, states, calls, command = installation
     with sqlite3.connect(db) as c:
         c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
@@ -171,9 +242,10 @@ def test_intraday_stop_without_database_ack_is_not_drained(installation, monkeyp
         if args[1] == 'stop':
             with sqlite3.connect(db) as c:
                 c.execute("UPDATE observer_state SET process_state='RUNNING'")
+            states[args[-1]]['State']['ExitCode'] = 1
         return result
     monkeypatch.setattr(q, 'command', no_ack)
-    with pytest.raises(ValueError, match='OPEN_SUSPEND_STATE_REQUIRED'):
+    with pytest.raises(ValueError, match='STOP_NONZERO_OR_UNKNOWN_EXIT'):
         q.run(SHA, 'drain', allow_market_open_suspend=True)
     assert q.run(SHA, 'recover')['status'] == 'ORIGINAL_RUNTIME_RESUMED'
 

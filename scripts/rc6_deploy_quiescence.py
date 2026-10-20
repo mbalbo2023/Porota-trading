@@ -99,7 +99,7 @@ def clean_stop(before, after):
 
 def admit(*, stopped=False, allow_admin_issue624=False,
           allow_market_open_suspend=False, allow_open_paper_carryover=False,
-          initial=False):
+          initial=False, stopped_receipt=None):
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
         c.row_factory = sqlite3.Row
@@ -117,8 +117,23 @@ def admit(*, stopped=False, allow_admin_issue624=False,
             # A stopped observer must acknowledge SIGTERM as STOPPED; a stale
             # RUNNING row is never proof of quiescence.
             allowed_processes = ({'RUNNING', 'STOPPED'} if initial else {'STOPPED'}) if stopped else {'RUNNING'}
-            if session != 'MARKET_OPEN' or process not in allowed_processes:
-                raise ValueError('QUIESCENCE_OPEN_SUSPEND_STATE_REQUIRED')
+            if stopped and not initial and process == 'RUNNING' and stopped_receipt is not None:
+                # The scanner can leave its last RUNNING row after its parent
+                # and child have exited. Docker identity and clean-exit proofs
+                # replace the missing DB acknowledgement; no writer may live.
+                exact_clean_stopped(stopped_receipt)
+                allowed_processes.add('RUNNING')
+            # The scanner also writes the calendar phase OPEN while renewing
+            # its read-only PPI session. The initial running admission must be
+            # fresh RUNNING/MARKET_OPEN; after a clean SIGTERM, STOPPED/OPEN
+            # is an exact transitional state, not evidence of market closure.
+            allowed_sessions = ({'MARKET_OPEN', 'OPEN'} if stopped and
+                                (process == 'STOPPED' or stopped_receipt is not None)
+                                else {'MARKET_OPEN'})
+            if session not in allowed_sessions or process not in allowed_processes:
+                observed_process = process if process in {'RUNNING', 'STOPPED', 'DEGRADED', 'STARTING'} else 'UNKNOWN'
+                observed_session = session if session in {'MARKET_OPEN', 'OPEN', 'MARKET_CLOSED', 'CLOSED', 'CHECKING'} else 'UNKNOWN'
+                raise ValueError('QUIESCENCE_OPEN_SUSPEND_STATE_REQUIRED:' + observed_process + ':' + observed_session)
         else:
             allowed_processes = {'WAITING_MARKET', 'STOPPED'} if stopped else {'WAITING_MARKET'}
             if process not in allowed_processes or session not in {'CLOSED', 'MARKET_CLOSED'}:
@@ -204,6 +219,22 @@ def verify_spot_carryover(receipt):
                     (paper_id,)).fetchone():
                 raise ValueError('QUIESCENCE_CARRYOVER_CLOSE_UNBACKED')
     return len(expected['paper_ids'])
+
+
+def exact_clean_stopped(receipt):
+    if (set(receipt.get('containers', {})) != set(OWNED) or
+            set(receipt.get('stop_evidence', {})) != set(OWNED) or
+            set(receipt.get('stop_attempted', [])) != set(OWNED)):
+        raise ValueError('QUIESCENCE_STOP_PROOF_INCOMPLETE')
+    for name in OWNED:
+        expected = receipt['containers'][name]
+        proof = receipt['stop_evidence'][name]
+        value = inspect(name)
+        if (value['Id'] != expected['id'] or value['Image'] != expected['image'] or
+                lifecycle(value) != proof.get('after') or
+                value['State']['Status'] != 'exited' or
+                proof.get('classification') not in {'CLEAN_EXIT', 'INHERITED_OOM_FLAG_CLEAN_EXIT'}):
+            raise ValueError('QUIESCENCE_STOP_PROOF_CHANGED')
 
 
 def admin_target_on_host():
@@ -449,7 +480,22 @@ def run(candidate, action, *, allow_admin_issue624=False,
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         receipt = json.loads(path.read_text()) if path.exists() else None
         if action == 'drain':
-            if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
+            if receipt is not None:
+                if (receipt.get('candidate_sha') != candidate or receipt.get('status') != 'DRAINED' or
+                        receipt.get('installation_started') is not False or
+                        receipt.get('market_open_suspended') != allow_market_open_suspend or
+                        receipt.get('open_paper_carryover') != allow_open_paper_carryover):
+                    raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
+                exact_clean_stopped(receipt)
+                admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
+                      allow_open_paper_carryover=allow_open_paper_carryover,
+                      stopped_receipt=receipt)
+                if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
+                    raise ValueError('QUIESCENCE_PAUSED_LEDGER_CHANGED')
+                print(json.dumps({'status': 'DRAINED', 'candidate_sha': candidate,
+                                  'prepaused_runtime_adopted': True, 'real_orders_sent': 0,
+                                  'ppi_watch_accessed': False}), flush=True)
+                return receipt
             process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624,
                             allow_market_open_suspend=allow_market_open_suspend,
                             allow_open_paper_carryover=allow_open_paper_carryover, initial=True)
@@ -492,7 +538,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     persist(path, receipt)
                 admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
                       allow_market_open_suspend=allow_market_open_suspend,
-                      allow_open_paper_carryover=allow_open_paper_carryover)
+                      allow_open_paper_carryover=allow_open_paper_carryover,
+                      stopped_receipt=receipt)
                 if admin_paper_id and admin_target_on_host() != admin_paper_id:
                     raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED_AFTER_STOP')
                 receipt.update(status='ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
@@ -546,7 +593,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
             if bool(receipt.get('open_paper_carryover', False)) != allow_open_paper_carryover:
                 raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_MODE_CHANGED')
             admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
-                  allow_open_paper_carryover=allow_open_paper_carryover)
+                  allow_open_paper_carryover=allow_open_paper_carryover,
+                  stopped_receipt=receipt)
             if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
                 raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_CHANGED')
             receipt.update(status='HOST_INSTALLATION_STARTED', installation_started=True)

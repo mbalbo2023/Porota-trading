@@ -45,6 +45,8 @@ class SuspendTests(unittest.TestCase):
                 result = suspend.run('a'*40, 'suspend', self.policy())
                 self.assertEqual(result['status'], 'SUSPENDED')
                 self.assertEqual({action for action, _ in mutations}, {'stop'})
+                self.assertEqual(suspend.run('a'*40, 'suspend', self.policy())['status'], 'SUSPENDED')
+                self.assertEqual(len(mutations), 2)
                 result = suspend.run('a'*40, 'restore', self.policy())
                 self.assertEqual(result['status'], 'RESTORED')
                 self.assertEqual({action for action, _ in mutations}, {'stop', 'start'})
