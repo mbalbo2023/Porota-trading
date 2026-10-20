@@ -80,6 +80,25 @@ jobs:
                   'mem_available_bytes':available,'io_psi_avg10':host_io,
                   'real_orders_sent':orders},sort_keys=True))
               raise SystemExit(0)
+          # Correlate the observed 01:01 UTC scanner I/O burst with bounded,
+          # read-only scheduler stamps. No event details or account data leave.
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',
+                               uri=True,timeout=.2) as db:
+              db.execute('PRAGMA query_only=ON')
+              db.execute('PRAGMA busy_timeout=200')
+              cutoff=time.monotonic()+2
+              db.set_progress_handler(lambda:int(time.monotonic()>cutoff),1000)
+              catalog_events=db.execute('''SELECT event_at,event_type FROM paper_events
+                WHERE event_type='COMPLEMENTARY_CATALOG_RECONCILIATION'
+                  AND julianday(event_at) BETWEEN julianday('2026-10-20T00:58:00+00:00')
+                                            AND julianday('2026-10-20T01:06:00+00:00')
+                ORDER BY id DESC LIMIT 20''').fetchall()
+              recent_events=db.execute('''SELECT event_at,event_type FROM paper_events
+                ORDER BY id DESC LIMIT 500''').fetchall()
+              jobs=db.execute('''SELECT job_key,last_run_at,state FROM operational_jobs
+                ORDER BY last_run_at DESC LIMIT 30''').fetchall()
+              sync=db.execute('''SELECT source,last_attempt_at,status FROM source_sync
+                ORDER BY last_attempt_at DESC LIMIT 20''').fetchall()
           names=('porota_production_observer','porota_production_dashboard',
                  'porota_critical_approval_rc6')
           docker=json.loads(subprocess.check_output(['docker','inspect',*names],
@@ -139,6 +158,12 @@ jobs:
               'host_before':{k:before[k] for k in ('mem_available_bytes','swap_free_bytes','host_io_psi','host_mem_psi')},
               'host_after':{k:after[k] for k in ('mem_available_bytes','swap_free_bytes','host_io_psi','host_mem_psi')},
               'vm_delta':delta(before['vm'],after['vm']),
+              'event_correlation':{'window_utc':['2026-10-20T00:58:00+00:00',
+                  '2026-10-20T01:06:00+00:00'],
+                  'catalog_events':catalog_events,
+                  'recent_events_in_window':[(at,kind) for at,kind in recent_events
+                      if '2026-10-20T00:58:00'<=at[:19]<='2026-10-20T01:06:00'],
+                  'operational_jobs':jobs,'source_sync':sync},
               'disk_delta':{dev:delta(before['disk'].get(dev,{}),values)
                   for dev,values in after['disk'].items()},
               'owned_cgroups':cg,'ppi_watch_mutated':False}
