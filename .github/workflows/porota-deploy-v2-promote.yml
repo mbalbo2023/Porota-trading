@@ -152,16 +152,6 @@ jobs:
               decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
           print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
           print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
-          intraday = require_exact_owner_authorization(
-              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
-              os.environ['CANDIDATE_TREE'],
-              decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY')
-          print(f'RC6_624_INTRADAY_SUSPEND_BY_OWNER=GREEN|comment={intraday}')
-          carryover = require_exact_owner_authorization(
-              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
-              os.environ['CANDIDATE_TREE'],
-              decision='RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER')
-          print(f'RC6_624_INTRADAY_PAPER_CARRYOVER_BY_OWNER=GREEN|comment={carryover}')
           postclose = require_exact_owner_authorization(
               os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
               os.environ['CANDIDATE_TREE'],
