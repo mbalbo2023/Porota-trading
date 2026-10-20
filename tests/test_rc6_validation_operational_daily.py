@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 
 import rc6_validation_operational_daily as m
+from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_REASON
 
 
 def _db(path: Path):
@@ -56,8 +57,11 @@ def test_fail_closed_if_real_orders_nonzero(tmp_path):
 def test_admin_cancellation_is_visible_without_a_sale_or_realized_pnl(tmp_path):
     p=tmp_path/'paper.db'; _db(p)
     with sqlite3.connect(p) as c:
+        c.execute('CREATE TABLE paper_admin_cancellations(paper_id TEXT,authority TEXT,reason TEXT,cancelled_at TEXT)')
         c.execute("INSERT INTO paper_positions VALUES('SUPV','2026-10-19T18:51:58+00:00',"
                   "'2026-10-19T23:55:00+00:00','CANCELLED_ADMIN',NULL,'ARS')")
+        c.execute('INSERT INTO paper_admin_cancellations VALUES(?,?,?,?)',
+                  ('SUPV',ADMIN_CANCEL_AUTHORITY,ADMIN_CANCEL_REASON,'2026-10-19T23:55:00+00:00'))
         c.execute("INSERT INTO paper_events VALUES(2,'2026-10-19T23:55:00+00:00',"
                   "'PAPER_ADMIN_CANCELLED_NO_MARKET','SUPV')")
     by_day={r['date_ar']:r for r in m.collect(db_path=str(p))['days']}
@@ -67,6 +71,17 @@ def test_admin_cancellation_is_visible_without_a_sale_or_realized_pnl(tmp_path):
     assert by_day['2026-10-19']['realized_by_currency']=={}
     assert by_day['2026-10-19']['event_types']['PAPER_ADMIN_CANCELLED_NO_MARKET']==1
     assert by_day['2026-09-10']['closed']==1
+
+
+def test_missing_admin_receipt_cannot_hide_a_missing_sale(tmp_path):
+    p=tmp_path/'paper.db'; _db(p)
+    with sqlite3.connect(p) as c:
+        c.execute("INSERT INTO paper_positions VALUES('X','2026-10-19T18:00:00+00:00',"
+                  "'2026-10-19T23:00:00+00:00','CANCELLED_ADMIN',NULL,'ARS')")
+    try:m.collect(db_path=str(p))
+    except m.OperationalDailyEvidenceError as exc:
+        assert 'ADMIN_CANCEL_RECEIPT_UNVERIFIED' in str(exc)
+    else:raise AssertionError('missing administrative receipt must fail closed')
 
 
 def test_unknown_closed_state_still_fails_closed(tmp_path):
