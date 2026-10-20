@@ -86,8 +86,14 @@ jobs:
           listed=subprocess.run(['systemctl','list-unit-files','--no-legend'],capture_output=True,text=True,timeout=10).stdout.splitlines()
           watch_names=sorted(x.split()[0] for x in listed if x.split() and 'ppi' in x.split()[0].lower() and 'watch' in x.split()[0].lower())
           watch_state={n:unit_state(n) for n in watch_names}
+          active_units=subprocess.run(['systemctl','list-units','--all','--no-legend','--plain'],capture_output=True,text=True,timeout=10).stdout.splitlines()
+          matched_units=sorted(x.split()[0] for x in active_units if x.split() and ('ppi' in x.split()[0].lower() or 'watch' in x.split()[0].lower()))
+          matched_state={n:unit_state(n) for n in matched_units}
+          p=subprocess.run(['docker','ps','-a','--format','{{.Names}}|{{.Status}}|{{.Image}}'],capture_output=True,text=True,timeout=10)
+          docker_watch=[x for x in p.stdout.splitlines() if 'ppi' in x.lower() or 'watch' in x.lower()]
+          critical_units={n:unit_state(n) for n in ('porota-critical-github-proxy-rc6.service','porota-critical-approval-rc6.service')}
           report={'memory':mem,'cpu_count':__import__('os').cpu_count(),'guard':choose(guard,('state','candidate_sha','receipt_sha','policy_sha256','paper_open')),
-                  'timers':timer_state,'ppi_watch':watch_state,'top_rss':top,
+                  'timers':timer_state,'ppi_watch':watch_state,'matched_units':matched_state,'docker_watch':docker_watch,'critical_units':critical_units,'top_rss':top,
                   'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
                   'containers':containers,'paper':{'mode':mode,'orders':orders,'process':process,'spots':spots},
                   'shadow_status':choose(status,('status','as_of','error_class','error_module','error_line','generation_timing','runtime_sql_diagnostics')),
