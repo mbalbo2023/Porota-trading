@@ -74,7 +74,7 @@ jobs:
               canonical=json.dumps(payload,sort_keys=True,separators=(',',':'),default=str,ensure_ascii=True,allow_nan=False).encode('ascii')
               key='sha256' if path.name.startswith(('manifest-','receipt-','queue.')) else 'digest'
               valid=hashlib.sha256(canonical).hexdigest()==outer.get(key)
-              fields=('snapshot_id','state','manifest_sha256','pack_sha256','pack_bytes','pack','failed_at','sealed_at','deadline_at','generation_id','file','status','real_orders_sent')
+              fields=('snapshot_id','state','manifest_sha256','pack_sha256','pack_bytes','pack','failed_at','error_class','error_code','error_phase','sealed_at','deadline_at','generation_id','file','status','real_orders_sent')
               return {'file':path.name,'hash_valid':valid,'fields':{k:payload.get(k) for k in fields if k in payload}}
           selected=[source/n for n in names if n=='queue.json' or n.startswith(('manifest-','receipt-'))]
           shadow=source.parent
