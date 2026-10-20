@@ -35,10 +35,10 @@ jobs:
           import hashlib,json,sqlite3,subprocess
           from pathlib import Path
           root=Path('/opt/porota-trading')
-          candidate='55014f3ae503eade77e7027ed8898fd953b0bcd3'
-          image='sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'
-          expected={'porota_production_observer':'b4b1fb7b8cbe25c6b9d00b0fb01407b169ffe705629e0d015fa0b50cc4b27b63',
-                    'porota_production_dashboard':'0badcadf46eb5b13c341da7f0e528a44732948a6689f37c627fa9ccfad2f7d65'}
+          candidate='e86bdb6a9fe5ac21b93bc26e70af9844945e1407'
+          image='sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
+          expected={'porota_production_observer':'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
+                    'porota_production_dashboard':'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570'}
           def cmd(*args):
               p=subprocess.run(args,capture_output=True,text=True,timeout=70)
               return p.returncode,p.stdout.strip()
