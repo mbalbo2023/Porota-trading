@@ -80,7 +80,7 @@ def test_stress_red_keeps_red_and_restores_same_containers(installation,monkeypa
     assert report['status']==('GREEN' if exit_code==0 else 'RED')
     assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
     docker=next(c for c in calls if c[:2]==['docker','run'])
-    for pair in [('--network','none'),('--memory','512m'),('--memory-swap','512m'),('--cpus','.75')]:
+    for pair in [('--network','none'),('--memory','256m'),('--memory-swap','256m'),('--cpus','.75')]:
         assert docker[docker.index(pair[0])+1]==pair[1]
     assert '--env-file' not in docker and '--read-only' in docker
     assert sum(c[:2]==['docker','stop'] for c in calls)==2
@@ -105,7 +105,7 @@ def test_python_temporary_files_use_isolated_bound_workspace_not_tmpfs(installat
     assert 'TMPDIR=/work' in environment
     work=root/'data/deploy/stress'/SHA/'130'
     assert 'type=bind,src='+str(work)+',dst=/work' in docker
-    assert docker[docker.index('--tmpfs')+1]=='/tmp:rw,nosuid,nodev,size=512m'
+    assert docker[docker.index('--tmpfs')+1]=='/tmp:rw,nosuid,nodev,size=256m'
     # Resolve the command's container mount in this test namespace and launch
     # real Python, proving tempfile accepts the existing writable directory.
     mapped=next(item.split('=',1)[1] for item in environment if item.startswith('TMPDIR='))
@@ -123,6 +123,35 @@ def test_memory_barrier_never_starts_stress_and_restores_runtime(installation,mo
     monkeypatch.setattr(host.subprocess,'Popen',lambda *a,**k:pytest.fail('stress ignored memory gate'))
     assert host.run(SHA,'124')==2
     report=json.loads((root/'data/deploy/stress'/SHA/'124/host-stress.json').read_text())
+    assert report['error_code']=='STRESS_MEMORY_ADMISSION_BLOCKED'
+    assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
+
+
+def test_256m_budget_keeps_128m_host_reserve_and_exposes_exact_limit(installation,monkeypatch):
+    root,db,calls,states=installation
+    monkeypatch.setattr(host,'memory_available',lambda:400*1024**2)
+    def spawn(args,**kwargs):
+        calls.append(args)
+        work=root/'data/deploy/stress'/SHA/'223'
+        (work/'stress.json').write_text(json.dumps({'status':'GREEN','smoke':False}))
+        return SimpleNamespace(returncode=0,poll=lambda:0)
+    monkeypatch.setattr(host.subprocess,'Popen',spawn)
+    assert host.run(SHA,'223')==0
+    report=json.loads((root/'data/deploy/stress'/SHA/'223/host-stress.json').read_text())
+    assert report['memory_available_after_quiesce']==400*1024**2
+    assert report['memory_limit_bytes']==256*1024**2
+    assert report['runtime_restore']=='GREEN'
+    docker=next(c for c in calls if c[:2]==['docker','run'])
+    assert docker[docker.index('--memory')+1]=='256m'
+    assert docker[docker.index('--memory-swap')+1]=='256m'
+
+
+def test_256m_budget_rejects_one_byte_below_host_reserve(installation,monkeypatch):
+    root,db,calls,states=installation
+    monkeypatch.setattr(host,'memory_available',lambda:384*1024**2-1)
+    monkeypatch.setattr(host.subprocess,'Popen',lambda *a,**k:pytest.fail('capacity bypass'))
+    assert host.run(SHA,'224')==2
+    report=json.loads((root/'data/deploy/stress'/SHA/'224/host-stress.json').read_text())
     assert report['error_code']=='STRESS_MEMORY_ADMISSION_BLOCKED'
     assert report['runtime_restore']=='GREEN' and all(s=='running' for s in states.values())
 
