@@ -755,11 +755,14 @@ jobs:
           sudo -n docker stop porota_production_observer >/dev/null
           echo "OBSERVER_PAUSED_FOR_CONTRACT_RECONCILIATION=GREEN"
           set +e
-          # The exhaustive PPI v1 compatibility pass performs ~2k bounded read-only
-          # requests before the mass v2 reconciliation. Production evidence shows a
-          # normal closed-session run needs ~35 minutes. Keep a 55-minute TERM budget
-          # and a hard 60-second KILL ceiling within the 90-minute workflow limit.
-          CONTRACT_OUTPUT="$(sudo -n timeout --signal=TERM --kill-after=60 3300 sudo -n docker run --rm --pull never \
+          # A completed provider v1 sweep from the last 24h is explicit
+          # complementary provenance, not a fresh market reading. Deploy must
+          # materialize v2 for the entire current catalogue; the scheduled v1
+          # collector retains ownership of its costly ~2460 bond requests.
+          # Name the container so a killed Docker CLI cannot leave a writer
+          # behind after the observer is restarted.
+          CONTRACT_NAME="porota-deploy-contract-$CANDIDATE_SHA"
+          CONTRACT_OUTPUT="$(sudo -n timeout --signal=TERM --kill-after=10 1200 sudo -n docker run --rm --name "$CONTRACT_NAME" --pull never \
             --user botuser --read-only --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,size=32m \
@@ -767,22 +770,29 @@ jobs:
             -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
             -e DATA_DIR=/app/data \
             -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            -e POROTA_CONTRACT_REMOTE_V1_POLICY=REUSE_RECENT_COMPLETED \
             --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
             -v /opt/porota-trading/data:/app/data \
             -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
             --entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py 2>&1)"
           CONTRACT_RC=$?
+          CONTRACT_LIFECYCLE="$(sudo -n python3 "$REPO/scripts/rc6_contract_runner_lifecycle.py" --candidate-sha "$CANDIDATE_SHA" 2>&1)"
+          CONTRACT_LIFECYCLE_RC=$?
           set -e
+          echo "$CONTRACT_LIFECYCLE"
           sudo -n docker start porota_production_observer >/dev/null
           echo "OBSERVER_RESTARTED_AFTER_CONTRACT_RECONCILIATION=GREEN"
           echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
           echo "$CONTRACT_OUTPUT"
+          test "$CONTRACT_LIFECYCLE_RC" -eq 0
           test "$CONTRACT_RC" -eq 0
           grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
           if grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN" <<< "$CONTRACT_OUTPUT"; then
             grep -Fq "DATABASE_READONLY_PROBE=1" <<< "$CONTRACT_OUTPUT"
             echo "RC6_REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN"
           else
+            grep -Fq "REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED" <<< "$CONTRACT_OUTPUT"
+            grep -Fq '"total":' <<< "$CONTRACT_OUTPUT"
             grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
           fi
           grep -Fq "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" <<< "$CONTRACT_OUTPUT"
@@ -1402,6 +1412,13 @@ jobs:
           echo 'POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true'
           trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=$CANDIDATE_SHA|rc=$rc"; fi' EXIT
           set +e
+          # If the runner shell itself was interrupted, stop only its named
+          # exact writer before recovery can restart the observer.
+          timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "if sudo -n docker inspect 'porota-deploy-contract-$CANDIDATE_SHA' >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha '$CANDIDATE_SHA'; else echo CONTRACT_WRITER_ABSENT; fi"
+          CONTRACT_ORPHAN_RC=$?
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
@@ -1416,6 +1433,7 @@ jobs:
             "$DO_USER@$DO_HOST" "sudo -n timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA'" \
             < scripts/rc6_deploy_failure_cleanup.py
           test "$RECOVERY_RC" -eq 0
+          test "$CONTRACT_ORPHAN_RC" -eq 0
 
       - name: Postdeploy full-session stress in the exact installed image
         id: stress

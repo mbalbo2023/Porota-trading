@@ -115,15 +115,18 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     import yaml
     from scripts.rc6_native_soak import SOAK_TIMEOUT_SECONDS
     source = _deploy()
-    assert 'sudo -n timeout --signal=TERM --kill-after=60 3300 sudo -n docker run' in source
+    assert 'sudo -n timeout --signal=TERM --kill-after=10 1200 sudo -n docker run' in source
+    assert '--name "$CONTRACT_NAME"' in source
+    assert '-e POROTA_CONTRACT_REMOTE_V1_POLICY=REUSE_RECENT_COMPLETED' in source
+    contract_block = source[source.index('CONTRACT_NAME="porota-deploy-contract-'):]
+    assert contract_block.index('CONTRACT_LIFECYCLE="$(sudo -n python3') < contract_block.index('sudo -n docker start porota_production_observer')
+    assert source.index('CONTRACT_ORPHAN_RC=$?') < source.index('RECOVERY_RC=$?')
     job = yaml.safe_load(source)['jobs']['promote']
     stress = next(step for step in job['steps'] if step.get('id') == 'stress')
     restored = next(step for step in job['steps'] if step.get('name') ==
         'Independent sustained native acceptance after stress restoration')
-    # The administrative parent deadline must cover the unchanged55-minute
-    # contract child, native soak, stress and the independent restore soak.
-    # A literal former110-minute setting cannot express that dependency.
-    mandatory_seconds = 3300 + SOAK_TIMEOUT_SECONDS + 60 * (
+    # The parent covers bounded local v2, native soak, stress and restore.
+    mandatory_seconds = 1200 + SOAK_TIMEOUT_SECONDS + 60 * (
         stress['timeout-minutes'] + restored['timeout-minutes'])
     assert job['timeout-minutes'] * 60 > mandatory_seconds
     assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in source

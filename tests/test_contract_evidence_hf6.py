@@ -1,11 +1,17 @@
 import json
 import sqlite3
+import sys
+import types
+from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 import bd_ppi_readonly_guard as readonly
 import ci_ppi_bond_estimate_patch_hf6  # noqa: F401
 import ch_contract_evidence_hf6 as evidence
 import cm_special_family_discovery_hf6 as discovery
+import ck_contract_evidence_runner_hf6 as runner
 
 
 class Store:
@@ -48,6 +54,64 @@ def test_documented_bond_endpoint_is_get_only_allowlisted():
         pass
     else:
         raise AssertionError("Bonds/Estimate must remain GET-only")
+
+
+def test_deploy_reuses_only_recent_completed_v1_and_never_a_partial_sweep(tmp_path):
+    store=Store(tmp_path/"v1.db")
+    schema(store)
+    now=datetime(2026,10,20,8,0,tzinfo=timezone.utc)
+    with pytest.raises(ValueError,match="RECENT_COMPLETED_V1_ABSENT"):
+        runner.recent_completed_v1(store,now=now)
+    with store.connect() as c:
+        c.execute("INSERT INTO contract_evidence_runs VALUES(?,?,?,?,?,?,?,?)",
+                  ("completed","2026-10-20T05:18:13+00:00",
+                   "2026-10-20T05:59:44+00:00",10219,1436,4758,4025,"provider-backed"))
+    proof=runner.recent_completed_v1(store,now=now)
+    assert proof["total"]==10219 and proof["age_seconds"]<3*3600
+    with store.connect() as c:
+        c.execute("UPDATE contract_evidence_runs SET total=10220")
+    with pytest.raises(ValueError,match="RECENT_COMPLETED_V1_UNVERIFIED"):
+        runner.recent_completed_v1(store,now=now)
+    with store.connect() as c:
+        c.execute("UPDATE contract_evidence_runs SET total=10219")
+    with pytest.raises(ValueError,match="RECENT_COMPLETED_V1_UNVERIFIED"):
+        runner.recent_completed_v1(store,now=datetime(2026,10,22,8,tzinfo=timezone.utc))
+
+
+def test_closed_deploy_reuses_complete_v1_but_materializes_v2_without_broker(tmp_path, monkeypatch, capsys):
+    db=tmp_path/"deploy.db"
+    store=Store(db)
+    schema(store)
+    now=datetime.now(timezone.utc)
+    with store.connect() as c:
+        c.execute("""CREATE TABLE observer_state(id INTEGER,mode TEXT,process_state TEXT,
+                  session_state TEXT,ppi_auth TEXT,real_orders_sent INTEGER)""")
+        c.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER','WAITING_MARKET','MARKET_CLOSED','OK',0)")
+        c.execute("""CREATE TABLE contract_evidence_v2_runs(run_id TEXT,job_key TEXT,
+                  state TEXT,records INTEGER,changed INTEGER,conflicts INTEGER,finished_at TEXT)""")
+        c.execute("INSERT INTO contract_evidence_runs VALUES(?,?,?,?,?,?,?,?)",
+                  ("completed",now.isoformat(),now.isoformat(),3,1,1,1,"complete"))
+    monkeypatch.setattr(runner,"DB",str(db))
+    monkeypatch.setattr(runner,"REMOTE_V1_POLICY","REUSE_RECENT_COMPLETED")
+    monkeypatch.setattr(runner,"ProductionMarketReader",lambda *a: pytest.fail("broker call"))
+    monkeypatch.setattr(runner.official_sources,"collect",lambda *a: pytest.fail("remote source call"))
+    calls=[]
+    def mass(local,*,run_id):
+        calls.append(run_id)
+        with local.connect() as c:
+            c.execute("INSERT INTO contract_evidence_v2_runs VALUES(?,?,?,?,?,?,?)",
+                      (run_id,"CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG","OK",2,0,0,now.isoformat()))
+        return {"records":2}
+    monkeypatch.setattr(runner.evidence_v2_mass,"collect",mass)
+    observer=types.ModuleType("bf_production_paper_observer")
+    observer._reconcile_complementary_catalog=lambda local: 0
+    monkeypatch.setitem(sys.modules,"bf_production_paper_observer",observer)
+    assert runner.main()==0
+    output=capsys.readouterr().out
+    assert len(calls)==1
+    assert "REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED" in output
+    assert "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" in output
+    assert "QUICK_CHECK=ok" in output and "STATUS=OK" in output
 
 
 def test_bond_estimate_is_evidence_not_automatic_multiplier(tmp_path):

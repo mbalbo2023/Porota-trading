@@ -28,6 +28,8 @@ from bd_ppi_readonly_guard import ProductionMarketReader
 DB = os.getenv("POROTA_CONTRACT_EVIDENCE_DB", "/app/data/paper_v17/observer_v17.db")
 SECRET = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
 CONTRACT_EVIDENCE_MODE = os.getenv("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").upper()
+REMOTE_V1_POLICY = os.getenv("POROTA_CONTRACT_REMOTE_V1_POLICY", "REFRESH").upper()
+MAX_REUSED_V1_AGE_SECONDS = 24 * 3600
 
 
 class Store:
@@ -65,6 +67,39 @@ def readiness_counts(store):
     return {"total": int(total), "by_family": {str(k): int(v) for k, v in by_family.items()}}
 
 
+def recent_completed_v1(store, *, now=None):
+    """Prove a complete recent v1 sweep; the deploy still materializes all v2.
+
+    V1 is complementary provider evidence, not a PAPER admission authority.
+    An incomplete/timed-out sweep cannot be called a completed prior run.
+    """
+    now = now or datetime.now(timezone.utc)
+    with store.connect() as c:
+        row = c.execute("""SELECT started_at,finished_at,total,verified,
+          blocked_porota,blocked_provider FROM contract_evidence_runs
+          ORDER BY finished_at DESC LIMIT 1""").fetchone()
+    if not row:
+        raise ValueError("RECENT_COMPLETED_V1_ABSENT")
+    start, finish, total, verified, blocked_porota, blocked_provider = row
+    try:
+        start_at = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        finish_at = datetime.fromisoformat(str(finish).replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("RECENT_COMPLETED_V1_TIMESTAMP_INVALID") from exc
+    age = (now - finish_at).total_seconds() if finish_at.tzinfo else -1
+    if (start_at.tzinfo is None or not start_at <= finish_at <= now or
+            not 0 <= age <= MAX_REUSED_V1_AGE_SECONDS or
+            type(total) is not int or total <= 0 or
+            any(type(x) is not int or x < 0 for x in
+                (verified, blocked_porota, blocked_provider)) or
+            verified + blocked_porota + blocked_provider != total):
+        raise ValueError("RECENT_COMPLETED_V1_UNVERIFIED")
+    return {"finished_at": str(finish), "age_seconds": round(age, 1),
+            "total": total, "verified": verified,
+            "blocked_porota": blocked_porota,
+            "blocked_provider": blocked_provider}
+
+
 def main():
     if CONTRACT_EVIDENCE_MODE != "ENABLED":
         print("STATUS=SKIPPED_SOURCE_UNAVAILABLE_BY_SCOPE")
@@ -81,7 +116,15 @@ def main():
     if mode != "PRODUCTION_PAPER" or int(real_orders or 0) != 0:
         raise SystemExit("FAIL_CLOSED_RUNTIME_INVARIANT")
     market_closed = session_state in {"MARKET_CLOSED", "CLOSED"}
-    if market_closed:
+    if market_closed and REMOTE_V1_POLICY == "REUSE_RECENT_COMPLETED":
+        # The overnight/full scheduler owns the expensive provider sweep.
+        # Deploy reuses only a successful <=24h run and always rematerializes
+        # the entire current PPI catalogue in v2 below. New v2 identities
+        # remain fail-closed until their own provider contract is complete.
+        previous = recent_completed_v1(store)
+        print("REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED")
+        print("REMOTE_PPI_V1_PROVENANCE=" + json.dumps(previous, sort_keys=True))
+    elif market_closed and REMOTE_V1_POLICY == "REFRESH":
         secret = json.loads(Path(SECRET).read_text(encoding="utf-8"))
         api_key = secret.get("api_key") or ""
         api_secret = secret.get("api_secret") or ""
@@ -101,12 +144,14 @@ def main():
             print("PPI_READER_METRICS=" + json.dumps(reader.metrics, sort_keys=True))
         finally:
             reader.close()
-    else:
+    elif REMOTE_V1_POLICY in {"REFRESH", "REUSE_RECENT_COMPLETED"}:
         # The remote v1 sweep is intentionally closed-session only.  The local
         # v2 materialization below is deterministic from the already-observed
         # PPI catalogue and must run in every deploy/session so a market-open
         # deploy cannot leave new PAPER policies dormant until post-close.
         print("REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN")
+    else:
+        raise SystemExit("REMOTE_V1_POLICY_INVALID")
 
     ready_before = readiness_counts(store)
     v2_run_id = "contract-evidence-v2-mass-" + uuid.uuid4().hex
