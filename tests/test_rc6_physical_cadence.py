@@ -154,7 +154,10 @@ def test_exact_artifact_workflow_runs_two_standalone_twelve_cut_stages():
         assert '--cadence-stage '+stage+' --output /proof/cadence' in native
         assert 'porota-native-cadence-'+stage+'-$GITHUB_RUN_ID' in native
     assert 'cadence-fresh|cadence-legacy) rc6_timeout=1500' in native
-    assert '--memory 512m --memory-swap 512m --cpus .75' in native
+    assert 'rc6_memory=(--memory 512m --memory-swap 512m)' in native
+    assert 'if test "$rc6_label" = session; then' in native
+    assert 'rc6_memory=(--memory 256m --memory-swap 256m)' in native
+    assert '"${rc6_memory[@]}" --cpus .75' in native
     assert '--network none' in native and '--user 1000:1000' in native and '--cap-drop ALL' in native
 
 
