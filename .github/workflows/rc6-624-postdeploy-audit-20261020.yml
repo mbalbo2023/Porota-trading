@@ -1,0 +1,155 @@
+name: RC6 624 independent postdeploy PAPER inventory
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-postdeploy-audit-20261020
+    paths:
+      - .github/workflows/rc6-624-postdeploy-audit-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout exact promoted policy
+        uses: actions/checkout@v4
+        with:
+          ref: 68e6681a9248f312e9e0c052fb3c4e5e032800b5
+      - name: Verify current production merge and strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^{tree})" = 78266c5c04d0556066f691ecec327289a1bac5b3
+          # Fill the exact two-parent merge SHA after the canonical promotion.
+          CURRENT="$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)"
+          test "$CURRENT" = ce16c19309d530b99b157c1a6d4cee6d3641b9a7
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_postdeploy_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_postdeploy_audit" "$HOME/.ssh/known_hosts"
+      - name: Read-only exact runtime and host inventory
+        shell: bash
+        timeout-minutes: 4
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 180 ssh -i "$HOME/.ssh/rc6_postdeploy_audit" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - '$POLICY_B64'" <<'PY'
+          import base64,hashlib,json,os,re,sqlite3,subprocess,sys,time,urllib.error,urllib.request
+          from datetime import datetime,timezone
+          from pathlib import Path
+          if not __debug__: raise RuntimeError('ASSERTIONS_REQUIRED')
+          root=Path('/opt/porota-trading')
+          folder=root/'data/deploy'
+          def load(p,limit=65536):
+              assert p.is_file() and not p.is_symlink() and 0<p.stat().st_size<limit
+              return json.loads(p.read_bytes())
+          def run(*args,timeout=8):
+              p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+              return p.returncode,p.stdout.strip()
+          state=load(folder/'CURRENT_STATE_V2.json')
+          assert state['candidate_sha']=='68e6681a9248f312e9e0c052fb3c4e5e032800b5'
+          assert state['deploy_sha']=='ce16c19309d530b99b157c1a6d4cee6d3641b9a7'
+          assert state['validation_status']=='VALIDATED_RUNTIME'
+          assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+          assert state['real_order_routes']=='NOT_CALLED'
+          image=state['image_id']
+          containers={}
+          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              rc,out=run('docker','inspect',name)
+              assert rc==0
+              row=json.loads(out)[0]
+              assert row['Image']==image and row['State']['Status']=='running'
+              assert row['State']['OOMKilled'] is False and row['RestartCount']==0
+              if name=='porota_critical_approval_rc6':
+                  assert row['State']['Health']['Status']=='healthy'
+              containers[name]={'id':row['Id'],'image':row['Image'],'status':'running','restarts':0,'oom':False}
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON'); c.execute('PRAGMA busy_timeout=200')
+              assert c.execute('PRAGMA query_only').fetchone()[0]==1
+              deadline=time.monotonic()+10
+              c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+              mode,orders,process,session,heartbeat=c.execute('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+              age=(datetime.now(timezone.utc)-datetime.fromisoformat(heartbeat)).total_seconds()
+              assert 0<=age<=120
+              spots=c.execute("SELECT status,COUNT(*) FROM paper_positions GROUP BY status").fetchall()
+              caucions=c.execute("SELECT status,COUNT(*) FROM paper_cauciones GROUP BY status").fetchall()
+              futures=c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'").fetchone()[0]
+              assert futures==0
+              assert c.execute('PRAGMA quick_check(1)').fetchone()[0]=='ok'
+          try:
+              with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5) as response:
+                  http=response.status
+          except urllib.error.HTTPError as error: http=error.code
+          assert http==200
+          for file_name,minimum,strict in (('native-generation-acceptance.json',2,False),
+                                            ('native-ten-generation-soak.json',10,True)):
+              evidence=load(folder/file_name,2*1024**2)
+              assert evidence['status']=='GREEN' and evidence['minimum_generations']==minimum
+              assert evidence['strict'] is strict and len(evidence['generations'])>=minimum
+              assert all(row['source_sha']==state['candidate_sha'] and
+                         row['candidate_tree_sha']=='78266c5c04d0556066f691ecec327289a1bac5b3' and
+                         row['real_orders_sent']==0 and row['real_routes']=='NOT_CALLED'
+                         for row in evidence['generations'])
+          sys.path.insert(0,str(root))
+          from scripts.rc6_native_soak import stable_reader
+          from scripts.rc6_deploy_generation_gate import receipt
+          shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+          cut=stable_reader(shadow,payload_limit=4*1024**2,require_current_status=True)
+          health=load(shadow.parent/'runtime-health.json',131072)
+          generation=receipt(cut,health,state['candidate_sha'],
+                             '78266c5c04d0556066f691ecec327289a1bac5b3',
+                             datetime.now(timezone.utc))
+          policy=json.loads(base64.b64decode(sys.argv[1],validate=True))
+          names=sorted(Path(p).name for p,v in policy['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          assert len(names)==20
+          def unit(n,verb): return run('systemctl',verb,n)[1]
+          timers={n:(unit(n,'is-enabled'),unit(n,'is-active')) for n in names}
+          assert all(v==('enabled','active') for v in timers.values())
+          rc,out=run('systemctl','list-unit-files','--no-legend','--no-pager')
+          assert rc==0
+          ppi=sorted(line.split()[0] for line in out.splitlines() if line.split() and {'ppi','watch'}<=set(re.split(r'[-_.@]',line.split()[0].lower())))
+          ppi_state=[(n,unit(n,'is-enabled'),unit(n,'is-active')) for n in ppi]
+          disk=os.statvfs('/')
+          free=disk.f_bavail*disk.f_frsize
+          inode_percent=100*disk.f_ffree/disk.f_files
+          mem={k:int(v.split()[0])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if ':' in line for k,v in [line.split(':',1)] if k in {'MemAvailable','SwapFree','SwapTotal'}}
+          assert free>=2*1024**3 and inode_percent>=10 and mem['MemAvailable']>=128*1024**2
+          backup_root=Path('/opt/porota-backups')
+          backups=sorted((p for p in backup_root.iterdir() if p.name.startswith('porota-general-') and
+                          p.name.endswith('.tar.gz') and p.is_file() and not p.is_symlink()),
+                         key=lambda p:p.stat().st_mtime,reverse=True)[:3] if backup_root.is_dir() else []
+          backup_inventory=[{'created_mtime_utc':datetime.fromtimestamp(p.stat().st_mtime,timezone.utc).isoformat(),
+                             'size_bytes':p.stat().st_size} for p in backups]
+          result={'schema':'RC6_624_POSTDEPLOY_READ_ONLY_V1','at':datetime.now(timezone.utc).isoformat(),
+                  'candidate_sha':state['candidate_sha'],'deploy_sha':state['deploy_sha'],
+                  'validation_status':state['validation_status'],'image_id':image,'containers':containers,
+                  'mode':mode,'real_orders_sent':orders,'real_order_routes':state['real_order_routes'],
+                  'observer_process':process,'observer_session':session,'heartbeat_age_seconds':round(age,3),
+                  'paper_spot_status_counts':spots,'paper_caucion_status_counts':caucions,'paper_future_active':futures,
+                  'dashboard_health_http':http,'managed_timers_active_enabled':len(timers),
+                  'ppi_watch_unit_discovery':'NOT_PRESENT' if not ppi else 'CANDIDATES_UNVERIFIED',
+                  'ppi_watch_units':ppi_state,'disk_free_bytes':free,'inode_free_percent':round(inode_percent,2),
+                  'mem_available_bytes':mem['MemAvailable'],'swap_used_bytes':mem['SwapTotal']-mem['SwapFree'],
+                  'recent_general_backups':backup_inventory,
+                  'native_receipts_verified':True,'current_shadow_generation':generation,
+                  'ppi_watch_health':'NO_VERIFICADO','ppi_watch_accessed':False}
+          print('RC6_624_POSTDEPLOY_AUDIT='+json.dumps(result,sort_keys=True))
+          PY
+      - name: Cleanup SSH material
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_postdeploy_audit"
