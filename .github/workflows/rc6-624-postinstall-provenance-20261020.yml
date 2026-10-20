@@ -99,6 +99,12 @@ jobs:
             'source_names':sorted(p.name for p in source.iterdir()),
             'archive_names':sorted(p.name for p in archive.iterdir()) if archive.exists() else []},sort_keys=True))
           PY
+          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
+          import json,sys
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import spot_carryover_snapshot
+          print('RC6_POSTFAIL_STOPPED_BOOK='+json.dumps(spot_carryover_snapshot(),sort_keys=True))
+          PY
           rm -f "$HOME/.ssh/rc6_read"
 
 # Inventory after preopen contract failure and exact clean stop.
