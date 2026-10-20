@@ -146,7 +146,8 @@ def run(candidate, action, policy_b64):
     if ppi_snapshot() != before:
         raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
     print(json.dumps({'status': receipt['status'], 'candidate_sha': candidate,
-                      'timer_count': len(names), 'ppi_watch_accessed': False}, sort_keys=True))
+                      'timer_count': len(names), 'ppi_watch_mutated': False,
+                      'ppi_watch_observed_read_only': True}, sort_keys=True))
     return receipt
 
 
