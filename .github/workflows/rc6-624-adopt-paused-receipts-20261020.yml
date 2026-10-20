@@ -1,0 +1,133 @@
+name: RC6 624 bind paused receipts to test-only successor
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-adopt-paused-receipts-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  adopt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      OLD_SHA: 21898722de17e6dbf0dc356e689c6554ee876d87
+      NEW_SHA: 801fe59e8495d29d3184798c785a5daeadfe31ae
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout exact test-only successor
+        uses: actions/checkout@v4
+        with:
+          ref: 801fe59e8495d29d3184798c785a5daeadfe31ae
+          fetch-depth: 0
+      - name: Verify source identity and prepare SSH
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$NEW_SHA"
+          test "$(git diff --name-only "$OLD_SHA" HEAD)" = 'tests/test_rc6_deploy_quiescence.py'
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_adopt"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_adopt" "$HOME/.ssh/known_hosts"
+      - name: Validate unchanged pause and atomically bind receipt pair
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 160 ssh -i "$HOME/.ssh/rc6_adopt" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - '$OLD_SHA' '$NEW_SHA' '$POLICY_B64'" <<'PY'
+          import base64,hashlib,json,os,re,sqlite3,subprocess,sys,tempfile,time
+          from pathlib import Path
+          old,new,policy_b64=sys.argv[1:]
+          assert re.fullmatch('[0-9a-f]{40}',old) and re.fullmatch('[0-9a-f]{40}',new) and old!=new
+          root=Path('/opt/porota-trading')
+          folder=root/'data/deploy'
+          assert folder.is_dir() and not folder.is_symlink()
+          qold=folder/('quiescence-'+old+'.json')
+          sold=folder/('scheduler-suspend-'+old+'.json')
+          qnew=folder/('quiescence-'+new+'.json')
+          snew=folder/('scheduler-suspend-'+new+'.json')
+          assert not qnew.exists() and not snew.exists() and not qnew.is_symlink() and not snew.is_symlink()
+          def load(path):
+              assert path.is_file() and not path.is_symlink() and path.stat().st_size<65536
+              raw=path.read_bytes()
+              return json.loads(raw),hashlib.sha256(raw).hexdigest()
+          q,qhash=load(qold)
+          s,shash=load(sold)
+          owned=('porota_production_observer','porota_production_dashboard')
+          assert q['candidate_sha']==old and q['status']=='DRAINED' and q['installation_started'] is False
+          assert q['market_open_suspended'] is True and q['open_paper_carryover'] is True
+          assert q['real_orders_sent']==0 and q['ppi_watch_accessed'] is False
+          assert set(q['containers'])==set(owned) and set(q['stop_evidence'])==set(owned) and set(q['stop_attempted'])==set(owned)
+          for name in owned:
+              v=json.loads(subprocess.check_output(['docker','inspect',name],text=True,timeout=5))[0]
+              e=q['containers'][name]
+              proof=q['stop_evidence'][name]
+              actual={key:v['State'].get(key) for key in ('Status','StartedAt','FinishedAt','ExitCode','OOMKilled')}
+              assert v['Id']==e['id'] and v['Image']==e['image'] and actual==proof['after']
+              assert actual['Status']=='exited' and actual['ExitCode']==0
+              assert proof['classification'] in {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'}
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              deadline=time.monotonic()+3
+              c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+              state=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+              assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+              assert state['process_state'] in {'RUNNING','STOPPED'} and state['session_state'] in {'MARKET_OPEN','OPEN'}
+              rows=c.execute("SELECT * FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT 17").fetchall()
+              assert len(rows)<=16 and len(rows)==q['spot_carryover']['open_count']
+              assert [r['paper_id'] for r in rows]==q['spot_carryover']['paper_ids']
+              assert [{key:r[key] for key in ('paper_id','symbol','quantity','entry_price','opened_at')} for r in rows]==q['spot_carryover']['identities']
+              payload=[]
+              for r in rows:
+                  fills=c.execute('SELECT * FROM paper_fills WHERE paper_id=? ORDER BY id LIMIT 65',(r['paper_id'],)).fetchall()
+                  intents=c.execute('SELECT * FROM paper_exit_intents WHERE paper_id=? LIMIT 2',(r['paper_id'],)).fetchall()
+                  assert len(fills)<=64 and len(intents)<=1 and not any(f['side']=='SELL_SIMULATED' for f in fills)
+                  payload.append({'position':dict(r),'fills':[dict(f) for f in fills],'intents':[dict(i) for i in intents]})
+              digest=hashlib.sha256(json.dumps(payload,sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()
+              assert digest==q['spot_carryover']['sha256']
+              for table,status in (('paper_cauciones','OPEN'),('paper_future_positions','ACTIVE')):
+                  assert c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(status,)).fetchone() is None
+          raw=base64.b64decode(policy_b64,validate=True)
+          policy=json.loads(raw)
+          names=sorted(Path(x).name for x,v in policy['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          assert len(names)==20 and s['candidate_sha']==old and s['status']=='SUSPENDED'
+          assert s['timers']==names and s['policy_sha256']==hashlib.sha256(raw).hexdigest() and set(s['attempted'])==set(names)
+          output=subprocess.check_output(['systemctl','list-unit-files','--no-legend'],text=True,timeout=5)
+          ppi=sorted(line.split()[0] for line in output.splitlines() if {'ppi','watch'}<=set(re.split(r'[-_.@]',line.split()[0].lower())))
+          def state(name,command):
+              return subprocess.run(['systemctl',command,name],capture_output=True,text=True,timeout=3).stdout.strip()
+          assert [[name,state(name,'is-enabled'),state(name,'is-active')] for name in ppi]==s['ppi_before']
+          for name in names:
+              assert state(name,'is-active')=='inactive'
+              unit=subprocess.check_output(['systemctl','show',name,'-p','Unit','--value'],text=True,timeout=3).strip()
+              assert unit.endswith('.service') and state(unit,'is-active') not in {'active','activating','reloading','deactivating'}
+          def persist(path,obj):
+              fd,tmp=tempfile.mkstemp(prefix='.adopt-prepause-',dir=folder)
+              try:
+                  with os.fdopen(fd,'w') as f:
+                      json.dump(obj,f,sort_keys=True,indent=2)
+                      f.write('\n'); f.flush(); os.fsync(f.fileno())
+                  os.replace(tmp,path)
+                  dfd=os.open(folder,os.O_RDONLY|os.O_DIRECTORY)
+                  try: os.fsync(dfd)
+                  finally: os.close(dfd)
+              finally:
+                  if os.path.exists(tmp): os.unlink(tmp)
+          q=dict(q,candidate_sha=new,prepause_from=old,prior_receipt_sha256=qhash)
+          s=dict(s,candidate_sha=new,prepause_from=old,prior_receipt_sha256=shash)
+          persist(snew,s)
+          persist(qnew,q)
+          print('RC6_PREPAUSE_RECEIPTS_ADOPTED=GREEN|old='+old+'|new='+new+'|timers=20|containers=exited|paper_open='+str(len(rows))+'|real_orders_sent=0|ppi_watch_mutated=false')
+          PY
