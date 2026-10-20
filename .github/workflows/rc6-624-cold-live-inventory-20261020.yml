@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)" = 33586f8805ad658042050ad81a8d96df235de0f8
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)" = 9c00e99fa5a2b56209e9c95c69091fbe7b8d9e5b
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_inventory"
@@ -46,7 +46,7 @@ jobs:
           cold=shadow/'cold-audit'
           ident='89e7f81dbc9b4a628bdc30edf86a17b0'
           cut='b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8'
-          candidate='638d5f73f43c5837752d3044f45da91317ffc7f4'
+          candidate='44239fbecb2c88a132e8ab9c034adc44891f86c0'
           def envelope(p,gz=False):
               assert p.is_file() and not p.is_symlink() and p.stat().st_size<4*1024**2
               raw=gzip.open(p,'rb').read(4*1024**2+1) if gz else p.read_bytes()
@@ -78,7 +78,7 @@ jobs:
               x=json.loads(p.stdout)[0]
               rows[n]={'id':x['Id'],'image':x['Image'],'status':x['State']['Status'],'exit_code':x['State']['ExitCode'],'restart_count':x['RestartCount'],'health':(x['State'].get('Health') or {}).get('Status')}
           images={}
-          for tag in ('porota-trading-bot:17.0.0-rc6','porota-predeploy-v2:638d5f73f43c5837752d3044f45da91317ffc7f4','porota-trading-bot:17.0.0-rc6-candidate-638d5f73f43c5837752d3044f45da91317ffc7f4'):
+          for tag in ('porota-trading-bot:17.0.0-rc6','porota-predeploy-v2:44239fbecb2c88a132e8ab9c034adc44891f86c0','porota-trading-bot:17.0.0-rc6-candidate-44239fbecb2c88a132e8ab9c034adc44891f86c0'):
               p=subprocess.run(['docker','image','inspect',tag],capture_output=True,text=True,timeout=10)
               images[tag]=None if p.returncode else {k:json.loads(p.stdout)[0].get(k) for k in ('Id','RepoTags','RepoDigests','Size')}
           ids=subprocess.run(['docker','ps','-aq','--no-trunc'],capture_output=True,text=True,timeout=10)
