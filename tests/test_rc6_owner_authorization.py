@@ -1,0 +1,51 @@
+import json
+import unittest
+
+from scripts.rc6_owner_authorization import (
+    MAX_PAGE_BYTES, PAGE_SIZE, require_exact_owner_authorization,
+)
+
+
+class OwnerAuthorizationTests(unittest.TestCase):
+    def test_authorization_after_ninety_large_comments_is_found(self):
+        candidate, tree = 'a' * 40, 'b' * 40
+        expected = f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
+        comments = [dict(id=n, body='x' * 7000, user={'login': 'mbalbo2023'},
+                         created_at='2026-10-19T00:00:00Z',
+                         updated_at='2026-10-19T00:00:00Z') for n in range(96)]
+        comments.append(dict(id=6281817812, body=expected,
+                             user={'login': 'mbalbo2023'},
+                             created_at='2026-10-20T02:20:09Z',
+                             updated_at='2026-10-20T02:20:09Z'))
+        self.assertGreater(len(json.dumps(comments).encode()), MAX_PAGE_BYTES)
+        requests = []
+
+        def page(url):
+            requests.append(url)
+            n = int(url.rsplit('page=', 1)[1])
+            return json.dumps(comments[(n - 1) * PAGE_SIZE:n * PAGE_SIZE]).encode()
+
+        self.assertEqual(require_exact_owner_authorization(
+            'owner/repo', candidate, tree, get_page=page), 6281817812)
+        self.assertEqual(len(requests), 10)
+        self.assertTrue(all('per_page=10' in url for url in requests))
+
+    def test_authorization_rejects_duplicate_or_edited_approval(self):
+        candidate, tree = 'a' * 40, 'b' * 40
+        body = f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
+        approval = dict(id=1, body=body, user={'login': 'mbalbo2023'},
+                        created_at='t1', updated_at='t1')
+        def page(rows):
+            return lambda _: json.dumps(rows).encode()
+
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo', candidate, tree,
+                                              get_page=page([approval, dict(approval, id=2)]))
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo', candidate, tree,
+                                              get_page=page([dict(approval, updated_at='t2')]))
+
+    def test_authorization_keeps_page_size_guard(self):
+        with self.assertRaisesRegex(ValueError, 'AUTHORIZATION_PAGE_BOUND'):
+            require_exact_owner_authorization('owner/repo', 'a' * 40, 'b' * 40,
+                                              get_page=lambda _: b'x' * (MAX_PAGE_BYTES + 1))
