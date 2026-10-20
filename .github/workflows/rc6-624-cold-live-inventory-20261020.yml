@@ -63,6 +63,9 @@ jobs:
           old_exists=old_path.is_file()
           current_snapshot=current.get('report',{}).get('computed_report',{}).get('snapshot_id')
           archive=folder/('rc6-failed-cold-'+ident)
+          cold2_archive=folder/'rc6-failed-cold-7dc99ccd8f7c47849ca3705ae1cb2c49'
+          active_queue=envelope(cold/'queue.json') if (cold/'queue.json').is_file() else None
+          current_reference=current.get('report',{}).get('computed_report',{})
           receipt=folder/('rc6-cold-fix-forward-'+candidate+'.json')
           prior_receipt=folder/'rc6-cold-fix-forward-d96cb68d177199317ee23239553517e04ee0a255.json'
           prior=json.loads(prior_receipt.read_bytes()) if prior_receipt.is_file() and not prior_receipt.is_symlink() and prior_receipt.stat().st_size<65536 else None
@@ -104,6 +107,10 @@ jobs:
                   'live_real_orders_sent':live.get('real_orders_sent'),
                   'cold_active_names':sorted(p.name for p in cold.iterdir()) if cold.exists() else [],
                   'cold_archive_exists':archive.is_dir(),'cold_fix_receipt_exists':receipt.exists(),
+                  'cold2_archive_names':sorted(p.name for p in cold2_archive.iterdir()) if cold2_archive.is_dir() else [],
+                  'active_cold_queue':{k:active_queue.get(k) for k in ('snapshot_id','state','manifest_sha256')} if active_queue else None,
+                  'current_cold_reference':{k:current_reference.get(k) for k in ('snapshot_id','state','manifest_sha256')},
+                  'live_real_routes':live.get('real_routes'),
                   'prior_cold_receipt':{k:prior.get(k) for k in ('schema','state','candidate_sha','archive','old_sha','snapshot_id','manifest_sha256','pack_sha256','pack_bytes','failed_at','deadline_at','revoked_cut','current_cut','old_cut_gc_complete')} if prior else None,
                   'archive_names':sorted(p.name for p in archive.iterdir()) if archive.is_dir() else [],
                   'quiescence_status':q.get('status'),'installation_started':q.get('installation_started'),
