@@ -18,8 +18,13 @@ def github_issue_page(url):
         return output.read(MAX_PAGE_BYTES + 1)
 
 
-def require_exact_owner_authorization(repo, candidate, tree, *, get_page=github_issue_page):
-    expected = f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
+def require_exact_owner_authorization(repo, candidate, tree, *,
+                                      decision='RC6_624_APPROVE_DEPLOY_AND_COLD2',
+                                      get_page=github_issue_page):
+    if decision not in {'RC6_624_APPROVE_DEPLOY_AND_COLD2',
+                        'RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED'}:
+        raise ValueError('AUTHORIZATION_DECISION_INVALID')
+    expected = f'{decision} candidate={candidate} tree={tree}'
     matches = []
     for page in range(1, MAX_PAGES + 1):
         url = f'repos/{repo}/issues/624/comments?per_page={PAGE_SIZE}&page={page}'
