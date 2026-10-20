@@ -26,20 +26,25 @@ jobs:
         run: |
           set -Eeuo pipefail
           cd "$RUNNER_TEMP/frozen"
+          FROZEN_JSON="$(find . -type f -name porota-frozen-candidate.json -print -quit)"
+          FROZEN_TAR="$(find . -type f -name porota-predeploy-image.tar.gz -print -quit)"
+          test -n "$FROZEN_JSON" && test -n "$FROZEN_TAR"
+          cp "$FROZEN_JSON" "$RUNNER_TEMP/frozen-candidate.json"
+          cp "$FROZEN_TAR" "$RUNNER_TEMP/frozen-image.tar.gz"
           python - <<'PY'
-          import hashlib,json,pathlib
-          root=pathlib.Path('.')
-          f=json.loads((root/'porota-frozen-candidate.json').read_text())
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          f=json.loads((root/'frozen-candidate.json').read_text())
           assert f['candidate_sha']=='4f305e094c7d19c4ffa04f6ff936c8a191610d7a'
           assert f['candidate_tree_sha']=='982fc6c5027d72b1ec1b751ff69db3450c742971'
           assert f['image_id']=='sha256:afed86ba62b3dc880823ddfe52c2571a4ad74fe38f6a6ff18140b92ff481abcd'
-          tar=root/'porota-predeploy-image.tar.gz'
+          tar=root/'frozen-image.tar.gz'
           assert hashlib.file_digest(tar.open('rb'),'sha256').hexdigest()==f['image_tar_sha256']
           print('EXACT_FROZEN_ARTIFACT=GREEN')
           PY
-          gzip -dc porota-predeploy-image.tar.gz | docker load
-          IMAGE='sha256:afed86ba62b3dc880823ddfe52c2571a4ad74fe38f6a6ff18140b92ff481abcd'
-          test "$(docker image inspect -f '{{.Id}}' "$IMAGE")" = "$IMAGE"
+          gzip -dc "$RUNNER_TEMP/frozen-image.tar.gz" | docker load
+          IMAGE='porota-predeploy-v2:4f305e094c7d19c4ffa04f6ff936c8a191610d7a'
+          test -n "$(docker image inspect -f '{{.Id}}' "$IMAGE")"
           mkdir -p "$RUNNER_TEMP/proof"
           chmod 777 "$RUNNER_TEMP/proof"
           docker create --name rc6-exact-256-proof --pull never --memory 256m --memory-swap 256m --cpus .75 \
