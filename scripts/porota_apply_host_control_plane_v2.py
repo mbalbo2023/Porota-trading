@@ -154,7 +154,7 @@ def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_pa
         role=item["role"]
         if role=="ACTIVE_TIMER":
             enabled=_run("systemctl","is-enabled",name).stdout.strip()
-            active=_run("systemctl","is-active",name).stdout.strip()
+            active=_run("systemctl","is-active",name,check=False).stdout.strip()
             expected_active = "inactive" if keep_active_timers_paused else "active"
             if enabled!="enabled" or active!=expected_active:
                 raise RuntimeError(f"ACTIVE_TIMER_VERIFY_FAILED:{name}:{enabled}:{active}")
