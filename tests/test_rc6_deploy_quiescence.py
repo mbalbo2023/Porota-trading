@@ -118,6 +118,50 @@ def test_stopped_successor_accepts_independent_healthy_issues_broker(installatio
     assert not any(c[1] in ('start', 'stop') for c in calls)
 
 
+@pytest.mark.parametrize('change', ['none', 'admin_receipt', 'sale', 'reopened'])
+def test_failed_cold2_continues_closed_admin_ledger_without_repeat_cancel(
+        installation, monkeypatch, change):
+    """Run 39370186360 closed SUPV, then failed COLD2 before Docker restart."""
+    root, db, states, calls, _ = installation
+    monkeypatch.setattr(q, 'FAILED_COLD2_CANDIDATE', SHA)
+    q.run(SHA, 'drain'); q.run(SHA, 'install'); q.run(SHA, 'recover')
+    paper_id = 'PAPER-observed-issue624'
+    with sqlite3.connect(db) as c:
+        for column in ('paper_id TEXT', 'close_reason TEXT', 'exit_price REAL', 'net_pnl REAL'):
+            c.execute('ALTER TABLE paper_positions ADD COLUMN '+column)
+        c.execute('CREATE TABLE paper_admin_cancellations(paper_id TEXT,authority TEXT)')
+        c.execute('CREATE TABLE paper_fills(paper_id TEXT,side TEXT)')
+        c.execute('''INSERT INTO paper_positions(status,paper_id,close_reason)
+                     VALUES (?,?,?)''', ('OPEN' if change == 'reopened' else 'CANCELLED_ADMIN',
+                                         paper_id, q.ADMIN_CANCEL_REASON))
+        if change == 'reopened':
+            c.execute("INSERT INTO paper_positions(status,paper_id) VALUES ('OPEN','PAPER-other')")
+        c.execute('INSERT INTO paper_admin_cancellations VALUES (?,?)',
+                  (paper_id, 'ISSUE624_OPERATOR_REQUEST_20261019'))
+        if change == 'sale':
+            c.execute("INSERT INTO paper_fills VALUES (?,'SELL_SIMULATED')", (paper_id,))
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET'")
+    prior_path = root/'data/deploy'/('quiescence-'+SHA+'.json')
+    prior = json.loads(prior_path.read_text())
+    prior.update(admin_cancel_paper_id=paper_id,
+                 admin_cancel_status='UNKNOWN' if change == 'admin_receipt'
+                 else 'APPLIED_NO_MARKET_SALE')
+    prior_path.write_text(json.dumps(prior))
+    calls.clear()
+    successor = 'b'*40
+    if change != 'none':
+        with pytest.raises((ValueError, sqlite3.Error)):
+            q.run(successor, 'drain', allow_admin_issue624=True)
+        assert not (root/'data/deploy'/('quiescence-'+successor+'.json')).exists()
+    else:
+        receipt = q.run(successor, 'drain', allow_admin_issue624=True)
+        assert receipt['status'] == 'DRAINED'
+        assert receipt['admin_cancel_paper_id'] is None
+        assert receipt['fix_forward_from'] == SHA
+        assert q.run(successor, 'install')['status'] == 'HOST_INSTALLATION_STARTED'
+    assert not any(c[1] in ('start', 'stop') for c in calls)
+
+
 @pytest.mark.parametrize('change', ['restarts', 'missing_restarts', 'capability'])
 def test_stopped_successor_rejects_unhealthy_independent_broker(
         installation, monkeypatch, change):
@@ -175,7 +219,8 @@ def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
     assert source.index('RC6_STAGED_BUNDLE_HASHES=GREEN') < source.index('--action admin-begin')
     assert source.index('--action admin-begin') < source.index('--apply') < source.index('--action admin-commit') < source.index('--action install')
     assert '--action recover' in source
-    assert source.index('RC6_DISK_OFFLINE_PRECLEAN_REQUIRED=RED') < source.index("<<'PRECLEAN_REMOTE'")
+    assert source.index('< scripts/rc6_offline_failed_image_cleanup.py') < source.index("<<'PRECLEAN_REMOTE'")
+    assert source.index('RC6_DISK_OFFLINE_PRECLEAN_INSUFFICIENT=RED') < source.index('id: drain')
 
 
 def test_preexisting_historical_oom_flag_with_new_clean_exit_is_not_a_new_oom(installation, monkeypatch):

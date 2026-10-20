@@ -100,7 +100,11 @@ def apply(root, candidate):
             latest, current_ids = receipt_for(root, candidate)
             if latest != receipt or current_ids != ids:
                 raise ValueError('COLD2_QUIESCENCE_RECEIPT_CHANGED')
-            if drain.admit(stopped=True) != 'STOPPED':
+            # The observer can retain WAITING_MARKET in its durable ledger
+            # after Docker stopped it. drain.admit(stopped=True) independently
+            # verifies CLOSED/PAPER/0 and absence of open positions; the exact
+            # stopped container identities are checked below on every boundary.
+            if drain.admit(stopped=True) not in {'STOPPED', 'WAITING_MARKET'}:
                 raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
             for name in OWNED:
                 row = drain.inspect(name)
