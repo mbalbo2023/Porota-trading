@@ -130,3 +130,59 @@ jobs:
           lines=[x[:200] for x in p.stdout.splitlines() if 'oom' in x.lower() or 'out of memory' in x.lower()]
           print('KERNEL_OOM_LINES',json.dumps(lines[-12:]))
           PY
+      - name: Stop only the timed-out exact contract writer if still orphaned
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          timeout 45 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'sudo -n python3 -' <<'PY'
+          import json,sqlite3,subprocess
+          from pathlib import Path
+          ROOT=Path('/opt/porota-trading')
+          CANDIDATE='525d3bba768dd494a399ab32bdf9f9ac14f0e483'
+          IMAGE='sha256:c00fb42edbddbd0428b76129357f2b6ccbb09da4646964c891f2b88276a94b15'
+          def docker(*args):
+              p=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=12,check=True)
+              return p.stdout.strip()
+          def record(id): return json.loads(docker('inspect',id))[0]
+          state=json.loads((ROOT/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          assert state['candidate_sha']==CANDIDATE and state['validation_status']=='DEPLOYED_VALIDATION_PENDING'
+          assert state['image_id']==IMAGE and state['mode']=='PRODUCTION_PAPER'
+          assert type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+          observer=record('porota_production_observer'); dashboard=record('porota_production_dashboard')
+          assert all(x['Image']==IMAGE and x['State']['Running'] for x in (observer,dashboard))
+          path=ROOT/'data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2)
+          c.execute('PRAGMA query_only=ON')
+          assert c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()==('PRODUCTION_PAPER',0)
+          c.close()
+          def ppi():
+              p=subprocess.run(['systemctl','list-unit-files','--no-legend'],capture_output=True,text=True,timeout=5,check=True)
+              names=sorted(x.split()[0] for x in p.stdout.splitlines() if x.split() and 'ppi' in x.split()[0].lower() and 'watch' in x.split()[0].lower())
+              assert len(names)<=16
+              return [(n,subprocess.run(['systemctl','is-active',n],capture_output=True,text=True,timeout=3).stdout.strip(),subprocess.run(['systemctl','is-enabled',n],capture_output=True,text=True,timeout=3).stdout.strip()) for n in names]
+          before=ppi()
+          ids=docker('ps','-q','--no-trunc').splitlines()
+          assert len(ids)<=64
+          orphans=[]
+          for id in ids:
+              r=record(id)
+              if r['Image']!=IMAGE or r['Name'] in ('/porota_production_observer','/porota_production_dashboard'):
+                  continue
+              if r.get('Path')=='python' and r.get('Args')==['ck_contract_evidence_runner_hf6.py']:
+                  assert r['State']['Running'] and r['HostConfig']['AutoRemove'] is True
+                  assert r['Created'].startswith('2026-10-20T06:56:')
+                  assert r['HostConfig']['ReadonlyRootfs'] is True
+                  orphans.append(r)
+          assert len(orphans)<=1
+          print('TIMED_OUT_CONTRACT_ORPHANS',json.dumps([{'id':x['Id'],'name':x['Name'],'image':x['Image'],'created':x['Created']} for x in orphans]))
+          if orphans:
+              target=orphans[0]['Id']
+              print('EXACT_ORPHAN_STOP',docker('stop','--time','5',target))
+              assert target not in docker('ps','-q','--no-trunc').splitlines()
+          assert ppi()==before
+          assert all(record(n)['State']['Running'] and record(n)['Image']==IMAGE for n in ('porota_production_observer','porota_production_dashboard'))
+          print('ORPHAN_RECOVERY=GREEN|PAPER=0|PPI_WATCH_UNCHANGED')
+          PY
