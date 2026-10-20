@@ -219,7 +219,8 @@ def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
     assert source.index('RC6_STAGED_BUNDLE_HASHES=GREEN') < source.index('--action admin-begin')
     assert source.index('--action admin-begin') < source.index('--apply') < source.index('--action admin-commit') < source.index('--action install')
     assert '--action recover' in source
-    assert source.index('< scripts/rc6_offline_failed_image_cleanup.py') < source.index("<<'PRECLEAN_REMOTE'")
+    assert source.index('< scripts/rc6_offline_current_image_cleanup.py') < source.index("<<'PRECLEAN_REMOTE'")
+    assert '< scripts/rc6_offline_failed_image_cleanup.py' not in source
     assert source.index('RC6_DISK_OFFLINE_PRECLEAN_INSUFFICIENT=RED') < source.index('id: drain')
 
 
