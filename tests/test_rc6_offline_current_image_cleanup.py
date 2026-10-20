@@ -131,3 +131,36 @@ def test_workflow_wires_current_identity_helper():
     assert '< scripts/rc6_offline_current_image_cleanup.py' in step
     assert '< scripts/rc6_offline_failed_image_cleanup.py' not in step
     assert subprocess.run(['bash','-n'], input=step, text=True, capture_output=True).returncode == 0
+
+
+def test_intraday_validated_state_requires_exact_stopped_receipt(tmp_path, monkeypatch):
+    from scripts import rc6_deploy_quiescence as drain
+    root = tmp_path/'porota'
+    folder = root/'data/deploy'
+    folder.mkdir(parents=True)
+    (folder/'CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':NEW_SHA, 'image_id':CURRENT, 'validation_status':'VALIDATED_RUNTIME',
+        'mode':'PRODUCTION_PAPER', 'real_orders_sent':0, 'real_order_routes':'NOT_CALLED'}))
+    monkeypatch.setattr(clean, 'ROOT', root)
+    owned = {name:{'Id':name, 'Image':CURRENT,
+                   'State':{'Status':'exited','ExitCode':0}} for name in clean.OWNED}
+    owned[clean.CRITICAL] = {'Id':'critical','Image':CURRENT,'RestartCount':0,
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    monkeypatch.setattr(clean, 'inspect', lambda name:owned[name])
+    monkeypatch.setattr(clean, 'docker', lambda *args:'RC6_CRITICAL_ISSUES_ONLY=GREEN')
+    monkeypatch.setattr(clean, 'ppi_units', lambda:{})
+    called = []
+    def witness(candidate, folder, originals, **options):
+        called.append((candidate, options))
+        return {'fix_forward_from':OLD_SHA,
+                'spot_carryover':{'open_count':4,'sha256':'e'*64}}
+    monkeypatch.setattr(drain, 'adopt_stopped_after_failed_install', witness)
+    result = clean.admission()
+    assert result['intraday_proof'] == (OLD_SHA, 'e'*64)
+    assert called[0][1] == {'allow_market_open_suspend':True,
+                            'allow_open_paper_carryover':True}
+    def changed(*args, **kwargs):
+        raise ValueError('QUIESCENCE_PRIOR_CARRYOVER_CHANGED')
+    monkeypatch.setattr(drain, 'adopt_stopped_after_failed_install', changed)
+    with pytest.raises(ValueError, match='PRIOR_CARRYOVER_CHANGED'):
+        clean.admission()
