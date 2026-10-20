@@ -1,0 +1,113 @@
+name: RC6 624 bounded backup timer hold
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/rc6-624-backup-hold.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  hold:
+    if: github.head_ref == 'diagnostic/rc6-624-backup-hold-20261020'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Admit off-market timer-only hold
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota-backup-hold"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota-backup-hold" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/porota-backup-hold"' EXIT
+          timeout 65 ssh -i "$HOME/.ssh/porota-backup-hold" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 45 python3 -B -' <<'PY'
+          import datetime,json,os,sqlite3,subprocess
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          timer='porota-host-general-backup-rc6.timer'
+          service='porota-host-general-backup-rc6.service'
+          names=('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
+          def run(*args,check=True):
+              p=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=8)
+              if check and p.returncode:raise RuntimeError('COMMAND_FAILED:'+args[0]+':'+str(p.returncode))
+              return p.stdout.strip()
+          def unit_state(name):
+              return {'active':run('systemctl','is-active',name,check=False),
+                      'enabled':run('systemctl','is-enabled',name,check=False)}
+          def ppi_state():
+              entries=run('systemctl','list-unit-files','--no-legend').splitlines()
+              names=sorted(line.split()[0] for line in entries if line.split() and
+                           'ppi' in line.split()[0].lower() and 'watch' in line.split()[0].lower())
+              return {name:unit_state(name) for name in names}
+          def docker_state():
+              rows=json.loads(run('docker','inspect',*names))
+              return {r['Name'].lstrip('/'):{'status':r['State']['Status'],
+                  'healthy':(r['State'].get('Health') or {}).get('Status'),
+                  'oom':r['State']['OOMKilled'],'restarts':r['RestartCount'],
+                  'image':r['Image']} for r in rows}
+          at=datetime.datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          if datetime.time(9,45)<=at.time()<datetime.time(17,30):
+              raise RuntimeError('MARKET_WINDOW_REJECTED')
+          m=Path('/proc/meminfo').read_text()
+          available=int(next(line.split()[1] for line in m.splitlines()
+              if line.startswith('MemAvailable:')))*1024
+          psi=Path('/proc/pressure/io').read_text().splitlines()[0]
+          avg10=float(next(x.split('=')[1] for x in psi.split() if x.startswith('avg10=')))
+          stat=os.statvfs('/')
+          free=stat.f_bavail*stat.f_frsize
+          if available<256*1024**2 or avg10>10 or free<2*1024**3:
+              print(json.dumps({'admission':'DEFERRED','mem_available':available,
+                  'io_psi_avg10':avg10,'free':free}))
+              raise RuntimeError('RESOURCE_ADMISSION_DEFERRED')
+          db=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.3) as c:
+              c.execute('PRAGMA query_only=ON')
+              mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          if mode!='PRODUCTION_PAPER' or orders!=0:raise RuntimeError('PAPER_INVARIANT_RED')
+          before={'timer':unit_state(timer),'service':unit_state(service),
+              'docker':docker_state(),'ppi_watch':ppi_state()}
+          if before['service']['active'] not in ('inactive','failed'):
+              raise RuntimeError('BACKUP_SERVICE_BUSY')
+          critical=before['docker']['porota_critical_approval_rc6']
+          if (critical['status']!='running' or critical['healthy']!='healthy'
+                  or critical['oom'] or critical['restarts']!=0):
+              raise RuntimeError('CRITICAL_HEALTH_RED')
+          if before['timer']=={'active':'active','enabled':'enabled'}:
+              run('systemctl','disable','--now',timer)
+              changed=True
+          elif before['timer']=={'active':'inactive','enabled':'disabled'}:
+              changed=False
+          else:
+              raise RuntimeError('UNEXPECTED_TIMER_STATE')
+          after={'timer':unit_state(timer),'service':unit_state(service),
+              'docker':docker_state(),'ppi_watch':ppi_state()}
+          if (after['timer']!={'active':'inactive','enabled':'disabled'} or
+                  after['service']!=before['service'] or after['docker']!=before['docker'] or
+                  after['ppi_watch']!=before['ppi_watch']):
+              if changed:run('systemctl','enable','--now',timer)
+              raise RuntimeError('POST_HOLD_INVARIANT_RED_RESTORED')
+          print(json.dumps({'status':'BACKUP_TIMER_HOLD_GREEN','time_art':at.isoformat(),
+              'changed':changed,'timer_before':before['timer'],'timer_after':after['timer'],
+              'backup_service':after['service'],'mem_available':available,
+              'io_psi_avg10':avg10,'free':free,'image_count':len({x['image'] for x in after['docker'].values()}),
+              'ppi_watch_unchanged':True,'real_orders_sent':0},sort_keys=True))
+          PY
