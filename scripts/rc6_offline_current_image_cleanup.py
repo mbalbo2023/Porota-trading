@@ -103,7 +103,6 @@ def admission():
         # proves this old validated image and its unchanged PAPER carryover.
         sys.path.insert(0, str(ROOT))
         from scripts import rc6_deploy_quiescence as drain
-        drain.ROOT = ROOT
         folder = ROOT/'data/deploy'
         paths = list(folder.glob('quiescence-*.json'))
         if len(paths) > 128 or any(p.is_symlink() or p.stat().st_size > 65536 for p in paths):
