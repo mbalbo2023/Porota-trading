@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: rc6-unified-paper-deploy
+  group: rc6-624-readonly-ledger-inventory
   cancel-in-progress: false
 jobs:
   inventory:
