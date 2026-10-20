@@ -20,109 +20,68 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: Strict SSH
+        run: |
           set -Eeuo pipefail
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_read"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_read" "$HOME/.ssh/known_hosts"
-          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 \
-            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
-          import json
-          from pathlib import Path
-          root=Path('/opt/porota-trading/data/deploy')
-          p=root/'CURRENT_STATE_V2.json'
-          state=json.loads(p.read_text()) if p.exists() else None
-          rows=[]
-          for p in root.glob('quiescence-*.json'):
-              if p.is_symlink() or p.stat().st_size>65536: continue
-              r=json.loads(p.read_text())
-              if r.get('recorded_at','').startswith('2026-10-20'):
-                  rows.append({'candidate':r.get('candidate_sha'),'status':r.get('status'),
-                    'installation_started':r.get('installation_started'),'recorded_at':r.get('recorded_at'),
-                    'market_open_suspended':r.get('market_open_suspended'),
-                    'open_paper_carryover':r.get('open_paper_carryover'),
-                    'containers':{n:(v.get('id'),v.get('image')) for n,v in r.get('containers',{}).items()}})
-          print('RC6_POSTINSTALL_PROVENANCE='+json.dumps({'current_state':state,'receipts':rows},sort_keys=True))
-          PY
-          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 \
-            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
-          import json,sys
+      - name: Read-only native status and exact owned provenance
+        run: |
+          set -Eeuo pipefail
+          timeout 100 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
+          import json, gzip, sqlite3, subprocess, shutil
           from pathlib import Path
           root=Path('/opt/porota-trading')
-          sys.path.insert(0,str(root))
-          from scripts import rc6_cold2_quarantine as old
-          shadow,source,_=old.paths(root)
-          pointer=old.envelope(shadow/'CURRENT.json')
-          cut=old.envelope(shadow/pointer['file'],zipped=True)
-          ref=cut['report']['computed_report']
-          ident=ref['snapshot_id']
-          archive=root/'data/deploy'/('rc6-failed-cold-'+ident)
-          def get(name):
-              p=source/name
-              return p if p.exists() else archive/name
-          m=old.envelope(get('manifest-'+ident+'.json'),cold=True)
-          r=old.envelope(get('receipt-'+ident+'.json'),cold=True)
-          q=old.envelope(get('queue.json'),cold=True)
-          h=old.digest(m)
-          checks={
-            'epoch':m.get('epoch')=='rc6.audit-actual-values.v1',
-            'snapshot':m.get('snapshot_id')==ident,
-            'pack':m.get('pack')==ident+'.pack',
-            'identity':isinstance(m.get('pack_identity'),list) and len(m['pack_identity'])==5,
-            'sealed_type':type(m.get('sealed_at')) in (float,int),
-            'deadline':m.get('deadline_at')==m.get('sealed_at',0)+30.0,
-            'ref_manifest':ref.get('manifest_sha256')==h,
-            'ref_deadline':ref.get('deadline_at')==m.get('deadline_at'),
-            'ref_source_as_of':ref.get('source_as_of')==m.get('source_as_of'),
-            'ref_config':ref.get('configuration_fingerprint')==m.get('configuration_fingerprint'),
-            'receipt_id':r.get('snapshot_id')==ident,
-            'receipt_state':r.get('state')=='FAILED',
-            'receipt_manifest':r.get('manifest_sha256')==h,
-            'receipt_error_class':r.get('error_class')=='ValueError',
-            'receipt_error_code':r.get('error_code')=='SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED',
-            'receipt_error_phase':r.get('error_phase')=='REPORT_WRITE',
-            'failed_type':type(r.get('failed_at')) in (float,int),
-            'failed_range':m.get('sealed_at',0)<=r.get('failed_at',-1)<=m.get('deadline_at',0)+5,
-            'queue_id':q.get('snapshot_id')==ident,
-            'queue_state':q.get('state')=='FAILED',
-            'queue_manifest':q.get('manifest_sha256')==h,
-          }
-          print('RC6_SUCCESSOR_BINDING_DIAG='+json.dumps({'id':ident,'checks':checks,
-            'sealed_at':m.get('sealed_at'),'deadline_at':m.get('deadline_at'),
-            'failed_at':r.get('failed_at'),'error_class':r.get('error_class'),
-            'error_code':r.get('error_code'),'error_phase':r.get('error_phase'),
-            'queue_state':q.get('state'),'receipt_state':r.get('state'),
-            'source_names':sorted(p.name for p in source.iterdir()),
-            'archive_names':sorted(p.name for p in archive.iterdir()) if archive.exists() else []},sort_keys=True))
+          shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+          def doc(p, zipped=False):
+              if p.is_symlink() or not p.is_file() or p.stat().st_size>1048576: return None
+              try:
+                  with (gzip.open(p,'rt') if zipped else p.open()) as f: return json.load(f)
+              except (OSError,ValueError): return None
+          def choose(d,keys):
+              return {k:d.get(k) for k in keys} if isinstance(d,dict) else None
+          state=doc(root/'data/deploy/CURRENT_STATE_V2.json')
+          current=doc(shadow/'CURRENT.json')
+          status=doc(shadow/'status.json')
+          health=doc(shadow.parent/'runtime-health.json')
+          cut=None
+          if isinstance(current,dict):
+              name=current.get('file')
+              if isinstance(name,str) and name.startswith('cut-') and name.endswith('.json.gz') and '/' not in name:
+                  cut=doc(shadow/name,True)
+          source=shadow/'cold-audit'
+          queue=doc(source/'queue.json')
+          receipt=None
+          if isinstance(queue,dict):
+              ident=queue.get('snapshot_id')
+              if isinstance(ident,str) and len(ident)==32 and all(c in '0123456789abcdef' for c in ident):
+                  receipt=doc(source/('receipt-'+ident+'.json'))
+          containers={}
+          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              p=subprocess.run(['docker','inspect',name],capture_output=True,text=True,timeout=10)
+              if p.returncode:
+                  containers[name]='ABSENT'
+              else:
+                  row=json.loads(p.stdout)[0]
+                  containers[name]={'id':row['Id'],'image':row['Image'],'status':row['State']['Status'],'exit_code':row['State']['ExitCode'],'oom':row['State']['OOMKilled'],'restarts':row['RestartCount'],'health':(row['State'].get('Health') or {}).get('Status')}
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as db:
+              mode,orders,process=db.execute('SELECT mode,real_orders_sent,process_state FROM observer_state WHERE id=1').fetchone()
+              spots=db.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+          report={'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
+                  'containers':containers,'paper':{'mode':mode,'orders':orders,'process':process,'spots':spots},
+                  'shadow_status':choose(status,('status','as_of','error_code','error_module','error_line','failure_reason','generation_timing','runtime_sql_diagnostics')),
+                  'health':choose(health,('source_sha','candidate_tree_sha','status','as_of','error_code')),
+                  'pointer':choose(current,('generation_id','sequence','file')),
+                  'cut_status':choose(cut.get('status') if isinstance(cut,dict) else None,('status','as_of','error_code','error_module','error_line')),
+                  'cut_reference':choose((cut.get('report') or {}).get('computed_report') if isinstance(cut,dict) else None,('state','snapshot_id','deadline_at')),
+                  'cold_queue':choose(queue,('state','snapshot_id','error_code')),
+                  'cold_receipt':choose(receipt,('state','error_code','error_phase','failed_at')),
+                  'disk_free':shutil.disk_usage('/').free}
+          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          print('RC6_NATIVE_POSTFAIL_DIAG='+json.dumps(report,sort_keys=True,default=str))
           PY
-          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
-          import json,sys
-          sys.path.insert(0,'/opt/porota-trading')
-          from scripts.rc6_deploy_quiescence import spot_carryover_snapshot
-          print('RC6_POSTFAIL_STOPPED_BOOK='+json.dumps(spot_carryover_snapshot(),sort_keys=True))
-          PY
-          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker inspect -f '{{.Id}}|{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}' porota_critical_approval_rc6"
-          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
-          import json,subprocess,shutil
-          def d(*args):
-              p=subprocess.run(['docker',*args],capture_output=True,text=True)
-              return p.returncode,p.stdout.strip()
-          ids=d('ps','-aq','--no-trunc')[1].splitlines()
-          refs={}
-          for cid in ids:
-              row=json.loads(d('inspect',cid)[1])[0]
-              refs.setdefault(row['Image'],[]).append((row['Name'],cid))
-          targets={}
-          for image in ('sha256:1fa027ec87b1b8166bd1431d24b1690ddb40ab582fe49ee2b58b5c9ca05aeadf','sha256:907e5bc6edd9ca7eecb66216622a01af8b5a9d3fd184142c33c05a09fdd55553'):
-              rc,out=d('image','inspect',image)
-              targets[image]={'present':rc==0,'tags':json.loads(out)[0].get('RepoTags') if rc==0 else [],'references':refs.get(image,[])}
-          print('RC6_IMAGE_REF_DIAG='+json.dumps({'free':shutil.disk_usage('/').free,'images':targets},sort_keys=True))
-          PY
-          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}'"
-          rm -f "$HOME/.ssh/rc6_read"
-
-# Inventory after preopen contract failure and exact clean stop.
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_read"
