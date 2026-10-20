@@ -122,6 +122,91 @@ def carry_installation(installation):
     return installation
 
 
+def test_running_postclose_drains_exact_paper_carryover_and_caucion(carry_installation, monkeypatch):
+    root, db, states, calls, _ = carry_installation
+    class Postclose(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:
+                return datetime.now(timezone.utc)
+            return datetime(2026, 10, 20, 19, 55, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Postclose)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',session_state='MARKET_CLOSED'")
+        c.execute("DELETE FROM paper_positions WHERE paper_id IN ('paper-2','paper-3')")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT,principal TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T17:00:00-03:00','100')")
+    flags = dict(allow_market_open_suspend=True, allow_open_paper_carryover=True,
+                 allow_postclose_pending=True)
+    receipt = q.run(SHA, 'drain', **flags)
+    assert receipt['status'] == 'DRAINED' and receipt['paused_postclose'] is True
+    assert receipt['spot_carryover']['open_count'] == 2
+    assert receipt['caucion_carryover']['open_count'] == 1
+    assert {states[name]['State']['Status'] for name in q.OWNED} == {'exited'}
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_cauciones SET principal='999'")
+    with pytest.raises(ValueError, match='INSTALL_CAUCION_CHANGED'):
+        q.run(SHA, 'install', **flags)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_cauciones SET principal='100'")
+    assert q.run(SHA, 'install', **flags)['installation_started'] is True
+
+
+def test_running_postclose_stale_db_ack_requires_exact_clean_stop(carry_installation, monkeypatch):
+    root, db, states, calls, command = carry_installation
+    class Postclose(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:
+                return datetime.now(timezone.utc)
+            return datetime(2026, 10, 20, 19, 55, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Postclose)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',session_state='MARKET_CLOSED'")
+        c.execute("DELETE FROM paper_positions WHERE paper_id IN ('paper-2','paper-3')")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T17:00:00-03:00')")
+    def no_ack(args):
+        result = command(args)
+        if args[1] == 'stop' and args[-1] == q.OWNED[0]:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET process_state='WAITING_MARKET'")
+        return result
+    monkeypatch.setattr(q, 'command', no_ack)
+    flags = dict(allow_market_open_suspend=True, allow_open_paper_carryover=True,
+                 allow_postclose_pending=True)
+    assert q.run(SHA, 'drain', **flags)['status'] == 'DRAINED'
+    states[q.OWNED[0]]['State']['Status'] = 'running'
+    with pytest.raises(ValueError, match='STOP_PROOF_CHANGED'):
+        q.run(SHA, 'drain', **flags)
+
+
+@pytest.mark.parametrize('change', ['open_session', 'stale_heartbeat', 'active_future'])
+def test_running_postclose_rejects_unsafe_state_before_stop(carry_installation, monkeypatch, change):
+    root, db, states, calls, _ = carry_installation
+    class Postclose(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:
+                return datetime.now(timezone.utc)
+            return datetime(2026, 10, 20, 19, 55, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Postclose)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',session_state='MARKET_CLOSED'")
+        if change == 'open_session':
+            c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+        elif change == 'stale_heartbeat':
+            c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+        else:
+            c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+    with pytest.raises(ValueError):
+        q.run(SHA, 'drain', allow_market_open_suspend=True,
+              allow_open_paper_carryover=True, allow_postclose_pending=True)
+    assert not any(call[1] in ('stop', 'start') for call in calls)
+
+
 def test_intraday_four_paper_spots_carry_across_install_and_restart(carry_installation):
     root, db, states, calls, _ = carry_installation
     receipt = q.run(SHA, 'drain', allow_market_open_suspend=True,
