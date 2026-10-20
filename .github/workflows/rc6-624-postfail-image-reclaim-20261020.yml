@@ -25,9 +25,9 @@ jobs:
       - name: Verify exact failed deployment and prepare SSH
         run: |
           set -Eeuo pipefail
-          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)" = 33586f8805ad658042050ad81a8d96df235de0f8
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39498542923" --jq '[.head_sha,.status,.conclusion] | join("|")' | \
-            grep -Fx '33586f8805ad658042050ad81a8d96df235de0f8|completed|failure'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)" = 9c00e99fa5a2b56209e9c95c69091fbe7b8d9e5b
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39514335011" --jq '[.head_sha,.status,.conclusion] | join("|")' | \
+            grep -Fx '9c00e99fa5a2b56209e9c95c69091fbe7b8d9e5b|completed|failure'
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_reclaim"
@@ -48,14 +48,14 @@ jobs:
           now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
           assert now.date().isoformat()=='2026-10-20' and 17<=now.hour<23
           root=Path('/opt/porota-trading');folder=root/'data/deploy'
-          old='sha256:5af3f01a09722faad9fc5cc49cc11b28494d75d1dbdb780425fdd240fd482a34'
-          failed='sha256:a946fc8bd558883998b14c010121f68fd6a82bd717fe838571fc56570b3eb5c0'
-          sha='638d5f73f43c5837752d3044f45da91317ffc7f4'
+          old='sha256:a73cb5886e846bedc1ad231e287096efa825eb37ccc4695ff89d036b1cf19e10'
+          failed='sha256:9775142bfa23ac64f413ad62648494802c22381bb61484393dfae5e773f947f7'
+          sha='44239fbecb2c88a132e8ab9c034adc44891f86c0'
           stable='porota-trading-bot:17.0.0-rc6'
           tags={stable,'porota-predeploy-v2:'+sha,'porota-trading-bot:17.0.0-rc6-candidate-'+sha}
-          owned={'porota_production_observer':'e0e770054854441ce32af64685ab7da6027735511e40e35beb40c0e2811c56eb',
-                 'porota_production_dashboard':'e89bb27820f93d655b9db410b4032878c22763529b81a7eac1783ec87702a570',
-                 'porota_critical_approval_rc6':'9eff1b1562a0051689da5841b62e65f9bb9bcb9059557f92bff4ff35b47084bf'}
+          owned={'porota_production_observer':'72989d6428695b4a7a8e63e5eedd6abc36db8a2772f6811b68bd2a5a76aaac7e',
+                 'porota_production_dashboard':'e86f90de5be25f8189cdbd6ae67c9780637dd0be1294f4ab986b8ae008284aa9',
+                 'porota_critical_approval_rc6':'122801c4fb640c63f389b56c284ab49f5e15f4cb8b9c1cf3b2fd9f68f078ad7d'}
           def cmd(*args,ok=True):
               p=subprocess.run(args,capture_output=True,text=True,timeout=18)
               if ok and p.returncode:raise RuntimeError('COMMAND_FAILED:'+args[0]+':'+args[1])
@@ -81,8 +81,8 @@ jobs:
           def admission():
               current=load(folder/'CURRENT_STATE_V2.json')
               q=load(folder/('quiescence-'+sha+'.json'))
-              assert current['candidate_sha']=='d96cb68d177199317ee23239553517e04ee0a255'
-              assert current['validation_status']=='DEPLOYED_VALIDATION_PENDING' and current['image_id']==old
+              assert current['candidate_sha']=='68e6681a9248f312e9e0c052fb3c4e5e032800b5'
+              assert current['validation_status']=='VALIDATED_RUNTIME' and current['image_id']==old
               assert current['mode']=='PRODUCTION_PAPER' and type(current['real_orders_sent']) is int and current['real_orders_sent']==0 and current['real_order_routes']=='NOT_CALLED'
               assert q['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and q['candidate_sha']==sha and q['installation_started'] is True and q['paused_postclose'] is True
               for n,ident in owned.items():
@@ -103,13 +103,18 @@ jobs:
                       intents=c.execute('SELECT * FROM paper_exit_intents WHERE paper_id=? LIMIT 2',(row['paper_id'],)).fetchall()
                       assert len(fills)<=64 and len(intents)<=1 and not any(f['side']=='SELL_SIMULATED' for f in fills)
                       payload.append({'position':dict(row),'fills':[dict(f) for f in fills],'intents':[dict(i) for i in intents]})
-                  assert hashlib.sha256(json.dumps(payload,sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()=='e7fa20929b6aa4c26a534db6554fd95a22f1734c0fc91175d6f20f05067af13e'
+                  assert len(payload)==2
                   caucion=c.execute("SELECT * FROM paper_cauciones WHERE status='OPEN' ORDER BY paper_id LIMIT 2").fetchall();assert len(caucion)==1
-                  assert hashlib.sha256(json.dumps(dict(caucion[0]),sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()=='bf6d2e347850e951c12141bd1d785868b6691da0cc878d17bfe429ac73c9c8a7'
+                  assert caucion[0]['status']=='OPEN'
                   assert not c.execute("SELECT 1 FROM paper_future_positions WHERE status='ACTIVE' LIMIT 1").fetchone()
+              import sys
+              sys.path.insert(0,str(root))
+              from scripts import rc6_deploy_quiescence as drain
+              assert drain.spot_carryover_snapshot()==q['spot_carryover']
+              assert drain.pending_caucion_snapshot()==q['caucion_carryover']
               policy=json.loads((root/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes())
               names=sorted(Path(n).name for n,v in policy['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
-              assert len(names)==20 and all(state(n,'is-enabled')=='enabled' and state(n,'is-active')=='inactive' for n in names)
+              assert len(names)==20 and all(state(n,'is-enabled')=='enabled' and state(n,'is-active')=='active' for n in names)
               refs=docker('ps','-aq','--no-trunc')[1].splitlines()
               assert len(refs)<=128
               referenced={inspect(n)['Image'] for n in refs}
@@ -136,10 +141,10 @@ jobs:
               assert docker('image','inspect',failed,ok=False)[0]!=0
               assert image(stable)['Id']==old and admission()==before
               free_after=os.statvfs('/').f_bavail*os.statvfs('/').f_frsize
-              print('RC6_624_EXACT_IMAGE_RECLAIM='+json.dumps({'status':'GREEN' if free_after>=4035194817 else 'INSUFFICIENT_DYNAMIC_FLOOR',
+              print('RC6_624_EXACT_IMAGE_RECLAIM='+json.dumps({'status':'GREEN' if free_after>=4035354216 else 'INSUFFICIENT_DYNAMIC_FLOOR',
                   'failed_image':failed,'stable_image':old,'removed_tags':removed,'disk_before':free_before,
-                  'disk_after':free_after,'required_prior_candidate':4035194817,'real_orders_sent':0,'ppi_watch_changed':False},sort_keys=True))
-              if free_after<4035194817:raise RuntimeError('DISK_DYNAMIC_FLOOR_NOT_RECOVERED')
+                  'disk_after':free_after,'required_prior_candidate':4035354216,'real_orders_sent':0,'ppi_watch_changed':False},sort_keys=True))
+              if free_after<4035354216:raise RuntimeError('DISK_DYNAMIC_FLOOR_NOT_RECOVERED')
           PY
       - name: Cleanup SSH
         if: always()
