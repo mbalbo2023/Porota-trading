@@ -52,7 +52,9 @@ def test_unsafe_or_unknown_cannot_stop_runtime(installation, change):
         elif change == 'open_session': c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
         else: c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
     with pytest.raises((ValueError, sqlite3.Error)): q.run(SHA, 'drain')
-    assert calls == []
+    # A read-only Docker inspect may distinguish a prior stopped receipt from
+    # a running scanner; an unsafe state must never stop/start either service.
+    assert not any(call[1] in ('stop', 'start') for call in calls)
 
 
 def test_drain_proves_exited_then_rechecks_ledgers_before_install(installation):

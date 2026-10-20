@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path('/opt/porota-trading')
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
 FAILED_INSTALL_CANDIDATE = '38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
+FAILED_ADMIN_CANDIDATE = '7ae4d088d8cf90f670f8675d220244638f35d7f6'
 ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
 
 
@@ -135,21 +136,24 @@ def admin_target_on_host():
         return admin_issue624_target(c)
 
 
-def adopt_stopped_after_failed_install(candidate, folder, originals):
+def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None):
     """One exact fail-closed continuation; never start the prior image."""
-    if candidate == FAILED_INSTALL_CANDIDATE:
+    previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id
+                          else FAILED_INSTALL_CANDIDATE)
+    if candidate in {FAILED_INSTALL_CANDIDATE, FAILED_ADMIN_CANDIDATE}:
         raise ValueError('QUIESCENCE_NEW_CANDIDATE_REQUIRED')
-    previous_path = folder / ('quiescence-' + FAILED_INSTALL_CANDIDATE + '.json')
+    previous_path = folder / ('quiescence-' + previous_candidate + '.json')
     if previous_path.is_symlink() or not previous_path.is_file():
         raise ValueError('QUIESCENCE_PRIOR_RECEIPT_MISSING')
     raw = previous_path.read_bytes()
     if len(raw) > 64 * 1024:
         raise ValueError('QUIESCENCE_PRIOR_RECEIPT_BOUND')
     previous = json.loads(raw)
-    if (previous.get('candidate_sha') != FAILED_INSTALL_CANDIDATE or
+    if (previous.get('candidate_sha') != previous_candidate or
             previous.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
             previous.get('installation_started') is not True or
             previous.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+            previous.get('admin_cancel_paper_id') != admin_paper_id or
             type(previous.get('real_orders_sent')) is not int or previous['real_orders_sent'] != 0 or
             previous.get('ppi_watch_accessed') is not False or
             set(previous.get('stop_attempted', [])) != set(OWNED) or
@@ -173,14 +177,17 @@ def adopt_stopped_after_failed_install(candidate, folder, originals):
             critical['State']['OOMKilled'] is not False or
             critical['Image'] != originals[OWNED[0]]['Image']):
         raise ValueError('QUIESCENCE_CRITICAL_UNHEALTHY')
-    if admit(stopped=True) != 'STOPPED':
+    process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
+    if process not in ({'WAITING_MARKET', 'STOPPED'} if admin_paper_id else {'STOPPED'}):
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
-    return {'candidate_sha': candidate, 'status': 'DRAINED',
+    return {'candidate_sha': candidate,
+            'status': 'ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
             'installation_started': False, 'stop_attempted': list(OWNED),
             'stop_evidence': previous['stop_evidence'],
             'containers': previous['containers'], 'real_orders_sent': 0,
             'ppi_watch_accessed': False, 'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
-            'fix_forward_from': FAILED_INSTALL_CANDIDATE,
+            'admin_cancel_paper_id': admin_paper_id,
+            'fix_forward_from': previous_candidate,
             'prior_receipt_sha256': hashlib.sha256(raw).hexdigest()}
 
 
@@ -254,16 +261,16 @@ def run(candidate, action, *, allow_admin_issue624=False):
             if receipt is not None: raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
             process = admit(stopped=True, allow_admin_issue624=allow_admin_issue624)
             admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
-            if process == 'WAITING_MARKET':
-                admit(allow_admin_issue624=bool(admin_paper_id))
             originals = {name: inspect(name) for name in OWNED}
-            if (process == 'STOPPED' and not admin_paper_id
+            if (process in {'STOPPED', 'WAITING_MARKET'}
                     and all(v['State']['Status'] == 'exited' for v in originals.values())):
-                receipt = adopt_stopped_after_failed_install(candidate, folder, originals)
+                receipt = adopt_stopped_after_failed_install(
+                    candidate, folder, originals, admin_paper_id=admin_paper_id)
                 persist(path, receipt)
             else:
                 if process != 'WAITING_MARKET' or any(v['State']['Status'] != 'running' for v in originals.values()):
                     raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
+                admit(allow_admin_issue624=bool(admin_paper_id))
                 receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
                            'installation_started': False, 'stop_attempted': [],
                            'stop_evidence': {},
