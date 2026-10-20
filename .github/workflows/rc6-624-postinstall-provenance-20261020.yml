@@ -78,7 +78,17 @@ jobs:
           ps=subprocess.run(['ps','-eo','pid,comm,rss,args','--sort=-rss'],capture_output=True,text=True,timeout=10)
           top=[{'pid':int(row.split(None,3)[0]),'comm':row.split(None,3)[1],'rss_kib':int(row.split(None,3)[2])}
                for row in ps.stdout.splitlines()[1:9] if len(row.split(None,3))>=3]
-          report={'memory':mem,'top_rss':top,'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
+          guard=doc(root/'data/deploy/rc6-resize-timer-guard-20261020.json')
+          def unit_state(name):
+              return {op:subprocess.run(['systemctl','is-'+op,name],capture_output=True,text=True,timeout=5).stdout.strip()
+                      for op in ('enabled','active')}
+          timer_state={n:unit_state(n) for n in guard.get('timers',[])} if isinstance(guard,dict) else {}
+          listed=subprocess.run(['systemctl','list-unit-files','--no-legend'],capture_output=True,text=True,timeout=10).stdout.splitlines()
+          watch_names=sorted(x.split()[0] for x in listed if x.split() and 'ppi' in x.split()[0].lower() and 'watch' in x.split()[0].lower())
+          watch_state={n:unit_state(n) for n in watch_names}
+          report={'memory':mem,'cpu_count':__import__('os').cpu_count(),'guard':choose(guard,('state','candidate_sha','receipt_sha','policy_sha256','paper_open')),
+                  'timers':timer_state,'ppi_watch':watch_state,'top_rss':top,
+                  'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
                   'containers':containers,'paper':{'mode':mode,'orders':orders,'process':process,'spots':spots},
                   'shadow_status':choose(status,('status','as_of','error_class','error_module','error_line','generation_timing','runtime_sql_diagnostics')),
                   'health':choose(health,('source_sha','candidate_tree_sha','status','as_of','error_code')),
@@ -90,6 +100,7 @@ jobs:
                   'disk_free':shutil.disk_usage('/').free}
           assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
           print('RC6_NATIVE_POSTFAIL_DIAG='+json.dumps(report,sort_keys=True,default=str))
+          assert len(timer_state)==20 and all(v=={'enabled':'disabled','active':'inactive'} for v in timer_state.values())
           PY
       - name: Cleanup
         if: always()
