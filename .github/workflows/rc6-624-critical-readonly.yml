@@ -54,6 +54,16 @@ jobs:
                               'critical_same_image_as_observer':critical['image']==values[names[0]]['image']}},
                            sort_keys=True))
           REMOTE
+      - name: Verify critical issues-only capability read-only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/rc6_probe" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get(\"status\")==\"ok\" and h.get(\"capability\")==\"issues_only\"; print(\"RC6_CRITICAL_ISSUES_ONLY=GREEN\")'"
       - name: Remove runner key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_probe"
