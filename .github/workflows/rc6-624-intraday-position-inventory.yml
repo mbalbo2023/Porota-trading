@@ -51,6 +51,8 @@ jobs:
               if len(rows)>128: raise RuntimeError('OPEN_POSITION_BOUND:'+name)
               digest=hashlib.sha256(json.dumps([dict(r) for r in rows],sort_keys=True,default=str).encode()).hexdigest()
               result['tables'][name]={'columns':cols,'open_count':len(rows),'open_rows_sha256':digest}
+          result['open_spot_fill_sides']=[dict(r) for r in c.execute("SELECT f.side,COUNT(*) AS count FROM paper_fills f JOIN paper_positions p ON p.paper_id=f.paper_id WHERE p.status='OPEN' GROUP BY f.side ORDER BY f.side")]
+          result['open_spots_without_fills']=c.execute("SELECT COUNT(*) FROM paper_positions p WHERE p.status='OPEN' AND NOT EXISTS(SELECT 1 FROM paper_fills f WHERE f.paper_id=p.paper_id)").fetchone()[0]
           for name in sorted(tables & {'paper_exit_intents','paper_fills','paper_orders','paper_admin_cancellations'}):
               result['tables'][name]={'columns':[r[1] for r in c.execute('PRAGMA table_info('+name+')')]}
           c.close()
