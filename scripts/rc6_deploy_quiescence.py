@@ -169,11 +169,29 @@ def critical_admission():
 
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None):
     """One exact fail-closed continuation; never start the prior image."""
-    closed_admin_prior = (admin_paper_id is None and
-        (folder / ('quiescence-' + FAILED_COLD2_CANDIDATE + '.json')).exists())
-    previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id else
-                          FAILED_COLD2_CANDIDATE if closed_admin_prior else
-                          FAILED_INSTALL_CANDIDATE)
+    # Once a candidate has been installed, CURRENT_STATE_V2 names the exact
+    # predecessor. A historical receipt may still exist but cannot own this
+    # stopped generation. Retain the legacy path only for pre-provenance hosts.
+    current_path = folder / 'CURRENT_STATE_V2.json'
+    current_provenance = current_path.exists() or current_path.is_symlink()
+    if current_provenance:
+        if current_path.is_symlink() or not current_path.is_file() or current_path.stat().st_size > 65536:
+            raise ValueError('QUIESCENCE_CURRENT_STATE_UNSAFE')
+        current = json.loads(current_path.read_bytes())
+        previous_candidate = current.get('candidate_sha')
+        if (not isinstance(previous_candidate, str) or
+                not re.fullmatch('[0-9a-f]{40}', previous_candidate) or
+                current.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+                current.get('mode') != 'PRODUCTION_PAPER' or
+                type(current.get('real_orders_sent')) is not int or current['real_orders_sent'] != 0 or
+                current.get('real_order_routes') != 'NOT_CALLED' or
+                not all(v['Image'] == current.get('image_id') for v in originals.values())):
+            raise ValueError('QUIESCENCE_CURRENT_PROVENANCE_RED')
+    else:
+        historical_admin = (folder / ('quiescence-' + FAILED_COLD2_CANDIDATE + '.json')).exists()
+        previous_candidate = (FAILED_ADMIN_CANDIDATE if admin_paper_id else
+                              FAILED_COLD2_CANDIDATE if historical_admin else
+                              FAILED_INSTALL_CANDIDATE)
     if candidate in {FAILED_INSTALL_CANDIDATE, FAILED_ADMIN_CANDIDATE,
                      FAILED_COLD2_CANDIDATE}:
         raise ValueError('QUIESCENCE_NEW_CANDIDATE_REQUIRED')
@@ -184,6 +202,8 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     if len(raw) > 64 * 1024:
         raise ValueError('QUIESCENCE_PRIOR_RECEIPT_BOUND')
     previous = json.loads(raw)
+    closed_admin_prior = (admin_paper_id is None and
+                          previous.get('admin_cancel_paper_id') is not None)
     if (previous.get('candidate_sha') != previous_candidate or
             previous.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
             previous.get('installation_started') is not True or
@@ -225,7 +245,7 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             raise ValueError('QUIESCENCE_PRIOR_STOP_IDENTITY_CHANGED')
     critical = critical_admission()
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id))
-    if process not in ({'WAITING_MARKET', 'STOPPED'} if admin_paper_id or closed_admin_prior
+    if process not in ({'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
                        else {'STOPPED'}):
         raise ValueError('QUIESCENCE_STOPPED_PROCESS_REQUIRED')
     return {'candidate_sha': candidate,

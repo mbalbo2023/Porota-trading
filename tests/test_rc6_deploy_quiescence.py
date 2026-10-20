@@ -104,6 +104,39 @@ def test_exact_failed_install_continues_stopped_without_starting_prior_image(ins
     assert q.run(successor,'install')['status']=='HOST_INSTALLATION_STARTED'
 
 
+@pytest.mark.parametrize('change', ['none','wrong_image','wrong_candidate','real_orders','old_receipt'])
+def test_current_provenance_owns_stopped_successor_over_historical_receipt(
+        installation, monkeypatch, change):
+    root, db, states, calls, _ = installation
+    image = 'sha256:' + 'c'*64
+    for name in q.OWNED: states[name]['Image'] = image
+    q.run(SHA, 'drain'); q.run(SHA, 'install'); q.run(SHA, 'recover')
+    historical = root/'data/deploy'/('quiescence-'+'f'*40+'.json')
+    historical.write_text(json.dumps({'candidate_sha':'f'*40, 'status':'FIX_FORWARD_VALIDATION_REQUIRED'}))
+    monkeypatch.setattr(q, 'FAILED_COLD2_CANDIDATE', 'f'*40)
+    state = {'candidate_sha':SHA,'image_id':image,
+             'validation_status':'DEPLOYED_VALIDATION_PENDING',
+             'mode':'PRODUCTION_PAPER','real_orders_sent':0,'real_order_routes':'NOT_CALLED'}
+    if change == 'wrong_image': state['image_id'] = 'sha256:'+'d'*64
+    if change == 'wrong_candidate': state['candidate_sha'] = 'e'*40
+    if change == 'real_orders': state['real_orders_sent'] = 1
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps(state))
+    if change == 'old_receipt':
+        prior = root/'data/deploy'/('quiescence-'+SHA+'.json')
+        value = json.loads(prior.read_text()); value['inflight'] = 'UNKNOWN'
+        prior.write_text(json.dumps(value))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET'")
+    calls.clear()
+    if change == 'none':
+        receipt = q.run('b'*40,'drain')
+        assert receipt['status'] == 'DRAINED' and receipt['fix_forward_from'] == SHA
+    else:
+        with pytest.raises(ValueError): q.run('b'*40,'drain')
+        assert not (root/'data/deploy'/('quiescence-'+'b'*40+'.json')).exists()
+    assert not any(c[1] in ('start','stop') for c in calls)
+
+
 def test_stopped_successor_accepts_independent_healthy_issues_broker(installation, monkeypatch):
     root, db, states, calls, _ = installation
     monkeypatch.setattr(q, 'FAILED_INSTALL_CANDIDATE', SHA)
