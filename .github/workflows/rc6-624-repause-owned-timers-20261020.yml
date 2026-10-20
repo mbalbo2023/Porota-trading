@@ -1,0 +1,66 @@
+name: RC6 624 re-pause owned timers after installed COLD2 gate
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-repause-owned-timers-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  pause:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      RECEIPT_SHA: 266dbd45ef47b193d90e4820cacae9f960d1bfdb
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout exact installed candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: 801fe59e8495d29d3184798c785a5daeadfe31ae
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_repause"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_repause" "$HOME/.ssh/known_hosts"
+      - name: Suspend only versioned RC6 timers and drain running jobs
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 170 ssh -i "$HOME/.ssh/rc6_repause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$RECEIPT_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+      - name: Read-only state of owned containers and PAPER ledger
+        run: |
+          set -Eeuo pipefail
+          timeout 60 ssh -i "$HOME/.ssh/rc6_repause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 -" <<'PY'
+          import json,sqlite3,subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          c={}
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              p=subprocess.run(['docker','inspect','-f','{{.State.Status}}|{{.Id}}|{{.Image}}',name],capture_output=True,text=True)
+              c[name]=p.stdout.strip() if p.returncode==0 else 'ABSENT'
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as db:
+              mode,orders,process=db.execute('SELECT mode,real_orders_sent,process_state FROM observer_state WHERE id=1').fetchone()
+              spots=db.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          print('RC6_REPAUSED_POSTFAIL='+json.dumps({'containers':c,'mode':mode,'process_state':process,'open_paper_positions':spots,'real_orders_sent':orders,'ppi_watch_mutated':False},sort_keys=True))
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_repause"
