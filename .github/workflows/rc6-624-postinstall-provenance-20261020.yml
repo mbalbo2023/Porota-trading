@@ -92,7 +92,15 @@ jobs:
           p=subprocess.run(['docker','ps','-a','--format','{{.Names}}|{{.Status}}|{{.Image}}'],capture_output=True,text=True,timeout=10)
           docker_watch=[x for x in p.stdout.splitlines() if 'ppi' in x.lower() or 'watch' in x.lower()]
           critical_units={n:unit_state(n) for n in ('porota-critical-github-proxy-rc6.service','porota-critical-approval-rc6.service')}
-          report={'memory':mem,'cpu_count':__import__('os').cpu_count(),'guard':choose(guard,('state','candidate_sha','receipt_sha','policy_sha256','paper_open')),
+          import hashlib,sys
+          sys.path.insert(0,str(root))
+          from scripts.rc6_deploy_quiescence import spot_carryover_snapshot
+          carry=spot_carryover_snapshot()
+          prior_path=root/'data/deploy/quiescence-d96cb68d177199317ee23239553517e04ee0a255.json'
+          prior=doc(prior_path)
+          prior_sha=hashlib.sha256(prior_path.read_bytes()).hexdigest() if prior_path.is_file() and not prior_path.is_symlink() else None
+          report={'carryover':carry,'failed_receipt':choose(prior,('candidate_sha','status','installation_started','market_open_suspended','open_paper_carryover','recorded_at')),
+                  'failed_receipt_sha256':prior_sha,'memory':mem,'cpu_count':__import__('os').cpu_count(),'guard':choose(guard,('state','candidate_sha','receipt_sha','policy_sha256','paper_open')),
                   'timers':timer_state,'ppi_watch':watch_state,'matched_units':matched_state,'docker_watch':docker_watch,'critical_units':critical_units,'top_rss':top,
                   'current_state':choose(state,('candidate_sha','validation_status','image_id','real_orders_sent')),
                   'containers':containers,'paper':{'mode':mode,'orders':orders,'process':process,'spots':spots},
