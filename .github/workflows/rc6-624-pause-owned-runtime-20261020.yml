@@ -1,0 +1,103 @@
+name: RC6 624 pause owned PAPER runtime for intraday deploy
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-intraday-position-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-pause-owned-runtime-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  pause:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      CANDIDATE_SHA: 3e8a79f17ec245b06e688b485e8e9c5f2adf0ddb
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout exact paused candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: 3e8a79f17ec245b06e688b485e8e9c5f2adf0ddb
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_pause"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_pause" "$HOME/.ssh/known_hosts"
+      - name: Suspend exactly owned timers
+        id: suspend
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 170 ssh -i "$HOME/.ssh/rc6_pause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+      - name: Stop owned observer and dashboard with PAPER receipt
+        id: drain
+        timeout-minutes: 3
+        run: |
+          set -Eeuo pipefail
+          timeout 170 ssh -i "$HOME/.ssh/rc6_pause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --market-open-suspend --carry-open-paper-spots" \
+            < scripts/rc6_deploy_quiescence.py
+      - name: Verify paused ownership and ledger
+        id: verify
+        timeout-minutes: 2
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 100 ssh -i "$HOME/.ssh/rc6_pause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - '$CANDIDATE_SHA' '$POLICY_B64'" <<'PY'
+          import base64,json,sqlite3,subprocess,sys
+          from pathlib import Path
+          sha,policy=sys.argv[1:]
+          root=Path('/opt/porota-trading')
+          receipt=json.loads((root/'data/deploy'/('quiescence-'+sha+'.json')).read_text())
+          sched=json.loads((root/'data/deploy'/('scheduler-suspend-'+sha+'.json')).read_text())
+          assert receipt['candidate_sha']==sha and receipt['status']=='DRAINED'
+          assert receipt['installation_started'] is False and receipt['open_paper_carryover'] is True
+          assert receipt['spot_carryover']['open_count'] <= 16
+          assert sched['candidate_sha']==sha and sched['status']=='SUSPENDED'
+          names=sorted(Path(x).name for x,v in json.loads(base64.b64decode(policy))['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          assert names==sched['timers'] and len(names)==20
+          for name in names:
+              assert subprocess.run(['systemctl','is-active',name],capture_output=True,text=True,timeout=3).stdout.strip()=='inactive'
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              status=subprocess.check_output(['docker','inspect','-f','{{.State.Status}}|{{.Id}}|{{.Image}}',name],text=True,timeout=3).strip().split('|')
+              assert status==['exited',receipt['containers'][name]['id'],receipt['containers'][name]['image']]
+          with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True) as c:
+              mode,orders,process=c.execute('SELECT mode,real_orders_sent,process_state FROM observer_state WHERE id=1').fetchone()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0 and process=='STOPPED'
+              assert c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]==receipt['spot_carryover']['open_count']
+          print('RC6_OWNED_RUNTIME_PAUSED=GREEN|timers=20|observer=exited|dashboard=exited|paper_open='+str(receipt['spot_carryover']['open_count'])+'|real_orders_sent=0|ppi_watch_mutated=false')
+          PY
+      - name: Recover original runtime and timers on any pause failure
+        if: ${{ failure() && (steps.suspend.outcome != 'skipped' || steps.drain.outcome != 'skipped') }}
+        timeout-minutes: 4
+        run: |
+          set +e
+          timeout 120 ssh -i "$HOME/.ssh/rc6_pause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action recover"
+          RECOVERY_RC=$?
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 120 ssh -i "$HOME/.ssh/rc6_pause" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+          SCHEDULER_RC=$?
+          echo "RC6_PAUSE_FAILURE_RECOVERY=runtime:$RECOVERY_RC|timers:$SCHEDULER_RC"
+          test "$RECOVERY_RC" -eq 0 && test "$SCHEDULER_RC" -eq 0
