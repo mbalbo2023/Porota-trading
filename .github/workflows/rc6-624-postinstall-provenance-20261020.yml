@@ -105,6 +105,7 @@ jobs:
           from scripts.rc6_deploy_quiescence import spot_carryover_snapshot
           print('RC6_POSTFAIL_STOPPED_BOOK='+json.dumps(spot_carryover_snapshot(),sort_keys=True))
           PY
+          timeout 65 ssh -i "$HOME/.ssh/rc6_read" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n docker inspect -f '{{.Id}}|{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}' porota_critical_approval_rc6"
           rm -f "$HOME/.ssh/rc6_read"
 
 # Inventory after preopen contract failure and exact clean stop.
