@@ -116,6 +116,39 @@ def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path):
     ) is True
 
 
+def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
+        tmp_path, monkeypatch):
+    due = observer._background_ingest_due
+    stamp = "2026-09-29T20:05:00+00:00"  # 17:05 ART
+    monkeypatch.setattr(observer, "now_iso", lambda: stamp)
+    monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: True)
+    for failure in (False, True):
+        store = engine.PaperStore(str(tmp_path / f"paper_{failure}.db"))
+        observer._support_schema(store)
+        with store.connect() as connection:
+            connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
+                               ("PPI_PRODUCTION_HISTORY", "AMARILLO",
+                                "2026-09-25T20:00:00+00:00", None, 0,
+                                "history migration deferred"))
+        if failure:
+            def blocked(_reader, _store):
+                raise RuntimeError("HISTORY_COPY_MIGRATION_REQUIRED")
+            monkeypatch.setattr(observer, "_download_histories", blocked)
+        else:
+            monkeypatch.setattr(observer, "_download_histories", lambda *_: 0)
+        assert observer._background_ingest(None, store) == (None if failure else 0)
+        with store.connect() as connection:
+            checked = connection.execute("""SELECT checked_at FROM api_health
+                WHERE component='PPI_BACKGROUND_INGEST'""").fetchone()[0]
+            source = connection.execute("""SELECT last_attempt_at FROM source_sync
+                WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()[0]
+        assert checked == stamp
+        assert source == "2026-09-25T20:00:00+00:00"
+        assert due(store, now=datetime(2026, 9, 29, 23, 30, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 30, 16, 59, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 30, 17, 1, tzinfo=observer.TZ)) is True
+
+
 def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypatch):
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
