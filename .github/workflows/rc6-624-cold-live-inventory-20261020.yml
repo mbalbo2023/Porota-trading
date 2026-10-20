@@ -1,0 +1,102 @@
+name: RC6 624 read-only cold live precondition inventory
+on:
+  push:
+    branches:
+      - diagnostic/rc6-624-cold-live-inventory-20261020
+    paths:
+      - .github/workflows/rc6-624-cold-live-inventory-20261020.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Verify exact product head and prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)" = 33586f8805ad658042050ad81a8d96df235de0f8
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_inventory"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_cold_inventory" "$HOME/.ssh/known_hosts"
+      - name: Read bounded exact COLD and host state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 110 ssh -i "$HOME/.ssh/rc6_cold_inventory" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import gzip,hashlib,json,os,sqlite3,subprocess,time
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          folder=root/'data/deploy'
+          shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+          cold=shadow/'cold-audit'
+          ident='89e7f81dbc9b4a628bdc30edf86a17b0'
+          cut='b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8'
+          candidate='638d5f73f43c5837752d3044f45da91317ffc7f4'
+          def envelope(p,gz=False):
+              assert p.is_file() and not p.is_symlink() and p.stat().st_size<4*1024**2
+              raw=gzip.open(p,'rb').read(4*1024**2+1) if gz else p.read_bytes()
+              assert len(raw)<4*1024**2
+              x=json.loads(raw)
+              assert isinstance(x,dict) and isinstance(x.get('payload'),dict)
+              return x['payload']
+          pointer=envelope(shadow/'CURRENT.json')
+          live=envelope(shadow/'status.json')
+          name=pointer.get('file')
+          assert isinstance(name,str) and name.startswith('cut-') and name.endswith('.json.gz') and '/' not in name
+          current=envelope(shadow/name,True)
+          old_path=shadow/('cut-'+cut+'.json.gz')
+          old_exists=old_path.is_file()
+          current_snapshot=current.get('report',{}).get('computed_report',{}).get('snapshot_id')
+          archive=folder/('rc6-failed-cold-'+ident)
+          receipt=folder/('rc6-cold-fix-forward-'+candidate+'.json')
+          state=json.loads((folder/'CURRENT_STATE_V2.json').read_bytes())
+          q=json.loads((folder/('quiescence-'+candidate+'.json')).read_bytes())
+          rows={}
+          for n in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              p=subprocess.run(['docker','inspect',n],capture_output=True,text=True,timeout=10)
+              assert p.returncode==0
+              x=json.loads(p.stdout)[0]
+              rows[n]={'id':x['Id'],'image':x['Image'],'status':x['State']['Status'],'exit_code':x['State']['ExitCode'],'restart_count':x['RestartCount'],'health':(x['State'].get('Health') or {}).get('Status')}
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              mode,orders,process,session=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+              spots=c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]
+              caucions=c.execute("SELECT COUNT(*) FROM paper_cauciones WHERE status='OPEN'").fetchone()[0]
+          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          policy=json.loads((root/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes())
+          names=sorted(Path(p).name for p,v in policy['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
+          def unit(n,a):return subprocess.run(['systemctl',a,n],capture_output=True,text=True,timeout=5).stdout.strip()
+          timer_states={n:unit(n,'is-enabled')+'|'+unit(n,'is-active') for n in names}
+          free=os.statvfs('/'); free_bytes=free.f_bavail*free.f_frsize
+          result={'schema':'RC6_624_COLD_LIVE_RO_V1','pointer_generation':pointer.get('generation_id'),
+                  'pointer_sequence':pointer.get('sequence'),'old_cut_exists':old_exists,
+                  'current_snapshot_id':current_snapshot,'live_status':live.get('status'),
+                  'live_real_orders_sent':live.get('real_orders_sent'),
+                  'cold_active_names':sorted(p.name for p in cold.iterdir()) if cold.exists() else [],
+                  'cold_archive_exists':archive.is_dir(),'cold_fix_receipt_exists':receipt.exists(),
+                  'quiescence_status':q.get('status'),'installation_started':q.get('installation_started'),
+                  'current_state':{k:state.get(k) for k in ('candidate_sha','deploy_sha','image_id','validation_status','mode','real_orders_sent','real_order_routes')},
+                  'containers':rows,'paper_mode':mode,'paper_orders':orders,'paper_process':process,'paper_session':session,
+                  'open_spots':spots,'open_caucions':caucions,'timers':timer_states,'disk_free_bytes':free_bytes,
+                  'ppi_watch_accessed':False}
+          print('RC6_624_COLD_LIVE_INVENTORY='+json.dumps(result,sort_keys=True))
+          PY
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_cold_inventory"
