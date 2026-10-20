@@ -25,12 +25,14 @@ def installation(tmp_path, monkeypatch):
     states = {name: {'Id': name + '_id', 'Image': 'old_image',
                     'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0}} for name in q.OWNED}
     states['porota_critical_approval_rc6'] = {'Id': 'critical_id', 'Image': 'old_image',
+        'RestartCount': 0,
         'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0,
                   'Health': {'Status': 'healthy'}}}
     calls = []
     def command(args):
         calls.append(args)
         if args[1] == 'inspect': return json.dumps([states[args[2]]])
+        if args[1] == 'exec': return 'RC6_CRITICAL_ISSUES_ONLY=GREEN\n'
         if args[1] == 'stop':
             states[args[-1]]['State']['Status'] = 'exited'
             if args[-1] == q.OWNED[0]:
@@ -100,6 +102,41 @@ def test_exact_failed_install_continues_stopped_without_starting_prior_image(ins
     assert not any(c[1] in ('start','stop') for c in calls)
     assert all(states[n]['State']['Status']=='exited' for n in q.OWNED)
     assert q.run(successor,'install')['status']=='HOST_INSTALLATION_STARTED'
+
+
+def test_stopped_successor_accepts_independent_healthy_issues_broker(installation, monkeypatch):
+    root, db, states, calls, _ = installation
+    monkeypatch.setattr(q, 'FAILED_INSTALL_CANDIDATE', SHA)
+    q.run(SHA, 'drain'); q.run(SHA, 'install'); q.run(SHA, 'recover')
+    states['porota_critical_approval_rc6']['Image'] = 'independent_critical_image'
+    calls.clear()
+    receipt = q.run('b' * 40, 'drain')
+    assert receipt['critical_admission'] == {
+        'image': 'independent_critical_image', 'status': 'healthy',
+        'restart_count': 0, 'capability': 'issues_only'}
+    assert any(c[1] == 'exec' for c in calls)
+    assert not any(c[1] in ('start', 'stop') for c in calls)
+
+
+@pytest.mark.parametrize('change', ['restarts', 'capability'])
+def test_stopped_successor_rejects_unhealthy_independent_broker(
+        installation, monkeypatch, change):
+    root, db, states, calls, original_command = installation
+    monkeypatch.setattr(q, 'FAILED_INSTALL_CANDIDATE', SHA)
+    q.run(SHA, 'drain'); q.run(SHA, 'install'); q.run(SHA, 'recover')
+    states['porota_critical_approval_rc6']['Image'] = 'independent_critical_image'
+    if change == 'restarts':
+        states['porota_critical_approval_rc6']['RestartCount'] = 1
+    else:
+        def no_issues_capability(args):
+            if args[1] == 'exec': return 'capability=orders\n'
+            return original_command(args)
+        monkeypatch.setattr(q, 'command', no_issues_capability)
+    calls.clear()
+    with pytest.raises(ValueError, match='QUIESCENCE_CRITICAL_'):
+        q.run('b' * 40, 'drain')
+    assert not (root / 'data/deploy' / ('quiescence-' + 'b' * 40 + '.json')).exists()
+    assert not any(c[1] in ('start', 'stop') for c in calls)
 
 
 @pytest.mark.parametrize('change',['prior_receipt','image','exit_code','critical','position','mixed'])
