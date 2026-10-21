@@ -250,7 +250,7 @@ class SampleMaterializer:
         try:
             if byma_paper_spot_phase(aware_datetime(at)) != 'CLOSED':
                 return None
-        except (OSError, ValueError):
+        except (OSError, TypeError, ValueError):
             return None
         try:
             with sqlite3.connect(Path(self.store.path).as_uri()+'?mode=ro',
@@ -272,7 +272,7 @@ class SampleMaterializer:
                 if c.execute('SELECT 1 FROM candle_dirty WHERE bar_end<=? LIMIT 1',(now,)).fetchone():
                     return None
                 return {'cursor':cursor,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING'}
-        except sqlite3.Error:
+        except (sqlite3.Error, TypeError, ValueError):
             return None
 
     def tick(self,at,*,batch_size=100):

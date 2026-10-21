@@ -220,6 +220,13 @@ def test_closed_idle_avoids_empty_sqlite_writer_but_keeps_due_heartbeat_and_new_
                for b in CandleArchive(store).read(sample_series(),
                    as_of='2026-08-28T18:01:02-03:00',qualities=('SAMPLED',)))
 
+    # Invalid old heartbeat must take the original writer and retain its
+    # existing clock-regression rejection, never certify an empty tick.
+    with store.connect() as c:
+        c.execute("UPDATE candle_worker_state SET heartbeat_at='invalid' WHERE id=1")
+    with pytest.raises(ValueError,match='retrocedió'):
+        worker.tick('2026-08-28T18:01:04-03:00')
+
 
 def test_misma_marca_temporal_distinto_precio_es_conflicto(store):
     store.add_quote(quote(price='100',at=AT))
