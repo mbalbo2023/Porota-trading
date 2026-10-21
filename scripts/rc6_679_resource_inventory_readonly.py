@@ -316,6 +316,39 @@ def backup_unit_inventory():
     return {'status': 'READ_ONLY', 'units': units}
 
 
+
+def growth_roots():
+    """Bounded metadata-only inventory; totals are partial when truncated."""
+    roots = (ROOT / 'data/deploy', ROOT / 'data/paper_v17/artifacts',
+             ROOT / 'data/market_history', Path('/var/log/journal'),
+             Path('/var/lib/docker/containers'))
+    output = {}
+    for root in roots:
+        seen = total = 0
+        truncated = False
+        if root.is_symlink() or not root.is_dir():
+            output[str(root)] = {'status': 'ABSENT_OR_SYMLINK'}
+            continue
+        for current, dirs, files in os.walk(root, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if not (Path(current) / d).is_symlink())
+            for name in sorted(files):
+                seen += 1
+                if seen > 512:
+                    truncated = True
+                    break
+                path = Path(current) / name
+                try:
+                    if not path.is_symlink() and path.is_file():
+                        total += path.stat().st_size
+                except OSError:
+                    pass
+            if truncated:
+                break
+        output[str(root)] = {'file_count_seen': seen, 'logical_bytes_observed': total,
+                             'truncated': truncated}
+    return output
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -383,6 +416,7 @@ def main(policy_b64):
               'backup_admission_journal': last_backup_admission(),
               'backup_manifest': backup_manifest(),
               'backup_units': backup_unit_inventory(),
+              'growth_roots': growth_roots(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
