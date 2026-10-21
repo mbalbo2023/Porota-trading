@@ -49,6 +49,19 @@ def unit_state(name):
         'systemctl', 'is-active', name, accepted=(0, 1, 3))
 
 
+def general_service_quiescent():
+    # The capacity guard exits 75 and leaves this oneshot unit in failed state.
+    # It is safe to retire only when systemd proves no active writer remains.
+    detail = command('systemctl', 'show', SERVICE, '-p', 'ActiveState', '-p', 'SubState',
+                     '-p', 'MainPID', '-p', 'ControlPID', '-p', 'ExecMainStatus')
+    fields = dict(line.split('=', 1) for line in detail.splitlines())
+    if (fields.get('MainPID') != '0' or fields.get('ControlPID') != '0' or
+            (fields.get('ActiveState'), fields.get('SubState'), fields.get('ExecMainStatus'))
+            not in {('inactive', 'dead', '0'), ('failed', 'failed', '75')}):
+        raise RuntimeError('GENERAL_BACKUP_SERVICE_WRITER_OR_UNKNOWN_STATE')
+    return fields
+
+
 def ppi_units():
     raw = command('systemctl', 'list-unit-files', '--no-legend')
     names = sorted(row.split()[0] for row in raw.splitlines() if row.split()
@@ -157,8 +170,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         ppi = ppi_units()
         before = paper_guard()
-        if unit_state(SERVICE)[1] != 'inactive':
-            raise RuntimeError('GENERAL_BACKUP_SERVICE_ACTIVE')
+        service_before = general_service_quiescent()
         rows = inventory()
         no_open_files({row[0] for row in rows})
         free_before = shutil.disk_usage(ROOT).free
@@ -166,7 +178,8 @@ def main():
         command('systemctl', 'mask', '--now', TIMER)
         if unit_state(TIMER) != ('masked', 'inactive'):
             raise RuntimeError('HOST_BACKUP_TIMER_NOT_MASKED')
-        if paper_guard()['jobs'] != before['jobs'] or inventory() != rows:
+        if (paper_guard()['jobs'] != before['jobs'] or inventory() != rows or
+                general_service_quiescent() != service_before):
             raise RuntimeError('PRE_UNLINK_STATE_CHANGED')
         no_open_files({row[0] for row in rows})
         digest = hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
@@ -194,6 +207,7 @@ def main():
                    'free_after':shutil.disk_usage(ROOT).free,
                    'timer_after':unit_state(TIMER), 'backup_jobs':after['jobs'],
                    'paper_book':after['book'], 'ppi_watch_unchanged':True,
+                   'general_service_before':service_before,
                    'internal_producers_suspended_after_candidate_deploy':False}
         fd = os.open(RECEIPT, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, 'w') as stream:
