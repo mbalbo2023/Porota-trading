@@ -38,3 +38,23 @@ def test_committed_view_keeps_actual_observation_coverage():
         report = {"engines": {}, "input_quality": {"observation_read_truncated": source}}
         view = durable_report_view(report, catalog_ready_count=0)
         assert view["input_quality"]["observation_read_truncated"] == expected
+
+
+def test_factual_paper_heartbeat_matches_bounded_observer_idle(monkeypatch):
+    now = datetime(2026, 10, 21, 18, 12, tzinfo=timezone.utc)
+    monkeypatch.setenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")
+    for elapsed, expected in ((31, "FRESH"), (61, "FRESH"), (76, "STALE")):
+        store = SimpleNamespace(now=now, one=lambda table: {
+            "heartbeat_at": (now-timedelta(seconds=elapsed)).isoformat(),
+            "process_state": "RUNNING"} if table == "observer_state" else {})
+        runtime = Projection(store).runtime
+        assert runtime["heartbeat_budget_seconds"] == 75
+        assert runtime["heartbeat_freshness"] == expected
+    for value in ("invalid", "3600"):
+        monkeypatch.setenv("PAPER_OBSERVER_INTERVAL_SECONDS", value)
+        store = SimpleNamespace(now=now, one=lambda table: {
+            "heartbeat_at": (now-timedelta(seconds=31)).isoformat(),
+            "process_state": "RUNNING"} if table == "observer_state" else {})
+        runtime = Projection(store).runtime
+        assert runtime["heartbeat_budget_seconds"] == 30
+        assert runtime["heartbeat_freshness"] == "STALE"

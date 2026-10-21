@@ -273,8 +273,15 @@ class Projection:
     @cached_property
     def runtime(self):
         state = self.store.one("observer_state")
+        # The PAPER scanner deliberately sleeps for its configured interval
+        # after each completed cycle. A fixed 30-second TTL marks the normal
+        # 60-second idle period STALE. Bound the allowance; malformed or
+        # unusually long intervals keep the conservative 30-second verdict.
+        interval = self.integer(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60"), 0)
+        heartbeat_budget = interval + 15 if 15 <= interval <= 120 else 30
         return {**state, "heartbeat_age": age(state.get("heartbeat_at"), self.now),
-                "heartbeat_freshness": freshness(state.get("heartbeat_at"), self.now, 30),
+                "heartbeat_budget_seconds": heartbeat_budget,
+                "heartbeat_freshness": freshness(state.get("heartbeat_at"), self.now, heartbeat_budget),
                 "market_age": age(state.get("last_market_data_at"), self.now),
                 "market_freshness": freshness(state.get("last_market_data_at"), self.now)}
 
@@ -588,6 +595,7 @@ class Projection:
         runtime = self.runtime
         rows.append({"worker": "Runtime PAPER factual", "source": "observer_state", "as_of": runtime.get("heartbeat_at"),
                      "age_seconds": runtime.get("heartbeat_age"), "freshness": runtime["heartbeat_freshness"],
+                     "heartbeat_budget_seconds": runtime.get("heartbeat_budget_seconds"),
                      "state": runtime.get("process_state", UNKNOWN) if runtime["heartbeat_freshness"] == "FRESH" else runtime["heartbeat_freshness"]})
         risk = self.risk()
         rows.append({"worker": "Riesgo diario", "source": risk.source,
