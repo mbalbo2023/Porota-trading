@@ -74,7 +74,7 @@ jobs:
           TOKEN="$(timeout 15 ssh -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes \
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            'sudo -n docker exec porota_production_dashboard sh -lc '\''printf %s "$DASHBOARD_ACCESS_TOKEN"'\'')"
+            'sudo -n docker exec porota_production_dashboard printenv DASHBOARD_ACCESS_TOKEN')"
           test "${#TOKEN}" -ge 24
           echo "::add-mask::$TOKEN"
           ssh -N -L 127.0.0.1:18085:127.0.0.1:8000 \
