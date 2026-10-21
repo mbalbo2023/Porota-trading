@@ -350,6 +350,29 @@ def growth_roots():
     return output
 
 
+
+def shadow_largest_files():
+    root = ROOT / 'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+    if not root.is_dir() or root.is_symlink():
+        return {'status':'ABSENT_OR_SYMLINK'}
+    files = []
+    seen = 0
+    for current, dirs, names in os.walk(root, followlinks=False):
+        dirs[:] = sorted(d for d in dirs if not (Path(current) / d).is_symlink())
+        for name in names:
+            seen += 1
+            if seen > 512:
+                return {'status':'TRUNCATED', 'file_count_seen': seen}
+            path = Path(current) / name
+            if path.is_symlink() or not path.is_file():
+                continue
+            st = path.stat()
+            files.append({'role': path.relative_to(root).as_posix(),
+                          'bytes': st.st_size, 'mtime_ns': st.st_mtime_ns})
+    return {'status':'READ_ONLY', 'file_count_seen':seen,
+            'largest':sorted(files, key=lambda x:x['bytes'], reverse=True)[:16]}
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -418,6 +441,7 @@ def main(policy_b64):
               'backup_manifest': backup_manifest(),
               'backup_units': backup_unit_inventory(),
               'growth_roots': growth_roots(),
+              'shadow_largest': shadow_largest_files(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
