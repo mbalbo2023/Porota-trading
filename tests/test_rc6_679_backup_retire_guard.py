@@ -52,7 +52,8 @@ def test_apply_guard_accepts_masked_inactive_timer_exit_three(tmp_path, monkeypa
     state.mkdir(parents=True)
     (state / 'CURRENT_STATE_V2.json').write_text(json.dumps({
         'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0,
-        'real_order_routes': 'NOT_CALLED', 'candidate_sha': candidate}))
+        'real_order_routes': 'NOT_CALLED', 'candidate_sha': candidate,
+        'validation_status': 'VALIDATED_RUNTIME', 'image_id': 'image'}))
     policy = tmp_path / 'ops' / 'policy'
     policy.mkdir(parents=True)
     (policy / 'rc6-disk-housekeeping-v1.json').write_text(
@@ -67,6 +68,31 @@ def test_apply_guard_accepts_masked_inactive_timer_exit_three(tmp_path, monkeypa
             return SimpleNamespace(returncode=3, stdout='inactive\n')
         if args[:2] == ('docker', 'exec'):
             return SimpleNamespace(returncode=0, stdout='')
+        if args[:2] == ('docker', 'inspect'):
+            return SimpleNamespace(returncode=0, stdout='image\n')
         raise AssertionError(args)
     monkeypatch.setattr(retire.subprocess, 'run', command)
     assert retire.guard(candidate, apply=True)['candidate_sha'] == candidate
+
+
+def test_exact_plan_removes_only_classified_files_and_persists_receipt(tmp_path, monkeypatch):
+    general, artifact, _ = setup_roots(tmp_path, monkeypatch)
+    backup = general / 'porota-general-20261021T071616Z.tar.gz'
+    backup.write_bytes(b'backup')
+    live = tmp_path / 'observer_v17.db'
+    live.write_bytes(b'LIVE')
+    deploy = tmp_path / 'data' / 'deploy'
+    deploy.mkdir(parents=True)
+    candidate = 'a' * 40
+    monkeypatch.setattr(retire, 'ROOT', tmp_path)
+    monkeypatch.setattr(retire, 'guard', lambda *_args, **_kwargs: {'image_id': 'same'})
+    monkeypatch.setattr(retire, 'open_files', lambda _paths: None)
+    plan = deploy / 'plan.json'
+    monkeypatch.setattr(sys, 'argv', ['retire', '--candidate-sha', candidate, '--plan-out', str(plan)])
+    retire.main()
+    monkeypatch.setattr(sys, 'argv', ['retire', '--candidate-sha', candidate, '--apply-plan', str(plan)])
+    retire.main()
+    receipt = json.loads((deploy / f'backup-retire-{candidate}.json').read_text())
+    assert (receipt['status'], receipt['count'], receipt['logical_bytes']) == ('DONE', 1, 6)
+    assert not backup.exists() and live.read_bytes() == b'LIVE'
+    assert retire.inventory() == []

@@ -1478,6 +1478,34 @@ jobs:
             "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action verify --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
+      - name: Retire exact operator-suspended backup files with a host receipt
+        id: backup_retire
+        if: success()
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n bash -s -- '$CANDIDATE_SHA'" <<'REMOTE'
+          set -Eeuo pipefail
+          CANDIDATE_SHA="$1"
+          REPO=/opt/porota-trading
+          SCRIPT="$REPO/scripts/rc6_679_backup_suspension.py"
+          PLAN="$REPO/data/deploy/backup-retire-plan-$CANDIDATE_SHA.json"
+          test -f "$SCRIPT"
+          python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --plan-out "$PLAN" >/dev/null
+          python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --apply-plan "$PLAN"
+          python3 - "$REPO/data/deploy/backup-retire-$CANDIDATE_SHA.json" "$CANDIDATE_SHA" <<'PY'
+          import json,sys
+          receipt=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert receipt['schema']=='RC6_679_BACKUP_RETIRE_V1'
+          assert receipt['status']=='DONE' and receipt['candidate_sha']==sys.argv[2]
+          print('RC6_BACKUP_RETIRE_RECEIPT=GREEN|count='+str(receipt['count']))
+          PY
+          REMOTE
+
       - name: Failure-safe host cleanup
         if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.carryover.outcome == 'failure' || steps.carryover.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled') }}
         timeout-minutes: 4

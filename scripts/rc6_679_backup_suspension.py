@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -48,7 +49,8 @@ def guard(candidate, apply=False):
             state['real_orders_sent'] != 0 or state.get('real_order_routes') != 'NOT_CALLED'):
         raise RuntimeError('PAPER_GUARD_FAILED')
     if apply:
-        if state.get('candidate_sha') != candidate:
+        if (state.get('candidate_sha') != candidate or
+                state.get('validation_status') != 'VALIDATED_RUNTIME'):
             raise RuntimeError('CANDIDATE_SHA_CHANGED')
         policy = json.loads((ROOT / 'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
         if policy.get('backups', {}).get('suspended') is not True:
@@ -59,6 +61,10 @@ def guard(candidate, apply=False):
         if run('docker', 'exec', 'porota_production_observer', 'python3', '-c',
                'import bi_operational_services as b; assert b.backups_suspended()'):
             raise RuntimeError('OBSERVER_BACKUP_GUARD_UNEXPECTED_OUTPUT')
+        if any(run('docker', 'inspect', '-f', '{{.Image}}', name) != state.get('image_id')
+               for name in ('porota_production_observer', 'porota_production_dashboard',
+                            'porota_critical_approval_rc6')):
+            raise RuntimeError('RUNTIME_IMAGE_CHANGED')
         sys.path.insert(0, str(ROOT))
         if not __import__('rc6_host_general_backup_job').backups_suspended():
             raise RuntimeError('HOST_BACKUP_GUARD_FAILED')
@@ -151,9 +157,20 @@ def main():
         after = guard(args.candidate_sha, apply=True)
         if after.get('image_id') != before.get('image_id'):
             raise RuntimeError('RUNTIME_IMAGE_CHANGED')
-        print('RC6_679_BACKUP_RETIRE=' + json.dumps({'status': 'DONE',
-              'count': len(observed), 'logical_bytes': sum(row['bytes'] for row in observed),
-              'manifest_sha256': digest(observed)}, sort_keys=True))
+        receipt = {'schema': 'RC6_679_BACKUP_RETIRE_V1', 'status': 'DONE',
+                   'candidate_sha': args.candidate_sha, 'image_id': after.get('image_id'),
+                   'count': len(observed),
+                   'logical_bytes': sum(row['bytes'] for row in observed),
+                   'manifest_sha256': digest(observed),
+                   'free_bytes_after': shutil.disk_usage(ROOT).free}
+        receipt_path = ROOT / 'data/deploy' / ('backup-retire-' + args.candidate_sha + '.json')
+        fd = os.open(receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as output:
+            json.dump(receipt, output, sort_keys=True)
+            output.write('\n')
+            output.flush()
+            os.fsync(output.fileno())
+        print('RC6_679_BACKUP_RETIRE=' + json.dumps(receipt, sort_keys=True))
     else:
         payload = {'schema': 'RC6_679_BACKUP_RETIRE_V1',
                    'candidate_sha': args.candidate_sha,

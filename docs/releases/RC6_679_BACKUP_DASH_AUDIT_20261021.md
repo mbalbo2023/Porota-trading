@@ -41,7 +41,7 @@ La cifra aproximada de **17 GB** provenía de un gate hipotético de creación d
 - `bi_operational_services.create_backup/create_history_backup/service_tick`: política compartida fail-closed; `force=True` tampoco crea archivos.
 - `az_maintenance_scheduler` legacy: retirar `maintenance_daily_backup` y bloquear invocación directa del job; `y_infra_monitor` respeta la misma política.
 - Política: `backups.suspended=true`, retención 0, sin pins/protección de rutas backup; housekeeping de Deploy V2 aún usa `--preserve-backups` hasta la eliminación exacta, para no borrar sin recibo.
-- Script `scripts/rc6_679_backup_suspension.py`: inventario allowlist con límite 64/10 GiB, plan inmutable por path/device/inode/tamaño/mtime, rechazo de enlaces/FD abiertos/deriva, APPLY sólo tras candidato desplegado, PAPER/0, timer masked y guard activo en observer/host. Requiere DEPLOY_OWNER global y Acción de host. **No ejecutado todavía**.
+- Script `scripts/rc6_679_backup_suspension.py`: inventario allowlist con límite 64/10 GiB, plan por path/device/inode/tamaño/mtime, rechazo de enlaces/FD abiertos/deriva, APPLY sólo tras candidato `VALIDATED_RUNTIME`, imagen exacta en tres contenedores, PAPER/0, timer masked y guard activo en observer/host. El Deploy V2 canónico lo invoca después de restaurar y verificar timers, genera recibo persistente y falla si faltan pruebas. Requiere DEPLOY_OWNER global y promoción autorizada. **No ejecutado todavía**.
 
 ## Censo pantalla por pantalla
 
