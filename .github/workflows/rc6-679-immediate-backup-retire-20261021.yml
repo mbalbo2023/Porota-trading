@@ -35,6 +35,15 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_679_retire"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_679_retire" "$HOME/.ssh/known_hosts"
+      - name: Read-only exact backup unit activity
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -Eeuo pipefail
+          timeout 50 ssh -i "$HOME/.ssh/porota_rc6_679_retire" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n systemctl show porota-host-general-backup-rc6.service -p ActiveState -p SubState -p MainPID -p ControlPID -p ExecMainStatus -p ActiveEnterTimestamp; sudo -n systemctl show porota-host-general-backup-rc6.timer -p ActiveState -p SubState -p Unit"
       - name: Execute bounded retirement on one exact runtime
         shell: bash
         timeout-minutes: 4
