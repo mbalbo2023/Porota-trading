@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rc6_trader_dashboard.datasets import artifact
+from rc6_trader_dashboard.components import badge
 
 
 NOW = datetime(2026, 10, 21, 20, 30, tzinfo=timezone.utc)
@@ -35,6 +36,7 @@ def test_active_timer_does_not_hide_failed_service_or_stale_snapshot():
     failed = page(recent, "exit-code")
     assert failed.rows[0]["state"] == "SERVICE_FAILED"
     assert failed.rows[0]["reason"] == "Service result: exit-code"
+    assert "badge-blocked" in badge(failed.rows[0]["state"])
     stale = page((NOW - timedelta(hours=2)).isoformat(), "success")
     assert stale.state == "STALE"
     assert stale.rows[0]["state"] == "NO_VERIFICADO"
