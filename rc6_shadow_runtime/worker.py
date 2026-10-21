@@ -820,7 +820,8 @@ class ShadowRuntime:
             if spool:
                 engine_views = durable_report_view(report, catalog_ready_count=ready_count)['engines']
                 hot = {**base, 'status': report['status'],
-                       'engines': _funnel_engine_views(report['engines'])}
+                       'engines': _funnel_engine_views(report['engines']),
+                       'input_quality': report.get('input_quality')}
                 # Only explicit operational inputs survive the completed planner.
                 if 'causal_discovery_evidence' in report:
                     hot['causal_discovery_evidence'] = report['causal_discovery_evidence']
