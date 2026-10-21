@@ -1,5 +1,5 @@
 """View adapters to existing facts and a coherent future SHADOW cut."""
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -165,26 +165,46 @@ def artifact(p, kind):
     if not isinstance(rows, list):
         rows = []
     result = []
-    captured = payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of")
+    captured = (payload.get("recorded_at") if kind == "scheduler" else
+                payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of"))
+    snapshot_freshness = freshness(captured, p.now, 3600)
+    snapshot_fresh = snapshot_freshness == "FRESH"
+
+    def systemd_time(value):
+        if not isinstance(value, str) or not value.endswith(" UTC"):
+            return None
+        try:
+            return datetime.strptime(value, "%a %Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            return None
+
     for row in rows:
         if not isinstance(row, dict):
             continue
         if kind == "scheduler":
-            # The systemd exporter publishes these exact names. An HTTP 200
-            # with 32 rows should not render every clock and state as unknown.
+            # A stale snapshot is historical, and an active timer cannot hide
+            # a failed service. It proves scheduling, not work completion.
             enabled, active = row.get("enabled_state"), row.get("active_state")
-            row = {**row, "state": ("ACTIVE" if enabled == "enabled" and active == "active" else
-                                    "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN),
+            outcome = row.get("last_result")
+            current = state == "AVAILABLE" and payload.get("state") == "OK" and snapshot_fresh
+            row_state = ("SERVICE_FAILED" if outcome not in {None, "", "success", "unknown"} else
+                         "TIMER_ACTIVE" if enabled == "enabled" and active == "active" and outcome == "success" else
+                         "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN)
+            row = {**row, "state": row_state if current else UNKNOWN,
                    "enabled": enabled, "active": active,
-                   "next_run": row.get("next_elapse"), "last_run": row.get("last_trigger"),
-                   "last_success": None,
+                   "next_run": systemd_time(row.get("next_elapse")),
+                   "last_run": systemd_time(row.get("last_trigger")),
                    "description": row.get("description"),
-                   "reason": row.get("last_result") if row.get("last_result") not in {None, "success"} else None}
+                   "reason": ("Service result: " + str(outcome)[:64]) if outcome not in {None, "success"} else None}
         # No arbitrary recursive payload dump: detail columns are allowlisted.
         result.append({**row, "as_of": row.get("as_of") or captured,
                        "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, 3600)})
+    page_state = state
+    if kind == "scheduler":
+        page_state = (snapshot_freshness if state == "AVAILABLE" and payload.get("state") == "OK"
+                      else UNKNOWN)
     return Page(files[kind], result[p.offset:p.offset + 10], len(result) if state == "AVAILABLE" else None,
-                state, p.offset, captured, state)
+                page_state, p.offset, captured, state)
 
 
 def logs(p):
