@@ -28,6 +28,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Pin source and verify no deploy drift
+        id: pin
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -48,6 +49,10 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
             "sudo -n docker exec -i porota_production_dashboard nice -n 19 python3 -" < scripts/rc6_679_dashboard_backup_readonly.py
       - name: Bounded backup manifest and host reads only
+        # This phase has its own SHA, PAPER and container guards. Preserve its
+        # independent evidence if the dashboard HTTP/API gate failed, while
+        # keeping the overall job RED and the host strictly read-only.
+        if: ${{ always() && steps.pin.outcome == 'success' }}
         shell: bash
         timeout-minutes: 2
         run: |

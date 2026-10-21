@@ -74,12 +74,24 @@ def main():
     if code == 200:
         try:
             truth = json.loads(body)
-            result['truth'] = {key: truth.get(key) for key in (
+            result['truth'] = ({key: truth.get(key) for key in (
                 'mode', 'execution', 'session_state', 'process_state', 'real_orders_sent')}
+                if isinstance(truth, dict) else {'status': 'INVALID_SCHEMA'})
         except ValueError:
             result['truth'] = {'status': 'INVALID_JSON'}
     else:
         result['truth'] = {'http': code}
+    # Preserve a safe diagnostic when the PAPER gate fails. The original
+    # generic exit hid whether the endpoint, JSON contract, mode or integer
+    # counter was unavailable; none of those cases is permission to proceed.
+    mode = result['truth'].get('mode')
+    orders = result['truth'].get('real_orders_sent')
+    print('RC6_DASHBOARD_PAPER_PREFLIGHT=' + json.dumps({
+        'http': code,
+        'mode': mode if mode in ('PRODUCTION_PAPER', 'SIMULATED') else 'NO_VERIFICADO',
+        'real_orders_sent': orders if type(orders) is int and 0 <= orders <= 1000000 else 'NO_VERIFICADO',
+        'truth_contract': 'VALID_JSON' if code == 200 and 'status' not in result['truth'] else 'NO_VERIFICADO',
+    }, sort_keys=True))
     if result['truth'].get('real_orders_sent') != 0 or result['truth'].get('mode') != 'PRODUCTION_PAPER':
         raise SystemExit('PAPER_GUARD_NOT_PROVEN')
     from cg_paper_workspace import database_path
