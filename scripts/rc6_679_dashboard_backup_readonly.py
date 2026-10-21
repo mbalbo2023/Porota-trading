@@ -95,6 +95,8 @@ def main():
             'liveness': projection.shadow_liveness,
             'as_of': report.get('as_of'),
             'capacity_open_status': report.get('capacity_open_status'),
+            'capacity_policy_status': report.get('capacity_policy', {}).get('status') if isinstance(report.get('capacity_policy'), dict) else None,
+            'preopen_quality_status': report.get('preopen_quality', {}).get('status') if isinstance(report.get('preopen_quality'), dict) else None,
             'observation_read_truncated': quality.get('observation_read_truncated') if isinstance(quality, dict) else None,
             'engine_count': len(report.get('engines', {})) if isinstance(report.get('engines'), dict) else None,
             'projection_errors': sorted(set(store.errors))}
