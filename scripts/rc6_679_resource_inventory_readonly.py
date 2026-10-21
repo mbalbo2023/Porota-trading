@@ -209,6 +209,15 @@ def bounded_directory(path, max_files=5000):
 
 
 
+
+def hash_file(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def backup_manifest():
     """Exact bounded candidates, with inode identity. Never traverse symlinks."""
     roots = (Path('/opt/porota-backups'),
@@ -228,7 +237,10 @@ def backup_manifest():
                     entries.append({'path': str(path), 'bytes': st.st_size,
                                     'inode': st.st_ino, 'device': st.st_dev,
                                     'mtime_ns': st.st_mtime_ns, 'links': st.st_nlink,
-                                    'regular': path.is_file() and not path.is_symlink()})
+                                    'regular': path.is_file() and not path.is_symlink(),
+                                    'sha256': (hash_file(path)
+                                               if name.startswith('market_history_') and name.endswith('.db.gz')
+                                               else None)})
         result[str(root)] = entries
     return result
 
