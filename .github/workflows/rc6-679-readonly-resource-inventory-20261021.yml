@@ -1,4 +1,5 @@
 name: RC6 679 bounded read-only resource inventory
+# Postdeploy read-only recheck: product d3774c839af61dfecb21f4fe7fb5cfeab5368e69, 2026-10-21.
 on:
   push:
     branches:
