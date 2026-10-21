@@ -71,6 +71,49 @@ def test_eod_spot_carry_blocks_but_caucion_carry_is_separate(source,tmp_path):
     assert result['state']=='BLOCKED' and result['reason']=='OPEN_POSITIONS'
 
 
+def test_eod_pending_spot_carry_allows_only_isolated_sampled_archive(source,tmp_path):
+    sample(source)
+    with source.connect() as c:
+        c.execute('DROP TABLE paper_positions')
+        c.execute('CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,status TEXT)')
+        c.execute('CREATE TABLE paper_exit_intents(paper_id TEXT PRIMARY KEY,state TEXT,cause TEXT)')
+        c.executemany('INSERT INTO paper_positions VALUES(?,?)',
+                      [('paper-1','OPEN'),('paper-2','OPEN')])
+        c.executemany('INSERT INTO paper_exit_intents VALUES(?,?,?)',
+                      [('paper-1','EXIT_PENDING_MARKET_CLOSED','EOD_PAPER'),
+                       ('paper-2','EXIT_PENDING_MARKET_CLOSED','EOD_PAPER')])
+        before=(c.execute('SELECT * FROM paper_positions ORDER BY paper_id').fetchall(),
+                c.execute('SELECT * FROM paper_exit_intents ORDER BY paper_id').fetchall())
+    target=tmp_path/'cold.db'
+    result=local.consolidate(source.path,target,as_of=NOW,free_bytes=local.RESERVE)
+    assert result['state']=='LOCAL_EOD_READY' and result['imported']==1
+    assert result['provider_requests']==0 and result['real_routes']=='NOT_CALLED'
+    with source.connect() as c:
+        assert before==(c.execute('SELECT * FROM paper_positions ORDER BY paper_id').fetchall(),
+                        c.execute('SELECT * FROM paper_exit_intents ORDER BY paper_id').fetchall())
+    with sqlite3.connect(target) as c:
+        body=json.loads(c.execute('SELECT body_json FROM history_local_daily_v1').fetchone()[0])
+    assert body['quality']=='SAMPLED' and body['coverage_state']=='PARTIAL'
+    assert body['volume'] is body['trades'] is body['vwap'] is None
+    assert local.consolidate(source.path,target,as_of=NOW,free_bytes=local.RESERVE)['imported']==0
+
+
+def test_eod_carry_fails_closed_if_any_spot_lacks_the_exact_pending_intent(source,tmp_path):
+    sample(source)
+    with source.connect() as c:
+        c.execute('DROP TABLE paper_positions')
+        c.execute('CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,status TEXT)')
+        c.execute('CREATE TABLE paper_exit_intents(paper_id TEXT PRIMARY KEY,state TEXT,cause TEXT)')
+        c.executemany('INSERT INTO paper_positions VALUES(?,?)',
+                      [('paper-1','OPEN'),('paper-2','OPEN')])
+        c.executemany('INSERT INTO paper_exit_intents VALUES(?,?,?)',
+                      [('paper-1','EXIT_PENDING_MARKET_CLOSED','EOD_PAPER'),
+                       ('paper-2','EXIT_PENDING_MARKET_CLOSED','STOP_LOSS')])
+    result=local.consolidate(source.path,tmp_path/'cold.db',as_of=NOW,free_bytes=local.RESERVE)
+    assert result['state']=='BLOCKED' and result['reason']=='OPEN_POSITIONS'
+    assert not (tmp_path/'cold.db').exists()
+
+
 def test_process_termination_before_eod_commit_keeps_cursor_unpublished(source,tmp_path):
     sample(source)
     target=tmp_path/'cold.db'
