@@ -295,6 +295,27 @@ def last_backup_admission():
     return {'status': 'NO_ADMISSION_LINE_IN_LAST_20'}
 
 
+
+def backup_unit_inventory():
+    """Find even legacy RC4 backup timers without touching service state."""
+    raw = command('systemctl', 'list-unit-files', '--no-legend', '--no-pager', timeout=5)
+    if raw is None:
+        return {'status': 'NO_VERIFICADO'}
+    names = sorted(set(line.split()[0] for line in raw.splitlines() if line.split()
+                       and line.split()[0].startswith('porota-')
+                       and 'backup' in line.split()[0].lower()
+                       and line.split()[0].endswith(('.timer', '.service'))))
+    if len(names) > 32:
+        raise RuntimeError('BACKUP_UNIT_INVENTORY_BOUNDS')
+    units = {}
+    for name in names:
+        state = command('systemctl', 'show', name, '-p',
+                        'LoadState,ActiveState,UnitFileState,FragmentPath', timeout=2)
+        units[name] = (dict(line.split('=', 1) for line in state.splitlines()
+                            if '=' in line) if state is not None else {'status':'UNAVAILABLE'})
+    return {'status': 'READ_ONLY', 'units': units}
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -361,6 +382,7 @@ def main(policy_b64):
               'local_eod_journal': last_eod_outcomes(),
               'backup_admission_journal': last_backup_admission(),
               'backup_manifest': backup_manifest(),
+              'backup_units': backup_unit_inventory(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
