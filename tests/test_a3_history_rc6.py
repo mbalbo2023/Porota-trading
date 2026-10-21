@@ -99,6 +99,30 @@ def test_incremental_uses_day_after_last_complete(tmp_path):
     assert client.calls[0]['date_to']=='2026-09-05'
 
 
+def test_completed_a3_cursor_avoids_catalog_request_but_reconcile_checks_corrections(tmp_path):
+    s=make_store(tmp_path)
+    a3.init_state(s)
+    with s.connect() as c:
+        c.execute('''INSERT INTO a3_history_ingest_state_rc6_v2
+          (source,symbol,instrument_type,market,currency,settlement,last_complete_day,status)
+          VALUES('A3_CEM_CLOSING','DLR/OCT26','FUTUROS','ROFEX','ARS','T+1',?,'COMPLETE')''',
+          (NOW.date().isoformat(),))
+    class Counted(Client):
+        def __init__(self):
+            super().__init__();self.catalog_calls=0
+        def symbols(self):
+            self.catalog_calls+=1
+            return super().symbols()
+    client=Counted()
+    for mode in ('DAILY_INCREMENTAL','WEEKEND_DEEP'):
+        result=a3.run(s,client=client,history_store=s,now=NOW,mode=mode)
+        assert result['reason']=='NO_NEW_A3_SESSION_GAP'
+        assert result['provider_requests']==0
+    assert client.catalog_calls==0 and client.calls==[]
+    a3.run(s,client=client,history_store=s,now=NOW,mode='RECONCILE')
+    assert client.catalog_calls==1 and len(client.calls)==1
+
+
 def test_no_exact_symbol_family_match_writes_no_history(tmp_path):
     s=make_store(tmp_path)
     class Mismatch(Client):

@@ -100,7 +100,6 @@ def _resolve_source_identity(symbol,family,by_identity):
 
 
 def _state(store,target):
-    init_state(store)
     with store.connect() as c:
         row=c.execute('''SELECT * FROM a3_history_ingest_state_rc6_v2 WHERE
           source='A3_CEM_CLOSING' AND symbol=? AND instrument_type=? AND market=? AND currency=? AND settlement=?''',target).fetchone()
@@ -155,10 +154,21 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
         if not runtime or str(runtime[0])!='MARKET_CLOSED' or int(runtime[1] or 0)!=0:
             return {'ran':False,'reason':'RUNTIME_NOT_CLOSED_OR_SAFE','execution_allowed':False,'mode':mode}
     targets=load_targets(store)[:max(1,int(batch_limit))]
+    init_state(store)
+    # Daily and weekend jobs have a durable per-identity high-water mark.
+    # Check it before asking A3 for the entire symbol catalog. RECONCILE is
+    # deliberately exempt: its purpose is to discover source corrections to
+    # already completed days, which a local cursor alone cannot rule out.
+    states={target:_state(store,target) for target in targets}
+    if mode!='RECONCILE' and not any(
+            _range_for(mode,current,states[target])[0] <= current.date()
+            for target in targets):
+        return {'ran':False,'reason':'NO_NEW_A3_SESSION_GAP','execution_allowed':False,
+                'mode':mode,'selected':len(targets),'provider_requests':0}
     cem=client or A3CEMPublicReadOnlyClient()
     catalog=normalize_symbols(cem.symbols())
     by_identity={(x.symbol,x.family):x for x in catalog if x.family in FAMILIES}
-    hstore=history_store or default_history_store();init_history_schema(hstore);init_state(store)
+    hstore=history_store or default_history_store();init_history_schema(hstore)
     stats={'selected':len(targets),'matched':0,'unmatched':0,'failed':0,'empty':0,'complete':0,
            'versions_appended':0,'canonical_updates':0,'protected_by_precedence':0,
            'deterministic_mapped':0}
@@ -172,7 +182,7 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
             per_target.append({'target':target,'status':'ALIGNMENT_UNVERIFIED'});continue
         if alignment_status=='EXACT_DETERMINISTIC':
             stats['deterministic_mapped']+=1
-        state=_state(store,target);start,end=_range_for(mode,current,state)
+        state=states[target];start,end=_range_for(mode,current,state)
         if start>end:
             per_target.append({'target':target,'status':'NOT_DUE'});continue
         try:

@@ -8,12 +8,30 @@ import json
 import os
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import ak_byma_calendar as calendar
+from co_market_sessions_hf6 import byma_paper_spot_phase
 
 from scripts.v17_host_general_backup import create_backup
 
 RESERVE_BYTES = 2 * 1024**3
 ARCHIVE_OVERHEAD_BYTES = 64 * 1024**2
+ART = ZoneInfo('America/Argentina/Buenos_Aires')
+
+
+def backup_window_admitted(now: datetime) -> bool:
+    """Persistent timer catch-up cannot start a heavy copy in live market."""
+    if now.tzinfo is None:
+        return False
+    local = now.astimezone(ART)
+    if local.year not in calendar.ANIOS_AUDITADOS:
+        return False
+    # Service TimeoutStartSec is 60 minutes. Leave more than an hour before
+    # the first 09:45 preopen preparation for a delayed catch-up trigger.
+    return local.hour < 8 and byma_paper_spot_phase(local) == 'CLOSED'
 
 
 def source_upper_bound(root: Path) -> int:
@@ -58,7 +76,10 @@ def backup_capacity(source: Path, destination: Path, staging: Path) -> dict:
             "same_device": staging_dev == dest_dev}
 
 
-def main() -> int:
+def main(*, now: datetime | None = None) -> int:
+    if not backup_window_admitted(now or datetime.now(ART)):
+        print(json.dumps({'backup_capacity': {'status': 'DEFERRED_MARKET_WINDOW'}}), flush=True)
+        return 75
     source = Path('/opt/porota-trading')
     destination = Path('/opt/porota-backups')
     # The timer cannot stage a multi-GB live data tree and then compress an

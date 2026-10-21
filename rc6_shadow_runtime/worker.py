@@ -4,8 +4,9 @@ No market-data client, trading writer, broker, fill, network transport or manual
 bundle. A missing preopen/OPEN capacity remains an explicit closed gate.
 """
 from datetime import datetime, timedelta, timezone
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import gc
+import hashlib
 import json
 import logging
 import os
@@ -35,6 +36,136 @@ VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
 SOURCE_FILES = {"BYMA": "rc6_public_sources_latest.json",
                 "IOL_MCP": "iol_shadow_latest.json",
                 "IOL_FAMILY_REFERENCE": "iol_family_reference_latest.json"}
+
+# These are the bounded native inputs of the planner, family, lab, signal and
+# funnel readers. Tables without an append-only native contract are scanned in
+# full; an oversized/slow or unknown read simply retains the existing tick.
+_CLOSED_INPUT_TABLES = (
+    ("financial_instrument_catalog", 20000),
+    ("paper_positions", 4096),
+    ("paper_future_positions", 4096),
+    ("paper_family_lifecycle", 4096),
+    ("paper_daily_risk", 32),
+    ("paper_equity_by_currency", 500),
+    ("ppi_intraday_contract_state", 20000),
+    ("ppi_intraday_points", 5000),
+    ("market_snapshots", 5000),
+    ("paper_events", 3000),
+    ("scalping_candidates", 2000),
+    ("decision_evidence_snapshots", 3000),
+    ("paper_fills", 3000),
+    ("paper_family_lifecycle_events", 3000),
+)
+_CLOSED_PROSPECTIVE_TAILS = frozenset((
+    "paper_daily_risk", "paper_equity_by_currency",
+    "ppi_intraday_points", "market_snapshots",
+    "paper_events", "scalping_candidates", "decision_evidence_snapshots",
+    "paper_fills", "paper_family_lifecycle_events"))
+
+
+def closed_input_signature(worker, as_of, *, deep_catalog=False):
+    """Bounded read-only equality proof for a CLOSED idle interval.
+
+    The signature is private to this process, never a financial watermark.
+    Ambiguous schema, oversize input, lock or deadline returns None, which
+    forces the unchanged full worker tick. No new cut is published from here.
+    """
+    at = stamp(as_of)
+    context = session_context(at)
+    local = at.astimezone(TZ)
+    close_day = local.date() if local.time() >= BYMA_PAPER_SPOT_CLOSE else local.date() - timedelta(days=1)
+    settled = datetime.combine(close_day, BYMA_PAPER_SPOT_CLOSE, TZ) + timedelta(hours=1)
+    if context["phase"] != "CLOSED" or local < settled:
+        return None
+    deadline = time.monotonic() + (2.0 if deep_catalog else .75)
+    hasher = hashlib.sha256()
+    def add(value):
+        raw = repr(value).encode("utf-8", "surrogatepass")
+        if len(raw) > 65536 or time.monotonic() > deadline:
+            raise ValueError("SHADOW_CLOSED_PROBE_BUDGET")
+        hasher.update(len(raw).to_bytes(4, "big"))
+        hasher.update(raw)
+    try:
+        path = worker.database
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
+            c.execute("PRAGMA query_only=ON")
+            c.set_progress_handler(lambda: int(time.monotonic() > deadline), 200)
+            c.execute("BEGIN")
+            safety = c.execute(
+                "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+            if safety is None or tuple(safety) != ("PRODUCTION_PAPER", 0):
+                return None
+            tables = {row[0] for row in c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+            add((path.stat().st_dev, path.stat().st_ino, context["session"]))
+            for name, limit in _CLOSED_INPUT_TABLES:
+                add(name)
+                if name not in tables:
+                    add("ABSENT")
+                    continue
+                if name == "financial_instrument_catalog" and not deep_catalog:
+                    # The native catalog writer uses INSERT OR REPLACE. An
+                    # unversioned in-place edit is caught by the full bounded
+                    # reconciliation every five CLOSED minutes, or by the
+                    # unconditional PREOPEN/OPEN tick. Never claim this scalar
+                    # probe alone is a complete content hash.
+                    add(tuple(c.execute("""SELECT COUNT(*),COALESCE(MAX(rowid),0),
+                        MAX(last_seen_at) FROM financial_instrument_catalog""").fetchone()))
+                    continue
+                # The native readers consume these append-only/current-window
+                # projections with their own smaller caps. Earlier rows are
+                # already in the checkpoint or outside their selection window;
+                # mutable catalog/positions/contracts are always read in full.
+                order = 'julianday(event_at)' if name == 'ppi_intraday_points' else 'rowid'
+                if name in _CLOSED_PROSPECTIVE_TAILS:
+                    add(c.execute(f'SELECT COALESCE(MAX(rowid),0) FROM "{name}"').fetchone()[0])
+                projection = ('rowid,captured_at,payload_sha256'
+                              if name == 'decision_evidence_snapshots' else '*')
+                for row in c.execute(
+                        f'SELECT {projection} FROM "{name}" ORDER BY {order} DESC LIMIT ?', (limit + 1,)):
+                    limit -= 1
+                    if limit < 0 and name not in _CLOSED_PROSPECTIVE_TAILS:
+                        # A large table cannot be proven equal by a tail
+                        # sample: updates to older rows would be invisible.
+                        return None
+                    if limit < 0:
+                        break
+                    add(tuple(row))
+            c.rollback()
+        for source in sorted(set(worker.source_inputs + list(
+                worker.capacity_controller.protected_paths)), key=str):
+            if time.monotonic() > deadline:
+                return None
+            if not source.exists():
+                add((str(source), "ABSENT"))
+                continue
+            if source.is_symlink() or not source.is_file():
+                return None
+            st = source.stat()
+            add((str(source), st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns))
+        return hasher.hexdigest()
+    except (OSError, sqlite3.Error, ValueError, TypeError, OverflowError):
+        return None
+
+
+def publish_closed_idle(worker, at, pointer_id, *, heartbeat_due=True):
+    """Keep worker liveness separate from the last immutable market cut."""
+    with worker.files as files:
+        pointer = files.read("CURRENT.json")
+        status = files.read("status.json")
+        if (not isinstance(pointer, dict) or pointer.get("generation_id") != pointer_id
+                or not isinstance(status, dict) or status.get("phase") != "CLOSED"
+                or status.get("status") != "SHADOW_OBSERVING"
+                or type(status.get("real_orders_sent")) is not int
+                or status["real_orders_sent"] != 0 or status.get("real_routes") != "NOT_CALLED"):
+            return False
+        if heartbeat_due:
+            files.write("idle.json", {"schema": "rc6.shadow-closed-idle.v1",
+                "state": "SHADOW_IDLE_MARKET_CLOSED", "heartbeat_at": stamp(at).isoformat(),
+                "last_generation_id": pointer_id, "last_source_as_of": status["as_of"],
+                "source_freshness_renewed": False, "real_orders_sent": 0,
+                "real_routes": "NOT_CALLED"})
+        return True
 
 
 def release_idle_heap():
@@ -820,6 +951,14 @@ def run_worker(database, stop, *, clock_fn=None):
     except OSError:
         pass
     worker = None
+    idle_baseline = idle_deep = idle_pointer = None
+    idle_heartbeat = 0.0
+    deep_checked = 0.0
+    # The existing deployment contract observes two plus ten native cuts
+    # after an image restart. Only then may CLOSED enter steady idle. A
+    # restart/configuration transition is material; this is bounded startup
+    # admission, not a nightly timer refreshing the old source.
+    bootstrap_cuts_remaining = 12
     while not stop.is_set():
         tick_failed = False
         try:
@@ -833,13 +972,34 @@ def run_worker(database, stop, *, clock_fn=None):
             if getattr(worker, 'defer_audit', False):
                 with worker.files as files:
                     cold_audit.drain(files)
+            as_of = clock_fn()
+            probe = (closed_input_signature(worker, as_of) if
+                     hasattr(worker, "source_inputs") and bootstrap_cuts_remaining <= 1 else None)
+            if (bootstrap_cuts_remaining == 0 and probe is not None
+                    and probe == idle_baseline and idle_pointer and idle_deep):
+                deep_ok = True
+                if time.monotonic() - deep_checked >= 300:
+                    deep_ok = closed_input_signature(worker, as_of, deep_catalog=True) == idle_deep
+                    if deep_ok:
+                        deep_checked = time.monotonic()
+                due = time.monotonic() - idle_heartbeat >= 60
+                if deep_ok and publish_closed_idle(worker, as_of, idle_pointer, heartbeat_due=due):
+                    if due:
+                        idle_heartbeat = time.monotonic()
+                        LOG.info("DYNAMIC_SHADOW_RUNTIME status=SHADOW_IDLE_MARKET_CLOSED phase=CLOSED "
+                                 "real_orders_sent=0 provider_requests=0")
+                    stop.wait(POLL_SECONDS)
+                    continue
             # POLL_SECONDS is a minimum start-to-start period. A slow HOT
             # computation has already consumed that period; adding another
             # full sleep after publication makes the previous immutable cut
             # expire before the next one can be published on the one-vCPU
             # host. COLD is still drained before each new source read.
+            before_deep = (closed_input_signature(worker, as_of, deep_catalog=True)
+                           if probe is not None else None)
             tick_started = time.monotonic()
-            report = worker.tick(clock_fn())
+            report = worker.tick(as_of)
+            bootstrap_cuts_remaining = max(0, bootstrap_cuts_remaining - 1)
             try:
                 LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
                          report["status"], report["phase"])
@@ -851,6 +1011,19 @@ def run_worker(database, stop, *, clock_fn=None):
                     with worker.files as files:
                         cold_audit.drain(files)
                         cold_audit.prune_completed(files)
+                    after = closed_input_signature(worker, clock_fn())
+                    after_deep = (closed_input_signature(worker, clock_fn(), deep_catalog=True)
+                                  if before_deep is not None and after == probe else None)
+                    if probe is not None and after == probe and after_deep == before_deep:
+                        with worker.files as files:
+                            pointer = files.read("CURRENT.json")
+                            idle_pointer = pointer.get("generation_id") if isinstance(pointer, dict) else None
+                        idle_baseline = after if idle_pointer else None
+                        idle_deep = after_deep if idle_pointer else None
+                        idle_heartbeat = 0.0
+                        deep_checked = time.monotonic()
+                    else:
+                        idle_baseline = idle_deep = idle_pointer = None
                 try:
                     LOG.info("DYNAMIC_SHADOW_IDLE_MEMORY %s", json.dumps(release_idle_heap(), sort_keys=True))
                 except Exception as memory_error:
@@ -859,6 +1032,7 @@ def run_worker(database, stop, *, clock_fn=None):
                     LOG.warning("DYNAMIC_SHADOW_IDLE_MEMORY_UNAVAILABLE:%s", type(memory_error).__name__)
         except Exception as exc:
             tick_failed = True
+            idle_baseline = idle_deep = idle_pointer = None
             # A bounded failed SHADOW read/write cannot stop the exit clock or
             # turn a stale prior report into current success. No source event.
             LOG.warning("DYNAMIC_SHADOW_RUNTIME_FAIL_CLOSED:%s", type(exc).__name__)
