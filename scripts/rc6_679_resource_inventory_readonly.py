@@ -391,6 +391,30 @@ def cold_audit_queue_metadata():
         return {'status':'NO_VERIFICADO'}
 
 
+
+def postclose_readiness_metadata():
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    try:
+        with sqlite3.connect(path.as_uri()+'?mode=ro', uri=True, timeout=.2) as c:
+            c.execute('PRAGMA query_only=ON')
+            c.execute('PRAGMA busy_timeout=200')
+            end = time.monotonic()+2
+            c.set_progress_handler(lambda: int(time.monotonic()>end), 1000)
+            state = c.execute('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                              'FROM observer_state WHERE id=1').fetchone()
+            if state is None or state[0]!='PRODUCTION_PAPER' or state[1]!=0:
+                return {'status':'PAPER_GUARD_RED'}
+            counts = {name:c.execute('SELECT COUNT(*) FROM '+name+' WHERE status=?',
+                      (status,)).fetchone()[0] for name,status in
+                      (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                       ('paper_future_positions','ACTIVE'))}
+            return {'status':'READ_ONLY', 'process_state':state[2],
+                    'session_state':state[3], 'heartbeat_at':state[4],
+                    'open_counts':counts}
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        return {'status':'NO_VERIFICADO'}
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -461,6 +485,7 @@ def main(policy_b64):
               'growth_roots': growth_roots(),
               'shadow_largest': shadow_largest_files(),
               'cold_audit_queue': cold_audit_queue_metadata(),
+              'postclose_readiness': postclose_readiness_metadata(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
