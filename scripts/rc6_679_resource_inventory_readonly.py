@@ -208,6 +208,31 @@ def bounded_directory(path, max_files=5000):
             'files_by_role': dict(counts), 'bytes_by_role': dict(sizes)}
 
 
+
+def backup_manifest():
+    """Exact bounded candidates, with inode identity. Never traverse symlinks."""
+    roots = (Path('/opt/porota-backups'),
+             ROOT / 'data/paper_v17/artifacts/observer_v17.db/backups',
+             ROOT / 'data/backups')
+    result = {}
+    for root in roots:
+        entries = []
+        if root.is_dir() and not root.is_symlink():
+            for current, folders, names in os.walk(root, followlinks=False):
+                folders[:] = sorted(d for d in folders if not (Path(current)/d).is_symlink())
+                for name in sorted(names):
+                    path = Path(current) / name
+                    if len(entries) >= 128:
+                        raise RuntimeError('BACKUP_MANIFEST_BOUNDS_EXCEEDED')
+                    st = path.lstat()
+                    entries.append({'path': str(path), 'bytes': st.st_size,
+                                    'inode': st.st_ino, 'device': st.st_dev,
+                                    'mtime_ns': st.st_mtime_ns, 'links': st.st_nlink,
+                                    'regular': path.is_file() and not path.is_symlink()})
+        result[str(root)] = entries
+    return result
+
+
 def last_eod_outcomes():
     raw = command('journalctl', '--no-pager', '-o', 'cat',
                   '-u', 'porota-local-eod-history-rc6.service',
@@ -311,6 +336,7 @@ def main(policy_b64):
               'timers': units, 'services': services,
               'local_eod_journal': last_eod_outcomes(),
               'backup_admission_journal': last_backup_admission(),
+              'backup_manifest': backup_manifest(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
