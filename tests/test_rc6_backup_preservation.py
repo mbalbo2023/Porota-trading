@@ -9,7 +9,7 @@ def fixture(tmp_path,monkeypatch):
     for name in ('paper','history','general'):
         root=tmp_path/name;root.mkdir()
         for n in range(6):(root/f'backup-{n}.gz').write_bytes(b'synthetic')
-        policy['backups'][name].update(root=str(root),glob='backup-*.gz',pinned_names=[])
+        policy['backups'][name].update(root=str(root),glob='backup-*.gz',keep_newest=3,pinned_names=[])
     policy['backups']['protected_paths']=[]
     monkeypatch.setattr(housekeeping,'disk_free_bytes',lambda _:5*1024**3)
     monkeypatch.setattr(housekeeping,'inode_free_percent',lambda _:90)
@@ -25,9 +25,17 @@ def fixture(tmp_path,monkeypatch):
 
 def test_legacy_retention_would_delete_nine_fixture_backups(tmp_path,monkeypatch):
     p=fixture(tmp_path,monkeypatch)
+    p['backups']['suspended']=False
     result,code=housekeeping.execute('cleanup',p)
     assert code==0 and len(result['deleted'])==9
     assert sum(len(list((tmp_path/name).iterdir())) for name in ('paper','history','general'))==9
+
+def test_suspension_preserves_all_backups_even_without_invocation_flag(tmp_path,monkeypatch):
+    p=fixture(tmp_path,monkeypatch)
+    result,code=housekeeping.execute('cleanup',p)
+    assert code==0 and result['preserve_backups'] is True
+    assert result['deleted']==[]
+    assert sum(len(list((tmp_path/name).iterdir())) for name in ('paper','history','general'))==18
 
 def test_operator_preserves_all_backups_without_changing_policy_or_reserves(tmp_path,monkeypatch):
     p=fixture(tmp_path,monkeypatch);original=copy.deepcopy(p)

@@ -23,7 +23,6 @@ EXPORTERS=(
 RC6_CORE_TIMERS=(
   porota-functional-health-rc6.timer
   porota-history-postclose-rc6.timer
-  porota-host-general-backup-rc6.timer
   porota-preopen-rc6.timer
   porota-candle-integrity-rc6.timer
 )
@@ -296,7 +295,6 @@ done
 CORE_FILES=(
   porota-functional-health-rc6.service porota-functional-health-rc6.timer
   porota-history-postclose-rc6.service porota-history-postclose-rc6.timer
-  porota-host-general-backup-rc6.service porota-host-general-backup-rc6.timer
   porota-preopen-rc6.service porota-preopen-rc6.timer
   porota-candle-integrity-rc6.service porota-candle-integrity-rc6.timer
 )
@@ -311,6 +309,9 @@ for f in "${CORE_FILES[@]}" "${A3_FILES[@]}"; do
 done
 sudo -n systemd-analyze calendar 'Mon..Fri *-*-* 10:15:00 America/Argentina/Buenos_Aires' >/dev/null
 sudo -n systemctl daemon-reload
+sudo -n systemctl disable --now porota-host-general-backup-rc6.timer >/dev/null 2>&1 || true
+sudo -n systemctl mask --now --force porota-host-general-backup-rc6.timer >/dev/null
+test "$(sudo -n systemctl is-enabled porota-host-general-backup-rc6.timer)" = masked
 MIGRATED=1
 for unit in "${RC6_CORE_TIMERS[@]}"; do
   sudo -n systemctl enable --now "$unit" >/dev/null

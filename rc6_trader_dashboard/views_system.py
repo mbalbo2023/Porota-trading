@@ -1,6 +1,10 @@
 """Technical detail belongs here; no host commands or mutations."""
+import json
+from pathlib import Path
+
 from .components import fields, definition_list, detail, notice, metric
 from .datasets import artifact, config, logs
+from .projection import Page
 from .view_common import render_table, WORKERS, WORKER_DETAIL, SOURCES, SOURCE_DETAIL
 
 
@@ -52,6 +56,22 @@ def render(p, destination, tab):
                 + detail(row, fields("observation_coverage|Cobertura de observaciones SHADOW|status;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
                 + "</section>")
     if tab == "backups":
+        try:
+            policy = json.loads((Path(__file__).resolve().parents[1] /
+                                 "ops/policy/rc6-disk-housekeeping-v1.json").read_text(encoding="utf-8"))
+            suspended = policy["backups"]["suspended"] is True
+        except (OSError, ValueError, KeyError, TypeError):
+            suspended = False
+        if suspended:
+            page = Page("ops/policy/rc6-disk-housekeeping-v1.json",
+                        [{"store": store, "state": "SUSPENDED_BY_OPERATOR",
+                          "coverage": "NO_VERIFICADO", "protected": "NO_VERIFICADO"}
+                         for store in ("general", "paper", "history")], 3, "AVAILABLE")
+            return notice("Generación de backups suspendida por decisión del operador. "
+                          "Esta vista no acredita el borrado de archivos previos; consultar el recibo de host.") + render_table(
+                p, destination, tab, page, "Backups · política vigente",
+                fields("store|Store;state|Estado|status;last_backup_at|Último backup|time;coverage|Coverage;protected|Protegido"),
+                fields("last_checkpoint_at|Checkpoint|time;retention|Retención;reason|Excepción"))
         return render_table(p, destination, tab, artifact(p, "backups"), "Backups & protected stores",
                             fields("store|Store;state|Estado|status;last_backup_at|Último backup|time;coverage|Coverage;protected|Protegido"),
                             fields("last_checkpoint_at|Checkpoint|time;retention|Retención;reason|Excepción"))

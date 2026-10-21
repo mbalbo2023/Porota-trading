@@ -315,6 +315,9 @@ def _docker_observation() -> str:
 def execute(mode: str, policy: dict, *, preserve_backups: bool = False) -> tuple[dict, int]:
     if type(preserve_backups) is not bool:
         raise ValueError("preserve_backups must be boolean")
+    # Suspension leaves retirement to the exact inode manifest under
+    # DEPLOY_OWNER. Scheduled housekeeping may still clean other targets.
+    preserve_backups = preserve_backups or policy.get("backups", {}).get("suspended") is True
     before_free = disk_free_bytes("/")
     before_inodes = inode_free_percent("/")
     before_band = disk_band(before_free, policy)

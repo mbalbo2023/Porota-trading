@@ -334,6 +334,13 @@ def durable_report_view(report, *, catalog_ready_count, engine_views=None, famil
             "preopen_file", "preopen_quality", "capacity_open_status", "observation_execution",
             "active_paper_scanner_authority", "catalog_ready_count")
     view = {key: report[key] for key in base if key in report}
+    quality = report.get("input_quality")
+    truncated = (quality.get("observation_read_truncated")
+                 if isinstance(quality, dict) else None)
+    # Keep only this bounded read-coverage verdict in the public cut. An
+    # unknown source value stays unknown; it is never promoted to complete.
+    view["input_quality"] = {"observation_read_truncated":
+                             truncated if type(truncated) is bool else "NO_VERIFICADO"}
     view["catalog_ready_count"] = catalog_ready_count
     view["engines"] = {}
     for engine, plan in (() if engine_views is not None else report["engines"].items()):

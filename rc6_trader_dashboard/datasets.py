@@ -165,14 +165,26 @@ def artifact(p, kind):
     if not isinstance(rows, list):
         rows = []
     result = []
+    captured = payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of")
     for row in rows:
         if not isinstance(row, dict):
             continue
+        if kind == "scheduler":
+            # The systemd exporter publishes these exact names. An HTTP 200
+            # with 32 rows should not render every clock and state as unknown.
+            enabled, active = row.get("enabled_state"), row.get("active_state")
+            row = {**row, "state": ("ACTIVE" if enabled == "enabled" and active == "active" else
+                                    "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN),
+                   "enabled": enabled, "active": active,
+                   "next_run": row.get("next_elapse"), "last_run": row.get("last_trigger"),
+                   "last_success": None,
+                   "description": row.get("description"),
+                   "reason": row.get("last_result") if row.get("last_result") not in {None, "success"} else None}
         # No arbitrary recursive payload dump: detail columns are allowlisted.
-        result.append({**row, "as_of": row.get("as_of") or payload.get("captured_at") or payload.get("as_of"),
-                       "source": files[kind], "freshness": freshness(row.get("as_of") or payload.get("captured_at") or payload.get("as_of"), p.now, 3600)})
+        result.append({**row, "as_of": row.get("as_of") or captured,
+                       "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, 3600)})
     return Page(files[kind], result[p.offset:p.offset + 10], len(result) if state == "AVAILABLE" else None,
-                state, p.offset, payload.get("as_of") or payload.get("captured_at"), state)
+                state, p.offset, captured, state)
 
 
 def logs(p):

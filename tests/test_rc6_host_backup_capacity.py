@@ -33,6 +33,7 @@ def test_symlink_does_not_expand_backup_source(tmp_path):
 
 
 def test_insufficient_capacity_never_calls_backup(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(job, "backups_suspended", lambda: False)
     source = tmp_path / "source"
     source.mkdir()
     destination = tmp_path / "backups"
@@ -46,6 +47,7 @@ def test_insufficient_capacity_never_calls_backup(tmp_path, monkeypatch, capsys)
 
 
 def test_persistent_backup_catchup_never_scans_or_copies_in_preopen_or_open(monkeypatch,capsys):
+    monkeypatch.setattr(job, "backups_suspended", lambda: False)
     zone=ZoneInfo('America/Argentina/Buenos_Aires')
     monkeypatch.setattr(job,'backup_capacity',lambda *_: (_ for _ in ()).throw(
         AssertionError('heavy backup admission must not run in market window')))
@@ -53,3 +55,15 @@ def test_persistent_backup_catchup_never_scans_or_copies_in_preopen_or_open(monk
         assert job.main(now=datetime(2026,10,21,hour,minute,tzinfo=zone))==75
         assert 'DEFERRED_MARKET_WINDOW' in capsys.readouterr().out
     assert job.backup_window_admitted(datetime(2026,10,21,4,15,tzinfo=zone))
+
+
+def test_capacity_bound_excludes_archiver_skipped_backup_subtrees(tmp_path):
+    source = tmp_path / "source"
+    live = source / "data" / "paper_v17"
+    live.mkdir(parents=True)
+    (live / "observer.db").write_bytes(b"live")
+    previous = live / "artifacts" / "backups"
+    previous.mkdir(parents=True)
+    (previous / "observer.db.gz").write_bytes(b"historical" * 1000)
+    (live / "observer.db-wal").write_bytes(b"wal" * 100)
+    assert job.source_upper_bound(source) == 4

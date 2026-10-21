@@ -33,6 +33,7 @@ import sqlite3
 import time
 from datetime import datetime
 import ac_db  # NUEVO EN v15.0 — conexión SQLite única (WAL + timeout)
+from rc6_backup_policy import backups_suspended
 
 logger = logging.getLogger("infra_monitor")
 
@@ -58,6 +59,9 @@ def run_daily_backup():
     BACKUP_RETENTION_DAYS, mismo criterio que el cronjob legacy de
     el instalador legacy (30 días por default).
     """
+    if backups_suspended():
+        logger.info("Backup legacy suspendido por decisión del operador.")
+        return None
     if not os.path.exists(DB_PATH):
         logger.warning("run_daily_backup: no existe %s todavía — nada que respaldar.", DB_PATH)
         return None
@@ -96,6 +100,9 @@ def get_backup_status() -> dict:
     dentro de BACKUP_MAX_AGE_HOURS_WARN, 'atrasado' si no, 'sin_backups'
     si nunca corrió ninguno (ej. despliegue nuevo o Docker sin este
     módulo conectado todavía)."""
+    if backups_suspended():
+        return {"status": "suspendido_por_operador", "last_backup_at": None,
+                "age_hours": None, "count": None, "total_size_mb": None}
     backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "trading_system_*.db")),
                       key=os.path.getmtime, reverse=True)
     if not backups:

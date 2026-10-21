@@ -43,8 +43,10 @@ jobs:
           grep -Fq 'droplet_disk_guard_must_run_before_transfer: true' ops/policy/porota-policy.yaml
           grep -Fq 'failed_host_transition_replay_required: true' ops/policy/porota-policy.yaml
           grep -Fq 'guard_fixture_contract_drift_must_fail_predeploy: true' ops/policy/porota-policy.yaml
-          grep -Fq 'paper_backup_keep_newest: 3' ops/policy/porota-policy.yaml
-          grep -Fq 'history_backup_keep_newest: 3' ops/policy/porota-policy.yaml
+          grep -Fq 'backups_suspended_by_operator: true' ops/policy/porota-policy.yaml
+          grep -Fq 'paper_backup_keep_newest: 0' ops/policy/porota-policy.yaml
+          grep -Fq 'history_backup_keep_newest: 0' ops/policy/porota-policy.yaml
+          grep -Fq 'general_backup_keep_newest: 0' ops/policy/porota-policy.yaml
           python - <<'PY'
           import json
           from pathlib import Path
@@ -56,8 +58,8 @@ jobs:
           assert f['image_unpacked_multiplier'] == 2
           assert f['bundle_multiplier'] == 2
           assert f['fixed_headroom_bytes'] == 2 * 1024**3
-          assert p['backups']['paper']['keep_newest'] == 3
-          assert p['backups']['history']['keep_newest'] == 3
+          assert p['backups']['suspended'] is True
+          assert all(p['backups'][name]['keep_newest'] == 0 for name in ('general', 'paper', 'history'))
           assert p['deploy']['canonical_workflow'] == '.github/workflows/porota-deploy-v2-promote.yml'
           print('POROTA_DISK_POLICY_GATE=GREEN')
           PY

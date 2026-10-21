@@ -16,11 +16,10 @@ def policy() -> dict:
     return load_policy(POLICY_PATH)
 
 
-def test_policy_retention_is_exactly_three_for_paper_and_history() -> None:
+def test_operator_suspension_retains_no_backup_class() -> None:
     p = policy()
-    assert p["backups"]["paper"]["keep_newest"] == 3
-    assert p["backups"]["history"]["keep_newest"] == 3
-    assert p["backups"]["general"]["keep_newest"] == 3
+    assert p["backups"]["suspended"] is True
+    assert all(p["backups"][name]["keep_newest"] == 0 for name in ("general", "paper", "history"))
 
 
 def test_policy_keeps_two_gib_as_final_reserve_not_start_gate() -> None:

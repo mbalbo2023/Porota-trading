@@ -594,10 +594,15 @@ class Projection:
                      "state": " · ".join(str(r.get("currency")) + ":" + str(r.get("state", UNKNOWN)) for r in risk.rows) or UNKNOWN,
                      "as_of": max((r.get("evaluated_at", "") for r in risk.rows), default=None)})
         status = self.shadow.get("status", {})
+        liveness = self.shadow_liveness
         rows.append({"worker": "Selector dinámico SHADOW", "source": "CURRENT.json · committed generation",
                      "state": self.shadow["state"], "as_of": status.get("as_of"),
                      "age_seconds": age(status.get("as_of"), self.now),
-                     "freshness": freshness(status.get("as_of"), self.now, 30)})
+                     "heartbeat_budget_seconds": liveness["budget_seconds"],
+                     "freshness": ("NO_VERIFICADO" if self.shadow["state"] != "COMMITTED_COHERENT_SHADOW" else
+                                   "FRESH" if self.shadow_fresh else
+                                   freshness(self.shadow.get("report", {}).get("as_of"),
+                                             self.now, liveness["budget_seconds"]))})
         if not critical:
             row = s.one("paper_notification_worker")
             rows.append({**row, "worker": "Notificaciones", "source": "paper_notification_worker"})

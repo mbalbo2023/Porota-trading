@@ -25,7 +25,11 @@ def render(p,destination,tab):
             if not params['price_basis'] or not params['adjustment_basis']: continue
             links.append("<a class='button' href='/analitica/anual?"+e(urlencode(params))+"'>"+
                          e(' / '.join(str(row[k]) for k in names))+"</a>")
-        return heading+scope+''.join(links)+render_table(p,destination,tab,page,'Seleccionar serie anual',
+        selector_status = (notice('ANNUAL_NO_SELECTABLE_CANONICAL_SERIES · '
+                                  + (page.reason or page.source)
+                                  + ' · faltan identidad completa o bases de precio/ajuste verificadas.')
+                           if not links else '')
+        return heading+scope+selector_status+''.join(links)+render_table(p,destination,tab,page,'Seleccionar serie anual',
             fields('symbol|Ticker;currency|Moneda;family|Familia;series_last_session|Última rueda;freshness|Frescura|status'),
             fields('market|Mercado;settlement|Liquidación;price_basis|Base;adjustment_basis|Ajuste;last_ingest_at|Ingestión|time'),
             note='Los enlaces antiguos sin moneda requieren seleccionar una identidad completa; no se combinan series ambiguas.')

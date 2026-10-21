@@ -33,24 +33,20 @@
     "general": {
       "root": "/opt/porota-backups",
       "glob": "porota-general-*.tar.gz",
-      "keep_newest": 3,
-      "pinned_names": [
-        "porota-general-20260912T071509Z.tar.gz"
-      ]
+      "keep_newest": 0
     },
     "paper": {
       "root": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper",
       "glob": "observer_*.db.gz",
-      "keep_newest": 3
+      "keep_newest": 0
     },
     "history": {
       "root": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history",
       "glob": "market_history_*.db.gz",
-      "keep_newest": 3
+      "keep_newest": 0
     },
-    "protected_paths": [
-      "/opt/porota-trading/data/backups/wave4_closure"
-    ]
+    "protected_paths": [],
+    "suspended": true
   },
   "journal": {
     "max_bytes": 536870912

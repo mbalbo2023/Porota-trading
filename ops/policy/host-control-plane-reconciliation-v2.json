@@ -200,20 +200,21 @@
       "reason": "Explicitly quarantined: host timer must be masked/inactive; source remains versioned for an explicitly authorized recovery project"
     },
     "systemd/porota-host-general-backup-rc6.service": {
-      "role": "ACTIVE_SERVICE",
+      "role": "QUARANTINED_SERVICE",
       "install": true,
       "enabled": null,
       "active": null,
       "remove_on_deploy": false,
-      "reason": "Required by current preopen readiness through its timer"
+      "reason": "Operator-authorized backup suspension 2026-10-21; do not reactivate without new policy and ownership"
     },
     "systemd/porota-host-general-backup-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "QUARANTINED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
       "remove_on_deploy": false,
-      "reason": "Required by current preopen readiness"
+      "reason": "Operator-authorized backup suspension 2026-10-21; do not reactivate without new policy and ownership",
+      "masked": true
     },
     "systemd/porota-preopen-rc6.service": {
       "role": "ACTIVE_SERVICE",

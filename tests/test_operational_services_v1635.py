@@ -75,6 +75,7 @@ def test_reporte_caucion_cuenta_interes_neto_al_acreditar_sin_sumar_principal(tm
 
 
 def test_sre_y_backup_incluyen_restore_real(tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "backups_suspended", lambda: False)
     db = tmp_path / "observer.db"
     store = PaperStore(str(db))
     monkeypatch.setattr(services, "BACKUP_DIR", tmp_path / "backups")
@@ -103,6 +104,7 @@ def test_sre_y_backup_incluyen_restore_real(tmp_path, monkeypatch):
 
 def test_backup_defers_before_materializing_when_disk_reserve_is_insufficient(
         tmp_path, monkeypatch):
+    monkeypatch.setattr(services, "backups_suspended", lambda: False)
     db = tmp_path / "observer.db"
     store = PaperStore(str(db))
     monkeypatch.setattr(services, "BACKUP_DIR", tmp_path / "backups")

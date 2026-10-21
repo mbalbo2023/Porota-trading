@@ -30,6 +30,7 @@ import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import CaucionBook
 from cg_paper_workspace import artifact_root
+from rc6_backup_policy import backups_suspended
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -194,6 +195,8 @@ def collect_sre(store):
 
 def create_backup(store, force=False):
     """Backup consistente, comprimido y con restore test real."""
+    if backups_suspended():
+        return None
     init_schema(store)
     key = datetime.now(TZ).strftime("%Y-%m-%d")
     if not force and not _job_due(store, "DAILY_BACKUP", 20 * 3600):
@@ -247,6 +250,8 @@ def create_backup(store, force=False):
 
 def create_history_backup(store, force=False):
     """Backup online SQLite del History Store v2 con restore test real."""
+    if backups_suspended():
+        return None
     init_schema(store)
     if not force and not _job_due(store, "HISTORY_BACKUP", 20 * 3600):
         return None
@@ -691,10 +696,11 @@ def service_tick(store, phase, force=False):
     init_schema(store)
     if force or _job_due(store, "SRE_SNAPSHOT", 300):
         collect_sre(store)
-    if force or _job_due(store, "DAILY_BACKUP", 20 * 3600):
-        create_backup(store, force=force)
-    if force or _job_due(store, "HISTORY_BACKUP", 20 * 3600):
-        create_history_backup(store, force=force)
+    if not backups_suspended():
+        if force or _job_due(store, "DAILY_BACKUP", 20 * 3600):
+            create_backup(store, force=force)
+        if force or _job_due(store, "HISTORY_BACKUP", 20 * 3600):
+            create_history_backup(store, force=force)
     if force or _job_due(store, "FINANCIAL_REFRESH", 12 * 3600):
         refresh_financial(store)
     news_enabled = os.getenv("PAPER_NEWS_INGEST_ENABLED", "false").lower() in {"1", "true", "yes"}

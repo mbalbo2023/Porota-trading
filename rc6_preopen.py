@@ -39,7 +39,6 @@ IOL_FALLBACK_ORDER = [
 REQUIRED_TIMERS = (
     'porota-fast-functional-health-rc6.timer',
     'porota-full-db-integrity-rc6.timer',
-    'porota-host-general-backup-rc6.timer',
     'porota-preopen-rc6.timer',
     'porota-candle-integrity-rc6.timer',
     'porota-byma-morning-watch-rc6.timer',
@@ -252,7 +251,7 @@ def required_timers(deploy_scheduler_candidate=None):
             units = tuple(suspend.timer_policy(raw))
             path = ROOT/'data/deploy'/('scheduler-suspend-'+deploy_scheduler_candidate+'.json')
             if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
-                    len(units) != 20 or not set(REQUIRED_TIMERS) <= set(units)):
+                    len(units) != 19 or not set(REQUIRED_TIMERS) <= set(units)):
                 raise ValueError('PREOPEN_DEPLOY_RECEIPT_UNSAFE')
             receipt = json.loads(path.read_bytes())
             if (receipt.get('candidate_sha') != deploy_scheduler_candidate or

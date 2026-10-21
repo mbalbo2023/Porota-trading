@@ -15,13 +15,12 @@ from zoneinfo import ZoneInfo
 import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import byma_paper_spot_phase
 
-from scripts.v17_host_general_backup import create_backup
+from scripts.v17_host_general_backup import create_backup, DEFAULT_PARTS, SKIP_NAMES, SECRET_FILENAMES
+from rc6_backup_policy import backups_suspended
 
 RESERVE_BYTES = 2 * 1024**3
 ARCHIVE_OVERHEAD_BYTES = 64 * 1024**2
 ART = ZoneInfo('America/Argentina/Buenos_Aires')
-
-
 def backup_window_admitted(now: datetime) -> bool:
     """Persistent timer catch-up cannot start a heavy copy in live market."""
     if now.tzinfo is None:
@@ -35,17 +34,18 @@ def backup_window_admitted(now: datetime) -> bool:
 
 
 def source_upper_bound(root: Path) -> int:
-    """Conservative bound for staging, including files the archiver excludes."""
+    """Conservative bound for staging of files the archiver actually admits."""
     total = 0
-    for name in ("data", "sre_vector_db"):
+    for name in DEFAULT_PARTS:
         part = root / name
         if not part.is_dir() or part.is_symlink():
             continue
         for base, dirs, files in os.walk(part, followlinks=False):
-            dirs[:] = [d for d in dirs if not (Path(base) / d).is_symlink()]
+            dirs[:] = [d for d in dirs if d not in SKIP_NAMES and not (Path(base) / d).is_symlink()]
             for name in files:
                 item = Path(base) / name
-                if item.is_file() and not item.is_symlink():
+                if (name not in SECRET_FILENAMES and not name.endswith(("-wal", "-shm"))
+                        and item.is_file() and not item.is_symlink()):
                     total += item.stat().st_size
     for name in ("_version.py", "docker-compose.yml"):
         item = root / name
@@ -77,6 +77,9 @@ def backup_capacity(source: Path, destination: Path, staging: Path) -> dict:
 
 
 def main(*, now: datetime | None = None) -> int:
+    if backups_suspended():
+        print(json.dumps({'backup_capacity': {'status': 'SUSPENDED_BY_OPERATOR'}}), flush=True)
+        return 0
     if not backup_window_admitted(now or datetime.now(ART)):
         print(json.dumps({'backup_capacity': {'status': 'DEFERRED_MARKET_WINDOW'}}), flush=True)
         return 75
