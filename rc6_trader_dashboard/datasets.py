@@ -167,7 +167,10 @@ def artifact(p, kind):
     result = []
     captured = (payload.get("recorded_at") if kind == "scheduler" else
                 payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of"))
-    snapshot_freshness = freshness(captured, p.now, 3600)
+    # One-minute exporter timer: three missed cycles are stale. Other
+    # artifacts retain their independent hourly display budget.
+    budget = 180 if kind == "scheduler" else 3600
+    snapshot_freshness = freshness(captured, p.now, budget)
     snapshot_fresh = snapshot_freshness == "FRESH"
 
     def systemd_time(value):
@@ -198,7 +201,7 @@ def artifact(p, kind):
                    "reason": ("Service result: " + str(outcome)[:64]) if outcome not in {None, "success"} else None}
         # No arbitrary recursive payload dump: detail columns are allowlisted.
         result.append({**row, "as_of": row.get("as_of") or captured,
-                       "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, 3600)})
+                       "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, budget)})
     page_state = state
     if kind == "scheduler":
         page_state = (snapshot_freshness if state == "AVAILABLE" and payload.get("state") == "OK"
