@@ -415,6 +415,45 @@ def postclose_readiness_metadata():
         return {'status':'NO_VERIFICADO'}
 
 
+def scheduler_export_exec_evidence():
+    """Allowlisted metadata for systemd 203/EXEC; no journal text or argv leaves the host."""
+    path = ROOT / 'scripts/porota_export_scheduler_state_rc6.sh'
+    result = {'expected_path_role': 'scripts/porota_export_scheduler_state_rc6.sh'}
+    try:
+        st = path.lstat()
+        result.update(present=True, regular=path.is_file() and not path.is_symlink(),
+                      mode=oct(st.st_mode & 0o777), uid=st.st_uid, gid=st.st_gid,
+                      bytes=st.st_size,
+                      mount_noexec=bool(os.statvfs(path).f_flag & getattr(os, 'ST_NOEXEC', 8)))
+        with path.open('rb') as stream:
+            result['shebang_expected'] = stream.readline(128).strip() == b'#!/usr/bin/env bash'
+    except FileNotFoundError:
+        result['present'] = False
+    except OSError:
+        result.setdefault('present', 'NO_VERIFICADO')
+        result['shebang_expected'] = 'NO_VERIFICADO'
+    raw = command('systemctl', 'show', 'porota-scheduler-export-rc6.service',
+                  '-p', 'Result', '-p', 'ExecMainStatus', '-p', 'User',
+                  '-p', 'FragmentPath', '-p', 'ExecStart', timeout=3)
+    props = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line) if raw else {}
+    result['unit'] = {
+        'result': props.get('Result'), 'exit_status': props.get('ExecMainStatus'),
+        'expected_user': props.get('User') == 'porotaadmin',
+        'expected_exec_path': str(path) in props.get('ExecStart', ''),
+        'fragment_in_systemd': props.get('FragmentPath') ==
+                                  '/etc/systemd/system/porota-scheduler-export-rc6.service'}
+    raw = command('journalctl', '--no-pager', '-o', 'cat', '-u',
+                  'porota-scheduler-export-rc6.service',
+                  '--since', '2026-10-21 19:00:00 UTC', '-n', '20', timeout=4)
+    result['journal_codes'] = ({
+        'failed_step_exec': 'Failed at step EXEC' in raw,
+        'file_missing': 'No such file or directory' in raw,
+        'permission_denied': 'Permission denied' in raw,
+        'exec_format': 'Exec format error' in raw,
+    } if raw is not None else {'status': 'NO_VERIFICADO'})
+    return result
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -486,6 +525,7 @@ def main(policy_b64):
               'shadow_largest': shadow_largest_files(),
               'cold_audit_queue': cold_audit_queue_metadata(),
               'postclose_readiness': postclose_readiness_metadata(),
+              'scheduler_export_exec_evidence': scheduler_export_exec_evidence(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
