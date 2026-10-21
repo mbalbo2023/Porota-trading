@@ -5,6 +5,8 @@ on:
       - diagnostic/rc6-679-readonly-baseline-20261021
     paths:
       - .github/workflows/rc6-679-immediate-backup-retire-20261021.yml
+      - scripts/rc6_679_immediate_backup_retire.py
+      - tests/test_rc6_679_immediate_backup_retire.py
 permissions:
   contents: read
 concurrency:
