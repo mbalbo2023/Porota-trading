@@ -81,6 +81,22 @@ def main():
         result['truth'] = {'http': code}
     if result['truth'].get('real_orders_sent') != 0 or result['truth'].get('mode') != 'PRODUCTION_PAPER':
         raise SystemExit('PAPER_GUARD_NOT_PROVEN')
+    from cg_paper_workspace import database_path
+    from rc6_trader_dashboard.projection import Projection, Store
+    with Store(database_path()) as store:
+        projection = Projection(store)
+        cut = projection.shadow
+        report = cut.get('report', {})
+        quality = report.get('input_quality', {})
+        result['shadow_status'] = {
+            'state': cut.get('state'), 'reason': cut.get('reason'),
+            'fresh': projection.shadow_fresh,
+            'liveness': projection.shadow_liveness,
+            'as_of': report.get('as_of'),
+            'capacity_open_status': report.get('capacity_open_status'),
+            'observation_read_truncated': quality.get('observation_read_truncated') if isinstance(quality, dict) else None,
+            'engine_count': len(report.get('engines', {})) if isinstance(report.get('engines'), dict) else None,
+            'projection_errors': sorted(set(store.errors))}
     exact_identity_link = None
     for path in ROUTES:
         if time.monotonic() >= DEADLINE:
