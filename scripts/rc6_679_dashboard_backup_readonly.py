@@ -12,12 +12,12 @@ import time
 import urllib.error
 import urllib.request
 
-ROUTES = ('/', '/en-vivo', '/en-vivo/oportunidades', '/en-vivo/decisiones',
-          '/trading', '/trading/scalping', '/universo', '/universo/discovery',
-          '/instrumentos', '/instrumentos/ficha', '/instrumentos/mercado',
-          '/analitica', '/analitica/experimentos', '/sistema',
-          '/sistema/evidencia', '/sistema/backups')
-DEADLINE = time.monotonic() + 24
+from rc6_trader_dashboard.navigation import DESTINATIONS, view_path
+from urllib.parse import urlsplit
+
+ROUTES = tuple(view_path(destination, tab) for destination in DESTINATIONS
+               for tab, _ in destination.tabs)
+DEADLINE = time.monotonic() + 45
 TOKEN = os.environ.get('DASHBOARD_ACCESS_TOKEN', '')
 BASE = 'http://127.0.0.1:8000'
 SAFE_CODES = re.compile(r'\b(?:SHADOW|GENERATION|COLD|SOURCE|MARKET|PAPER|NO_VERIFICADO|STALE|UNAVAILABLE|NOT_AVAILABLE|COMMITTED)[A-Z0-9_]{0,72}\b')
@@ -55,7 +55,7 @@ def fetch(path):
                            'Cache-Control': 'no-store'})
     try:
         with urllib.request.urlopen(request, timeout=2.5) as response:
-            return response.status, response.read(600000).decode('utf-8', 'replace')
+            return response.status, response.read(1200000).decode('utf-8', 'replace')
     except urllib.error.HTTPError as exc:
         return exc.code, ''
     except (OSError, TimeoutError):
@@ -66,7 +66,7 @@ def main():
     if len(TOKEN) < 24:
         raise SystemExit('DASHBOARD_BEARER_NOT_AVAILABLE')
     start = time.monotonic()
-    result = {'schema': 'RC6_DASHBOARD_ROUTE_RO_V1', 'routes': [],
+    result = {'schema': 'RC6_DASHBOARD_ROUTE_RO_V2', 'routes': [],
               'security': 'BEARER_NOT_LOGGED;HTML_NOT_LOGGED',
               'truncated': False, 'shadow_status': {}}
     code, body = fetch('/api/dashboard/truth')
@@ -81,6 +81,7 @@ def main():
         result['truth'] = {'http': code}
     if result['truth'].get('real_orders_sent') != 0 or result['truth'].get('mode') != 'PRODUCTION_PAPER':
         raise SystemExit('PAPER_GUARD_NOT_PROVEN')
+    exact_identity_link = None
     for path in ROUTES:
         if time.monotonic() >= DEADLINE:
             result['truncated'] = True
@@ -96,7 +97,26 @@ def main():
                'stale_count': body.upper().count('STALE'), 'codes': codes}
         if path == '/instrumentos':
             row['exact_ficha_links'] = len(heading.links)
+            if heading.links:
+                exact_identity_link = heading.links[0]
         result['routes'].append(row)
+    if exact_identity_link and not result['truncated']:
+        from urllib.parse import parse_qs, urlencode
+        identity = parse_qs(urlsplit(exact_identity_link).query).get('identity', [''])[0]
+        if identity:
+            result['exact_identity_drilldown'] = []
+            for tab in ('ficha', 'contrato', 'mercado', 'evidencia'):
+                path = '/instrumentos/' + tab
+                status, body = fetch(path + '?' + urlencode({'identity': identity}))
+                heading = Headings()
+                heading.feed(body)
+                result['exact_identity_drilldown'].append({
+                    'tab': tab, 'http': status, 'headings': heading.headings[:8],
+                    'tables': heading.table_count,
+                    'no_verificado_count': body.upper().count('NO_VERIFICADO'),
+                    'stale_count': body.upper().count('STALE'),
+                    'codes': sorted(set(SAFE_CODES.findall(re.sub(r'<[^>]*>', ' ', body))))[:30]})
+    result['route_count_expected'] = len(ROUTES)
     result['elapsed_seconds'] = round(time.monotonic()-start, 3)
     print('RC6_DASHBOARD_ROUTE_AUDIT=' + json.dumps(result, sort_keys=True))
 
