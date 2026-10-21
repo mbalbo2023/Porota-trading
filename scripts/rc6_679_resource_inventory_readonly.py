@@ -6,6 +6,7 @@ Unknown historical counters are reported as unavailable, never inferred.
 import base64
 from collections import defaultdict
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -115,41 +116,64 @@ def sqlite_status(path):
                         tails[name] = c.execute(
                             f'SELECT COALESCE(MAX(rowid),0) FROM "{name}"').fetchone()[0]
                 result['allowlisted_rowid_tails'] = tails
-                # Dry-run only the proposed bounded CLOSED input read. No
-                # payload leaves the host; stop within the same 750 ms gate.
-                specs = (('financial_instrument_catalog', 20001),
-                         ('paper_positions', 4097), ('paper_future_positions', 4097),
-                         ('paper_family_lifecycle', 4097), ('paper_daily_risk', 33),
-                         ('paper_equity_by_currency', 501),
-                         ('ppi_intraday_contract_state', 20001),
-                         ('ppi_intraday_points', 5001), ('market_snapshots', 5001),
-                         ('paper_events', 3001), ('scalping_candidates', 2001),
-                         ('decision_evidence_snapshots', 3001), ('paper_fills', 3001),
-                         ('paper_family_lifecycle_events', 3001))
-                started = time.monotonic()
-                dry = {'tables': {}, 'budget_ms': 750}
-                for name, limit in specs:
-                    if time.monotonic() - started > .75:
-                        dry['status'] = 'OVER_BUDGET'
-                        break
-                    if name not in names:
-                        dry['tables'][name] = {'rows': 0, 'absent': True}
-                        continue
-                    order = 'julianday(event_at)' if name == 'ppi_intraday_points' else 'rowid'
-                    count = size = 0
-                    for row in c.execute(f'SELECT * FROM "{name}" ORDER BY {order} DESC LIMIT ?',
-                                         (limit,)):
-                        count += 1
-                        size += len(repr(tuple(row)).encode('utf-8', 'surrogatepass'))
-                        if time.monotonic() - started > .75:
-                            break
-                    dry['tables'][name] = {'rows': count, 'represented_bytes': size}
-                dry['elapsed_ms'] = round((time.monotonic() - started) * 1000, 3)
-                if dry['elapsed_ms'] > 750 or len(dry['tables']) < len(specs):
-                    dry['status'] = 'OVER_BUDGET'
-                else:
-                    dry['status'] = 'WITHIN_BUDGET'
-                result['closed_probe_cost'] = dry
+                # Measure the exact two bounded read variants; do not export
+                # payloads, alter the database or allow a long SQLite scan.
+                specs = (('financial_instrument_catalog', 20000),
+                         ('paper_positions', 4096), ('paper_future_positions', 4096),
+                         ('paper_family_lifecycle', 4096), ('paper_daily_risk', 32),
+                         ('paper_equity_by_currency', 500),
+                         ('ppi_intraday_contract_state', 20000),
+                         ('ppi_intraday_points', 5000), ('market_snapshots', 5000),
+                         ('paper_events', 3000), ('scalping_candidates', 2000),
+                         ('decision_evidence_snapshots', 3000), ('paper_fills', 3000),
+                         ('paper_family_lifecycle_events', 3000))
+                for deep, budget in ((False, .75), (True, 2.0)):
+                    started = time.monotonic()
+                    deadline = started + budget
+                    c.set_progress_handler(lambda: int(time.monotonic() > deadline), 200)
+                    digest = hashlib.sha256()
+                    measured = {'tables': {}, 'budget_ms': int(budget * 1000)}
+                    try:
+                        for name, limit in specs:
+                            if time.monotonic() > deadline:
+                                break
+                            if name not in names:
+                                measured['tables'][name] = {'rows': 0, 'absent': True}
+                                continue
+                            if name == 'financial_instrument_catalog' and not deep:
+                                row = c.execute('''SELECT COUNT(*),COALESCE(MAX(rowid),0),
+                                  MAX(last_seen_at) FROM financial_instrument_catalog''').fetchone()
+                                digest.update(repr(tuple(row)).encode())
+                                measured['tables'][name] = {'scalar': True}
+                                continue
+                            order = 'julianday(event_at)' if name == 'ppi_intraday_points' else 'rowid'
+                            if name in ('paper_daily_risk', 'paper_equity_by_currency',
+                                        'ppi_intraday_points', 'market_snapshots', 'paper_events',
+                                        'scalping_candidates', 'decision_evidence_snapshots',
+                                        'paper_fills', 'paper_family_lifecycle_events'):
+                                row = c.execute(f'SELECT COALESCE(MAX(rowid),0) FROM "{name}"').fetchone()
+                                digest.update(repr(tuple(row)).encode())
+                            projection = ('rowid,captured_at,payload_sha256' if name ==
+                                          'decision_evidence_snapshots' else '*')
+                            count = size = 0
+                            for row in c.execute(f'SELECT {projection} FROM "{name}" ORDER BY {order} DESC LIMIT ?',
+                                                 (limit + 1,)):
+                                if count >= limit:
+                                    break
+                                raw = repr(tuple(row)).encode('utf-8', 'surrogatepass')
+                                if len(raw) > 65536 or time.monotonic() > deadline:
+                                    raise ValueError('PROBE_BUDGET')
+                                digest.update(raw)
+                                count += 1
+                                size += len(raw)
+                            measured['tables'][name] = {'rows': count, 'represented_bytes': size}
+                    except (sqlite3.Error, ValueError) as exc:
+                        measured['error_class'] = type(exc).__name__
+                    measured['elapsed_ms'] = round((time.monotonic() - started) * 1000, 3)
+                    measured['status'] = ('WITHIN_BUDGET' if len(measured['tables']) == len(specs)
+                                          and measured['elapsed_ms'] <= budget * 1000 and
+                                          'error_class' not in measured else 'OVER_BUDGET')
+                    result['closed_probe_cost_' + ('deep' if deep else 'fast')] = measured
     except (OSError, sqlite3.Error) as exc:
         result['query_error'] = type(exc).__name__
     return result
