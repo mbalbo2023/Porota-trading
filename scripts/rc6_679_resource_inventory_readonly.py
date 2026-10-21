@@ -135,6 +135,23 @@ def bounded_directory(path, max_files=5000):
             'files_by_role': dict(counts), 'bytes_by_role': dict(sizes)}
 
 
+def last_eod_outcomes():
+    raw = command('journalctl', '--no-pager', '-o', 'cat',
+                  '-u', 'porota-local-eod-history-rc6.service',
+                  '--since', '2026-10-20 00:00:00 UTC', '-n', '20', timeout=5)
+    if raw is None:
+        return {'status': 'NO_VERIFICADO'}
+    outcomes = []
+    for line in raw.splitlines():
+        try:
+            value = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(value, dict) and value.get('schema') == 'rc6.local-eod.v1':
+            outcomes.append({key: value.get(key) for key in ('as_of', 'state', 'reason')})
+    return {'status': 'BOUNDED_LAST_20_LINES', 'outcomes': outcomes[-10:]}
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -198,6 +215,7 @@ def main(policy_b64):
               'containers': containers, 'process_delta_window_seconds': 5,
               'processes': processes, 'tracked_process_count': len(pids),
               'timers': units, 'services': services,
+              'local_eod_journal': last_eod_outcomes(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
