@@ -6,8 +6,32 @@ import re
 import stat
 from pathlib import Path
 import hashlib
+from co_market_sessions_hf6 import byma_paper_spot_phase
 
 from .projection import Page, UNKNOWN, age, freshness, json_object, contract_labels, validated_metrics
+
+
+def current_open_capacity(p, plan, capacity):
+    """Display only an unexpired SHADOW recommendation from the live OPEN cut."""
+    if (plan.get("phase") != "OPEN" or byma_paper_spot_phase(p.now) != "OPEN"
+            or capacity.get("status") != "SHADOW_RECOMMENDATION"
+            or capacity.get("mode") != "SHADOW" or capacity.get("real_orders_sent") != 0
+            or capacity.get("real_routes") != "NOT_CALLED"
+            or capacity.get("production_limit_modified") is not False):
+        return False
+    limit = capacity.get("safe_limit")
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        return False
+    if any(not isinstance(capacity.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", capacity[key])
+           for key in ("evidence_digest", "configuration_fingerprint")):
+        return False
+    if freshness(capacity.get("validated_as_of"), p.now, 120) != "FRESH":
+        return False
+    try:
+        expires = datetime.fromisoformat(str(capacity.get("expires_at")).replace("Z", "+00:00"))
+        return expires.tzinfo is not None and expires.utcoffset() is not None and p.now < expires
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 def shadow_rows(p, kind):
@@ -29,16 +53,22 @@ def shadow_rows(p, kind):
             if kind == "capacity":
                 discovery = json_object(plan.get("discovery", {}))
                 capacity = json_object(plan.get("capacity", {}))
-                open_verified = report.get("capacity_open_status") == "OPEN_EVIDENCE_VERIFIED" and p.shadow_fresh
+                open_verified = current_open_capacity(p, plan, capacity)
+                # The detail must not expose a historical limit as if it were
+                # usable now merely because the committed report retains it.
+                capacity_detail = (capacity if open_verified else {
+                    key: capacity.get(key) for key in ("status", "reason_codes", "evidence_digest",
+                                                   "validated_as_of", "expires_at") if key in capacity})
                 rows.append({**discovery, "engine": engine, "source": "committed SHADOW · engines.capacity",
-                             "state": "OPEN_EVIDENCE_VERIFIED" if open_verified else UNKNOWN, "as_of": report.get("as_of"),
+                             "state": "SHADOW_RECOMMENDATION" if open_verified else UNKNOWN, "as_of": report.get("as_of"),
                              "safe_capacity": capacity.get("safe_limit") if open_verified else None,
                              "baseline": report.get("capacity_policy", {}).get("baseline"),
-                             "endpoint_budgets": capacity.get("endpoint_budgets"),
-                             "opened_priority": plan.get("opened_priority"), "capacity": capacity,
+                             "endpoint_budgets": capacity.get("slots_by_endpoint") if open_verified else None,
+                             "opened_priority": plan.get("opened_priority"), "capacity": capacity_detail,
                              "planned_revisit": None, "achieved_revisit": None,
                              "hot": plan.get("hot_count"), "warm": plan.get("warm_count"), "discovery": plan.get("discovery_count"),
-                             "reason": "Capacidad OPEN no certificada" if report.get("capacity_open_status") != "OPEN_EVIDENCE_VERIFIED" else None})
+                             "reason": ("Recomendación SHADOW medida; política de admisión independiente" if open_verified
+                                        else "Capacidad OPEN vigente no verificada")})
                 continue
             for raw in plan.get("telemetry", []):
                 if not isinstance(raw, dict):

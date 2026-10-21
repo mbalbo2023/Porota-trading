@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from rc6_trader_dashboard.datasets import artifact
+from rc6_trader_dashboard.datasets import artifact, shadow_rows
 from rc6_trader_dashboard.components import badge
 
 
@@ -51,3 +51,50 @@ def test_scheduler_service_uses_explicit_interpreter_for_readable_nonexecutables
     unit = Path("systemd/porota-scheduler-export-rc6.service").read_text()
     assert "ExecStart=/usr/bin/bash /opt/porota-trading/scripts/porota_export_scheduler_state_rc6.sh" in unit
     assert "ExecStart=/opt/porota-trading/scripts/porota_export_scheduler_state_rc6.sh" not in unit
+
+
+def capacity_page(now, *, phase="OPEN", capacity_changes=None, fresh=True):
+    capacity = {"status": "SHADOW_RECOMMENDATION", "mode": "SHADOW", "safe_limit": 7,
+                "evidence_digest": "a" * 64, "configuration_fingerprint": "b" * 64,
+                "validated_as_of": "2026-10-21T14:00:00+00:00",
+                "expires_at": "2026-10-21T14:02:00+00:00",
+                "slots_by_endpoint": {"current": 7}, "real_orders_sent": 0,
+                "real_routes": "NOT_CALLED", "production_limit_modified": False}
+    capacity.update(capacity_changes or {})
+    report = {"as_of": "2026-10-21T14:00:00+00:00", "capacity_open_status": "OPEN_OBSERVATIONS_RECORDED",
+              "capacity_policy": {"baseline": "OFF_BASELINE", "status": "OFF"},
+              "engines": {"SCALPING": {"phase": phase, "capacity": capacity, "discovery": {}}}}
+    projection = SimpleNamespace(now=now, offset=0, shadow_fresh=fresh,
+                                 shadow={"report": report, "state": "COMMITTED_COHERENT_SHADOW",
+                                         "reason": None})
+    return shadow_rows(projection, "capacity")
+
+
+def test_open_capacity_uses_validated_engine_recommendation_not_worker_status():
+    result = capacity_page(datetime(2026, 10, 21, 14, 0, 30, tzinfo=timezone.utc))
+    row = result.rows[0]
+    assert row["state"] == "SHADOW_RECOMMENDATION"
+    assert row["safe_capacity"] == 7
+    assert row["endpoint_budgets"] == {"current": 7}
+    assert row["baseline"] == "OFF_BASELINE"  # recommendation != admission approval
+    assert "política de admisión independiente" in row["reason"]
+
+
+def test_capacity_remains_unverified_outside_open_or_without_current_evidence():
+    open_at = datetime(2026, 10, 21, 14, 0, 30, tzinfo=timezone.utc)
+    cases = (
+        capacity_page(datetime(2026, 10, 21, 21, 0, tzinfo=timezone.utc)),
+        capacity_page(open_at, phase="CLOSED"),
+        capacity_page(open_at, capacity_changes={"expires_at": "2026-10-21T14:00:00+00:00"}),
+        capacity_page(open_at, capacity_changes={"evidence_digest": "bad"}),
+        capacity_page(open_at, capacity_changes={"validated_as_of": "2026-10-21T13:00:00+00:00"}),
+        capacity_page(open_at, capacity_changes={"safe_limit": 0}),
+        capacity_page(open_at, capacity_changes={"real_orders_sent": 1}),
+    )
+    for result in cases:
+        row = result.rows[0]
+        assert row["state"] == "NO_VERIFICADO"
+        assert row["safe_capacity"] is None and row["endpoint_budgets"] is None
+        assert "safe_limit" not in row["capacity"]
+        assert "slots_by_endpoint" not in row["capacity"]
+    assert capacity_page(open_at, fresh=False).rows == []
