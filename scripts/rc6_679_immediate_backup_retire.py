@@ -2,7 +2,7 @@
 """One-shot guarded retirement of only the audited RC6 backup inventory.
 
 The old observer continues PAPER operation.  Its two internal producers must
-have a proven future due time; the host timer is masked before any unlink.
+have a proven future due time; the host timer is stopped and disabled before any unlink.
 This is an operator-authorized interim action pending the certified candidate.
 """
 import hashlib
@@ -40,10 +40,7 @@ ROOTS = (
 def command(*args, accepted=(0,)):
     p = subprocess.run(args, text=True, capture_output=True, timeout=15)
     if p.returncode not in accepted:
-        # Commands here contain only fixed systemctl/docker arguments.  Keep
-        # the bounded reason so a rejected host transition can be diagnosed.
-        raise RuntimeError('COMMAND_FAILED:' + args[0] + ':' + args[1] +
-                           ':reason=' + p.stderr.strip().replace('\n', ' ')[:180])
+        raise RuntimeError('COMMAND_FAILED:' + args[0] + ':' + args[1])
     return p.stdout.strip()
 
 
@@ -178,9 +175,7 @@ def main():
         no_open_files({row[0] for row in rows})
         free_before = shutil.disk_usage(ROOT).free
         timer_before = unit_state(TIMER)
-        # The versioned timer is installed as a real /etc unit file.  Match
-        # the certified candidate installer, which replaces it with the mask.
-        command('systemctl', 'mask', '--now', '--force', TIMER)
+        command('systemctl', 'mask', '--now', TIMER)
         if unit_state(TIMER) != ('masked', 'inactive'):
             raise RuntimeError('HOST_BACKUP_TIMER_NOT_MASKED')
         if (paper_guard()['jobs'] != before['jobs'] or inventory() != rows or
