@@ -7,6 +7,7 @@ on:
       - .github/workflows/rc6-679-readonly-resource-inventory-20261021.yml
       - scripts/rc6_679_resource_inventory_readonly.py
       - scripts/rc6_679_storage_metadata_readonly.py
+      - scripts/rc6_679_dashboard_backup_readonly.py
 permissions:
   contents: read
 concurrency:
@@ -31,20 +32,20 @@ jobs:
           set -Eeuo pipefail
           test "$(git merge-base HEAD bc661130968f2b85b8b2146f76923ddd26eb7837)" = bc661130968f2b85b8b2146f76923ddd26eb7837
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          python -m py_compile scripts/rc6_679_storage_metadata_readonly.py
+          python -m py_compile scripts/rc6_679_dashboard_backup_readonly.py
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_679_readonly"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_679_readonly" "$HOME/.ssh/known_hosts"
-      - name: Seven-second metadata-only storage inventory
+      - name: Bounded authenticated dashboard route census
         shell: bash
         timeout-minutes: 2
         run: |
           set -Eeuo pipefail
-          timeout 25 ssh -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes \
+          timeout 45 ssh -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes \
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n nice -n 19 python3 -" < scripts/rc6_679_storage_metadata_readonly.py
+            "sudo -n docker exec -i porota_production_dashboard nice -n 19 python3 -" < scripts/rc6_679_dashboard_backup_readonly.py
       - name: Remove SSH key
         if: always()
         shell: bash
