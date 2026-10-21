@@ -321,7 +321,8 @@ def growth_roots():
     """Bounded metadata-only inventory; totals are partial when truncated."""
     roots = (ROOT / 'data/deploy', ROOT / 'data/paper_v17/artifacts',
              ROOT / 'data/market_history', Path('/var/log/journal'),
-             Path('/var/lib/docker/containers'))
+             Path('/var/lib/docker/containers'), ROOT / 'data/market',
+             ROOT / 'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
     output = {}
     for root in roots:
         seen = total = 0
