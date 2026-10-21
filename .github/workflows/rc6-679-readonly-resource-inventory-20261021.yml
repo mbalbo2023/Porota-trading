@@ -1,5 +1,5 @@
 name: RC6 679 bounded read-only resource inventory
-# Postdeploy read-only recheck: product d3774c839af61dfecb21f4fe7fb5cfeab5368e69, 2026-10-21.
+# Postdeploy read-only recheck: product f0c393ca2b5c1560bf57cf776f1e9fcfcbca582f, 2026-10-21.
 on:
   push:
     branches:
@@ -52,7 +52,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set -Eeuo pipefail
-          POLICY_B64="$(git show d3774c839af61dfecb21f4fe7fb5cfeab5368e69:ops/policy/host-control-plane-reconciliation-v2.json | base64 -w0)"
+          POLICY_B64="$(git show f0c393ca2b5c1560bf57cf776f1e9fcfcbca582f:ops/policy/host-control-plane-reconciliation-v2.json | base64 -w0)"
           timeout 100 ssh -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes \
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
