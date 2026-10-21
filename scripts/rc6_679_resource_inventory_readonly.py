@@ -420,10 +420,10 @@ def main(policy_b64):
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
     timers = sorted(Path(path).name for path, spec in policy['units'].items()
                     if spec['role'] == 'ACTIVE_TIMER' and spec['active'] is True)
-    if len(timers) != 20:
+    if len(timers) != 19:
         raise RuntimeError('TIMER_POLICY_COUNT_MISMATCH')
     current = json.loads((ROOT / 'data/deploy/CURRENT_STATE_V2.json').read_text())
-    if current['deploy_sha'] != 'bc661130968f2b85b8b2146f76923ddd26eb7837':
+    if current['deploy_sha'] != 'd3774c839af61dfecb21f4fe7fb5cfeab5368e69':
         raise RuntimeError('DEPLOY_SHA_CHANGED')
     if current['mode'] != 'PRODUCTION_PAPER' or type(current['real_orders_sent']) is not int \
             or current['real_orders_sent'] != 0 or current['real_order_routes'] != 'NOT_CALLED':

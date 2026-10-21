@@ -52,7 +52,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set -Eeuo pipefail
-          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          POLICY_B64="$(git show d3774c839af61dfecb21f4fe7fb5cfeab5368e69:ops/policy/host-control-plane-reconciliation-v2.json | base64 -w0)"
           timeout 100 ssh -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes \
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
