@@ -40,7 +40,10 @@ ROOTS = (
 def command(*args, accepted=(0,)):
     p = subprocess.run(args, text=True, capture_output=True, timeout=15)
     if p.returncode not in accepted:
-        raise RuntimeError('COMMAND_FAILED:' + args[0] + ':' + args[1])
+        # Commands here contain only fixed systemctl/docker arguments.  Keep
+        # the bounded reason so a rejected host transition can be diagnosed.
+        raise RuntimeError('COMMAND_FAILED:' + args[0] + ':' + args[1] +
+                           ':reason=' + p.stderr.strip().replace('\n', ' ')[:180])
     return p.stdout.strip()
 
 
@@ -175,9 +178,11 @@ def main():
         no_open_files({row[0] for row in rows})
         free_before = shutil.disk_usage(ROOT).free
         timer_before = unit_state(TIMER)
-        command('systemctl', 'mask', '--now', TIMER)
-        if unit_state(TIMER) != ('masked', 'inactive'):
-            raise RuntimeError('HOST_BACKUP_TIMER_NOT_MASKED')
+        # The real /etc unit file cannot be masked in place on this host.
+        # Stop and disable the exact timer, then prove systemd sees it idle.
+        command('systemctl', 'disable', '--now', TIMER)
+        if unit_state(TIMER) != ('disabled', 'inactive'):
+            raise RuntimeError('HOST_BACKUP_TIMER_NOT_DISABLED')
         if (paper_guard()['jobs'] != before['jobs'] or inventory() != rows or
                 general_service_quiescent() != service_before):
             raise RuntimeError('PRE_UNLINK_STATE_CHANGED')
