@@ -1,5 +1,5 @@
 """Admission, drain races and recovery boundary without a live Docker host."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sqlite3
@@ -181,6 +181,55 @@ def test_running_postclose_stale_db_ack_requires_exact_clean_stop(carry_installa
     states[q.OWNED[0]]['State']['Status'] = 'running'
     with pytest.raises(ValueError, match='STOP_PROOF_CHANGED'):
         q.run(SHA, 'drain', **flags)
+
+
+def test_postclose_failed_install_adopts_exact_validated_stopped_runtime(carry_installation, monkeypatch):
+    root, db, states, calls, _ = carry_installation
+    class Postclose(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:return datetime.now(timezone.utc)
+            return datetime(2026, 10, 20, 20, 45, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Postclose)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',session_state='MARKET_CLOSED'")
+        c.execute("DELETE FROM paper_positions WHERE paper_id IN ('paper-2','paper-3')")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT,principal TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T17:00:00-03:00','100')")
+    flags = dict(allow_market_open_suspend=True, allow_open_paper_carryover=True,
+                 allow_postclose_pending=True)
+    first=q.run(SHA,'drain',**flags)
+    q.run(SHA,'install',**flags)
+    q.run(SHA,'recover')
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':'9'*40,'image_id':'old_image',
+        'recorded_at':(datetime.now(timezone.utc)-timedelta(minutes=2)).isoformat(),
+        'validation_status':'VALIDATED_RUNTIME','mode':'PRODUCTION_PAPER',
+        'real_orders_sent':0,'real_order_routes':'NOT_CALLED'}))
+    calls.clear()
+    successor='b'*40
+    prior_path=root/'data/deploy'/('quiescence-'+SHA+'.json')
+    original=prior_path.read_bytes()
+    missing=json.loads(original)
+    missing['postclose_live_closed']=False
+    prior_path.write_text(json.dumps(missing))
+    with pytest.raises(ValueError,match='PRIOR_POSTCLOSE_PROOF_MISSING'):
+        q.run(successor,'drain',**flags)
+    prior_path.write_bytes(original)
+    with sqlite3.connect(db) as c:c.execute("UPDATE paper_cauciones SET principal='999'")
+    with pytest.raises(ValueError,match='PRIOR_CAUCION_CHANGED'):
+        q.run(successor,'drain',**flags)
+    with sqlite3.connect(db) as c:c.execute("UPDATE paper_cauciones SET principal='100'")
+    adopted=q.run(successor,'drain',**flags)
+    assert adopted['fix_forward_from']==SHA and adopted['paused_postclose'] is True
+    assert adopted['postclose_live_closed'] is True
+    assert adopted['spot_carryover']==first['spot_carryover']
+    assert adopted['caucion_carryover']==first['caucion_carryover']
+    assert not any(call[1] in ('stop','start') for call in calls)
+    with sqlite3.connect(db) as c:c.execute("UPDATE paper_cauciones SET principal='999'")
+    with pytest.raises(ValueError,match='INSTALL_CAUCION_CHANGED'):
+        q.run(successor,'install',**flags)
 
 
 @pytest.mark.parametrize('change', ['open_session', 'stale_heartbeat', 'active_future'])

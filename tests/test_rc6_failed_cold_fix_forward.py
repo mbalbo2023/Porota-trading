@@ -1,5 +1,6 @@
 """Preserve the original failed input, never rehabilitate its old cut."""
 import json
+from datetime import datetime, timedelta, timezone
 import pytest
 from rc6_shadow_runtime import cold_audit as c, persistence as p
 from scripts import rc6_failed_cold_fix_forward as recovery
@@ -101,6 +102,37 @@ def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,mo
     prior_path.write_bytes(prior_bytes)
     with p.EvidenceFiles(shadow) as files:
         files.write('status.json',{'status':'FAIL_CLOSED','real_orders_sent':0})
+    with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
+        recovery.run(successor)
+    stopped = datetime.now(timezone.utc)
+    qpath = deploy/('quiescence-'+successor+'.json')
+    q = json.loads(qpath.read_text())
+    q['paused_postclose'] = True
+    q['stop_evidence']['porota_production_observer'] = {
+        'classification': 'CLEAN_EXIT',
+        'before': {'Status': 'running', 'StartedAt':
+                   (stopped-timedelta(minutes=2)).isoformat()},
+        'after': {'Status': 'exited', 'ExitCode': 0, 'OOMKilled': False,
+                  'FinishedAt': stopped.isoformat()}}
+    qpath.write_text(json.dumps(q))
+    cancellation = {'status': 'FAIL_CLOSED', 'error_class': 'ValueError',
+        'error_module': 'cold_audit', 'error_line': 360,
+        'as_of': (stopped-timedelta(seconds=1)).isoformat(),
+        'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'}
+    with p.EvidenceFiles(shadow) as files:files.write('status.json',cancellation)
+    recovery.run(successor)  # Exact SIGTERM cancellation after a proven clean stop.
+    with p.EvidenceFiles(shadow) as files:
+        files.write('status.json',{**cancellation,'error_line': 361})
+    with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
+        recovery.run(successor)
+    with p.EvidenceFiles(shadow) as files:
+        files.write('status.json',{**cancellation,
+            'as_of': (stopped-timedelta(seconds=60)).isoformat()})
+    with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
+        recovery.run(successor)
+    q['stop_evidence']['porota_production_observer']['classification'] = 'UNKNOWN'
+    qpath.write_text(json.dumps(q))
+    with p.EvidenceFiles(shadow) as files:files.write('status.json',cancellation)
     with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
         recovery.run(successor)
     with p.EvidenceFiles(shadow) as files:

@@ -403,8 +403,9 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             json.loads(current_path.read_bytes()).get('validation_status') == 'DEPLOYED_VALIDATION_PENDING'):
         return adopt_exact_pending_intraday_stop(candidate, folder, originals,
                                                  postclose=allow_postclose_pending)
-    if allow_postclose_pending:
-        raise ValueError('QUIESCENCE_POSTCLOSE_EXACT_PENDING_REQUIRED')
+    # A validated prior runtime may be stopped by a later failed installation.
+    # Its exact postclose receipt owns the containers and both PAPER ledgers.
+    # The DEPLOYED_VALIDATION_PENDING branch above has a separate identity gate.
     if current_provenance:
         if current_path.is_symlink() or not current_path.is_file() or current_path.stat().st_size > 65536:
             raise ValueError('QUIESCENCE_CURRENT_STATE_UNSAFE')
@@ -512,9 +513,14 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     critical = critical_admission()
     if bool(previous.get('market_open_suspended', False)) != allow_market_open_suspend:
         raise ValueError('QUIESCENCE_PRIOR_SESSION_MODE_CHANGED')
+    if allow_postclose_pending and (previous.get('paused_postclose') is not True or
+            previous.get('postclose_live_closed') is not True or
+            previous.get('open_paper_carryover') is not True):
+        raise ValueError('QUIESCENCE_PRIOR_POSTCLOSE_PROOF_MISSING')
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
                     allow_market_open_suspend=allow_market_open_suspend,
                     allow_open_paper_carryover=allow_open_paper_carryover,
+                    allow_postclose_pending=allow_postclose_pending,
                     stopped_receipt=previous)
     allowed = ({'RUNNING', 'STOPPED'} if allow_market_open_suspend else
                {'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
@@ -524,9 +530,15 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     carryover = spot_carryover_snapshot() if allow_open_paper_carryover else None
     if allow_open_paper_carryover and previous.get('spot_carryover') != carryover:
         raise ValueError('QUIESCENCE_PRIOR_CARRYOVER_CHANGED')
+    caucion = pending_caucion_snapshot() if allow_postclose_pending else None
+    if allow_postclose_pending and previous.get('caucion_carryover') != caucion:
+        raise ValueError('QUIESCENCE_PRIOR_CAUCION_CHANGED')
     return {'candidate_sha': candidate,
             'spot_carryover': carryover,
             'open_paper_carryover': allow_open_paper_carryover,
+            'paused_postclose': allow_postclose_pending,
+            'postclose_live_closed': allow_postclose_pending,
+            'caucion_carryover': caucion,
             'status': 'ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
             'installation_started': False, 'stop_attempted': list(OWNED),
             'stop_evidence': previous['stop_evidence'],
