@@ -190,6 +190,37 @@ def test_no_rellena_minutos_sin_observaciones(store):
     assert len(candles)==2 and all(not b['synthetic'] for b in candles)
 
 
+def test_closed_idle_avoids_empty_sqlite_writer_but_keeps_due_heartbeat_and_new_samples(store, monkeypatch):
+    worker=SampleMaterializer(store)
+    closed='2026-08-28T18:00:00-03:00'
+    first=worker.tick(closed)
+    assert first['cursor']==0 and first['state']=='RUNNING'
+    initial=rows(store,'candle_worker_state')[0]
+
+    # The previous implementation enters BEGIN IMMEDIATE every two seconds.
+    # With no new input the read-only path must never open the writer.
+    original_connect=store.connect
+    def forbidden_writer():
+        raise AssertionError('EMPTY_CLOSED_WRITER')
+    monkeypatch.setattr(store,'connect',forbidden_writer)
+    idle=worker.tick('2026-08-28T18:00:02-03:00')
+    assert idle=={'cursor':0,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING'}
+    monkeypatch.setattr(store,'connect',original_connect)
+    assert rows(store,'candle_worker_state')[0]==initial
+
+    # A heartbeat is still durable on its due boundary, and a late legitimate
+    # snapshot is consumed immediately even though the market is closed.
+    worker.tick('2026-08-28T18:01:00-03:00')
+    assert rows(store,'candle_worker_state')[0]['heartbeat_at']==stamp('2026-08-28T18:01:00-03:00')
+    store.add_quote(quote(at='2026-08-28T16:59:00-03:00'))
+    consumed=worker.tick('2026-08-28T18:01:02-03:00')
+    assert consumed['cursor']==1 and consumed['accepted']==1
+    assert consumed['versions']==2
+    assert all(b['volume'] is None and b['trades'] is None
+               for b in CandleArchive(store).read(sample_series(),
+                   as_of='2026-08-28T18:01:02-03:00',qualities=('SAMPLED',)))
+
+
 def test_misma_marca_temporal_distinto_precio_es_conflicto(store):
     store.add_quote(quote(price='100',at=AT))
     store.add_quote(quote(price='101',at=AT))
