@@ -102,6 +102,18 @@ def sqlite_status(path):
             c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
             result['pages'] = {name: c.execute('PRAGMA ' + name).fetchone()[0]
                                for name in ('page_count', 'page_size', 'freelist_count')}
+            if p.name == 'market_history.db':
+                names = {row[0] for row in c.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+                result['history_schema'] = {}
+                for table in ('history_canonical_v2', 'production_history',
+                              'history_local_daily_v1', 'local_eod_cursor_v1'):
+                    if table in names:
+                        result['history_schema'][table] = {
+                            'columns': [row[1] for row in c.execute('PRAGMA table_info("' + table + '")')],
+                            'max_rowid': c.execute('SELECT COALESCE(MAX(rowid),0) FROM "' + table + '"').fetchone()[0]}
+                    else:
+                        result['history_schema'][table] = {'present': False}
             if p.name == 'observer_v17.db':
                 names = {row[0] for row in c.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
