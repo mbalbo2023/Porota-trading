@@ -10,6 +10,15 @@ import rc6_679_immediate_backup_retire as m
 
 
 class RetirementInventoryTest(unittest.TestCase):
+    def test_failed_capacity_job_has_no_writer_but_active_job_rejected(self):
+        old = 'MainPID=0\nControlPID=0\nExecMainStatus=75\nActiveState=failed\nSubState=failed'
+        with patch.object(m, 'command', return_value=old):
+            self.assertEqual(m.general_service_quiescent()['ExecMainStatus'], '75')
+        running = old.replace('MainPID=0', 'MainPID=314')
+        with patch.object(m, 'command', return_value=running):
+            with self.assertRaisesRegex(RuntimeError, 'GENERAL_BACKUP_SERVICE_WRITER'):
+                m.general_service_quiescent()
+
     def test_exact_inventory_and_unknown_file_fail_closed(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
