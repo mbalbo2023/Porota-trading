@@ -9,6 +9,7 @@ on:
       - scripts/rc6_679_resource_inventory_readonly.py
       - scripts/rc6_679_storage_metadata_readonly.py
       - scripts/rc6_679_dashboard_backup_readonly.py
+      - scripts/rc6_685_live_browser_readonly.py
 permissions:
   contents: read
 concurrency:
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   inventory:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 12
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -62,6 +63,41 @@ jobs:
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
             "sudo -n python3 - '$POLICY_B64'" < scripts/rc6_679_resource_inventory_readonly.py
+      - name: Authenticated real browser inspection via local SSH tunnel
+        if: ${{ always() && steps.pin.outcome == 'success' }}
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          command -v google-chrome >/dev/null
+          TOKEN="$(timeout 15 ssh -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            'sudo -n docker exec porota_production_dashboard sh -lc '\''printf %s "$DASHBOARD_ACCESS_TOKEN"'\'')"
+          test "${#TOKEN}" -ge 24
+          echo "::add-mask::$TOKEN"
+          ssh -N -L 127.0.0.1:18085:127.0.0.1:8000 \
+            -i "$HOME/.ssh/rc6_679_readonly" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" &
+          TUNNEL_PID=$!
+          trap 'kill "$TUNNEL_PID" 2>/dev/null || true' EXIT
+          for attempt in 1 2 3 4 5; do
+            if DASHBOARD_ACCESS_TOKEN="$TOKEN" python -c 'import os,urllib.request; u="http://127.0.0.1:18085/api/dashboard/truth"; r=urllib.request.urlopen(urllib.request.Request(u,headers={"Authorization":"Bearer "+os.environ["DASHBOARD_ACCESS_TOKEN"]}),timeout=2); assert r.status==200'; then break; fi
+            sleep 1
+          done
+          DASHBOARD_ACCESS_TOKEN="$TOKEN" python scripts/rc6_685_live_browser_readonly.py --output visual-evidence
+          unset TOKEN
+      - name: Preserve sanitized visual evidence
+        if: ${{ always() && steps.pin.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-685-sanitized-browser-evidence
+          path: visual-evidence/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Remove SSH key
         if: always()
         shell: bash
