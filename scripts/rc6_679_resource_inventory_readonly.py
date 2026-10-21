@@ -47,11 +47,16 @@ def process_sample(pid):
         # Inspect an allowlist of module names only. Never publish raw argv,
         # which may contain credentials or private runtime data.
         args = (base / 'cmdline').read_bytes().lower()[:4096]
-        roles = (b'rc6_shadow_runtime', b'bl_candle_engine',
-                 b'bf_production_paper_observer', b'bv_paper_runtime',
-                 b'rc6_notification', b'rc6_performance', b'exit_reader',
-                 b'caucion', b'scalping')
-        role = next((value.decode() for value in roles if value in args), 'UNCLASSIFIED')
+        roles = ((b'--dynamic-shadow-worker', 'dynamic_shadow'),
+                 (b'--candle-worker', 'candle_worker'),
+                 (b'--exit-reader', 'exit_reader'),
+                 (b'--notification-worker', 'notifications'),
+                 (b'--performance-worker', 'performance'),
+                 (b'--intraday-scalping-worker', 'intraday_scalping'),
+                 (b'--caucion-cash-sweep-worker', 'caucion_cash_sweep'),
+                 (b'bf_production_paper_observer.py', 'scanner'),
+                 (b'bv_paper_runtime.py', 'exit_clock'))
+        role = next((label for marker, label in roles if marker in args), 'UNCLASSIFIED')
         return {'pid': pid, 'cpu_ticks': int(stat[11]) + int(stat[12]),
                 'read_bytes': int(io['read_bytes']), 'write_bytes': int(io['write_bytes']),
                 'rss_kib': int(status['VmRSS'].split()[0]),
