@@ -178,7 +178,9 @@ def main():
         no_open_files({row[0] for row in rows})
         free_before = shutil.disk_usage(ROOT).free
         timer_before = unit_state(TIMER)
-        command('systemctl', 'mask', '--now', TIMER)
+        # The versioned timer is installed as a real /etc unit file.  Match
+        # the certified candidate installer, which replaces it with the mask.
+        command('systemctl', 'mask', '--now', '--force', TIMER)
         if unit_state(TIMER) != ('masked', 'inactive'):
             raise RuntimeError('HOST_BACKUP_TIMER_NOT_MASKED')
         if (paper_guard()['jobs'] != before['jobs'] or inventory() != rows or
