@@ -225,6 +225,27 @@ def last_eod_outcomes():
     return {'status': 'BOUNDED_LAST_20_LINES', 'outcomes': outcomes[-10:]}
 
 
+def last_backup_admission():
+    raw = command('journalctl', '--no-pager', '-o', 'cat',
+                  '-u', 'porota-host-general-backup-rc6.service',
+                  '--since', '2026-10-21 00:00:00 UTC', '-n', '20', timeout=5)
+    if raw is None:
+        return {'status': 'NO_VERIFICADO'}
+    for line in reversed(raw.splitlines()):
+        try:
+            value = json.loads(line)
+            admission = value.get('backup_capacity')
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if isinstance(admission, dict):
+            allowed = ('status', 'source_upper_bound_bytes', 'staging_required_bytes',
+                       'destination_required_bytes', 'staging_free_bytes',
+                       'destination_free_bytes', 'same_device')
+            return {'status': 'OBSERVED_JOURNAL', 'admission':
+                    {key: admission.get(key) for key in allowed}}
+    return {'status': 'NO_ADMISSION_LINE_IN_LAST_20'}
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -289,6 +310,7 @@ def main(policy_b64):
               'processes': processes, 'tracked_process_count': len(pids),
               'timers': units, 'services': services,
               'local_eod_journal': last_eod_outcomes(),
+              'backup_admission_journal': last_backup_admission(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
