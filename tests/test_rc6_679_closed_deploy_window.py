@@ -1,4 +1,4 @@
-"""Intraday operator suspension preserves the exact one PAPER caucion."""
+"""Deploy selects live flat PAPER quiescence without a calendar gate."""
 
 from pathlib import Path
 
@@ -6,24 +6,30 @@ from pathlib import Path
 WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/porota-deploy-v2-promote.yml'
 
 
-def test_deploy_requires_current_intraday_window_and_exact_caucion_admission():
+def test_deploy_classifies_live_session_and_rechecks_flat_paper_at_drain():
     source = WORKFLOW.read_text(encoding='utf-8')
-    assert "local.date().isoformat() != '2026-10-21'" in source
-    assert '13 <= local.hour < 17' in source
-    assert 'RC6_INTRADAY_CAUCION_WINDOW=RED' in source
-    assert '--action drain --market-open-suspend --intraday-caucion' in source
-    assert '--action install --market-open-suspend --intraday-caucion' in source
+    assert "local.date().isoformat()" not in source
+    assert "('RUNNING','MARKET_OPEN')" in source
+    assert "state[0]=='WAITING_MARKET'" in source
+    assert "state[1] in ('CLOSED','MARKET_CLOSED')" in source
+    assert "assert admit(allow_market_open_suspend=True)=='RUNNING'" in source
+    assert "assert admit()=='WAITING_MARKET'" in source
+    assert "case \"$RC6_QUIESCENCE_MODE\" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';;" in source
+    assert '--action drain $FLAG' in source
+    assert '--action install $QUIESCENCE_FLAG' in source
+    assert '--intraday-caucion' not in source
     assert '--carry-open-paper-spots' not in source
     assert '--paused-postclose' not in source
     assert 'RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION' not in source
 
 
-def test_deploy_checks_exact_intraday_caucion_after_restart():
+def test_deploy_checks_flat_paper_after_restart():
     source = WORKFLOW.read_text(encoding='utf-8')
     assert 'from scripts.rc6_deploy_quiescence import admit' in source
-    assert 'assert admit(allow_market_open_suspend=True, allow_intraday_caucion=True) == \\"RUNNING\\"' in source
-    assert 'RC6_INTRADAY_CAUCION_POSTSTART=GREEN' in source
-    assert '--action verify-carryover' in source
+    assert "assert admit(allow_market_open_suspend=mode=='OPEN')==expected" in source
+    assert "expected='RUNNING' if mode=='OPEN' else 'WAITING_MARKET'" in source
+    assert 'RC6_FLAT_POSTSTART=GREEN|mode=' in source
+    assert '--action verify-carryover' not in source
     cleanup = source.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name: Postdeploy full-session stress', 1)[0]
     assert "steps.flat_book.outcome == 'failure'" in cleanup
     assert "steps.backup_retire.outcome == 'failure'" in cleanup

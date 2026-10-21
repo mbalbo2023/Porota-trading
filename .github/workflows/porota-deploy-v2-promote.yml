@@ -154,19 +154,6 @@ jobs:
           print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
           PY
 
-      - name: Admit operator-authorized intraday PAPER caucion window before host work
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python - <<'PY'
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
-          local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-          if local.date().isoformat() != '2026-10-21' or not 13 <= local.hour < 17:
-              raise SystemExit('RC6_INTRADAY_CAUCION_WINDOW=RED')
-          print('RC6_INTRADAY_CAUCION_WINDOW=GREEN|exact_open_paper_caucion_and_no_spots_required')
-          PY
-
       - name: Prepare strict SSH
         shell: bash
         run: |
@@ -176,6 +163,37 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Classify current flat PAPER session before host writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SESSION_MODE="$(timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 12 python3 -' <<'PY'
+          import sqlite3,sys
+          from pathlib import Path
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import admit
+          path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=200')
+              state=c.execute('SELECT process_state,session_state FROM observer_state WHERE id=1').fetchone()
+          if state==('RUNNING','MARKET_OPEN'):
+              assert admit(allow_market_open_suspend=True)=='RUNNING'
+              print('OPEN')
+          elif state and state[0]=='WAITING_MARKET' and state[1] in ('CLOSED','MARKET_CLOSED'):
+              assert admit()=='WAITING_MARKET'
+              print('CLOSED')
+          else:
+              raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
+          PY
+          )"
+          case "$SESSION_MODE" in OPEN|CLOSED) ;; *) echo 'RC6_FLAT_PAPER_SESSION=RED'; exit 31;; esac
+          echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
+          echo "RC6_FLAT_PAPER_SESSION=GREEN|mode=$SESSION_MODE|PAPER_ZERO_OPEN_POSITIONS_REQUIRED"
 
       - name: Dynamic pre-transfer disk guard and conditional safe cleanup
         id: diskguard
@@ -426,17 +444,18 @@ jobs:
             "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
-      - name: Admit intraday PAPER and exact caucion before draining RC6
+      - name: Admit OPEN PAPER flat book before draining RC6
         id: drain
         timeout-minutes: 3
         shell: bash
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; *) exit 31;; esac
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain --market-open-suspend --intraday-caucion" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -457,7 +476,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
@@ -579,8 +598,9 @@ jobs:
 
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
+          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; *) exit 31;; esac
           sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
-            --candidate-sha "$CANDIDATE_SHA" --action install --market-open-suspend --intraday-caucion
+            --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
 
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
           import hashlib,json,os,shutil,sys
@@ -1436,7 +1456,7 @@ jobs:
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
 
-      - name: Verify intraday PAPER caucion identity after runtime restart
+      - name: Verify same flat PAPER session after runtime restart
         id: flat_book
         if: success()
         timeout-minutes: 3
@@ -1445,7 +1465,16 @@ jobs:
           set -Eeuo pipefail
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action verify-carryover && sudo -n python3 -c 'from sys import path; path.insert(0, \"/opt/porota-trading\"); from scripts.rc6_deploy_quiescence import admit; assert admit(allow_market_open_suspend=True, allow_intraday_caucion=True) == \"RUNNING\"; print(\"RC6_INTRADAY_CAUCION_POSTSTART=GREEN\")'"
+            "$DO_USER@$DO_HOST" "sudo -n python3 - '$RC6_QUIESCENCE_MODE'" <<'PY'
+          import sys
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import admit
+          mode=sys.argv[1]
+          assert mode in ('OPEN','CLOSED')
+          expected='RUNNING' if mode=='OPEN' else 'WAITING_MARKET'
+          assert admit(allow_market_open_suspend=mode=='OPEN')==expected
+          print('RC6_FLAT_POSTSTART=GREEN|mode='+mode+'|PRODUCTION_PAPER|0')
+          PY
 
       - name: Restore RC6 schedulers only after successful promotion
         id: timers_restore

@@ -24,9 +24,16 @@ def attention(p, positions):
         alerts.append(("Autenticación PPI sin estado OK", "PPI", "/sistema/integraciones"))
     if p.runtime["heartbeat_freshness"] != "FRESH":
         alerts.append(("Heartbeat runtime sin verificación fresca", p.runtime["heartbeat_freshness"], "/sistema/workers"))
-    for row in p.risk().rows:
-        if row.get("state") in {"HARD_STOP", "SOFT_STOP", "STALE", "BLOCKED"}:
-            alerts.append(("Revisar límite de riesgo diario", row.get("currency", UNKNOWN), "/riesgo/limites"))
+    daily_risk = p.risk()
+    if not daily_risk.rows:
+        alerts.append(("Riesgo diario sin corte verificable", UNKNOWN, "/riesgo/limites"))
+    for row in daily_risk.rows:
+        currency = row.get("currency") or UNKNOWN
+        state = row.get("state") or UNKNOWN
+        if state != "READY":
+            alerts.append(("Riesgo diario " + str(currency) + ": " + str(state), currency, "/riesgo/limites"))
+        elif row.get("freshness") != "FRESH":
+            alerts.append(("Riesgo diario sin corte fresco", currency, "/riesgo/limites"))
     for row in positions.rows:
         if row.get("freshness") != "FRESH":
             alerts.append(("Book de salida sin frescura verificada", row.get("symbol", UNKNOWN), "/riesgo/liquidez"))

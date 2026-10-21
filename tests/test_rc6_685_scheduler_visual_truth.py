@@ -5,6 +5,9 @@ from types import SimpleNamespace
 
 from rc6_trader_dashboard.datasets import artifact, shadow_rows
 from rc6_trader_dashboard.components import badge
+from rc6_trader_dashboard.navigation import DESTINATIONS
+from rc6_trader_dashboard.shell import render as render_shell
+from rc6_trader_dashboard.views_home import attention
 
 
 NOW = datetime(2026, 10, 21, 20, 30, tzinfo=timezone.utc)
@@ -98,3 +101,32 @@ def test_capacity_remains_unverified_outside_open_or_without_current_evidence():
         assert "safe_limit" not in row["capacity"]
         assert "slots_by_endpoint" not in row["capacity"]
     assert capacity_page(open_at, fresh=False).rows == []
+
+
+def test_header_preserves_factual_off_baseline_for_measured_live_cut():
+    destination = DESTINATIONS[0]
+    runtime = {"mode": "PRODUCTION_PAPER", "session_state": "MARKET_CLOSED",
+               "ppi_auth": "OK", "real_orders_sent": 0,
+               "heartbeat_freshness": "FRESH", "market_freshness": "STALE"}
+    cut = {"report": {"as_of": (NOW - timedelta(seconds=65)).isoformat(),
+                      "capacity_policy": {"status": "OFF_BASELINE"}}}
+    p = SimpleNamespace(now=NOW, runtime=runtime, filters={}, shadow=cut, shadow_fresh=True)
+    tab = destination.tabs[0][0]
+    fresh = render_shell(destination, tab, p, "")
+    assert "Selector / capacidad</b><span>OFF_BASELINE</span>" in fresh
+    p.shadow_fresh = False
+    stale = render_shell(destination, tab, p, "")
+    assert "Selector / capacidad</b><span>NO_VERIFICADO</span>" in stale
+
+
+def test_home_attention_highlights_blocking_ars_daily_risk():
+    p = SimpleNamespace(now=NOW, shadow_fresh=True,
+                        store=SimpleNamespace(query=lambda *_args: [{"state": "VERDE", "checked_at": NOW.isoformat()}]),
+                        runtime={"ppi_auth": "OK", "heartbeat_freshness": "FRESH"},
+                        risk=lambda: SimpleNamespace(rows=[
+                            {"currency": "ARS", "state": "BASELINE_UNAVAILABLE", "freshness": "FRESH"},
+                            {"currency": "USD", "state": "READY", "freshness": "FRESH"}]))
+    html, count = attention(p, SimpleNamespace(rows=[]))
+    assert count == 1
+    assert "Riesgo diario ARS: BASELINE_UNAVAILABLE" in html
+    assert "Riesgo diario USD" not in html
