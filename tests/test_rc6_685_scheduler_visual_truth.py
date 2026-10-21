@@ -2,12 +2,14 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+import sqlite3
 
 from rc6_trader_dashboard.datasets import artifact, shadow_rows
 from rc6_trader_dashboard.components import badge
 from rc6_trader_dashboard.navigation import DESTINATIONS
 from rc6_trader_dashboard.shell import render as render_shell
 from rc6_trader_dashboard.views_home import attention
+from rc6_trader_dashboard.projection import Projection, Store
 
 
 NOW = datetime(2026, 10, 21, 20, 30, tzinfo=timezone.utc)
@@ -120,13 +122,32 @@ def test_header_preserves_factual_off_baseline_for_measured_live_cut():
 
 
 def test_home_attention_highlights_blocking_ars_daily_risk():
+    requested_offsets = []
+    def risk(*, offset=None):
+        requested_offsets.append(offset)
+        return SimpleNamespace(rows=[
+            {"currency": "ARS", "state": "BASELINE_UNAVAILABLE", "freshness": "FRESH"},
+            {"currency": "USD", "state": "READY", "freshness": "FRESH"}])
     p = SimpleNamespace(now=NOW, shadow_fresh=True,
                         store=SimpleNamespace(query=lambda *_args: [{"state": "VERDE", "checked_at": NOW.isoformat()}]),
                         runtime={"ppi_auth": "OK", "heartbeat_freshness": "FRESH"},
-                        risk=lambda: SimpleNamespace(rows=[
-                            {"currency": "ARS", "state": "BASELINE_UNAVAILABLE", "freshness": "FRESH"},
-                            {"currency": "USD", "state": "READY", "freshness": "FRESH"}]))
+                        offset=10, risk=risk)
     html, count = attention(p, SimpleNamespace(rows=[]))
+    assert requested_offsets == [0]
     assert count == 1
     assert "Riesgo diario ARS: BASELINE_UNAVAILABLE" in html
     assert "Riesgo diario USD" not in html
+
+
+def test_home_risk_override_reads_ars_even_with_user_offset(tmp_path):
+    path = tmp_path / "paper.db"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE paper_daily_risk(day TEXT,currency TEXT,state TEXT,evaluated_at TEXT)")
+        day = NOW.date().isoformat()
+        db.executemany("INSERT INTO paper_daily_risk VALUES(?,?,?,?)", [
+            (day, "ARS", "BASELINE_UNAVAILABLE", NOW.isoformat()),
+            (day, "USD", "READY", NOW.isoformat())])
+    with Store(path, now=NOW) as store:
+        p = Projection(store, filters={"offset": "1"})
+        assert [r["currency"] for r in p.risk().rows] == ["USD"]
+        assert [r["currency"] for r in p.risk(offset=0).rows] == ["ARS", "USD"]

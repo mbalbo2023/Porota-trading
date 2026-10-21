@@ -674,7 +674,7 @@ def test_home_attention_keeps_shadow_and_primary_source_in_five_item_preview():
         shadow_fresh=False, now=NOW,
         store=SimpleNamespace(query=lambda *_args, **_kwargs: []),
         runtime={"ppi_auth": "ERROR", "heartbeat_freshness": "STALE"},
-        risk=lambda: SimpleNamespace(rows=[]),
+        risk=lambda *, offset=None: SimpleNamespace(rows=[]),
     )
     positions = SimpleNamespace(rows=[{"symbol": f"T{i}", "freshness": "STALE", "exit_state": "BLOCKED"}
                                       for i in range(10)])

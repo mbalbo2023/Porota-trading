@@ -565,10 +565,11 @@ class Projection:
                        principal_verified=principal is not None)
         return page
 
-    def risk(self):
+    def risk(self, *, offset=None):
         s = self.store
         day = self.now.astimezone(TZ).date().isoformat()
-        page = s.page("paper_daily_risk", where="day=?", params=(day,), order="currency", offset=self.offset) if "day" in s.columns("paper_daily_risk") else Page("paper_daily_risk")
+        page = s.page("paper_daily_risk", where="day=?", params=(day,), order="currency",
+                      offset=self.offset if offset is None else offset) if "day" in s.columns("paper_daily_risk") else Page("paper_daily_risk")
         for row in page.rows:
             row.update(as_of=row.get("evaluated_at"), freshness=freshness(row.get("evaluated_at"), self.now),
                        source="DailyRisk · paper_daily_risk")

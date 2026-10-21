@@ -10,7 +10,7 @@ def preview(page, title, path, *, key="symbol"):
     return f"<section class='panel'><h2>{title}</h2><ul class='preview-list'>{rows or empty}</ul><a class='text-link' href='{path}'>Ver {title.lower()}</a></section>"
 
 
-def attention(p, positions):
+def attention(p, positions, daily_risk=None):
     alerts = []
     # Put safety and primary-source uncertainty before per-position detail so
     # the five-item preview cannot hide a current operational incident.
@@ -24,7 +24,9 @@ def attention(p, positions):
         alerts.append(("Autenticación PPI sin estado OK", "PPI", "/sistema/integraciones"))
     if p.runtime["heartbeat_freshness"] != "FRESH":
         alerts.append(("Heartbeat runtime sin verificación fresca", p.runtime["heartbeat_freshness"], "/sistema/workers"))
-    daily_risk = p.risk()
+    # Attention must always see the first currency page. A user-controlled
+    # table offset must never hide ARS admission failures from the home view.
+    daily_risk = daily_risk if daily_risk is not None else p.risk(offset=0)
     if not daily_risk.rows:
         alerts.append(("Riesgo diario sin corte verificable", UNKNOWN, "/riesgo/limites"))
     for row in daily_risk.rows:
@@ -47,7 +49,8 @@ def render(p, destination, tab):
     from .datasets import shadow_rows
     counts = p.counts()
     positions = p.positions(limit=5)
-    alerts, count = attention(p, positions)
+    daily_risk = p.risk(offset=0)
+    alerts, count = attention(p, positions, daily_risk)
     balances = p.balances()
     cards = []
     for row in balances.rows:
@@ -65,7 +68,7 @@ def render(p, destination, tab):
     performance = p.performance(today=True)
     result_cards = "".join(metric("PnL neto hoy · " + r["currency"] + " · " + r["strategy"], r.get("net_pnl"),
                                 f"Cerradas: {r.get('sample_size')} · Costos: {r.get('costs')}", kind="money", currency=r["currency"], result=True) for r in performance.rows)
-    risk = "".join(definition_list(r, fields("currency|Moneda;state|Estado|status;daily_pnl|PnL diario|money;loss_budget|Presupuesto|money;evaluated_at|Evaluado|time")) for r in p.risk().rows)
+    risk = "".join(definition_list(r, fields("currency|Moneda;state|Estado|status;daily_pnl|PnL diario|money;loss_budget|Presupuesto|money;evaluated_at|Evaluado|time")) for r in daily_risk.rows)
     return ("<div class='metric-grid'>" + "".join(cards) + "</div>" + alerts +
             "<div class='split-panels'>" + preview(positions, "Posiciones abiertas", "/en-vivo/posiciones") +
             preview(shadow_rows(p, "opportunities"), "Oportunidades HOT / WARM", "/en-vivo/oportunidades") + "</div>" +
