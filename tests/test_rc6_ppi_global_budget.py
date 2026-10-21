@@ -374,16 +374,46 @@ def test_admission_waits_bounded_for_a_changing_native_sqlite_writer(tmp_path):
     assert budget.metrics()["global"] == {"requested": 1, "allowed": 1, "used": 1, "dropped": 0}
 
 
+def test_admission_fails_closed_when_native_writer_exceeds_bounded_wait(tmp_path):
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", policy(clock), clock=clock.now)
+    ctx = multiprocessing.get_context("fork")
+    ready, release = ctx.Event(), ctx.Event()
+    writer = ctx.Process(target=_hold_native_sqlite_writer, args=(str(budget.path), ready, release))
+    writer.start()
+    assert ready.wait(timeout=2)
+    try:
+        with pytest.raises(BudgetBackpressure, match="PPI_BUDGET_STATE_UNAVAILABLE"):
+            budget.acquire("book", consumer="SCANNER")
+    finally:
+        release.set()
+        writer.join(timeout=2)
+    assert writer.exitcode == 0
+    assert budget.metrics()["global"] == {"requested": 0, "allowed": 0, "used": 0, "dropped": 0}
+
+
 def _process_admission(path, config, at, ready, initialized, output):
     clock = Clock(at)
     budget = GlobalPPIBudget(path, config, clock=clock.now)
     initialized.put(multiprocessing.current_process().name)
     assert ready.wait(timeout=10), "admission barrier was not released"
     count = 0
+    bounded_contention = 0
     for _ in range(4):
-        if use(budget, "book", consumer="SCANNER")["allowed"]:
+        try:
+            result = budget.acquire("book", consumer="SCANNER")
+        except BudgetBackpressure as error:
+            if str(error) != "PPI_BUDGET_STATE_UNAVAILABLE":
+                raise
+            # The 50 ms SQL lock limit intentionally refuses a request under
+            # runner contention. It cannot claim a lease or count as a wire call.
+            bounded_contention += 1
+            continue
+        if result["allowed"]:
+            budget.start(result["lease"])
+            budget.finish(result["lease"])
             count += 1
-    output.put(count)
+    output.put((count, bounded_contention))
 
 
 def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
@@ -404,11 +434,13 @@ def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
         for p in workers:
             p.join(timeout=10)
             assert p.exitcode == 0
-        count = sum(output.get(timeout=2) for _ in workers)
+        outcomes = [output.get(timeout=2) for _ in workers]
+        count = sum(row[0] for row in outcomes)
+        bounded_contention = sum(row[1] for row in outcomes)
         assert 0 < count <= 3
         metrics = budget.metrics()["global"]
         assert metrics["allowed"] == metrics["used"] == count
-        assert metrics["requested"] == metrics["allowed"] + metrics["dropped"] == 8
+        assert metrics["requested"] == metrics["allowed"] + metrics["dropped"] == 8 - bounded_contention
     finally:
         ready.set()
         for p in workers:

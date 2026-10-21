@@ -135,6 +135,23 @@ def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,mo
     with p.EvidenceFiles(shadow) as files:files.write('status.json',cancellation)
     with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
         recovery.run(successor)
+    q['stop_evidence']['porota_production_observer']['classification'] = 'CLEAN_EXIT'
+    q.update(paused_postclose=False,market_open_suspended=True,
+             open_paper_carryover=False,intraday_caucion=True,
+             spot_carryover=None,caucion_carryover={
+                 'open_count':1,'sha256':'d'*64,
+                 'maturity_at':'2026-10-21T17:00:00-03:00'})
+    qpath.write_text(json.dumps(q))
+    recovery.run(successor)  # The exact intraday caucion survives the clean stop.
+    q['caucion_carryover']['sha256']='invalid'
+    qpath.write_text(json.dumps(q))
+    with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
+        recovery.run(successor)
+    q['caucion_carryover']['sha256']='d'*64
+    q['open_paper_carryover']=True
+    qpath.write_text(json.dumps(q))
+    with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
+        recovery.run(successor)
     with p.EvidenceFiles(shadow) as files:
         files.write('status.json',{'status':'SHADOW_OBSERVING',
             'real_orders_sent':0,'real_routes':'NOT_CALLED'})

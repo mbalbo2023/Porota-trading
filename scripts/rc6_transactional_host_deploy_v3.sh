@@ -309,18 +309,26 @@ for f in "${CORE_FILES[@]}" "${A3_FILES[@]}"; do
 done
 sudo -n systemd-analyze calendar 'Mon..Fri *-*-* 10:15:00 America/Argentina/Buenos_Aires' >/dev/null
 sudo -n systemctl daemon-reload
-# An installed /etc unit cannot be masked in place, even with --force.
-# Retire only the exact versioned timer file after it is idle and disabled.
-sudo -n systemctl disable --now porota-host-general-backup-rc6.timer >/dev/null
-test "$(sudo -n systemctl is-enabled porota-host-general-backup-rc6.timer)" = disabled
-test "$(sudo -n systemctl is-active porota-host-general-backup-rc6.timer)" = inactive
 BACKUP_TIMER=/etc/systemd/system/porota-host-general-backup-rc6.timer
-sudo -n test -f "$BACKUP_TIMER"
-sudo -n test ! -L "$BACKUP_TIMER"
-sudo -n cmp -s "$REPO/systemd/porota-host-general-backup-rc6.timer" "$BACKUP_TIMER"
-sudo -n rm -- "$BACKUP_TIMER"
-sudo -n systemctl daemon-reload
-sudo -n systemctl mask --now porota-host-general-backup-rc6.timer >/dev/null
+# A prior failed installation may already have completed this quarantine.
+# Admit only its exact /dev/null mask; never unmask or reinstall the timer.
+if [ "$(sudo -n systemctl is-enabled porota-host-general-backup-rc6.timer)" = masked ]; then
+  test "$(sudo -n systemctl is-active porota-host-general-backup-rc6.timer)" = inactive
+  sudo -n test -L "$BACKUP_TIMER"
+  test "$(sudo -n readlink -- "$BACKUP_TIMER")" = /dev/null
+else
+  # A real installed /etc unit cannot be masked in place, even with --force.
+  # Retire only the exact versioned file after it is idle and disabled.
+  sudo -n systemctl disable --now porota-host-general-backup-rc6.timer >/dev/null
+  test "$(sudo -n systemctl is-enabled porota-host-general-backup-rc6.timer)" = disabled
+  test "$(sudo -n systemctl is-active porota-host-general-backup-rc6.timer)" = inactive
+  sudo -n test -f "$BACKUP_TIMER"
+  sudo -n test ! -L "$BACKUP_TIMER"
+  sudo -n cmp -s "$REPO/systemd/porota-host-general-backup-rc6.timer" "$BACKUP_TIMER"
+  sudo -n rm -- "$BACKUP_TIMER"
+  sudo -n systemctl daemon-reload
+  sudo -n systemctl mask --now porota-host-general-backup-rc6.timer >/dev/null
+fi
 test "$(sudo -n systemctl is-enabled porota-host-general-backup-rc6.timer)" = masked
 test "$(sudo -n systemctl is-active porota-host-general-backup-rc6.timer)" = inactive
 MIGRATED=1

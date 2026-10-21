@@ -403,7 +403,8 @@ def adopt_exact_pending_intraday_stop(candidate, folder, originals, *, postclose
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None,
                                        allow_market_open_suspend=False,
                                        allow_open_paper_carryover=False,
-                                       allow_postclose_pending=False):
+                                       allow_postclose_pending=False,
+                                       allow_intraday_caucion=False):
     """One exact fail-closed continuation; never start the prior image."""
     # CURRENT_STATE_V2 identifies the installed image, but a subsequent
     # failed pre-install COLD2 has its own newer stop receipt. Select the
@@ -529,10 +530,16 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
             previous.get('postclose_live_closed') is not True or
             previous.get('open_paper_carryover') is not True):
         raise ValueError('QUIESCENCE_PRIOR_POSTCLOSE_PROOF_MISSING')
+    if allow_intraday_caucion and (previous.get('intraday_caucion') is not True or
+            previous.get('paused_postclose') is not False or
+            previous.get('open_paper_carryover') is not False or
+            previous.get('spot_carryover') is not None):
+        raise ValueError('QUIESCENCE_PRIOR_INTRADAY_CAUCION_PROOF_MISSING')
     process = admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
                     allow_market_open_suspend=allow_market_open_suspend,
                     allow_open_paper_carryover=allow_open_paper_carryover,
                     allow_postclose_pending=allow_postclose_pending,
+                    allow_intraday_caucion=allow_intraday_caucion,
                     stopped_receipt=previous)
     allowed = ({'RUNNING', 'STOPPED'} if allow_market_open_suspend else
                {'WAITING_MARKET', 'STOPPED'} if current_provenance or admin_paper_id or closed_admin_prior
@@ -542,13 +549,14 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     carryover = spot_carryover_snapshot() if allow_open_paper_carryover else None
     if allow_open_paper_carryover and previous.get('spot_carryover') != carryover:
         raise ValueError('QUIESCENCE_PRIOR_CARRYOVER_CHANGED')
-    caucion = pending_caucion_snapshot() if allow_postclose_pending else None
-    if allow_postclose_pending and previous.get('caucion_carryover') != caucion:
+    caucion = pending_caucion_snapshot() if (allow_postclose_pending or allow_intraday_caucion) else None
+    if (allow_postclose_pending or allow_intraday_caucion) and previous.get('caucion_carryover') != caucion:
         raise ValueError('QUIESCENCE_PRIOR_CAUCION_CHANGED')
     return {'candidate_sha': candidate,
             'spot_carryover': carryover,
             'open_paper_carryover': allow_open_paper_carryover,
             'paused_postclose': allow_postclose_pending,
+            'intraday_caucion': allow_intraday_caucion,
             'postclose_live_closed': allow_postclose_pending,
             'caucion_carryover': caucion,
             'status': 'ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
@@ -670,7 +678,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
             # After an installed intraday failure SQLite may still say RUNNING.
             # Select the exact previous stop receipt before reading that marker.
-            if stopped_owned and allow_market_open_suspend and allow_open_paper_carryover:
+            if stopped_owned and allow_market_open_suspend and (
+                    allow_open_paper_carryover or allow_intraday_caucion):
                 admin_paper_id = None
                 process = None
             else:
@@ -683,12 +692,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
             if allow_market_open_suspend and admin_paper_id:
                 raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
             if (stopped_owned and (process in {'STOPPED', 'WAITING_MARKET'} or
-                                   allow_market_open_suspend and allow_open_paper_carryover)):
+                                   allow_market_open_suspend and (
+                                       allow_open_paper_carryover or allow_intraday_caucion))):
                 receipt = adopt_stopped_after_failed_install(
                     candidate, folder, originals, admin_paper_id=admin_paper_id,
                     allow_market_open_suspend=allow_market_open_suspend,
                     allow_open_paper_carryover=allow_open_paper_carryover,
-                    allow_postclose_pending=allow_postclose_pending)
+                    allow_postclose_pending=allow_postclose_pending,
+                    allow_intraday_caucion=allow_intraday_caucion)
                 persist(path, receipt)
             else:
                 required_process = ('WAITING_MARKET' if allow_postclose_pending else

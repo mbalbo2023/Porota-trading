@@ -55,7 +55,22 @@ def proven_stop_cancellation(live, quiescence):
     exit. The immutable old cut still stays revoked; any other failure must
     keep blocking the archived recovery path.
     """
-    if (not isinstance(quiescence, dict) or quiescence.get('paused_postclose') is not True or
+    if not isinstance(quiescence, dict):
+        return False
+    caucion=quiescence.get('caucion_carryover')
+    intraday_caucion=(quiescence.get('intraday_caucion') is True and
+        quiescence.get('market_open_suspended') is True and
+        quiescence.get('paused_postclose') is False and
+        quiescence.get('open_paper_carryover') is False and
+        quiescence.get('spot_carryover') is None and
+        isinstance(caucion,dict) and
+        type(caucion.get('open_count')) is int and caucion['open_count']==1 and
+        caucion.get('maturity_at')=='2026-10-21T17:00:00-03:00' and
+        type(caucion.get('sha256')) is str and
+        re.fullmatch('[0-9a-f]{64}',caucion['sha256']) is not None)
+    postclose=(quiescence.get('paused_postclose') is True and
+               quiescence.get('intraday_caucion') is not True)
+    if ((not postclose and not intraday_caucion) or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
             live.get('error_module')!='cold_audit' or
             type(live.get('error_line')) is not int or live['error_line']!=360):
