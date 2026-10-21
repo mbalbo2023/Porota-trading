@@ -103,6 +103,47 @@ def test_intraday_one_caucion_is_preserved_without_spot_carryover(installation, 
     assert q.run(SHA, 'verify-carryover')['caucion_verified_count'] == 1
 
 
+def test_failed_intraday_caucion_install_adopts_only_exact_stopped_receipt(installation, monkeypatch):
+    root, db, states, calls, _ = installation
+    class Intraday(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:
+                return datetime.now(timezone.utc)
+            return datetime(2026, 10, 21, 14, 0, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Intraday)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT,principal TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T17:00:00-03:00','100')")
+    flags = dict(allow_market_open_suspend=True, allow_intraday_caucion=True)
+    q.run(SHA, 'drain', **flags)
+    q.run(SHA, 'install', **flags)
+    q.run(SHA, 'recover')
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':'9'*40,'image_id':'old_image',
+        'recorded_at':'2026-10-20T12:23:38+00:00',
+        'validation_status':'VALIDATED_RUNTIME','mode':'PRODUCTION_PAPER',
+        'real_orders_sent':0,'real_order_routes':'NOT_CALLED'}))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='OPEN'")
+        c.execute("UPDATE paper_cauciones SET principal='999'")
+    successor = 'b'*40
+    calls.clear()
+    with pytest.raises(ValueError, match='PRIOR_CAUCION_CHANGED'):
+        q.run(successor, 'drain', **flags)
+    assert not any(call[1] in ('stop','start') for call in calls)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_cauciones SET principal='100'")
+    row = q.run(successor, 'drain', **flags)
+    assert row['fix_forward_from'] == SHA
+    assert row['intraday_caucion'] is True and row['caucion_carryover']['open_count'] == 1
+    assert row['spot_carryover'] is None
+    assert not any(call[1] in ('stop','start') for call in calls)
+    assert q.run(successor, 'install', **flags)['installation_started'] is True
+
+
 def test_intraday_caucion_requires_only_exact_open_book(installation, monkeypatch):
     root, db, states, calls, _ = installation
     class Intraday(datetime):
