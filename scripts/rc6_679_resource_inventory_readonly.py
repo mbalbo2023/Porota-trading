@@ -176,11 +176,17 @@ def main(policy_b64):
                           'major_faults_delta_5s': b['major_faults']-a['major_faults']})
     fields = ('ActiveState', 'SubState', 'UnitFileState', 'LastTriggerUSec',
               'NextElapseUSecRealtime', 'Result', 'ExecMainStatus')
-    units = {}
+    service_fields = ('ActiveState', 'SubState', 'Result', 'ExecMainStatus',
+                      'ExecMainStartTimestamp', 'ExecMainExitTimestamp', 'NRestarts')
+    units, services = {}, {}
     for timer in timers:
         raw = command('systemctl', 'show', timer, '-p', ','.join(fields), timeout=2)
         units[timer] = (dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
                         if raw is not None else {'status': 'UNAVAILABLE'})
+        service = timer.removesuffix('.timer') + '.service'
+        raw = command('systemctl', 'show', service, '-p', ','.join(service_fields), timeout=2)
+        services[service] = (dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+                             if raw is not None else {'status': 'UNAVAILABLE'})
     db = ROOT / 'data/paper_v17/observer_v17.db'
     shadow = ROOT / 'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
     disk = os.statvfs('/')
@@ -191,7 +197,8 @@ def main(policy_b64):
                         'real_routes': current['real_order_routes']},
               'containers': containers, 'process_delta_window_seconds': 5,
               'processes': processes, 'tracked_process_count': len(pids),
-              'timers': units, 'observer_sqlite': sqlite_status(db),
+              'timers': units, 'services': services,
+              'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
               'disk_free_bytes': disk.f_bavail * disk.f_frsize,
