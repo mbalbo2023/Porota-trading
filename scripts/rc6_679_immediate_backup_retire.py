@@ -40,7 +40,10 @@ ROOTS = (
 def command(*args, accepted=(0,)):
     p = subprocess.run(args, text=True, capture_output=True, timeout=15)
     if p.returncode not in accepted:
-        raise RuntimeError('COMMAND_FAILED:' + args[0] + ':' + args[1])
+        # Commands here contain only fixed systemctl/docker arguments.  Keep
+        # the bounded reason so a rejected host transition can be diagnosed.
+        raise RuntimeError('COMMAND_FAILED:' + args[0] + ':' + args[1] +
+                           ':reason=' + p.stderr.strip().replace('\n', ' ')[:180])
     return p.stdout.strip()
 
 
