@@ -132,6 +132,25 @@ def main():
                               ('worker', 'state', 'observed_state', 'freshness',
                                'age_seconds', 'heartbeat_budget_seconds')}
                              for row in projection.workers().rows]
+        risk = projection.risk()
+        result['daily_risk_states'] = [{'currency': row.get('currency'),
+                                        'state': row.get('state'),
+                                        'freshness': row.get('freshness')}
+                                       for row in risk.rows]
+        closed = projection.positions(closed=True, today=True)
+        result['paper_closures_today'] = {
+            'source': closed.source, 'state': closed.state,
+            'total': closed.total, 'sample_rows': len(closed.rows),
+            'close_reason_counts': dict(sorted(collections.Counter(
+                str(row.get('close_reason') or 'NO_VERIFICADO') for row in closed.rows).items())),
+            'net_pnl_present': sum(row.get('net_pnl') is not None for row in closed.rows),
+            'real_routes': 'NOT_CALLED'}
+        sources = projection.sources()
+        result['source_states'] = [{'component': row.get('component'),
+                                    'role': row.get('role'), 'state': row.get('state'),
+                                    'observed_state': row.get('observed_state'),
+                                    'freshness': row.get('freshness')}
+                                   for row in sources.rows]
     exact_identity_link = None
     annual_link = None
     for path in ROUTES:
