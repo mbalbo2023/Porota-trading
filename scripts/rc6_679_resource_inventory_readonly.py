@@ -373,6 +373,24 @@ def shadow_largest_files():
             'largest':sorted(files, key=lambda x:x['bytes'], reverse=True)[:16]}
 
 
+
+def cold_audit_queue_metadata():
+    root = ROOT / 'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
+    path = root / 'queue.json'
+    try:
+        if root.is_symlink() or path.is_symlink() or path.stat().st_size > 8192:
+            return {'status':'UNTRUSTED'}
+        value = json.loads(path.read_text())
+        payload = value.get('payload', {})
+        if type(payload) is not dict:
+            return {'status':'UNTRUSTED'}
+        return {'status':'READ_ONLY', 'state':payload.get('state'),
+                'snapshot_id':payload.get('snapshot_id'),
+                'manifest_sha256':payload.get('manifest_sha256')}
+    except (OSError, ValueError, TypeError):
+        return {'status':'NO_VERIFICADO'}
+
+
 def main(policy_b64):
     start = time.monotonic()
     policy = json.loads(base64.b64decode(policy_b64, validate=True))
@@ -442,6 +460,7 @@ def main(policy_b64):
               'backup_units': backup_unit_inventory(),
               'growth_roots': growth_roots(),
               'shadow_largest': shadow_largest_files(),
+              'cold_audit_queue': cold_audit_queue_metadata(),
               'observer_sqlite': sqlite_status(db),
               'history_sqlite': sqlite_status(ROOT / 'data/market_history.db'),
               'shadow_files': bounded_directory(shadow),
