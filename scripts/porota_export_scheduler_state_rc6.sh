@@ -10,10 +10,32 @@ exec 9>"$LOCK"
 flock -n 9 || exit 0
 python3 - "$OUT" <<'PY'
 from __future__ import annotations
-import json,subprocess,sys
+import json,stat,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 out=Path(sys.argv[1])
+# The timer remains armed each minute so OPEN and preopen retain their original
+# cadence. Outside those phases, an existing recent 20-unit snapshot is still
+# useful and avoids dozens of systemctl calls and an identical JSON rewrite.
+# Unknown calendar, missing/untrusted output or clock skew takes the original
+# full export path. No provider or trading source is accessed here.
+try:
+    import ak_byma_calendar as calendar
+    from co_market_sessions_hf6 import byma_paper_spot_phase, TZ
+    now=datetime.now(TZ)
+    info=out.stat()
+    age=time.time()-info.st_mtime
+    if (not out.is_symlink() and stat.S_ISREG(info.st_mode) and info.st_size <= 1024*1024 and
+            now.year in calendar.ANIOS_AUDITADOS and
+            0 <= (now.date()-calendar.CALENDARIO_ACTUALIZADO_EL).days <= 60 and
+            byma_paper_spot_phase(now)=='CLOSED' and 0 <= age < 540):
+        prior=json.loads(out.read_text(encoding='utf-8'))
+        if (prior.get('schema')=='porota-scheduler-systemd-v1' and
+                prior.get('state')=='OK' and isinstance(prior.get('timers'),list) and
+                len(prior['timers'])>=20):
+            sys.exit(0)
+except (OSError, ValueError, TypeError, ImportError, AttributeError):
+    pass
 def run(*args):
     p=subprocess.run(args,text=True,capture_output=True,timeout=12,check=False)
     return p.returncode,p.stdout,p.stderr

@@ -1,6 +1,8 @@
 """A scheduled backup must never stage a full data tree on a near-full host."""
 from pathlib import Path
 from types import SimpleNamespace
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import rc6_host_general_backup_job as job
 
@@ -31,6 +33,7 @@ def test_symlink_does_not_expand_backup_source(tmp_path):
 
 
 def test_insufficient_capacity_never_calls_backup(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(job, "backups_suspended", lambda: False)
     source = tmp_path / "source"
     source.mkdir()
     destination = tmp_path / "backups"
@@ -39,5 +42,28 @@ def test_insufficient_capacity_never_calls_backup(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(job, "create_backup", lambda *_args, **_kwargs: (_ for _ in ()).throw(
         AssertionError("backup must not run")))
     monkeypatch.setattr(job, "Path", lambda value: source if value == "/opt/porota-trading" else destination)
-    assert job.main() == 75
+    assert job.main(now=datetime(2026,10,21,4,15,tzinfo=ZoneInfo('America/Argentina/Buenos_Aires'))) == 75
     assert 'DEFERRED_DISK_HEADROOM' in capsys.readouterr().out
+
+
+def test_persistent_backup_catchup_never_scans_or_copies_in_preopen_or_open(monkeypatch,capsys):
+    monkeypatch.setattr(job, "backups_suspended", lambda: False)
+    zone=ZoneInfo('America/Argentina/Buenos_Aires')
+    monkeypatch.setattr(job,'backup_capacity',lambda *_: (_ for _ in ()).throw(
+        AssertionError('heavy backup admission must not run in market window')))
+    for hour,minute in ((8,0),(9,45),(11,0),(16,45),(17,30)):
+        assert job.main(now=datetime(2026,10,21,hour,minute,tzinfo=zone))==75
+        assert 'DEFERRED_MARKET_WINDOW' in capsys.readouterr().out
+    assert job.backup_window_admitted(datetime(2026,10,21,4,15,tzinfo=zone))
+
+
+def test_capacity_bound_excludes_archiver_skipped_backup_subtrees(tmp_path):
+    source = tmp_path / "source"
+    live = source / "data" / "paper_v17"
+    live.mkdir(parents=True)
+    (live / "observer.db").write_bytes(b"live")
+    previous = live / "artifacts" / "backups"
+    previous.mkdir(parents=True)
+    (previous / "observer.db.gz").write_bytes(b"historical" * 1000)
+    (live / "observer.db-wal").write_bytes(b"wal" * 100)
+    assert job.source_upper_bound(source) == 4

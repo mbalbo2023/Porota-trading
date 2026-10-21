@@ -821,6 +821,10 @@ def read_committed_generation(root, *, payload_limit=4 * 1024**2, require_curren
                 live.get("status") != status.get("status") or
                 live.get("report_digest") != status.get("report_digest")):
             raise ValueError("GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS")
+        idle = files.read("idle.json")
+        if isinstance(idle, dict) and idle.get("last_generation_id") == pointer["generation_id"]:
+            # Worker liveness is never a fresh financial generation.
+            raise ValueError("GENERATION_IDLE_MARKET_CLOSED")
     for member in (cut["report"], status):
         if (type(member.get("real_orders_sent")) is not int or member["real_orders_sent"] != 0 or
                 member.get("real_routes") != "NOT_CALLED"):

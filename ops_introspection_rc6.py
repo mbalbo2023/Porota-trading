@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import ak_byma_calendar as calendar
+from co_market_sessions_hf6 import byma_paper_spot_phase
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
 from _version import VERSION
@@ -42,6 +44,18 @@ def non_negative_age_seconds(now: datetime, heartbeat_at: str | None) -> float |
         if observed.tzinfo is None:
             observed = observed.replace(tzinfo=TZ)
         return max(0.0, (now - observed.astimezone(TZ)).total_seconds())
+    except (ValueError, TypeError):
+        return None
+
+
+def strict_age_seconds(now: datetime, heartbeat_at: str | None) -> float | None:
+    """Safety gates must reject future and timezone-free heartbeat values."""
+    try:
+        observed=datetime.fromisoformat(str(heartbeat_at).replace('Z','+00:00'))
+        if observed.tzinfo is None:
+            return None
+        age=(now-observed.astimezone(TZ)).total_seconds()
+        return age if age>=0 else None
     except (ValueError, TypeError):
         return None
 
@@ -74,6 +88,45 @@ def one(c, sql, params=(), default=0):
 
 def rows(c, sql, params=()):
     return [dict(r) for r in c.execute(sql, params)]
+
+
+def pending_closed_eod_over_hold(c, now, observer):
+    """Only an exact, supervised EOD carry can contextualize wall-clock hold.
+
+    The raw count remains visible. Any missing clock, PAPER gate, intent or
+    worker health leaves the excess CRITICAL instead of silently downgrading.
+    """
+    if (observer.get('mode') != 'PRODUCTION_PAPER' or
+            type(observer.get('real_orders_sent')) is not int or
+            observer['real_orders_sent'] != 0 or
+            observer.get('session_state') not in {'CLOSED','MARKET_CLOSED'} or
+            now.year not in calendar.ANIOS_AUDITADOS or
+            strict_age_seconds(now, observer.get('heartbeat_at')) is None or
+            strict_age_seconds(now, observer.get('heartbeat_at')) > 60):
+        return 0
+    try:
+        if byma_paper_spot_phase(now) != 'CLOSED':
+            return 0
+        for name, valid_states in (('paper_supervisor_state', {'RUNNING'}),
+                                   ('paper_exit_reader_state', {'WAITING_MARKET'})):
+            row=c.execute(f'SELECT state,heartbeat_at FROM {name} WHERE id=1').fetchone()
+            if (not row or row['state'] not in valid_states or
+                    strict_age_seconds(now,row['heartbeat_at']) is None or
+                    strict_age_seconds(now,row['heartbeat_at']) > 20):
+                return 0
+        return one(c, """SELECT COUNT(*) FROM paper_positions p
+            JOIN paper_exit_intents x USING(paper_id)
+            WHERE p.status='OPEN' AND (julianday(?) - julianday(p.opened_at))*1440>?
+              AND x.state='EXIT_PENDING_MARKET_CLOSED' AND x.cause='EOD_PAPER'""",
+                   (now.isoformat(),MAX_HOLD))
+    except (sqlite3.Error, OSError, ValueError):
+        return 0
+
+
+def hold_excess_findings(raw, pending):
+    pending=max(0,min(raw,pending))
+    return ([f'open_over_max_hold={raw-pending}'] if raw>pending else [],
+            [f'open_over_max_hold_pending_market_closed={pending}'] if pending else [])
 
 
 def atomic_text(path, content):
@@ -140,8 +193,15 @@ def collect():
         }
         result["coherence"] = coherence
         for key, value in coherence.items():
-            if value:
+            if value and key != 'open_over_max_hold':
                 result["anomalies"].append(f"{key}={value}")
+        if coherence['open_over_max_hold']:
+            pending=min(coherence['open_over_max_hold'],
+                        pending_closed_eod_over_hold(c,now,observer))
+            coherence['open_over_max_hold_pending_market_closed']=pending
+            anomalies,warnings=hold_excess_findings(coherence['open_over_max_hold'],pending)
+            result['anomalies'].extend(anomalies)
+            result['warnings'].extend(warnings)
         result["workers"] = {}
         for name, source in (("supervisor","paper_supervisor_state"),
                              ("exit_reader","paper_exit_reader_state"),

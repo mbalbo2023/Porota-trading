@@ -5,7 +5,7 @@ Las barras muestreadas nunca se rotulan OHLCV completo, ni generan VWAP/dollar
 bars. Correcciones se anexan con su disponibilidad real; no reescriben el pasado.
 """
 from dataclasses import asdict, dataclass
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -14,6 +14,7 @@ import sqlite3
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
+from co_market_sessions_hf6 import byma_paper_spot_phase
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 RESOLUTIONS = {'1m':1,'5m':5,'15m':15,'30m':30,'1h':60,'1d':1440}
@@ -227,6 +228,7 @@ class CandleArchive:
 
 class SampleMaterializer:
     """Checkpoint y agregados en una transacción acotada; nunca consulta PPI."""
+    CLOSED_HEARTBEAT_SECONDS = 60
     def __init__(self,store,resolutions=('1m','5m')):
         if not resolutions or len(set(resolutions))!=len(resolutions) or any(r not in RESOLUTIONS for r in resolutions):
             raise ValueError('Resoluciones inválidas')
@@ -238,10 +240,48 @@ class SampleMaterializer:
               ON CONFLICT(id) DO UPDATE SET heartbeat_at=excluded.heartbeat_at,
                 state=excluded.state,detail=excluded.detail''',(stamp(at),state,detail))
 
+    def _idle_closed(self, at, now):
+        """Skip an empty write only when the closed-market proof is complete.
+
+        A new snapshot or overdue dirty bar goes through the original writer
+        on this tick. A racing insertion is consumed on the next two-second
+        tick. Unknown calendar, SQL errors, or missing state use the old path.
+        """
+        try:
+            if byma_paper_spot_phase(aware_datetime(at)) != 'CLOSED':
+                return None
+        except (OSError, TypeError, ValueError):
+            return None
+        try:
+            with sqlite3.connect(Path(self.store.path).as_uri()+'?mode=ro',
+                                 uri=True,timeout=.05) as c:
+                c.row_factory=sqlite3.Row
+                c.execute('PRAGMA query_only=ON')
+                c.execute('PRAGMA busy_timeout=50')
+                state=c.execute('SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1').fetchone()
+                if state is None or state['state']!='RUNNING':
+                    return None
+                age=(datetime.fromisoformat(now)-datetime.fromisoformat(state['heartbeat_at'])).total_seconds()
+                if age < 0:
+                    raise ValueError('Reloj del materializador retrocedió')
+                if age >= self.CLOSED_HEARTBEAT_SECONDS:
+                    return None
+                cursor=state['cursor']
+                if c.execute('SELECT 1 FROM market_snapshots WHERE id>? LIMIT 1',(cursor,)).fetchone():
+                    return None
+                if c.execute('SELECT 1 FROM candle_dirty WHERE bar_end<=? LIMIT 1',(now,)).fetchone():
+                    return None
+                return {'cursor':cursor,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING'}
+        except (sqlite3.Error, TypeError, ValueError):
+            return None
+
     def tick(self,at,*,batch_size=100):
         now=stamp(at)
         if not 1<=batch_size<=500:
             raise ValueError('Lote fuera del límite')
+        idle=self._idle_closed(at,now)
+        if idle is not None:
+            return idle
         accepted=rejected=written=0
         with self.store.connect() as c:
             c.execute('BEGIN IMMEDIATE')

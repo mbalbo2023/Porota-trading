@@ -21,10 +21,14 @@ INTERNAL_HISTORICAL_WRITE_JOBS = frozenset({
     "historical_refresh",
     "historical_refresh_if_needed",
 })
+SUSPENDED_JOBS = frozenset({"backup"})
 
 
 def _run_job(job_name: str) -> None:
     """Ejecuta y libera toda la memoria importada por una tarea pesada."""
+    if job_name in SUSPENDED_JOBS:
+        logger.info("Backup de mantenimiento suspendido por decisión del operador.")
+        return
     if job_name in INTERNAL_HISTORICAL_WRITE_JOBS:
         logger.warning(
             "Mantenimiento histórico %s bloqueado por política RC6.", job_name
@@ -67,8 +71,6 @@ def build_scheduler() -> BackgroundScheduler:
                       day=1, hour=1, minute=30, args=["data_retention"])
     scheduler.add_job(_run_job, "cron", id="maintenance_macro_refresh",
                       hour=2, minute=30, args=["macro_refresh"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_daily_backup",
-                      hour=3, minute=0, args=["backup"])
     # Sin catch-up de arranque ni cron histórico: sólo PPI Watch puede gestionar
     # ese circuito tras su revisión individual.
     scheduler.add_job(_run_job, "cron", id="maintenance_model_guardian",

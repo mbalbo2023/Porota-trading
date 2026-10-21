@@ -84,7 +84,21 @@ def _runtime_block(read, at):
     if safety['session_state'] not in {'CLOSED','MARKET_CLOSED'} or not 0 <= (at-heartbeat).total_seconds() <= 180:
         return 'RUNTIME_CLOSED_UNVERIFIED'
     if read.execute("SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1").fetchone():
-        return 'OPEN_POSITIONS'
+        # The cold archive reads sampled candle history, not the PAPER book.
+        # An EOD carry with a persisted market-closed exit intent must not
+        # prevent historical archiving for the entire night. An unmatched or
+        # different OPEN position still blocks. Legacy/missing intent schema
+        # also fails closed; this gate is repeated after cold preparation.
+        try:
+            unsafe = read.execute("""SELECT 1 FROM paper_positions p
+                WHERE p.status='OPEN' AND NOT EXISTS (
+                  SELECT 1 FROM paper_exit_intents x WHERE x.paper_id=p.paper_id
+                    AND x.state='EXIT_PENDING_MARKET_CLOSED' AND x.cause='EOD_PAPER')
+                LIMIT 1""").fetchone()
+        except sqlite3.Error:
+            return 'OPEN_POSITIONS'
+        if unsafe:
+            return 'OPEN_POSITIONS'
     return None
 
 

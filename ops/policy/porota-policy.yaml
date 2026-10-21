@@ -94,9 +94,10 @@ cleanup:
   report_before_after: true
   periodic_housekeeping_required: true
   disk_housekeeping_policy: ops/policy/rc6-disk-housekeeping-v1.json
-  paper_backup_keep_newest: 3
-  history_backup_keep_newest: 3
-  general_backup_keep_newest: 3
+  backups_suspended_by_operator: true
+  paper_backup_keep_newest: 0
+  history_backup_keep_newest: 0
+  general_backup_keep_newest: 0
   journal_max_bytes: 536870912
   tmp_min_age_days: 7
   allowed_targets:
@@ -110,7 +111,6 @@ cleanup:
     - stale_porota_tmp_older_than_policy
     - apt_cache_and_lists
     - journal_above_policy_cap
-    - backup_retention_excess
   forbidden_targets:
     - active_containers
     - referenced_runtime_images

@@ -38,7 +38,6 @@ def install_policy_overrides():
     base.REQUIRED_TIMERS = (
         "porota-fast-functional-health-rc6.timer",
         "porota-history-postclose-rc6.timer",
-        "porota-host-general-backup-rc6.timer",
         "porota-preopen-rc6.timer",
         "porota-candle-integrity-rc6.timer",
     )

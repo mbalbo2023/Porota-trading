@@ -74,6 +74,54 @@ def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installat
     assert q.run(SHA, 'install', allow_market_open_suspend=True)['installation_started'] is True
 
 
+def test_intraday_one_caucion_is_preserved_without_spot_carryover(installation, monkeypatch):
+    root, db, states, calls, _ = installation
+    class Intraday(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:
+                return datetime.now(timezone.utc)
+            return datetime(2026, 10, 21, 14, 0, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Intraday)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT,principal TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T17:00:00-03:00','100')")
+    flags = dict(allow_market_open_suspend=True, allow_intraday_caucion=True)
+    receipt = q.run(SHA, 'drain', **flags)
+    assert receipt['intraday_caucion'] is True and receipt['caucion_carryover']['open_count'] == 1
+    assert receipt['spot_carryover'] is None and receipt['caucion_carryover']['maturity_at'] == '2026-10-21T17:00:00-03:00'
+    assert {states[name]['State']['Status'] for name in q.OWNED} == {'exited'}
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_cauciones SET principal='999'")
+    with pytest.raises(ValueError, match='INSTALL_INTRADAY_CAUCION_CHANGED'):
+        q.run(SHA, 'install', **flags)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE paper_cauciones SET principal='100'")
+    assert q.run(SHA, 'install', **flags)['installation_started'] is True
+    assert q.run(SHA, 'verify-carryover')['caucion_verified_count'] == 1
+
+
+def test_intraday_caucion_requires_only_exact_open_book(installation, monkeypatch):
+    root, db, states, calls, _ = installation
+    class Intraday(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz == timezone.utc:
+                return datetime.now(timezone.utc)
+            return datetime(2026, 10, 21, 14, 0, tzinfo=tz)
+    monkeypatch.setattr(q, 'datetime', Intraday)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        c.execute('DROP TABLE paper_cauciones')
+        c.execute('CREATE TABLE paper_cauciones(paper_id TEXT,status TEXT,maturity_at TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('overnight','OPEN','2026-10-21T18:00:00-03:00')")
+    with pytest.raises(ValueError, match='INTRADAY_CAUCION_CHANGED'):
+        q.run(SHA, 'drain', allow_market_open_suspend=True, allow_intraday_caucion=True)
+    assert not any(call[1] == 'stop' for call in calls)
+
+
 def test_paused_postclose_admits_only_exact_stopped_paper_caucion(installation, monkeypatch):
     root, db, states, calls, _ = installation
     class Postclose(datetime):

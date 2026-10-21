@@ -42,8 +42,8 @@ def _notifier():
 
 def run(job_name: str) -> None:
     if job_name == "backup":
-        import y_infra_monitor
-        y_infra_monitor.run_daily_backup()
+        logger.info("Backup de mantenimiento suspendido por decisión del operador.")
+        return
     elif job_name == "macro_refresh":
         import ad_macro_history
         ad_macro_history.refresh()

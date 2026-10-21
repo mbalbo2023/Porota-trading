@@ -17,7 +17,6 @@ def test_scheduler_siempre_activo_contiene_todas_las_tareas():
         "maintenance_monthly_autotune",
         "maintenance_data_retention",
         "maintenance_macro_refresh",
-        "maintenance_daily_backup",
         "maintenance_model_guardian",
         "maintenance_monthly_report",
         "maintenance_learning_diagnostic",
@@ -34,12 +33,13 @@ def test_scheduler_siempre_activo_contiene_todas_las_tareas():
     })
 
 
-def test_backup_ocurre_despues_del_refresco_macro():
+def test_backup_suspendido_del_scheduler():
     scheduler = az_maintenance_scheduler.build_scheduler()
     jobs = {job.id: str(job.trigger) for job in scheduler.get_jobs()}
 
     assert "hour='2', minute='30'" in jobs["maintenance_macro_refresh"]
-    assert "hour='3', minute='0'" in jobs["maintenance_daily_backup"]
+    assert "maintenance_daily_backup" not in jobs
+    assert "backup" in az_maintenance_scheduler.SUSPENDED_JOBS
 
 
 def test_entrypoint_posee_y_cierra_el_scheduler():

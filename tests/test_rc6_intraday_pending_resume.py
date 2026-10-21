@@ -36,7 +36,7 @@ def test_preopen_accepts_only_exact_paused_deploy_receipt(tmp_path, monkeypatch)
         return 3,'inactive',''
     monkeypatch.setattr(preopen,'cmd',command)
     assert preopen.required_timers(candidate)['state']=='GREEN'
-    assert len(preopen.required_timers(candidate)['units'])==20
+    assert len(preopen.required_timers(candidate)['units'])==19
     assert preopen.required_timers()['state']=='RED'
     receipt['status']='RESTORED'
     path.write_text(json.dumps(receipt))

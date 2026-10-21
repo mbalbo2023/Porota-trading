@@ -49,6 +49,9 @@ def read_shadow(root: Path, reader=None, *, historical=False):
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
         if isinstance(exc, ValueError) and str(exc) == "COMMITTED_GENERATION_MISSING":
             return {"state": AWAITING, "reason": "COMMITTED_GENERATION_NOT_PUBLISHED", "report": {}}
+        if isinstance(exc, ValueError) and str(exc) == "GENERATION_IDLE_MARKET_CLOSED":
+            return {"state": "SHADOW_IDLE_MARKET_CLOSED",
+                    "reason": "LAST_GENERATION_HISTORICAL_NOT_LIVE", "report": {}}
         # Never surface an arbitrary provider/path/exception message.
         return {"state": "NO_VERIFICADO", "reason": "COMMITTED_GENERATION_REJECTED",
                 "error_class": type(exc).__name__, "report": {}}

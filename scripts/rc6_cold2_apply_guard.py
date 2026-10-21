@@ -166,9 +166,16 @@ def apply(root, candidate):
             # intraday path must preserve the full PAPER book byte-for-byte;
             # a stale RUNNING SQLite marker is accepted only with the
             # receipt's clean Docker stop proof.
-            intraday = (receipt.get('market_open_suspended') is True and
-                        receipt.get('open_paper_carryover') is True)
-            if intraday:
+            intraday_spots = (receipt.get('market_open_suspended') is True and
+                              receipt.get('open_paper_carryover') is True)
+            intraday_caucion = (receipt.get('market_open_suspended') is True and
+                                receipt.get('intraday_caucion') is True and
+                                receipt.get('open_paper_carryover') is False and
+                                receipt.get('paused_postclose') is False and
+                                receipt.get('spot_carryover') is None)
+            if intraday_spots and receipt.get('intraday_caucion') is True:
+                raise ValueError('COLD2_SESSION_MODE_CHANGED')
+            if intraday_spots:
                 drain.exact_clean_stopped(receipt)
                 state = drain.admit(stopped=True, allow_market_open_suspend=True,
                                     allow_open_paper_carryover=True,
@@ -184,13 +191,29 @@ def apply(root, candidate):
                     raise ValueError('COLD2_POSTCLOSE_CAUCION_CHANGED')
                 if state not in {'STOPPED', 'RUNNING'}:
                     raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
+                caucion = receipt.get('caucion_carryover') if receipt.get('paused_postclose') is True else None
+            elif intraday_caucion:
+                drain.exact_clean_stopped(receipt)
+                state = drain.admit(stopped=True, allow_market_open_suspend=True,
+                                    allow_intraday_caucion=True, stopped_receipt=receipt)
+                caucion = drain.pending_caucion_snapshot()
+                if (caucion != receipt.get('caucion_carryover') or
+                        type(caucion.get('open_count')) is not int or
+                        caucion['open_count'] != 1 or
+                        caucion.get('maturity_at') != '2026-10-21T17:00:00-03:00'):
+                    raise ValueError('COLD2_INTRADAY_CAUCION_CHANGED')
+                if state not in {'STOPPED', 'RUNNING'}:
+                    raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
+                carry = None
             else:
                 if (receipt.get('market_open_suspended') is True or
-                        receipt.get('open_paper_carryover') is True):
+                        receipt.get('open_paper_carryover') is True or
+                        receipt.get('intraday_caucion') is True):
                     raise ValueError('COLD2_SESSION_MODE_CHANGED')
                 if drain.admit(stopped=True) not in {'STOPPED', 'WAITING_MARKET'}:
                     raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
                 carry = None
+                caucion = None
             for name in OWNED:
                 row = drain.inspect(name)
                 if (row['Id'] != ids[name] or
@@ -237,10 +260,13 @@ def apply(root, candidate):
             if ppi_units() != baseline:
                 raise ValueError('COLD2_PPI_UNIT_CHANGED')
             return {'status': 'DRAINED', 'owned_stopped': True,
-                    'market_closed': not intraday, 'no_positions': not intraday,
-                    'market_open_suspended': intraday,
-                    'open_paper_carryover': intraday,
+                    'market_closed': not (intraday_spots or intraday_caucion),
+                    'no_positions': not (intraday_spots or intraday_caucion),
+                    'market_open_suspended': intraday_spots or intraday_caucion,
+                    'open_paper_carryover': intraday_spots,
                     'spot_carryover': carry,
+                    'intraday_caucion': intraday_caucion,
+                    'caucion_carryover': caucion,
                     'lock_held': True, 'mode': 'PRODUCTION_PAPER',
                     'real_orders_sent': 0, 'real_routes': 'NOT_CALLED',
                     'order_routing_blocked': True, 'inflight_absent': True,

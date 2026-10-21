@@ -293,6 +293,7 @@ def _admit(root, admission, expected_owned_ids):
     intraday = (type(state) is dict and
                 state.get('market_open_suspended') is True and
                 state.get('open_paper_carryover') is True and
+                state.get('intraday_caucion') is not True and
                 state.get('market_closed') is False and
                 state.get('no_positions') is False and
                 type(carry) is dict and
@@ -301,12 +302,26 @@ def _admit(root, admission, expected_owned_ids):
                 re.fullmatch('[a-f0-9]{64}', carry['sha256']) is not None and
                 type(carry.get('paper_ids')) is list and
                 len(carry['paper_ids']) == carry['open_count'])
+    caucion = state.get('caucion_carryover') if type(state) is dict else None
+    intraday_caucion = (type(state) is dict and
+                        state.get('market_open_suspended') is True and
+                        state.get('open_paper_carryover') is False and
+                        state.get('intraday_caucion') is True and
+                        state.get('market_closed') is False and
+                        state.get('no_positions') is False and
+                        carry is None and type(caucion) is dict and
+                        type(caucion.get('open_count')) is int and
+                        caucion['open_count'] == 1 and
+                        caucion.get('maturity_at') == '2026-10-21T17:00:00-03:00' and
+                        type(caucion.get('sha256')) is str and
+                        re.fullmatch('[a-f0-9]{64}', caucion['sha256']) is not None)
     closed = (type(state) is dict and state.get('market_closed') is True and
               state.get('no_positions') is True and
               state.get('market_open_suspended') is not True and
-              state.get('open_paper_carryover') is not True)
+              state.get('open_paper_carryover') is not True and
+              state.get('intraday_caucion') is not True)
     if (type(state) is not dict or state.get('status') != 'DRAINED' or
-            state.get('owned_stopped') is not True or not (closed or intraday) or
+            state.get('owned_stopped') is not True or not (closed or intraday or intraday_caucion) or
             state.get('lock_held') is not True or
             state.get('mode') != 'PRODUCTION_PAPER' or
             state.get('real_routes') != 'NOT_CALLED' or
