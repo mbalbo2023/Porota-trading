@@ -1,4 +1,4 @@
-name: RC6 679 immediate guarded backup retirement
+name: RC6 679 backup retirement postreceipt read-only verification
 on:
   push:
     branches:
@@ -46,15 +46,34 @@ jobs:
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
             "sudo -n systemctl show porota-host-general-backup-rc6.service -p ActiveState -p SubState -p MainPID -p ControlPID -p ExecMainStatus -p ActiveEnterTimestamp; sudo -n systemctl show porota-host-general-backup-rc6.timer -p ActiveState -p SubState -p Unit -p FragmentPath -p UnitFileState"
-      - name: Execute bounded retirement on one exact runtime
+      - name: Verify retirement receipt and installed timer content read-only
         shell: bash
-        timeout-minutes: 4
+        timeout-minutes: 2
         run: |
           set -Eeuo pipefail
-          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_679_retire" -o BatchMode=yes \
+          EXPECTED_TIMER_SHA="$(sha256sum systemd/porota-host-general-backup-rc6.timer | cut -d' ' -f1)"
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_679_retire" -o BatchMode=yes \
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -B -" < scripts/rc6_679_immediate_backup_retire.py
+            "sudo -n python3 -B - '$EXPECTED_TIMER_SHA'" <<'REMOTE'
+          import hashlib,json,os,pathlib,subprocess,sys
+          root=pathlib.Path('/opt/porota-trading')
+          receipt=json.loads((root/'data/deploy/backup-retire-immediate-20261021.json').read_text())
+          assert receipt['status']=='DONE' and receipt['count']==31
+          timer=pathlib.Path('/etc/systemd/system/porota-host-general-backup-rc6.timer')
+          assert timer.is_file() and not timer.is_symlink()
+          sha=hashlib.sha256(timer.read_bytes()).hexdigest()
+          assert sha==sys.argv[1], 'INSTALLED_TIMER_DIFFERS_FROM_VERSIONED_SOURCE'
+          def state(cmd):
+              return subprocess.run(['systemctl',cmd,'porota-host-general-backup-rc6.timer'],
+                                    check=False,text=True,capture_output=True).stdout.strip()
+          assert (state('is-enabled'),state('is-active'))==('disabled','inactive')
+          for folder in ('/opt/porota-backups',
+                         '/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups',
+                         '/opt/porota-trading/data/backups'):
+              assert sum(len(names) for _,_,names in os.walk(folder))==0
+          print('RC6_679_POSTRECEIPT_READONLY=GREEN|count=31|timer_sha256='+sha+'|timer=disabled/inactive')
+          REMOTE
       - name: Remove SSH key
         if: always()
         shell: bash
