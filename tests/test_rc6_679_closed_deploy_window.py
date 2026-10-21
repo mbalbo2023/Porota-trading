@@ -25,3 +25,7 @@ def test_deploy_checks_exact_closed_flat_admission_after_restart():
     assert 'assert admit() == \\"WAITING_MARKET\\"' in source
     assert 'RC6_CLOSED_FLAT_PAPER_POSTSTART=GREEN' in source
     assert '--action verify-carryover' not in source
+    cleanup = source.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name: Postdeploy full-session stress', 1)[0]
+    assert "steps.flat_book.outcome == 'failure'" in cleanup
+    assert "steps.backup_retire.outcome == 'failure'" in cleanup
+    assert 'steps.carryover.' not in cleanup

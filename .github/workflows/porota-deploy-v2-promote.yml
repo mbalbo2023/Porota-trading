@@ -1502,7 +1502,7 @@ jobs:
           REMOTE
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.carryover.outcome == 'failure' || steps.carryover.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |
