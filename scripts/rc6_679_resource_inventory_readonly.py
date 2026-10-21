@@ -101,6 +101,20 @@ def sqlite_status(path):
             c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
             result['pages'] = {name: c.execute('PRAGMA ' + name).fetchone()[0]
                                for name in ('page_count', 'page_size', 'freelist_count')}
+            if p.name == 'observer_v17.db':
+                names = {row[0] for row in c.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+                allowed = ('financial_instrument_catalog', 'market_snapshots',
+                           'ppi_intraday_points', 'ppi_intraday_contract_state',
+                           'paper_positions', 'paper_events',
+                           'decision_evidence_snapshots', 'paper_fills')
+                tails = {}
+                for name in allowed:
+                    if name in names:
+                        # Indexed rowid tail, no row payload or table scan.
+                        tails[name] = c.execute(
+                            f'SELECT COALESCE(MAX(rowid),0) FROM "{name}"').fetchone()[0]
+                result['allowlisted_rowid_tails'] = tails
     except (OSError, sqlite3.Error) as exc:
         result['query_error'] = type(exc).__name__
     return result
