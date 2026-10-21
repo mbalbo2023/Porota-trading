@@ -1,0 +1,89 @@
+name: RC6 679 read-only COLD failure proof
+on:
+  push:
+    branches:
+      - diagnostic/rc6-679-readonly-baseline-20261021
+    paths:
+      - .github/workflows/rc6-679-cold-failure-probe-20261021.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bounded read-only host predicate proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_probe"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_cold_probe" "$HOME/.ssh/known_hosts"
+          timeout 100 ssh -i "$HOME/.ssh/rc6_cold_probe" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -B -" <<'REMOTE'
+          import json,sys,subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          sys.path.insert(0,str(root))
+          from scripts import rc6_failed_cold_fix_forward as cold
+          sha='0efa73664ed90ea55402d96303ee900924a1941a'
+          receipt=json.loads((root/'data/deploy'/('quiescence-'+sha+'.json')).read_text())
+          shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+          live=cold.enveloped(shadow/'status.json')
+          pointer=cold.enveloped(shadow/'CURRENT.json')
+          cut=cold.enveloped_gzip(shadow/pointer['file'])
+          old=shadow/('cut-'+cold.CUT+'.json.gz')
+          state=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          def docker(name):
+              return subprocess.check_output(['docker','inspect','-f',
+                   '{{.State.Status}}|{{.Image}}',name],text=True).strip()
+          proof=(receipt.get('stop_evidence') or {}).get('porota_production_observer') or {}
+          before,after=proof.get('before') or {},proof.get('after') or {}
+          print('RC6_COLD_FAILURE_PROOF='+json.dumps({
+              'candidate':sha,'quiescence_status':receipt.get('status'),
+              'installation_started':receipt.get('installation_started'),
+              'paused_postclose':receipt.get('paused_postclose'),
+              'intraday_caucion':receipt.get('intraday_caucion'),
+              'market_open_suspended':receipt.get('market_open_suspended'),
+              'open_paper_carryover':receipt.get('open_paper_carryover'),
+              'stop_classification':proof.get('classification'),
+              'stop_before_status':before.get('Status'),
+              'stop_after_status':after.get('Status'),
+              'stop_after_exit':after.get('ExitCode'),
+              'stop_after_oom':after.get('OOMKilled'),
+              'stop_started_at':before.get('StartedAt'),
+              'stop_finished_at':after.get('FinishedAt'),
+              'live_status':live.get('status'),
+              'live_error_class':live.get('error_class'),
+              'live_error_module':live.get('error_module'),
+              'live_error_line':live.get('error_line'),
+              'live_as_of':live.get('as_of'),
+              'live_real_routes':live.get('real_routes'),
+              'old_cut_exists':old.exists(),
+              'generation_is_old':pointer.get('generation_id')==cold.CUT,
+              'current_snapshot_is_failed':cut.get('report',{}).get('computed_report',{}).get('snapshot_id')==cold.IDENT,
+              'stop_cancel_proven':cold.proven_stop_cancellation(live,receipt),
+              'state_candidate':state.get('candidate_sha'),
+              'state_validation':state.get('validation_status'),
+              'observer_container':docker('porota_production_observer').split('|')[0],
+              'dashboard_container':docker('porota_production_dashboard').split('|')[0],
+              'real_orders_sent':state.get('real_orders_sent')
+          },sort_keys=True))
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6_cold_probe"
