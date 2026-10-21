@@ -98,6 +98,15 @@ def main():
             'observation_read_truncated': quality.get('observation_read_truncated') if isinstance(quality, dict) else None,
             'engine_count': len(report.get('engines', {})) if isinstance(report.get('engines'), dict) else None,
             'projection_errors': sorted(set(store.errors))}
+        history = projection.history()
+        result['annual_source'] = {
+            'state': history.state, 'reason': history.reason, 'source': history.source,
+            'total': history.total, 'sample_rows': len(history.rows),
+            'rows_with_exact_bases': sum(bool(row.get('price_basis') and row.get('adjustment_basis'))
+                                         for row in history.rows),
+            'rows_with_full_identity': sum(all(row.get(k) for k in
+                                             ('symbol','instrument_type','market','currency','settlement'))
+                                           for row in history.rows)}
     exact_identity_link = None
     annual_link = None
     for path in ROUTES:
