@@ -5,6 +5,7 @@ on:
       - diagnostic/rc6-679-readonly-baseline-20261021
     paths:
       - .github/workflows/rc6-679-readonly-resource-inventory-20261021.yml
+      - scripts/rc6_679_resource_inventory_readonly.py
 permissions:
   contents: read
 concurrency:
