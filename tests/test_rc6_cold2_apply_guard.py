@@ -183,6 +183,68 @@ def test_intraday_cold2_rechecks_exact_paper_book_at_archive_boundary(tmp_path):
         assert admit.call_args.kwargs['stopped_receipt'] == value
 
 
+def test_intraday_cold2_rechecks_one_caucion_without_spots_at_each_boundary(tmp_path):
+    value = receipt()
+    caucion = {'open_count': 1, 'sha256': 'd'*64,
+               'maturity_at': '2026-10-21T17:00:00-03:00'}
+    value.update(market_open_suspended=True, open_paper_carryover=False,
+                 intraday_caucion=True, paused_postclose=False,
+                 spot_carryover=None, caucion_carryover=caucion)
+    folder(tmp_path, value)
+    ids = {name:value['containers'][name]['id'] for name in NAMES}
+    live = {name:{'Id':ids[name], 'Image':'sha256:'+'a'*64,
+                  'State':{'Status':'exited','ExitCode':0}} for name in NAMES}
+    live['porota_critical_approval_rc6'] = {
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    observed = [caucion]
+    def archive(root, *, admission, expected_owned_ids):
+        state = admission()
+        assert state['intraday_caucion'] is True
+        assert state['spot_carryover'] is None
+        assert state['caucion_carryover'] == caucion
+        observed[0] = dict(caucion, sha256='e'*64)
+        with pytest.raises(ValueError, match='COLD2_INTRADAY_CAUCION_CHANGED'):
+            admission()
+        observed[0] = caucion
+        return {'state':'QUARANTINED_FAILED'}
+    with (patch.object(guard, 'ppi_units', return_value={}),
+          patch.object(guard.drain, 'exact_clean_stopped'),
+          patch.object(guard.drain, 'admit', return_value='RUNNING') as admit,
+          patch.object(guard.drain, 'pending_caucion_snapshot',
+                       side_effect=lambda:observed[0]),
+          patch.object(guard.drain, 'inspect', side_effect=lambda name:live[name]),
+          patch.object(guard.cold, 'envelope', return_value={
+              'status':'FAIL_CLOSED','real_routes':'NOT_CALLED'}),
+          patch.object(guard.cold, 'quarantine', side_effect=archive)):
+        assert guard.apply(tmp_path, CANDIDATE)['old_cut_revoked'] is True
+        assert admit.call_args.kwargs['allow_intraday_caucion'] is True
+        assert admit.call_args.kwargs['stopped_receipt'] == value
+
+
+def test_cold2_quarantine_requires_exact_intraday_caucion_witness(tmp_path):
+    from scripts import rc6_cold2_quarantine as cold
+    ids = {name:hex(i+1)[2:]*64 for i,name in enumerate(NAMES)}
+    caucion = {'open_count':1,'sha256':'d'*64,
+               'maturity_at':'2026-10-21T17:00:00-03:00'}
+    state = {'status':'DRAINED','owned_stopped':True,
+             'market_closed':False,'no_positions':False,
+             'market_open_suspended':True,'open_paper_carryover':False,
+             'intraday_caucion':True,'spot_carryover':None,
+             'caucion_carryover':caucion,'lock_held':True,
+             'mode':'PRODUCTION_PAPER','real_orders_sent':0,
+             'real_routes':'NOT_CALLED','order_routing_blocked':True,
+             'inflight_absent':True,'critical_healthy':True,
+             'owned_ids':ids,'ppi_watch_accessed':False}
+    cold._admit(tmp_path, lambda:state, ids)
+    state['caucion_carryover'] = dict(caucion, sha256='invalid')
+    with pytest.raises(ValueError, match='COLD2_QUIESCENCE_REQUIRED'):
+        cold._admit(tmp_path, lambda:state, ids)
+    state['caucion_carryover'] = caucion
+    state['open_paper_carryover'] = True
+    with pytest.raises(ValueError, match='COLD2_QUIESCENCE_REQUIRED'):
+        cold._admit(tmp_path, lambda:state, ids)
+
+
 def test_postclose_cold2_rejects_caucion_drift_before_archive(tmp_path):
     value=receipt()
     carry={'open_count':2,'paper_ids':['a','b'],'sha256':'c'*64}
