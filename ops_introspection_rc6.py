@@ -48,6 +48,18 @@ def non_negative_age_seconds(now: datetime, heartbeat_at: str | None) -> float |
         return None
 
 
+def strict_age_seconds(now: datetime, heartbeat_at: str | None) -> float | None:
+    """Safety gates must reject future and timezone-free heartbeat values."""
+    try:
+        observed=datetime.fromisoformat(str(heartbeat_at).replace('Z','+00:00'))
+        if observed.tzinfo is None:
+            return None
+        age=(now-observed.astimezone(TZ)).total_seconds()
+        return age if age>=0 else None
+    except (ValueError, TypeError):
+        return None
+
+
 def should_warn_no_usd_operations(session_state: str | None, currencies: list[dict]) -> bool:
     """Only expect intraday USD activity while the market is actually open."""
     if str(session_state or "").upper() != "MARKET_OPEN":
@@ -89,8 +101,8 @@ def pending_closed_eod_over_hold(c, now, observer):
             observer['real_orders_sent'] != 0 or
             observer.get('session_state') not in {'CLOSED','MARKET_CLOSED'} or
             now.year not in calendar.ANIOS_AUDITADOS or
-            non_negative_age_seconds(now, observer.get('heartbeat_at')) is None or
-            non_negative_age_seconds(now, observer.get('heartbeat_at')) > 60):
+            strict_age_seconds(now, observer.get('heartbeat_at')) is None or
+            strict_age_seconds(now, observer.get('heartbeat_at')) > 60):
         return 0
     try:
         if byma_paper_spot_phase(now) != 'CLOSED':
@@ -99,8 +111,8 @@ def pending_closed_eod_over_hold(c, now, observer):
                                    ('paper_exit_reader_state', {'WAITING_MARKET'})):
             row=c.execute(f'SELECT state,heartbeat_at FROM {name} WHERE id=1').fetchone()
             if (not row or row['state'] not in valid_states or
-                    non_negative_age_seconds(now,row['heartbeat_at']) is None or
-                    non_negative_age_seconds(now,row['heartbeat_at']) > 20):
+                    strict_age_seconds(now,row['heartbeat_at']) is None or
+                    strict_age_seconds(now,row['heartbeat_at']) > 20):
                 return 0
         return one(c, """SELECT COUNT(*) FROM paper_positions p
             JOIN paper_exit_intents x USING(paper_id)

@@ -61,3 +61,17 @@ def test_open_clock_never_downgrades_stale_market_closed_label():
         assert introspection.pending_closed_eod_over_hold(c,now,observer)==0
     finally:
         c.close()
+
+
+def test_future_or_stale_safety_heartbeat_never_downgrades_hold():
+    now=datetime.fromisoformat('2026-10-20T23:00:00-03:00')
+    c,observer=fixture(now)
+    try:
+        observer['heartbeat_at']=(now+timedelta(seconds=1)).isoformat()
+        assert introspection.pending_closed_eod_over_hold(c,now,observer)==0
+        observer['heartbeat_at']=now.isoformat()
+        c.execute('UPDATE paper_exit_reader_state SET heartbeat_at=?',
+                  ((now-timedelta(seconds=21)).isoformat(),))
+        assert introspection.pending_closed_eod_over_hold(c,now,observer)==0
+    finally:
+        c.close()
