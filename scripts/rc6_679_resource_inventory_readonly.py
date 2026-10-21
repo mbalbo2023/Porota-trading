@@ -44,10 +44,19 @@ def process_sample(pid):
                   if ': ' in line)
         status = dict(line.split(':', 1) for line in (base / 'status').read_text().splitlines()
                       if ':' in line)
+        # Inspect an allowlist of module names only. Never publish raw argv,
+        # which may contain credentials or private runtime data.
+        args = (base / 'cmdline').read_bytes().lower()[:4096]
+        roles = (b'rc6_shadow_runtime', b'bl_candle_engine',
+                 b'bf_production_paper_observer', b'bv_paper_runtime',
+                 b'rc6_notification', b'rc6_performance', b'exit_reader',
+                 b'caucion', b'scalping')
+        role = next((value.decode() for value in roles if value in args), 'UNCLASSIFIED')
         return {'pid': pid, 'cpu_ticks': int(stat[11]) + int(stat[12]),
                 'read_bytes': int(io['read_bytes']), 'write_bytes': int(io['write_bytes']),
                 'rss_kib': int(status['VmRSS'].split()[0]),
-                'major_faults': int(stat[9]), 'name': status.get('Name', '').strip()[:48]}
+                'major_faults': int(stat[9]), 'name': status.get('Name', '').strip()[:48],
+                'parent_pid': int(status['PPid'].strip()), 'allowlisted_role': role}
     except (OSError, ValueError, KeyError, IndexError):
         return None
 
