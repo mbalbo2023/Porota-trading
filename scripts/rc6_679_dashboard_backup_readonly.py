@@ -109,6 +109,17 @@ def main():
             'rows_with_full_identity': sum(all(row.get(k) for k in
                                              ('symbol','instrument_type','market','currency','settlement'))
                                            for row in history.rows)}
+        from rc6_trader_dashboard.datasets import artifact
+        result['system_artifacts'] = {}
+        for kind in ('scheduler', 'backups'):
+            page = artifact(projection, kind)
+            result['system_artifacts'][kind] = {'state': page.state, 'reason': page.reason,
+                                               'total': page.total, 'sample_rows': len(page.rows),
+                                               'states': sorted(set(str(row.get('state')) for row in page.rows))}
+        result['workers'] = [{key: row.get(key) for key in
+                              ('worker', 'state', 'observed_state', 'freshness',
+                               'age_seconds', 'heartbeat_budget_seconds')}
+                             for row in projection.workers().rows]
     exact_identity_link = None
     annual_link = None
     for path in ROUTES:
