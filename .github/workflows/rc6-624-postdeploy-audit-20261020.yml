@@ -24,15 +24,15 @@ jobs:
       - name: Checkout exact promoted policy
         uses: actions/checkout@v4
         with:
-          ref: 68e6681a9248f312e9e0c052fb3c4e5e032800b5
+          ref: f525ed707d540ad3b4b75eecf95c503bfd4b230c
       - name: Verify current production merge and strict SSH
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^{tree})" = 78266c5c04d0556066f691ecec327289a1bac5b3
+          test "$(git rev-parse HEAD^{tree})" = 1d7e9fad7e1af792f15a39a6cc68dcd2ecc8f33b
           # Fill the exact two-parent merge SHA after the canonical promotion.
           CURRENT="$(gh api "repos/$GITHUB_REPOSITORY/branches/deploy/rc6-pr69-isolated-20260915" --jq .commit.sha)"
-          test "$CURRENT" = 678f66f557357c3c967a44534e4178799d38f535
+          test "$CURRENT" = bc661130968f2b85b8b2146f76923ddd26eb7837
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_postdeploy_audit"
@@ -60,8 +60,8 @@ jobs:
               p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
               return p.returncode,p.stdout.strip()
           state=load(folder/'CURRENT_STATE_V2.json')
-          assert state['candidate_sha']=='68e6681a9248f312e9e0c052fb3c4e5e032800b5'
-          assert state['deploy_sha']=='ce16c19309d530b99b157c1a6d4cee6d3641b9a7'
+          assert state['candidate_sha']=='f525ed707d540ad3b4b75eecf95c503bfd4b230c'
+          assert state['deploy_sha']=='bc661130968f2b85b8b2146f76923ddd26eb7837'
           assert state['validation_status']=='VALIDATED_RUNTIME'
           assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
           assert state['real_order_routes']=='NOT_CALLED'
@@ -105,7 +105,7 @@ jobs:
               assert evidence['status']=='GREEN' and evidence['minimum_generations']==minimum
               assert evidence['strict'] is strict and len(evidence['generations'])>=minimum
               assert all(row['source_sha']==state['candidate_sha'] and
-                         row['candidate_tree_sha']=='78266c5c04d0556066f691ecec327289a1bac5b3' and
+                         row['candidate_tree_sha']=='1d7e9fad7e1af792f15a39a6cc68dcd2ecc8f33b' and
                          row['real_orders_sent']==0 and row['real_routes']=='NOT_CALLED'
                          for row in evidence['generations'])
           sys.path.insert(0,str(root))
@@ -115,7 +115,7 @@ jobs:
           cut=stable_reader(shadow,payload_limit=4*1024**2,require_current_status=True)
           health=load(shadow.parent/'runtime-health.json',131072)
           generation=receipt(cut,health,state['candidate_sha'],
-                             '78266c5c04d0556066f691ecec327289a1bac5b3',
+                             '1d7e9fad7e1af792f15a39a6cc68dcd2ecc8f33b',
                              datetime.now(timezone.utc))
           policy=json.loads(base64.b64decode(sys.argv[1],validate=True))
           names=sorted(Path(p).name for p,v in policy['units'].items() if v['role']=='ACTIVE_TIMER' and v['active'] is True)
