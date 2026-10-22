@@ -1656,12 +1656,18 @@ def _download_histories_locked(reader, store, history_store):
             store.event('HISTORY_V2_INGEST',f'{symbol}: accepted={count}; rejected={result["rejected_rows"]}; full_key={identity}; readiness=NONE')
         except Exception as exc:
             batch_statuses.append('ERROR')
+            # The provider-key rejection is a fixed, safe diagnostic code;
+            # arbitrary broker exceptions must never leak payloads or URLs.
+            reason=('HISTORY_PROVIDER_IDENTITY_AMBIGUOUS'
+                    if str(exc)=='HISTORY_PROVIDER_IDENTITY_AMBIGUOUS'
+                    else type(exc).__name__)
             history_ledger.append_attempt(store,history_ledger.HistoryAttempt(
                 symbol=symbol,instrument_type=family,settlement=settlement,source='PPI_PRODUCTION_HISTORY',
                 attempted_at=attempted,state='ERROR',requested_from=start.isoformat(),requested_to=end.isoformat(),
-                error_class=type(exc).__name__,detail='History request/sink incomplete; retry follows durable full-key saga',
-                metadata={'market':market,'currency':currency,'identity':list(identity),'readiness_implication':'NONE'}))
-            store.event('HISTORY_V2_ERROR',f'{symbol}: {type(exc).__name__}')
+                error_class=type(exc).__name__,detail=f'{reason}; retry follows durable full-key saga',
+                metadata={'market':market,'currency':currency,'identity':list(identity),
+                          'guard_reason':reason,'readiness_implication':'NONE'}))
+            store.event('HISTORY_V2_ERROR',f'{symbol}: {reason}')
     with history_store.connect() as c:
         coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
             consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)

@@ -346,6 +346,8 @@ def test_ppi_short_history_request_never_attributes_ambiguous_catalog_identity(
     assert rows(history_pipeline,'history_versions_v2')==[]
     attempts=rows(store,'history_attempt_ledger_v2')
     assert len(attempts)==1 and attempts[0]['state']=='ERROR'
+    assert 'HISTORY_PROVIDER_IDENTITY_AMBIGUOUS' in attempts[0]['detail']
+    assert json.loads(attempts[0]['metadata_json'])['guard_reason']=='HISTORY_PROVIDER_IDENTITY_AMBIGUOUS'
     assert rows(store,'historical_raw_archive')==[]
 
 
