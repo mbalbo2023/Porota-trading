@@ -16,6 +16,9 @@ concurrency:
 jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
+    # Draft PRs cannot be promoted. Certify their final SHA once they become
+    # ready_for_review instead of spending a full native cycle while drafting.
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     # Existing35min gates + two12*120+60s physical stages + cleanup5min.
     timeout-minutes: 90
@@ -86,11 +89,23 @@ jobs:
           test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 7
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
 
-      - name: Governed automatic test discovery and execution
+      - name: Fast host-transition incident replay
         shell: bash
         run: |
           set -Eeuo pipefail
           python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_rc6_deploy_quiescence.py \
+            tests/test_rc6_deploy_scheduler_suspend.py \
+            tests/test_rc6_cold2_apply_guard.py \
+            tests/test_rc6_cold2_quarantine.py \
+            tests/test_rc6_cold2_successor.py
+          echo 'POROTA_HOST_TRANSITION_EARLY=GREEN'
+
+      - name: Governed automatic test discovery and execution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           python - <<'PY'
           from pathlib import Path
           import yaml
@@ -231,15 +246,41 @@ jobs:
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --json-out /tmp/porota-host-policy-v2.json
 
-      - name: Build candidate exactly once
+      - name: Resolve frozen tree for image identity
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker build \
-            --build-arg "POROTA_BUILD_SHA=$CANDIDATE_SHA" \
-            --build-arg "POROTA_CANDIDATE_TREE_SHA=$(git rev-parse HEAD^{tree})" \
-            --label "porota.commit=${CANDIDATE_SHA}" --label "porota.predeploy=v2" \
-            -t "$IMAGE" .
+          echo "CANDIDATE_TREE_SHA=$(git rev-parse HEAD^{tree})" >> "$GITHUB_ENV"
+
+      - name: Set up Buildx for incremental dependency layers
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build candidate exactly once
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            POROTA_BUILD_SHA=${{ env.CANDIDATE_SHA }}
+            POROTA_CANDIDATE_TREE_SHA=${{ env.CANDIDATE_TREE_SHA }}
+          labels: |
+            porota.commit=${{ env.CANDIDATE_SHA }}
+            porota.predeploy=v2
+          # Cache is an untrusted accelerator. The exact source/image/bundle
+          # gates below still validate the candidate independently. No registry
+          # or Droplet is involved, and cold cache misses rebuild from source.
+          cache-from: type=gha,scope=porota-rc6-predeploy-v2
+          cache-to: type=gha,scope=porota-rc6-predeploy-v2,mode=max,timeout=2m,ignore-error=true
+
+      - name: Verify cached or rebuilt image identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           docker image inspect "$IMAGE" >/dev/null
           echo "POROTA_BUILD_ONCE=GREEN|IMAGE=$IMAGE"
 
@@ -308,7 +349,16 @@ jobs:
         run: |
           set -Eeuo pipefail
           install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
-          trap 'docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" "porota-native-session-$GITHUB_RUN_ID" "porota-native-cadence-fresh-$GITHUB_RUN_ID" "porota-native-cadence-legacy-$GITHUB_RUN_ID" >/dev/null 2>&1 || true' EXIT
+          cleanup_native_proof() {
+            rc6_cleanup_rc=$?
+            docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" "porota-native-session-$GITHUB_RUN_ID" "porota-native-cadence-fresh-$GITHUB_RUN_ID" "porota-native-cadence-legacy-$GITHUB_RUN_ID" >/dev/null 2>&1 || true
+            if test -n "${rc6_session_pid:-}"; then
+              wait "$rc6_session_pid" || rc6_cleanup_rc=1
+              cat "$RUNNER_TEMP/porota-native-session.log"
+            fi
+            exit "$rc6_cleanup_rc"
+          }
+          trap cleanup_native_proof EXIT
           run_native_proof() {
             rc6_label="$1"; shift
             rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"
@@ -318,10 +368,11 @@ jobs:
             if test "$rc6_label" = session; then
               rc6_memory=(--memory 256m --memory-swap 256m)
             fi
+            install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence/tmp/$rc6_label"
             docker create --name "$rc6_name" --pull never "${rc6_memory[@]}" --cpus .75 \
               --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
               --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
-              -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/proof/tmp \
+              -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e "TMPDIR=/proof/tmp/$rc6_label" \
               -v "$RUNNER_TEMP/porota-native-sizing-evidence:/proof" "$IMAGE" "$@"
             set +e
             rc6_timeout=480
@@ -344,16 +395,26 @@ jobs:
           # The generated catalogue runs inline without a pytest parent beside it.
           run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
             --full-catalog-check --output /proof/catalog
-          # Same offline405-minute replay and eight adversarial groups later
-          # required on the Droplet. CI success never substitutes for that host.
+          # The 405-minute virtual session and eight adversarial groups are
+          # independent of cadence, but cadence legacy consumes fresh's exact
+          # receipt and fixture. Keep fresh -> legacy ordered. Docker caps and
+          # proof paths are separate; both branches must finish cleanly.
           run_native_proof session python scripts/rc6_postdeploy_stress.py \
-            --output /proof/session
+            --output /proof/session > "$RUNNER_TEMP/porota-native-session.log" 2>&1 &
+          rc6_session_pid=$!
           # Independent processes preserve each existing additive nice10 call.
           # Every stage physically waits30s and verifies12full original audits.
           run_native_proof cadence-fresh python scripts/rc6_postdeploy_stress.py \
             --cadence-stage fresh --output /proof/cadence
           run_native_proof cadence-legacy python scripts/rc6_postdeploy_stress.py \
             --cadence-stage legacy --output /proof/cadence
+          set +e
+          wait "$rc6_session_pid"
+          rc6_session_rc=$?
+          set -e
+          cat "$RUNNER_TEMP/porota-native-session.log"
+          rc6_session_pid=
+          test "$rc6_session_rc" -eq 0
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash

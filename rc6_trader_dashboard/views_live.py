@@ -33,7 +33,7 @@ def render(p, destination, tab):
                              filters=True, note="HOT ≠ BUY. DISCOVERY/WARM son observación. Tradeability no es señal direccional ni probabilidad.") + timeline(shadow_rows(p, "events").rows))
     if tab == "decisiones":
         return render_table(p, destination, tab, p.decisions(), "Decisiones factuales PAPER", DECISIONS, DECISION_DETAIL,
-                            note="Cada decisión conserva signal, economics y risk. Un HOLD requiere su motivo; score_is_probability=false.")
+                            note="Cada decisión conserva signal, economics y risk. HOLD sin gate de compra muestra NOT_EVALUATED para economics/risk; BUY sin gate sigue NO_VERIFICADO. Un HOLD requiere su motivo; score_is_probability=false.")
     if tab == "posiciones":
         return render_table(p, destination, tab, p.positions(), "Posiciones y seguridad de salida", POSITIONS, POSITION_DETAIL, filters=True,
                             note="Un mark contable no acredita un fill ejecutable. MFE/MAE sin trayectoria validada = NO_MEDIDO.")

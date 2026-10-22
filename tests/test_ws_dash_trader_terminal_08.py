@@ -233,7 +233,16 @@ def test_invalid_financial_numbers_never_become_zero(database):
     assert close_stats["state"] == "INVALID_NET_PNL" and close_stats["win_rate"] is None
 
 
-def test_source_scope_score_and_trajectory_semantics(database):
+def test_source_scope_score_and_trajectory_semantics(database, monkeypatch):
+    root = Path(database).parent
+    (root / "iol_shadow_latest.json").write_text(json.dumps({"refreshed_at": STAMP, "cache_state": "LIVE",
+        "symbols": [{"state": "LIVE", "source_state": "LIVE_FRESH"},
+                    {"state": "CACHE_STALE", "source_state": "EMPTY_UNEXPECTED"}]}))
+    (root / "iol_family_reference_latest.json").write_text(json.dumps({"refreshed_at": STAMP,
+        "cache_state": "LIVE", "last_known_good_at": STAMP,
+        "section_states": {"fci": "LIVE", "fixed_income": "SOURCE_UNAVAILABLE"}}))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_CACHE_PATH", str(root / "iol_shadow_latest.json"))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(root))
     with Store(database, now=NOW) as s:
         p = Projection(s)
         assert p.positions().rows[0]["mfe"] == "NO_MEDIDO"
@@ -241,12 +250,13 @@ def test_source_scope_score_and_trajectory_semantics(database):
         assert p.positions().rows[0]["freshness"] == "STALE"
         assert p.positions().rows[0]["executable_mark"] == "NO_VERIFICADO"
         source = p.sources().rows[0]
-        assert source["scope"] == "IOL source_sync" and source["state"] == "NO_VERIFICADO"
-        assert source["observed_state"] == "LIVE_FRESH"
-        assert any(r["scope"] == "IOL:caucion:ARS" and r["state"] == "SOURCE_UNAVAILABLE" for r in p.sources().rows)
+        assert source["scope"] == "IOL quotes + families (por sección)" and source["state"] == "PARTIAL_LIVE"
+        assert source["observed_state"] == "LIVE" and source["freshness"] == "FRESH"
+        assert "LIVE=1" in source["data_quality"] and "CACHE_STALE=1" in source["data_quality"]
+        assert "fixed_income" in source["detail"] and "source_sync IOL: SIN_FILAS" in source["detail"]
         decision = p.decisions().rows[0]
         assert decision["reason"] == "LIQUIDITY_BLOCKED"
-        assert decision["economics"] == "NO_VERIFICADO" and decision["risk"] == "NO_VERIFICADO"
+        assert decision["economics"] == "NOT_EVALUATED" and decision["risk"] == "NOT_EVALUATED"
         assert decision["final"] == "HOLD"  # The recorded PAPER action, not an invented gate result.
         assert decision["score_is_probability"] is False
     assert "badge-hot" in badge("HOT") and "badge-pass" not in badge("HOT")
@@ -255,6 +265,30 @@ def test_source_scope_score_and_trajectory_semantics(database):
     assert freshness(STAMP, NOW) == "FRESH"
     assert freshness("2026-10-05 16:00:00", NOW) == "NO_VERIFICADO"
     assert freshness((NOW + timedelta(seconds=1)).isoformat(), NOW) == "NO_VERIFICADO"
+
+
+def test_buy_without_gate_remains_unverified(database):
+    with sqlite3.connect(database) as c:
+        c.execute("UPDATE paper_decisions SET action='BUY' WHERE id=(SELECT MAX(id) FROM paper_decisions)")
+    with Store(database, now=NOW) as s:
+        decision = Projection(s).decisions().rows[0]
+    assert decision["final"] == "BUY"
+    assert decision["economics"] == "NO_VERIFICADO"
+    assert decision["risk"] == "NO_VERIFICADO"
+
+
+def test_iol_cache_without_current_receipt_never_becomes_live(database, monkeypatch):
+    root = Path(database).parent
+    old = (NOW - timedelta(minutes=10)).isoformat()
+    (root / "iol_shadow_latest.json").write_text(json.dumps({"refreshed_at": old,
+        "cache_state": "LIVE", "symbols": [{"state": "LIVE", "source_state": "LIVE_FRESH"}]}))
+    (root / "iol_family_reference_latest.json").write_text(json.dumps({"refreshed_at": old,
+        "cache_state": "LIVE", "section_states": {"fci": "LIVE"}}))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_CACHE_PATH", str(root / "iol_shadow_latest.json"))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(root))
+    with Store(database, now=NOW) as s:
+        row = Projection(s).sources().rows[0]
+    assert row["observed_state"] == "LIVE" and row["state"] == "STALE"
 
 
 def coherent_cut():
