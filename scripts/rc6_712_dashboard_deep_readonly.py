@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
@@ -107,13 +108,30 @@ def main(output):
                                           if isinstance(v,dict)}}}
         for path in CANONICAL_PATHS:
             try:
+                started=time.monotonic()
                 response=page.goto(BASE+path,wait_until='domcontentloaded',timeout=12000)
+                navigation_ms=round((time.monotonic()-started)*1000)
                 metrics=page.evaluate(DOM)
-                item={'path':path,'http':response.status if response else None,**metrics}
+                item={'path':path,'http':response.status if response else None,
+                      'navigation_ms':navigation_ms,**metrics}
                 if item['http']!=200 or max(item['body'],item['html'])>1442:
                     report['findings'].append({'kind':'route_http_or_overflow','path':path,'http':item['http']})
                 if path=='/analitica/anual':
                     item['annual_selector_links']=page.locator('a[href^="/analitica/anual?identity="]').count()
+                if path=='/':
+                    # Header controls are shared across all 52 routes. The
+                    # manual action fetches this GET view only, and the auto
+                    # toggle is turned off before its 30-second interval.
+                    page.locator('#refresh-data').click(timeout=1000)
+                    page.wait_for_function("document.querySelector('#refresh-status')?.textContent?.includes('Datos actualizados')",timeout=9000)
+                    auto=page.locator('#auto-refresh')
+                    auto.click(timeout=1000)
+                    enabled=auto.get_attribute('aria-pressed')=='true'
+                    auto.click(timeout=1000)
+                    disabled=auto.get_attribute('aria-pressed')=='false'
+                    item['refresh_controls']={'manual_get':True,'auto_on':enabled,'auto_off':disabled}
+                    if not (enabled and disabled):
+                        report['findings'].append({'kind':'refresh_controls_interaction'})
                 # Expand each disclosure in place; the browser blocks mutation and
                 # all nonlocal requests. Record structural changes, not private text.
                 for detail in page.locator('details').all()[:32]:

@@ -21,6 +21,21 @@ state=rows('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_a
 assert state['mode']=='PRODUCTION_PAPER' and state['real_orders_sent']==0
 out={'schema':'RC6_712_DASHBOARD_LINEAGE_READONLY_V1','at_utc':datetime.now(timezone.utc).isoformat(),
      'paper':state,'tables':{}}
+out['quiescence_open']={}
+for name,active in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                    ('paper_future_positions','ACTIVE')):
+    if not table(name):
+        out['quiescence_open'][name]={'state':'SCHEMA_UNAVAILABLE'}
+        continue
+    columns={r['name'] for r in rows('PRAGMA table_info("'+name+'")')}
+    # No paper IDs, symbols, quantities, broker data or account fields leave
+    # the host. A bounded sample exposes the lifecycle class and clocks.
+    allowed=('status','asset_class','currency','opened_at','closed_at','maturity_at','updated_at')
+    selected=[key for key in allowed if key in columns]
+    sample=rows('SELECT '+','.join('"'+key+'"' for key in selected)+
+                ' FROM "'+name+'" WHERE status=? LIMIT 4',(active,))
+    out['quiescence_open'][name]={'at_least':len(sample),'has_more_than_three':len(sample)==4,
+                                   'sample':sample[:3]}
 if table('paper_decisions'):
     decisions=rows('SELECT decision_key,action,decided_at FROM paper_decisions ORDER BY id DESC LIMIT 10')
     counter=collections.Counter()
