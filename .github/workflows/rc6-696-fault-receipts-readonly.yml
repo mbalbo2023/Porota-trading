@@ -93,6 +93,19 @@ jobs:
                   'pack_bytes':mm.get('pack_bytes'),'report_raw_bytes':(item.get('computed_report') or {}).get('raw_bytes'),
                   'completed_at':item.get('completed_at')})
           print('RC6_COLD_COMPLETED_PROFILES='+json.dumps(profiles))
+          history=root/'data/market_history.db'
+          with sqlite3.connect(history.as_uri()+'?mode=ro',uri=True,timeout=.2) as h:
+              h.execute('PRAGMA query_only=ON')
+              tables={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 100")}
+              out={}
+              for table in ('history_canonical_v2','history_versions_v2','history_local_daily_v1'):
+                  if table not in tables:continue
+                  indexes=[]
+                  for ix in h.execute('PRAGMA index_list("'+table+'")'):
+                      indexes.append({'name':ix[1],'unique':bool(ix[2]),'columns':[
+                          row[2] for row in h.execute('PRAGMA index_info("'+ix[1]+'")')]})
+                  out[table]=indexes
+          print('RC6_HISTORY_INDEX_INVENTORY='+json.dumps(out,sort_keys=True))
           PY
       - name: Remove SSH key
         if: always()
