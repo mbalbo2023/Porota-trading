@@ -8,6 +8,39 @@ from tests.rc6_native_storage import native_storage
 from tests.test_rc6_shadow_cold_audit import seal, publish_reference
 
 
+def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
+    # The Oct 22 host had no carryover. _frame() cancelled 1.9 seconds before
+    # Docker's clean exit; the archived failed cut must remain revoked.
+    q = {'paused_postclose': False, 'intraday_caucion': False,
+         'market_open_suspended': False, 'open_paper_carryover': False,
+         'spot_carryover': None, 'caucion_carryover': None,
+         'stop_evidence': {'porota_production_observer': {
+             'classification': 'CLEAN_EXIT',
+             'before': {'Status': 'running',
+                        'StartedAt': '2026-10-22T00:02:50.313220733Z'},
+             'after': {'Status': 'exited', 'ExitCode': 0,
+                       'OOMKilled': False,
+                       'FinishedAt': '2026-10-22T00:40:58.147470735Z'}}}}
+    live = {'status': 'FAIL_CLOSED', 'error_class': 'ValueError',
+            'error_module': 'cold_audit', 'error_line': 265,
+            'as_of': '2026-10-22T00:40:56.246642+00:00',
+            'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'}
+    assert recovery.proven_stop_cancellation(live, q)
+    assert not recovery.proven_stop_cancellation({**live, 'error_line': 360}, q)
+    assert not recovery.proven_stop_cancellation({**live, 'error_line': 264}, q)
+    assert not recovery.proven_stop_cancellation({**live, 'error_module': 'other'}, q)
+    assert not recovery.proven_stop_cancellation({**live,
+        'as_of': '2026-10-22T00:40:40+00:00'}, q)
+    assert not recovery.proven_stop_cancellation(live, {**q,
+        'caucion_carryover': {'open_count': 1}})
+    assert not recovery.proven_stop_cancellation(live, {**q,
+        'market_open_suspended': True})
+    assert not recovery.proven_stop_cancellation(live, {**q,
+        'stop_evidence': {'porota_production_observer': {
+            **q['stop_evidence']['porota_production_observer'],
+            'classification': 'UNKNOWN'}}})
+
+
 def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,monkeypatch):
     native=tmp_path/'native';native.mkdir()
     monkeypatch.setattr(p,'_native_json_bound',native_storage(native))

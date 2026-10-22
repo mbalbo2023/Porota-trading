@@ -70,10 +70,22 @@ def proven_stop_cancellation(live, quiescence):
         re.fullmatch('[0-9a-f]{64}',caucion['sha256']) is not None)
     postclose=(quiescence.get('paused_postclose') is True and
                quiescence.get('intraday_caucion') is not True)
-    if ((not postclose and not intraday_caucion) or
+    closed_flat=(quiescence.get('paused_postclose') is False and
+                 quiescence.get('intraday_caucion') is False and
+                 quiescence.get('market_open_suspended') is False and
+                 quiescence.get('open_paper_carryover') is False and
+                 quiescence.get('spot_carryover') is None and
+                 quiescence.get('caucion_carryover') is None)
+    # The 2026-10-22 clean stop interrupted _frame() at line 265 while
+    # flushing an 8 MiB segment. The older stage() cancellation at line 360
+    # belongs to the separately proved postclose/caucion paths.
+    expected_line=(265 if closed_flat else 360 if (postclose or intraday_caucion)
+                   else None)
+    if (expected_line is None or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
             live.get('error_module')!='cold_audit' or
-            type(live.get('error_line')) is not int or live['error_line']!=360):
+            type(live.get('error_line')) is not int or
+            live['error_line']!=expected_line):
         return False
     proof=(quiescence.get('stop_evidence') or {}).get('porota_production_observer')
     if not isinstance(proof,dict) or proof.get('classification')!='CLEAN_EXIT':return False
