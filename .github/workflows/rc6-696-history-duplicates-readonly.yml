@@ -1,0 +1,77 @@
+name: RC6 696 bounded historical duplication inventory read only
+on:
+  push:
+    branches:
+      - diagnostic/rc6-679-readonly-baseline-20261021
+    paths:
+      - .github/workflows/rc6-696-history-duplicates-readonly.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-696-readonly-history
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bound historical duplicate candidates in SQLite without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_history_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_history_ro" "$HOME/.ssh/known_hosts"
+          timeout 65 ssh -i "$HOME/.ssh/rc6_history_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n timeout 50 nice -n 19 python3 -' <<'PY'
+          import collections,json,sqlite3,time
+          from pathlib import Path
+          db=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          start=time.monotonic()
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=200')
+              n=[0]
+              def bounded():
+                  n[0]+=1
+                  return int(n[0]>200 or time.monotonic()-start>12)
+              c.set_progress_handler(bounded,1000)
+              mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+              results={}
+              for table,fields in (
+                  ('production_history',('symbol','instrument_type','settlement','date_from','date_to','row_count','downloaded_at','payload_json')),
+                  ('history_versions_v2',('id','symbol','instrument_type','market','settlement','date','source','payload_hash','previous_version_id','observed_at'))):
+                  cols={r[1] for r in c.execute('PRAGMA table_info('+table+')')}
+                  if not cols:
+                      results[table]={'state':'TABLE_ABSENT'}
+                      continue
+                  selected=[f for f in fields if f in cols]
+                  rows=c.execute('SELECT '+','.join(selected)+' FROM '+table+' LIMIT 5001').fetchall()
+                  complete=len(rows)<=5000
+                  info={'sampled_rows':min(len(rows),5000),'complete_table_if_within_budget':complete,'columns_present':selected}
+                  if complete:
+                      info['rows']=len(rows)
+                      index={field:i for i,field in enumerate(selected)}
+                      if table=='production_history':
+                          keys=[tuple(row[index[f]] for f in ('symbol','instrument_type','settlement')) for row in rows]
+                          info['four_field_key_collisions']=len(keys)-len(set(keys))
+                          info['empty_payload_rows']=sum(not row[index['payload_json']] for row in rows)
+                      else:
+                          basis=('symbol','instrument_type','market','settlement','date','source','payload_hash','previous_version_id')
+                          keys=[tuple(row[index[f]] for f in basis) for row in rows]
+                          info['legacy_revision_key_collisions']=len(keys)-len(set(keys))
+                          info['legacy_basis_incomplete']=not {'currency','price_basis','adjustment_basis','version_known_at'}<=cols
+                  results[table]=info
+              print('RC6_HISTORY_DUPLICATION_BOUNDED_READONLY='+json.dumps({'tables':results,'opcodes_upper_bound':n[0]*1000,'elapsed_seconds':round(time.monotonic()-start,3),'real_orders_sent':orders,'deletion_authorized':False},sort_keys=True))
+          PY
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_history_ro"
