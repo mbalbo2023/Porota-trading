@@ -22,6 +22,9 @@ def test_deploy_classifies_live_session_and_rechecks_flat_paper_at_drain():
     assert '--paused-postclose' not in source
     assert "CLOSED_CAUCION) FLAG='--pending-paper-caucion'" in source
     assert "CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion'" in source
+    assert 'CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"' in source
+    assert 'RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)' in source
+    assert 'RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")' in source
     assert 'RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION' not in source
 
 

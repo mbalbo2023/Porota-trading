@@ -12,7 +12,7 @@ import sqlite3
 from bl_candle_engine import fingerprint, stamp
 from bs_instrument_contracts import decimal_value
 from bt_caucion_paper import CaucionOffer, offer_payload, validate_position
-from ca_caucion_allocator import CaucionPolicy, encoded, selection_key
+from ca_caucion_allocator import CaucionPolicy, encoded, selection_key, _paper_tariff_authorized
 
 
 def _require(condition, code):
@@ -65,7 +65,13 @@ def _validated(row, connection):
         if candidate['code'] == 'ELIGIBLE':
             offer = offers[key]
             principal = decimal_value(candidate['principal'], 'principal', positive=True)
-            _require(principal == offer.fee_quote_principal and offer.currency == policy.currency,
+            # An explicit quote fixes the exact principal. A versioned ARS
+            # PAPER tariff intentionally has no quote principal: the selector
+            # computes it within policy limits and economics() prices it.
+            cost_authorized = (principal == offer.fee_quote_principal
+                               if offer.quoted_total_fees is not None else
+                               offer.fee_quote_principal is None and _paper_tariff_authorized(offer))
+            _require(cost_authorized and offer.currency == policy.currency,
                      'ELIGIBLE_TERMS_MISMATCH')
             interest, fees, net = offer.economics(principal)
             debit = principal + (fees if offer.fee_payment == 'UPFRONT' else Decimal(0))

@@ -168,11 +168,12 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
           SESSION_MODE="$(timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 12 python3 - '$CANDIDATE_SHA'" <<'PY'
-          import sqlite3,sys
+            "$DO_USER@$DO_HOST" "sudo -n timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64'" <<'PY'
+          import base64,sqlite3,sys,types
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_deploy_quiescence import (
@@ -226,7 +227,10 @@ jobs:
                   from datetime import datetime, timezone
                   from zoneinfo import ZoneInfo
                   from bt_caucion_paper import validate_position
-                  from cb_caucion_audit import _validated
+                  candidate_audit=types.ModuleType('rc6_candidate_cb_caucion_audit')
+                  exec(compile(base64.b64decode(sys.argv[2],validate=True),
+                               'candidate/cb_caucion_audit.py','exec'),candidate_audit.__dict__)
+                  _validated=candidate_audit._validated
                   with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
                       c.row_factory=sqlite3.Row
                       c.execute('PRAGMA query_only=ON')
@@ -529,10 +533,14 @@ jobs:
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
           case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; *) exit 31;; esac
+          AUDIT_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
+            AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
+          fi
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
+            "$DO_USER@$DO_HOST" "sudo -n env $AUDIT_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -650,7 +658,7 @@ jobs:
               src=stage/rel
               assert src.is_file() and not src.is_symlink()
               assert hashlib.sha256(src.read_bytes()).hexdigest()==row['sha256'], rel
-          assert {'cd_spot_ledger.py','scripts/rc6_paper_admin_cancel.py',
+          assert {'cb_caucion_audit.py','cd_spot_ledger.py','scripts/rc6_paper_admin_cancel.py',
                   'scripts/rc6_deploy_quiescence.py'} <= observed
           print(f"RC6_STAGED_BUNDLE_HASHES=GREEN|files={len(observed)}")
           PY
@@ -676,7 +684,11 @@ jobs:
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
           case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; *) exit 31;; esac
-          sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+          QUIESCENCE_AUDIT_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
+            QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
+          fi
+          sudo -n env $QUIESCENCE_AUDIT_ENV python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
             --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
 
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'

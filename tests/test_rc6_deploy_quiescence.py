@@ -177,9 +177,11 @@ def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installat
 
 
 def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_path, monkeypatch):
+    import base64
     from be_paper_engine import PaperBroker, PaperStore, D
     from bt_caucion_paper import CaucionOffer
     from ca_caucion_allocator import CaucionPolicy
+    from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
     root = tmp_path
     (root / 'data/paper_v17').mkdir(parents=True)
     path = root / 'data/paper_v17/observer_v17.db'
@@ -190,11 +192,12 @@ def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_
                           maturity_at='2026-10-23T17:00:00-03:00', quoted_at=at,
                           available_principal=D('100000'), minimum_principal=D('100'),
                           principal_step=D('1'), day_count_basis=365, fee_payment='MATURITY',
-                          metadata_source='TEST_FIXTURE_NOT_BROKER', quoted_total_fees=D('.1'),
-                          fee_quote_principal=D('1000'))
+                          metadata_source='CONTRACT_EVIDENCE_V2:INCIDENT_REPLAY',
+                          paper_fill_policy='CONSERVATIVE_NOTIONAL_CAP',
+                          fee_authority=CAUCION_PAPER_FEE_AUTHORITY)
     policy = CaucionPolicy(frozen_at='2026-10-22T10:59:00-03:00', currency='ARS',
                             reserve_cash=D(1000), maximum_cash_fraction=D('.5'),
-                            maximum_principal=D(3000), liquidity_deadline=offer.maturity_at,
+                            maximum_principal=D(1000), liquidity_deadline=offer.maturity_at,
                             maximum_quote_age_seconds=D(60), participation=D('.10'),
                             minimum_net_profit=D(0), ranking='NET_PROFIT',
                             session_open_at='2026-10-22T11:00:00-03:00',
@@ -202,6 +205,8 @@ def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_
                             session_source='TEST_NOT_MARKET_CALENDAR')
     result = broker.allocate_caucion([offer], policy, 'pending-deploy-test', as_of=at)
     assert result['status'] == 'PLACED_SIMULATED', (result['code'], result['candidates'])
+    from cb_caucion_audit import allocation_history
+    assert allocation_history(path)['state'] == 'READABLE'
     with sqlite3.connect(path) as c:
         c.execute("UPDATE observer_state SET mode='PRODUCTION_PAPER',real_orders_sent=0,"
                   "process_state='WAITING_MARKET',session_state='MARKET_CLOSED',heartbeat_at=? WHERE id=1",
@@ -230,6 +235,8 @@ def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_
         return ''
     monkeypatch.setattr(q, 'command', command)
     flags = {'allow_pending_caucion': True}
+    audit_source = (Path(__file__).resolve().parents[1] / 'cb_caucion_audit.py').read_bytes()
+    monkeypatch.setenv('RC6_CANDIDATE_CAUCION_AUDIT_B64', base64.b64encode(audit_source).decode())
     before = q.verified_pending_caucion_snapshot()
     receipt = q.run(SHA, 'drain', **flags)
     assert receipt['caucion_carryover'] == before
@@ -241,6 +248,7 @@ def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_
     with sqlite3.connect(path) as c:
         c.execute("UPDATE paper_cauciones SET principal='1000' WHERE status='OPEN'")
     assert q.run(SHA, 'install', **flags)['installation_started'] is True
+    monkeypatch.delenv('RC6_CANDIDATE_CAUCION_AUDIT_B64')
     with sqlite3.connect(path) as c:
         c.execute("UPDATE observer_state SET process_state='WAITING_MARKET'")
     assert q.admit_poststart_flat('CLOSED_CAUCION', SHA) == 'CLOSED'
