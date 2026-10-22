@@ -80,6 +80,19 @@ jobs:
                type(data.get('failed_at')) in (int,float) and type(m.get('sealed_at')) in (int,float) else None,
               'pack_bytes':m.get('pack_bytes'),'pack_present':pack.is_file() if pack else False,
               'shadow_status':status.get('status'),'shadow_real_orders_sent':status.get('real_orders_sent')}))
+          profiles=[]
+          for file in sorted(path.glob('receipt-*.json'))[:16]:
+              outer=bounded_json(file)
+              item=outer.get('payload',{}) if isinstance(outer,dict) else {}
+              if item.get('state')!='COMPLETE':continue
+              sid=item.get('snapshot_id','')
+              if not isinstance(sid,str) or not re.fullmatch(r'[0-9a-f]{32}',sid):continue
+              manifest_outer=bounded_json(path/('manifest-'+sid+'.json'))
+              mm=manifest_outer.get('payload',{}) if isinstance(manifest_outer,dict) else {}
+              profiles.append({'wall_seconds':item.get('wall_seconds'),'cpu_seconds':item.get('cpu_seconds'),
+                  'pack_bytes':mm.get('pack_bytes'),'report_raw_bytes':(item.get('computed_report') or {}).get('raw_bytes'),
+                  'completed_at':item.get('completed_at')})
+          print('RC6_COLD_COMPLETED_PROFILES='+json.dumps(profiles))
           PY
       - name: Remove SSH key
         if: always()
