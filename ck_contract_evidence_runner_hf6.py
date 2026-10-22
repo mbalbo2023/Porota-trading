@@ -88,12 +88,14 @@ def recent_completed_v1(store, *, now=None):
         raise ValueError("RECENT_COMPLETED_V1_TIMESTAMP_INVALID") from exc
     age = (now - finish_at).total_seconds() if finish_at.tzinfo else -1
     if (start_at.tzinfo is None or not start_at <= finish_at <= now or
-            not 0 <= age <= MAX_REUSED_V1_AGE_SECONDS or
+            age < 0 or
             type(total) is not int or total <= 0 or
             any(type(x) is not int or x < 0 for x in
                 (verified, blocked_porota, blocked_provider)) or
             verified + blocked_porota + blocked_provider != total):
         raise ValueError("RECENT_COMPLETED_V1_UNVERIFIED")
+    if age > MAX_REUSED_V1_AGE_SECONDS:
+        raise ValueError("RECENT_COMPLETED_V1_EXPIRED")
     return {"finished_at": str(finish), "age_seconds": round(age, 1),
             "total": total, "verified": verified,
             "blocked_porota": blocked_porota,
@@ -121,9 +123,20 @@ def main():
         # Deploy reuses only a successful <=24h run and always rematerializes
         # the entire current PPI catalogue in v2 below. New v2 identities
         # remain fail-closed until their own provider contract is complete.
-        previous = recent_completed_v1(store)
-        print("REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED")
-        print("REMOTE_PPI_V1_PROVENANCE=" + json.dumps(previous, sort_keys=True))
+        try:
+            previous = recent_completed_v1(store)
+        except ValueError as exc:
+            if str(exc) != "RECENT_COMPLETED_V1_EXPIRED":
+                raise
+            # V1 is complementary provider provenance.  Never call an old
+            # sweep recent or replay the expensive remote sweep on deploy.
+            # The v2 materialization below retains original observed_at;
+            # PAPER admission must continue to reject stale/unknown evidence.
+            print("REMOTE_PPI_V1_REFRESH=SKIPPED_EXPIRED_COMPLETED")
+            print("REMOTE_PPI_V1_STATUS=STALE")
+        else:
+            print("REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED")
+            print("REMOTE_PPI_V1_PROVENANCE=" + json.dumps(previous, sort_keys=True))
     elif market_closed and REMOTE_V1_POLICY == "REFRESH":
         secret = json.loads(Path(SECRET).read_text(encoding="utf-8"))
         api_key = secret.get("api_key") or ""
