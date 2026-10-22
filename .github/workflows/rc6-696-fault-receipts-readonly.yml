@@ -1,0 +1,68 @@
+name: RC6 696 bounded fault receipts read only
+on:
+  push:
+    branches:
+      - diagnostic/rc6-679-readonly-baseline-20261021
+    paths:
+      - .github/workflows/rc6-696-fault-receipts-readonly.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  receipts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read only exact fault receipts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_fault_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_fault_ro" "$HOME/.ssh/known_hosts"
+          timeout 45 ssh -i "$HOME/.ssh/rc6_fault_ro" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 25 python3 -' <<'PY'
+          import json,os,re,sqlite3,subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          state=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          assert state['deploy_sha']=='328a6526a3eaf3851ef93778c1d0345593afc3ee'
+          assert state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              assert c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()==('PRODUCTION_PAPER',0)
+          p=subprocess.run(['journalctl','-u','porota-local-eod-history-rc6.service','--since','2026-10-22 01:50:00 UTC','--until','2026-10-22 02:00:00 UTC','--no-pager','-o','cat','-n','80'],capture_output=True,text=True,timeout=5)
+          lines=p.stdout.splitlines()[:80] if p.returncode==0 else []
+          codes=sorted(set(re.findall(r'\b(?:LOCAL_EOD|HISTORY|SHADOW_COLD|SQLITE)_[A-Z0-9_]{3,100}\b','\n'.join(lines))))
+          kinds=sorted(set(re.findall(r'\b(?:[A-Za-z_]+Error|TimeoutExpired|Traceback)\b','\n'.join(lines))))
+          print('RC6_LOCAL_EOD_FAULT='+json.dumps({'journal_read':p.returncode==0,'lines':len(lines),'codes':codes[:16],'exception_types':kinds[:16]}))
+          path=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/cold-audit'
+          def bounded_json(file):
+              if file.is_symlink() or not file.is_file() or file.stat().st_size>131072:return None
+              return json.loads(file.read_text())
+          queue=bounded_json(path/'queue.json')
+          payload=queue.get('payload',{}) if isinstance(queue,dict) else {}
+          ident=payload.get('snapshot_id','')
+          assert isinstance(ident,str) and (not ident or re.fullmatch(r'[0-9a-f]{32}',ident))
+          receipt=bounded_json(path/('receipt-'+ident+'.json')) if ident else None
+          data=receipt.get('payload',{}) if isinstance(receipt,dict) else {}
+          allowed=('state','error_class','error_code','error_phase','failed_at','snapshot_id')
+          print('RC6_COLD_RECEIPT='+json.dumps({'queue_state':payload.get('state'),'receipt_present':receipt is not None,
+              'receipt':{k:data.get(k) for k in allowed},'queue_snapshot_matches_receipt':ident==data.get('snapshot_id')}))
+          PY
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_fault_ro"
