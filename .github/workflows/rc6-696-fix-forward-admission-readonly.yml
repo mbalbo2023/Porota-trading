@@ -22,12 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 9bd8294185320afcf8e8a3c75b22d9e146abd9b8
+          ref: 571b519eb114415da6ea027fd72c5e8c6223833c
       - name: Prove exact candidate and host guard admissions without writes
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = 9bd8294185320afcf8e8a3c75b22d9e146abd9b8
+          test "$(git rev-parse HEAD)" = 571b519eb114415da6ea027fd72c5e8c6223833c
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_696_fix_ro"
@@ -48,7 +48,7 @@ jobs:
           assert ok
           deploy=Path('/opt/porota-trading/data/deploy')
           shadow=Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          prior=json.loads((deploy/'quiescence-d17f55442caf5c5227346f1966aba4f150d9d23c.json').read_text())
+          prior=json.loads((deploy/'quiescence-9bd8294185320afcf8e8a3c75b22d9e146abd9b8.json').read_text())
           evidence=checked(directory,shadow,archived_recovery=True,quiescence=prior,
               prior_quiescence=deploy/('quiescence-'+PRIOR_CANCELLED_SHA+'.json'))
           print('RC6_696_ARCHIVE_FULL_CHECKED_READONLY='+json.dumps({
@@ -56,7 +56,7 @@ jobs:
               'current_cut':evidence.get('current_cut'),
               'snapshot_id':evidence.get('snapshot_id')},sort_keys=True))
           PY
-          } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n env PYTHONPATH=/opt/porota-trading timeout 75 nice -n 19 python3 -'
+          } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n timeout 75 nice -n 19 python3 -I -'
           {
             sed '/^if __name__==/,$d' scripts/rc6_offline_current_image_cleanup.py
             cat <<'PY'
@@ -65,7 +65,7 @@ jobs:
           assert result['flat_stop_proof'] and result['intraday_proof'] is None
           print('RC6_696_OFFLINE_ADMISSION_READONLY='+json.dumps(result,sort_keys=True))
           PY
-          } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n env PYTHONPATH=/opt/porota-trading timeout 75 nice -n 19 python3 -'
+          } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n timeout 75 nice -n 19 python3 -I -'
       - name: Remove SSH key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_696_fix_ro"
