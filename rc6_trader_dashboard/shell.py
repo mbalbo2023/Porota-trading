@@ -2,7 +2,7 @@
 from .components import badge, clock, e, number
 from .design_system import CSS, SCRIPT
 from .navigation import DESTINATIONS, view_path
-from .projection import UNKNOWN, freshness
+from .projection import UNKNOWN
 from urllib.parse import urlencode
 
 
@@ -10,9 +10,13 @@ def render(destination, tab, projection, content):
     state = projection.runtime
     policy = projection.shadow["report"].get("capacity_policy", {})
     selector = policy.get("status", UNKNOWN) if isinstance(policy, dict) else UNKNOWN
-    if selector not in {"OFF", "SHADOW", "APPROVED_DYNAMIC", "BASELINE_FAIL_CLOSED"}:
+    if selector not in {"OFF", "OFF_BASELINE", "SHADOW", "SHADOW_BASELINE",
+                        "APPROVED_DYNAMIC", "ACTIVATION_BLOCKED_EXIT_CAPACITY",
+                        "BASELINE_FAIL_CLOSED"}:
         selector = UNKNOWN
-    if freshness(projection.shadow["report"].get("as_of"), projection.now, 30) != "FRESH":
+    # The coherent generation has a measured liveness budget; a fixed 30 s
+    # clock incorrectly hides a fresh selector during normal native cycles.
+    if not projection.shadow_fresh or not projection.shadow["report"].get("as_of"):
         selector = UNKNOWN
     def current(active):
         return "aria-current='page'" if active else ""

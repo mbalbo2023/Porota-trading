@@ -74,6 +74,29 @@ def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installat
     assert q.run(SHA, 'install', allow_market_open_suspend=True)['installation_started'] is True
 
 
+@pytest.mark.parametrize('change', ['open_spot', 'open_caucion', 'active_future',
+                                   'real_order', 'closed_session', 'stale_heartbeat'])
+def test_open_flat_deploy_rejects_unsafe_book_before_stopping(installation, change):
+    _, db, _, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        if change == 'open_spot':
+            c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+        elif change == 'open_caucion':
+            c.execute("INSERT INTO paper_cauciones VALUES('OPEN')")
+        elif change == 'active_future':
+            c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+        elif change == 'real_order':
+            c.execute('UPDATE observer_state SET real_orders_sent=1')
+        elif change == 'closed_session':
+            c.execute("UPDATE observer_state SET session_state='CLOSED'")
+        else:
+            c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+    with pytest.raises((ValueError, sqlite3.Error)):
+        q.run(SHA, 'drain', allow_market_open_suspend=True)
+    assert not any(call[1] in ('stop', 'start') for call in calls)
+
+
 def test_intraday_one_caucion_is_preserved_without_spot_carryover(installation, monkeypatch):
     root, db, states, calls, _ = installation
     class Intraday(datetime):

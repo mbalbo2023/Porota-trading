@@ -36,8 +36,8 @@ def render(p, destination, tab):
     if tab == "scheduler":
         return render_table(p, destination, tab, artifact(p, "scheduler"), "Scheduler · snapshot read-only",
                             fields("unit|Unidad / job;state|Estado|status;freshness|Snapshot freshness|status;next_run|Próxima ejecución|time;last_run|Última ejecución|time"),
-                            fields("enabled|Habilitado;active|Activo;last_success|Último éxito|time;lag|Lag;description|Descripción;reason|Excepción"),
-                            note="Sólo snapshot de jobs/systemd; esta pantalla no ejecuta comandos ni habilita timers.")
+                            fields("enabled|Habilitado;active|Activo;last_result|Resultado servicio;exec_main_status|Exit status;description|Descripción;reason|Excepción"),
+                            note="El timer activo no certifica ejecución exitosa. Estado y reloj de un snapshot vencido no son evidencia actual; esta pantalla no ejecuta comandos ni habilita timers.")
     if tab == "evidencia":
         cut = p.shadow
         pointer, manifest = cut.get("pointer", {}), cut.get("manifest", {})

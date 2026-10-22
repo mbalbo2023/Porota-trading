@@ -70,7 +70,7 @@ def badge(value):
         tone, icon = "discovery", "⌕"
     elif key in {"PASS", "HEALTHY", "FRESH", "RUNNING", "OK"}:
         tone, icon = "pass", "✓"
-    elif key in {"FAIL", "BLOCKED", "STALE", "ERROR", "HARD_STOP", "SOFT_STOP"}:
+    elif key in {"FAIL", "BLOCKED", "STALE", "ERROR", "HARD_STOP", "SOFT_STOP", "SERVICE_FAILED"}:
         tone, icon = "blocked", "!"
     else:
         tone, icon = "unknown", "·"

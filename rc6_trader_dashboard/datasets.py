@@ -1,13 +1,37 @@
 """View adapters to existing facts and a coherent future SHADOW cut."""
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 import re
 import stat
 from pathlib import Path
 import hashlib
+from co_market_sessions_hf6 import byma_paper_spot_phase
 
 from .projection import Page, UNKNOWN, age, freshness, json_object, contract_labels, validated_metrics
+
+
+def current_open_capacity(p, plan, capacity):
+    """Display only an unexpired SHADOW recommendation from the live OPEN cut."""
+    if (plan.get("phase") != "OPEN" or byma_paper_spot_phase(p.now) != "OPEN"
+            or capacity.get("status") != "SHADOW_RECOMMENDATION"
+            or capacity.get("mode") != "SHADOW" or capacity.get("real_orders_sent") != 0
+            or capacity.get("real_routes") != "NOT_CALLED"
+            or capacity.get("production_limit_modified") is not False):
+        return False
+    limit = capacity.get("safe_limit")
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        return False
+    if any(not isinstance(capacity.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", capacity[key])
+           for key in ("evidence_digest", "configuration_fingerprint")):
+        return False
+    if freshness(capacity.get("validated_as_of"), p.now, 120) != "FRESH":
+        return False
+    try:
+        expires = datetime.fromisoformat(str(capacity.get("expires_at")).replace("Z", "+00:00"))
+        return expires.tzinfo is not None and expires.utcoffset() is not None and p.now < expires
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 def shadow_rows(p, kind):
@@ -29,16 +53,22 @@ def shadow_rows(p, kind):
             if kind == "capacity":
                 discovery = json_object(plan.get("discovery", {}))
                 capacity = json_object(plan.get("capacity", {}))
-                open_verified = report.get("capacity_open_status") == "OPEN_EVIDENCE_VERIFIED" and p.shadow_fresh
+                open_verified = current_open_capacity(p, plan, capacity)
+                # The detail must not expose a historical limit as if it were
+                # usable now merely because the committed report retains it.
+                capacity_detail = (capacity if open_verified else {
+                    key: capacity.get(key) for key in ("status", "reason_codes", "evidence_digest",
+                                                   "validated_as_of", "expires_at") if key in capacity})
                 rows.append({**discovery, "engine": engine, "source": "committed SHADOW · engines.capacity",
-                             "state": "OPEN_EVIDENCE_VERIFIED" if open_verified else UNKNOWN, "as_of": report.get("as_of"),
+                             "state": "SHADOW_RECOMMENDATION" if open_verified else UNKNOWN, "as_of": report.get("as_of"),
                              "safe_capacity": capacity.get("safe_limit") if open_verified else None,
                              "baseline": report.get("capacity_policy", {}).get("baseline"),
-                             "endpoint_budgets": capacity.get("endpoint_budgets"),
-                             "opened_priority": plan.get("opened_priority"), "capacity": capacity,
+                             "endpoint_budgets": capacity.get("slots_by_endpoint") if open_verified else None,
+                             "opened_priority": plan.get("opened_priority"), "capacity": capacity_detail,
                              "planned_revisit": None, "achieved_revisit": None,
                              "hot": plan.get("hot_count"), "warm": plan.get("warm_count"), "discovery": plan.get("discovery_count"),
-                             "reason": "Capacidad OPEN no certificada" if report.get("capacity_open_status") != "OPEN_EVIDENCE_VERIFIED" else None})
+                             "reason": ("Recomendación SHADOW medida; política de admisión independiente" if open_verified
+                                        else "Capacidad OPEN vigente no verificada")})
                 continue
             for raw in plan.get("telemetry", []):
                 if not isinstance(raw, dict):
@@ -165,26 +195,49 @@ def artifact(p, kind):
     if not isinstance(rows, list):
         rows = []
     result = []
-    captured = payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of")
+    captured = (payload.get("recorded_at") if kind == "scheduler" else
+                payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of"))
+    # One-minute exporter timer: three missed cycles are stale. Other
+    # artifacts retain their independent hourly display budget.
+    budget = 180 if kind == "scheduler" else 3600
+    snapshot_freshness = freshness(captured, p.now, budget)
+    snapshot_fresh = snapshot_freshness == "FRESH"
+
+    def systemd_time(value):
+        if not isinstance(value, str) or not value.endswith(" UTC"):
+            return None
+        try:
+            return datetime.strptime(value, "%a %Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            return None
+
     for row in rows:
         if not isinstance(row, dict):
             continue
         if kind == "scheduler":
-            # The systemd exporter publishes these exact names. An HTTP 200
-            # with 32 rows should not render every clock and state as unknown.
+            # A stale snapshot is historical, and an active timer cannot hide
+            # a failed service. It proves scheduling, not work completion.
             enabled, active = row.get("enabled_state"), row.get("active_state")
-            row = {**row, "state": ("ACTIVE" if enabled == "enabled" and active == "active" else
-                                    "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN),
+            outcome = row.get("last_result")
+            current = state == "AVAILABLE" and payload.get("state") == "OK" and snapshot_fresh
+            row_state = ("SERVICE_FAILED" if outcome not in {None, "", "success", "unknown"} else
+                         "TIMER_ACTIVE" if enabled == "enabled" and active == "active" and outcome == "success" else
+                         "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN)
+            row = {**row, "state": row_state if current else UNKNOWN,
                    "enabled": enabled, "active": active,
-                   "next_run": row.get("next_elapse"), "last_run": row.get("last_trigger"),
-                   "last_success": None,
+                   "next_run": systemd_time(row.get("next_elapse")),
+                   "last_run": systemd_time(row.get("last_trigger")),
                    "description": row.get("description"),
-                   "reason": row.get("last_result") if row.get("last_result") not in {None, "success"} else None}
+                   "reason": ("Service result: " + str(outcome)[:64]) if outcome not in {None, "success"} else None}
         # No arbitrary recursive payload dump: detail columns are allowlisted.
         result.append({**row, "as_of": row.get("as_of") or captured,
-                       "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, 3600)})
+                       "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, budget)})
+    page_state = state
+    if kind == "scheduler":
+        page_state = (snapshot_freshness if state == "AVAILABLE" and payload.get("state") == "OK"
+                      else UNKNOWN)
     return Page(files[kind], result[p.offset:p.offset + 10], len(result) if state == "AVAILABLE" else None,
-                state, p.offset, captured, state)
+                page_state, p.offset, captured, state)
 
 
 def logs(p):
