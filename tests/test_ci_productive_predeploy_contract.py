@@ -101,7 +101,10 @@ def test_candidate_tree_mismatch_fails_closed(tmp_path):
 
 
 def test_predeploy_stays_off_droplet_and_builds_once():
-    assert PREDEPLOY.count("docker build") == 1
+    assert PREDEPLOY.count("uses: docker/build-push-action@v7") == 1
+    assert "load: true" in PREDEPLOY and "push: false" in PREDEPLOY
+    assert "cache-from: type=gha,scope=porota-rc6-predeploy-v2" in PREDEPLOY
+    assert "cache-to: type=gha,scope=porota-rc6-predeploy-v2" in PREDEPLOY
     assert "ssh " not in PREDEPLOY
     assert "scp " not in PREDEPLOY
     assert "DROPLET_TOUCHED=NO" in PREDEPLOY
