@@ -25,6 +25,29 @@ PRIOR_ARCHIVE_SHA='d96cb68d177199317ee23239553517e04ee0a255'
 PRIOR_CANCELLED_SHA='dc15f2af0bdcdf9c53dd26a645a6a131471ce879'
 PRIOR_CANCELLED_RECEIPT_SHA='813ed6a0fb2e8b56fb9a9e1484f6976269bdf313082fc43a4c086f66bf841f80'
 FILES={IDENT+'.pack','manifest-'+IDENT+'.json','receipt-'+IDENT+'.json','queue.json'}
+CURRENT_FAILED_SUCCESSOR='3bfbfd6996a849f6b395f6c4a27ff15a'
+CURRENT_FAILED_MANIFEST='9893c071a5c88cada7cda6ace0f534e1424c69623eaf0eda84f0af758280f8dc'
+CURRENT_FAILED_REPORT_SHA='2416726d6ee67a1c52b1d87e5561003a3f717ddefb576aa80578c830b0db2718'
+
+
+def proven_distinct_failed_successor(directory, generation, current_snapshot):
+    """Keep the original archived cut revoked while a later exact FAILED cut waits.
+
+    The successor is inspected read-only with its own manifest, receipt, pack,
+    CURRENT and PAPER guards. Its separate fix-forward must still run later.
+    """
+    if current_snapshot != CURRENT_FAILED_SUCCESSOR:
+        return False
+    from scripts import rc6_cold2_successor as successor
+    try:
+        evidence=successor.inspect(directory.parents[2])
+    except (OSError,ValueError,KeyError,TypeError):
+        return False
+    return (evidence.get('snapshot_id')==CURRENT_FAILED_SUCCESSOR and
+            evidence.get('manifest_sha256')==CURRENT_FAILED_MANIFEST and
+            evidence.get('pack_bytes')==219680584 and
+            evidence.get('failed_computed_report',{}).get('sha256')==CURRENT_FAILED_REPORT_SHA and
+            evidence.get('cut')==generation and evidence.get('queue_failed') is True)
 
 
 def digest(value):
@@ -221,7 +244,9 @@ def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
         if (generation==CUT or old_cut_path.exists() or current_snapshot==IDENT or
                 (live.get('status')!='SHADOW_OBSERVING' and
                  not proven_stop_cancellation(live,quiescence) and
-                 not proven_prior_stop_cancellation(live,quiescence,prior_quiescence)) or
+                 not proven_prior_stop_cancellation(live,quiescence,prior_quiescence) and
+                 not (live.get('status')=='FAIL_CLOSED' and
+                      proven_distinct_failed_successor(directory,generation,current_snapshot))) or
                 live.get('real_routes')!='NOT_CALLED'):
             raise ValueError('COLD_ARCHIVED_RECOVERY_NOT_PROVEN')
     elif live.get('status')!='FAIL_CLOSED':

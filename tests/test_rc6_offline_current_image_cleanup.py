@@ -1,6 +1,7 @@
 """Exercise the stopped-runtime cleanup against an in-memory Docker inventory."""
 import fcntl
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -164,4 +165,49 @@ def test_intraday_validated_state_requires_exact_stopped_receipt(tmp_path, monke
     monkeypatch.setattr(drain, 'spot_carryover_snapshot',
                         lambda:dict(carry,sha256='f'*64))
     with pytest.raises(ValueError, match='OFFLINE_CURRENT_CARRYOVER_RED'):
+        clean.admission()
+
+
+def test_closed_flat_validated_state_requires_stopped_paper_zero(tmp_path, monkeypatch):
+    from scripts import rc6_deploy_quiescence as drain
+    root=tmp_path/'porota';folder=root/'data/deploy';folder.mkdir(parents=True)
+    (folder/'CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':NEW_SHA,'image_id':CURRENT,'validation_status':'VALIDATED_RUNTIME',
+        'mode':'PRODUCTION_PAPER','real_orders_sent':0,'real_order_routes':'NOT_CALLED',
+        'recorded_at':'2026-10-22T02:33:14+00:00'}))
+    db=root/'data/paper_v17/observer_v17.db';db.parent.mkdir(parents=True)
+    with sqlite3.connect(db) as c:
+        c.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER,process_state TEXT,session_state TEXT)')
+        c.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,'STOPPED','MARKET_CLOSED')")
+        for table in ('paper_positions','paper_cauciones','paper_future_positions'):
+            c.execute(f'CREATE TABLE {table}(status TEXT)')
+    monkeypatch.setattr(clean,'ROOT',root)
+    owned={name:{'Id':name,'Image':CURRENT,'State':{'Status':'exited','ExitCode':0}}
+           for name in clean.OWNED}
+    owned[clean.CRITICAL]={'Id':'critical','Image':CURRENT,'RestartCount':0,
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    monkeypatch.setattr(clean,'inspect',lambda name:owned[name])
+    monkeypatch.setattr(clean,'docker',lambda *args:'RC6_CRITICAL_ISSUES_ONLY=GREEN')
+    monkeypatch.setattr(clean,'ppi_units',lambda:{})
+    prior={'candidate_sha':OLD_SHA,'recorded_at':'2026-10-22T12:41:17+00:00',
+           'status':'FIX_FORWARD_VALIDATION_REQUIRED','installation_started':True,
+           'market_open_suspended':False,'open_paper_carryover':False,
+           'paused_postclose':False,'intraday_caucion':False,
+           'spot_carryover':None,'caucion_carryover':None,
+           'containers':{name:{'id':owned[name]['Id'],'image':CURRENT} for name in clean.OWNED}}
+    path=folder/('quiescence-'+OLD_SHA+'.json');path.write_text(json.dumps(prior))
+    monkeypatch.setattr(drain,'exact_clean_stopped',lambda receipt:None)
+    monkeypatch.setattr(drain,'admit',lambda **kwargs:'STOPPED')
+    result=clean.admission()
+    assert result['flat_stop_proof']==(OLD_SHA,prior['recorded_at'])
+    assert result['intraday_proof'] is None
+    with sqlite3.connect(db) as c:c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_FLAT_POSITION_OPEN'):
+        clean.admission()
+    with sqlite3.connect(db) as c:c.execute('DELETE FROM paper_positions')
+    monkeypatch.setattr(drain,'admit',lambda **kwargs:'RUNNING')
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_FLAT_STOP_RED'):
+        clean.admission()
+    prior['market_open_suspended']=True;path.write_text(json.dumps(prior))
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING'):
         clean.admission()
