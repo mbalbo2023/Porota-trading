@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 0edebcdbc87c66f39d56bc0ded1e826f5a1b3745
+          test "$(git rev-parse HEAD^)" = 7548d929697c2ac0201a2136076189ebc5268318
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -40,7 +40,7 @@ jobs:
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
             "sudo -n python3 -" <<'PY'
-          import importlib.util,json,os
+          import importlib.util,json,os,hashlib
           from pathlib import Path
           spec=importlib.util.spec_from_file_location('cold','/opt/porota-trading/scripts/rc6_failed_cold_fix_forward.py')
           cold=importlib.util.module_from_spec(spec);spec.loader.exec_module(cold)
@@ -48,7 +48,8 @@ jobs:
           shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
           deploy=root/'data/deploy'
           candidate='dc15f2af0bdcdf9c53dd26a645a6a131471ce879'
-          q=json.loads((deploy/('quiescence-'+candidate+'.json')).read_text())
+          qraw=(deploy/('quiescence-'+candidate+'.json')).read_bytes()
+          q=json.loads(qraw)
           live=cold.enveloped(shadow/'status.json')
           pointer=cold.enveloped(shadow/'CURRENT.json')
           current=cold.enveloped_gzip(shadow/pointer['file'])
@@ -58,6 +59,8 @@ jobs:
           result={
             'schema':'RC6_685_COLD_ARCHIVE_READONLY_V1',
             'candidate':candidate,
+            'quiescence_sha256':hashlib.sha256(qraw).hexdigest(),
+            'quiescence_bytes':len(qraw),
             'archived_exists':(deploy/('rc6-failed-cold-'+cold.IDENT)).is_dir(),
             'old_cut_exists':(shadow/('cut-'+cold.CUT+'.json.gz')).exists(),
             'generation_is_revoked':pointer.get('generation_id')==cold.CUT,
