@@ -16,6 +16,9 @@ concurrency:
 jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
+    # Draft PRs cannot be promoted. Certify their final SHA once they become
+    # ready_for_review instead of spending a full native cycle while drafting.
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     # Existing35min gates + two12*120+60s physical stages + cleanup5min.
     timeout-minutes: 90
@@ -86,11 +89,23 @@ jobs:
           test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 7
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
 
-      - name: Governed automatic test discovery and execution
+      - name: Fast host-transition incident replay
         shell: bash
         run: |
           set -Eeuo pipefail
           python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_rc6_deploy_quiescence.py \
+            tests/test_rc6_deploy_scheduler_suspend.py \
+            tests/test_rc6_cold2_apply_guard.py \
+            tests/test_rc6_cold2_quarantine.py \
+            tests/test_rc6_cold2_successor.py
+          echo 'POROTA_HOST_TRANSITION_EARLY=GREEN'
+
+      - name: Governed automatic test discovery and execution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           python - <<'PY'
           from pathlib import Path
           import yaml
