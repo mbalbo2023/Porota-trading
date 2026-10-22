@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import sqlite3
+import shutil
 import sys
 
 sys.path.insert(0, '/opt/porota-trading')
@@ -31,6 +32,13 @@ current_state_path=deploy/'CURRENT_STATE_V2.json'
 current_state=json.loads(current_state_path.read_bytes()) if (
     current_state_path.is_file() and not current_state_path.is_symlink()
     and current_state_path.stat().st_size<65536) else {}
+images={}
+for tag in ('porota-trading-bot:17.0.0-rc6',
+            'porota-predeploy-v2:d1f9691404c4a9145e91a95ca1f2bbf9b137d138'):
+    raw=subprocess.check_output(['docker','image','inspect',tag],text=True,timeout=5)
+    item=json.loads(raw)[0]
+    images[tag]={'id':item['Id'],'size':item.get('Size'),
+                 'tags':item.get('RepoTags')}
 containers = {}
 for name in ('porota_production_observer', 'porota_production_dashboard'):
     raw = subprocess.check_output(['docker', 'inspect', '--format',
@@ -42,6 +50,8 @@ caucion = q.get('caucion_carryover')
 proof = (q.get('stop_evidence') or {}).get('porota_production_observer') or {}
 out = {
     'candidate': candidate,
+    'disk_free_bytes': shutil.disk_usage('/').free,
+    'images': images,
     'observer_state': {'process':process,'session':session,'mode':mode,'real_orders_sent':orders},
     'current_state': {key:current_state.get(key) for key in
                       ('candidate_sha','validation_status','mode','image_id')},
