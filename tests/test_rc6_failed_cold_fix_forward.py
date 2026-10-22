@@ -4,8 +4,30 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from rc6_shadow_runtime import cold_audit as c, persistence as p
 from scripts import rc6_failed_cold_fix_forward as recovery
+from scripts import rc6_cold2_successor
 from tests.rc6_native_storage import native_storage
 from tests.test_rc6_shadow_cold_audit import seal, publish_reference
+
+
+def test_distinct_failed_successor_requires_exact_bound_current(monkeypatch, tmp_path):
+    archive=tmp_path/'data/deploy/rc6-failed-cold-original'
+    evidence={'snapshot_id':recovery.CURRENT_FAILED_SUCCESSOR,
+              'manifest_sha256':recovery.CURRENT_FAILED_MANIFEST,
+              'pack_bytes':219680584,
+              'failed_computed_report':{'sha256':recovery.CURRENT_FAILED_REPORT_SHA},
+              'cut':'a'*64,'queue_failed':True}
+    monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root:evidence)
+    assert recovery.proven_distinct_failed_successor(archive,'a'*64,
+                                                      recovery.CURRENT_FAILED_SUCCESSOR)
+    assert not recovery.proven_distinct_failed_successor(archive,'b'*64,
+                                                          recovery.CURRENT_FAILED_SUCCESSOR)
+    assert not recovery.proven_distinct_failed_successor(archive,'a'*64,'other')
+    for key,value in [('manifest_sha256','0'*64),('queue_failed',False),
+                      ('failed_computed_report',{'sha256':'0'*64})]:
+        changed={**evidence,key:value}
+        monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root, v=changed:v)
+        assert not recovery.proven_distinct_failed_successor(archive,'a'*64,
+                                                              recovery.CURRENT_FAILED_SUCCESSOR)
 
 
 def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
@@ -181,7 +203,11 @@ def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,mo
         recovery.run(successor)
     prior_path.write_bytes(prior_bytes)
     with p.EvidenceFiles(shadow) as files:
-        files.write('status.json',{'status':'FAIL_CLOSED','real_orders_sent':0})
+        files.write('status.json',{'status':'FAIL_CLOSED','real_orders_sent':0,
+                                   'real_routes':'NOT_CALLED'})
+    with monkeypatch.context() as exact:
+        exact.setattr(recovery,'proven_distinct_failed_successor',lambda *_:True)
+        recovery.run(successor)  # A separately proved FAILED cut can wait for its own guard.
     with pytest.raises(ValueError,match='COLD_ARCHIVED_RECOVERY_NOT_PROVEN'):
         recovery.run(successor)
     stopped = datetime.now(timezone.utc)

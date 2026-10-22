@@ -97,6 +97,7 @@ def admission():
     if capability!='RC6_CRITICAL_ISSUES_ONLY=GREEN':
         raise ValueError('OFFLINE_CURRENT_CRITICAL_CAPABILITY')
     intraday = None
+    flat_stop_proof = None
     if validation == 'VALIDATED_RUNTIME':
         # An install can fail before CURRENT_STATE is advanced. The exact
         # stopped fix-forward receipt, not the stale SQLite RUNNING marker,
@@ -113,10 +114,17 @@ def admission():
             if (path.name != 'quiescence-' + str(prior.get('candidate_sha')) + '.json' or
                     not re.fullmatch(r'[a-f0-9]{40}', str(prior.get('candidate_sha')))):
                 raise ValueError('OFFLINE_CURRENT_RECEIPT_IDENTITY_RED')
+            intraday_mode = (prior.get('market_open_suspended') is True and
+                             prior.get('open_paper_carryover') is True)
+            closed_flat = (prior.get('market_open_suspended') is False and
+                           prior.get('open_paper_carryover') is False and
+                           prior.get('paused_postclose') is False and
+                           prior.get('intraday_caucion') is False and
+                           prior.get('spot_carryover') is None and
+                           prior.get('caucion_carryover') is None)
             if (prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
                     prior.get('installation_started') is not True or
-                    prior.get('market_open_suspended') is not True or
-                    prior.get('open_paper_carryover') is not True or
+                    not (intraday_mode or closed_flat) or
                     set(prior.get('containers', {})) != set(OWNED) or
                     any(prior['containers'][name].get('id') != owned[name]['Id'] or
                         prior['containers'][name].get('image') != owned[name]['Image']
@@ -129,20 +137,36 @@ def admission():
             raise ValueError('OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING')
         prior = eligible[-1][1]
         drain.exact_clean_stopped(prior)
-        observed = drain.admit(stopped=True, allow_market_open_suspend=True,
-                               allow_open_paper_carryover=True,
-                               allow_postclose_pending=prior.get('paused_postclose') is True,
-                               stopped_receipt=prior)
-        carry = drain.spot_carryover_snapshot()
-        if (observed not in {'STOPPED', 'RUNNING'} or
-                carry != prior.get('spot_carryover') or
-                type(carry.get('open_count')) is not int or
-                not 0 < carry['open_count'] <= 16):
-            raise ValueError('OFFLINE_CURRENT_CARRYOVER_RED')
-        if prior.get('paused_postclose') is True and (
-                drain.pending_caucion_snapshot() != prior.get('caucion_carryover')):
-            raise ValueError('OFFLINE_CURRENT_CAUCION_CARRYOVER_RED')
-        intraday = (prior['candidate_sha'], carry['sha256'])
+        if prior.get('market_open_suspended') is False:
+            if drain.admit(stopped=True, stopped_receipt=prior) != 'STOPPED':
+                raise ValueError('OFFLINE_CURRENT_FLAT_STOP_RED')
+            db=ROOT/'data/paper_v17/observer_v17.db'
+            with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                c.execute('PRAGMA query_only=ON')
+                row=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+                if (not row or row[0]!='PRODUCTION_PAPER' or type(row[1]) is not int or row[1]!=0 or
+                        row[2]!='STOPPED' or row[3] not in {'CLOSED','MARKET_CLOSED'}):
+                    raise ValueError('OFFLINE_CURRENT_FLAT_PAPER_RED')
+                for table,value in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                                    ('paper_future_positions','ACTIVE')):
+                    if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(value,)).fetchone():
+                        raise ValueError('OFFLINE_CURRENT_FLAT_POSITION_OPEN')
+            flat_stop_proof = (prior['candidate_sha'], prior['recorded_at'])
+        else:
+            observed = drain.admit(stopped=True, allow_market_open_suspend=True,
+                                   allow_open_paper_carryover=True,
+                                   allow_postclose_pending=prior.get('paused_postclose') is True,
+                                   stopped_receipt=prior)
+            carry = drain.spot_carryover_snapshot()
+            if (observed not in {'STOPPED', 'RUNNING'} or
+                    carry != prior.get('spot_carryover') or
+                    type(carry.get('open_count')) is not int or
+                    not 0 < carry['open_count'] <= 16):
+                raise ValueError('OFFLINE_CURRENT_CARRYOVER_RED')
+            if prior.get('paused_postclose') is True and (
+                    drain.pending_caucion_snapshot() != prior.get('caucion_carryover')):
+                raise ValueError('OFFLINE_CURRENT_CAUCION_CARRYOVER_RED')
+            intraday = (prior['candidate_sha'], carry['sha256'])
     else:
         db=ROOT/'data/paper_v17/observer_v17.db'
         with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
@@ -160,7 +184,7 @@ def admission():
             row['State']['Status'],row['State']['ExitCode']) for name,row in owned.items()},
             'critical':(critical['Id'],critical['Image'],critical['State']['Status']),
             'candidate_sha':state['candidate_sha'],'ppi':ppi_units(),
-            'intraday_proof':intraday}
+            'intraday_proof':intraday,'flat_stop_proof':flat_stop_proof}
 
 
 def cleanup():
