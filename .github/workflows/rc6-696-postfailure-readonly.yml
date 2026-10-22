@@ -60,8 +60,8 @@ jobs:
           staged=Path('/tmp/porota-deploy-v2-d17f55442caf5c5227346f1966aba4f150d9d23c')
           print('RC6_POSTFAIL_READONLY='+json.dumps({'free_bytes':v.f_bavail*v.f_frsize,
               'inodes_free_percent':round(100*v.f_ffree/v.f_files,3),'current_deploy_sha':current.get('deploy_sha'),
-              'current_candidate_sha':current.get('candidate_sha'),'paper':paper,'containers':containers,
-              'images':images,'quiescence_status':q.get('status'),'staged_dir_present':staged.exists(),
+              'current_candidate_sha':current.get('candidate_sha'),'validation_status':current.get('validation_status'),'current_image_id':current.get('image_id'),'paper':paper,'containers':containers,
+              'images':images,'quiescence_status':q.get('status'),'quiescence_market_open':q.get('market_open_suspended'),'quiescence_paused_postclose':q.get('paused_postclose'),'quiescence_open_paper':q.get('open_paper_carryover'),'staged_dir_present':staged.exists(),
               'ppi_watch_accessed':False},sort_keys=True))
           PY
       - name: Remove SSH key
