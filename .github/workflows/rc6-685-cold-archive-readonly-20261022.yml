@@ -1,0 +1,79 @@
+name: RC6 685 COLD archive read-only diagnosis
+on:
+  push:
+    branches:
+      - diagnostic/rc6-685-cold-archive-20261022
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  cold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Bound source and SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^)" = cf2c387ebea16e18702f1a6a7823ae0327744b35
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_cold_readonly" "$HOME/.ssh/known_hosts"
+      - name: Read exact archived COLD and quiescence predicates
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 75 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -" <<'PY'
+          import importlib.util,json,os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('cold','/opt/porota-trading/scripts/rc6_failed_cold_fix_forward.py')
+          cold=importlib.util.module_from_spec(spec);spec.loader.exec_module(cold)
+          root=Path('/opt/porota-trading')
+          shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+          deploy=root/'data/deploy'
+          candidate='dc15f2af0bdcdf9c53dd26a645a6a131471ce879'
+          q=json.loads((deploy/('quiescence-'+candidate+'.json')).read_text())
+          live=cold.enveloped(shadow/'status.json')
+          pointer=cold.enveloped(shadow/'CURRENT.json')
+          current=cold.enveloped_gzip(shadow/pointer['file'])
+          evidence=(q.get('stop_evidence') or {}).get('porota_production_observer') or {}
+          before=evidence.get('before') or {};after=evidence.get('after') or {}
+          caucion=q.get('caucion_carryover') or {}
+          result={
+            'schema':'RC6_685_COLD_ARCHIVE_READONLY_V1',
+            'candidate':candidate,
+            'archived_exists':(deploy/('rc6-failed-cold-'+cold.IDENT)).is_dir(),
+            'old_cut_exists':(shadow/('cut-'+cold.CUT+'.json.gz')).exists(),
+            'generation_is_revoked':pointer.get('generation_id')==cold.CUT,
+            'current_snapshot_is_failed':current.get('report',{}).get('computed_report',{}).get('snapshot_id')==cold.IDENT,
+            'live':{key:live.get(key) for key in ('status','error_class','error_module','error_line','as_of','real_routes','real_orders_sent')},
+            'live_status_mtime':(shadow/'status.json').stat().st_mtime_ns,
+            'quiescence':{key:q.get(key) for key in ('status','paused_postclose','intraday_caucion','market_open_suspended','open_paper_carryover','spot_carryover','real_orders_sent')},
+            'caucion_open_count':caucion.get('open_count'),
+            'stop':{'classification':evidence.get('classification'),'before_status':before.get('Status'),
+                    'started_at':before.get('StartedAt'),'after_status':after.get('Status'),
+                    'finished_at':after.get('FinishedAt'),'exit_code':after.get('ExitCode'),
+                    'oom_killed':after.get('OOMKilled')},
+            'proven_stop_cancellation':cold.proven_stop_cancellation(live,q),
+          }
+          print(json.dumps(result,sort_keys=True,default=str))
+          PY
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_cold_readonly"
