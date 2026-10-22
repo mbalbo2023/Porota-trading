@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -31,6 +32,32 @@ def require_owned_running():
         db.execute('PRAGMA query_only=ON')
         if db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone() != ('PRODUCTION_PAPER', 0):
             raise ValueError('SCHEDULER_PAPER_ZERO_REQUIRED')
+
+
+def require_exact_stopped_open_flat(candidate):
+    """Keep timers paused only under the prior clean OPEN PAPER stop proof."""
+    sys.path.insert(0, '/opt/porota-trading')
+    from scripts import rc6_deploy_quiescence as quiescence
+    originals = {name: quiescence.inspect(name) for name in quiescence.OWNED}
+    if any(value['State']['Status'] != 'exited' for value in originals.values()):
+        raise ValueError('SCHEDULER_STOPPED_OPEN_IDENTITY_RED')
+    receipt = quiescence.adopt_stopped_after_failed_install(
+        candidate, quiescence.ROOT/'data/deploy', originals,
+        allow_market_open_suspend=True)
+    quiescence.exact_clean_stopped(receipt)
+    if (receipt.get('status') != 'DRAINED' or
+            type(receipt.get('real_orders_sent')) is not int or
+            receipt['real_orders_sent'] != 0 or
+            receipt.get('ppi_watch_accessed') is not False or
+            receipt.get('market_open_suspended') is not True or
+            receipt.get('open_paper_carryover') is not False or
+            receipt.get('spot_carryover') is not None or
+            receipt.get('caucion_carryover') is not None or
+            receipt.get('paused_postclose') is not False or
+            receipt.get('intraday_caucion') is not False or
+            quiescence.admit(stopped=True, allow_market_open_suspend=True,
+                             stopped_receipt=receipt) not in ('RUNNING', 'STOPPED')):
+        raise ValueError('SCHEDULER_STOPPED_OPEN_FLAT_RED')
 
 
 def command(*args):
@@ -194,6 +221,25 @@ def run(candidate, action, policy_b64):
                 receipt.get('ppi_before') != before or
                 not set(receipt.get('attempted', [])) <= set(names)):
             raise ValueError('SCHEDULER_RECEIPT_IDENTITY_CHANGED')
+        if action == 'hold-open-flat':
+            if (receipt.get('status') != 'SUSPENDED' or
+                    set(receipt.get('attempted', [])) != set(names)):
+                raise ValueError('SCHEDULER_OPEN_HOLD_RECEIPT_RED')
+            for name in names:
+                if (command('systemctl', 'is-active', name)[0] != 'inactive' or
+                        command('systemctl', 'is-enabled', name)[0] != 'enabled'):
+                    raise ValueError('SCHEDULER_OPEN_HOLD_TIMER_CHANGED:' + name)
+                service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+                if (code or not service.endswith('.service') or
+                        command('systemctl', 'is-active', service)[0] in
+                        ('active', 'activating', 'reloading', 'deactivating')):
+                    raise ValueError('SCHEDULER_OPEN_HOLD_JOB_ACTIVE:' + name)
+            require_exact_stopped_open_flat(candidate)
+            if ppi_snapshot() != before:
+                raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
+            print(json.dumps({'status': 'STOPPED_OPEN_HELD', 'candidate_sha': candidate,
+                              'timer_count': len(names), 'ppi_watch_accessed': False}, sort_keys=True))
+            return receipt
         if action == 'restore':
             require_owned_running()
             for name in receipt['attempted']:
@@ -222,7 +268,8 @@ def run(candidate, action, policy_b64):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
-    parser.add_argument('--action', choices=['suspend', 'restore', 'verify'], required=True)
+    parser.add_argument('--action', choices=['suspend', 'restore', 'verify',
+                                           'hold-open-flat'], required=True)
     parser.add_argument('--policy-b64', required=True)
     args = parser.parse_args()
     run(args.candidate_sha, args.action, args.policy_b64)

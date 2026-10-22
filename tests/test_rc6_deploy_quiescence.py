@@ -974,6 +974,42 @@ def test_intraday_failed_install_adopts_latest_exact_stopped_receipt(carry_insta
                  allow_open_paper_carryover=True)['installation_started'] is True
 
 
+@pytest.mark.parametrize('change', ['none', 'open_spot', 'real_order', 'changed_image'])
+def test_failed_open_flat_install_adopts_only_exact_stopped_receipt(
+        installation, change):
+    root, db, states, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+    first = q.run(SHA, 'drain', allow_market_open_suspend=True)
+    q.run(SHA, 'install', allow_market_open_suspend=True)
+    q.run(SHA, 'recover')
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha': '9'*40, 'image_id': 'old_image',
+        'recorded_at': '2026-10-20T12:23:38+00:00',
+        'validation_status': 'VALIDATED_RUNTIME', 'mode': 'PRODUCTION_PAPER',
+        'real_orders_sent': 0, 'real_order_routes': 'NOT_CALLED'}))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='OPEN',"
+                  "heartbeat_at='2020-01-01T00:00:00+00:00'")
+        if change == 'open_spot': c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+        if change == 'real_order': c.execute('UPDATE observer_state SET real_orders_sent=1')
+    if change == 'changed_image': states[q.OWNED[0]]['Image'] = 'altered_image'
+    calls.clear()
+    successor = 'b'*40
+    if change == 'none':
+        row = q.run(successor, 'drain', allow_market_open_suspend=True)
+        assert row['status'] == 'DRAINED' and row['fix_forward_from'] == SHA
+        assert row['prior_receipt_sha256'] and row['spot_carryover'] is None
+        assert row['market_open_suspended'] is True
+        assert q.run(successor, 'install', allow_market_open_suspend=True)['installation_started'] is True
+    else:
+        with pytest.raises(ValueError, match=(
+                'CURRENT_PROVENANCE_RED' if change == 'changed_image' else
+                'PAPER_REQUIRED' if change == 'real_order' else 'OPEN_POSITION')):
+            q.run(successor, 'drain', allow_market_open_suspend=True)
+    assert not any(call[1] in ('start', 'stop') for call in calls)
+
+
 def test_intraday_failed_install_refuses_changed_book(carry_installation):
     root, db, states, calls, _ = carry_installation
     q.run(SHA, 'drain', allow_market_open_suspend=True, allow_open_paper_carryover=True)

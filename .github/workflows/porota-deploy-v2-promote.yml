@@ -1600,10 +1600,19 @@ jobs:
             < scripts/rc6_deploy_quiescence.py
           RECOVERY_RC=$?
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          SCHEDULER_ACTION=restore
+          if [ '${{ steps.drain.outcome }}' = failure ] && \
+             [ '${{ steps.transfer.outcome }}' = skipped ] && \
+             [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ]; then
+            # A pre-transfer failure with the exact prior OPEN runtime stopped
+            # must retain paused timers. A read-only identity/ledger/critical
+            # proof is required; rearming against stopped Docker is unsafe.
+            SCHEDULER_ACTION=hold-open-flat
+          fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
           SCHEDULER_RESTORE_RC=$?
           set -e
