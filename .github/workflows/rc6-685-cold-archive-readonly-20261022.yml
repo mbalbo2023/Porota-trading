@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 6facfc4440f3ea1c25628acd1178a95b3d3229df
+          test "$(git rev-parse HEAD^)" = 4107ae8dffc436865c0f901cbdf3c6da66e03f34
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
