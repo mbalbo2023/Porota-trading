@@ -171,11 +171,13 @@ jobs:
           SESSION_MODE="$(timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" 'sudo -n timeout 12 python3 -' <<'PY'
+            "$DO_USER@$DO_HOST" "sudo -n timeout 12 python3 - '$CANDIDATE_SHA'" <<'PY'
           import sqlite3,sys
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
-          from scripts.rc6_deploy_quiescence import admit
+          from scripts.rc6_deploy_quiescence import (
+              ROOT, OWNED, admit, inspect, exact_clean_stopped,
+              adopt_stopped_after_failed_install)
           path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
           with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
               c.execute('PRAGMA query_only=ON')
@@ -186,6 +188,22 @@ jobs:
               print('OPEN')
           elif state and state[0]=='WAITING_MARKET' and state[1] in ('CLOSED','MARKET_CLOSED'):
               assert admit()=='WAITING_MARKET'
+              print('CLOSED')
+          elif state and state[0]=='STOPPED' and state[1] in ('CLOSED','MARKET_CLOSED'):
+              # A failed installed promotion leaves its exact prior image
+              # cleanly stopped. Reuse the established read-only provenance,
+              # ledger and independent critical-broker checks before any write.
+              originals={name:inspect(name) for name in OWNED}
+              if any(value['State']['Status']!='exited' for value in originals.values()):
+                  raise SystemExit('RC6_STOPPED_RUNTIME_IDENTITY_RED')
+              receipt=adopt_stopped_after_failed_install(
+                  sys.argv[1],ROOT/'data/deploy',originals)
+              exact_clean_stopped(receipt)
+              if (receipt.get('status')!='DRAINED' or
+                      receipt.get('real_orders_sent')!=0 or
+                      receipt.get('ppi_watch_accessed') is not False or
+                      admit(stopped=True,stopped_receipt=receipt)!='STOPPED'):
+                  raise SystemExit('RC6_STOPPED_FLAT_RECEIPT_RED')
               print('CLOSED')
           else:
               raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
