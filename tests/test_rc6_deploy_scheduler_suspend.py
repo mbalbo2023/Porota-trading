@@ -1,5 +1,6 @@
 import base64
 import json
+import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -9,6 +10,29 @@ from scripts import rc6_deploy_scheduler_suspend as suspend
 
 
 class SuspendTests(unittest.TestCase):
+    def test_restore_runtime_gate_checks_containers_and_paper_zero(self):
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            db_path = data/'paper_v17/observer_v17.db'
+            db_path.parent.mkdir()
+            with sqlite3.connect(db_path) as db:
+                db.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER)')
+                db.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0)")
+            status = {'porota_production_observer':'exited',
+                      'porota_production_dashboard':'running'}
+            def docker(*args):
+                self.assertEqual(args[:3], ('docker','inspect','-f'))
+                return status[args[-1]], 0
+            with patch.object(suspend,'ROOT',data/'deploy'), patch.object(suspend,'command',docker):
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_OWNED_RUNTIME_STOPPED'):
+                    suspend.require_owned_running()
+                status['porota_production_observer']='running'
+                suspend.require_owned_running()
+                with sqlite3.connect(db_path) as db:
+                    db.execute('UPDATE observer_state SET real_orders_sent=1')
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_PAPER_ZERO_REQUIRED'):
+                    suspend.require_owned_running()
+
     def policy(self):
         raw = json.dumps({'units': {
             'systemd/porota-runtime-evidence-rc6.timer': {
@@ -41,7 +65,8 @@ class SuspendTests(unittest.TestCase):
                 return ('', 0)
             raise AssertionError(args)
         with TemporaryDirectory() as directory:
-            with patch.object(suspend, 'ROOT', Path(directory)), patch.object(suspend, 'command', command):
+            with patch.object(suspend, 'ROOT', Path(directory)), patch.object(suspend, 'command', command), \
+                 patch.object(suspend, 'require_owned_running') as owned_running:
                 result = suspend.run('a'*40, 'suspend', self.policy())
                 self.assertEqual(result['status'], 'SUSPENDED')
                 self.assertEqual({action for action, _ in mutations}, {'stop'})
@@ -50,6 +75,12 @@ class SuspendTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'SCHEDULER_RESTORE_RECEIPT_MISSING'):
                     suspend.run('a'*40, 'verify', self.policy())
                 self.assertEqual(len(mutations), 2)
+                owned_running.side_effect = ValueError('SCHEDULER_OWNED_RUNTIME_STOPPED')
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_OWNED_RUNTIME_STOPPED'):
+                    suspend.run('a'*40, 'restore', self.policy())
+                self.assertEqual(len(mutations), 2)
+                self.assertEqual(json.loads((Path(directory)/('scheduler-suspend-'+'a'*40+'.json')).read_text())['status'], 'SUSPENDED')
+                owned_running.side_effect = None
                 result = suspend.run('a'*40, 'restore', self.policy())
                 self.assertEqual(result['status'], 'RESTORED')
                 self.assertEqual({action for action, _ in mutations}, {'stop', 'start'})
