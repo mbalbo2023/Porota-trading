@@ -810,9 +810,10 @@ jobs:
           echo "OBSERVER_PAUSED_FOR_CONTRACT_RECONCILIATION=GREEN"
           set +e
           # A completed provider v1 sweep from the last 24h is explicit
-          # complementary provenance, not a fresh market reading. Deploy must
-          # materialize v2 for the entire current catalogue; the scheduled v1
-          # collector retains ownership of its costly ~2460 bond requests.
+          # complementary provenance, not a fresh market reading. An expired
+          # complete sweep stays STALE; it cannot trigger a broker refresh or
+          # authorize PAPER. Deploy must materialize v2 for the catalogue;
+          # the scheduled v1 collector owns its costly ~2460 bond requests.
           # Name the container so a killed Docker CLI cannot leave a writer
           # behind after the observer is restarted.
           CONTRACT_NAME="porota-deploy-contract-$CANDIDATE_SHA"
@@ -844,6 +845,10 @@ jobs:
           if grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN" <<< "$CONTRACT_OUTPUT"; then
             grep -Fq "DATABASE_READONLY_PROBE=1" <<< "$CONTRACT_OUTPUT"
             echo "RC6_REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN"
+          elif grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_EXPIRED_COMPLETED" <<< "$CONTRACT_OUTPUT"; then
+            grep -Fq "REMOTE_PPI_V1_STATUS=STALE" <<< "$CONTRACT_OUTPUT"
+            grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_REMOTE_PPI_V1=STALE_COMPLETED_NOT_REUSED"
           else
             grep -Fq "REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED" <<< "$CONTRACT_OUTPUT"
             grep -Fq '"total":' <<< "$CONTRACT_OUTPUT"

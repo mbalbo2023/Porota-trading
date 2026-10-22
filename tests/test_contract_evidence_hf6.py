@@ -74,8 +74,45 @@ def test_deploy_reuses_only_recent_completed_v1_and_never_a_partial_sweep(tmp_pa
         runner.recent_completed_v1(store,now=now)
     with store.connect() as c:
         c.execute("UPDATE contract_evidence_runs SET total=10219")
-    with pytest.raises(ValueError,match="RECENT_COMPLETED_V1_UNVERIFIED"):
+    with pytest.raises(ValueError,match="RECENT_COMPLETED_V1_EXPIRED"):
         runner.recent_completed_v1(store,now=datetime(2026,10,22,8,tzinfo=timezone.utc))
+
+
+def test_expired_complete_v1_stays_stale_while_closed_deploy_materializes_v2_without_broker(
+        tmp_path, monkeypatch, capsys):
+    db = tmp_path / "expired.db"
+    store = Store(db)
+    schema(store)
+    now = datetime.now(timezone.utc)
+    old = datetime(2026, 10, 20, 7, 55, tzinfo=timezone.utc)
+    with store.connect() as c:
+        c.execute("""CREATE TABLE observer_state(id INTEGER,mode TEXT,process_state TEXT,
+                  session_state TEXT,ppi_auth TEXT,real_orders_sent INTEGER)""")
+        c.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER','WAITING_MARKET','MARKET_CLOSED','OK',0)")
+        c.execute("""CREATE TABLE contract_evidence_v2_runs(run_id TEXT,job_key TEXT,
+                  state TEXT,records INTEGER,changed INTEGER,conflicts INTEGER,finished_at TEXT)""")
+        c.execute("INSERT INTO contract_evidence_runs VALUES(?,?,?,?,?,?,?,?)",
+                  ("host-20261020",old.isoformat(),old.isoformat(),10328,1438,4804,4086,"provider-backed"))
+    monkeypatch.setattr(runner,"DB",str(db))
+    monkeypatch.setattr(runner,"REMOTE_V1_POLICY","REUSE_RECENT_COMPLETED")
+    monkeypatch.setattr(runner,"ProductionMarketReader",lambda *a: pytest.fail("broker call"))
+    monkeypatch.setattr(runner.official_sources,"collect",lambda *a: pytest.fail("remote source call"))
+    def mass(local,*,run_id):
+        with local.connect() as c:
+            c.execute("INSERT INTO contract_evidence_v2_runs VALUES(?,?,?,?,?,?,?)",
+                      (run_id,"CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG","OK",2,0,0,now.isoformat()))
+        return {"records":2}
+    monkeypatch.setattr(runner.evidence_v2_mass,"collect",mass)
+    observer=types.ModuleType("bf_production_paper_observer")
+    observer._reconcile_complementary_catalog=lambda local: 0
+    monkeypatch.setitem(sys.modules,"bf_production_paper_observer",observer)
+    assert runner.main()==0
+    output=capsys.readouterr().out
+    assert "REMOTE_PPI_V1_REFRESH=SKIPPED_EXPIRED_COMPLETED" in output
+    assert "REMOTE_PPI_V1_STATUS=STALE" in output
+    assert "REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED" not in output
+    assert "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" in output
+    assert "QUICK_CHECK=ok" in output
 
 
 def test_closed_deploy_reuses_complete_v1_but_materializes_v2_without_broker(tmp_path, monkeypatch, capsys):

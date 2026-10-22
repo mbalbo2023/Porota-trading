@@ -572,6 +572,34 @@ def test_exact_failed_install_continues_stopped_without_starting_prior_image(ins
     assert q.run(successor,'install')['status']=='HOST_INSTALLATION_STARTED'
 
 
+def test_rc6_685_expired_v1_postinstall_receipt_adopts_exact_pending_image(installation):
+    """Replay 39696980751's installed PAPER candidate and failed validation boundary."""
+    root, db, states, calls, _ = installation
+    prior = '9b138e8b759ce5046419f5827375a1ff530ca6b9'
+    deployed = 'c16a093df2161fbb6ef17edd44d17adf64578f85'
+    image = 'sha256:9f13b7cd8a5b2015ad794d385adff9819d3001d21a76d2579b4248b3054d2a17'
+    for name in q.OWNED:
+        states[name]['Image'] = image
+    q.run(prior, 'drain')
+    installed = q.run(prior, 'install')
+    assert q.run(prior, 'recover')['status'] == 'FIX_FORWARD_VALIDATION_REQUIRED'
+    (root/'data/deploy/CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':prior, 'deploy_sha':deployed, 'image_id':image,
+        'recorded_at':installed['recorded_at'],
+        'validation_status':'DEPLOYED_VALIDATION_PENDING',
+        'mode':'PRODUCTION_PAPER', 'real_orders_sent':0,
+        'real_order_routes':'NOT_CALLED'}))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET'")
+    calls.clear()
+    successor = 'b'*40
+    receipt = q.run(successor, 'drain')
+    assert receipt['fix_forward_from'] == prior
+    assert receipt['status'] == 'DRAINED'
+    assert not any(call[1] in ('start', 'stop') for call in calls)
+    assert q.run(successor, 'install')['installation_started'] is True
+
+
 @pytest.mark.parametrize('change', ['none','wrong_image','wrong_candidate','real_orders','old_receipt'])
 def test_current_provenance_owns_stopped_successor_over_historical_receipt(
         installation, monkeypatch, change):
