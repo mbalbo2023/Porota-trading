@@ -179,6 +179,12 @@ def apply(root, candidate):
                              receipt.get('paused_postclose') is False and
                              receipt.get('spot_carryover') is None and
                              receipt.get('caucion_carryover') is None)
+            pending_caucion = (receipt.get('pending_caucion') is True and
+                               receipt.get('market_open_suspended') is False and
+                               receipt.get('open_paper_carryover') is False and
+                               receipt.get('intraday_caucion') is False and
+                               receipt.get('paused_postclose') is False and
+                               receipt.get('spot_carryover') is None)
             if intraday_spots and receipt.get('intraday_caucion') is True:
                 raise ValueError('COLD2_SESSION_MODE_CHANGED')
             if intraday_spots:
@@ -219,10 +225,21 @@ def apply(root, candidate):
                     raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
                 carry = None
                 caucion = None
+            elif pending_caucion:
+                drain.exact_clean_stopped(receipt)
+                state = drain.admit(stopped=True, allow_pending_caucion=True,
+                                    stopped_receipt=receipt)
+                caucion = drain.verified_pending_caucion_snapshot()
+                if caucion != receipt.get('caucion_carryover'):
+                    raise ValueError('COLD2_PENDING_CAUCION_CHANGED')
+                if state not in {'STOPPED', 'WAITING_MARKET'}:
+                    raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
+                carry = None
             else:
                 if (receipt.get('market_open_suspended') is True or
                         receipt.get('open_paper_carryover') is True or
-                        receipt.get('intraday_caucion') is True):
+                        receipt.get('intraday_caucion') is True or
+                        receipt.get('pending_caucion') is True):
                     raise ValueError('COLD2_SESSION_MODE_CHANGED')
                 if drain.admit(stopped=True) not in {'STOPPED', 'WAITING_MARKET'}:
                     raise ValueError('COLD2_STOPPED_PROCESS_REQUIRED')
@@ -275,11 +292,12 @@ def apply(root, candidate):
                 raise ValueError('COLD2_PPI_UNIT_CHANGED')
             return {'status': 'DRAINED', 'owned_stopped': True,
                     'market_closed': not (intraday_spots or intraday_caucion or intraday_flat),
-                    'no_positions': not (intraday_spots or intraday_caucion),
+                    'no_positions': not (intraday_spots or intraday_caucion or pending_caucion),
                     'market_open_suspended': intraday_spots or intraday_caucion or intraday_flat,
                     'open_paper_carryover': intraday_spots,
                     'spot_carryover': carry,
                     'intraday_caucion': intraday_caucion,
+                    'pending_caucion': pending_caucion,
                     'caucion_carryover': caucion,
                     'lock_held': True, 'mode': 'PRODUCTION_PAPER',
                     'real_orders_sent': 0, 'real_routes': 'NOT_CALLED',

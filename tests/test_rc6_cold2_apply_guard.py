@@ -183,6 +183,44 @@ def test_intraday_cold2_rechecks_exact_paper_book_at_archive_boundary(tmp_path):
         assert admit.call_args.kwargs['stopped_receipt'] == value
 
 
+def test_closed_pending_caucion_rechecks_audited_receipt_at_archive_boundary(tmp_path):
+    value=receipt()
+    carry={'open_count':1,'maturity_at':'2026-10-23T17:00:00-03:00',
+           'allocation_reconciled':True,'sha256':'a'*64,
+           'audit_source_sha256':
+               'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865'}
+    value.update(pending_caucion=True,market_open_suspended=False,
+                 open_paper_carryover=False,intraday_caucion=False,
+                 paused_postclose=False,spot_carryover=None,caucion_carryover=carry)
+    folder(tmp_path,value)
+    ids={name:value['containers'][name]['id'] for name in NAMES}
+    live={name:{'Id':ids[name],'Image':'sha256:'+'a'*64,
+                'State':{'Status':'exited','ExitCode':0}} for name in NAMES}
+    live['porota_critical_approval_rc6']={
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    current=[carry.copy()]
+    def archive(root,*,admission,expected_owned_ids):
+        state=admission()
+        assert state['market_closed'] is True and state['no_positions'] is False
+        assert state['pending_caucion'] is True and state['caucion_carryover']==carry
+        current[0]={**carry,'sha256':'0'*64}
+        with pytest.raises(ValueError,match='COLD2_PENDING_CAUCION_CHANGED'):
+            admission()
+        current[0]=carry.copy()
+        return {'state':'QUARANTINED_FAILED'}
+    with (patch.object(guard,'ppi_units',return_value={}),
+          patch.object(guard.drain,'exact_clean_stopped'),
+          patch.object(guard.drain,'admit',return_value='STOPPED') as admit,
+          patch.object(guard.drain,'verified_pending_caucion_snapshot',
+                       side_effect=lambda:current[0]),
+          patch.object(guard.drain,'inspect',side_effect=lambda name:live[name]),
+          patch.object(guard.cold,'envelope',return_value={
+              'status':'FAIL_CLOSED','real_routes':'NOT_CALLED'}),
+          patch.object(guard.cold,'quarantine',side_effect=archive)):
+        assert guard.apply(tmp_path,CANDIDATE)['old_cut_revoked'] is True
+        assert admit.call_args.kwargs['allow_pending_caucion'] is True
+
+
 def test_open_flat_cold2_uses_exact_stop_and_empty_paper_book(tmp_path):
     value = receipt()
     value.update(market_open_suspended=True, open_paper_carryover=False,
