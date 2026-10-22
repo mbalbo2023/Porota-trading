@@ -42,6 +42,7 @@ DOM = r"""() => {
   while((node=walker.nextNode())) {
     if(node.parentElement?.closest('script,style,noscript')) continue;
     const value = node.nodeValue || '';
+    if(!node.parentElement?.getClientRects().length) continue;
     for(const m of value.matchAll(status)) occurrences.push({state:m[0].toUpperCase(),...loc(node.parentElement)});
   }
   const tables = [...document.querySelectorAll('table')].map((table,index) => {
@@ -59,7 +60,7 @@ DOM = r"""() => {
   return {viewport,body:document.body.scrollWidth,html:document.documentElement.scrollWidth,
     cards:document.querySelectorAll('article,.card,.panel').length,h1:document.querySelectorAll('h1').length,
     tables,occurrences,nav_links:links.length,nav_targets:[...new Set(links.filter(x=>x.startsWith('/')).map(x=>x.split('?')[0]))],
-    disclosure,buttons,visible_more:[...document.querySelectorAll('a,button,summary')].filter(x=>/ver m[aá]s|mostrar m[aá]s|expandir/i.test(x.textContent||'')).length};
+    disclosure,buttons,visible_more:[...document.querySelectorAll('a,button,summary')].filter(x=>/ver m[aá]s|mostrar (?:10 )?m[aá]s|expandir/i.test(x.textContent||'')).length};
 }"""
 
 def main(output):
@@ -111,11 +112,37 @@ def main(output):
                 expanded=page.evaluate(DOM)
                 item['expanded_disclosures']=sum(x['open'] for x in expanded['disclosure'])
                 item['expanded_occurrences']=expanded['occurrences']
+                first_dialog=page.locator('button[data-detail-dialog]').first
+                if first_dialog.count():
+                    first_dialog.click(timeout=1000)
+                    dialog=page.locator('dialog[open]')
+                    item['dialog_opened']=dialog.count()==1
+                    item['dialog_visible_statuses']=dict(Counter(x['state'] for x in
+                        page.evaluate(DOM)['occurrences']))
+                    dialog.locator('button[type="submit"]').first.click(timeout=1000)
+                    item['dialog_closed']=page.locator('dialog[open]').count()==0
+                    if not item['dialog_opened'] or not item['dialog_closed']:
+                        report['findings'].append({'kind':'detail_dialog_interaction','path':path})
                 page.evaluate(REDACT)
                 name='home' if path=='/' else path.strip('/').replace('/','_')
                 filename=f'{name}-1440.png'
                 page.screenshot(path=str(output/filename),full_page=True,animations='disabled')
                 report['screenshots'].append({'path':path,'width':1440,'file':filename})
+                # A bounded GET on one representative server paginator verifies
+                # the next ten rows are reachable without submitting a form.
+                if path in ('/en-vivo/decisiones','/instrumentos','/analitica/anual'):
+                    more=page.locator('nav.pager a[href*="offset=10"]')
+                    if more.count():
+                        before=[v for v in page.locator('table tbody tr[data-row]').evaluate_all(
+                            '(nodes)=>nodes.map(x=>x.id)')]
+                        more.first.click(timeout=5000)
+                        after=page.locator('table tbody tr[data-row]').evaluate_all(
+                            '(nodes)=>nodes.map(x=>x.id)')
+                        item['pagination_probed']={'before':len(before),'after':len(after),
+                            'distinct':bool(set(after)-set(before)),
+                            'offset_10':'offset=10' in page.url}
+                        if not item['pagination_probed']['distinct'] or not item['pagination_probed']['offset_10']:
+                            report['findings'].append({'kind':'paginator_not_advancing','path':path})
                 report['paths'].append(item)
             except Exception as exc:
                 report['findings'].append({'kind':'route_exception','path':path,'error_type':type(exc).__name__})
@@ -128,6 +155,14 @@ def main(output):
                     metrics=page.evaluate(DOM)
                     if response.status!=200 or max(metrics['body'],metrics['html'])>width+2:
                         report['findings'].append({'kind':'responsive_http_or_overflow','path':path,'width':width})
+                    if path=='/' and width==390:
+                        menu=page.locator('#terminal-menu')
+                        menu.click(timeout=1000)
+                        report['mobile_menu_open']=menu.get_attribute('aria-expanded')=='true'
+                        page.keyboard.press('Escape')
+                        report['mobile_menu_closed']=menu.get_attribute('aria-expanded')=='false'
+                        if not (report['mobile_menu_open'] and report['mobile_menu_closed']):
+                            report['findings'].append({'kind':'mobile_menu_interaction'})
                     page.evaluate(REDACT)
                     name='home' if path=='/' else path.strip('/').replace('/','_')
                     filename=f'{name}-{width}.png'
