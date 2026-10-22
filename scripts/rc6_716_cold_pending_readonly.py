@@ -39,6 +39,10 @@ for tag in ('porota-trading-bot:17.0.0-rc6',
     item=json.loads(raw)[0]
     images[tag]={'id':item['Id'],'size':item.get('Size'),
                  'tags':item.get('RepoTags')}
+rows=subprocess.check_output(['docker','images','-a','--no-trunc',
+    '--format','{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}'],text=True,timeout=8).splitlines()
+if len(rows)>128:raise SystemExit('IMAGE_INVENTORY_BOUND_RED')
+image_inventory=rows
 containers = {}
 for name in ('porota_production_observer', 'porota_production_dashboard'):
     raw = subprocess.check_output(['docker', 'inspect', '--format',
@@ -52,6 +56,7 @@ out = {
     'candidate': candidate,
     'disk_free_bytes': shutil.disk_usage('/').free,
     'images': images,
+    'image_inventory': image_inventory,
     'observer_state': {'process':process,'session':session,'mode':mode,'real_orders_sent':orders},
     'current_state': {key:current_state.get(key) for key in
                       ('candidate_sha','validation_status','mode','image_id')},
