@@ -116,23 +116,28 @@ def main(output):
                     item['annual_selector_links']=page.locator('a[href^="/analitica/anual?identity="]').count()
                 # Expand each disclosure in place; the browser blocks mutation and
                 # all nonlocal requests. Record structural changes, not private text.
-                for detail in page.locator('details').all()[:16]:
+                for detail in page.locator('details').all()[:32]:
                     if not detail.evaluate('(x)=>x.open'):
                         detail.locator('summary').first.click(timeout=1000)
                 expanded=page.evaluate(DOM)
                 item['expanded_disclosures']=sum(x['open'] for x in expanded['disclosure'])
                 item['expanded_occurrences']=expanded['occurrences']
-                first_dialog=page.locator('button[data-detail-dialog]').first
-                if first_dialog.count():
-                    first_dialog.click(timeout=1000)
+                dialog_buttons=page.locator('button[data-detail-dialog]')
+                item['dialog_rows_probed']=0
+                item['dialog_statuses']=Counter()
+                # Inspect every displayed row on the first ten-row page, not
+                # merely the first representative modal. Never submit data.
+                for index in range(min(dialog_buttons.count(),10)):
+                    dialog_buttons.nth(index).click(timeout=1200)
                     dialog=page.locator('dialog[open]')
-                    item['dialog_opened']=dialog.count()==1
-                    item['dialog_visible_statuses']=dict(Counter(x['state'] for x in
-                        page.evaluate(DOM)['occurrences']))
+                    opened=dialog.count()==1
+                    item['dialog_statuses'].update(x['state'] for x in page.evaluate(DOM)['occurrences'])
                     dialog.locator('button[type="submit"]').first.click(timeout=1000)
-                    item['dialog_closed']=page.locator('dialog[open]').count()==0
-                    if not item['dialog_opened'] or not item['dialog_closed']:
-                        report['findings'].append({'kind':'detail_dialog_interaction','path':path})
+                    closed=page.locator('dialog[open]').count()==0
+                    item['dialog_rows_probed']+=1
+                    if not opened or not closed:
+                        report['findings'].append({'kind':'detail_dialog_interaction','path':path,'row':index+1})
+                item['dialog_statuses']=dict(item['dialog_statuses'])
                 page.evaluate(REDACT)
                 name='home' if path=='/' else path.strip('/').replace('/','_')
                 filename=f'{name}-1440.png'
