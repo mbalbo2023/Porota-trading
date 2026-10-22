@@ -41,6 +41,53 @@ def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
             'classification': 'UNKNOWN'}}})
 
 
+def test_unchanged_previous_cancellation_requires_hashed_receipt_and_new_clean_stop(
+        tmp_path, monkeypatch):
+    old_stop = {'classification': 'CLEAN_EXIT',
+        'before': {'Status': 'running', 'StartedAt': '2026-10-22T00:02:50Z'},
+        'after': {'Status': 'exited', 'ExitCode': 0, 'OOMKilled': False,
+                  'FinishedAt': '2026-10-22T00:40:58Z'}}
+    previous = {'candidate_sha': recovery.PRIOR_CANCELLED_SHA,
+        'status': 'FIX_FORWARD_VALIDATION_REQUIRED', 'installation_started': True,
+        'real_orders_sent': 0, 'ppi_watch_accessed': False,
+        'paused_postclose': False, 'intraday_caucion': False,
+        'market_open_suspended': False, 'open_paper_carryover': False,
+        'spot_carryover': None, 'caucion_carryover': None,
+        'stop_evidence': {'porota_production_observer': old_stop}}
+    path = tmp_path/'quiescence-prior.json'
+    raw = json.dumps(previous, sort_keys=True).encode()
+    path.write_bytes(raw);path.chmod(0o600)
+    monkeypatch.setattr(recovery, 'PRIOR_CANCELLED_RECEIPT_SHA',
+                        recovery.hashlib.sha256(raw).hexdigest())
+    live = {'status': 'FAIL_CLOSED', 'error_class': 'ValueError',
+        'error_module': 'cold_audit', 'error_line': 265,
+        'as_of': '2026-10-22T00:40:56.246642+00:00',
+        'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'}
+    new_stop = {'classification': 'CLEAN_EXIT',
+        'before': {'Status': 'running', 'StartedAt': '2026-10-22T00:42:18Z'},
+        'after': {'Status': 'exited', 'ExitCode': 0, 'OOMKilled': False,
+                  'FinishedAt': '2026-10-22T01:15:00Z'}}
+    current = {'candidate_sha': 'f'*40, 'status': 'HOST_INSTALLATION_STARTED',
+        'real_orders_sent': 0, 'ppi_watch_accessed': False,
+        'paused_postclose': False, 'intraday_caucion': False,
+        'market_open_suspended': False, 'open_paper_carryover': False,
+        'spot_carryover': None, 'caucion_carryover': None,
+        'stop_evidence': {name: new_stop for name in
+            ('porota_production_observer','porota_production_dashboard')}}
+    assert recovery.proven_prior_stop_cancellation(live, current, path)
+    assert not recovery.proven_prior_stop_cancellation({**live,
+        'real_orders_sent': 1}, current, path)
+    assert not recovery.proven_prior_stop_cancellation(live, {**current,
+        'market_open_suspended': True}, path)
+    assert not recovery.proven_prior_stop_cancellation(live, {**current,
+        'stop_evidence': {'porota_production_observer': new_stop}}, path)
+    assert not recovery.proven_prior_stop_cancellation(live, {**current,
+        'stop_evidence': {**current['stop_evidence'],
+            'porota_production_dashboard': {**new_stop, 'classification': 'UNKNOWN'}}}, path)
+    path.write_bytes(raw+b' ')
+    assert not recovery.proven_prior_stop_cancellation(live, current, path)
+
+
 def test_exact_failed_backlog_archive_then_fresh_complete_generation(tmp_path,monkeypatch):
     native=tmp_path/'native';native.mkdir()
     monkeypatch.setattr(p,'_native_json_bound',native_storage(native))

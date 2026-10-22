@@ -21,6 +21,12 @@ at line 265 when a stop interrupts an 8 MiB sync boundary. The guard only
 recognized the `stage()` cancellation at line 360 and only for the caución or
 postclose paths. It therefore rejected this legitimate closed-session stop.
 
+Read-only rechecks 39703543978 and 39703696871 found the live status still
+unchanged at 01:06 UTC. The exact prior quiescence receipt is 2,129 bytes,
+SHA256 `813ed6a0fb2e8b56fb9a9e1484f6976269bdf313082fc43a4c086f66bf841f80`.
+A new deploy creates a later stop receipt, so comparing the historical status
+only with that new stop would reject the same cancellation again.
+
 ## Fix and limits
 
 The guard recognizes line 265 solely for the closed, flat PAPER shape. It
@@ -30,6 +36,14 @@ seconds before exit. The other archived-input, hash, inode, prior receipt,
 CURRENT and real-order checks remain mandatory. The revoked old cut is never
 rehabilitated. Unknown modes, altered time, other error lines and unproven
 stops remain blocked.
+
+If the live status remains unchanged, the successor instead proves that
+exact previous receipt by its full byte hash, candidate, archived failure
+state, zero-order fields and original clean-stop timing. Its own new receipt
+must also prove clean stops for both owned containers, in a closed and flat
+session, strictly later than the original stop. Mutated receipts, stale status
+from another error, carryover or ambiguous stops fail closed. This path is
+bound to the observed candidate and is not a generic stale-status bypass.
 
 The regression uses the actual receipt times and line from the host, along
 with adverse mutations. The existing archive and COLD2 tests still cover the
