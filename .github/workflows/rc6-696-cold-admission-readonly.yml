@@ -53,7 +53,7 @@ jobs:
           } | timeout 55 ssh -i "$HOME/.ssh/rc6_cold_ro" -o BatchMode=yes \
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 45 nice -n 19 python3 -"
+            "sudo -n env PYTHONPATH=/opt/porota-trading timeout 45 nice -n 19 python3 -"
       - name: Remove SSH key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_cold_ro"
