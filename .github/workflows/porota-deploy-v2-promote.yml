@@ -344,7 +344,7 @@ jobs:
               "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
             if [ "$OWNED_STATE" != $'running\nrunning' ]; then
               RC6_DISK_PRECLEAN_TRIGGERED=1
-              "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 -" \
+              "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 - '$REQUIRED_PRETRANSFER_FREE'" \
                 < scripts/rc6_offline_current_image_cleanup.py
               mapfile -t METRICS < <(probe_disk)
               test "${#METRICS[@]}" -eq 2
