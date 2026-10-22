@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 4331b70b817e575b89edf0f09d585984b64631ac
+          test "$(git rev-parse HEAD^)" = dae1bcf8877910fd63f790f79e4c4925bc78b07b
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -76,6 +76,19 @@ jobs:
           out['observer_stop']={'classification':proof.get('classification'),'before_status':before.get('Status'),'started_at':before.get('StartedAt'),'after_status':after.get('Status'),'finished_at':after.get('FinishedAt'),'exit_code':after.get('ExitCode'),'oom_killed':after.get('OOMKilled')}
           out['caucion_carryover_is_none']=q.get('caucion_carryover') is None
           out['stop_evidence_names']=sorted((q.get('stop_evidence') or {}).keys())
+          import hashlib,sqlite3,sys
+          prior_raw=(deploy/('quiescence-'+candidate+'.json')).read_bytes()
+          out['prior_receipt_sha256']=hashlib.sha256(prior_raw).hexdigest()
+          out['prior_inflight']=q.get('inflight')
+          sys.path.insert(0,str(root))
+          from scripts import rc6_deploy_quiescence as drain
+          out['stopped_flat_admission']=drain.admit(stopped=True,allow_market_open_suspend=True,stopped_receipt=q)
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2) as con:
+              con.execute('PRAGMA query_only=ON')
+              out['observer_state']=con.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+              out['open_counts']={table:con.execute('SELECT COUNT(*) FROM '+table+' WHERE status=?',(status,)).fetchone()[0] for table,status in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),('paper_future_positions','ACTIVE'))}
+          out['stable_image']=subprocess.check_output(['docker','image','inspect','--format','{{.Id}}|{{json .RepoTags}}','porota-trading-bot:17.0.0-rc6'],text=True,timeout=5).strip()
           print(json.dumps(out,sort_keys=True))
           PY
       - name: Remove SSH key
