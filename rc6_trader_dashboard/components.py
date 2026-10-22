@@ -131,6 +131,7 @@ def value_html(row, field):
 
 IDENTITY = fields("symbol|Ticker;family|Familia;market|Mercado;currency|Moneda;settlement|Settlement")
 EVIDENCE = fields("source|Fuente;as_of|Reloj de la fuente|time;freshness|Freshness|status;reason|Motivo;entry_authority|Autoridad de entrada")
+AGGREGATE_EVIDENCE = fields("source|Fuente;as_of|Reloj del agregado|time;scope|Granularidad;reason|Alcance")
 
 
 def definition_list(row, columns):
@@ -162,7 +163,7 @@ def pager(page, path, filters, table_id):
     return f"<nav class='pager' aria-label='Paginación de {e(table_id)}'><span>{range_text} de {total} · {visible} filas</span>{less}{more}</nav>"
 
 
-def table(page, title, columns, extra=(), *, path="", filters=None, table_id="main-table"):
+def table(page, title, columns, extra=(), *, path="", filters=None, table_id="main-table", aggregate=False):
     column_classes = [
         " ".join(name for name, enabled in (
             ("secondary", i > 2),
@@ -179,7 +180,10 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             key = str(index)
         row_id = table_id + "-" + hashlib.sha256(str(key).encode()).hexdigest()[:12]
         cells = "".join(f"<td data-label='{e(f.label)}' class='{column_classes[i]}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
-        drawer_fields = tuple(dict.fromkeys((*IDENTITY, *columns, *extra, *EVIDENCE)))
+        # A family aggregate has no single ticker, market, currency or
+        # settlement. Do not render the exact-identity drawer for that grain.
+        evidence_fields = AGGREGATE_EVIDENCE if aggregate else EVIDENCE
+        drawer_fields = tuple(dict.fromkeys((*(() if aggregate else IDENTITY), *columns, *extra, *evidence_fields)))
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
         reasons = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido; revisar el worker y la hora de publicación.",
@@ -237,7 +241,8 @@ def funnel(counts, scope="NO_VERIFICADO · committed cut unavailable"):
             f"</ol><p class='muted'>{e(scope)} · Etapas independientes · HOT ≠ BUY · DISCOVERY/WARM = observación.</p></section>")
 
 
-def timeline(events, title="Promociones / demociones / descartes en vivo"):
+def timeline(events, title="Promociones / demociones / descartes en vivo", *, verified_empty=False):
     items = "".join(f"<li><time>{e(clock(row.get('as_of')))}</time><b>{e(row.get('symbol') or UNKNOWN)}</b>{badge(row.get('state'))}<p>{e(row.get('reason') or UNKNOWN)}</p></li>" for row in events[:5])
-    empty = "<li class='muted'>NO_VERIFICADO · Sin eventos comprometidos disponibles.</li>"
+    empty = ("<li class='muted'>Sin eventos en este scope (0).</li>" if verified_empty else
+             "<li class='muted'>NO_VERIFICADO · Sin eventos comprometidos disponibles.</li>")
     return f"<section class='panel'><h2>{e(title)}</h2><ol class='timeline'>{items or empty}</ol></section>"

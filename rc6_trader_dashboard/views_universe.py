@@ -7,13 +7,18 @@ from .views_trading import STRATEGIES, STRATEGY_DETAIL
 
 def render(p, destination, tab):
     if tab == "resumen":
+        # Universe eligibility belongs to the UNIVERSE_SHADOW cohort; the
+        # default NATIVE_FACTUAL group only measures signal evaluations.
+        p.filters.setdefault("channel", "UNIVERSE_SHADOW")
         counts = p.counts()
+        group = p.funnel_group
+        scope = f"{group['currency']} / {group['channel']} · corte SHADOW" if group else "corte SHADOW sin cohorte"
         cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
-            ("READY", "Catalog READY", "candidate_identity_v2"), ("ELIGIBLE", "Strategy eligible", "cut SHADOW comprometido"),
-            ("TRADEABLE", "Tradeable", "cut SHADOW; no señal direccional"), ("HOT", "HOT", "prioridad de observación")))
+            ("READY", "Catalog READY", "candidate_identity_v2"), ("ELIGIBLE", "Strategy eligible", scope),
+            ("TRADEABLE", "Tradeable", scope + "; no señal direccional"), ("HOT", "HOT", scope + "; observación")))
         return "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p) + render_table(
             p, destination, tab, family_summary(p), "Distribución por familia", fields("family|Familia;candidates|Identidades|number;ready|RUNTIME_READY|number"),
-            fields("market|Mercado;currency|Moneda;touched_fraction|Coverage touched;discovery_age|Discovery age;as_of|Readiness as_of|time"))
+            fields("as_of|Readiness as_of|time;scope|Granularidad;reason|Alcance"), aggregate=True)
     if tab == "familias":
         page = shadow_rows(p, "families")
         if not page.rows:

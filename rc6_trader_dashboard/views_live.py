@@ -9,6 +9,7 @@ from .view_common import (render_table, OPPORTUNITIES, OPPORTUNITY_DETAIL, POSIT
 
 def render(p, destination, tab):
     if tab == "resumen":
+        events = shadow_rows(p, "events")
         counts = p.counts()
         cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
             ("open_positions", "Operaciones abiertas", "paper_positions · OPEN"),
@@ -22,18 +23,19 @@ def render(p, destination, tab):
         verified = sum(r.get("freshness") == "FRESH" and r.get("state") in {"RUNNING", "OK"} for r in watched)
         cards += metric("Workers críticos frescos", verified, f"De {len(watched)} · revisar cobertura", kind="number")
         content = "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p)
-        content += "<div class='split-panels'>" + preview(shadow_rows(p, "opportunities"), "Oportunidades", "/en-vivo/oportunidades") + timeline(shadow_rows(p, "events").rows) + "</div>"
+        content += "<div class='split-panels'>" + preview(shadow_rows(p, "opportunities"), "Oportunidades", "/en-vivo/oportunidades") + timeline(events.rows, verified_empty=events.state == "AVAILABLE") + "</div>"
         content += "<div class='split-panels'>" + preview(p.positions(limit=5), "1. Operaciones abiertas ahora", "/en-vivo/posiciones") + preview(p.positions(closed=True, today=True, limit=5), "2. Operaciones cerradas hoy", "/en-vivo/cierres") + "</div>"
         content += preview(p.decisions(), "3. Decisiones en vivo — BUY / HOLD / abstenciones", "/en-vivo/decisiones")
         content += preview(shadow_rows(p, "capacity"), "Capacidad & Coverage", "/en-vivo/capacidad", key="engine")
         content += "<a class='text-link' href='/scalping'>Abrir Scalping en Trading</a>"
         return content
     if tab == "oportunidades":
+        events = shadow_rows(p, "events")
         return (render_table(p, destination, tab, shadow_rows(p, "opportunities"), "Mesa de oportunidades", OPPORTUNITIES, OPPORTUNITY_DETAIL,
-                             filters=True, note="HOT ≠ BUY. DISCOVERY/WARM son observación. Tradeability no es señal direccional ni probabilidad.") + timeline(shadow_rows(p, "events").rows))
+                             filters=True, note="HOT ≠ BUY. DISCOVERY/WARM son observación. Tradeability no es señal direccional ni probabilidad.") + timeline(events.rows, verified_empty=events.state == "AVAILABLE"))
     if tab == "decisiones":
         return render_table(p, destination, tab, p.decisions(), "Decisiones factuales PAPER", DECISIONS, DECISION_DETAIL,
-                            note="Cada decisión conserva signal, economics y risk. Un HOLD requiere su motivo; score_is_probability=false.")
+                            note="Cada decisión conserva signal, economics y risk. HOLD sin gate de compra muestra NOT_EVALUATED para economics/risk; BUY sin gate sigue NO_VERIFICADO. Un HOLD requiere su motivo; score_is_probability=false.")
     if tab == "posiciones":
         return render_table(p, destination, tab, p.positions(), "Posiciones y seguridad de salida", POSITIONS, POSITION_DETAIL, filters=True,
                             note="Un mark contable no acredita un fill ejecutable. MFE/MAE sin trayectoria validada = NO_MEDIDO.")

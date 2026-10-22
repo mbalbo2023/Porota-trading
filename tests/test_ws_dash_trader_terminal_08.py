@@ -233,7 +233,16 @@ def test_invalid_financial_numbers_never_become_zero(database):
     assert close_stats["state"] == "INVALID_NET_PNL" and close_stats["win_rate"] is None
 
 
-def test_source_scope_score_and_trajectory_semantics(database):
+def test_source_scope_score_and_trajectory_semantics(database, monkeypatch):
+    root = Path(database).parent
+    (root / "iol_shadow_latest.json").write_text(json.dumps({"refreshed_at": STAMP, "cache_state": "LIVE",
+        "symbols": [{"state": "LIVE", "source_state": "LIVE_FRESH"},
+                    {"state": "CACHE_STALE", "source_state": "EMPTY_UNEXPECTED"}]}))
+    (root / "iol_family_reference_latest.json").write_text(json.dumps({"refreshed_at": STAMP,
+        "cache_state": "LIVE", "last_known_good_at": STAMP,
+        "section_states": {"fci": "LIVE", "fixed_income": "SOURCE_UNAVAILABLE"}}))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_CACHE_PATH", str(root / "iol_shadow_latest.json"))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(root))
     with Store(database, now=NOW) as s:
         p = Projection(s)
         assert p.positions().rows[0]["mfe"] == "NO_MEDIDO"
@@ -241,12 +250,13 @@ def test_source_scope_score_and_trajectory_semantics(database):
         assert p.positions().rows[0]["freshness"] == "STALE"
         assert p.positions().rows[0]["executable_mark"] == "NO_VERIFICADO"
         source = p.sources().rows[0]
-        assert source["scope"] == "IOL source_sync" and source["state"] == "NO_VERIFICADO"
-        assert source["observed_state"] == "LIVE_FRESH"
-        assert any(r["scope"] == "IOL:caucion:ARS" and r["state"] == "SOURCE_UNAVAILABLE" for r in p.sources().rows)
+        assert source["scope"] == "IOL quotes + families (por sección)" and source["state"] == "PARTIAL_LIVE"
+        assert source["observed_state"] == "LIVE" and source["freshness"] == "FRESH"
+        assert "LIVE=1" in source["data_quality"] and "CACHE_STALE=1" in source["data_quality"]
+        assert "fixed_income" in source["detail"] and "source_sync IOL: LIVE_FRESH" in source["detail"]
         decision = p.decisions().rows[0]
         assert decision["reason"] == "LIQUIDITY_BLOCKED"
-        assert decision["economics"] == "NO_VERIFICADO" and decision["risk"] == "NO_VERIFICADO"
+        assert decision["economics"] == "NOT_EVALUATED" and decision["risk"] == "NOT_EVALUATED"
         assert decision["final"] == "HOLD"  # The recorded PAPER action, not an invented gate result.
         assert decision["score_is_probability"] is False
     assert "badge-hot" in badge("HOT") and "badge-pass" not in badge("HOT")
@@ -255,6 +265,30 @@ def test_source_scope_score_and_trajectory_semantics(database):
     assert freshness(STAMP, NOW) == "FRESH"
     assert freshness("2026-10-05 16:00:00", NOW) == "NO_VERIFICADO"
     assert freshness((NOW + timedelta(seconds=1)).isoformat(), NOW) == "NO_VERIFICADO"
+
+
+def test_buy_without_gate_remains_unverified(database):
+    with sqlite3.connect(database) as c:
+        c.execute("UPDATE paper_decisions SET action='BUY' WHERE id=(SELECT MAX(id) FROM paper_decisions)")
+    with Store(database, now=NOW) as s:
+        decision = Projection(s).decisions().rows[0]
+    assert decision["final"] == "BUY"
+    assert decision["economics"] == "NO_VERIFICADO"
+    assert decision["risk"] == "NO_VERIFICADO"
+
+
+def test_iol_cache_without_current_receipt_never_becomes_live(database, monkeypatch):
+    root = Path(database).parent
+    old = (NOW - timedelta(minutes=10)).isoformat()
+    (root / "iol_shadow_latest.json").write_text(json.dumps({"refreshed_at": old,
+        "cache_state": "LIVE", "symbols": [{"state": "LIVE", "source_state": "LIVE_FRESH"}]}))
+    (root / "iol_family_reference_latest.json").write_text(json.dumps({"refreshed_at": old,
+        "cache_state": "LIVE", "section_states": {"fci": "LIVE"}}))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_CACHE_PATH", str(root / "iol_shadow_latest.json"))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(root))
+    with Store(database, now=NOW) as s:
+        row = Projection(s).sources().rows[0]
+    assert row["observed_state"] == "LIVE" and row["state"] == "STALE"
 
 
 def coherent_cut():
@@ -327,14 +361,46 @@ def test_canonical_reader_rejection_has_no_legacy_fallback(tmp_path):
 def test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency(database):
     cut = coherent_cut()
     cut["report"]["operational_funnel"] = {"as_of": STAMP, "by_currency_channel": [
-        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"CATALOG_READY": 3, "PAPER_OPENED": 1}},
-        {"currency": "USD", "channel": "SHADOW", "stages": {"CATALOG_READY": 99, "PAPER_OPENED": 9}}]}
+        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"CATALOG_READY": 3,
+            "STRATEGY_ELIGIBLE": 2, "TRADEABLE": 1, "HOT": 1, "PAPER_OPENED": 1}},
+        {"currency": "USD", "channel": "SHADOW", "stages": {"CATALOG_READY": 99,
+            "STRATEGY_ELIGIBLE": 99, "TRADEABLE": 99, "HOT": 99, "PAPER_OPENED": 9}}]}
     seal_cut(cut)
     with Store(database, now=NOW) as s:
         p = Projection(s, generation_reader=lambda *args, **kwargs: cut)
         html = committed_funnel(p)
+        assert {key: p.counts()[key] for key in ("ELIGIBLE", "TRADEABLE", "HOT")} == {
+            "ELIGIBLE": 2, "TRADEABLE": 1, "HOT": 1}
+        selected = Projection(s, {"currency": "USD", "channel": "SHADOW"},
+                              generation_reader=lambda *args, **kwargs: cut)
+        assert selected.counts()["ELIGIBLE"] == 99
     assert "ARS / NATIVE_FACTUAL" in html
     assert "<b>3</b>" in html and "<b>99</b>" not in html and "<b>25</b>" not in html
+
+
+def test_universe_cards_read_the_actual_cohort_stage_schema(database):
+    from rc6_trader_dashboard.views_universe import render
+    cut = coherent_cut()
+    cut["report"]["operational_funnel"] = {"as_of": STAMP, "by_currency_channel": [
+        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"SIGNAL_EVALUATED": 584}},
+        {"currency": "ARS", "channel": "SHADOW_ENTRY_EXPERIMENT", "stages": {"SIGNAL_CANDIDATE": 374}},
+        {"currency": "ARS", "channel": "UNIVERSE_SHADOW", "stages": {
+            "CATALOG_READY": 11530, "STRATEGY_ELIGIBLE": 1070, "DISCOVERY_TOUCHED": 258}},
+        {"currency": "USD", "channel": "UNIVERSE_SHADOW", "stages": {"STRATEGY_ELIGIBLE": 30}}]}
+    seal_cut(cut)
+    with Store(database, now=NOW) as store:
+        p = Projection(store, generation_reader=lambda *args, **kwargs: cut)
+        assert p.counts()["SIGNAL"] == 374
+        html = render(p, BY_KEY["universo"], "resumen")
+        assert p.funnel_group["channel"] == "UNIVERSE_SHADOW"
+        assert p.counts()["ELIGIBLE"] == 1070 and p.counts()["TRADEABLE"] == 0
+        assert "1.070" in html and "ARS / UNIVERSE_SHADOW" in html
+        assert "<b>0</b>" in html and "<b>NO_VERIFICADO</b>" not in html
+        assert "Agregado por familia; sin identidad exacta" in html
+        assert "<dt>Ticker</dt>" not in html and "<dt>Settlement</dt>" not in html
+        unknown = Projection(store, {"currency": "USD", "channel": "NATIVE_FACTUAL"},
+                             generation_reader=lambda *args, **kwargs: cut)
+        assert "ELIGIBLE" not in unknown.counts()
 
 
 def test_read_only_snapshot_parameterization_and_large_catalog(database):
@@ -536,6 +602,10 @@ def test_other_aggregates_fail_closed_on_interrupted_reads(database):
 
 def test_home_does_not_call_failed_performance_read_an_empty_day(client, monkeypatch):
     from rc6_trader_dashboard.views_home import preview
+    from rc6_trader_dashboard.components import timeline
+    assert "Sin registros en este scope (0)" in preview(Page("paper_positions", [], 0, "AVAILABLE"), "Posiciones", "/en-vivo/posiciones")
+    assert "NO_VERIFICADO" not in timeline([], verified_empty=True)
+    assert "NO_VERIFICADO" in timeline([])
     failed = Page("paper_positions", reason="PERFORMANCE_READ_ERROR")
     assert "PERFORMANCE_READ_ERROR" in preview(failed, "Posiciones", "/en-vivo/posiciones")
     monkeypatch.setattr(Projection, "performance", lambda self, today=False: failed)
@@ -556,9 +626,9 @@ def test_system_health_and_integrations_keep_distinct_authorities(client):
     assert "Cauciones · cash sweep" in workers.text and "WINDOW_NOT_OPEN" in workers.text
     source_rows = BeautifulSoup(sources.text, "html.parser").select(".terminal-table tr[data-row]")
     assert len(source_rows) <= 10
-    assert "IOL · captura complementaria" in source_rows[0].get_text()
-    assert "NO_VERIFICADO" in source_rows[0].get_text()
-    assert "LIVE_FRESH" in source_rows[0].get_text()
+    assert "IOL · caché complementario" in source_rows[0].get_text()
+    assert "SOURCE_UNAVAILABLE" in source_rows[0].get_text()
+    assert "source_sync IOL: LIVE_FRESH" in sources.text  # Scoped diagnostic, not live authority.
 
 
 def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(database):

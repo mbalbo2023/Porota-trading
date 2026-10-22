@@ -312,6 +312,40 @@ class Projection:
         return {'budget_seconds':budget,'basis':basis,
                 'age_seconds':age(self.shadow.get('report',{}).get('as_of'),self.now)}
 
+    @property
+    def funnel_group(self):
+        """Use the same exact currency/channel cohort as the visible funnel."""
+        if not self.shadow_fresh:
+            return {}
+        funnel = self.shadow["report"].get("operational_funnel") or {}
+        groups = funnel.get("by_currency_channel") or []
+        groups = [row for row in groups if isinstance(row, dict) and isinstance(row.get("stages"), dict)]
+        currency, channel = self.filters.get("currency"), self.filters.get("channel")
+        if currency and channel:
+            return next((row for row in groups if row.get("currency") == currency
+                         and row.get("channel") == channel), {})
+        if channel:
+            return next((row for row in groups if row.get("channel") == channel), {})
+        if currency:
+            return (next((row for row in groups if row.get("currency") == currency and
+                          row.get("channel") == "NATIVE_FACTUAL"), None)
+                    or next((row for row in groups if row.get("currency") == currency), {}))
+        return (next((row for row in groups if row.get("channel") == "NATIVE_FACTUAL"), None)
+                or next(iter(groups), {}))
+
+    def funnel_stage(self, stage, channel):
+        """One measured stage within one channel/currency; never a cross-currency sum."""
+        if not self.shadow_fresh:
+            return None
+        groups = (self.shadow["report"].get("operational_funnel") or {}).get("by_currency_channel") or []
+        currency = self.filters.get("currency") or "ARS"
+        group = next((r for r in groups if isinstance(r, dict) and r.get("currency") == currency
+                      and r.get("channel") == channel and isinstance(r.get("stages"), dict)), None)
+        if group is None:
+            return None
+        value = group["stages"].get(stage, 0)
+        return value if type(value) is int and value >= 0 else None
+
     def daily_where(self, column):
         start = datetime.combine(self.now.astimezone(TZ).date(), datetime.min.time(), TZ)
         return f"julianday({column})>=julianday(?) AND julianday({column})<julianday(?)", (
@@ -417,12 +451,26 @@ class Projection:
         # A coherent but stale generation is historical evidence, not live HOT/SIGNAL.
         funnel = self.shadow["report"].get("operational_funnel", {}) if self.shadow_fresh else {}
         if isinstance(funnel, dict):
-            stages = funnel.get("counts", funnel)
+            # The factual funnel producer publishes by_currency_channel/stages;
+            # the legacy top-level counts shape was only a test fixture. Never
+            # add distinct currencies or channels into a misleading total.
+            group = self.funnel_group
+            stages = group["stages"] if group else funnel.get("counts", funnel)
             stages = stages if isinstance(stages, dict) else {}
-            for stage in ("ELIGIBLE", "TRADEABLE", "DISCOVERY", "WARM", "HOT", "SIGNAL", "ECONOMICS", "RISK", "PAPER"):
-                value = stages.get(stage)
+            mapping = {"ELIGIBLE": "STRATEGY_ELIGIBLE", "TRADEABLE": "TRADEABLE",
+                       "DISCOVERY": "DISCOVERY_TOUCHED", "WARM": "WARM", "HOT": "HOT",
+                       "SIGNAL": "SIGNAL_CANDIDATE", "ECONOMICS": "ECONOMICS_PASS",
+                       "RISK": "RISK_PASS", "PAPER": "PAPER_OPENED"}
+            for stage, native in mapping.items():
+                value = stages.get(native, 0) if group else stages.get(stage)
                 if isinstance(value, int) and value >= 0:
                     result[stage] = value
+            if group and not self.filters.get("channel"):
+                # The candidate-signal producer owns this channel, separate
+                # from the native and universe cohorts of the visible funnel.
+                signal = self.funnel_stage("SIGNAL_CANDIDATE", "SHADOW_ENTRY_EXPERIMENT")
+                if signal is not None:
+                    result["SIGNAL"] = signal
         return result
 
     def positions(self, closed=False, limit=10, today=False):
@@ -503,17 +551,22 @@ class Projection:
             features = json_object(row.pop("features_json", None))
             gate = gates.get(row.get("decision_key"), {})
             payload = json_object(evidence.get(row.get("decision_key"), {}).get("payload_json"))
+            # HOLD never enters the BUY-only economic/patrimonial gates in the
+            # factual engine. An absent gate is therefore a known skipped stage
+            # for HOLD, whereas a BUY without its gate remains unverified.
+            skipped_buy_gates = row.get("action") == "HOLD" and not gate
             row.update(features=features, evidence=payload, gates=gate,
                        strategy=row.get("strategy_version"), as_of=row.get("decided_at"),
                        family=features.get("asset_class") or features.get("family"),
                        market=features.get("market"), currency=features.get("currency"), settlement=features.get("settlement"),
-                       signal=gate.get("technical_gate") or UNKNOWN, economics=UNKNOWN,
-                       risk=gate.get("patrimonial_gate") or UNKNOWN,
+                       signal=gate.get("technical_gate") or UNKNOWN,
+                       economics="NOT_EVALUATED" if skipped_buy_gates else UNKNOWN,
+                       risk=gate.get("patrimonial_gate") or ("NOT_EVALUATED" if skipped_buy_gates else UNKNOWN),
                        final=gate.get("final_result") or row.get("action") or UNKNOWN,
                        reason=gate.get("reason") or row.get("reason"), score_is_probability=False)
             detail = json_object(gate.get("detail_json"))
             economics = detail.get("economics", {})
-            if isinstance(economics, dict):
+            if isinstance(economics, dict) and economics:
                 row["economics"] = economics.get("state") or UNKNOWN
                 row["expected_cost"] = economics.get("expected_cost")
             row["previous_state"] = features.get("previous_state")
@@ -687,8 +740,8 @@ class Projection:
         cols = self.store.columns("api_health")
         order = ("CASE component WHEN 'PPI_PRODUCTION_MARKETDATA' THEN 0 "
                  "WHEN 'PPI_PRODUCTION_AUTH' THEN 1 ELSE 2 END,component") if "component" in cols else ""
-        # Reserve the first row for IOL. api_health currently publishes PPI,
-        # BYMA and ROFEX, but no IOL component: omission is not healthy IOL.
+        # Reserve the first row for IOL. Its collector writes mounted JSON,
+        # not source_sync; read the same scoped projection as /api/dashboard/truth.
         page = self.store.page("api_health", order=order, offset=max(0, self.offset - 1),
                                limit=9 if self.offset == 0 else 10)
         page.offset = self.offset
@@ -733,16 +786,37 @@ class Projection:
                            state=(observed if component == "BYMA_INSTRUMENTS_API" and observed == "GRIS"
                                   else observed if quality == "FRESH" else UNKNOWN))
         if self.offset == 0:
+            from er_dashboard_truth_projection_rc6 import iol_truth
+            iol = iol_truth()
+            quotes, families = iol["quotes"], iol["families"]
+            quote_states = quotes.get("states") or {}
+            sections = families.get("sections") or {}
+            quote_clock, family_clock = quotes.get("as_of"), families.get("as_of")
+            current = (freshness(quote_clock, self.now, 180) == "FRESH"
+                       and freshness(family_clock, self.now, 180) == "FRESH")
+            live = quote_states.get("LIVE", 0)
+            unavailable = sum(section.get("state") == "SOURCE_UNAVAILABLE"
+                              for section in sections.values())
+            state = ("SOURCE_UNAVAILABLE" if not quotes.get("total") and not sections else
+                     "STALE" if not current else
+                     "PARTIAL_LIVE" if (live < quotes.get("total", 0) or unavailable) else "LIVE")
             sync = self.store.page("source_sync", where="source LIKE ?", params=("IOL%",),
                                    order="last_attempt_at DESC", limit=1)
             observed = sync.rows[0] if sync.rows else {}
-            checked = observed.get("last_attempt_at")
-            page.rows.insert(0, {"component": "IOL · captura complementaria", "role": "COMPLEMENT / OBSERVE_ONLY",
-                                 "state": UNKNOWN, "observed_state": observed.get("status") or UNKNOWN,
-                                 "freshness": freshness(checked, self.now, 3600), "as_of": checked,
-                                 "checked_age_seconds": age(checked, self.now), "cadence": "SOURCE_SYNC_CAPTURE; no live ping",
-                                 "lkg": observed.get("last_success_at"), "scope": "IOL source_sync",
-                                 "source": "source_sync", "detail": "Captura observada; autoridad PPI primaria."})
+            breakdown = ", ".join(f"{key}={value}" for key, value in sorted(quote_states.items()))
+            page.rows.insert(0, {"component": "IOL · caché complementario", "role": "COMPLEMENT / OBSERVE_ONLY",
+                                 "state": state, "observed_state": quotes.get("state") or UNKNOWN,
+                                 "freshness": "FRESH" if current else "STALE" if quote_clock or family_clock else UNKNOWN,
+                                 "data_freshness": freshness(quote_clock, self.now, 180),
+                                 "data_quality": f"{quotes.get('total', 0)} cotizaciones: {breakdown}; {unavailable}/{len(sections)} secciones no disponibles",
+                                 "as_of": quote_clock, "receipt_clock": quote_clock,
+                                 "checked_age_seconds": age(quote_clock, self.now),
+                                 "cadence": "MOUNTED_IOL_CACHE; max 180s; sin llamada al proveedor",
+                                 "lkg": families.get("last_known_good_at"), "scope": "IOL quotes + families (por sección)",
+                                 "source": iol["source"], "decision_effect": "OBSERVE_ONLY",
+                                 "detail": f"Familias {families.get('state')}; reloj {family_clock}; secciones no disponibles: " +
+                                           (", ".join(k for k, v in sections.items() if v.get("state") == "SOURCE_UNAVAILABLE") or "ninguna") +
+                                           "; source_sync IOL: " + (observed.get("status") or "SIN_FILAS")})
         if page.total == 0 or page.total is None:
             if self.offset == 0:
                 page.rows += [{"component": label, "role": role, "state": UNKNOWN, "scope": label,
@@ -752,7 +826,7 @@ class Projection:
             page.state = UNKNOWN
         else:
             page.total += 1
-            page.source += " + source_sync(IOL)"
+            page.source += " + IOL cache (source_sync diagnostic only)"
         return page
 
     def history(self):

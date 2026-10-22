@@ -60,8 +60,9 @@ def test_dashboard_env_cannot_override_the_frozen_image_identity(tmp_path, monke
 def test_build_and_promotion_verify_observed_identity_without_runtime_env_injection():
     root = Path(__file__).resolve().parents[1]
     predeploy = (root / '.github/workflows/porota-predeploy-v2.yml').read_text()
-    assert '--build-arg "POROTA_BUILD_SHA=$CANDIDATE_SHA"' in predeploy
-    assert '--build-arg "POROTA_CANDIDATE_TREE_SHA=$(git rev-parse HEAD^{tree})"' in predeploy
+    assert 'CANDIDATE_TREE_SHA=$(git rev-parse HEAD^{tree})' in predeploy
+    assert 'POROTA_BUILD_SHA=${{ env.CANDIDATE_SHA }}' in predeploy
+    assert 'POROTA_CANDIDATE_TREE_SHA=${{ env.CANDIDATE_TREE_SHA }}' in predeploy
     assert 'verify_source_identity(sys.argv[1], sys.argv[2])' in predeploy
     deploy = (root / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     start = deploy.index('for IDENTITY_CONTAINER in porota_production_observer porota_production_dashboard;')
