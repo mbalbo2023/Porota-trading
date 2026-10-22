@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = f7bd7d5d850a7402f502c1d97799c2adbb0003c0
+          test "$(git rev-parse HEAD^)" = f139b1271c8cac990ce771a850d5ac8d0c5ec3a8
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -120,6 +120,8 @@ jobs:
                       cols_set=set(cols)
                       selected=[v for v in ('symbol','market','settlement','currency','price_basis','adjustment_basis','source') if v in cols_set]
                       item['sample']=list(db.execute('SELECT '+','.join(selected)+' FROM '+name+' LIMIT 12')) if selected else []
+                      item['rows']=db.execute('SELECT COUNT(*) FROM financial_instrument_catalog').fetchone()[0]
+                      item['ambiguous_exact_keys']=db.execute('SELECT COUNT(*) FROM (SELECT ticker,instrument_type,market,settlement FROM financial_instrument_catalog GROUP BY ticker,instrument_type,market,settlement HAVING COUNT(DISTINCT currency)>1)').fetchone()[0]
                   info[name]=item
               db.close();out[label]=info
           print(json.dumps(out,sort_keys=True,default=str))
