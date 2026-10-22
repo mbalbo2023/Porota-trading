@@ -51,6 +51,9 @@ jobs:
           prior=json.loads((deploy/'quiescence-9bd8294185320afcf8e8a3c75b22d9e146abd9b8.json').read_text())
           evidence=checked(directory,shadow,archived_recovery=True,quiescence=prior,
               prior_quiescence=deploy/('quiescence-'+PRIOR_CANCELLED_SHA+'.json'))
+          receipt_hash=prior_archive_receipt(deploy,directory,evidence)
+          assert len(receipt_hash)==64
+          print('RC6_696_PRIOR_ARCHIVE_RECEIPT_READONLY='+receipt_hash)
           print('RC6_696_ARCHIVE_FULL_CHECKED_READONLY='+json.dumps({
               'old_cut_revoked':evidence.get('old_cut_revoked'),
               'current_cut':evidence.get('current_cut'),
