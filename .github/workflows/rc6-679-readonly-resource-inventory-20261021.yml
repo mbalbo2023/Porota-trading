@@ -1,5 +1,5 @@
 name: RC6 679 bounded read-only resource inventory
-# Predeploy read-only recheck: RC6 #698 candidate 86ac9c8a5bd9, product 328a6526a3ea, 2026-10-22.
+# Final premerge read-only host and Chrome recheck: RC6 #698 candidate d17f55442caf, product 328a6526a3ea, 2026-10-22.
 on:
   push:
     branches:
