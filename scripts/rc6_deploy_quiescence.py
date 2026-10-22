@@ -699,10 +699,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 return receipt
             originals = {name: inspect(name) for name in OWNED}
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
-            # After an installed intraday failure SQLite may still say RUNNING.
-            # Select the exact previous stop receipt before reading that marker.
-            if stopped_owned and allow_market_open_suspend and (
-                    allow_open_paper_carryover or allow_intraday_caucion):
+            # After an installed OPEN failure SQLite may still say RUNNING,
+            # including a completely flat book. Select the exact previous
+            # stop receipt before considering that stale live heartbeat.
+            if stopped_owned and allow_market_open_suspend:
                 admin_paper_id = None
                 process = None
             else:
@@ -715,8 +715,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
             if allow_market_open_suspend and admin_paper_id:
                 raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
             if (stopped_owned and (process in {'STOPPED', 'WAITING_MARKET'} or
-                                   allow_market_open_suspend and (
-                                       allow_open_paper_carryover or allow_intraday_caucion))):
+                                   allow_market_open_suspend)):
                 receipt = adopt_stopped_after_failed_install(
                     candidate, folder, originals, admin_paper_id=admin_paper_id,
                     allow_market_open_suspend=allow_market_open_suspend,

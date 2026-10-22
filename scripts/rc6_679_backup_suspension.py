@@ -50,7 +50,7 @@ def guard(candidate, apply=False):
         raise RuntimeError('PAPER_GUARD_FAILED')
     if apply:
         if (state.get('candidate_sha') != candidate or
-                state.get('validation_status') != 'VALIDATED_RUNTIME'):
+                state.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING'):
             raise RuntimeError('CANDIDATE_SHA_CHANGED')
         policy = json.loads((ROOT / 'ops/policy/rc6-disk-housekeeping-v1.json').read_text())
         if policy.get('backups', {}).get('suspended') is not True:

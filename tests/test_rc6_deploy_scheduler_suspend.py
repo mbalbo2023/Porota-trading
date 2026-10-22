@@ -7,9 +7,32 @@ import unittest
 from unittest.mock import patch
 
 from scripts import rc6_deploy_scheduler_suspend as suspend
+from scripts import rc6_deploy_quiescence as quiescence
 
 
 class SuspendTests(unittest.TestCase):
+    def test_open_hold_requires_exact_stopped_paper_receipt(self):
+        originals = {name: {'State': {'Status': 'exited'}} for name in quiescence.OWNED}
+        receipt = {'status': 'DRAINED', 'real_orders_sent': 0,
+                   'ppi_watch_accessed': False, 'market_open_suspended': True,
+                   'open_paper_carryover': False, 'spot_carryover': None,
+                   'caucion_carryover': None, 'paused_postclose': False,
+                   'intraday_caucion': False}
+        with patch.object(quiescence, 'inspect', side_effect=lambda n: originals[n]), \
+             patch.object(quiescence, 'adopt_stopped_after_failed_install', return_value=receipt) as adopt, \
+             patch.object(quiescence, 'exact_clean_stopped') as exact, \
+             patch.object(quiescence, 'admit', return_value='RUNNING') as admit:
+            suspend.require_exact_stopped_open_flat('a'*40)
+            self.assertTrue(adopt.call_args.kwargs['allow_market_open_suspend'])
+            exact.assert_called_once_with(receipt)
+            self.assertTrue(admit.call_args.kwargs['stopped'])
+            receipt['real_orders_sent'] = 1
+            with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_OPEN_FLAT_RED'):
+                suspend.require_exact_stopped_open_flat('a'*40)
+            originals[quiescence.OWNED[0]]['State']['Status'] = 'running'
+            with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_OPEN_IDENTITY_RED'):
+                suspend.require_exact_stopped_open_flat('a'*40)
+
     def test_restore_runtime_gate_checks_containers_and_paper_zero(self):
         with TemporaryDirectory() as directory:
             data = Path(directory)
@@ -122,6 +145,40 @@ class SuspendTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'SCHEDULER_PREPAUSE_JOB_ACTIVE'):
                     suspend.run('c'*40, 'suspend', self.policy())
                 self.assertFalse((Path(directory)/('scheduler-suspend-'+'c'*40+'.json')).exists())
+
+    def test_failed_pretransfer_open_keeps_exact_paused_timers_without_rearming(self):
+        names = {'porota-runtime-evidence-rc6.timer', 'porota-preopen-rc6.timer'}
+        states = dict.fromkeys(names, 'active')
+        mutations = []
+        def command(*args):
+            if args[:2] == ('systemctl', 'list-unit-files'):
+                return ('other-ppi-watch.service enabled\n', 0)
+            unit = args[2]
+            if args[1] == 'is-enabled': return ('enabled', 0)
+            if args[1] == 'is-active':
+                return ('active', 0) if unit == 'other-ppi-watch.service' else (states.get(unit, 'inactive'), 0)
+            if args[1] == 'show': return (unit.removesuffix('.timer')+'.service', 0)
+            if args[1] == 'stop':
+                mutations.append(('stop',unit)); states[unit]='inactive'; return ('',0)
+            if args[1] == 'start': raise AssertionError('stopped runtime must not rearm')
+            raise AssertionError(args)
+        with TemporaryDirectory() as directory:
+            with patch.object(suspend, 'ROOT', Path(directory)), \
+                 patch.object(suspend, 'command', command), \
+                 patch.object(suspend, 'require_exact_stopped_open_flat') as proof:
+                suspend.run('a'*40, 'suspend', self.policy())
+                result = suspend.run('a'*40, 'hold-open-flat', self.policy())
+                self.assertEqual(result['status'], 'SUSPENDED')
+                proof.assert_called_once_with('a'*40)
+                self.assertEqual(len(mutations), 2)
+                self.assertEqual(json.loads((Path(directory)/('scheduler-suspend-'+'a'*40+'.json')).read_text())['status'], 'SUSPENDED')
+                proof.side_effect = ValueError('SCHEDULER_STOPPED_OPEN_FLAT_RED')
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_OPEN_FLAT_RED'):
+                    suspend.run('a'*40, 'hold-open-flat', self.policy())
+                proof.side_effect = None
+                states['porota-preopen-rc6.timer'] = 'active'
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_OPEN_HOLD_TIMER_CHANGED'):
+                    suspend.run('a'*40, 'hold-open-flat', self.policy())
 
     def test_invalid_policy_never_mutates_systemd(self):
         bad = base64.b64encode(json.dumps({'units': {

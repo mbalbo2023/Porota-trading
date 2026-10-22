@@ -74,10 +74,11 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
 
 def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
-    validated = text.index('"validation_status":"VALIDATED_RUNTIME"')
+    native = text.index("RC6_TEN_NATIVE_GENERATIONS_WITH_RESERVES=GREEN")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
-    assert validated < cleanup
-    tail = text[validated:cleanup + 200]
+    final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
+    assert native < cleanup < final
+    tail = text[native:cleanup + 200]
     assert "--mode cleanup" in tail
     assert "last-deploy-housekeeping.json" in tail
     assert "docker image prune -f" in tail
@@ -97,9 +98,9 @@ def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> N
 
 def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candidates() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
-    validated = text.index('"validation_status":"VALIDATED_RUNTIME"')
+    native = text.index("RC6_TEN_NATIVE_GENERATIONS_WITH_RESERVES=GREEN")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
-    tail = text[validated:cleanup + 400]
+    tail = text[native:cleanup + 400]
 
     assert "CRITICAL_IMAGE_COMPATIBILITY=GREEN" in tail
     assert "systemctl restart porota-critical-approval-rc6.service" in tail

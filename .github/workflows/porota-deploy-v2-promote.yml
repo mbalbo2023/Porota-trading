@@ -1340,37 +1340,10 @@ jobs:
           assert manifest.get("bundle_sha256")
           print("POROTA_RUNTIME_PROVENANCE_MATERIALIZED=GREEN")
           PY
-          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
-          import json,sys
-          from datetime import datetime,timezone
-          path,candidate,deploy,image_id,post=sys.argv[1:]
-          payload={
-            "schema_version":2,
-            "recorded_at":datetime.now(timezone.utc).isoformat(),
-            "candidate_sha":candidate,
-            "deploy_sha":deploy,
-            "image_id":image_id,
-            "mode":"PRODUCTION_PAPER",
-            "real_orders_sent":0,
-            "real_order_routes":"NOT_CALLED",
-            "observer_state":post,
-            "dashboard_health_http":200,
-            "ppi_watch_untouched":True,
-            "deployment_strategy":"FIX_FORWARD_ONLY",
-            "build_once":True,
-            "validation_status":"VALIDATED_RUNTIME",
-          }
-          import os,tempfile
-          directory=os.path.dirname(path)
-          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
-          try:
-              with os.fdopen(fd,"w",encoding="utf-8") as handle:
-                  json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
-              os.replace(tmp,path)
-          finally:
-              if os.path.exists(tmp): os.unlink(tmp)
-          print("CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME")
-          PY
+          # Keep the already materialized candidate state PENDING. The final
+          # marker follows the independent flat-book, scheduler and backup
+          # gates below; a successful soak alone is not a completed deploy.
+          echo 'RC6_CURRENT_STATE_STILL_PENDING=1'
 
           # Reconcile the critical approval gateway to the already-promoted
           # stable image before image cleanup. The control-plane code remains
@@ -1576,8 +1549,67 @@ jobs:
           PY
           REMOTE
 
+      - name: Finalize runtime marker after all required host gates
+        id: finalize_runtime
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
+          import json, os, subprocess, sys, tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+          candidate, deploy = sys.argv[1:]
+          root = Path('/opt/porota-trading/data/deploy')
+          path = root / 'CURRENT_STATE_V2.json'
+          if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+              raise ValueError('FINAL_STATE_UNSAFE')
+          state = json.loads(path.read_bytes())
+          if (state.get('candidate_sha') != candidate or state.get('deploy_sha') != deploy or
+                  state.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+                  state.get('mode') != 'PRODUCTION_PAPER' or
+                  type(state.get('real_orders_sent')) is not int or state['real_orders_sent'] != 0 or
+                  state.get('real_order_routes') != 'NOT_CALLED' or
+                  state.get('ppi_watch_untouched') is not True):
+              raise ValueError('FINAL_STATE_IDENTITY_RED')
+          for name in ('porota_production_observer', 'porota_production_dashboard',
+                       'porota_critical_approval_rc6'):
+              raw = subprocess.check_output(['docker', 'inspect', name], timeout=10)
+              container = json.loads(raw)[0]
+              if (container['State']['Status'] != 'running' or
+                      container['Image'] != state.get('image_id')):
+                  raise ValueError('FINAL_CONTAINER_CHANGED:' + name)
+              if name == 'porota_critical_approval_rc6' and container['State']['Health']['Status'] != 'healthy':
+                  raise ValueError('FINAL_CRITICAL_UNHEALTHY')
+          scheduler = root / ('scheduler-suspend-' + candidate + '.json')
+          backup = root / ('backup-retire-' + candidate + '.json')
+          if any(p.is_symlink() or not p.is_file() or p.stat().st_size > 65536
+                 for p in (scheduler, backup)):
+              raise ValueError('FINAL_RECEIPT_UNSAFE')
+          if (json.loads(scheduler.read_bytes()).get('status') != 'RESTORED' or
+                  json.loads(backup.read_bytes()).get('status') != 'DONE'):
+              raise ValueError('FINAL_RECEIPT_INCOMPLETE')
+          state['dashboard_health_http'] = 200
+          state['validation_status'] = 'VALIDATED_RUNTIME'
+          state['recorded_at'] = datetime.now(timezone.utc).isoformat()
+          fd, tmp = tempfile.mkstemp(prefix='.CURRENT_STATE_V2.', suffix='.tmp', dir=root)
+          try:
+              with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                  json.dump(state, handle, indent=2, sort_keys=True)
+                  handle.write('\n')
+                  handle.flush()
+                  os.fsync(handle.fileno())
+              os.replace(tmp, path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print('CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME')
+          PY
+
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |
@@ -1600,10 +1632,19 @@ jobs:
             < scripts/rc6_deploy_quiescence.py
           RECOVERY_RC=$?
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          SCHEDULER_ACTION=restore
+          if [ '${{ steps.drain.outcome }}' = failure ] && \
+             [ '${{ steps.transfer.outcome }}' = skipped ] && \
+             [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ]; then
+            # A pre-transfer failure with the exact prior OPEN runtime stopped
+            # must retain paused timers. A read-only identity/ledger/critical
+            # proof is required; rearming against stopped Docker is unsafe.
+            SCHEDULER_ACTION=hold-open-flat
+          fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
+            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
           SCHEDULER_RESTORE_RC=$?
           set -e
