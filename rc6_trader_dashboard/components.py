@@ -241,7 +241,8 @@ def funnel(counts, scope="NO_VERIFICADO · committed cut unavailable"):
             f"</ol><p class='muted'>{e(scope)} · Etapas independientes · HOT ≠ BUY · DISCOVERY/WARM = observación.</p></section>")
 
 
-def timeline(events, title="Promociones / demociones / descartes en vivo"):
+def timeline(events, title="Promociones / demociones / descartes en vivo", *, verified_empty=False):
     items = "".join(f"<li><time>{e(clock(row.get('as_of')))}</time><b>{e(row.get('symbol') or UNKNOWN)}</b>{badge(row.get('state'))}<p>{e(row.get('reason') or UNKNOWN)}</p></li>" for row in events[:5])
-    empty = "<li class='muted'>NO_VERIFICADO · Sin eventos comprometidos disponibles.</li>"
+    empty = ("<li class='muted'>Sin eventos en este scope (0).</li>" if verified_empty else
+             "<li class='muted'>NO_VERIFICADO · Sin eventos comprometidos disponibles.</li>")
     return f"<section class='panel'><h2>{e(title)}</h2><ol class='timeline'>{items or empty}</ol></section>"

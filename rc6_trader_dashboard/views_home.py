@@ -5,7 +5,8 @@ from .projection import UNKNOWN, freshness
 
 def preview(page, title, path, *, key="symbol"):
     rows = "".join(f"<li><b>{e(row.get(key) or UNKNOWN)}</b>{badge(row.get('state') or row.get('status') or row.get('final'))}<span>{e(row.get('currency') or '')}</span><small>{e(row.get('reason') or row.get('exit_reason') or row.get('close_reason') or row.get('as_of') or UNKNOWN)}</small></li>" for row in page.rows[:5])
-    empty = (f"<li>NO_VERIFICADO · {e(page.reason)}</li>" if page.reason else
+    empty = ("<li>Sin registros en este scope (0).</li>" if page.state == "AVAILABLE" else
+             f"<li>NO_VERIFICADO · {e(page.reason)}</li>" if page.reason else
              "<li>NO_VERIFICADO · sin registros publicados en este scope.</li>")
     return f"<section class='panel'><h2>{title}</h2><ul class='preview-list'>{rows or empty}</ul><a class='text-link' href='{path}'>Ver {title.lower()}</a></section>"
 

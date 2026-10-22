@@ -602,6 +602,10 @@ def test_other_aggregates_fail_closed_on_interrupted_reads(database):
 
 def test_home_does_not_call_failed_performance_read_an_empty_day(client, monkeypatch):
     from rc6_trader_dashboard.views_home import preview
+    from rc6_trader_dashboard.components import timeline
+    assert "Sin registros en este scope (0)" in preview(Page("paper_positions", [], 0, "AVAILABLE"), "Posiciones", "/en-vivo/posiciones")
+    assert "NO_VERIFICADO" not in timeline([], verified_empty=True)
+    assert "NO_VERIFICADO" in timeline([])
     failed = Page("paper_positions", reason="PERFORMANCE_READ_ERROR")
     assert "PERFORMANCE_READ_ERROR" in preview(failed, "Posiciones", "/en-vivo/posiciones")
     monkeypatch.setattr(Projection, "performance", lambda self, today=False: failed)
