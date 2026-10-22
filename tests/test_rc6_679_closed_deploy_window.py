@@ -25,10 +25,10 @@ def test_deploy_classifies_live_session_and_rechecks_flat_paper_at_drain():
 
 def test_deploy_checks_flat_paper_after_restart():
     source = WORKFLOW.read_text(encoding='utf-8')
-    assert 'from scripts.rc6_deploy_quiescence import admit' in source
-    assert "assert admit(allow_market_open_suspend=mode=='OPEN')==expected" in source
-    assert "expected='RUNNING' if mode=='OPEN' else 'WAITING_MARKET'" in source
-    assert 'RC6_FLAT_POSTSTART=GREEN|mode=' in source
+    assert 'from scripts.rc6_deploy_quiescence import admit_poststart_flat' in source
+    assert 'after=admit_poststart_flat(before)' in source
+    assert 'RC6_FLAT_POSTSTART=GREEN|before=' in source
+    assert "|after='+after+'|PRODUCTION_PAPER|0" in source
     assert '--action verify-carryover' not in source
     cleanup = source.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name: Postdeploy full-session stress', 1)[0]
     assert "steps.flat_book.outcome == 'failure'" in cleanup
