@@ -59,6 +59,47 @@ def test_unsafe_or_unknown_cannot_stop_runtime(installation, change):
     assert not any(call[1] in ('stop', 'start') for call in calls)
 
 
+@pytest.mark.parametrize('before,process,session,after', [
+    ('CLOSED', 'RUNNING', 'MARKET_OPEN', 'OPEN'),
+    ('OPEN', 'WAITING_MARKET', 'MARKET_CLOSED', 'CLOSED'),
+    ('OPEN', 'RUNNING', 'MARKET_OPEN', 'OPEN'),
+    ('CLOSED', 'WAITING_MARKET', 'CLOSED', 'CLOSED'),
+])
+def test_poststart_admits_actual_live_phase_after_long_promotion(
+        installation, before, process, session, after):
+    _, db, _, _, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute('UPDATE observer_state SET process_state=?,session_state=?',
+                  (process, session))
+    assert q.admit_poststart_flat(before) == after
+
+
+@pytest.mark.parametrize('change', ['unknown_phase', 'real_order', 'open_spot', 'stale'])
+def test_poststart_refuses_unproven_or_nonflat_phase(installation, change):
+    _, db, _, _, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+        if change == 'unknown_phase':
+            c.execute("UPDATE observer_state SET session_state='CHECKING'")
+        elif change == 'real_order':
+            c.execute('UPDATE observer_state SET real_orders_sent=1')
+        elif change == 'open_spot':
+            c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+        else:
+            c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+    with pytest.raises(ValueError):
+        q.admit_poststart_flat('CLOSED')
+
+
+def test_deploy_poststart_uses_fresh_phase_gate_after_long_soak():
+    source = (Path(__file__).resolve().parents[1] /
+              '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    block = source.split('- name: Verify same flat PAPER session after runtime restart', 1)[1]
+    block = block.split('- name: Restore RC6 schedulers', 1)[0]
+    assert 'admit_poststart_flat(before)' in block
+    assert "expected='RUNNING' if mode=='OPEN'" not in block
+
+
 def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installation):
     root, db, states, calls, _ = installation
     with sqlite3.connect(db) as c:

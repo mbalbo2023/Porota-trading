@@ -325,6 +325,32 @@ def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,history_
     assert health['state']=='ROJO'
 
 
+@pytest.mark.parametrize('other_market,other_currency',[
+    ('BYMA','USD'),('OTRO','ARS'),
+])
+def test_ppi_short_history_request_never_attributes_ambiguous_catalog_identity(
+        store,history_pipeline,monkeypatch,other_market,other_currency):
+    observer._support_schema(store)
+    seed_ppi_history_identity(store,'GGAL')
+    with store.connect() as connection:
+        connection.execute("""INSERT INTO financial_instrument_catalog VALUES(
+          ?,'ACCIONES',?,?,'A-24HS','PPI_FIELD','fixture',?,'fixture-run',
+          'STALE','HISTORY_UNVERIFIED','{}')""",
+          ('GGAL',other_market,other_currency,AT))
+    monkeypatch.setattr(observer,'_historical_targets',
+                        lambda _: [('GGAL','ACCIONES','BYMA','ARS','A-24HS')])
+    class Reader:
+        def history(self,*_):
+            pytest.fail('Ambiguous short-key PPI request must not be sent')
+    assert observer._download_histories(Reader(),store)==0
+    assert rows(history_pipeline,'history_versions_v2')==[]
+    attempts=rows(store,'history_attempt_ledger_v2')
+    assert len(attempts)==1 and attempts[0]['state']=='ERROR'
+    assert 'HISTORY_PROVIDER_IDENTITY_AMBIGUOUS' in attempts[0]['detail']
+    assert json.loads(attempts[0]['metadata_json'])['guard_reason']=='HISTORY_PROVIDER_IDENTITY_AMBIGUOUS'
+    assert rows(store,'historical_raw_archive')==[]
+
+
 @pytest.mark.parametrize('payload',[
     ['error','error'], {'data':history_payload()}, [{'message':'no data'}],
     [history_payload()[0]|{'price':0}], [history_payload()[0]|{'volume':float('nan')}],
