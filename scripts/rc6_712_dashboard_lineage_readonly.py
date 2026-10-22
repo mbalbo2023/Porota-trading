@@ -63,6 +63,48 @@ if table('api_health'):
     out['tables']['source_health']=rows('SELECT component,state,checked_at,last_success_at FROM api_health ORDER BY component LIMIT 25')
 if table('source_sync'):
     out['tables']['iol_sync']=rows("SELECT source,status,last_attempt_at,last_success_at FROM source_sync WHERE source LIKE 'IOL%' ORDER BY last_attempt_at DESC LIMIT 3")
+if table('paper_cauciones') and table('paper_caucion_allocations'):
+    from decimal import Decimal
+    from bt_caucion_paper import CaucionOffer, validate_position
+    from bl_candle_engine import fingerprint
+    from ca_caucion_allocator import _paper_tariff_authorized
+    from cb_caucion_audit import _validated
+    pending=rows("SELECT * FROM paper_cauciones WHERE status='OPEN' LIMIT 2")
+    diagnostic={'open_count':len(pending)}
+    if len(pending)==1:
+        p=pending[0]
+        alloc=rows('SELECT * FROM paper_caucion_allocations WHERE paper_id=? LIMIT 2',(p['paper_id'],))
+        diagnostic['allocation_count']=len(alloc)
+        try:
+            validate_position(p)
+            diagnostic['placement_terms_valid']=True
+        except (ValueError,TypeError,KeyError) as exc:
+            diagnostic['placement_terms_valid']=False
+            diagnostic['placement_error_class']=type(exc).__name__
+        if len(alloc)==1:
+            try:
+                decision=json.loads(alloc[0]['decision_json'])
+                selected=decision['selected']
+                offers=decision['manifest']['offers']
+                offer=CaucionOffer(**next(x for x in offers if fingerprint(x)==selected['candidate_id']))
+                diagnostic.update(quoted_fees_absent=offer.quoted_total_fees is None,
+                    fee_quote_principal_absent=offer.fee_quote_principal is None,
+                    paper_tariff_authorized=_paper_tariff_authorized(offer),
+                    selected_equals_placement=Decimal(selected['principal'])==Decimal(p['principal']),
+                    selected_equals_quote=(offer.fee_quote_principal is not None and
+                        Decimal(selected['principal'])==offer.fee_quote_principal),
+                    placement_equals_quote=(offer.fee_quote_principal is not None and
+                        Decimal(p['principal'])==offer.fee_quote_principal),
+                    selected_fee_equals_placement=Decimal(selected['fees'])==Decimal(p['total_fees']),
+                    selected_code=selected['code'], decision_status=decision['status'])
+                try:
+                    _validated(alloc[0],c)
+                    diagnostic['allocation_audit']='CONSISTENT'
+                except (ValueError,TypeError,KeyError,AttributeError) as exc:
+                    diagnostic['allocation_audit']=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
+            except (ValueError,TypeError,KeyError,StopIteration) as exc:
+                diagnostic['shape_error_class']=type(exc).__name__
+    out['pending_caucion_audit']=diagnostic
 c.close()
 from rc6_trader_dashboard.projection import Projection, Store
 with Store(PATH) as store:
