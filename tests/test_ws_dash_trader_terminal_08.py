@@ -395,6 +395,7 @@ def test_universe_cards_read_the_actual_cohort_stage_schema(database):
         assert p.funnel_group["channel"] == "UNIVERSE_SHADOW"
         assert p.counts()["ELIGIBLE"] == 1070 and p.counts()["TRADEABLE"] == 0
         assert "1.070" in html and "ARS / UNIVERSE_SHADOW" in html
+        assert "<b>0</b>" in html and "<b>NO_VERIFICADO</b>" not in html
         unknown = Projection(store, {"currency": "USD", "channel": "NATIVE_FACTUAL"},
                              generation_reader=lambda *args, **kwargs: cut)
         assert "ELIGIBLE" not in unknown.counts()

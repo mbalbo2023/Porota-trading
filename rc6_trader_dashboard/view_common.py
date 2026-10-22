@@ -50,7 +50,9 @@ def committed_funnel(p):
     names = {"READY": "CATALOG_READY", "ELIGIBLE": "STRATEGY_ELIGIBLE", "TRADEABLE": "TRADEABLE",
              "DISCOVERY": "DISCOVERY_TOUCHED", "WARM": "WARM", "HOT": "HOT", "SIGNAL": "SIGNAL_CANDIDATE",
              "ECONOMICS": "ECONOMICS_PASS", "RISK": "RISK_PASS", "PAPER": "PAPER_OPENED"}
-    counts = {stage: selected["stages"].get(native) for stage, native in names.items()}
+    # The producer's Counter only stores reached stages. Within a committed
+    # cohort a missing stage is an observed zero, not an absent dataset.
+    counts = {stage: selected["stages"].get(native, 0) for stage, native in names.items()}
     timing=p.shadow_liveness
     scope = (f"{selected.get('currency')} / {selected.get('channel')} · {clock(report.get('as_of'))} · CURRENT.json"
              f" · edad {timing['age_seconds']}s / presupuesto {timing['budget_seconds']}s · {timing['basis']}")
