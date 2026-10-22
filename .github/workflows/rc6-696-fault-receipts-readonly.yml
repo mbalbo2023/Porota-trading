@@ -62,6 +62,24 @@ jobs:
           allowed=('state','error_class','error_code','error_phase','failed_at','snapshot_id')
           print('RC6_COLD_RECEIPT='+json.dumps({'queue_state':payload.get('state'),'receipt_present':receipt is not None,
               'receipt':{k:data.get(k) for k in allowed},'queue_snapshot_matches_receipt':ident==data.get('snapshot_id')}))
+          categories={'docker_not_running':r'(?i)container.{0,120}not running',
+              'docker_exec_failed':r'(?i)(?:OCI runtime exec failed|exec failed)',
+              'python_module_missing':r'(?i)(?:ModuleNotFoundError|No module named)',
+              'python_traceback':r'(?i)(?:Traceback|Error:)',
+              'docker_daemon_unavailable':r'(?i)(?:Cannot connect to the Docker daemon|connection refused)',
+              'unit_failed':r'(?i)(?:status=1|failed with result|Failed to start)'}
+          print('RC6_EOD_JOURNAL_CLASSES='+json.dumps({k:sum(bool(re.search(v,line)) for line in lines) for k,v in categories.items()}))
+          manifest=bounded_json(path/('manifest-'+ident+'.json')) if ident else None
+          m=manifest.get('payload',{}) if isinstance(manifest,dict) else {}
+          pack=path/(ident+'.pack') if ident else None
+          shadow_status=bounded_json(path.parent/'status.json')
+          status=shadow_status.get('payload',{}) if isinstance(shadow_status,dict) else {}
+          print('RC6_COLD_CAUSAL='+json.dumps({'sealed_at':m.get('sealed_at'),
+              'deadline_at':m.get('deadline_at'),'failed_at':data.get('failed_at'),
+              'failure_seconds_after_seal':round(data['failed_at']-m['sealed_at'],3) if
+               type(data.get('failed_at')) in (int,float) and type(m.get('sealed_at')) in (int,float) else None,
+              'pack_bytes':m.get('pack_bytes'),'pack_present':pack.is_file() if pack else False,
+              'shadow_status':status.get('status'),'shadow_real_orders_sent':status.get('real_orders_sent')}))
           PY
       - name: Remove SSH key
         if: always()
