@@ -156,6 +156,32 @@ jobs:
               containers[name]=raw
           print(json.dumps({'schema':'RC6_685_PAPER_STATE_READONLY_V1','state':state,'open_counts':counts,'containers':containers},sort_keys=True))
           PY
+      - name: Verify exact stopped flat continuation without writes
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -" <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import ROOT, OWNED, inspect, adopt_stopped_after_failed_install, admit, exact_clean_stopped
+          folder=ROOT/'data/deploy'
+          state=json.loads((folder/'CURRENT_STATE_V2.json').read_text())
+          print(json.dumps({'schema':'RC6_685_CURRENT_PROVENANCE_V1', 'candidate_sha':state.get('candidate_sha'), 'validation_status':state.get('validation_status'), 'image_id':state.get('image_id'), 'recorded_at':state.get('recorded_at')},sort_keys=True))
+          originals={name:inspect(name) for name in OWNED}
+          try:
+              receipt=adopt_stopped_after_failed_install('e'*40,folder,originals)
+              exact_clean_stopped(receipt)
+              process=admit(stopped=True,stopped_receipt=receipt)
+              print(json.dumps({'schema':'RC6_685_STOPPED_ADMISSION_V1','status':receipt['status'],'process':process,'prior':receipt.get('fix_forward_from'),'critical':receipt.get('critical_admission'),'real_orders_sent':receipt['real_orders_sent']},sort_keys=True))
+          except Exception as exc:
+              print(json.dumps({'schema':'RC6_685_STOPPED_ADMISSION_RED','class':type(exc).__name__,'error':str(exc)},sort_keys=True))
+              raise
+          PY
       - name: Remove SSH key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_cold_readonly"
