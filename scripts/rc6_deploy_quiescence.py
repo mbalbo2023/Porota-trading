@@ -186,6 +186,29 @@ def admit(*, stopped=False, allow_admin_issue624=False,
         return process
 
 
+def admit_poststart_flat(pre_mode):
+    """Recheck the live flat PAPER book after a promotion crosses market phase."""
+    if pre_mode not in {'OPEN', 'CLOSED'}:
+        raise ValueError('QUIESCENCE_PRESTART_MODE_UNKNOWN')
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        state = c.execute(
+            'SELECT process_state,session_state FROM observer_state WHERE id=1').fetchone()
+    if state == ('RUNNING', 'MARKET_OPEN'):
+        actual, expected = 'OPEN', 'RUNNING'
+    elif state and state[0] == 'WAITING_MARKET' and state[1] in {'CLOSED', 'MARKET_CLOSED'}:
+        actual, expected = 'CLOSED', 'WAITING_MARKET'
+    else:
+        raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED')
+    # admit rereads committed mode, integer zero orders, a fresh heartbeat and
+    # all three flat ledgers. A phase change between reads fails closed.
+    if admit(allow_market_open_suspend=actual == 'OPEN') != expected:
+        raise ValueError('QUIESCENCE_POSTSTART_BOOK_CHANGED')
+    return actual
+
+
 def spot_carryover_snapshot():
     """Bounded, read-only committed PAPER spot book after observer SIGTERM."""
     path = ROOT / 'data/paper_v17/observer_v17.db'
