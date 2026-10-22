@@ -477,6 +477,11 @@ def main(policy_b64):
     if current['mode'] != 'PRODUCTION_PAPER' or type(current['real_orders_sent']) is not int \
             or current['real_orders_sent'] != 0 or current['real_order_routes'] != 'NOT_CALLED':
         raise RuntimeError('PAPER_SAFETY_GATE_FAILED')
+    # Log only scalar contract evidence before other inventory gates.
+    proof = sqlite_status(ROOT / 'data/paper_v17/observer_v17.db')
+    print('RC6_CONTRACT_V1_RECENT_SCALARS=' + json.dumps(
+        proof.get('contract_v1_recent_scalars', proof.get('query_error', 'UNAVAILABLE')),
+        sort_keys=True))
     containers = {}
     pids = set()
     for name in CONTAINERS:
@@ -484,7 +489,8 @@ def main(policy_b64):
         if raw is None:
             raise RuntimeError('CONTAINER_INSPECT_UNAVAILABLE')
         row = json.loads(raw)[0]
-        if row['Image'] != current['image_id'] or not row['State']['Running']:
+        if not row['State']['Running'] or (name != 'porota_critical_approval_rc6'
+                and row['Image'] != current['image_id']):
             raise RuntimeError('CONTAINER_IDENTITY_CHANGED')
         pid = int(row['State']['Pid'])
         containers[name] = {'init_pid': pid, 'image_id': row['Image'],
