@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 
@@ -38,6 +39,10 @@ def proven_distinct_failed_successor(directory, generation, current_snapshot):
     """
     if current_snapshot != CURRENT_FAILED_SUCCESSOR:
         return False
+    # Deploy V2 invokes this file by absolute path on the host. In that mode
+    # Python places scripts/ rather than its parent on sys.path.
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from scripts import rc6_cold2_successor as successor
     try:
         evidence=successor.inspect(directory.parents[2])
