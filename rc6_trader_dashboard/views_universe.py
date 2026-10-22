@@ -18,7 +18,7 @@ def render(p, destination, tab):
             ("TRADEABLE", "Tradeable", scope + "; no señal direccional"), ("HOT", "HOT", scope + "; observación")))
         return "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p) + render_table(
             p, destination, tab, family_summary(p), "Distribución por familia", fields("family|Familia;candidates|Identidades|number;ready|RUNTIME_READY|number"),
-            fields("market|Mercado;currency|Moneda;touched_fraction|Coverage touched;discovery_age|Discovery age;as_of|Readiness as_of|time"))
+            fields("as_of|Readiness as_of|time;scope|Granularidad;reason|Alcance"), aggregate=True)
     if tab == "familias":
         page = shadow_rows(p, "families")
         if not page.rows:

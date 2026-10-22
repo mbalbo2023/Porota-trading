@@ -277,5 +277,7 @@ def family_summary(p):
         return Page("candidate_identity_v2", reason="FAMILY_SUMMARY_READ_ERROR")
     for row in rows:
         row.update(source="candidate_identity_v2", status=UNKNOWN, entry_authority=UNKNOWN,
-                   strategy=UNKNOWN, lifecycle_owner=UNKNOWN, blocker="Routing de estrategia pendiente de reconciliación #466")
+                   strategy=UNKNOWN, lifecycle_owner=UNKNOWN, blocker="Routing de estrategia pendiente de reconciliación #466",
+                   scope="Agregado por familia; sin identidad exacta ni mercado, moneda o plazo únicos",
+                   reason="RUNTIME_READY agregado no certifica estrategia ni autoridad de entrada")
     return Page("candidate_identity_v2 · readiness (not strategy permission)", rows, count[0]["n"] if count else None, "AVAILABLE", p.offset)

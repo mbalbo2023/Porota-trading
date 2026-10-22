@@ -25,12 +25,12 @@ PERFORMANCE = fields("currency|Moneda;strategy|Estrategia;net_pnl|PnL neto|money
 PERFORMANCE_DETAIL = fields("family|Familia;gross_pnl|PnL bruto|money;win_rate|Win rate · con muestra|percent;expectancy|Expectancy|money;avg_win|Ganancia media|money;avg_loss|Pérdida media|money;drawdown|Drawdown|money;holding_time|Duración media|number;edge|Edge / OOS;as_of|Último cierre|time")
 
 
-def render_table(p, destination, tab, page, title, columns, detail=(), *, filters=False, catalog=False, note=""):
+def render_table(p, destination, tab, page, title, columns, detail=(), *, filters=False, catalog=False, note="", aggregate=False):
     from .navigation import view_path
     path = view_path(destination, tab)
     form = filters_form(path, p.filters, catalog=catalog, positions=page.source == "paper_positions") if filters else ""
     return ((notice(note) if note else "") + form +
-            table(page, title, columns, detail, path=path, filters=p.filters))
+            table(page, title, columns, detail, path=path, filters=p.filters, aggregate=aggregate))
 
 
 def committed_funnel(p):
