@@ -30,10 +30,11 @@ STATUS = re.compile(
     r"\b(?:NO_VERIFICADO|STALE|BASELINE_UNAVAILABLE|SOURCE_UNAVAILABLE|"
     r"COMMITTED_COHERENT_SHADOW|SIMULATED|WAITING_MARKET|MARKET_CLOSED|"
     r"PRODUCTION_PAPER|OFF_BASELINE|PAPER|SHADOW|OPEN|BACKLOG|"
-    r"ANNUAL_NO_CANONICAL_BARS|READY|UNAVAILABLE)\b", re.I
+    r"ANNUAL_NO_CANONICAL_BARS|ANNUAL_NO_SELECTABLE_CANONICAL_SERIES|"
+    r"SUSPENDED_BY_OPERATOR|READY|UNAVAILABLE)\b", re.I
 )
 REDACT = r"""() => {
-  const allowed = /\b(?:NO_VERIFICADO|STALE|BASELINE_UNAVAILABLE|SOURCE_UNAVAILABLE|COMMITTED_COHERENT_SHADOW|SIMULATED|WAITING_MARKET|MARKET_CLOSED|PRODUCTION_PAPER|OFF_BASELINE|PAPER|SHADOW|OPEN|BACKLOG|ANNUAL_NO_CANONICAL_BARS|READY|UNAVAILABLE)\b/gi;
+  const allowed = /\b(?:NO_VERIFICADO|STALE|BASELINE_UNAVAILABLE|SOURCE_UNAVAILABLE|COMMITTED_COHERENT_SHADOW|SIMULATED|WAITING_MARKET|MARKET_CLOSED|PRODUCTION_PAPER|OFF_BASELINE|PAPER|SHADOW|OPEN|BACKLOG|ANNUAL_NO_CANONICAL_BARS|ANNUAL_NO_SELECTABLE_CANONICAL_SERIES|SUSPENDED_BY_OPERATOR|READY|UNAVAILABLE)\b/gi;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let node;
   while ((node = walker.nextNode())) {
@@ -100,6 +101,28 @@ def main(output):
                 item = {"path": path, "http": response.status if response else None,
                         "rendered_characters": len(body), "status_counts": status_counts,
                         "desktop": metrics}
+                if path == "/analitica/anual":
+                    item["annual_selector_links"] = page.locator('a[href^="/analitica/anual?"]').count()
+                    item["annual_no_selectable"] = "ANNUAL_NO_SELECTABLE_CANONICAL_SERIES" in body
+                    if not item["annual_selector_links"] and not item["annual_no_selectable"]:
+                        report["findings"].append({"kind": "annual_missing_honest_empty_state", "path": path})
+                if path == "/sistema/backups":
+                    item["backup_operator_suspended"] = ("SUSPENDED_BY_OPERATOR" in body and
+                        "Generación de backups suspendida" in body)
+                    if not item["backup_operator_suspended"]:
+                        report["findings"].append({"kind": "backup_view_not_suspended", "path": path})
+                if path == "/en-vivo/cierres":
+                    item["paper_closure_scope"] = "Posiciones cerradas PAPER" in body
+                    if not item["paper_closure_scope"]:
+                        report["findings"].append({"kind": "paper_closure_scope_missing", "path": path})
+                if path == "/en-vivo/capacidad":
+                    item["open_capacity_caveat"] = "La capacidad real exige evidencia OPEN" in body
+                    if not item["open_capacity_caveat"]:
+                        report["findings"].append({"kind": "open_capacity_caveat_missing", "path": path})
+                if path == "/en-vivo/fuentes":
+                    item["source_authority_caveat"] = "PPI es autoridad primaria" in body
+                    if not item["source_authority_caveat"]:
+                        report["findings"].append({"kind": "source_authority_caveat_missing", "path": path})
                 if response.status != 200 or not body.strip():
                     report["findings"].append({"kind": "rendered_route_error", "path": path,
                                                "http": item["http"]})
