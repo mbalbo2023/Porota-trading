@@ -312,6 +312,40 @@ class Projection:
         return {'budget_seconds':budget,'basis':basis,
                 'age_seconds':age(self.shadow.get('report',{}).get('as_of'),self.now)}
 
+    @property
+    def funnel_group(self):
+        """Use the same exact currency/channel cohort as the visible funnel."""
+        if not self.shadow_fresh:
+            return {}
+        funnel = self.shadow["report"].get("operational_funnel") or {}
+        groups = funnel.get("by_currency_channel") or []
+        groups = [row for row in groups if isinstance(row, dict) and isinstance(row.get("stages"), dict)]
+        currency, channel = self.filters.get("currency"), self.filters.get("channel")
+        if currency and channel:
+            return next((row for row in groups if row.get("currency") == currency
+                         and row.get("channel") == channel), {})
+        if channel:
+            return next((row for row in groups if row.get("channel") == channel), {})
+        if currency:
+            return (next((row for row in groups if row.get("currency") == currency and
+                          row.get("channel") == "NATIVE_FACTUAL"), None)
+                    or next((row for row in groups if row.get("currency") == currency), {}))
+        return (next((row for row in groups if row.get("channel") == "NATIVE_FACTUAL"), None)
+                or next(iter(groups), {}))
+
+    def funnel_stage(self, stage, channel):
+        """One measured stage within one channel/currency; never a cross-currency sum."""
+        if not self.shadow_fresh:
+            return None
+        groups = (self.shadow["report"].get("operational_funnel") or {}).get("by_currency_channel") or []
+        currency = self.filters.get("currency") or "ARS"
+        group = next((r for r in groups if isinstance(r, dict) and r.get("currency") == currency
+                      and r.get("channel") == channel and isinstance(r.get("stages"), dict)), None)
+        if group is None:
+            return None
+        value = group["stages"].get(stage, 0)
+        return value if type(value) is int and value >= 0 else None
+
     def daily_where(self, column):
         start = datetime.combine(self.now.astimezone(TZ).date(), datetime.min.time(), TZ)
         return f"julianday({column})>=julianday(?) AND julianday({column})<julianday(?)", (
@@ -417,12 +451,26 @@ class Projection:
         # A coherent but stale generation is historical evidence, not live HOT/SIGNAL.
         funnel = self.shadow["report"].get("operational_funnel", {}) if self.shadow_fresh else {}
         if isinstance(funnel, dict):
-            stages = funnel.get("counts", funnel)
+            # The factual funnel producer publishes by_currency_channel/stages;
+            # the legacy top-level counts shape was only a test fixture. Never
+            # add distinct currencies or channels into a misleading total.
+            group = self.funnel_group
+            stages = group["stages"] if group else funnel.get("counts", funnel)
             stages = stages if isinstance(stages, dict) else {}
-            for stage in ("ELIGIBLE", "TRADEABLE", "DISCOVERY", "WARM", "HOT", "SIGNAL", "ECONOMICS", "RISK", "PAPER"):
-                value = stages.get(stage)
+            mapping = {"ELIGIBLE": "STRATEGY_ELIGIBLE", "TRADEABLE": "TRADEABLE",
+                       "DISCOVERY": "DISCOVERY_TOUCHED", "WARM": "WARM", "HOT": "HOT",
+                       "SIGNAL": "SIGNAL_CANDIDATE", "ECONOMICS": "ECONOMICS_PASS",
+                       "RISK": "RISK_PASS", "PAPER": "PAPER_OPENED"}
+            for stage, native in mapping.items():
+                value = stages.get(native, 0) if group else stages.get(stage)
                 if isinstance(value, int) and value >= 0:
                     result[stage] = value
+            if group and not self.filters.get("channel"):
+                # The candidate-signal producer owns this channel, separate
+                # from the native and universe cohorts of the visible funnel.
+                signal = self.funnel_stage("SIGNAL_CANDIDATE", "SHADOW_ENTRY_EXPERIMENT")
+                if signal is not None:
+                    result["SIGNAL"] = signal
         return result
 
     def positions(self, closed=False, limit=10, today=False):

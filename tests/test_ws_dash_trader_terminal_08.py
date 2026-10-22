@@ -361,14 +361,43 @@ def test_canonical_reader_rejection_has_no_legacy_fallback(tmp_path):
 def test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency(database):
     cut = coherent_cut()
     cut["report"]["operational_funnel"] = {"as_of": STAMP, "by_currency_channel": [
-        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"CATALOG_READY": 3, "PAPER_OPENED": 1}},
-        {"currency": "USD", "channel": "SHADOW", "stages": {"CATALOG_READY": 99, "PAPER_OPENED": 9}}]}
+        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"CATALOG_READY": 3,
+            "STRATEGY_ELIGIBLE": 2, "TRADEABLE": 1, "HOT": 1, "PAPER_OPENED": 1}},
+        {"currency": "USD", "channel": "SHADOW", "stages": {"CATALOG_READY": 99,
+            "STRATEGY_ELIGIBLE": 99, "TRADEABLE": 99, "HOT": 99, "PAPER_OPENED": 9}}]}
     seal_cut(cut)
     with Store(database, now=NOW) as s:
         p = Projection(s, generation_reader=lambda *args, **kwargs: cut)
         html = committed_funnel(p)
+        assert {key: p.counts()[key] for key in ("ELIGIBLE", "TRADEABLE", "HOT")} == {
+            "ELIGIBLE": 2, "TRADEABLE": 1, "HOT": 1}
+        selected = Projection(s, {"currency": "USD", "channel": "SHADOW"},
+                              generation_reader=lambda *args, **kwargs: cut)
+        assert selected.counts()["ELIGIBLE"] == 99
     assert "ARS / NATIVE_FACTUAL" in html
     assert "<b>3</b>" in html and "<b>99</b>" not in html and "<b>25</b>" not in html
+
+
+def test_universe_cards_read_the_actual_cohort_stage_schema(database):
+    from rc6_trader_dashboard.views_universe import render
+    cut = coherent_cut()
+    cut["report"]["operational_funnel"] = {"as_of": STAMP, "by_currency_channel": [
+        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"SIGNAL_EVALUATED": 584}},
+        {"currency": "ARS", "channel": "SHADOW_ENTRY_EXPERIMENT", "stages": {"SIGNAL_CANDIDATE": 374}},
+        {"currency": "ARS", "channel": "UNIVERSE_SHADOW", "stages": {
+            "CATALOG_READY": 11530, "STRATEGY_ELIGIBLE": 1070, "DISCOVERY_TOUCHED": 258}},
+        {"currency": "USD", "channel": "UNIVERSE_SHADOW", "stages": {"STRATEGY_ELIGIBLE": 30}}]}
+    seal_cut(cut)
+    with Store(database, now=NOW) as store:
+        p = Projection(store, generation_reader=lambda *args, **kwargs: cut)
+        assert p.counts()["SIGNAL"] == 374
+        html = render(p, BY_KEY["universo"], "resumen")
+        assert p.funnel_group["channel"] == "UNIVERSE_SHADOW"
+        assert p.counts()["ELIGIBLE"] == 1070 and p.counts()["TRADEABLE"] == 0
+        assert "1.070" in html and "ARS / UNIVERSE_SHADOW" in html
+        unknown = Projection(store, {"currency": "USD", "channel": "NATIVE_FACTUAL"},
+                             generation_reader=lambda *args, **kwargs: cut)
+        assert "ELIGIBLE" not in unknown.counts()
 
 
 def test_read_only_snapshot_parameterization_and_large_catalog(database):

@@ -44,8 +44,9 @@ def committed_funnel(p):
     groups = [r for r in groups if isinstance(r, dict) and isinstance(r.get("stages"), dict)]
     if not groups:
         return funnel({}, p.shadow["state"])
-    selected = next((r for r in groups if r.get("channel") == p.filters.get("channel") and r.get("currency") == p.filters.get("currency")), None)
-    selected = selected or next((r for r in groups if r.get("channel") == "NATIVE_FACTUAL"), groups[0])
+    selected = p.funnel_group
+    if not selected:
+        return notice("NO_VERIFICADO · La cohorte currency/channel solicitada no existe en el corte comprometido.")
     names = {"READY": "CATALOG_READY", "ELIGIBLE": "STRATEGY_ELIGIBLE", "TRADEABLE": "TRADEABLE",
              "DISCOVERY": "DISCOVERY_TOUCHED", "WARM": "WARM", "HOT": "HOT", "SIGNAL": "SIGNAL_CANDIDATE",
              "ECONOMICS": "ECONOMICS_PASS", "RISK": "RISK_PASS", "PAPER": "PAPER_OPENED"}
