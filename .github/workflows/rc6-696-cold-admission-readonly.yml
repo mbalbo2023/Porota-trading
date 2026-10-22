@@ -1,0 +1,59 @@
+name: RC6 696 exact COLD successor admission read only
+on:
+  push:
+    branches:
+      - diagnostic/rc6-679-readonly-baseline-20261021
+    paths:
+      - .github/workflows/rc6-696-cold-admission-readonly.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d17f55442caf5c5227346f1966aba4f150d9d23c
+      - name: Prove exact source and inspect active failed successor
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = d17f55442caf5c5227346f1966aba4f150d9d23c
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_cold_ro" "$HOME/.ssh/known_hosts"
+          {
+            cat scripts/rc6_cold2_successor.py
+            cat <<'PY'
+          import json
+          from pathlib import Path
+          result=inspect(Path('/opt/porota-trading'))
+          assert result['snapshot_id']=='3bfbfd6996a849f6b395f6c4a27ff15a'
+          assert result['queue_failed'] and result['failed_computed_report']
+          print('RC6_696_COLD_ADMISSION_READONLY='+json.dumps({
+              'snapshot_id':result['snapshot_id'],
+              'pack_bytes':result['pack_bytes'],
+              'report':result['failed_computed_report'],
+              'source_names':result['source_names'],
+              'archive_names':result['archive_names'],
+              'queue_failed':result['queue_failed']
+          },sort_keys=True))
+          PY
+          } | timeout 55 ssh -i "$HOME/.ssh/rc6_cold_ro" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 45 nice -n 19 python3 -"
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_cold_ro"
