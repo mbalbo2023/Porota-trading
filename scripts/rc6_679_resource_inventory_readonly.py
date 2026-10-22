@@ -1,4 +1,4 @@
-# RC6 #696 read-only visual census of the 571b519eb114415da6ea027fd72c5e8c6223833c runtime.
+# RC6 #696 read-only visual census of the 5b35a04c312f6bcb2bd1d2c5ff8a9831dc8ab21c runtime.
 """Bounded host inventory for #679. Run through an isolated diagnostic Action.
 
 No writes, broker calls, service controls, Docker exec, or WAL checkpoints.
@@ -473,8 +473,10 @@ def main(policy_b64):
     if len(timers) != 19:
         raise RuntimeError('TIMER_POLICY_COUNT_MISMATCH')
     current = json.loads((ROOT / 'data/deploy/CURRENT_STATE_V2.json').read_text())
-    if current['deploy_sha'] != '08d1ce524c9255497fb404b6a8a9cdb864b19a43' or current['candidate_sha'] != '571b519eb114415da6ea027fd72c5e8c6223833c':
+    if current['deploy_sha'] != '52843ee81d5c0f72bfcf7b15188b82d0a4185640' or current['candidate_sha'] != '5b35a04c312f6bcb2bd1d2c5ff8a9831dc8ab21c':
         raise RuntimeError('DEPLOY_SHA_CHANGED')
+    if current.get('validation_status') != 'VALIDATED_RUNTIME':
+        raise RuntimeError('RUNTIME_NOT_VALIDATED')
     if current['mode'] != 'PRODUCTION_PAPER' or type(current['real_orders_sent']) is not int \
             or current['real_orders_sent'] != 0 or current['real_order_routes'] != 'NOT_CALLED':
         raise RuntimeError('PAPER_SAFETY_GATE_FAILED')
