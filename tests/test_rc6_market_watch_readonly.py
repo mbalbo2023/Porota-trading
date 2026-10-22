@@ -106,6 +106,19 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
+    def test_independent_critical_image_does_not_mask_promoted_image_mismatch(self):
+        self.inspect["porota_critical_approval_rc6"]["image"] = "sha256:" + "c" * 64
+        current = self.capture()
+        self.assertNotIn("CONTAINER_IMAGE_MISMATCH:porota_critical_approval_rc6", self.codes(current))
+        self.assertNotIn("CONTAINER_IMAGE_UNVERIFIED:porota_critical_approval_rc6", self.codes(current))
+        self.inspect["porota_production_dashboard"]["image"] = "sha256:" + "d" * 64
+        self.assertIn("CONTAINER_IMAGE_MISMATCH:porota_production_dashboard",
+                      self.codes(self.capture(), "P0"))
+        self.inspect["porota_production_dashboard"]["image"] = IMAGE
+        self.inspect["porota_critical_approval_rc6"]["image"] = "unverified"
+        self.assertIn("CONTAINER_IMAGE_UNVERIFIED:porota_critical_approval_rc6",
+                      self.codes(self.capture(), "P0"))
+
     def test_live_probe_uses_completed_db_read_clock_without_future_or_stale_bypass(self):
         future=(NOW+timedelta(milliseconds=200)).isoformat()
         with sqlite3.connect(self.root/monitor.DB_REL) as db:
