@@ -25,13 +25,13 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 62b3ae7f8636bce378597293ebab2ddd138473bc
+          test "$(git rev-parse HEAD^)" = 67d9cc1d4c4ca78a9237a36e555b248763068f2c
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_cold_readonly" "$HOME/.ssh/known_hosts"
-      - name: Read exact archived COLD and quiescence predicates
+      - name: Bound read-only state after Deploy V2 failure
         timeout-minutes: 2
         shell: bash
         run: |
@@ -40,201 +40,38 @@ jobs:
             -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
             "sudo -n python3 -" <<'PY'
-          import importlib.util,json,os,hashlib
+          import importlib.util,json,subprocess,os
           from pathlib import Path
-          spec=importlib.util.spec_from_file_location('cold','/opt/porota-trading/scripts/rc6_failed_cold_fix_forward.py')
-          cold=importlib.util.module_from_spec(spec);spec.loader.exec_module(cold)
           root=Path('/opt/porota-trading')
+          spec=importlib.util.spec_from_file_location('cold',str(root/'scripts/rc6_failed_cold_fix_forward.py'))
+          cold=importlib.util.module_from_spec(spec);spec.loader.exec_module(cold)
           shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
           deploy=root/'data/deploy'
-          candidate='dc15f2af0bdcdf9c53dd26a645a6a131471ce879'
-          qraw=(deploy/('quiescence-'+candidate+'.json')).read_bytes()
-          q=json.loads(qraw)
+          candidate='83855c3b08647243dcd706ca7ead929378c4c11d'
+          q=json.loads((deploy/('quiescence-'+candidate+'.json')).read_text())
           live=cold.enveloped(shadow/'status.json')
           pointer=cold.enveloped(shadow/'CURRENT.json')
-          current=cold.enveloped_gzip(shadow/pointer['file'])
-          evidence=(q.get('stop_evidence') or {}).get('porota_production_observer') or {}
-          before=evidence.get('before') or {};after=evidence.get('after') or {}
-          caucion=q.get('caucion_carryover') or {}
-          result={
-            'schema':'RC6_685_COLD_ARCHIVE_READONLY_V1',
-            'candidate':candidate,
-            'quiescence_sha256':hashlib.sha256(qraw).hexdigest(),
-            'quiescence_bytes':len(qraw),
-            'archived_exists':(deploy/('rc6-failed-cold-'+cold.IDENT)).is_dir(),
-            'old_cut_exists':(shadow/('cut-'+cold.CUT+'.json.gz')).exists(),
-            'generation_is_revoked':pointer.get('generation_id')==cold.CUT,
-            'current_snapshot_is_failed':current.get('report',{}).get('computed_report',{}).get('snapshot_id')==cold.IDENT,
-            'live':{key:live.get(key) for key in ('status','error_class','error_module','error_line','as_of','real_routes','real_orders_sent')},
-            'live_status_mtime':(shadow/'status.json').stat().st_mtime_ns,
-            'quiescence':{key:q.get(key) for key in ('status','paused_postclose','intraday_caucion','market_open_suspended','open_paper_carryover','spot_carryover','real_orders_sent')},
-            'caucion_open_count':caucion.get('open_count'),
-            'stop':{'classification':evidence.get('classification'),'before_status':before.get('Status'),
-                    'started_at':before.get('StartedAt'),'after_status':after.get('Status'),
-                    'finished_at':after.get('FinishedAt'),'exit_code':after.get('ExitCode'),
-                    'oom_killed':after.get('OOMKilled')},
-            'proven_stop_cancellation':cold.proven_stop_cancellation(live,q),
-          }
-          print(json.dumps(result,sort_keys=True,default=str))
-          PY
-      - name: Bounded legacy history provenance sample
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 55 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
-            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -" <<'PY'
-          import json,sqlite3,time
-          from pathlib import Path
-          root=Path('/opt/porota-trading')
-          out={'schema':'RC6_685_HISTORY_PROVENANCE_SAMPLE_V1'}
-          for label,path in [('history',root/'data/market_history.db'),
-                             ('runtime',root/'data/paper_v17/observer_v17.db')]:
-              if not path.is_file():
-                  out[label]={'file':'ABSENT'};continue
-              db=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True,timeout=2)
-              db.execute('PRAGMA query_only=ON')
-              deadline=time.monotonic()+8
-              db.set_progress_handler(lambda:int(time.monotonic()>deadline),500)
-              tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-              info={'file_bytes':path.stat().st_size}
-              names=('history_canonical_v2','history_versions_v2') if label=='history' else ('financial_instrument_catalog','production_history')
-              for name in names:
-                  if name not in tables:info[name]={'table':'ABSENT'};continue
-                  cols=[r[1] for r in db.execute('PRAGMA table_info('+name+')')]
-                  item={'columns':cols}
-                  if name.startswith('history_') and 'metadata_json' in cols:
-                      rows=db.execute('SELECT metadata_json FROM '+name+' LIMIT 100').fetchall()
-                      counts={};currencies={}
-                      for (raw,) in rows:
-                          try: metadata=json.loads(raw or '{}')
-                          except (TypeError,ValueError):metadata={}
-                          if isinstance(metadata,dict):
-                              for key in metadata: counts[key]=counts.get(key,0)+1
-                              value=metadata.get('currency')
-                              if isinstance(value,str):currencies[value]=currencies.get(value,0)+1
-                      item.update(sample=len(rows),metadata_keys=counts,currency_values=currencies)
-                  elif name=='financial_instrument_catalog':
-                      cols_set=set(cols)
-                      selected=[v for v in ('symbol','market','settlement','currency','price_basis','adjustment_basis','source') if v in cols_set]
-                      item['sample']=list(db.execute('SELECT '+','.join(selected)+' FROM '+name+' LIMIT 12')) if selected else []
-                      item['rows']=db.execute('SELECT COUNT(*) FROM financial_instrument_catalog').fetchone()[0]
-                      item['ambiguous_exact_keys']=db.execute('SELECT COUNT(*) FROM (SELECT ticker,instrument_type,market,settlement FROM financial_instrument_catalog GROUP BY ticker,instrument_type,market,settlement HAVING COUNT(DISTINCT currency)>1)').fetchone()[0]
-                  info[name]=item
-              db.close();out[label]=info
-          print(json.dumps(out,sort_keys=True,default=str))
-          PY
-      - name: Bounded PAPER state after failed promotion
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
-            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -" <<'PY'
-          import json,sqlite3,subprocess
-          from pathlib import Path
-          path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
-          db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=2)
-          db.execute('PRAGMA query_only=ON')
-          cols={r[1] for r in db.execute('PRAGMA table_info(observer_state)')}
-          selected=[v for v in ('mode','process_state','session_state','real_orders_sent','heartbeat_at','last_error') if v in cols]
-          state=dict(zip(selected,db.execute('SELECT '+','.join(selected)+' FROM observer_state WHERE id=1').fetchone()))
-          tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-          counts={}
-          for name in ('paper_positions','paper_cauciones','paper_futures_positions'):
-              if name in tables:
-                  field='status' if 'status' in {r[1] for r in db.execute('PRAGMA table_info('+name+')')} else None
-                  counts[name]=db.execute('SELECT COUNT(*) FROM '+name+(' WHERE status=?' if field else ''),('OPEN',) if field else ()).fetchone()[0]
-          db.close()
+          cut=cold.enveloped_gzip(shadow/pointer['file'])
+          snapshot=cut.get('report',{}).get('computed_report',{}).get('snapshot_id')
+          prior=deploy/('quiescence-'+cold.PRIOR_CANCELLED_SHA+'.json')
+          state=json.loads((deploy/'CURRENT_STATE_V2.json').read_text())
           containers={}
-          for name in ('porota_production_observer','porota_production_dashboard'):
-              raw=subprocess.check_output(['docker','inspect','--format','{{.State.Status}}|{{.State.OOMKilled}}|{{.State.ExitCode}}',name],text=True,timeout=8).strip()
-              containers[name]=raw
-          print(json.dumps({'schema':'RC6_685_PAPER_STATE_READONLY_V1','state':state,'open_counts':counts,'containers':containers},sort_keys=True))
-          PY
-      - name: Verify exact stopped flat continuation without writes
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
-            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -" <<'PY'
-          import json,sys
-          from pathlib import Path
-          sys.path.insert(0,'/opt/porota-trading')
-          from scripts.rc6_deploy_quiescence import ROOT, OWNED, inspect, adopt_stopped_after_failed_install, admit, exact_clean_stopped
-          folder=ROOT/'data/deploy'
-          state=json.loads((folder/'CURRENT_STATE_V2.json').read_text())
-          print(json.dumps({'schema':'RC6_685_CURRENT_PROVENANCE_V1', 'candidate_sha':state.get('candidate_sha'), 'validation_status':state.get('validation_status'), 'image_id':state.get('image_id'), 'recorded_at':state.get('recorded_at')},sort_keys=True))
-          originals={name:inspect(name) for name in OWNED}
-          try:
-              receipt=adopt_stopped_after_failed_install('e'*40,folder,originals)
-              exact_clean_stopped(receipt)
-              process=admit(stopped=True,stopped_receipt=receipt)
-              print(json.dumps({'schema':'RC6_685_STOPPED_ADMISSION_V1','status':receipt['status'],'process':process,'prior':receipt.get('fix_forward_from'),'critical':receipt.get('critical_admission'),'real_orders_sent':receipt['real_orders_sent']},sort_keys=True))
-          except Exception as exc:
-              print(json.dumps({'schema':'RC6_685_STOPPED_ADMISSION_RED','class':type(exc).__name__,'error':str(exc)},sort_keys=True))
-              raise
-          PY
-      - name: Sample raw history identity fields without a scan
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
-            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -" <<'PY'
-          import json,sqlite3,time
-          from pathlib import Path
-          root=Path('/opt/porota-trading/data')
-          result={}
-          for label,path,table,columns in (
-              ('raw',root/'paper_v17/observer_v17.db','production_history',
-               'symbol,instrument_type,settlement,date_from,date_to,downloaded_at,row_count,substr(payload_json,1,1200)'),
-              ('versions',root/'market_history.db','history_versions_v2',
-               'symbol,instrument_type,market,settlement,date,source,observed_at,metadata_json')):
-              db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=1)
-              db.execute('PRAGMA query_only=ON')
-              deadline=time.monotonic()+3
-              db.set_progress_handler(lambda:int(time.monotonic()>deadline),500)
-              rows=db.execute('SELECT '+columns+' FROM '+table+' LIMIT 3').fetchall()
-              result[label]=rows;db.close()
-          print(json.dumps({'schema':'RC6_685_HISTORY_LINEAGE_SAMPLE_V1','rows':result},sort_keys=True,default=str))
-          PY
-      - name: Inspect alternate exact history identity samples
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
-            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -" <<'PY'
-          import json,sqlite3,time
-          from pathlib import Path
-          result={}
-          for label,path,table,columns in (
-              ('raw_archive',Path('/opt/porota-trading/data/paper_v17/observer_v17.db'),
-               'historical_raw_archive','origin,quality,substr(body_json,1,500)'),
-              ('candle_series',Path('/opt/porota-trading/data/market_history.db'),
-               'candle_series','substr(identity_json,1,500)'),
-              ('local_daily',Path('/opt/porota-trading/data/market_history.db'),
-               'history_local_daily_v1','substr(identity_json,1,500)')):
-              db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=1)
-              db.execute('PRAGMA query_only=ON')
-              deadline=time.monotonic()+3
-              db.set_progress_handler(lambda:int(time.monotonic()>deadline),500)
-              present=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone()
-              result[label]=db.execute('SELECT '+columns+' FROM '+table+' LIMIT 3').fetchall() if present else 'ABSENT'
-              db.close()
-          print(json.dumps({'schema':'RC6_685_ALTERNATE_HISTORY_IDENTITY_V1','samples':result},sort_keys=True))
+          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              containers[name]=subprocess.check_output(['docker','inspect','--format','{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}|{{.Image}}',name],text=True,timeout=5).strip()
+          out={'schema':'RC6_696_FAILED_PROMOTION_READONLY_V1',
+               'current':{key:state.get(key) for key in ('deploy_sha','candidate_sha','validation_status','mode','real_orders_sent','image_id')},
+               'candidate_quiescence':{key:q.get(key) for key in ('status','candidate_sha','paused_postclose','intraday_caucion','market_open_suspended','open_paper_carryover','spot_carryover','real_orders_sent')},
+               'live':{key:live.get(key) for key in ('status','error_class','error_module','error_line','as_of','real_routes','real_orders_sent')},
+               'pointer_generation':pointer.get('generation_id'), 'current_snapshot':snapshot,
+               'old_cut_exists':(shadow/('cut-'+cold.CUT+'.json.gz')).exists(),
+               'archive_exists':(deploy/('rc6-failed-cold-'+cold.IDENT)).is_dir(),
+               'current_snapshot_is_original':snapshot==cold.IDENT,
+               'distinct_failed_successor':cold.proven_distinct_failed_successor(deploy/('rc6-failed-cold-'+cold.IDENT),pointer.get('generation_id'),snapshot),
+               'stop_cancellation':cold.proven_stop_cancellation(live,q),
+               'prior_stop_cancellation':cold.proven_prior_stop_cancellation(live,q,prior),
+               'containers':containers,
+               'free_root_bytes':os.statvfs('/').f_bavail*os.statvfs('/').f_frsize}
+          print(json.dumps(out,sort_keys=True))
           PY
       - name: Remove SSH key
         if: always()
