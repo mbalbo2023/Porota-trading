@@ -13,11 +13,13 @@ Workstream `WS-RC6-712-INTEGRAL-20261022`. Agente único, PAPER/SHADOW, órdenes
 
 | Firma / pantalla | Antes y causa | FIX / guard | Evidencia y límite |
 |---|---|---|---|
-| `/universo`: Strategy eligible, Tradeable, HOT NO_VERIFICADO con cut fresco | `Projection.counts()` pedía `operational_funnel.counts`, inexistente en productor real. [Sonda #39844650684](https://github.com/mbalbo2023/Porota-trading/actions/runs/39844650684) a 19:58:13: generación `COMMITTED_COHERENT_SHADOW`, edad 42,4 s, presupuesto 112,5 s. Grupos reales ARS/UNIVERSE_SHADOW: STRATEGY_ELIGIBLE 1.070 y DISCOVERY_TOUCHED 258; ARS/NATIVE_FACTUAL: SIGNAL_EVALUATED 584; ARS/SHADOW_ENTRY_EXPERIMENT: SIGNAL_CANDIDATE 374. No hay `counts` global. | PR #712 lee el stage exacto de la cohorte currency/channel seleccionada, hace explícito ese alcance y conserva cero medido dentro de una cohorte existente. Scope ausente sigue NO_VERIFICADO; nunca suma monedas o canales. La señal candidata usa el canal experimental que la publica. Test de productor real, selector alternativo y scope inexistente. | EN_GITHUB hasta Predeploy, Deploy y navegador posterior. `OFF_BASELINE` del selector/capacidad no se convierte en APPROVED_DYNAMIC. Un conteo de observación no otorga entrada PAPER. |
+| `/universo`: Strategy eligible, Tradeable, HOT NO_VERIFICADO con cut fresco | `Projection.counts()` pedía `operational_funnel.counts`, inexistente en productor real. [Sonda #39844650684](https://github.com/mbalbo2023/Porota-trading/actions/runs/39844650684) a 19:58:13: generación `COMMITTED_COHERENT_SHADOW`, edad 42,4 s, presupuesto 112,5 s. Grupos reales ARS/UNIVERSE_SHADOW: STRATEGY_ELIGIBLE 1.070 y DISCOVERY_TOUCHED 258; ARS/NATIVE_FACTUAL: SIGNAL_EVALUATED 584; ARS/SHADOW_ENTRY_EXPERIMENT: SIGNAL_CANDIDATE 374. No hay `counts` global. La fila visual del embudo también interpretaba una etapa ausente del contador disperso como dato ausente. | PR #712 lee el stage exacto de la cohorte currency/channel seleccionada, hace explícito ese alcance y conserva cero medido dentro de una cohorte existente tanto en tarjetas como en embudo. Scope ausente sigue NO_VERIFICADO; nunca suma monedas o canales. La señal candidata usa el canal experimental que la publica. Test de productor real, selector alternativo y scope inexistente. | EN_GITHUB hasta Predeploy, Deploy y navegador posterior. `OFF_BASELINE` del selector/capacidad no se convierte en APPROVED_DYNAMIC. Un conteo de observación no otorga entrada PAPER. |
 | `/en-vivo/fuentes`: IOL NO_VERIFICADO pese al caché actual | La primera fila leía `source_sync(IOL)`, sin filas instaladas, aunque `/api/dashboard/truth` consumía dos JSON montados. [Artefacto #12453657693](https://github.com/mbalbo2023/Porota-trading/actions/runs/39843385832): 4.874 cotizaciones a 19:49Z: 1.950 LIVE, 2.493 CACHE_STALE, 431 SOURCE_UNAVAILABLE. Familias LIVE en agregado; caución ARS/USD y FCI LIVE; fixed_income y cuatro opciones SOURCE_UNAVAILABLE (cinco secciones). | PR #712 usa la misma proyección canónica de caché, relojes propios de quote/familias y presupuesto conservador 180 s. Desglosa parcialidad y señala `source_sync` sólo como diagnóstico. Test caché mixto/fresco y test cache LIVE antiguo que debe quedar STALE. PPI conserva autoridad primaria. | No se etiqueta todo IOL verde; cachés, secciones y recibos de proveedor son autoridades distintas. |
 | `/en-vivo/decisiones`: economics/risk NO_VERIFICADO de HOLD | [SQL bounded #39842793281](https://github.com/mbalbo2023/Porota-trading/actions/runs/39842793281): las diez decisiones recientes son HOLD y ninguna tiene `trade_gate_evaluations`. El motor sólo ejecuta gates económicos/patrimoniales en la ruta BUY. | PR #712 muestra `NOT_EVALUATED` para HOLD sin gate, conserva NO_VERIFICADO para BUY sin gate y no inventa signal. Prueba positiva/negativa y nota visible. | No se infiere PnL, fill, calidad de una estrategia ni resultado de gate que no se ejecutó. |
 | Badge NO_VERIFICADO cortado dentro de tabla | CSS de `table-layout:fixed` permitía partir palabra; regla anterior sólo cubría readiness de catálogo. | PR #712 mantiene la etiqueta legible en todas las celdas, con tamaño y padding acotados. | Comparar capturas instaladas postdeploy en desktop/tablet/móvil; la cobertura previa no equivale a prueba de este CSS nuevo. |
 | `/instrumentos/mercado` pide identidad exacta | La página sin `identity` no puede unir un libro con símbolo/familia/mercado/moneda/plazo seguros. | Mantener mensaje `SELECT_EXACT_IDENTITY_FOR_MARKET` y navegación al Buscador; no autoseleccionar ticker ni usar last quote global. | NO_VERIFICADO legítimo sin elección. Captura del operador y browser 52/52. |
+| `/universo` detalle de la distribución por familia | `candidate_identity_v2` se agrupa sólo por `instrument_type`, pero el diálogo de tabla le agregaba campos de identidad exacta (Ticker, Mercado, Moneda, Settlement), que no existen para ese grano. La captura del operador exhibía varios NO_VERIFICADO que aparentaban registros defectuosos. | PR #712 identifica el grano `agregado por familia` y presenta familia, cantidades, reloj y fuente, sin ficha de especie implícita ni autoridad de estrategia. Ficha/Buscador siguen siendo la ruta de identidad exacta. Prueba de ausencia de campos de ticker/settlement en el diálogo. | EN_GITHUB. No sustituye evidencia de mercado o capacidad. |
+| `/` y `/en-vivo` vistas previas/cronología vacías | El renderer etiquetaba `NO_VERIFICADO` incluso cuando `Page.state=AVAILABLE` y la consulta devolvía cero filas (posiciones, oportunidades, cierres y eventos). | PR #712 distingue cero observado en el scope de `DATASET_NOT_PUBLISHED`/corte vencido. La cronología sólo declara cero si `shadow_rows(events)` es AVAILABLE; conserva NO_VERIFICADO al faltar un corte. Prueba de ambos estados y smoke local. | No traslada el cero de una vista parcial a coverage global ni a una ventana OPEN distinta. |
 | `/universo/coverage` y `OFF_BASELINE` | Capacidad OPEN de EQUITY_SPOT/SCALPING y preopen baseline aún sin recibos suficientes; el embudo observado tiene otros denominadores. | Conservar NO_VERIFICADO en capacidad/hot/warm de ese contrato hasta prueba OPEN por motor. El conteo elegible del embudo sí se corrige por su autoridad separada. | No mostrar capacidad usable a partir de un benchmark o de STRATEGY_ELIGIBLE. |
 | `/analitica/anual` | No hay serie canónica seleccionable con linaje original monetario y bases, aunque existe histórico legacy. | Estado `ANNUAL_NO_SELECTABLE_CANONICAL_SERIES`, sin copia falsa de 1.151 filas. | BLOQUEADO por fuente original por fila; ver P0 histórico. |
 
@@ -34,7 +36,7 @@ Browser autenticado de host vía Actions, sólo GET/HEAD local y sin POST: [run 
 | C4 RCA y guards | #700–#707 ya cerrados con pruebas; #712 documenta tres wiring/UI RCA nuevos. | Catálogo de fallos aún debe consolidar firma/primer gate/antes/after de incidentes históricos no reproducibles. No repetir el error de un test de contrato: #709 falló #39840824771 tras agregar un tercer replay; test actualizado por FIX-FORWARD `35ba472...`, run #39842053089 SUCCESS. |
 | C5 visual, fuentes, rueda, DB | EN_GITHUB para #712 y evidencia READ_ONLY del SHA instalado; NO_GO integral | 310 filas visibles y matriz de estados arriba. PPI market fresh a 19:45 y fuente primaria, IOL cache mixto, BYMA calendar/open/web/structured VERDE, INSTRUMENTS_API GRIS sin éxito, GEMINI_DECISION chequeo histórico 29/08, PPI_BACKGROUND_INGEST/CATALOG/HISTORY y ROFEX AMARILLO con relojes propios. Cuatro riesgos READY y valuación CURRENT. No hay pruebas de duplicados por identidad/ABA; write amplification observada exige ensayo comparable. AST/root inventario 763/263/258: cinco CLI/emergencia/diagnóstico/diferido no son basura demostrada. |
 | C6 candidato/artefacto/Deploy/runtime | #712 PR funcional; Deploy V2 PENDIENTE | No declarar GREEN por PR, suite, HTTP200 ni antiguo VALIDATED_RUNTIME. Revalidar candidato/tree, suite sin skip, artefacto/digest y disco/owners; merge normal de dos padres; Deploy V2 exacto, navegador posterior, PAPER/0 y recursos. Si histórico original no aparece, dictamen integral NO_GO incluso con runtime validado. |
-| P1/P2 Market Watch, Telegram, schedules, EOD | NO_VERIFICADO tras Deploy #707 | Market Watch schedule #39826689635 FAILED a 17:54Z **antes** del Deploy V2 a 18:49. Exigir tres eventos genuinos `schedule` posteriores, separación y ACK externo/Telegram E2E sólo con transición real. No inventar notificación. Timer 19 unidades verificado, backup masked; stress host E09/E10 diferido por orden. |
+| P1/P2 Market Watch, Telegram, schedules, EOD | NO_VERIFICADO tras Deploy #707 | Market Watch schedule #39826689635 FAILED a 17:54Z **antes** del Deploy V2 a 18:49. Consulta Actions a 20:15Z: 16 eventos `schedule` totales, ninguno posterior a 17:54Z pese a cron cada diez minutos en main; el ritmo de creación no satisface el contrato de tres eventos posteriores. GitHub [documenta demoras o pérdida bajo carga](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows), pero el motivo de este repositorio aún NO_VERIFICADO. Exigir tres eventos genuinos `schedule` posteriores, separación y ACK externo/Telegram E2E sólo con transición real. No inventar notificación. Timer 19 unidades verificado, backup masked; stress host E09/E10 diferido por orden. |
 | P1 DB/retención/duplicación y módulos | NO_VERIFICADO causal | DB observer + WAL y history inventariadas, freelist 0, crecimiento físico acotado; no DELETE/VACUUM/REINDEX/retag por conjetura. Import closure no demuestra cinco módulos sin uso. Política `ops/policy/rc6-storage-history-reprojection.md` conserva revisiones ABA y recibos. |
 
 ## Docker cache y tiempo
@@ -46,3 +48,89 @@ Deploy V2 #39831414654 midió Build Cache **0 B** antes/después/final en el Dro
 Prohibidas órdenes reales, backups, rollback, stress host, subagentes, tareas programadas y SSH manual. Toda operación host usó GitHub Actions. P0 histórico anual bloqueado por recibos originales faltantes; P0 capacidad OPEN y primera rueda postdeploy no certificados; F01 Market Watch corrigió imagen/false positive pero no prueba schedule posterior; F03 COLD nuevo COMPLETE; F04 falso STALE observer corregido con intervalo; F05 cobertura SHADOW corregida sin certificar cada oportunidad; F06 OPEN baseline pendiente; F07 riesgo revalidado READY; F08 stale por reloj/identidad legítimo; F09 anual bloqueado; F10 browser completado para imagen previa; F11 duplicados no probados; F12 backup suspended; F13 primera rueda/EOD pendiente; F14 PR #684 documental/attest histórico, no gate actual.
 
 **No declarar GREEN integral.** Agregar aquí el artifact exacto de #712, Deploy V2, imagen y navegador posterior cuando existan; liberar WRITE_OWNER y cualquier DEPLOY_OWNER pareadamente en #471/#473 al cerrar. No promocionar un SHA distinto del artefacto certificado.
+
+## F01–F14 del peritaje #685
+
+| ID | Estado actual y discriminante |
+|---|---|
+| F01 Market Watch imagen/false positive | YA_RESUELTO_CON_EVIDENCIA en #693 y run manual `read_only` #39712642740; no equivale a F02 cron genuino posterior. |
+| F02 cron/Telegram/ACK | NO_VERIFICADO: 16 eventos schedule totales en API a 20:15Z y ninguno tras #39831414654; faltan tres posteriores, separación temporal, transición real y recepción externa. El FAILED #39826689635 fue anterior al Deploy. El cron existe en main; causa de la cadencia escasa no adjudicada. |
+| F03 COLD/caución PAPER | COLD snapshot vigente COMPLETE en #39836367721; ciclo caución PAPER completo/retorno postrueda requiere recibo de ventana y no se fabrica. |
+| F04 falso STALE observer | YA_RESUELTO en producto: presupuesto de heartbeat respeta intervalo 15–120 s con margen 15; sonda 19:55 mostró heartbeat fresco. STALE mercado tras cierre conserva reloj propio. |
+| F05 SHADOW coherencia/cobertura | Generación comprometida fresca en #39844650684; productor publicó cohortes y fases sin truncar por el viejo cap. Cobertura real de todas las oportunidades y primera rueda completa no se infiere. #712 repara lector `counts`. |
+| F06 capacidad OPEN/preopen | NO_VERIFICADO: #39846656387 vio EQUITY_SPOT/SCALPING `telemetry_count=0`, `capacity.status=NO_VERIFICADO`, `CAPACITY_EVIDENCE_INVALID`; selector OFF_BASELINE se conserva. Requiere recibo OPEN válido por motor y baseline medido. |
+| F07 riesgo ARS y divisas | Cuatro monedas READY y `paper_valuation_quality=CURRENT`, `stale_positions=0` a 19:55Z en #39844270251; no reeditar un bug anterior sin regresión. Cambios futuros siguen bajo reloj. |
+| F08 Mercado/Liquidez stale | Identidad exacta y relojes `book/trade/received` son independientes. Sin selector no se consulta un libro implícito; después de MARKET_CLOSED el mercado se volvió STALE de manera factual. |
+| F09 anual | BLOQUEADO: 1.151 filas legado sin identidad monetaria/bases/recibo PIT, cero serie seleccionable. Sin reproyección por ticker o borrado cosmético. |
+| F10 QA visual | 52 rutas y 310 diálogos/78 capturas en #39845560577 sobre imagen #707; runtime visual del SHA #712 aún pendiente. No usar HTTP 200 como única prueba. |
+| F11 DB/WAL/duplicados | Observación de tamaños y write amplification; duplicado causal por identidad/evento/ABA NO_VERIFICADO. No purga ni VACUUM host. |
+| F12 backup/continuidad | Backups masked/inactive y raíces vacías por orden. Restore offhost NO_VERIFICADO; sin activación ni nueva copia. |
+| F13 primera rueda/estrategia/EOD | OPEN PAPER/0 y decisiones HOLD observadas; falta primer ciclo completo postdeploy con cierre EOD/MaxHold/STOP/TAKE_PROFIT bajo el SHA nuevo. Fallo EOD a 01:55 antecede #707. |
+| F14 #684 attest documental | Incidente histórico sucedido por PRs #698–#710 y Predeploy/Deploy V2 #707; no es un gate actual del código #712. Conservar recibo RED histórico. |
+
+## FIX-FORWARD del gate exacto #712
+
+- Run #39845856464, SHA `fd135a0d053c1351031545a19b1e79f87e08a351`: 4.548 descubiertas/ejecutadas, 1 FAIL, 0 ERROR/SKIP/XFAIL, artifact parcial #12455338118 **no promocionable**. El detalle económico vacío de una decisión HOLD sobrescribía `NOT_EVALUATED` con `NO_VERIFICADO`; este paso ocurría después de la asignación inicial. Gate RED antes del build.
+- FIX-FORWARD SHA `b053a5f1ba8dc4aefe9e287f6b36508c0640d65f`, tree `966857cc7ae4ec22e70b25c7862ad52db5063571`: no sobrescribir con `{ }` vacío; smoke local de HOLD sin gate PASS. Predeploy V2 #39846940991 CANCELLED por el siguiente push; ningún artefacto promocionable.
+- FIX-FORWARD visual posterior SHA `e737e72ac2697c6018ab61170ab45d2dc62c1bd0`, tree `c2866a9b58809cd4dffd0c7b5ae8a2032fc61d8e`: misma semántica del `Counter` del productor para la fila de embudo; etapa no alcanzada dentro de cohorte comprometida es cero, cohorte/corte ausente sigue NO_VERIFICADO. Gate #39847607249 CANCELLED por el siguiente push; no promociona éste.
+- FIX-FORWARD del detalle agregado SHA `2722ab35ca4bc97bdd6cdc9013e9ca51e9f67e90`, tree `a9a2a2c803740a16d67973201d2278200441d0c1`: la fila agrupada por familia no se representa como un instrumento exacto. Run #39848031968 CANCELLED por el siguiente push.
+- FIX-FORWARD de vistas vacías SHA `3b31e4c304dd6642ba056b87895a947419f66dd7`, tree `ea7f2a81edc75df2cb1c25159e15a12c42061e1a`: `AVAILABLE`+cero → cero en scope; fuente o corte no disponible → NO_VERIFICADO. Predeploy V2 exacto #39848309035 EN_CURSO; no usar recibos de SHA anterior.
+
+## Anexo: censo por ruta de la imagen previa (#39845560577)
+
+Estas son apariciones visibles en la primera página de cada ruta a 20:04–20:05Z; NV incluye texto explicativo y estados de origen distinto. El STALE común a las 52 rutas es la cabecera de market data tras MARKET_CLOSED. `Diálogos` indica filas efectivamente abiertas/cerradas. No se declara que las páginas posteriores o controles mutantes hayan sido probados.
+
+| Ruta | NV | STALE | SOURCE_UNAVAILABLE | Diálogos |
+|---|---:|---:|---:|---:|
+| `/` | 10 | 1 | 0 | 0 |
+| `/en-vivo` | 17 | 1 | 0 | 0 |
+| `/en-vivo/oportunidades` | 1 | 1 | 0 | 1 |
+| `/en-vivo/decisiones` | 10 | 1 | 0 | 10 |
+| `/en-vivo/posiciones` | 0 | 1 | 0 | 1 |
+| `/en-vivo/cierres` | 1 | 1 | 0 | 1 |
+| `/en-vivo/capacidad` | 10 | 1 | 0 | 3 |
+| `/en-vivo/workers` | 2 | 1 | 0 | 8 |
+| `/en-vivo/fuentes` | 36 | 22 | 1 | 10 |
+| `/trading` | 21 | 1 | 0 | 10 |
+| `/trading/equity-spot` | 0 | 1 | 0 | 10 |
+| `/trading/scalping` | 0 | 1 | 0 | 10 |
+| `/trading/renta-fija` | 0 | 1 | 0 | 10 |
+| `/trading/derivados` | 0 | 1 | 0 | 10 |
+| `/trading/cauciones` | 1 | 1 | 0 | 7 |
+| `/trading/tesoreria` | 0 | 1 | 0 | 10 |
+| `/universo` | 12 | 1 | 0 | 10 |
+| `/universo/discovery` | 2 | 1 | 0 | 1 |
+| `/universo/tradeability` | 2 | 1 | 0 | 1 |
+| `/universo/coverage` | 10 | 1 | 0 | 3 |
+| `/universo/excluidos` | 2 | 1 | 0 | 1 |
+| `/universo/familias` | 20 | 1 | 0 | 10 |
+| `/instrumentos` | 0 | 1 | 0 | 10 |
+| `/instrumentos/ficha` | 0 | 1 | 0 | 10 |
+| `/instrumentos/contrato` | 0 | 1 | 0 | 10 |
+| `/instrumentos/mercado` | 3 | 1 | 0 | 1 |
+| `/instrumentos/evidencia` | 0 | 1 | 0 | 10 |
+| `/riesgo` | 0 | 2 | 0 | 5 |
+| `/riesgo/exposicion` | 1 | 1 | 0 | 1 |
+| `/riesgo/limites` | 0 | 1 | 0 | 5 |
+| `/riesgo/posiciones` | 1 | 1 | 0 | 1 |
+| `/riesgo/liquidez` | 1 | 1 | 0 | 1 |
+| `/riesgo/pnl` | 0 | 1 | 0 | 8 |
+| `/riesgo/event-risk` | 3 | 1 | 0 | 1 |
+| `/analitica` | 1 | 1 | 0 | 8 |
+| `/analitica/senales` | 2 | 1 | 0 | 1 |
+| `/analitica/salidas` | 0 | 1 | 0 | 10 |
+| `/analitica/historico` | 10 | 1 | 0 | 10 |
+| `/analitica/anual` | 20 | 1 | 0 | 10 |
+| `/analitica/experimentos` | 2 | 1 | 0 | 1 |
+| `/analitica/contrafactuales` | 7 | 1 | 0 | 1 |
+| `/analitica/cierre-diario` | 9 | 1 | 0 | 1 |
+| `/analitica/reportes` | 0 | 1 | 0 | 10 |
+| `/sistema` | 3 | 1 | 0 | 8 |
+| `/sistema/salud` | 2 | 1 | 0 | 8 |
+| `/sistema/workers` | 5 | 1 | 0 | 9 |
+| `/sistema/integraciones` | 6 | 2 | 0 | 10 |
+| `/sistema/scheduler` | 19 | 12 | 0 | 10 |
+| `/sistema/evidencia` | 1 | 1 | 0 | 1 |
+| `/sistema/backups` | 9 | 1 | 0 | 4 |
+| `/sistema/logs` | 0 | 1 | 0 | 10 |
+| `/sistema/configuracion` | 3 | 1 | 0 | 8 |
