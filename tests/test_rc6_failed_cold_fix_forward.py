@@ -1,5 +1,8 @@
 """Preserve the original failed input, never rehabilitate its old cut."""
 import json
+from pathlib import Path
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 import pytest
 from rc6_shadow_runtime import cold_audit as c, persistence as p
@@ -7,6 +10,26 @@ from scripts import rc6_failed_cold_fix_forward as recovery
 from scripts import rc6_cold2_successor
 from tests.rc6_native_storage import native_storage
 from tests.test_rc6_shadow_cold_audit import seal, publish_reference
+
+
+def test_absolute_entrypoint_imports_successor_from_host_root(tmp_path):
+    script=Path(recovery.__file__).resolve()
+    root=script.parents[1]
+    probe='''import importlib.util,sys
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('rc6_entrypoint',sys.argv[1])
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.ROOT=Path(sys.argv[2])
+archive=module.ROOT/'data/deploy/rc6-failed-cold-89e7f81dbc9b4a628bdc30edf86a17b0'
+assert module.proven_distinct_failed_successor(
+    archive,'a'*64,module.CURRENT_FAILED_SUCCESSOR) is False
+print('COLD_ENTRYPOINT_IMPORT_PATH=GREEN')
+'''
+    result=subprocess.run([sys.executable,'-I','-c',probe,str(script),str(root)],
+                          cwd=tmp_path,text=True,capture_output=True,timeout=20)
+    assert result.returncode==0, result.stderr
+    assert result.stdout.strip()=='COLD_ENTRYPOINT_IMPORT_PATH=GREEN'
 
 
 def test_distinct_failed_successor_requires_exact_bound_current(monkeypatch, tmp_path):
