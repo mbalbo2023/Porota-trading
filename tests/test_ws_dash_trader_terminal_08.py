@@ -253,7 +253,7 @@ def test_source_scope_score_and_trajectory_semantics(database, monkeypatch):
         assert source["scope"] == "IOL quotes + families (por sección)" and source["state"] == "PARTIAL_LIVE"
         assert source["observed_state"] == "LIVE" and source["freshness"] == "FRESH"
         assert "LIVE=1" in source["data_quality"] and "CACHE_STALE=1" in source["data_quality"]
-        assert "fixed_income" in source["detail"] and "source_sync IOL: SIN_FILAS" in source["detail"]
+        assert "fixed_income" in source["detail"] and "source_sync IOL: LIVE_FRESH" in source["detail"]
         decision = p.decisions().rows[0]
         assert decision["reason"] == "LIQUIDITY_BLOCKED"
         assert decision["economics"] == "NOT_EVALUATED" and decision["risk"] == "NOT_EVALUATED"
@@ -619,9 +619,9 @@ def test_system_health_and_integrations_keep_distinct_authorities(client):
     assert "Cauciones · cash sweep" in workers.text and "WINDOW_NOT_OPEN" in workers.text
     source_rows = BeautifulSoup(sources.text, "html.parser").select(".terminal-table tr[data-row]")
     assert len(source_rows) <= 10
-    assert "IOL · captura complementaria" in source_rows[0].get_text()
-    assert "NO_VERIFICADO" in source_rows[0].get_text()
-    assert "LIVE_FRESH" in source_rows[0].get_text()
+    assert "IOL · caché complementario" in source_rows[0].get_text()
+    assert "SOURCE_UNAVAILABLE" in source_rows[0].get_text()
+    assert "source_sync IOL: LIVE_FRESH" in sources.text  # Scoped diagnostic, not live authority.
 
 
 def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(database):
