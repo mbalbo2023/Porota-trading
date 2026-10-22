@@ -1439,6 +1439,21 @@ def _exact_history_target(store, target):
     return (symbol,family,market,currency,settlement),metadata
 
 
+def _ppi_history_request_is_ambiguous(connection, identity):
+    """PPI history accepts only ticker/family/term, never market or currency.
+
+    A second known catalog identity for that request makes an unlabelled
+    provider payload impossible to attribute to the requested exact series.
+    The primary catalog key starts with ticker/family, so this read is bounded
+    to one provider request and stops at its first conflicting identity.
+    """
+    symbol,family,market,currency,settlement=identity
+    return connection.execute("""SELECT 1 FROM financial_instrument_catalog
+      WHERE ticker=? AND instrument_type=? AND settlement=?
+        AND (market<>? OR currency<>?) LIMIT 1""",
+      (symbol,family,settlement,market,currency)).fetchone() is not None
+
+
 def _history_cutoff_repair_complete() -> bool:
     try:
         from cv_history_store_adapter_hf6 import default_history_store
@@ -1596,6 +1611,12 @@ def _download_histories_locked(reader, store, history_store):
         symbol,family,market,currency,settlement=identity
         attempted=now_iso()
         try:
+            # Run only for the bounded scheduled batch. The existing attempt
+            # ledger rotates rejected identities instead of retrying the same
+            # ambiguous provider request every cycle.
+            with store.connect() as c:
+                if _ppi_history_request_is_ambiguous(c,identity):
+                    raise ValueError('HISTORY_PROVIDER_IDENTITY_AMBIGUOUS')
             payload=reader.history(symbol,_history_provider_instrument_type(metadata,family),settlement,start,end)
             attempted=now_iso()
             row_key=canonical([list(identity),start.isoformat(),end.isoformat(),attempted])
