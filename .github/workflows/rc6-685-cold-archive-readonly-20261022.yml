@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 7548d929697c2ac0201a2136076189ebc5268318
+          test "$(git rev-parse HEAD^)" = f7bd7d5d850a7402f502c1d97799c2adbb0003c0
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -76,6 +76,53 @@ jobs:
             'proven_stop_cancellation':cold.proven_stop_cancellation(live,q),
           }
           print(json.dumps(result,sort_keys=True,default=str))
+          PY
+      - name: Bounded legacy history provenance sample
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 55 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -" <<'PY'
+          import json,sqlite3,time
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          out={'schema':'RC6_685_HISTORY_PROVENANCE_SAMPLE_V1'}
+          for label,path in [('history',root/'data/market_history.db'),
+                             ('runtime',root/'data/paper_v17/observer_v17.db')]:
+              if not path.is_file():
+                  out[label]={'file':'ABSENT'};continue
+              db=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True,timeout=2)
+              db.execute('PRAGMA query_only=ON')
+              deadline=time.monotonic()+8
+              db.set_progress_handler(lambda:int(time.monotonic()>deadline),500)
+              tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              info={'file_bytes':path.stat().st_size}
+              names=('history_canonical_v2','history_versions_v2') if label=='history' else ('financial_instrument_catalog','production_history')
+              for name in names:
+                  if name not in tables:info[name]={'table':'ABSENT'};continue
+                  cols=[r[1] for r in db.execute('PRAGMA table_info('+name+')')]
+                  item={'columns':cols}
+                  if name.startswith('history_') and 'metadata_json' in cols:
+                      rows=db.execute('SELECT metadata_json FROM '+name+' LIMIT 100').fetchall()
+                      counts={};currencies={}
+                      for (raw,) in rows:
+                          try: metadata=json.loads(raw or '{}')
+                          except (TypeError,ValueError):metadata={}
+                          if isinstance(metadata,dict):
+                              for key in metadata: counts[key]=counts.get(key,0)+1
+                              value=metadata.get('currency')
+                              if isinstance(value,str):currencies[value]=currencies.get(value,0)+1
+                      item.update(sample=len(rows),metadata_keys=counts,currency_values=currencies)
+                  elif name=='financial_instrument_catalog':
+                      cols_set=set(cols)
+                      selected=[v for v in ('symbol','market','settlement','currency','price_basis','adjustment_basis','source') if v in cols_set]
+                      item['sample']=list(db.execute('SELECT '+','.join(selected)+' FROM '+name+' LIMIT 12')) if selected else []
+                  info[name]=item
+              db.close();out[label]=info
+          print(json.dumps(out,sort_keys=True,default=str))
           PY
       - name: Remove SSH key
         if: always()
