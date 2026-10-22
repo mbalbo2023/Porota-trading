@@ -49,4 +49,19 @@ if table('api_health'):
 if table('source_sync'):
     out['tables']['iol_sync']=rows("SELECT source,status,last_attempt_at,last_success_at FROM source_sync WHERE source LIKE 'IOL%' ORDER BY last_attempt_at DESC LIMIT 3")
 c.close()
+from rc6_trader_dashboard.projection import Projection, Store
+with Store(PATH) as store:
+    projection=Projection(store)
+    shadow=projection.shadow
+    report=shadow.get('report') or {}
+    status=shadow.get('status') or {}
+    out['shadow']={'state':shadow.get('state'),'reason':shadow.get('reason'),
+                   'error_class':shadow.get('error_class'),
+                   'fresh':projection.shadow_fresh,
+                   'liveness':projection.shadow_liveness,
+                   'report_as_of':report.get('as_of'),
+                   'status_state':status.get('state'),
+                   'status_as_of':status.get('as_of'),
+                   'funnel_counts':{k:v for k,v in (report.get('operational_funnel') or {}).get('counts',{}).items()
+                                    if k in ('ELIGIBLE','TRADEABLE','HOT') and type(v) is int}}
 print('RC6_712_DASHBOARD_LINEAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
