@@ -34,6 +34,21 @@ def require_owned_running():
             raise ValueError('SCHEDULER_PAPER_ZERO_REQUIRED')
 
 
+def resolve_open_recovery():
+    """Choose by current Docker state; a receipt alone does not prove liveness."""
+    observed = []
+    for name in ('porota_production_observer', 'porota_production_dashboard'):
+        status, code = command('docker', 'inspect', '-f', '{{.State.Status}}', name)
+        if code:
+            raise ValueError('SCHEDULER_OPEN_RECOVERY_IDENTITY_UNKNOWN')
+        observed.append(status)
+    if observed == ['running', 'running']:
+        return 'restore'
+    if observed == ['exited', 'exited']:
+        return 'hold-open-flat'
+    raise ValueError('SCHEDULER_OPEN_RECOVERY_MIXED_OR_UNKNOWN')
+
+
 def require_exact_stopped_open_flat(candidate):
     """Keep timers paused only under the prior clean OPEN PAPER stop proof."""
     sys.path.insert(0, '/opt/porota-trading')
@@ -238,6 +253,8 @@ def run(candidate, action, policy_b64):
                 receipt.get('ppi_before') != before or
                 not set(receipt.get('attempted', [])) <= set(names)):
             raise ValueError('SCHEDULER_RECEIPT_IDENTITY_CHANGED')
+        if action == 'recover-open':
+            action = resolve_open_recovery()
         if action == 'hold-open-flat':
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
@@ -286,7 +303,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['suspend', 'restore', 'verify',
-                                           'hold-open-flat'], required=True)
+                                           'hold-open-flat', 'recover-open'], required=True)
     parser.add_argument('--policy-b64', required=True)
     args = parser.parse_args()
     run(args.candidate_sha, args.action, args.policy_b64)

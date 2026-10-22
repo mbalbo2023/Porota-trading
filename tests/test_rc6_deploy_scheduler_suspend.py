@@ -217,6 +217,45 @@ class SuspendTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'SCHEDULER_OPEN_HOLD_TIMER_CHANGED'):
                     suspend.run('a'*40, 'hold-open-flat', self.policy())
 
+    def test_open_recovery_selects_current_docker_pair_before_timer_mutation(self):
+        names = {'porota-runtime-evidence-rc6.timer', 'porota-preopen-rc6.timer'}
+        states = dict.fromkeys(names, 'active')
+        docker = {'porota_production_observer':'exited',
+                  'porota_production_dashboard':'exited'}
+        mutations = []
+        def command(*args):
+            if args[0] == 'docker':
+                return docker[args[-1]], 0
+            if args[:2] == ('systemctl', 'list-unit-files'):
+                return ('other-ppi-watch.service enabled\n', 0)
+            unit = args[2]
+            if args[1] == 'is-enabled': return ('enabled', 0)
+            if args[1] == 'is-active':
+                return ('active', 0) if unit == 'other-ppi-watch.service' else (states.get(unit,'inactive'), 0)
+            if args[1] == 'show': return (unit.removesuffix('.timer')+'.service', 0)
+            if args[1] in ('start','stop'):
+                mutations.append((args[1],unit))
+                states[unit] = 'active' if args[1] == 'start' else 'inactive'
+                return ('',0)
+            raise AssertionError(args)
+        with TemporaryDirectory() as directory:
+            with patch.object(suspend,'ROOT',Path(directory)), \
+                 patch.object(suspend,'command',side_effect=command), \
+                 patch.object(suspend,'require_exact_stopped_open_flat') as exact, \
+                 patch.object(suspend,'require_owned_running') as running:
+                suspend.run('a'*40,'suspend',self.policy())
+                assert suspend.run('a'*40,'recover-open',self.policy())['status']=='SUSPENDED'
+                exact.assert_called_once_with('a'*40)
+                self.assertEqual(len(mutations),2)
+                docker['porota_production_observer']='running'
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_OPEN_RECOVERY_MIXED_OR_UNKNOWN'):
+                    suspend.run('a'*40,'recover-open',self.policy())
+                self.assertEqual(len(mutations),2)
+                docker['porota_production_dashboard']='running'
+                assert suspend.run('a'*40,'recover-open',self.policy())['status']=='RESTORED'
+                running.assert_called_once()
+                self.assertEqual(len(mutations),4)
+
     def test_invalid_policy_never_mutates_systemd(self):
         bad = base64.b64encode(json.dumps({'units': {
             'systemd/porota-ppi-watch-rc6.timer': {'role': 'ACTIVE_TIMER', 'active': True},

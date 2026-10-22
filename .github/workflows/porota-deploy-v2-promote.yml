@@ -1639,10 +1639,11 @@ jobs:
                  [ '${{ steps.transfer.outcome }}' = skipped ]; } || \
                { [ "$RECOVERY_RC" -eq 0 ] && \
                  grep -Fq '"status": "FIX_FORWARD_VALIDATION_REQUIRED"' <<< "$RECOVERY_OUTPUT"; }; }; then
-            # Either the inherited stop failed before transfer, or this
-            # installation itself stopped at a later gate. In both cases an
-            # exact read-only stop/book/critical proof must precede the hold.
-            SCHEDULER_ACTION=hold-open-flat
+            # A pending installation may have stopped before or after runtime
+            # restart. Select by both current Docker states: both running
+            # restore with PAPER/0; both exited hold with exact stop/book/
+            # critical proof; mixed or unknown fails closed.
+            SCHEDULER_ACTION=recover-open
           fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
