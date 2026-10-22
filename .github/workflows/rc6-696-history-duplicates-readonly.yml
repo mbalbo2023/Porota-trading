@@ -33,7 +33,12 @@ jobs:
           timeout 65 ssh -i "$HOME/.ssh/rc6_history_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n timeout 50 nice -n 19 python3 -' <<'PY'
           import collections,json,sqlite3,time
           from pathlib import Path
-          db=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          gate=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          with sqlite3.connect(gate.as_uri()+'?mode=ro',uri=True,timeout=.2) as paper:
+              paper.execute('PRAGMA query_only=ON')
+              mode,orders=paper.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          db=Path('/opt/porota-trading/data/market_history.db')
           start=time.monotonic()
           with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
               c.execute('PRAGMA query_only=ON')
@@ -43,8 +48,6 @@ jobs:
                   n[0]+=1
                   return int(n[0]>200 or time.monotonic()-start>12)
               c.set_progress_handler(bounded,1000)
-              mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
-              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
               results={}
               for table,fields in (
                   ('production_history',('symbol','instrument_type','settlement','date_from','date_to','row_count','downloaded_at','payload_json')),
