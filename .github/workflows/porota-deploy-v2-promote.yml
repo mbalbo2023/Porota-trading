@@ -1491,12 +1491,10 @@ jobs:
             "$DO_USER@$DO_HOST" "sudo -n python3 - '$RC6_QUIESCENCE_MODE'" <<'PY'
           import sys
           sys.path.insert(0,'/opt/porota-trading')
-          from scripts.rc6_deploy_quiescence import admit
-          mode=sys.argv[1]
-          assert mode in ('OPEN','CLOSED')
-          expected='RUNNING' if mode=='OPEN' else 'WAITING_MARKET'
-          assert admit(allow_market_open_suspend=mode=='OPEN')==expected
-          print('RC6_FLAT_POSTSTART=GREEN|mode='+mode+'|PRODUCTION_PAPER|0')
+          from scripts.rc6_deploy_quiescence import admit_poststart_flat
+          before=sys.argv[1]
+          after=admit_poststart_flat(before)
+          print('RC6_FLAT_POSTSTART=GREEN|before='+before+'|after='+after+'|PRODUCTION_PAPER|0')
           PY
 
       - name: Restore RC6 schedulers only after successful promotion
