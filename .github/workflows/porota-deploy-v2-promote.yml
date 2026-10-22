@@ -183,19 +183,44 @@ jobs:
               c.execute('PRAGMA query_only=ON')
               c.execute('PRAGMA busy_timeout=200')
               state=c.execute('SELECT process_state,session_state FROM observer_state WHERE id=1').fetchone()
-          if state==('RUNNING','MARKET_OPEN'):
+          originals={name:inspect(name) for name in OWNED}
+          statuses={value['State']['Status'] for value in originals.values()}
+          if (statuses=={'exited'} and state and
+                  state[0] in ('RUNNING','STOPPED') and state[1] in ('MARKET_OPEN','OPEN')):
+              # A failed OPEN installation can leave a stale RUNNING heartbeat
+              # after both owned containers exited. Only the exact prior stop
+              # receipt, Docker identity, flat ledgers and independent critical
+              # broker admission can replace that live heartbeat.
+              receipt=adopt_stopped_after_failed_install(
+                  sys.argv[1],ROOT/'data/deploy',originals,
+                  allow_market_open_suspend=True)
+              exact_clean_stopped(receipt)
+              if (receipt.get('status')!='DRAINED' or
+                      type(receipt.get('real_orders_sent')) is not int or
+                      receipt['real_orders_sent']!=0 or
+                      receipt.get('ppi_watch_accessed') is not False or
+                      receipt.get('market_open_suspended') is not True or
+                      receipt.get('open_paper_carryover') is not False or
+                      receipt.get('spot_carryover') is not None or
+                      receipt.get('caucion_carryover') is not None or
+                      receipt.get('paused_postclose') is not False or
+                      receipt.get('intraday_caucion') is not False or
+                      admit(stopped=True,allow_market_open_suspend=True,
+                            stopped_receipt=receipt) not in ('RUNNING','STOPPED')):
+                  raise SystemExit('RC6_STOPPED_OPEN_FLAT_RECEIPT_RED')
+              print('OPEN')
+          elif statuses=={'running'} and state==('RUNNING','MARKET_OPEN'):
               assert admit(allow_market_open_suspend=True)=='RUNNING'
               print('OPEN')
-          elif state and state[0]=='WAITING_MARKET' and state[1] in ('CLOSED','MARKET_CLOSED'):
+          elif (statuses=={'running'} and state and state[0]=='WAITING_MARKET' and
+                state[1] in ('CLOSED','MARKET_CLOSED')):
               assert admit()=='WAITING_MARKET'
               print('CLOSED')
-          elif state and state[0]=='STOPPED' and state[1] in ('CLOSED','MARKET_CLOSED'):
+          elif (statuses=={'exited'} and state and state[0]=='STOPPED' and
+                state[1] in ('CLOSED','MARKET_CLOSED')):
               # A failed installed promotion leaves its exact prior image
               # cleanly stopped. Reuse the established read-only provenance,
               # ledger and independent critical-broker checks before any write.
-              originals={name:inspect(name) for name in OWNED}
-              if any(value['State']['Status']!='exited' for value in originals.values()):
-                  raise SystemExit('RC6_STOPPED_RUNTIME_IDENTITY_RED')
               receipt=adopt_stopped_after_failed_install(
                   sys.argv[1],ROOT/'data/deploy',originals)
               exact_clean_stopped(receipt)

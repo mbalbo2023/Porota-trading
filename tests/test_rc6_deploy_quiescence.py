@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sqlite3
+import sys
+from types import ModuleType
 
 import pytest
 
@@ -98,6 +100,65 @@ def test_deploy_poststart_uses_fresh_phase_gate_after_long_soak():
     block = block.split('- name: Restore RC6 schedulers', 1)[0]
     assert 'admit_poststart_flat(before)' in block
     assert "expected='RUNNING' if mode=='OPEN'" not in block
+
+
+@pytest.mark.parametrize('case', ['stale_open', 'changed_receipt', 'mixed_containers'])
+def test_pretransfer_stopped_open_admission_uses_exact_receipt_before_live_heartbeat(
+        monkeypatch, capsys, case):
+    workflow = (Path(__file__).resolve().parents[1] /
+                '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    block = workflow.split('- name: Classify current flat PAPER session before host writes', 1)[1]
+    block = block.split('- name: Dynamic pre-transfer disk guard', 1)[0]
+    code = block.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0]
+    code = '\n'.join(line.removeprefix('          ') for line in code.splitlines())
+
+    class ReadOnlyConnection:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def execute(self, statement):
+            assert statement.startswith(('PRAGMA ', 'SELECT process_state,'))
+            return self
+        def fetchone(self): return ('RUNNING', 'MARKET_OPEN')
+
+    monkeypatch.setattr(sqlite3, 'connect', lambda *_, **__: ReadOnlyConnection())
+    monkeypatch.setattr(sys, 'argv', ['-', 'b' * 40])
+    receipt = dict(status='DRAINED', real_orders_sent=0, ppi_watch_accessed=False,
+                   market_open_suspended=True, open_paper_carryover=False,
+                   spot_carryover=None, caucion_carryover=None,
+                   paused_postclose=False, intraday_caucion=False)
+    if case == 'changed_receipt': receipt['real_orders_sent'] = 1
+    names = ('porota_observer_v17', 'porota_dashboard_rc6')
+    states = ('exited', 'running') if case == 'mixed_containers' else ('exited', 'exited')
+    calls = []
+    module = ModuleType('scripts.rc6_deploy_quiescence')
+    module.ROOT = Path('/irrelevant')
+    module.OWNED = names
+    module.inspect = lambda name: {'State': {'Status': states[names.index(name)]}}
+    def adopt(*args, **kwargs):
+        calls.append(('adopt', kwargs))
+        assert kwargs == {'allow_market_open_suspend': True}
+        return receipt
+    module.adopt_stopped_after_failed_install = adopt
+    module.exact_clean_stopped = lambda *_: calls.append(('proof',))
+    def admit(**kwargs):
+        calls.append(('admit', kwargs))
+        if not kwargs.get('stopped'):
+            raise ValueError('QUIESCENCE_HEARTBEAT_UNVERIFIED')
+        assert kwargs['allow_market_open_suspend'] is True
+        assert kwargs['stopped_receipt'] is receipt
+        return 'RUNNING'
+    module.admit = admit
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    if case == 'stale_open':
+        exec(compile(code, 'deploy-v2-host-classification', 'exec'), {})
+        assert capsys.readouterr().out == 'OPEN\n'
+        assert [row[0] for row in calls] == ['adopt', 'proof', 'admit']
+    else:
+        with pytest.raises(SystemExit, match=(
+                'RC6_STOPPED_OPEN_FLAT_RECEIPT_RED' if case == 'changed_receipt'
+                else 'RC6_FLAT_PAPER_SESSION_UNVERIFIED')):
+            exec(compile(code, 'deploy-v2-host-classification', 'exec'), {})
+        if case == 'mixed_containers': assert calls == []
 
 
 def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installation):
