@@ -34,14 +34,14 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_696_fix_ro" "$HOME/.ssh/known_hosts"
           {
-            cat scripts/rc6_failed_cold_fix_forward.py
+            sed '/^if __name__==/,$d' scripts/rc6_failed_cold_fix_forward.py
             cat <<'PY'
           import json
           from pathlib import Path
           directory=Path('/opt/porota-trading/data/deploy/rc6-failed-cold-89e7f81dbc9b4a628bdc30edf86a17b0')
-          pointer=enveloped(Path('/opt/porota-trading/data/paper_v17/shadow/CURRENT.json'))
+          pointer=enveloped(Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/CURRENT.json'))
           generation=pointer['generation_id']
-          current=enveloped_gzip(Path('/opt/porota-trading/data/paper_v17/shadow')/pointer['file'])
+          current=enveloped_gzip(Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')/pointer['file'])
           snapshot=current['report']['computed_report']['snapshot_id']
           ok=proven_distinct_failed_successor(directory,generation,snapshot)
           print('RC6_696_ARCHIVE_ADMISSION_READONLY='+json.dumps({'admitted':ok,'generation':generation,'snapshot':snapshot}))
@@ -49,7 +49,7 @@ jobs:
           PY
           } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n env PYTHONPATH=/opt/porota-trading timeout 75 nice -n 19 python3 -'
           {
-            cat scripts/rc6_offline_current_image_cleanup.py
+            sed '/^if __name__==/,$d' scripts/rc6_offline_current_image_cleanup.py
             cat <<'PY'
           import json
           result=admission()
