@@ -1,0 +1,62 @@
+name: RC6 696 bounded fix-forward admission read only
+on:
+  push:
+    branches:
+      - diagnostic/rc6-679-readonly-baseline-20261021
+    paths:
+      - .github/workflows/rc6-696-fix-forward-admission-readonly.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-696-readonly-admission
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9bd8294185320afcf8e8a3c75b22d9e146abd9b8
+      - name: Prove exact candidate and host guard admissions without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = 9bd8294185320afcf8e8a3c75b22d9e146abd9b8
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_696_fix_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_696_fix_ro" "$HOME/.ssh/known_hosts"
+          {
+            cat scripts/rc6_failed_cold_fix_forward.py
+            cat <<'PY'
+          import json
+          from pathlib import Path
+          directory=Path('/opt/porota-trading/data/deploy/rc6-failed-cold-89e7f81dbc9b4a628bdc30edf86a17b0')
+          pointer=enveloped(Path('/opt/porota-trading/data/paper_v17/shadow/CURRENT.json'))
+          generation=pointer['generation_id']
+          current=enveloped_gzip(Path('/opt/porota-trading/data/paper_v17/shadow')/pointer['file'])
+          snapshot=current['report']['computed_report']['snapshot_id']
+          ok=proven_distinct_failed_successor(directory,generation,snapshot)
+          print('RC6_696_ARCHIVE_ADMISSION_READONLY='+json.dumps({'admitted':ok,'generation':generation,'snapshot':snapshot}))
+          assert ok
+          PY
+          } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n env PYTHONPATH=/opt/porota-trading timeout 75 nice -n 19 python3 -'
+          {
+            cat scripts/rc6_offline_current_image_cleanup.py
+            cat <<'PY'
+          import json
+          result=admission()
+          assert result['flat_stop_proof'] and result['intraday_proof'] is None
+          print('RC6_696_OFFLINE_ADMISSION_READONLY='+json.dumps(result,sort_keys=True))
+          PY
+          } | timeout 85 ssh -i "$HOME/.ssh/rc6_696_fix_ro" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n env PYTHONPATH=/opt/porota-trading timeout 75 nice -n 19 python3 -'
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_696_fix_ro"
