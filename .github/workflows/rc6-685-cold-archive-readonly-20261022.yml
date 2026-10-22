@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 4107ae8dffc436865c0f901cbdf3c6da66e03f34
+          test "$(git rev-parse HEAD^)" = bcb718d5b081bb298c174bed0b0a48b9d73181e0
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -181,6 +181,32 @@ jobs:
           except Exception as exc:
               print(json.dumps({'schema':'RC6_685_STOPPED_ADMISSION_RED','class':type(exc).__name__,'error':str(exc)},sort_keys=True))
               raise
+          PY
+      - name: Sample raw history identity fields without a scan
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -" <<'PY'
+          import json,sqlite3,time
+          from pathlib import Path
+          root=Path('/opt/porota-trading/data')
+          result={}
+          for label,path,table,columns in (
+              ('raw',root/'paper_v17/observer_v17.db','production_history',
+               'symbol,instrument_type,settlement,date_from,date_to,downloaded_at,row_count,substr(payload_json,1,1200)'),
+              ('versions',root/'market_history.db','history_versions_v2',
+               'symbol,instrument_type,market,settlement,date,source,observed_at,metadata_json')):
+              db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=1)
+              db.execute('PRAGMA query_only=ON')
+              deadline=time.monotonic()+3
+              db.set_progress_handler(lambda:int(time.monotonic()>deadline),500)
+              rows=db.execute('SELECT '+columns+' FROM '+table+' LIMIT 3').fetchall()
+              result[label]=rows;db.close()
+          print(json.dumps({'schema':'RC6_685_HISTORY_LINEAGE_SAMPLE_V1','rows':result},sort_keys=True,default=str))
           PY
       - name: Remove SSH key
         if: always()
