@@ -1,4 +1,4 @@
-"""Deploy selects live flat PAPER quiescence without a calendar gate."""
+"""Deploy selects live PAPER quiescence and one exact overnight receipt."""
 
 from pathlib import Path
 
@@ -8,7 +8,7 @@ WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/porota-deplo
 
 def test_deploy_classifies_live_session_and_rechecks_flat_paper_at_drain():
     source = WORKFLOW.read_text(encoding='utf-8')
-    assert "local.date().isoformat()" not in source
+    assert "local.date().isoformat()" in source  # only the exact incident identity
     assert "('RUNNING','MARKET_OPEN')" in source
     assert "state[0]=='WAITING_MARKET'" in source
     assert "state[1] in ('CLOSED','MARKET_CLOSED')" in source
@@ -20,16 +20,18 @@ def test_deploy_classifies_live_session_and_rechecks_flat_paper_at_drain():
     assert '--intraday-caucion' not in source
     assert '--carry-open-paper-spots' not in source
     assert '--paused-postclose' not in source
+    assert "CLOSED_CAUCION) FLAG='--pending-paper-caucion'" in source
+    assert "CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion'" in source
     assert 'RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION' not in source
 
 
 def test_deploy_checks_flat_paper_after_restart():
     source = WORKFLOW.read_text(encoding='utf-8')
     assert 'from scripts.rc6_deploy_quiescence import admit_poststart_flat' in source
-    assert 'after=admit_poststart_flat(before)' in source
-    assert 'RC6_FLAT_POSTSTART=GREEN|before=' in source
+    assert 'after=admit_poststart_flat(before,candidate)' in source
+    assert 'RC6_PAPER_POSTSTART=GREEN|before=' in source
     assert "|after='+after+'|PRODUCTION_PAPER|0" in source
-    assert '--action verify-carryover' not in source
+    assert '--action verify-carryover' in source
     cleanup = source.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name: Postdeploy full-session stress', 1)[0]
     assert "steps.flat_book.outcome == 'failure'" in cleanup
     assert "steps.backup_retire.outcome == 'failure'" in cleanup

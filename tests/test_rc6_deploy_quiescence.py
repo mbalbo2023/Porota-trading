@@ -98,7 +98,7 @@ def test_deploy_poststart_uses_fresh_phase_gate_after_long_soak():
               '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     block = source.split('- name: Verify same flat PAPER session after runtime restart', 1)[1]
     block = block.split('- name: Restore RC6 schedulers', 1)[0]
-    assert 'admit_poststart_flat(before)' in block
+    assert 'admit_poststart_flat(before,candidate)' in block
     assert "expected='RUNNING' if mode=='OPEN'" not in block
 
 
@@ -174,6 +174,85 @@ def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installat
     with pytest.raises(ValueError, match='INSTALL_SESSION_MODE_CHANGED'):
         q.run(SHA, 'install')
     assert q.run(SHA, 'install', allow_market_open_suspend=True)['installation_started'] is True
+
+
+def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_path, monkeypatch):
+    from be_paper_engine import PaperBroker, PaperStore, D
+    from bt_caucion_paper import CaucionOffer
+    from ca_caucion_allocator import CaucionPolicy
+    root = tmp_path
+    (root / 'data/paper_v17').mkdir(parents=True)
+    path = root / 'data/paper_v17/observer_v17.db'
+    broker = PaperBroker(PaperStore(str(path)), initial_cash='10000', daily_loss_pct='1')
+    at = '2026-10-22T16:30:15-03:00'
+    offer = CaucionOffer(instrument_id='CAUCION-FIXTURE-ARS-20261023', currency='ARS',
+                          annual_rate_fraction=D('.365'), start_date='2026-10-22',
+                          maturity_at='2026-10-23T17:00:00-03:00', quoted_at=at,
+                          available_principal=D('100000'), minimum_principal=D('100'),
+                          principal_step=D('1'), day_count_basis=365, fee_payment='MATURITY',
+                          metadata_source='TEST_FIXTURE_NOT_BROKER', quoted_total_fees=D('.1'),
+                          fee_quote_principal=D('1000'))
+    policy = CaucionPolicy(frozen_at='2026-10-22T10:59:00-03:00', currency='ARS',
+                            reserve_cash=D(1000), maximum_cash_fraction=D('.5'),
+                            maximum_principal=D(3000), liquidity_deadline=offer.maturity_at,
+                            maximum_quote_age_seconds=D(60), participation=D('.10'),
+                            minimum_net_profit=D(0), ranking='NET_PROFIT',
+                            session_open_at='2026-10-22T11:00:00-03:00',
+                            session_close_at='2026-10-22T17:00:00-03:00',
+                            session_source='TEST_NOT_MARKET_CALENDAR')
+    result = broker.allocate_caucion([offer], policy, 'pending-deploy-test', as_of=at)
+    assert result['status'] == 'PLACED_SIMULATED', (result['code'], result['candidates'])
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE observer_state SET mode='PRODUCTION_PAPER',real_orders_sent=0,"
+                  "process_state='WAITING_MARKET',session_state='MARKET_CLOSED',heartbeat_at=? WHERE id=1",
+                  ('2026-10-22T20:15:00+00:00',))
+    class IncidentClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 22, 20, 15, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(q, 'datetime', IncidentClock)
+    monkeypatch.setattr(q, 'ROOT', root)
+    states = {name: {'Id': name + '_id', 'Image': 'old_image',
+                     'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0}}
+              for name in q.OWNED}
+    states['porota_critical_approval_rc6'] = {'Image':'critical_image', 'RestartCount':0,
+        'State':{'Status':'running','OOMKilled':False,'ExitCode':0,'Health':{'Status':'healthy'}}}
+    calls = []
+    def command(args):
+        calls.append(args)
+        if args[1] == 'inspect': return json.dumps([states[args[2]]])
+        if args[1] == 'exec': return 'RC6_CRITICAL_ISSUES_ONLY=GREEN\n'
+        if args[1] == 'stop':
+            states[args[-1]]['State']['Status'] = 'exited'
+            if args[-1] == q.OWNED[0]:
+                with sqlite3.connect(path) as c:
+                    c.execute("UPDATE observer_state SET process_state='STOPPED'")
+        return ''
+    monkeypatch.setattr(q, 'command', command)
+    flags = {'allow_pending_caucion': True}
+    before = q.verified_pending_caucion_snapshot()
+    receipt = q.run(SHA, 'drain', **flags)
+    assert receipt['caucion_carryover'] == before
+    assert {states[name]['State']['Status'] for name in q.OWNED} == {'exited'}
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE paper_cauciones SET principal='999' WHERE status='OPEN'")
+    with pytest.raises(ValueError):
+        q.run(SHA, 'install', **flags)
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE paper_cauciones SET principal='1000' WHERE status='OPEN'")
+    assert q.run(SHA, 'install', **flags)['installation_started'] is True
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET'")
+    assert q.admit_poststart_flat('CLOSED_CAUCION', SHA) == 'CLOSED'
+    assert q.run(SHA, 'verify-carryover')['caucion_verified_count'] == 1
+    with sqlite3.connect(path) as c:
+        assert c.execute("SELECT status,settled_at FROM paper_cauciones").fetchone() == ('OPEN', None)
+        assert broker._cash(as_of=at) == D('9000')
+    assert not any(call[1] == 'start' for call in calls)
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE paper_caucion_allocations SET request_hash='tampered'")
+    with pytest.raises(ValueError):
+        q.admit_poststart_flat('CLOSED_CAUCION', SHA)
 
 
 @pytest.mark.parametrize('change', ['open_spot', 'open_caucion', 'active_future',
