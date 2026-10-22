@@ -139,6 +139,56 @@ def test_open_flat_clean_stop_inherited_by_exact_failed_deploy(tmp_path):
     assert not recovery.proven_inherited_flat_stop_cancellation(live,current,path)
 
 
+def test_pending_paper_caucion_cold_cancellation_and_hashed_fix_forward(tmp_path):
+    # Read-only Actions #39866095743: cold_audit:360 at 22:32:42.761654Z,
+    # clean Docker exit at 22:32:47.063944893Z, one reconciled PAPER caucion.
+    stop={'classification':'CLEAN_EXIT',
+          'before':{'Status':'running','StartedAt':'2026-10-22T21:00:00Z'},
+          'after':{'Status':'exited','ExitCode':0,'OOMKilled':False,
+                   'FinishedAt':'2026-10-22T22:32:47.063944893Z'}}
+    carry={'open_count':1,'maturity_at':'2026-10-23T17:00:00-03:00',
+           'allocation_reconciled':True,'sha256':'a'*64,
+           'audit_source_sha256':
+               'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865'}
+    mode={'pending_caucion':True,'paused_postclose':False,
+          'intraday_caucion':False,'market_open_suspended':False,
+          'open_paper_carryover':False,'spot_carryover':None,
+          'caucion_carryover':carry}
+    evidence={'porota_production_observer':stop,
+              'porota_production_dashboard':{'classification':'CLEAN_EXIT'}}
+    containers={name:{'id':name+'-id','image':'sha256:'+'a'*64}
+                for name in evidence}
+    candidate='d1f9691404c4a9145e91a95ca1f2bbf9b137d138'
+    prior={**mode,'candidate_sha':candidate,'status':'FIX_FORWARD_VALIDATION_REQUIRED',
+           'installation_started':True,'inflight':'ABSENT_OWNED_RUNTIME_STOPPED',
+           'real_orders_sent':0,'ppi_watch_accessed':False,
+           'stop_evidence':evidence,'containers':containers}
+    live={'status':'FAIL_CLOSED','error_class':'ValueError',
+          'error_module':'cold_audit','error_line':360,
+          'as_of':'2026-10-22T22:32:42.761654+00:00',
+          'real_orders_sent':0,'real_routes':'NOT_CALLED'}
+    assert recovery.proven_stop_cancellation(live,prior)
+    path=tmp_path/('quiescence-'+candidate+'.json')
+    raw=json.dumps(prior,sort_keys=True).encode()
+    path.write_bytes(raw);path.chmod(0o600)
+    current={**prior,'candidate_sha':'f'*40,'fix_forward_from':candidate,
+             'status':'HOST_INSTALLATION_STARTED',
+             'prior_receipt_sha256':recovery.hashlib.sha256(raw).hexdigest()}
+    assert recovery.proven_inherited_pending_stop_cancellation(live,current,path)
+    for changed in ({'pending_caucion':False},{'caucion_carryover':{**carry,'sha256':'0'*64}},
+                    {'prior_receipt_sha256':'0'*64},
+                    {'stop_evidence':{**evidence,'porota_production_observer':
+                                      {**stop,'classification':'UNKNOWN'}}}):
+        assert not recovery.proven_inherited_pending_stop_cancellation(
+            live,{**current,**changed},path)
+    for changed in ({'error_line':361},{'as_of':'2026-10-22T22:32:20Z'}):
+        assert not recovery.proven_stop_cancellation({**live,**changed},prior)
+    assert not recovery.proven_stop_cancellation(live,{**prior,
+        'caucion_carryover':{**carry,'audit_source_sha256':'0'*64}})
+    path.write_bytes(raw+b' ')
+    assert not recovery.proven_inherited_pending_stop_cancellation(live,current,path)
+
+
 def test_unchanged_previous_cancellation_requires_hashed_receipt_and_new_clean_stop(
         tmp_path, monkeypatch):
     old_stop = {'classification': 'CLEAN_EXIT',
