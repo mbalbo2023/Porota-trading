@@ -114,8 +114,11 @@ def main():
     parser.add_argument("--repository",type=Path,default=Path(__file__).resolve().parents[1])
     parser.add_argument("--database",action="append",type=Path,default=[])
     parser.add_argument("--sample",type=int,default=250)
+    parser.add_argument("--database-only",action="store_true",
+                        help="Skip source scan for a bounded host database probe")
     args=parser.parse_args()
-    report={"schema":"RC6_STORAGE_WIRING_READONLY_V1","wiring":inspect_wiring(args.repository),
+    report={"schema":"RC6_STORAGE_WIRING_READONLY_V1",
+            "wiring":None if args.database_only else inspect_wiring(args.repository),
             "databases":[inspect_database(path,args.sample) for path in args.database]}
     print(json.dumps(report,sort_keys=True,separators=(",",":")))
 
