@@ -566,7 +566,7 @@ class Projection:
                        reason=gate.get("reason") or row.get("reason"), score_is_probability=False)
             detail = json_object(gate.get("detail_json"))
             economics = detail.get("economics", {})
-            if isinstance(economics, dict):
+            if isinstance(economics, dict) and economics:
                 row["economics"] = economics.get("state") or UNKNOWN
                 row["expected_cost"] = economics.get("expected_cost")
             row["previous_state"] = features.get("previous_state")
