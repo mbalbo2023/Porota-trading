@@ -592,7 +592,15 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
                     add('OOM_HISTORICAL:'+name,'P2')
                 else:
                     add('CONTAINER_NOT_HEALTHY:'+name,'P0')
-            if state.get("image") != provenance.get("image_id"):
+            # The critical approval broker is a separately owned issues-only
+            # container. Deploy V2 promotes the observer/dashboard image, not
+            # this broker. Require its own verifiable Docker image identity;
+            # only the two promoted containers must equal deploy provenance.
+            image = state.get("image")
+            if name == "porota_critical_approval_rc6":
+                if not isinstance(image, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
+                    add("CONTAINER_IMAGE_UNVERIFIED:" + name, "P0")
+            elif image != provenance.get("image_id"):
                 add("CONTAINER_IMAGE_MISMATCH:" + name, "P0")
             if state.get("restarts", 0) > 0:
                 add("CONTAINER_RESTART_COUNT:" + name, "P2", state["restarts"])
