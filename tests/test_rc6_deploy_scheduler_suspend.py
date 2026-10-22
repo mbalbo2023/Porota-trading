@@ -21,7 +21,8 @@ class SuspendTests(unittest.TestCase):
         with patch.object(quiescence, 'inspect', side_effect=lambda n: originals[n]), \
              patch.object(quiescence, 'adopt_stopped_after_failed_install', return_value=receipt) as adopt, \
              patch.object(quiescence, 'exact_clean_stopped') as exact, \
-             patch.object(quiescence, 'admit', return_value='RUNNING') as admit:
+             patch.object(quiescence, 'admit', return_value='RUNNING') as admit, \
+             patch.object(quiescence, 'critical_admission'):
             suspend.require_exact_stopped_open_flat('a'*40)
             self.assertTrue(adopt.call_args.kwargs['allow_market_open_suspend'])
             exact.assert_called_once_with(receipt)
@@ -32,6 +33,42 @@ class SuspendTests(unittest.TestCase):
             originals[quiescence.OWNED[0]]['State']['Status'] = 'running'
             with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_OPEN_IDENTITY_RED'):
                 suspend.require_exact_stopped_open_flat('a'*40)
+
+    def test_postinstall_open_flat_hold_uses_own_exact_pending_receipt(self):
+        candidate = 'f'*40
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root/'data/deploy'
+            target.mkdir(parents=True)
+            originals = {name: {'Id': str(index)*64, 'Image': 'sha256:'+'a'*64,
+                                'State': {'Status': 'exited'}}
+                         for index, name in enumerate(quiescence.OWNED, 1)}
+            row = {'candidate_sha': candidate, 'status': 'FIX_FORWARD_VALIDATION_REQUIRED',
+                   'installation_started': True,
+                   'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
+                   'containers': {name:{'id': value['Id'], 'image':value['Image']}
+                                  for name,value in originals.items()},
+                   'real_orders_sent':0, 'ppi_watch_accessed':False,
+                   'market_open_suspended':True, 'open_paper_carryover':False,
+                   'spot_carryover':None, 'caucion_carryover':None,
+                   'paused_postclose':False, 'intraday_caucion':False}
+            path = target/('quiescence-'+candidate+'.json')
+            path.write_text(json.dumps(row))
+            with patch.object(quiescence, 'ROOT', root), \
+                 patch.object(quiescence, 'inspect', side_effect=lambda n:originals[n]), \
+                 patch.object(quiescence, 'adopt_stopped_after_failed_install') as adopt, \
+                 patch.object(quiescence, 'exact_clean_stopped') as exact, \
+                 patch.object(quiescence, 'admit', return_value='RUNNING') as admit, \
+                 patch.object(quiescence, 'critical_admission') as critical:
+                suspend.require_exact_stopped_open_flat(candidate)
+                adopt.assert_not_called()
+                exact.assert_called_once_with(row)
+                critical.assert_called_once()
+                self.assertTrue(admit.call_args.kwargs['allow_market_open_suspend'])
+                row['containers'][quiescence.OWNED[0]]['id'] = 'e'*64
+                path.write_text(json.dumps(row))
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_OPEN_INSTALL_IDENTITY_RED'):
+                    suspend.require_exact_stopped_open_flat(candidate)
 
     def test_restore_runtime_gate_checks_containers_and_paper_zero(self):
         with TemporaryDirectory() as directory:

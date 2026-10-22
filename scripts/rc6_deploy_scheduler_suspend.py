@@ -41,11 +41,27 @@ def require_exact_stopped_open_flat(candidate):
     originals = {name: quiescence.inspect(name) for name in quiescence.OWNED}
     if any(value['State']['Status'] != 'exited' for value in originals.values()):
         raise ValueError('SCHEDULER_STOPPED_OPEN_IDENTITY_RED')
-    receipt = quiescence.adopt_stopped_after_failed_install(
-        candidate, quiescence.ROOT/'data/deploy', originals,
-        allow_market_open_suspend=True)
+    path = quiescence.ROOT/'data/deploy'/('quiescence-' + candidate + '.json')
+    if path.is_symlink() or (path.exists() and path.stat().st_size > 65536):
+        raise ValueError('SCHEDULER_STOPPED_OPEN_RECEIPT_UNSAFE')
+    own = json.loads(path.read_bytes()) if path.is_file() else None
+    if own and own.get('installation_started') is True:
+        if (own.get('candidate_sha') != candidate or
+                own.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+                own.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+                set(own.get('containers', {})) != set(quiescence.OWNED)):
+            raise ValueError('SCHEDULER_STOPPED_OPEN_INSTALL_RECEIPT_RED')
+        receipt = own
+        for name, value in originals.items():
+            expected = receipt['containers'][name]
+            if value['Id'] != expected.get('id') or value['Image'] != expected.get('image'):
+                raise ValueError('SCHEDULER_STOPPED_OPEN_INSTALL_IDENTITY_RED')
+    else:
+        receipt = quiescence.adopt_stopped_after_failed_install(
+            candidate, quiescence.ROOT/'data/deploy', originals,
+            allow_market_open_suspend=True)
     quiescence.exact_clean_stopped(receipt)
-    if (receipt.get('status') != 'DRAINED' or
+    if (receipt.get('status') not in {'DRAINED', 'FIX_FORWARD_VALIDATION_REQUIRED'} or
             type(receipt.get('real_orders_sent')) is not int or
             receipt['real_orders_sent'] != 0 or
             receipt.get('ppi_watch_accessed') is not False or
@@ -58,6 +74,7 @@ def require_exact_stopped_open_flat(candidate):
             quiescence.admit(stopped=True, allow_market_open_suspend=True,
                              stopped_receipt=receipt) not in ('RUNNING', 'STOPPED')):
         raise ValueError('SCHEDULER_STOPPED_OPEN_FLAT_RED')
+    quiescence.critical_admission()
 
 
 def command(*args):
