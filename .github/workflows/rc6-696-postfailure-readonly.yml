@@ -1,0 +1,69 @@
+name: RC6 696 postfailure disk and quiescence read only
+on:
+  push:
+    branches:
+      - diagnostic/rc6-679-readonly-baseline-20261021
+    paths:
+      - .github/workflows/rc6-696-postfailure-readonly.yml
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bounded paper and disk read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_postfail_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_postfail_ro" "$HOME/.ssh/known_hosts"
+          timeout 45 ssh -i "$HOME/.ssh/rc6_postfail_ro" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 30 python3 -' <<'PY'
+          import json,os,subprocess,sqlite3
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          current=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              paper=c.execute('SELECT mode,real_orders_sent,session_state,process_state FROM observer_state WHERE id=1').fetchone()
+          assert paper[0]=='PRODUCTION_PAPER' and paper[1]==0
+          def cmd(*args):
+              r=subprocess.run(args,capture_output=True,text=True,timeout=4)
+              return r.stdout.strip() if r.returncode==0 else 'UNAVAILABLE'
+          names=('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6')
+          containers={n:{'status':cmd('docker','inspect','-f','{{.State.Status}}',n),
+                         'image':cmd('docker','inspect','-f','{{.Image}}',n)} for n in names}
+          images={}
+          for tag in ('porota-trading-bot:17.0.0-rc6',
+                      'porota-trading-bot:17.0.0-rc6-candidate-d17f55442caf5c5227346f1966aba4f150d9d23c',
+                      'porota-predeploy-v2:d17f55442caf5c5227346f1966aba4f150d9d23c'):
+              images[tag]=cmd('docker','image','inspect','-f','{{.Id}}|{{.Size}}',tag)
+          v=os.statvfs('/')
+          receipt=root/'data/deploy/quiescence-d17f55442caf5c5227346f1966aba4f150d9d23c.json'
+          q=json.loads(receipt.read_text()) if receipt.is_file() and receipt.stat().st_size<65536 else {}
+          staged=Path('/tmp/porota-deploy-v2-d17f55442caf5c5227346f1966aba4f150d9d23c')
+          print('RC6_POSTFAIL_READONLY='+json.dumps({'free_bytes':v.f_bavail*v.f_frsize,
+              'inodes_free_percent':round(100*v.f_ffree/v.f_files,3),'current_deploy_sha':current.get('deploy_sha'),
+              'current_candidate_sha':current.get('candidate_sha'),'paper':paper,'containers':containers,
+              'images':images,'quiescence_status':q.get('status'),'staged_dir_present':staged.exists(),
+              'ppi_watch_accessed':False},sort_keys=True))
+          PY
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_postfail_ro"
