@@ -320,8 +320,15 @@ def _admit(root, admission, expected_owned_ids):
               state.get('market_open_suspended') is not True and
               state.get('open_paper_carryover') is not True and
               state.get('intraday_caucion') is not True)
+    intraday_flat = (type(state) is dict and
+                     state.get('market_closed') is False and
+                     state.get('no_positions') is True and
+                     state.get('market_open_suspended') is True and
+                     state.get('open_paper_carryover') is False and
+                     state.get('intraday_caucion') is False and
+                     carry is None and caucion is None)
     if (type(state) is not dict or state.get('status') != 'DRAINED' or
-            state.get('owned_stopped') is not True or not (closed or intraday or intraday_caucion) or
+            state.get('owned_stopped') is not True or not (closed or intraday or intraday_caucion or intraday_flat) or
             state.get('lock_held') is not True or
             state.get('mode') != 'PRODUCTION_PAPER' or
             state.get('real_routes') != 'NOT_CALLED' or

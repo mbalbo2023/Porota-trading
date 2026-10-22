@@ -1625,21 +1625,25 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "if sudo -n docker inspect 'porota-deploy-contract-$CANDIDATE_SHA' >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha '$CANDIDATE_SHA'; else echo CONTRACT_WRITER_ABSENT; fi"
           CONTRACT_ORPHAN_RC=$?
-          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+          RECOVERY_OUTPUT="$(timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
-            < scripts/rc6_deploy_quiescence.py
+            < scripts/rc6_deploy_quiescence.py)"
           RECOVERY_RC=$?
+          echo "$RECOVERY_OUTPUT"
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
           SCHEDULER_ACTION=restore
-          if [ '${{ steps.drain.outcome }}' = failure ] && \
-             [ '${{ steps.transfer.outcome }}' = skipped ] && \
-             [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ]; then
-            # A pre-transfer failure with the exact prior OPEN runtime stopped
-            # must retain paused timers. A read-only identity/ledger/critical
-            # proof is required; rearming against stopped Docker is unsafe.
-            SCHEDULER_ACTION=hold-open-flat
+          if [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ] && \
+             { { [ '${{ steps.drain.outcome }}' = failure ] && \
+                 [ '${{ steps.transfer.outcome }}' = skipped ]; } || \
+               { [ "$RECOVERY_RC" -eq 0 ] && \
+                 grep -Fq '"status": "FIX_FORWARD_VALIDATION_REQUIRED"' <<< "$RECOVERY_OUTPUT"; }; }; then
+            # A pending installation may have stopped before or after runtime
+            # restart. Select by both current Docker states: both running
+            # restore with PAPER/0; both exited hold with exact stop/book/
+            # critical proof; mixed or unknown fails closed.
+            SCHEDULER_ACTION=recover-open
           fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
