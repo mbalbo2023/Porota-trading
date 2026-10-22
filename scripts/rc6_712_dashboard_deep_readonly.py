@@ -95,6 +95,16 @@ def main(output):
         if response.status!=200 or truth.get('mode')!='PRODUCTION_PAPER' or truth.get('real_orders_sent')!=0:
             raise SystemExit('PAPER_GUARD_NOT_PROVEN')
         report['paper_guard']={'mode':'PRODUCTION_PAPER','real_orders_sent':0,'http':200}
+        # The truth endpoint already reads IOL's separate mounted cache. Only
+        # aggregate states/clocks enter public evidence, never symbol quotes.
+        iol=truth.get('iol') or {}
+        quotes=iol.get('quotes') or {}
+        families=iol.get('families') or {}
+        report['iol_truth']={'quotes':{k:quotes.get(k) for k in ('total','states','source_states','state','as_of')},
+            'families':{'state':families.get('state'),'as_of':families.get('as_of'),
+                        'last_known_good_at':families.get('last_known_good_at'),
+                        'section_states':{str(k):v.get('state') for k,v in (families.get('sections') or {}).items()
+                                          if isinstance(v,dict)}}}
         for path in CANONICAL_PATHS:
             try:
                 response=page.goto(BASE+path,wait_until='domcontentloaded',timeout=12000)
