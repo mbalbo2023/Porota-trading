@@ -117,6 +117,16 @@ def sqlite_status(path):
             if p.name == 'observer_v17.db':
                 names = {row[0] for row in c.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+                # Postinstall V1 gate incident: eight scalar rows, bounded RO.
+                if 'contract_evidence_runs' in names:
+                    rows = c.execute('''SELECT started_at,finished_at,total,verified,
+                      blocked_porota,blocked_provider FROM contract_evidence_runs
+                      ORDER BY finished_at DESC LIMIT 8''').fetchall()
+                    result['contract_v1_recent_scalars'] = [dict(zip(
+                        ('started_at','finished_at','total','verified',
+                         'blocked_porota','blocked_provider'), row)) for row in rows]
+                else:
+                    result['contract_v1_recent_scalars'] = 'TABLE_ABSENT'
                 allowed = ('financial_instrument_catalog', 'market_snapshots',
                            'ppi_intraday_points', 'ppi_intraday_contract_state',
                            'paper_positions', 'paper_events',
@@ -462,7 +472,7 @@ def main(policy_b64):
     if len(timers) != 19:
         raise RuntimeError('TIMER_POLICY_COUNT_MISMATCH')
     current = json.loads((ROOT / 'data/deploy/CURRENT_STATE_V2.json').read_text())
-    if current['deploy_sha'] != 'f0c393ca2b5c1560bf57cf776f1e9fcfcbca582f':
+    if current['deploy_sha'] != 'c16a093df2161fbb6ef17edd44d17adf64578f85':
         raise RuntimeError('DEPLOY_SHA_CHANGED')
     if current['mode'] != 'PRODUCTION_PAPER' or type(current['real_orders_sent']) is not int \
             or current['real_orders_sent'] != 0 or current['real_order_routes'] != 'NOT_CALLED':
