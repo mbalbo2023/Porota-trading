@@ -123,6 +123,21 @@ def main(output):
                     item["source_authority_caveat"] = "PPI es autoridad primaria" in body
                     if not item["source_authority_caveat"]:
                         report["findings"].append({"kind": "source_authority_caveat_missing", "path": path})
+                    item["source_unavailable_scoped"] = "SOURCE_UNAVAILABLE siempre se limita a su scope" in body
+                    if not item["source_unavailable_scoped"]:
+                        report["findings"].append({"kind": "source_unavailable_scope_missing", "path": path})
+                if path == "/riesgo":
+                    item["risk_currencies_separate"] = "ARS, USD, USD_MEP y USD_CCL se conservan separados" in body
+                    if not item["risk_currencies_separate"]:
+                        report["findings"].append({"kind": "risk_currency_separation_missing", "path": path})
+                if path == "/sistema/evidencia":
+                    item["shadow_current_authority"] = "Sólo CURRENT.json y su generación comprometida/coherente" in body
+                    if not item["shadow_current_authority"]:
+                        report["findings"].append({"kind": "shadow_current_authority_missing", "path": path})
+                if path == "/en-vivo/oportunidades":
+                    item["shadow_not_buy"] = "HOT ≠ BUY" in body
+                    if not item["shadow_not_buy"]:
+                        report["findings"].append({"kind": "shadow_entry_caveat_missing", "path": path})
                 if response.status != 200 or not body.strip():
                     report["findings"].append({"kind": "rendered_route_error", "path": path,
                                                "http": item["http"]})
