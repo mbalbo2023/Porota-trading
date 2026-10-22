@@ -1645,6 +1645,10 @@ def history_page():
     coverage_complete=bool(coverage_verified and history_target and history_count>=history_target)
     coverage_state_label=('NO_VERIFICADO' if not coverage_verified else
                           'COMPLETA' if coverage_complete else 'EN PROGRESO')
+    fresh_target=int(fresh_v5.get('target_total') or 0)
+    def fresh_tone(key):
+        return ("green" if fresh_v5.get('available') and fresh_target>0
+                and int(fresh_v5.get(key) or 0)==fresh_target else "yellow")
     target_label=(f"{coverage_state_label} · {history_count}/{history_target}"
                   if history_target else f"{coverage_state_label} · {history_count}/objetivo dinámico pendiente")
     coverage_detail=(f"Moneda objetivo sin identidad exacta: {_e(target_coverage.get('reason'))} · {_locale_number(history_rows,0)} filas registradas"
@@ -1660,16 +1664,16 @@ def history_page():
               "green" if coverage_complete else "yellow" if not coverage_verified else "gray"),
         _card("Historia fresca ≥30",
               f"{fresh_v5.get('fresh_ge30',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
-              f"FULL_OHLC · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",
-              "green" if fresh_v5.get('available') else "yellow"),
+              f"FULL_OHLC · RAW sin ajuste · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",
+              fresh_tone('fresh_ge30')),
         _card("Historia fresca ≥90",
               f"{fresh_v5.get('fresh_ge90',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
-              f"FULL_OHLC + freshness ≤2 ruedas · stale ≥90: {fresh_v5.get('stale_ge90_count',0)}",
-              "green" if fresh_v5.get('available') else "yellow"),
+              f"FULL_OHLC RAW + freshness ≤2 ruedas · stale ≥90: {fresh_v5.get('stale_ge90_count',0)}",
+              fresh_tone('fresh_ge90')),
         _card("Historia fresca ≥180",
               f"{fresh_v5.get('fresh_ge180',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
-              "FULL_OHLC profundo y fresco; no es precio de ejecución ni autorización PAPER",
-              "green" if fresh_v5.get('available') else "yellow"),
+              "FULL_OHLC RAW profundo y fresco; no es precio de ejecución ni autorización PAPER",
+              fresh_tone('fresh_ge180')),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
             f"capa {store_v2.get('layer','V2')} · cobertura histórica por capacidad · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
