@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sqlite3
 import sys
 
 sys.path.insert(0, '/opt/porota-trading')
@@ -22,6 +23,14 @@ pointer = cold.enveloped(shadow / 'CURRENT.json')
 archive = deploy / ('rc6-failed-cold-' + cold.IDENT)
 prior = deploy / ('quiescence-' + cold.PRIOR_CANCELLED_SHA + '.json')
 inherited = deploy / 'quiescence-83855c3b08647243dcd706ca7ead929378c4c11d.json'
+with sqlite3.connect((root/'data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True,timeout=.2) as db:
+    db.execute('PRAGMA query_only=ON')
+    process,session,mode,orders=db.execute(
+        'SELECT process_state,session_state,mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+current_state_path=deploy/'CURRENT_STATE_V2.json'
+current_state=json.loads(current_state_path.read_bytes()) if (
+    current_state_path.is_file() and not current_state_path.is_symlink()
+    and current_state_path.stat().st_size<65536) else {}
 containers = {}
 for name in ('porota_production_observer', 'porota_production_dashboard'):
     raw = subprocess.check_output(['docker', 'inspect', '--format',
@@ -33,6 +42,9 @@ caucion = q.get('caucion_carryover')
 proof = (q.get('stop_evidence') or {}).get('porota_production_observer') or {}
 out = {
     'candidate': candidate,
+    'observer_state': {'process':process,'session':session,'mode':mode,'real_orders_sent':orders},
+    'current_state': {key:current_state.get(key) for key in
+                      ('candidate_sha','validation_status','mode','image_id')},
     'quiescence_status': q.get('status'),
     'installation_started': q.get('installation_started'),
     'pending_caucion': q.get('pending_caucion'),
