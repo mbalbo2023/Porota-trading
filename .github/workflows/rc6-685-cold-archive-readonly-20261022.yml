@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = 30e931537dcdce3852227f7c307e7be95c3aac9b
+          test "$(git rev-parse HEAD^)" = 4331b70b817e575b89edf0f09d585984b64631ac
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -71,6 +71,11 @@ jobs:
                'prior_stop_cancellation':cold.proven_prior_stop_cancellation(live,q,prior),
                'containers':containers,
                'free_root_bytes':os.statvfs('/').f_bavail*os.statvfs('/').f_frsize}
+          proof=(q.get('stop_evidence') or {}).get('porota_production_observer') or {}
+          before=proof.get('before') or {};after=proof.get('after') or {}
+          out['observer_stop']={'classification':proof.get('classification'),'before_status':before.get('Status'),'started_at':before.get('StartedAt'),'after_status':after.get('Status'),'finished_at':after.get('FinishedAt'),'exit_code':after.get('ExitCode'),'oom_killed':after.get('OOMKilled')}
+          out['caucion_carryover_is_none']=q.get('caucion_carryover') is None
+          out['stop_evidence_names']=sorted((q.get('stop_evidence') or {}).keys())
           print(json.dumps(out,sort_keys=True))
           PY
       - name: Remove SSH key
