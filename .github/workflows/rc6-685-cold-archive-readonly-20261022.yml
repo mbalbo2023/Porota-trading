@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = bcb718d5b081bb298c174bed0b0a48b9d73181e0
+          test "$(git rev-parse HEAD^)" = 62b3ae7f8636bce378597293ebab2ddd138473bc
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -207,6 +207,34 @@ jobs:
               rows=db.execute('SELECT '+columns+' FROM '+table+' LIMIT 3').fetchall()
               result[label]=rows;db.close()
           print(json.dumps({'schema':'RC6_685_HISTORY_LINEAGE_SAMPLE_V1','rows':result},sort_keys=True,default=str))
+          PY
+      - name: Inspect alternate exact history identity samples
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -" <<'PY'
+          import json,sqlite3,time
+          from pathlib import Path
+          result={}
+          for label,path,table,columns in (
+              ('raw_archive',Path('/opt/porota-trading/data/paper_v17/observer_v17.db'),
+               'historical_raw_archive','origin,quality,substr(body_json,1,500)'),
+              ('candle_series',Path('/opt/porota-trading/data/market_history.db'),
+               'candle_series','substr(identity_json,1,500)'),
+              ('local_daily',Path('/opt/porota-trading/data/market_history.db'),
+               'history_local_daily_v1','substr(identity_json,1,500)')):
+              db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=1)
+              db.execute('PRAGMA query_only=ON')
+              deadline=time.monotonic()+3
+              db.set_progress_handler(lambda:int(time.monotonic()>deadline),500)
+              present=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(table,)).fetchone()
+              result[label]=db.execute('SELECT '+columns+' FROM '+table+' LIMIT 3').fetchall() if present else 'ABSENT'
+              db.close()
+          print(json.dumps({'schema':'RC6_685_ALTERNATE_HISTORY_IDENTITY_V1','samples':result},sort_keys=True))
           PY
       - name: Remove SSH key
         if: always()
