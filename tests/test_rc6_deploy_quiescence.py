@@ -205,7 +205,12 @@ def test_pending_paper_caucion_preserves_exact_audited_ledger_across_deploy(tmp_
     with sqlite3.connect(path) as c:
         c.execute("UPDATE observer_state SET mode='PRODUCTION_PAPER',real_orders_sent=0,"
                   "process_state='WAITING_MARKET',session_state='MARKET_CLOSED',heartbeat_at=? WHERE id=1",
-                  (datetime.now(timezone.utc).isoformat(),))
+                  ('2026-10-22T20:15:00+00:00',))
+    class IncidentClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 22, 20, 15, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(q, 'datetime', IncidentClock)
     monkeypatch.setattr(q, 'ROOT', root)
     states = {name: {'Id': name + '_id', 'Image': 'old_image',
                      'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0}}
