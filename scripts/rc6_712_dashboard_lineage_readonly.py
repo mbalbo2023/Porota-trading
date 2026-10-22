@@ -68,6 +68,11 @@ with Store(PATH) as store:
                    'funnel_keys':sorted(funnel) if isinstance(funnel,dict) else [],
                    'groups':[{'currency':g.get('currency'),'channel':g.get('channel'),
                               'stages':g.get('stages')} for g in groups[:16] if isinstance(g,dict)],
+                   'engines':{str(name):{'keys':sorted(plan),
+                                         'telemetry_count':len(plan.get('telemetry') or []),
+                                         'capacity_status':(plan.get('capacity') or {}).get('status'),
+                                         'capacity_reason_codes':(plan.get('capacity') or {}).get('reason_codes')}
+                              for name,plan in (report.get('engines') or {}).items() if isinstance(plan,dict)},
                    'funnel_counts':{k:v for k,v in (report.get('operational_funnel') or {}).get('counts',{}).items()
                                     if k in ('ELIGIBLE','TRADEABLE','HOT') and type(v) is int}}
 print('RC6_712_DASHBOARD_LINEAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
