@@ -1,0 +1,41 @@
+name: RC6 716 COLD pending PAPER read-only RCA
+on:
+  push:
+    branches:
+      - diagnostic/rc6-716-cold-pending-readonly-20261022
+    paths:
+      - .github/workflows/rc6-716-cold-pending-readonly.yml
+      - scripts/rc6_716_cold_pending_readonly.py
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict key and bounded read-only COLD receipt inspection
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile scripts/rc6_716_cold_pending_readonly.py
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_cold_readonly" "$HOME/.ssh/known_hosts"
+          timeout 35 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 25 python3 -' < scripts/rc6_716_cold_pending_readonly.py
+      - name: Runner cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_cold_readonly"
