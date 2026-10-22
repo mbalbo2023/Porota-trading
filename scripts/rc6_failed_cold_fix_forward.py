@@ -22,6 +22,8 @@ MANIFEST_SHA='4d8e93f529e4c7385710dbcff58c52bea764762eafc0190907b63b1b214f1c6d'
 CUT='b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8'
 OLD_SHA='b346fcc8ae6edc51be20ac7325cd068cdeb60832'
 PRIOR_ARCHIVE_SHA='d96cb68d177199317ee23239553517e04ee0a255'
+PRIOR_CANCELLED_SHA='dc15f2af0bdcdf9c53dd26a645a6a131471ce879'
+PRIOR_CANCELLED_RECEIPT_SHA='813ed6a0fb2e8b56fb9a9e1484f6976269bdf313082fc43a4c086f66bf841f80'
 FILES={IDENT+'.pack','manifest-'+IDENT+'.json','receipt-'+IDENT+'.json','queue.json'}
 
 
@@ -70,10 +72,22 @@ def proven_stop_cancellation(live, quiescence):
         re.fullmatch('[0-9a-f]{64}',caucion['sha256']) is not None)
     postclose=(quiescence.get('paused_postclose') is True and
                quiescence.get('intraday_caucion') is not True)
-    if ((not postclose and not intraday_caucion) or
+    closed_flat=(quiescence.get('paused_postclose') is False and
+                 quiescence.get('intraday_caucion') is False and
+                 quiescence.get('market_open_suspended') is False and
+                 quiescence.get('open_paper_carryover') is False and
+                 quiescence.get('spot_carryover') is None and
+                 quiescence.get('caucion_carryover') is None)
+    # The 2026-10-22 clean stop interrupted _frame() at line 265 while
+    # flushing an 8 MiB segment. The older stage() cancellation at line 360
+    # belongs to the separately proved postclose/caucion paths.
+    expected_line=(265 if closed_flat else 360 if (postclose or intraday_caucion)
+                   else None)
+    if (expected_line is None or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
             live.get('error_module')!='cold_audit' or
-            type(live.get('error_line')) is not int or live['error_line']!=360):
+            type(live.get('error_line')) is not int or
+            live['error_line']!=expected_line):
         return False
     proof=(quiescence.get('stop_evidence') or {}).get('porota_production_observer')
     if not isinstance(proof,dict) or proof.get('classification')!='CLEAN_EXIT':return False
@@ -91,7 +105,61 @@ def proven_stop_cancellation(live, quiescence):
     except (KeyError,AttributeError,TypeError,ValueError):return False
 
 
-def checked(directory,shadow, *, archived_recovery=False, quiescence=None):
+def proven_prior_stop_cancellation(live, current, prior_path):
+    """Adopt only the exact durable clean stop behind an unchanged live status.
+
+    A restored observer can leave status.json at its last fail-closed write.
+    A new quiescence has a different stop time; it must prove its own clean
+    stop without pretending that the historical status came from that stop.
+    """
+    if prior_path is None or not isinstance(current,dict):return False
+    try:
+        if (prior_path.is_symlink() or regular(prior_path).st_size>65536 or
+                current.get('candidate_sha')==PRIOR_CANCELLED_SHA or
+                current.get('status') not in {'DRAINED','HOST_INSTALLATION_STARTED'} or
+                current.get('real_orders_sent')!=0 or
+                current.get('ppi_watch_accessed') is not False or
+                not (current.get('paused_postclose') is False and
+                     current.get('intraday_caucion') is False and
+                     current.get('market_open_suspended') is False and
+                     current.get('open_paper_carryover') is False and
+                     current.get('spot_carryover') is None and
+                     current.get('caucion_carryover') is None)):
+            return False
+        raw=prior_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=PRIOR_CANCELLED_RECEIPT_SHA:
+            return False
+        prior=json.loads(raw)
+        if (prior.get('candidate_sha')!=PRIOR_CANCELLED_SHA or
+                prior.get('status')!='FIX_FORWARD_VALIDATION_REQUIRED' or
+                prior.get('installation_started') is not True or
+                prior.get('real_orders_sent')!=0 or
+                prior.get('ppi_watch_accessed') is not False or
+                live.get('real_orders_sent')!=0 or
+                live.get('real_routes')!='NOT_CALLED' or
+                not proven_stop_cancellation(live,prior)):
+            return False
+        stops=current.get('stop_evidence') or {}
+        if set(stops)!={'porota_production_observer','porota_production_dashboard'}:
+            return False
+        prior_end=datetime.fromisoformat(prior['stop_evidence']['porota_production_observer']
+             ['after']['FinishedAt'].replace('Z','+00:00'))
+        for proof in stops.values():
+            before,after=proof['before'],proof['after']
+            if (proof.get('classification')!='CLEAN_EXIT' or
+                    before.get('Status')!='running' or after.get('Status')!='exited' or
+                    type(after.get('ExitCode')) is not int or after['ExitCode']!=0 or
+                    after.get('OOMKilled') is not False):return False
+            start=datetime.fromisoformat(before['StartedAt'].replace('Z','+00:00'))
+            end=datetime.fromisoformat(after['FinishedAt'].replace('Z','+00:00'))
+            if (any(t.tzinfo is None for t in (prior_end,start,end)) or
+                    not prior_end<start<=end):return False
+        return True
+    except (OSError,KeyError,TypeError,ValueError):return False
+
+
+def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
+            prior_quiescence=None):
     info=directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)&0o077:
         raise ValueError('COLD_DIRECTORY_UNSAFE')
@@ -152,7 +220,8 @@ def checked(directory,shadow, *, archived_recovery=False, quiescence=None):
         # fail-closed cancellation; this is bound to the stop receipt/time.
         if (generation==CUT or old_cut_path.exists() or current_snapshot==IDENT or
                 (live.get('status')!='SHADOW_OBSERVING' and
-                 not proven_stop_cancellation(live,quiescence)) or
+                 not proven_stop_cancellation(live,quiescence) and
+                 not proven_prior_stop_cancellation(live,quiescence,prior_quiescence)) or
                 live.get('real_routes')!='NOT_CALLED'):
             raise ValueError('COLD_ARCHIVED_RECOVERY_NOT_PROVEN')
     elif live.get('status')!='FAIL_CLOSED':
@@ -265,8 +334,9 @@ def run(candidate):
     where=original_location(source,archive)
     if not where.exists():raise ValueError('COLD_ORIGINAL_MISSING')
     recovered_archive=where==archive and candidate!=PRIOR_ARCHIVE_SHA
+    prior_quiescence=deploy/('quiescence-'+PRIOR_CANCELLED_SHA+'.json')
     evidence=checked(where,shadow,archived_recovery=recovered_archive,
-                     quiescence=quiescence)
+                     quiescence=quiescence,prior_quiescence=prior_quiescence)
     prior_receipt_sha=(prior_archive_receipt(deploy,archive,evidence)
                        if recovered_archive else None)
     if where==source:
@@ -281,7 +351,7 @@ def run(candidate):
     elif source.exists():
         raise ValueError('COLD_ARCHIVE_INCOMPLETE')
     checked(archive,shadow,archived_recovery=recovered_archive,
-            quiescence=quiescence)
+            quiescence=quiescence,prior_quiescence=prior_quiescence)
     write(receipt_path,{'schema':'rc6.issue624.failed-cold-fix-forward.v1',
         'state':'ARCHIVED_OLD_CUT_STILL_REVOKED','old_sha':OLD_SHA,
         'candidate_sha':candidate,'archive':str(archive),
