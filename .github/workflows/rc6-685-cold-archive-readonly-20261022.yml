@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = f139b1271c8cac990ce771a850d5ac8d0c5ec3a8
+          test "$(git rev-parse HEAD^)" = 6facfc4440f3ea1c25628acd1178a95b3d3229df
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_cold_readonly"
@@ -125,6 +125,36 @@ jobs:
                   info[name]=item
               db.close();out[label]=info
           print(json.dumps(out,sort_keys=True,default=str))
+          PY
+      - name: Bounded PAPER state after failed promotion
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 50 ssh -i "$HOME/.ssh/rc6_cold_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -" <<'PY'
+          import json,sqlite3,subprocess
+          from pathlib import Path
+          path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=2)
+          db.execute('PRAGMA query_only=ON')
+          cols={r[1] for r in db.execute('PRAGMA table_info(observer_state)')}
+          selected=[v for v in ('mode','process_state','session_state','real_orders_sent','heartbeat_at','last_error') if v in cols]
+          state=dict(zip(selected,db.execute('SELECT '+','.join(selected)+' FROM observer_state WHERE id=1').fetchone()))
+          tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          counts={}
+          for name in ('paper_positions','paper_cauciones','paper_futures_positions'):
+              if name in tables:
+                  field='status' if 'status' in {r[1] for r in db.execute('PRAGMA table_info('+name+')')} else None
+                  counts[name]=db.execute('SELECT COUNT(*) FROM '+name+(' WHERE status=?' if field else ''),('OPEN',) if field else ()).fetchone()[0]
+          db.close()
+          containers={}
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              raw=subprocess.check_output(['docker','inspect','--format','{{.State.Status}}|{{.State.OOMKilled}}|{{.State.ExitCode}}',name],text=True,timeout=8).strip()
+              containers[name]=raw
+          print(json.dumps({'schema':'RC6_685_PAPER_STATE_READONLY_V1','state':state,'open_counts':counts,'containers':containers},sort_keys=True))
           PY
       - name: Remove SSH key
         if: always()
