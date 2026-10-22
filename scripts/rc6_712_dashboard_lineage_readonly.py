@@ -54,6 +54,8 @@ with Store(PATH) as store:
     projection=Projection(store)
     shadow=projection.shadow
     report=shadow.get('report') or {}
+    funnel=report.get('operational_funnel') or {}
+    groups=funnel.get('by_currency_channel') or []
     status=shadow.get('status') or {}
     out['shadow']={'state':shadow.get('state'),'reason':shadow.get('reason'),
                    'error_class':shadow.get('error_class'),
@@ -62,6 +64,10 @@ with Store(PATH) as store:
                    'report_as_of':report.get('as_of'),
                    'status_state':status.get('state'),
                    'status_as_of':status.get('as_of'),
+                   'report_keys':sorted(report),
+                   'funnel_keys':sorted(funnel) if isinstance(funnel,dict) else [],
+                   'groups':[{'currency':g.get('currency'),'channel':g.get('channel'),
+                              'stages':g.get('stages')} for g in groups[:16] if isinstance(g,dict)],
                    'funnel_counts':{k:v for k,v in (report.get('operational_funnel') or {}).get('counts',{}).items()
                                     if k in ('ELIGIBLE','TRADEABLE','HOT') and type(v) is int}}
 print('RC6_712_DASHBOARD_LINEAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
