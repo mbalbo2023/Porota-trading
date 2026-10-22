@@ -297,6 +297,9 @@ def pending_caucion_snapshot():
 
 def verified_pending_caucion_snapshot():
     """One exact, internally reconciled PAPER caucion; never settle it early."""
+    import sys
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from bt_caucion_paper import validate_position
     from cb_caucion_audit import _validated
     path = ROOT / 'data/paper_v17/observer_v17.db'
