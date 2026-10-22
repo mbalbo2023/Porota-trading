@@ -53,7 +53,7 @@ def test_apply_guard_accepts_masked_inactive_timer_exit_three(tmp_path, monkeypa
     (state / 'CURRENT_STATE_V2.json').write_text(json.dumps({
         'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0,
         'real_order_routes': 'NOT_CALLED', 'candidate_sha': candidate,
-        'validation_status': 'VALIDATED_RUNTIME', 'image_id': 'image'}))
+        'validation_status': 'DEPLOYED_VALIDATION_PENDING', 'image_id': 'image'}))
     policy = tmp_path / 'ops' / 'policy'
     policy.mkdir(parents=True)
     (policy / 'rc6-disk-housekeeping-v1.json').write_text(
@@ -73,6 +73,13 @@ def test_apply_guard_accepts_masked_inactive_timer_exit_three(tmp_path, monkeypa
         raise AssertionError(args)
     monkeypatch.setattr(retire.subprocess, 'run', command)
     assert retire.guard(candidate, apply=True)['candidate_sha'] == candidate
+    # Retirement precedes the final marker; a completed marker cannot be
+    # reused to delete another backup under this one-shot deploy sequence.
+    old = json.loads((state / 'CURRENT_STATE_V2.json').read_text())
+    old['validation_status'] = 'VALIDATED_RUNTIME'
+    (state / 'CURRENT_STATE_V2.json').write_text(json.dumps(old))
+    with pytest.raises(RuntimeError, match='CANDIDATE_SHA_CHANGED'):
+        retire.guard(candidate, apply=True)
 
 
 def test_exact_plan_removes_only_classified_files_and_persists_receipt(tmp_path, monkeypatch):

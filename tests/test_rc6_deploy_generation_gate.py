@@ -93,7 +93,10 @@ def test_canonical_gate_precedes_validated_state():
     root = Path(__file__).resolve().parents[1]
     text = (root / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     assert text.index('RC6_EXIT139_SOAK=GREEN') < text.index('rc6_deploy_generation_gate.py')
-    assert text.index('rc6_deploy_generation_gate.py') < text.index('"validation_status":"VALIDATED_RUNTIME"')
+    final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
+    assert text.index('rc6_deploy_generation_gate.py') < final
+    assert text.index('id: flat_book') < text.index('id: timers_restored') < text.index('id: backup_retire') < final
+    assert text.index('RC6_CURRENT_STATE_STILL_PENDING=1') < final
 
 
 def test_native_red_preserves_reviewed_freshness_cause_and_bounded_costs(tmp_path):
