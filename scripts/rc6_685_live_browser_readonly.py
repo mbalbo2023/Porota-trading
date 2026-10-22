@@ -102,10 +102,12 @@ def main(output):
                         "rendered_characters": len(body), "status_counts": status_counts,
                         "desktop": metrics}
                 if path == "/analitica/anual":
-                    item["annual_selector_links"] = page.locator('a[href^="/analitica/anual?"]').count()
+                    item["annual_selector_links"] = page.locator('a[href^="/analitica/anual?identity="]').count()
                     item["annual_no_selectable"] = "ANNUAL_NO_SELECTABLE_CANONICAL_SERIES" in body
                     if not item["annual_selector_links"] and not item["annual_no_selectable"]:
                         report["findings"].append({"kind": "annual_missing_honest_empty_state", "path": path})
+                    if item["annual_selector_links"] and item["annual_no_selectable"]:
+                        report["findings"].append({"kind": "annual_selector_conflicts_with_empty_state", "path": path})
                 if path == "/sistema/backups":
                     item["backup_operator_suspended"] = ("SUSPENDED_BY_OPERATOR" in body and
                         "Generación de backups suspendida" in body)
