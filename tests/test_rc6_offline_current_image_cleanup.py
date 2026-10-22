@@ -16,6 +16,7 @@ OLD_SHA = '1' * 40
 NEW_SHA = '2' * 40
 PREDEPLOY = 'porota-predeploy-v2:' + OLD_SHA
 CANDIDATE = 'porota-trading-bot:17.0.0-rc6-candidate-' + OLD_SHA
+HISTORICAL = 'sha256:'+'e'*64
 
 
 class Docker:
@@ -50,8 +51,10 @@ class Docker:
         if args[:2] == ('image', 'rm'):
             if self.before_remove: self.before_remove()
             assert STALE not in self.refs
-            self.images[STALE].remove(args[2])
-            if not self.images[STALE]: del self.images[STALE]
+            identity=next(ident for ident,tags in self.images.items() if args[2] in tags)
+            assert identity not in self.refs
+            self.images[identity].remove(args[2])
+            if not self.images[identity]: del self.images[identity]
             return ''
         raise AssertionError(args)
 
@@ -77,6 +80,28 @@ def test_retags_current_and_deletes_only_unreferenced_old_aliases(host):
     assert STALE not in host.images
     assert clean.STABLE in host.images[CURRENT]
     assert clean.cleanup()['stable'] == 'ALREADY_CURRENT'
+
+
+def test_shortfall_releases_only_exact_unreferenced_historical_predeploy(host,monkeypatch):
+    tag=clean.HISTORICAL_PREDEPLOY_TAGS[0]
+    host.images[HISTORICAL]=[tag]
+    monkeypatch.setattr(clean.shutil,'disk_usage',lambda _:SimpleNamespace(
+        free=1024**3+(STALE not in host.images)*400*1024**2+
+             (HISTORICAL not in host.images)*800*1024**2))
+    result=clean.cleanup(2*1024**3)
+    assert result['status']=='GREEN'
+    assert result['removed_tags']==[PREDEPLOY,CANDIDATE,tag]
+    assert HISTORICAL not in host.images and CURRENT in host.images
+    assert not any(args[0]=='prune' for args in host.calls)
+
+
+def test_historical_image_with_foreign_tag_blocks_extra_reclaim(host,monkeypatch):
+    tag=clean.HISTORICAL_PREDEPLOY_TAGS[0]
+    host.images[HISTORICAL]=[tag,'ppi-watch:keep']
+    monkeypatch.setattr(clean.shutil,'disk_usage',lambda _:SimpleNamespace(free=1024**3))
+    with pytest.raises(ValueError,match='HISTORICAL_IMAGE_UNSAFE'):
+        clean.cleanup(2*1024**3)
+    assert 'ppi-watch:keep' in host.images[HISTORICAL]
 
 
 @pytest.mark.parametrize('alien', ['external:keep', 'ppi-watch:latest'])
@@ -218,5 +243,57 @@ def test_closed_flat_validated_state_requires_stopped_paper_zero(tmp_path, monke
         clean.admission()
     with sqlite3.connect(db) as c:c.execute('DELETE FROM paper_cauciones')
     prior['market_open_suspended']='UNKNOWN';path.write_text(json.dumps(prior))
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING'):
+        clean.admission()
+
+
+def test_pending_paper_stop_allows_only_exact_unreferenced_image_cleanup(tmp_path,monkeypatch):
+    from scripts import rc6_deploy_quiescence as drain
+    root=tmp_path/'porota';folder=root/'data/deploy';folder.mkdir(parents=True)
+    (folder/'CURRENT_STATE_V2.json').write_text(json.dumps({
+        'candidate_sha':NEW_SHA,'image_id':CURRENT,'validation_status':'VALIDATED_RUNTIME',
+        'mode':'PRODUCTION_PAPER','real_orders_sent':0,'real_order_routes':'NOT_CALLED',
+        'recorded_at':'2026-10-22T02:33:14+00:00'}))
+    db=root/'data/paper_v17/observer_v17.db';db.parent.mkdir(parents=True)
+    with sqlite3.connect(db) as c:
+        c.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER,process_state TEXT,session_state TEXT)')
+        c.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,'STOPPED','MARKET_CLOSED')")
+        for table in ('paper_positions','paper_cauciones','paper_future_positions'):
+            c.execute(f'CREATE TABLE {table}(status TEXT)')
+        c.execute("INSERT INTO paper_cauciones VALUES('OPEN')")
+    monkeypatch.setattr(clean,'ROOT',root)
+    owned={name:{'Id':name,'Image':CURRENT,'State':{'Status':'exited','ExitCode':0}}
+           for name in clean.OWNED}
+    owned[clean.CRITICAL]={'Id':'critical','Image':CURRENT,'RestartCount':0,
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    monkeypatch.setattr(clean,'inspect',lambda name:owned[name])
+    monkeypatch.setattr(clean,'docker',lambda *args:'RC6_CRITICAL_ISSUES_ONLY=GREEN')
+    monkeypatch.setattr(clean,'ppi_units',lambda:{})
+    carry={'open_count':1,'maturity_at':'2026-10-23T17:00:00-03:00',
+           'allocation_reconciled':True,'sha256':'a'*64,
+           'audit_source_sha256':
+               'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865'}
+    prior={'candidate_sha':OLD_SHA,'recorded_at':'2026-10-22T22:34:00+00:00',
+           'status':'FIX_FORWARD_VALIDATION_REQUIRED','installation_started':True,
+           'market_open_suspended':False,'open_paper_carryover':False,
+           'paused_postclose':False,'intraday_caucion':False,'pending_caucion':True,
+           'spot_carryover':None,'caucion_carryover':carry,
+           'containers':{name:{'id':owned[name]['Id'],'image':CURRENT} for name in clean.OWNED}}
+    path=folder/('quiescence-'+OLD_SHA+'.json');path.write_text(json.dumps(prior))
+    monkeypatch.setattr(drain,'exact_clean_stopped',lambda receipt:None)
+    monkeypatch.setattr(drain,'admit',lambda **kwargs:'STOPPED' if kwargs.get('allow_pending_caucion') else 'INVALID')
+    observed=[carry.copy()]
+    monkeypatch.setattr(drain,'verified_pending_caucion_snapshot',lambda:observed[0])
+    assert clean.admission()['flat_stop_proof']==(OLD_SHA,prior['recorded_at'],'a'*64)
+    observed[0]={**carry,'sha256':'0'*64}
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_PENDING_CAUCION_CHANGED'):
+        clean.admission()
+    observed[0]=carry.copy()
+    with sqlite3.connect(db) as c:c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_FLAT_POSITION_OPEN'):
+        clean.admission()
+    with sqlite3.connect(db) as c:c.execute('DELETE FROM paper_positions')
+    prior['caucion_carryover']['audit_source_sha256']='0'*64
+    path.write_text(json.dumps(prior))
     with pytest.raises(ValueError,match='OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING'):
         clean.admission()

@@ -22,6 +22,11 @@ OWNED = ('porota_production_observer', 'porota_production_dashboard')
 CRITICAL = 'porota_critical_approval_rc6'
 IMAGE = re.compile(r'sha256:[a-f0-9]{64}')
 CANDIDATE_TAG = re.compile(r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)[a-f0-9]{40}')
+HISTORICAL_PREDEPLOY_TAGS = tuple('porota-predeploy-v2:' + sha for sha in (
+    'dc15f2af0bdcdf9c53dd26a645a6a131471ce879',
+    '9b138e8b759ce5046419f5827375a1ff530ca6b9',
+    '0efa73664ed90ea55402d96303ee900924a1941a',
+    'f31393fdced65f6e2362e69c9ed1df934897296d'))
 
 
 def command(*args):
@@ -121,7 +126,23 @@ def admission():
                            prior.get('paused_postclose') is False and
                            prior.get('intraday_caucion') is False and
                            prior.get('spot_carryover') is None and
-                           prior.get('caucion_carryover') is None)
+                           prior.get('caucion_carryover') is None and
+                           prior.get('pending_caucion') is not True)
+            caucion = prior.get('caucion_carryover')
+            closed_pending = (prior.get('pending_caucion') is True and
+                              prior.get('market_open_suspended') is False and
+                              prior.get('open_paper_carryover') is False and
+                              prior.get('paused_postclose') is False and
+                              prior.get('intraday_caucion') is False and
+                              prior.get('spot_carryover') is None and
+                              isinstance(caucion,dict) and
+                              caucion.get('open_count') == 1 and
+                              caucion.get('maturity_at') == '2026-10-23T17:00:00-03:00' and
+                              caucion.get('allocation_reconciled') is True and
+                              caucion.get('audit_source_sha256') ==
+                                  'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865' and
+                              type(caucion.get('sha256')) is str and
+                              re.fullmatch('[a-f0-9]{64}', caucion['sha256']) is not None)
             open_flat = (prior.get('market_open_suspended') is True and
                          prior.get('open_paper_carryover') is False and
                          prior.get('paused_postclose') is False and
@@ -130,7 +151,7 @@ def admission():
                          prior.get('caucion_carryover') is None)
             if (prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
                     prior.get('installation_started') is not True or
-                    not (intraday_mode or closed_flat or open_flat) or
+                    not (intraday_mode or closed_flat or closed_pending or open_flat) or
                     set(prior.get('containers', {})) != set(OWNED) or
                     any(prior['containers'][name].get('id') != owned[name]['Id'] or
                         prior['containers'][name].get('image') != owned[name]['Image']
@@ -150,8 +171,10 @@ def admission():
                      prior.get('spot_carryover') is None and
                      prior.get('caucion_carryover') is None)
         if prior.get('market_open_suspended') is False or open_flat:
+            pending = prior.get('pending_caucion') is True
             observed = drain.admit(stopped=True,
-                allow_market_open_suspend=open_flat, stopped_receipt=prior)
+                allow_market_open_suspend=open_flat,
+                allow_pending_caucion=pending, stopped_receipt=prior)
             if observed not in ({'RUNNING','STOPPED'} if open_flat else {'STOPPED'}):
                 raise ValueError('OFFLINE_CURRENT_FLAT_STOP_RED')
             db=ROOT/'data/paper_v17/observer_v17.db'
@@ -166,9 +189,14 @@ def admission():
                     raise ValueError('OFFLINE_CURRENT_FLAT_PAPER_RED')
                 for table,value in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
                                     ('paper_future_positions','ACTIVE')):
+                    if table == 'paper_cauciones' and pending:
+                        if drain.verified_pending_caucion_snapshot() != prior.get('caucion_carryover'):
+                            raise ValueError('OFFLINE_CURRENT_PENDING_CAUCION_CHANGED')
+                        continue
                     if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(value,)).fetchone():
                         raise ValueError('OFFLINE_CURRENT_FLAT_POSITION_OPEN')
-            flat_stop_proof = (prior['candidate_sha'], prior['recorded_at'])
+            flat_stop_proof = (prior['candidate_sha'], prior['recorded_at']) + (
+                (prior['caucion_carryover']['sha256'],) if pending else ())
         else:
             observed = drain.admit(stopped=True, allow_market_open_suspend=True,
                                    allow_open_paper_carryover=True,
@@ -204,7 +232,11 @@ def admission():
             'intraday_proof':intraday,'flat_stop_proof':flat_stop_proof}
 
 
-def cleanup():
+def cleanup(required_free_bytes=None):
+    if (required_free_bytes is not None and
+            (type(required_free_bytes) is not int or
+             not 1024**3 <= required_free_bytes <= 16*1024**3)):
+        raise ValueError('OFFLINE_CURRENT_REQUIRED_SPACE_INVALID')
     lock=ROOT/'data/deploy/.deploy-quiescence.lock'
     if lock.is_symlink() or not lock.is_file() or not stat.S_ISREG(lock.lstat().st_mode):
         raise ValueError('OFFLINE_CURRENT_LOCK_UNSAFE')
@@ -249,6 +281,22 @@ def cleanup():
             removed.append(tag)
         if admission()!=before or image(STABLE)['Id']!=current:
             raise ValueError('OFFLINE_CURRENT_POSTSTATE_CHANGED')
+        # The runner builds the new image. Only if the exact stale image was
+        # insufficient, release observed, singly tagged RC6 predeploy images.
+        # No Docker build cache, foreign tag, volume or container is touched.
+        for tag in HISTORICAL_PREDEPLOY_TAGS if required_free_bytes is not None else ():
+            if shutil.disk_usage('/').free >= required_free_bytes:
+                break
+            old=image(tag)
+            if (old['Id'] in {current,stale_id} or old['Id'] in references() or
+                    old.get('RepoTags') != [tag] or old.get('RepoDigests')):
+                raise ValueError('OFFLINE_CURRENT_HISTORICAL_IMAGE_UNSAFE')
+            if admission()!=before or image(STABLE)['Id']!=current:
+                raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
+            docker('image','rm',tag)
+            removed.append(tag)
+            if admission()!=before or image(STABLE)['Id']!=current:
+                raise ValueError('OFFLINE_CURRENT_POSTSTATE_CHANGED')
         return {'status':'GREEN','stable':'RECONCILED_TO_CURRENT',
                 'current_image':current,'stale_image':stale_id,'removed_tags':removed,
                 'disk_before':free_before,'disk_after':shutil.disk_usage('/').free,
@@ -256,4 +304,6 @@ def cleanup():
 
 
 if __name__=='__main__':
-    print(json.dumps(cleanup(),sort_keys=True))
+    if len(sys.argv)!=2 or not re.fullmatch('[0-9]{10,11}',sys.argv[1]):
+        raise ValueError('OFFLINE_CURRENT_REQUIRED_SPACE_ARGUMENT')
+    print(json.dumps(cleanup(int(sys.argv[1])),sort_keys=True))
