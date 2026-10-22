@@ -297,11 +297,23 @@ def pending_caucion_snapshot():
 
 def verified_pending_caucion_snapshot():
     """One exact, internally reconciled PAPER caucion; never settle it early."""
+    import base64
     import sys
+    import types
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     from bt_caucion_paper import validate_position
-    from cb_caucion_audit import _validated
+    source_b64 = os.environ.get('RC6_CANDIDATE_CAUCION_AUDIT_B64')
+    if source_b64:
+        raw_source = base64.b64decode(source_b64, validate=True)
+        if not 8000 <= len(raw_source) <= 16000:
+            raise ValueError('QUIESCENCE_CANDIDATE_AUDIT_BOUND')
+        audit = types.ModuleType('rc6_candidate_cb_caucion_audit')
+        exec(compile(raw_source, 'candidate/cb_caucion_audit.py', 'exec'), audit.__dict__)
+    else:
+        import cb_caucion_audit as audit
+        raw_source = Path(audit.__file__).read_bytes()
+    audit_sha256 = hashlib.sha256(raw_source).hexdigest()
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
         c.row_factory = sqlite3.Row
@@ -330,7 +342,7 @@ def verified_pending_caucion_snapshot():
                                 (p['paper_id'],)).fetchall()
         if len(allocations) != 1:
             raise ValueError('QUIESCENCE_PENDING_ALLOCATION_MISSING')
-        _, placement = _validated(allocations[0], c)
+        _, placement = audit._validated(allocations[0], c)
         if not placement or placement['paper_id'] != p['paper_id'] or placement['status'] != 'OPEN':
             raise ValueError('QUIESCENCE_PENDING_ALLOCATION_CHANGED')
         raw = json.dumps({'position': p, 'allocation': dict(allocations[0])},
@@ -339,7 +351,8 @@ def verified_pending_caucion_snapshot():
             raise ValueError('QUIESCENCE_PENDING_SNAPSHOT_BOUND')
         return {'open_count': 1, 'sha256': hashlib.sha256(raw).hexdigest(),
                 'paper_id_sha256': hashlib.sha256(p['paper_id'].encode()).hexdigest(),
-                'maturity_at': p['maturity_at'], 'allocation_reconciled': True}
+                'maturity_at': p['maturity_at'], 'allocation_reconciled': True,
+                'audit_source_sha256': audit_sha256}
 
 
 def verify_spot_carryover(receipt):
