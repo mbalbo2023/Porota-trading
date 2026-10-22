@@ -122,9 +122,15 @@ def admission():
                            prior.get('intraday_caucion') is False and
                            prior.get('spot_carryover') is None and
                            prior.get('caucion_carryover') is None)
+            open_flat = (prior.get('market_open_suspended') is True and
+                         prior.get('open_paper_carryover') is False and
+                         prior.get('paused_postclose') is False and
+                         prior.get('intraday_caucion') is False and
+                         prior.get('spot_carryover') is None and
+                         prior.get('caucion_carryover') is None)
             if (prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
                     prior.get('installation_started') is not True or
-                    not (intraday_mode or closed_flat) or
+                    not (intraday_mode or closed_flat or open_flat) or
                     set(prior.get('containers', {})) != set(OWNED) or
                     any(prior['containers'][name].get('id') != owned[name]['Id'] or
                         prior['containers'][name].get('image') != owned[name]['Image']
@@ -137,15 +143,26 @@ def admission():
             raise ValueError('OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING')
         prior = eligible[-1][1]
         drain.exact_clean_stopped(prior)
-        if prior.get('market_open_suspended') is False:
-            if drain.admit(stopped=True, stopped_receipt=prior) != 'STOPPED':
+        open_flat = (prior.get('market_open_suspended') is True and
+                     prior.get('open_paper_carryover') is False and
+                     prior.get('intraday_caucion') is False and
+                     prior.get('paused_postclose') is False and
+                     prior.get('spot_carryover') is None and
+                     prior.get('caucion_carryover') is None)
+        if prior.get('market_open_suspended') is False or open_flat:
+            observed = drain.admit(stopped=True,
+                allow_market_open_suspend=open_flat, stopped_receipt=prior)
+            if observed not in ({'RUNNING','STOPPED'} if open_flat else {'STOPPED'}):
                 raise ValueError('OFFLINE_CURRENT_FLAT_STOP_RED')
             db=ROOT/'data/paper_v17/observer_v17.db'
             with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
                 c.execute('PRAGMA query_only=ON')
                 row=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
                 if (not row or row[0]!='PRODUCTION_PAPER' or type(row[1]) is not int or row[1]!=0 or
-                        row[2]!='STOPPED' or row[3] not in {'CLOSED','MARKET_CLOSED'}):
+                        row[2] not in ({'STOPPED','RUNNING'} if open_flat else {'STOPPED'}) or
+                        row[3] not in (
+                            {'MARKET_OPEN','OPEN'} if open_flat else
+                            {'CLOSED','MARKET_CLOSED'})):
                     raise ValueError('OFFLINE_CURRENT_FLAT_PAPER_RED')
                 for table,value in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
                                     ('paper_future_positions','ACTIVE')):

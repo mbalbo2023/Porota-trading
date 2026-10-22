@@ -78,12 +78,65 @@ def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
         'as_of': '2026-10-22T00:40:40+00:00'}, q)
     assert not recovery.proven_stop_cancellation(live, {**q,
         'caucion_carryover': {'open_count': 1}})
-    assert not recovery.proven_stop_cancellation(live, {**q,
+    assert recovery.proven_stop_cancellation(live, {**q,
         'market_open_suspended': True})
+    assert not recovery.proven_stop_cancellation(live, {**q,
+        'market_open_suspended': True, 'open_paper_carryover': True})
     assert not recovery.proven_stop_cancellation(live, {**q,
         'stop_evidence': {'porota_production_observer': {
             **q['stop_evidence']['porota_production_observer'],
             'classification': 'UNKNOWN'}}})
+
+
+def test_open_flat_clean_stop_inherited_by_exact_failed_deploy(tmp_path):
+    # #703 stopped a flat OPEN PAPER observer while _frame flushed its segment.
+    # The live FAIL_CLOSED status precedes the clean exit by 5.19 seconds.
+    prior_sha='83855c3b08647243dcd706ca7ead929378c4c11d'
+    stop={'classification':'CLEAN_EXIT',
+        'before':{'Status':'running','StartedAt':'2026-10-22T13:58:50.536918847Z'},
+        'after':{'Status':'exited','ExitCode':0,'OOMKilled':False,
+                 'FinishedAt':'2026-10-22T15:22:02.310428782Z'}}
+    evidence={'porota_production_observer':stop,
+              'porota_production_dashboard':{'classification':'CLEAN_EXIT'}}
+    containers={name:{'id':name+'-id','image':'sha256:'+'a'*64}
+                for name in evidence}
+    flat={'paused_postclose':False,'intraday_caucion':False,
+          'market_open_suspended':True,'open_paper_carryover':False,
+          'spot_carryover':None,'caucion_carryover':None}
+    prior={**flat,'candidate_sha':prior_sha,
+           'status':'FIX_FORWARD_VALIDATION_REQUIRED',
+           'installation_started':True,'inflight':'ABSENT_OWNED_RUNTIME_STOPPED',
+           'real_orders_sent':0,'ppi_watch_accessed':False,
+           'stop_evidence':evidence,'containers':containers}
+    path=tmp_path/('quiescence-'+prior_sha+'.json')
+    raw=json.dumps(prior,sort_keys=True).encode()
+    path.write_bytes(raw);path.chmod(0o600)
+    current={**flat,'candidate_sha':'f'*40,'fix_forward_from':prior_sha,
+             'prior_receipt_sha256':recovery.hashlib.sha256(raw).hexdigest(),
+             'status':'HOST_INSTALLATION_STARTED','real_orders_sent':0,
+             'ppi_watch_accessed':False,'stop_evidence':evidence,
+             'containers':containers}
+    live={'status':'FAIL_CLOSED','error_class':'ValueError',
+          'error_module':'cold_audit','error_line':265,
+          'as_of':'2026-10-22T15:21:57.117973+00:00',
+          'real_orders_sent':0,'real_routes':'NOT_CALLED'}
+    assert recovery.proven_stop_cancellation(live,prior)
+    assert recovery.proven_inherited_flat_stop_cancellation(live,current,path)
+    for changed in ({'prior_receipt_sha256':'0'*64},
+                    {'fix_forward_from':'e'*40},
+                    {'market_open_suspended':False},
+                    {'stop_evidence':{**evidence,'porota_production_observer':
+                                      {**stop,'classification':'UNKNOWN'}}},
+                    {'containers':{**containers,'porota_production_observer':
+                                   {**containers['porota_production_observer'], 'id':'wrong'}}}):
+        assert not recovery.proven_inherited_flat_stop_cancellation(
+            live,{**current,**changed},path)
+    for changed in ({'error_line':360}, {'real_orders_sent':1},
+                    {'as_of':'2026-10-22T15:21:30+00:00'}):
+        assert not recovery.proven_inherited_flat_stop_cancellation(
+            {**live,**changed},current,path)
+    path.write_bytes(raw+b' ')
+    assert not recovery.proven_inherited_flat_stop_cancellation(live,current,path)
 
 
 def test_unchanged_previous_cancellation_requires_hashed_receipt_and_new_clean_stop(

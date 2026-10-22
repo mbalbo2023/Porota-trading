@@ -209,5 +209,14 @@ def test_closed_flat_validated_state_requires_stopped_paper_zero(tmp_path, monke
     with pytest.raises(ValueError,match='OFFLINE_CURRENT_FLAT_STOP_RED'):
         clean.admission()
     prior['market_open_suspended']=True;path.write_text(json.dumps(prior))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN'")
+    open_result=clean.admission()
+    assert open_result['flat_stop_proof']==(OLD_SHA,prior['recorded_at'])
+    with sqlite3.connect(db) as c:c.execute("INSERT INTO paper_cauciones VALUES('OPEN')")
+    with pytest.raises(ValueError,match='OFFLINE_CURRENT_FLAT_POSITION_OPEN'):
+        clean.admission()
+    with sqlite3.connect(db) as c:c.execute('DELETE FROM paper_cauciones')
+    prior['market_open_suspended']='UNKNOWN';path.write_text(json.dumps(prior))
     with pytest.raises(ValueError,match='OFFLINE_CURRENT_EXACT_FAILURE_RECEIPT_MISSING'):
         clean.admission()

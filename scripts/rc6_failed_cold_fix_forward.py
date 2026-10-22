@@ -100,16 +100,16 @@ def proven_stop_cancellation(live, quiescence):
         re.fullmatch('[0-9a-f]{64}',caucion['sha256']) is not None)
     postclose=(quiescence.get('paused_postclose') is True and
                quiescence.get('intraday_caucion') is not True)
-    closed_flat=(quiescence.get('paused_postclose') is False and
+    flat=(quiescence.get('paused_postclose') is False and
                  quiescence.get('intraday_caucion') is False and
-                 quiescence.get('market_open_suspended') is False and
+                 type(quiescence.get('market_open_suspended')) is bool and
                  quiescence.get('open_paper_carryover') is False and
                  quiescence.get('spot_carryover') is None and
                  quiescence.get('caucion_carryover') is None)
     # The 2026-10-22 clean stop interrupted _frame() at line 265 while
     # flushing an 8 MiB segment. The older stage() cancellation at line 360
     # belongs to the separately proved postclose/caucion paths.
-    expected_line=(265 if closed_flat else 360 if (postclose or intraday_caucion)
+    expected_line=(265 if flat else 360 if (postclose or intraday_caucion)
                    else None)
     if (expected_line is None or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
@@ -186,8 +186,54 @@ def proven_prior_stop_cancellation(live, current, prior_path):
     except (OSError,KeyError,TypeError,ValueError):return False
 
 
+def proven_inherited_flat_stop_cancellation(live, current, prior_path):
+    """The next candidate can inherit the same exact clean stop, never a new one.
+
+    Quiescence independently pins the stopped container IDs, image, PAPER flat
+    book, critical approval and hash of its immediate predecessor's receipt.
+    This predicate additionally binds the unchanged COLD cancellation to that
+    predecessor's stop time and rejects any edited or unrelated receipt.
+    """
+    if prior_path is None or not isinstance(current,dict):return False
+    try:
+        if (prior_path.is_symlink() or regular(prior_path).st_size>65536 or
+                current.get('fix_forward_from')!='83855c3b08647243dcd706ca7ead929378c4c11d' or
+                current.get('candidate_sha')==current['fix_forward_from'] or
+                current.get('status') not in {'DRAINED','HOST_INSTALLATION_STARTED'} or
+                type(current.get('real_orders_sent')) is not int or current['real_orders_sent']!=0 or
+                current.get('ppi_watch_accessed') is not False or
+                current.get('paused_postclose') is not False or
+                current.get('intraday_caucion') is not False or
+                current.get('market_open_suspended') is not True or
+                current.get('open_paper_carryover') is not False or
+                current.get('spot_carryover') is not None or
+                current.get('caucion_carryover') is not None):return False
+        raw=prior_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=current.get('prior_receipt_sha256'):
+            return False
+        prior=json.loads(raw)
+        return (prior.get('candidate_sha')==current['fix_forward_from'] and
+                prior.get('status')=='FIX_FORWARD_VALIDATION_REQUIRED' and
+                prior.get('installation_started') is True and
+                prior.get('inflight')=='ABSENT_OWNED_RUNTIME_STOPPED' and
+                type(prior.get('real_orders_sent')) is int and prior['real_orders_sent']==0 and
+                prior.get('ppi_watch_accessed') is False and
+                all(prior.get(key)==current.get(key) for key in
+                    ('paused_postclose','intraday_caucion','market_open_suspended',
+                     'open_paper_carryover','spot_carryover','caucion_carryover',
+                     'stop_evidence','containers')) and
+                set(current.get('stop_evidence',{}))==
+                    {'porota_production_observer','porota_production_dashboard'} and
+                set(current.get('containers',{}))==
+                    {'porota_production_observer','porota_production_dashboard'} and
+                live.get('real_orders_sent')==0 and
+                live.get('real_routes')=='NOT_CALLED' and
+                proven_stop_cancellation(live,prior))
+    except (OSError,KeyError,TypeError,ValueError):return False
+
+
 def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
-            prior_quiescence=None):
+            prior_quiescence=None, inherited_quiescence=None):
     info=directory.lstat()
     if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)&0o077:
         raise ValueError('COLD_DIRECTORY_UNSAFE')
@@ -250,6 +296,7 @@ def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
                 (live.get('status')!='SHADOW_OBSERVING' and
                  not proven_stop_cancellation(live,quiescence) and
                  not proven_prior_stop_cancellation(live,quiescence,prior_quiescence) and
+                 not proven_inherited_flat_stop_cancellation(live,quiescence,inherited_quiescence) and
                  not (live.get('status')=='FAIL_CLOSED' and
                       proven_distinct_failed_successor(directory,generation,current_snapshot))) or
                 live.get('real_routes')!='NOT_CALLED'):
@@ -365,8 +412,10 @@ def run(candidate):
     if not where.exists():raise ValueError('COLD_ORIGINAL_MISSING')
     recovered_archive=where==archive and candidate!=PRIOR_ARCHIVE_SHA
     prior_quiescence=deploy/('quiescence-'+PRIOR_CANCELLED_SHA+'.json')
+    inherited_quiescence=deploy/'quiescence-83855c3b08647243dcd706ca7ead929378c4c11d.json'
     evidence=checked(where,shadow,archived_recovery=recovered_archive,
-                     quiescence=quiescence,prior_quiescence=prior_quiescence)
+                     quiescence=quiescence,prior_quiescence=prior_quiescence,
+                     inherited_quiescence=inherited_quiescence)
     prior_receipt_sha=(prior_archive_receipt(deploy,archive,evidence)
                        if recovered_archive else None)
     if where==source:
@@ -381,7 +430,8 @@ def run(candidate):
     elif source.exists():
         raise ValueError('COLD_ARCHIVE_INCOMPLETE')
     checked(archive,shadow,archived_recovery=recovered_archive,
-            quiescence=quiescence,prior_quiescence=prior_quiescence)
+            quiescence=quiescence,prior_quiescence=prior_quiescence,
+            inherited_quiescence=inherited_quiescence)
     write(receipt_path,{'schema':'rc6.issue624.failed-cold-fix-forward.v1',
         'state':'ARCHIVED_OLD_CUT_STILL_REVOKED','old_sha':OLD_SHA,
         'candidate_sha':candidate,'archive':str(archive),
