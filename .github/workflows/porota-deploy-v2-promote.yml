@@ -173,7 +173,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "sudo -n timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64'" <<'PY'
-          import base64,sqlite3,sys,types
+          import base64,os,sqlite3,sys,types
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_deploy_quiescence import (
@@ -259,15 +259,22 @@ jobs:
               # A failed installed promotion leaves its exact prior image
               # cleanly stopped. Reuse the established read-only provenance,
               # ledger and independent critical-broker checks before any write.
+              with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                  c.execute('PRAGMA query_only=ON')
+                  pending=c.execute("SELECT COUNT(*) FROM paper_cauciones WHERE status='OPEN'").fetchone()[0]
+              if pending:
+                  os.environ['RC6_CANDIDATE_CAUCION_AUDIT_B64']=sys.argv[2]
               receipt=adopt_stopped_after_failed_install(
-                  sys.argv[1],ROOT/'data/deploy',originals)
+                  sys.argv[1],ROOT/'data/deploy',originals,
+                  allow_pending_caucion=bool(pending))
               exact_clean_stopped(receipt)
               if (receipt.get('status')!='DRAINED' or
                       receipt.get('real_orders_sent')!=0 or
                       receipt.get('ppi_watch_accessed') is not False or
-                      admit(stopped=True,stopped_receipt=receipt)!='STOPPED'):
+                      admit(stopped=True,allow_pending_caucion=bool(pending),
+                            stopped_receipt=receipt)!='STOPPED'):
                   raise SystemExit('RC6_STOPPED_FLAT_RECEIPT_RED')
-              print('CLOSED')
+              print('CLOSED_CAUCION' if pending else 'CLOSED')
           else:
               raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
           PY

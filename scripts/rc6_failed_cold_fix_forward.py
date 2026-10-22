@@ -98,6 +98,19 @@ def proven_stop_cancellation(live, quiescence):
         caucion.get('maturity_at')=='2026-10-21T17:00:00-03:00' and
         type(caucion.get('sha256')) is str and
         re.fullmatch('[0-9a-f]{64}',caucion['sha256']) is not None)
+    pending_caucion=(quiescence.get('pending_caucion') is True and
+        quiescence.get('paused_postclose') is False and
+        quiescence.get('intraday_caucion') is False and
+        quiescence.get('market_open_suspended') is False and
+        quiescence.get('open_paper_carryover') is False and
+        quiescence.get('spot_carryover') is None and
+        isinstance(caucion,dict) and caucion.get('open_count')==1 and
+        caucion.get('maturity_at')=='2026-10-23T17:00:00-03:00' and
+        caucion.get('allocation_reconciled') is True and
+        caucion.get('audit_source_sha256')==
+            'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865' and
+        type(caucion.get('sha256')) is str and
+        re.fullmatch('[0-9a-f]{64}',caucion['sha256']) is not None)
     postclose=(quiescence.get('paused_postclose') is True and
                quiescence.get('intraday_caucion') is not True)
     flat=(quiescence.get('paused_postclose') is False and
@@ -109,7 +122,7 @@ def proven_stop_cancellation(live, quiescence):
     # The 2026-10-22 clean stop interrupted _frame() at line 265 while
     # flushing an 8 MiB segment. The older stage() cancellation at line 360
     # belongs to the separately proved postclose/caucion paths.
-    expected_line=(265 if flat else 360 if (postclose or intraday_caucion)
+    expected_line=(265 if flat else 360 if (postclose or intraday_caucion or pending_caucion)
                    else None)
     if (expected_line is None or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
@@ -232,6 +245,44 @@ def proven_inherited_flat_stop_cancellation(live, current, prior_path):
     except (OSError,KeyError,TypeError,ValueError):return False
 
 
+def proven_inherited_pending_stop_cancellation(live, current, prior_path):
+    """Bind a later candidate to the exact pending PAPER stop and prior receipt."""
+    if prior_path is None or not isinstance(current,dict):return False
+    try:
+        previous_candidate=current.get('fix_forward_from')
+        if (type(previous_candidate) is not str or
+                re.fullmatch('[0-9a-f]{40}',previous_candidate) is None or
+                prior_path.name!='quiescence-'+previous_candidate+'.json' or
+                prior_path.is_symlink() or regular(prior_path).st_size>65536 or
+                current.get('candidate_sha')==previous_candidate or
+                current.get('status') not in {'DRAINED','HOST_INSTALLATION_STARTED'} or
+                current.get('real_orders_sent')!=0 or
+                current.get('ppi_watch_accessed') is not False or
+                current.get('pending_caucion') is not True):return False
+        raw=prior_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=current.get('prior_receipt_sha256'):
+            return False
+        prior=json.loads(raw)
+        return (prior.get('candidate_sha')==previous_candidate and
+                prior.get('status')=='FIX_FORWARD_VALIDATION_REQUIRED' and
+                prior.get('installation_started') is True and
+                prior.get('inflight')=='ABSENT_OWNED_RUNTIME_STOPPED' and
+                prior.get('real_orders_sent')==0 and
+                prior.get('ppi_watch_accessed') is False and
+                all(prior.get(key)==current.get(key) for key in
+                    ('pending_caucion','paused_postclose','intraday_caucion',
+                     'market_open_suspended','open_paper_carryover',
+                     'spot_carryover','caucion_carryover','stop_evidence','containers')) and
+                set(current.get('stop_evidence',{}))==
+                    {'porota_production_observer','porota_production_dashboard'} and
+                set(current.get('containers',{}))==
+                    {'porota_production_observer','porota_production_dashboard'} and
+                live.get('real_orders_sent')==0 and
+                live.get('real_routes')=='NOT_CALLED' and
+                proven_stop_cancellation(live,prior))
+    except (OSError,KeyError,TypeError,ValueError):return False
+
+
 def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
             prior_quiescence=None, inherited_quiescence=None):
     info=directory.lstat()
@@ -297,6 +348,10 @@ def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
                  not proven_stop_cancellation(live,quiescence) and
                  not proven_prior_stop_cancellation(live,quiescence,prior_quiescence) and
                  not proven_inherited_flat_stop_cancellation(live,quiescence,inherited_quiescence) and
+                 not proven_inherited_pending_stop_cancellation(live,quiescence,
+                     (ROOT/'data/deploy'/('quiescence-'+quiescence['fix_forward_from']+'.json'))
+                     if isinstance(quiescence,dict) and
+                        re.fullmatch('[0-9a-f]{40}',str(quiescence.get('fix_forward_from'))) else None) and
                  not (live.get('status')=='FAIL_CLOSED' and
                       proven_distinct_failed_successor(directory,generation,current_snapshot))) or
                 live.get('real_routes')!='NOT_CALLED'):

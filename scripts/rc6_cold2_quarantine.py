@@ -319,7 +319,24 @@ def _admit(root, admission, expected_owned_ids):
               state.get('no_positions') is True and
               state.get('market_open_suspended') is not True and
               state.get('open_paper_carryover') is not True and
-              state.get('intraday_caucion') is not True)
+              state.get('intraday_caucion') is not True and
+              state.get('pending_caucion') is not True and
+              carry is None and caucion is None)
+    closed_pending_caucion = (type(state) is dict and
+              state.get('market_closed') is True and
+              state.get('no_positions') is False and
+              state.get('market_open_suspended') is False and
+              state.get('open_paper_carryover') is False and
+              state.get('intraday_caucion') is False and
+              state.get('pending_caucion') is True and
+              carry is None and type(caucion) is dict and
+              caucion.get('open_count') == 1 and
+              caucion.get('maturity_at') == '2026-10-23T17:00:00-03:00' and
+              caucion.get('allocation_reconciled') is True and
+              caucion.get('audit_source_sha256') ==
+                  'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865' and
+              type(caucion.get('sha256')) is str and
+              re.fullmatch('[a-f0-9]{64}', caucion['sha256']) is not None)
     intraday_flat = (type(state) is dict and
                      state.get('market_closed') is False and
                      state.get('no_positions') is True and
@@ -328,7 +345,7 @@ def _admit(root, admission, expected_owned_ids):
                      state.get('intraday_caucion') is False and
                      carry is None and caucion is None)
     if (type(state) is not dict or state.get('status') != 'DRAINED' or
-            state.get('owned_stopped') is not True or not (closed or intraday or intraday_caucion or intraday_flat) or
+            state.get('owned_stopped') is not True or not (closed or closed_pending_caucion or intraday or intraday_caucion or intraday_flat) or
             state.get('lock_held') is not True or
             state.get('mode') != 'PRODUCTION_PAPER' or
             state.get('real_routes') != 'NOT_CALLED' or

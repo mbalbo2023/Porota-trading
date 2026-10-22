@@ -63,6 +63,23 @@ def admitted():
             'critical_healthy':True,'owned_ids':EXPECTED.copy()}
 
 
+def test_closed_pending_paper_caucion_requires_exact_cold2_admission(state):
+    root,*_=state
+    carry={'open_count':1,'maturity_at':'2026-10-23T17:00:00-03:00',
+           'allocation_reconciled':True,'sha256':'a'*64,
+           'audit_source_sha256':
+               'b1d711899a5c85f4efc72e2632a9d81cdddf0a6dc71dee82d5c42923b5639865'}
+    exact={**admitted(),'no_positions':False,'pending_caucion':True,
+           'market_open_suspended':False,'open_paper_carryover':False,
+           'intraday_caucion':False,'spot_carryover':None,'caucion_carryover':carry}
+    q._admit(root,lambda:exact,EXPECTED)
+    for changed in ({'no_positions':True},{'market_closed':False},
+                    {'pending_caucion':False},{'caucion_carryover':{**carry,'sha256':'0'}},
+                    {'caucion_carryover':{**carry,'audit_source_sha256':'0'*64}}):
+        with pytest.raises(ValueError,match='COLD2_QUIESCENCE_REQUIRED'):
+            q._admit(root,lambda x=changed:{**exact,**x},EXPECTED)
+
+
 def test_plan_then_archive_preserves_original_bytes_and_revocation(state):
     root,source,archive,raw=state
     originals={name:(source/name).read_bytes() for name in q.FILES}
