@@ -8,9 +8,10 @@ auditados. Ninguna métrica de este módulo habilita READY_PAPER ni ejecución.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 import sqlite3
+from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma_calendar
 from am_us_equity_calendar_rc6 import us_equity_business_day
@@ -64,6 +65,19 @@ def _freshness(last_day: date | None, latest: date, family: str = "ACCIONES") ->
     return "SEVERELY_STALE", str(gap)
 
 
+def _expected_completed_session() -> date:
+    """Use an independent market clock, never the newest stored candle."""
+    now=datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+    day=now.date() if now.time()>=time(18,0) else now.date()-timedelta(days=1)
+    for _ in range(10):
+        if day.year not in byma_calendar.ANIOS_AUDITADOS:
+            return day  # caller marks the unaudited calendar NO_VERIFICADO
+        if byma_calendar.es_dia_habil_operativo(day):
+            return day
+        day-=timedelta(days=1)
+    raise ValueError("HISTORY_EXPECTED_SESSION_UNVERIFIED")
+
+
 def freshness_qualified_metrics(observer_connection, path: Path | None = None, families=None, *, expected_session_date: date | None = None) -> dict:
     """Read-only freshness metrics for an explicitly bounded dashboard scope.
 
@@ -72,10 +86,14 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
     the newest date found in the store as its own benchmark.
     """
     targets=target_universe(observer_connection, families=families)
+    partial_keys={
+        (item["symbol"],item["family"],item["market"],item["settlement"])
+        for item in targets
+    }
     db=(path or history_db_path()).resolve()
     base={
         "available":False,
-        "target_total":len(targets),
+        "target_total":len(partial_keys),
         "fresh_ge30":0,
         "fresh_ge90":0,
         "fresh_ge180":0,
@@ -89,39 +107,74 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
     }
     if not db.exists() or not db.is_file():
         return dict(base,reason="HISTORY_DB_UNAVAILABLE")
+    tables={r[0] for r in observer_connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    if "financial_instrument_catalog" not in tables:
+        return dict(base,reason="TARGET_CURRENCY_UNVERIFIED")
+    catalog_columns={r[1] for r in observer_connection.execute(
+        "PRAGMA table_info(financial_instrument_catalog)")}
+    if not {"ticker","instrument_type","market","currency","settlement"} <= catalog_columns:
+        return dict(base,reason="TARGET_CURRENCY_UNVERIFIED")
+    currencies={}
+    for symbol,family,market,currency,settlement in observer_connection.execute(
+            "SELECT ticker,instrument_type,market,currency,settlement FROM financial_instrument_catalog"):
+        key=tuple(str(x or "").upper() for x in (symbol,family,market,settlement))
+        if key in partial_keys:
+            currencies.setdefault(key,set()).add(str(currency or "").upper())
+    unresolved=sum(1 for key in partial_keys if len(currencies.get(key,set()))!=1
+                   or next(iter(currencies[key])) in {"","UNKNOWN"})
+    if unresolved:
+        return dict(base,reason="TARGET_CURRENCY_AMBIGUOUS_OR_MISSING",
+                    unresolved_target_total=unresolved)
     c=sqlite3.connect("file:"+str(db)+"?mode=ro",uri=True,timeout=5)
     c.execute("PRAGMA query_only=ON")
     try:
         tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if "history_canonical_v2" not in tables:
             return dict(base,reason="HISTORY_V2_UNAVAILABLE")
-        latest_raw=c.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+        columns={r[1] for r in c.execute("PRAGMA table_info(history_canonical_v2)")}
+        if not {"symbol","instrument_type","market","currency","settlement",
+                "date","price_basis","adjustment_basis","open","high","low","close"} <= columns:
+            return dict(base,reason="V2_EXACT_SCHEMA_NOT_PRESENT")
+        # Only this explicitly named RAW series and complete OHLC rows can
+        # contribute to a FULL_OHLC depth/freshness card.
+        basis=("RAW","RAW_NO_ADJUSTMENT")
+        eligible_sql="""price_basis=? AND adjustment_basis=? AND
+            open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL AND
+            close IS NOT NULL"""
+        latest_raw=c.execute(
+            "SELECT MAX(date) FROM history_canonical_v2 WHERE "+eligible_sql,basis
+        ).fetchone()[0]
         if not latest_raw:
-            return dict(base,reason="HISTORY_STORE_EMPTY")
+            return dict(base,reason="NO_FULL_OHLC_RAW_SERIES")
         latest=date.fromisoformat(str(latest_raw)[:10])
-        expected = expected_session_date or latest
+        expected = expected_session_date or _expected_completed_session()
         if latest.year not in byma_calendar.ANIOS_AUDITADOS or expected.year not in byma_calendar.ANIOS_AUDITADOS:
             return dict(base,reason="FRESHNESS_CALENDAR_YEAR_NOT_AUDITED",store_latest_date=latest.isoformat(),expected_session_date=expected.isoformat())
 
         groups={}
         for r in c.execute(
-            """SELECT symbol,instrument_type,market,settlement,COUNT(*),MIN(date),MAX(date)
+            """SELECT symbol,instrument_type,market,currency,settlement,COUNT(*),MIN(date),MAX(date)
                FROM history_canonical_v2
-               GROUP BY symbol,instrument_type,market,settlement"""
+               WHERE """+eligible_sql+"""
+               GROUP BY symbol,instrument_type,market,currency,settlement""",basis
         ):
-            groups[tuple(str(x or "").upper() for x in r[:4])]=(int(r[4] or 0),r[5],r[6])
+            groups[tuple(str(x or "").upper() for x in r[:5])]=(int(r[5] or 0),r[6],r[7])
 
         depths=Counter(); freshness=Counter(); stale_ge90=[]; instrument_rows=[]
         fresh_ge30=fresh_ge90=fresh_ge180=fresh_total=0
-        for item in targets:
-            key=(item["symbol"],item["family"],item["market"],item["settlement"])
+        for partial in sorted(partial_keys):
+            symbol,family,market,settlement=partial
+            currency=next(iter(currencies[partial]))
+            key=(symbol,family,market,currency,settlement)
             rows,first,last=groups.get(key,(0,None,None))
             dep=_depth(rows)
             last_day=date.fromisoformat(str(last)[:10]) if last else None
-            fr,gap=_freshness(last_day,expected,item["family"])
+            fr,gap=_freshness(last_day,expected,family)
             instrument_rows.append({
-                "symbol": item["symbol"], "family": item["family"], "market": item["market"],
-                "settlement": item["settlement"], "rows": rows, "last_date": last,
+                "symbol":symbol,"family":family,"market":market,"currency":currency,
+                "settlement":settlement,"price_basis":basis[0],"adjustment_basis":basis[1],
+                "rows": rows, "last_date": last,
                 "expected_session_date": expected.isoformat(), "freshness": fr, "business_gap": gap,
             })
             depths[dep]+=1
@@ -136,8 +189,8 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
                     fresh_ge180 += 1
             if rows >= 90 and fr != "FRESH":
                 stale_ge90.append({
-                    "symbol":item["symbol"],"family":item["family"],
-                    "market":item["market"],"settlement":item["settlement"],
+                    "symbol":symbol,"family":family,"market":market,"currency":currency,
+                    "settlement":settlement,"price_basis":basis[0],"adjustment_basis":basis[1],
                     "rows":rows,"first_date":first,"last_date":last,
                     "freshness":fr,"business_gap":gap,
                 })
@@ -157,6 +210,9 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
             depth_counts=dict(sorted(depths.items())),
             freshness_counts=dict(sorted(freshness.items())),
             instrument_rows=sorted(instrument_rows, key=lambda row: (str(row["freshness"]) == "FRESH", str(row["symbol"]))),
+            identity_key="symbol/instrument_type/market/currency/settlement",
+            series_basis="RAW/RAW_NO_ADJUSTMENT",
+            minimum_quality="FULL_OHLC",
             calendar_source="BYMA_AUDITED_PLUS_US_UNDERLYING_FOR_CEDEARS",
         )
     finally:

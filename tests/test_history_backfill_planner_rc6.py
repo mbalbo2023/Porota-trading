@@ -1,7 +1,7 @@
 import ast,inspect
 import fj_history_backfill_planner_rc6 as m
 
-ID=m.Identity('GGAL','ACCIONES','BYMA','A-24HS','RAW')
+ID=m.Identity('GGAL','ACCIONES','BYMA','A-24HS','RAW','ARS','RAW_NO_ADJUSTMENT')
 
 def test_gap_uses_ppi_first_and_skips_current_day():
     r=m.plan(identity=ID,expected_dates=['2026-09-03','2026-09-04','2026-09-07'],canonical_dates=['2026-09-03'],as_of_date='2026-09-07')
@@ -29,6 +29,15 @@ def test_complete_identity_has_no_jobs():
 
 def test_no_calendar_guessing_when_expected_dates_empty():
     r=m.plan(identity=ID,expected_dates=[],canonical_dates=[]); assert r['status']=='NO_EXPECTED_DATES'
+
+
+def test_missing_currency_or_adjustment_cannot_plan_or_collide():
+    import pytest
+    with pytest.raises(m.BackfillPlanError,match='IDENTITY_UNVERIFIED'):
+        m.plan(identity=m.Identity('GGAL','ACCIONES','BYMA','A-24HS','RAW'),
+               expected_dates=['2026-09-04'],canonical_dates=[])
+    assert ID.normalized()!=m.Identity('GGAL','ACCIONES','BYMA','A-24HS','RAW',
+                                       'USD_MEP','RAW_NO_ADJUSTMENT').normalized()
 
 def test_offline_no_db_network_orders():
     m.assert_shadow_only(); tree=ast.parse(inspect.getsource(m)); imports=[]

@@ -1641,11 +1641,19 @@ def history_page():
     history_count=int(target_coverage.get('covered_target_total') or 0)
     history_rows=int(store_v2.get('canonical_rows') or 0)
     history_pct=min(100.0,history_count/max(1,history_target)*100) if history_target else 0.0
-    coverage_complete=bool(history_target and history_count>=history_target)
-    coverage_state_label='COMPLETA' if coverage_complete else 'EN PROGRESO'
+    coverage_verified=bool(target_coverage.get('available'))
+    coverage_complete=bool(coverage_verified and history_target and history_count>=history_target)
+    coverage_state_label=('NO_VERIFICADO' if not coverage_verified else
+                          'COMPLETA' if coverage_complete else 'EN PROGRESO')
+    fresh_target=int(fresh_v5.get('target_total') or 0)
+    def fresh_tone(key):
+        return ("green" if fresh_v5.get('available') and fresh_target>0
+                and int(fresh_v5.get(key) or 0)==fresh_target else "yellow")
     target_label=(f"{coverage_state_label} · {history_count}/{history_target}"
-                  if history_target else f"EN PROGRESO · {history_count}/objetivo dinámico pendiente")
-    coverage_detail=(f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
+                  if history_target else f"{coverage_state_label} · {history_count}/objetivo dinámico pendiente")
+    coverage_detail=(f"Moneda objetivo sin identidad exacta: {_e(target_coverage.get('reason'))} · {_locale_number(history_rows,0)} filas registradas"
+                     if not coverage_verified else
+                     f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
                      if history_target and not coverage_complete else
                      f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · objetivo dinámico cubierto"
                      if history_target else f"{_locale_number(history_rows,0)} filas; esperando universo dinámico")
@@ -1653,19 +1661,19 @@ def history_page():
         _card("Catálogo PPI",catalog,"Inventario PPI observado; no equivale a READY PAPER","green" if catalog else "gray"),
         _card("RUNTIME_READY actual",eligible,"candidate_identity_v2; se muestra sólo como referencia y no deriva del histórico","green" if eligible else "gray"),
         _card("Cobertura histórica operativa",target_label,coverage_detail+" · profundidad/freshness se informan por separado",
-              "green" if coverage_complete else "gray"),
+              "green" if coverage_complete else "yellow" if not coverage_verified else "gray"),
         _card("Historia fresca ≥30",
               f"{fresh_v5.get('fresh_ge30',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
-              f"FULL_OHLC · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",
-              "green" if fresh_v5.get('available') else "yellow"),
+              f"FULL_OHLC · RAW sin ajuste · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",
+              fresh_tone('fresh_ge30')),
         _card("Historia fresca ≥90",
               f"{fresh_v5.get('fresh_ge90',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
-              f"FULL_OHLC + freshness ≤2 ruedas · stale ≥90: {fresh_v5.get('stale_ge90_count',0)}",
-              "green" if fresh_v5.get('available') else "yellow"),
+              f"FULL_OHLC RAW + freshness ≤2 ruedas · stale ≥90: {fresh_v5.get('stale_ge90_count',0)}",
+              fresh_tone('fresh_ge90')),
         _card("Historia fresca ≥180",
               f"{fresh_v5.get('fresh_ge180',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
-              "FULL_OHLC profundo y fresco; no es precio de ejecución ni autorización PAPER",
-              "green" if fresh_v5.get('available') else "yellow"),
+              "FULL_OHLC RAW profundo y fresco; no es precio de ejecución ni autorización PAPER",
+              fresh_tone('fresh_ge180')),
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
             f"capa {store_v2.get('layer','V2')} · cobertura histórica por capacidad · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),

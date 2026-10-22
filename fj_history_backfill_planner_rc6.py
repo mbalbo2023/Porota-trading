@@ -17,10 +17,15 @@ class BackfillPlanError(ValueError): pass
 @dataclass(frozen=True)
 class Identity:
     symbol:str; instrument_type:str; market:str; settlement:str; price_basis:str='RAW'
-    def normalized(self): return tuple(str(x or '').strip().upper() for x in (self.symbol,self.instrument_type,self.market,self.settlement,self.price_basis))
+    currency:str=''; adjustment_basis:str=''
+    def normalized(self):
+        return tuple(str(x or '').strip().upper() for x in (
+            self.symbol,self.instrument_type,self.market,self.currency,self.settlement,
+            self.price_basis,self.adjustment_basis))
     def validate(self):
         if any(x in {'','UNKNOWN'} for x in self.normalized()): raise BackfillPlanError('IDENTITY_UNVERIFIED')
-        if self.normalized()[-1] not in {'RAW','ADJUSTED'}: raise BackfillPlanError('PRICE_BASIS_UNVERIFIED')
+        if self.normalized()[-2] not in {'RAW','SPLIT','DIVIDEND','TOTAL_RETURN','UNKNOWN_ADJUSTED'}:
+            raise BackfillPlanError('PRICE_BASIS_UNVERIFIED')
 
 @dataclass(frozen=True)
 class SourcePolicy:

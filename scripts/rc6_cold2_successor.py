@@ -17,6 +17,34 @@ SHA = re.compile(r'[a-f0-9]{64}')
 SOURCE_NAME = re.compile(r'(?:queue\.json|(?:manifest|receipt)-[a-f0-9]{32}\.json|[a-f0-9]{32}\.pack)')
 MAX_NAMES = 128
 MAX_PACK = 512 * 1024**2
+MAX_COMPUTED = 64 * 1024**2
+
+
+def _failed_report(shadow, archive, *, sealed_at, failed_at):
+    """Bind a REPORT_VERIFY failure to its sole completed audit file.
+
+    A failed verification may already have written the complete report. Keep
+    those original bytes before a later generation prunes old computed files.
+    The report remains failed; it is never reclassified as a COMPLETE receipt.
+    """
+    reports = []
+    for entry in shadow.iterdir():
+        if not re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', entry.name):
+            continue
+        info = entry.lstat()
+        if sealed_at <= info.st_mtime_ns / 1e9 <= failed_at + 5:
+            old.regular(entry, bound=MAX_COMPUTED)
+            reports.append(entry)
+    if len(reports) != 1:
+        raise ValueError('COLD2_SUCCESSOR_REPORT_VERIFY_EVIDENCE_AMBIGUOUS')
+    report = reports[0]
+    digest = old.sha(report)
+    archived = archive / report.name
+    if archived.exists() or archived.is_symlink():
+        old.regular(archived, bound=MAX_COMPUTED)
+        if old.sha(archived) != digest or archived.stat().st_size != report.stat().st_size:
+            raise ValueError('COLD2_SUCCESSOR_REPORT_ARCHIVE_CHANGED')
+    return {'name':report.name, 'sha256':digest, 'bytes':report.stat().st_size}
 
 
 def _names(path):
@@ -54,8 +82,6 @@ def inspect(root, *, hash_pack=True):
     manifest_name, receipt_name, pack_name = 'manifest-'+ident+'.json', 'receipt-'+ident+'.json', ident+'.pack'
     files = (manifest_name, receipt_name, 'queue.json')
     allowed_archive = set(files) | {pack_name, 'quarantine.json'} | {'.write-'+n+'.tmp' for n in files+('quarantine.json',)}
-    if archived - allowed_archive:
-        raise ValueError('COLD2_SUCCESSOR_ARCHIVE_UNEXPECTED')
     for name in files+(pack_name,):
         if name not in names and name not in archived:
             raise ValueError('COLD2_SUCCESSOR_MISSING_'+name.split('-')[0].upper())
@@ -89,6 +115,7 @@ def inspect(root, *, hash_pack=True):
             receipt.get('error_class') != 'ValueError' or
             (receipt.get('error_code'), receipt.get('error_phase')) not in {
                 ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_WRITE'),
+                ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_VERIFY'),
                 ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'PACK_HASH'),
             } or
             type(receipt.get('failed_at')) not in (float, int) or
@@ -96,6 +123,13 @@ def inspect(root, *, hash_pack=True):
             queue.get('snapshot_id') != ident or queue.get('state') != 'FAILED' or
             queue.get('manifest_sha256') != manifest_sha):
         raise ValueError('COLD2_SUCCESSOR_BINDING')
+    report = (_failed_report(shadow, archive, sealed_at=manifest['sealed_at'],
+                             failed_at=receipt['failed_at'])
+              if receipt['error_phase'] == 'REPORT_VERIFY' else None)
+    if report is not None:
+        allowed_archive.update((report['name'], '.write-'+report['name']+'.tmp'))
+    if archived - allowed_archive:
+        raise ValueError('COLD2_SUCCESSOR_ARCHIVE_UNEXPECTED')
     pack = get(pack_name)
     st = old.regular(pack, bound=MAX_PACK)
     if (st.st_size != size or [st.st_dev, st.st_ino, st.st_size] != original_identity[:3] or
@@ -126,13 +160,15 @@ def inspect(root, *, hash_pack=True):
         if (record.get('state') != 'QUARANTINED_FAILED' or
                 record.get('snapshot_id') != ident or record.get('pack_sha256') != pack_sha or
                 record.get('manifest_sha256') != manifest_sha or
-                record.get('revoked_cut') != pointer['generation_id']):
+                record.get('revoked_cut') != pointer['generation_id'] or
+                record.get('failed_computed_report') != report):
             raise ValueError('COLD2_SUCCESSOR_RECEIPT_CHANGED')
     return {'snapshot_id':ident,'manifest_sha256':manifest_sha,'pack_sha256':pack_sha,
             'pack_bytes':size,'cut':pointer['generation_id'],
             'source_names':sorted(names),'archive_names':sorted(archived),
-            'archive_complete':all(n in archived for n in files+(pack_name,'quarantine.json')),
-            'queue_failed': 'queue.json' in names}
+            'archive_complete':all(n in archived for n in files+(pack_name,'quarantine.json')+
+                                   ((report['name'],) if report else ())),
+            'queue_failed': 'queue.json' in names, 'failed_computed_report':report}
 
 
 def quarantine(root, *, admission, expected_owned_ids, checkpoint=lambda step: None):
@@ -147,6 +183,17 @@ def quarantine(root, *, admission, expected_owned_ids, checkpoint=lambda step: N
         old._admit(root, admission, expected_owned_ids)
         archive.mkdir(mode=0o700)
         old.fsync_dir(archive.parent)
+    report = before['failed_computed_report']
+    if report is not None:
+        original = source.parent / report['name']
+        target = archive / report['name']
+        old._admit(root, admission, expected_owned_ids)
+        if not target.exists():
+            old._atomic_copy(original, target)
+        old.regular(target, bound=MAX_COMPUTED)
+        if old.sha(target) != report['sha256'] or target.stat().st_size != report['bytes']:
+            raise ValueError('COLD2_SUCCESSOR_REPORT_ARCHIVE_CHANGED')
+        checkpoint('report_copied')
     names = ('manifest-'+ident+'.json','receipt-'+ident+'.json','queue.json')
     for name in names:
         old._admit(root, admission, expected_owned_ids)
@@ -177,7 +224,8 @@ def quarantine(root, *, admission, expected_owned_ids, checkpoint=lambda step: N
     record={'schema':'rc6.issue624.cold2.successor.v1','state':'QUARANTINED_FAILED',
             'snapshot_id':ident,'manifest_sha256':before['manifest_sha256'],
             'pack_sha256':before['pack_sha256'],'pack_bytes':before['pack_bytes'],
-            'revoked_cut':before['cut'],'old_cut_revoked':True,'real_orders_sent':0}
+            'revoked_cut':before['cut'],'old_cut_revoked':True,'real_orders_sent':0,
+            'failed_computed_report':report}
     # The same atomic receipt helper as original COLD2, parameterized here
     # for a successor ID; a crash before its fsync keeps queue FAILED.
     target, temp = archive/'quarantine.json', archive/'.write-quarantine.json.tmp'

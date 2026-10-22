@@ -12,11 +12,25 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import subprocess
 import tempfile
 import time
 
 ROOT = Path('/opt/porota-trading/data/deploy')
+
+
+def require_owned_running():
+    """Never arm RC6 timers while a failed deploy leaves the observer stopped."""
+    for name in ('porota_production_observer', 'porota_production_dashboard'):
+        output, code = command('docker', 'inspect', '-f', '{{.State.Status}}', name)
+        if code or output != 'running':
+            raise ValueError('SCHEDULER_OWNED_RUNTIME_STOPPED')
+    path = ROOT.parent / 'paper_v17/observer_v17.db'
+    with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2) as db:
+        db.execute('PRAGMA query_only=ON')
+        if db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone() != ('PRODUCTION_PAPER', 0):
+            raise ValueError('SCHEDULER_PAPER_ZERO_REQUIRED')
 
 
 def command(*args):
@@ -181,6 +195,7 @@ def run(candidate, action, policy_b64):
                 not set(receipt.get('attempted', [])) <= set(names)):
             raise ValueError('SCHEDULER_RECEIPT_IDENTITY_CHANGED')
         if action == 'restore':
+            require_owned_running()
             for name in receipt['attempted']:
                 _, code = command('systemctl', 'start', name)
                 if code or command('systemctl', 'is-active', name)[0] != 'active':

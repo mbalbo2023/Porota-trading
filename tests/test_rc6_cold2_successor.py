@@ -1,5 +1,6 @@
 """Replay the 20/10 COMPLETE→COMPLETE→FAILED live COLD lineage."""
 import hashlib
+import gzip
 import json
 import os
 import pytest
@@ -144,6 +145,60 @@ def test_memory_reserve_failed_successor_archives_with_exact_pack_binding(succes
     assert result['state']=='QUARANTINED_FAILED'
     assert (archive/(ID+'.pack')).read_bytes()==raw
     assert not (source/'queue.json').exists()
+
+
+def _report_verify_failure(source, *, add_report=True):
+    path=source/('receipt-'+ID+'.json')
+    receipt=old.envelope(path,cold=True)
+    receipt['error_phase']='REPORT_VERIFY'
+    put(path,receipt,cold=True)
+    if not add_report:
+        return None
+    raw=b'failed verification audit evidence' * 200
+    report=source.parent/('computed-'+hashlib.sha256(raw).hexdigest()+'.json.gz')
+    report.write_bytes(gzip.compress(raw))
+    report.chmod(0o600)
+    sealed=old.envelope(source/('manifest-'+ID+'.json'),cold=True)['sealed_at']
+    os.utime(report,(sealed+29,sealed+29))
+    return report
+
+
+def test_report_verify_failure_preserves_computed_bytes_without_promoting(successor):
+    root,source,archive,_=successor
+    report=_report_verify_failure(source)
+    expected=report.read_bytes()
+    before=new.inspect(root)
+    assert before['failed_computed_report']['sha256']==hashlib.sha256(expected).hexdigest()
+    with pytest.raises(RuntimeError,match='crash'):
+        new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED,
+                       checkpoint=lambda at: (_ for _ in ()).throw(RuntimeError('crash'))
+                       if at=='report_copied' else None)
+    assert (archive/report.name).read_bytes()==expected
+    assert new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)['state']=='QUARANTINED_FAILED'
+    assert (archive/report.name).read_bytes()==expected
+    assert old.envelope(archive/'quarantine.json')['failed_computed_report']==before['failed_computed_report']
+    assert old.envelope(source.parent/'status.json')['status']=='FAIL_CLOSED'
+    assert not (source/'queue.json').exists()
+
+
+@pytest.mark.parametrize('problem',['missing','ambiguous','changed_archive'])
+def test_report_verify_fail_closed_when_evidence_is_not_unique(successor,problem):
+    root,source,archive,_=successor
+    report=_report_verify_failure(source,add_report=problem!='missing')
+    if problem=='ambiguous':
+        other=source.parent/('computed-'+'f'*64+'.json.gz')
+        other.write_bytes(b'other')
+        other.chmod(0o600)
+        sealed=old.envelope(source/('manifest-'+ID+'.json'),cold=True)['sealed_at']
+        os.utime(other,(sealed+29,sealed+29))
+    if problem=='changed_archive':
+        archive.mkdir(mode=0o700)
+        copy=archive/report.name
+        copy.write_bytes(b'not the same report')
+        copy.chmod(0o600)
+    with pytest.raises(ValueError,match='REPORT_VERIFY_EVIDENCE_AMBIGUOUS|REPORT_ARCHIVE_CHANGED'):
+        new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    assert (source/'queue.json').exists()
 
 
 @pytest.mark.parametrize('error_code,error_phase',[

@@ -66,6 +66,44 @@ def exact_read(store,cut=NOW,**changes):
     with store.connect() as c:return history.read_as_of(c,**args)
 
 
+def test_historical_authority_writer_reconciler_and_pit_agree(tmp_path):
+    from fb_history_reconciler_rc6 import HistoryCandidate, HistoryIdentity, choose_winner
+    s=Store(tmp_path/'policy.sqlite')
+    base=candle(source='IOL',open=100,high=110,low=95,close=105,
+                observed_at='2026-10-01T16:00:00Z')
+    close_only=candle(source='BYMA_EOD',open=None,high=None,low=None,volume=None,
+                      close=106,volume_kind='UNKNOWN',observed_at='2026-10-01T17:00:00Z')
+    history.append_many(s,[base,close_only])
+    canonical=table(s,'history_canonical_v2')[0]
+    assert canonical['source']=='IOL' and canonical['source_rank']==20
+    assert exact_read(s)[0]['source']=='IOL'
+    ident=HistoryIdentity('AUDIT','ACCIONES','BYMA','A-24HS','2026-09-30',
+                          'RAW','ARS','RAW_NO_ADJUSTMENT')
+    candidates=[HistoryCandidate(ident,v.source,v.observed_at,v.open,v.high,v.low,
+                                  v.close,v.volume,volume_kind=v.volume_kind)
+                for v in (base,close_only)]
+    assert choose_winner(candidates)['winner'].source=='IOL'
+    ppi=candle(source='PPI_API',open=None,high=None,low=None,volume=None,
+               volume_kind='UNKNOWN',close=104,observed_at='2026-10-01T18:00:00Z')
+    history.append_candle(s,ppi)
+    assert table(s,'history_canonical_v2')[0]['source']=='PPI_API'
+    assert exact_read(s)[0]['source']=='PPI_API'
+    assert exact_read(s,minimum_quality='FULL_OHLC')[0]['source']=='IOL'
+    assert exact_read(s,minimum_quality='FULL_OHLCV')[0]['source']=='IOL'
+    assert exact_read(s,cut='2026-10-01T16:30:00Z')[0]['source']=='IOL'
+
+
+def test_new_eligible_iol_revision_ignores_materialized_old_byma_rank(tmp_path):
+    s=Store(tmp_path/'old_rank.sqlite')
+    history.append_candle(s,candle(source='BYMA_EOD',open=None,high=None,low=None,
+        volume=None,volume_kind='UNKNOWN',observed_at='2026-10-01T16:00:00Z'))
+    with s.connect() as c:
+        c.execute("UPDATE history_canonical_v2 SET source_rank=20 WHERE source='BYMA_EOD'")
+    history.append_candle(s,candle(source='IOL',observed_at='2026-10-01T17:00:00Z'))
+    assert table(s,'history_canonical_v2')[0]['source']=='IOL'
+    assert table(s,'history_canonical_v2')[0]['source_rank']==20
+
+
 def test_AUD06_adjusted_secondary_never_overwrites_raw_and_action_bases_are_separate(tmp_path):
     s=Store(tmp_path/'history.sqlite')
     history.append_candle(s,candle())

@@ -131,27 +131,45 @@ def v2_store_metrics(path: Path | None = None, families=None) -> dict:
         if not required.issubset(tables):
             return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,
                     "by_family":{},"reason":"V2_SCHEMA_NOT_PRESENT","close_series":close}
+        columns={r[1] for r in c.execute("PRAGMA table_info(history_canonical_v2)")}
+        # Old four-field tables have the same name. Their rows cannot be
+        # counted as exact monetary identities or complete OHLC evidence.
+        if not {"symbol","instrument_type","market","currency","settlement",
+                "date","price_basis","adjustment_basis","open","high","low",
+                "close","volume","volume_kind"} <= columns:
+            return {"available":False,"path":str(db),"canonical_rows":0,"identities":0,
+                    "by_family":{},"reason":"V2_EXACT_SCHEMA_NOT_PRESENT","close_series":close}
         scope=_family_scope(families)
         where="" if scope is None else " WHERE UPPER(instrument_type) IN ("+",".join("?" for _ in scope)+")"
         params=tuple(sorted(scope or ()))
-        row=c.execute("SELECT COUNT(*) FROM history_canonical_v2"+where,params).fetchone()
+        row=c.execute("""SELECT COUNT(*),
+            SUM(CASE WHEN open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL THEN 1 ELSE 0 END),
+            SUM(CASE WHEN open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                      AND volume IS NOT NULL AND volume_kind IN ('QUANTITY','NOMINAL','CONTRACTS')
+                     THEN 1 ELSE 0 END),
+            SUM(CASE WHEN open IS NULL AND high IS NULL AND low IS NULL THEN 1 ELSE 0 END)
+            FROM history_canonical_v2"""+where,params).fetchone()
         identities=c.execute(
             """SELECT COUNT(*) FROM (
-               SELECT symbol,instrument_type,market,settlement
+               SELECT symbol,instrument_type,market,currency,settlement
                FROM history_canonical_v2"""+where+"""
-               GROUP BY symbol,instrument_type,market,settlement)""",params
+               GROUP BY symbol,instrument_type,market,currency,settlement)""",params
         ).fetchone()
         by={}
         for r in c.execute(
-            """SELECT instrument_type,COUNT(DISTINCT symbol),COUNT(*),MIN(date),MAX(date)
+            """SELECT instrument_type,COUNT(DISTINCT symbol),COUNT(*),MIN(date),MAX(date),
+                      SUM(CASE WHEN open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL THEN 1 ELSE 0 END)
                FROM history_canonical_v2"""+where+""" GROUP BY instrument_type ORDER BY instrument_type""",params
         ):
             by[str(r[0])]={"symbols":int(r[1] or 0),"rows":int(r[2] or 0),
-                           "first_date":r[3],"last_date":r[4]}
+                           "first_date":r[3],"last_date":r[4],"full_ohlc_rows":int(r[5] or 0)}
         return {"available":True,"path":str(db),"canonical_rows":int(row[0] or 0),
-                "full_ohlc_canonical_rows":int(row[0] or 0),
+                "full_ohlc_canonical_rows":int(row[1] or 0),
+                "full_ohlcv_canonical_rows":int(row[2] or 0),
+                "close_only_canonical_rows":int(row[3] or 0),
                 "identities":int(identities[0] or 0),"by_family":by,
-                "full_ohlc_quality":"FULL_OHLC","close_series":close}
+                "identity_key":"symbol/instrument_type/market/currency/settlement",
+                "full_ohlc_quality":"VERIFIED_COMPONENTS_ONLY","close_series":close}
     finally:
         c.close()
 
@@ -182,21 +200,22 @@ def target_store_coverage_metrics(observer_connection, path: Path | None = None,
     """Compare History Store v2 against the exact current AVAILABLE target scope.
 
     The numerator and denominator use the same identity key
-    (symbol/family/market/settlement). Historical-only identities are reported
-    separately and can never make covered > target.
+    (symbol/family/market/currency/settlement). An AVAILABLE four-field
+    target without exactly one catalog currency has unknown coverage; never
+    infer its currency from a matching history row.
     """
     targets = target_universe(observer_connection, families=families)
-    target_keys = {
+    partial_keys = {
         (str(row["symbol"] or "").upper(), str(row["family"] or "").upper(),
          str(row["market"] or "").upper(), str(row["settlement"] or "").upper())
         for row in targets
     }
-    target_by = Counter(key[1] for key in target_keys)
+    target_by = Counter(key[1] for key in partial_keys)
     db = (path or history_db_path()).resolve()
     base = {
         "available": False,
         "path": str(db),
-        "target_total": len(target_keys),
+        "target_total": len(partial_keys),
         "covered_target_total": 0,
         "historical_identity_total": 0,
         "by_family": {
@@ -206,22 +225,46 @@ def target_store_coverage_metrics(observer_connection, path: Path | None = None,
     }
     if not db.exists() or not db.is_file():
         return dict(base, reason="V2_STORE_NOT_PRESENT")
+    catalog_tables={row[0] for row in observer_connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    if "financial_instrument_catalog" not in catalog_tables:
+        return dict(base,reason="TARGET_CURRENCY_UNVERIFIED")
+    catalog_cols={row[1] for row in observer_connection.execute(
+        "PRAGMA table_info(financial_instrument_catalog)")}
+    if not {"ticker","instrument_type","market","currency","settlement"} <= catalog_cols:
+        return dict(base,reason="TARGET_CURRENCY_UNVERIFIED")
+    catalog={}
+    for symbol,family,market,currency,settlement in observer_connection.execute(
+            "SELECT ticker,instrument_type,market,currency,settlement FROM financial_instrument_catalog"):
+        key=tuple(str(x or "").upper() for x in (symbol,family,market,settlement))
+        if key in partial_keys:
+            catalog.setdefault(key,set()).add(str(currency or "").upper())
+    unresolved=sum(1 for key in partial_keys
+                   if len(catalog.get(key,set()))!=1 or
+                   next(iter(catalog[key])) in {"","UNKNOWN"})
+    if unresolved:
+        return dict(base,reason="TARGET_CURRENCY_AMBIGUOUS_OR_MISSING",
+                    unresolved_target_total=unresolved)
+    target_keys={(key[0],key[1],key[2],next(iter(catalog[key])),key[3])
+                 for key in partial_keys}
     connection = sqlite3.connect("file:" + str(db) + "?mode=ro", uri=True, timeout=5)
     try:
         tables = {row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         if "history_canonical_v2" not in tables:
             return dict(base, reason="V2_SCHEMA_NOT_PRESENT")
+        columns={r[1] for r in connection.execute("PRAGMA table_info(history_canonical_v2)")}
+        if not {"symbol","instrument_type","market","currency","settlement"} <= columns:
+            return dict(base,reason="V2_EXACT_SCHEMA_NOT_PRESENT")
         scope = _family_scope(families)
         where = "" if scope is None else (
             " WHERE UPPER(instrument_type) IN (" + ",".join("?" for _ in scope) + ")"
         )
         params = tuple(sorted(scope or ()))
         history_keys = {
-            (str(row[0] or "").upper(), str(row[1] or "").upper(),
-             str(row[2] or "").upper(), str(row[3] or "").upper())
+            tuple(str(x or "").upper() for x in row)
             for row in connection.execute(
-                "SELECT DISTINCT symbol,instrument_type,market,settlement "
+                "SELECT DISTINCT symbol,instrument_type,market,currency,settlement "
                 "FROM history_canonical_v2" + where, params)
         }
     finally:
@@ -245,7 +288,7 @@ def target_store_coverage_metrics(observer_connection, path: Path | None = None,
         "covered_target_total": len(covered),
         "historical_identity_total": len(history_keys),
         "by_family": by_family,
-        "identity_key": "symbol/family/market/settlement",
+        "identity_key": "symbol/family/market/currency/settlement",
     }
 
 
