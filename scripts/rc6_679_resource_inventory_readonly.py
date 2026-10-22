@@ -1,3 +1,4 @@
+# RC6 #696 read-only visual census of the 571b519eb114415da6ea027fd72c5e8c6223833c runtime.
 """Bounded host inventory for #679. Run through an isolated diagnostic Action.
 
 No writes, broker calls, service controls, Docker exec, or WAL checkpoints.
