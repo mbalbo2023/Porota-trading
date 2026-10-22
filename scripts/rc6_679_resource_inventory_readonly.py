@@ -472,7 +472,7 @@ def main(policy_b64):
     if len(timers) != 19:
         raise RuntimeError('TIMER_POLICY_COUNT_MISMATCH')
     current = json.loads((ROOT / 'data/deploy/CURRENT_STATE_V2.json').read_text())
-    if current['deploy_sha'] != '328a6526a3eaf3851ef93778c1d0345593afc3ee' or current['candidate_sha'] != '01ca7270fb0f1497b2f22412579413bd570c919c':
+    if current['deploy_sha'] != '08d1ce524c9255497fb404b6a8a9cdb864b19a43' or current['candidate_sha'] != '571b519eb114415da6ea027fd72c5e8c6223833c':
         raise RuntimeError('DEPLOY_SHA_CHANGED')
     if current['mode'] != 'PRODUCTION_PAPER' or type(current['real_orders_sent']) is not int \
             or current['real_orders_sent'] != 0 or current['real_order_routes'] != 'NOT_CALLED':
