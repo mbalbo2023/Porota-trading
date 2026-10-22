@@ -1641,11 +1641,15 @@ def history_page():
     history_count=int(target_coverage.get('covered_target_total') or 0)
     history_rows=int(store_v2.get('canonical_rows') or 0)
     history_pct=min(100.0,history_count/max(1,history_target)*100) if history_target else 0.0
-    coverage_complete=bool(history_target and history_count>=history_target)
-    coverage_state_label='COMPLETA' if coverage_complete else 'EN PROGRESO'
+    coverage_verified=bool(target_coverage.get('available'))
+    coverage_complete=bool(coverage_verified and history_target and history_count>=history_target)
+    coverage_state_label=('NO_VERIFICADO' if not coverage_verified else
+                          'COMPLETA' if coverage_complete else 'EN PROGRESO')
     target_label=(f"{coverage_state_label} · {history_count}/{history_target}"
-                  if history_target else f"EN PROGRESO · {history_count}/objetivo dinámico pendiente")
-    coverage_detail=(f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
+                  if history_target else f"{coverage_state_label} · {history_count}/objetivo dinámico pendiente")
+    coverage_detail=(f"Moneda objetivo sin identidad exacta: {_e(target_coverage.get('reason'))} · {_locale_number(history_rows,0)} filas registradas"
+                     if not coverage_verified else
+                     f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · cobertura parcial incremental; objetivo derivado del universo AVAILABLE"
                      if history_target and not coverage_complete else
                      f"{_locale_number(history_pct,1)}% · {_locale_number(history_rows,0)} filas canónicas · objetivo dinámico cubierto"
                      if history_target else f"{_locale_number(history_rows,0)} filas; esperando universo dinámico")
@@ -1653,7 +1657,7 @@ def history_page():
         _card("Catálogo PPI",catalog,"Inventario PPI observado; no equivale a READY PAPER","green" if catalog else "gray"),
         _card("RUNTIME_READY actual",eligible,"candidate_identity_v2; se muestra sólo como referencia y no deriva del histórico","green" if eligible else "gray"),
         _card("Cobertura histórica operativa",target_label,coverage_detail+" · profundidad/freshness se informan por separado",
-              "green" if coverage_complete else "gray"),
+              "green" if coverage_complete else "yellow" if not coverage_verified else "gray"),
         _card("Historia fresca ≥30",
               f"{fresh_v5.get('fresh_ge30',0)}/{fresh_v5.get('target_total') or history_target or '—'}",
               f"FULL_OHLC · última fecha store {_e(fresh_v5.get('store_latest_date'))} · no implica READY PAPER",

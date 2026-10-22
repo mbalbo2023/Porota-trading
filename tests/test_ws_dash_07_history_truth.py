@@ -29,28 +29,41 @@ def test_history_coverage_uses_same_current_target_scope(tmp_path):
     observer.execute("""CREATE TABLE candidate_universe(
       ticker TEXT,instrument_type TEXT,settlement TEXT,market TEXT,
       can_simulate INTEGER,status TEXT,detail TEXT,last_checked_at TEXT)""")
+    observer.execute("""CREATE TABLE financial_instrument_catalog(
+      ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT)""")
     observer.executemany("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",[
       ("OPT-A","OPCIONES","INMEDIATA","BYMA",1,"AVAILABLE","", "2026-10-02"),
       ("OPT-B","OPCIONES","INMEDIATA","BYMA",1,"AVAILABLE","", "2026-10-02"),
     ])
+    observer.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?)",[
+      ("OPT-A","OPCIONES","BYMA","ARS","INMEDIATA"),
+      ("OPT-B","OPCIONES","BYMA","ARS","INMEDIATA"),
+    ])
     db=tmp_path/"history.db"
     h=sqlite3.connect(db)
     h.execute("""CREATE TABLE history_canonical_v2(
-      symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,
+      symbol TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
       trading_date TEXT,open TEXT,high TEXT,low TEXT,close TEXT,volume TEXT,
       source_class TEXT,source_ref TEXT,observed_at TEXT,known_at TEXT,
       quality_state TEXT,source_version_id INTEGER,PRIMARY KEY(
-      symbol,instrument_type,market,settlement,trading_date))""")
+      symbol,instrument_type,market,currency,settlement,trading_date))""")
     values=("2026-10-01","1","1","1","1","1","TEST","TEST","2026-10-02","2026-10-02","FULL_OHLC",1)
-    h.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-              ("OPT-A","OPCIONES","BYMA","INMEDIATA",*values))
-    h.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-              ("OLD-ONLY","OPCIONES","BYMA","INMEDIATA",*values))
+    h.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              ("OPT-A","OPCIONES","BYMA","ARS","INMEDIATA",*values))
+    h.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              ("OLD-ONLY","OPCIONES","BYMA","ARS","INMEDIATA",*values))
     h.commit(); h.close()
     result=metrics.target_store_coverage_metrics(observer,path=db,families=("OPCIONES",))
     family=result["by_family"]["OPCIONES"]
     assert family == {"target":2,"covered_target":1,"historical_identities":2}
     assert result["covered_target_total"] <= result["target_total"]
+    assert result["identity_key"] == "symbol/family/market/currency/settlement"
+    observer.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?)",
+                     ("OPT-A","OPCIONES","BYMA","USD_MEP","INMEDIATA"))
+    blocked=metrics.target_store_coverage_metrics(observer,path=db,families=("OPCIONES",))
+    assert blocked["available"] is False
+    assert blocked["reason"]=="TARGET_CURRENCY_AMBIGUOUS_OR_MISSING"
+    assert blocked["covered_target_total"]==0
     observer.close()
 
 

@@ -7,15 +7,15 @@ from fb_history_reconciler_rc6 import (
 )
 
 
-def ident(*,basis='RAW',settlement='A-24HS',symbol='GGAL',family='ACCIONES',market='BYMA',date='2026-09-04'):
-    return HistoryIdentity(symbol,family,market,settlement,date,basis)
+def ident(*,basis='RAW',settlement='A-24HS',symbol='GGAL',family='ACCIONES',market='BYMA',date='2026-09-04',currency='ARS',adjustment='RAW_NO_ADJUSTMENT'):
+    return HistoryIdentity(symbol,family,market,settlement,date,basis,currency,adjustment)
 
 
-def cand(source,*,basis='RAW',o=7000,h=7100,l=6900,c=7050,v=1000,at='2026-09-05T00:00:00+00:00',settlement='A-24HS',symbol='GGAL'):
-    return HistoryCandidate(ident(basis=basis,settlement=settlement,symbol=symbol),source,at,o,h,l,c,v,payload_hash=source)
+def cand(source,*,basis='RAW',o=7000,h=7100,l=6900,c=7050,v=1000,at='2026-09-05T00:00:00+00:00',settlement='A-24HS',symbol='GGAL',currency='ARS',adjustment='RAW_NO_ADJUSTMENT'):
+    return HistoryCandidate(ident(basis=basis,settlement=settlement,symbol=symbol,currency=currency,adjustment=adjustment),source,at,o,h,l,c,v,payload_hash=source,volume_kind='QUANTITY')
 
 
-def test_full_iol_beats_a3_close_only_even_though_a3_has_better_rank():
+def test_full_iol_beats_a3_close_only_with_contractual_rank():
     a3=cand('A3_CEM_CLOSING',o=None,h=None,l=None,v=None,c=7050)
     iol=cand('IOL',c=7048)
     result=choose_winner([a3,iol])
@@ -35,7 +35,8 @@ def test_full_ppi_beats_discrepant_iol_absent_family_override():
 
 def test_raw_and_adjusted_can_never_compete_in_same_selection():
     with pytest.raises(HistoryReconciliationError,match='IDENTITY_MIXED_OR_PRICE_BASIS_MIXED'):
-        choose_winner([cand('PPI_API',basis='RAW'),cand('PPI_API',basis='ADJUSTED')])
+        choose_winner([cand('PPI_API',basis='RAW'),
+                       cand('PPI_API',basis='SPLIT',adjustment='CORPORATE_ACTION_V1')])
 
 
 def test_settlement_mismatch_is_fail_closed():
@@ -67,6 +68,22 @@ def test_later_observation_only_wins_inside_same_quality_and_rank():
 def test_different_symbol_is_never_mixed():
     with pytest.raises(HistoryReconciliationError):
         choose_winner([cand('PPI_API'),cand('IOL',symbol='BMA')])
+
+
+def test_currency_and_adjustment_mismatch_fail_closed():
+    with pytest.raises(HistoryReconciliationError,match='IDENTITY_MIXED'):
+        choose_winner([cand('PPI_API'),cand('IOL',currency='USD_MEP')])
+    with pytest.raises(HistoryReconciliationError,match='IDENTITY_MIXED'):
+        choose_winner([cand('PPI_API'),cand('IOL',adjustment='CORPORATE_ACTION_V1')])
+
+
+def test_consumer_minimum_quality_filters_before_source_authority():
+    ppi=cand('PPI_API',o=None,h=None,l=None,v=None)
+    iol=cand('IOL',c=7048)
+    assert choose_winner([ppi,iol])['winner'].source=='PPI_API'
+    selected=choose_winner([ppi,iol],minimum_quality='FULL_OHLC')
+    assert selected['winner'].source=='IOL'
+    assert 'POLICY=RC6_HISTORICAL_AUTHORITY_V2_20261022' in selected['reason']
 
 
 def test_no_db_or_network_capability_contract():

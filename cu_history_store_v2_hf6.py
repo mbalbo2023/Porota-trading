@@ -19,10 +19,8 @@ from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import cash_currency
+from history_source_policy_rc6 import POLICY_VERSION, SOURCE_RANK, eligible, quality, source_rank
 
-SOURCE_RANK = {"PPI_PRODUCTION_HISTORY":10,"PPI_API":10,"BYMA_EOD":20,"BYMA":20,
-               "A3_CEM_CLOSING":20,"IOL":30,"DATA912":50,"DATA912_POROTA_BATCH":50,"YAHOO":90}
-DEFAULT_SOURCE_RANK = 100
 MAX_BATCH_ROWS = 10000
 IDENTITY = ("symbol","instrument_type","market","currency","settlement")
 SERIES = (*IDENTITY,"date","price_basis","adjustment_basis")
@@ -238,13 +236,6 @@ def init_schema(store):
     initialize_history_schema(store,_init_connection)
 
 
-def source_rank(source):
-    text=str(source or "").upper()
-    for name,rank in SOURCE_RANK.items():
-        if text==name or text.startswith(name+"_"): return rank
-    return DEFAULT_SOURCE_RANK
-
-
 def _key(value): return tuple(getattr(value,f) for f in SERIES)
 
 
@@ -256,7 +247,8 @@ def _hash(candle):
     # other evidence semantics. Changing/removing it is a real revision even
     # when OHLCV is unchanged. Only engine annotations/provenance are omitted.
     body['metadata']={key:item for key,item in (value.metadata or {}).items()
-                      if key not in {'session_calendar_status','history_quality','copy_migration_currency'}}
+                      if key not in {'session_calendar_status','history_quality','history_policy_version',
+                                     'copy_migration_currency'}}
     return sha256(_canonical_json(body).encode()).hexdigest()
 
 
@@ -278,7 +270,11 @@ def _prefer(new,current):
     value=new.normalized()
     if (value.price_basis,value.adjustment_basis)!=(current["price_basis"],current["adjustment_basis"]): return False
     rank=source_rank(value.source)
-    if rank!=int(current["source_rank"]): return rank<int(current["source_rank"])
+    # Historical materialization may carry an old numeric rank. Compare its
+    # immutable source using the current policy; reprojection remains a
+    # separate audited copy migration, never a silent UPDATE on the host.
+    current_rank=source_rank(current["source"])
+    if rank!=current_rank: return rank<current_rank
     left,right=instant(value.observed_at),instant(current["version_known_at"])
     return left>right or (left==right and value.source<current["source"])
 
@@ -297,7 +293,8 @@ def _append_connection(connection,value):
     appended=not duplicate
     metadata=dict(value.metadata or {})
     metadata["session_calendar_status"]="AUDITED_BYMA_2026" if value.market=="BYMA" and value.date.startswith("2026-") else "HOLIDAYS_NO_VERIFICADO"
-    metadata["history_quality"]="FULL_OHLC" if value.open is not None else "CLOSE_ONLY"
+    metadata["history_quality"]=quality(value.open,value.high,value.low,value.volume,value.volume_kind)
+    metadata["history_policy_version"]=POLICY_VERSION
     if appended:
         fields=(*SERIES,"open","high","low","close","volume","volume_kind","source","adjusted","event_at","provider_at","observed_at","version_known_at","payload_hash","previous_version_id","metadata_json")
         args=(*_key(value),value.open,value.high,value.low,value.close,value.volume,value.volume_kind,value.source,
@@ -392,8 +389,10 @@ def append_candle(store,candle): return append_many(store,[candle])["row_results
 
 
 def read_as_of(connection,*,symbol,instrument_type,market,currency,settlement,as_of,
-               price_basis="RAW",adjustment_basis="RAW_NO_ADJUSTMENT"):
-    """Latest known revision per source/day, then authority within same basis."""
+               price_basis="RAW",adjustment_basis="RAW_NO_ADJUSTMENT",
+               minimum_quality="CLOSE_ONLY"):
+    """Latest PIT revision per source/day, then eligible historical authority."""
+    eligible("CLOSE_ONLY",minimum_quality)  # validate even when no rows exist
     cut=utc(as_of)
     identity=tuple(str(x or "").strip().upper() for x in (symbol,instrument_type,market,currency,settlement))
     if any(x in {"","UNKNOWN"} for x in identity): raise ValueError("HISTORY_IDENTITY_UNVERIFIED")
@@ -407,6 +406,10 @@ def read_as_of(connection,*,symbol,instrument_type,market,currency,settlement,as
         if instant(row["version_known_at"])<=instant(cut): by_source[(row["date"],row["source"])]=row
     by_day={}
     for row in by_source.values():
+        evidence_quality=quality(row["open"],row["high"],row["low"],
+                                 row["volume"],row["volume_kind"])
+        if not eligible(evidence_quality,minimum_quality):
+            continue
         # ISO timestamps have fixed UTC width; no float epoch loses microseconds.
         old=by_day.get(row["date"])
         rank=source_rank(row["source"])

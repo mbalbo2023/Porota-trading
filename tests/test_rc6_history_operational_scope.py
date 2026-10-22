@@ -26,20 +26,48 @@ def test_history_metrics_only_count_explicit_operational_families(tmp_path):
         c.executescript("""
             CREATE TABLE history_versions_v2 (id INTEGER);
             CREATE TABLE history_canonical_v2 (
-              symbol TEXT, instrument_type TEXT, market TEXT, settlement TEXT, date TEXT
+              symbol TEXT, instrument_type TEXT, market TEXT, currency TEXT,
+              settlement TEXT, date TEXT, price_basis TEXT, adjustment_basis TEXT,
+              open REAL, high REAL, low REAL, close REAL, volume REAL, volume_kind TEXT
             );
             INSERT INTO history_canonical_v2 VALUES
-              ('AAPL', 'CEDEARS', 'BCBA', 'CI', '2026-09-15'),
-              ('YPFD', 'ACCIONES', 'BCBA', 'CI', '2026-09-15'),
-              ('GD41', 'BONOS', 'BCBA', 'CI', '2026-09-15');
+              ('AAPL', 'CEDEARS', 'BCBA', 'ARS', 'CI', '2026-09-15', 'RAW', 'RAW_NO_ADJUSTMENT', 100, 110, 90, 105, 10, 'QUANTITY'),
+              ('YPFD', 'ACCIONES', 'BCBA', 'ARS', 'CI', '2026-09-15', 'RAW', 'RAW_NO_ADJUSTMENT', NULL, NULL, NULL, 105, NULL, 'UNKNOWN'),
+              ('GD41', 'BONOS', 'BCBA', 'ARS', 'CI', '2026-09-15', 'RAW', 'RAW_NO_ADJUSTMENT', 100, 110, 90, 105, 10, 'QUANTITY');
         """)
     store = v2_store_metrics(history, families=OPERATIONAL)
     assert store["identities"] == 2
     assert store["canonical_rows"] == 2
+    assert store["full_ohlc_canonical_rows"] == 1
+    assert store["full_ohlcv_canonical_rows"] == 1
+    assert store["close_only_canonical_rows"] == 1
     assert set(store["by_family"]) == {"ACCIONES", "CEDEARS"}
     with sqlite3.connect(observer) as c:
         effective = effective_store_metrics(c, path=history, families=OPERATIONAL)
     assert effective["canonical_rows"] == 2
+
+
+def test_history_metrics_do_not_collapse_currency_or_trust_legacy_named_v2(tmp_path):
+    history=tmp_path/"history.db"
+    with sqlite3.connect(history) as c:
+        c.executescript("""
+            CREATE TABLE history_versions_v2(id INTEGER);
+            CREATE TABLE history_canonical_v2(
+              symbol TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
+              date TEXT,price_basis TEXT,adjustment_basis TEXT,
+              open REAL,high REAL,low REAL,close REAL,volume REAL,volume_kind TEXT);
+            INSERT INTO history_canonical_v2 VALUES
+              ('GGAL','ACCIONES','BYMA','ARS','CI','2026-09-15','RAW','RAW_NO_ADJUSTMENT',1,2,1,2,4,'QUANTITY'),
+              ('GGAL','ACCIONES','BYMA','USD_MEP','CI','2026-09-15','RAW','RAW_NO_ADJUSTMENT',NULL,NULL,NULL,2,NULL,'UNKNOWN');
+        """)
+    result=v2_store_metrics(history)
+    assert result["identities"]==2
+    assert result["canonical_rows"]==2
+    assert result["full_ohlc_canonical_rows"]==1
+    with sqlite3.connect(history) as c:
+        c.execute("DROP TABLE history_canonical_v2")
+        c.execute("CREATE TABLE history_canonical_v2(symbol TEXT,close REAL)")
+    assert v2_store_metrics(history)["reason"]=="V2_EXACT_SCHEMA_NOT_PRESENT"
 
 
 def test_dashboard_passes_operational_scope_to_all_history_summary_metrics():

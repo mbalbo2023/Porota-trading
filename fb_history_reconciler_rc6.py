@@ -7,8 +7,8 @@ before any PPI/IOL/A3 multi-source canonical writer is authorized.
 Selection order for one *complete* financial identity/date/price basis:
   1. exact identity and exact price basis;
   2. valid evidence only;
-  3. completeness class;
-  4. source authority;
+  3. consumer-specific minimum completeness;
+  4. source authority among eligible evidence;
   5. observation freshness only inside otherwise equivalent evidence.
 
 No averaging is permitted.  RAW and ADJUSTED are separate series.  Ambiguous
@@ -20,28 +20,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Iterable
+from history_source_policy_rc6 import POLICY_VERSION, QUALITY_ORDER, SOURCE_RANK, eligible, source_rank
 
-QUALITY_ORDER = {
-    "FULL_OHLCV": 0,
-    "FULL_OHLC": 1,
-    "CLOSE_ONLY": 2,
-    "INVALID": 90,
-    "IDENTITY_UNVERIFIED": 91,
-    "SOURCE_DISCREPANCY": 92,
-}
-SOURCE_RANK = {
-    "PPI_PRODUCTION_HISTORY": 10,
-    "PPI_API": 10,
-    "BYMA_EOD": 20,
-    "BYMA": 20,
-    "A3_CEM_CLOSING": 20,
-    "IOL": 30,
-    "DATA912": 50,
-    "DATA912_POROTA_BATCH": 50,
-    "YAHOO": 90,
-}
-ELIGIBLE_QUALITY = frozenset({"FULL_OHLCV", "FULL_OHLC", "CLOSE_ONLY"})
-PRICE_BASES = frozenset({"RAW", "ADJUSTED"})
+ELIGIBLE_QUALITY = frozenset(QUALITY_ORDER)
+PRICE_BASES = frozenset({"RAW", "SPLIT", "DIVIDEND", "TOTAL_RETURN", "UNKNOWN_ADJUSTED"})
 
 
 class HistoryReconciliationError(ValueError):
@@ -56,6 +38,8 @@ class HistoryIdentity:
     settlement: str
     date: str
     price_basis: str
+    currency: str = ""
+    adjustment_basis: str = ""
 
     def normalized(self) -> "HistoryIdentity":
         return HistoryIdentity(
@@ -65,11 +49,14 @@ class HistoryIdentity:
             str(self.settlement or "").strip().upper(),
             str(self.date or "")[:10],
             str(self.price_basis or "").strip().upper(),
+            str(self.currency or "").strip().upper(),
+            str(self.adjustment_basis or "").strip().upper(),
         )
 
     def validate(self) -> None:
         x=self.normalized()
-        if any(v in {"", "UNKNOWN"} for v in (x.symbol,x.instrument_type,x.market,x.settlement,x.date)):
+        if any(v in {"", "UNKNOWN"} for v in (x.symbol,x.instrument_type,x.market,
+                                               x.settlement,x.date,x.currency,x.adjustment_basis)):
             raise HistoryReconciliationError("IDENTITY_UNVERIFIED")
         try:
             datetime.fromisoformat(x.date)
@@ -91,6 +78,7 @@ class HistoryCandidate:
     volume: float | None
     payload_hash: str = ""
     provenance: str = ""
+    volume_kind: str = "UNKNOWN"
 
     def normalized_source(self) -> str:
         return str(self.source or "").strip().upper()
@@ -124,19 +112,13 @@ def classify(candidate: HistoryCandidate) -> str:
     if o is not None and h is not None and l is not None:
         if not (l <= min(o,close) <= max(o,close) <= h):
             return "INVALID"
-        return "FULL_OHLCV" if v is not None else "FULL_OHLC"
+        return "FULL_OHLCV" if v is not None and candidate.volume_kind in {
+            "QUANTITY","NOMINAL","CONTRACTS"} else "FULL_OHLC"
     # A partial OHLC shape is not a candle; only a pure close-only observation
     # is eligible for the separate low-completeness class.
     if any(x is not None for x in (o,h,l)):
         return "INVALID"
     return "CLOSE_ONLY"
-
-
-def source_rank(source: str) -> int:
-    s=str(source or "").strip().upper()
-    for prefix,rank in SOURCE_RANK.items():
-        if s.startswith(prefix): return rank
-    return 100
 
 
 def _observed_key(value: str) -> datetime:
@@ -152,7 +134,7 @@ def exact_identity_match(a: HistoryIdentity, b: HistoryIdentity) -> bool:
     return a.normalized() == b.normalized()
 
 
-def choose_winner(candidates: Iterable[HistoryCandidate]) -> dict:
+def choose_winner(candidates: Iterable[HistoryCandidate],*,minimum_quality="CLOSE_ONLY") -> dict:
     """Choose one candidate for one exact identity+basis, with audit reason.
 
     This function is pure: it performs no DB or network I/O.
@@ -166,18 +148,19 @@ def choose_winner(candidates: Iterable[HistoryCandidate]) -> dict:
         if not exact_identity_match(anchor,c.identity):
             raise HistoryReconciliationError("IDENTITY_MIXED_OR_PRICE_BASIS_MIXED")
     classified=[(c,classify(c)) for c in items]
-    valid=[(c,q) for c,q in classified if q in ELIGIBLE_QUALITY]
+    valid=[(c,q) for c,q in classified if eligible(q,minimum_quality)]
     if not valid:
         return {"winner":None,"reason":"NO_VALID_EVIDENCE","evaluated":len(items),"classes":[q for _,q in classified]}
     valid.sort(key=lambda cq:(
-        QUALITY_ORDER[cq[1]],
         source_rank(cq[0].source),
+        QUALITY_ORDER[cq[1]],
         -_observed_key(cq[0].observed_at).timestamp(),
         cq[0].normalized_source(),
         cq[0].payload_hash,
     ))
     winner,quality=valid[0]
-    reason=f"QUALITY={quality};SOURCE_RANK={source_rank(winner.source)};PRICE_BASIS={anchor.price_basis}"
+    reason=(f"POLICY={POLICY_VERSION};MINIMUM_QUALITY={minimum_quality};QUALITY={quality};"
+            f"SOURCE_RANK={source_rank(winner.source)};PRICE_BASIS={anchor.price_basis}")
     return {
         "winner":winner,
         "quality":quality,
@@ -206,4 +189,4 @@ def discrepancy(a: HistoryCandidate,b: HistoryCandidate,*,relative_tolerance:flo
 def assert_shadow_only() -> None:
     # Deliberate static capability declaration for CI and governance.
     assert not hasattr(HistoryCandidate,"append")
-    assert PRICE_BASES == frozenset({"RAW","ADJUSTED"})
+    assert "RAW" in PRICE_BASES and "SPLIT" in PRICE_BASES
