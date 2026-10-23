@@ -116,6 +116,11 @@ def exits(p):
         row={key:raw.get(key) for key in keys}
         if (row.get('state')!='EVALUABLE' or decimal_amount(row.get('modeled_net')) is None
                 or row.get('currency') not in {'ARS','USD','USD_MEP','USD_CCL'}):
+            row['reason'] = ('PATH_COVERAGE_NOT_VERIFIED; sampled points do not certify a complete comparable path'
+                             if row.get('coverage') != 'MEDIDO' else
+                             'MONETARY_IDENTITY_NOT_VERIFIED' if row.get('currency') not in {'ARS','USD','USD_MEP','USD_CCL'} else
+                             'COUNTERFACTUAL_NOT_EVALUABLE' if row.get('state') != 'EVALUABLE' else
+                             'MODELED_NET_NOT_VERIFIED')
             row.update(modeled_net=None,state='INSUFFICIENT_EVIDENCE')
         row.update(source='committed retrospective SHADOW; same factual entry',as_of=report['as_of'],
                    entry_authority=False,economic_edge_validated=False)

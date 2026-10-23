@@ -311,6 +311,31 @@ def test_canonical_reports_exposes_only_published_paper_action4(database):
     assert "NO_VERIFICADO" in rejected and "/api/reports/action4" not in rejected
 
 
+def test_report_registry_dialog_does_not_invent_instrument_fields(client, database):
+    with sqlite3.connect(database) as c:
+        c.execute("""CREATE TABLE report_registry(id INTEGER PRIMARY KEY,period_type TEXT,
+            period_start TEXT,period_end TEXT,created_at TEXT,state TEXT,pdf_path TEXT)""")
+        c.execute("INSERT INTO report_registry VALUES(210,'DIARIO',?,?,?,'VERDE',NULL)",
+                  (STAMP, STAMP, STAMP))
+    html = client.get("/analitica/reportes?channel=exits").text
+    dialog = BeautifulSoup(html, "html.parser").select_one(".terminal-table .row-dialog")
+    assert dialog and "Detalle fila 1 · 210" in dialog.get_text()
+    for field in ("Ticker", "Familia", "Settlement", "Autoridad de entrada", "Reloj de la fuente"):
+        assert field not in dialog.get_text()
+
+
+def test_counterfactual_channel_does_not_hide_daily_funnel_on_other_tab(client, monkeypatch):
+    from rc6_trader_dashboard import views_analytics
+    seen = []
+    monkeypatch.setattr(views_analytics, "committed_funnel",
+                        lambda p: seen.append(dict(p.filters)) or "<div>funnel checked</div>")
+    response = client.get("/analitica/cierre-diario?channel=exits")
+    assert response.status_code == 200 and "funnel checked" in response.text
+    assert seen and "channel" not in seen[-1]
+    client.get("/analitica/cierre-diario?channel=UNIVERSE_SHADOW")
+    assert seen[-1].get("channel") == "UNIVERSE_SHADOW"
+
+
 def test_source_scope_score_and_trajectory_semantics(database, monkeypatch):
     root = Path(database).parent
     (root / "iol_shadow_latest.json").write_text(json.dumps({"refreshed_at": STAMP, "cache_state": "LIVE",

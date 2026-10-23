@@ -27,6 +27,10 @@ def build_page(path, params, database_path):
     if destination is None or tab is None:
         raise HTTPException(404, "Subview no disponible")
     filters = {k: str(v)[:(512 if k == "identity" else 80)] for k, v in params.items() if k in FILTERS}
+    # Counterfactual sub-tabs use "channel=exits". It is not a funnel channel;
+    # carrying that query to another Analytics tab must not erase its cohort.
+    if destination.key == "analitica" and tab != "contrafactuales" and filters.get("channel") in {"profiles", "gates", "exits"}:
+        filters.pop("channel")
     start = perf_counter()
     with Store(database_path) as store:
         projection = Projection(store, filters)

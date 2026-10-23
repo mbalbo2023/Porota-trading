@@ -58,7 +58,7 @@ def render(p, destination, tab):
             page=cf.exits(p)
             return links+note+render_table(p,destination,tab,page,labels['exits'],
                 fields('symbol|Ticker;currency|Moneda;policy|Política SHADOW;state|Comparabilidad|status;modeled_net|Neto modelado comparable|money'),
-                fields('family|Familia;market|Mercado;settlement|Liquidación;paper_id|Entrada factual;opened_at|Entrada|time;registered_at|Registro|time;as_of|Cut histórico|time;coverage|Cobertura de trayectoria;path_observations|Muestras|number;entry_evidence_sha256|Hash entrada;path_sha256|Hash trayectoria;comparison_basis|Base de comparación;economic_edge_validated|Edge validado'),
+                fields('family|Familia;market|Mercado;settlement|Liquidación;paper_id|Entrada factual;opened_at|Entrada|time;registered_at|Registro|time;as_of|Cut histórico|time;coverage|Cobertura de trayectoria;path_observations|Muestras|number;reason|Límite de comparabilidad;entry_evidence_sha256|Hash entrada;path_sha256|Hash trayectoria;comparison_basis|Base de comparación;economic_edge_validated|Edge validado'),
                 note='Replay de la misma entrada factual; no se ejecuta ningún replay en la petición web. Caminos censurados/no comparables no publican neto como resultado completo.')
         page,counts=cf.profiles(p)
         cards="<div class='metric-grid'>"+''.join(metric(key,counts.get(key),'Muestra publicada, no ejecución ni rentabilidad',kind='number')
@@ -106,5 +106,6 @@ def render(p, destination, tab):
         row["report_type"] = row.get("report_type") or row.get("period_type")
     result = render_table(p, destination, tab, page, "Reportes versionados",
                           fields("id|Reporte;report_type|Tipo;created_at|Publicado|time;state|Estado|status"),
-                          fields("period_start|Desde;period_end|Hasta;download|Descarga autenticada"))
+                          fields("period_start|Desde;period_end|Hasta;download|Descarga autenticada"),
+                          identity=False, evidence=False)
     return _action4_card(p) + result + "<a class='text-link' href='/api/reports/weekly/download'>Descargar reporte semanal disponible</a>"
