@@ -25,12 +25,12 @@ PERFORMANCE = fields("currency|Moneda;strategy|Estrategia;net_pnl|PnL neto|money
 PERFORMANCE_DETAIL = fields("family|Familia;gross_pnl|PnL bruto|money;win_rate|Win rate · con muestra|percent;expectancy|Expectancy|money;avg_win|Ganancia media|money;avg_loss|Pérdida media|money;drawdown|Drawdown|money;holding_time|Duración media|number;edge|Edge / OOS;as_of|Último cierre|time")
 
 
-def render_table(p, destination, tab, page, title, columns, detail=(), *, filters=False, catalog=False, note="", aggregate=False):
+def render_table(p, destination, tab, page, title, columns, detail=(), *, filters=False, catalog=False, note="", aggregate=False, identity=True):
     from .navigation import view_path
     path = view_path(destination, tab)
     form = filters_form(path, p.filters, catalog=catalog, positions=page.source == "paper_positions") if filters else ""
     return ((notice(note) if note else "") + form +
-            table(page, title, columns, detail, path=path, filters=p.filters, aggregate=aggregate))
+            table(page, title, columns, detail, path=path, filters=p.filters, aggregate=aggregate, identity=identity))
 
 
 def committed_funnel(p):
@@ -58,3 +58,4 @@ def committed_funnel(p):
              f" · edad {timing['age_seconds']}s / presupuesto {timing['budget_seconds']}s · {timing['basis']}")
     links = "".join(f"<a class='button' href='?{e(urlencode({'currency': r.get('currency'), 'channel': r.get('channel')}))}'>{e(r.get('currency'))} / {e(r.get('channel'))}</a>" for r in groups[:10])
     return f"<nav class='pager' aria-label='Scope del embudo'>{links}</nav>" + funnel(counts, scope)
+
