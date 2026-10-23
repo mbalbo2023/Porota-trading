@@ -1,6 +1,6 @@
 # RC6 — conciliación Big Hub y dictamen causal (23/10/2026 UTC)
 
-WORKSTREAM_ID=WS-RC6-719-DASHBOARD-GRAIN-20261022. Corte de esta auditoría: 23/10 ~01:41 UTC. **NO_GO integral.** El estado cambia con la rueda y el host; no extrapolar este corte. La instrucción vigente del operador es PAPER/SHADOW, cero órdenes reales, PPI Watch intocable, backups deshabilitados, FIX-FORWARD; sin rollback, estrés de host, subagentes ni tareas programadas.
+WORKSTREAM_ID=WS-RC6-719-DASHBOARD-GRAIN-20261022. Corte de esta auditoría: 23/10 ~01:35 UTC. **NO_GO integral.** El estado cambia con la rueda y el host; no extrapolar este corte. La instrucción vigente del operador es PAPER/SHADOW, cero órdenes reales, PPI Watch intocable, backups deshabilitados, FIX-FORWARD; sin rollback, estrés de host, subagentes ni tareas programadas.
 
 ## Identidad y recibos
 
