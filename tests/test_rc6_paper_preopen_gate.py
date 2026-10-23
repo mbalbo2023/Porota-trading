@@ -108,3 +108,32 @@ def test_per_candidate_contract_must_match_exact_monetary_identity(tmp_path, mon
     assert gate.paper_admission_guard(quote, store) == (True, "")
     record["capability"] = "NEEDS_OPTION_CONTRACT"
     assert gate.paper_admission_guard(quote, store) == (False, "PAPER_EXACT_CONTRACT_NOT_READY")
+
+
+def test_eod_caucion_worker_holds_placement_on_global_no_go(tmp_path, monkeypatch):
+    import bv_paper_runtime
+    import di_caucion_cash_sweep_runtime_hf6 as sweep
+
+    store = PaperStore(str(tmp_path / "paper.db"))
+    monkeypatch.setattr(bv_paper_runtime, "broker_from_environment", lambda *_a, **_k:
+                        type("Broker", (), {"participation": D("0.1")})())
+    monkeypatch.setattr(sweep, "offers_from_store", lambda *_a, **_k: ([], []))
+    monkeypatch.setattr(sweep, "obligation_snapshot_from_ledger", lambda *_a, **_k: {})
+    monkeypatch.setattr(sweep, "run_paper_sweep", lambda *_a, **_k:
+                        (_ for _ in ()).throw(AssertionError("placement despite NO_GO")))
+    monkeypatch.setattr(gate, "admission_status", lambda **_k: (False, "NO_GO_PAPER_SCALPING"))
+
+    class OneTick:
+        stopped = False
+        def is_set(self):
+            return self.stopped
+        def wait(self, _seconds):
+            with store.connect() as db:
+                state = db.execute("SELECT state,code FROM paper_caucion_cash_sweep_state WHERE id=1").fetchone()
+            assert tuple(state) == ("HOLD", "NO_GO_PAPER_SCALPING")
+            self.stopped = True
+
+    sweep.run_worker(store, OneTick(), clock_fn=lambda: "2026-10-15T16:40:00-03:00")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
