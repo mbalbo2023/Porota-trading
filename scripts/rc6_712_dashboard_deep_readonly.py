@@ -168,12 +168,18 @@ def main(output):
                     if more.count():
                         before=[v for v in page.locator('table tbody tr[data-row]').evaluate_all(
                             '(nodes)=>nodes.map(x=>x.id)')]
-                        more.first.click(timeout=5000)
+                        response=page.expect_navigation(wait_until='domcontentloaded',timeout=10000)
+                        with response:
+                            more.first.click(timeout=5000)
+                        page.locator('table.terminal-table tbody').first.wait_for(state='attached',timeout=5000)
                         after=page.locator('table tbody tr[data-row]').evaluate_all(
                             '(nodes)=>nodes.map(x=>x.id)')
                         item['pagination_probed']={'before':len(before),'after':len(after),
                             'distinct':bool(set(after)-set(before)),
-                            'offset_10':'offset=10' in page.url}
+                            'offset_10':'offset=10' in page.url,
+                            'http':response.value.status if response.value else None,
+                            'empty_state':bool(page.locator('table tbody tr td.empty').count()),
+                            'source_state':page.locator('section.data-panel .source-line .badge').first.get_attribute('data-status') if page.locator('section.data-panel .source-line .badge').count() else None}
                         if not item['pagination_probed']['distinct'] or not item['pagination_probed']['offset_10']:
                             report['findings'].append({'kind':'paginator_not_advancing','path':path})
                 report['paths'].append(item)
