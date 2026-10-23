@@ -729,8 +729,9 @@ class PaperBroker:
                  economics_mode="SHADOW", min_net_reward_risk="1.20",
                  stop_loss_pct="0.02", target_gain_pct="0.035",
                  daily_loss_pct="2.5", daily_soft_stop_pct=None,
-                 intraday_fee_rebate=None):
+                 intraday_fee_rebate=None, admission_guard=None):
         self.store = store
+        self.admission_guard = admission_guard
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
         self.max_positions = int(max_positions)
@@ -1245,6 +1246,15 @@ class PaperBroker:
             return self._open_future(q, score, features)
         return self._open(q, score, features)
 
+    def _preopen_admission_error(self, q):
+        if self.admission_guard is None:
+            return ""
+        try:
+            allowed, reason = self.admission_guard(q, self.store)
+            return "" if allowed else (reason or "NO_GO_PAPER_SCALPING")
+        except Exception:
+            return "PAPER_PREOPEN_GATE_UNAVAILABLE"
+
     @staticmethod
     def _decision_key_error(connection, features):
         key=features.get("native_decision_key")
@@ -1454,6 +1464,9 @@ class PaperBroker:
         return ""
 
     def _open_future(self, q: Quote, score: Decimal, features: dict):
+        gate_error = self._preopen_admission_error(q)
+        if gate_error:
+            return False, gate_error, None
         contract = q.contract
         try:
             currency, market = q.monetary_identity()
@@ -1919,6 +1932,9 @@ class PaperBroker:
                     self._future_exit_state(position,at,"WATCH_INVALID_CONTRACT","Futures supervision requires durable contract")
 
     def _open(self, q: Quote, score: Decimal, features: dict):
+        gate_error = self._preopen_admission_error(q)
+        if gate_error:
+            return False, gate_error, None
         try:
             family = family_name(q.asset_class)
             currency, market = q.monetary_identity()
