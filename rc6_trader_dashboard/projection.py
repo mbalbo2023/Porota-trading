@@ -737,6 +737,15 @@ class Projection:
             "PPI_PRODUCTION_HISTORY": 48 * 3600,
             "PPI_BACKGROUND_INGEST": 48 * 3600,
         }
+        # These four service checks are written together by _runtime_readiness
+        # every PAPER_READINESS_CHECK_SECONDS while MARKET_CLOSED. Keep this
+        # bounded service-check clock distinct from quote/provider freshness.
+        readiness_interval = self.integer(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"), 0)
+        readiness_budget = readiness_interval + 15 if 60 <= readiness_interval <= 600 else 180
+        paper_readiness_components = ("PAPER_ECONOMIC_GATE_SHADOW", "PAPER_FOCUS_COVERAGE",
+                                      "PAPER_SIGNAL_ROTATION", "PAPER_SIGNAL_SAMPLING")
+        for component in paper_readiness_components:
+            budgets[component] = readiness_budget
         cols = self.store.columns("api_health")
         order = ("CASE component WHEN 'PPI_PRODUCTION_MARKETDATA' THEN 0 "
                  "WHEN 'PPI_PRODUCTION_AUTH' THEN 1 ELSE 2 END,component") if "component" in cols else ""
@@ -756,6 +765,8 @@ class Projection:
                        as_of=checked, provider_clock=None, receipt_clock=checked,
                        scope=component, lkg=row.get("last_success_at"),
                        observed_state=observed, checked_age_seconds=state_age)
+            if component in paper_readiness_components:
+                row["grain"] = "SERVICE_CHECK"
             row.update(check_freshness=freshness(checked, self.now, budget),
                        data_freshness=UNKNOWN, data_quality="NO_VERIFICADO",
                        decision_effect="IDENTITY_OR_MARKET_INPUT" if primary else "OBSERVE_ONLY")
@@ -987,3 +998,4 @@ class Projection:
             return (payload, "AVAILABLE") if isinstance(payload, dict) else ({}, "EVIDENCE_INVALID")
         except (OSError, ValueError, TypeError):
             return {}, "EVIDENCE_NOT_PUBLISHED"
+
