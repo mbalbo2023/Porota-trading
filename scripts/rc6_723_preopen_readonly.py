@@ -89,6 +89,20 @@ try:
     for key in ('heartbeat_at','last_market_data_at'):
         if key in out['observer']:out['observer'][key+'_age_seconds']=age(out['observer'][key])
     tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    # Eight bounded exact focus identities: diagnostic only, never an admission switch.
+    focus=('GGAL','YPFD','PAMP','BMA','BBAR','SUPV','CEPU','AAPL')
+    out['focus_contracts']={'ready':0,'required':len(focus),'missing':[]}
+    if {'financial_instrument_catalog','candidate_identity_v2'} <= tables:
+        for ticker in focus:
+            kind='CEDEARS' if ticker=='AAPL' else 'ACCIONES'
+            rows=c.execute("""SELECT f.market,f.currency FROM financial_instrument_catalog f
+                JOIN candidate_identity_v2 v USING(ticker,instrument_type,market,currency,settlement)
+                WHERE f.ticker=? AND f.instrument_type=? AND f.settlement='A-24HS'
+                  AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
+                  AND v.status='AVAILABLE' AND v.can_simulate=1 LIMIT 2""",(ticker,kind)).fetchall()
+            if len(rows)==1:out['focus_contracts']['ready']+=1
+            else:out['focus_contracts']['missing'].append(ticker)
+    else:out['focus_contracts']['reason']='CATALOG_OR_LEDGER_MISSING'
     out['open_paper']={}
     for name,status in [('paper_positions','OPEN'),('paper_future_positions','ACTIVE'),('paper_cauciones','OPEN')]:
         out['open_paper'][name]='AT_LEAST_2' if name in tables and len(c.execute('SELECT 1 FROM '+name+' WHERE status=? LIMIT 2',(status,)).fetchall())==2 else ('AT_MOST_1' if name in tables else 'TABLE_ABSENT')
