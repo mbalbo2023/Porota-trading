@@ -113,8 +113,6 @@ if table('paper_cauciones') and table('paper_caucion_allocations'):
 c.close()
 from rc6_trader_dashboard.projection import Projection, Store
 with Store(PATH) as store:
-    store_deadline=time.monotonic()+4
-    store.connection.set_progress_handler(lambda:int(time.monotonic()>store_deadline),100)
     projection=Projection(store)
     shadow=projection.shadow
     report=shadow.get('report') or {}
@@ -139,6 +137,8 @@ with Store(PATH) as store:
                               for name,plan in (report.get('engines') or {}).items() if isinstance(plan,dict)},
                    'funnel_counts':{k:v for k,v in (report.get('operational_funnel') or {}).get('counts',{}).items()
                                     if k in ('ELIGIBLE','TRADEABLE','HOT') and type(v) is int}}
+    store_deadline=time.monotonic()+4
+    store.connection.set_progress_handler(lambda:int(time.monotonic()>store_deadline),100)
     page=projection.performance()
     performance={'state':page.state,'reason':page.reason,'group_count':page.total,
                  'visible_groups':len(page.rows),'cross_check':'NOT_EVALUATED'}
@@ -194,7 +194,13 @@ for label,path in (('counterfactual_snapshot',Path('/app/data/validation/counter
                     'count':len(entries) if isinstance(entries,list) else None}
     except FileNotFoundError:
         out[label]={'state':'ABSENT'}
-    except (OSError,ValueError,TypeError):
-        out[label]={'state':'REJECTED'}
+    except (OSError,ValueError,TypeError) as exc:
+        out[label]={'state':'REJECTED','error_class':type(exc).__name__}
+    try:
+        metadata=os.lstat(path)
+        out[label].update(size_bytes=metadata.st_size,
+                          file_kind='SYMLINK' if stat.S_ISLNK(metadata.st_mode) else
+                                    'REGULAR' if stat.S_ISREG(metadata.st_mode) else 'OTHER')
+    except OSError: pass
 print('RC6_712_DASHBOARD_LINEAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
 
