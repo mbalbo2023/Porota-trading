@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Bounded, host-only RC6 preopen facts. No service, database or PPI Watch mutation."""
+# Follow-up fact cut after the scheduled 09:45 ART preopen; no operational write.
 import json
 import hashlib
 import re
