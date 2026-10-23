@@ -6,6 +6,55 @@ import time
 from .projection import Page, UNKNOWN, age, decimal_amount, json_object
 
 
+def profile_decisions(p):
+    """Three published profiles per factual decision; no replay on GET."""
+    from cg_paper_workspace import artifact_root
+
+    source = "decision_evidence_counterfactual_latest.json · committed SHADOW profiles"
+    payload, state = p.bounded_file("reports/decision_evidence_counterfactual_latest.json",
+                                    root=artifact_root(p.store.path))
+    if state != "AVAILABLE":
+        return Page(source, reason="PROFILE_PUBLICATION_" + state)
+    generated = _clock(payload.get("generated_at"))
+    if (payload.get("compact_projection") is not True or
+            payload.get("read_only") is not True or
+            payload.get("real_orders_authorized") is not False or
+            not generated or generated > p.now or
+            not isinstance(payload.get("decisions"), list)):
+        return Page(source, reason="PROFILE_PUBLICATION_UNVERIFIED")
+    labels = {"BASELINE_CONSERVATIVE_V1": "conservative",
+              "SHADOW_BALANCED_V1": "balanced",
+              "SHADOW_AGGRESSIVE_V1": "aggressive"}
+    rows = []
+    for raw in payload["decisions"][:100]:
+        if not isinstance(raw, dict) or raw.get("state") != "VERIFIED":
+            continue
+        stamped = _clock(raw.get("evidence_at"))
+        if not stamped or stamped > generated or not raw.get("decision_key"):
+            continue
+        profiles = raw.get("profiles")
+        if not isinstance(profiles, list):
+            profiles = []
+        row = {"decision_key": raw["decision_key"], "symbol": raw.get("symbol"),
+               "factual_decision": raw.get("factual_decision"),
+               "as_of": raw["evidence_at"], "entry_authority": False}
+        for profile in profiles[:3]:
+            if not isinstance(profile, dict) or profile.get("name") not in labels:
+                continue
+            key = labels[profile["name"]]
+            verified = profile.get("state") == "VERIFIED"
+            row[key] = profile.get("action") if verified else None
+            row[key + "_state"] = "VERIFIED" if verified else "INSUFFICIENT_EVIDENCE"
+            row[key + "_reason"] = profile.get("reason")
+        for key in labels.values():
+            row.setdefault(key + "_state", "NO_VERIFICADO")
+        rows.append(row)
+    return Page(source, rows[p.offset:p.offset + 10], len(rows),
+                "HISTORICAL_OBSERVABLE" if rows else UNKNOWN, p.offset,
+                payload["generated_at"],
+                "Máximo 100 decisiones publicadas; perfiles SHADOW descriptivos, sin fills ni autoridad de entrada")
+
+
 def profiles(p):
     from rc6_counterfactual_learning import read_bounded
     result=read_bounded(as_of=p.now,offset=p.offset)

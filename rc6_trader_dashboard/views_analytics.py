@@ -1,23 +1,24 @@
 """Economics, samples, factual exits and explicitly limited experiments."""
+import re
 from cg_paper_workspace import artifact_root
-from .components import fields, funnel, metric, notice, e, clock
+from rc6_action4_audit import published_audit_is_safe
+from .components import fields, funnel, metric, notice, e, clock, badge, sanitized
 from .datasets import shadow_rows, artifact
 from .view_common import render_table, PERFORMANCE, PERFORMANCE_DETAIL, CLOSES, CLOSE_DETAIL, committed_funnel
+
+
+def _public_text(value):
+    text = str(value or "")[:500]
+    return "[REDACTED] sensitive detail" if re.search(
+        r"(?i)(token|secret|password|authorization|bearer|cookie|api[_-]?key|cbu|cuit)", text
+    ) else str(sanitized(text))
 
 
 def _action4_card(p):
     """Show the already published PAPER audit; page views never run the job."""
     payload, state = p.bounded_file("reports/rc6_action4_auditoria_latest.json",
                                     root=artifact_root(p.store.path))
-    safety = payload.get("safety") if isinstance(payload.get("safety"), dict) else {}
-    local = (payload.get("status") == "PAPER_READ_ONLY" and
-             safety.get("real_orders_sent") == 0 and safety.get("broker_routes_called") is False)
-    weekly = (payload.get("scope") == "RC6" and payload.get("status") == "SUCCESS" and
-              payload.get("source") == "/api/observer/state" and
-              payload.get("database_access_from_action") == "NO" and
-              payload.get("mode") == "PRODUCTION_PAPER" and
-              type(payload.get("real_orders_sent")) is int and payload["real_orders_sent"] == 0)
-    if state != "AVAILABLE" or not (local or weekly):
+    if state != "AVAILABLE" or not published_audit_is_safe(payload):
         return notice("Action 4 · NO_VERIFICADO: auditoría PAPER publicada ausente, inválida o fuera del límite de lectura.")
     window = payload.get("window") if isinstance(payload.get("window"), dict) else {}
     origin = payload.get("origin") if isinstance(payload.get("origin"), dict) else {}
@@ -31,10 +32,48 @@ def _action4_card(p):
                                         ("Cierres PAPER", separation.get("executed_closed")),
                                         ("Aperturas simuladas", separation.get("opened_simulated")),
                                         ("HOLD", separation.get("hold"))))
+    daily = payload.get("dashboard_daily_report")
+    daily = daily if isinstance(daily, dict) else {}
+    verified_day = (payload.get("status") == "PAPER_READ_ONLY" and
+                    daily.get("scope") == "ALL_CONTRACT_FAMILIES_PAPER" and
+                    daily.get("closure_state") == "POSTCLOSE_VERIFIED" and
+                    (payload.get("safety") or {}).get("observer_session_state") == "MARKET_CLOSED" and
+                    daily.get("periodo") == str(window.get("from_local") or "")[:10])
+    lessons = daily.get("lessons") if verified_day else None
+    lessons = lessons if isinstance(lessons, list) else []
+    lesson_rows = "".join("<li>" + e(_public_text(item)) + "</li>" for item in lessons[:8]
+                          if isinstance(item, str) and item.strip())
+    lesson_panel = ("<h3>Lecciones del cierre · " + e(daily["periodo"]) + "</h3>"
+                    "<p class='muted'>Resumen descriptivo del recibo diario; no acredita ventaja ni la rueda actual.</p>"
+                    "<ul>" + lesson_rows + "</ul>") if lesson_rows else (
+                    "<p class='muted'>Lecciones de cierre NO_VERIFICADO: falta un recibo PAPER con sesión MARKET_CLOSED para este día.</p>")
     return ("<section class='panel'><h2>Action 4 · auditoría publicada</h2>"
             "<p class='muted'>Recibo histórico PAPER; su fecha no certifica la rueda actual.</p>"
-            f"<dl class='facts'>{rows}</dl>"
+            f"<dl class='facts'>{rows}</dl>" + lesson_panel +
             "<a class='text-link' href='/api/reports/action4'>Descargar auditoría JSON autenticada</a></section>")
+
+
+def _profile_decisions_panel(page):
+    names = (("conservative", "Conservador"), ("balanced", "Balanceado"),
+             ("aggressive", "Agresivo"))
+    entries = []
+    for row in page.rows:
+        profiles = "".join(
+            "<li><b>" + label + ":</b> " + e(row.get(key) or "NO_VERIFICADO") + " · " +
+            badge(row[key + "_state"]) + " · " + e(_public_text(row.get(key + "_reason") or "Sin motivo publicado")) +
+            "</li>" for key, label in names)
+        entries.append("<li><details><summary>" + e(str(row.get("symbol") or "NO_VERIFICADO")[:80]) +
+                       " · factual PAPER: " + e(str(row.get("factual_decision") or "NO_VERIFICADO")[:80]) +
+                       " · " + e(clock(row.get("as_of"))) + "</summary><ul>" + profiles +
+                       "</ul><p class='muted'>Evidence ID: " + e(str(row["decision_key"])[:100]) +
+                       " · autoridad de entrada: No</p></details></li>")
+    message = ("<ul>" + "".join(entries) + "</ul><p class='muted'>Primeras " + str(len(entries)) +
+               " decisiones de hasta " + str(page.total) + " publicadas en este corte.</p>"
+               if entries else "<p>NO_VERIFICADO · " + e(page.reason or "Sin perfiles publicados") + "</p>")
+    return ("<section class='panel'><h2>Perfiles por decisión · conservador / balanceado / agresivo</h2>"
+            "<p class='muted'>SHADOW histórico. Una acción se muestra sólo con evidencia VERIFIED; "
+            "ningún perfil envía órdenes ni modifica la decisión factual.</p>" + message +
+            "<p class='muted'>Fuente: " + e(page.source) + " · " + e(clock(page.as_of)) + "</p></section>")
 
 
 def render(p, destination, tab):
@@ -61,9 +100,11 @@ def render(p, destination, tab):
                 fields('family|Familia;market|Mercado;settlement|Liquidación;paper_id|Entrada factual;opened_at|Entrada|time;registered_at|Registro|time;as_of|Cut histórico|time;coverage|Cobertura de trayectoria;path_observations|Muestras|number;reason|Límite de comparabilidad;entry_evidence_sha256|Hash entrada;path_sha256|Hash trayectoria;comparison_basis|Base de comparación;economic_edge_validated|Edge validado'),
                 note='Replay de la misma entrada factual; no se ejecuta ningún replay en la petición web. Caminos censurados/no comparables no publican neto como resultado completo.')
         page,counts=cf.profiles(p)
+        decisions=cf.profile_decisions(p) if p.offset == 0 else None
+        decision_panel = _profile_decisions_panel(decisions) if decisions is not None else ''
         cards="<div class='metric-grid'>"+''.join(metric(key,counts.get(key),'Muestra publicada, no ejecución ni rentabilidad',kind='number')
             for key in ('WOULD_CONFIRM','WOULD_WARN','WOULD_REJECT','INSUFFICIENT_EVIDENCE'))+"</div>"
-        return links+note+cards+render_table(p,destination,tab,page,'Aprendizaje contrafáctico histórico',
+        return links+note+decision_panel+cards+render_table(p,destination,tab,page,'Aprendizaje contrafáctico histórico',
             fields('symbol|Ticker;profile|Perfil SHADOW;original_decision|Decisión factual;outcome|Comparación|status;currency|Moneda'),
             fields('family|Familia;candidate_id|Evidence ID;evidence_at|Evidencia|time;compared_at|Comparación|time;reason|Límite / fundamento;entry_authority|Autoridad de entrada'),
             note='WOULD_CONFIRM/WARN/REJECT exige publicación comparable y clocks válidos. Un reporte antiguo sigue visible como histórico; no acredita salud LIVE.')
@@ -97,7 +138,7 @@ def render(p, destination, tab):
                             note="Experimentos preregistrados. NO automatic promotion. OBSERVE_ONLY/SHADOW conservan entry_authority=false.")
     if tab == "cierre-diario":
         counts = p.counts()
-        return committed_funnel(p) + render_table(p, destination, tab, p.performance(today=True), "Journal de la rueda · ART", PERFORMANCE,
+        return _action4_card(p) + committed_funnel(p) + render_table(p, destination, tab, p.performance(today=True), "Journal de la rueda · ART", PERFORMANCE,
                                            (*PERFORMANCE_DETAIL, *fields("exit_reasons|Motivos de salida;why_no_trade|Why no trade;late_missed|Late/missed discovery causal;no_trade_baseline|No-trade baseline;cash_opportunity_cost|Costo de oportunidad caja|money;caucion_opportunity_cost|Costo de oportunidad caución|money;alerts|Alertas / incidentes")),
                                            note="No-trade baseline y late/missed requieren evidencia causal. Se conservan moneda y atribución; no se reconstruyen oportunidades perdidas por intuición.")
     page = p.store.page("report_registry", order="id DESC" if "id" in p.store.columns("report_registry") else "", offset=p.offset)

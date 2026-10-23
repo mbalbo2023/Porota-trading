@@ -80,4 +80,3 @@ def render(p, destination, tab):
         return render_table(p, destination, tab, logs(p), "Logs sanitizados · últimas 10 líneas", fields("state|Scope|status;line|Mensaje")) + "<a class='text-link' href='/api/trader/logs/download'>Descargar últimas líneas sanitizadas</a>"
     return render_table(p, destination, tab, config(p), "Configuración efectiva no secreta", fields("setting|Setting;value|Valor;origin|Origen;state|Estado|status"),
                         note="Configuración no secreta; los modos operativos continúan usando observer_state como autoridad.")
-

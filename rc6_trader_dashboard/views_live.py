@@ -65,4 +65,3 @@ def render(p, destination, tab):
     return panel+render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
                         note="PPI es autoridad primaria. IOL complementa; BYMA público observa. VERDE de PAPER_ECONOMIC_GATE_SHADOW es salud de un chequeo, no permiso de entrada ni rentabilidad validada. SOURCE_UNAVAILABLE siempre se limita a su scope.",
                         identity=False)
-

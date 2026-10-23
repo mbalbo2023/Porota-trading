@@ -58,4 +58,3 @@ def committed_funnel(p):
              f" · edad {timing['age_seconds']}s / presupuesto {timing['budget_seconds']}s · {timing['basis']}")
     links = "".join(f"<a class='button' href='?{e(urlencode({'currency': r.get('currency'), 'channel': r.get('channel')}))}'>{e(r.get('currency'))} / {e(r.get('channel'))}</a>" for r in groups[:10])
     return f"<nav class='pager' aria-label='Scope del embudo'>{links}</nav>" + funnel(counts, scope)
-

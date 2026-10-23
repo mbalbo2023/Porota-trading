@@ -298,7 +298,8 @@ def test_canonical_reports_exposes_only_published_paper_action4(database):
                "window": {"from_local": STAMP, "to_local": STAMP},
                "origin": {"run_id": "LOCAL_DAILY", "commit": "NOT_AVAILABLE"},
                "separation": {"executed_closed": 2, "opened_simulated": 1, "hold": 5},
-               "safety": {"real_orders_sent": 0, "broker_routes_called": False}}
+               "safety": {"observer_mode": "PRODUCTION_PAPER", "sqlite": "READ_ONLY",
+                          "real_orders_sent": 0, "broker_routes_called": False}}
     target.write_text(json.dumps(payload))
     with Store(database, now=NOW) as s:
         html = _action4_card(Projection(s))
@@ -309,6 +310,65 @@ def test_canonical_reports_exposes_only_published_paper_action4(database):
     with Store(database, now=NOW) as s:
         rejected = _action4_card(Projection(s))
     assert "NO_VERIFICADO" in rejected and "/api/reports/action4" not in rejected
+    payload["safety"]["real_orders_sent"] = False
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        rejected_boolean = _action4_card(Projection(s))
+    assert "NO_VERIFICADO" in rejected_boolean and "/api/reports/action4" not in rejected_boolean
+
+
+def test_counterfactual_profiles_show_three_verified_lanes_without_extra_table(database):
+    from cg_paper_workspace import artifact_root
+    from rc6_trader_dashboard.counterfactuals import profile_decisions
+    from rc6_trader_dashboard.views_analytics import _profile_decisions_panel
+    target = artifact_root(database) / "reports" / "decision_evidence_counterfactual_latest.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"compact_projection": True, "read_only": True, "real_orders_authorized": False,
+               "generated_at": STAMP, "decisions": [{"decision_key": "fact-1", "symbol": "YPFD",
+               "state": "VERIFIED", "factual_decision": "HOLD", "evidence_at": STAMP,
+               "profiles": [{"name": "BASELINE_CONSERVATIVE_V1", "state": "VERIFIED", "action": "HOLD", "reason": "factual"},
+                            {"name": "SHADOW_BALANCED_V1", "state": "VERIFIED", "action": "CANDIDATE_OPEN", "reason": "score"},
+                            {"name": "SHADOW_AGGRESSIVE_V1", "state": "INSUFFICIENT_EVIDENCE", "action": "BUY", "reason": "api_token=private"}]}]}
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        page = profile_decisions(Projection(s))
+        html = _profile_decisions_panel(page)
+    assert page.total == 1 and page.rows[0]["aggressive"] is None
+    assert "Conservador" in html and "Balanceado" in html and "Agresivo" in html
+    assert "CANDIDATE_OPEN" in html and "private" not in html
+    assert "<table" not in html and "autoridad de entrada: No" in html
+    payload["generated_at"] = (NOW + timedelta(seconds=1)).isoformat()
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        assert profile_decisions(Projection(s)).rows == []
+
+
+def test_cierre_displays_only_same_day_paper_lessons(database):
+    from cg_paper_workspace import artifact_root
+    from rc6_trader_dashboard.views_analytics import _action4_card
+    target = artifact_root(database) / "reports" / "rc6_action4_auditoria_latest.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"status": "PAPER_READ_ONLY", "generated_at_utc": STAMP,
+               "window": {"from_local": "2026-10-05T00:00:00-03:00", "to_local": STAMP},
+               "safety": {"observer_mode": "PRODUCTION_PAPER", "observer_session_state": "MARKET_CLOSED", "sqlite": "READ_ONLY",
+                          "real_orders_sent": 0, "broker_routes_called": False},
+               "dashboard_daily_report": {"scope": "ALL_CONTRACT_FAMILIES_PAPER",
+                                          "closure_state": "POSTCLOSE_VERIFIED", "periodo": "2026-10-05",
+                                          "lessons": ["Cierres simulados: 2", "api_token=private"]}}
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        html = _action4_card(Projection(s))
+    assert "Lecciones del cierre · 2026-10-05" in html and "Cierres simulados: 2" in html
+    assert "private" not in html
+    payload["dashboard_daily_report"]["periodo"] = "2026-10-04"
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        assert "Lecciones del cierre" not in _action4_card(Projection(s))
+    payload["dashboard_daily_report"]["periodo"] = "2026-10-05"
+    payload["safety"]["observer_session_state"] = "MARKET_OPEN"
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        assert "Lecciones del cierre ·" not in _action4_card(Projection(s))
 
 
 def test_report_registry_dialog_does_not_invent_instrument_fields(client, database):

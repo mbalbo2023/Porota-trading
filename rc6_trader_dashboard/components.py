@@ -252,4 +252,3 @@ def timeline(events, title="Promociones / demociones / descartes en vivo", *, ve
     empty = ("<li class='muted'>Sin eventos en este scope (0).</li>" if verified_empty else
              "<li class='muted'>NO_VERIFICADO · Sin eventos comprometidos disponibles.</li>")
     return f"<section class='panel'><h2>{e(title)}</h2><ol class='timeline'>{items or empty}</ol></section>"
-

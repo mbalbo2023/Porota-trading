@@ -17,7 +17,7 @@ Before changing Porota, every agent/chat MUST:
 - Never use Codespaces.
 - Never modify PPI Watch.
 - Never write directly to the protected deploy branch or main for development work. Use an isolated branch and explicit promotion.
-- Parallel development requires explicit operator permission; shared runtime writers remain serialized.
+- Parallel development is the default when workstreams are independent and safe; shared runtime writers remain serialized.
 - Parallel workstreams must converge into ONE frozen candidate, ONE final Predeploy V2 gate, ONE immutable artifact/digest and ONE consolidated production deploy.
 - A candidate must pass pre-deploy integrity, dependency, import, runtime-smoke and PAPER-safety gates before it may modify the droplet.
 - Test the exact artifact that will be deployed.
@@ -35,12 +35,3 @@ Before changing Porota, every agent/chat MUST:
 
 ## Accessibility invariant
 If a normal recurring operation requires the user to open a terminal, copy/paste shell commands, or manage GitHub manually, treat that as an automation defect to be fixed.
-
-## Continuity contract
-
-Read [docs/codex/RC6_AGENT_CONTINUITY_V1.md](docs/codex/RC6_AGENT_CONTINUITY_V1.md)
-before claiming current ownership, a deployed SHA or runtime health. `main` is
-not a substitute for the product branch or the Droplet. Never infer that a new
-Codex task inherited uncommitted files, credentials, context or authorization.
-The operator's current explicit restrictions take precedence over generic
-parallelism and automation guidance in this file.

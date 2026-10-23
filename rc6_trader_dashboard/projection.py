@@ -1020,4 +1020,3 @@ class Projection:
             return (payload, "AVAILABLE") if isinstance(payload, dict) else ({}, "EVIDENCE_INVALID")
         except (OSError, ValueError, TypeError):
             return {}, "EVIDENCE_NOT_PUBLISHED"
-

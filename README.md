@@ -1,36 +1,66 @@
-# Porota Trading RC6 — entrada al producto PAPER
+# Porota Trading v16.2
 
-Esta rama contiene el código del candidato RC6. Su HEAD no demuestra por sí solo qué
-SHA está instalado: comprobar `CURRENT_STATE_V2.json`, el Deploy V2 exacto y la
-evidencia runtime antes de afirmar un estado operativo.
+Sistema autónomo de trading algorítmico para el mercado argentino (BYMA), con
+ejecución a través de PPI y motor de decisión sobre Google Gemini.
 
-## Seguridad y alcance
+## Control desde Telegram
 
-- Sólo `PRODUCTION_PAPER` / SHADOW: decisiones y fills simulados, `real_orders_sent=0`;
-  rutas de órdenes reales prohibidas. No operar con dinero real.
-- PPI Watch no se modifica. Backups están suspendidos por política vigente.
-- FIX-FORWARD únicamente; sin rollback, reinicios o estrés del Droplet durante rueda.
-- GitHub y Actions son el plano normal de cambios: rama aislada, PR, Predeploy V2
-  del SHA exacto, artefacto congelado, un solo candidato reconciliado y Deploy V2
-  sujeto a owner global y aceptación PAPER.
-- Ningún README, test, PR o workflow exitoso sustituye la prueba del Droplet.
+| Comando | Qué hace |
+|---|---|
+| `ESTADO` | Qué hay abierto y en qué estado está el bot |
+| `PARADA` | Parada de emergencia: ordenada, liquidar todo, o corte seco |
+| `REARRANCAR` | Volver a operar |
+| `AYUDA` | La lista completa |
 
-## Al empezar una tarea
+## Lo primero que hay que saber
 
-Leer [AGENTS.md](AGENTS.md), la [política RC6](ops/policy/porota-policy.yaml)
-y el [contrato de continuidad](docs/codex/RC6_AGENT_CONTINUITY_V1.md). Resolver
-HEAD, PRs/issues abiertos, owners y los runs recientes en GitHub. Revalidar
-contra la evidencia directa del runtime; reportar `NO_VERIFICADO` cuando falte.
+**El bot no arranca a operar solo.** Al levantar, manda un mensaje a Telegram y
+espera que autorices cómo arrancar: simulación contra el sandbox de PPI, real, o
+quedarse levantado sin operar. Hasta que no respondas, no toca el mercado.
 
-La rama `main` aloja documentación y coordinación, pero no identifica por sí
-misma el producto instalado. Las guías de v16, Telegram para operar en real,
-`docker compose up` y los ejemplos antiguos son material histórico; no son
-instrucciones de arranque ni de promoción de RC6.
+## Puesta en marcha en Docker
 
-## Superficies de consulta
+```bash
+cp .env.example .env            # 0. crear configuracion local sin credenciales
+docker compose build            # 1. construir el entorno reproducible
+docker compose run --rm bot pytest -q  # 2. ejecutar la suite
+docker compose up -d            # 3. arrancar; requiere credenciales en .env
+docker compose exec bot python ap_api_verifier.py  # 4. verificar APIs
+```
 
-- [Issues](https://github.com/mbalbo2023/Porota-trading/issues),
-  [PRs](https://github.com/mbalbo2023/Porota-trading/pulls) y
-  [Actions](https://github.com/mbalbo2023/Porota-trading/actions).
-- [Handoffs](docs/handoffs/) y [política de pruebas](ops/policy/test-policy.yaml):
-  documentos con corte temporal; nunca convertirlos en estado presente sin un recibo nuevo.
+Responder **🧪 Simulación** y mirar el panel en `/testing`.
+
+## Documentación
+
+| Archivo | Qué contiene |
+|---|---|
+| `PLAN_DE_TESTING.md` | Plan completo para QA: por dónde empezar, herramientas gratuitas, guía paso a paso para generar tests con IA, guion de aceptación |
+| `.env.example` | Plantilla sin secretos para crear el `.env` local |
+
+**El Documento Maestro y la Bitácora se entregan por separado**, fuera de este
+paquete, porque el Anexo A del Documento Maestro contiene credenciales en claro
+y un PDF con claves subido a un repositorio queda en el historial de Git de
+forma permanente.
+
+## Panel de control
+
+| Ruta | Para qué |
+|---|---|
+| `/` | Resumen de los últimos días |
+| `/vivo` | Qué está haciendo el bot ahora mismo |
+| `/testing` | Estado del arranque y traza paso a paso |
+| `/salud` | Semáforos de todas las APIs y módulos |
+| `/sre` | Propuestas de mejora e historial de cambios |
+| `/historicos` | Qué hay archivado y de qué fuentes |
+| `/aprendizaje` | Descarga del blog de aprendizaje |
+| `/config` | Editor de variables de entorno |
+
+## Credenciales
+
+Para el **entorno de pruebas**, crear `.env` desde `.env.example` y cargar las
+credenciales fuera de Git. Nunca versionar `.env`, `.env.testing` ni respaldos
+del archivo de entorno.
+
+Para **producción** hay que generar credenciales nuevas y moverlas a Secrets.
+Las de prueba quedan en el historial del repositorio de forma permanente, así
+que rotarlas antes del pase no es opcional.

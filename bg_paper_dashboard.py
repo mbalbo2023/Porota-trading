@@ -24,6 +24,7 @@ from cb_caucion_audit import allocation_history
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
 import rc6_counterfactual_learning as counterfactual_learning
+from rc6_action4_audit import published_audit_is_safe, validate_weekly_payload
 import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
@@ -2086,9 +2087,9 @@ def _action4_contains_sensitive_key(value) -> bool:
 
 def _action4_report_card() -> str:
     payload = _read_action4()
-    if not payload:
+    if not published_audit_is_safe(payload):
         return ("<div class='paper-card'><h2>Auditoría Action 4</h2>"
-                "<p class='paper-muted'>Todavía no hay una auditoría RC6 publicada.</p></div>")
+                "<p class='paper-muted'>NO_VERIFICADO: auditoría PAPER ausente o sin certificado de seguridad.</p></div>")
     window = payload.get("window") or {}
     origin = payload.get("origin") or {}
     separation = payload.get("separation") or {}
@@ -3377,16 +3378,15 @@ def install(app,check_auth):
             raise HTTPException(400,"JSON inválido")
         if not isinstance(payload,dict):
             raise HTTPException(400,"La auditoría debe ser un objeto JSON")
-        if payload.get("scope") != "RC6" or payload.get("source") != "/api/observer/state":
-            raise HTTPException(400,"Fuente o alcance no autorizados")
-        if payload.get("database_access_from_action") != "NO":
-            raise HTTPException(400,"La Action no puede leer la base directamente")
         try:
-            real_orders_sent=int(payload.get("real_orders_sent",0))
-        except (TypeError,ValueError):
-            raise HTTPException(400,"real_orders_sent inválido")
-        if real_orders_sent != 0:
-            raise HTTPException(409,"La auditoría no puede registrar órdenes reales")
+            validate_weekly_payload(payload)
+        except ValueError as exc:
+            raise HTTPException(400,str(exc)) from exc
+        observed=_rows("SELECT mode,real_orders_sent FROM observer_state WHERE id=1")
+        if (len(observed)!=1 or observed[0].get("mode")!="PRODUCTION_PAPER" or
+                type(observed[0].get("real_orders_sent")) is not int or
+                observed[0]["real_orders_sent"]!=0):
+            raise HTTPException(409,"Estado PAPER del observer no verificable")
         if _action4_contains_sensitive_key(payload):
             raise HTTPException(400,"La auditoría contiene una clave sensible")
         path=_action4_path()
