@@ -35,14 +35,18 @@ units=['porota-preopen-rc6.timer','porota-preopen-rc6.service',
        'porota-a3-history-daily-rc6.timer','porota-a3-history-reconcile-rc6.timer',
        'porota-a3-history-weekend-rc6.timer','porota-iol-shadow-collector-rc6.timer',
        'porota-host-general-backup-rc6.timer','porota-contract-evidence-rc4.timer',
-       'porota-functional-health-rc6.timer']
+       'porota-functional-health-rc6.timer',
+       'porota-a3-history-daily-rc6.service','porota-a3-history-reconcile-rc6.service',
+       'porota-a3-history-weekend-rc6.service','porota-iol-shadow-collector-rc6.service']
 out['units']={}
 for unit in units:
     active=cmd(['systemctl','is-active',unit],3)
     enabled=cmd(['systemctl','is-enabled',unit],3)
     out['units'][unit]={'active':active.get('out') or active.get('error'),
                         'enabled':enabled.get('out') or enabled.get('error')}
-for unit in ('porota-preopen-rc6.service','porota-market-watch-silence-rc6.service'):
+for unit in ('porota-preopen-rc6.service','porota-market-watch-silence-rc6.service',
+             'porota-a3-history-daily-rc6.service','porota-a3-history-reconcile-rc6.service',
+             'porota-a3-history-weekend-rc6.service','porota-iol-shadow-collector-rc6.service'):
     s=cmd(['systemctl','show',unit,'--property=Result,ExecMainStatus,ActiveEnterTimestamp,InactiveEnterTimestamp','--no-pager'],3)
     out['units'][unit]['last']={k:v for k,v in (line.split('=',1) for line in s.get('out','').splitlines() if '=' in line)}
 out['containers']={}
@@ -88,4 +92,13 @@ ppi=cmd(['systemctl','list-unit-files','--no-legend','--no-pager'],5,65536)
 matches=[line.split()[0] for line in ppi.get('out','').splitlines()
          if 'ppi' in line.lower() and 'watch' in line.lower()]
 out['ppi_watch_passive']={'enumeration_rc':ppi['rc'],'matching_units':matches[:4]}
+legacy=[line.split()[0] for line in ppi.get('out','').splitlines()
+        if any(tag in line.split()[0].lower() for tag in ('rc4','rc5','hf5'))]
+out['legacy_units']={'enumeration_rc':ppi['rc'],'units':[
+    {'name':unit,'active':cmd(['systemctl','is-active',unit],3).get('out'),
+     'enabled':cmd(['systemctl','is-enabled',unit],3).get('out')}
+    for unit in legacy[:24]],'truncated':len(legacy)>24}
+next_preopen=cmd(['systemctl','show','porota-preopen-rc6.timer',
+                  '--property=NextElapseUSecRealtime,LastTriggerUSec','--no-pager'],3)
+out['preopen_schedule']={k:v for k,v in (line.split('=',1) for line in next_preopen.get('out','').splitlines() if '=' in line)}
 print('RC6_723_PREOPEN_READONLY='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
