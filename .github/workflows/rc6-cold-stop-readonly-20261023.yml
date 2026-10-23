@@ -1,0 +1,60 @@
+name: RC6 exact COLD and stop receipt read-only diagnostic
+on:
+  push:
+    branches: [diag/rc6-cold-stop-readonly-20261023]
+    paths: [.github/workflows/rc6-cold-stop-readonly-20261023.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Strict SSH and scoped read-only host proof
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_readonly" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/rc6_readonly" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json,sys,hashlib,subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          sys.path.insert(0,str(root))
+          from scripts import rc6_failed_cold_fix_forward as old
+          from scripts import rc6_cold2_successor as successor
+          d=root/'data/deploy'
+          candidate='8ff3f851e0fc857c24a8ee22be45f20a9aa39127'
+          q=json.loads((d/('quiescence-'+candidate+'.json')).read_text())
+          prior=d/('quiescence-'+str(q.get('fix_forward_from'))+'.json')
+          live=old.enveloped(root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow/status.json')
+          shadow=root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+          pointer=old.enveloped(shadow/'CURRENT.json')
+          current=old.enveloped_gzip(shadow/pointer['file'])
+          def show(k,v):print(k+'='+json.dumps(v,sort_keys=True,default=str))
+          show('CANDIDATE_QUIESCENCE',{k:q.get(k) for k in ('status','candidate_sha','fix_forward_from','prior_receipt_sha256','paused_postclose','intraday_caucion','pending_caucion','market_open_suspended','open_paper_carryover','spot_carryover','caucion_carryover','inflight','installation_started')})
+          show('PRIOR_RECEIPT',{'exists':prior.is_file(),'sha256':hashlib.sha256(prior.read_bytes()).hexdigest() if prior.is_file() else None,'status':json.loads(prior.read_text()).get('status') if prior.is_file() else None})
+          show('CURRENT_MARKER',{k:json.loads((d/'CURRENT_STATE_V2.json').read_text()).get(k) for k in ('candidate_sha','deploy_sha','validation_status','mode','real_orders_sent')})
+          show('COLD_LIVE',{k:live.get(k) for k in ('status','as_of','error_class','error_module','error_line','real_routes','real_orders_sent')})
+          show('COLD_POINTER',{'generation':pointer.get('generation_id'),'snapshot_id':current.get('report',{}).get('computed_report',{}).get('snapshot_id')})
+          show('PROOFS',{'current_stop':old.proven_stop_cancellation(live,q),'prior_stop':old.proven_prior_stop_cancellation(live,q,d/('quiescence-'+old.PRIOR_CANCELLED_SHA+'.json')),'inherited_flat':old.proven_inherited_flat_stop_cancellation(live,q,d/'quiescence-83855c3b08647243dcd706ca7ead929378c4c11d.json'),'inherited_pending':old.proven_inherited_pending_stop_cancellation(live,q,prior),'distinct_successor':old.proven_distinct_failed_successor(d/('rc6-failed-cold-'+old.IDENT),pointer.get('generation_id'),current.get('report',{}).get('computed_report',{}).get('snapshot_id'))})
+          try:
+              proof=successor.inspect(root,hash_pack=False)
+              show('SUCCESSOR_INSPECT',{k:proof.get(k) for k in ('snapshot_id','manifest_sha256','pack_bytes','cut','queue_failed','failed_computed_report','archive_complete')})
+          except Exception as exc:show('SUCCESSOR_INSPECT_ERROR',str(exc))
+          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              raw=subprocess.check_output(['docker','inspect','-f','{{.State.Status}}|{{.State.ExitCode}}|{{.Image}}|{{.State.OOMKilled}}',name],text=True).strip()
+              show('CONTAINER_'+name,raw)
+          for name in ('porota-introspection-rc6.timer','porota-iol-shadow-collector-rc6.timer'):
+              show('TIMER_'+name,subprocess.run(['systemctl','is-active',name],text=True,capture_output=True).stdout.strip())
+          PY
+      - name: Remove runner key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_readonly"
