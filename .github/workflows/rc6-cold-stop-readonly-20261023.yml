@@ -30,6 +30,8 @@ jobs:
           sys.path.insert(0,str(root))
           from scripts import rc6_failed_cold_fix_forward as old
           from scripts import rc6_cold2_successor as successor
+          from scripts import rc6_cold2_apply_guard as cold2
+          from scripts import rc6_cold2_quarantine as original2
           d=root/'data/deploy'
           candidate='8ff3f851e0fc857c24a8ee22be45f20a9aa39127'
           q=json.loads((d/('quiescence-'+candidate+'.json')).read_text())
@@ -51,6 +53,13 @@ jobs:
           for ident in ('fae69c426b714c298f805f7402888ff3','a6573757fb4d42f08b105a595f7fad9d'):
               show('PAIR_'+ident,{'manifest':{k:old.enveloped(source/('manifest-'+ident+'.json'),cold=True).get(k) for k in ('snapshot_id','pack','pack_bytes','pack_sha256','sealed_at','deadline_at')},'receipt':old.enveloped(source/('receipt-'+ident+'.json'),cold=True)})
           show('QUEUE',old.enveloped(source/'queue.json',cold=True))
+          show('COMPLETE_QUEUE_PROOF',cold2.verify_complete_queue(root))
+          original_archive=d/('rc6-failed-cold-'+original2.IDENT)
+          show('COLD2_ORIGINAL_ARCHIVE',{'exists':original_archive.is_dir(),
+              'names':sorted(p.name for p in original_archive.iterdir()) if original_archive.is_dir() else []})
+          prior_fix=d/('rc6-cold-fix-forward-'+old.PRIOR_ARCHIVE_SHA+'.json')
+          show('PRIOR_FIX_RECEIPT',{'exists':prior_fix.is_file(),
+              'sha256':hashlib.sha256(prior_fix.read_bytes()).hexdigest() if prior_fix.is_file() else None})
           show('COLD_ARCHIVE_NAMES',sorted(p.name for p in (d/('rc6-failed-cold-'+old.IDENT)).iterdir()))
           show('COLD_LIVE_EXTRA',{k:v for k,v in live.items() if k not in ('status','as_of','error_class','error_module','error_line','real_routes','real_orders_sent')})
           show('PROOFS',{'current_stop':old.proven_stop_cancellation(live,q),'prior_stop':old.proven_prior_stop_cancellation(live,q,d/('quiescence-'+old.PRIOR_CANCELLED_SHA+'.json')),'inherited_flat':old.proven_inherited_flat_stop_cancellation(live,q,d/'quiescence-83855c3b08647243dcd706ca7ead929378c4c11d.json'),'inherited_pending':old.proven_inherited_pending_stop_cancellation(live,q,prior),'distinct_successor':old.proven_distinct_failed_successor(d/('rc6-failed-cold-'+old.IDENT),pointer.get('generation_id'),current.get('report',{}).get('computed_report',{}).get('snapshot_id'))})
