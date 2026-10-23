@@ -68,17 +68,20 @@ def _evidence_fallback(root: Path | str | None = None, *, loader=None) -> dict[s
     candidates = []
     if root is not None:
         base = Path(root)
-        candidates.extend((base / "decision_evidence_latest.json",
+        candidates.extend((base / "decision_evidence_counterfactual_latest.json",
+                           base / "decision_evidence_latest.json",
                            base.parent / "reports" / "decision_evidence_latest.json"))
     evidence_root = os.getenv("RC6_DECISION_EVIDENCE_ROOT", "").strip()
     if evidence_root:
-        candidates.append(Path(evidence_root) / "decision_evidence_latest.json")
+        candidates.extend((Path(evidence_root) / "decision_evidence_counterfactual_latest.json",
+                           Path(evidence_root) / "decision_evidence_latest.json"))
+    candidates.append(Path("/app/data/paper_v17/reports/decision_evidence_counterfactual_latest.json"))
     candidates.append(Path("/app/data/paper_v17/reports/decision_evidence_latest.json"))
     payload: dict[str, Any] = {}
     for path in candidates:
         try:
             loaded = loader(path) if loader else json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict) and (not loader or loaded.get('decisions')):
+            if isinstance(loaded, dict) and (not loader or loaded.get('decisions') or loaded.get('compact_projection') is True):
                 payload = loaded
                 break
         except (FileNotFoundError, OSError, json.JSONDecodeError):
@@ -107,7 +110,7 @@ def _evidence_fallback(root: Path | str | None = None, *, loader=None) -> dict[s
             elif state == "HARD_SAFETY_BLOCKED" or action == "HOLD":
                 outcome = "WOULD_WARN" if factual in {"BUY", "OPEN", "OPENED_SIMULATED", "ENTER"} else "WOULD_REJECT"
                 reason = "SHADOW: " + str(profile.get("reason") or "Perfil habría mantenido HOLD")
-            elif state == "EVALUATED" and action in {"CANDIDATE_OPEN", "BUY", "OPEN"}:
+            elif state in {"EVALUATED", "VERIFIED"} and action in {"CANDIDATE_OPEN", "BUY", "OPEN"}:
                 outcome = "WOULD_CONFIRM"
                 reason = "SHADOW: perfil habría habilitado el criterio de entrada"
             else:
@@ -131,6 +134,7 @@ def _evidence_fallback(root: Path | str | None = None, *, loader=None) -> dict[s
         "generated_at": payload.get("generated_at"),
         "source": str(payload.get("source") or "decision_evidence_snapshots/read-only") + " · SHADOW_DUAL_EVALUATION",
         "entries": rows[:100],
+        "compact_projection": payload.get("compact_projection") is True,
     }
 
 
@@ -165,7 +169,9 @@ def read_bounded(root=None, *, as_of, offset=0, limit=10):
         raw=load(snapshot_path(root))
         source=SNAPSHOT_NAME
         if not isinstance(raw.get('entries'),list) or not raw.get('entries'):
-            raw=_evidence_fallback(root,loader=load);source='decision_evidence_latest.json · published profile comparisons'
+            raw=_evidence_fallback(root,loader=load)
+            source=('decision_evidence_counterfactual_latest.json' if raw.get('compact_projection') else
+                    'decision_evidence_latest.json')+' · published profile comparisons'
         generated=clock(raw.get('generated_at'))
         if not generated or generated>as_of:
             return empty|{'reason':'PUBLICATION_CLOCK_UNVERIFIED' if raw else 'SIN_PUBLICACION'}

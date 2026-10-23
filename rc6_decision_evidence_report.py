@@ -20,7 +20,9 @@ from rc6_shadow_profiles import evaluate_profiles
 DEFAULT_DB = os.getenv("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
 DEFAULT_ROOT = Path(os.getenv("RC6_DECISION_EVIDENCE_ROOT", "data/paper_v17/reports"))
 OUTPUT_NAME = "decision_evidence_latest.json"
+COUNTERFACTUAL_NAME = "decision_evidence_counterfactual_latest.json"
 MAX_ROWS = 500
+COUNTERFACTUAL_MAX_BYTES = 1024 * 1024
 
 
 def output_path(root: Path | str | None = None) -> Path:
@@ -131,10 +133,43 @@ def write(payload: dict[str, Any], *, root: Path | str | None = None) -> Path:
     return target
 
 
+def write_counterfactual(payload: dict[str, Any], *, root: Path | str | None = None) -> Path:
+    """Publish a bounded, observational subset of already verified decisions."""
+    decisions = []
+    for row in payload.get("decisions", [])[:100]:
+        if not isinstance(row, dict) or row.get("state") != "VERIFIED":
+            continue
+        decisions.append({
+            "decision_key": row.get("decision_key"), "symbol": row.get("symbol"),
+            "state": "VERIFIED", "factual_decision": row.get("factual_decision"),
+            "evidence_at": row.get("evidence_at"),
+            "profiles": [{key: profile.get(key) for key in ("name", "state", "action", "reason")}
+                         for profile in row.get("profiles", [])[:3] if isinstance(profile, dict)],
+        })
+    compact = {"schema_version": 1, "compact_projection": True,
+               "generated_at": payload.get("generated_at"),
+               "source": "decision_evidence_snapshots/read-only",
+               "decisions": decisions, "read_only": True, "real_orders_authorized": False}
+    raw = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    while len(raw) > COUNTERFACTUAL_MAX_BYTES and decisions:
+        decisions.pop()
+        raw = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    if len(raw) > COUNTERFACTUAL_MAX_BYTES:
+        raise ValueError("COUNTERFACTUAL_PUBLICATION_BYTE_BUDGET")
+    target = output_path(root).with_name(COUNTERFACTUAL_NAME)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile("wb", dir=target.parent, prefix=".decision-counterfactual-", suffix=".tmp", delete=False) as handle:
+        handle.write(raw); handle.flush(); os.fsync(handle.fileno())
+        temporary = Path(handle.name)
+    os.replace(temporary, target)
+    return target
+
+
 def publish(**kwargs) -> dict[str, Any]:
     root = kwargs.pop("root", None)
     payload = build(**kwargs)
     write(payload, root=root)
+    write_counterfactual(payload, root=root)
     return payload
 
 
