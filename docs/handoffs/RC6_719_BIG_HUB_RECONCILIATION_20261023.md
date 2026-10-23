@@ -1,4 +1,6 @@
-# RC6 — conciliación Big Hub y dictamen causal (23/10/2026 UTC)
+# RC6 — conciliación de issues de GitHub y dictamen causal (23/10/2026 UTC)
+
+La expresión «Big Hub» y el nombre histórico de este archivo provinieron de un error de dictado: siempre se refiere exclusivamente a los issues del repositorio GitHub `mbalbo2023/Porota-trading`. Se conserva la ruta del archivo para mantener sus enlaces existentes.
 
 WORKSTREAM_ID=WS-RC6-719-DASHBOARD-GRAIN-20261022. Corte de esta auditoría: 23/10 ~01:35 UTC. **NO_GO integral.** El estado cambia con la rueda y el host; no extrapolar este corte. La instrucción vigente del operador es PAPER/SHADOW, cero órdenes reales, PPI Watch intocable, backups deshabilitados, FIX-FORWARD; sin rollback, estrés de host, subagentes ni tareas programadas.
 
