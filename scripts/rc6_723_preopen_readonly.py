@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Bounded, host-only RC6 preopen facts. No service, database or PPI Watch mutation."""
 import json
+import hashlib
+import re
 import os
 import shutil
 import sqlite3
@@ -51,6 +53,22 @@ for unit in ('porota-preopen-rc6.service','porota-market-watch-silence-rc6.servi
              'porota-a3-history-rc6@WEEKEND_DEEP.service','porota-iol-shadow-collector-rc6.service'):
     s=cmd(['systemctl','show',unit,'--property=Result,ExecMainStatus,ActiveEnterTimestamp,InactiveEnterTimestamp','--no-pager'],3)
     out['units'][unit]['last']={k:v for k,v in (line.split('=',1) for line in s.get('out','').splitlines() if '=' in line)}
+out['a3_failure_signatures']={}
+for instance in ('DAILY_INCREMENTAL','RECONCILE'):
+    unit='porota-a3-history-rc6@'+instance+'.service'
+    journal=cmd(['journalctl','-u',unit,'--since','2026-10-22 00:00:00 UTC',
+                 '-n','60','--no-pager','-o','cat'],5,12000)
+    lines=journal.get('out','').splitlines()
+    exception=[re.match(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):',v.strip())
+               for v in lines]
+    classes=[m.group(1) for m in exception if m]
+    last=lines[-1].strip() if lines else ''
+    out['a3_failure_signatures'][instance]={'journal_rc':journal['rc'],
+        'line_count':len(lines),'exception_classes':classes[-4:],
+        'last_line_sha256':hashlib.sha256(last.encode()).hexdigest() if last else None,
+        'docker_error':any('Error response from daemon' in v for v in lines),
+        'no_such_container':any('No such container' in v for v in lines),
+        'traceback':any('Traceback (most recent call last)' in v for v in lines)}
 out['containers']={}
 for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
     s=cmd(['docker','inspect','-f','{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}',name],5)
