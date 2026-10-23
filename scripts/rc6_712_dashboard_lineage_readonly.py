@@ -2,8 +2,13 @@
 """Bounded, non-sensitive dashboard producer census in the installed image."""
 import collections
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import hashlib
 import json
+import os
+from pathlib import Path
 import sqlite3
+import stat
 import time
 
 PATH='/app/data/paper_v17/observer_v17.db'
@@ -108,6 +113,8 @@ if table('paper_cauciones') and table('paper_caucion_allocations'):
 c.close()
 from rc6_trader_dashboard.projection import Projection, Store
 with Store(PATH) as store:
+    store_deadline=time.monotonic()+4
+    store.connection.set_progress_handler(lambda:int(time.monotonic()>store_deadline),100)
     projection=Projection(store)
     shadow=projection.shadow
     report=shadow.get('report') or {}
@@ -132,4 +139,62 @@ with Store(PATH) as store:
                               for name,plan in (report.get('engines') or {}).items() if isinstance(plan,dict)},
                    'funnel_counts':{k:v for k,v in (report.get('operational_funnel') or {}).get('counts',{}).items()
                                     if k in ('ELIGIBLE','TRADEABLE','HOT') and type(v) is int}}
+    page=projection.performance()
+    performance={'state':page.state,'reason':page.reason,'group_count':page.total,
+                 'visible_groups':len(page.rows),'cross_check':'NOT_EVALUATED'}
+    if page.state=='AVAILABLE' and page.total is not None and page.total<=10:
+        columns=store.columns('paper_positions')
+        required={'status','currency','asset_class','strategy_version','net_pnl','gross_pnl','entry_cost','exit_cost'}
+        if required<=columns:
+            ledger=store.query('SELECT currency,asset_class,strategy_version,net_pnl,gross_pnl,entry_cost,exit_cost '
+                               "FROM paper_positions WHERE status='CLOSED' LIMIT 1001")
+            if len(ledger)<=1000 and not store.errors:
+                groups={}
+                valid=True
+                for item in ledger:
+                    key=(item['currency'],item['asset_class'],item['strategy_version'])
+                    group=groups.setdefault(key,{'n':0,'net':Decimal(0),'gross':Decimal(0),'costs':Decimal(0)})
+                    group['n']+=1
+                    for label,values in (('net',(item['net_pnl'],)),('gross',(item['gross_pnl'],)),
+                                         ('costs',(item['entry_cost'],item['exit_cost']))):
+                        try:
+                            amounts=[Decimal(str(value)) for value in values]
+                            if not all(value.is_finite() for value in amounts): raise InvalidOperation()
+                            group[label]+=sum(amounts)
+                        except (InvalidOperation,TypeError,ValueError): valid=False
+                expected={(row['currency'],row['family'],row['strategy']):row for row in page.rows}
+                matched=valid and set(groups)==set(expected)
+                for key,group in groups.items():
+                    row=expected.get(key,{})
+                    matched=matched and row.get('sample_size')==group['n']
+                    for column,aggregate in (('net_pnl','net'),('gross_pnl','gross'),('costs','costs')):
+                        try:
+                            matched=matched and Decimal(str(row.get(column)))==group[aggregate]
+                        except (InvalidOperation,TypeError,ValueError): matched=False
+                performance.update(cross_check='MATCH' if matched else 'MISMATCH',
+                                   closed_rows=len(ledger),compared_groups=len(groups))
+            else: performance['cross_check']='BOUNDED_OR_READ_ERROR'
+    out['performance_ledger']=performance
+from rc6_counterfactual_learning import read_bounded
+counterfactual=read_bounded(as_of=datetime.now(timezone.utc))
+out['counterfactual']={key:counterfactual.get(key) for key in
+                       ('state','reason','source','total','counts','as_of','sample_truncated')}
+for label,path in (('counterfactual_snapshot',Path('/app/data/validation/counterfactual_learning_rc6.json')),
+                   ('decision_evidence',Path('/app/data/paper_v17/reports/decision_evidence_latest.json'))):
+    try:
+        with os.fdopen(os.open(path,os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW),'rb') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode): raise ValueError('NOT_REGULAR')
+            raw=stream.read(1024**2+1)
+        if len(raw)>1024**2: raise ValueError('TOO_LARGE')
+        payload=json.loads(raw)
+        if not isinstance(payload,dict): raise ValueError('BAD_SHAPE')
+        entries=payload.get('entries') if label=='counterfactual_snapshot' else payload.get('decisions')
+        out[label]={'state':'AVAILABLE','sha256':hashlib.sha256(raw).hexdigest(),
+                    'generated_at':payload.get('generated_at'),
+                    'count':len(entries) if isinstance(entries,list) else None}
+    except FileNotFoundError:
+        out[label]={'state':'ABSENT'}
+    except (OSError,ValueError,TypeError):
+        out[label]={'state':'REJECTED'}
 print('RC6_712_DASHBOARD_LINEAGE='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
+
