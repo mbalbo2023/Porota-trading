@@ -101,4 +101,16 @@ out['legacy_units']={'enumeration_rc':ppi['rc'],'units':[
 next_preopen=cmd(['systemctl','show','porota-preopen-rc6.timer',
                   '--property=NextElapseUSecRealtime,LastTriggerUSec','--no-pager'],3)
 out['preopen_schedule']={k:v for k,v in (line.split('=',1) for line in next_preopen.get('out','').splitlines() if '=' in line)}
+action4=Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/rc6_action4_auditoria_latest.json')
+try:
+    stat=action4.stat()
+    if stat.st_size>1048576:
+        out['action4_report']={'state':'OVERSIZE','bytes':stat.st_size}
+    else:
+        report=json.loads(action4.read_text(encoding='utf-8'))
+        out['action4_report']={'state':'PRESENT','bytes':stat.st_size,
+          'status':report.get('status'),'generated_at_utc':report.get('generated_at_utc'),
+          'scope':report.get('scope'),'age_seconds':age(report.get('generated_at_utc'))}
+except (OSError,ValueError,TypeError) as exc:
+    out['action4_report']={'state':'NO_VERIFICADO','error':type(exc).__name__}
 print('RC6_723_PREOPEN_READONLY='+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(',',':')))
