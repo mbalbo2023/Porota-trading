@@ -65,7 +65,7 @@ for instance in ('DAILY_INCREMENTAL','RECONCILE'):
     last=lines[-1].strip() if lines else ''
     out['a3_failure_signatures'][instance]={'journal_rc':journal['rc'],
         'line_count':len(lines),'exception_classes':classes[-4:],
-        'snapshot_reasons':[m.group(1) for v in lines for m in [re.search(r'SnapshotError:\\s*([A-Z][A-Z0-9_]+)',v)] if m][-4:],
+        'snapshot_reasons':[m.group(1) for v in lines for m in [re.search(r'SnapshotError:\s*([A-Z][A-Z0-9_]+)',v)] if m][-4:],
         'last_line_sha256':hashlib.sha256(last.encode()).hexdigest() if last else None,
         'docker_error':any('Error response from daemon' in v for v in lines),
         'no_such_container':any('No such container' in v for v in lines),
