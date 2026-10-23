@@ -7,6 +7,7 @@ import pytest
 
 from scripts import rc6_cold2_apply_guard as guard
 from scripts import rc6_cold2_quarantine as cold
+from scripts import rc6_failed_cold_fix_forward as recovery
 
 FIRST = 'a' * 32
 LATEST = 'b' * 32
@@ -64,6 +65,30 @@ def test_complete_queue_is_attested_and_left_byte_identical(tmp_path):
     assert result['snapshot_id'] == LATEST and result['complete_pairs'] == 2
     assert result['old_cut_revoked'] is True
     assert before == {p:str(p.read_bytes()) for p in before}
+
+
+def test_oct23_complete_queue_and_cancelled_next_capture_remain_distinct(tmp_path):
+    root, source, shadow, _, _ = fixture(tmp_path)
+    before={p:p.read_bytes() for p in source.iterdir()}
+    live={'status':'FAIL_CLOSED','error_class':'ValueError',
+          'error_module':'cold_audit','error_line':360,
+          'as_of':'2026-10-23T22:18:21.695017+00:00',
+          'real_orders_sent':0,'real_routes':'NOT_CALLED'}
+    stop={'classification':'CLEAN_EXIT',
+          'before':{'Status':'running','StartedAt':'2026-10-22T23:49:15.51107753Z'},
+          'after':{'Status':'exited','ExitCode':0,'OOMKilled':False,
+                   'FinishedAt':recovery.CLOSED_FLAT_STAGE_STOP_FINISHED}}
+    receipt={'candidate_sha':recovery.CLOSED_FLAT_STAGE_STOP_SHA,
+             'paused_postclose':False,'intraday_caucion':False,
+             'market_open_suspended':False,'open_paper_carryover':False,
+             'spot_carryover':None,'caucion_carryover':None,
+             'stop_evidence':{'porota_production_observer':stop}}
+    write_envelope(shadow/'status.json',live)
+    assert recovery.proven_stop_cancellation(live,receipt)
+    assert guard.verify_complete_queue(root)['state']=='COMPLETE_UNTOUCHED'
+    assert before=={p:p.read_bytes() for p in source.iterdir()}
+    assert cold.envelope(shadow/'status.json')['status']=='FAIL_CLOSED'
+    assert not recovery.proven_stop_cancellation({**live,'error_line':361},receipt)
 
 
 @pytest.mark.parametrize('change,reason', [
