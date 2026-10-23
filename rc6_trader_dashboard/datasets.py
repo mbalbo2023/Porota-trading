@@ -106,6 +106,28 @@ def shadow_rows(p, kind):
             rows.sort(key=lambda row: row.get("as_of") or "", reverse=True)
         elif kind not in {"capacity"}:
             rows.sort(key=lambda row: ({"HOT": 0, "WARM": 1, "DISCOVERY": 2}.get(row.get("state"), 3), row.get("rank") or 10**9, row.get("symbol", "")))
+    elif kind in {"signals", "experiments"}:
+        entry = report.get("entry_signal_lab")
+        if not isinstance(entry, dict):
+            return Page("CURRENT.json · entry_signal_lab", state=UNKNOWN,
+                        reason="ENTRY_SIGNAL_SUMMARY_NOT_PUBLISHED")
+        cohorts = entry.get("cohorts") if isinstance(entry.get("cohorts"), list) else []
+        rows = [{"family": row.get("family"), "currency": row.get("currency"),
+                 "strategy": row.get("strategy_id"), "registry_version": row.get("registry_sha256"),
+                 "state": UNKNOWN, "sample_size": row.get("observations"), "score": None,
+                 "entry_authority": False, "as_of": entry.get("as_of"),
+                 "observations": row.get("observations"),
+                 "reason": "Cohorte SHADOW medida; score no es probabilidad ni edge validado",
+                 "cohort_total": entry.get("cohort_total"),
+                 "cohorts_truncated": entry.get("cohorts_truncated")}
+                for row in cohorts if isinstance(row, dict)]
+        return Page("CURRENT.json · entry_signal_lab · top 10 cohortes",
+                    rows[p.offset:p.offset + 10], len(rows),
+                    "AVAILABLE" if rows else UNKNOWN,
+                    p.offset, entry.get("as_of"),
+                    "Publicadas " + str(len(rows)) + "/" + str(entry.get("cohort_total")) +
+                    " cohortes; registros de evaluador=" + str(entry.get("registry_total")) +
+                    "; decisiones nativas observadas=" + str(entry.get("native_decisions_observed")))
     else:
         name = {"families": "family_routing", "experiments": "entry_signal_lab", "signals": "entry_signal_lab",
                 "exits": "economic_exit_lab", "event-risk": "event_risk", "strategies": "family_routing"}[kind]

@@ -233,6 +233,84 @@ def test_invalid_financial_numbers_never_become_zero(database):
     assert close_stats["state"] == "INVALID_NET_PNL" and close_stats["win_rate"] is None
 
 
+def test_open_position_shows_signed_paper_pnl_only_with_current_book(database):
+    from rc6_trader_dashboard.views_live import render
+    with sqlite3.connect(database) as c:
+        c.executescript("""CREATE TABLE paper_fills(id INTEGER PRIMARY KEY,paper_id TEXT,source TEXT,
+            side TEXT,filled_at TEXT,quantity TEXT,price TEXT,costs TEXT,slippage TEXT);
+            CREATE TABLE paper_spot_sales(fill_id INTEGER PRIMARY KEY,paper_id TEXT,entry_cost TEXT,
+            gross_pnl TEXT,net_pnl TEXT,net_proceeds TEXT,available_at TEXT,basis TEXT,reason TEXT);""")
+        c.execute("UPDATE paper_position_marks SET book_at=?,marked_at=? WHERE paper_id='open-1'", (STAMP, STAMP))
+    with Store(database, now=NOW) as s:
+        p = Projection(s)
+        row = p.positions().rows[0]
+        html = render(p, BY_KEY["en-vivo"], "posiciones")
+    assert row["unrealized_pnl"] == "29" and row["remaining_quantity"] == "10"
+    assert "Ganancia/pérdida PAPER" in html
+    assert "29,00" in html and "result-positive" in html
+
+    with sqlite3.connect(database) as c:
+        c.execute("UPDATE paper_position_marks SET mark_price='98' WHERE paper_id='open-1'")
+    with Store(database, now=NOW) as s:
+        row = Projection(s).positions().rows[0]
+        html = render(Projection(s), BY_KEY["en-vivo"], "posiciones")
+    assert row["unrealized_pnl"] == "-21" and "result-negative" in html
+
+    with sqlite3.connect(database) as c:
+        c.execute("UPDATE paper_position_marks SET book_at=? WHERE paper_id='open-1'",
+                  ((NOW - timedelta(hours=1)).isoformat(),))
+    with Store(database, now=NOW) as s:
+        row = Projection(s).positions().rows[0]
+    assert row["unrealized_pnl"] is None and row["freshness"] == "STALE"
+
+
+def test_open_position_pnl_uses_validated_residual_lot_after_partial_sale(database):
+    with sqlite3.connect(database) as c:
+        c.executescript("""CREATE TABLE paper_fills(id INTEGER PRIMARY KEY,paper_id TEXT,source TEXT,
+            side TEXT,filled_at TEXT,quantity TEXT,price TEXT,costs TEXT,slippage TEXT);
+            CREATE TABLE paper_spot_sales(fill_id INTEGER PRIMARY KEY,paper_id TEXT,entry_cost TEXT,
+            gross_pnl TEXT,net_pnl TEXT,net_proceeds TEXT,available_at TEXT,basis TEXT,reason TEXT);""")
+        opened = (NOW - timedelta(minutes=10)).isoformat()
+        sold = (NOW - timedelta(minutes=5)).isoformat()
+        c.execute("UPDATE paper_positions SET opened_at=?,features_json=? WHERE paper_id='open-1'",
+                  (opened, '{"contract_cash_multiplier":"2"}'))
+        c.execute("UPDATE paper_position_marks SET book_at=?,marked_at=? WHERE paper_id='open-1'", (STAMP, STAMP))
+        c.execute("INSERT INTO paper_fills VALUES(1,'open-1','PAPER','SELL_SIMULATED',?,'4','102','0.5','0')", (sold,))
+        c.execute("INSERT INTO paper_spot_sales VALUES(1,'open-1','0.40','16','15.10','815.50',NULL,'PAPER_CONSERVATIVE_CALENDAR','PARTIAL')")
+    with Store(database, now=NOW) as s:
+        row = Projection(s).positions().rows[0]
+    assert row["quantity"] == "10" and row["remaining_quantity"] == "6"
+    assert row["unrealized_pnl"] == "35.40"  # (103 - 100) * 6 * 2 - 0.60
+
+    # A sale whose money does not reconcile cannot silently become a result.
+    with sqlite3.connect(database) as c:
+        c.execute("UPDATE paper_spot_sales SET net_pnl='99' WHERE fill_id=1")
+    with Store(database, now=NOW) as s:
+        assert Projection(s).positions().rows[0]["unrealized_pnl"] is None
+
+
+def test_canonical_reports_exposes_only_published_paper_action4(database):
+    from cg_paper_workspace import artifact_root
+    from rc6_trader_dashboard.views_analytics import _action4_card
+    target = artifact_root(database) / "reports" / "rc6_action4_auditoria_latest.json"
+    target.parent.mkdir(parents=True)
+    payload = {"status": "PAPER_READ_ONLY", "generated_at_utc": STAMP,
+               "window": {"from_local": STAMP, "to_local": STAMP},
+               "origin": {"run_id": "LOCAL_DAILY", "commit": "NOT_AVAILABLE"},
+               "separation": {"executed_closed": 2, "opened_simulated": 1, "hold": 5},
+               "safety": {"real_orders_sent": 0, "broker_routes_called": False}}
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        html = _action4_card(Projection(s))
+    assert "Action 4 · auditoría publicada" in html and "Cierres PAPER" in html
+    assert "/api/reports/action4" in html and "LOCAL_DAILY" in html
+    payload["safety"]["real_orders_sent"] = 1
+    target.write_text(json.dumps(payload))
+    with Store(database, now=NOW) as s:
+        rejected = _action4_card(Projection(s))
+    assert "NO_VERIFICADO" in rejected and "/api/reports/action4" not in rejected
+
+
 def test_source_scope_score_and_trajectory_semantics(database, monkeypatch):
     root = Path(database).parent
     (root / "iol_shadow_latest.json").write_text(json.dumps({"refreshed_at": STAMP, "cache_state": "LIVE",

@@ -1,7 +1,40 @@
 """Economics, samples, factual exits and explicitly limited experiments."""
+from cg_paper_workspace import artifact_root
 from .components import fields, funnel, metric, notice, e, clock
 from .datasets import shadow_rows, artifact
 from .view_common import render_table, PERFORMANCE, PERFORMANCE_DETAIL, CLOSES, CLOSE_DETAIL, committed_funnel
+
+
+def _action4_card(p):
+    """Show the already published PAPER audit; page views never run the job."""
+    payload, state = p.bounded_file("reports/rc6_action4_auditoria_latest.json",
+                                    root=artifact_root(p.store.path))
+    safety = payload.get("safety") if isinstance(payload.get("safety"), dict) else {}
+    local = (payload.get("status") == "PAPER_READ_ONLY" and
+             safety.get("real_orders_sent") == 0 and safety.get("broker_routes_called") is False)
+    weekly = (payload.get("scope") == "RC6" and payload.get("status") == "SUCCESS" and
+              payload.get("source") == "/api/observer/state" and
+              payload.get("database_access_from_action") == "NO" and
+              payload.get("mode") == "PRODUCTION_PAPER" and
+              type(payload.get("real_orders_sent")) is int and payload["real_orders_sent"] == 0)
+    if state != "AVAILABLE" or not (local or weekly):
+        return notice("Action 4 · NO_VERIFICADO: auditoría PAPER publicada ausente, inválida o fuera del límite de lectura.")
+    window = payload.get("window") if isinstance(payload.get("window"), dict) else {}
+    origin = payload.get("origin") if isinstance(payload.get("origin"), dict) else {}
+    separation = payload.get("separation") if isinstance(payload.get("separation"), dict) else {}
+    rows = "".join(f"<dt>{e(label)}</dt><dd>{e(value if value is not None else 'NO_VERIFICADO')}</dd>"
+                   for label, value in (("Desde", window.get("from_local")),
+                                        ("Hasta", window.get("to_local")),
+                                        ("Generado UTC", payload.get("generated_at_utc")),
+                                        ("Run", origin.get("run_id")),
+                                        ("Commit", origin.get("commit")),
+                                        ("Cierres PAPER", separation.get("executed_closed")),
+                                        ("Aperturas simuladas", separation.get("opened_simulated")),
+                                        ("HOLD", separation.get("hold"))))
+    return ("<section class='panel'><h2>Action 4 · auditoría publicada</h2>"
+            "<p class='muted'>Recibo histórico PAPER; su fecha no certifica la rueda actual.</p>"
+            f"<dl class='facts'>{rows}</dl>"
+            "<a class='text-link' href='/api/reports/action4'>Descargar auditoría JSON autenticada</a></section>")
 
 
 def render(p, destination, tab):
@@ -74,4 +107,4 @@ def render(p, destination, tab):
     result = render_table(p, destination, tab, page, "Reportes versionados",
                           fields("id|Reporte;report_type|Tipo;created_at|Publicado|time;state|Estado|status"),
                           fields("period_start|Desde;period_end|Hasta;download|Descarga autenticada"))
-    return result + "<a class='text-link' href='/api/reports/weekly/download'>Descargar reporte semanal disponible</a>"
+    return _action4_card(p) + result + "<a class='text-link' href='/api/reports/weekly/download'>Descargar reporte semanal disponible</a>"
