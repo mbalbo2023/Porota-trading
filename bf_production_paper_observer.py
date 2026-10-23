@@ -2158,6 +2158,10 @@ def run():
                     broker.on_quote(
                         q, allow_new_openings=allow_openings,
                         opening_block_reason=opening_reason,
+                        evaluate_when_blocked=(
+                            not allow_openings and
+                            (symbol, asset_class, settlement) in set(map(tuple, focus["matched"]))
+                        ),
                     )
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
