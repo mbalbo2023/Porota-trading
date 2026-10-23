@@ -73,6 +73,12 @@ jobs:
           echo 'POROTA_INCIDENT_REPLAY_POLICY=GREEN'
           echo 'POROTA_POLICY_GATE=GREEN'
 
+      - name: Product Codex continuity and negative fixtures
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_codex_continuity_guard.py --root . --self-test
+
       - name: Python syntax gate
         shell: bash
         run: |
