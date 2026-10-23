@@ -106,3 +106,12 @@ El término del nombre histórico de este archivo significa exclusivamente **iss
 ### Recibo de preopen real 09:45 ART
 
 [Action read-only #39955971701](https://github.com/mbalbo2023/Porota-trading/actions/runs/39955971701), 09:47:24 ART: `porota-preopen-rc6.service` Result=success / ExecMainStatus=0, fin 09:45:09; timer último trigger 09:45:08, próximo 10:20:00. Observer heartbeat 0,4 s, PPI auth OK, foco 8/8, PAPER/0/rutas NOT_CALLED. Datos de mercado más recientes 22/10; A3 DAILY/RECONCILE mantienen `SOURCE_BYTE_BUDGET_EXHAUSTED`. Es un éxito de T-45 del producto instalado previo; no prueba T-10/OPEN ni instala el interlock #61. **NO_GO integral.**
+
+
+### Candidato unificado y Predeploy exacto — 23/10 10:05 ART
+
+[PR de producto #727](https://github.com/mbalbo2023/Porota-trading/pull/727), basado en `c0a5ad35a731928c0c214b11a7fac9ac99681155`: head `d9509fabf64101a07c4f046c3499d1ada277f115`, tree `c2294f5a2a47824e04ec72ffcb0ce74d8de1a510`. Reconcilia los cambios de dashboard/grano, preflight A3 con SQLite de sólo lectura acotado, recibo T-10 y admisión PAPER fail-closed, además de README/AGENTS y guard de continuidad. Los PRs parciales #720/#722/#725/#726 se cerraron **sin merge** como supersedidos por este árbol; #727 permanece OPEN y no instalado.
+
+[Predeploy V2 exacto #39953839963](https://github.com/mbalbo2023/Porota-trading/actions/runs/39953839963) SUCCESS: 4573 casos descubiertos/ejecutados, cero FAIL/ERROR/SKIP/XFAIL; guard documental y análisis de secretos GREEN. Artifact #12502702991, ZIP SHA-256 `a39cc61b45c3d714c6fc833f9585dda9f9cb2aa6450224944c8a731cfa5cec5b`, vence 30/10 12:55:35 UTC. Esta evidencia acredita el candidato de CI, **no** cambia el `candidate_sha=dfb0309042dd4a22a7cda6fb32ca97c67ee25125` instalado ni el resultado A3 en el Droplet.
+
+El corte T-45 09:45 de arriba fue satisfactorio para el producto anterior. T-10 10:20 y la rueda OPEN todavía no ocurrieron a este corte; ni el recibo vinculante #61 ni el fix A3 #28 se han validado runtime. La condición anual PIT/OOS #72 sigue sin materia prima original por fila; cron/ACK #511 y auditoría temporal #679 tampoco están certificados. Hay controles propios pendientes, no sólo datos de mercado externos. Mantener **NO_GO integral**, PAPER/SHADOW/0 y no promover durante la rueda. Al cierre del workstream liberar WRITE_OWNER pareadamente en #471/#473; no se adquirió DEPLOY_OWNER.
