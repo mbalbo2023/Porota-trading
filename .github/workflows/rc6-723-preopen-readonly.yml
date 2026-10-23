@@ -1,0 +1,61 @@
+name: RC6 723 bounded preopen read-only
+on:
+  push:
+    branches:
+      - diagnostic/rc6-723-preopen-readonly-20261023
+    paths:
+      - .github/workflows/rc6-723-preopen-readonly.yml
+      - scripts/rc6_723_preopen_readonly.py
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Pin read-only probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          python -m py_compile scripts/rc6_723_preopen_readonly.py
+          install -m 700 -d "$RUNNER_TEMP/rc6_preopen_ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_preopen_ssh/id"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_preopen_ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_preopen_ssh/id" "$RUNNER_TEMP/rc6_preopen_ssh/known_hosts"
+          echo "RC6_723_SOURCE=${GITHUB_SHA}"
+      - name: Bounded host facts without writes
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -Eeuo pipefail
+          timeout 70 ssh -i "$RUNNER_TEMP/rc6_preopen_ssh/id" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_preopen_ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 45 python3 -' \
+            < scripts/rc6_723_preopen_readonly.py | tee "$RUNNER_TEMP/rc6_preopen_readonly.jsonl"
+      - name: Upload sanitized read-only receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-723-preopen-readonly-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6_preopen_readonly.jsonl
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove SSH material
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/rc6_preopen_ssh/id" "$RUNNER_TEMP/rc6_preopen_ssh/known_hosts"
