@@ -88,6 +88,46 @@ def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
             'classification': 'UNKNOWN'}}})
 
 
+def test_oct23_closed_flat_stage_cancellation_requires_exact_clean_stop(tmp_path):
+    stop={'classification':'CLEAN_EXIT',
+          'before':{'Status':'running','StartedAt':'2026-10-22T23:49:15.51107753Z'},
+          'after':{'Status':'exited','ExitCode':0,'OOMKilled':False,
+                   'FinishedAt':recovery.CLOSED_FLAT_STAGE_STOP_FINISHED}}
+    flat={'paused_postclose':False,'intraday_caucion':False,
+          'pending_caucion':False,'market_open_suspended':False,
+          'open_paper_carryover':False,'spot_carryover':None,
+          'caucion_carryover':None}
+    containers={name:{'id':name+'-id','image':'sha256:'+'a'*64}
+                for name in ('porota_production_observer','porota_production_dashboard')}
+    prior={**flat,'candidate_sha':recovery.CLOSED_FLAT_STAGE_STOP_SHA,
+           'status':'FIX_FORWARD_VALIDATION_REQUIRED','installation_started':True,
+           'inflight':'ABSENT_OWNED_RUNTIME_STOPPED','real_orders_sent':0,
+           'ppi_watch_accessed':False,'containers':containers,
+           'stop_evidence':{'porota_production_observer':stop,
+                            'porota_production_dashboard':{'classification':'CLEAN_EXIT'}}}
+    live={'status':'FAIL_CLOSED','error_class':'ValueError',
+          'error_module':'cold_audit','error_line':360,
+          'as_of':'2026-10-23T22:18:21.695017+00:00',
+          'real_orders_sent':0,'real_routes':'NOT_CALLED'}
+    assert recovery.proven_stop_cancellation(live,prior)
+    assert not recovery.proven_stop_cancellation(live,{**prior,'candidate_sha':'f'*40})
+    assert not recovery.proven_stop_cancellation({**live,'error_line':361},prior)
+    assert not recovery.proven_stop_cancellation(
+        {**live,'as_of':'2026-10-23T22:18:01+00:00'},prior)
+    path=tmp_path/('quiescence-'+recovery.CLOSED_FLAT_STAGE_STOP_SHA+'.json')
+    path.write_text(json.dumps(prior));path.chmod(0o600)
+    current={**prior,'candidate_sha':'e'*40,'status':'HOST_INSTALLATION_STARTED',
+             'fix_forward_from':recovery.CLOSED_FLAT_STAGE_STOP_SHA,
+             'prior_receipt_sha256':recovery.hashlib.sha256(path.read_bytes()).hexdigest()}
+    assert recovery.proven_inherited_closed_flat_stop_cancellation(live,current,path)
+    assert not recovery.proven_inherited_closed_flat_stop_cancellation(live,
+        {**current,'prior_receipt_sha256':'0'*64},path)
+    assert not recovery.proven_inherited_closed_flat_stop_cancellation(live,
+        {**current,'containers':{**containers,'porota_production_observer':{'id':'changed'}}},path)
+    assert not recovery.proven_inherited_closed_flat_stop_cancellation(live,
+        {**current,'pending_caucion':True},path)
+
+
 def test_open_flat_clean_stop_inherited_by_exact_failed_deploy(tmp_path):
     # #703 stopped a flat OPEN PAPER observer while _frame flushed its segment.
     # The live FAIL_CLOSED status precedes the clean exit by 5.19 seconds.

@@ -29,6 +29,8 @@ FILES={IDENT+'.pack','manifest-'+IDENT+'.json','receipt-'+IDENT+'.json','queue.j
 CURRENT_FAILED_SUCCESSOR='3bfbfd6996a849f6b395f6c4a27ff15a'
 CURRENT_FAILED_MANIFEST='9893c071a5c88cada7cda6ace0f534e1424c69623eaf0eda84f0af758280f8dc'
 CURRENT_FAILED_REPORT_SHA='2416726d6ee67a1c52b1d87e5561003a3f717ddefb576aa80578c830b0db2718'
+CLOSED_FLAT_STAGE_STOP_SHA='8ff3f851e0fc857c24a8ee22be45f20a9aa39127'
+CLOSED_FLAT_STAGE_STOP_FINISHED='2026-10-23T22:18:23.266737528Z'
 
 
 def proven_distinct_failed_successor(directory, generation, current_snapshot):
@@ -122,8 +124,15 @@ def proven_stop_cancellation(live, quiescence):
     # The 2026-10-22 clean stop interrupted _frame() at line 265 while
     # flushing an 8 MiB segment. The older stage() cancellation at line 360
     # belongs to the separately proved postclose/caucion paths.
-    expected_line=(265 if flat else 360 if (postclose or intraday_caucion or pending_caucion)
-                   else None)
+    # This exact Oct 23 CLOSED/flat drain cancelled at stage(), after the
+    # preceding COLD generation had already reached COMPLETE. Bind the new
+    # source line to its candidate and clean Docker stop receipt; retain the
+    # older _frame() line for other flat stops.
+    stage_flat=(flat and quiescence.get('candidate_sha')==CLOSED_FLAT_STAGE_STOP_SHA and
+        (quiescence.get('stop_evidence') or {}).get('porota_production_observer',{})
+            .get('after',{}).get('FinishedAt')==CLOSED_FLAT_STAGE_STOP_FINISHED)
+    expected_line=(360 if stage_flat else 265 if flat else
+                   360 if (postclose or intraday_caucion or pending_caucion) else None)
     if (expected_line is None or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
             live.get('error_module')!='cold_audit' or
@@ -283,6 +292,48 @@ def proven_inherited_pending_stop_cancellation(live, current, prior_path):
     except (OSError,KeyError,TypeError,ValueError):return False
 
 
+def proven_inherited_closed_flat_stop_cancellation(live, current, prior_path):
+    """Adopt only the Oct 23 flat stop through its exact hashed predecessor."""
+    if prior_path is None or not isinstance(current,dict):return False
+    try:
+        if (current.get('fix_forward_from')!=CLOSED_FLAT_STAGE_STOP_SHA or
+                prior_path.name!='quiescence-'+CLOSED_FLAT_STAGE_STOP_SHA+'.json' or
+                prior_path.is_symlink() or regular(prior_path).st_size>65536 or
+                current.get('candidate_sha')==CLOSED_FLAT_STAGE_STOP_SHA or
+                current.get('status') not in {'DRAINED','HOST_INSTALLATION_STARTED'} or
+                current.get('real_orders_sent')!=0 or
+                current.get('ppi_watch_accessed') is not False or
+                current.get('paused_postclose') is not False or
+                current.get('intraday_caucion') is not False or
+                current.get('pending_caucion') is not False or
+                current.get('market_open_suspended') is not False or
+                current.get('open_paper_carryover') is not False or
+                current.get('spot_carryover') is not None or
+                current.get('caucion_carryover') is not None):return False
+        raw=prior_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=current.get('prior_receipt_sha256'):
+            return False
+        prior=json.loads(raw)
+        return (prior.get('candidate_sha')==CLOSED_FLAT_STAGE_STOP_SHA and
+                prior.get('status')=='FIX_FORWARD_VALIDATION_REQUIRED' and
+                prior.get('installation_started') is True and
+                prior.get('inflight')=='ABSENT_OWNED_RUNTIME_STOPPED' and
+                prior.get('real_orders_sent')==0 and
+                prior.get('ppi_watch_accessed') is False and
+                all(prior.get(key)==current.get(key) for key in
+                    ('paused_postclose','intraday_caucion','pending_caucion',
+                     'market_open_suspended','open_paper_carryover',
+                     'spot_carryover','caucion_carryover','stop_evidence','containers')) and
+                set(current.get('stop_evidence',{}))==
+                    {'porota_production_observer','porota_production_dashboard'} and
+                set(current.get('containers',{}))==
+                    {'porota_production_observer','porota_production_dashboard'} and
+                live.get('real_orders_sent')==0 and
+                live.get('real_routes')=='NOT_CALLED' and
+                proven_stop_cancellation(live,prior))
+    except (OSError,KeyError,TypeError,ValueError):return False
+
+
 def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
             prior_quiescence=None, inherited_quiescence=None):
     info=directory.lstat()
@@ -349,6 +400,10 @@ def checked(directory,shadow, *, archived_recovery=False, quiescence=None,
                  not proven_prior_stop_cancellation(live,quiescence,prior_quiescence) and
                  not proven_inherited_flat_stop_cancellation(live,quiescence,inherited_quiescence) and
                  not proven_inherited_pending_stop_cancellation(live,quiescence,
+                     (ROOT/'data/deploy'/('quiescence-'+quiescence['fix_forward_from']+'.json'))
+                     if isinstance(quiescence,dict) and
+                        re.fullmatch('[0-9a-f]{40}',str(quiescence.get('fix_forward_from'))) else None) and
+                 not proven_inherited_closed_flat_stop_cancellation(live,quiescence,
                      (ROOT/'data/deploy'/('quiescence-'+quiescence['fix_forward_from']+'.json'))
                      if isinstance(quiescence,dict) and
                         re.fullmatch('[0-9a-f]{40}',str(quiescence.get('fix_forward_from'))) else None) and
