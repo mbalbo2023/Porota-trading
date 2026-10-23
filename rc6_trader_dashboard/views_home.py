@@ -4,7 +4,10 @@ from .projection import UNKNOWN, freshness
 
 
 def preview(page, title, path, *, key="symbol"):
-    rows = "".join(f"<li><b>{e(row.get(key) or UNKNOWN)}</b>{badge(row.get('state') or row.get('status') or row.get('final'))}<span>{e(row.get('currency') or '')}</span><small>{e(row.get('reason') or row.get('exit_reason') or row.get('close_reason') or row.get('as_of') or UNKNOWN)}</small></li>" for row in page.rows[:5])
+    def short_reason(row):
+        value = str(row.get('reason_summary') or row.get('reason') or row.get('exit_reason') or row.get('close_reason') or row.get('as_of') or UNKNOWN)
+        return value if len(value) <= 130 else value[:127] + '… (ver detalle)'
+    rows = "".join(f"<li><b>{e(row.get(key) or UNKNOWN)}</b>{badge(row.get('state') or row.get('status') or row.get('final'))}<span>{e(row.get('currency') or '')}</span><small>{e(short_reason(row))}</small></li>" for row in page.rows[:5])
     empty = ("<li>Sin registros en este scope (0).</li>" if page.state == "AVAILABLE" else
              f"<li>NO_VERIFICADO · {e(page.reason)}</li>" if page.reason else
              "<li>NO_VERIFICADO · sin registros publicados en este scope.</li>")
@@ -67,11 +70,11 @@ def render(p, destination, tab):
                   metric("Alertas para revisar", count, "Hasta cinco alertas priorizadas", kind="number"),
                   metric("Tiempo a cierre / EOD", None, "Requiere reloj de cierre publicado")))
     performance = p.performance(today=True)
-    result_cards = "".join(metric("PnL neto hoy · " + r["currency"] + " · " + r["strategy"], r.get("net_pnl"),
+    result_cards = "".join(metric("PnL de cierres PAPER hoy · " + r["currency"] + " · " + r["strategy"], r.get("net_pnl"),
                                 f"Cerradas: {r.get('sample_size')} · Costos: {r.get('costs')}", kind="money", currency=r["currency"], result=True) for r in performance.rows)
     risk = "".join(definition_list(r, fields("currency|Moneda;state|Estado|status;daily_pnl|PnL diario|money;loss_budget|Presupuesto|money;evaluated_at|Evaluado|time")) for r in daily_risk.rows)
     return ("<div class='metric-grid'>" + "".join(cards) + "</div>" + alerts +
             "<div class='split-panels'>" + preview(positions, "Posiciones abiertas", "/en-vivo/posiciones") +
             preview(shadow_rows(p, "opportunities"), "Oportunidades HOT / WARM", "/en-vivo/oportunidades") + "</div>" +
-            "<div class='metric-grid'>" + (result_cards or metric("PnL neto hoy por moneda/estrategia", None, performance.reason or "Sin cierres medidos en este scope")) + "</div>" +
-            "<section class='panel'><h2>Riesgo resumido</h2>" + (risk or notice("NO_VERIFICADO · DailyRisk no publicó un corte de hoy.")) + "<a class='text-link' href='/riesgo'>Abrir riesgo</a></section>")
+            "<div class='metric-grid'>" + (result_cards or metric("PnL de cierres PAPER hoy por moneda/estrategia", None, performance.reason or "Sin cierres medidos; las posiciones abiertas se muestran por separado")) + "</div>" +
+            "<section class='panel'><h2>Riesgo resumido</h2>" + notice("PnL diario de riesgo = cambio del patrimonio PAPER desde la base del día; incluye valuación no realizada cuando hay libros vigentes. PnL de cierres muestra solo posiciones cerradas.") + (risk or notice("NO_VERIFICADO · DailyRisk no publicó un corte de hoy.")) + "<a class='text-link' href='/riesgo'>Abrir riesgo</a></section>")

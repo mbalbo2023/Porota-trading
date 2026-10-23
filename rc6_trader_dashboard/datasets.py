@@ -87,6 +87,8 @@ def shadow_rows(p, kind):
                        "tradeability": raw.get("tradeability_score"), "reason": " · ".join(raw.get("rejection_reason", [])),
                        "freshness": freshness(raw.get("strategy_source_at") or raw.get("last_useful_observation_at"), p.now),
                        "generation_id": cut["pointer"]["generation_id"], "configuration_fingerprint": cut["manifest"]["configuration_fingerprint"]}
+                reasons = [str(value) for value in raw.get("rejection_reason", []) if value] if isinstance(raw.get("rejection_reason"), list) else []
+                row["reason_summary"] = " · ".join(reasons[:2]) + (f" · +{len(reasons) - 2} motivos (ver detalle)" if len(reasons) > 2 else "")
                 if row["freshness"] != "FRESH":
                     row["freshness"] = freshness(row["as_of"], p.now)
                 if kind == "exclusions" and not raw.get("rejection_reason"):

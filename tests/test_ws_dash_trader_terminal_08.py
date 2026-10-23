@@ -403,6 +403,19 @@ def test_adapter_uses_only_canonical_reader_and_never_promotes_shadow(database):
     assert len(calls) == 1 and calls[0][1]["payload_limit"] == generation.PAYLOAD_LIMIT
 
 
+def test_hot_reason_summary_keeps_all_original_blockers_in_detail(database):
+    cut = coherent_cut()
+    blockers = ["SCANNER_CAPACITY", "DEPTH_NO_VERIFICADO", "SOURCE_UNAVAILABLE", "SPREAD_NO_VERIFICADO"]
+    cut["report"]["engines"]["EQUITY_SPOT"]["telemetry"][0]["rejection_reason"] = blockers
+    seal_cut(cut)
+    with Store(database, now=NOW) as s:
+        p = Projection(s, generation_reader=lambda root, **kwargs: cut)
+        row = shadow_rows(p, "opportunities").rows[0]
+    assert row["state"] == "HOT" and row["entry_authority"] is False
+    assert row["reason_summary"] == "SCANNER_CAPACITY · DEPTH_NO_VERIFICADO · +2 motivos (ver detalle)"
+    assert all(reason in row["reason"] for reason in blockers)
+
+
 @pytest.mark.parametrize("mutation", ["digest", "manifest_id", "member_id", "watermark", "config", "safety", "sequence", "payload"])
 def test_mixed_or_corrupt_generation_fails_closed(mutation, tmp_path):
     cut = coherent_cut()
