@@ -29,7 +29,8 @@ def render(p, destination, tab):
             note="Integraciones tiene su propia vista. Un heartbeat o un HTTP 200 no acreditan actividad PAPER ni fills.")
     if tab == "integraciones":
         return render_table(p, destination, tab, p.sources(), "Salud de integración · sin autoridad BUY", SOURCES,
-                            (*SOURCE_DETAIL, *fields("last_success_at|Último éxito|time;next_check|Próximo chequeo|time")))
+                            (*SOURCE_DETAIL, *fields("last_success_at|Último éxito|time;next_check|Próximo chequeo|time")),
+                            identity=False)
     if tab == "workers":
         return render_table(p, destination, tab, p.workers(critical=False), "Workers & lag", WORKERS,
                             (*WORKER_DETAIL, *fields("failures|Fallos|number;lag|Lag (s)|number")))
@@ -79,3 +80,4 @@ def render(p, destination, tab):
         return render_table(p, destination, tab, logs(p), "Logs sanitizados · últimas 10 líneas", fields("state|Scope|status;line|Mensaje")) + "<a class='text-link' href='/api/trader/logs/download'>Descargar últimas líneas sanitizadas</a>"
     return render_table(p, destination, tab, config(p), "Configuración efectiva no secreta", fields("setting|Setting;value|Valor;origin|Origen;state|Estado|status"),
                         note="Configuración no secreta; los modos operativos continúan usando observer_state como autoridad.")
+
