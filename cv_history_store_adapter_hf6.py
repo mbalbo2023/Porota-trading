@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import time
 
 import al_historical_ingest as legacy_history
 
@@ -51,9 +52,32 @@ class HistoricalStore:
         """
         path, identity = self._path_identity()
         if identity is not None and identity != self._initialized_identity:
-            from rc6_audit_evidence.sqlite_snapshot import readonly_copy
-            with readonly_copy(path, validate=False) as source_copy:
-                validator(source_copy)
+            from rc6_audit_evidence.sqlite_scratch import MAX_BYTES
+            source_bytes = sum(
+                Path(str(path) + suffix).stat().st_size
+                for suffix in ('', '-wal', '-shm', '-journal')
+                if Path(str(path) + suffix).exists()
+            )
+            if source_bytes <= MAX_BYTES:
+                from rc6_audit_evidence.sqlite_snapshot import readonly_copy
+                with readonly_copy(path, validate=False) as source_copy:
+                    validator(source_copy)
+            else:
+                # The history database can outgrow the 512 MiB private-copy
+                # budget. Schema metadata needs a consistent SQLite snapshot,
+                # not a second full copy of every market row on the tiny host.
+                # The write transaction below validates the schema again.
+                deadline = time.monotonic() + 2.0
+                with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True,
+                                     timeout=0.3, factory=_OwnedConnection) as source:
+                    source.execute('PRAGMA query_only=ON')
+                    source.execute('PRAGMA busy_timeout=300')
+                    source.set_progress_handler(lambda: int(time.monotonic() > deadline), 100)
+                    source.execute('BEGIN')
+                    validator(source)
+                    source.execute('ROLLBACK')
+                    if time.monotonic() > deadline:
+                        raise ValueError('HISTORY_SCHEMA_PREFLIGHT_TIME_BUDGET_EXHAUSTED')
             if self._path_identity()[1] != identity:
                 raise ValueError('HISTORY_INITIALIZATION_SOURCE_CHANGED')
         self._prepared_identity = identity
