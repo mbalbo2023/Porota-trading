@@ -184,6 +184,12 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
         # Keep their factual check/source fields without adding inapplicable keys.
         evidence_fields = AGGREGATE_EVIDENCE if aggregate else EVIDENCE
         drawer_fields = tuple(dict.fromkeys((*(() if aggregate or not identity else IDENTITY), *columns, *extra, *evidence_fields)))
+        if not identity and row.get("grain") == "SERVICE_CHECK":
+            # The internal PAPER checker publishes a check and a receipt, not
+            # provider/event clocks or market-data quality for an instrument.
+            inapplicable = {"data_freshness", "data_quality", "provider_clock",
+                            "entry_authority", "reason", "conflicts"}
+            drawer_fields = tuple(f for f in drawer_fields if f.key not in inapplicable)
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
         reasons = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido; revisar el worker y la hora de publicación.",

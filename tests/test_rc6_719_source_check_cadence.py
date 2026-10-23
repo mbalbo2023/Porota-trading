@@ -30,6 +30,7 @@ def test_internal_paper_check_uses_bounded_observer_cadence(monkeypatch):
     monkeypatch.setenv("PAPER_READINESS_CHECK_SECONDS", "300")
     row = source_row("PAPER_ECONOMIC_GATE_SHADOW", 185)
     assert (row["state"], row["check_freshness"], row["checked_age_seconds"]) == ("VERDE", "FRESH", 185)
+    assert row["grain"] == "SERVICE_CHECK"
     assert row["cadence"] == "CHECK_WITHIN_315s"
     assert source_row("PAPER_ECONOMIC_GATE_SHADOW", 316)["state"] == "NO_VERIFICADO"
 
