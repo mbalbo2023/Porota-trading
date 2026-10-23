@@ -11,10 +11,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 NOW = datetime.now(timezone.utc)
-def cmd(argv, seconds=5):
+def cmd(argv, seconds=5, limit=240):
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=seconds, check=False)
-        return {'rc':r.returncode,'out':r.stdout.strip()[:240]}
+        return {'rc':r.returncode,'out':r.stdout.strip()[:limit]}
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {'rc':999,'error':type(exc).__name__}
 
@@ -84,7 +84,7 @@ try:
         ('validation_status','mode','real_orders_sent','real_order_routes','source_sha','candidate_sha','image_id')}
 except (OSError,ValueError,TypeError) as exc:
     out['current_state']={'error':type(exc).__name__}
-ppi=cmd(['systemctl','list-unit-files','--no-legend','--no-pager'],5)
+ppi=cmd(['systemctl','list-unit-files','--no-legend','--no-pager'],5,65536)
 matches=[line.split()[0] for line in ppi.get('out','').splitlines()
          if 'ppi' in line.lower() and 'watch' in line.lower()]
 out['ppi_watch_passive']={'enumeration_rc':ppi['rc'],'matching_units':matches[:4]}
