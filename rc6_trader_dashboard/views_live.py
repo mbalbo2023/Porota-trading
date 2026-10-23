@@ -63,4 +63,6 @@ def render(p, destination, tab):
         panel+="<details><summary>"+e(' / '.join(str(row.get(k) or 'NO_VERIFICADO') for k in ('symbol','family','market','currency','settlement')))+"</summary>"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"</details>"
     panel+="</section>"
     return panel+render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
-                        note="PPI es autoridad primaria. IOL complementa; BYMA público observa. SOURCE_UNAVAILABLE siempre se limita a su scope.")
+                        note="PPI es autoridad primaria. IOL complementa; BYMA público observa. SOURCE_UNAVAILABLE siempre se limita a su scope.",
+                        identity=False)
+
