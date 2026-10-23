@@ -1312,7 +1312,7 @@ class PaperBroker:
         }
 
     def on_quote(self, q: Quote, *, allow_new_openings=True,
-                 opening_block_reason=""):
+                 opening_block_reason="", evaluate_when_blocked=False):
         try:
             family = family_name(q.asset_class)
         except ValueError:
@@ -1320,12 +1320,13 @@ class PaperBroker:
         if family == "FUTUROS":
             return self._on_future_quote(
                 q, allow_new_openings=allow_new_openings,
-                opening_block_reason=opening_block_reason)
+                opening_block_reason=opening_block_reason,
+                evaluate_when_blocked=evaluate_when_blocked)
         if self._maybe_close(q):
             return
         if self.store.open_position(q.symbol):
             return
-        if not allow_new_openings:
+        if not allow_new_openings and not evaluate_when_blocked:
             self.record_observation_rejection(q, opening_block_reason or "OPENING_NOT_AUTHORIZED")
             return
         action, score, reason, features = self.decide(q)
@@ -1337,6 +1338,11 @@ class PaperBroker:
             return
         self.store.event("DECISION_PAPER", f"{q.symbol} {action}: {reason}")
         if action == "BUY":
+            if not allow_new_openings:
+                self.store.record_gates(q, key, "APPROVE", "NOT_USED", "NOT_EVALUATED",
+                                        "BLOCKED", opening_block_reason or "OPENING_NOT_AUTHORIZED",
+                                        detail=features)
+                return
             try:
                 economics = self._economic_diagnostics(q)
             except ValueError as exc:
@@ -1745,7 +1751,7 @@ class PaperBroker:
         return ""
 
     def _on_future_quote(self, q: Quote, *, allow_new_openings=True,
-                         opening_block_reason=""):
+                         opening_block_reason="", evaluate_when_blocked=False):
         at = self.execution_time(q)
         position = self.family_paper.active_future(q.symbol)
         if position:
@@ -1820,7 +1826,7 @@ class PaperBroker:
                 self._future_exit_state(position,at,"OPEN","Within supervised futures parameters")
             return
 
-        if not allow_new_openings or opening_block_reason:
+        if (not allow_new_openings or opening_block_reason) and not evaluate_when_blocked:
             return
         action, score, reason, features = self._decide_future(q)
         mark_lineage(features, "decision", self)
@@ -1831,6 +1837,11 @@ class PaperBroker:
         if not self.store.record_decision(key, q, action, score, reason, features):
             return
         if action != "BUY":
+            return
+        if not allow_new_openings or opening_block_reason:
+            self.store.record_gates(q, key, "APPROVE", "NOT_USED", "NOT_EVALUATED",
+                                    "BLOCKED", opening_block_reason or "OPENING_NOT_AUTHORIZED",
+                                    detail=features)
             return
         features["economics"] = {
             "passed": False,
