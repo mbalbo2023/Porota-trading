@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
 from bu_instrument_catalog import rc6_underlying_opening_block
+from rc6_paper_admission_gate import focus_contracts, publish_preopen
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
@@ -386,13 +387,16 @@ def foreign_market_policy(today):
             'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_CEDEAR_OPENINGS_WHILE_US_MARKET_CLOSED'}
 
 
-def main(phase_override=None, deploy_scheduler_candidate=None):
+def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gate=False):
     now = datetime.now(TZ)
     today = now.date()
     if not byma.es_dia_habil_operativo(today):
-        print(json.dumps({'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
+        result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
                           'status':'NOT_DUE','reason':'BYMA_NON_OPERATIONAL_DAY',
-                          'read_only':True,'network_order_test_performed':False}, ensure_ascii=False, sort_keys=True))
+                          'read_only':not publish_paper_gate,'network_order_test_performed':False}
+        if publish_paper_gate:
+            publish_preopen(result, now=now)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
 
     free = shutil.disk_usage('/').free
@@ -414,19 +418,30 @@ def main(phase_override=None, deploy_scheduler_candidate=None):
         'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),
     }
+    if publish_paper_gate:
+        checks['paper_focus_contracts'] = focus_contracts(DB)
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
               'phase':phase_override or preopen_phase(now),
               'status':'GREEN' if not reds else 'RED','red_checks':reds,'checks':checks,
               'dry_equivalent':phase_override is not None,
-              'read_only':True,'network_order_test_performed':False,'direct_telegram_send':False}
+              'read_only':not publish_paper_gate,'network_order_test_performed':False,'direct_telegram_send':False}
+    if publish_paper_gate:
+        try:
+            result['paper_admission_receipt'] = publish_preopen(result, now=now)
+        except (OSError, ValueError) as exc:
+            result['status'] = 'RED'
+            result['red_checks'].append('paper_admission_receipt')
+            result['paper_admission_receipt'] = {'status':'NO_GO_PAPER_SCALPING',
+                                                  'reason':type(exc).__name__}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-    return 0 if not reds else 2
+    return 0 if result['status'] == 'GREEN' else 2
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--phase', choices=('T_MINUS_45','T_MINUS_10'))
     parser.add_argument('--deploy-scheduler-candidate')
+    parser.add_argument('--publish-paper-gate', action='store_true')
     args = parser.parse_args()
-    raise SystemExit(main(args.phase, args.deploy_scheduler_candidate))
+    raise SystemExit(main(args.phase, args.deploy_scheduler_candidate, args.publish_paper_gate))

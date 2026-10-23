@@ -63,6 +63,9 @@ def test_u03_recovery_completion_cannot_precede_durable_start_or_survive_restart
 
 
 def test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed(tmp_path,monkeypatch):
+    # This unit exercises the independent economic veto with a synthetic GO.
+    import rc6_paper_admission_gate as preopen_gate
+    monkeypatch.setattr(preopen_gate, 'paper_admission_guard', lambda q, store: (True, ''))
     store,r=seeded(tmp_path)
     assert scalping.evaluate_candidate(store,r,at=AT)=='BUY_CANDIDATE'
     monkeypatch.setenv('PAPER_SCALPING_MODE','ACTIVE_PAPER')

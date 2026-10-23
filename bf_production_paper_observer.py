@@ -30,6 +30,7 @@ from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_source_consolidation import collect_public_sources
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
+from rc6_paper_admission_gate import paper_admission_guard
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -2039,7 +2040,8 @@ def run():
                     # La IA continúa OFF; este paso no envía órdenes ni llama
                     # rutas operativas. Sólo prepara decisiones simuladas.
                     broker = broker_from_environment(store, ai_gate=None, require_ai=False,
-                                                     ai_mode="OFF", context_fn=None)
+                                                     ai_mode="OFF", context_fn=None,
+                                                     admission_guard=paper_admission_guard)
                     _daily_sync(reader, store)
                 except Exception as exc:
                     _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
@@ -2156,6 +2158,10 @@ def run():
                     broker.on_quote(
                         q, allow_new_openings=allow_openings,
                         opening_block_reason=opening_reason,
+                        evaluate_when_blocked=(
+                            not allow_openings and
+                            (symbol, asset_class, settlement) in set(map(tuple, focus["matched"]))
+                        ),
                     )
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)

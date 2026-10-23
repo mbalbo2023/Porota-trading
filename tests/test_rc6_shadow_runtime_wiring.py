@@ -390,3 +390,36 @@ def test_durable_shadow_projection_bounds_large_derived_inventories(tmp_path):
         files.write("checkpoint.json.gz", causal)
         assert files.read("latest.json.gz")["engines"]["SCALPING"]["telemetry"] == [chosen]
         files.prune_computed_reports(keep=audit["file"])
+
+
+def test_entry_signal_cut_bounds_cohorts_without_inventing_oos_or_entry_authority():
+    from types import SimpleNamespace
+    from rc6_trader_dashboard.datasets import shadow_rows
+
+    cohorts = [{"strategy_id": "S1", "variant": "native-baseline:v1", "family": "ACCIONES",
+                "currency": "ARS", "observations": n, "registry_sha256": "a" * 64,
+                "horizon_seconds": 60, "entry_hour_art": 11, "regime": "NO_VERIFICADO",
+                "forward_returns": {"raw": "x" * 100_000}}
+               for n in range(1, 13)]
+    full = {"schema": "SHADOW", "as_of": OPEN.isoformat(), "engines": {},
+            "entry_signal_lab": {"status": "OBSERVE_ONLY", "as_of": OPEN.isoformat(),
+                                 "registered": 12, "registries": {"S1": {"large": "y" * 100_000}},
+                                 "native_decisions_observed": 12, "cohorts": cohorts,
+                                 "experiments": [{"large": "z" * 100_000}]}}
+    cut = durable_report_view(full, catalog_ready_count=0)
+    entry = cut["entry_signal_lab"]
+    assert entry["cohort_total"] == 12 and entry["cohorts_truncated"] is True
+    assert [r["observations"] for r in entry["cohorts"]] == list(range(12, 2, -1))
+    assert "experiments" not in entry and "forward_returns" not in entry["cohorts"][0]
+    assert len(json.dumps(entry)) < 10_000
+    view = SimpleNamespace(shadow_fresh=True,
+                           shadow={"report": cut, "state": "AVAILABLE", "reason": ""},
+                           offset=0)
+    page = shadow_rows(view, "signals")
+    assert page.total == 10 and page.state == "AVAILABLE"
+    assert all(row["score"] is None and row["entry_authority"] is False
+               and row["state"] == "NO_VERIFICADO" for row in page.rows)
+    full["entry_signal_lab"]["cohorts"] = []
+    view.shadow["report"] = durable_report_view(full, catalog_ready_count=0)
+    empty = shadow_rows(view, "signals")
+    assert empty.state == "NO_VERIFICADO" and "12" in empty.reason

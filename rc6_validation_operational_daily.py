@@ -73,7 +73,9 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
         state = conn.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
         if not state:
             raise OperationalDailyEvidenceError("OBSERVER_STATE_MISSING")
-        if str(state["mode"]) != "PRODUCTION_PAPER" or int(state["real_orders_sent"] or 0) != 0:
+        if (str(state["mode"]) != "PRODUCTION_PAPER"
+                or type(state["real_orders_sent"]) is not int
+                or state["real_orders_sent"] != 0):
             raise OperationalDailyEvidenceError("PAPER_SAFETY_INVARIANT_FAILED")
 
         for row in conn.execute("SELECT event_at,event_type,paper_id FROM paper_events ORDER BY id DESC LIMIT ?", (event_limit,)):

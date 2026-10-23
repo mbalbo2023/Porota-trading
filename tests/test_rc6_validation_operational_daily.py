@@ -54,6 +54,18 @@ def test_fail_closed_if_real_orders_nonzero(tmp_path):
         raise AssertionError('expected fail closed')
 
 
+def test_missing_real_order_counter_is_not_zero(tmp_path):
+    p=tmp_path/'paper.db'; _db(p)
+    with sqlite3.connect(p) as c:
+        c.execute('UPDATE observer_state SET real_orders_sent=NULL WHERE id=1')
+    try:
+        m.collect(db_path=str(p))
+    except m.OperationalDailyEvidenceError as exc:
+        assert 'PAPER_SAFETY_INVARIANT_FAILED' in str(exc)
+    else:
+        raise AssertionError('missing counter must fail closed')
+
+
 def test_admin_cancellation_is_visible_without_a_sale_or_realized_pnl(tmp_path):
     p=tmp_path/'paper.db'; _db(p)
     with sqlite3.connect(p) as c:

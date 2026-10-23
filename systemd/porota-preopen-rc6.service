@@ -6,5 +6,5 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
-ExecStart=/usr/bin/python3 /opt/porota-trading/rc6_preopen.py
+ExecStart=/usr/bin/python3 /opt/porota-trading/rc6_preopen.py --publish-paper-gate
 TimeoutStartSec=5min

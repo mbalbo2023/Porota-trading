@@ -964,6 +964,7 @@ def promote_paper_candidate(store, record, *, at):
         return "STALE_BOOK"
     from be_paper_engine import Quote
     from bv_paper_runtime import broker_from_environment
+    from rc6_paper_admission_gate import paper_admission_guard
     q = Quote(
         symbol=quote_row["symbol"], asset_class=quote_row["asset_class"],
         settlement=quote_row["settlement"], last=_decimal(quote_row["last"],nonnegative=True),
@@ -1006,7 +1007,8 @@ def promote_paper_candidate(store, record, *, at):
     broker = broker_from_environment(
         store, risk_pct=os.getenv("PAPER_SCALPING_RISK_PER_TRADE", "0.001"),
         stop_loss_pct=os.getenv("PAPER_SCALPING_STOP_LOSS_PCT", "0.008"),
-        target_gain_pct=os.getenv("PAPER_SCALPING_TARGET_GAIN_PCT", "0.02"))
+        target_gain_pct=os.getenv("PAPER_SCALPING_TARGET_GAIN_PCT", "0.02"),
+        admission_guard=paper_admission_guard)
     opened, reason, paper_id = broker.admit_paper_candidate(q, Decimal(candidate["score"]), features)
     store.record_gates(q, key, "APPROVE", "NOT_USED",
                        "APPROVE" if opened else "BLOCKED",

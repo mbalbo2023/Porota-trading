@@ -16,7 +16,7 @@ def render(p, destination, tab):
             ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT en corte fresco", "Observación SHADOW; HOT ≠ BUY"),
             ("SIGNAL", "Señales candidatas", "Cut SHADOW comprometido")))
         summary = p.performance(today=True)
-        cards += "".join(metric("PnL neto hoy · " + r["currency"], r.get("net_pnl"), r["strategy"], kind="money", currency=r["currency"], result=True) for r in summary.rows)
+        cards += "".join(metric("PnL de cierres PAPER hoy · " + r["currency"], r.get("net_pnl"), r["strategy"], kind="money", currency=r["currency"], result=True) for r in summary.rows)
         workers = p.workers()
         # DailyRisk is a risk state, not a heartbeat-bearing worker.
         watched = [r for r in workers.rows if r.get("source") != "paper_daily_risk"]
@@ -32,13 +32,13 @@ def render(p, destination, tab):
     if tab == "oportunidades":
         events = shadow_rows(p, "events")
         return (render_table(p, destination, tab, shadow_rows(p, "opportunities"), "Mesa de oportunidades", OPPORTUNITIES, OPPORTUNITY_DETAIL,
-                             filters=True, note="HOT ≠ BUY. DISCOVERY/WARM son observación. Tradeability no es señal direccional ni probabilidad.") + timeline(events.rows, verified_empty=events.state == "AVAILABLE"))
+                             filters=True, note="HOT indica prioridad de observación, no BUY. Si capacidad OPEN no está demostrada, una fila HOT conserva señal NOT_READY y SCANNER_CAPACITY. Tradeability no es señal direccional ni probabilidad.") + timeline(events.rows, verified_empty=events.state == "AVAILABLE"))
     if tab == "decisiones":
         return render_table(p, destination, tab, p.decisions(), "Decisiones factuales PAPER", DECISIONS, DECISION_DETAIL,
                             note="Cada decisión conserva signal, economics y risk. HOLD sin gate de compra muestra NOT_EVALUATED para economics/risk; BUY sin gate sigue NO_VERIFICADO. Un HOLD requiere su motivo; score_is_probability=false.")
     if tab == "posiciones":
         return render_table(p, destination, tab, p.positions(), "Posiciones y seguridad de salida", POSITIONS, POSITION_DETAIL, filters=True,
-                            note="Un mark contable no acredita un fill ejecutable. MFE/MAE sin trayectoria validada = NO_MEDIDO.")
+                            note="Ganancia/pérdida PAPER no realizada: bid fresco menos entrada sobre cantidad remanente, multiplicador y costo histórico del ledger. Un mark contable no acredita un fill ejecutable; evidencia vencida o inconsistente = NO_VERIFICADO. MFE/MAE sin trayectoria validada = NO_MEDIDO.")
     if tab == "cierres":
         stats = p.close_win_rate_today()
         detail = (f"{stats['wins']}/{stats['sample']} cierres con PnL neto positivo · empates en la muestra"
@@ -63,4 +63,5 @@ def render(p, destination, tab):
         panel+="<details><summary>"+e(' / '.join(str(row.get(k) or 'NO_VERIFICADO') for k in ('symbol','family','market','currency','settlement')))+"</summary>"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"</details>"
     panel+="</section>"
     return panel+render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
-                        note="PPI es autoridad primaria. IOL complementa; BYMA público observa. SOURCE_UNAVAILABLE siempre se limita a su scope.")
+                        note="PPI es autoridad primaria. IOL complementa; BYMA público observa. VERDE de PAPER_ECONOMIC_GATE_SHADOW es salud de un chequeo, no permiso de entrada ni rentabilidad validada. SOURCE_UNAVAILABLE siempre se limita a su scope.",
+                        identity=False)

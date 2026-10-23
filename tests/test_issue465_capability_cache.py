@@ -87,6 +87,10 @@ class Harness:
         monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
         monkeypatch.setenv("PAPER_INTRADAY_SCAN_SECONDS", "60")
         monkeypatch.setenv("POROTA_DYNAMIC_CAPACITY_MODE", "OFF")
+        # Simulate a valid external T-10 receipt for the historical 05/10
+        # fixture; the exact per-candidate catalog check remains live.
+        import rc6_paper_admission_gate as preopen_gate
+        monkeypatch.setattr(preopen_gate, "admission_status", lambda: (True, ""))
         import bv_paper_runtime as runtime
         import be_paper_engine as engine
         from bm_exit_supervisor import PositionExitSupervisor, init_schema as init_exit_schema

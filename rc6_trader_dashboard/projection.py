@@ -499,11 +499,32 @@ class Projection:
         sales = s.by_keys("paper_spot_sales", "paper_id", keys)
         supervisor = self.workers().rows if keys and not closed else []
         for row in page.rows:
+            mark_record = marks.get(row["paper_id"], {})
+            # Reuse the PAPER ledger's exact residual lot and allocated entry
+            # cost. A partial sale must not value the original quantity again.
+            unrealized = remaining = None
+            if not closed and s.connection is not None and row.get("features_json_oversize") is not True:
+                try:
+                    from cd_spot_ledger import partition, entry_terms
+                    residual, _ = partition(s.connection, row, self.now)
+                    if residual is not None:
+                        quantity, cost, entry, factor = entry_terms(residual)
+                        remaining = str(quantity)
+                        if (freshness(mark_record.get("book_at"), self.now, 120) == "FRESH"
+                                and freshness(mark_record.get("marked_at"), self.now, 120) == "FRESH"
+                                and age(row.get("opened_at"), datetime.fromisoformat(
+                                    str(mark_record.get("book_at")).replace("Z", "+00:00"))) is not None):
+                            bid = Decimal(str(mark_record.get("mark_price")))
+                            if bid.is_finite() and bid > 0:
+                                unrealized = str((bid - entry) * quantity * factor - cost)
+                except (ValueError, TypeError, KeyError, OverflowError, sqlite3.Error, InvalidOperation):
+                    # Invalid ledger or mark evidence cannot become a measured PnL.
+                    pass
             features = json_object(row.pop("features_json", None))
             row["features"] = features
             row.update(family=row.get("asset_class"), strategy=row.get("strategy_version"),
-                       mark=marks.get(row["paper_id"], {}).get("mark_price"),
-                       mark_as_of=marks.get(row["paper_id"], {}).get("book_at"),
+                       mark=mark_record.get("mark_price"),
+                       mark_as_of=mark_record.get("book_at"),
                        exit_state=intents.get(row["paper_id"], {}).get("state"),
                        exit_reason=intents.get(row["paper_id"], {}).get("blocked_reason"),
                        exit_due_at=intents.get(row["paper_id"], {}).get("due_at"),
@@ -513,13 +534,14 @@ class Projection:
                        lifecycle=features.get("lifecycle_owner"), risk_contribution=features.get("risk_contribution"),
                        bid_depth=features.get("exit_bid_depth"), eod_at=features.get("eod_deadline"),
                        maxhold_at=features.get("max_hold_deadline"),
-                       executable_mark="NO_VERIFICADO", unrealized_pnl=features.get("unrealized_pnl"),
+                       executable_mark="NO_VERIFICADO", unrealized_pnl=unrealized,
+                       remaining_quantity=remaining,
                        mfe="NO_MEDIDO", mae="NO_MEDIDO", workers=supervisor)
             # Only measured trajectory evidence may qualify MFE/MAE.
             trajectory = features.get("trajectory_provenance")
             if isinstance(trajectory, dict) and trajectory.get("validated") is True and trajectory.get("source") and trajectory.get("as_of"):
                 row.update(mfe=features.get("measured_mfe", "NO_MEDIDO"), mae=features.get("measured_mae", "NO_MEDIDO"))
-            row["freshness"] = freshness(row.get("mark_as_of"), self.now)
+            row["freshness"] = freshness(row.get("mark_as_of"), self.now, 120)
             row["time_in_position_seconds"] = age(row.get("opened_at"), self.now)
             if closed and row.get("closed_at"):
                 try:
@@ -737,6 +759,15 @@ class Projection:
             "PPI_PRODUCTION_HISTORY": 48 * 3600,
             "PPI_BACKGROUND_INGEST": 48 * 3600,
         }
+        # These four service checks are written together by _runtime_readiness
+        # every PAPER_READINESS_CHECK_SECONDS while MARKET_CLOSED. Keep this
+        # bounded service-check clock distinct from quote/provider freshness.
+        readiness_interval = self.integer(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"), 0)
+        readiness_budget = readiness_interval + 15 if 60 <= readiness_interval <= 600 else 180
+        paper_readiness_components = ("PAPER_ECONOMIC_GATE_SHADOW", "PAPER_FOCUS_COVERAGE",
+                                      "PAPER_SIGNAL_ROTATION", "PAPER_SIGNAL_SAMPLING")
+        for component in paper_readiness_components:
+            budgets[component] = readiness_budget
         cols = self.store.columns("api_health")
         order = ("CASE component WHEN 'PPI_PRODUCTION_MARKETDATA' THEN 0 "
                  "WHEN 'PPI_PRODUCTION_AUTH' THEN 1 ELSE 2 END,component") if "component" in cols else ""
@@ -756,6 +787,8 @@ class Projection:
                        as_of=checked, provider_clock=None, receipt_clock=checked,
                        scope=component, lkg=row.get("last_success_at"),
                        observed_state=observed, checked_age_seconds=state_age)
+            if component in paper_readiness_components:
+                row["grain"] = "SERVICE_CHECK"
             row.update(check_freshness=freshness(checked, self.now, budget),
                        data_freshness=UNKNOWN, data_quality="NO_VERIFICADO",
                        decision_effect="IDENTITY_OR_MARKET_INPUT" if primary else "OBSERVE_ONLY")

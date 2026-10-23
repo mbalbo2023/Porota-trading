@@ -1,7 +1,9 @@
 import json
 import sqlite3
+from datetime import datetime, timezone
 
 import rc6_decision_evidence_report as report
+from rc6_counterfactual_learning import read_bounded
 
 
 def _payload():
@@ -55,3 +57,32 @@ def test_bad_hash_is_insufficient_evidence(tmp_path):
     result = report.build(db_path=database)
     assert result["decisions"][0]["state"] == "INSUFFICIENT_EVIDENCE"
     assert result["decisions"][0]["profiles"] == []
+
+
+def test_compact_verified_publication_survives_oversized_full_report(tmp_path):
+    payload = _payload()
+    database = tmp_path / "paper.db"
+    _db(database, payload, report._canonical_hash(payload))
+    result = report.build(db_path=database)
+    result["generated_at"] = "2026-09-19T20:00:00+00:00"
+    result["decisions"][0]["sources"] = {"irrelevant_to_profile": "x" * (1024 * 1024)}
+    assert report.write(result, root=tmp_path).stat().st_size > 1024 * 1024
+    compact = report.write_counterfactual(result, root=tmp_path)
+    assert compact.stat().st_size <= 1024 * 1024
+    view = read_bounded(tmp_path, as_of=datetime(2026, 9, 20, tzinfo=timezone.utc))
+    assert view["state"] == "HISTORICAL_OBSERVABLE"
+    assert view["counts"]["WOULD_CONFIRM"] > 0
+    assert "counterfactual_latest.json" in view["source"]
+    assert all(row["entry_authority"] is False for row in view["rows"])
+
+
+def test_compact_does_not_promote_bad_hash_or_future_publication(tmp_path):
+    payload = _payload()
+    database = tmp_path / "paper.db"
+    _db(database, payload, "bad")
+    result = report.build(db_path=database)
+    result["generated_at"] = "2026-09-21T20:00:00+00:00"
+    report.write_counterfactual(result, root=tmp_path)
+    view = read_bounded(tmp_path, as_of=datetime(2026, 9, 20, tzinfo=timezone.utc))
+    assert view["state"] == "NO_VERIFICADO"
+    assert view["total"] is None

@@ -134,6 +134,7 @@ def test_exit_lane_never_promotes_censored_results_or_unknown_currency(database)
         p.shadow_history={'state':'HISTORICAL_COHERENT_SHADOW','report':{'as_of':STAMP,'economic_exit_lab':lab}}
         result=cf.exits(p)
     assert len(result.rows)==10 and result.rows[0]['modeled_net'] is None
+    assert result.rows[0]['reason'].startswith('PATH_COVERAGE_NOT_VERIFIED')
     assert all(r['entry_authority'] is False for r in result.rows)
 
 

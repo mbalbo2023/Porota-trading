@@ -139,7 +139,7 @@ def definition_list(row, columns):
 
 
 def detail(row, columns, row_id, index, *, label=None):
-    label = label or f"Detalle fila {index} · {row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or 'registro'}"
+    label = label or f"Detalle fila {index} · {row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or row.get('id') or 'registro'}"
     dialog_id = f"{row_id}-dialog"
     return (f"<button class='button detail-trigger' type='button' data-detail-dialog='{dialog_id}' "
             f"aria-haspopup='dialog' aria-controls='{dialog_id}'>{e(label)}</button>"
@@ -163,7 +163,7 @@ def pager(page, path, filters, table_id):
     return f"<nav class='pager' aria-label='Paginación de {e(table_id)}'><span>{range_text} de {total} · {visible} filas</span>{less}{more}</nav>"
 
 
-def table(page, title, columns, extra=(), *, path="", filters=None, table_id="main-table", aggregate=False):
+def table(page, title, columns, extra=(), *, path="", filters=None, table_id="main-table", aggregate=False, identity=True, evidence=True):
     column_classes = [
         " ".join(name for name, enabled in (
             ("secondary", i > 2),
@@ -180,10 +180,16 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             key = str(index)
         row_id = table_id + "-" + hashlib.sha256(str(key).encode()).hexdigest()[:12]
         cells = "".join(f"<td data-label='{e(f.label)}' class='{column_classes[i]}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
-        # A family aggregate has no single ticker, market, currency or
-        # settlement. Do not render the exact-identity drawer for that grain.
-        evidence_fields = AGGREGATE_EVIDENCE if aggregate else EVIDENCE
-        drawer_fields = tuple(dict.fromkeys((*(() if aggregate else IDENTITY), *columns, *extra, *evidence_fields)))
+        # Family aggregates and service health rows have no instrument identity.
+        # Keep their factual check/source fields without adding inapplicable keys.
+        evidence_fields = (AGGREGATE_EVIDENCE if aggregate else EVIDENCE) if evidence else ()
+        drawer_fields = tuple(dict.fromkeys((*(() if aggregate or not identity else IDENTITY), *columns, *extra, *evidence_fields)))
+        if not identity and row.get("grain") == "SERVICE_CHECK":
+            # The internal PAPER checker publishes a check and a receipt, not
+            # provider/event clocks or market-data quality for an instrument.
+            inapplicable = {"data_freshness", "data_quality", "provider_clock",
+                            "entry_authority", "reason", "conflicts"}
+            drawer_fields = tuple(f for f in drawer_fields if f.key not in inapplicable)
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
         reasons = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido; revisar el worker y la hora de publicación.",

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from zoneinfo import ZoneInfo
@@ -20,11 +21,67 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 FILENAME = "rc6_action4_auditoria_latest.json"
 
 
-def _rows(connection, query, params=()):
+def validate_weekly_payload(payload, now=None):
+    """Reject stale or non-PAPER Action 4 receipts before replacing the artifact."""
+    now = now or datetime.now(timezone.utc)
+    if (not isinstance(payload, dict) or payload.get("scope") != "RC6" or
+            payload.get("source") != "/api/observer/state" or
+            payload.get("database_access_from_action") != "NO" or
+            payload.get("status") != "SUCCESS" or
+            payload.get("mode") != "PRODUCTION_PAPER" or
+            type(payload.get("real_orders_sent")) is not int or
+            payload["real_orders_sent"] != 0 or
+            payload.get("decision_snapshot_scope") != "LATEST_100_ONLY; INCOMPLETE_FOR_WEEKLY_TOTAL" or
+            not isinstance(payload.get("operations"), list) or
+            not isinstance(payload.get("separation"), dict)):
+        raise ValueError("ACTION4_WEEKLY_PAPER_SCOPE_UNVERIFIED")
+    origin = payload.get("origin") or {}
+    if (not isinstance(origin, dict) or
+            not str(origin.get("run_id") or "").isdigit() or
+            not re.fullmatch(r"[0-9a-f]{40}", str(origin.get("commit") or ""))):
+        raise ValueError("ACTION4_WEEKLY_ORIGIN_UNVERIFIED")
+    window = payload.get("window") or {}
     try:
-        return [dict(row) for row in connection.execute(query, params)]
-    except sqlite3.OperationalError:
-        return []
+        start = datetime.fromisoformat(window["from_local"])
+        end = datetime.fromisoformat(window["to_local"])
+        generated = datetime.fromisoformat(str(payload["generated_at_utc"]).replace("Z", "+00:00"))
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise ValueError("ACTION4_WEEKLY_WINDOW_UNVERIFIED") from None
+    if (any(stamp.tzinfo is None for stamp in (start, end, generated, now)) or
+            start.utcoffset() != TZ.utcoffset(start) or
+            end.utcoffset() != TZ.utcoffset(end) or
+            generated.utcoffset() != timedelta(0) or
+            not timedelta(days=6, hours=23) <= end - start <= timedelta(days=7, minutes=1) or
+            not timedelta(seconds=-60) <= now - generated <= timedelta(hours=1) or
+            not timedelta(seconds=-60) <= generated - end <= timedelta(hours=1)):
+        raise ValueError("ACTION4_WEEKLY_WINDOW_UNVERIFIED")
+    return payload
+
+
+def published_audit_is_safe(payload):
+    """Historical display authority, distinct from freshness for today's wheel."""
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("status") == "PAPER_READ_ONLY":
+        safety = payload.get("safety") or {}
+        return (isinstance(safety, dict) and
+                safety.get("observer_mode") == "PRODUCTION_PAPER" and
+                safety.get("sqlite") == "READ_ONLY" and
+                type(safety.get("real_orders_sent")) is int and
+                safety["real_orders_sent"] == 0 and
+                safety.get("broker_routes_called") is False)
+    try:
+        stamp = datetime.fromisoformat(str(payload["generated_at_utc"]).replace("Z", "+00:00"))
+        validate_weekly_payload(payload, now=stamp)
+        return True
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _rows(connection, query, params=()):
+    # A missing or unreadable required table must fail the audit. Treating a
+    # database error as zero activity would manufacture a successful receipt.
+    return [dict(row) for row in connection.execute(query, params)]
 
 
 def _local_day(value):
@@ -49,6 +106,16 @@ def build(db_path=None, now=None):
     connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=20)
     connection.row_factory = sqlite3.Row
     try:
+        has_session_state = "session_state" in _columns(connection, "observer_state")
+        observer = connection.execute(
+            "SELECT mode,real_orders_sent" + (",session_state" if has_session_state else "") +
+            " FROM observer_state WHERE id=1"
+        ).fetchone()
+        if (observer is None or observer["mode"] != "PRODUCTION_PAPER" or
+                type(observer["real_orders_sent"]) is not int or
+                observer["real_orders_sent"] != 0):
+            raise ValueError("ACTION4_PAPER_SAFETY_NOT_VERIFIED")
+        session_state = observer["session_state"] if has_session_state else None
         position_columns = _columns(connection, "paper_positions")
         has_asset_class = "asset_class" in position_columns
         position_scope = "ALL_PAPER_POSITION_FAMILIES" if has_asset_class else "LEGACY_SCHEMA_UNFILTERED"
@@ -68,14 +135,14 @@ def build(db_path=None, now=None):
             WHERE date(event_at, '-3 hours')=?
             GROUP BY event_type
             ORDER BY event_type
-        """, (day,))
+        """, (day,)) if _columns(connection, "paper_events") else None
         learning = _rows(connection, """
             SELECT outcome, COUNT(*) AS total
             FROM paper_learning_samples
             WHERE date(COALESCE(label_timestamp, feature_timestamp), '-3 hours')=?
             GROUP BY outcome
             ORDER BY outcome
-        """, (day,))
+        """, (day,)) if _columns(connection, "paper_learning_samples") else None
     finally:
         connection.close()
 
@@ -83,10 +150,10 @@ def build(db_path=None, now=None):
     opened = [row for row in positions if row.get("status") == "OPEN" or _local_day(row.get("opened_at")) == day]
     final = Counter(str(row.get("final_result") or "UNKNOWN") for row in gates)
     reasons = Counter(str(row.get("close_reason") or "UNSPECIFIED") for row in closed)
-    events_by_type = {str(row.get("event_type") or "UNKNOWN"): int(row.get("total") or 0)
-                      for row in events}
-    outcomes = {str(row.get("outcome") or "UNLABELED"): int(row.get("total") or 0)
-                for row in learning}
+    events_by_type = ({str(row.get("event_type") or "UNKNOWN"): int(row.get("total") or 0)
+                       for row in events} if events is not None else None)
+    outcomes = ({str(row.get("outcome") or "UNLABELED"): int(row.get("total") or 0)
+                 for row in learning} if learning is not None else None)
     families = Counter(
         str(row.get("asset_class") or "UNKNOWN").upper()
         for row in positions if "asset_class" in row
@@ -129,21 +196,27 @@ def build(db_path=None, now=None):
         },
         "dashboard_daily_report": {
             "periodo": day,
+            "closure_state": ("POSTCLOSE_VERIFIED" if session_state == "MARKET_CLOSED"
+                              else "NOT_POSTCLOSE"),
             "gate_final_counts": dict(sorted(final.items())),
-            "event_counts": dict(sorted(events_by_type.items())),
-            "learning_outcomes": dict(sorted(outcomes.items())),
+            "event_counts": dict(sorted(events_by_type.items())) if events_by_type is not None else None,
+            "learning_outcomes": dict(sorted(outcomes.items())) if outcomes is not None else None,
             "lessons": lessons,
             "scope": "ALL_CONTRACT_FAMILIES_PAPER",
             "scope_evidence": {
                 "positions": position_scope,
                 "position_families": dict(sorted(families.items())),
                 "gates_events_learning": "LEGACY_ACTIVITY_UNATTRIBUTED_BY_ASSET_CLASS",
+                "events": "AVAILABLE" if events is not None else "SOURCE_UNAVAILABLE",
+                "learning": "AVAILABLE" if learning is not None else "SOURCE_UNAVAILABLE",
                 "interpretation": "Las posiciones PAPER se informan para todas las familias persistidas. Los conteos legacy de gates, eventos y aprendizaje que no guardan familia no se atribuyen retroactivamente.",
             },
         },
         "safety": {
             "sqlite": "READ_ONLY",
-            "real_orders_sent": 0,
+            "observer_mode": observer["mode"],
+            "observer_session_state": session_state,
+            "real_orders_sent": observer["real_orders_sent"],
             "broker_routes_called": False,
         },
     }

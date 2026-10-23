@@ -371,6 +371,31 @@ def durable_report_view(report, *, catalog_ready_count, engine_views=None, famil
     view["operational_funnel"] = {key: funnel[key] for key in (
         "status", "as_of", "by_currency_channel", "counts") if key in funnel}
     view['economic_exit_lab']=durable_exit_observations(report.get('economic_exit_lab',{}))
+    entry = report.get("entry_signal_lab", {})
+    if isinstance(entry, dict):
+        cohorts = entry.get("cohorts") if isinstance(entry.get("cohorts"), list) else []
+        # The full prospective audit stays in computed_report. CURRENT only
+        # exposes a bounded, explicit sample with its original denominator.
+        selected = sorted((row for row in cohorts if isinstance(row, dict)),
+                          key=lambda row: (-(row.get("observations") if type(row.get("observations")) is int
+                                              and row["observations"] >= 0 else 0),
+                                           str(row.get("strategy_id") or ""),
+                                           str(row.get("variant") or "")))[:10]
+        keys = ("strategy_id", "variant", "family", "currency", "observations",
+                "horizon_seconds", "entry_hour_art", "regime", "native_strategy_version",
+                "native_configuration_fingerprint", "candidate_labels",
+                "net_economic_observations", "auc_gross", "auc_modeled_net",
+                "registry_sha256")
+        view["entry_signal_lab"] = {
+            "status": entry.get("status"), "as_of": entry.get("as_of"),
+            "registered": entry.get("registered"),
+            "registry_total": len(entry.get("registries")) if isinstance(entry.get("registries"), dict) else None,
+            "native_decisions_observed": entry.get("native_decisions_observed"),
+            "source_read_truncated": entry.get("source_read_truncated"),
+            "cohort_total": len(cohorts), "cohorts_truncated": len(cohorts) > len(selected),
+            "cohorts": [{key: row[key] for key in keys if key in row} for row in selected],
+            "score_is_probability": False, "economic_edge_validated": False,
+        }
     view["section_status"] = {key: report[key].get("status")
         for key in ("economic_exit_lab", "entry_signal_lab", "operational_funnel")
         if isinstance(report.get(key), dict)}

@@ -8,14 +8,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import rc6_validation_dynamic as dynamic
 from em_validation_campaign_rc6 import load_records
-from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
+from ek_history_freshness_metrics_rc5 import _expected_completed_session, freshness_qualified_metrics
 from rc6_validation_operational_daily import collect as collect_operational_daily
 
 SNAPSHOT_NAME = "validation_milestones_rc6.json"
 SCHEMA_VERSION = 3
+TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def snapshot_path(root=None):
@@ -56,8 +58,18 @@ def _freshness_pulse() -> dict:
     root = Path(os.getenv("POROTA_VALIDATION_ROOT", "/app/data/validation"))
     try:
         audit = json.loads((root / "preopen_freshness_rc6.json").read_text(encoding="utf-8"))
+        if not isinstance(audit, dict):
+            raise ValueError("PREOPEN_RECEIPT_INVALID")
         metrics = audit.get("metrics") if isinstance(audit.get("metrics"), dict) else {}
-        if audit.get("state") and metrics:
+        observed = datetime.fromisoformat(str(audit.get("generated_at") or "").replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        current_day = now.astimezone(TZ_AR).date()
+        if (observed.tzinfo is not None and observed <= now
+                and observed.astimezone(TZ_AR).date() == current_day
+                and audit.get("expected_session_date") == _expected_completed_session().isoformat()
+                and audit.get("source") == "rc6-preopen-freshness-audit/read-only"
+                and audit.get("state") in {"READY", "DEGRADED", "UNAVAILABLE"}
+                and metrics.get("expected_session_date") == audit.get("expected_session_date")):
             return dict(metrics, available=bool(metrics.get("available")), preopen_state=audit.get("state"),
                         expected_session_date=audit.get("expected_session_date"))
     except (OSError, ValueError, json.JSONDecodeError):
@@ -103,13 +115,18 @@ def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
     days = operational.get("days") if isinstance(operational.get("days"), list) else []
     if days:
         latest = days[0] if isinstance(days[0], dict) else {}
+        today = datetime.now(TZ_AR).date().isoformat()
+        latest_day = str(latest.get("date_ar") or "")
+        current = latest_day == today
+        future = latest_day > today
         result["M4"].update({
-            "state": "YELLOW", "compliance_pct": min(75, 10 + len(days) * 5),
-            "claim_status": "VERIFIED_CURRENT", "implementation_status": "IMPLEMENTED",
-            "work_status": "IN_PROGRESS", "evidence_status": "CURRENT",
+            "state": "GRAY" if future else "YELLOW", "compliance_pct": 0 if future else min(75, 10 + len(days) * 5),
+            "claim_status": "PENDING" if future else ("VERIFIED_CURRENT" if current else "VERIFIED_HISTORICAL"),
+            "implementation_status": "IMPLEMENTED", "work_status": "IN_PROGRESS",
+            "evidence_status": "UNAVAILABLE" if future else ("CURRENT" if current else "HISTORICAL"),
             "observed_evidence": f"Actividad PAPER agrupada por rueda: {len(days)} días observados; último {latest.get('date_ar') or 'UNKNOWN'} con {latest.get('decisions', 0)} decisiones, {latest.get('fills', 0)} fills y {latest.get('closed', 0)} cierres.",
             "deviation": "Evidencia de actividad no equivale aún a campaña PAPER sostenida ni a estabilidad multi-rueda.",
-            "blocker": "Acumular y revisar sesiones independientes sin incidentes críticos.",
+            "blocker": "FUTURE_OPERATIONAL_DATE" if future else "Acumular y revisar sesiones independientes sin incidentes críticos.",
             "next_action": "Revisión post-cierre diaria y sign-off humano; no automatizar cambios de estrategia.",
             "evidence_ref": "observer_v17.db/read-only/operational-daily",
         })

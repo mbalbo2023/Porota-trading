@@ -29,8 +29,8 @@ def render(p, destination, tab):
         page = shadow_rows(p, "strategies")
         if not page.rows:
             page = family_summary(p)
-        return render_table(p, destination, tab, page, "Estrategias & lifecycle por familia", STRATEGIES, STRATEGY_DETAIL,
-                            note="ACTIVE_PAPER, SHADOW, OBSERVE_ONLY y NO_VERIFICADO son estados distintos. Readiness no concede entry_authority.")
+        return render_table(p, destination, tab, page, "Routing de familias · evaluación SHADOW", STRATEGIES, STRATEGY_DETAIL,
+                            note="Estas filas provienen del puente de observación sin writer. OBSERVE_ONLY aquí no describe al observer PAPER: sus posiciones y decisiones factuales están en En Vivo. HOT prioriza observación, no es BUY. Readiness no concede entry_authority.")
     if tab == "cauciones":
         decisions = p.filters.get("caucion_view") == "decisiones"
         selected = "decisiones" if decisions else "colocaciones"
