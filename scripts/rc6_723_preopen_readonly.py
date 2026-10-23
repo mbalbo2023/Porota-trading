@@ -122,6 +122,15 @@ out['legacy_units']={'enumeration_rc':ppi['rc'],'units':[
 next_preopen=cmd(['systemctl','show','porota-preopen-rc6.timer',
                   '--property=NextElapseUSecRealtime,LastTriggerUSec','--no-pager'],3)
 out['preopen_schedule']={k:v for k,v in (line.split('=',1) for line in next_preopen.get('out','').splitlines() if '=' in line)}
+history=Path('/opt/porota-trading/data/market_history.db')
+out['history_source_footprint']={}
+for suffix in ('','-wal','-shm'):
+    try:
+        member=Path(str(history)+suffix)
+        stat=member.stat()
+        out['history_source_footprint'][suffix or 'main']=stat.st_size
+    except OSError:
+        out['history_source_footprint'][suffix or 'main']=None
 action4=Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/reports/rc6_action4_auditoria_latest.json')
 try:
     stat=action4.stat()
