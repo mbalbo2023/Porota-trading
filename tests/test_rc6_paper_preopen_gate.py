@@ -85,6 +85,21 @@ def test_live_broker_guard_blocks_fill_but_preserves_paper_state(tmp_path):
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
+def test_partial_focus_records_buy_evaluation_as_hold_without_fill(tmp_path, monkeypatch):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    quote = Quote("GGAL", "ACCIONES", "A-24HS", D("100"), D("99"), D("101"),
+                  D("100"), D("100"), DAY.isoformat(), currency="ARS", market="BYMA")
+    broker = PaperBroker(store, admission_guard=lambda q, s: (False, "NO_GO_PAPER_SCALPING"))
+    monkeypatch.setattr(broker, "decide", lambda q: ("BUY", D("0.8"), "fixture", {}))
+    broker.on_quote(quote, allow_new_openings=False, evaluate_when_blocked=True,
+                    opening_block_reason="FOCUS_3_OF_8")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_decisions").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+        assert tuple(db.execute("SELECT final_result,reason FROM trade_gate_evaluations").fetchone()) == (
+            "BLOCKED", "FOCUS_3_OF_8")
+
+
 def test_unsafe_receipt_symlink_is_rejected(tmp_path):
     real = tmp_path / "actual.json"
     link = tmp_path / "gate.json"
