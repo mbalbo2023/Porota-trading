@@ -108,7 +108,7 @@ El término del nombre histórico de este archivo significa exclusivamente **iss
 [Action read-only #39955971701](https://github.com/mbalbo2023/Porota-trading/actions/runs/39955971701), 09:47:24 ART: `porota-preopen-rc6.service` Result=success / ExecMainStatus=0, fin 09:45:09; timer último trigger 09:45:08, próximo 10:20:00. Observer heartbeat 0,4 s, PPI auth OK, foco 8/8, PAPER/0/rutas NOT_CALLED. Datos de mercado más recientes 22/10; A3 DAILY/RECONCILE mantienen `SOURCE_BYTE_BUDGET_EXHAUSTED`. Es un éxito de T-45 del producto instalado previo; no prueba T-10/OPEN ni instala el interlock #61. **NO_GO integral.**
 
 
-### Candidato unificado y Predeploy exacto — 23/10 10:05 ART
+### Candidato unificado y Predeploy exacto — 23/10 10:01 ART
 
 [PR de producto #727](https://github.com/mbalbo2023/Porota-trading/pull/727), basado en `c0a5ad35a731928c0c214b11a7fac9ac99681155`: head `d9509fabf64101a07c4f046c3499d1ada277f115`, tree `c2294f5a2a47824e04ec72ffcb0ce74d8de1a510`. Reconcilia los cambios de dashboard/grano, preflight A3 con SQLite de sólo lectura acotado, recibo T-10 y admisión PAPER fail-closed, además de README/AGENTS y guard de continuidad. Los PRs parciales #720/#722/#725/#726 se cerraron **sin merge** como supersedidos por este árbol; #727 permanece OPEN y no instalado.
 
