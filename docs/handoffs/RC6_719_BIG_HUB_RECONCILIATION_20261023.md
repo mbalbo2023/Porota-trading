@@ -101,3 +101,8 @@ El término del nombre histórico de este archivo significa exclusivamente **iss
 - [Issue #511](https://github.com/mbalbo2023/Porota-trading/issues/511): el workflow de monitor declara cron de diez minutos, pero GitHub registró sólo tres runs `event=schedule` el 22/10; timer host fallback activo/último success, entrega/ACK Telegram no probadas. [#67](https://github.com/mbalbo2023/Porota-trading/issues/67) tiene tarjeta/JSON local pero publicación semanal Actions/descarga autenticada 200 no verificadas. [#679](https://github.com/mbalbo2023/Porota-trading/issues/679) ya contextualiza en código `EXIT_PENDING_MARKET_CLOSED/EOD_PAPER`, con tests, mientras auditoría factual de costos/schedule sigue abierta.
 
 **Dictamen:** NO_GO integral. La observación de la rueda podría estar disponible si el preopen y market data OPEN pasan, pero persisten rojos propios no instalados/certificados: interlock #61, A3 #28 y alerting #511, además de PIT/OOS anual y contratos especializados externos. No fusionar ni desplegar durante la rueda; sin tocar PPI Watch ni backups.
+
+
+### Recibo de preopen real 09:45 ART
+
+[Action read-only #39955971701](https://github.com/mbalbo2023/Porota-trading/actions/runs/39955971701), 09:47:24 ART: `porota-preopen-rc6.service` Result=success / ExecMainStatus=0, fin 09:45:09; timer último trigger 09:45:08, próximo 10:20:00. Observer heartbeat 0,4 s, PPI auth OK, foco 8/8, PAPER/0/rutas NOT_CALLED. Datos de mercado más recientes 22/10; A3 DAILY/RECONCILE mantienen `SOURCE_BYTE_BUDGET_EXHAUSTED`. Es un éxito de T-45 del producto instalado previo; no prueba T-10/OPEN ni instala el interlock #61. **NO_GO integral.**
