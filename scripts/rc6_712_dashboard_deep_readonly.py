@@ -168,23 +168,32 @@ def main(output):
                     if more.count():
                         before=[v for v in page.locator('table tbody tr[data-row]').evaluate_all(
                             '(nodes)=>nodes.map(x=>x.id)')]
-                        response=page.expect_navigation(wait_until='domcontentloaded',timeout=10000)
-                        with response:
-                            more.first.click(timeout=5000)
+                        href=more.first.get_attribute('href')
+                        more.first.click(timeout=5000)
+                        page.wait_for_url('**/*offset=10*',wait_until='domcontentloaded',timeout=10000)
                         page.locator('table.terminal-table tbody').first.wait_for(state='attached',timeout=5000)
                         after=page.locator('table tbody tr[data-row]').evaluate_all(
                             '(nodes)=>nodes.map(x=>x.id)')
+                        if not after and href:
+                            # A direct GET separates a real empty page from a
+                            # click/navigation observation race in the browser.
+                            probe=page.goto(BASE+href,wait_until='domcontentloaded',timeout=10000)
+                            after=page.locator('table tbody tr[data-row]').evaluate_all(
+                                '(nodes)=>nodes.map(x=>x.id)')
+                        else:
+                            probe=None
                         item['pagination_probed']={'before':len(before),'after':len(after),
                             'distinct':bool(set(after)-set(before)),
                             'offset_10':'offset=10' in page.url,
-                            'http':response.value.status if response.value else None,
+                            'direct_get_http':probe.status if probe else None,
                             'empty_state':bool(page.locator('table tbody tr td.empty').count()),
                             'source_state':page.locator('section.data-panel .source-line .badge').first.get_attribute('data-status') if page.locator('section.data-panel .source-line .badge').count() else None}
                         if not item['pagination_probed']['distinct'] or not item['pagination_probed']['offset_10']:
                             report['findings'].append({'kind':'paginator_not_advancing','path':path})
                 report['paths'].append(item)
             except Exception as exc:
-                report['findings'].append({'kind':'route_exception','path':path,'error_type':type(exc).__name__})
+                report['findings'].append({'kind':'route_exception','path':path,'error_type':type(exc).__name__,
+                    'diagnostic':re.sub(r'[^A-Za-z0-9_ .:-]', '?',str(exc))[:120]})
                 report['paths'].append({'path':path,'http':None})
         for width in (768,390):
             page.set_viewport_size({'width':width,'height':900})
