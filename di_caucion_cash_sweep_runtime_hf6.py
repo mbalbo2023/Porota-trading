@@ -436,11 +436,17 @@ def run_worker(store, stop, *, clock_fn):
                         snapshot = obligation_snapshot_from_ledger(
                             store, observed_at=at,
                             liquidity_deadline=schedule["liquidity_deadline"])
-                        result = run_paper_sweep(
-                            broker, offers, obligation_snapshot=snapshot,
-                            currency="ARS", as_of=at, request_id=request_id,
-                            participation=broker.participation,
-                            max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)
+                        from rc6_paper_admission_gate import admission_status
+                        admission_allowed, admission_reason = admission_status(now=at)
+                        if admission_allowed:
+                            result = run_paper_sweep(
+                                broker, offers, obligation_snapshot=snapshot,
+                                currency="ARS", as_of=at, request_id=request_id,
+                                participation=broker.participation,
+                                max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)
+                        else:
+                            result = {"status": "HOLD", "code": admission_reason or "NO_GO_PAPER_SCALPING",
+                                      "reason": "GLOBAL_PAPER_PREOPEN_INTERLOCK"}
                     else:
                         offers, errors = (), ()
                     allocation = result.get("allocation") or {}
