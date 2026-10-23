@@ -47,6 +47,10 @@ jobs:
           show('STOP_EVIDENCE',{k:v for k,v in q.get('stop_evidence',{}).items()})
           show('COLD_CUT',{'report':current.get('report',{}).get('computed_report',{}),'status':current.get('status',{})})
           show('COLD_SOURCE_NAMES',sorted(p.name for p in (shadow/'cold-audit').iterdir()))
+          source=shadow/'cold-audit'
+          for ident in ('fae69c426b714c298f805f7402888ff3','a6573757fb4d42f08b105a595f7fad9d'):
+              show('PAIR_'+ident,{'manifest':{k:old.enveloped(source/('manifest-'+ident+'.json'),cold=True).get(k) for k in ('snapshot_id','pack','pack_bytes','pack_sha256','sealed_at','deadline_at')},'receipt':old.enveloped(source/('receipt-'+ident+'.json'),cold=True)})
+          show('QUEUE',old.enveloped(source/'queue.json',cold=True))
           show('COLD_ARCHIVE_NAMES',sorted(p.name for p in (d/('rc6-failed-cold-'+old.IDENT)).iterdir()))
           show('COLD_LIVE_EXTRA',{k:v for k,v in live.items() if k not in ('status','as_of','error_class','error_module','error_line','real_routes','real_orders_sent')})
           show('PROOFS',{'current_stop':old.proven_stop_cancellation(live,q),'prior_stop':old.proven_prior_stop_cancellation(live,q,d/('quiescence-'+old.PRIOR_CANCELLED_SHA+'.json')),'inherited_flat':old.proven_inherited_flat_stop_cancellation(live,q,d/'quiescence-83855c3b08647243dcd706ca7ead929378c4c11d.json'),'inherited_pending':old.proven_inherited_pending_stop_cancellation(live,q,prior),'distinct_successor':old.proven_distinct_failed_successor(d/('rc6-failed-cold-'+old.IDENT),pointer.get('generation_id'),current.get('report',{}).get('computed_report',{}).get('snapshot_id'))})
