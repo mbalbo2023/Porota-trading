@@ -1,5 +1,6 @@
 name: RC6 712 dashboard deep read-only navigation
 # GET-only browser audit of the exact PAPER dashboard. Shares the deploy mutex.
+# Revalidate runtime candidate dfb0309042dd4a22a7cda6fb32ca97c67ee25125 after Deploy V2 #39873839848.
 on:
   push:
     branches:
