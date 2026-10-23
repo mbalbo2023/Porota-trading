@@ -36,8 +36,9 @@ units=['porota-preopen-rc6.timer','porota-preopen-rc6.service',
        'porota-a3-history-weekend-rc6.timer','porota-iol-shadow-collector-rc6.timer',
        'porota-host-general-backup-rc6.timer','porota-contract-evidence-rc4.timer',
        'porota-functional-health-rc6.timer',
-       'porota-a3-history-daily-rc6.service','porota-a3-history-reconcile-rc6.service',
-       'porota-a3-history-weekend-rc6.service','porota-iol-shadow-collector-rc6.service']
+       'porota-a3-history-rc6@DAILY_INCREMENTAL.service',
+       'porota-a3-history-rc6@RECONCILE.service',
+       'porota-a3-history-rc6@WEEKEND_DEEP.service','porota-iol-shadow-collector-rc6.service']
 out['units']={}
 for unit in units:
     active=cmd(['systemctl','is-active',unit],3)
@@ -45,8 +46,9 @@ for unit in units:
     out['units'][unit]={'active':active.get('out') or active.get('error'),
                         'enabled':enabled.get('out') or enabled.get('error')}
 for unit in ('porota-preopen-rc6.service','porota-market-watch-silence-rc6.service',
-             'porota-a3-history-daily-rc6.service','porota-a3-history-reconcile-rc6.service',
-             'porota-a3-history-weekend-rc6.service','porota-iol-shadow-collector-rc6.service'):
+             'porota-a3-history-rc6@DAILY_INCREMENTAL.service',
+             'porota-a3-history-rc6@RECONCILE.service',
+             'porota-a3-history-rc6@WEEKEND_DEEP.service','porota-iol-shadow-collector-rc6.service'):
     s=cmd(['systemctl','show',unit,'--property=Result,ExecMainStatus,ActiveEnterTimestamp,InactiveEnterTimestamp','--no-pager'],3)
     out['units'][unit]['last']={k:v for k,v in (line.split('=',1) for line in s.get('out','').splitlines() if '=' in line)}
 out['containers']={}
