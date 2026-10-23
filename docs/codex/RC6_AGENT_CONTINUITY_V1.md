@@ -1,5 +1,7 @@
 # RC6 — contrato de continuidad del agente
 
+Corte documental: 23/10/2026. Revalidar instrucciones posteriores del operador.
+
 Este procedimiento sirve para recuperar contexto desde GitHub y el Droplet.
 No certifica el SHA instalado ni la rueda de hoy por sí mismo.
 La rama main no es evidencia de lo instalado.
@@ -25,10 +27,11 @@ La rama main no es evidencia de lo instalado.
 
 Sólo PAPER/SHADOW; `PRODUCTION_PAPER`, fills simulados, `real_orders_sent=0`,
 ninguna ruta de orden real. PPI Watch intocable. Backups deshabilitados por
-política actual y FIX-FORWARD sin rollback. Toda excepción requiere la orden
+política al corte de este documento; revalidar política/host antes de cualquier
+cambio. FIX-FORWARD sin rollback. Toda excepción requiere la orden
 explícita del operador y un recibo verificable; no inferirla de un README viejo.
-No exigir comandos manuales al usuario. La prohibición actual de subagentes,
-estrés del host y tareas programadas prevalece sobre sugerencias genéricas.
+No exigir comandos manuales al usuario. Releer las restricciones de la sesión:
+al corte citado, subagentes, estrés del host y tareas programadas estaban prohibidos.
 
 ## Handoff por hito
 
