@@ -1,0 +1,59 @@
+name: RC6 732 isolated candidate tests
+
+on:
+  push:
+    branches:
+      - diagnostic/rc6-732-candidate-tests-20261024
+    paths:
+      - .github/workflows/rc6-732-candidate-paper-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      ENVIRONMENT: SANDBOX
+      STARTUP_REQUIRE_AUTH: 'false'
+      POROTA_BUILD_SHA: 31bd117c457b58fde33296d5fe2f7e683609910c
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 31bd117c457b58fde33296d5fe2f7e683609910c
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact checkout
+        run: |
+          test "$(git rev-parse HEAD)" = "$POROTA_BUILD_SHA"
+          git diff --check
+      - name: Install pinned test dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Compile touched sources
+        run: python -m compileall -q be_paper_engine.py bt_caucion_paper.py da_dashboard_ux_hf6.py rc6_paper_family_lifecycle.py rc6_trader_dashboard tests/test_rc6_732_family_ui_contract.py tests/test_rc6_paper_preopen_gate.py
+      - name: Collect complete suite without execution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pytest tests --collect-only -q > "$RUNNER_TEMP/rc6-732-collection.txt" 2>&1
+          tail -n 5 "$RUNNER_TEMP/rc6-732-collection.txt"
+      - name: Run scoped PAPER and dashboard regressions
+        run: |
+          python -m pytest -q \
+            tests/test_dashboard_ux_logs_cem_hf6.py \
+            tests/test_intraday_scalping_rc6_integration.py \
+            tests/test_production_paper_v1634.py \
+            tests/test_rc6_732_family_ui_contract.py \
+            tests/test_rc6_convergence_core_admission.py \
+            tests/test_rc6_convergence_finance.py \
+            tests/test_rc6_convergence_finance_review.py \
+            tests/test_rc6_future_paper_engine.py \
+            tests/test_rc6_future_paper_lifecycle.py \
+            tests/test_rc6_future_programming_complete.py \
+            tests/test_rc6_operational_scope.py \
+            tests/test_rc6_paper_preopen_gate.py \
+            tests/test_rc6_shadow_operational_funnel.py
