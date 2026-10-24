@@ -7,11 +7,11 @@ Los términos normalizados deben estar respaldados por datos del instrumento.
 
 import hashlib
 import json
-import os
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
@@ -392,10 +392,11 @@ class CaucionBook:
             return dict(previous)
         # Both explicit placement and allocation converge here, inside the
         # SQLite transaction. A replay above does not open a new PAPER position.
-        # A missing image identity on the canonical runtime path also fails
-        # closed; synthetic local books remain independent of host receipts.
-        if (os.getenv("POROTA_BUILD_SHA")
-                or str(self.store.path) == "/app/data/paper_v17/observer_v17.db"):
+        # The workspace resolver identifies the actual PAPER runtime database,
+        # including an explicit path override. Synthetic books remain isolated
+        # even when their tests run inside an image with POROTA_BUILD_SHA set.
+        from cg_paper_workspace import database_path
+        if Path(self.store.path).resolve() == database_path():
             from rc6_paper_admission_gate import admission_status
             allowed, reason = admission_status()
             if not allowed:
