@@ -147,10 +147,23 @@ class HostMutexTests(unittest.TestCase):
                 SimpleNamespace(returncode=0, stdout=''), SimpleNamespace(returncode=0),
                 SimpleNamespace(returncode=0, stdout='')]))
             stack.enter_context(redirect_stdout(out)); stack.enter_context(redirect_stderr(err))
-            self.assertEqual(mutex.run(self.args('disk_probe')), 0)
+            self.assertEqual(mutex.run(self.args('classify')), 0)
         self.assertEqual(out.getvalue(), '')
         self.assertIn('RC6_DEPLOY_HOST_MUTEX=HELD', err.getvalue())
-        self.assertFalse(self.barrier.exists())  # read-only disk probe
+        self.assertFalse(self.barrier.exists())  # read-only classification
+
+    def test_offline_image_cleanup_timeout_keeps_durable_barrier(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex, '_contract_writers', return_value=set()))
+            stack.enter_context(patch.object(mutex.subprocess, 'run',
+                                            side_effect=subprocess.TimeoutExpired(['docker'], 1)))
+            with self.assertRaises(subprocess.TimeoutExpired):
+                mutex.run(self.args('offline_preclean'))
+            self.assertEqual(json.loads(self.barrier.read_text())['status'], 'INFLIGHT')
+            with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):
+                mutex.run(self.args('offline_preclean'))
 
     def test_same_attempt_chains_and_finalizes_but_other_attempt_cannot_enter(self):
         from contextlib import ExitStack
@@ -402,6 +415,8 @@ class WorkflowIntegrationTests(unittest.TestCase):
                         if step['name'] == 'Classify current flat PAPER session before host writes')
         self.assertIn('RC6_MUTEX_B64', classify)
         self.assertIn('PYTHONDONTWRITEBYTECODE=1', classify)
+        self.assertIn('backup_inventory()', classify)
+        self.assertIn('RC6_BACKUP_RETIRE_PRECHECK=GREEN', classify)
         for key in ('diskguard', 'suspend', 'drain', 'transfer', 'promotion',
                     'timers_restore', 'timers_restored', 'backup_retire',
                     'finalize_runtime'):
@@ -417,6 +432,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
         self.assertEqual(sum('--phase classify ' in line for line in boundaries), 1)
+        self.assertIn('--phase offline_preclean python3 -', by_id['diskguard'])
+        self.assertNotIn('--phase disk_probe python3 -', by_id['diskguard'])
+        self.assertIn('rc6_offline_current_image_cleanup.py', by_id['diskguard'])
+        self.assertIn('--apply-plan "$PLAN" --require-empty', by_id['backup_retire'])
         self.assertEqual(sum('--phase finalize ' in line for line in boundaries), 1)
         self.assertEqual(sum('--phase cleanup_final ' in line for line in boundaries), 1)
         self.assertEqual(failure.count('--allow-contract-lifecycle'), 1)

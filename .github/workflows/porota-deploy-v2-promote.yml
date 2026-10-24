@@ -181,6 +181,10 @@ jobs:
           import base64,os,sqlite3,sys,types
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_679_backup_suspension import inventory as backup_inventory
+          if backup_inventory():
+              raise SystemExit('RC6_BACKUP_RETIRE_NEW_FILES_NEED_REVIEW')
+          print('RC6_BACKUP_RETIRE_PRECHECK=GREEN|files=0', file=sys.stderr)
           from scripts.rc6_deploy_quiescence import (
               ROOT, OWNED, admit, inspect, exact_clean_stopped,
               adopt_stopped_after_failed_install)
@@ -350,7 +354,7 @@ jobs:
             if [ "$OWNED_STATE" != $'running\nrunning' ]; then
               RC6_DISK_PRECLEAN_TRIGGERED=1
               "${SSH[@]}" "$DO_USER@$DO_HOST" \
-                "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase disk_probe python3 - '$REQUIRED_PRETRANSFER_FREE'" \
+                "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase offline_preclean python3 - '$REQUIRED_PRETRANSFER_FREE'" \
                 < scripts/rc6_offline_current_image_cleanup.py
               mapfile -t METRICS < <(probe_disk)
               test "${#METRICS[@]}" -eq 2
@@ -1588,7 +1592,7 @@ jobs:
           PLAN="$REPO/data/deploy/backup-retire-plan-$CANDIDATE_SHA.json"
           test -f "$SCRIPT"
           python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --plan-out "$PLAN" >/dev/null
-          python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --apply-plan "$PLAN"
+          python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --apply-plan "$PLAN" --require-empty
           python3 - "$REPO/data/deploy/backup-retire-$CANDIDATE_SHA.json" "$CANDIDATE_SHA" <<'PY'
           import json,sys
           receipt=json.load(open(sys.argv[1],encoding='utf-8'))
