@@ -1,0 +1,20 @@
+{
+  "schema": "RC6_733_BACKUP_RETIRE_INVENTORY_READONLY_V1",
+  "run_id": 40140208147,
+  "job_id": 121010170402,
+  "candidate_sha": "4bba1335cc1875c6feb6d8a75aea141c31b83653",
+  "candidate_tree": "bbdf7f979e7b7092e0705f8037b3cb65f4865546",
+  "source_sha256": "0824ef37db677cd8ba05fd47bd194ac6a86b2acb68b150aad61543a72f4b5c11",
+  "sampled_at_utc": "2026-10-24T22:50:21.366185+00:00",
+  "status": "PASS_INVENTORY",
+  "file_count": 0,
+  "logical_bytes": 0,
+  "manifest_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "files": [],
+  "backup_policy_suspended": true,
+  "timer_enabled": "masked",
+  "timer_active": "inactive",
+  "current_marker_mode": "PRODUCTION_PAPER",
+  "current_marker_real_orders_sent": 0,
+  "side_effects": "NONE_READ_ONLY"
+}
