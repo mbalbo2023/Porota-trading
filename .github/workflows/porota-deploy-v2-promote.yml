@@ -163,6 +163,10 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
+          # Stream the frozen helper before any host mutation.  Every remote
+          # mutator uses the same root-owned inode under /run/lock.
+          echo "RC6_MUTEX_B64=$(base64 -w0 scripts/rc6_deploy_host_mutex.py)" >> "$GITHUB_ENV"
+          echo "RC6_STAGE_B64=$(base64 -w0 scripts/rc6_deploy_stage_transfer.py)" >> "$GITHUB_ENV"
 
       - name: Classify current flat PAPER session before host writes
         shell: bash
@@ -344,7 +348,8 @@ jobs:
               "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
             if [ "$OWNED_STATE" != $'running\nrunning' ]; then
               RC6_DISK_PRECLEAN_TRIGGERED=1
-              "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n python3 - '$REQUIRED_PRETRANSFER_FREE'" \
+              "${SSH[@]}" "$DO_USER@$DO_HOST" \
+                "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - '$REQUIRED_PRETRANSFER_FREE'" \
                 < scripts/rc6_offline_current_image_cleanup.py
               mapfile -t METRICS < <(probe_disk)
               test "${#METRICS[@]}" -eq 2
@@ -365,7 +370,8 @@ jobs:
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
             IMAGE_CLEANUP_B64="$(base64 -w0 scripts/rc6_pretransfer_image_cleanup.py)"
             HOUSEKEEPING_B64="$(base64 -w0 scripts/rc6_disk_housekeeping.py)"
-            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' HOUSEKEEPING_B64='$HOUSEKEEPING_B64' bash -s" <<'PRECLEAN_REMOTE'
+            "${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user env POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' HOUSEKEEPING_B64='$HOUSEKEEPING_B64' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
@@ -529,7 +535,8 @@ jobs:
           timeout 240 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
       - name: Admit PAPER book before draining RC6
@@ -547,7 +554,8 @@ jobs:
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n env $AUDIT_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root env $AUDIT_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -556,11 +564,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
-          REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
-          SCP=(scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
-          "${SSH[@]}" "$DO_USER@$DO_HOST" "rm -rf '$REMOTE_DIR' && mkdir -p '$REMOTE_DIR'"
-          "${SCP[@]}" /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json "$DO_USER@$DO_HOST:$REMOTE_DIR/"
+          tar -C /tmp -cf - porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json | \
+            "${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user python3 -c 'import base64;exec(base64.b64decode(\"$RC6_STAGE_B64\"))' '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
 
       - name: Promote exact frozen candidate and verify
         id: promotion
@@ -568,10 +578,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
-          REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
+          REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           STAGE="$REMOTE_DIR/stage"
           STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"
           FROZEN_IMAGE="porota-predeploy-v2:$CANDIDATE_SHA"
@@ -587,7 +598,8 @@ jobs:
           # The heavy pre-transfer gate already cleaned first when required.
           # After transfer, re-check the remaining peak needed for bundle staging
           # + Docker image materialization + the final residual reserve.
-          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' ! -path "$REMOTE_DIR" -exec rm -rf -- {} +
+          # Other attempts own their staging.  Cleanup of this attempt happens
+          # only after exact validation, under the same remote mutex.
           DISK_PREFLIGHT_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
           DOCKER_DF_AFTER="$(sudo -n docker system df 2>&1 || true)"
           IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
@@ -1563,7 +1575,8 @@ jobs:
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
       - name: Verify RC6 schedulers restored after promotion
@@ -1589,7 +1602,8 @@ jobs:
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n bash -s -- '$CANDIDATE_SHA'" <<'REMOTE'
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root bash -s -- '$CANDIDATE_SHA'" <<'REMOTE'
           set -Eeuo pipefail
           CANDIDATE_SHA="$1"
           REPO=/opt/porota-trading
@@ -1616,7 +1630,8 @@ jobs:
           set -Eeuo pipefail
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
           import json, os, subprocess, sys, tempfile
           from datetime import datetime, timezone
           from pathlib import Path
@@ -1681,15 +1696,25 @@ jobs:
           timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "if sudo -n docker inspect 'porota-deploy-contract-$CANDIDATE_SHA' >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha '$CANDIDATE_SHA'; else echo CONTRACT_WRITER_ABSENT; fi"
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user bash -c 'if sudo -n docker inspect porota-deploy-contract-$CANDIDATE_SHA >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha $CANDIDATE_SHA; else echo CONTRACT_WRITER_ABSENT; fi'"
           CONTRACT_ORPHAN_RC=$?
+          if [ "$CONTRACT_ORPHAN_RC" -ne 0 ]; then
+            echo 'RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED|no recovery permitted'
+            exit "$CONTRACT_ORPHAN_RC"
+          fi
           RECOVERY_OUTPUT="$(timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
             < scripts/rc6_deploy_quiescence.py)"
           RECOVERY_RC=$?
           echo "$RECOVERY_OUTPUT"
+          if [ "$RECOVERY_RC" -ne 0 ]; then
+            echo 'RC6_FAILURE_RECOVERY=RED|no scheduler mutation permitted'
+            exit "$RECOVERY_RC"
+          fi
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
           SCHEDULER_ACTION=restore
           if [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ] && \
@@ -1706,15 +1731,18 @@ jobs:
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
           SCHEDULER_RESTORE_RC=$?
           set -e
+          test "$SCHEDULER_RESTORE_RC" -eq 0
           timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA'" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'" \
             < scripts/rc6_deploy_failure_cleanup.py
           test "$RECOVERY_RC" -eq 0
           test "$SCHEDULER_RESTORE_RC" -eq 0
