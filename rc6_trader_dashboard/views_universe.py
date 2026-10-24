@@ -14,17 +14,20 @@ def render(p, destination, tab):
         group = p.funnel_group
         scope = f"{group['currency']} / {group['channel']} · corte SHADOW" if group else "corte SHADOW sin cohorte"
         cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
-            ("READY", "Catalog READY", "candidate_identity_v2"), ("ELIGIBLE", "Strategy eligible", scope),
+            ("READY", "Aptas en catálogo", "candidate_identity_v2"), ("ELIGIBLE", "Strategy eligible", scope),
             ("TRADEABLE", "Tradeable", scope + "; no señal direccional"), ("HOT", "HOT", scope + "; observación")))
         return "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p) + render_table(
-            p, destination, tab, family_summary(p), "Distribución por familia", fields("family|Familia;candidates|Identidades|number;ready|RUNTIME_READY|number"),
+            p, destination, tab, family_summary(p), "Distribución por familia", fields("family|Familia;candidates|Identidades|number;ready|Aptas en catálogo|number"),
             fields("as_of|Readiness as_of|time;scope|Granularidad;reason|Alcance"), aggregate=True)
     if tab == "familias":
         page = shadow_rows(p, "families")
+        from_shadow = bool(page.rows)
         if not page.rows:
             page = family_summary(p)
         return render_table(p, destination, tab, page, "Routing & policy por familia", STRATEGIES,
-                            (*STRATEGY_DETAIL, *fields("cadence_class|Cadence class;deep_analysis_eligibility|Deep-analysis eligibility;reason|Por qué OBSERVE_ONLY")))
+                            (*STRATEGY_DETAIL, *fields("cadence_class|Cadence class;deep_analysis_eligibility|Deep-analysis eligibility;reason|Por qué OBSERVE_ONLY")),
+                            note=("Canal SHADOW experimental: OBSERVE_ONLY y entry_authority=No aquí no describen la autorización del observer PAPER. Consultar En Vivo para decisiones y posiciones factuales."
+                                  if from_shadow else "Resumen agregado del catálogo; sin corte SHADOW de familias en esta vista. No acredita aperturas PAPER."))
     if tab == "coverage":
         return render_table(p, destination, tab, shadow_rows(p, "capacity"), "Coverage causal", CAPACITY, CAPACITY_DETAIL,
                             note="Untouched/late se informa sólo con evidencia causal. No se certifica detección completa ni capacidad por benchmark fuera de rueda.")

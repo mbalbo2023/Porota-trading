@@ -113,9 +113,9 @@ def render(p, destination, tab):
                             note="Win rate se acompaña de muestra, costos, neto, expectancy y profit factor cuando está definido. Edge y calibración OOS permanecen NO_VERIFICADO sin evidencia.")
     if tab == "senales":
         return render_table(p, destination, tab, shadow_rows(p, "signals"), "Señales & cohorts · score_is_probability=false",
-                            fields("family|Familia;strategy|Estrategia;state|OOS|status;sample_size|Muestra|number;score|Score · NO PROBABILIDAD|score"),
-                            fields("score_bucket|Bucket de score;hit_rate|Hit rate|percent;forward_returns|Forward returns;mfe|MFE validada;mae|MAE validada;auc|AUC dataset validado;calibration|Calibración OOS;symbol|Ticker;hour|Hora ART;regime|Régimen;registry_version|Registry / versión"),
-                            note="Score NO PROBABILIDAD. AUC/calibración requieren dataset correcto; no se promueven evaluadores automáticamente.")
+                            fields("family|Familia;strategy|Estrategia;state|OOS|status;sample_size|Muestra|number;score_bucket|Bucket de score"),
+                            fields("hit_rate|Hit rate|percent;forward_returns|Forward returns;mfe|MFE validada;mae|MAE validada;auc|AUC dataset validado;calibration|Calibración OOS;registry_version|Registry / versión"),
+                            note="Cohorte agregada SHADOW, no instrumento individual. No hay score por ticker en esta fila; AUC/calibración requieren dataset correcto y siguen NO_VERIFICADO si falta evidencia. No se promueven evaluadores automáticamente.")
     if tab == "salidas":
         return render_table(p, destination, tab, p.positions(closed=True), "Salidas factuales PAPER", CLOSES,
                             (*CLOSE_DETAIL, *fields("shadow_alternative|Alternativa SHADOW;counterfactual|Same-entry counterfactual;trailing|Experimento trailing;break_even|Experimento break-even")),
