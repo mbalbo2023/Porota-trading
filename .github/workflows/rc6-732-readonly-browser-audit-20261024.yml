@@ -5,7 +5,7 @@ on:
       - diagnostic/rc6-732-readonly-browser-20261024
     paths:
       - .github/workflows/rc6-732-readonly-browser-audit-20261024.yml
-      - scripts/rc6_732_live_browser_readonly.py
+      - scripts/rc6_732_focus_browser_readonly.py
 permissions:
   contents: read
 concurrency:
@@ -29,7 +29,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git merge-base HEAD ae1e299d3f39a21cf5e6320b42bc0461636ab710)" = ae1e299d3f39a21cf5e6320b42bc0461636ab710
-          python -m py_compile scripts/rc6_732_live_browser_readonly.py
+          python -m py_compile scripts/rc6_732_focus_browser_readonly.py
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_732_readonly"
@@ -73,14 +73,14 @@ jobs:
             if DASHBOARD_ACCESS_TOKEN="$TOKEN" python -c 'import os,urllib.request; u="http://127.0.0.1:18085/api/dashboard/truth"; r=urllib.request.urlopen(urllib.request.Request(u,headers={"Authorization":"Bearer "+os.environ["DASHBOARD_ACCESS_TOKEN"]}),timeout=2); assert r.status==200'; then break; fi
             sleep 1
           done
-          DASHBOARD_ACCESS_TOKEN="$TOKEN" python scripts/rc6_732_live_browser_readonly.py --output visual-evidence
+          DASHBOARD_ACCESS_TOKEN="$TOKEN" python scripts/rc6_732_focus_browser_readonly.py
           unset TOKEN
-      - name: Preserve redacted visual evidence
+      - name: Preserve non-content route diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-732-redacted-browser-evidence
-          path: visual-evidence/
+          name: rc6-732-focused-no-content-report
+          path: focus-evidence/report.json
           if-no-files-found: warn
           retention-days: 7
       - name: Remove SSH key
