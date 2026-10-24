@@ -173,10 +173,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
-          SESSION_MODE="$(timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+          SESSION_MODE="$(timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64'" <<'PY'
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64'" <<'PY'
           import base64,os,sqlite3,sys,types
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')

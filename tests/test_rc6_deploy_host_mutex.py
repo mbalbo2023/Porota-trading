@@ -176,6 +176,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
                     '.github/workflows/porota-deploy-v2-promote.yml').read_text()
         steps = yaml.safe_load(workflow)['jobs']['promote']['steps']
         by_id = {step.get('id'): step.get('run', '') for step in steps}
+        classify = next(step['run'] for step in steps
+                        if step['name'] == 'Classify current flat PAPER session before host writes')
+        self.assertIn('RC6_MUTEX_B64', classify)
+        self.assertIn('PYTHONDONTWRITEBYTECODE=1', classify)
         for key in ('diskguard', 'suspend', 'drain', 'transfer', 'promotion',
                     'timers_restore', 'backup_retire', 'finalize_runtime'):
             self.assertIn('RC6_MUTEX_B64', by_id[key], key)
