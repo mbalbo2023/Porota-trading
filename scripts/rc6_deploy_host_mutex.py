@@ -82,7 +82,9 @@ def run(argv: list[str]) -> int:
                 os.initgroups(user.pw_name, user.pw_gid)
                 os.setgid(user.pw_gid)
                 os.setuid(user.pw_uid)
-        print('RC6_DEPLOY_HOST_MUTEX=HELD', flush=True)
+        # The classification step captures stdout as one exact OPEN/CLOSED
+        # token. Operational lock evidence must not change child stdout.
+        print('RC6_DEPLOY_HOST_MUTEX=HELD', file=sys.stderr, flush=True)
         return subprocess.run(command, check=False, env=env, pass_fds=(fd,),
                               preexec_fn=drop_privileges).returncode
     finally:

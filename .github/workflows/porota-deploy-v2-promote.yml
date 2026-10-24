@@ -1563,7 +1563,8 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
               -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-              "$DO_USER@$DO_HOST" "sudo -n python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action verify-carryover"
+              "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action verify-carryover"
           fi
 
       - name: Restore RC6 schedulers only after successful promotion
@@ -1590,7 +1591,8 @@ jobs:
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --action verify --policy-b64 '$POLICY_B64'" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root python3 - --candidate-sha '$CANDIDATE_SHA' --action verify --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
       - name: Retire exact operator-suspended backup files with a host receipt

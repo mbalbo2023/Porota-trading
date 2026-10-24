@@ -1,5 +1,6 @@
 """Adversarial, off-host tests for Deploy V2 serialization and staging."""
 import io
+from contextlib import redirect_stderr, redirect_stdout
 import os
 from pathlib import Path
 import subprocess
@@ -119,6 +120,21 @@ class HostMutexTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertEqual(docker.call_count, 1)
 
+    def test_lock_evidence_does_not_pollute_exact_child_stdout(self):
+        fake_user = SimpleNamespace(pw_uid=1, pw_gid=1, pw_name='nobody', pw_dir='/tmp')
+        real_open = mutex.open_lock
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(mutex.os, 'geteuid', return_value=0), \
+             patch.object(mutex.pwd, 'getpwnam', return_value=fake_user), \
+             patch.object(mutex, 'open_lock', side_effect=lambda: real_open(self.root, os.getuid())), \
+             patch.object(mutex.subprocess, 'run', side_effect=[
+                 SimpleNamespace(returncode=0, stdout=''),
+                 SimpleNamespace(returncode=0)]), \
+             redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(mutex.run(['nobody', 'root', 'echo', 'CLOSED']), 0)
+        self.assertEqual(out.getvalue(), '')
+        self.assertIn('RC6_DEPLOY_HOST_MUTEX=HELD', err.getvalue())
+
 
 class TransferTests(unittest.TestCase):
     def setUp(self):
@@ -181,8 +197,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('RC6_MUTEX_B64', classify)
         self.assertIn('PYTHONDONTWRITEBYTECODE=1', classify)
         for key in ('diskguard', 'suspend', 'drain', 'transfer', 'promotion',
-                    'timers_restore', 'backup_retire', 'finalize_runtime'):
+                    'timers_restore', 'timers_restored', 'backup_retire',
+                    'finalize_runtime'):
             self.assertIn('RC6_MUTEX_B64', by_id[key], key)
+        self.assertIn('RC6_MUTEX_B64', by_id['flat_book'].split('verify-carryover')[0])
         failure = next(step['run'] for step in steps
                        if step['name'] == 'Failure-safe host cleanup')
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 4)
