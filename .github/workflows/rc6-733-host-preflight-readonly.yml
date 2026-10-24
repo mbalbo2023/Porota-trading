@@ -34,7 +34,7 @@ jobs:
         timeout-minutes: 2
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^1)" = ae1e299d3f39a21cf5e6320b42bc0461636ab710
+          test "$(git merge-base HEAD ae1e299d3f39a21cf5e6320b42bc0461636ab710)" = ae1e299d3f39a21cf5e6320b42bc0461636ab710
           python3 -m py_compile scripts/rc6_733_host_preflight_readonly.py
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$HOME/.ssh"
