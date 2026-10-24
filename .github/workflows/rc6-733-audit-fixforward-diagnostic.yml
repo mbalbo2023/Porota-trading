@@ -70,6 +70,13 @@ jobs:
               print('RC6_RUNNER_NESTED_SUDO_FD=' + result.stdout.strip())
               print('RC6_RUNNER_NESTED_SUDO_RC=' + str(result.returncode))
               assert result.returncode==0 and result.stdout.strip() in ('FD_OPEN','FD_CLOSED'), result.stderr.strip()
+              override=subprocess.run(['sudo','-n','-C',str(fd+1),'python3','-c',
+                  'import os,sys; print("FD_OPEN" if os.path.exists("/proc/self/fd/"+sys.argv[1]) else "FD_CLOSED")',
+                  str(fd)],pass_fds=(fd,),text=True,capture_output=True)
+              print('RC6_RUNNER_SUDO_CLOSEFROM_OVERRIDE_RC=' + str(override.returncode))
+              print('RC6_RUNNER_SUDO_CLOSEFROM_OVERRIDE_FD=' + override.stdout.strip())
+              print('RC6_RUNNER_SUDO_CLOSEFROM_OVERRIDE_DENIED=' +
+                    str('close from' in override.stderr.lower() or 'closefrom' in override.stderr.lower()))
           finally:
               os.close(fd); os.unlink(path)
           PY
