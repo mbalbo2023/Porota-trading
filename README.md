@@ -1,66 +1,24 @@
-# Porota Trading v16.2
+# Porota Trading RC6
 
-Sistema autónomo de trading algorítmico para el mercado argentino (BYMA), con
-ejecución a través de PPI y motor de decisión sobre Google Gemini.
+Sistema de observación SHADOW y simulación PAPER para el mercado argentino. **Las órdenes reales permanecen bloqueadas**; una pantalla de catálogo, un estado READY o una cotización no autorizan una apertura PAPER ni una operación real. PPI es la identidad primaria; IOL y otras fuentes se usan sólo con su procedencia y alcance verificados.
 
-## Control desde Telegram
+## Estado y evidencia
 
-| Comando | Qué hace |
-|---|---|
-| `ESTADO` | Qué hay abierto y en qué estado está el bot |
-| `PARADA` | Parada de emergencia: ordenada, liquidar todo, o corte seco |
-| `REARRANCAR` | Volver a operar |
-| `AYUDA` | La lista completa |
+La fuente de seguimiento es [#732](https://github.com/mbalbo2023/Porota-trading/issues/732). Allí constan el SHA de producto, el último Deploy V2, los alcances CLOSED/OPEN, las autorrectificaciones y la aprobación requerida antes del próximo predeploy o deploy. Un comentario o este README documenta un estado; el código, las pruebas, Actions, el artefacto y el runtime se verifican por separado. No llamar GREEN a una fase sin su evidencia.
 
-## Lo primero que hay que saber
+Las diez familias solicitadas para evaluación PAPER son ACCIONES, CEDEARS, ETFS, BONOS, LETRAS, OBLIGACIONES, OPCIONES, FUTUROS, CAUCIONES y FCI. Su visualización y catálogo no demuestran estrategia, contrato, fuente, riesgo, admisión y fill simulados para cada instrumento. El interlock global de preopen/NO-GO se sigue en [#61](https://github.com/mbalbo2023/Porota-trading/issues/61).
 
-**El bot no arranca a operar solo.** Al levantar, manda un mensaje a Telegram y
-espera que autorices cómo arrancar: simulación contra el sandbox de PPI, real, o
-quedarse levantado sin operar. Hasta que no respondas, no toca el mercado.
+## Panel y operación
 
-## Puesta en marcha en Docker
+El dashboard protegido organiza 52 vistas canónicas en Inicio, En Vivo, Trading, Universo, Instrumentos, Riesgo, Analítica y Sistema. El mapa efectivo está en [rc6_trader_dashboard/navigation.py](rc6_trader_dashboard/navigation.py); los alias antiguos pueden resolver a vistas nuevas y no representan operaciones adicionales. Los registros y sus detalles indican fuente, frescura y alcance cuando la evidencia existe. **NO_VERIFICADO** y **SHADOW** no se convierten en ejecución PAPER.
 
-```bash
-cp .env.example .env            # 0. crear configuracion local sin credenciales
-docker compose build            # 1. construir el entorno reproducible
-docker compose run --rm bot pytest -q  # 2. ejecutar la suite
-docker compose up -d            # 3. arrancar; requiere credenciales en .env
-docker compose exec bot python ap_api_verifier.py  # 4. verificar APIs
-```
+La promoción de una versión usa exclusivamente los workflows controlados [Predeploy V2](.github/workflows/porota-predeploy-v2.yml) y [Deploy V2](.github/workflows/porota-deploy-v2-promote.yml), con artefacto congelado, ownership y autorización expresa del alcance. No usar `docker compose up -d` de una guía histórica como procedimiento de promoción. No tocar PPI Watch ni ejecutar estrés en el Droplet por una auditoría RC6.
 
-Responder **🧪 Simulación** y mirar el panel en `/testing`.
+## Continuidad
 
-## Documentación
+- [#485](https://github.com/mbalbo2023/Porota-trading/issues/485): inventario, retención y gobierno de PR.
+- [#624](https://github.com/mbalbo2023/Porota-trading/issues/624): SHADOW, seguridad de promoción e infraestructura.
+- [#478](https://github.com/mbalbo2023/Porota-trading/issues/478): SQLite, retención y recuperación con diagnóstico causal.
+- [AGENTS.md](AGENTS.md): reglas de trabajo del repositorio.
 
-| Archivo | Qué contiene |
-|---|---|
-| `PLAN_DE_TESTING.md` | Plan completo para QA: por dónde empezar, herramientas gratuitas, guía paso a paso para generar tests con IA, guion de aceptación |
-| `.env.example` | Plantilla sin secretos para crear el `.env` local |
-
-**El Documento Maestro y la Bitácora se entregan por separado**, fuera de este
-paquete, porque el Anexo A del Documento Maestro contiene credenciales en claro
-y un PDF con claves subido a un repositorio queda en el historial de Git de
-forma permanente.
-
-## Panel de control
-
-| Ruta | Para qué |
-|---|---|
-| `/` | Resumen de los últimos días |
-| `/vivo` | Qué está haciendo el bot ahora mismo |
-| `/testing` | Estado del arranque y traza paso a paso |
-| `/salud` | Semáforos de todas las APIs y módulos |
-| `/sre` | Propuestas de mejora e historial de cambios |
-| `/historicos` | Qué hay archivado y de qué fuentes |
-| `/aprendizaje` | Descarga del blog de aprendizaje |
-| `/config` | Editor de variables de entorno |
-
-## Credenciales
-
-Para el **entorno de pruebas**, crear `.env` desde `.env.example` y cargar las
-credenciales fuera de Git. Nunca versionar `.env`, `.env.testing` ni respaldos
-del archivo de entorno.
-
-Para **producción** hay que generar credenciales nuevas y moverlas a Secrets.
-Las de prueba quedan en el historial del repositorio de forma permanente, así
-que rotarlas antes del pase no es opcional.
+Los secretos pertenecen a los mecanismos seguros de entorno y Actions; no se publican en el repositorio, los logs ni los artefactos de auditoría.
