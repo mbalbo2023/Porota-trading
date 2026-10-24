@@ -153,7 +153,10 @@ def main(output):
                             span = page.locator("nav.pager span").first
                             item["second_page"]["pager_numbers"] = [int(n) for n in re.findall(
                                 r"\d+", span.inner_text())] if span.count() else []
-                            snapshot(page, output, report, path, 1440, "-page2-empty")
+                            item["second_page"]["read_error_code"] = (
+                                "CATALOG_READ_ERROR" if page.get_by_text("CATALOG_READ_ERROR").count()
+                                else "NO_VERIFICADO" if page.get_by_text("NO_VERIFICADO", exact=True).count()
+                                else "UNKNOWN")
                             retry = page.goto(page2, wait_until="domcontentloaded", timeout=9000)
                             item["second_page"]["retry_http"] = retry.status if retry else None
                             item["second_page"]["retry_visible_rows"] = page.locator("tr[data-row='true']").count()
