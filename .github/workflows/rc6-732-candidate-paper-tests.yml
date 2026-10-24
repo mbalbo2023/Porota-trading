@@ -17,12 +17,12 @@ jobs:
     env:
       ENVIRONMENT: SANDBOX
       STARTUP_REQUIRE_AUTH: 'false'
-      POROTA_BUILD_SHA: 31bd117c457b58fde33296d5fe2f7e683609910c
+      POROTA_BUILD_SHA: 56c485af6232d2459dfe632f53c874259ddbdefc
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 31bd117c457b58fde33296d5fe2f7e683609910c
+          ref: 56c485af6232d2459dfe632f53c874259ddbdefc
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -31,6 +31,24 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$POROTA_BUILD_SHA"
           git diff --check
+      - name: Exercise root to unprivileged remote mutex on runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n python3 - <<'PY'
+          import base64, pathlib, subprocess, tempfile
+          source=pathlib.Path('scripts/rc6_deploy_host_mutex.py').read_text()
+          needle="LOCK_DIR = Path('/run/lock')"
+          assert source.count(needle)==1
+          with tempfile.TemporaryDirectory(prefix='rc6-action-lock-') as root:
+              source=source.replace(needle, f"LOCK_DIR = Path({root!r})")
+              code=base64.b64encode(source.encode()).decode()
+              command=f"python3 -c 'import base64;exec(base64.b64decode(\\\"{code}\\\"))' nobody user python3 -c 'print(\\\"RC6_MUTEX_USER=PASS\\\")'"
+              result=subprocess.run(['bash','-c',command],capture_output=True,text=True,timeout=15)
+              assert result.returncode==0, (result.returncode,result.stderr)
+              assert 'RC6_MUTEX_USER=PASS' in result.stdout
+              print('RC6_MUTEX_PRIVILEGE_AND_FD=PASS')
+          PY
       - name: Install pinned test dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
       - name: Compile touched sources
