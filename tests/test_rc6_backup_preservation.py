@@ -58,6 +58,9 @@ def test_preservation_flag_reaches_pretransfer_candidate_helper_and_final_cleanu
     workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
     assert 'HOUSEKEEPING_B64="$(base64 -w0 scripts/rc6_disk_housekeeping.py)"' in workflow
     pre=workflow[workflow.index('RC6_DISK_PRECLEAN=START'):workflow.index('RC6_DISK_PRETRANSFER_GATE=GREEN')]
-    final=workflow[workflow.index('# Mandatory final cleanup after runtime validation/provenance.'):]
+    final=workflow[workflow.index('# Final read-only inventory after runtime validation/provenance.'):]
     assert 'base64 -d | sudo -n python3 -' in pre and '--preserve-backups' in pre
     assert '--preserve-backups' in final
+    assert '--mode audit --preserve-backups' in pre
+    assert '--mode audit --preserve-backups' in final
+    assert '--mode cleanup' not in pre and '--mode cleanup' not in final

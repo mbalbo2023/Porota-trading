@@ -28,8 +28,11 @@ def test_deploy_storage_audit_and_allowlisted_image_retention_are_safe():
     assert "DISK_BEFORE=" in body
     assert "DISK_AFTER=" in body
     assert "SPACE_RECOVERED=" in body
-    assert "docker image prune -f" in body
-    assert "docker builder prune -af" in body
+    assert "docker image prune -f" not in body
+    assert "docker builder prune -af" not in body
+    assert "docker buildx prune -af" not in body
+    assert "RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED" in body
+    assert "RC6_FINAL_HOSTWIDE_MUTATION=SKIPPED" in body
     assert "PPI_WATCH_UNTOUCHED=GREEN" in body
     assert "docker system prune" not in body
     assert "docker volume prune" not in body
