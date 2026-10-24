@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from urllib.parse import urlsplit
 
@@ -147,6 +148,17 @@ def main(output):
                         if not page.url.startswith(BASE + path + "?"):
                             raise RuntimeError("PAGINATION_TARGET")
                         inspect_rows(page, report, item, path, second=True)
+                        if item["second_page"]["visible_rows"] == 0:
+                            page2 = page.url
+                            span = page.locator("nav.pager span").first
+                            item["second_page"]["pager_numbers"] = [int(n) for n in re.findall(
+                                r"\d+", span.inner_text())] if span.count() else []
+                            snapshot(page, output, report, path, 1440, "-page2-empty")
+                            retry = page.goto(page2, wait_until="domcontentloaded", timeout=9000)
+                            item["second_page"]["retry_http"] = retry.status if retry else None
+                            item["second_page"]["retry_visible_rows"] = page.locator("tr[data-row='true']").count()
+                            report["findings"].append({"kind": "pagination_link_empty_page", "path": path,
+                                                       "retry_rows": item["second_page"]["retry_visible_rows"]})
                         response = page.goto(BASE + path, wait_until="domcontentloaded", timeout=9000)
                         if not response or response.status != 200:
                             raise RuntimeError("FIRST_PAGE_RETURN")
