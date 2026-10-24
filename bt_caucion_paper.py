@@ -11,6 +11,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
@@ -389,6 +390,17 @@ class CaucionBook:
             if previous["request_fingerprint"] != request_fingerprint:
                 raise ValueError("Clave de colocación reutilizada con términos diferentes")
             return dict(previous)
+        # Both explicit placement and allocation converge here, inside the
+        # SQLite transaction. A replay above does not open a new PAPER position.
+        # The workspace resolver identifies the actual PAPER runtime database,
+        # including an explicit path override. Synthetic books remain isolated
+        # even when their tests run inside an image with POROTA_BUILD_SHA set.
+        from cg_paper_workspace import database_path
+        if Path(self.store.path).resolve() == database_path():
+            from rc6_paper_admission_gate import admission_status
+            allowed, reason = admission_status()
+            if not allowed:
+                raise ValueError(reason or "NO_GO_PAPER_SCALPING")
         age = (at - aware_datetime(offer.quoted_at)).total_seconds()
         if age < 0 or age > max_quote_age_seconds:
             raise ValueError("Cotización de caución vencida o futura")

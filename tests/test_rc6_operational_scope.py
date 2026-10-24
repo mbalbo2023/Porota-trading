@@ -4,7 +4,7 @@ import da_dashboard_ux_hf6 as ux
 import historical_candle_shadow_rc6 as candle_shadow
 
 
-def test_trading_navigation_exposes_all_families_without_expanding_operation():
+def test_trading_navigation_exposes_ten_paper_families_without_claiming_readiness():
     labels = [item.label for item in ux.TRADING_NAV]
     assert labels == [
         "Resumen y motor", "Estrategias", "Acciones y CEDEAR", "Bonos",
@@ -13,7 +13,12 @@ def test_trading_navigation_exposes_all_families_without_expanding_operation():
     assert ux.families_for_group("acciones-cedears") == ("ACCIONES", "CEDEARS")
     assert ux.families_for_group("bonos") == ("BONOS",)
     assert ux.families_for_group("futuros") == ("FUTUROS",)
-    assert ux.OPERATIONAL_FAMILIES == frozenset(("ACCIONES", "CEDEARS"))
+    assert ux.OPERATIONAL_FAMILIES == frozenset((
+        "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+    ))
+    assert "ETFS" in ux.families_for_group("etf")
+    assert "OBLIGACIONES" in ux.families_for_group("on")
 
 
 def test_historical_shadow_accepts_operational_bond_family_but_stays_observe_only_without_data():

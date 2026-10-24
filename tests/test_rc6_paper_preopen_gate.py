@@ -152,3 +152,37 @@ def test_eod_caucion_worker_holds_placement_on_global_no_go(tmp_path, monkeypatc
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("path", ["direct", "allocator"])
+def test_caucion_final_insert_rechecks_global_receipt_in_runtime_image(tmp_path, monkeypatch, path):
+    from test_production_paper_v1634 import caucion_offer, caucion_policy
+
+    monkeypatch.setenv("POROTA_BUILD_SHA", SHA)
+    offer = caucion_offer()
+
+    def attempt(broker):
+        if path == "direct":
+            return broker.place_caucion(offer, "1000", "receipt-test", offer.quoted_at)
+        return broker.allocate_caucion([offer], caucion_policy(), "receipt-test",
+                                       as_of=offer.quoted_at)
+
+    # A valid receipt lets both existing PAPER paths operate in an isolated book.
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "go.db"))
+    green = PaperBroker(PaperStore(str(tmp_path / "go.db")), initial_cash="10000",
+                        daily_loss_pct="1")
+    accepted = attempt(green)
+    assert accepted.get("paper_id")
+
+    # The same input under NO_GO cannot insert a new position or allocation.
+    monkeypatch.setattr(gate, "admission_status", lambda: (False, "NO_GO_PAPER_SCALPING"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "no-go.db"))
+    red = PaperBroker(PaperStore(str(tmp_path / "no-go.db")), initial_cash="10000",
+                      daily_loss_pct="1")
+    with pytest.raises(ValueError, match="NO_GO_PAPER_SCALPING"):
+        attempt(red)
+    with red.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM paper_caucion_allocations").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0

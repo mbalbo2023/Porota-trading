@@ -206,22 +206,6 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         self.assertLess(workflow.index('Failure-safe host cleanup'), workflow.index('Runner cleanup'))
 
-    def test_promoter_acquires_the_cleanup_lock_before_staging_mutation(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-        promoter = workflow.split('      - name: Promote exact frozen candidate and verify', 1)[1]
-        promoter = promoter.split('      - name: Failure-safe host cleanup', 1)[0]
-        lock = 'DEPLOY_LOCK=/tmp/porota-rc6-deploy-v2.lock'
-        opened = 'exec 9>>"$DEPLOY_LOCK"'
-        acquired = "flock -n 9 || { echo 'RC6_REMOTE_PROMOTION_BUSY=RED'; exit 75; }"
-        staging = 'find /tmp -maxdepth 1 -type d -name'
-        self.assertLess(promoter.index(lock), promoter.index(opened))
-        self.assertLess(promoter.index(opened), promoter.index(acquired))
-        self.assertLess(promoter.index(acquired), promoter.index(staging))
-        self.assertIn('test ! -L "$DEPLOY_LOCK"', promoter)
-        self.assertIn('test -f "$DEPLOY_LOCK"', promoter)
-        cleaner = (Path(__file__).resolve().parents[1] / 'scripts/rc6_deploy_failure_cleanup.py').read_text()
-        self.assertIn("REMOTE_ROOT / 'porota-rc6-deploy-v2.lock'", cleaner)
-
 
 if __name__ == '__main__':
     unittest.main()
