@@ -147,7 +147,7 @@ class HostMutexTests(unittest.TestCase):
             self.assertEqual(mutex.run(self.args('disk_probe')), 0)
         self.assertEqual(out.getvalue(), '')
         self.assertIn('RC6_DEPLOY_HOST_MUTEX=HELD', err.getvalue())
-        self.assertEqual(json.loads(self.barrier.read_text())['status'], 'IDLE')
+        self.assertFalse(self.barrier.exists())  # read-only disk probe
 
     def test_same_attempt_chains_and_finalizes_but_other_attempt_cannot_enter(self):
         from contextlib import ExitStack
@@ -156,7 +156,7 @@ class HostMutexTests(unittest.TestCase):
             def successful(cmd, **kwargs):
                 return SimpleNamespace(returncode=0, stdout='')
             stack.enter_context(patch.object(mutex.subprocess, 'run', side_effect=successful))
-            self.assertEqual(mutex.run(self.args('disk_probe')), 0)
+            self.assertEqual(mutex.run(self.args('suspend')), 0)
             self.assertEqual(json.loads(self.barrier.read_text())['status'], 'IDLE')
             with self.assertRaisesRegex(RuntimeError, 'BARRIER_OTHER_ATTEMPT'):
                 mutex.run(['nobody', 'root', '--attempt', SHA, '9876', ATTEMPT,
@@ -184,11 +184,12 @@ class HostMutexTests(unittest.TestCase):
                 'root=Path(sys.argv[1]);fd=m.open_lock(root,os.getuid());'
                 'm._enter(root,(sys.argv[2],sys.argv[3],sys.argv[4]),"promotion");'
                 'p=subprocess.Popen([sys.executable,"-c",'
-                '"import os,time,sys;open(sys.argv[1],\'w\').write(str(os.getpid()));time.sleep(10)",'
-                'sys.argv[5]],close_fds=True);os.close(fd);os._exit(0)')
+                '"import os,time,sys;from pathlib import Path;Path(sys.argv[1]).write_text(str(os.getpid()));[(Path(sys.argv[2]).write_text(str(i)),time.sleep(.02)) for i in range(500)]",'
+                'sys.argv[5],sys.argv[6]],close_fds=True);os.close(fd);os._exit(0)')
         pid_path = self.root / 'nested.pid'
+        heartbeat = self.root / 'nested.heartbeat'
         parent = subprocess.run(['python3', '-c', code, str(self.root), SHA, RUN,
-                                 ATTEMPT, str(pid_path)], check=False, timeout=3)
+                                 ATTEMPT, str(pid_path), str(heartbeat)], check=False, timeout=3)
         self.assertEqual(parent.returncode, 0)
         try:
             for _ in range(100):
@@ -196,8 +197,14 @@ class HostMutexTests(unittest.TestCase):
                 import time; time.sleep(.01)
             child_pid = int(pid_path.read_text())
             os.kill(child_pid, 0)
-            self.assertNotEqual((Path('/proc') / str(child_pid) / 'stat').read_text()
-                                .rsplit(')', 1)[1].split()[0], 'Z')
+            for _ in range(100):
+                if heartbeat.exists(): break
+                import time; time.sleep(.01)
+            before = heartbeat.read_text()
+            for _ in range(100):
+                if heartbeat.read_text() != before: break
+                import time; time.sleep(.01)
+            self.assertNotEqual(heartbeat.read_text(), before)  # live child
             successor = self.acquire()  # fd was closed even though child lives
             try:
                 with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):

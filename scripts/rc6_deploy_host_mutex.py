@@ -166,7 +166,7 @@ def run(argv: list[str]) -> int:
             argv[7] not in PHASES):
         raise RuntimeError('MUTEX_ATTEMPT_INVALID')
     phase = argv[7]
-    observe = phase == 'classify'
+    observe = phase in {'classify', 'disk_probe'}
     user = pwd.getpwnam(argv[0])
     if user.pw_uid == 0:
         raise RuntimeError('MUTEX_REMOTE_USER_MUST_BE_UNPRIVILEGED')
@@ -175,7 +175,7 @@ def run(argv: list[str]) -> int:
     if not command:
         raise RuntimeError('MUTEX_COMMAND_MISSING')
     if (allow_contract_lifecycle != (phase == 'cleanup_contract') or
-            (phase in FINAL_PHASES | {'classify'} and argv[1] != 'root') or
+            (phase in FINAL_PHASES | {'classify', 'disk_probe'} and argv[1] != 'root') or
             (phase == 'cleanup_contract' and argv[1] != 'user')):
         raise RuntimeError('MUTEX_PHASE_INVALID')
     fd = open_lock(LOCK_DIR)
