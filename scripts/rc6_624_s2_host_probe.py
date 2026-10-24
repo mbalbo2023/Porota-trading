@@ -11,8 +11,11 @@ import os
 from pathlib import Path
 import pwd
 import re
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 import types
 
 
@@ -65,24 +68,63 @@ def main(argv):
             raise RuntimeError('S2_PROBE_SECOND_ATTEMPT_ADMITTED')
         if module.run(command('cleanup_final')) != 0 or module._read_barrier(root) is not None:
             raise RuntimeError('S2_PROBE_FINAL_RELEASE_FAILED')
-        held = module.open_lock(root)
+        # Kill the synthetic lock owner by exiting its process immediately
+        # after it launches a bounded, FD-closing grandchild. Observe a real
+        # advancing heartbeat and PID before trying a second host operation.
+        heartbeat = root / 'live-child.heartbeat'
+        grandchild = ('import os,sys,time;from pathlib import Path;'
+                      'p=Path(sys.argv[1]);'
+                      '[(p.write_text(str(os.getpid())+":"+str(i)),time.sleep(.01)) '
+                      'for i in range(300)]')
+        child = ('import base64,os,subprocess,sys,types;from pathlib import Path;'
+                 'm=types.ModuleType("rc6_s2_nested_probe");'
+                 'exec(compile(base64.b64decode(sys.argv[1]),"<s2-helper>","exec"),m.__dict__);'
+                 'root=Path(sys.argv[2]);fd=m.open_lock(root);'
+                 'm._enter(root,(sys.argv[3],sys.argv[4],sys.argv[5]),"promotion");'
+                 'subprocess.Popen([sys.executable,"-c",sys.argv[7],sys.argv[6]],'
+                 'close_fds=True,start_new_session=True,stdin=subprocess.DEVNULL,'
+                 'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);'
+                 'os.close(fd);os._exit(0)')
+        subprocess.run([sys.executable, '-c', child, base64.b64encode(source).decode(),
+                        str(root), *identity, str(heartbeat), grandchild],
+                       check=True, timeout=4)
+        live_pid = None
         try:
-            module._enter(root, identity, 'promotion')  # synthetic lost wrapper
-        finally:
+            for _ in range(100):
+                if heartbeat.exists():
+                    break
+                time.sleep(.01)
+            first = heartbeat.read_text()
+            live_pid = int(first.partition(':')[0])
+            for _ in range(100):
+                if heartbeat.read_text() != first:
+                    break
+                time.sleep(.01)
+            if heartbeat.read_text() == first:
+                raise RuntimeError('S2_PROBE_LIVE_CHILD_NOT_OBSERVED')
+            held = module.open_lock(root)  # wrapper's flock FD is gone
             os.close(held)
-        try:
-            module.run(command('cleanup_recover'))
-        except RuntimeError as exc:
-            if str(exc) != 'BARRIER_PRIOR_OPERATION_UNCERTAIN':
-                raise
-        else:
-            raise RuntimeError('S2_PROBE_UNCERTAIN_ATTEMPT_ADMITTED')
+            try:
+                module.run(command('cleanup_recover'))
+            except RuntimeError as exc:
+                if str(exc) != 'BARRIER_PRIOR_OPERATION_UNCERTAIN':
+                    raise
+            else:
+                raise RuntimeError('S2_PROBE_UNCERTAIN_ATTEMPT_ADMITTED')
+        finally:
+            if live_pid is not None:
+                try:
+                    os.kill(live_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            module._drain_children(max_seconds=1)
     print('RC6_624_S2_HOST_PROBE=' + json.dumps({
         'schema': 'RC6_624_S2_HOST_MUTEX_PROBE_V1', 'status': 'PASS',
         'source_sha': argv[1], 'helper_blob_sha': actual_blob,
         'root_fsync': True, 'linux_subreaper': True,
         'clean_failure_recovery': True, 'foreign_attempt_blocked': True,
         'uncertain_attempt_blocked': True, 'lost_wrapper_simulated': True,
+        'live_child_after_wrapper_exit': True, 'flock_released_while_live': True,
         'canonical_lock_touched': False, 'rc6_runtime_touched': False,
         'ppi_watch_touched': False, 'droplet_stress': False,
     }, sort_keys=True))
