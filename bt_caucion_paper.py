@@ -7,6 +7,7 @@ Los términos normalizados deben estar respaldados por datos del instrumento.
 
 import hashlib
 import json
+import os
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -389,6 +390,16 @@ class CaucionBook:
             if previous["request_fingerprint"] != request_fingerprint:
                 raise ValueError("Clave de colocación reutilizada con términos diferentes")
             return dict(previous)
+        # Both explicit placement and allocation converge here, inside the
+        # SQLite transaction. A replay above does not open a new PAPER position.
+        # A missing image identity on the canonical runtime path also fails
+        # closed; synthetic local books remain independent of host receipts.
+        if (os.getenv("POROTA_BUILD_SHA")
+                or str(self.store.path) == "/app/data/paper_v17/observer_v17.db"):
+            from rc6_paper_admission_gate import admission_status
+            allowed, reason = admission_status()
+            if not allowed:
+                raise ValueError(reason or "NO_GO_PAPER_SCALPING")
         age = (at - aware_datetime(offer.quoted_at)).total_seconds()
         if age < 0 or age > max_quote_age_seconds:
             raise ValueError("Cotización de caución vencida o futura")
