@@ -51,7 +51,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 25 python3 -c 'import base64;exec(base64.b64decode(\"$PROBE_B64\"))' '$PRODUCT_SHA'"
+            "sudo -n timeout 25 python3 -c 'import base64;exec(base64.b64decode(\"$PROBE_B64\"))' '$DO_USER' '$PRODUCT_SHA'"
       - name: Remove key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_733_fd_probe"
