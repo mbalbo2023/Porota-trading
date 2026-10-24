@@ -30,15 +30,20 @@ class HostMutexTests(unittest.TestCase):
 
     def test_orphan_holds_inode_after_parent_loses_fd_and_second_attempt_cannot_mutate(self):
         first = self.acquire()
-        child = subprocess.Popen(['sleep', '0.25'], pass_fds=(first,))
+        reader, writer = os.pipe()
+        child = subprocess.Popen(['python3', '-c', f'import os;os.read({reader},1)'],
+                                 pass_fds=(first, reader))
+        os.close(reader)
         try:
             os.close(first)  # synthetic SSH/wrapper termination
             with self.assertRaisesRegex(RuntimeError, 'MUTEX_BUSY'):
                 self.acquire()
+            os.write(writer, b'1')
             self.assertEqual(child.wait(timeout=3), 0)
             successor = self.acquire()
             os.close(successor)
         finally:
+            os.close(writer)
             if child.poll() is None:
                 child.kill(); child.wait(timeout=3)
 
