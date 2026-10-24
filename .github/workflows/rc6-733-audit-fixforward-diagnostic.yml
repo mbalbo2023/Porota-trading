@@ -29,7 +29,15 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m compileall -q tests/test_ci_productive_predeploy_contract.py tests/test_rc6_disk_deploy_guard.py tests/test_rc6_disk_materialization_reserve.py
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -p no:cacheprovider             tests/test_ci_productive_predeploy_contract.py             tests/test_rc6_disk_deploy_guard.py             tests/test_rc6_disk_materialization_reserve.py             tests/test_rc6_deploy_host_mutex.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -p no:cacheprovider --junitxml=/tmp/rc6-audit-diagnostic.xml tests/test_ci_productive_predeploy_contract.py tests/test_rc6_disk_deploy_guard.py tests/test_rc6_disk_materialization_reserve.py tests/test_rc6_deploy_host_mutex.py
+          python3 - <<'PY'
+          from xml.etree import ElementTree as ET
+          root=ET.parse('/tmp/rc6-audit-diagnostic.xml').getroot()
+          cases=list(root.iter('testcase'))
+          red=sum(1 for case in cases if any(case.find(tag) is not None for tag in ('failure','error','skipped')))
+          assert cases and red==0, (len(cases),red)
+          print('RC6_DIAGNOSTIC_CASES=' + str(len(cases)) + '|RED=0')
+          PY
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
@@ -48,16 +56,20 @@ jobs:
           set -Eeuo pipefail
           python3 - <<'PY'
           import os, subprocess, tempfile
+          baseline=subprocess.run(['sudo','-n','python3','-c','print("SUDO_AVAILABLE")'],
+                                  capture_output=True,text=True)
+          print('RC6_RUNNER_SUDO_BASE_RC=' + str(baseline.returncode))
+          print('RC6_RUNNER_SUDO_BASE_OUTPUT=' + baseline.stdout.strip())
+          assert baseline.returncode==0 and baseline.stdout.strip()=='SUDO_AVAILABLE', baseline.stderr.strip()
           fd,path=tempfile.mkstemp(prefix='rc6-fd-runner-')
           try:
-              # Match the wrapper's pass_fds followed by a nested sudo child.
               result=subprocess.run(['sudo','-n','python3','-c',
-                  'import os,sys; os.fstat(int(sys.argv[1])); print("OPEN")',
+                  'import os,sys; fd=int(sys.argv[1]); ' +
+                  'print("FD_OPEN" if os.path.exists("/proc/self/fd/"+str(fd)) else "FD_CLOSED")',
                   str(fd)],pass_fds=(fd,),text=True,capture_output=True)
-              print('RC6_RUNNER_NESTED_SUDO_FD=' +
-                    ('OPEN' if result.returncode==0 and result.stdout.strip()=='OPEN'
-                     else 'CLOSED_OR_UNAVAILABLE'))
+              print('RC6_RUNNER_NESTED_SUDO_FD=' + result.stdout.strip())
               print('RC6_RUNNER_NESTED_SUDO_RC=' + str(result.returncode))
+              assert result.returncode==0 and result.stdout.strip() in ('FD_OPEN','FD_CLOSED'), result.stderr.strip()
           finally:
               os.close(fd); os.unlink(path)
           PY
