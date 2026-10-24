@@ -10,6 +10,7 @@ observes the immediate child exit, including when SSH disappears.
 from __future__ import annotations
 
 import fcntl
+import ctypes
 import json
 import os
 import pwd
@@ -18,6 +19,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -33,6 +35,7 @@ PHASES = frozenset({
 FINAL_PHASES = frozenset({'finalize', 'cleanup_final'})
 IDENTITY = re.compile(r'[0-9a-f]{40}')
 NUMBER = re.compile(r'[1-9][0-9]*')
+PR_SET_CHILD_SUBREAPER = 36
 
 
 def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
@@ -156,6 +159,41 @@ def _finish(directory_path: Path, identity: tuple[str, str, str], phase: str,
         _write_barrier(directory_path, state)
 
 
+def _enable_subreaper() -> None:
+    # An inherited flock is insufficient across nested sudo. Reparent orphaned
+    # grandchildren here while this root wrapper lives, including after their
+    # immediate shell exits; a lost wrapper leaves the INFLIGHT barrier.
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), 'MUTEX_SUBREAPER_UNAVAILABLE')
+
+
+def _drain_children(max_seconds: float = 10) -> None:
+    deadline = time.monotonic() + max_seconds
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return  # All adopted descendants have exited and been reaped.
+        if pid:
+            continue
+        if time.monotonic() >= deadline:
+            raise RuntimeError('MUTEX_DESCENDANT_STILL_RUNNING')
+        time.sleep(.05)
+
+
+def _check_contract_writer() -> None:
+    inventory = subprocess.run(
+        ['docker', 'ps', '--format', '{{.Names}}', '--filter',
+         'name=porota-deploy-contract-'], capture_output=True,
+        text=True, timeout=10, check=False)
+    if inventory.returncode:
+        raise RuntimeError('CONTRACT_WRITER_INVENTORY_FAILED')
+    if any(re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name)
+           for name in inventory.stdout.splitlines()):
+        raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
+
+
 def run(argv: list[str]) -> int:
     if (os.geteuid() != 0 or len(argv) < 9 or argv[1] not in ('user', 'root') or
             argv[2] != '--attempt' or argv[6] != '--phase'):
@@ -180,6 +218,7 @@ def run(argv: list[str]) -> int:
         raise RuntimeError('MUTEX_PHASE_INVALID')
     fd = open_lock(LOCK_DIR)
     try:
+        _enable_subreaper()
         existing = _read_barrier(LOCK_DIR)
         if observe and existing is not None:
             raise RuntimeError('BARRIER_PRIOR_ATTEMPT_UNRESOLVED')
@@ -191,15 +230,7 @@ def run(argv: list[str]) -> int:
         # A Docker child can outlive a lost SSH/sudo CLI even after its parent
         # releases flock. Never start another mutator beside that exact writer.
         if not allow_contract_lifecycle:
-            inventory = subprocess.run(
-                ['docker', 'ps', '--format', '{{.Names}}', '--filter',
-                 'name=porota-deploy-contract-'], capture_output=True,
-                text=True, timeout=10, check=False)
-            if inventory.returncode:
-                raise RuntimeError('CONTRACT_WRITER_INVENTORY_FAILED')
-            if any(re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name)
-                   for name in inventory.stdout.splitlines()):
-                raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
+            _check_contract_writer()
         if not observe:
             _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
@@ -216,11 +247,14 @@ def run(argv: list[str]) -> int:
         print('RC6_DEPLOY_HOST_MUTEX=HELD', file=sys.stderr, flush=True)
         result = subprocess.run(command, check=False, env=env, pass_fds=(fd,),
                                 preexec_fn=drop_privileges)
-        if result.returncode == 0 and not observe:
-            _finish(LOCK_DIR, identity, phase, phase in FINAL_PHASES)
-        # On any nonzero return, timeout, exception or abrupt wrapper death,
-        # keep INFLIGHT. No second writer, including failure cleanup, is safe
-        # until the exact orphan state is independently resolved.
+        _drain_children()
+        _check_contract_writer()
+        if not observe:
+            _finish(LOCK_DIR, identity, phase,
+                    result.returncode == 0 and phase in FINAL_PHASES)
+        # An ordinary nonzero exit with no adopted descendants and no contract
+        # writer may be recovered by this exact attempt. Timeout, uncertain
+        # children or abrupt wrapper death keep INFLIGHT and block all writers.
         return result.returncode
     finally:
         os.close(fd)

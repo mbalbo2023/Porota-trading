@@ -40,6 +40,8 @@ class HostMutexTests(unittest.TestCase):
         open_lock = mutex.open_lock
         return (patch.object(mutex.os, 'geteuid', return_value=0),
                 patch.object(mutex.pwd, 'getpwnam', return_value=fake_user),
+                patch.object(mutex, '_enable_subreaper'),
+                patch.object(mutex, '_drain_children'),
                 patch.object(mutex, 'LOCK_DIR', self.root),
                 patch.object(mutex, 'open_lock', side_effect=lambda p: open_lock(p, os.getuid())),
                 patch.object(mutex, '_read_barrier',
@@ -142,7 +144,8 @@ class HostMutexTests(unittest.TestCase):
         with ExitStack() as stack:
             for mocked in self.mock_root(): stack.enter_context(mocked)
             stack.enter_context(patch.object(mutex.subprocess, 'run', side_effect=[
-                SimpleNamespace(returncode=0, stdout=''), SimpleNamespace(returncode=0)]))
+                SimpleNamespace(returncode=0, stdout=''), SimpleNamespace(returncode=0),
+                SimpleNamespace(returncode=0, stdout='')]))
             stack.enter_context(redirect_stdout(out)); stack.enter_context(redirect_stderr(err))
             self.assertEqual(mutex.run(self.args('disk_probe')), 0)
         self.assertEqual(out.getvalue(), '')
@@ -171,10 +174,34 @@ class HostMutexTests(unittest.TestCase):
             for mocked in self.mock_root(): stack.enter_context(mocked)
             stack.enter_context(patch.object(mutex.subprocess, 'run', side_effect=[
                 SimpleNamespace(returncode=0, stdout=''), SimpleNamespace(returncode=9)]))
-            self.assertEqual(mutex.run(self.args('suspend')), 9)
+            stack.enter_context(patch.object(mutex, '_drain_children',
+                                             side_effect=RuntimeError('MUTEX_DESCENDANT_STILL_RUNNING')))
+            with self.assertRaisesRegex(RuntimeError, 'MUTEX_DESCENDANT_STILL_RUNNING'):
+                mutex.run(self.args('suspend'))
             self.assertEqual(json.loads(self.barrier.read_text())['status'], 'INFLIGHT')
             with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):
                 mutex.run(self.args('cleanup_recover'))
+
+    def test_clean_nonzero_allows_same_attempt_failure_recovery(self):
+        from contextlib import ExitStack
+        child_calls = [0]
+        def fake_run(cmd, **kwargs):
+            if cmd[0] == 'docker':
+                return SimpleNamespace(returncode=0, stdout='')
+            child_calls[0] += 1
+            return SimpleNamespace(returncode=9 if child_calls[0] == 1 else 0)
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex.subprocess, 'run', side_effect=fake_run))
+            self.assertEqual(mutex.run(self.args('suspend')), 9)
+            self.assertEqual(json.loads(self.barrier.read_text())['status'], 'IDLE')
+            self.assertEqual(mutex.run(['nobody', 'user', '--attempt', SHA, RUN,
+                ATTEMPT, '--phase', 'cleanup_contract', '--allow-contract-lifecycle',
+                'true']), 0)
+            self.assertEqual(mutex.run(self.args('cleanup_recover')), 0)
+            self.assertEqual(mutex.run(self.args('cleanup_restore')), 0)
+            self.assertEqual(mutex.run(self.args('cleanup_final')), 0)
+            self.assertFalse(self.barrier.exists())
 
     def test_sudo_like_child_closes_fd_then_parent_lost_keeps_barrier(self):
         # Synthetic SSH loss: the child retains no flock fd; the marker alone
@@ -216,6 +243,23 @@ class HostMutexTests(unittest.TestCase):
         finally:
             if pid_path.exists():
                 os.kill(int(pid_path.read_text()), signal.SIGKILL)
+
+    def test_live_adopted_grandchild_blocks_normal_failed_exit_until_it_finishes(self):
+        # Exercise the real Linux subreaper in an isolated process so pytest
+        # cannot adopt unrelated children from another test.
+        middle = ('import subprocess,sys;subprocess.Popen([sys.executable,'
+                  '"-c","import time;time.sleep(.3)"],close_fds=True)')
+        code = (f'import subprocess,sys\nfrom scripts import rc6_deploy_host_mutex as m\n'
+                f'm._enable_subreaper()\n'
+                f'subprocess.run([sys.executable,"-c",{middle!r}],check=True)\n'
+                f'try:\n m._drain_children(.05)\n'
+                f'except RuntimeError as exc:\n'
+                f' assert str(exc)=="MUTEX_DESCENDANT_STILL_RUNNING"\n'
+                f'else:\n raise AssertionError("ADOPTED_CHILD_MISSED")\n'
+                f'm._drain_children(1)\n')
+        result = subprocess.run(['python3', '-c', code], capture_output=True,
+                                text=True, timeout=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_barrier_symlink_hardlink_corrupt_and_replaced_fail_closed(self):
         self.barrier.symlink_to(self.root / 'outside')
