@@ -1,0 +1,858 @@
+{
+  "as_of_utc": "2026-10-24T22:26:34.177278+00:00",
+  "candidate_sha": "4bba1335cc1875c6feb6d8a75aea141c31b83653",
+  "candidate_tree_sha": "bbdf7f979e7b7092e0705f8037b3cb65f4865546",
+  "coverage": [
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/",
+      "screenshot": "route-01-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 4,
+      "first_page_rows": 4,
+      "path": "/analitica",
+      "screenshot": "route-02-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/anual",
+      "screenshot": "route-03-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/cierre-diario",
+      "screenshot": "route-04-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/contrafactuales",
+      "screenshot": "route-05-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/experimentos",
+      "screenshot": "route-06-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/historico",
+      "screenshot": "route-07-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/reportes",
+      "screenshot": "route-08-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 5,
+      "first_page_rows": 5,
+      "path": "/analitica/salidas",
+      "screenshot": "route-09-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/senales",
+      "screenshot": "route-10-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo",
+      "screenshot": "route-11-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo/capacidad",
+      "screenshot": "route-12-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo/cierres",
+      "screenshot": "route-13-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/en-vivo/decisiones",
+      "screenshot": "route-14-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 2,
+      "first_page_rows": 2,
+      "path": "/en-vivo/fuentes",
+      "screenshot": "route-15-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo/oportunidades",
+      "screenshot": "route-16-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/en-vivo/posiciones",
+      "screenshot": "route-17-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/en-vivo/workers",
+      "screenshot": "route-18-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos",
+      "screenshot": "route-19-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos/contrato",
+      "screenshot": "route-20-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos/evidencia",
+      "screenshot": "route-21-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos/ficha",
+      "screenshot": "route-22-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/instrumentos/mercado",
+      "screenshot": "route-23-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/riesgo",
+      "screenshot": "route-24-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/riesgo/event-risk",
+      "screenshot": "route-25-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/riesgo/exposicion",
+      "screenshot": "route-26-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/riesgo/limites",
+      "screenshot": "route-27-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/riesgo/liquidez",
+      "screenshot": "route-28-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 4,
+      "first_page_rows": 4,
+      "path": "/riesgo/pnl",
+      "screenshot": "route-29-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/riesgo/posiciones",
+      "screenshot": "route-30-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/sistema",
+      "screenshot": "route-31-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 3,
+      "first_page_rows": 3,
+      "path": "/sistema/backups",
+      "screenshot": "route-32-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/sistema/configuracion",
+      "screenshot": "route-33-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/sistema/evidencia",
+      "screenshot": "route-34-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 2,
+      "first_page_rows": 2,
+      "path": "/sistema/integraciones",
+      "screenshot": "route-35-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/sistema/logs",
+      "screenshot": "route-36-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/sistema/salud",
+      "screenshot": "route-37-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/sistema/scheduler",
+      "screenshot": "route-38-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 8,
+      "first_page_rows": 8,
+      "path": "/sistema/workers",
+      "screenshot": "route-39-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/trading",
+      "screenshot": "route-40-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/trading/cauciones",
+      "screenshot": "route-41-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/trading/derivados",
+      "screenshot": "route-42-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/trading/equity-spot",
+      "screenshot": "route-43-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/trading/renta-fija",
+      "screenshot": "route-44-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/trading/scalping",
+      "screenshot": "route-45-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/trading/tesoreria",
+      "screenshot": "route-46-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/universo",
+      "screenshot": "route-47-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/coverage",
+      "screenshot": "route-48-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/discovery",
+      "screenshot": "route-49-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/excluidos",
+      "screenshot": "route-50-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/universo/familias",
+      "screenshot": "route-51-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/tradeability",
+      "screenshot": "route-52-1440.png",
+      "width": 1440
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/",
+      "screenshot": "route-01-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 4,
+      "first_page_rows": 4,
+      "path": "/analitica",
+      "screenshot": "route-02-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/anual",
+      "screenshot": "route-03-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/cierre-diario",
+      "screenshot": "route-04-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/contrafactuales",
+      "screenshot": "route-05-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/experimentos",
+      "screenshot": "route-06-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/historico",
+      "screenshot": "route-07-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/reportes",
+      "screenshot": "route-08-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 5,
+      "first_page_rows": 5,
+      "path": "/analitica/salidas",
+      "screenshot": "route-09-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/analitica/senales",
+      "screenshot": "route-10-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo",
+      "screenshot": "route-11-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo/capacidad",
+      "screenshot": "route-12-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo/cierres",
+      "screenshot": "route-13-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/en-vivo/decisiones",
+      "screenshot": "route-14-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 2,
+      "first_page_rows": 2,
+      "path": "/en-vivo/fuentes",
+      "screenshot": "route-15-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/en-vivo/oportunidades",
+      "screenshot": "route-16-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/en-vivo/posiciones",
+      "screenshot": "route-17-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/en-vivo/workers",
+      "screenshot": "route-18-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos",
+      "screenshot": "route-19-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos/contrato",
+      "screenshot": "route-20-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos/evidencia",
+      "screenshot": "route-21-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/instrumentos/ficha",
+      "screenshot": "route-22-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/instrumentos/mercado",
+      "screenshot": "route-23-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/riesgo",
+      "screenshot": "route-24-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/riesgo/event-risk",
+      "screenshot": "route-25-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/riesgo/exposicion",
+      "screenshot": "route-26-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/riesgo/limites",
+      "screenshot": "route-27-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/riesgo/liquidez",
+      "screenshot": "route-28-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 4,
+      "first_page_rows": 4,
+      "path": "/riesgo/pnl",
+      "screenshot": "route-29-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/riesgo/posiciones",
+      "screenshot": "route-30-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/sistema",
+      "screenshot": "route-31-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 3,
+      "first_page_rows": 3,
+      "path": "/sistema/backups",
+      "screenshot": "route-32-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/sistema/configuracion",
+      "screenshot": "route-33-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/sistema/evidencia",
+      "screenshot": "route-34-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 2,
+      "first_page_rows": 2,
+      "path": "/sistema/integraciones",
+      "screenshot": "route-35-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/sistema/logs",
+      "screenshot": "route-36-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 7,
+      "first_page_rows": 7,
+      "path": "/sistema/salud",
+      "screenshot": "route-37-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/sistema/scheduler",
+      "screenshot": "route-38-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 8,
+      "first_page_rows": 8,
+      "path": "/sistema/workers",
+      "screenshot": "route-39-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/trading",
+      "screenshot": "route-40-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/trading/cauciones",
+      "screenshot": "route-41-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/trading/derivados",
+      "screenshot": "route-42-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/trading/equity-spot",
+      "screenshot": "route-43-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/trading/renta-fija",
+      "screenshot": "route-44-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 10,
+      "first_page_rows": 10,
+      "path": "/trading/scalping",
+      "screenshot": "route-45-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/trading/tesoreria",
+      "screenshot": "route-46-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/universo",
+      "screenshot": "route-47-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/coverage",
+      "screenshot": "route-48-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/discovery",
+      "screenshot": "route-49-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/excluidos",
+      "screenshot": "route-50-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 1,
+      "first_page_rows": 1,
+      "path": "/universo/familias",
+      "screenshot": "route-51-360.png",
+      "width": 360
+    },
+    {
+      "first_page_dialogs_opened": 0,
+      "first_page_rows": 0,
+      "path": "/universo/tradeability",
+      "screenshot": "route-52-360.png",
+      "width": 360
+    }
+  ],
+  "findings": [],
+  "first_page_dialogs_opened": 268,
+  "first_page_rows": 268,
+  "fixture": "synthetic SQLite; no runtime, provider, broker, or production data",
+  "pagination_expected": [
+    10,
+    10,
+    5
+  ],
+  "route_viewport_checks": 104,
+  "routes_expected": 52,
+  "schema": "rc6.733.synthetic-visual.v1",
+  "screenshots": [
+    "route-01-1440.png",
+    "route-02-1440.png",
+    "route-03-1440.png",
+    "route-04-1440.png",
+    "route-05-1440.png",
+    "route-06-1440.png",
+    "route-07-1440.png",
+    "route-08-1440.png",
+    "route-09-1440.png",
+    "route-10-1440.png",
+    "route-11-1440.png",
+    "route-12-1440.png",
+    "route-13-1440.png",
+    "route-14-1440.png",
+    "route-15-1440.png",
+    "route-16-1440.png",
+    "route-17-1440.png",
+    "route-18-1440.png",
+    "route-19-1440.png",
+    "route-20-1440.png",
+    "route-21-1440.png",
+    "route-22-1440.png",
+    "route-23-1440.png",
+    "route-24-1440.png",
+    "route-25-1440.png",
+    "route-26-1440.png",
+    "route-27-1440.png",
+    "route-28-1440.png",
+    "route-29-1440.png",
+    "route-30-1440.png",
+    "route-31-1440.png",
+    "route-32-1440.png",
+    "route-33-1440.png",
+    "route-34-1440.png",
+    "route-35-1440.png",
+    "route-36-1440.png",
+    "route-37-1440.png",
+    "route-38-1440.png",
+    "route-39-1440.png",
+    "route-40-1440.png",
+    "route-41-1440.png",
+    "route-42-1440.png",
+    "route-43-1440.png",
+    "route-44-1440.png",
+    "route-45-1440.png",
+    "route-46-1440.png",
+    "route-47-1440.png",
+    "route-48-1440.png",
+    "route-49-1440.png",
+    "route-50-1440.png",
+    "route-51-1440.png",
+    "route-52-1440.png",
+    "route-01-360.png",
+    "route-02-360.png",
+    "route-03-360.png",
+    "route-04-360.png",
+    "route-05-360.png",
+    "route-06-360.png",
+    "route-07-360.png",
+    "route-08-360.png",
+    "route-09-360.png",
+    "route-10-360.png",
+    "route-11-360.png",
+    "route-12-360.png",
+    "route-13-360.png",
+    "route-14-360.png",
+    "route-15-360.png",
+    "route-16-360.png",
+    "route-17-360.png",
+    "route-18-360.png",
+    "route-19-360.png",
+    "route-20-360.png",
+    "route-21-360.png",
+    "route-22-360.png",
+    "route-23-360.png",
+    "route-24-360.png",
+    "route-25-360.png",
+    "route-26-360.png",
+    "route-27-360.png",
+    "route-28-360.png",
+    "route-29-360.png",
+    "route-30-360.png",
+    "route-31-360.png",
+    "route-32-360.png",
+    "route-33-360.png",
+    "route-34-360.png",
+    "route-35-360.png",
+    "route-36-360.png",
+    "route-37-360.png",
+    "route-38-360.png",
+    "route-39-360.png",
+    "route-40-360.png",
+    "route-41-360.png",
+    "route-42-360.png",
+    "route-43-360.png",
+    "route-44-360.png",
+    "route-45-360.png",
+    "route-46-360.png",
+    "route-47-360.png",
+    "route-48-360.png",
+    "route-49-360.png",
+    "route-50-360.png",
+    "route-51-360.png",
+    "route-52-360.png"
+  ],
+  "status": "GREEN",
+  "viewports": [
+    1440,
+    360
+  ]
+}
