@@ -161,6 +161,33 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
+      - name: Inventory public instrument metadata on manual runs only
+        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p audit-inventory
+          set +e
+          timeout 40 ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 10 python3 - instrument-inventory-host" \
+            < scripts/rc6_market_watch_readonly.py > audit-inventory/instruments.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool audit-inventory/instruments.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.instrument-audit-inventory.v1","status":"UNVERIFIED","read_only":true,"complete_inventory":false}' > audit-inventory/instruments.json
+          fi
+      - name: Preserve separate manual instrument inventory
+        if: always() && github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-instrument-inventory-${{ github.run_id }}
+          path: audit-inventory/instruments.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Diagnose SHADOW SQLite stages on manual runs only
         if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
         shell: bash
@@ -214,6 +241,19 @@ jobs:
           set -e
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/observer_lifecycle.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.observer-lifecycle.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true,"events":[]}' > evidence/observer_lifecycle.json
+          fi
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 22 python3 - porota-image-inventory-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/porota_images.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/porota_images.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.porota-image-inventory.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/porota_images.json
           fi
       - name: Audit authenticated dashboard routes and connector states without exporting content
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.window.outputs.active == '1'
@@ -342,6 +382,7 @@ jobs:
             evidence/shadow_diagnostic.json
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
+            evidence/porota_images.json
             evidence/recent_critical.json
             evidence/dashboard_audit.json
             evidence/delivery.json

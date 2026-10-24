@@ -758,18 +758,86 @@ def shadow_diagnostic():
     return result
 
 
+GENERATION_RECEIPT_PROBE = '''
+def _committed_generation_receipt():
+ import json, math, os, re
+ from datetime import datetime, timezone
+ from pathlib import Path
+ receipt={"schema":"rc6.committed-generation-receipt.v1","integrity":"UNVERIFIED","read_only":True}
+ try:
+  from rc6_shadow_runtime.persistence import read_committed_generation
+  from rc6_shadow_runtime.timing import generation_budget
+  db=Path(os.getenv("PAPER_V17_DB_PATH","/app/data/paper_v17/observer_v17.db"))
+  root=db.parent/"artifacts"/db.name
+  cut=read_committed_generation(root/"dynamic-shadow",payload_limit=4*1024**2,require_current_status=True)
+  status=cut["status"]; pointer=cut["pointer"]
+  captured=datetime.now(timezone.utc)
+  stamp=datetime.fromisoformat(status["as_of"].replace("Z","+00:00"))
+  budget,authority=generation_budget(status)
+  if stamp.tzinfo is None or authority!="TWO_MEASURED_CYCLES_SOURCE_CAPPED":raise ValueError("GENERATION_CLOCK_UNVERIFIED")
+  age=(captured-stamp).total_seconds()
+  if not 0<=age<=budget:raise ValueError("GENERATION_FRESHNESS_UNVERIFIED")
+  for value in (pointer["generation_id"],pointer["manifest_sha256"],status["configuration_fingerprint"]):
+   if not isinstance(value,str) or not re.fullmatch("[0-9a-f]{64}",value):raise ValueError("GENERATION_HASH_UNVERIFIED")
+  if (type(pointer["sequence"]) is not int or pointer["sequence"]<=0 or
+      status.get("mode")!="SHADOW" or type(status.get("provider_requests")) is not int or status["provider_requests"]!=0):
+   raise ValueError("GENERATION_AUTHORITY_UNVERIFIED")
+  if status.get("status") not in {"SHADOW_OBSERVING","PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"}:
+   raise ValueError("GENERATION_WORKER_STATE_UNVERIFIED")
+  if type(status.get("real_orders_sent")) is not int or status["real_orders_sent"]!=0 or status.get("real_routes")!="NOT_CALLED":
+   raise ValueError("GENERATION_SAFETY_UNVERIFIED")
+  def number(value):
+   return type(value) in (int,float) and math.isfinite(value) and 0<=value<=120000
+  raw=status.get("runtime_sql_diagnostics") or {}
+  stages=[]
+  allowed={"CATALOG_FULL","OPEN_POSITIONS","SCHEMA_TABLES","INTRADAY_CONTRACTS","INTRADAY_POINTS","MARKET_SNAPSHOTS"}
+  for row in raw.get("stages",[])[:6]:
+   if not isinstance(row,dict) or row.get("stage") not in allowed:continue
+   clean={"stage":row["stage"]}
+   for key in ("elapsed_ms","remaining_ms","rows"):
+    if number(row.get(key)):clean[key]=row[key]
+   for key in ("deadline_elapsed","interrupted_by_deadline"):
+    if type(row.get(key)) is bool:clean[key]=row[key]
+   stages.append(clean)
+  elapsed=raw.get("sql_elapsed_ms")
+  within=(raw.get("budget_ms")==2000 and number(elapsed) and elapsed<=2000 and bool(stages)
+          and all(row.get("deadline_elapsed") is False and row.get("interrupted_by_deadline") is False for row in stages))
+  receipt.update(integrity="VERIFIED",captured_at=captured.isoformat(),as_of=status["as_of"],
+   generation_id=pointer["generation_id"],sequence=pointer["sequence"],manifest_sha256=pointer["manifest_sha256"],
+   configuration_fingerprint=status["configuration_fingerprint"],worker_status=status["status"],
+   live_status_required=True,age_seconds=round(age,3),liveness_budget_seconds=budget,
+   native_sql_within_budget=within,native_sql_elapsed_ms=elapsed if number(elapsed) else None,
+   native_sql_stages=stages,real_orders_sent=0,real_routes="NOT_CALLED",provider_requests=0)
+  # Source identity is reported exactly as observed; unknown is never filled
+  # from GitHub's expected SHA or from a different container.
+  health=root/"runtime-health.json"
+  if health.is_file() and not health.is_symlink() and health.stat().st_size<=131072:
+   source=json.loads(health.read_text())
+   for key in ("source_sha","candidate_tree_sha"):
+    value=source.get(key)
+    receipt[key]=value if isinstance(value,str) and re.fullmatch("[0-9a-f]{40}",value) else None
+ except Exception as exc:
+  receipt={"schema":"rc6.committed-generation-receipt.v1","integrity":"UNVERIFIED","read_only":True,"error_class":type(exc).__name__}
+ return receipt
+generation_receipt=_committed_generation_receipt()
+'''
+
+
 def shadow_diagnostic_host():
     """Use the already authorized root Python entry to execute an isolated probe.
 
     The host never emits Docker stderr, exception messages, paths or SQL. A
     subprocess timeout bounds the entire container probe independently of SSH.
     """
-    child = '''import json, os, re, sqlite3, time
+    child = GENERATION_RECEIPT_PROBE + '''
+import json, os, re, sqlite3, time
 from datetime import datetime, timezone
 from pathlib import Path
 at=datetime.now(timezone.utc)
 db=Path(os.getenv("PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db"))
 result={"schema":"rc6.shadow-readonly-diagnostic.v1","generated_at":at.isoformat(),"read_only":True,"stages":[]}
+result["committed_generation"]=generation_receipt
+result["query_shape_authority"]="LEGACY_ROW_CONTROL_NOT_CURRENT_NATIVE_RUNTIME"
 try:
  # The prior probe first executed the entire 1.5-second runtime read and
  # then a second 2-second timing pass. Under live load it exceeded the
@@ -800,8 +868,8 @@ try:
  # One bounded live timing pass over the production query shapes. No values,
  # SQL parameters, result rows, account data or exception messages are exported.
  floor=at.replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
- # Mirror the deployed runtime's full catalogue and independently bounded
- # observation sources; keep one timing pass within the 2s shared deadline.
+ # Historical row-per-row control, not the current packed native query model.
+ # Current native SQL timings come only from the committed generation above.
  observation_limit=3001
  detailed=(
   ("CATALOG_FULL", "SELECT ticker,instrument_type,market,currency,settlement,status,capability FROM financial_instrument_catalog ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?", (20001,)),
@@ -864,11 +932,14 @@ try:
   try:
    argv=(process/"cmdline").read_bytes()[:4096].split(b"\\0")
    if b"--dynamic-shadow-worker" not in argv: continue
-   state=(process/"stat").read_text().split(") ",1)[1].split()[0]
+   fields=(process/"stat").read_text().split(") ",1)[1].split()
+   state=fields[0]
    wchan=(process/"wchan").read_text().strip()
    workers.append({"state":state if state in "RSDTZI" else "UNKNOWN",
-                   "wchan":wchan if re.fullmatch(r"[A-Za-z0-9_]{1,64}",wchan) else "UNKNOWN"})
-  except (OSError,IndexError): continue
+                   "wchan":wchan if re.fullmatch(r"[A-Za-z0-9_]{1,64}",wchan) else "UNKNOWN",
+                   "rss_kib":int(fields[21])*os.sysconf("SC_PAGESIZE")//1024,
+                   "cpu_seconds":round((int(fields[11])+int(fields[12]))/os.sysconf("SC_CLK_TCK"),3)})
+  except (OSError,IndexError,ValueError): continue
  result["shadow_worker_process_count"]=min(10,len(workers))
  result["shadow_worker_processes"]=workers[:3]
  try: result["wal_bytes"]=db.with_name(db.name+"-wal").stat().st_size
@@ -922,6 +993,64 @@ except Exception as exc: print(json.dumps({"status":"API_UNAVAILABLE","error_cla
         pass
     return {"schema": "rc6.market-schedule-api.v1", "read_only": True,
             "status": "CONTAINER_PROBE_UNAVAILABLE"}
+
+
+def porota_image_inventory_host():
+    """Manual read-only ownership evidence, no deletion or environment export."""
+    result={'schema':'rc6.porota-image-inventory.v1','read_only':True,
+            'status':'UNVERIFIED','complete_inventory':False,'records':[]}
+    def run(args):
+        completed=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=4,check=False)
+        if completed.returncode or len(completed.stdout)>65536:raise ValueError('IMAGE_PROBE_UNAVAILABLE')
+        return completed.stdout.strip()
+    try:
+        image_id=re.compile(r'sha256:[0-9a-f]{64}')
+        listing=run(['image','ls','--no-trunc','--format','{{json .}}',
+                     '--filter','reference=porota-predeploy-v2:*',
+                     '--filter','reference=porota-trading-bot:*']).splitlines()
+        if len(listing)>64:raise ValueError('IMAGE_LIST_LIMIT')
+        images={}
+        for line in listing:
+            row=json.loads(line);ident=row.get('ID');repo=row.get('Repository');tag=row.get('Tag')
+            if not isinstance(ident,str) or not image_id.fullmatch(ident):raise ValueError('IMAGE_ID_INVALID')
+            if repo not in {'porota-predeploy-v2','porota-trading-bot'} or not isinstance(tag,str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}',tag):
+                raise ValueError('IMAGE_TAG_INVALID')
+            images.setdefault(ident,[]).append(repo+':'+tag)
+        if len(images)>16:raise ValueError('IMAGE_LIST_LIMIT')
+        containers=run(['ps','-aq']).splitlines()
+        if len(containers)>64 or any(not re.fullmatch(r'[0-9a-f]{12,64}',x) for x in containers):
+            raise ValueError('CONTAINER_LIST_INVALID')
+        refs=run(['inspect','--format','{{.Image}}',*containers]).splitlines() if containers else []
+        if len(refs)!=len(containers) or any(not image_id.fullmatch(x) for x in refs):
+            raise ValueError('IMAGE_REFERENCES_UNVERIFIED')
+        records=[]
+        details=run(['image','inspect','--format','{{.Id}}|{{.Size}}|{{json .RepoTags}}|{{json .RepoDigests}}',*images]).splitlines() if images else []
+        if len(details)!=len(images):raise ValueError('IMAGE_SIZES_UNVERIFIED')
+        seen=set()
+        for line in details:
+            parts=line.split('|',3)
+            if len(parts)!=4:raise ValueError('IMAGE_SIZE_INVALID')
+            ident,size,raw_tags,raw_digests=parts;all_tags=json.loads(raw_tags);digests=json.loads(raw_digests) or []
+            if (ident not in images or ident in seen or not size.isdecimal() or not isinstance(all_tags,list)
+                    or not all_tags or len(all_tags)>64 or any(not isinstance(tag,str) for tag in all_tags)):
+                raise ValueError('IMAGE_SIZE_OR_ALIASES_INVALID')
+            if not isinstance(digests,list) or len(digests)>64 or any(not isinstance(value,str) for value in digests):
+                raise ValueError('IMAGE_DIGESTS_INVALID')
+            known_digests=[value for value in digests if re.fullmatch(r'(?:porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}',value)]
+            external_digests=len(digests)-len(known_digests)
+            seen.add(ident);tags=sorted(images[ident]);references=refs.count(ident)
+            eligible=all(re.fullmatch(r'porota-predeploy-v2:[0-9a-f]{40}|porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40}',tag) for tag in all_tags)
+            records.append({'image_id':ident,'porota_tags':tags,'size_bytes':int(size),
+                            'all_container_reference_count':references,
+                            'scoped_candidate_tags_only':eligible,'unlisted_alias_count':len(set(all_tags)-set(tags)),
+                            'canonical_repository_digests':known_digests,'external_digest_count':external_digests,
+                            'deletion_authority':False,
+                            'unreferenced_candidate_observed':not references and eligible and not external_digests})
+        result.update(status='OBSERVED_READ_ONLY',complete_inventory=True,
+                      records=sorted(records,key=lambda r:r['image_id']),container_count=len(containers))
+    except (OSError,ValueError,TypeError,subprocess.TimeoutExpired) as exc:
+        result['error_class']=type(exc).__name__
+    return result
 
 
 def observer_lifecycle_host():
@@ -1271,6 +1400,136 @@ def _read_optional(path):
     return load_bounded(Path(path), MAX_JSON_BYTES)
 
 
+def instrument_inventory_host(root=ROOT, *, at=None, row_limit=20000, budget_seconds=2):
+    """Complete bounded metadata inventory; never market/financial acceptance.
+
+    No positions, prices, account values, free-text detail or metadata_json are
+    selected. Exported contract flags cannot grant entry or freshness authority.
+    """
+    result = {'schema': 'rc6.instrument-audit-inventory.v1', 'read_only': True,
+              'status': 'UNVERIFIED', 'entry_authority': False,
+              'broker_requests': 0, 'ppi_watch_accessed': False,
+              'source_database_effect': 'READ_ONLY', 'complete_inventory': False}
+    connection = None
+    started = time.monotonic(); stage = 'ADMISSION'; interrupted = False; plan = []
+    def expired():
+        nonlocal interrupted
+        interrupted = time.monotonic() > deadline
+        return int(interrupted)
+    try:
+        if type(row_limit) is not int or not 1 <= row_limit <= 20000 or not 0 < budget_seconds <= 2:
+            raise ValueError('INVENTORY_BUDGET_INVALID')
+        database = Path(root) / DB_REL
+        if database.is_symlink() or database.resolve(strict=True) != database.absolute():
+            raise ValueError('INVENTORY_PATH_ALIAS')
+        stage = 'CONNECT'
+        connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=.005)
+        connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024**2)
+        connection.execute('PRAGMA query_only=ON')
+        deadline = time.monotonic() + budget_seconds
+        connection.set_progress_handler(expired, 1000)
+        connection.execute('BEGIN')
+        stage = 'PAPER_SAFETY'
+        safety = connection.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+        if not safety or safety[0] != 'PRODUCTION_PAPER' or type(safety[1]) is not int or safety[1] != 0:
+            raise ValueError('INVENTORY_PAPER_REQUIRED')
+        stage = 'SCHEMA'
+        tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = ['ticker', 'instrument_type', 'market', 'currency', 'settlement',
+                   'settlement_source', 'last_seen_at', 'catalog_status', 'catalog_capability']
+        # Read each relation once in the SAME read-only snapshot. A join did
+        # one random non-covering lookup for each of 14k catalogue identities
+        # on this 1GiB host; sequential packed projections avoid that fan-out.
+        specifications = [('CATALOG', 'financial_instrument_catalog',
+            columns[:7] + ['status', 'capability'])]
+        if 'candidate_identity_v2' in tables:
+            specifications.append(('CANDIDATE', 'candidate_identity_v2',
+                columns[:5] + ['can_simulate', 'status', 'checked_at']))
+        if 'ppi_intraday_contract_state' in tables:
+            specifications.append(('INTRADAY', 'ppi_intraday_contract_state',
+                ['symbol', 'asset_class', 'market', 'currency', 'settlement',
+                 'state', 'last_source_at', 'checked_at']))
+        metadata_index = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_catalog_public_metadata_v1'").fetchone() is not None
+        packed_relations = {}
+        total_bytes = 0
+        for label, table, projection in specifications:
+            source_hint = (' INDEXED BY idx_catalog_public_metadata_v1'
+                           if label == 'CATALOG' and metadata_index else ' NOT INDEXED')
+            sql = ('SELECT COUNT(*),json_group_array(json_array(' + ','.join(projection) +
+                   ')) FROM (SELECT ' + ','.join(projection) + ' FROM ' + table +
+                   source_hint + ' LIMIT ?)')
+            stage = 'QUERY_PLAN'
+            for item in connection.execute('EXPLAIN QUERY PLAN ' + sql, (row_limit + 1,)):
+                detail = str(item[3]).upper(); words = detail.split()
+                target = words[1] if len(words)>1 and words[1] in {
+                    'FINANCIAL_INSTRUMENT_CATALOG','CANDIDATE_IDENTITY_V2',
+                    'PPI_INTRADAY_CONTRACT_STATE'} else 'INTERNAL'
+                plan.append({'operation':words[0] if words and words[0] in {'SCAN','SEARCH'} else 'INTERNAL',
+                             'target':target,'covering_index':'COVERING INDEX' in detail,
+                             'automatic_index':'AUTOMATIC' in detail,'temporary_btree':'TEMP B-TREE' in detail})
+                if len(plan)>24:raise ValueError('INVENTORY_QUERY_PLAN_UNBOUNDED')
+            if label == 'CATALOG' and metadata_index and not any(item['covering_index'] for item in plan):
+                raise ValueError('INVENTORY_INDEX_CONTRACT_MISMATCH')
+            stage = 'PACKED_METADATA'
+            count, packed = connection.execute(sql, (row_limit + 1,)).fetchone()
+            if count > row_limit:
+                raise ValueError('INVENTORY_TRUNCATED_OR_DUPLICATED')
+            total_bytes += len(packed.encode('utf-8'))
+            if total_bytes > 8*1024**2:
+                raise ValueError('INVENTORY_TOTAL_LENGTH_LIMIT')
+            packed_relations[label] = (count, packed)
+        connection.rollback(); connection.close(); connection = None
+        stage = 'DECODE_AND_IDENTITY'
+        captured = at or now_utc()
+        decoded = {}
+        for label, (relation_count, packed) in packed_relations.items():
+            relation = json.loads(packed)
+            if len(relation) != relation_count or len({tuple(r[:5]) for r in relation}) != relation_count:
+                raise ValueError('INVENTORY_IDENTITY_NOT_UNIQUE')
+            decoded[label] = {tuple(r[:5]): r[5:] for r in relation}
+        rows = [list(identity) + values + decoded.get('CANDIDATE', {}).get(identity, [None]*3) +
+                decoded.get('INTRADAY', {}).get(identity, [None]*3)
+                for identity, values in decoded['CATALOG'].items()]
+        count = len(rows)
+        columns += ['candidate_can_simulate', 'candidate_status', 'candidate_checked_at',
+                    'intraday_contract_state', 'intraday_source_at', 'intraday_checked_at']
+        rows.sort(key=lambda row:tuple(row[:5]))
+        provenance = load_bounded(Path(root) / 'data/deploy/CURRENT_STATE_V2.json') or {}
+        observed = {}
+        for key in ('candidate_sha', 'deploy_sha'):
+            value = provenance.get(key)
+            observed[key] = value if isinstance(value, str) and re.fullmatch('[0-9a-f]{40}', value) else None
+        observed['validation_status'] = provenance.get('validation_status') if provenance.get('validation_status') in {
+            'VALIDATED_RUNTIME', 'DEPLOYED_VALIDATION_PENDING'} else None
+        result.update(status='OBSERVED_METADATA_ONLY', complete_inventory=True,
+                      generated_at=captured.isoformat(), columns=columns, records=rows, count=count,
+                      real_orders_sent=0, mode='PRODUCTION_PAPER', provenance=observed,
+                      missing_optional_tables=sorted({'candidate_identity_v2','ppi_intraday_contract_state'}-tables),
+                      unverified_per_identity_stages=['quote_freshness','candle','history','signal','risk',
+                          'decision','fill','exit','pnl','external_alert'],
+                      contract_flags_are_not_live_tradeability=True)
+    except (OSError, ValueError, TypeError, sqlite3.Error) as exc:
+        result['error_class'] = type(exc).__name__
+        if isinstance(exc, sqlite3.Error):
+            message = str(exc).lower()
+            if 'no such function' in message: code = 'SQLITE_FUNCTION_UNAVAILABLE'
+            elif 'no such column' in message: code = 'SQLITE_SCHEMA_COLUMN_MISMATCH'
+            elif 'no such table' in message: code = 'SQLITE_SCHEMA_TABLE_MISMATCH'
+            elif 'locked' in message or 'busy' in message: code = 'SQLITE_BUSY_OR_LOCKED'
+            elif 'interrupted' in message: code = 'SQLITE_DEADLINE_INTERRUPTED' if interrupted else 'SQLITE_INTERRUPT_UNATTRIBUTED'
+            elif 'too big' in message: code = 'SQLITE_LENGTH_LIMIT'
+            else: code = 'SQLITE_OTHER_ERROR'
+            result['error_code'] = code
+    finally:
+        if connection is not None:
+            connection.close()
+        result['diagnostic'] = {'stage':stage,'elapsed_ms':round((time.monotonic()-started)*1000,3),
+                                'interrupted_by_deadline':interrupted,'sqlite_version':sqlite3.sqlite_version,
+                                'query_plan':plan}
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     actions = parser.add_subparsers(dest="action", required=True)
@@ -1284,7 +1543,9 @@ def main(argv=None):
     actions.add_parser("shadow-diagnostic-host")
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
+    actions.add_parser("porota-image-inventory-host")
     actions.add_parser("recent-critical-host")
+    actions.add_parser("instrument-inventory-host")
     cadence = actions.add_parser('schedule-health')
     cadence.add_argument('--current',required=True)
     cadence.add_argument('--repo',required=True)
@@ -1330,8 +1591,12 @@ def main(argv=None):
         data = schedule_api_host()
     elif args.action == "observer-lifecycle-host":
         data = observer_lifecycle_host()
+    elif args.action == "porota-image-inventory-host":
+        data = porota_image_inventory_host()
     elif args.action == "recent-critical-host":
         data = recent_critical_host()
+    elif args.action == "instrument-inventory-host":
+        data = instrument_inventory_host()
     elif args.action == "alert-host":
         data = alert_host(args.encoded)
     elif args.action == "prepare-alert":
