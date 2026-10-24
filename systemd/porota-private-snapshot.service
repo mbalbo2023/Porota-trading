@@ -1,0 +1,22 @@
+[Unit]
+Description=Porota RC6 localhost-only private Decision Cockpit
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/porota-private-snapshot
+Environment=POROTA_ROOT=/opt/porota-trading
+Environment=POROTA_PRIVATE_SITE_PORT=8766
+ExecStart=/usr/bin/python3 /opt/porota-private-snapshot/server.py
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/porota-trading /opt/porota-ingest /var/lib/porota
+ReadWritePaths=/opt/porota-private-snapshot
+
+[Install]
+WantedBy=multi-user.target
