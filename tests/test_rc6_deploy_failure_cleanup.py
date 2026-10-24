@@ -208,7 +208,7 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertIn("steps.promotion.outcome == 'failure'", block)
         self.assertIn("steps.promotion.outcome == 'cancelled'", block)
         self.assertIn('timeout 180 ssh', block)
-        self.assertIn('root timeout 150 python3 - --candidate-sha', block)
+        self.assertIn('--phase cleanup_final timeout 150 python3 - --candidate-sha', block)
         self.assertIn('--run-id', block)
         self.assertIn('--attempt', block)
         self.assertIn('RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED', block)

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/rc6-733-audit-fixforward-20261024
+      - work/rc6-624-s2-crash-guard-20261024
 
 permissions:
   contents: read

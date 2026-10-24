@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Run one Deploy V2 host operation under a protected, inherited flock.
+"""Serialize Deploy V2 operations and fail closed after an uncertain exit.
 
 The workflow sends this exact source via a base64 Python -c argument before
 installing a candidate.  It is a short-lived part of that operation, not a
-background daemon.  A surviving child retains the open file description if
-the SSH transport or its parent exits.
+background daemon.  Nested sudo may close inherited descriptors.  A durable
+attempt barrier therefore remains INFLIGHT if this wrapper dies before it
+observes the immediate child exit, including when SSH disappears.
 """
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import pwd
 import re
+import secrets
 import stat
 import subprocess
 import sys
@@ -20,6 +23,16 @@ from pathlib import Path
 
 LOCK_DIR = Path('/run/lock')
 LOCK_PATH = LOCK_DIR / 'porota-rc6-deploy-v2.lock'
+BARRIER_NAME = 'porota-rc6-deploy-v2-attempt.json'
+PHASES = frozenset({
+    'classify', 'disk_probe', 'preclean', 'suspend', 'drain', 'transfer',
+    'promotion', 'flat_book', 'verify_carryover', 'timers_restore',
+    'timers_restored', 'backup_retire', 'finalize', 'cleanup_contract',
+    'cleanup_recover', 'cleanup_restore', 'cleanup_final',
+})
+FINAL_PHASES = frozenset({'finalize', 'cleanup_final'})
+IDENTITY = re.compile(r'[0-9a-f]{40}')
+NUMBER = re.compile(r'[1-9][0-9]*')
 
 
 def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
@@ -49,18 +62,132 @@ def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
         raise
 
 
+def _barrier(directory_path: Path) -> Path:
+    return directory_path / BARRIER_NAME
+
+
+def _read_barrier(directory_path: Path, trusted_uid: int = 0) -> dict | None:
+    path = _barrier(directory_path)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return None
+    try:
+        before, on_path = os.fstat(fd), os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != trusted_uid or
+                stat.S_IMODE(before.st_mode) != 0o600 or before.st_nlink != 1 or
+                (before.st_dev, before.st_ino) != (on_path.st_dev, on_path.st_ino) or
+                before.st_size > 1024):
+            raise RuntimeError('BARRIER_ALIAS_UNSAFE')
+        data = os.read(fd, 1025)
+        after = os.lstat(path)
+        if (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino):
+            raise RuntimeError('BARRIER_REPLACED')
+        if len(data) > 1024:
+            raise RuntimeError('BARRIER_INVALID')
+        try:
+            state = json.loads(data)
+        except (UnicodeError, ValueError) as exc:
+            raise RuntimeError('BARRIER_INVALID') from exc
+        if (not isinstance(state, dict) or set(state) !=
+                {'candidate', 'run', 'attempt', 'phase', 'status'} or
+                not isinstance(state['candidate'], str) or
+                not IDENTITY.fullmatch(state['candidate']) or
+                not isinstance(state['run'], str) or not NUMBER.fullmatch(state['run']) or
+                not isinstance(state['attempt'], str) or not NUMBER.fullmatch(state['attempt']) or
+                not isinstance(state['phase'], str) or state['phase'] not in PHASES or
+                not isinstance(state['status'], str) or
+                state['status'] not in {'IDLE', 'INFLIGHT'}):
+            raise RuntimeError('BARRIER_INVALID')
+        return state
+    finally:
+        os.close(fd)
+
+
+def _sync_directory(directory_path: Path) -> None:
+    fd = os.open(directory_path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _write_barrier(directory_path: Path, state: dict) -> None:
+    path = _barrier(directory_path)
+    # The flock is held throughout; random O_EXCL temp and atomic rename
+    # make a partial write fail closed rather than admit a different attempt.
+    temp = directory_path / ('.' + BARRIER_NAME + '.' + secrets.token_hex(12))
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                 os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(fd, 'wb') as handle:
+            handle.write((json.dumps(state, sort_keys=True, separators=(',', ':')) + '\n').encode())
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+        _sync_directory(directory_path)
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def _enter(directory_path: Path, identity: tuple[str, str, str], phase: str) -> None:
+    state = _read_barrier(directory_path)
+    if state is not None:
+        if tuple(state[k] for k in ('candidate', 'run', 'attempt')) != identity:
+            raise RuntimeError('BARRIER_OTHER_ATTEMPT')
+        if state['status'] != 'IDLE':
+            raise RuntimeError('BARRIER_PRIOR_OPERATION_UNCERTAIN')
+    _write_barrier(directory_path, dict(zip(('candidate', 'run', 'attempt'), identity),
+                                       phase=phase, status='INFLIGHT'))
+
+
+def _finish(directory_path: Path, identity: tuple[str, str, str], phase: str,
+            complete: bool) -> None:
+    state = _read_barrier(directory_path)
+    if (state is None or tuple(state[k] for k in ('candidate', 'run', 'attempt')) != identity or
+            state['phase'] != phase or state['status'] != 'INFLIGHT'):
+        raise RuntimeError('BARRIER_CHANGED_DURING_OPERATION')
+    if complete:
+        _barrier(directory_path).unlink()
+        _sync_directory(directory_path)
+    else:
+        state['status'] = 'IDLE'
+        _write_barrier(directory_path, state)
+
+
 def run(argv: list[str]) -> int:
-    if os.geteuid() != 0 or len(argv) < 3 or argv[1] not in ('user', 'root'):
+    if (os.geteuid() != 0 or len(argv) < 9 or argv[1] not in ('user', 'root') or
+            argv[2] != '--attempt' or argv[6] != '--phase'):
         raise RuntimeError('MUTEX_INVOCATION_INVALID')
+    identity = tuple(argv[3:6])
+    if (not IDENTITY.fullmatch(identity[0]) or
+            not NUMBER.fullmatch(identity[1]) or not NUMBER.fullmatch(identity[2]) or
+            argv[7] not in PHASES):
+        raise RuntimeError('MUTEX_ATTEMPT_INVALID')
+    phase = argv[7]
+    observe = phase == 'classify'
     user = pwd.getpwnam(argv[0])
     if user.pw_uid == 0:
         raise RuntimeError('MUTEX_REMOTE_USER_MUST_BE_UNPRIVILEGED')
-    allow_contract_lifecycle = len(argv) > 2 and argv[2] == '--allow-contract-lifecycle'
-    command = argv[3:] if allow_contract_lifecycle else argv[2:]
+    allow_contract_lifecycle = argv[8] == '--allow-contract-lifecycle'
+    command = argv[9:] if allow_contract_lifecycle else argv[8:]
     if not command:
         raise RuntimeError('MUTEX_COMMAND_MISSING')
-    fd = open_lock()
+    if (allow_contract_lifecycle != (phase == 'cleanup_contract') or
+            (phase in FINAL_PHASES | {'classify'} and argv[1] != 'root') or
+            (phase == 'cleanup_contract' and argv[1] != 'user')):
+        raise RuntimeError('MUTEX_PHASE_INVALID')
+    fd = open_lock(LOCK_DIR)
     try:
+        existing = _read_barrier(LOCK_DIR)
+        if observe and existing is not None:
+            raise RuntimeError('BARRIER_PRIOR_ATTEMPT_UNRESOLVED')
+        if existing is not None and not observe:
+            if tuple(existing[k] for k in ('candidate', 'run', 'attempt')) != identity:
+                raise RuntimeError('BARRIER_OTHER_ATTEMPT')
+            if existing['status'] != 'IDLE':
+                raise RuntimeError('BARRIER_PRIOR_OPERATION_UNCERTAIN')
         # A Docker child can outlive a lost SSH/sudo CLI even after its parent
         # releases flock. Never start another mutator beside that exact writer.
         if not allow_contract_lifecycle:
@@ -73,6 +200,8 @@ def run(argv: list[str]) -> int:
             if any(re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name)
                    for name in inventory.stdout.splitlines()):
                 raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
+        if not observe:
+            _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
         env['RC6_DEPLOY_MUTEX_FD'] = str(fd)
         if argv[1] == 'user':
@@ -85,8 +214,14 @@ def run(argv: list[str]) -> int:
         # The classification step captures stdout as one exact OPEN/CLOSED
         # token. Operational lock evidence must not change child stdout.
         print('RC6_DEPLOY_HOST_MUTEX=HELD', file=sys.stderr, flush=True)
-        return subprocess.run(command, check=False, env=env, pass_fds=(fd,),
-                              preexec_fn=drop_privileges).returncode
+        result = subprocess.run(command, check=False, env=env, pass_fds=(fd,),
+                                preexec_fn=drop_privileges)
+        if result.returncode == 0 and not observe:
+            _finish(LOCK_DIR, identity, phase, phase in FINAL_PHASES)
+        # On any nonzero return, timeout, exception or abrupt wrapper death,
+        # keep INFLIGHT. No second writer, including failure cleanup, is safe
+        # until the exact orphan state is independently resolved.
+        return result.returncode
     finally:
         os.close(fd)
 
