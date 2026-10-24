@@ -571,6 +571,13 @@ jobs:
             "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
+          # The failure cleanup opens this same inode and refuses to reclaim
+          # staging while an SSH-disconnected promoter is still running.
+          DEPLOY_LOCK=/tmp/porota-rc6-deploy-v2.lock
+          test ! -L "$DEPLOY_LOCK"
+          exec 9>>"$DEPLOY_LOCK"
+          test -f "$DEPLOY_LOCK"
+          flock -n 9 || { echo 'RC6_REMOTE_PROMOTION_BUSY=RED'; exit 75; }
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
           STAGE="$REMOTE_DIR/stage"
           STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"
