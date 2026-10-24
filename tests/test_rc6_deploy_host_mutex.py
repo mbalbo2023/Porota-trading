@@ -104,6 +104,21 @@ class HostMutexTests(unittest.TestCase):
         finally:
             os.close(owner)
 
+    def test_orphan_docker_writer_blocks_new_mutation_after_flock_releases(self):
+        fake_user = SimpleNamespace(pw_uid=1, pw_gid=1, pw_name='nobody', pw_dir='/tmp')
+        real_open = mutex.open_lock
+        marker = self.root / 'mutated'
+        with patch.object(mutex.os, 'geteuid', return_value=0), \
+             patch.object(mutex.pwd, 'getpwnam', return_value=fake_user), \
+             patch.object(mutex, 'open_lock', side_effect=lambda: real_open(self.root, os.getuid())), \
+             patch.object(mutex.subprocess, 'run', return_value=SimpleNamespace(
+                 returncode=0, stdout='porota-deploy-contract-' + SHA + '\n')) as docker:
+            with self.assertRaisesRegex(RuntimeError, 'CONTRACT_WRITER_ORPHAN_RUNNING'):
+                mutex.run(['nobody', 'root', 'python3', '-c',
+                           f'from pathlib import Path;Path({str(marker)!r}).touch()'])
+        self.assertFalse(marker.exists())
+        self.assertEqual(docker.call_count, 1)
+
 
 class TransferTests(unittest.TestCase):
     def setUp(self):
@@ -167,6 +182,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         failure = next(step['run'] for step in steps
                        if step['name'] == 'Failure-safe host cleanup')
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 4)
+        self.assertEqual(failure.count('--allow-contract-lifecycle'), 1)
         self.assertIn('RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED', failure)
         self.assertIn('RC6_FAILURE_RECOVERY=RED', failure)
         self.assertIn("--run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'", failure)

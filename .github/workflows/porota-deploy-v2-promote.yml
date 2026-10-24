@@ -1697,7 +1697,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user bash -c 'if sudo -n docker inspect porota-deploy-contract-$CANDIDATE_SHA >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha $CANDIDATE_SHA; else echo CONTRACT_WRITER_ABSENT; fi'"
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --allow-contract-lifecycle bash -c 'if sudo -n docker inspect porota-deploy-contract-$CANDIDATE_SHA >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha $CANDIDATE_SHA; else echo CONTRACT_WRITER_ABSENT; fi'"
           CONTRACT_ORPHAN_RC=$?
           if [ "$CONTRACT_ORPHAN_RC" -ne 0 ]; then
             echo 'RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED|no recovery permitted'

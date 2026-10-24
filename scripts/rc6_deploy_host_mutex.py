@@ -11,6 +11,7 @@ from __future__ import annotations
 import fcntl
 import os
 import pwd
+import re
 import stat
 import subprocess
 import sys
@@ -54,11 +55,24 @@ def run(argv: list[str]) -> int:
     user = pwd.getpwnam(argv[0])
     if user.pw_uid == 0:
         raise RuntimeError('MUTEX_REMOTE_USER_MUST_BE_UNPRIVILEGED')
-    command = argv[2:]
+    allow_contract_lifecycle = len(argv) > 2 and argv[2] == '--allow-contract-lifecycle'
+    command = argv[3:] if allow_contract_lifecycle else argv[2:]
     if not command:
         raise RuntimeError('MUTEX_COMMAND_MISSING')
     fd = open_lock()
     try:
+        # A Docker child can outlive a lost SSH/sudo CLI even after its parent
+        # releases flock. Never start another mutator beside that exact writer.
+        if not allow_contract_lifecycle:
+            inventory = subprocess.run(
+                ['docker', 'ps', '--format', '{{.Names}}', '--filter',
+                 'name=porota-deploy-contract-'], capture_output=True,
+                text=True, timeout=10, check=False)
+            if inventory.returncode:
+                raise RuntimeError('CONTRACT_WRITER_INVENTORY_FAILED')
+            if any(re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name)
+                   for name in inventory.stdout.splitlines()):
+                raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
         env = os.environ.copy()
         env['RC6_DEPLOY_MUTEX_FD'] = str(fd)
         if argv[1] == 'user':
@@ -78,7 +92,7 @@ def run(argv: list[str]) -> int:
 def main() -> int:
     try:
         return run(sys.argv[1:])
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         print('RC6_DEPLOY_HOST_MUTEX=RED|' + str(exc), file=sys.stderr)
         return 75
 
