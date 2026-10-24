@@ -79,7 +79,7 @@ def main(argv):
             raise RuntimeError('S2_PROBE_UNCERTAIN_ATTEMPT_ADMITTED')
     print('RC6_624_S2_HOST_PROBE=' + json.dumps({
         'schema': 'RC6_624_S2_HOST_MUTEX_PROBE_V1', 'status': 'PASS',
-        'candidate_sha': argv[1], 'helper_blob_sha': actual_blob,
+        'source_sha': argv[1], 'helper_blob_sha': actual_blob,
         'root_fsync': True, 'linux_subreaper': True,
         'clean_failure_recovery': True, 'foreign_attempt_blocked': True,
         'uncertain_attempt_blocked': True, 'lost_wrapper_simulated': True,

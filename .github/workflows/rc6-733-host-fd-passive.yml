@@ -27,6 +27,7 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
       PRODUCT_SHA: ae1e299d3f39a21cf5e6320b42bc0461636ab710
+      S2_SOURCE_SHA: 21305f01d96dec41ef52b7ce03b3f421e33a1ce5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +40,7 @@ jobs:
           python3 -m py_compile scripts/rc6_733_host_fd_passive.py
           python3 -m py_compile scripts/rc6_624_s2_host_probe.py scripts/rc6_deploy_host_mutex.py
           test "$(git hash-object scripts/rc6_deploy_host_mutex.py)" = 6328f92f5e658687a32733063fe48a0a5fa33e42
+          test "$S2_SOURCE_SHA" = 21305f01d96dec41ef52b7ce03b3f421e33a1ce5
           echo 'RC6_733_FD_BRANCH_PIN=GREEN'
       - name: Bounded temporary-inode FD inheritance on host
         shell: bash
@@ -68,7 +70,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 60 python3 -c 'import base64;exec(base64.b64decode(\"$S2_PROBE_B64\"))' '$DO_USER' '$PRODUCT_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' '$HELPER_B64' '$HELPER_BLOB_SHA'"
+            "sudo -n timeout 60 python3 -c 'import base64;exec(base64.b64decode(\"$S2_PROBE_B64\"))' '$DO_USER' '$S2_SOURCE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' '$HELPER_B64' '$HELPER_BLOB_SHA'"
       - name: Remove key
         if: always()
         run: rm -f "$HOME/.ssh/rc6_733_fd_probe"
