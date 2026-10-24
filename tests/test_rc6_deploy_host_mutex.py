@@ -234,10 +234,13 @@ class HostMutexTests(unittest.TestCase):
             self.assertNotEqual(heartbeat.read_text(), before)  # live child
             successor = self.acquire()  # fd was closed even though child lives
             try:
-                with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):
-                    mutex._enter(self.root, (SHA, RUN, ATTEMPT), 'cleanup_recover')
-                with self.assertRaisesRegex(RuntimeError, 'BARRIER_OTHER_ATTEMPT'):
-                    mutex._enter(self.root, (SHA, '9876', ATTEMPT), 'promotion')
+                real_read = mutex._read_barrier
+                with patch.object(mutex, '_read_barrier',
+                                  side_effect=lambda p: real_read(p, os.getuid())):
+                    with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):
+                        mutex._enter(self.root, (SHA, RUN, ATTEMPT), 'cleanup_recover')
+                    with self.assertRaisesRegex(RuntimeError, 'BARRIER_OTHER_ATTEMPT'):
+                        mutex._enter(self.root, (SHA, '9876', ATTEMPT), 'promotion')
             finally:
                 os.close(successor)
         finally:
