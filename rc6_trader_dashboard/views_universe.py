@@ -27,7 +27,7 @@ def render(p, destination, tab):
         return render_table(p, destination, tab, page, "Routing & policy por familia", STRATEGIES,
                             (*STRATEGY_DETAIL, *fields("cadence_class|Cadence class;deep_analysis_eligibility|Deep-analysis eligibility;reason|Por qué OBSERVE_ONLY")),
                             note=("Canal SHADOW experimental: OBSERVE_ONLY y entry_authority=No aquí no describen la autorización del observer PAPER. Consultar En Vivo para decisiones y posiciones factuales."
-                                  if from_shadow else "Resumen agregado del catálogo; sin corte SHADOW de familias en esta vista. No acredita aperturas PAPER."))
+                                  if from_shadow else "Resumen agregado del catálogo porque la vista SHADOW de familias no aportó filas. Esto no acredita ausencia de corte SHADOW ni aperturas PAPER."))
     if tab == "coverage":
         return render_table(p, destination, tab, shadow_rows(p, "capacity"), "Coverage causal", CAPACITY, CAPACITY_DETAIL,
                             note="Untouched/late se informa sólo con evidencia causal. No se certifica detección completa ni capacidad por benchmark fuera de rueda.")

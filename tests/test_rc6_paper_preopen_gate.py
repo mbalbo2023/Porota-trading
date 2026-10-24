@@ -186,3 +186,63 @@ def test_caucion_final_insert_rechecks_global_receipt_in_runtime_image(tmp_path,
         assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM paper_caucion_allocations").fetchone()[0] == 0
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_runtime_spot_book_requires_guard_and_matching_fixture_receipt(tmp_path, monkeypatch):
+    from test_production_paper_v1634 import quote
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return DAY.astimezone(tz or TZ)
+
+    path = tmp_path / "runtime.db"
+    receipt, release = tmp_path / "receipt.json", tmp_path / "release.json"
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
+    monkeypatch.setenv("POROTA_BUILD_SHA", SHA)
+    monkeypatch.setattr(gate, "RUNTIME_RECEIPT", receipt)
+    monkeypatch.setattr(gate, "datetime", FrozenDateTime)
+    store = PaperStore(str(path))
+    candidate = quote(ask_size="100")
+    direct = PaperBroker(store, initial_cash="10000")
+    assert direct._open(candidate, D("0.8"), {})[:2] == (
+        False, "PAPER_ADMISSION_GUARD_MISSING")
+
+    guarded = PaperBroker(store, initial_cash="10000", admission_guard=lambda *_: (True, ""))
+    assert guarded._open(candidate, D("0.8"), {})[:2] == (
+        False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
+
+    state(release)
+    gate.publish_preopen(result(), now=DAY, state_path=release, receipt_path=receipt)
+    assert guarded._open(candidate, D("0.8"), {})[0] is True
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 1
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_runtime_spot_receipt_revoked_before_locked_insert_rolls_back(tmp_path, monkeypatch):
+    from test_production_paper_v1634 import quote
+
+    path = tmp_path / "runtime.db"
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
+    store = PaperStore(str(path))
+    broker = PaperBroker(store, initial_cash="10000", admission_guard=lambda *_: (True, ""))
+    checks = iter([(True, ""), (False, "NO_GO_PAPER_SCALPING")])
+    monkeypatch.setattr(gate, "admission_status", lambda: next(checks))
+    assert broker._open(quote(ask_size="100"), D("0.8"), {})[:2] == (
+        False, "NO_GO_PAPER_SCALPING")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+
+
+def test_runtime_future_locked_gate_rejects_missing_receipt(tmp_path, monkeypatch):
+    path = tmp_path / "runtime.db"
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
+    monkeypatch.setenv("POROTA_BUILD_SHA", SHA)
+    monkeypatch.setattr(gate, "RUNTIME_RECEIPT", tmp_path / "missing.json")
+    broker = PaperBroker(PaperStore(str(path)), admission_guard=lambda *_: (True, ""))
+    assert broker._future_locked_admission(None, None, None, None, None, connection=None) == (
+        "PAPER_PREOPEN_RECEIPT_UNSAFE")

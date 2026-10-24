@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from pathlib import Path
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, replace
@@ -1246,7 +1247,28 @@ class PaperBroker:
             return self._open_future(q, score, features)
         return self._open(q, score, features)
 
+    def _runtime_preopen_error(self):
+        """The effective PAPER book needs an injected exact guard and a live receipt.
+
+        Synthetic books have independent admission contracts. Call this again
+        under the write transaction before inserting a new spot/future row.
+        """
+        try:
+            from cg_paper_workspace import database_path
+            if Path(self.store.path).resolve() != database_path():
+                return ""
+            if self.admission_guard is None:
+                return "PAPER_ADMISSION_GUARD_MISSING"
+            from rc6_paper_admission_gate import admission_status
+            allowed, reason = admission_status()
+            return "" if allowed else (reason or "NO_GO_PAPER_SCALPING")
+        except (OSError, ValueError, TypeError):
+            return "PAPER_PREOPEN_GATE_UNAVAILABLE"
+
     def _preopen_admission_error(self, q):
+        error = self._runtime_preopen_error()
+        if error:
+            return error
         if self.admission_guard is None:
             return ""
         try:
@@ -1418,6 +1440,9 @@ class PaperBroker:
     def _future_locked_admission(self, q, at, candidate_notional, emergency_cap,
                                  candidate_risk,
                                  *, connection):
+        error = self._runtime_preopen_error()
+        if error:
+            return error
         error = q.time_error(
             at, require_trade=True, max_age_seconds=self.quote_max_age_seconds,
             max_trade_age_seconds=self.trade_max_age_seconds)
@@ -2237,6 +2262,9 @@ class PaperBroker:
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, identidad o exposición cambiaron antes de registrar la compra", None
+            receipt_error = self._runtime_preopen_error()
+            if receipt_error:
+                return False, receipt_error, None
             mark_lineage(features, "intent", self)
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,

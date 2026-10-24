@@ -90,7 +90,15 @@ class FamilyUiContractTests(unittest.TestCase):
              patch.object(views_universe, "family_summary", return_value=fallback), \
              patch.object(views_universe, "render_table", return_value="rendered") as render:
             views_universe.render(None, None, "familias")
-        self.assertIn("sin corte SHADOW", render.call_args.kwargs["note"])
+        self.assertIn("no aportó filas", render.call_args.kwargs["note"])
+        self.assertIn("no acredita ausencia de corte SHADOW", render.call_args.kwargs["note"])
+        # A valid but empty cut also has no rows. The fallback cannot call
+        # it nonexistent just because the catalog has rows to display.
+        with patch.object(views_universe, "shadow_rows", return_value=Page("committed SHADOW", [], 0, "AVAILABLE")), \
+             patch.object(views_universe, "family_summary", return_value=fallback), \
+             patch.object(views_universe, "render_table", return_value="rendered") as render:
+            views_universe.render(None, None, "familias")
+        self.assertIn("no aportó filas", render.call_args.kwargs["note"])
 
     def test_signal_cohort_does_not_claim_instrument_score(self):
         page = Page("committed SHADOW", [], 0, "AVAILABLE")

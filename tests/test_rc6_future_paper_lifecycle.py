@@ -1,5 +1,8 @@
 import sqlite3
 from decimal import Decimal
+import pytest
+
+import rc6_paper_admission_gate as gate
 
 from bs_instrument_contracts import InstrumentContract
 from rc6_paper_family_lifecycle import (
@@ -28,6 +31,27 @@ def dlr():
         paper_margin_rate=Decimal("1"),
         underlying="DOLAR_A3500",
     )
+
+
+def test_runtime_future_executor_cannot_bypass_preopen_on_direct_call(tmp_path, monkeypatch):
+    path = tmp_path / "runtime.sqlite"
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
+    monkeypatch.setenv("POROTA_BUILD_SHA", "a" * 40)
+    monkeypatch.setattr(gate, "RUNTIME_RECEIPT", tmp_path / "missing.json")
+    executor = FamilyPaperExecutor(Store(path))
+    request = dict(lifecycle_id="FUT-1", event_id="OPEN-1", entry_price="1500",
+                   quantity="1", entry_cost="100", occurred_at="2026-10-03T12:00:00-03:00")
+    with pytest.raises(ValueError, match="PAPER_ADMISSION_GUARD_MISSING"):
+        executor.open_future(dlr(), **request)
+    with pytest.raises(ValueError, match="PAPER_PREOPEN_RECEIPT_UNSAFE"):
+        executor.open_future(dlr(), admission_guard=lambda _c: "", **request)
+    with executor.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_future_positions").fetchone()[0] == 0
+
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    assert executor.open_future(dlr(), admission_guard=lambda _c: "", **request)["state"] == "ACTIVE"
+    monkeypatch.setattr(gate, "admission_status", lambda: (False, "NO_GO_PAPER_SCALPING"))
+    assert executor.open_future(dlr(), admission_guard=lambda _c: "", **request)["idempotent"] is True
 
 
 def test_future_lifecycle_reserve_mark_variation_close_and_cash(tmp_path):
