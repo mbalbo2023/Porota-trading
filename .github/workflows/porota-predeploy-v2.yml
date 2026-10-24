@@ -136,7 +136,7 @@ jobs:
           mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
           set +e
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=/tmp/porota-governed-tests.xml
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
