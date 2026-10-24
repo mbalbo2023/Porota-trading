@@ -57,24 +57,5 @@ jobs:
             tests/test_rc6_operational_scope.py \
             tests/test_rc6_paper_preopen_gate.py \
             tests/test_rc6_shadow_operational_funnel.py
-, data, re.M)))
-          print(f'COLLECTION_CASES={sum(counts)} MODULES={len(counts)}')
-          PY
-      - name: Run scoped PAPER and dashboard regressions
-        run: |
-          python -m pytest -q \
-            tests/test_dashboard_ux_logs_cem_hf6.py \
-            tests/test_intraday_scalping_rc6_integration.py \
-            tests/test_production_paper_v1634.py \
-            tests/test_rc6_732_family_ui_contract.py \
-            tests/test_rc6_convergence_core_admission.py \
-            tests/test_rc6_convergence_finance.py \
-            tests/test_rc6_convergence_finance_review.py \
-            tests/test_rc6_future_paper_engine.py \
-            tests/test_rc6_future_paper_lifecycle.py \
-            tests/test_rc6_future_programming_complete.py \
-            tests/test_rc6_operational_scope.py \
-            tests/test_rc6_paper_preopen_gate.py \
-            tests/test_rc6_shadow_operational_funnel.py
       - name: Run broad offline sandbox suite
         run: python -m pytest -q tests -m 'not red' --maxfail=10
