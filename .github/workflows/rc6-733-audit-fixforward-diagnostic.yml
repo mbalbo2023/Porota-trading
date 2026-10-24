@@ -80,4 +80,34 @@ jobs:
           finally:
               os.close(fd); os.unlink(path)
           PY
+          python3 - <<'PY'
+          import fcntl, os, subprocess, tempfile
+          fd,path=tempfile.mkstemp(prefix='rc6-orphan-runner-')
+          fcntl.flock(fd,fcntl.LOCK_EX | fcntl.LOCK_NB)
+          proc=None
+          try:
+              proc=subprocess.Popen(
+                  ['bash','-c',"""sudo -n python3 -c 'import time; print("READY",flush=True); time.sleep(3)'"""],
+                  pass_fds=(fd,),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+              ready=proc.stdout.readline().strip()
+              assert ready=='READY', (ready, proc.poll())
+              proc.terminate()
+              proc.wait(timeout=2)
+              os.close(fd); fd=-1
+              probe=os.open(path,os.O_RDWR)
+              try:
+                  try:
+                      fcntl.flock(probe,fcntl.LOCK_EX | fcntl.LOCK_NB)
+                  except BlockingIOError:
+                      print('RC6_RUNNER_ORPHAN_LOCK=HELD')
+                  else:
+                      print('RC6_RUNNER_ORPHAN_LOCK=RELEASED_WHILE_SUDO_CHILD_ACTIVE')
+              finally:
+                  os.close(probe)
+          finally:
+              if fd>=0: os.close(fd)
+              if proc is not None and proc.poll() is None:
+                  proc.kill(); proc.wait(timeout=2)
+              os.unlink(path)
+          PY
           echo 'DROPLET_TOUCHED=NO'
