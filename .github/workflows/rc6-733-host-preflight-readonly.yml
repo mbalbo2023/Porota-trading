@@ -1,0 +1,53 @@
+name: RC6 733 bounded host capability preflight
+
+on:
+  push:
+    branches:
+      - diagnostic/rc6-733-host-preflight-20261024
+    paths:
+      - .github/workflows/rc6-733-host-preflight-readonly.yml
+      - scripts/rc6_733_host_preflight_readonly.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      CANDIDATE_SHA: 97ed080d2c8cc793bfd8c5a07ca92e3b20a75d80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prove exact ancestry and bounded read-only host capability
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^1)" = ae1e299d3f39a21cf5e6320b42bc0461636ab710
+          python3 -m py_compile scripts/rc6_733_host_preflight_readonly.py
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_733_preflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_733_preflight" "$HOME/.ssh/known_hosts"
+          PROBE_B64="$(base64 -w0 scripts/rc6_733_host_preflight_readonly.py)"
+          timeout 35 ssh -i "$HOME/.ssh/rc6_733_preflight" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$PROBE_B64\"))' '$DO_USER' '$CANDIDATE_SHA'"
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6_733_preflight"
