@@ -1,0 +1,63 @@
+name: RC6 733 current host read-only preflight
+
+on:
+  push:
+    branches:
+      - diagnostic/rc6-733-current-host-readonly-20261024
+    paths:
+      - .github/workflows/rc6-733-current-host-readonly.yml
+      - scripts/rc6_733_current_host_readonly.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      CANDIDATE_SHA: 4bba1335cc1875c6feb6d8a75aea141c31b83653
+      CANDIDATE_TREE: bbdf7f979e7b7092e0705f8037b3cb65f4865546
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prove source identity and bounded read-only snapshot
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -Eeuo pipefail
+          test "$(git merge-base HEAD "$CANDIDATE_SHA")" = "$CANDIDATE_SHA"
+          test "$(git rev-parse "$CANDIDATE_SHA^{tree}")" = "$CANDIDATE_TREE"
+          EXPECTED=$'.github/workflows/rc6-733-current-host-readonly.yml\nscripts/rc6_733_current_host_readonly.py'
+          test "$(git diff --name-only "$CANDIDATE_SHA" HEAD)" = "$EXPECTED"
+          python3 -m py_compile scripts/rc6_733_current_host_readonly.py
+          REQUIRED_LINE="$(python3 scripts/rc6_disk_space_guard.py \
+            --policy ops/policy/rc6-disk-housekeeping-v1.json \
+            --image-tar-bytes 277448273 \
+            --image-unpacked-bytes 806637724 \
+            --bundle-bytes 1634630)"
+          test "$REQUIRED_LINE" = 'RC6_DISK_REQUIRED_PRETRANSFER_FREE=4041476629'
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_733_current_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_733_current_readonly" "$HOME/.ssh/known_hosts"
+          PROBE_B64="$(base64 -w0 scripts/rc6_733_current_host_readonly.py)"
+          timeout 45 ssh -i "$HOME/.ssh/rc6_733_current_readonly" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 15 python3 -c 'import base64;exec(base64.b64decode(\"$PROBE_B64\"))' '$DO_USER' '$CANDIDATE_SHA' '$CANDIDATE_TREE' '4041476629'"
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6_733_current_readonly"
