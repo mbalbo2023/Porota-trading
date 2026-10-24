@@ -1,0 +1,89 @@
+name: RC6 732 bounded read-only browser and SQLite metadata audit
+on:
+  push:
+    branches:
+      - diagnostic/rc6-732-readonly-browser-20261024
+    paths:
+      - .github/workflows/rc6-732-readonly-browser-audit-20261024.yml
+      - scripts/rc6_732_live_browser_readonly.py
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pin production ancestry and strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git merge-base HEAD ae1e299d3f39a21cf5e6320b42bc0461636ab710)" = ae1e299d3f39a21cf5e6320b42bc0461636ab710
+          python -m py_compile scripts/rc6_732_live_browser_readonly.py
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_732_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_732_readonly" "$HOME/.ssh/known_hosts"
+      - name: Verify observed image SHA and passive SQLite file metadata
+        shell: bash
+        timeout-minutes: 1
+        run: |
+          set -Eeuo pipefail
+          EXPECTED_TREE="$(git rev-parse '6d06d825a90f9f22a1eb685b6b3c93940f6b19b9^{tree}')"
+          timeout 30 ssh -i "$HOME/.ssh/rc6_732_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec porota_production_dashboard python /app/scripts/porota_image_source_identity.py --expected-sha 6d06d825a90f9f22a1eb685b6b3c93940f6b19b9 --expected-tree '$EXPECTED_TREE'"
+          timeout 30 ssh -i "$HOME/.ssh/rc6_732_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import json,os,time; p=\"/opt/porota-trading/data/paper_v17/observer_v17.db\"; print(\"RC6_732_SQLITE_STAT=\"+json.dumps({\"at_unix\":int(time.time()),\"files\":{x:(os.stat(p+x).st_size if os.path.isfile(p+x) else None) for x in (\"\",\"-wal\",\"-shm\")}},sort_keys=True))'"
+      - name: Authenticated Chrome inspection through local tunnel
+        shell: bash
+        timeout-minutes: 13
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          command -v google-chrome >/dev/null
+          TOKEN="$(timeout 15 ssh -i "$HOME/.ssh/rc6_732_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            'sudo -n docker exec porota_production_dashboard printenv DASHBOARD_ACCESS_TOKEN')"
+          test "${#TOKEN}" -ge 24
+          echo "::add-mask::$TOKEN"
+          ssh -N -L 127.0.0.1:18085:127.0.0.1:8000 \
+            -i "$HOME/.ssh/rc6_732_readonly" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" &
+          TUNNEL_PID=$!
+          trap 'kill "$TUNNEL_PID" 2>/dev/null || true' EXIT
+          for attempt in 1 2 3 4 5; do
+            if DASHBOARD_ACCESS_TOKEN="$TOKEN" python -c 'import os,urllib.request; u="http://127.0.0.1:18085/api/dashboard/truth"; r=urllib.request.urlopen(urllib.request.Request(u,headers={"Authorization":"Bearer "+os.environ["DASHBOARD_ACCESS_TOKEN"]}),timeout=2); assert r.status==200'; then break; fi
+            sleep 1
+          done
+          DASHBOARD_ACCESS_TOKEN="$TOKEN" python scripts/rc6_732_live_browser_readonly.py --output visual-evidence
+          unset TOKEN
+      - name: Preserve redacted visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-732-redacted-browser-evidence
+          path: visual-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6_732_readonly"
