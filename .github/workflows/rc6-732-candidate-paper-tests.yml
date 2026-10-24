@@ -17,12 +17,12 @@ jobs:
     env:
       ENVIRONMENT: SANDBOX
       STARTUP_REQUIRE_AUTH: 'false'
-      POROTA_BUILD_SHA: 56c485af6232d2459dfe632f53c874259ddbdefc
+      POROTA_BUILD_SHA: ffa85b05e8f9601d3b5d720304a42349f3145ca4
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 56c485af6232d2459dfe632f53c874259ddbdefc
+          ref: ffa85b05e8f9601d3b5d720304a42349f3145ca4
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
