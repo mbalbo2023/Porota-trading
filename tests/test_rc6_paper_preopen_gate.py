@@ -169,6 +169,7 @@ def test_caucion_final_insert_rechecks_global_receipt_in_runtime_image(tmp_path,
 
     # A valid receipt lets both existing PAPER paths operate in an isolated book.
     monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "go.db"))
     green = PaperBroker(PaperStore(str(tmp_path / "go.db")), initial_cash="10000",
                         daily_loss_pct="1")
     accepted = attempt(green)
@@ -176,6 +177,7 @@ def test_caucion_final_insert_rechecks_global_receipt_in_runtime_image(tmp_path,
 
     # The same input under NO_GO cannot insert a new position or allocation.
     monkeypatch.setattr(gate, "admission_status", lambda: (False, "NO_GO_PAPER_SCALPING"))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "no-go.db"))
     red = PaperBroker(PaperStore(str(tmp_path / "no-go.db")), initial_cash="10000",
                       daily_loss_pct="1")
     with pytest.raises(ValueError, match="NO_GO_PAPER_SCALPING"):
