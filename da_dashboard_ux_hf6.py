@@ -62,15 +62,15 @@ LEGACY_ROUTE_REDIRECTS = {
 
 FAMILY_GROUPS = {
     "acciones-cedears": ("ACCIONES", "CEDEARS"),
-    "renta-fija": ("BONOS", "LETRAS", "OBLIGACIONES", "ON"),
+    "renta-fija": ("BONOS", "LETRAS", "OBLIGACIONES"),
     "cauciones": ("CAUCIONES",),
     "opciones": ("OPCIONES",),
     "futuros": ("FUTUROS",),
     "fci": ("FCI", "FCI_LOCAL", "FCI_EXTERIOR"),
-    "etf": ("ETFS", "ETF"),
+    "etf": ("ETFS",),
     "indices": ("INDICES",),
     "bonos": ("BONOS",),
-    "on": ("OBLIGACIONES", "ON"),
+    "on": ("OBLIGACIONES",),
     "letras": ("LETRAS",),
     "licitaciones": ("LICITACIONES", "CANJES"),
 }

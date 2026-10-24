@@ -4,6 +4,8 @@ import re
 from unittest.mock import patch
 
 import da_dashboard_ux_hf6 as legacy_ux
+import bg_paper_dashboard as legacy_dashboard
+from er_dashboard_truth_projection_rc6 import normalize_family
 from rc6_trader_dashboard import components, view_common, views_analytics, views_instruments, views_trading, views_universe
 from rc6_trader_dashboard.projection import Page
 
@@ -35,6 +37,17 @@ class FamilyUiContractTests(unittest.TestCase):
         self.assertIn("OBLIGACIONES", legacy_ux.families_for_group("on"))
         self.assertIn("OBLIGACIONES", views_trading.FAMILY_GROUPS["renta-fija"])
         self.assertIn("metadata.nominal_unit", [f.key for f in views_instruments.family_fields("OBLIGACIONES")])
+
+    def test_legacy_aliases_do_not_duplicate_family_rows_or_totals(self):
+        for group in legacy_ux.FAMILY_GROUPS:
+            families = [normalize_family(family) for family in legacy_ux.families_for_group(group)]
+            self.assertEqual(len(families), len(set(families)), group)
+        truth = {"readiness": {"families": [{"family": "OBLIGACIONES", "runtime_ready": 3,
+                                                  "candidate_total": 5, "catalog_total": 5}]},
+                 "contract": {"families": []}}
+        rows = legacy_dashboard._family_ux_snapshot(
+            legacy_ux.families_for_group("on"), truth=truth, paper_history={})
+        self.assertEqual([(row["family"], row["ready"]) for row in rows], [("OBLIGACIONES", 3)])
 
     def test_catalog_state_explains_its_limited_authority(self):
         readiness = next(f for f in view_common.CATALOG if f.key == "readiness")
