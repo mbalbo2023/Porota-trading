@@ -1,5 +1,6 @@
 """Bounded UI contract regressions for the RC6 #732 findings."""
 import unittest
+import re
 from unittest.mock import patch
 
 import da_dashboard_ux_hf6 as legacy_ux
@@ -8,6 +9,21 @@ from rc6_trader_dashboard.projection import Page
 
 
 class FamilyUiContractTests(unittest.TestCase):
+    def test_repeated_identity_has_distinct_row_dialog_targets(self):
+        identity = '["AL30","BONOS","BYMA","ARS","A-24HS"]'
+        page = Page("market_snapshots", [
+            {"identity": identity, "symbol": "AL30", "last": "100"},
+            {"identity": identity, "symbol": "AL30", "last": "101"},
+        ], 2, "AVAILABLE")
+        markup = components.table(page, "Mercado", components.fields("symbol|Ticker;last|Último"),
+                                  table_id="market")
+        row_ids = re.findall(r"<tr id='([^']+)' data-row='true'>", markup)
+        self.assertEqual(len(row_ids), 2)
+        self.assertEqual(len(set(row_ids)), 2)
+        for row_id in row_ids:
+            self.assertIn(f"data-detail-dialog='{row_id}-dialog'", markup)
+            self.assertIn(f"<dialog id='{row_id}-dialog'", markup)
+
     def test_all_ten_paper_families_visible_without_claiming_readiness(self):
         canonical = {
             "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",

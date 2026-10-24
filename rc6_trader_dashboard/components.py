@@ -178,7 +178,10 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             sort_keys=True, default=str)
         if key == "{}":
             key = str(index)
-        row_id = table_id + "-" + hashlib.sha256(str(key).encode()).hexdigest()[:12]
+        # Multiple observations can share one instrument identity. A dialog
+        # target must still identify this particular row within the page.
+        row_id = table_id + "-" + hashlib.sha256(
+            f"{key}:{page.offset + index}".encode()).hexdigest()[:12]
         cells = "".join(f"<td data-label='{e(f.label)}' class='{column_classes[i]}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
         # Family aggregates and service health rows have no instrument identity.
         # Keep their factual check/source fields without adding inapplicable keys.
