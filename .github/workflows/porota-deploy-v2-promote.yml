@@ -385,7 +385,8 @@ jobs:
             done
           )"
 
-          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
+          # Other run/attempt staging has a distinct owner. Retain it until
+          # that exact attempt's bounded cleanup; low disk must fail closed.
           # General retention cleanup may finish safely but still report 43
           # because Docker's unused cache/old critical image is not reclaimed
           # until the following steps. Accept only that exact structured
@@ -1552,7 +1553,8 @@ jobs:
           set -Eeuo pipefail
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "sudo -n python3 - '$RC6_QUIESCENCE_MODE' '$CANDIDATE_SHA'" <<'PY'
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root env PYTHONDONTWRITEBYTECODE=1 python3 - '$RC6_QUIESCENCE_MODE' '$CANDIDATE_SHA'" <<'PY'
           import sys
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_deploy_quiescence import admit_poststart_flat

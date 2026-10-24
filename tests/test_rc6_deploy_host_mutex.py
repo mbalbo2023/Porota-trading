@@ -200,7 +200,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
                     'timers_restore', 'timers_restored', 'backup_retire',
                     'finalize_runtime'):
             self.assertIn('RC6_MUTEX_B64', by_id[key], key)
-        self.assertIn('RC6_MUTEX_B64', by_id['flat_book'].split('verify-carryover')[0])
+        self.assertEqual(by_id['flat_book'].count('RC6_MUTEX_B64'), 2)
         failure = next(step['run'] for step in steps
                        if step['name'] == 'Failure-safe host cleanup')
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 4)
@@ -210,6 +210,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("--run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'", failure)
         self.assertIn('tar -C /tmp -cf -', by_id['transfer'])
         self.assertNotIn('scp ', by_id['transfer'])
+        self.assertNotIn("find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*'", workflow)
         self.assertNotIn("rm -rf '$REMOTE_DIR'", by_id['transfer'])
         self.assertIn('$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT', by_id['promotion'])
         self.assertNotIn("! -path \"$REMOTE_DIR\" -exec rm -rf", by_id['promotion'])
