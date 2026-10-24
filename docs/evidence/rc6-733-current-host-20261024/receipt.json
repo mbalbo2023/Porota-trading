@@ -1,0 +1,58 @@
+{
+  "schema": "RC6_733_CURRENT_HOST_READONLY_V1",
+  "run_id": 40139818793,
+  "job_id": 121008999058,
+  "run_conclusion": "success",
+  "diagnostic_commit": "7a9eb4b9117224498b19eeba535c69b40fa568c6",
+  "candidate_sha": "4bba1335cc1875c6feb6d8a75aea141c31b83653",
+  "candidate_tree": "bbdf7f979e7b7092e0705f8037b3cb65f4865546",
+  "sampled_at_utc": "2026-10-24T22:44:44.028842+00:00",
+  "status": "PASS_SNAPSHOT",
+  "classification_hint": "CLOSED_FLAT",
+  "observer": {
+    "mode": "PRODUCTION_PAPER",
+    "real_orders_sent": 0,
+    "process_state": "WAITING_MARKET",
+    "session_state": "MARKET_CLOSED",
+    "heartbeat_at": "2026-10-24T22:44:43.722352+00:00",
+    "heartbeat_fresh_180s": true,
+    "exposures_at_most_two_each": {
+      "spot_open": 0,
+      "futures_active": 0,
+      "caucion_open": 0
+    },
+    "historical_caucion_exception_eligible_now": false
+  },
+  "host": {
+    "sudo_euid": 0,
+    "remote_user_unprivileged": true,
+    "lock_parent_safe": true,
+    "lock_status": "ABSENT",
+    "barrier_file_status": "ABSENT",
+    "barrier_state": "ABSENT",
+    "contract_writers_running": 0,
+    "root_available_bytes": 7740514304,
+    "required_pretransfer_bytes": 4041476629,
+    "margin_at_sample_bytes": 3699037675,
+    "inode_free_percent": 91.642539,
+    "disk_pass_at_sample": true,
+    "owned_containers": {
+      "porota_production_observer": {
+        "status": "running",
+        "image": "sha256:4c91f79ce95d4219c05e09051fdb99b7304da6466742cb922f725d97d59daaa1"
+      },
+      "porota_production_dashboard": {
+        "status": "running",
+        "image": "sha256:4c91f79ce95d4219c05e09051fdb99b7304da6466742cb922f725d97d59daaa1"
+      }
+    }
+  },
+  "host_mutations": "NONE_REQUESTED",
+  "limits": [
+    "Snapshot, not transfer-time disk admission",
+    "No deploy classification via the full product admit() contract",
+    "No candidate image installed or runtime verified",
+    "No market-open, ten-family real dataset, Android voice or host stress evidence",
+    "SQLite read-only WAL connection may use shared-memory reader bookkeeping"
+  ]
+}
