@@ -19,7 +19,7 @@ from rc6_trader_dashboard.navigation import CANONICAL_PATHS
 from rc6_trader_dashboard.routes import build_page
 
 
-def run(output: Path):
+def run(output: Path, candidate_sha: str, candidate_tree_sha: str):
     from playwright.sync_api import sync_playwright
 
     output.mkdir(parents=True, exist_ok=True)
@@ -100,6 +100,18 @@ def run(output: Path):
                             page.keyboard.press("Escape")
                             assert dialog.get_attribute("open") is None, target
                             entry["first_page_dialogs_opened"] += 1
+                        page.evaluate("""() => {
+                          const label = document.createElement('div');
+                          label.textContent = 'DATOS SINTÉTICOS — NO RUNTIME / NO MERCADO REAL';
+                          Object.assign(label.style, {
+                            position: 'fixed', bottom: '0', left: '0', right: '0',
+                            zIndex: '2147483647', padding: '6px 10px',
+                            background: '#a40000', color: '#ffffff',
+                            font: 'bold 13px sans-serif', textAlign: 'center',
+                            pointerEvents: 'none'
+                          });
+                          document.body.appendChild(label);
+                        }""")
                         page.evaluate("window.scrollTo(0, 0)")
                         page.screenshot(path=str(output / entry["screenshot"]),
                                         full_page=False, animations="disabled")
@@ -126,7 +138,8 @@ def run(output: Path):
     if outside_requests:
         findings.append({"external_requests_blocked": outside_requests[:10]})
     result = {
-        "schema": "rc6.733.synthetic-visual.v1", "source_tree": "EXACT_CANDIDATE_TREE_GUARDED_BY_WORKFLOW",
+        "schema": "rc6.733.synthetic-visual.v1", "candidate_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree_sha,
         "as_of_utc": datetime.now(timezone.utc).isoformat(),
         "routes_expected": len(paths), "viewports": [1440, 360],
         "route_viewport_checks": len(coverage),
@@ -151,4 +164,7 @@ def run(output: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    run(parser.parse_args().output)
+    parser.add_argument("--candidate-sha", required=True)
+    parser.add_argument("--candidate-tree-sha", required=True)
+    args = parser.parse_args()
+    run(args.output, args.candidate_sha, args.candidate_tree_sha)

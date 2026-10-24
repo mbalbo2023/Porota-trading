@@ -55,12 +55,17 @@ jobs:
         timeout-minutes: 18
         run: |
           set -Eeuo pipefail
-          timeout 1020 python3 scripts/rc6_733_visual_candidate_offhost.py --output /tmp/rc6-733-visual
+          timeout 1020 python3 scripts/rc6_733_visual_candidate_offhost.py \
+            --output /tmp/rc6-733-visual \
+            --candidate-sha 4bba1335cc1875c6feb6d8a75aea141c31b83653 \
+            --candidate-tree-sha bbdf7f979e7b7092e0705f8037b3cb65f4865546
           python3 - <<'PY'
           from pathlib import Path
           import json
           result=json.loads(Path('/tmp/rc6-733-visual/visual-receipt.json').read_text())
           assert result['status']=='GREEN' and result['route_viewport_checks']==104
+          assert result['candidate_sha']=='4bba1335cc1875c6feb6d8a75aea141c31b83653'
+          assert result['candidate_tree_sha']=='bbdf7f979e7b7092e0705f8037b3cb65f4865546'
           assert len(result['screenshots'])==104
           assert result['first_page_rows']==result['first_page_dialogs_opened']
           print('RC6_733_VISUAL_OFFHOST=GREEN|ROUTES=52|VIEWPORT_CHECKS=104|DIALOGS=' +
