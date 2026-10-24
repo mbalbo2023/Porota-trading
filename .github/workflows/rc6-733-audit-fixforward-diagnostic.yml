@@ -29,7 +29,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m compileall -q tests/test_ci_productive_predeploy_contract.py tests/test_rc6_disk_deploy_guard.py tests/test_rc6_disk_materialization_reserve.py
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -p no:cacheprovider --junitxml=/tmp/rc6-audit-diagnostic.xml tests/test_ci_productive_predeploy_contract.py tests/test_rc6_disk_deploy_guard.py tests/test_rc6_disk_materialization_reserve.py tests/test_rc6_deploy_host_mutex.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -p no:cacheprovider --junitxml=/tmp/rc6-audit-diagnostic.xml tests/test_ci_productive_predeploy_contract.py tests/test_rc6_disk_deploy_guard.py tests/test_rc6_disk_materialization_reserve.py tests/test_rc6_deploy_host_mutex.py tests/test_rc6_disk_housekeeping_policy.py tests/test_deploy_v2_promotion_contract.py
           python3 - <<'PY'
           from xml.etree import ElementTree as ET
           root=ET.parse('/tmp/rc6-audit-diagnostic.xml').getroot()

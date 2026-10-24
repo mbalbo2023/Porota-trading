@@ -83,13 +83,12 @@ def test_actual_postload_shell_preserves_foreign_cache_and_fails_closed(tmp_path
     assert ('FOREIGN_CACHE_PRESERVED' in result.stdout) == (expected != 0)
 
 
-@pytest.mark.parametrize('housekeeping_rc,reason,expected', [
-    (43, 'POST_CLEANUP_FREE_BELOW_MINIMUM', 0),
-    (43, 'UNRECOGNIZED_FAILURE', 1),
-    (44, 'POST_CLEANUP_FREE_BELOW_MINIMUM', 44),
-    (0, '', 0),
+@pytest.mark.parametrize('audit_rc,status,expected', [
+    (0, 'GREEN', 0),
+    (43, 'RED', 43),
+    (44, 'RED', 44),
 ])
-def test_preclean_only_defers_exact_residual_space_result_to_final_admission(tmp_path, housekeeping_rc, reason, expected):
+def test_preclean_hostwide_audit_never_accepts_error_as_cleanup_success(tmp_path, audit_rc, status, expected):
     import base64
     import os
     import shlex
@@ -97,25 +96,25 @@ def test_preclean_only_defers_exact_residual_space_result_to_final_admission(tmp
     start = workflow.index('          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json')
     end = workflow.index('          # Shared Docker images and build caches', start)
     block = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
+    assert '--mode audit --preserve-backups' in block
+    assert '--mode cleanup' not in block
     receipt = tmp_path / 'housekeeping.json'
     block = block.replace('/tmp/porota-predeploy-housekeeping.json', shlex.quote(str(receipt)))
     stub = tmp_path / 'sudo'
     supplied = tmp_path / 'supplied-helper.py'
     helper = (ROOT / 'scripts/rc6_disk_housekeeping.py').read_bytes()
-    data = json.dumps({'status': 'RED', 'reason': reason, 'effective_mode': 'cleanup'})
+    data = json.dumps({'status': status, 'effective_mode': 'audit'})
     stub.write_text('#!/bin/bash\nset -eu\nshift\nif [ "$1" = rm ]; then shift; exec rm "$@"; fi\n'
                     + '[ "$1" = python3 ]\n[ "$2" = - ]\n'
                     + 'cat > ' + shlex.quote(str(supplied)) + '\n'
                     + "printf '%s' " + shlex.quote(data) + ' > ' + shlex.quote(str(receipt))
-                    + '\nexit ' + str(housekeeping_rc) + '\n')
+                    + '\nexit ' + str(audit_rc) + '\n')
     stub.chmod(0o700)
     env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ['PATH'],
                REPO=str(ROOT), TMP_POLICY=str(POLICY),
                HOUSEKEEPING_B64=base64.b64encode(helper).decode('ascii'))
-    result = subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + block + '\necho REACHED_DOCKER_CLEANUP'],
+    result = subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + block + '\necho REACHED_OWNED_CLEANUP'],
                             env=env, capture_output=True, text=True, timeout=10)
     assert result.returncode == expected, result.stderr + result.stdout
-    # Even negative fixtures must exercise the real stdin transport. A missing
-    # input variable must not accidentally satisfy an expected error branch.
     assert supplied.read_bytes() == helper
-    assert ('REACHED_DOCKER_CLEANUP' in result.stdout) == (expected == 0)
+    assert ('REACHED_OWNED_CLEANUP' in result.stdout) == (expected == 0)

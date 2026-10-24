@@ -385,34 +385,14 @@ jobs:
             done
           )"
 
-          # Other run/attempt staging has a distinct owner. Retain it until
-          # that exact attempt's bounded cleanup; low disk must fail closed.
-          # General retention cleanup may finish safely but still report 43
-          # because the old RC6 critical image may not be reclaimed
-          # until the following owned-image checks. Accept only that exact structured
-          # residual-space result, then enforce the full admission gate below.
+          # Host-wide housekeeping is inventory only: /tmp, apt, journal, and
+          # backups may have other owners, including PPI Watch. Reclaim only
+          # proven-unreferenced RC6 images below, then fail closed on space.
           sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
-          set +e
-          # The installed legacy helper may predate --preserve-backups. Run
-          # this already-certified candidate's stdlib helper from stdin;
-          # no product source is installed before the admission gate.
           printf '%s' "$HOUSEKEEPING_B64" | base64 -d | sudo -n python3 - \
-            --policy "$TMP_POLICY" --mode cleanup --preserve-backups \
+            --policy "$TMP_POLICY" --mode audit --preserve-backups \
             --json-out /tmp/porota-predeploy-housekeeping.json
-          PRECLEAN_HOUSEKEEPING_RC=$?
-          set -e
-          if [ "$PRECLEAN_HOUSEKEEPING_RC" -eq 43 ]; then
-            python3 - /tmp/porota-predeploy-housekeeping.json <<'PY'
-          import json,sys
-          result=json.load(open(sys.argv[1],encoding="utf-8"))
-          assert result.get("status")=="RED"
-          assert result.get("reason")=="POST_CLEANUP_FREE_BELOW_MINIMUM"
-          assert result.get("effective_mode")=="cleanup"
-          print("RC6_PRECLEAN_RETENTION_COMPLETE_RESERVE_PENDING=1")
-          PY
-          elif [ "$PRECLEAN_HOUSEKEEPING_RC" -ne 0 ]; then
-            exit "$PRECLEAN_HOUSEKEEPING_RC"
-          fi
+          echo 'RC6_PRECLEAN_HOSTWIDE_MUTATION=SKIPPED'
           # Shared Docker images and build caches have no RC6 ownership proof.
           # The measured reserve below fails closed if owned cleanup is insufficient.
           echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
@@ -1493,12 +1473,13 @@ jobs:
             done
           done
 
-          # Mandatory final cleanup after runtime validation/provenance.
+          # Final read-only inventory after runtime validation/provenance.
           sudo -n mkdir -p "$REPO/data/deploy"
           sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
             --policy "$REPO/ops/policy/rc6-disk-housekeeping-v1.json" \
-            --mode cleanup --preserve-backups \
+            --mode audit --preserve-backups \
             --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
+          echo 'RC6_FINAL_HOSTWIDE_MUTATION=SKIPPED'
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
           echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
           rm -rf "$REMOTE_DIR"

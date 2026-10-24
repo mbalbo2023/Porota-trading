@@ -68,6 +68,9 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
     assert "image_size_bytes" in block
     assert "RC6_DISK_PRECLEAN=START" in block
     assert "rc6_disk_housekeeping.py" in block
+    assert "--mode audit --preserve-backups" in block
+    assert "--mode cleanup" not in block
+    assert "RC6_PRECLEAN_HOSTWIDE_MUTATION=SKIPPED" in block
     assert "RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED" in block
     assert "docker image prune -f" not in block
     assert "docker builder prune -af" not in block
@@ -81,7 +84,9 @@ def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
     assert native < cleanup < final
     tail = text[native:cleanup + 200]
-    assert "--mode cleanup" in tail
+    assert "--mode audit --preserve-backups" in tail
+    assert "--mode cleanup" not in tail
+    assert "RC6_FINAL_HOSTWIDE_MUTATION=SKIPPED" in tail
     assert "last-deploy-housekeeping.json" in tail
     assert "RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED" in tail
     assert "docker image prune -f" not in tail
