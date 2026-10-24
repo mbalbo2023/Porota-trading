@@ -763,6 +763,322 @@ class MonitorContracts(unittest.TestCase):
 
 
 
+class CommittedGenerationProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.cut = {
+            "pointer": {"generation_id": "a" * 64, "manifest_sha256": "b" * 64, "sequence": 123},
+            "status": {"as_of": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+                       "configuration_fingerprint": "c" * 64, "mode": "SHADOW",
+                       "status": "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION",
+                       "provider_requests": 0, "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+                       "runtime_sql_diagnostics": {"budget_ms": 2000, "sql_elapsed_ms": 12,
+                           "plans": {"CATALOG_FULL": ["SECRET_MARKET_VALUES"]},
+                           "stages": [{"stage": "CATALOG_FULL", "elapsed_ms": 12, "rows": 14608,
+                                       "deadline_elapsed": False, "interrupted_by_deadline": False}]}},
+            "report": {"private_source_value": "SECRET_MARKET_VALUES"}}
+        self.calls = []
+
+    def capture(self, *, error=None, authority="TWO_MEASURED_CYCLES_SOURCE_CAPPED"):
+        persistence = types.ModuleType("rc6_shadow_runtime.persistence")
+        timing = types.ModuleType("rc6_shadow_runtime.timing")
+        def reader(*args, **kwargs):
+            self.calls.append((args, kwargs))
+            if error:
+                raise error
+            return self.cut
+        persistence.read_committed_generation = reader
+        timing.generation_budget = lambda status: (60, authority)
+        scope = {}
+        with patch.dict(sys.modules, {"rc6_shadow_runtime.persistence": persistence,
+                                     "rc6_shadow_runtime.timing": timing}), patch.dict(
+                monitor.os.environ, {"PAPER_V17_DB_PATH": str(self.root / "book.db")}):
+            exec(compile(monitor.GENERATION_RECEIPT_PROBE, "<strict-generation-probe>", "exec"), scope)
+        return scope["generation_receipt"]
+
+    def test_strict_read_receipt_does_not_promote_missing_preopen_to_ready(self):
+        value = self.capture()
+        self.assertEqual(value["integrity"], "VERIFIED")
+        self.assertEqual(value["worker_status"], "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION")
+        self.assertTrue(value["native_sql_within_budget"])
+        self.assertEqual(self.calls[0][1], {"payload_limit": 4 * 1024**2, "require_current_status": True})
+        self.assertNotIn("SECRET_MARKET_VALUES", json.dumps(value))
+        self.assertFalse((self.root / "artifacts").exists())
+
+    def test_revoked_or_tampered_generation_never_claims_verified(self):
+        value = self.capture(error=ValueError("SECRET_MARKET_VALUES"))
+        self.assertEqual(value["integrity"], "UNVERIFIED")
+        self.assertNotIn("SECRET_MARKET_VALUES", json.dumps(value))
+        self.assertNotIn("real_orders_sent", value)
+
+    def test_future_stale_or_legacy_cadence_cannot_qualify(self):
+        for seconds in (-600, 600):
+            self.cut["status"]["as_of"] = (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+            self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+        self.cut["status"]["as_of"] = datetime.now(timezone.utc).isoformat()
+        self.assertEqual(self.capture(authority="CADENCE_UNVERIFIED_LEGACY_CUT")["integrity"], "UNVERIFIED")
+
+    def test_unknown_or_nonzero_safety_is_not_replaced_with_zero(self):
+        for value in (None, 1, False):
+            self.cut["status"]["real_orders_sent"] = value
+            self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+
+    def test_sql_budget_failure_is_separate_from_generation_integrity(self):
+        self.cut["status"]["runtime_sql_diagnostics"]["stages"][0]["interrupted_by_deadline"] = True
+        value = self.capture()
+        self.assertEqual(value["integrity"], "VERIFIED")
+        self.assertFalse(value["native_sql_within_budget"])
+        self.cut["status"]["runtime_sql_diagnostics"]["sql_elapsed_ms"] = 2001
+        self.assertFalse(self.capture()["native_sql_within_budget"])
+
+    def test_runtime_identity_unknown_is_preserved(self):
+        path = self.root / "artifacts/book.db/runtime-health.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"source_sha": None, "candidate_tree_sha": "SECRET_MARKET_VALUES"}))
+        value = self.capture()
+        self.assertEqual(value["integrity"], "VERIFIED")
+        self.assertIsNone(value["source_sha"])
+        self.assertIsNone(value["candidate_tree_sha"])
+        self.assertNotIn("SECRET_MARKET_VALUES", json.dumps(value))
+
+    def test_fail_closed_worker_or_invalid_hash_cannot_qualify(self):
+        self.cut["status"]["status"] = "FAIL_CLOSED"
+        self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+        self.cut["status"]["status"] = "SHADOW_OBSERVING"
+        self.cut["pointer"]["generation_id"] = "SECRET_MARKET_VALUES"
+        self.assertEqual(self.capture()["integrity"], "UNVERIFIED")
+
+
+    def test_reviewed_failure_code_is_exposed_but_arbitrary_exception_text_is_not(self):
+        value=self.capture(error=ValueError("GENERATION_MEMBER_MISMATCH"))
+        self.assertEqual(value["error_reason"],"GENERATION_MEMBER_MISMATCH")
+        value=self.capture(error=ValueError("SECRET_MARKET_VALUES"))
+        self.assertNotIn("error_reason",value)
+        self.assertNotIn("SECRET_MARKET_VALUES",json.dumps(value))
+
+    def test_stale_receipt_preserves_bounded_timing_without_authority(self):
+        self.cut["status"]["as_of"]=(datetime.now(timezone.utc)-timedelta(seconds=200)).isoformat()
+        self.cut["status"]["generation_timing"]={"tick_seconds":170.5,"SECRET":"SECRET_MARKET_VALUES"}
+        value=self.capture()
+        self.assertEqual(value["integrity"],"UNVERIFIED")
+        self.assertEqual(value["error_reason"],"GENERATION_FRESHNESS_UNVERIFIED")
+        self.assertEqual(value["generation_tick_seconds"],170.5)
+        self.assertGreater(value["age_seconds"],190)
+        self.assertNotIn("real_orders_sent",value)
+        self.assertNotIn("SECRET_MARKET_VALUES",json.dumps(value))
+
+
+class ImageInventoryContracts(unittest.TestCase):
+    def test_manual_image_receipt_is_preserved_by_existing_artifact(self):
+        text=(SOURCE.parents[1]/'.github/workflows/rc6-market-watch-readonly.yml').read_text()
+        start=text.index('name: Save immutable per-run evidence')
+        end=text.index('name: Fail checks on verified critical or confirmed P1',start)
+        self.assertIn('evidence/porota_images.json',text[start:end])
+
+    def capture(self,referenced=False,foreign_alias=False,inspection_failed=False,digests=None):
+        ident='sha256:'+'c'*64;tag='porota-predeploy-v2:'+'a'*40
+        aliases=[tag]+(['PRIVATE_OTHER_REPOSITORY:SECRET'] if foreign_alias else [])
+        rows=[subprocess.CompletedProcess([],0,stdout=json.dumps({'ID':ident,'Repository':'porota-predeploy-v2','Tag':'a'*40,'Env':'PRIVATE_SECRET'}),stderr=''),
+              subprocess.CompletedProcess([],0,stdout='d'*12,stderr=''),
+              subprocess.CompletedProcess([],1 if inspection_failed else 0,stdout=ident if referenced else 'sha256:'+'e'*64,stderr='PRIVATE_SECRET'),
+              subprocess.CompletedProcess([],0,stdout=ident+'|12345|'+json.dumps(aliases)+'|'+json.dumps(digests or []),stderr='')]
+        with patch.object(monitor.subprocess,'run',side_effect=rows) as calls:
+            value=monitor.porota_image_inventory_host()
+        self.assertNotIn('PRIVATE_',json.dumps(value))
+        self.assertFalse(any(token in c.args[0] for c in calls.call_args_list for token in ['rm','prune','stop','start','--force']))
+        return value
+
+    def test_unreferenced_candidate_is_observed_without_deletion_authority(self):
+        value=self.capture();self.assertTrue(value['complete_inventory'])
+        row=value['records'][0];self.assertTrue(row['unreferenced_candidate_observed'])
+        self.assertFalse(row['deletion_authority'])
+
+    def test_reference_or_foreign_alias_prevents_candidate_eligibility(self):
+        self.assertFalse(self.capture(referenced=True)['records'][0]['unreferenced_candidate_observed'])
+        row=self.capture(foreign_alias=True)['records'][0]
+        self.assertFalse(row['scoped_candidate_tags_only']);self.assertEqual(row['unlisted_alias_count'],1)
+
+    def test_digest_inventory_preserves_canonical_names_and_redacts_external(self):
+        known='porota-predeploy-v2@sha256:'+'a'*64
+        row=self.capture(digests=[known])['records'][0]
+        self.assertEqual(row['canonical_repository_digests'],[known])
+        self.assertEqual(row['external_digest_count'],0)
+        row=self.capture(digests=[known,'PRIVATE_REGISTRY/SECRET@sha256:'+'b'*64])['records'][0]
+        self.assertEqual(row['external_digest_count'],1)
+        self.assertFalse(row['unreferenced_candidate_observed'])
+
+    def test_failed_ownership_inspection_cannot_claim_unused(self):
+        value=self.capture(inspection_failed=True)
+        self.assertFalse(value['complete_inventory']);self.assertEqual(value['records'],[])
+
+
+class InstrumentInventoryContracts(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.db = self.root / monitor.DB_REL; self.db.parent.mkdir(parents=True)
+        with sqlite3.connect(self.db) as c:
+            c.executescript('''
+                CREATE TABLE observer_state(id INTEGER PRIMARY KEY,mode TEXT,real_orders_sent INTEGER);
+                INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0);
+                CREATE TABLE financial_instrument_catalog(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,settlement_source TEXT,last_seen_at TEXT,status TEXT,capability TEXT,metadata_json TEXT);
+                CREATE TABLE candidate_identity_v2(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,can_simulate INTEGER,status TEXT,checked_at TEXT);
+                CREATE TABLE ppi_intraday_contract_state(symbol TEXT,asset_class TEXT,market TEXT,currency TEXT,settlement TEXT,state TEXT,last_source_at TEXT,checked_at TEXT);
+                CREATE TABLE private_account_data(secret TEXT);
+                INSERT INTO private_account_data VALUES('PRIVATE_ACCOUNT_SECRET');
+            ''')
+            for currency in ('ARS', 'USD'):
+                key = ('SAME', 'ACCIONES', 'BYMA', currency, 'A-24HS')
+                c.execute('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    (*key, 'PPI', NOW.isoformat(), 'AVAILABLE', 'READY_PAPER_SPOT', 'PRIVATE_METADATA_SECRET'))
+                c.execute('INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?)',
+                    (*key, int(currency == 'ARS'), 'AVAILABLE', NOW.isoformat()))
+
+    def test_complete_five_part_inventory_is_readonly_and_excludes_private_fields(self):
+        before = hashlib.sha256(self.db.read_bytes()).hexdigest()
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertEqual(value['status'], 'OBSERVED_METADATA_ONLY')
+        self.assertEqual(value['count'], 2)
+        self.assertTrue(value['complete_inventory'])
+        self.assertFalse(value['entry_authority'])
+        self.assertEqual({r[3] for r in value['records']}, {'ARS', 'USD'})
+        by_currency = {r[3]: dict(zip(value['columns'],r)) for r in value['records']}
+        self.assertEqual(by_currency['ARS']['candidate_can_simulate'], 1)
+        self.assertEqual(by_currency['USD']['candidate_can_simulate'], 0)
+        self.assertIn('fill', value['unverified_per_identity_stages'])
+        self.assertIsNone(value['provenance']['candidate_sha'])
+        self.assertNotIn('PRIVATE_', json.dumps(value))
+        self.assertEqual(before, hashlib.sha256(self.db.read_bytes()).hexdigest())
+
+    def test_row_sentinel_never_publishes_partial_inventory_as_complete(self):
+        value = monitor.instrument_inventory_host(self.root, at=NOW, row_limit=1)
+        self.assertFalse(value['complete_inventory'])
+        self.assertEqual(value['status'], 'UNVERIFIED')
+        self.assertNotIn('records', value)
+
+    def test_complete_inventory_order_does_not_depend_on_physical_catalog_order(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('DELETE FROM financial_instrument_catalog')
+            for currency in ('USD','ARS'):
+                c.execute('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    ('SAME','ACCIONES','BYMA',currency,'A-24HS','PPI',NOW.isoformat(),
+                     'AVAILABLE','READY_PAPER_SPOT','PRIVATE_LARGE_METADATA'*10000))
+            c.execute('CREATE INDEX idx_shadow_catalog_order ON financial_instrument_catalog(instrument_type,market,currency,ticker,settlement,status,capability)')
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertEqual([row[3] for row in value['records']],['ARS','USD'])
+        self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
+        self.assertNotIn('PRIVATE_',json.dumps(value))
+
+    def test_packed_relations_are_read_once_without_join_fanout(self):
+        connect = sqlite3.connect; queries = []
+        class Observe:
+            def __init__(self,*args,**kwargs): self.connection=connect(*args,**kwargs)
+            def __getattr__(self,name): return getattr(self.connection,name)
+            def execute(self,sql,*args):
+                if 'json_group_array(' in sql and not sql.startswith('EXPLAIN'):
+                    queries.append(sql)
+                    if ' JOIN ' in sql.upper():
+                        raise sqlite3.OperationalError('interrupted')
+                return self.connection.execute(sql,*args)
+        with patch.object(monitor.sqlite3,'connect',Observe):
+            value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertEqual(len(queries),3)
+        self.assertTrue(all('NOT INDEXED LIMIT ?' in sql for sql in queries))
+        self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
+
+    def test_metadata_covering_index_avoids_large_catalog_payload(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('CREATE INDEX idx_catalog_public_metadata_v1 ON financial_instrument_catalog(instrument_type,market,currency,ticker,settlement,status,capability,settlement_source,last_seen_at)')
+            c.execute("UPDATE financial_instrument_catalog SET metadata_json=?", ('PRIVATE_LARGE_'*50000,))
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertTrue(any(row['covering_index'] and row['target']=='FINANCIAL_INSTRUMENT_CATALOG' for row in value['diagnostic']['query_plan']))
+        self.assertNotIn('PRIVATE_',json.dumps(value))
+        self.assertEqual({row[3]:row[9] for row in value['records']},{'ARS':1,'USD':0})
+
+    def test_wrong_named_index_is_not_mistaken_for_covering_contract(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('CREATE INDEX idx_catalog_public_metadata_v1 ON financial_instrument_catalog(ticker)')
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertFalse(value['complete_inventory'])
+        self.assertNotIn('records',value)
+        self.assertEqual(value['diagnostic']['stage'],'QUERY_PLAN')
+
+    def test_duplicate_optional_identity_outside_catalog_still_fails_closed(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("INSERT INTO ppi_intraday_contract_state VALUES('OTHER','BONOS','BYMA','ARS','CI','READY',NULL,NULL)")
+            c.execute('INSERT INTO ppi_intraday_contract_state SELECT * FROM ppi_intraday_contract_state')
+        value=monitor.instrument_inventory_host(self.root,at=NOW)
+        self.assertFalse(value['complete_inventory'])
+        self.assertNotIn('records',value)
+
+    def test_unknown_or_nonzero_real_orders_blocks_inventory(self):
+        for count in (None, 1):
+            with sqlite3.connect(self.db) as c:
+                c.execute('UPDATE observer_state SET real_orders_sent=?', (count,))
+            value = monitor.instrument_inventory_host(self.root, at=NOW)
+            self.assertFalse(value['complete_inventory'])
+            self.assertNotIn('records', value)
+
+    def test_missing_optional_contract_data_remains_explicit(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('DROP TABLE candidate_identity_v2')
+            c.execute('DROP TABLE ppi_intraday_contract_state')
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertTrue(value['complete_inventory'])
+        self.assertEqual(len(value['missing_optional_tables']), 2)
+        self.assertTrue(all(v is None for row in value['records'] for v in row[9:]))
+
+    def test_duplicate_join_cannot_silently_multiply_an_identity(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('INSERT INTO candidate_identity_v2 SELECT * FROM candidate_identity_v2')
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertFalse(value['complete_inventory'])
+        self.assertNotIn('records', value)
+
+    def test_schema_failure_reports_safe_stage_without_column_or_sql(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('ALTER TABLE candidate_identity_v2 RENAME COLUMN checked_at TO PRIVATE_SQL_COLUMN')
+        value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertEqual(value['status'], 'UNVERIFIED')
+        self.assertEqual(value['error_code'], 'SQLITE_SCHEMA_COLUMN_MISMATCH')
+        self.assertEqual(value['diagnostic']['stage'], 'QUERY_PLAN')
+        self.assertFalse(value['diagnostic']['interrupted_by_deadline'])
+        self.assertNotIn('PRIVATE_', json.dumps(value))
+        self.assertNotIn('records', value)
+
+    def test_unavailable_host_function_has_typed_cause_without_raw_error(self):
+        connect = sqlite3.connect
+        class WithoutJson:
+            def __init__(self,*args,**kwargs): self.connection=connect(*args,**kwargs)
+            def __getattr__(self,name): return getattr(self.connection,name)
+            def execute(self,sql,*args):
+                if 'json_group_array(' in sql:
+                    raise sqlite3.OperationalError('no such function: PRIVATE_HOST_DETAIL')
+                return self.connection.execute(sql,*args)
+        with patch.object(monitor.sqlite3,'connect',WithoutJson):
+            value = monitor.instrument_inventory_host(self.root, at=NOW)
+        self.assertEqual(value['status'], 'UNVERIFIED')
+        self.assertEqual(value['error_code'], 'SQLITE_FUNCTION_UNAVAILABLE')
+        self.assertEqual(value['diagnostic']['stage'], 'QUERY_PLAN')
+        self.assertNotIn('PRIVATE_', json.dumps(value))
+        self.assertNotIn('records', value)
+
+    def test_manual_inventory_does_not_expand_comparison_artifact_or_schedule(self):
+        text = (SOURCE.parents[1] / '.github/workflows/rc6-market-watch-readonly.yml').read_text()
+        start = text.index('name: Inventory public instrument metadata on manual runs only')
+        end = text.index('name: Diagnose SHADOW SQLite stages on manual runs only', start)
+        self.assertIn("github.event_name == 'workflow_dispatch'", text[start:end])
+        self.assertIn('name: rc6-instrument-inventory-', text[start:end])
+        start = text.index('name: Save immutable per-run evidence')
+        end = text.index('name: Fail checks on verified critical or confirmed P1', start)
+        self.assertNotIn('audit-inventory', text[start:end])
+
+
 if __name__ == "__main__":
     unittest.main()
 
