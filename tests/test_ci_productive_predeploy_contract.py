@@ -147,3 +147,26 @@ def test_governed_gate_rejects_actual_pytest_skip_and_xfail_receipts(tmp_path):
         receipt = json.loads(paths['/tmp/porota-governed-tests.json'].read_text())
         assert receipt['status'] == expected
         assert (result.returncode == 0) == (expected == 'GREEN')
+
+
+def test_predeploy_forces_unexpected_xpass_to_fail(tmp_path):
+    """Pytest rc and native XML must turn XPASS into a failure."""
+    import os
+    import subprocess
+    import sys
+    from xml.etree import ElementTree as ET
+
+    assert 'python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=' in PREDEPLOY
+    file = tmp_path / 'test_unexpected_pass.py'
+    file.write_text('import pytest\\n@pytest.mark.xfail(reason="expected failure")\\ndef test_unexpected_pass():\\n    assert True\\n'.replace('\\n', '\n'))
+    junit = tmp_path / 'strict.xml'
+    result = subprocess.run(
+        [sys.executable, '-m', 'pytest', '-q', '-o', 'xfail_strict=true',
+         '--junitxml=' + str(junit), str(file)],
+        env=os.environ | {'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'},
+        capture_output=True, text=True, timeout=15,
+    )
+    root = ET.parse(junit).getroot()
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert len(list(root.iter('testcase'))) == 1
+    assert len(list(root.iter('failure'))) == 1
