@@ -208,7 +208,14 @@ def test_runtime_spot_book_requires_guard_and_matching_fixture_receipt(tmp_path,
     assert direct._open(candidate, D("0.8"), {})[:2] == (
         False, "PAPER_ADMISSION_GUARD_MISSING")
 
-    guarded = PaperBroker(store, initial_cash="10000", admission_guard=lambda *_: (True, ""))
+    def readable_contract(_quote, live_store):
+        # The production callback reads catalog rows through a second SQLite
+        # connection. Keep that shape working when the write lock is held.
+        with live_store.connect() as db:
+            assert db.execute("SELECT COUNT(*) FROM paper_workspace").fetchone()[0] == 1
+        return True, ""
+
+    guarded = PaperBroker(store, initial_cash="10000", admission_guard=readable_contract)
     assert guarded._open(candidate, D("0.8"), {})[:2] == (
         False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
     with store.connect() as db:
@@ -236,6 +243,51 @@ def test_runtime_spot_receipt_revoked_before_locked_insert_rolls_back(tmp_path, 
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+
+
+def test_runtime_spot_contract_revoked_before_locked_insert_rolls_back(tmp_path, monkeypatch):
+    from test_production_paper_v1634 import quote
+
+    path = tmp_path / "runtime.db"
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    checks = []
+
+    def contract_guard(_quote, _store):
+        checks.append(1)
+        return ((True, "") if len(checks) == 1 else
+                (False, "PAPER_EXACT_CONTRACT_NOT_READY"))
+
+    broker = PaperBroker(PaperStore(str(path)), initial_cash="10000", admission_guard=contract_guard)
+    assert broker._open(quote(ask_size="100"), D("0.8"), {})[:2] == (
+        False, "PAPER_EXACT_CONTRACT_NOT_READY")
+    assert len(checks) == 2
+    with broker.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+
+
+def test_runtime_future_contract_revoked_under_locked_admission_rolls_back(tmp_path, monkeypatch):
+    from test_rc6_future_paper_engine import broker as future_broker, quote as future_quote
+
+    clock = ["2026-10-05T12:00:00-03:00"]
+    broker = future_broker(tmp_path, clock)
+    monkeypatch.setenv("PAPER_V17_DB_PATH", broker.store.path)
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    checks = []
+
+    def contract_guard(_quote, _store):
+        checks.append(1)
+        return ((True, "") if len(checks) == 1 else
+                (False, "PAPER_EXACT_CONTRACT_NOT_READY"))
+
+    broker.admission_guard = contract_guard
+    assert broker._open_future(future_quote(clock[0]), D("0.8"), {"samples": 8})[:2] == (
+        False, "PAPER_EXACT_CONTRACT_NOT_READY")
+    assert len(checks) == 2
+    with broker.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_future_positions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
 
 
 def test_runtime_future_locked_gate_rejects_missing_receipt(tmp_path, monkeypatch):

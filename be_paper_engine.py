@@ -1247,11 +1247,12 @@ class PaperBroker:
             return self._open_future(q, score, features)
         return self._open(q, score, features)
 
-    def _runtime_preopen_error(self):
-        """The effective PAPER book needs an injected exact guard and a live receipt.
+    def _runtime_preopen_error(self, q=None):
+        """The effective PAPER book needs an injected guard and a live receipt.
 
         Synthetic books have independent admission contracts. Call this again
-        under the write transaction before inserting a new spot/future row.
+        under the write transaction before inserting a new spot/future row;
+        with a quote, recheck the exact-contract callback under that lock.
         """
         try:
             from cg_paper_workspace import database_path
@@ -1261,7 +1262,15 @@ class PaperBroker:
                 return "PAPER_ADMISSION_GUARD_MISSING"
             from rc6_paper_admission_gate import admission_status
             allowed, reason = admission_status()
-            return "" if allowed else (reason or "NO_GO_PAPER_SCALPING")
+            if not allowed:
+                return reason or "NO_GO_PAPER_SCALPING"
+            if q is not None:
+                try:
+                    allowed, reason = self.admission_guard(q, self.store)
+                    return "" if allowed else (reason or "NO_GO_PAPER_SCALPING")
+                except Exception:
+                    return "PAPER_PREOPEN_GATE_UNAVAILABLE"
+            return ""
         except (OSError, ValueError, TypeError):
             return "PAPER_PREOPEN_GATE_UNAVAILABLE"
 
@@ -1440,7 +1449,7 @@ class PaperBroker:
     def _future_locked_admission(self, q, at, candidate_notional, emergency_cap,
                                  candidate_risk,
                                  *, connection):
-        error = self._runtime_preopen_error()
+        error = self._runtime_preopen_error(q)
         if error:
             return error
         error = q.time_error(
@@ -2262,7 +2271,7 @@ class PaperBroker:
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, identidad o exposición cambiaron antes de registrar la compra", None
-            receipt_error = self._runtime_preopen_error()
+            receipt_error = self._runtime_preopen_error(q)
             if receipt_error:
                 return False, receipt_error, None
             mark_lineage(features, "intent", self)
