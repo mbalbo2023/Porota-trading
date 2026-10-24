@@ -39,6 +39,10 @@ def main():
                    for n in inventory.stdout.splitlines())
                if inventory.returncode == 0 else None)
     fs = os.statvfs('/')
+    available = fs.f_bavail * fs.f_frsize
+    inode_free_percent = (100.0 * fs.f_ffree / fs.f_files) if fs.f_files else 0.0
+    # Exact #733 frozen bytes plus the product policy's 2 GiB headroom.
+    required = 277389663 + 2 * 806479940 + 2 * 1632401 + 2147483648
     report = {
         'schema': 'RC6_733_HOST_PREFLIGHT_READONLY_V1',
         'candidate_sha': sys.argv[2],
@@ -47,11 +51,16 @@ def main():
         'lock_parent_safe': bool(safe_parent),
         'lock_status': lock_status,
         'contract_writers_running': writers,
-        'root_available_bytes': fs.f_bavail * fs.f_frsize,
+        'root_available_bytes': available,
+        'inode_free_percent': round(inode_free_percent, 6),
+        'frozen_pretransfer_required_bytes': required,
+        'disk_formula_pass_at_sample': available >= required,
+        'inode_gate_pass_at_sample': inode_free_percent >= 10,
         'side_effects': 'NONE_READ_ONLY',
     }
     report['status'] = ('GREEN' if safe_parent and lock_status != 'UNSAFE'
-                        and writers == 0 else 'RED')
+                        and writers == 0 and available >= required
+                        and inode_free_percent >= 10 else 'RED')
     print('RC6_733_HOST_PREFLIGHT=' + json.dumps(report, sort_keys=True))
     return 0 if report['status'] == 'GREEN' else 2
 
