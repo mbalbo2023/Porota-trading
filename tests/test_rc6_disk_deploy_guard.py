@@ -68,7 +68,9 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
     assert "image_size_bytes" in block
     assert "RC6_DISK_PRECLEAN=START" in block
     assert "rc6_disk_housekeeping.py" in block
-    assert "docker image prune -f" in block
+    assert "RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED" in block
+    assert "docker image prune -f" not in block
+    assert "docker builder prune -af" not in block
     assert block.index("RC6_DISK_PRECLEAN=START") < block.index("RC6_DISK_PRETRANSFER_GATE=GREEN")
 
 
@@ -81,7 +83,8 @@ def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     tail = text[native:cleanup + 200]
     assert "--mode cleanup" in tail
     assert "last-deploy-housekeeping.json" in tail
-    assert "docker image prune -f" in tail
+    assert "RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED" in tail
+    assert "docker image prune -f" not in tail
     assert "FINAL_INODE_FREE_PERCENT" in tail
 
 
@@ -113,10 +116,11 @@ def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candi
     assert "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE" in tail
     assert "porota-trading-bot:17.0.0-rc6-candidate-*" in tail
 
-    # Keep the broad prune dangling-only. Tagged deletion is limited to
-    # proven-unreferenced RC6 candidate tags above.
+    # Cleanup only proven-unreferenced RC6 candidates; no host-wide prune.
     assert "docker image prune -af" not in tail
-    assert "docker image prune -f" in tail
+    assert "docker image prune -f" not in tail
+    assert "docker builder prune -af" not in tail
+    assert "docker buildx prune -af" not in tail
 
 
 def test_final_cleanup_revalidates_critical_approval_after_cleanup() -> None:

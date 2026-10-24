@@ -1,0 +1,64 @@
+name: RC6 733 audit fix-forward diagnostic
+
+on:
+  push:
+    branches:
+      - work/rc6-733-audit-fixforward-20261024
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-733-audit-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offhost:
+    name: Offhost gate and cleanup regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install exact Python lock
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+      - name: Syntax and targeted adversarial regressions
+        run: |
+          set -Eeuo pipefail
+          python3 -m compileall -q tests/test_ci_productive_predeploy_contract.py tests/test_rc6_disk_deploy_guard.py tests/test_rc6_disk_materialization_reserve.py
+          python3 -m pytest -q -p no:cacheprovider             tests/test_ci_productive_predeploy_contract.py             tests/test_rc6_disk_deploy_guard.py             tests/test_rc6_disk_materialization_reserve.py             tests/test_rc6_deploy_host_mutex.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import yaml
+          for filename in ('porota-predeploy-v2.yml','porota-deploy-v2-promote.yml'):
+              doc=yaml.safe_load((Path('.github/workflows')/filename).read_text())
+              for job in doc['jobs'].values():
+                  for step in job['steps']:
+                      if 'run' in step:
+                          subprocess.run(['bash','-n'],input=step['run'],text=True,check=True)
+          print('RC6_FIX_FORWARD_SYNTAX=GREEN')
+          PY
+          echo 'DROPLET_TOUCHED=NO'
+      - name: Diagnose sudo file-descriptor inheritance on runner only
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os, subprocess, tempfile
+          fd,path=tempfile.mkstemp(prefix='rc6-fd-runner-')
+          try:
+              # Match the wrapper's pass_fds followed by a nested sudo child.
+              result=subprocess.run(['sudo','-n','python3','-c',
+                  'import os,sys; os.fstat(int(sys.argv[1])); print("OPEN")',
+                  str(fd)],pass_fds=(fd,),text=True,capture_output=True)
+              print('RC6_RUNNER_NESTED_SUDO_FD=' +
+                    ('OPEN' if result.returncode==0 and result.stdout.strip()=='OPEN'
+                     else 'CLOSED_OR_UNAVAILABLE'))
+              print('RC6_RUNNER_NESTED_SUDO_RC=' + str(result.returncode))
+          finally:
+              os.close(fd); os.unlink(path)
+          PY
+          echo 'DROPLET_TOUCHED=NO'

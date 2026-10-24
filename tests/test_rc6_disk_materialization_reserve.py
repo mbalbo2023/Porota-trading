@@ -49,53 +49,38 @@ def test_postload_guard_precedes_host_services_and_long_contract_sweep():
     assert loaded < guard < apply
     block = text[loaded:guard]
     assert '--phase postload' in block
-    # The general housekeeper requires running containers; this stage is
-    # deliberately drained. Only reference-safe Docker/cache cleanup applies.
+    # The drained stage cannot prove ownership of host-wide Docker cache.
+    # A low measured reserve must fail closed before services or contract sweep.
     assert 'rc6_disk_housekeeping.py' not in block
-    assert 'docker image prune -f' in block
-    assert 'docker builder prune -af' in block
-    assert 'docker system prune' not in block
-    assert 'docker image prune -af' not in block
-    assert block.count('check_postload_reserve') >= 3
+    assert 'FOREIGN_CACHE_PRESERVED' in block
+    assert 'docker image prune -f' not in block
+    assert 'docker builder prune -af' not in block
+    assert 'docker buildx prune -af' not in block
+    assert block.count('check_postload_reserve') >= 2
 
 
-@pytest.mark.parametrize('recovered,expected', [(True, 0), (False, 42)])
-def test_actual_postload_shell_rechecks_after_cleanup_and_fails_closed(tmp_path, recovered, expected):
+@pytest.mark.parametrize('free,expected', [(2147483648, 0), (1766100992, 42)])
+def test_actual_postload_shell_preserves_foreign_cache_and_fails_closed(tmp_path, free, expected):
     import os
     import shlex
     workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     start = workflow.index('          check_postload_reserve()')
     end = workflow.index('          sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py"', start)
     block = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
-    flag = tmp_path / 'pruned'
-    calls = tmp_path / 'calls'
     bin_dir = tmp_path / 'bin'; bin_dir.mkdir()
-    # Real guard/policy run in a child process. Only host metrics and Docker
-    # effects are simulated; no Docker/production path is touched locally.
     python_stub = bin_dir / 'python3'
     python_stub.write_text('#!/bin/bash\nif [ "$1" = -c ]; then\n'
-        + ('if [ -f "$PRUNED" ]; then echo 2147483648; else echo 1766100992; fi\n' if recovered else 'echo 1766100992\n')
-        + 'echo 89.56\nelse\nexec ' + shlex.quote(sys.executable) + ' "$@"\nfi\n')
-    sudo_stub = bin_dir / 'sudo'
-    sudo_stub.write_text('#!/bin/bash\nset -eu\nshift\n'
-        'printf "%s\\n" "$*" >> "$CALLS"\n'
-        'case "$*" in\n'
-        '"docker image prune -f"|"docker builder prune -af"|"docker buildx prune -af") touch "$PRUNED";;\n'
-        '"docker buildx version") exit 0;;\n'
-        '*) exit 99;;\nesac\n')
-    python_stub.chmod(0o700); sudo_stub.chmod(0o700)
+        'echo "$RC6_TEST_FREE_BYTES"\necho 89.56\nelse\nexec '
+        + shlex.quote(sys.executable) + ' "$@"\nfi\n')
+    python_stub.chmod(0o700)
     env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
-               REPO=str(ROOT), PRUNED=str(flag), CALLS=str(calls))
+               REPO=str(ROOT), RC6_TEST_FREE_BYTES=str(free))
     result = subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + block],
                             env=env, capture_output=True, text=True, timeout=15)
     assert result.returncode == expected, result.stderr + result.stdout
-    assert 'RC6_DISK_POSTLOAD_RESERVE=RED' in result.stdout
-    assert result.stdout.count('RC6_DISK_POSTLOAD_RESERVE=') == 2
-    assert ('RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN' in result.stdout) == recovered
-    assert ('FIX_FORWARD_VALIDATION_REQUIRED' in result.stdout) != recovered
-    assert calls.read_text().splitlines() == [
-        'docker image prune -f', 'docker builder prune -af',
-        'docker buildx version', 'docker buildx prune -af']
+    assert result.stdout.count('RC6_DISK_POSTLOAD_RESERVE=') == 1
+    assert ('RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN' in result.stdout) == (expected == 0)
+    assert ('FOREIGN_CACHE_PRESERVED' in result.stdout) == (expected != 0)
 
 
 @pytest.mark.parametrize('housekeeping_rc,reason,expected', [
@@ -110,7 +95,7 @@ def test_preclean_only_defers_exact_residual_space_result_to_final_admission(tmp
     import shlex
     workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     start = workflow.index('          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json')
-    end = workflow.index('          sudo -n docker image prune -f', start)
+    end = workflow.index('          # Shared Docker images and build caches', start)
     block = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
     receipt = tmp_path / 'housekeeping.json'
     block = block.replace('/tmp/porota-predeploy-housekeeping.json', shlex.quote(str(receipt)))

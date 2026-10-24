@@ -388,8 +388,8 @@ jobs:
           # Other run/attempt staging has a distinct owner. Retain it until
           # that exact attempt's bounded cleanup; low disk must fail closed.
           # General retention cleanup may finish safely but still report 43
-          # because Docker's unused cache/old critical image is not reclaimed
-          # until the following steps. Accept only that exact structured
+          # because the old RC6 critical image may not be reclaimed
+          # until the following owned-image checks. Accept only that exact structured
           # residual-space result, then enforce the full admission gate below.
           sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
           set +e
@@ -413,9 +413,9 @@ jobs:
           elif [ "$PRECLEAN_HOUSEKEEPING_RC" -ne 0 ]; then
             exit "$PRECLEAN_HOUSEKEEPING_RC"
           fi
-          sudo -n docker image prune -f
-          sudo -n docker builder prune -af
-          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+          # Shared Docker images and build caches have no RC6 ownership proof.
+          # The measured reserve below fails closed if owned cleanup is insufficient.
+          echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
 
           STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
           import sqlite3,sys
@@ -483,7 +483,7 @@ jobs:
                 esac
               done
               sudo -n docker image rm "$CRIT_IMAGE" >/dev/null 2>&1 || true
-              sudo -n docker image prune -f
+              echo 'RC6_UNSCOPED_DOCKER_IMAGE_PRUNE=SKIPPED'
             fi
             echo "RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|old_referenced=$OLD_IMAGE_USERS|image=$CURRENT_IMAGE"
           fi
@@ -765,17 +765,10 @@ jobs:
               --available-bytes "${metrics[0]}" --inode-free-percent "${metrics[1]}" --json
           }
           if ! check_postload_reserve; then
-            echo "RC6_DISK_POSTLOAD_SAFE_CLEANUP=START"
-            # General housekeeping requires running containers and already ran
-            # in preclean. At this drained stage reclaim only unused caches
-            # and dangling images; Docker preserves all container references.
-            sudo -n docker image prune -f
-            sudo -n docker builder prune -af
-            if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
-            if ! check_postload_reserve; then
-              echo "RC6_DISK_POSTLOAD_RESERVE_GATE=RED|FIX_FORWARD_VALIDATION_REQUIRED"
-              exit 42
-            fi
+            # No ownership proof exists for host-global build cache or dangling
+            # images. Preserve other owners and fail closed on low reserve.
+            echo "RC6_DISK_POSTLOAD_RESERVE_GATE=RED|FOREIGN_CACHE_PRESERVED"
+            exit 42
           fi
           echo "RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN"
 
@@ -1507,9 +1500,7 @@ jobs:
             --mode cleanup --preserve-backups \
             --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
-          sudo -n docker image prune -f
-          sudo -n docker builder prune -af
-          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+          echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
           rm -rf "$REMOTE_DIR"
           mapfile -t FINAL_DISK_METRICS < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
           DISK_AFTER="${FINAL_DISK_METRICS[0]}"
