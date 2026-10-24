@@ -203,6 +203,35 @@ class HostMutexTests(unittest.TestCase):
             self.assertEqual(mutex.run(self.args('cleanup_final')), 0)
             self.assertFalse(self.barrier.exists())
 
+    def test_only_exact_orphan_contract_can_be_stopped_before_recovery(self):
+        from contextlib import ExitStack
+        calls = [0]
+        def fake_run(cmd, **kwargs):
+            calls[0] += 1
+            if cmd[0] == 'docker':
+                # The promotion created exactly its named contract; after
+                # cleanup_contract the inventory becomes empty.
+                value = 'porota-deploy-contract-' + SHA + '\n' if calls[0] == 3 else ''
+                return SimpleNamespace(returncode=0, stdout=value)
+            return SimpleNamespace(returncode=1 if calls[0] == 2 else 0)
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex.subprocess, 'run', side_effect=fake_run))
+            with self.assertRaisesRegex(RuntimeError, 'CONTRACT_WRITER_REQUIRES_EXACT_STOP'):
+                mutex.run(self.args('promotion'))
+            self.assertEqual(json.loads(self.barrier.read_text())['status'], 'CONTRACT_ONLY')
+            with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):
+                mutex.run(self.args('cleanup_recover'))
+            with self.assertRaisesRegex(RuntimeError, 'BARRIER_OTHER_ATTEMPT'):
+                mutex.run(['nobody', 'root', '--attempt', SHA, '9876', ATTEMPT,
+                           '--phase', 'promotion', 'true'])
+            self.assertEqual(mutex.run(['nobody', 'user', '--attempt', SHA, RUN,
+                ATTEMPT, '--phase', 'cleanup_contract', '--allow-contract-lifecycle',
+                'true']), 0)
+            self.assertEqual(json.loads(self.barrier.read_text())['status'], 'IDLE')
+            self.assertEqual(mutex.run(self.args('cleanup_final')), 0)
+            self.assertFalse(self.barrier.exists())
+
     def test_sudo_like_child_closes_fd_then_parent_lost_keeps_barrier(self):
         # Synthetic SSH loss: the child retains no flock fd; the marker alone
         # prevents a second writer while that exact child is alive.

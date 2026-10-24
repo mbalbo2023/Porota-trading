@@ -100,7 +100,7 @@ def _read_barrier(directory_path: Path, trusted_uid: int = 0) -> dict | None:
                 not isinstance(state['attempt'], str) or not NUMBER.fullmatch(state['attempt']) or
                 not isinstance(state['phase'], str) or state['phase'] not in PHASES or
                 not isinstance(state['status'], str) or
-                state['status'] not in {'IDLE', 'INFLIGHT'}):
+                state['status'] not in {'IDLE', 'INFLIGHT', 'CONTRACT_ONLY'}):
             raise RuntimeError('BARRIER_INVALID')
         return state
     finally:
@@ -139,7 +139,8 @@ def _enter(directory_path: Path, identity: tuple[str, str, str], phase: str) -> 
     if state is not None:
         if tuple(state[k] for k in ('candidate', 'run', 'attempt')) != identity:
             raise RuntimeError('BARRIER_OTHER_ATTEMPT')
-        if state['status'] != 'IDLE':
+        if state['status'] != 'IDLE' and not (
+                state['status'] == 'CONTRACT_ONLY' and phase == 'cleanup_contract'):
             raise RuntimeError('BARRIER_PRIOR_OPERATION_UNCERTAIN')
     _write_barrier(directory_path, dict(zip(('candidate', 'run', 'attempt'), identity),
                                        phase=phase, status='INFLIGHT'))
@@ -157,6 +158,15 @@ def _finish(directory_path: Path, identity: tuple[str, str, str], phase: str,
     else:
         state['status'] = 'IDLE'
         _write_barrier(directory_path, state)
+
+
+def _contract_only(directory_path: Path, identity: tuple[str, str, str], phase: str) -> None:
+    state = _read_barrier(directory_path)
+    if (state is None or tuple(state[k] for k in ('candidate', 'run', 'attempt')) != identity or
+            state['phase'] != phase or state['status'] != 'INFLIGHT'):
+        raise RuntimeError('BARRIER_CHANGED_DURING_OPERATION')
+    state['status'] = 'CONTRACT_ONLY'
+    _write_barrier(directory_path, state)
 
 
 def _enable_subreaper() -> None:
@@ -182,16 +192,18 @@ def _drain_children(max_seconds: float = 10) -> None:
         time.sleep(.05)
 
 
-def _check_contract_writer() -> None:
+def _contract_writers() -> set[str]:
     inventory = subprocess.run(
         ['docker', 'ps', '--format', '{{.Names}}', '--filter',
          'name=porota-deploy-contract-'], capture_output=True,
         text=True, timeout=10, check=False)
     if inventory.returncode:
         raise RuntimeError('CONTRACT_WRITER_INVENTORY_FAILED')
-    if any(re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name)
-           for name in inventory.stdout.splitlines()):
-        raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
+    names = set(inventory.stdout.splitlines())
+    if any(not re.fullmatch(r'porota-deploy-contract-[0-9a-f]{40}', name)
+           for name in names):
+        raise RuntimeError('CONTRACT_WRITER_NAME_INVALID')
+    return names
 
 
 def run(argv: list[str]) -> int:
@@ -225,12 +237,14 @@ def run(argv: list[str]) -> int:
         if existing is not None and not observe:
             if tuple(existing[k] for k in ('candidate', 'run', 'attempt')) != identity:
                 raise RuntimeError('BARRIER_OTHER_ATTEMPT')
-            if existing['status'] != 'IDLE':
+            if existing['status'] != 'IDLE' and not (
+                    existing['status'] == 'CONTRACT_ONLY' and phase == 'cleanup_contract'):
                 raise RuntimeError('BARRIER_PRIOR_OPERATION_UNCERTAIN')
         # A Docker child can outlive a lost SSH/sudo CLI even after its parent
         # releases flock. Never start another mutator beside that exact writer.
         if not allow_contract_lifecycle:
-            _check_contract_writer()
+            if _contract_writers():
+                raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
         if not observe:
             _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
@@ -248,7 +262,16 @@ def run(argv: list[str]) -> int:
         result = subprocess.run(command, check=False, env=env, pass_fds=(fd,),
                                 preexec_fn=drop_privileges)
         _drain_children()
-        _check_contract_writer()
+        writers = _contract_writers()
+        if writers:
+            # A known, exact Docker contract is the one writer that can be
+            # stopped safely by the existing failure-cleanup first stage.
+            # All Linux descendants have exited; retain an exclusive barrier
+            # and admit only that exact attempt's contract-stop action.
+            if phase == 'promotion' and writers == {'porota-deploy-contract-' + identity[0]}:
+                _contract_only(LOCK_DIR, identity, phase)
+                raise RuntimeError('CONTRACT_WRITER_REQUIRES_EXACT_STOP')
+            raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
         if not observe:
             _finish(LOCK_DIR, identity, phase,
                     result.returncode == 0 and phase in FINAL_PHASES)
