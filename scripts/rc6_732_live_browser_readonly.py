@@ -5,6 +5,7 @@ Artifacts contain paths, counts, statuses and redacted screenshots, never bearer
 identities, order/account values or raw HTML. The request interceptor denies writes.
 """
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 import json
 import os
@@ -19,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from rc6_trader_dashboard.navigation import CANONICAL_PATHS
 
 BASE = "http://127.0.0.1:18085"
+STATUS = re.compile(r"\b(?:NO_VERIFICADO|STALE|SOURCE_UNAVAILABLE|PRODUCTION_PAPER|"
+                    r"COMMITTED_COHERENT_SHADOW|SHADOW|PAPER|HOLD|MARKET_CLOSED|"
+                    r"WAITING_MARKET|SUSPENDED_BY_OPERATOR|RUNTIME_READY)\b", re.I)
 MOBILE = ("/", "/en-vivo", "/en-vivo/posiciones", "/en-vivo/cierres",
           "/trading", "/trading/cauciones", "/universo", "/instrumentos",
           "/riesgo", "/analitica/anual", "/sistema", "/sistema/backups")
@@ -57,7 +61,8 @@ def inspect_rows(page, report, item, path, second=False):
                 raise RuntimeError("TRIGGER_COUNT")
             dialog_id = trigger.get_attribute("data-detail-dialog")
             candidate = page.locator("dialog[id]").filter(has=page.locator(".dialog-body"))
-            if not dialog_id or candidate.count() < 1:
+            local_dialog = row.locator("dialog.row-dialog")
+            if not dialog_id or candidate.count() < 1 or local_dialog.count() != 1:
                 raise RuntimeError("DIALOG_MISSING")
             trigger.click(timeout=3500)
             state = page.evaluate("""id => {
@@ -69,7 +74,7 @@ def inspect_rows(page, report, item, path, second=False):
                 fields:content?.querySelectorAll('dt,dd').length || 0,
                 scrollable:!!content && content.scrollHeight>=content.clientHeight};
             }""", dialog_id)
-            if not state or not all(state.values()):
+            if not state or not all(state.values()) or not local_dialog.evaluate("el => el.open && el.matches(':modal')"):
                 raise RuntimeError("DIALOG_STATE")
             item[key]["dialogs_checked"] += 1
             page.evaluate("id => document.getElementById(id).close()", dialog_id)
@@ -134,6 +139,15 @@ def main(output):
                     response = page.goto(BASE + path, wait_until="domcontentloaded", timeout=9000)
                     item["http"] = response.status if response else None
                     item["desktop"] = geometry(page)
+                    safe_text = page.locator("body").inner_text(timeout=3500)
+                    item["status_counts"] = dict(sorted(Counter(x.upper() for x in STATUS.findall(safe_text)).items()))
+                    item["duplicate_dom_ids"] = page.evaluate("""() => {
+                      const all = [...document.querySelectorAll('[id]')].map(el => el.id);
+                      return all.length - new Set(all).size;
+                    }""")
+                    if item["duplicate_dom_ids"]:
+                        report["findings"].append({"kind": "duplicate_dom_ids", "path": path,
+                                                   "count": item["duplicate_dom_ids"]})
                     if item["http"] != 200 or item["desktop"]["heading"] < 1:
                         report["findings"].append({"kind": "route_render_failed", "path": path,
                                                    "http": item["http"]})
@@ -187,7 +201,15 @@ def main(output):
                     metrics = geometry(page)
                     if max(metrics["body"], metrics["html"]) > 392:
                         report["findings"].append({"kind": "mobile_horizontal_overflow", "path": path})
-                    snapshot(page, output, report, path, 390)
+                    first = page.locator("tr[data-row='true']").first
+                    if first.count():
+                        first.locator("button[data-detail-dialog]").click(timeout=3500)
+                        if not first.locator("dialog.row-dialog").evaluate(
+                                "el => el.open && el.matches(':modal') && el.getBoundingClientRect().width <= innerWidth + 2"):
+                            raise RuntimeError("MOBILE_ROW_DIALOG_NOT_OPEN")
+                        snapshot(page, output, report, path, 390, "-dialog")
+                    else:
+                        snapshot(page, output, report, path, 390)
                 except Exception as exc:
                     report["findings"].append({"kind": "mobile_exception", "path": path,
                                                "error_type": type(exc).__name__})
