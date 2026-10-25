@@ -98,111 +98,12 @@ jobs:
                   'a3_target_markets':target_markets,'candidate_identity_counts':candidate_counts,
                   'cutoff_repair':cutoff,'cutoff_states':cutoff_failures,'ppi_source_sync':source,
                   'history_db_bytes':os.stat(history).st_size,
+                  'history_volume_available_bytes':os.statvfs(history).f_bavail*os.statvfs(history).f_frsize,
                   'history_schema_columns':cols,'provider_requests':0,'history_writes':False,
                   'ppi_watch_accessed':False}
           print(json.dumps(result,sort_keys=True))
           PY
           REMOTE
-      - name: Count A3 catalog alignment with one bounded public GET
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          timeout 65 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
-          import collections,json,sqlite3
-          from datetime import date,datetime,timedelta,timezone
-          import requests
-          from pathlib import Path
-          from cz_a3_cem_public_history_hf6 import DEFAULT_CEM_BASE_URL
-          from db_a3_cem_normalizer_hf6 import normalize_symbols,closing_to_candle
-          from ew_a3_history_rc6 import load_targets,_resolve_source_identity,FAMILIES
-
-          class Store:
-              def connect(self):
-                  c=sqlite3.connect(Path('/app/data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True,timeout=.3)
-                  c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');return c
-          targets=load_targets(Store())
-          with Store().connect() as c:
-              nonoperational_futures=[tuple(r) for r in c.execute(
-                  "SELECT ticker,market,currency,settlement,status,can_simulate "
-                  "FROM candidate_identity_v2 WHERE instrument_type='FUTUROS' "
-                  "AND market IN ('A3','ROFEX') AND currency NOT IN ('','UNKNOWN') "
-                  "AND settlement NOT IN ('','UNKNOWN') LIMIT 500")]
-          result={'schema':'rc6-a77-a3-alignment-v1','target_count':len(targets),
-                  'historical_requests':0,'catalog_requests':1,'history_writes':False,
-                  'ppi_watch_accessed':False,'real_routes':'NOT_CALLED'}
-          try:
-              with requests.get(DEFAULT_CEM_BASE_URL+'/api/v1/symbols',timeout=10,
-                      headers={'Accept':'application/json','User-Agent':'Porota-HF6-CEM/1.0'},stream=True) as response:
-                  response.raise_for_status()
-                  chunks=[];total=0
-                  for chunk in response.iter_content(chunk_size=65536):
-                      total+=len(chunk)
-                      if total>8*1024*1024:raise ValueError('A3_CATALOG_BYTE_BUDGET')
-                      chunks.append(chunk)
-              catalog=normalize_symbols(json.loads(b''.join(chunks)))
-              by_identity={(x.symbol,x.family):x for x in catalog if x.family in FAMILIES}
-              counts=collections.Counter(_resolve_source_identity(t[0],t[1],by_identity)[2]
-                                         for t in targets)
-              future_counts=collections.Counter((t[1],t[4],t[5],
-                  _resolve_source_identity(t[0],'FUTUROS',by_identity)[2])
-                  for t in nonoperational_futures)
-              result.update(state='VALIDATED',catalog_bytes=total,
-                            catalog_family_counts=dict(sorted(collections.Counter(x.family for x in catalog if x.family in FAMILIES).items())),
-                            target_alignment=dict(sorted(counts.items())),
-                            nonoperational_future_targets=len(nonoperational_futures),
-                            future_alignment=[{'market':k[0],'status':k[1],'can_simulate':k[2],
-                                'alignment':k[3],'n':v} for k,v in sorted(future_counts.items())])
-              sample=[]
-              for target in nonoperational_futures:
-                  meta,source_symbol,alignment=_resolve_source_identity(target[0],'FUTUROS',by_identity)
-                  if not meta or not source_symbol or target[1]!='A3':continue
-                  try:expiry=date.fromisoformat(str(meta.maturity_date)[:10])
-                  except (TypeError,ValueError):continue
-                  if expiry>=datetime.now(timezone.utc).date():sample.append((expiry,target,source_symbol,alignment))
-              if sample:
-                  _expiry,chosen,source_symbol,alignment=sorted(sample,key=lambda x:x[0])[0]
-                  today=datetime.now(timezone.utc).date()
-                  params={'symbol':source_symbol,'from':(today-timedelta(days=7)).isoformat(),
-                          'to':today.isoformat(),'page':1,'pageSize':500}
-                  sample_result={'state':'NO_VERIFICADO','candidate_market':chosen[1],
-                                 'candidate_status':chosen[4],'identity_alignment':alignment,
-                                 'history_requests':1,'history_writes':False}
-                  try:
-                      with requests.get(DEFAULT_CEM_BASE_URL+'/api/v1/closing-prices',
-                              params=params,timeout=10,stream=True,
-                              headers={'Accept':'application/json','User-Agent':'Porota-HF6-CEM/1.0'}) as response:
-                          response.raise_for_status()
-                          chunks=[];count=0
-                          for chunk in response.iter_content(chunk_size=65536):
-                              count+=len(chunk)
-                              if count>2*1024*1024:raise ValueError('A3_SAMPLE_BYTE_BUDGET')
-                              chunks.append(chunk)
-                      payload=json.loads(b''.join(chunks))
-                      rows=payload.get('data') if isinstance(payload,dict) else None
-                      if not isinstance(rows,list):raise ValueError('A3_CLOSING_SHAPE_INVALID')
-                      valid=0;reasons=collections.Counter();days=[]
-                      for row in rows:
-                          if str(row.get('symbol') or '').upper()!=source_symbol:continue
-                          try:
-                              item=closing_to_candle(row,instrument_type='FUTUROS',
-                                  market=chosen[1],currency=chosen[2],settlement_identity=chosen[3],
-                                  observed_at=datetime.now(timezone.utc).isoformat())
-                              item.validate();valid+=1;days.append(item.date)
-                          except (TypeError,ValueError) as exc:
-                              code=str(exc).split(':',1)[0]
-                              reasons[code if code.startswith(('CEM_','HISTORY_')) else type(exc).__name__]+=1
-                      sample_result.update(state='VALIDATED',response_bytes=count,rows=len(rows),
-                                           exact_valid_rows=valid,invalid_reason_counts=dict(reasons),
-                                           latest_valid_day=max(days,default=None))
-                  except Exception as exc:sample_result.update(error_class=type(exc).__name__)
-                  result['one_future_history_sample']=sample_result
-              else:result['one_future_history_sample']={'state':'NO_ACTIVE_ALIGNED_FUTURE','history_requests':0}
-          except Exception as exc:
-              result.update(state='NO_VERIFICADO',error_class=type(exc).__name__)
-          print(json.dumps(result,sort_keys=True))
-          PY
       - name: Remove SSH material
         if: always()
         shell: bash
