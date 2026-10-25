@@ -125,6 +125,11 @@ def test_every_canonical_subview_is_authenticated_and_dark(client, path):
     assert len(soup.select(".primary-nav > a")) == 8
     assert len(soup.select("#porota-canonical-nav")) == 1
     assert len(soup.select("#porota-paper-mode")) == 1
+    # A responsive drawer must offer a named close control within the drawer;
+    # its covered opening toggle and an external keyboard are insufficient.
+    close = soup.select_one("#terminal-sidebar button[aria-label='Cerrar menú']")
+    assert close is not None and close.get('type') == 'button'
+    assert close.get_text(strip=True) == 'Cerrar menú'
     assert soup.select_one("#trader-terminal-tokens")
     assert soup.select_one("nav.subnav [aria-current=page]")
     assert len(soup.select(".terminal-table")) <= 1
