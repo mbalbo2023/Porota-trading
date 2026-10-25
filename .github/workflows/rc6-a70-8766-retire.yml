@@ -1,4 +1,4 @@
-name: RC6 A70 inspect isolated site 8766
+name: RC6 A70 retire isolated site 8766
 on:
   push:
     branches: [ops/rc6-a70-8766-retire-20261025]
@@ -9,7 +9,7 @@ concurrency:
   group: rc6-unified-paper-deploy
   cancel-in-progress: false
 jobs:
-  inspect:
+  retire:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -18,7 +18,7 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - name: Read bounded site and port ownership only
+      - name: Verify exact ownership then disable only site service
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -29,13 +29,29 @@ jobs:
           chmod 600 "$HOME/.ssh/known_hosts"
           ssh -i "$HOME/.ssh/rc6_a70" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
-          echo "A70_SITE_INSPECT_START=1"
-          for unit in porota-private-snapshot.service porota-live-decision-cockpit-rc6.timer porota-live-decision-cockpit-rc6.service; do
-            echo "UNIT=$unit"
-            sudo -n systemctl show "$unit" --no-pager --property=LoadState,ActiveState,UnitFileState,MainPID,ExecStart
-          done
-          if sudo -n ss -ltnp | grep -Eq '127[.]0[.]0[.]1:8766[[:space:]]'; then echo 'PORT_8766_LOCAL_LISTENER=YES'; else echo 'PORT_8766_LOCAL_LISTENER=NO'; fi
-          if sudo -n ss -ltnp | grep -Eq '(:|[.])8000[[:space:]]'; then echo 'PORT_8000_LISTENER=YES'; else echo 'PORT_8000_LISTENER=NO'; fi
-          if curl -fsS --max-time 3 -o /dev/null http://127.0.0.1:8766/health; then echo 'SITE_HEALTH_HTTP=200'; else echo 'SITE_HEALTH_HTTP=UNAVAILABLE'; fi
-          echo "A70_SITE_INSPECT_COMPLETE=1"
+          unit=porota-private-snapshot.service
+          [[ "$(sudo -n systemctl show "$unit" --property=LoadState --value)" == loaded ]]
+          [[ "$(sudo -n systemctl show "$unit" --property=ActiveState --value)" == active ]]
+          [[ "$(sudo -n systemctl show "$unit" --property=UnitFileState --value)" == enabled ]]
+          cmd="$(sudo -n systemctl show "$unit" --property=ExecStart --value)"
+          [[ "$cmd" == *'argv[]=/usr/bin/python3 /opt/porota-private-snapshot/server.py ;'* ]] || { echo 'A70_EXACT_SERVER=RED'; exit 21; }
+          pid="$(sudo -n systemctl show "$unit" --property=MainPID --value)"
+          [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )) || { echo 'A70_SITE_PID=RED'; exit 22; }
+          listener="$(sudo -n ss -ltnpH | awk '$4 ~ /:8766$/ {print}')"
+          [[ "$listener" == *'127.0.0.1:8766'* && "$listener" == *"pid=$pid,"* ]] || { echo 'A70_PORT_OWNERSHIP=RED'; exit 23; }
+          before8000="$(sudo -n ss -ltnpH | awk '$4 ~ /:8000$/ {print}')"
+          [[ -n "$before8000" ]] || { echo 'A70_DASHBOARD_8000_PRE=RED'; exit 24; }
+          observer_before="$(sudo -n docker inspect -f '{{.Id}}|{{.RestartCount}}' porota_production_observer)"
+          dashboard_before="$(sudo -n docker inspect -f '{{.Id}}|{{.RestartCount}}' porota_production_dashboard)"
+          echo 'A70_EXACT_SITE_PREFLIGHT=GREEN'
+          sudo -n systemctl disable --now "$unit"
+          [[ "$(sudo -n systemctl show "$unit" --property=ActiveState --value)" == inactive ]]
+          [[ "$(sudo -n systemctl show "$unit" --property=UnitFileState --value)" == disabled ]]
+          if sudo -n ss -ltnpH | awk '$4 ~ /:8766$/ {print}' | grep -q .; then echo 'A70_PORT_8766_POST=RED'; exit 25; fi
+          [[ -n "$(sudo -n ss -ltnpH | awk '$4 ~ /:8000$/ {print}')" ]] || { echo 'A70_DASHBOARD_8000_POST=RED'; exit 26; }
+          [[ "$observer_before" == "$(sudo -n docker inspect -f '{{.Id}}|{{.RestartCount}}' porota_production_observer)" ]]
+          [[ "$dashboard_before" == "$(sudo -n docker inspect -f '{{.Id}}|{{.RestartCount}}' porota_production_dashboard)" ]]
+          echo 'A70_SITE_8766=DISABLED_AND_STOPPED'
+          echo 'A70_DASHBOARD_8000=LISTENING_SAME_CONTAINERS'
+          echo 'A70_COLLECTOR_TIMER=UNCHANGED_BY_THIS_WORKFLOW'
           REMOTE
