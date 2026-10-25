@@ -1,8 +1,10 @@
-name: RC6 A74 bounded scheduler and storage audit
-on:
+name: RC6 A74 offhost history and scheduler reconciliation
+'on':
   push:
-    branches: [ops/rc6-a71-host-audit-20261025]
-    paths: [.github/workflows/rc6-a71-host-final-readonly.yml]
+    branches:
+    - ops/rc6-a71-host-audit-20261025
+    paths:
+    - .github/workflows/rc6-a71-host-final-readonly.yml
 permissions:
   contents: read
 concurrency:
@@ -11,203 +13,229 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 10
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - name: Finite metadata and worker sample without runtime writes
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a74"
-          chmod 600 "$HOME/.ssh/rc6_a74"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
-          timeout 240 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_readonly.json" <<'PY'
-          """Finite RC6 metadata audit. Never starts a worker or writes runtime data."""
-          import datetime,json,os,pathlib,re,shutil,sqlite3,subprocess,time
-          from zoneinfo import ZoneInfo
-          
-          START=time.monotonic()
-          UTC=datetime.timezone.utc
-          ROOT=pathlib.Path('/opt/porota-trading')
-          R={'schema':'RC6_A74_READONLY_V1','source_utc':datetime.datetime.now(UTC).isoformat(),
-             'read_only':True,'source_freshness_renewed':False,'warnings':[]}
-          
-          def command(args,seconds=5):
-              try:
-                  p=subprocess.run(args,capture_output=True,text=True,timeout=seconds)
-                  return p.returncode,p.stdout[:250000]
-              except (OSError,subprocess.TimeoutExpired):return 124,''
-          
-          def show(unit,props):
-              rc,out=command(['systemctl','show',unit,'--no-pager','--property='+','.join(props)])
-              return {'query_rc':rc,**dict(x.split('=',1) for x in out.splitlines() if '=' in x)}
-          
-          def mem_available():
-              try:return int(re.search(r'^MemAvailable:\s+([0-9]+)',pathlib.Path('/proc/meminfo').read_text(),re.M).group(1))*1024
-              except (OSError,AttributeError):return 0
-          
-          R['resources']={'free_bytes':shutil.disk_usage('/').free,'memory_available_bytes':mem_available()}
-          rc,raw=command(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status','native_acceptance_mode','source_freshness_renewed')}))"])
-          try:R['marker']={'query_rc':rc,**json.loads(raw)}
-          except ValueError:R['marker']={'query_rc':rc,'error':'MARKER_UNAVAILABLE'}
-          R['containers']={}
-          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
-              rc,raw=command(['sudo','-n','docker','inspect','-f','{{.Image}} {{.State.Status}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.StartedAt}}',name])
-              vals=raw.split()
-              if rc==0 and len(vals)==5 and re.fullmatch(r'sha256:[0-9a-f]{64}',vals[0]):
-                  R['containers'][name]={'image':vals[0],'status':vals[1],'restarts':vals[2],'oom':vals[3],'started_at':vals[4]}
-              else:R['containers'][name]={'error':'CONTAINER_QUERY_FAILED','query_rc':rc}
-          
-          rc,raw=command(['systemctl','list-unit-files','porota*.timer','--no-legend','--no-pager'])
-          names=sorted(set(x.split()[0] for x in raw.splitlines() if re.match(r'^porota[A-Za-z0-9@_.-]*\.timer\s',x)))
-          names=[n for n in names if not re.search(r'ppi[-_]?watch',n,re.I)]
-          R['timer_inventory']={'query_rc':rc,'count':len(names),'ppi_watch_excluded':True,'rows':[]}
-          services=set()
-          for unit in names[:64]:
-              row=show(unit,('ActiveState','SubState','UnitFileState','LastTriggerUSec','NextElapseUSecRealtime','NextElapseUSecMonotonic','Triggers','Persistent','AccuracyUSec','RandomizedDelayUSec','TimersCalendar','TimersMonotonic'))
-              row['unit']=unit
-              _,definition=command(['systemctl','cat',unit,'--no-pager'])
-              row['calendar_definition']=[x for x in definition.splitlines() if x.startswith(('OnCalendar=','OnBootSec=','OnUnitActiveSec=','Unit=','Persistent='))][:12]
-              target=next((x[5:] for x in row['calendar_definition'] if x.startswith('Unit=')),None)
-              if not target:
-                  target=next((x for x in row.get('Triggers','').split() if x.endswith('.service')),None)
-              if target and re.fullmatch(r'porota[A-Za-z0-9@_.-]*\.service',target) and not re.search(r'ppi[-_]?watch',target,re.I):services.add(target)
-              row['service']=target
-              R['timer_inventory']['rows'].append(row)
-          
-          R['services']=[]
-          for unit in sorted(services):
-              row=show(unit,('ActiveState','SubState','UnitFileState','Result','ExecMainStatus','CPUUsageNSec','IOReadBytes','IOWriteBytes','MemoryPeak','NRestarts','ExecMainStartTimestamp','ExecMainExitTimestamp','ExecMainStartTimestampMonotonic','ExecMainExitTimestampMonotonic','InvocationID','TimeoutStartUSec','Nice','IOSchedulingClass'))
-              row['unit']=unit
-              rc,definition=command(['systemctl','cat',unit,'--no-pager'])
-              starts=[x for x in definition.splitlines() if x.startswith('ExecStart=')]
-              row['docker_wrapper']=any('docker' in x for x in starts)
-              row['programs']=sorted(set(y for x in starts for y in re.findall(r'(?<![A-Za-z0-9_])[A-Za-z0-9_/-]+\.(?:py|sh)\b',x)))[:12]
-              row['has_explicit_flock']=any('flock' in x for x in starts)
-              R['services'].append(row)
-          
-          # Only lifecycle metadata is emitted. No provider log line leaves the host.
-          R['journal']={'coverage':'BOUNDED_SAMPLE_NOT_COMPLETE','since_utc':'2026-10-23T12:00:00Z','events':[]}
-          if services:
-              args=['sudo','-n','journalctl','--since','2026-10-23 12:00:00 UTC','--no-pager','-o','json','-n','1800']
-              for s in sorted(services):args+=['-u',s]
-              rc,raw=command(args,10)
-              R['journal']['query_rc']=rc
-              R['journal']['possibly_truncated']=len(raw)>=250000
-              for line in raw.splitlines():
-                  try:o=json.loads(line)
-                  except ValueError:continue
-                  msg=o.get('MESSAGE','')
-                  if not isinstance(msg,str):continue
-                  unit=o.get('UNIT') or o.get('_SYSTEMD_UNIT')
-                  if unit not in services:continue
-                  event=next((n for p,n in ((r'^Starting ','STARTING'),(r'^Started ','STARTED'),(r'^Finished ','FINISHED'),(r'Deactivated successfully','SUCCESS'),(r'Failed with result','FAILED'),(r'Consumed [0-9]','RESOURCE_RECORDED')) if re.search(p,msg)),None)
-                  if event:
-                      R['journal']['events'].append({'unit':unit,'at_us':o.get('__REALTIME_TIMESTAMP'),'event':event,'invocation':o.get('INVOCATION_ID') or o.get('_SYSTEMD_INVOCATION_ID')})
-              R['journal']['events']=R['journal']['events'][-512:]
-          
-          def read_envelope(name):
-              p=ROOT/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'/name
-              try:
-                  if not p.is_file() or p.is_symlink() or p.stat().st_size>262144:return None
-                  o=json.loads(p.read_bytes())
-                  return o.get('payload') if isinstance(o,dict) else None
-              except (OSError,ValueError):return None
-          
-          def proc_sample():
-              result={}
-              rc,raw=command(['sudo','-n','docker','top','porota_production_observer','-eo','pid,ppid,args'])
-              roles={'--dynamic-shadow-worker':'dynamic_shadow','--scanner-worker':'scanner','--performance-worker':'performance','--exit-reader':'exit_reader','--notification-worker':'notifications','--candle-worker':'candles','--intraday-scalping-worker':'intraday_scalping','--caucion-cash-sweep-worker':'caucion_cash_sweep'}
-              for line in raw.splitlines()[1:]:
-                  fields=line.split(None,2)
-                  if len(fields)!=3 or not fields[0].isdigit() or not any(x in fields[2] for x in ('bf_production_paper_observer.py','bv_paper_runtime.py')):continue
-                  pid=int(fields[0]);role=next((v for k,v in roles.items() if k in fields[2]),'scanner' if 'bf_production_paper_observer.py' in fields[2] else 'observer_clock')
-                  try:
-                      stat=(pathlib.Path('/proc')/str(pid)/'stat').read_text()
-                      parts=stat[stat.rfind(')')+2:].split()
-                      item={'pid':pid,'role':role,'cpu_seconds':(int(parts[11])+int(parts[12]))/os.sysconf('SC_CLK_TCK'),'rss_bytes':int(parts[21])*os.sysconf('SC_PAGE_SIZE')}
-                      try:
-                          io=dict(x.split(':',1) for x in (pathlib.Path('/proc')/str(pid)/'io').read_text().splitlines())
-                          item.update({k:int(io[k]) for k in ('read_bytes','write_bytes','rchar','wchar')})
-                      except OSError:item['io_error']='PERMISSION_UNAVAILABLE'
-                      result[str(pid)]=item
-                  except (OSError,ValueError,IndexError):continue
-              return result
-          
-          before=proc_sample();wall=time.monotonic()
-          time.sleep(12)
-          after=proc_sample();elapsed=time.monotonic()-wall
-          R['process_sample']={'elapsed_seconds':round(elapsed,3),'rows':[],'count_before':len(before),'count_after':len(after)}
-          for pid,a in after.items():
-              b=before.get(pid)
-              if not b:R['process_sample']['rows'].append(dict(a,continuity=False));continue
-              out={k:a[k] for k in ('pid','role','rss_bytes')}
-              out.update(continuity=True,cpu_delta_seconds=round(a['cpu_seconds']-b['cpu_seconds'],3))
-              out['cpu_fraction_one_core']=round(out['cpu_delta_seconds']/elapsed,4)
-              for k in ('read_bytes','write_bytes','rchar','wchar'):
-                  if k in a and k in b:out[k+'_delta']=a[k]-b[k]
-              R['process_sample']['rows'].append(out)
-          R['shadow']={}
-          for name in ('CURRENT.json','idle.json','status.json'):
-              o=read_envelope(name) or {}
-              R['shadow'][name]={k:o.get(k) for k in ('generation_id','as_of','status','phase','state','heartbeat_at','last_generation_id','source_freshness_renewed','real_orders_sent','real_routes','generation_timing','poll_seconds') if k in o}
-          
-          R['databases']={}
-          if R['resources']['memory_available_bytes']>=256*1024*1024:
-              for label,p in (('paper',ROOT/'data/paper_v17/observer_v17.db'),('history',ROOT/'data/market_history.db')):
-                  d={'state':'NO_VERIFICADO','read_only':True,'full_scan':False,'deletion_allowed':False}
-                  if not p.is_file() or p.is_symlink():R['databases'][label]=dict(d,reason='SOURCE_UNAVAILABLE');continue
-                  d['files']={suffix or 'main':pathlib.Path(str(p)+suffix).stat().st_size for suffix in ('','-wal','-shm') if pathlib.Path(str(p)+suffix).is_file()}
-                  try:
-                      with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True,timeout=.05) as c:
-                          c.execute('PRAGMA query_only=ON')
-                          deadline=time.monotonic()+2
-                          c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
-                          d['pragmas']={k:c.execute('PRAGMA '+k).fetchone()[0] for k in ('page_size','page_count','freelist_count','journal_mode')}
-                          meta=c.execute("SELECT name,type,sql FROM sqlite_master WHERE type IN ('table','index') LIMIT 500").fetchall()
-                          d['tables']={name:{'columns':[r[1] for r in c.execute('PRAGMA table_info("'+name.replace('"','""')+'")')]} for name,kind,sql in meta if kind=='table'}
-                          d['indexes']=[name for name,kind,sql in meta if kind=='index']
-                          if label=='paper':
-                              c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
-                              if 'observer_state' in d['tables']:
-                                  row=c.execute('SELECT mode,process_state,session_state,heartbeat_at,real_orders_sent FROM observer_state ORDER BY id DESC LIMIT 1').fetchone()
-                                  d['observer_state']=dict(zip(('mode','process_state','session_state','heartbeat_at','real_orders_sent'),row)) if row else None
-                              for table in ('financial_instrument_catalog','candidate_universe'):
-                                  if table not in d['tables']:continue
-                                  columns=d['tables'][table]['columns']
-                                  projection=['instrument_type']+[k for k in ('status','capability','can_simulate') if k in columns]
-                                  q=','.join('"'+k+'"' for k in projection)
-                                  try:
-                                      deadline=time.monotonic()+.5
-                                      rows=c.execute('SELECT '+q+',count(*) FROM "'+table+'" GROUP BY '+q+' LIMIT 200').fetchall()
-                                      d[table+'_groups']=[dict(zip(projection+['count'],r)) for r in rows]
-                                  except sqlite3.Error:d[table+'_groups']={'state':'NO_VERIFICADO','reason':'BOUNDED_QUERY_ABORTED'}
-                          d['state']='VALIDADO_RUNTIME'
-                  except (OSError,sqlite3.Error) as exc:d.update(state='NO_VERIFICADO',reason=type(exc).__name__)
-                  R['databases'][label]=d
-          else:R['warnings'].append('SQL_METADATA_SKIPPED_MEMORY_RESERVE')
-          R['source_end_utc']=datetime.datetime.now(UTC).isoformat()
-          R['source_art']=datetime.datetime.fromisoformat(R['source_utc']).astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat()
-          R['elapsed_seconds']=round(time.monotonic()-START,3)
-          print(json.dumps(R,sort_keys=True,separators=(',',':')))
-          PY
-          python3 - "$RUNNER_TEMP/a74_readonly.json" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]))
-          print('A74_METADATA_COMPLETE='+str({'timers':r['timer_inventory']['count'],'workers':r['process_sample']['count_after'],'source_utc':r['source_utc'],'mode':r.get('marker',{}).get('mode'),'real_orders_sent':r.get('marker',{}).get('real_orders_sent')}))
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rc6-a74-readonly
-          path: ${{ runner.temp }}/a74_readonly.json
-          retention-days: 7
-      - name: Remove runner SSH key
-        if: always()
-        shell: bash
-        run: rm -f "$HOME/.ssh/rc6_a74"
+    - name: Verified quiescent history copy and bounded lifecycle evidence
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        install -m 700 -d "$HOME/.ssh"
+        printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a74"
+        chmod 600 "$HOME/.ssh/rc6_a74"
+        printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+        chmod 600 "$HOME/.ssh/known_hosts"
+        umask 077
+        test "$(df --output=avail -B1 "$RUNNER_TEMP" | tail -1)" -gt 4294967296
+        timeout 90 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n nice -n 19 ionice -c 3 python3 -' > "$RUNNER_TEMP/a74_history.sqlite" 2> "$RUNNER_TEMP/a74_capture.log" <<'PY'
+        """Read one quiescent RC6 history file; stdout is the SQLite image."""
+        import datetime,hashlib,json,os,pathlib,shutil,sqlite3,stat,subprocess,sys,time
+        from zoneinfo import ZoneInfo
+        START=time.monotonic();LIMIT=60.0
+        SOURCE=pathlib.Path('/opt/porota-trading/data/market_history.db')
+        def check():
+            if time.monotonic()-START>LIMIT:raise ValueError('CAPTURE_TIME_BUDGET')
+            mem=next(int(x.split()[1])*1024 for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:'))
+            if mem<384*1024**2:raise ValueError('CAPTURE_MEMORY_RESERVE')
+        def inventory():
+            if SOURCE.resolve()!=SOURCE or any(p.is_symlink() for p in SOURCE.parents):raise ValueError('SOURCE_ALIAS')
+            d={}
+            for suffix in ('','-wal','-journal'):
+                p=pathlib.Path(str(SOURCE)+suffix)
+                try:s=p.lstat()
+                except FileNotFoundError:continue
+                if not stat.S_ISREG(s.st_mode) or s.st_nlink!=1:raise ValueError('SOURCE_ALIAS')
+                d[suffix]=(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+                if suffix and s.st_size:raise ValueError('SOURCE_NOT_QUIESCENT')
+            if '' not in d or not 4096<=d[''][2]<=1024**3:raise ValueError('SOURCE_BYTE_BUDGET')
+            return d
+        def sha_pass(expected,output=None):
+            h=hashlib.sha256();count=0
+            fd=os.open(SOURCE,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_NONBLOCK)
+            with os.fdopen(fd,'rb') as f:
+                s=os.fstat(f.fileno())
+                if (s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)!=expected['']:raise ValueError('SOURCE_CHANGED')
+                while True:
+                    check();b=f.read(min(1024**2,expected[''][2]-count+1))
+                    if not b:break
+                    count+=len(b)
+                    if count>expected[''][2]:raise ValueError('SOURCE_GREW')
+                    h.update(b)
+                    if output:output.write(b)
+            if count!=expected[''][2] or inventory()!=expected:raise ValueError('SOURCE_CHANGED')
+            return h.hexdigest()
+        try:
+            check()
+            at=datetime.datetime.now(datetime.timezone.utc)
+            if at.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).weekday()<5:raise ValueError('WEEKEND_CAPTURE_SCOPE_ONLY')
+            if shutil.disk_usage('/').free<4*1024**3:raise ValueError('HOST_DISK_RESERVE')
+            for name in ('daily','reconcile','weekend'):
+                unit='porota-a3-history-'+name+'-rc6.timer'
+                p=subprocess.run(['systemctl','show',unit,'--property=ActiveState,UnitFileState'],capture_output=True,text=True,timeout=3)
+                vals=dict(x.split('=',1) for x in p.stdout.splitlines() if '=' in x)
+                if p.returncode or vals!={'ActiveState':'inactive','UnitFileState':'masked'}:raise ValueError('A3_QUARANTINE_REQUIRED')
+            p=subprocess.run(['systemctl','is-active','porota-local-eod-history-rc6.service'],capture_output=True,text=True,timeout=3)
+            if p.stdout.strip() not in ('inactive','failed'):raise ValueError('HISTORY_WRITER_ACTIVE')
+            c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=.05)
+            try:
+                c.execute('PRAGMA query_only=ON')
+                row=c.execute('SELECT mode,real_orders_sent,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+                if not row or row[:3]!=('PRODUCTION_PAPER',0,'MARKET_CLOSED'):raise ValueError('CLOSED_PAPER_REQUIRED')
+                stamp=datetime.datetime.fromisoformat(row[3])
+                if not 0<=(at-stamp).total_seconds()<=180:raise ValueError('HEARTBEAT_REQUIRED')
+            finally:c.close()
+            before=inventory()
+            digest=sha_pass(before,sys.stdout.buffer)
+            sys.stdout.buffer.flush()
+            if sha_pass(before)!=digest:raise ValueError('SOURCE_HASH_CHANGED')
+            receipt={'schema':'RC6_A74_QUIESCENT_HISTORY_CAPTURE_V1','source_utc':at.isoformat(),
+                'source_end_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'source_bytes':before[''][2],'source_sha256':digest,'wal_bytes':0,
+                'same_inventory_before_after':True,'second_full_hash_equal':True,
+                'source_sqlite_opened':False,'source_noatime':True,'runtime_budget_unchanged':True,
+                'elapsed_seconds':round(time.monotonic()-START,3)}
+            print('CAPTURE_RECEIPT='+json.dumps(receipt,sort_keys=True),file=sys.stderr)
+        except Exception as exc:
+            reason=str(exc) if isinstance(exc,ValueError) and str(exc).isupper() else type(exc).__name__
+            print('CAPTURE_REJECTED='+reason,file=sys.stderr)
+            sys.exit(2)
+        PY
+        python3 - "$RUNNER_TEMP" <<'PY'
+        """Inspect a verified offhost history image; no original rows are promoted."""
+        import collections,datetime,hashlib,json,pathlib,sqlite3,sys,time,zlib
+        root=pathlib.Path(sys.argv[1]);p=root/'a74_history.sqlite';at=datetime.datetime.now(datetime.timezone.utc)
+        receipt=json.loads(next(x.split('=',1)[1] for x in (root/'a74_capture.log').read_text().splitlines() if x.startswith('CAPTURE_RECEIPT=')))
+        h=hashlib.sha256()
+        with p.open('rb') as f:
+            for b in iter(lambda:f.read(1024**2),b''):h.update(b)
+        assert h.hexdigest()==receipt['source_sha256'] and p.stat().st_size==receipt['source_bytes']
+        r={'schema':'RC6_A74_HISTORY_OFFHOST_V1','source_capture':receipt,'analyzed_utc':at.isoformat(),
+           'deletion_allowed':False,'migration_allowed':False,'source_writes':False,'tables':{},'warnings':[]}
+        c=sqlite3.connect(p.as_uri()+'?mode=ro',uri=True);c.execute('PRAGMA query_only=ON');c.execute('PRAGMA cache_size=-8192')
+        deadline=time.monotonic()+180;c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+        r['quick_check']=[x[0] for x in c.execute('PRAGMA quick_check')]
+        r['foreign_key_check_count']=sum(1 for _ in c.execute('PRAGMA foreign_key_check'))
+        try:r['physical_by_object']=[{'name':x[0],'page_bytes':x[1],'payload_bytes':x[2],'pages':x[3]} for x in c.execute('SELECT name,sum(pgsize),sum(payload),count(*) FROM dbstat GROUP BY name ORDER BY sum(pgsize) DESC')]
+        except sqlite3.Error:r['physical_by_object']='NO_VERIFICADO'
+        cutoff=(at.date()-datetime.timedelta(days=365)).isoformat();r['retention_cutoff_date_utc']=cutoff
+        names=[x[0] for x in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        for name in names:
+            quoted='"'+name.replace('"','""')+'"';cols=[x[1] for x in c.execute('PRAGMA table_info('+quoted+')')]
+            d={'rows':c.execute('SELECT COUNT(*) FROM '+quoted).fetchone()[0],'columns':cols,'retention_policy':'NO_VERIFICADO','deletion_allowed':False}
+            clocks=[x for x in ('date','session','bar_start','event_at','recorded_at','known_at','version_known_at','observed_at','ingested_at','published_at','quarantined_at','updated_at') if x in cols]
+            d['clocks']={}
+            for clock in clocks[:3]:
+                row=c.execute('SELECT MIN("'+clock+'"),MAX("'+clock+'"),sum(CASE WHEN substr("'+clock+'",1,10)<? THEN 1 ELSE 0 END) FROM '+quoted,(cutoff,)).fetchone()
+                # Raw timestamps and aggregate counts only; no instrument/account row.
+                d['clocks'][clock]={'minimum':row[0],'maximum':row[1],'older_than_365d_by_lexical_date':row[2] or 0,'semantic_clock_certified':False}
+            if {'open','high','low','close','volume'}<=set(cols):
+                row=c.execute('SELECT sum(open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL AND close IS NOT NULL),sum(volume IS NOT NULL) FROM '+quoted).fetchone()
+                d['numeric_presence']={'ohlc_complete_rows':row[0] or 0,'volume_present_rows':row[1] or 0,'FULL_OHLCV_certified':False}
+            if 'metadata_json' in cols:
+                key_counts=collections.Counter();explicit=collections.Counter();bad=0
+                for (raw,) in c.execute('SELECT metadata_json FROM '+quoted):
+                    try:meta=json.loads(raw)
+                    except (ValueError,TypeError):bad+=1;continue
+                    if not isinstance(meta,dict):bad+=1;continue
+                    for key in meta:
+                        if isinstance(key,str) and len(key)<80 and key.replace('_','').isalnum() and not any(x in key.lower() for x in ('token','password','secret','key','account')):key_counts[key]+=1
+                    for field in ('currency','price_basis','adjustment_basis','volume_kind','version_known_at','event_at','provider_at','observed_at','source_ref'):
+                        if meta.get(field) not in (None,'','UNKNOWN'):explicit[field]+=1
+                d['metadata_keys']=dict(key_counts.most_common(60));d['explicit_top_level_metadata_fields']=dict(explicit);d['bad_metadata_rows']=bad
+            if name=='history_versions_v2':
+                required={'currency','price_basis','adjustment_basis','version_known_at','volume_kind','event_at','previous_version_id'}
+                d['missing_required_columns']=sorted(required-set(cols))
+                d['migration_gate']='HISTORY_COPY_MIGRATION_REQUIRED' if d['missing_required_columns'] else 'REQUIRES_ROW_AND_LINEAGE_VALIDATION'
+                refs={}
+                for table in ('history_canonical_v2','history_canonical_v2_quarantine_rc6'):
+                    if table in names:
+                        refs[table]=c.execute('SELECT COUNT(DISTINCT version_id) FROM "'+table+'"').fetchone()[0]
+                d['known_version_reference_counts']=refs;d['cross_database_and_artifact_pins']='NO_VERIFICADO'
+            r['tables'][name]=d
+        c.close()
+        # Lossless compression is measured only on the runner, preserving every byte.
+        z=zlib.compressobj(level=6);decompress=zlib.decompressobj();compressed=0;decoded=hashlib.sha256()
+        with p.open('rb') as f:
+            for b in iter(lambda:f.read(1024**2),b''):
+                out=z.compress(b);compressed+=len(out);decoded.update(decompress.decompress(out))
+        out=z.flush();compressed+=len(out);decoded.update(decompress.decompress(out));decoded.update(decompress.flush())
+        assert decompress.eof and decoded.hexdigest()==receipt['source_sha256']
+        r['lossless_compression_trial']={'source_bytes':p.stat().st_size,'zlib_bytes':compressed,'bytes_difference':p.stat().st_size-compressed,'roundtrip_sha256_equal':True,'source_deletion_allowed':False,'note':'Offhost stream measurement; not deployed archive or SQLite retention savings'}
+        r['retention_conclusion']='NO_PURGE_WITHOUT_SEMANTIC_CLOCK_AND_COMPLETE_PIN_MANIFEST'
+        r['finished_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+        (root/'a74_history_report.json').write_text(json.dumps(r,sort_keys=True,separators=(',',':')))
+        print('A74_HISTORY_OFFHOST='+json.dumps({'quick_check':r['quick_check'],'tables':len(r['tables']),'fk_errors':r['foreign_key_check_count'],'sha256':receipt['source_sha256']}))
+        PY
+        timeout 60 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_scheduler_history.json" <<'PY'
+        """Finite historical lifecycle and quarantined-service revalidation."""
+        import datetime,json,os,pathlib,re,subprocess,time
+        R={'schema':'RC6_A74_SCHEDULER_HISTORY_V1','source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_writes':False,'services':[],'journal':{},'overlaps':[],'warnings':[]}
+        def run(args,seconds=8):
+            try:
+                p=subprocess.run(args,capture_output=True,text=True,timeout=seconds)
+                return p.returncode,p.stdout
+            except (OSError,subprocess.TimeoutExpired):return 124,''
+        R['host_cpu_count']=os.cpu_count()
+        R['host_timezone']=run(['timedatectl','show','--property=Timezone','--value'])[1].strip()
+        for file in ('cpu.max','cpu.stat'):
+            try:R['cgroup_'+file]=pathlib.Path('/sys/fs/cgroup',file).read_text()[:1000]
+            except OSError:R['cgroup_'+file]=None
+        for unit in ('porota-a3-history-rc6@DAILY_INCREMENTAL.service','porota-a3-history-rc6@RECONCILE.service','porota-a3-history-rc6@WEEKEND_DEEP.service','porota-host-general-backup-rc6.service','porota-history-postclose-rc6.service'):
+            rc,out=run(['systemctl','show',unit,'--property=ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestamp,ExecMainExitTimestamp,CPUUsageNSec','--no-pager'])
+            R['services'].append({'unit':unit,'query_rc':rc,**dict(x.split('=',1) for x in out.splitlines() if '=' in x)})
+        windows=[('FRIDAY_OPEN','2026-10-23 13:30:00 UTC','2026-10-23 20:05:00 UTC',('porota-iol-shadow-collector-rc6.service','porota-runtime-evidence-rc6.service')),
+                 ('FRIDAY_POSTCLOSE','2026-10-23 20:05:00 UTC','2026-10-24 02:00:00 UTC',('porota-local-eod-history-rc6.service','porota-full-db-integrity-rc6.service','porota-runtime-evidence-rc6.service'))]
+        for label,start,end,units in windows:
+            args=['sudo','-n','journalctl','--since',start,'--until',end,'--no-pager','-o','json','-n','1500','--grep','^(Starting |Finished |.*Deactivated successfully|.*Failed with result)']
+            for unit in units:args+=['-u',unit]
+            rc,raw=run(args,12);frames=[]
+            if len(raw)>6*1024**2:raw=raw[:6*1024**2];R['warnings'].append('JOURNAL_BYTE_CAP_'+label)
+            for line in raw.splitlines():
+                try:o=json.loads(line)
+                except ValueError:continue
+                unit=o.get('UNIT') or o.get('_SYSTEMD_UNIT');msg=o.get('MESSAGE','')
+                if unit not in units or not isinstance(msg,str):continue
+                event='START' if msg.startswith('Starting ') else 'END' if msg.startswith('Finished ') or 'Deactivated successfully' in msg else 'FAILED' if 'Failed with result' in msg else None
+                if event:
+                    try:stamp=int(o['__REALTIME_TIMESTAMP'])
+                    except (KeyError,ValueError,TypeError):continue
+                    frames.append({'unit':unit,'at_us':stamp,'event':event})
+            frames.sort(key=lambda r:r['at_us']);pending={};intervals=[];unpaired=0
+            for row in frames:
+                unit=row['unit']
+                if row['event']=='START':
+                    if unit in pending:unpaired+=1
+                    pending[unit]=row['at_us']
+                elif unit in pending:
+                    first=pending.pop(unit)
+                    intervals.append({'unit':unit,'start_utc':datetime.datetime.fromtimestamp(first/1e6,datetime.timezone.utc).isoformat(),'end_utc':datetime.datetime.fromtimestamp(row['at_us']/1e6,datetime.timezone.utc).isoformat(),'seconds':round((row['at_us']-first)/1e6,3),'result':row['event'],'start_us':first,'end_us':row['at_us']})
+            overlap=[]
+            for i,a in enumerate(intervals):
+                for b in intervals[i+1:]:
+                    if a['unit']==b['unit']:continue
+                    seconds=(min(a['end_us'],b['end_us'])-max(a['start_us'],b['start_us']))/1e6
+                    if seconds>0:overlap.append({'units':sorted((a['unit'],b['unit'])),'seconds':round(seconds,3),'start_utc':max(a['start_utc'],b['start_utc'])})
+            by_unit={}
+            for unit in units:
+                rows=[x for x in intervals if x['unit']==unit]
+                durations=sorted(x['seconds'] for x in rows)
+                by_unit[unit]={'paired_executions':len(rows),'failed':sum(x['result']=='FAILED' for x in rows),'wall_total_seconds':round(sum(durations),3),'wall_max_seconds':max(durations,default=None),'wall_p95_sample_seconds':durations[min(len(durations)-1,int(.95*(len(durations)-1)))] if durations else None,'first_start':rows[0]['start_utc'] if rows else None,'last_start':rows[-1]['start_utc'] if rows else None}
+            R['journal'][label]={'query_rc':rc,'since':start,'until':end,'frames':len(frames),'possibly_record_capped':len(raw.splitlines())>=1500,'unpaired_starts':unpaired+len(pending),'summary':by_unit,'intervals':[{k:v for k,v in x.items() if k not in ('start_us','end_us')} for x in intervals],'overlaps':overlap}
+        R['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+        print(json.dumps(R,sort_keys=True,separators=(',',':')))
+        PY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: rc6-a74-history-and-scheduler
+        path: |-
+          ${{ runner.temp }}/a74_history_report.json
+          ${{ runner.temp }}/a74_scheduler_history.json
+        retention-days: 7
+    - name: Delete private runner copy and SSH key
+      if: always()
+      shell: bash
+      run: rm -f "$HOME/.ssh/rc6_a74" "$RUNNER_TEMP/a74_history.sqlite" "$RUNNER_TEMP/a74_history.sqlite-wal" "$RUNNER_TEMP/a74_history.sqlite-shm" "$RUNNER_TEMP/a74_capture.log"
