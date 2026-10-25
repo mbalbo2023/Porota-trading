@@ -12,6 +12,7 @@ import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_currency,
                                      decimal_value, register_exact_time_sql,
@@ -303,6 +304,24 @@ class FamilyPaperExecutor:
                 blocked = str(admission_guard(connection) or "")
                 if blocked:
                     raise ValueError(blocked)
+            # The executor is also callable directly. The normal broker passes
+            # a locked guard, but a missing callback must not bypass the global
+            # receipt when this is the effective PAPER runtime database.
+            try:
+                from cg_paper_workspace import database_path
+                runtime_book = Path(self.store.path).resolve() == database_path()
+            except (OSError, ValueError, TypeError) as exc:
+                raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+            if runtime_book:
+                if admission_guard is None:
+                    raise ValueError("PAPER_ADMISSION_GUARD_MISSING")
+                try:
+                    from rc6_paper_admission_gate import admission_status
+                    allowed, reason = admission_status()
+                except Exception as exc:
+                    raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+                if not allowed:
+                    raise ValueError(reason or "NO_GO_PAPER_SCALPING")
             base_detail = {
                 **(detail or {}),
                 "mode": "PRODUCTION_PAPER", "execution": "SIMULATION",

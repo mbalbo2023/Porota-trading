@@ -178,7 +178,10 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             sort_keys=True, default=str)
         if key == "{}":
             key = str(index)
-        row_id = table_id + "-" + hashlib.sha256(str(key).encode()).hexdigest()[:12]
+        # Multiple observations can share one instrument identity. A dialog
+        # target must still identify this particular row within the page.
+        row_id = table_id + "-" + hashlib.sha256(
+            f"{key}:{page.offset + index}".encode()).hexdigest()[:12]
         cells = "".join(f"<td data-label='{e(f.label)}' class='{column_classes[i]}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
         # Family aggregates and service health rows have no instrument identity.
         # Keep their factual check/source fields without adding inapplicable keys.
@@ -195,11 +198,15 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
         reasons = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido; revisar el worker y la hora de publicación.",
                    "COMMITTED_GENERATION_NOT_PUBLISHED": "El worker SHADOW aún no publicó una generación comprometida.",
                    "COMMITTED_GENERATION_REJECTED": "La lectura rechazó la generación SHADOW por integridad o publicación incompleta."}
-        message = ("Sin registros en este scope." if page.state == "AVAILABLE" else
-                   "NO_VERIFICADO · " + reasons.get(page.reason, page.reason or "evidencia aún no publicada o lectura no disponible."))
+        if page.reason in {"SELECT_EXACT_IDENTITY_FOR_MARKET", "SELECT_EXACT_IDENTITY_FOR_CONTRACT"}:
+            message = "REQUIERE_IDENTIDAD · Seleccione ticker, familia, mercado, moneda y settlement en el buscador."
+        else:
+            message = ("Sin registros en este scope." if page.state == "AVAILABLE" else
+                       "NO_VERIFICADO · " + reasons.get(page.reason, page.reason or "evidencia aún no publicada o lectura no disponible."))
         body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{e(message)}</td></tr>")
     heads = "".join(f"<th scope='col' class='{column_classes[i]}'>{e(f.label)}</th>" for i, f in enumerate(columns))
-    provenance = f"<div class='source-line'>Fuente: {e(page.source)} · {badge(page.state)}"
+    selection_required = page.reason in {"SELECT_EXACT_IDENTITY_FOR_MARKET", "SELECT_EXACT_IDENTITY_FOR_CONTRACT"}
+    provenance = f"<div class='source-line'>Fuente: {e(page.source)} · {badge('REQUIERE_IDENTIDAD' if selection_required else page.state)}"
     if page.as_of:
         provenance += f" · {e(clock(page.as_of))}"
     provenance += "</div>"

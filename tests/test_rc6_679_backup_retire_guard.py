@@ -103,3 +103,24 @@ def test_exact_plan_removes_only_classified_files_and_persists_receipt(tmp_path,
     assert (receipt['status'], receipt['count'], receipt['logical_bytes']) == ('DONE', 1, 6)
     assert not backup.exists() and live.read_bytes() == b'LIVE'
     assert retire.inventory() == []
+
+
+def test_new_backup_aborts_deploy_retirement_without_unlink(tmp_path, monkeypatch):
+    general, _, _ = setup_roots(tmp_path, monkeypatch)
+    backup = general / 'porota-general-20261021T071616Z.tar.gz'
+    backup.write_bytes(b'preserve')
+    candidate = 'a' * 40
+    monkeypatch.setattr(retire, 'ROOT', tmp_path)
+    monkeypatch.setattr(retire, 'guard', lambda *_args, **_kwargs: {'image_id': 'same'})
+    monkeypatch.setattr(retire, 'open_files', lambda _paths: None)
+    deploy = tmp_path / 'data' / 'deploy'
+    deploy.mkdir(parents=True)
+    plan = deploy / 'plan.json'
+    monkeypatch.setattr(sys, 'argv', ['retire', '--candidate-sha', candidate,
+                                    '--plan-out', str(plan)])
+    retire.main()
+    monkeypatch.setattr(sys, 'argv', ['retire', '--candidate-sha', candidate,
+                                    '--apply-plan', str(plan), '--require-empty'])
+    with pytest.raises(RuntimeError, match='BACKUP_RETIRE_NEW_FILES_NEED_REVIEW'):
+        retire.main()
+    assert backup.read_bytes() == b'preserve'

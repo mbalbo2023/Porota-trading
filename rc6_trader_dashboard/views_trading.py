@@ -7,7 +7,7 @@ from .view_common import render_table, CATALOG, CATALOG_DETAIL, OPPORTUNITIES, O
 FAMILY_GROUPS = {
     "equity-spot": ("ACCIONES", "CEDEARS", "CEDEAR", "ETF", "ETFS"),
     "scalping": ("ACCIONES", "CEDEARS", "CEDEAR", "ETF", "ETFS"),
-    "renta-fija": ("BONOS", "LETRAS", "ON", "OBLIGACIONES_NEGOCIABLES"),
+    "renta-fija": ("BONOS", "LETRAS", "OBLIGACIONES", "ON", "OBLIGACIONES_NEGOCIABLES"),
     "derivados": ("OPCIONES", "FUTUROS"),
     "cauciones": ("CAUCIONES", "CAUCION"),
     "tesoreria": ("FCI",),
@@ -20,7 +20,7 @@ FAMILY_DETAILS = {
     "cauciones": fields("metadata.settled_free_cash|Caja libre liquidada|money;metadata.rate|Tasa;metadata.tenor|Plazo;metadata.minimum|Mínimo verificado;metadata.step|Incremento verificado;metadata.costs|Costos|money;metadata.maturity|Vencimiento|time;metadata.opportunity_cost|Costo de oportunidad|money;metadata.sweep_state|Estado allocation/sweep|status;metadata.strategy_status|Estado de estrategia|status"),
     "tesoreria": fields("metadata.nav_clock|NAV clock|time;metadata.subscription_state|Suscripción|status;metadata.redemption_state|Rescate|status;metadata.liquidity_horizon|Horizonte de liquidez;metadata.strategy_status|Estado de estrategia|status"),
 }
-STRATEGIES = fields("family|Familia;strategy|Estrategia;status|Estado de estrategia|status;entry_authority|Autoridad de entrada;ready|RUNTIME_READY|number")
+STRATEGIES = fields("family|Familia;strategy|Estrategia;status|Estado de estrategia|status;entry_authority|Autoridad de entrada;ready|Aptas en catálogo|number")
 STRATEGY_DETAIL = fields("lifecycle_owner|Lifecycle owner;eligible|Eligible|number;tradeable|Tradeable|number;hot|HOT|number;cadence|Cadencia;as_of|Última evaluación|time;open_positions|Posiciones abiertas|number;trades_today|Operaciones hoy|number;net_pnl|PnL neto|money;blocker|Principal bloqueo;source_authority|Autoridad de fuente")
 
 

@@ -108,3 +108,65 @@ def test_predeploy_stays_off_droplet_and_builds_once():
     assert "ssh " not in PREDEPLOY
     assert "scp " not in PREDEPLOY
     assert "DROPLET_TOUCHED=NO" in PREDEPLOY
+
+
+def test_governed_gate_rejects_actual_pytest_skip_and_xfail_receipts(tmp_path):
+    """Execute the workflow's real evaluator with rc=0 and one skipped testcase."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    marker = '          TEST_RC="$TEST_RC" python - <<' + "'PY'\n"
+    start = PREDEPLOY.index(marker) + len(marker)
+    end = PREDEPLOY.index('\n          PY', start)
+    evaluator = '\n'.join(line.removeprefix('          ')
+                          for line in PREDEPLOY[start:end].splitlines())
+    paths = {
+        '/tmp/porota-test-collection.txt': tmp_path / 'collection.txt',
+        '/tmp/porota-governed-tests.xml': tmp_path / 'junit.xml',
+        '/tmp/porota-test-exclusions.txt': tmp_path / 'exclusions.txt',
+        '/tmp/porota-governed-tests.json': tmp_path / 'result.json',
+    }
+    for old, new in paths.items():
+        evaluator = evaluator.replace(old, str(new))
+    paths['/tmp/porota-test-collection.txt'].write_text('tests/test_one.py: 1\n')
+    paths['/tmp/porota-test-exclusions.txt'].write_text('')
+    for xml, expected in (
+        ('', 'GREEN'),
+        ('<skipped message="deliberate" />', 'RED'),
+        ('<skipped type="pytest.xfail" message="expected" />', 'RED'),
+    ):
+        paths['/tmp/porota-governed-tests.xml'].write_text(
+            '<testsuites><testsuite tests="1" failures="0" errors="0">'
+            '<testcase classname="test_one" name="test_one">' + xml +
+            '</testcase></testsuite></testsuites>')
+        result = subprocess.run([sys.executable, '-c', evaluator],
+                                env=os.environ | {'TEST_RC': '0'},
+                                capture_output=True, text=True, timeout=10)
+        receipt = json.loads(paths['/tmp/porota-governed-tests.json'].read_text())
+        assert receipt['status'] == expected
+        assert (result.returncode == 0) == (expected == 'GREEN')
+
+
+def test_predeploy_forces_unexpected_xpass_to_fail(tmp_path):
+    """Pytest rc and native XML must turn XPASS into a failure."""
+    import os
+    import subprocess
+    import sys
+    from xml.etree import ElementTree as ET
+
+    assert 'python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=' in PREDEPLOY
+    file = tmp_path / 'test_unexpected_pass.py'
+    file.write_text('import pytest\\n@pytest.mark.xfail(reason="expected failure")\\ndef test_unexpected_pass():\\n    assert True\\n'.replace('\\n', '\n'))
+    junit = tmp_path / 'strict.xml'
+    result = subprocess.run(
+        [sys.executable, '-m', 'pytest', '-q', '-o', 'xfail_strict=true',
+         '--junitxml=' + str(junit), str(file)],
+        env=os.environ | {'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'},
+        capture_output=True, text=True, timeout=15,
+    )
+    root = ET.parse(junit).getroot()
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert len(list(root.iter('testcase'))) == 1
+    assert len(list(root.iter('failure'))) == 1

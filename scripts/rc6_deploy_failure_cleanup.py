@@ -99,10 +99,19 @@ def overlaps(left, right):
     return left == right or left in right.parents or right in left.parents
 
 
-def cleanup(candidate_sha):
+def cleanup(candidate_sha, run_id=None, attempt=None):
     if not isinstance(candidate_sha, str) or SHA.fullmatch(candidate_sha) is None:
         raise CleanupRejected('CANDIDATE_SHA_INVALID')
-    staging = REMOTE_ROOT / ('porota-deploy-v2-' + candidate_sha)
+    if run_id is None and attempt is None:
+        # Legacy unit fixtures only.  The canonical workflow always supplies
+        # both identities and can never erase another attempt's upload.
+        staging = REMOTE_ROOT / ('porota-deploy-v2-' + candidate_sha)
+    elif (isinstance(run_id, str) and isinstance(attempt, str) and
+          re.fullmatch(r'[1-9][0-9]*', run_id) and
+          re.fullmatch(r'[1-9][0-9]*', attempt)):
+        staging = REMOTE_ROOT / f'porota-deploy-v2-{candidate_sha}-{run_id}-{attempt}'
+    else:
+        raise CleanupRejected('ATTEMPT_IDENTITY_INVALID')
     # Never follow a substituted staging root, even if no Docker mount uses it.
     if staging.is_symlink() or staging.resolve().parent != REMOTE_ROOT.resolve():
         raise CleanupRejected('STAGING_PATH_INVALID')
@@ -153,10 +162,12 @@ def cleanup(candidate_sha):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--candidate-sha', required=True)
+    parser.add_argument('--run-id')
+    parser.add_argument('--attempt')
     args = parser.parse_args(argv)
     try:
         with promotion_lock():
-            report = cleanup(args.candidate_sha)
+            report = cleanup(args.candidate_sha, args.run_id, args.attempt)
     except (CleanupRejected, subprocess.TimeoutExpired, OSError) as exc:
         report = {'schema': 'POROTA_DEPLOY_FAILURE_CLEANUP_V1', 'status': 'RED',
                   'candidate_sha': args.candidate_sha,

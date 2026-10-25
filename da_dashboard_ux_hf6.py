@@ -47,9 +47,12 @@ TRADING_NAV = (
     NavItem("/trading/opciones", "Opciones"),
 )
 
-# El alcance operativo de RC6 es explícito: no se exploran ni procesan otras
-# familias hasta que haya una decisión de producto que las re-habilite.
-OPERATIONAL_FAMILIES = frozenset(("ACCIONES", "CEDEARS"))
+# Alcance PAPER configurado, no certificación READY de cada instrumento.
+# Contrato, datos, estrategia, riesgo y preopen conservan sus gates separados.
+OPERATIONAL_FAMILIES = frozenset((
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+))
 
 # Legacy routes are kept intentionally so bookmarks and old links do not break.
 LEGACY_ROUTE_REDIRECTS = {
@@ -59,15 +62,15 @@ LEGACY_ROUTE_REDIRECTS = {
 
 FAMILY_GROUPS = {
     "acciones-cedears": ("ACCIONES", "CEDEARS"),
-    "renta-fija": ("BONOS", "LETRAS", "ON"),
+    "renta-fija": ("BONOS", "LETRAS", "OBLIGACIONES"),
     "cauciones": ("CAUCIONES",),
     "opciones": ("OPCIONES",),
     "futuros": ("FUTUROS",),
     "fci": ("FCI", "FCI_LOCAL", "FCI_EXTERIOR"),
-    "etf": ("ETF",),
+    "etf": ("ETFS",),
     "indices": ("INDICES",),
     "bonos": ("BONOS",),
-    "on": ("ON",),
+    "on": ("OBLIGACIONES",),
     "letras": ("LETRAS",),
     "licitaciones": ("LICITACIONES", "CANJES"),
 }
@@ -78,6 +81,8 @@ FAMILY_LABELS = {
     "BONOS": "Bonos",
     "LETRAS": "Letras",
     "ON": "Obligaciones Negociables",
+    "OBLIGACIONES": "Obligaciones Negociables",
+    "ETFS": "ETF",
     "CAUCIONES": "Cauciones",
     "OPCIONES": "Opciones",
     "FUTUROS": "Futuros",
@@ -127,5 +132,6 @@ def assert_ux_invariants() -> None:
         raise AssertionError("operational actions/CEDEAR scope missing")
     if families_for_group("futuros") != ("FUTUROS",):
         raise AssertionError("Futuros readiness submenu must remain visible")
-    if not OPERATIONAL_FAMILIES.issubset({"ACCIONES", "CEDEARS"}):
-        raise AssertionError("operational scope changed unexpectedly")
+    visible_families = {family for group in FAMILY_GROUPS.values() for family in group}
+    if not OPERATIONAL_FAMILIES.issubset(visible_families):
+        raise AssertionError("PAPER family missing from UX navigation")

@@ -126,6 +126,8 @@ def digest(rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
+    parser.add_argument('--require-empty', action='store_true',
+                        help='Abort if the allowlist has changed from the approved empty inventory')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--plan-out')
     group.add_argument('--apply-plan')
@@ -133,8 +135,12 @@ def main():
     if not re.fullmatch(r'[0-9a-f]{40}', args.candidate_sha):
         raise RuntimeError('CANDIDATE_SHA_INVALID')
     applying = args.apply_plan is not None
+    if args.require_empty and not applying:
+        raise RuntimeError('BACKUP_EMPTY_GATE_REQUIRES_APPLY')
     before = guard(args.candidate_sha, apply=applying)
     observed = inventory()
+    if args.require_empty and observed:
+        raise RuntimeError('BACKUP_RETIRE_NEW_FILES_NEED_REVIEW')
     open_files({row['path'] for row in observed})
     if applying:
         target = Path(args.apply_plan)

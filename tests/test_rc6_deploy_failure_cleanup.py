@@ -183,6 +183,18 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertEqual(lock.stat().st_ino, inode)
         self.assertFalse(self.staging.exists())
 
+    def test_cleanup_selects_exact_run_attempt_and_preserves_same_sha_other_attempt(self):
+        first = self.root / f'porota-deploy-v2-{SHA}-1234-1'
+        other = self.root / f'porota-deploy-v2-{SHA}-1234-2'
+        first.mkdir(); other.mkdir()
+        (other / 'keep').write_text('different attempt')
+        result = cleanup.cleanup(SHA, '1234', '1')
+        self.assertEqual(result['status'], 'GREEN')
+        self.assertFalse(first.exists())
+        self.assertEqual((other / 'keep').read_text(), 'different attempt')
+        with self.assertRaisesRegex(cleanup.CleanupRejected, 'ATTEMPT_IDENTITY_INVALID'):
+            cleanup.cleanup(SHA, '../', '1')
+
     def test_failure_cleanup_step_survives_failed_promotion_and_has_bounded_ssh(self):
         workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
         import yaml
@@ -196,7 +208,11 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertIn("steps.promotion.outcome == 'failure'", block)
         self.assertIn("steps.promotion.outcome == 'cancelled'", block)
         self.assertIn('timeout 180 ssh', block)
-        self.assertIn('sudo -n timeout 150 python3 - --candidate-sha', block)
+        self.assertIn('--phase cleanup_final timeout 150 python3 - --candidate-sha', block)
+        self.assertIn('--run-id', block)
+        self.assertIn('--attempt', block)
+        self.assertIn('RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED', block)
+        self.assertIn('RC6_FAILURE_RECOVERY=RED', block)
         self.assertIn('POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=', block)
         self.assertIn('< scripts/rc6_deploy_failure_cleanup.py', block)
         # bash checks the actual runner block syntax; no SSH command executes.

@@ -136,7 +136,7 @@ jobs:
           mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
           set +e
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=/tmp/porota-governed-tests.xml
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
@@ -166,7 +166,8 @@ jobs:
               'errors': errors,
               'exclusions': exclusions,
               'pytest_exit_code': int(os.environ['TEST_RC']),
-              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests else 'RED',
+              'status': 'GREEN' if (int(os.environ['TEST_RC']) == 0 and discovered > 0 and discovered == tests
+                                      and failures == errors == skipped == xfail == 0) else 'RED',
           }
           Path('/tmp/porota-governed-tests.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(f'POROTA_TEST_DISCOVERED={discovered}')
@@ -179,6 +180,8 @@ jobs:
           print(f'POROTA_GOVERNED_TEST_STATUS={result["status"]}')
           assert discovered > 0, 'automatic discovery returned zero tests'
           assert discovered == tests, f'collected/executed mismatch: {discovered}!={tests}'
+          assert failures == errors == skipped == xfail == 0, (
+              f'governed suite has failures/errors/skipped/xfail: {failures}/{errors}/{skipped}/{xfail}')
           PY
           test "$TEST_RC" -eq 0
           echo 'POROTA_GOVERNED_TESTS=GREEN'
@@ -500,12 +503,62 @@ jobs:
             --candidate-sha "$CANDIDATE_SHA" \
             --tree-sha "$(git rev-parse HEAD^{tree})"
 
+      - name: Verify required published native evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          proof = Path(os.environ['RUNNER_TEMP']) / 'porota-native-sizing-evidence'
+          required = [
+              Path('/tmp/porota-frozen-candidate.json'),
+              Path('/tmp/porota-deploy-bundle-v2.tgz'),
+              Path('/tmp/porota-deploy-bundle-v2-manifest.json'),
+              Path('/tmp/porota-predeploy-image.tar.gz'),
+              Path('/tmp/porota-governed-tests.json'),
+              proof / 'native-bound.xml',
+              *(proof / 'session' / name for name in (
+                  'dashboard_auth_52.xml', 'publication_io_identity.xml',
+                  'scalping_capacity.xml', 'scheduler_monitor_backup.xml',
+                  'signals_risk_exit_ledger.xml', 'sources_readiness_network.xml',
+                  'sql_shadow_wal.xml', 'treasury_caucion.xml')),
+              proof / 'session/stress.json',
+              proof / 'catalog/full-catalog.json',
+              proof / 'cadence/cadence-fresh.json',
+              proof / 'cadence/cadence-legacy.json',
+          ]
+          for path in required:
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_MISSING:{path.name}')
+          for path in (item for item in required if item.suffix == '.xml'):
+              root = ET.parse(path).getroot()
+              if (not root.findall('.//testcase') or
+                      next(root.iter('failure'), None) is not None or
+                      next(root.iter('error'), None) is not None or
+                      next(root.iter('skipped'), None) is not None):
+                  raise SystemExit(f'REQUIRED_NATIVE_JUNIT_NOT_GREEN:{path.name}')
+          governed = json.loads(Path('/tmp/porota-governed-tests.json').read_text())
+          if (governed['status'] != 'GREEN' or
+                  any(governed[key] for key in ('failures', 'errors', 'skipped', 'xfail'))):
+              raise SystemExit('REQUIRED_GOVERNED_JUNIT_NOT_GREEN')
+          for path in (proof / 'session/stress.json',
+                       proof / 'cadence/cadence-fresh.json',
+                       proof / 'cadence/cadence-legacy.json'):
+              data = json.loads(path.read_text())
+              if data['status'] != 'GREEN' or data['production_data_mounted'] is not False:
+                  raise SystemExit(f'REQUIRED_NATIVE_RECEIPT_NOT_GREEN:{path.name}')
+          print('POROTA_REQUIRED_EVIDENCE=GREEN')
+          PY
+
       - name: Upload predeploy evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: porota-predeploy-v2-${{ env.CANDIDATE_SHA }}
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
           path: |
             /tmp/porota-artifact-manifest.json
