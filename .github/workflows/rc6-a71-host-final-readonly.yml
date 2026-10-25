@@ -1,4 +1,4 @@
-name: 'RC6 A74 steady CLOSED worker sample after #739'
+name: 'RC6 A74 exact publisher access after #740'
 'on':
   push:
     branches:
@@ -13,19 +13,14 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 3
     env:
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-      A74_PROBE: '0'
     steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: 8d2e2343e6cf54264a77a4b99822377c4ccd335f
-        fetch-depth: 2
-    - name: 'Read-only settled 95-second worker sample after #739'
+    - name: Verify read-only publisher can read exact installed marker
       shell: bash
       run: |
         set -Eeuo pipefail
@@ -35,205 +30,78 @@ jobs:
         printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
         chmod 600 "$HOME/.ssh/known_hosts"
         umask 077
-        timeout 180 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_post_workers.json" <<'PY'
-        """Finite RC6 metadata audit. Never starts a worker or writes runtime data."""
-        import datetime,hashlib,json,os,pathlib,re,shutil,sqlite3,subprocess,time
-        from zoneinfo import ZoneInfo
+        timeout 25 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_publisher_normal.json" <<'PY'
 
-        START=time.monotonic()
-        UTC=datetime.timezone.utc
-        ROOT=pathlib.Path('/opt/porota-trading')
-        R={'schema':'RC6_A74_POSTDEPLOY_WORKERS_V2','source_utc':datetime.datetime.now(UTC).isoformat(),
-           'read_only':True,'probe_renews_source_freshness':False,'warnings':[]}
+        import json,os,pathlib,stat,subprocess
+        p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+        q=pathlib.Path('/opt/porota-trading/data/deploy/porota-frozen-candidate.json')
+        r={'schema':'RC6_A74_PUBLISHER_PROVENANCE_ACCESS_V1','euid':os.geteuid(),'egid':os.getegid(),'files':{}}
+        for name,target in [('state',p),('frozen',q)]:
+          item={}
+          try:
+            s=target.lstat()
+            item.update(exists=True,regular=stat.S_ISREG(s.st_mode),symlink=stat.S_ISLNK(s.st_mode),mode=oct(stat.S_IMODE(s.st_mode)),uid=s.st_uid,gid=s.st_gid)
+            if not item['regular'] or item['symlink'] or s.st_size>1048576:raise ValueError('FILE_METADATA_UNSAFE')
+            payload=json.loads(target.read_text())
+            item['readable']=True
+            item['selected_fields']={k:payload.get(k) for k in ('deploy_sha','candidate_sha','image_id','mode','real_orders_sent','real_order_routes','recorded_at','validation_status') if k in payload}
+          except (OSError,ValueError) as e:item['readable']=False;item['error_class']=type(e).__name__
+          r['files'][name]=item
+        s=subprocess.run(['systemctl','show','porota-runtime-evidence-rc6.service','-p','User','-p','Group','-p','ActiveState','-p','Result','--no-pager'],capture_output=True,text=True,timeout=5)
+        r['publisher_service']={'query_rc':s.returncode,'fields':dict(x.split('=',1) for x in s.stdout.splitlines() if '=' in x)}
+        print(json.dumps(r,sort_keys=True))
 
-        def command(args,seconds=5):
-            try:
-                p=subprocess.run(args,capture_output=True,text=True,timeout=seconds)
-                return p.returncode,p.stdout[:250000]
-            except (OSError,subprocess.TimeoutExpired):return 124,''
+        PY
+        timeout 25 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' > "$RUNNER_TEMP/a74_publisher_root.json" <<'PY'
 
-        def show(unit,props):
-            rc,out=command(['systemctl','show',unit,'--no-pager','--property='+','.join(props)])
-            return {'query_rc':rc,**dict(x.split('=',1) for x in out.splitlines() if '=' in x)}
+        import json,os,pathlib,stat,subprocess
+        p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+        q=pathlib.Path('/opt/porota-trading/data/deploy/porota-frozen-candidate.json')
+        r={'schema':'RC6_A74_PUBLISHER_PROVENANCE_ACCESS_V1','euid':os.geteuid(),'egid':os.getegid(),'files':{}}
+        for name,target in [('state',p),('frozen',q)]:
+          item={}
+          try:
+            s=target.lstat()
+            item.update(exists=True,regular=stat.S_ISREG(s.st_mode),symlink=stat.S_ISLNK(s.st_mode),mode=oct(stat.S_IMODE(s.st_mode)),uid=s.st_uid,gid=s.st_gid)
+            if not item['regular'] or item['symlink'] or s.st_size>1048576:raise ValueError('FILE_METADATA_UNSAFE')
+            payload=json.loads(target.read_text())
+            item['readable']=True
+            item['selected_fields']={k:payload.get(k) for k in ('deploy_sha','candidate_sha','image_id','mode','real_orders_sent','real_order_routes','recorded_at','validation_status') if k in payload}
+          except (OSError,ValueError) as e:item['readable']=False;item['error_class']=type(e).__name__
+          r['files'][name]=item
+        s=subprocess.run(['systemctl','show','porota-runtime-evidence-rc6.service','-p','User','-p','Group','-p','ActiveState','-p','Result','--no-pager'],capture_output=True,text=True,timeout=5)
+        r['publisher_service']={'query_rc':s.returncode,'fields':dict(x.split('=',1) for x in s.stdout.splitlines() if '=' in x)}
+        print(json.dumps(r,sort_keys=True))
 
-        def mem_available():
-            try:return int(re.search(r'^MemAvailable:\s+([0-9]+)',pathlib.Path('/proc/meminfo').read_text(),re.M).group(1))*1024
-            except (OSError,AttributeError):return 0
-
-        R['resources']={'free_bytes':shutil.disk_usage('/').free,'memory_available_bytes':mem_available()}
-        rc,raw=command(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status','native_acceptance_mode','source_freshness_renewed')}))"])
-        try:R['marker']={'query_rc':rc,**json.loads(raw)}
-        except ValueError:R['marker']={'query_rc':rc,'error':'MARKER_UNAVAILABLE'}
-        assert R['marker']['deploy_sha']=='089d3d9914ba9400c4c2c385ccb4987772f00f70' and R['marker']['candidate_sha']=='8d2e2343e6cf54264a77a4b99822377c4ccd335f' and R['marker']['image_id']=='sha256:c2744c518343f64b794ee800bb60c32663528f1e1a6b6d001469d0c6f442cbcc' and R['marker']['mode']=='PRODUCTION_PAPER' and R['marker']['real_orders_sent']==0
-        R['container_limits']={}
-        for cname in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
-            rc,limits=command(['sudo','-n','docker','inspect','-f','{{json .HostConfig.NanoCpus}} {{json .HostConfig.CpuQuota}} {{json .HostConfig.CpuPeriod}} {{json .HostConfig.CpusetCpus}} {{json .HostConfig.Memory}} {{json .HostConfig.PidsLimit}}',cname])
-            R['container_limits'][cname]={'query_rc':rc,'cpu_memory_pid_limits':limits.strip() if rc==0 else None}
-        R['containers']={}
-        for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
-            rc,raw=command(['sudo','-n','docker','inspect','-f','{{.Image}} {{.State.Status}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.StartedAt}}',name])
-            vals=raw.split()
-            if rc==0 and len(vals)==5 and re.fullmatch(r'sha256:[0-9a-f]{64}',vals[0]):
-                R['containers'][name]={'image':vals[0],'status':vals[1],'restarts':vals[2],'oom':vals[3],'started_at':vals[4]}
-            else:R['containers'][name]={'error':'CONTAINER_QUERY_FAILED','query_rc':rc}
-
-        rc,raw=command(['systemctl','list-unit-files','porota*.timer','--no-legend','--no-pager'])
-        names=sorted(set(x.split()[0] for x in raw.splitlines() if re.match(r'^porota[A-Za-z0-9@_.-]*\.timer\s',x)))
-        names=[n for n in names if not re.search(r'ppi[-_]?watch',n,re.I)]
-        R['timer_inventory']={'query_rc':rc,'count':len(names),'ppi_watch_excluded':True,'rows':[]}
-        services=set()
-        for unit in names[:64]:
-            row=show(unit,('ActiveState','SubState','UnitFileState','LastTriggerUSec','NextElapseUSecRealtime','NextElapseUSecMonotonic','Triggers','Persistent','AccuracyUSec','RandomizedDelayUSec','TimersCalendar','TimersMonotonic'))
-            row['unit']=unit
-            _,definition=command(['systemctl','cat',unit,'--no-pager'])
-            row['calendar_definition']=[x for x in definition.splitlines() if x.startswith(('OnCalendar=','OnBootSec=','OnUnitActiveSec=','Unit=','Persistent='))][:12]
-            target=next((x[5:] for x in row['calendar_definition'] if x.startswith('Unit=')),None)
-            if not target:
-                target=next((x for x in row.get('Triggers','').split() if x.endswith('.service')),None)
-            if target and re.fullmatch(r'porota[A-Za-z0-9@_.-]*\.service',target) and not re.search(r'ppi[-_]?watch',target,re.I):services.add(target)
-            row['service']=target
-            R['timer_inventory']['rows'].append(row)
-
-        services.update(('porota-a3-history-rc6@DAILY_INCREMENTAL.service','porota-a3-history-rc6@RECONCILE.service','porota-a3-history-rc6@WEEKEND_DEEP.service','porota-host-general-backup-rc6.service','porota-history-postclose-rc6.service'))
-        R['services']=[]
-        for unit in sorted(services):
-            row=show(unit,('ActiveState','SubState','UnitFileState','Result','ExecMainStatus','CPUUsageNSec','IOReadBytes','IOWriteBytes','MemoryPeak','NRestarts','ExecMainStartTimestamp','ExecMainExitTimestamp','ExecMainStartTimestampMonotonic','ExecMainExitTimestampMonotonic','InvocationID','TimeoutStartUSec','Nice','IOSchedulingClass'))
-            row['unit']=unit
-            rc,definition=command(['systemctl','cat',unit,'--no-pager'])
-            starts=[x for x in definition.splitlines() if x.startswith('ExecStart=')]
-            row['docker_wrapper']=any('docker' in x for x in starts)
-            row['programs']=sorted(set(y for x in starts for y in re.findall(r'(?<![A-Za-z0-9_])[A-Za-z0-9_/-]+\.(?:py|sh)\b',x)))[:12]
-            row['has_explicit_flock']=any('flock' in x for x in starts)
-            R['services'].append(row)
-
-        def read_envelope(name):
-            p=ROOT/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'/name
-            try:
-                if not p.is_file() or p.is_symlink() or p.stat().st_size>262144:return None
-                o=json.loads(p.read_bytes())
-                return o.get('payload') if isinstance(o,dict) else None
-            except (OSError,ValueError):return None
-
-        def proc_sample():
-            result={}
-            rc,raw=command(['sudo','-n','docker','top','porota_production_observer','-eo','pid,ppid,args'])
-            roles={'--dynamic-shadow-worker':'dynamic_shadow','--scanner-worker':'scanner','--performance-worker':'performance','--exit-reader':'exit_reader','--notification-worker':'notifications','--candle-worker':'candles','--intraday-scalping-worker':'intraday_scalping','--caucion-cash-sweep-worker':'caucion_cash_sweep'}
-            for line in raw.splitlines()[1:]:
-                fields=line.split(None,2)
-                if len(fields)!=3 or not fields[0].isdigit() or not any(x in fields[2] for x in ('bf_production_paper_observer.py','bv_paper_runtime.py')):continue
-                pid=int(fields[0]);role=next((v for k,v in roles.items() if k in fields[2]),'scanner' if 'bf_production_paper_observer.py' in fields[2] else 'observer_clock')
-                try:
-                    stat=(pathlib.Path('/proc')/str(pid)/'stat').read_text()
-                    parts=stat[stat.rfind(')')+2:].split()
-                    item={'pid':pid,'role':role,'cpu_seconds':(int(parts[11])+int(parts[12]))/os.sysconf('SC_CLK_TCK'),'rss_bytes':int(parts[21])*os.sysconf('SC_PAGE_SIZE'),'start_ticks':int(parts[19])}
-                    try:
-                        io=dict(x.split(':',1) for x in (pathlib.Path('/proc')/str(pid)/'io').read_text().splitlines())
-                        item.update({k:int(io[k]) for k in ('read_bytes','write_bytes','rchar','wchar')})
-                    except OSError:item['io_error']='PERMISSION_UNAVAILABLE'
-                    result[str(pid)]=item
-                except (OSError,ValueError,IndexError):continue
-            return result
-
-        before=proc_sample();wall=time.monotonic()
-        R['process_checkpoints']=[]
-        R['host_cpu_count']=os.cpu_count()
-        for sample_index in range(19):
-            time.sleep(5)
-            values=proc_sample()
-            R['process_checkpoints'].append({'elapsed_seconds':round(time.monotonic()-wall,3),'count':len(values),'roles':sorted(v['role'] for v in values.values()),'continuity':set(values)==set(before) and all(values[p]['start_ticks']==before[p]['start_ticks'] for p in values),'memory_available_bytes':mem_available()})
-        after=proc_sample();elapsed=time.monotonic()-wall
-        R['process_sample']={'elapsed_seconds':round(elapsed,3),'rows':[],'count_before':len(before),'count_after':len(after)}
-        for pid,a in after.items():
-            b=before.get(pid)
-            if not b or a['start_ticks']!=b['start_ticks']:R['process_sample']['rows'].append(dict(a,continuity=False));continue
-            out={k:a[k] for k in ('pid','role','rss_bytes')}
-            out.update(continuity=True,cpu_delta_seconds=round(a['cpu_seconds']-b['cpu_seconds'],3))
-            out['cpu_fraction_one_core']=round(out['cpu_delta_seconds']/elapsed,4)
-            for k in ('read_bytes','write_bytes','rchar','wchar'):
-                if k in a and k in b:out[k+'_delta']=a[k]-b[k]
-            R['process_sample']['rows'].append(out)
-        R['shadow']={}
-        for name in ('CURRENT.json','idle.json','status.json'):
-            o=read_envelope(name) or {}
-            R['shadow'][name]={k:o.get(k) for k in ('generation_id','as_of','status','phase','state','heartbeat_at','last_generation_id','source_freshness_renewed','real_orders_sent','real_routes','generation_timing','poll_seconds') if k in o}
-
-        R['databases']={}
-        if R['resources']['memory_available_bytes']>=256*1024*1024:
-            for label,p in (('paper',ROOT/'data/paper_v17/observer_v17.db'),('history',ROOT/'data/market_history.db')):
-                d={'state':'NO_VERIFICADO','read_only':True,'full_scan':False,'deletion_allowed':False}
-                if not p.is_file() or p.is_symlink():R['databases'][label]=dict(d,reason='SOURCE_UNAVAILABLE');continue
-                d['files']={suffix or 'main':pathlib.Path(str(p)+suffix).stat().st_size for suffix in ('','-wal','-shm') if pathlib.Path(str(p)+suffix).is_file()}
-                try:
-                    with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True,timeout=.05) as c:
-                        c.execute('PRAGMA query_only=ON')
-                        deadline=time.monotonic()+2
-                        c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
-                        d['pragmas']={k:c.execute('PRAGMA '+k).fetchone()[0] for k in ('page_size','page_count','freelist_count','journal_mode')}
-                        meta=c.execute("SELECT name,type,sql FROM sqlite_master WHERE type IN ('table','index') LIMIT 500").fetchall()
-                        d['tables']={name:{'columns':[r[1] for r in c.execute('PRAGMA table_info("'+name.replace('"','""')+'")')]} for name,kind,sql in meta if kind=='table'}
-                        d['indexes']=[name for name,kind,sql in meta if kind=='index']
-                        if label=='paper':
-                            c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
-                            if 'observer_state' in d['tables']:
-                                row=c.execute('SELECT mode,process_state,session_state,heartbeat_at,real_orders_sent FROM observer_state ORDER BY id DESC LIMIT 1').fetchone()
-                                d['observer_state']=dict(zip(('mode','process_state','session_state','heartbeat_at','real_orders_sent'),row)) if row else None
-                            for table in ('financial_instrument_catalog','candidate_universe'):
-                                if table not in d['tables']:continue
-                                columns=d['tables'][table]['columns']
-                                projection=['instrument_type']+[k for k in ('status','capability','can_simulate') if k in columns]
-                                q=','.join('"'+k+'"' for k in projection)
-                                try:
-                                    deadline=time.monotonic()+.5
-                                    rows=c.execute('SELECT '+q+',count(*) FROM "'+table+'" GROUP BY '+q+' LIMIT 200').fetchall()
-                                    d[table+'_groups']=[dict(zip(projection+['count'],r)) for r in rows]
-                                except sqlite3.Error:d[table+'_groups']={'state':'NO_VERIFICADO','reason':'BOUNDED_QUERY_ABORTED'}
-                        d['state']='VALIDADO_RUNTIME'
-                except (OSError,sqlite3.Error) as exc:d.update(state='NO_VERIFICADO',reason=type(exc).__name__)
-                R['databases'][label]=d
-        else:R['warnings'].append('SQL_METADATA_SKIPPED_MEMORY_RESERVE')
-
-        R['host_managed_source_hashes']={}
-        EXPECTED={'ops_runtime_evidence_rc6.py': '09c9a2c4729b443e39ea86c008ac81f95b3f2f08717069117732fa8af5dbda33', 'scripts/porota_publish_runtime_evidence_github_rc6.sh': '58f788d957128d42dde035492347beb0f5ac547b378f8adb7b98618102532e2f', 'scripts/porota_export_scheduler_state_rc6.sh': 'f61197b511bee3b0e69a4c4db8302ab0ea471fad59c8e2bfc4e2b72edf752b5c', 'scripts/rc6_iol_shadow_collect.py': '89110add33f031f0649741be8c6df354a06002f5d0208a9cf8ce3bf46169bd1e', 'scripts/rc6_public_source_capture.py': 'b6fc3939bb73e8a4cd828ce3cc265431396594d6b1d6171809bee0e45d1be17a', 'scripts/rc6_full_universe_evidence.py': '85261dd1c5160778b4fa1ad3a2a1414f1198b48275c20b08380dda941dc1d7e0', 'rc6_local_eod_history.py': '8a70e9c70bfe4310b1a0704d35c4af5efec6d320707fb4532336d852a670d445', 'ew_a3_history_rc6.py': '50a7c73373bd3571a8a4f75bd0aac095f4c9a0dc4dbabcb6f7a571d9ce4c6a89', 'ex_a3_history_job_rc6.py': '501140f718059dc782aa1f77f5138d73081e813de0753e97942da7a884735f77', 'cv_history_store_adapter_hf6.py': 'd6b96cf45751172eda45be057f14ebfc092be81ece1c4181be48155ae0edaac5', 'cu_history_store_v2_hf6.py': '8565376c6918f810465cd4289d2b1ab2b60149fa1343590acf15bcc6fec939bc', 'bf_production_paper_observer.py': '185a0214590dfbd1695bdc91e3d7018cc9bcf386295da63ad239c6d4f43a2e3e', 'bv_paper_runtime.py': 'ba4ec879ea9ab61a45cecf8e800cc5b61cff62fac7c8f6008969a809cd42284f', 'bl_candle_engine.py': 'a009df5d92ad40c1f5a8a0d0c6ddd9cd94da44bb2ffd3a54fe1a5ca4c1748345', 'bn_telegram_bus.py': '3e64b7641999aff82f31b7a6ebbf7a101fc29f04d9c0e4b5157083d316369d66', 'rc6_performance/capture.py': '5e0bf6a95cc66668e810ce628b4af53a395753d0956b1433ad1172813e131c5a', 'rc6_shadow_runtime/worker.py': '88e5f34a8d019fa089529a78c447bfe69a103f5fba778a782c39833bdebe2cda', 'cf_intraday_scalping.py': '42cbe3c2ce5537eca7d2abfc89f5855c7dbbb1c8d2286c6b8cef58412ca83bbb', 'di_caucion_cash_sweep_runtime_hf6.py': 'a274b405a82c11d07981a8e28d13af095ce38707a2ed231720e29f874720b4bd'}
-        for relative,digest in EXPECTED.items():
-            p=ROOT/relative
-            try:
-                good=p.is_file() and not p.is_symlink() and p.stat().st_size<2*1024**2
-                actual=hashlib.sha256(p.read_bytes()).hexdigest() if good else None
-                R['host_managed_source_hashes'][relative]={'expected_sha256':digest,'actual_sha256':actual,'matches':actual==digest}
-            except OSError:R['host_managed_source_hashes'][relative]={'matches':False,'error':'READ_FAILED'}
-        try:
-            p=ROOT/'data/market_history.db'
-            with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True,timeout=.05) as c:
-                c.execute('PRAGMA query_only=ON')
-                names=[r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 100")]
-                R['history_declared_foreign_key_counts']={name:len(c.execute('PRAGMA foreign_key_list("'+name.replace('"','""')+'")').fetchall()) for name in names}
-        except sqlite3.Error:R['history_declared_foreign_key_counts']={'state':'NO_VERIFICADO'}
-
-        R['resources_after']={'free_bytes':shutil.disk_usage('/').free,'memory_available_bytes':mem_available()}
-        R['source_end_utc']=datetime.datetime.now(UTC).isoformat()
-        R['source_art']=datetime.datetime.fromisoformat(R['source_utc']).astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat()
-        R['elapsed_seconds']=round(time.monotonic()-START,3)
-        print(json.dumps(R,sort_keys=True,separators=(',',':')))
         PY
         python3 - <<'PY'
-        import json,os,pathlib
-        r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'a74_post_workers.json').read_text())
-        assert r['marker']['deploy_sha']=='089d3d9914ba9400c4c2c385ccb4987772f00f70' and r['marker']['image_id']=='sha256:c2744c518343f64b794ee800bb60c32663528f1e1a6b6d001469d0c6f442cbcc'
-        assert r['marker']['real_orders_sent']==0 and r['marker']['mode']=='PRODUCTION_PAPER'
-        assert len(r['process_checkpoints'])==19 and all(x['count']==9 and x['continuity'] for x in r['process_checkpoints'])
-        assert all(x['matches'] for x in r['host_managed_source_hashes'].values())
-        print('A74_CLOSED_SHADOW_SECOND_SAMPLE='+json.dumps({'elapsed_seconds':r['process_sample']['elapsed_seconds'],'roles':{x['role']:{'cpu_delta_seconds':x.get('cpu_delta_seconds'),'write_bytes_delta':x.get('write_bytes_delta')} for x in r['process_sample']['rows']},'phase':r['shadow']['status.json'].get('phase')},sort_keys=True))
+        import datetime,json,os,pathlib
+        root=pathlib.Path(os.environ['RUNNER_TEMP'])
+        u=json.loads((root/'a74_publisher_normal.json').read_text())
+        s=json.loads((root/'a74_publisher_root.json').read_text())
+        m=s['files']['state']
+        assert m['readable'] and m['selected_fields']['deploy_sha']=='6cc0944fc225fb5bf50b0715f59125e0df206311'
+        assert m['selected_fields']['mode']=='PRODUCTION_PAPER' and m['selected_fields']['real_orders_sent']==0
+        assert m['selected_fields']['image_id']=='sha256:efdc2c077237b57cb2259e887e652caffee8fe929bc4f2891671a1242d0f2aca'
+        assert m['uid']==0 and m['gid']==1000 and m['mode']=='0o640'
+        assert u['euid']==1000 and u['egid']==1000 and u['files']['state']['readable']
+        assert u['files']['state']['selected_fields']==m['selected_fields']
+        assert u['files']['state']['selected_fields']['real_order_routes']=='NOT_CALLED'
+        r={'schema':'RC6_A74_PUBLISHER_ACCESS_RECONCILIATION_V1','source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+         'normal':u,'root':s,'publisher_user_matches_probe':u['publisher_service']['fields'].get('User')=='porotaadmin',
+         'root_marker_readable':m['readable'],'publisher_marker_readable':u['files']['state']['readable']}
+        (root/'a74_publisher_reconciliation.json').write_text(json.dumps(r,sort_keys=True))
+        print('A74_PUBLISHER_ROOT_MARKER='+str(m['readable'])+'|UNPRIVILEGED='+str(u['files']['state']['readable'])+'|SAME_USER='+str(r['publisher_user_matches_probe']))
         PY
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: rc6-a74-settled-worker-sample
+        name: rc6-a74-publisher-positive-access
         path: |-
-          ${{ runner.temp }}/a74_post_workers.json
+          ${{ runner.temp }}/a74_publisher_reconciliation.json
         retention-days: 7
-    - name: Close tunnel and delete runner credentials
+    - name: Delete runner credential
       if: always()
       shell: bash
       run: |-
-        ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" -S "$RUNNER_TEMP/a74_tunnel" -O exit || true
-        rm -f "$HOME/.ssh/rc6_a74" "$RUNNER_TEMP/a74_dashboard_token" "$RUNNER_TEMP/a74_audit.pub"
+        rm -f "$HOME/.ssh/rc6_a74"
