@@ -1709,6 +1709,13 @@ jobs:
             # critical proof; mixed or unknown fails closed.
             SCHEDULER_ACTION=recover-open
           fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED ] && \
+             grep -Fq '"status": "FIX_FORWARD_VALIDATION_REQUIRED"' <<< "$RECOVERY_OUTPUT"; then
+            # A failed CLOSED/flat installation can leave both owned containers
+            # cleanly stopped. Verify its exact stop and keep timers suspended;
+            # rearm only if both runtimes are running with PAPER/0.
+            SCHEDULER_ACTION=recover-closed
+          fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
