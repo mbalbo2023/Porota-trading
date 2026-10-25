@@ -1,0 +1,41 @@
+name: RC6 A70 inspect isolated site 8766
+on:
+  push:
+    branches: [ops/rc6-a70-8766-retire-20261025]
+    paths: [.github/workflows/rc6-a70-8766-retire.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Read bounded site and port ownership only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a70"
+          chmod 600 "$HOME/.ssh/rc6_a70"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/rc6_a70" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "A70_SITE_INSPECT_START=1"
+          for unit in porota-private-snapshot.service porota-live-decision-cockpit-rc6.timer porota-live-decision-cockpit-rc6.service; do
+            echo "UNIT=$unit"
+            sudo -n systemctl show "$unit" --no-pager --property=LoadState,ActiveState,UnitFileState,MainPID,ExecStart
+          done
+          if sudo -n ss -ltnp | grep -Eq '127[.]0[.]0[.]1:8766[[:space:]]'; then echo 'PORT_8766_LOCAL_LISTENER=YES'; else echo 'PORT_8766_LOCAL_LISTENER=NO'; fi
+          if sudo -n ss -ltnp | grep -Eq '(:|[.])8000[[:space:]]'; then echo 'PORT_8000_LISTENER=YES'; else echo 'PORT_8000_LISTENER=NO'; fi
+          if curl -fsS --max-time 3 -o /dev/null http://127.0.0.1:8766/health; then echo 'SITE_HEALTH_HTTP=200'; else echo 'SITE_HEALTH_HTTP=UNAVAILABLE'; fi
+          echo "A70_SITE_INSPECT_COMPLETE=1"
+          REMOTE
