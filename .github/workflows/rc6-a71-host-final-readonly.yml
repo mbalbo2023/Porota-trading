@@ -312,10 +312,118 @@ jobs:
           import json,sys
           r=json.load(open(sys.argv[1]));print('A72_CLOSED_SIGNATURE='+str(r['samples']))
           PY
+          timeout 135 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a72_runtime.json" <<'PY'
+          """Bounded read-only SHADOW idle proof, run on the RC6 host via Actions."""
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+          import sqlite3
+          import subprocess
+          import time
+          
+          UTC = datetime.timezone.utc
+          ROOT = Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
+          DATABASE = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          
+          
+          def command(argv, seconds=6):
+              try:
+                  proc = subprocess.run(argv, capture_output=True, text=True, timeout=seconds)
+                  return proc.returncode, proc.stdout[:25000]
+              except (OSError, subprocess.TimeoutExpired):
+                  return 124, ''
+          
+          
+          def owned(name):
+              path = ROOT / name
+              if not path.is_file() or path.is_symlink() or path.stat().st_size > 2 * 1024 * 1024:
+                  return None
+              try:
+                  payload = json.loads(path.read_bytes())
+                  return payload.get('payload') if isinstance(payload, dict) else None
+              except (OSError, ValueError):
+                  return None
+          
+          
+          def worker_cpu():
+              rc, raw = command(['sudo', '-n', 'docker', 'top', 'porota_production_observer',
+                                 '-eo', 'pid,ppid,args'])
+              if rc:
+                  return None, None
+              pids = []
+              for line in raw.splitlines()[1:]:
+                  fields = line.split(None, 2)
+                  if len(fields) == 3 and fields[0].isdigit() and '--dynamic-shadow-worker' in fields[2]:
+                      pids.append(int(fields[0]))
+              if len(pids) != 1:
+                  return None, None
+              pid = pids[0]
+              try:
+                  raw = Path('/proc', str(pid), 'stat').read_text()
+                  fields = raw[raw.rfind(')') + 2:].split()
+                  return pid, (int(fields[11]) + int(fields[12])) / os.sysconf('SC_CLK_TCK')
+              except (OSError, ValueError, IndexError):
+                  return None, None
+          
+          
+          def sample():
+              pointer = owned('CURRENT.json') or {}
+              idle = owned('idle.json') or {}
+              status = owned('status.json') or {}
+              pid, cpu = worker_cpu()
+              values = {'utc': datetime.datetime.now(UTC).isoformat(),
+                        'generation_id': pointer.get('generation_id'),
+                        'idle_state': idle.get('state'), 'idle_heartbeat': idle.get('heartbeat_at'),
+                        'idle_generation_id': idle.get('last_generation_id'),
+                        'idle_source_freshness_renewed': idle.get('source_freshness_renewed'),
+                        'phase': status.get('phase'), 'status': status.get('status'),
+                        'source_as_of': status.get('as_of'),
+                        'real_orders_sent': status.get('real_orders_sent'),
+                        'real_routes': status.get('real_routes'), 'pid': pid, 'cpu_seconds': cpu}
+              if DATABASE.is_file():
+                  try:
+                      with sqlite3.connect(DATABASE.as_uri() + '?mode=ro', uri=True, timeout=.005) as c:
+                          c.execute('PRAGMA query_only=ON')
+                          values['equity_max_id'] = c.execute(
+                              'SELECT COALESCE(MAX(id),0) FROM paper_equity_by_currency').fetchone()[0]
+                  except sqlite3.Error:
+                      values['equity_max_id'] = None
+              return values
+          
+          
+          before = sample()
+          time.sleep(95)
+          after = sample()
+          same_worker = (before['pid'] is not None and before['pid'] == after['pid']
+                         and before['cpu_seconds'] is not None and after['cpu_seconds'] is not None)
+          result = {
+              'source_start_utc': before['utc'], 'source_end_utc': after['utc'],
+              'before': before, 'after': after,
+              'same_worker': same_worker,
+              'cpu_delta_seconds': (round(after['cpu_seconds'] - before['cpu_seconds'], 3)
+                                    if same_worker else None),
+              'equity_id_delta': (after['equity_max_id'] - before['equity_max_id']
+                                  if isinstance(before.get('equity_max_id'), int)
+                                  and isinstance(after.get('equity_max_id'), int) else None),
+              'same_generation': (before['generation_id'] is not None
+                                  and before['generation_id'] == after['generation_id']),
+              'idle_heartbeat_advanced': (before['idle_heartbeat'] is not None
+                                          and after['idle_heartbeat'] is not None
+                                          and after['idle_heartbeat'] > before['idle_heartbeat']),
+          }
+          print(json.dumps(result, sort_keys=True, separators=(',', ':')))
+          PY
+          python3 - "$RUNNER_TEMP/a72_runtime.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          print("A72_RUNTIME_PROOF="+str({k:r.get(k) for k in ("same_worker","cpu_delta_seconds","equity_id_delta","same_generation","idle_heartbeat_advanced")}))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: rc6-a71-final-readonly
           path: |
             ${{ runner.temp }}/a71_final.json
             ${{ runner.temp }}/a72_probe.json
+            ${{ runner.temp }}/a72_runtime.json
           retention-days: 7
