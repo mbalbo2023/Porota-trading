@@ -1,0 +1,55 @@
+{
+  "source": "https://github.com/mbalbo2023/Porota-trading/actions/runs/40146181187",
+  "job_id": 121027897382,
+  "diagnostic_commit": "ab85f0ffd46345e485d11fa5fbd580629ad06394",
+  "receipt": {
+    "backup_allowlist_bytes": 0,
+    "backup_allowlist_count": 0,
+    "backup_timer": {
+      "active": "inactive",
+      "enabled": "masked"
+    },
+    "barrier_file_status": "ABSENT",
+    "barrier_state": "ABSENT",
+    "candidate_sha": "26a95f734cb9eece72e89a1d084c7006a1e05fa2",
+    "candidate_tree": "2f717f2ba2d2cd99b5d9ee046e1dd9732a9afac3",
+    "classification_hint": "CLOSED_FLAT",
+    "contract_writers_running": 0,
+    "disk_pass_at_sample": true,
+    "host_mutations": "NONE_REQUESTED",
+    "inode_free_percent": 91.641871,
+    "lock_parent_safe": true,
+    "lock_status": "ABSENT",
+    "observer": {
+      "exposures_at_most_two_each": {
+        "caucion_open": 0,
+        "futures_active": 0,
+        "spot_open": 0
+      },
+      "heartbeat_at": "2026-10-25T00:18:54.039199+00:00",
+      "heartbeat_fresh_180s": true,
+      "historical_caucion_exception_eligible_now": false,
+      "mode": "PRODUCTION_PAPER",
+      "process_state": "WAITING_MARKET",
+      "real_orders_sent": 0,
+      "session_state": "MARKET_CLOSED"
+    },
+    "owned_containers": {
+      "porota_production_dashboard": {
+        "image": "sha256:4c91f79ce95d4219c05e09051fdb99b7304da6466742cb922f725d97d59daaa1",
+        "status": "running"
+      },
+      "porota_production_observer": {
+        "image": "sha256:4c91f79ce95d4219c05e09051fdb99b7304da6466742cb922f725d97d59daaa1",
+        "status": "running"
+      }
+    },
+    "remote_user_unprivileged": true,
+    "required_pretransfer_bytes": 4041528229,
+    "root_available_bytes": 7950344192,
+    "sampled_at_utc": "2026-10-25T00:18:54.994404+00:00",
+    "schema": "RC6_733_CURRENT_HOST_READONLY_V1",
+    "status": "PASS_SNAPSHOT",
+    "sudo_euid": 0
+  }
+}
