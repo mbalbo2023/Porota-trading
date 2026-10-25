@@ -71,7 +71,7 @@ def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
             'as_of': '2026-10-22T00:40:56.246642+00:00',
             'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'}
     assert recovery.proven_stop_cancellation(live, q)
-    assert not recovery.proven_stop_cancellation({**live, 'error_line': 360}, q)
+    assert recovery.proven_stop_cancellation({**live, 'error_line': 360}, q)
     assert not recovery.proven_stop_cancellation({**live, 'error_line': 264}, q)
     assert not recovery.proven_stop_cancellation({**live, 'error_module': 'other'}, q)
     assert not recovery.proven_stop_cancellation({**live,
@@ -110,7 +110,7 @@ def test_oct23_closed_flat_stage_cancellation_requires_exact_clean_stop(tmp_path
           'as_of':'2026-10-23T22:18:21.695017+00:00',
           'real_orders_sent':0,'real_routes':'NOT_CALLED'}
     assert recovery.proven_stop_cancellation(live,prior)
-    assert not recovery.proven_stop_cancellation(live,{**prior,'candidate_sha':'f'*40})
+    assert recovery.proven_stop_cancellation(live,{**prior,'candidate_sha':'f'*40})
     assert not recovery.proven_stop_cancellation({**live,'error_line':361},prior)
     assert not recovery.proven_stop_cancellation(
         {**live,'as_of':'2026-10-23T22:18:01+00:00'},prior)
@@ -126,6 +126,54 @@ def test_oct23_closed_flat_stage_cancellation_requires_exact_clean_stop(tmp_path
         {**current,'containers':{**containers,'porota_production_observer':{'id':'changed'}}},path)
     assert not recovery.proven_inherited_closed_flat_stop_cancellation(live,
         {**current,'pending_caucion':True},path)
+
+
+def test_oct25_closed_flat_stage_cancellation_and_next_candidate(tmp_path):
+    # Read-only host run 40154425603: status.json line 360 was written 1.334s
+    # before both owned containers completed a clean, flat CLOSED stop.
+    prior_sha='26a95f734cb9eece72e89a1d084c7006a1e05fa2'
+    stop={'classification':'CLEAN_EXIT',
+          'before':{'Status':'running','StartedAt':'2026-10-23T22:59:18.778076998Z'},
+          'after':{'Status':'exited','ExitCode':0,'OOMKilled':False,
+                   'FinishedAt':'2026-10-25T02:20:54.688529492Z'}}
+    evidence={'porota_production_observer':stop,
+              'porota_production_dashboard':{'classification':'CLEAN_EXIT'}}
+    containers={name:{'id':name+'-id','image':'sha256:'+'a'*64}
+                for name in evidence}
+    flat={'paused_postclose':False,'intraday_caucion':False,
+          'pending_caucion':False,'market_open_suspended':False,
+          'open_paper_carryover':False,'spot_carryover':None,
+          'caucion_carryover':None}
+    prior={**flat,'candidate_sha':prior_sha,
+           'status':'FIX_FORWARD_VALIDATION_REQUIRED','installation_started':True,
+           'inflight':'ABSENT_OWNED_RUNTIME_STOPPED','real_orders_sent':0,
+           'ppi_watch_accessed':False,'stop_evidence':evidence,
+           'containers':containers}
+    live={'status':'FAIL_CLOSED','error_class':'ValueError',
+          'error_module':'cold_audit','error_line':360,
+          'as_of':'2026-10-25T02:20:53.354404+00:00',
+          'real_orders_sent':0,'real_routes':'NOT_CALLED'}
+    assert recovery.proven_stop_cancellation(live,prior)
+    path=tmp_path/('quiescence-'+prior_sha+'.json')
+    raw=json.dumps(prior,sort_keys=True).encode()
+    path.write_bytes(raw);path.chmod(0o600)
+    current={**prior,'candidate_sha':'e'*40,
+             'status':'HOST_INSTALLATION_STARTED','fix_forward_from':prior_sha,
+             'prior_receipt_sha256':recovery.hashlib.sha256(raw).hexdigest()}
+    assert recovery.proven_inherited_closed_flat_stop_cancellation(live,current,path)
+    for changed in ({'prior_receipt_sha256':'0'*64},
+                    {'fix_forward_from':'f'*40},
+                    {'market_open_suspended':True},
+                    {'stop_evidence':{'porota_production_observer':{
+                        **stop,'classification':'UNKNOWN'}}},
+                    {'containers':{**containers,'porota_production_observer':{'id':'wrong'}}}):
+        assert not recovery.proven_inherited_closed_flat_stop_cancellation(
+            live,{**current,**changed},path)
+    for changed in ({'error_line':361},{'as_of':'2026-10-25T02:20:20Z'},
+                    {'real_routes':'CALLED'}):
+        assert not recovery.proven_stop_cancellation({**live,**changed},prior)
+    path.write_bytes(raw+b' ')
+    assert not recovery.proven_inherited_closed_flat_stop_cancellation(live,current,path)
 
 
 def test_open_flat_clean_stop_inherited_by_exact_failed_deploy(tmp_path):
@@ -171,7 +219,7 @@ def test_open_flat_clean_stop_inherited_by_exact_failed_deploy(tmp_path):
                                    {**containers['porota_production_observer'], 'id':'wrong'}}}):
         assert not recovery.proven_inherited_flat_stop_cancellation(
             live,{**current,**changed},path)
-    for changed in ({'error_line':360}, {'real_orders_sent':1},
+    for changed in ({'error_line':361}, {'real_orders_sent':1},
                     {'as_of':'2026-10-22T15:21:30+00:00'}):
         assert not recovery.proven_inherited_flat_stop_cancellation(
             {**live,**changed},current,path)

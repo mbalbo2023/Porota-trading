@@ -49,6 +49,57 @@ def resolve_open_recovery():
     raise ValueError('SCHEDULER_OPEN_RECOVERY_MIXED_OR_UNKNOWN')
 
 
+def resolve_closed_recovery():
+    """A stopped CLOSED/flat install must keep its timers paused."""
+    observed = []
+    for name in ('porota_production_observer', 'porota_production_dashboard'):
+        status, code = command('docker', 'inspect', '-f', '{{.State.Status}}', name)
+        if code:
+            raise ValueError('SCHEDULER_CLOSED_RECOVERY_IDENTITY_UNKNOWN')
+        observed.append(status)
+    if observed == ['running', 'running']:
+        return 'restore'
+    if observed == ['exited', 'exited']:
+        return 'hold-closed-flat'
+    raise ValueError('SCHEDULER_CLOSED_RECOVERY_MIXED_OR_UNKNOWN')
+
+
+def require_exact_stopped_closed_flat(candidate):
+    """Prove the installed failed candidate's exact clean stop and flat PAPER ledger."""
+    sys.path.insert(0, '/opt/porota-trading')
+    from scripts import rc6_deploy_quiescence as quiescence
+    originals = {name: quiescence.inspect(name) for name in quiescence.OWNED}
+    if any(value['State']['Status'] != 'exited' for value in originals.values()):
+        raise ValueError('SCHEDULER_STOPPED_CLOSED_IDENTITY_RED')
+    path = quiescence.ROOT/'data/deploy'/('quiescence-' + candidate + '.json')
+    if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536):
+        raise ValueError('SCHEDULER_STOPPED_CLOSED_RECEIPT_UNSAFE')
+    receipt = json.loads(path.read_bytes())
+    if (receipt.get('candidate_sha') != candidate or
+            receipt.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            receipt.get('installation_started') is not True or
+            receipt.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+            set(receipt.get('containers', {})) != set(quiescence.OWNED) or
+            any(originals[name]['Id'] != receipt['containers'][name].get('id') or
+                originals[name]['Image'] != receipt['containers'][name].get('image')
+                for name in quiescence.OWNED)):
+        raise ValueError('SCHEDULER_STOPPED_CLOSED_INSTALL_IDENTITY_RED')
+    quiescence.exact_clean_stopped(receipt)
+    if (type(receipt.get('real_orders_sent')) is not int or
+            receipt['real_orders_sent'] != 0 or
+            receipt.get('ppi_watch_accessed') is not False or
+            receipt.get('market_open_suspended') is not False or
+            receipt.get('open_paper_carryover') is not False or
+            receipt.get('spot_carryover') is not None or
+            receipt.get('caucion_carryover') is not None or
+            receipt.get('paused_postclose') is not False or
+            receipt.get('intraday_caucion') is not False or
+            receipt.get('pending_caucion') is not False or
+            quiescence.admit(stopped=True, stopped_receipt=receipt) not in ('RUNNING', 'STOPPED')):
+        raise ValueError('SCHEDULER_STOPPED_CLOSED_FLAT_RED')
+    quiescence.critical_admission()
+
+
 def require_exact_stopped_open_flat(candidate):
     """Keep timers paused only under the prior clean OPEN PAPER stop proof."""
     sys.path.insert(0, '/opt/porota-trading')
@@ -255,7 +306,9 @@ def run(candidate, action, policy_b64):
             raise ValueError('SCHEDULER_RECEIPT_IDENTITY_CHANGED')
         if action == 'recover-open':
             action = resolve_open_recovery()
-        if action == 'hold-open-flat':
+        if action == 'recover-closed':
+            action = resolve_closed_recovery()
+        if action in ('hold-open-flat', 'hold-closed-flat'):
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_OPEN_HOLD_RECEIPT_RED')
@@ -268,10 +321,13 @@ def run(candidate, action, policy_b64):
                         command('systemctl', 'is-active', service)[0] in
                         ('active', 'activating', 'reloading', 'deactivating')):
                     raise ValueError('SCHEDULER_OPEN_HOLD_JOB_ACTIVE:' + name)
-            require_exact_stopped_open_flat(candidate)
+            if action == 'hold-open-flat':
+                require_exact_stopped_open_flat(candidate)
+            else:
+                require_exact_stopped_closed_flat(candidate)
             if ppi_snapshot() != before:
                 raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
-            print(json.dumps({'status': 'STOPPED_OPEN_HELD', 'candidate_sha': candidate,
+            print(json.dumps({'status': 'STOPPED_OPEN_HELD' if action == 'hold-open-flat' else 'STOPPED_CLOSED_HELD', 'candidate_sha': candidate,
                               'timer_count': len(names), 'ppi_watch_accessed': False}, sort_keys=True))
             return receipt
         if action == 'restore':
@@ -303,7 +359,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['suspend', 'restore', 'verify',
-                                           'hold-open-flat', 'recover-open'], required=True)
+                                           'hold-open-flat', 'recover-open',
+                                           'hold-closed-flat', 'recover-closed'], required=True)
     parser.add_argument('--policy-b64', required=True)
     args = parser.parse_args()
     run(args.candidate_sha, args.action, args.policy_b64)

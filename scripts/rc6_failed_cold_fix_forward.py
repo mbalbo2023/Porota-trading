@@ -121,23 +121,20 @@ def proven_stop_cancellation(live, quiescence):
                  quiescence.get('open_paper_carryover') is False and
                  quiescence.get('spot_carryover') is None and
                  quiescence.get('caucion_carryover') is None)
-    # The 2026-10-22 clean stop interrupted _frame() at line 265 while
-    # flushing an 8 MiB segment. The older stage() cancellation at line 360
-    # belongs to the separately proved postclose/caucion paths.
-    # This exact Oct 23 CLOSED/flat drain cancelled at stage(), after the
-    # preceding COLD generation had already reached COMPLETE. Bind the new
-    # source line to its candidate and clean Docker stop receipt; retain the
-    # older _frame() line for other flat stops.
-    stage_flat=(flat and quiescence.get('candidate_sha')==CLOSED_FLAT_STAGE_STOP_SHA and
-        (quiescence.get('stop_evidence') or {}).get('porota_production_observer',{})
-            .get('after',{}).get('FinishedAt')==CLOSED_FLAT_STAGE_STOP_FINISHED)
-    expected_line=(360 if stage_flat else 265 if flat else
-                   360 if (postclose or intraday_caucion or pending_caucion) else None)
-    if (expected_line is None or
+    # Both source sites raise SHADOW_COLD_CAPTURE_CANCELLED after should_abort:
+    # _frame() at 265 and stage() at 360. The 25 Oct CLOSED/flat clean stop
+    # hit stage() again, so a historical candidate/timestamp whitelist cannot
+    # prove subsequent stops. Bind either site to this exact CLEAN_EXIT and
+    # the 15-second cancellation window below; reject all other source lines.
+    expected_lines=({265,360} if flat else {360} if
+                    (postclose or intraday_caucion or pending_caucion) else set())
+    if (not expected_lines or
             live.get('status')!='FAIL_CLOSED' or live.get('error_class')!='ValueError' or
             live.get('error_module')!='cold_audit' or
+            type(live.get('real_orders_sent')) is not int or
+            live['real_orders_sent']!=0 or live.get('real_routes')!='NOT_CALLED' or
             type(live.get('error_line')) is not int or
-            live['error_line']!=expected_line):
+            live['error_line'] not in expected_lines):
         return False
     proof=(quiescence.get('stop_evidence') or {}).get('porota_production_observer')
     if not isinstance(proof,dict) or proof.get('classification')!='CLEAN_EXIT':return False
@@ -296,10 +293,12 @@ def proven_inherited_closed_flat_stop_cancellation(live, current, prior_path):
     """Adopt only the Oct 23 flat stop through its exact hashed predecessor."""
     if prior_path is None or not isinstance(current,dict):return False
     try:
-        if (current.get('fix_forward_from')!=CLOSED_FLAT_STAGE_STOP_SHA or
-                prior_path.name!='quiescence-'+CLOSED_FLAT_STAGE_STOP_SHA+'.json' or
+        previous_candidate=current.get('fix_forward_from')
+        if (type(previous_candidate) is not str or
+                re.fullmatch('[0-9a-f]{40}',previous_candidate) is None or
+                prior_path.name!='quiescence-'+previous_candidate+'.json' or
                 prior_path.is_symlink() or regular(prior_path).st_size>65536 or
-                current.get('candidate_sha')==CLOSED_FLAT_STAGE_STOP_SHA or
+                current.get('candidate_sha')==previous_candidate or
                 current.get('status') not in {'DRAINED','HOST_INSTALLATION_STARTED'} or
                 current.get('real_orders_sent')!=0 or
                 current.get('ppi_watch_accessed') is not False or
@@ -314,7 +313,7 @@ def proven_inherited_closed_flat_stop_cancellation(live, current, prior_path):
         if hashlib.sha256(raw).hexdigest()!=current.get('prior_receipt_sha256'):
             return False
         prior=json.loads(raw)
-        return (prior.get('candidate_sha')==CLOSED_FLAT_STAGE_STOP_SHA and
+        return (prior.get('candidate_sha')==previous_candidate and
                 prior.get('status')=='FIX_FORWARD_VALIDATION_REQUIRED' and
                 prior.get('installation_started') is True and
                 prior.get('inflight')=='ABSENT_OWNED_RUNTIME_STOPPED' and

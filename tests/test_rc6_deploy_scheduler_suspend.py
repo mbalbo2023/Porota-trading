@@ -70,6 +70,52 @@ class SuspendTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_OPEN_INSTALL_IDENTITY_RED'):
                     suspend.require_exact_stopped_open_flat(candidate)
 
+    def test_postinstall_closed_flat_hold_requires_own_receipt_and_paper_zero(self):
+        candidate = 'f'*40
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root/'data/deploy'
+            target.mkdir(parents=True)
+            originals = {name: {'Id': str(index)*64, 'Image': 'sha256:'+'a'*64,
+                                'State': {'Status': 'exited'}}
+                         for index, name in enumerate(quiescence.OWNED, 1)}
+            row = {'candidate_sha': candidate, 'status': 'FIX_FORWARD_VALIDATION_REQUIRED',
+                   'installation_started': True, 'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
+                   'containers': {name: {'id': value['Id'], 'image': value['Image']}
+                                  for name, value in originals.items()},
+                   'real_orders_sent': 0, 'ppi_watch_accessed': False,
+                   'market_open_suspended': False, 'open_paper_carryover': False,
+                   'spot_carryover': None, 'caucion_carryover': None,
+                   'paused_postclose': False, 'intraday_caucion': False,
+                   'pending_caucion': False}
+            path = target/('quiescence-'+candidate+'.json')
+            path.write_text(json.dumps(row))
+            with patch.object(quiescence, 'ROOT', root), \
+                 patch.object(quiescence, 'inspect', side_effect=lambda n: originals[n]), \
+                 patch.object(quiescence, 'exact_clean_stopped') as exact, \
+                 patch.object(quiescence, 'admit', return_value='STOPPED') as admit, \
+                 patch.object(quiescence, 'critical_admission') as critical:
+                suspend.require_exact_stopped_closed_flat(candidate)
+                exact.assert_called_once_with(row)
+                critical.assert_called_once()
+                self.assertTrue(admit.call_args.kwargs['stopped'])
+                self.assertNotIn('allow_market_open_suspend', admit.call_args.kwargs)
+                for field, value in [('real_orders_sent', 1),
+                                     ('market_open_suspended', True),
+                                     ('pending_caucion', True)]:
+                    bad = {**row, field: value}
+                    path.write_text(json.dumps(bad))
+                    with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_CLOSED_FLAT_RED'):
+                        suspend.require_exact_stopped_closed_flat(candidate)
+                path.write_text(json.dumps(row))
+                row['containers'][quiescence.OWNED[0]]['id'] = 'e'*64
+                path.write_text(json.dumps(row))
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_CLOSED_INSTALL_IDENTITY_RED'):
+                    suspend.require_exact_stopped_closed_flat(candidate)
+                path.unlink()
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_CLOSED_RECEIPT_UNSAFE'):
+                    suspend.require_exact_stopped_closed_flat(candidate)
+
     def test_restore_runtime_gate_checks_containers_and_paper_zero(self):
         with TemporaryDirectory() as directory:
             data = Path(directory)
@@ -255,6 +301,44 @@ class SuspendTests(unittest.TestCase):
                 assert suspend.run('a'*40,'recover-open',self.policy())['status']=='RESTORED'
                 running.assert_called_once()
                 self.assertEqual(len(mutations),4)
+
+    def test_closed_recovery_holds_stopped_pair_and_rejects_mixed(self):
+        names = {'porota-runtime-evidence-rc6.timer', 'porota-preopen-rc6.timer'}
+        states = dict.fromkeys(names, 'active')
+        docker = dict.fromkeys(('porota_production_observer',
+                                'porota_production_dashboard'), 'exited')
+        mutations = []
+        def command(*args):
+            if args[0] == 'docker': return docker[args[-1]], 0
+            if args[:2] == ('systemctl', 'list-unit-files'):
+                return ('other-ppi-watch.service enabled\n', 0)
+            unit = args[2]
+            if args[1] == 'is-enabled': return ('enabled', 0)
+            if args[1] == 'is-active':
+                return ('active', 0) if unit == 'other-ppi-watch.service' else (states.get(unit, 'inactive'), 0)
+            if args[1] == 'show': return (unit.removesuffix('.timer')+'.service', 0)
+            if args[1] in ('start', 'stop'):
+                mutations.append((args[1], unit))
+                states[unit] = 'active' if args[1] == 'start' else 'inactive'
+                return ('', 0)
+            raise AssertionError(args)
+        with TemporaryDirectory() as directory:
+            with patch.object(suspend, 'ROOT', Path(directory)), \
+                 patch.object(suspend, 'command', side_effect=command), \
+                 patch.object(suspend, 'require_exact_stopped_closed_flat') as exact, \
+                 patch.object(suspend, 'require_owned_running') as running:
+                suspend.run('a'*40, 'suspend', self.policy())
+                assert suspend.run('a'*40, 'recover-closed', self.policy())['status'] == 'SUSPENDED'
+                exact.assert_called_once_with('a'*40)
+                self.assertEqual(len(mutations), 2)
+                docker['porota_production_observer'] = 'running'
+                with self.assertRaisesRegex(ValueError, 'SCHEDULER_CLOSED_RECOVERY_MIXED_OR_UNKNOWN'):
+                    suspend.run('a'*40, 'recover-closed', self.policy())
+                self.assertEqual(len(mutations), 2)
+                docker['porota_production_dashboard'] = 'running'
+                assert suspend.run('a'*40, 'recover-closed', self.policy())['status'] == 'RESTORED'
+                running.assert_called_once()
+                self.assertEqual(len(mutations), 4)
 
     def test_invalid_policy_never_mutates_systemd(self):
         bad = base64.b64encode(json.dumps({'units': {
