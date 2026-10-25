@@ -1,0 +1,95 @@
+name: RC6 A77 bounded history admission (read only)
+
+on:
+  push:
+    branches: [audit/rc6-a77-history-readonly-20261025]
+    paths: ['.github/workflows/rc6-a77-history-readonly.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Probe exact history gates without mutation or provider calls
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 180 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          for unit in porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer porota-history-postclose-rc6.timer; do
+            enabled="$(systemctl is-enabled "$unit" || true)"
+            active="$(systemctl is-active "$unit" || true)"
+            printf 'HISTORY_TIMER=%s|%s|%s\n' "$unit" "$enabled" "$active"
+            test "$enabled" = masked
+            test "$active" = inactive
+          done
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import collections,json,os,sqlite3
+          from pathlib import Path
+          from ew_a3_history_rc6 import load_targets
+
+          paper='/app/data/paper_v17/observer_v17.db'
+          history='/app/data/market_history.db'
+          def connect(path):
+              c=sqlite3.connect(Path(path).as_uri()+'?mode=ro',uri=True,timeout=.3)
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=300')
+              return c
+          class Store:
+              def connect(self):return connect(paper)
+          with connect(paper) as c:
+              state=c.execute('SELECT mode,real_orders_sent,session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+              assert state and state['mode']=='PRODUCTION_PAPER' and type(state['real_orders_sent']) is int and state['real_orders_sent']==0
+              assert state['session_state']=='MARKET_CLOSED'
+              targets=load_targets(Store())
+              families=dict(sorted(collections.Counter(t[1] for t in targets).items()))
+              tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              source=None
+              if 'source_sync' in tables:
+                  row=c.execute("SELECT status,last_attempt_at FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'").fetchone()
+                  source=dict(row) if row else None
+          with connect(history) as c:
+              tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              cutoff=None
+              if 'rc6_history_cutoff_repair_runs' in tables:
+                  row=c.execute("SELECT state,targets,complete,failed,ppi_queries FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
+                  cutoff=dict(row) if row else None
+              cols={t:[r[1] for r in c.execute('PRAGMA table_info('+t+')')]
+                    for t in ('history_versions_v2','history_canonical_v2','history_close_versions_v1')}
+          result={'schema':'rc6-a77-history-admission-v1','paper':state['mode'],
+                  'real_orders_sent':state['real_orders_sent'],'session':state['session_state'],
+                  'a3_exact_target_count':len(targets),'a3_by_family':families,
+                  'cutoff_repair':cutoff,'ppi_source_sync':source,
+                  'history_db_bytes':os.stat(history).st_size,
+                  'history_schema_columns':cols,'provider_requests':0,'history_writes':False,
+                  'ppi_watch_accessed':False}
+          print(json.dumps(result,sort_keys=True))
+          PY
+          REMOTE
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
