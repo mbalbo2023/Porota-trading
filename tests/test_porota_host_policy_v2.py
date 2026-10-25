@@ -44,7 +44,7 @@ def test_retired_timer_must_be_removed_and_disabled():
     assert validate_policy(m, p)["status"] == "GREEN"
 
 
-def test_current_all_family_policy_keeps_a3_history_active():
+def test_failed_a3_history_timers_remain_quarantined_on_deploy():
     import json
     from pathlib import Path
     policy=json.loads(Path("ops/policy/host-control-plane-reconciliation-v2.json").read_text())
@@ -55,10 +55,11 @@ def test_current_all_family_policy_keeps_a3_history_active():
         "systemd/porota-a3-history-weekend-rc6.timer",
     ):
         row=units[name]
-        assert row["role"]=="ACTIVE_TIMER"
-        assert row["install"] is True
-        assert row["enabled"] is True
-        assert row["active"] is True
+        assert row["role"]=="QUARANTINED_TIMER"
+        assert row["install"] is False
+        assert row["enabled"] is False
+        assert row["active"] is False
+        assert row["masked"] is True
     svc=units["systemd/porota-a3-history-rc6@.service"]
     assert svc["role"]=="ACTIVE_SERVICE"
     assert svc["install"] is True

@@ -77,7 +77,7 @@ def test_canonical_aliases_auth_pagination_and_redaction(client,tmp_path,monkeyp
     value=publication(tmp_path)
     value['entries'][0]['reason']='api_token=do-not-render-secret'
     (tmp_path/'counterfactual_learning_rc6.json').write_text(json.dumps(value))
-    for path in ('/aprendizaje','/validacion','/analitica/contrafactuales'):
+    for path in ('/aprendizaje','/analitica/contrafactuales'):
         response=client.get(path)
         assert response.status_code==200
         soup=BeautifulSoup(response.text,'html.parser')
@@ -86,8 +86,30 @@ def test_canonical_aliases_auth_pagination_and_redaction(client,tmp_path,monkeyp
         assert 'do-not-render-secret' not in response.text
         assert 'channel=gates' in response.text and 'channel=exits' in response.text
         assert soup.find('a',string='Mostrar 10 más')
+    # This fixture installs only the terminal. The real application delegates
+    # /validacion to the independent M0–M11 campaign middleware.
+    assert client.get('/validacion').status_code == 404
     client.headers.pop('Authorization')
     assert client.get('/analitica/contrafactuales').status_code==401
+
+
+def test_real_dashboard_validation_is_authenticated_milestone_campaign(client,monkeypatch):
+    from fastapi.testclient import TestClient
+    import en_validation_project_dashboard_rc6 as validation
+    import o_dashboard as dashboard
+
+    monkeypatch.setattr(validation.projection,'read',lambda:None)
+    monkeypatch.setattr(validation.iol_shadow_view,'render',lambda:'')
+    monkeypatch.setattr(validation,'_action4_section',lambda:'')
+    monkeypatch.setattr(validation,'_operational_daily_section',lambda:'')
+    with TestClient(dashboard.app) as real:
+        assert real.get('/validacion').status_code == 401
+        response=real.get('/validacion',headers={'Authorization':client.headers['Authorization']})
+    assert response.status_code == 200
+    assert 'Camino a Producción' in response.text
+    assert 'M0 ·' in response.text and 'M11 ·' in response.text
+    assert 'Dinero real' in response.text and 'BLOCKED' in response.text
+    assert 'analitica/contrafactuales' not in response.text
 
 
 def test_gate_sample_deduplicates_exact_positions_and_separates_currencies(database):

@@ -42,7 +42,10 @@ ROUTE_CONCEPTS: dict[str, tuple[list[str], list[str], str]] = {
     "/salud": (["runtime", "iol_current", "timers"], ["observer_state", "api_health", "source_sync", "IOL section cache"], "salud de fuentes"),
     "/health": (["runtime"], ["observer_state"], "health probe"),
     "/sistema": (["runtime", "timers", "readiness", "caucion"], ["observer_state", "systemd snapshot", "candidate_identity_v2", "paper_cauciones"], "sistema e introspección"),
-    "/validacion": (["strategy_eligibility"], ["trade_gate_evaluations"], "validación SHADOW/BINDING"),
+    "/validacion": (["validation_campaign", "safety", "history", "iol_current"],
+                    ["validation_milestones_rc6.json", "validation_campaign_rc6.jsonl",
+                     "operational daily PAPER evidence", "Action 4 published audit", "IOL SHADOW view"],
+                    "Validación > Camino a Producción M0–M11"),
     "/riesgo": (["runtime", "safety"], ["observer_state", "trade_gate_evaluations", "risk ledgers"], "riesgo"),
     "/observacion": (["runtime", "catalog"], ["observer_state", "financial_instrument_catalog", "market_snapshots"], "observación"),
     "/informacion-financiera": (["history"], ["official_source_evidence", "financial snapshots"], "información financiera"),
@@ -145,12 +148,18 @@ def inventory() -> dict[str, Any]:
             "stale_unknown_semantics": ("VISIBLE_EXPLICIT; no se promueve a LIVE/READY"
                                         if kind != "FRAMEWORK" else "NOT_APPLICABLE"),
             "navigation": "Enlaces sin token; menú canónico y Arriba" if kind == "VISIBLE_SURFACE" else "NOT_APPLICABLE",
-            "pagination": "Máximo 10 filas visibles + Mostrar más" if kind == "VISIBLE_SURFACE" else "Paginación/limit del contrato API",
+            "pagination": ("12 hitos M0–M11 visibles; actividad diaria acotada a 10 jornadas" if route.path == "/validacion"
+                           else "Máximo 10 filas visibles + Mostrar más" if kind == "VISIBLE_SURFACE"
+                           else "Paginación/limit del contrato API"),
             "accessibility": "ARIA + foco + texto además de color + Voice Access" if kind == "VISIBLE_SURFACE" else "JSON/HTTP",
             "locale": "es-AR" if kind == "VISIBLE_SURFACE" else "JSON canónico",
             "write_route": any(method not in {"GET", "HEAD", "OPTIONS"} for method in methods),
-            "presentation_endpoint": ("rc6_trader_dashboard.routes.trader_terminal" if route.path in CANONICAL_PATHS or route.path in LEGACY else "NOT_APPLICABLE"),
-            "canonical_view": ("/".join(CANONICAL_PATHS.get(route.path) or LEGACY.get(route.path)) if route.path in CANONICAL_PATHS or route.path in LEGACY else "NOT_APPLICABLE"),
+            "presentation_endpoint": ("en_validation_project_dashboard_rc6.rc6_validation_project_view" if route.path == "/validacion"
+                                      else "rc6_trader_dashboard.routes.trader_terminal" if route.path in CANONICAL_PATHS or route.path in LEGACY
+                                      else "NOT_APPLICABLE"),
+            "canonical_view": ("validacion/m0-m11" if route.path == "/validacion"
+                               else "/".join(CANONICAL_PATHS.get(route.path) or LEGACY.get(route.path)) if route.path in CANONICAL_PATHS or route.path in LEGACY
+                               else "NOT_APPLICABLE"),
             "legacy_compatible_alias": route.path in LEGACY,
         })
     return {

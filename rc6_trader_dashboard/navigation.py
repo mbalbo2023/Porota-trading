@@ -48,7 +48,7 @@ BY_KEY = {item.key: item for item in DESTINATIONS}
 LEGACY = {
     "/inicio": ("inicio", "resumen"), "/vivo": ("en-vivo", "resumen"),
     "/universo-operativo": ("universo", "resumen"), "/scalping": ("trading", "scalping"),
-    "/motor-trading": ("trading", "resumen"), "/validacion": ("analitica", "contrafactuales"),
+    "/motor-trading": ("trading", "resumen"),
     "/historicos": ("analitica", "historico"), "/analisis": ("analitica", "anual"),
     "/aprendizaje": ("analitica", "contrafactuales"), "/reportes": ("analitica", "reportes"),
     "/postcierre": ("analitica", "cierre-diario"), "/salud": ("sistema", "salud"),

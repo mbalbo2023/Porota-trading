@@ -143,6 +143,25 @@ def test_legacy_urls_keep_shell_and_corresponding_subview(client, path):
     assert len(soup.select(".primary-nav > a")) == 8
 
 
+def test_validation_milestones_retain_their_own_route_and_visible_link(client, database):
+    # The canonical dispatcher must pass through to the existing validation
+    # middleware, which renders the M0–M11 campaign from its own projection.
+    assert "/validacion" not in LEGACY
+    assert resolve("/validacion") == (None, None)
+    page = BeautifulSoup(client.get("/sistema/evidencia").text, "html.parser")
+    assert page.select_one("a[href='/validacion']").get_text(strip=True) == "Ver hitos M0–M11"
+    app = FastAPI()
+    @app.get("/validacion")
+    def existing_validation_view():
+        return {"view": "M0–M11"}
+    def authorize(token, header, cookie):
+        return None
+    install(app, authorize, lambda: str(database))
+    with TestClient(app) as routed:
+        result = routed.get("/validacion")
+    assert result.status_code == 200 and result.json() == {"view": "M0–M11"}
+
+
 def test_no_auth_no_mutation_and_token_clean_redirect(client):
     import ay_dashboard_auth as auth
     client.headers.pop("Authorization")
