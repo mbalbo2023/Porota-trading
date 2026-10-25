@@ -218,7 +218,7 @@ jobs:
           print('A3_ERRORS='+str({k:v['errors'] for k,v in r['a3'].items()}))
           PY
           timeout 55 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' > "$RUNNER_TEMP/a72_probe.json" <<'PY'
-          import datetime,json,sqlite3,time
+          import datetime,hashlib,json,sqlite3,time
           from pathlib import Path
           from rc6_shadow_runtime.worker import ShadowRuntime,closed_input_signature
           from rc6_shadow_runtime import worker as module
@@ -232,6 +232,34 @@ jobs:
               expected=('id','measured_at','currency','cash','exposure',
                   'pending_proceeds','caucion_principal','caucion_accrued',
                   'unrealized_pnl','realized_pnl','equity')
+              def component_digests():
+                  pieces={};cursors={}
+                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.005) as c:
+                      c.execute('PRAGMA query_only=ON')
+                      deadline=time.monotonic()+3
+                      c.set_progress_handler(lambda:int(time.monotonic()>deadline),200)
+                      present={r[0] for r in c.execute(
+                          "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+                      for name,cap in original_tables:
+                          if name not in present:pieces[name]='ABSENT';continue
+                          if name=='financial_instrument_catalog':
+                              records=[c.execute('SELECT COUNT(*),COALESCE(MAX(rowid),0),MAX(last_seen_at) FROM financial_instrument_catalog').fetchone()]
+                          else:
+                              order='julianday(event_at)' if name=='ppi_intraday_points' else 'rowid'
+                              projection='rowid,captured_at,payload_sha256' if name=='decision_evidence_snapshots' else '*'
+                              records=c.execute(f'SELECT {projection} FROM "{name}" ORDER BY {order} DESC LIMIT ?', (cap+1,)).fetchall()
+                          h=hashlib.sha256()
+                          for row in records:
+                              raw=repr(tuple(row)).encode('utf8','surrogatepass')
+                              if len(raw)>65536:raise ValueError('ROW_TOO_LARGE')
+                              h.update(len(raw).to_bytes(4,'big'));h.update(raw)
+                          pieces[name]=h.hexdigest()
+                          cursors[name]=c.execute(f'SELECT COALESCE(MAX(rowid),0) FROM "{name}"').fetchone()[0]
+                  sources={}
+                  for index,source in enumerate(sorted(set(worker.source_inputs+list(worker.capacity_controller.protected_paths)),key=str)):
+                      st=source.stat() if source.exists() else None
+                      sources[index]=(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns) if st else None
+                  return pieces,cursors,sources
               for n in range(2):
                   at=datetime.datetime.now(datetime.timezone.utc)
                   started=time.monotonic()
@@ -251,6 +279,7 @@ jobs:
                       if row[2] not in latest or measured>latest[row[2]][0]:
                           latest[row[2]]=(measured,tuple(row[2:]))
                   economic=(len(raw)>500,tuple(sorted((k,v) for k,(_,v) in latest.items())))
+                  pieces,cursors,sources=component_digests()
                   result['samples'].append({'valid':value is not None,
                       'elapsed_ms':round(1000*(time.monotonic()-started),2),
                       'utc':at.isoformat(),'same_as_prior':n==1 and value is not None and value==previous,
@@ -258,6 +287,12 @@ jobs:
                       'equity_schema_exact':columns==expected,
                       'equity_economics_same_as_prior':n==1 and economic==previous_economic})
                   previous,previous_other,previous_economic=value,other,economic
+                  if n==1:
+                      result['changed_tables']=[name for name in pieces if pieces[name]!=previous_pieces.get(name)]
+                      result['changed_source_indices']=[index for index in sources if sources[index]!=previous_sources.get(index)]
+                      result['changed_table_rowid_deltas']={name:cursors[name]-previous_cursors.get(name,0)
+                          for name in result['changed_tables'] if name in cursors}
+                  previous_pieces,previous_cursors,previous_sources=pieces,cursors,sources
                   if n==0:time.sleep(32)
           print(json.dumps(result,sort_keys=True))
           PY
