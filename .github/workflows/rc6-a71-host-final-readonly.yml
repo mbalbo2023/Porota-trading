@@ -159,6 +159,45 @@ jobs:
                   'delta_rowid':second['rowid']-first['rowid'] if first and second else None}
           except (sqlite3.Error,OSError,TypeError) as exc:
               output['equity_cursor_35s']={'error':type(exc).__name__}
+          # Installed dashboard probe returns booleans and status only. The bearer
+          # stays inside its own container and no HTML or credentials leave it.
+          route_code="""import json,os,urllib.request,urllib.error
+url='http://127.0.0.1:8000/validacion'
+def fetch(token=None):
+    headers={'Authorization':'Bearer '+token} if token else {}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=12) as response:
+            return response.status,response.read(2000001)
+    except urllib.error.HTTPError as exc:
+        return exc.code,b''
+token=os.environ.get('DASHBOARD_ACCESS_TOKEN','')
+unauth,_=fetch()
+auth,body=fetch(token) if token else (None,b'')
+page=body.decode('utf-8','replace')
+print(json.dumps({'auth_available':bool(token),'unauthorized_status':unauth,
+ 'authorized_status':auth,'body_bounded':len(body)<=2000000,
+ 'm0':('M0 ·' in page),'m11':('M11 ·' in page),
+ 'real_money_blocked':('Dinero real' in page and 'BLOCKED' in page),
+ 'legacy_counterfactual':('analitica/contrafactuales' in page)}))
+"""
+          rc,raw=call(['sudo','-n','docker','exec','porota_production_dashboard',
+                       'python3','-c',route_code],20)
+          try: output['dashboard_validation_route']={'rc':rc,**json.loads(raw)}
+          except (ValueError,TypeError): output['dashboard_validation_route']={'rc':rc,'error':'UNAVAILABLE'}
+          rc,raw=call(['ss','-ltnH'],5)
+          output['port_8766']={'rc':rc,'listener_present':bool(re.search(r':8766\\s',raw)) if rc==0 else None}
+          rc,raw=call(['git','-C','/opt/porota-trading','rev-parse','HEAD'],5)
+          output['installed_sha']={'rc':rc,'sha':raw.strip() if re.fullmatch(r'[0-9a-f]{40}\\n?',raw) else None}
+          output['postdeploy_timer_states']={}
+          for unit in ('porota-a3-history-daily-rc6.timer',
+                       'porota-a3-history-reconcile-rc6.timer',
+                       'porota-a3-history-weekend-rc6.timer',
+                       'porota-live-decision-cockpit-rc6.timer',
+                       'porota-1016-github-verify.timer'):
+              enabled,_enabled=call(['systemctl','is-enabled',unit],3)
+              active,_active=call(['systemctl','is-active',unit],3)
+              output['postdeploy_timer_states'][unit]={'enabled':_enabled.strip()[:20],
+                                                          'active':_active.strip()[:20]}
           output['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
           print(json.dumps(output,sort_keys=True,separators=(',',':')))
           PY
