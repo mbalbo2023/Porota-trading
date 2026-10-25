@@ -1,0 +1,160 @@
+name: RC6 A71 deep disk and worker read-only
+on:
+  push:
+    branches: [ops/rc6-a71-host-audit-20261025]
+    paths: [.github/workflows/rc6-a71-host-deep-readonly.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Bounded references, process and cost sampling
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a71"
+          chmod 600 "$HOME/.ssh/rc6_a71"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_deep.json" <<'PY'
+          import datetime, hashlib, json, os, pathlib, re, subprocess, time
+
+          def call(args, seconds=6):
+              try:
+                  p=subprocess.run(args,capture_output=True,text=True,timeout=seconds)
+                  return p.returncode,p.stdout[:150000]
+              except (subprocess.TimeoutExpired,OSError):return 124,''
+          def du(path,depth=1):
+              if not os.path.isdir(path):return {'state':'ABSENT'}
+              rc,out=call(['timeout','14s','nice','-n','15','ionice','-c3','sudo','-n',
+                           'du','-x','-B1',f'-d{depth}',path],16)
+              rows=[]
+              for line in out.splitlines():
+                  a=line.split('\t',1)
+                  if len(a)==2 and a[0].isdigit():rows.append({'path':a[1],'bytes':int(a[0])})
+              return {'rc':rc,'rows':rows}
+          def role(args):
+              for token,name in (('bf_production_paper_observer.py','scanner'),
+                  ('--dynamic-shadow-worker','dynamic_shadow'),('--performance-worker','performance'),
+                  ('--exit-reader','exit_reader'),('--notification-worker','notifications'),
+                  ('--candle-worker','candles'),('--intraday-scalping-worker','intraday_scalping'),
+                  ('--caucion-cash-sweep-worker','caucion_cash_sweep'),
+                  ('bv_paper_runtime.py','runtime_parent'),('o_dashboard.py','dashboard')):
+                  if token in args:return name
+              return 'OTHER'
+          def proc_stat(pid):
+              try:
+                  s=pathlib.Path('/proc',str(pid),'stat').read_text()
+                  parts=s[s.rfind(')')+2:].split()
+                  return (int(parts[11])+int(parts[12]))/os.sysconf('SC_CLK_TCK')
+              except (OSError,ValueError,IndexError):return None
+          def proc_io(pid):
+              rc,out=call(['sudo','-n','cat',f'/proc/{pid}/io'],2)
+              if rc:return None
+              kv=dict(x.split(':',1) for x in out.splitlines() if ':' in x)
+              try:return {k:int(kv[k]) for k in ('read_bytes','write_bytes')}
+              except (KeyError,ValueError):return None
+          def sample(pids):
+              return {p:{'cpu_seconds':proc_stat(p),'io':proc_io(p)} for p in pids}
+
+          r={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+             'docker':{},'space':{},'timers':{},'services':{},'workers':{},'warnings':[]}
+          rc,root=call(['sudo','-n','docker','info','--format','{{.DockerRootDir}}'],5)
+          root=root.strip() if rc==0 else ''
+          r['docker']['root']=root if root in ('/var/lib/docker','/var/lib/containerd') or root.startswith(('/mnt/','/opt/')) else 'UNVERIFIED'
+          rc,images=call(['sudo','-n','docker','image','ls','--no-trunc','--format','{{.ID}}'],6)
+          ids=sorted(set(images.splitlines())) if rc==0 else []
+          r['docker']['images_rc']=rc;r['docker']['images']=[]
+          for iid in ids[:30]:
+              if not re.fullmatch(r'sha256:[a-f0-9]{64}',iid):continue
+              rc,out=call(['sudo','-n','docker','image','inspect','-f',
+                  '{{.Id}}|{{.Size}}|{{json .RepoTags}}|{{json .RepoDigests}}',iid],5)
+              if rc:continue
+              f=out.strip().split('|',3)
+              if len(f)!=4:continue
+              r['docker']['images'].append({'id':f[0],'size_bytes':int(f[1]),
+                  'tags':json.loads(f[2]),'digests':json.loads(f[3])})
+          rc,verbose=call(['sudo','-n','docker','system','df','-v'],18)
+          r['docker']['df_verbose']={'rc':rc,'text':verbose[:12000] if rc==0 else ''}
+
+          rc,timer=call(['sudo','-n','systemctl','list-timers','--all','--no-pager','--no-legend'],6)
+          r['timers']={'rc':rc,'porota_lines':[line.strip() for line in timer.splitlines()
+                         if 'porota-' in line and 'ppi-watch' not in line.lower()]}
+          rc,failed=call(['sudo','-n','systemctl','--failed','--no-pager','--no-legend'],5)
+          r['services']['failed']=[re.search(r'porota-[\w@.\\-]+',line).group(0)
+                                  for line in failed.splitlines() if re.search(r'porota-[\w@.\\-]+',line)
+                                  and 'ppi-watch' not in line.lower()]
+          rc,units=call(['sudo','-n','systemctl','list-unit-files','porota-*','--no-pager','--no-legend'],7)
+          names=[line.split()[0] for line in units.splitlines() if line.startswith('porota-')
+                 and line.split()[0].endswith('.service') and 'ppi-watch' not in line.lower()]
+          for name in names:
+              rc,out=call(['sudo','-n','systemctl','show',name,'-p','ExecStart','-p','FragmentPath','--no-pager'],4)
+              if rc:continue
+              paths=sorted(set(re.findall(r'/(?:opt/porota-trading|app)/[A-Za-z0-9_./-]+',out)))
+              r['services'][name]={'code_paths':[p.rstrip(';') for p in paths[:8]],
+                                   'unit_sha256':None}
+              fragment=re.search(r'^FragmentPath=(.+)$',out,re.M)
+              if fragment and fragment.group(1).startswith('/etc/systemd/system/porota-'):
+                  rc2,blob=call(['sudo','-n','cat',fragment.group(1)],2)
+                  if rc2==0:r['services'][name]['unit_sha256']=hashlib.sha256(blob.encode()).hexdigest()
+
+          top=call(['sudo','-n','docker','top','porota_production_observer','-eo',
+                    'pid,ppid,pcpu,rss,etimes,args'],7)
+          workers=[]
+          if top[0]==0:
+              for line in top[1].splitlines()[1:]:
+                  cols=line.strip().split(None,5)
+                  if len(cols)!=6 or not cols[0].isdigit():continue
+                  pid,ppid,cpu,rss,elapsed,args=cols
+                  workers.append({'pid':int(pid),'ppid':int(ppid),'role':role(args),
+                                  'pcpu_lifetime':cpu,'rss_kib':rss,'elapsed_seconds':elapsed})
+          r['workers']['enumeration_rc']=top[0]
+          r['workers']['observer']=workers
+          pids=[w['pid'] for w in workers]
+          first=sample(pids)
+          time.sleep(10)
+          last=sample(pids)
+          for w in workers:
+              a,b=first.get(w['pid']),last.get(w['pid'])
+              if a and b and a['cpu_seconds'] is not None and b['cpu_seconds'] is not None:
+                  w['cpu_seconds_10s']=round(b['cpu_seconds']-a['cpu_seconds'],3)
+              if a and b and a['io'] and b['io']:
+                  w['io_bytes_10s']={k:b['io'][k]-a['io'][k] for k in ('read_bytes','write_bytes')}
+          rc,stats=call(['sudo','-n','docker','stats','--no-stream','--format',
+                         '{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}'],12)
+          r['workers']['container_stats']={'rc':rc,'rows':[x for x in stats.splitlines()
+                                                 if '|porota_' in x or '|sre_' in x][:12]}
+
+          for p in ('/opt/porota-trading/data','/var/lib/containerd',r['docker']['root']):
+              if p and p!='UNVERIFIED' and p not in r['space']:
+                  r['space'][p]=du(p,2 if p.endswith('/data') else 1)
+          r['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+          print(json.dumps(r,ensure_ascii=False,sort_keys=True,separators=(',',':')))
+          PY
+          python3 - "$RUNNER_TEMP/a71_deep.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          print('A71_DEEP_READ_ONLY=COMPLETE')
+          print('SOURCE_UTC='+r['source_utc'])
+          print('DOCKER_ROOT='+r['docker']['root'])
+          print('IMAGE_COUNT='+str(len(r['docker']['images'])))
+          print('FAILED_UNITS='+','.join(r['services']['failed']))
+          print('WORKER_COUNT='+str(len(r['workers']['observer'])))
+          print('DU_COVERAGE='+','.join(k+':'+str(v.get('rc',v.get('state'))) for k,v in r['space'].items()))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a71-deep-readonly
+          path: ${{ runner.temp }}/a71_deep.json
+          retention-days: 7
