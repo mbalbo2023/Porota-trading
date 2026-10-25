@@ -28,9 +28,9 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
           ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_final.json" <<'PY'
-          import datetime,gzip,json,pathlib,re,sqlite3,subprocess,time
+          import datetime,gzip,json,pathlib,re,shutil,sqlite3,subprocess,time
           root=pathlib.Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'a3_schema':{},'shadow':{},'timer':{},'closed_probe_table_counts':{},'equity_cursor_35s':{},'warnings':[]}
+          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'disk_free_bytes':shutil.disk_usage('/').free,'a3':{},'a3_schema':{},'shadow':{},'timer':{},'closed_probe_table_counts':{},'equity_cursor_35s':{},'warnings':[]}
           def call(argv,seconds=5):
               try:
                   p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
@@ -190,7 +190,7 @@ jobs:
           output['host_checkout_git_head_historical']={'rc':rc,'sha':raw.strip() if re.fullmatch(r'[0-9a-f]{40}\n?',raw) else None}
           # The host checkout .git pointer is historical; read the root-owned
           # marker with a bounded sudo read and emit only allowlisted fields.
-          rc,raw=call(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<=65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status')},sort_keys=True))"],5)
+          rc,raw=call(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<=65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status','native_acceptance_mode','source_freshness_renewed')},sort_keys=True))"],5)
           try: output['installed_runtime_identity']={'rc':rc,**json.loads(raw)}
           except (ValueError,TypeError): output['installed_runtime_identity']={'rc':rc,'error':'UNAVAILABLE'}
           output['container_images']={}
