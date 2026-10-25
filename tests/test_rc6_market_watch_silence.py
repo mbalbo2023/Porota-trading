@@ -1,7 +1,10 @@
 """No-network contracts for the independent PAPER schedule-silence watchdog."""
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
 
 import pytest
 
@@ -104,3 +107,34 @@ def test_nonpaper_and_offhours_never_call_network_or_transport(tmp_path, monkeyp
                       path=tmp_path / "state", fetch=forbidden)["status"] == "OUTSIDE_WINDOW"
     monkeypatch.setattr(watch, "REAL_ORDER_CAPABILITY", "ENABLED")
     assert watch.tick(now=NOW, path=tmp_path / "state", fetch=forbidden)["status"] == "BLOCKED_NON_PAPER"
+
+
+def test_installed_systemd_calendar_stays_in_watch_window_and_avoids_publisher():
+    """Parse the actual unit with systemd, including its timezone and rollover."""
+    timer = (Path(__file__).resolve().parents[1] /
+             "systemd/porota-market-watch-silence-rc6.timer").read_text()
+    expressions = [line.split("=", 1)[1] for line in timer.splitlines()
+                   if line.startswith("OnCalendar=")]
+    assert timer.count("Persistent=false") == 1
+    assert expressions
+    events = set()
+    for expression in expressions:
+        result = subprocess.run(
+            ["systemd-analyze", "calendar", "--base-time=2026-10-26 00:00 UTC",
+             "--iterations=40", expression], check=True, capture_output=True,
+            text=True, env={**os.environ, "TZ": "UTC"})
+        stamps = re.findall(
+            r"(?m)^\s+(?:Next elapse|Iteration #\d+): \w{3} "
+            r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC$", result.stdout)
+        assert len(stamps) == 40
+        events.update(datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc) for stamp in stamps)
+    monday = sorted(moment for moment in events
+                    if moment.astimezone(watch.ART).date().isoformat() == "2026-10-26")
+    assert len(monday) == 38
+    assert all(watch.active_window(moment) for moment in monday)
+    assert all(moment.astimezone(watch.ART).minute != 50 for moment in monday)
+    assert all(second - first == timedelta(minutes=10)
+               for first, second in zip(monday, monday[1:]))
+    assert monday[0].astimezone(watch.ART).strftime("%H:%M") == "11:03"
+    assert monday[-1].astimezone(watch.ART).strftime("%H:%M") == "17:13"
