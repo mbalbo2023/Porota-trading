@@ -1,4 +1,4 @@
-name: RC6 A71 exact unused predeploy image cleanup
+name: RC6 A72 exact replaced image cleanup
 on:
   push:
     branches: [ops/rc6-a71-host-audit-20261025]
@@ -27,14 +27,12 @@ jobs:
           chmod 600 "$HOME/.ssh/rc6_a71"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
-          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_image_cleanup.json" <<'PY'
+          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a72_image_cleanup.json" <<'PY'
           import datetime,json,os,subprocess,sys
-          live='sha256:6b09d4fa143f8a3ca93aa8bd644d38b24061fb04beb506ac902c784314797242'
+          live='sha256:07e13c476c7ff7fdfff8e9595ac440554529cf770e9dcb01192ec0d70b31a101'
           victims={
-            'sha256:822ef069d9780429fb77de27007b82232ab6428e96d87ceb0518242367513e95':
-                'porota-predeploy-v2:26a95f734cb9eece72e89a1d084c7006a1e05fa2',
-            'sha256:3f0f89ce069691225402c6a591eef0139068d188d9524b50d87cd371ca3455d1':
-                'porota-predeploy-v2:8ff3f851e0fc857c24a8ee22be45f20a9aa39127'}
+            'sha256:f9b8f1aee2d0c2b9a8d4814e77d33081baf84cb70bd81b20b8bbcc6d6b78f1d0':
+                'porota-predeploy-v2:5cb9f89380268a28bed150f78503b5ec27dd08b2'}
           names={'porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'}
           def docker(*args):
               p=subprocess.run(['sudo','-n','docker',*args],capture_output=True,text=True,timeout=45)
@@ -44,7 +42,7 @@ jobs:
               s=os.statvfs('/');return s.f_bavail*s.f_frsize
           receipt={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
                    'before_available_bytes':available(),'expected_image_ids':list(victims),
-                   'removed':[],'scope':'EXACT_UNUSED_PREDEPLOY_IMAGES_ONLY','ppi_watch':'UNTOUCHED'}
+                   'removed':[],'scope':'EXACT_UNUSED_REPLACED_A72_IMAGE_ONLY','ppi_watch':'UNTOUCHED'}
           try:
               ids=docker('ps','-aq').splitlines()
               if len(ids)!=3:raise RuntimeError('CONTAINER_SET_CHANGED')
@@ -58,6 +56,20 @@ jobs:
               current=json.loads(docker('image','inspect',live))[0]
               if current['Id']!=live or 'porota-trading-bot:17.0.0-rc6' not in current['RepoTags']:
                   raise RuntimeError('ACTIVE_TAG_CHANGED')
+              marker=subprocess.run(['sudo','-n','cat',
+                  '/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'],
+                  capture_output=True,text=True,timeout=5,check=True)
+              state=json.loads(marker.stdout)
+              if (state.get('candidate_sha')!='2ae0f6cb56464c6fb1705de4a640def260696d60'
+                  or state.get('deploy_sha')!='f351009b528747d7a593946d0100646cb540bc3a'
+                  or state.get('image_id')!=live
+                  or state.get('mode')!='PRODUCTION_PAPER'
+                  or state.get('real_orders_sent')!=0
+                  or state.get('real_order_routes')!='NOT_CALLED'
+                  or state.get('ppi_watch_untouched') is not True
+                  or state.get('validation_status')!='VALIDATED_RUNTIME'
+                  or state.get('native_acceptance_mode')!='CLOSED_IDLE'):
+                  raise RuntimeError('RUNTIME_MARKER_CHANGED')
               for image,tag in victims.items():
                   obj=json.loads(docker('image','inspect',image))[0]
                   if obj['Id']!=image or obj['RepoTags']!=[tag]:
@@ -85,15 +97,15 @@ jobs:
               print(json.dumps(receipt,sort_keys=True,separators=(',',':')))
           if receipt['status']!='PASS':sys.exit(2)
           PY
-          python3 - "$RUNNER_TEMP/a71_image_cleanup.json" <<'PY'
+          python3 - "$RUNNER_TEMP/a72_image_cleanup.json" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1]))
-          print('A71_EXACT_IMAGE_CLEANUP='+r['status'])
+          print('A72_EXACT_IMAGE_CLEANUP='+r['status'])
           print('REMOVED_COUNT='+str(len(r['removed'])))
           print('AVAILABLE_DELTA_BYTES='+str(r['delta_available_bytes']))
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: rc6-a71-image-cleanup-receipt
-          path: ${{ runner.temp }}/a71_image_cleanup.json
+          name: rc6-a72-image-cleanup-receipt
+          path: ${{ runner.temp }}/a72_image_cleanup.json
           retention-days: 7
