@@ -30,7 +30,7 @@ jobs:
           ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_final.json" <<'PY'
           import datetime,gzip,json,pathlib,re,sqlite3,subprocess,time
           root=pathlib.Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'a3_schema':{},'shadow':{},'timer':{},'closed_probe_table_counts':{},'warnings':[]}
+          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'a3_schema':{},'shadow':{},'timer':{},'closed_probe_table_counts':{},'equity_cursor_35s':{},'warnings':[]}
           def call(argv,seconds=5):
               try:
                   p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
@@ -143,6 +143,22 @@ jobs:
                   elif line.startswith(('OnCalendar=','OnUnitActiveSec=','Description=')):
                       settings.append(line[:120])
               output['timer'][unit+'_wiring']={'rc':rc,'programs':program[:12],'settings':settings[:12]}
+          # A read-only pair tests whether the PAPER valuation clock invalidates
+          # the CLOSED SHADOW equality signature at the same 30-second cadence.
+          try:
+              db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+              def equity_cursor():
+                  with sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=.1) as c:
+                      c.execute('PRAGMA query_only=ON')
+                      row=c.execute('SELECT rowid,measured_at FROM paper_equity_by_currency ORDER BY rowid DESC LIMIT 1').fetchone()
+                      return {'rowid':row[0],'measured_at':row[1]} if row else None
+              first=equity_cursor()
+              time.sleep(35)
+              second=equity_cursor()
+              output['equity_cursor_35s']={'before':first,'after':second,
+                  'delta_rowid':second['rowid']-first['rowid'] if first and second else None}
+          except (sqlite3.Error,OSError,TypeError) as exc:
+              output['equity_cursor_35s']={'error':type(exc).__name__}
           output['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
           print(json.dumps(output,sort_keys=True,separators=(',',':')))
           PY
