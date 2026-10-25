@@ -101,7 +101,9 @@ jobs:
             tests/test_rc6_cold2_quarantine.py \
             tests/test_rc6_cold2_successor.py \
             tests/test_rc6_failed_cold_fix_forward.py \
-            tests/test_rc6_cold2_complete_queue.py
+            tests/test_rc6_cold2_complete_queue.py \
+            tests/test_rc6_deploy_generation_gate.py \
+            tests/test_rc6_native_soak.py
           echo 'POROTA_HOST_TRANSITION_EARLY=GREEN'
 
       - name: Governed automatic test discovery and execution

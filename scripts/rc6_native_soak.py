@@ -72,6 +72,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--expected-sha',required=True)
     p.add_argument('--expected-tree',required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--root',type=Path,default=Path('/opt/porota-trading'))
+    p.add_argument('--allow-closed-idle',action='store_true')
     p.add_argument('--timeout',type=int,default=SOAK_TIMEOUT_SECONDS);args=p.parse_args()
     root=args.root/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
     baseline=owned_state()
@@ -87,7 +88,8 @@ def main():
                 raise ValueError('NATIVE_SOAK_SERVICE_UNAVAILABLE') from exc
         return resource_sample(args.root,baseline,state_fn=lambda:cached[1])
     result=collect(root,args.expected_sha,args.expected_tree,timeout=args.timeout,
-                   minimum_generations=10,strict=True,sample=sample,reader=stable_reader)
+                   minimum_generations=10,strict=True,sample=sample,reader=stable_reader,
+                   allow_closed_idle=args.allow_closed_idle)
     result.update(services=baseline,all_services_sampled_running=result['status']=='GREEN',
                   resource_sampling_seconds=2,service_sampling_seconds=10,
                   ram_floor_bytes=RAM_FLOOR,disk_floor_bytes=DISK_FLOOR)

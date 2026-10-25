@@ -79,7 +79,7 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
 
 def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
-    native = text.index("RC6_TEN_NATIVE_GENERATIONS_WITH_RESERVES=GREEN")
+    native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
     final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
     assert native < cleanup < final
@@ -106,7 +106,7 @@ def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> N
 
 def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candidates() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
-    native = text.index("RC6_TEN_NATIVE_GENERATIONS_WITH_RESERVES=GREEN")
+    native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
     tail = text[native:cleanup + 400]
 

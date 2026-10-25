@@ -1,0 +1,38 @@
+{
+  "schema": "RC6_A72_CLOSED_IDLE_DEPLOY_INCIDENT_V1",
+  "provenance": {
+    "failed_deploy_run": 40210730520,
+    "readonly_run": 40212203638,
+    "readonly_artifact": 12605804079,
+    "readonly_zip_sha256": "4222fda06a70c8fe0bca5700cc8813a25f5a18c10a6448f4624ca9ba95e52737",
+    "candidate_sha": "5cb9f89380268a28bed150f78503b5ec27dd08b2",
+    "deploy_sha": "25a19db8826113f733cf7f36c546874056a6b951",
+    "image_id": "sha256:f9b8f1aee2d0c2b9a8d4814e77d33081baf84cb70bd81b20b8bbcc6d6b78f1d0"
+  },
+  "transition": {
+    "failure_code": "GENERATION_IDLE_MARKET_CLOSED",
+    "prior_validation_status": "DEPLOYED_VALIDATION_PENDING",
+    "phase": "CLOSED",
+    "source_as_of": "2026-10-25T16:25:44.873312+00:00",
+    "generation_id": "cbf14e87bf01b5990e4b6a3e2388ba07eefbe9a7450666ff65f1ba7f5cb32b25",
+    "before": {
+      "observed_at": "2026-10-25T16:34:13.219711+00:00",
+      "heartbeat_at": "2026-10-25T16:33:21.600357+00:00",
+      "pid": 1880323,
+      "cpu_seconds": 362.04,
+      "paper_equity_max_id": 607304
+    },
+    "after": {
+      "observed_at": "2026-10-25T16:35:48.277708+00:00",
+      "heartbeat_at": "2026-10-25T16:35:22.549656+00:00",
+      "pid": 1880323,
+      "cpu_seconds": 362.7,
+      "paper_equity_max_id": 607316
+    },
+    "source_freshness_renewed": false,
+    "mode": "PRODUCTION_PAPER",
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "ppi_watch_untouched": true
+  }
+}
