@@ -188,17 +188,11 @@ jobs:
           output['port_8766']={'rc':rc,'listener_present':bool(re.search(r':8766\s',raw)) if rc==0 else None}
           rc,raw=call(['git','-C','/opt/porota-trading','rev-parse','HEAD'],5)
           output['host_checkout_git_head_historical']={'rc':rc,'sha':raw.strip() if re.fullmatch(r'[0-9a-f]{40}\n?',raw) else None}
-          # The administrative host checkout can retain an old .git pointer;
-          # durable runtime identity is the guarded state marker and image ID.
-          try:
-              marker=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
-              if marker.is_symlink() or marker.stat().st_size>65536: raise ValueError('MARKER_UNSAFE')
-              state=json.loads(marker.read_bytes())
-              output['installed_runtime_identity']={k:state.get(k) for k in
-                  ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent',
-                   'real_order_routes','ppi_watch_untouched','validation_status')}
-          except (OSError,ValueError,TypeError) as exc:
-              output['installed_runtime_identity']={'error':type(exc).__name__}
+          # The host checkout .git pointer is historical; read the root-owned
+          # marker with a bounded sudo read and emit only allowlisted fields.
+          rc,raw=call(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<=65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status')},sort_keys=True))"],5)
+          try: output['installed_runtime_identity']={'rc':rc,**json.loads(raw)}
+          except (ValueError,TypeError): output['installed_runtime_identity']={'rc':rc,'error':'UNAVAILABLE'}
           output['container_images']={}
           for name in ('porota_production_observer','porota_production_dashboard',
                        'porota_critical_approval_rc6'):
