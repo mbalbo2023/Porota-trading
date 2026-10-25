@@ -28,9 +28,9 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
           ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_final.json" <<'PY'
-          import datetime,gzip,json,pathlib,re,subprocess,time
+          import datetime,gzip,json,pathlib,re,sqlite3,subprocess,time
           root=pathlib.Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'a3_schema':{},'shadow':{},'timer':{},'warnings':[]}
+          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'a3_schema':{},'shadow':{},'timer':{},'closed_probe_table_counts':{},'warnings':[]}
           def call(argv,seconds=5):
               try:
                   p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
@@ -104,6 +104,27 @@ jobs:
                                       for row in rows[:20] if isinstance(row,dict)],
                           'funnel_status':(report.get('operational_funnel') or {}).get('status')}
               except (OSError,ValueError,TypeError):output['shadow']['cut']={'error':'READ_FAILED'}
+          try:
+              db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+              c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=.1)
+              c.execute('PRAGMA query_only=ON')
+              allowed={'financial_instrument_catalog':20000,'paper_positions':4096,
+                       'paper_future_positions':4096,'paper_family_lifecycle':4096,
+                       'ppi_intraday_contract_state':20000}
+              present={row[0] for row in c.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
+              for name,limit in allowed.items():
+                  if name not in present:
+                      output['closed_probe_table_counts'][name]={'absent':True};continue
+                  deadline=time.monotonic()+.25
+                  c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                  try:
+                      count=c.execute('SELECT COUNT(*) FROM "'+name+'"').fetchone()[0]
+                      output['closed_probe_table_counts'][name]={'rows':count,'cap':limit,'over_cap':count>limit}
+                  except sqlite3.Error as exc:
+                      output['closed_probe_table_counts'][name]={'error':type(exc).__name__}
+                  finally:c.set_progress_handler(None,0)
+              c.close()
+          except (sqlite3.Error,OSError) as exc:output['closed_probe_table_counts']['error']=type(exc).__name__
           # Bound observer output to a window; only service state and aggregate timing.
           for unit in ('porota-candle-integrity-rc6.service','porota-rc6-candle-inmarket-verify.service',
                        'porota-live-decision-cockpit-rc6.service','porota-runtime-evidence-rc6.service'):
