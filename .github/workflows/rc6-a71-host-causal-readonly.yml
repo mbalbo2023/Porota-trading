@@ -114,7 +114,7 @@ jobs:
               query('safety','SELECT mode,process_state,session_state,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1')
               tables={x[0] for x in c.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1500")}
               for name in ('financial_instrument_catalog','candidate_identity_v2','paper_positions',
-                           'paper_fills','paper_cauciones','paper_family_lifecycle'):
+                           'paper_fills','paper_cauciones','paper_family_lifecycle','paper_future_positions'):
                   if name not in tables:continue
                   cols={x[1] for x in c.execute('PRAGMA table_info("'+name+'")')}
                   r['families'][name+'_columns']=sorted(cols)
@@ -125,6 +125,12 @@ jobs:
                       query(name+'_counts','SELECT '+select+',COUNT(*) FROM "'+name+'" GROUP BY '+select)
                   elif name in ('paper_fills','paper_cauciones'):
                       query(name+'_total','SELECT COUNT(*) FROM "'+name+'"')
+              if 'candidate_identity_v2' in tables:
+                  query('candidate_identity_v2_admission','SELECT instrument_type,status,can_simulate,COUNT(*) FROM candidate_identity_v2 GROUP BY instrument_type,status,can_simulate')
+              if 'paper_future_positions' in tables:
+                  cols={x[1] for x in c.execute('PRAGMA table_info(paper_future_positions)')}
+                  r['families']['paper_future_positions_columns']=sorted(cols)
+                  query('paper_future_positions_total','SELECT COUNT(*) FROM paper_future_positions')
               c.close()
           except (sqlite3.Error,OSError) as e:r['families']['db_error']=type(e).__name__
 
