@@ -857,7 +857,7 @@ jobs:
             "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
           echo "RC6_FROZEN_PROVENANCE_PROVISIONAL=GREEN|candidate=$CANDIDATE_SHA"
           sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
-          import json,os,sys,tempfile
+          import grp,json,os,sys,tempfile
           from datetime import datetime,timezone
           path,candidate,deploy,image_id,post=sys.argv[1:]
           payload={
@@ -878,6 +878,10 @@ jobs:
           directory=os.path.dirname(path)
           fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
           try:
+              # Keep root ownership while granting the read-only publisher
+              # access to exact installed provenance before atomic replace.
+              os.fchown(fd,0,grp.getgrnam('porotaadmin').gr_gid)
+              os.fchmod(fd,0o640)
               with os.fdopen(fd,"w",encoding="utf-8") as handle:
                   json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
               os.replace(tmp,path)
@@ -1640,7 +1644,7 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
             "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase finalize python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
-          import json, os, subprocess, sys, tempfile
+          import grp, json, os, subprocess, sys, tempfile
           from datetime import datetime, timezone
           from pathlib import Path
           candidate, deploy = sys.argv[1:]
@@ -1687,6 +1691,8 @@ jobs:
           state['recorded_at'] = datetime.now(timezone.utc).isoformat()
           fd, tmp = tempfile.mkstemp(prefix='.CURRENT_STATE_V2.', suffix='.tmp', dir=root)
           try:
+              os.fchown(fd,0,grp.getgrnam('porotaadmin').gr_gid)
+              os.fchmod(fd,0o640)
               with os.fdopen(fd, 'w', encoding='utf-8') as handle:
                   json.dump(state, handle, indent=2, sort_keys=True)
                   handle.write('\n')
