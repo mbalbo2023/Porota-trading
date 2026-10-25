@@ -74,15 +74,20 @@ jobs:
           with connect(history) as c:
               tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
               cutoff=None
+              cutoff_failures=[]
               if 'rc6_history_cutoff_repair_runs' in tables:
                   row=c.execute("SELECT state,targets,complete,failed,ppi_queries FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
                   cutoff=dict(row) if row else None
+              if 'rc6_history_cutoff_repair' in tables:
+                  cutoff_failures=[{'state':r[0],'error_class':r[1],'n':r[2]} for r in c.execute(
+                      "SELECT state,COALESCE(error_class,''),COUNT(*) FROM rc6_history_cutoff_repair "
+                      "WHERE cutoff='2026-09-21' GROUP BY state,error_class ORDER BY COUNT(*) DESC LIMIT 20")]
               cols={t:[r[1] for r in c.execute('PRAGMA table_info('+t+')')]
                     for t in ('history_versions_v2','history_canonical_v2','history_close_versions_v1')}
           result={'schema':'rc6-a77-history-admission-v1','paper':state['mode'],
                   'real_orders_sent':state['real_orders_sent'],'session':state['session_state'],
                   'a3_exact_target_count':len(targets),'a3_by_family':families,
-                  'cutoff_repair':cutoff,'ppi_source_sync':source,
+                  'cutoff_repair':cutoff,'cutoff_states':cutoff_failures,'ppi_source_sync':source,
                   'history_db_bytes':os.stat(history).st_size,
                   'history_schema_columns':cols,'provider_requests':0,'history_writes':False,
                   'ppi_watch_accessed':False}
