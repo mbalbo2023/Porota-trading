@@ -1,4 +1,4 @@
-name: 'RC6 A74 exact publisher access after #740'
+name: 'RC6 A74 installed watchdog calendar after #741'
 'on':
   push:
     branches:
@@ -20,7 +20,7 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-    - name: Verify read-only publisher can read exact installed marker
+    - name: Read exact installed calendar and next elapse without invoking service
       shell: bash
       run: |
         set -Eeuo pipefail
@@ -30,78 +30,41 @@ jobs:
         printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
         chmod 600 "$HOME/.ssh/known_hosts"
         umask 077
-        timeout 25 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_publisher_normal.json" <<'PY'
-
-        import json,os,pathlib,stat,subprocess
-        p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
-        q=pathlib.Path('/opt/porota-trading/data/deploy/porota-frozen-candidate.json')
-        r={'schema':'RC6_A74_PUBLISHER_PROVENANCE_ACCESS_V1','euid':os.geteuid(),'egid':os.getegid(),'files':{}}
-        for name,target in [('state',p),('frozen',q)]:
-          item={}
-          try:
-            s=target.lstat()
-            item.update(exists=True,regular=stat.S_ISREG(s.st_mode),symlink=stat.S_ISLNK(s.st_mode),mode=oct(stat.S_IMODE(s.st_mode)),uid=s.st_uid,gid=s.st_gid)
-            if not item['regular'] or item['symlink'] or s.st_size>1048576:raise ValueError('FILE_METADATA_UNSAFE')
-            payload=json.loads(target.read_text())
-            item['readable']=True
-            item['selected_fields']={k:payload.get(k) for k in ('deploy_sha','candidate_sha','image_id','mode','real_orders_sent','real_order_routes','recorded_at','validation_status') if k in payload}
-          except (OSError,ValueError) as e:item['readable']=False;item['error_class']=type(e).__name__
-          r['files'][name]=item
-        s=subprocess.run(['systemctl','show','porota-runtime-evidence-rc6.service','-p','User','-p','Group','-p','ActiveState','-p','Result','--no-pager'],capture_output=True,text=True,timeout=5)
-        r['publisher_service']={'query_rc':s.returncode,'fields':dict(x.split('=',1) for x in s.stdout.splitlines() if '=' in x)}
-        print(json.dumps(r,sort_keys=True))
-
-        PY
-        timeout 25 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' > "$RUNNER_TEMP/a74_publisher_root.json" <<'PY'
-
-        import json,os,pathlib,stat,subprocess
-        p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
-        q=pathlib.Path('/opt/porota-trading/data/deploy/porota-frozen-candidate.json')
-        r={'schema':'RC6_A74_PUBLISHER_PROVENANCE_ACCESS_V1','euid':os.geteuid(),'egid':os.getegid(),'files':{}}
-        for name,target in [('state',p),('frozen',q)]:
-          item={}
-          try:
-            s=target.lstat()
-            item.update(exists=True,regular=stat.S_ISREG(s.st_mode),symlink=stat.S_ISLNK(s.st_mode),mode=oct(stat.S_IMODE(s.st_mode)),uid=s.st_uid,gid=s.st_gid)
-            if not item['regular'] or item['symlink'] or s.st_size>1048576:raise ValueError('FILE_METADATA_UNSAFE')
-            payload=json.loads(target.read_text())
-            item['readable']=True
-            item['selected_fields']={k:payload.get(k) for k in ('deploy_sha','candidate_sha','image_id','mode','real_orders_sent','real_order_routes','recorded_at','validation_status') if k in payload}
-          except (OSError,ValueError) as e:item['readable']=False;item['error_class']=type(e).__name__
-          r['files'][name]=item
-        s=subprocess.run(['systemctl','show','porota-runtime-evidence-rc6.service','-p','User','-p','Group','-p','ActiveState','-p','Result','--no-pager'],capture_output=True,text=True,timeout=5)
-        r['publisher_service']={'query_rc':s.returncode,'fields':dict(x.split('=',1) for x in s.stdout.splitlines() if '=' in x)}
-        print(json.dumps(r,sort_keys=True))
-
+        timeout 25 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_watchdog_installed.json" <<'PY'
+        import datetime,json,pathlib,subprocess,zoneinfo
+        unit='porota-market-watch-silence-rc6.timer'
+        def read(args):
+          p=subprocess.run(args,capture_output=True,text=True,timeout=6)
+          if p.returncode:raise RuntimeError('READ_FAILED')
+          return p.stdout
+        body=read(['systemctl','cat',unit,'--no-pager'])
+        fields=dict(line.split('=',1) for line in read(['systemctl','show',unit,'-p','ActiveState','-p','NextElapseUSecRealtime','-p','Unit','--no-pager']).splitlines() if '=' in line)
+        marker=json.loads(pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json').read_text())
+        schedules=[line.split('=',1)[1] for line in body.splitlines() if line.startswith('OnCalendar=')]
+        expected=['Mon..Fri *-*-* 11..16:03,13,23,33,43,53:00 America/Argentina/Buenos_Aires','Mon..Fri *-*-* 17:03,13:00 America/Argentina/Buenos_Aires']
+        assert schedules==expected and fields.get('ActiveState')=='active'
+        assert fields.get('Unit')=='porota-market-watch-silence-rc6.service'
+        assert marker.get('deploy_sha')=='b183a9e8b9b9028d647390c006a8512cb0dc9f52' and marker.get('mode')=='PRODUCTION_PAPER' and marker.get('real_orders_sent')==0
+        assert marker.get('real_order_routes')=='NOT_CALLED' and marker.get('image_id')=='sha256:41155071b25004454ae5f96ef430f5ed7104079e85103eef3c62f7bd08034cca'
+        next_elapse=fields.get('NextElapseUSecRealtime','')
+        assert '2026-10-26' in next_elapse and ':03:' in next_elapse
+        out={'schema':'RC6_A74_WATCHDOG_INSTALLED_V1','source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'timer':fields,'calendar':schedules,'candidate_sha':marker.get('candidate_sha'),'deploy_sha':marker.get('deploy_sha'),'image_id':marker.get('image_id'),'mode':marker.get('mode'),'real_orders_sent':marker.get('real_orders_sent'),'real_order_routes':marker.get('real_order_routes')}
+        print(json.dumps(out,sort_keys=True))
         PY
         python3 - <<'PY'
-        import datetime,json,os,pathlib
-        root=pathlib.Path(os.environ['RUNNER_TEMP'])
-        u=json.loads((root/'a74_publisher_normal.json').read_text())
-        s=json.loads((root/'a74_publisher_root.json').read_text())
-        m=s['files']['state']
-        assert m['readable'] and m['selected_fields']['deploy_sha']=='6cc0944fc225fb5bf50b0715f59125e0df206311'
-        assert m['selected_fields']['mode']=='PRODUCTION_PAPER' and m['selected_fields']['real_orders_sent']==0
-        assert m['selected_fields']['image_id']=='sha256:efdc2c077237b57cb2259e887e652caffee8fe929bc4f2891671a1242d0f2aca'
-        assert m['uid']==0 and m['gid']==1000 and m['mode']=='0o640'
-        assert u['euid']==1000 and u['egid']==1000 and u['files']['state']['readable']
-        assert u['files']['state']['selected_fields']==m['selected_fields']
-        assert u['files']['state']['selected_fields']['real_order_routes']=='NOT_CALLED'
-        r={'schema':'RC6_A74_PUBLISHER_ACCESS_RECONCILIATION_V1','source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
-         'normal':u,'root':s,'publisher_user_matches_probe':u['publisher_service']['fields'].get('User')=='porotaadmin',
-         'root_marker_readable':m['readable'],'publisher_marker_readable':u['files']['state']['readable']}
-        (root/'a74_publisher_reconciliation.json').write_text(json.dumps(r,sort_keys=True))
-        print('A74_PUBLISHER_ROOT_MARKER='+str(m['readable'])+'|UNPRIVILEGED='+str(u['files']['state']['readable'])+'|SAME_USER='+str(r['publisher_user_matches_probe']))
+        import json,os,pathlib
+        p=pathlib.Path(os.environ['RUNNER_TEMP'])/'a74_watchdog_installed.json'
+        d=json.loads(p.read_text())
+        assert d['timer']['ActiveState']=='active' and len(d['calendar'])==2
+        print('A74_WATCHDOG_INSTALLED=GREEN|next='+d['timer']['NextElapseUSecRealtime'])
         PY
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: rc6-a74-publisher-positive-access
-        path: |-
-          ${{ runner.temp }}/a74_publisher_reconciliation.json
+        name: rc6-a74-watchdog-installed
+        path: ${{ runner.temp }}/a74_watchdog_installed.json
         retention-days: 7
     - name: Delete runner credential
       if: always()
       shell: bash
-      run: |-
-        rm -f "$HOME/.ssh/rc6_a74"
+      run: rm -f "$HOME/.ssh/rc6_a74"
