@@ -94,6 +94,48 @@ jobs:
           print(json.dumps(result,sort_keys=True))
           PY
           REMOTE
+      - name: Count A3 catalog alignment with one bounded public GET
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 65 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          import collections,json,sqlite3
+          import requests
+          from pathlib import Path
+          from cz_a3_cem_public_history_hf6 import DEFAULT_CEM_BASE_URL
+          from db_a3_cem_normalizer_hf6 import normalize_symbols
+          from ew_a3_history_rc6 import load_targets,_resolve_source_identity,FAMILIES
+
+          class Store:
+              def connect(self):
+                  c=sqlite3.connect(Path('/app/data/paper_v17/observer_v17.db').as_uri()+'?mode=ro',uri=True,timeout=.3)
+                  c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');return c
+          targets=load_targets(Store())
+          result={'schema':'rc6-a77-a3-alignment-v1','target_count':len(targets),
+                  'historical_requests':0,'catalog_requests':1,'history_writes':False,
+                  'ppi_watch_accessed':False,'real_routes':'NOT_CALLED'}
+          try:
+              with requests.get(DEFAULT_CEM_BASE_URL+'/api/v1/symbols',timeout=10,
+                      headers={'Accept':'application/json','User-Agent':'Porota-HF6-CEM/1.0'},stream=True) as response:
+                  response.raise_for_status()
+                  chunks=[];total=0
+                  for chunk in response.iter_content(chunk_size=65536):
+                      total+=len(chunk)
+                      if total>8*1024*1024:raise ValueError('A3_CATALOG_BYTE_BUDGET')
+                      chunks.append(chunk)
+              catalog=normalize_symbols(json.loads(b''.join(chunks)))
+              by_identity={(x.symbol,x.family):x for x in catalog if x.family in FAMILIES}
+              counts=collections.Counter(_resolve_source_identity(t[0],t[1],by_identity)[2]
+                                         for t in targets)
+              result.update(state='VALIDATED',catalog_bytes=total,
+                            catalog_family_counts=dict(sorted(collections.Counter(x.family for x in catalog if x.family in FAMILIES).items())),
+                            target_alignment=dict(sorted(counts.items())))
+          except Exception as exc:
+              result.update(state='NO_VERIFICADO',error_class=type(exc).__name__)
+          print(json.dumps(result,sort_keys=True))
+          PY
       - name: Remove SSH material
         if: always()
         shell: bash
