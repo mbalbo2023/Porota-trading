@@ -57,10 +57,69 @@ _CLOSED_INPUT_TABLES = (
     ("paper_family_lifecycle_events", 3000),
 )
 _CLOSED_PROSPECTIVE_TAILS = frozenset((
-    "paper_daily_risk", "paper_equity_by_currency",
     "ppi_intraday_points", "market_snapshots",
     "paper_events", "scalping_candidates", "decision_evidence_snapshots",
     "paper_fills", "paper_family_lifecycle_events"))
+_CLOSED_EQUITY_COLUMNS = (
+    "id", "measured_at", "currency", "cash", "exposure", "pending_proceeds",
+    "caucion_principal", "caucion_accrued", "unrealized_pnl",
+    "realized_pnl", "equity")
+_CLOSED_RISK_COLUMNS = (
+    "day", "currency", "baseline_equity", "limit_pct", "loss_budget",
+    "last_equity", "daily_pnl", "state", "latched_at", "evaluated_at", "detail")
+
+
+def _closed_daily_risk_input(c, at):
+    """Keep the current day's economic/latch state and its freshness class.
+
+    The supervisor updates evaluated_at in place while CLOSED. An identical
+    risk result may idle, but a new state, loss, latch or 120-second freshness
+    boundary must rebuild the cut. The historical cut is never marked fresh by
+    the independent idle heartbeat.
+    """
+    columns = tuple(row[1] for row in c.execute('PRAGMA table_info("paper_daily_risk")'))
+    if columns != _CLOSED_RISK_COLUMNS:
+        raise ValueError("SHADOW_CLOSED_RISK_SCHEMA")
+    day = at.astimezone(TZ).date().isoformat()
+    rows = c.execute('SELECT * FROM "paper_daily_risk" WHERE day=? '
+                     'ORDER BY currency LIMIT 9', (day,)).fetchall()
+    if len(rows) > 8:
+        raise ValueError("SHADOW_CLOSED_RISK_ROWS")
+    effective = []
+    for row in rows:
+        evaluated = stamp(row[9])
+        age = (at - evaluated).total_seconds()
+        if age < 0:
+            raise ValueError("SHADOW_CLOSED_RISK_FUTURE")
+        effective.append((tuple(row[:9] + row[10:]), age <= 120))
+    return tuple(effective)
+
+
+def _closed_equity_input(c, at, limit):
+    """The family reader uses the latest eligible cash row per currency.
+
+    The PAPER clock appends four identical valuations every 30 seconds even
+    when the market is closed. A later timestamp alone must not refresh a
+    committed SHADOW cut. Preserve the full economic row, the reader's 500-row
+    window and truncation bit; an unfamiliar schema or future row is not an
+    equality proof. The idle marker explicitly revokes source freshness.
+    """
+    columns = tuple(row[1] for row in c.execute(
+        'PRAGMA table_info("paper_equity_by_currency")'))
+    if columns != _CLOSED_EQUITY_COLUMNS:
+        raise ValueError("SHADOW_CLOSED_EQUITY_SCHEMA")
+    rows = c.execute('SELECT * FROM "paper_equity_by_currency" '
+                     'ORDER BY id DESC LIMIT ?', (limit + 1,)).fetchall()
+    latest = {}
+    for row in rows[:limit]:
+        measured = stamp(row[1])
+        if measured > at or not isinstance(row[2], str) or not row[2]:
+            raise ValueError("SHADOW_CLOSED_EQUITY_CLOCK_OR_CURRENCY")
+        currency = row[2]
+        if currency not in latest or measured > latest[currency][0]:
+            latest[currency] = (measured, tuple(row[2:]))
+    return (len(rows) > limit,
+            tuple(sorted((currency, value) for currency, (_, value) in latest.items())))
 
 
 def closed_input_signature(worker, as_of, *, deep_catalog=False):
@@ -111,6 +170,12 @@ def closed_input_signature(worker, as_of, *, deep_catalog=False):
                     # probe alone is a complete content hash.
                     add(tuple(c.execute("""SELECT COUNT(*),COALESCE(MAX(rowid),0),
                         MAX(last_seen_at) FROM financial_instrument_catalog""").fetchone()))
+                    continue
+                if name == "paper_equity_by_currency":
+                    add(_closed_equity_input(c, at, limit))
+                    continue
+                if name == "paper_daily_risk":
+                    add(_closed_daily_risk_input(c, at))
                     continue
                 # The native readers consume these append-only/current-window
                 # projections with their own smaller caps. Earlier rows are

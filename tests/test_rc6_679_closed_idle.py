@@ -4,6 +4,7 @@ import sqlite3
 
 import pytest
 
+from be_paper_engine import PaperBroker
 from rc6_shadow_runtime.persistence import read_committed_generation
 from rc6_shadow_runtime.worker import (
     ShadowRuntime, closed_input_signature, publish_closed_idle)
@@ -60,6 +61,123 @@ def test_closed_signature_handles_a_large_append_only_event_history(tmp_path):
           (event_at,source,event_type,paper_id,detail) VALUES(?,?,?,?,?)""",
           (CLOSED.isoformat(), "PRODUCTION_PAPER", "OBSERVED", None, "late"))
     assert closed_input_signature(worker, CLOSED + timedelta(seconds=30)) != first
+
+
+def test_closed_paper_clock_valuation_append_preserves_idle_only_if_economics_match(tmp_path):
+    store, _ = make_store(tmp_path, count=2)
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    columns = ("measured_at,currency,cash,exposure,pending_proceeds,"
+               "caucion_principal,caucion_accrued,unrealized_pnl,realized_pnl,equity")
+    currencies = ("ARS", "USD", "MEP", "CCL")
+
+    def append(at, *, ars_cash="100", accrued="0"):
+        with store.connect() as c:
+            c.executemany(f"INSERT INTO paper_equity_by_currency({columns}) "
+                          "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ((at.isoformat(), currency, ars_cash if currency == "ARS" else "50",
+                  "0", "0", "0", accrued if currency == "ARS" else "0",
+                  "0", "0", ars_cash if currency == "ARS" else "50")
+                 for currency in currencies))
+
+    append(CLOSED)
+    before = closed_input_signature(worker, CLOSED + timedelta(seconds=1))
+    assert before is not None
+    deep_before = closed_input_signature(worker, CLOSED + timedelta(seconds=1),
+                                         deep_catalog=True)
+    assert deep_before is not None
+    append(CLOSED + timedelta(seconds=30))
+    # The four real clock append IDs and timestamps change, while the only
+    # family input (the latest economic row per currency) does not.
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=31)) == before
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=31),
+                                  deep_catalog=True) == deep_before
+
+    append(CLOSED + timedelta(seconds=60), ars_cash="101")
+    cash_change = closed_input_signature(worker, CLOSED + timedelta(seconds=61))
+    assert cash_change is not None and cash_change != before
+    append(CLOSED + timedelta(seconds=90), ars_cash="101", accrued="0.01")
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=91)) != cash_change
+
+    # A future observation is not an eligible current row. Fail closed until
+    # it can be interpreted rather than hiding a later time transition.
+    append(CLOSED + timedelta(days=1), ars_cash="101", accrued="0.01")
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=92)) is None
+    rollover = closed_input_signature(worker, CLOSED + timedelta(days=1, seconds=1))
+    assert rollover is not None and rollover != cash_change
+    # PREOPEN/OPEN never uses this idle shortcut, even with equal economics.
+    assert closed_input_signature(worker, OPEN + timedelta(minutes=2)) is None
+
+
+def test_real_paper_broker_clock_appends_four_equal_closed_valuations(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    broker = PaperBroker(store)
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    broker.mark_equity({}, as_of=CLOSED.isoformat())
+    first = closed_input_signature(worker, CLOSED + timedelta(seconds=1))
+    assert first is not None
+    with store.connect() as c:
+        count_before = c.execute("SELECT COUNT(*) FROM paper_equity_by_currency").fetchone()[0]
+    broker.mark_equity({}, as_of=(CLOSED + timedelta(seconds=30)).isoformat())
+    with store.connect() as c:
+        count_after = c.execute("SELECT COUNT(*) FROM paper_equity_by_currency").fetchone()[0]
+    assert count_after - count_before == 4
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=31)) == first
+
+
+def test_closed_risk_supervisor_refresh_preserves_latch_and_freshness_boundary(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    broker = PaperBroker(store, daily_loss_pct="2.5")
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    broker.daily_risk.evaluate(CLOSED.isoformat())
+    first = closed_input_signature(worker, CLOSED + timedelta(seconds=1))
+    assert first is not None
+    broker.daily_risk.evaluate((CLOSED + timedelta(seconds=30)).isoformat())
+    refreshed = closed_input_signature(worker, CLOSED + timedelta(seconds=31))
+    assert refreshed == first
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=151)) != refreshed
+    with store.connect() as c:
+        c.execute("UPDATE paper_daily_risk SET state='LATCHED',latched_at=? "
+                  "WHERE day=? AND currency='ARS'",
+                  ((CLOSED + timedelta(seconds=30)).isoformat(),
+                   CLOSED.astimezone(runtime.TZ).date().isoformat()))
+    assert closed_input_signature(worker, CLOSED + timedelta(seconds=32)) != refreshed
+
+
+def test_closed_equity_window_detects_currency_expelled_by_new_rows(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    values = lambda currency: (CLOSED.isoformat(), currency, "10", "0", "0",
+                               "0", "0", "0", "0", "10")
+    with store.connect() as c:
+        c.execute("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+                  values("ARS"))
+        c.execute("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+                  values("USD"))
+        c.executemany("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+                      (values("ARS") for _ in range(499)))
+    before = closed_input_signature(worker, CLOSED + timedelta(seconds=1))
+    assert before is not None
+    with store.connect() as c:
+        c.execute("INSERT INTO paper_equity_by_currency VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",
+                  values("ARS"))
+    after = closed_input_signature(worker, CLOSED + timedelta(seconds=1))
+    assert after is not None and after != before
+
+
+def test_closed_equity_unknown_schema_fails_closed(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    with store.connect() as c:
+        c.execute('ALTER TABLE paper_equity_by_currency ADD COLUMN audit_hint TEXT')
+    assert closed_input_signature(worker, CLOSED) is None
+
+
+def test_closed_risk_unknown_schema_fails_closed(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    with store.connect() as c:
+        c.execute('ALTER TABLE paper_daily_risk ADD COLUMN unreviewed_policy TEXT')
+    assert closed_input_signature(worker, CLOSED) is None
 
 
 def test_idle_marker_revokes_live_cut_and_preserves_historical_cut(tmp_path):
