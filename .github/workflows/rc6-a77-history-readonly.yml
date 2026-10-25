@@ -111,10 +111,11 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
           import collections,json,sqlite3
+          from datetime import date,datetime,timedelta,timezone
           import requests
           from pathlib import Path
           from cz_a3_cem_public_history_hf6 import DEFAULT_CEM_BASE_URL
-          from db_a3_cem_normalizer_hf6 import normalize_symbols
+          from db_a3_cem_normalizer_hf6 import normalize_symbols,closing_to_candle
           from ew_a3_history_rc6 import load_targets,_resolve_source_identity,FAMILIES
 
           class Store:
@@ -153,6 +154,51 @@ jobs:
                             nonoperational_future_targets=len(nonoperational_futures),
                             future_alignment=[{'market':k[0],'status':k[1],'can_simulate':k[2],
                                 'alignment':k[3],'n':v} for k,v in sorted(future_counts.items())])
+              sample=[]
+              for target in nonoperational_futures:
+                  meta,source_symbol,alignment=_resolve_source_identity(target[0],'FUTUROS',by_identity)
+                  if not meta or not source_symbol or target[1]!='A3':continue
+                  try:expiry=date.fromisoformat(str(meta.maturity_date)[:10])
+                  except (TypeError,ValueError):continue
+                  if expiry>=datetime.now(timezone.utc).date():sample.append((expiry,target,source_symbol,alignment))
+              if sample:
+                  _expiry,chosen,source_symbol,alignment=sorted(sample,key=lambda x:x[0])[0]
+                  today=datetime.now(timezone.utc).date()
+                  params={'symbol':source_symbol,'from':(today-timedelta(days=7)).isoformat(),
+                          'to':today.isoformat(),'page':1,'pageSize':500}
+                  sample_result={'state':'NO_VERIFICADO','candidate_market':chosen[1],
+                                 'candidate_status':chosen[4],'identity_alignment':alignment,
+                                 'history_requests':1,'history_writes':False}
+                  try:
+                      with requests.get(DEFAULT_CEM_BASE_URL+'/api/v1/closing-prices',
+                              params=params,timeout=10,stream=True,
+                              headers={'Accept':'application/json','User-Agent':'Porota-HF6-CEM/1.0'}) as response:
+                          response.raise_for_status()
+                          chunks=[];count=0
+                          for chunk in response.iter_content(chunk_size=65536):
+                              count+=len(chunk)
+                              if count>2*1024*1024:raise ValueError('A3_SAMPLE_BYTE_BUDGET')
+                              chunks.append(chunk)
+                      payload=json.loads(b''.join(chunks))
+                      rows=payload.get('data') if isinstance(payload,dict) else None
+                      if not isinstance(rows,list):raise ValueError('A3_CLOSING_SHAPE_INVALID')
+                      valid=0;reasons=collections.Counter();days=[]
+                      for row in rows:
+                          if str(row.get('symbol') or '').upper()!=source_symbol:continue
+                          try:
+                              item=closing_to_candle(row,instrument_type='FUTUROS',
+                                  market=chosen[1],currency=chosen[2],settlement_identity=chosen[3],
+                                  observed_at=datetime.now(timezone.utc).isoformat())
+                              item.validate();valid+=1;days.append(item.date)
+                          except (TypeError,ValueError) as exc:
+                              code=str(exc).split(':',1)[0]
+                              reasons[code if code.startswith(('CEM_','HISTORY_')) else type(exc).__name__]+=1
+                      sample_result.update(state='VALIDATED',response_bytes=count,rows=len(rows),
+                                           exact_valid_rows=valid,invalid_reason_counts=dict(reasons),
+                                           latest_valid_day=max(days,default=None))
+                  except Exception as exc:sample_result.update(error_class=type(exc).__name__)
+                  result['one_future_history_sample']=sample_result
+              else:result['one_future_history_sample']={'state':'NO_ACTIVE_ALIGNED_FUTURE','history_requests':0}
           except Exception as exc:
               result.update(state='NO_VERIFICADO',error_class=type(exc).__name__)
           print(json.dumps(result,sort_keys=True))
