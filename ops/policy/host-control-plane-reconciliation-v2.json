@@ -85,7 +85,7 @@
       "enabled": null,
       "active": null,
       "remove_on_deploy": false,
-      "reason": "Read-only A3 historical template used by active FUTUROS/OPCIONES background timers; no order methods"
+      "reason": "Read-only A3 historical template retained for guarded repair; its three failed timers remain quarantined and do not run"
     },
     "systemd/porota-a3-history-reconcile-rc6.timer": {
       "role": "QUARANTINED_TIMER",
