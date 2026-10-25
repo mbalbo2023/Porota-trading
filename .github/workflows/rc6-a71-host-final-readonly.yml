@@ -217,8 +217,35 @@ jobs:
           print('SHADOW='+str(r['shadow'].get('status.json',{}).get('status')))
           print('A3_ERRORS='+str({k:v['errors'] for k,v in r['a3'].items()}))
           PY
+          timeout 55 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' > "$RUNNER_TEMP/a72_probe.json" <<'PY'
+          import datetime,json,time
+          from pathlib import Path
+          from rc6_shadow_runtime.worker import ShadowRuntime,closed_input_signature
+          path=Path('/app/data/paper_v17/observer_v17.db')
+          result={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  'probe':'SHADOW_CLOSED_SIGNATURE_READ_ONLY','db_exists':path.is_file(),
+                  'samples':[]}
+          if path.is_file():
+              worker=ShadowRuntime(path)
+              for n in range(2):
+                  at=datetime.datetime.now(datetime.timezone.utc)
+                  started=time.monotonic()
+                  value=closed_input_signature(worker,at)
+                  result['samples'].append({'valid':value is not None,
+                      'elapsed_ms':round(1000*(time.monotonic()-started),2),
+                      'utc':at.isoformat(),'same_as_prior':n==1 and value is not None and value==previous})
+                  previous=value
+                  if n==0:time.sleep(32)
+          print(json.dumps(result,sort_keys=True))
+          PY
+          python3 - "$RUNNER_TEMP/a72_probe.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]));print('A72_CLOSED_SIGNATURE='+str(r['samples']))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: rc6-a71-final-readonly
-          path: ${{ runner.temp }}/a71_final.json
+          path: |
+            ${{ runner.temp }}/a71_final.json
+            ${{ runner.temp }}/a72_probe.json
           retention-days: 7
