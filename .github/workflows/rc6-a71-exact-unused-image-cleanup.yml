@@ -1,0 +1,99 @@
+name: RC6 A71 exact unused predeploy image cleanup
+on:
+  push:
+    branches: [ops/rc6-a71-host-audit-20261025]
+    paths: [.github/workflows/rc6-a71-exact-unused-image-cleanup.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Exact-image guarded cleanup and independent measurement
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a71"
+          chmod 600 "$HOME/.ssh/rc6_a71"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_image_cleanup.json" <<'PY'
+          import datetime,json,os,subprocess,sys
+          live='sha256:6b09d4fa143f8a3ca93aa8bd644d38b24061fb04beb506ac902c784314797242'
+          victims={
+            'sha256:822ef069d9780429fb77de27007b82232ab6428e96d87ceb0518242367513e95':
+                'porota-predeploy-v2:26a95f734cb9eece72e89a1d084c7006a1e05fa2',
+            'sha256:3f0f89ce069691225402c6a591eef0139068d188d9524b50d87cd371ca3455d1':
+                'porota-predeploy-v2:8ff3f851e0fc857c24a8ee22be45f20a9aa39127'}
+          names={'porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'}
+          def docker(*args):
+              p=subprocess.run(['sudo','-n','docker',*args],capture_output=True,text=True,timeout=45)
+              if p.returncode:raise RuntimeError('DOCKER_CALL_FAILED:'+args[0])
+              return p.stdout.strip()
+          def available():
+              s=os.statvfs('/');return s.f_bavail*s.f_frsize
+          receipt={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                   'before_available_bytes':available(),'expected_image_ids':list(victims),
+                   'removed':[],'scope':'EXACT_UNUSED_PREDEPLOY_IMAGES_ONLY','ppi_watch':'UNTOUCHED'}
+          try:
+              ids=docker('ps','-aq').splitlines()
+              if len(ids)!=3:raise RuntimeError('CONTAINER_SET_CHANGED')
+              actual={}
+              for cid in ids:
+                  obj=json.loads(docker('inspect',cid))[0]
+                  actual[obj['Name'].lstrip('/')]=obj['Image']
+                  if obj['State']['Status']!='running':raise RuntimeError('CONTAINER_NOT_RUNNING')
+              if set(actual)!=names or set(actual.values())!={live}:
+                  raise RuntimeError('ACTIVE_CONTAINER_IMAGE_CHANGED')
+              current=json.loads(docker('image','inspect',live))[0]
+              if current['Id']!=live or 'porota-trading-bot:17.0.0-rc6' not in current['RepoTags']:
+                  raise RuntimeError('ACTIVE_TAG_CHANGED')
+              for image,tag in victims.items():
+                  obj=json.loads(docker('image','inspect',image))[0]
+                  if obj['Id']!=image or obj['RepoTags']!=[tag]:
+                      raise RuntimeError('PREDEPLOY_IMAGE_REFERENCE_CHANGED')
+              receipt['containers_before']=actual
+              for image in victims:
+                  docker('image','rm','--no-prune',image)
+                  receipt['removed'].append(image)
+              after={}
+              for cid in docker('ps','-aq').splitlines():
+                  obj=json.loads(docker('inspect',cid))[0]
+                  after[obj['Name'].lstrip('/')]=obj['Image']
+                  if obj['State']['Status']!='running':raise RuntimeError('CONTAINER_CHANGED_AFTER')
+              if after!=actual or json.loads(docker('image','inspect',live))[0]['Id']!=live:
+                  raise RuntimeError('LIVE_IMAGE_CHANGED_AFTER')
+              receipt['containers_after']=after
+              receipt['status']='PASS'
+          except Exception as exc:
+              receipt['status']='STOPPED';receipt['error_class']=type(exc).__name__
+              receipt['error_code']=str(exc)[:100] if type(exc) is RuntimeError else 'UNCLASSIFIED'
+          finally:
+              receipt['after_available_bytes']=available()
+              receipt['delta_available_bytes']=receipt['after_available_bytes']-receipt['before_available_bytes']
+              receipt['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+              print(json.dumps(receipt,sort_keys=True,separators=(',',':')))
+          if receipt['status']!='PASS':sys.exit(2)
+          PY
+          python3 - "$RUNNER_TEMP/a71_image_cleanup.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          print('A71_EXACT_IMAGE_CLEANUP='+r['status'])
+          print('REMOVED_COUNT='+str(len(r['removed'])))
+          print('AVAILABLE_DELTA_BYTES='+str(r['delta_available_bytes']))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a71-image-cleanup-receipt
+          path: ${{ runner.temp }}/a71_image_cleanup.json
+          retention-days: 7
