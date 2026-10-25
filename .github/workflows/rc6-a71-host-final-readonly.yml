@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     env:
-      HOST: ${{ secrets.DO_HOST }}
-      USER: ${{ secrets.DO_USER }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
@@ -95,6 +95,7 @@ jobs:
         path: ${{ runner.temp }}/a74_publisher_reconciliation.json
         retention-days: 7
     - name: Delete runner credential
+      if: always()
       shell: bash
       run: |-
         rm -f "$HOME/.ssh/rc6_a74"
