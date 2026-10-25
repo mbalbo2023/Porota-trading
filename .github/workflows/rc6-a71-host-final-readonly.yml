@@ -1,4 +1,4 @@
-name: 'RC6 A74 settled CLOSED worker sample after #739'
+name: 'RC6 A74 steady CLOSED worker sample after #739'
 'on':
   push:
     branches:
