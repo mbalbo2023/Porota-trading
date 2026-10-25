@@ -7,4 +7,6 @@ Requires=docker.service
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
 ExecStart=/usr/bin/python3 /opt/porota-trading/rc6_preopen.py --publish-paper-gate
-TimeoutStartSec=5min
+# Bound the 10:15 check so it cannot still occupy this oneshot at the
+# binding 10:20 gate. A timeout is fail-closed; no PAPER GO is published.
+TimeoutStartSec=3min
