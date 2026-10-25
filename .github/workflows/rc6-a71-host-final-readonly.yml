@@ -36,6 +36,49 @@ jobs:
                   p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
                   return p.returncode,p.stdout[:100000]
               except (OSError,subprocess.TimeoutExpired):return 124,''
+          # Bounded, read-only filesystem and Docker inventory. Never emit names,
+          # tags, container environment, database rows, or PPI Watch paths.
+          disk={'paths':{},'docker_df':[],'images':[]}
+          paths=('/opt/porota-trading/data','/opt/porota-trading/data/paper_v17',
+                 '/opt/porota-trading/data/deploy','/opt/porota-trading/data/market_history.db',
+                 '/var/lib/containerd','/var/lib/docker','/var/log','/var/cache/apt')
+          for path in paths:
+              rc,raw=call(['sudo','-n','du','-s','-B1','-x',path],12)
+              m=re.match(r'([0-9]+)\\s',raw)
+              disk['paths'][path]={'rc':rc,'bytes':int(m.group(1)) if rc==0 and m else None}
+          rc,raw=call(['sudo','-n','docker','system','df','--format','{{json .}}'],12)
+          disk['docker_df_rc']=rc
+          if rc==0:
+              for line in raw.splitlines()[:12]:
+                  try:
+                      item=json.loads(line)
+                      disk['docker_df'].append({k:item.get(k) for k in
+                          ('Type','TotalCount','Active','Size','Reclaimable')})
+                  except (ValueError,TypeError):pass
+          rc,raw=call(['sudo','-n','docker','image','ls','-q','--no-trunc'],8)
+          images=sorted(set(re.findall(r'sha256:[0-9a-f]{64}',raw)))
+          disk['image_list_rc']=rc
+          disk['image_list_complete']=rc==0 and len(images)<=40
+          rc2,raw2=call(['sudo','-n','docker','ps','-aq','--no-trunc'],8)
+          containers=sorted(set(re.findall(r'(?<![a-f0-9])[a-f0-9]{64}(?![a-f0-9])',raw2)))
+          disk['container_list_rc']=rc2
+          disk['container_list_complete']=rc2==0 and len(containers)<=40
+          used=set()
+          if containers and disk['container_list_complete']:
+              ri,ri_raw=call(['sudo','-n','docker','inspect','-f','{{.Image}}',*containers],12)
+              disk['reference_inspect_rc']=ri
+              if ri==0:used=set(re.findall(r'sha256:[0-9a-f]{64}',ri_raw))
+          if images and disk['image_list_complete']:
+              ri,ri_raw=call(['sudo','-n','docker','image','inspect',
+                              '-f','{{.Id}} {{.Size}}',*images],12)
+              disk['image_inspect_rc']=ri
+              if ri==0:
+                  for line in ri_raw.splitlines():
+                      m=re.fullmatch(r'(sha256:[0-9a-f]{64}) ([0-9]+)',line)
+                      if m:disk['images'].append({'id':m.group(1),'virtual_size_bytes':int(m.group(2)),
+                                                   'container_referenced':m.group(1) in used
+                                                   if disk['reference_inspect_rc']==0 else None})
+          output['disk_inventory']=disk
           # Never emit raw journal messages, SQL, traceback paths, or provider data.
           for mode in ('DAILY_INCREMENTAL','RECONCILE','WEEKEND_DEEP'):
               unit='porota-a3-history-rc6@'+mode+'.service'
