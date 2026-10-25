@@ -1,4 +1,4 @@
-name: RC6 A71 bounded failure and family cut audit
+name: RC6 A74 bounded scheduler and storage audit
 on:
   push:
     branches: [ops/rc6-a71-host-audit-20261025]
@@ -18,456 +18,196 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - name: Sanitized diagnoses and SHADOW family cut
+      - name: Finite metadata and worker sample without runtime writes
         shell: bash
         run: |
           set -Eeuo pipefail
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a71"
-          chmod 600 "$HOME/.ssh/rc6_a71"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a74"
+          chmod 600 "$HOME/.ssh/rc6_a74"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
-          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_final.json" <<'PY'
-          import datetime,gzip,json,pathlib,re,shutil,sqlite3,subprocess,time
-          root=pathlib.Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'disk_free_bytes':shutil.disk_usage('/').free,'a3':{},'a3_schema':{},'shadow':{},'timer':{},'closed_probe_table_counts':{},'equity_cursor_35s':{},'warnings':[]}
-          def call(argv,seconds=5):
-              try:
-                  p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
-                  return p.returncode,p.stdout[:100000]
-              except (OSError,subprocess.TimeoutExpired):return 124,''
-          # Bounded, read-only filesystem and Docker inventory. Never emit names,
-          # tags, container environment, database rows, or PPI Watch paths.
-          disk={'paths':{},'docker_df':[],'images':[]}
-          paths=('/opt/porota-trading/data','/opt/porota-trading/data/paper_v17',
-                 '/opt/porota-trading/data/deploy','/opt/porota-trading/data/market_history.db',
-                 '/var/lib/containerd','/var/lib/docker','/var/log','/var/cache/apt')
-          for path in paths:
-              rc,raw=call(['sudo','-n','du','-s','-B1','-x',path],12)
-              m=re.match(r'([0-9]+)\s',raw)
-              disk['paths'][path]={'rc':rc,'bytes':int(m.group(1)) if rc==0 and m else None}
-          rc,raw=call(['sudo','-n','docker','system','df','--format','{{json .}}'],12)
-          disk['docker_df_rc']=rc
-          if rc==0:
-              for line in raw.splitlines()[:12]:
-                  try:
-                      item=json.loads(line)
-                      disk['docker_df'].append({k:item.get(k) for k in
-                          ('Type','TotalCount','Active','Size','Reclaimable')})
-                  except (ValueError,TypeError):pass
-          rc,raw=call(['sudo','-n','docker','image','ls','-q','--no-trunc'],8)
-          images=sorted(set(re.findall(r'sha256:[0-9a-f]{64}',raw)))
-          disk['image_list_rc']=rc
-          disk['image_list_complete']=rc==0 and len(images)<=40
-          rc2,raw2=call(['sudo','-n','docker','ps','-aq','--no-trunc'],8)
-          containers=sorted(set(re.findall(r'(?<![a-f0-9])[a-f0-9]{64}(?![a-f0-9])',raw2)))
-          disk['container_list_rc']=rc2
-          disk['container_list_complete']=rc2==0 and len(containers)<=40
-          used=set()
-          disk['reference_inspect_rc']=None
-          if containers and disk['container_list_complete']:
-              ri,ri_raw=call(['sudo','-n','docker','inspect','-f','{{.Image}}',*containers],12)
-              disk['reference_inspect_rc']=ri
-              if ri==0:used=set(re.findall(r'sha256:[0-9a-f]{64}',ri_raw))
-          if images and disk['image_list_complete']:
-              ri,ri_raw=call(['sudo','-n','docker','image','inspect',
-                              '-f','{{.Id}} {{.Size}}',*images],12)
-              disk['image_inspect_rc']=ri
-              if ri==0:
-                  for line in ri_raw.splitlines():
-                      m=re.fullmatch(r'(sha256:[0-9a-f]{64}) ([0-9]+)',line)
-                      if m:disk['images'].append({'id':m.group(1),'virtual_size_bytes':int(m.group(2)),
-                                                   'container_referenced':m.group(1) in used
-                                                   if disk['reference_inspect_rc']==0 else None})
-          output['disk_inventory']=disk
-          # Never emit raw journal messages, SQL, traceback paths, or provider data.
-          for mode in ('DAILY_INCREMENTAL','RECONCILE','WEEKEND_DEEP'):
-              unit='porota-a3-history-rc6@'+mode+'.service'
-              rc,raw=call(['sudo','-n','journalctl','-u',unit,'-n','45','--no-pager','-o','json'],5)
-              frames=[];errors=[];results=[]
-              for line in raw.splitlines():
-                  try:message=str(json.loads(line).get('MESSAGE',''))
-                  except (ValueError,TypeError):continue
-                  match=re.search(r'File "[^"]*/([A-Za-z0-9_]+\.py)", line ([0-9]{1,5})',message)
-                  if match:frames.append({'module':match.group(1),'line':int(match.group(2))})
-                  match=re.search(r'\b(SnapshotError|ValueError|sqlite3\.OperationalError):\s*([A-Z][A-Z0-9_]{2,90})\b',message)
-                  if match:errors.append([match.group(1),match.group(2)])
-                  try:
-                      j=json.loads(message)
-                      if isinstance(j,dict):results.append({k:j.get(k) for k in ('ran','reason','mode','selected','failed','complete') if k in j})
-                  except (ValueError,TypeError):pass
-              output['a3'][mode]={'journal_rc':rc,'frames':frames[-12:],'errors':errors[-3:],'results':results[-2:]}
-          code="import sqlite3,json; c=sqlite3.connect('file:/app/data/market_history.db?mode=ro',uri=True,timeout=.1); c.execute('PRAGMA query_only=ON'); print(json.dumps({n:[r[1] for r in c.execute('PRAGMA table_info('+n+')')] for n in ('history_versions_v2','history_canonical_v2','history_close_versions_v1','history_close_canonical_v1')})); c.close()"
-          rc,raw=call(['sudo','-n','docker','exec','porota_production_observer','python','-c',code],6)
-          output['a3_schema']={'rc':rc}
-          if rc==0:
-              try:output['a3_schema']['columns']=json.loads(raw)
-              except ValueError:output['a3_schema']['error']='PARSE_FAILED'
-          if root.is_dir():
-              def safe_read(p,compressed=False):
-                  if not p.is_file() or p.is_symlink() or p.stat().st_size>4*1024*1024:return None
-                  with (gzip.open(p,'rt') if compressed else open(p,'r')) as stream:
-                      envelope=json.load(stream)
-                  return envelope.get('payload') if isinstance(envelope,dict) else None
-              for name in ('status.json','idle.json','publication.json','CURRENT.json'):
-                  try:
-                      p=root/name;obj=safe_read(p)
-                      if not isinstance(obj,dict):continue
-                      keys=('schema','as_of','phase','status','mode','error_class','error_module',
-                            'error_line','runtime_read_stage','source_as_of','heartbeat_at',
-                            'last_generation_id','last_source_as_of','source_freshness_renewed',
-                            'provider_requests','real_orders_sent','real_routes','catalog_ready_count',
-                            'entry_signal_lab_status','operational_funnel_status','file','sequence',
-                            'total_seconds','total_cpu_seconds','poll_seconds')
-                      safe={k:obj[k] for k in keys if k in obj and isinstance(obj[k],(str,int,float,bool,type(None)))}
-                      if isinstance(obj.get('generation_timing'),dict):
-                          t=obj['generation_timing'];safe['timing']={k:t.get(k) for k in (
-                              'tick_seconds','tick_cpu_seconds','process_peak_rss_kib','stages_seconds',
-                              'stages_cpu_seconds') if k in t}
-                      output['shadow'][name]=safe
-                  except (OSError,ValueError,TypeError):output['shadow'][name]={'error':'READ_FAILED'}
-              evidence=pathlib.Path('/opt/porota-trading/data/validation/candle_inmarket_latest.json')
-              try:
-                  if evidence.is_file() and not evidence.is_symlink() and evidence.stat().st_size<65536:
-                      value=json.loads(evidence.read_text())
-                      output['timer']['candle_inmarket_evidence']={k:value.get(k) for k in
-                          ('status','observed_at','expires_at','worker_state','current_cursor',
-                           'baseline_cursor','dirty_due_bars','collection_error','checks')}
-              except (OSError,ValueError,TypeError):output['timer']['candle_inmarket_evidence']={'error':'READ_FAILED'}
-              try:
-                  current=safe_read(root/'CURRENT.json') or {}
-                  cut_name=current.get('file','')
-                  if re.fullmatch(r'cut-[a-f0-9]{64}\.json\.gz',cut_name):
-                      cut=safe_read(root/cut_name,True)
-                      report=(cut or {}).get('report') or {}
-                      family=report.get('family_routing') or {}
-                      rows=family.get('families') or []
-                      output['shadow']['cut']={'as_of':report.get('as_of'),'status':report.get('status'),
-                          'family_status':family.get('status'),'family_count':len(rows),
-                          'families':[{k:row.get(k) for k in ('family','status','catalog_count','entry_authority')}
-                                      for row in rows[:20] if isinstance(row,dict)],
-                          'funnel_status':(report.get('operational_funnel') or {}).get('status')}
-              except (OSError,ValueError,TypeError):output['shadow']['cut']={'error':'READ_FAILED'}
-          try:
-              db='/opt/porota-trading/data/paper_v17/observer_v17.db'
-              c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=.1)
-              c.execute('PRAGMA query_only=ON')
-              allowed={'financial_instrument_catalog':20000,'paper_positions':4096,
-                       'paper_future_positions':4096,'paper_family_lifecycle':4096,
-                       'ppi_intraday_contract_state':20000}
-              present={row[0] for row in c.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
-              for name,limit in allowed.items():
-                  if name not in present:
-                      output['closed_probe_table_counts'][name]={'absent':True};continue
-                  deadline=time.monotonic()+.25
-                  c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
-                  try:
-                      count=c.execute('SELECT COUNT(*) FROM "'+name+'"').fetchone()[0]
-                      output['closed_probe_table_counts'][name]={'rows':count,'cap':limit,'over_cap':count>limit}
-                  except sqlite3.Error as exc:
-                      output['closed_probe_table_counts'][name]={'error':type(exc).__name__}
-                  finally:c.set_progress_handler(None,0)
-              c.close()
-          except (sqlite3.Error,OSError) as exc:output['closed_probe_table_counts']['error']=type(exc).__name__
-          # Bound observer output to a window; only service state and aggregate timing.
-          for unit in ('porota-candle-integrity-rc6.service','porota-rc6-candle-inmarket-verify.service',
-                       'porota-live-decision-cockpit-rc6.service','porota-runtime-evidence-rc6.service'):
-              rc,out=call(['sudo','-n','systemctl','show',unit,'--no-pager','-p','Result',
-                  '-p','ExecMainStatus','-p','ExecMainStartTimestamp','-p','ExecMainExitTimestamp',
-                  '-p','CPUUsageNSec'],5)
-              output['timer'][unit]={'rc':rc,**dict(x.split('=',1) for x in out.splitlines() if '=' in x)}
-          for unit in ('porota-live-decision-cockpit-rc6.service','porota-private-snapshot.service',
-                       'porota-1016-github-verify.service'):
-              rc,raw=call(['sudo','-n','systemctl','cat',unit,'--no-pager'],5)
-              program=[];settings=[]
-              for line in raw.splitlines():
-                  if line.startswith('ExecStart='):
-                      program.extend(re.findall(r'/(?:opt|usr/local|app)/[A-Za-z0-9_./-]+',line)[:8])
-                      settings.extend(x for x in ('docker','python','curl','sqlite','snapshot','cockpit','8766') if x in line.lower())
-                  elif line.startswith(('OnCalendar=','OnUnitActiveSec=','Description=')):
-                      settings.append(line[:120])
-              output['timer'][unit+'_wiring']={'rc':rc,'programs':program[:12],'settings':settings[:12]}
-          # A read-only pair tests whether the PAPER valuation clock invalidates
-          # the CLOSED SHADOW equality signature at the same 30-second cadence.
-          try:
-              db='/opt/porota-trading/data/paper_v17/observer_v17.db'
-              def equity_cursor():
-                  with sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=.1) as c:
-                      c.execute('PRAGMA query_only=ON')
-                      row=c.execute('SELECT rowid,measured_at FROM paper_equity_by_currency ORDER BY rowid DESC LIMIT 1').fetchone()
-                      return {'rowid':row[0],'measured_at':row[1]} if row else None
-              first=equity_cursor()
-              time.sleep(35)
-              second=equity_cursor()
-              output['equity_cursor_35s']={'before':first,'after':second,
-                  'delta_rowid':second['rowid']-first['rowid'] if first and second else None}
-          except (sqlite3.Error,OSError,TypeError) as exc:
-              output['equity_cursor_35s']={'error':type(exc).__name__}
-          # Installed dashboard probe returns booleans and status only. The bearer
-          # stays inside its own container and no HTML or credentials leave it.
-          route_code="""import json,os,urllib.request,urllib.error
-          url='http://127.0.0.1:8000/validacion'
-          def fetch(token=None):
-              headers={'Authorization':'Bearer '+token} if token else {}
-              try:
-                  with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=12) as response:
-                      return response.status,response.read(2000001)
-              except urllib.error.HTTPError as exc:
-                  return exc.code,b''
-          token=os.environ.get('DASHBOARD_ACCESS_TOKEN','')
-          unauth,_=fetch()
-          auth,body=fetch(token) if token else (None,b'')
-          page=body.decode('utf-8','replace')
-          print(json.dumps({'auth_available':bool(token),'unauthorized_status':unauth,
-           'authorized_status':auth,'body_bounded':len(body)<=2000000,
-           'm0':('M0 ·' in page),'m11':('M11 ·' in page),
-           'real_money_blocked':('Dinero real' in page and 'BLOCKED' in page),
-           'legacy_counterfactual':('analitica/contrafactuales' in page)}))
-          """
-          rc,raw=call(['sudo','-n','docker','exec','porota_production_dashboard',
-                       'python3','-c',route_code],20)
-          try: output['dashboard_validation_route']={'rc':rc,**json.loads(raw)}
-          except (ValueError,TypeError): output['dashboard_validation_route']={'rc':rc,'error':'UNAVAILABLE'}
-          rc,raw=call(['ss','-ltnH'],5)
-          output['port_8766']={'rc':rc,'listener_present':bool(re.search(r':8766\s',raw)) if rc==0 else None}
-          rc,raw=call(['git','-C','/opt/porota-trading','rev-parse','HEAD'],5)
-          output['host_checkout_git_head_historical']={'rc':rc,'sha':raw.strip() if re.fullmatch(r'[0-9a-f]{40}\n?',raw) else None}
-          # The host checkout .git pointer is historical; read the root-owned
-          # marker with a bounded sudo read and emit only allowlisted fields.
-          rc,raw=call(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<=65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status','native_acceptance_mode','source_freshness_renewed')},sort_keys=True))"],5)
-          try: output['installed_runtime_identity']={'rc':rc,**json.loads(raw)}
-          except (ValueError,TypeError): output['installed_runtime_identity']={'rc':rc,'error':'UNAVAILABLE'}
-          output['container_images']={}
-          for name in ('porota_production_observer','porota_production_dashboard',
-                       'porota_critical_approval_rc6'):
-              rc,raw=call(['sudo','-n','docker','inspect','-f','{{.Image}}',name],5)
-              output['container_images'][name]=raw.strip() if rc==0 and re.fullmatch(r'sha256:[0-9a-f]{64}\n?',raw) else None
-          output['postdeploy_timer_states']={}
-          for unit in ('porota-a3-history-daily-rc6.timer',
-                       'porota-a3-history-reconcile-rc6.timer',
-                       'porota-a3-history-weekend-rc6.timer',
-                       'porota-live-decision-cockpit-rc6.timer',
-                       'porota-1016-github-verify.timer'):
-              enabled,_enabled=call(['systemctl','is-enabled',unit],3)
-              active,_active=call(['systemctl','is-active',unit],3)
-              output['postdeploy_timer_states'][unit]={'enabled':_enabled.strip()[:20],
-                                                          'active':_active.strip()[:20]}
-          output['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
-          print(json.dumps(output,sort_keys=True,separators=(',',':')))
-          PY
-          python3 - "$RUNNER_TEMP/a71_final.json" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]));print('A71_FINAL_READ_ONLY=COMPLETE')
-          print('SHADOW='+str(r['shadow'].get('status.json',{}).get('status')))
-          print('A3_ERRORS='+str({k:v['errors'] for k,v in r['a3'].items()}))
-          PY
-          timeout 55 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' > "$RUNNER_TEMP/a72_probe.json" <<'PY'
-          import datetime,hashlib,json,sqlite3,time
-          from pathlib import Path
+          timeout 240 ssh -i "$HOME/.ssh/rc6_a74" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a74_readonly.json" <<'PY'
+          """Finite RC6 metadata audit. Never starts a worker or writes runtime data."""
+          import datetime,json,os,pathlib,re,shutil,sqlite3,subprocess,time
           from zoneinfo import ZoneInfo
-          from cg_paper_workspace import artifact_root
-          from rc6_shadow_runtime.worker import ShadowRuntime,closed_input_signature
-          from rc6_shadow_runtime import worker as module
-          path=Path('/app/data/paper_v17/observer_v17.db')
-          result={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                  'probe':'SHADOW_CLOSED_SIGNATURE_READ_ONLY','db_exists':path.is_file(),
-                  'samples':[]}
-          if path.is_file():
-              worker=ShadowRuntime(path,evidence_root=artifact_root(path)/'dynamic-shadow')
-              original_tables=module._CLOSED_INPUT_TABLES
-              expected=('id','measured_at','currency','cash','exposure',
-                  'pending_proceeds','caucion_principal','caucion_accrued',
-                  'unrealized_pnl','realized_pnl','equity')
-              def component_digests():
-                  pieces={};cursors={}
-                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.005) as c:
-                      c.execute('PRAGMA query_only=ON')
-                      deadline=time.monotonic()+3
-                      c.set_progress_handler(lambda:int(time.monotonic()>deadline),200)
-                      present={r[0] for r in c.execute(
-                          "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1000")}
-                      for name,cap in original_tables:
-                          if name not in present:pieces[name]='ABSENT';continue
-                          if name=='financial_instrument_catalog':
-                              records=[c.execute('SELECT COUNT(*),COALESCE(MAX(rowid),0),MAX(last_seen_at) FROM financial_instrument_catalog').fetchone()]
-                          else:
-                              order='julianday(event_at)' if name=='ppi_intraday_points' else 'rowid'
-                              projection='rowid,captured_at,payload_sha256' if name=='decision_evidence_snapshots' else '*'
-                              records=c.execute(f'SELECT {projection} FROM "{name}" ORDER BY {order} DESC LIMIT ?', (cap+1,)).fetchall()
-                          h=hashlib.sha256()
-                          for row in records:
-                              raw=repr(tuple(row)).encode('utf8','surrogatepass')
-                              if len(raw)>65536:raise ValueError('ROW_TOO_LARGE')
-                              h.update(len(raw).to_bytes(4,'big'));h.update(raw)
-                          pieces[name]=h.hexdigest()
-                          cursors[name]=c.execute(f'SELECT COALESCE(MAX(rowid),0) FROM "{name}"').fetchone()[0]
-                  sources={}
-                  for index,source in enumerate(sorted(set(worker.source_inputs+list(worker.capacity_controller.protected_paths)),key=str)):
-                      st=source.stat() if source.exists() else None
-                      sources[index]=(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns) if st else None
-                  return pieces,cursors,sources
-              for n in range(2):
-                  at=datetime.datetime.now(datetime.timezone.utc)
-                  started=time.monotonic()
-                  value=closed_input_signature(worker,at)
-                  module._CLOSED_INPUT_TABLES=tuple(t for t in original_tables
-                      if t[0]!='paper_equity_by_currency')
-                  try:other=closed_input_signature(worker,at)
-                  finally:module._CLOSED_INPUT_TABLES=original_tables
-                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.005) as c:
-                      c.execute('PRAGMA query_only=ON')
-                      columns=tuple(r[1] for r in c.execute(
-                          'PRAGMA table_info("paper_equity_by_currency")'))
-                      raw=c.execute('SELECT * FROM paper_equity_by_currency ORDER BY id DESC LIMIT 501').fetchall()
-                      risk_cols=tuple(r[1] for r in c.execute(
-                          'PRAGMA table_info("paper_daily_risk")'))
-                      risk_day=at.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
-                      risk_rows={r[1]:tuple(r) for r in c.execute(
-                          'SELECT * FROM paper_daily_risk WHERE day=? LIMIT 9',(risk_day,))}
-                  latest={}
-                  for row in raw[:500]:
-                      measured=datetime.datetime.fromisoformat(row[1])
-                      if row[2] not in latest or measured>latest[row[2]][0]:
-                          latest[row[2]]=(measured,tuple(row[2:]))
-                  economic=(len(raw)>500,tuple(sorted((k,v) for k,(_,v) in latest.items())))
-                  pieces,cursors,sources=component_digests()
-                  result['samples'].append({'valid':value is not None,
-                      'elapsed_ms':round(1000*(time.monotonic()-started),2),
-                      'utc':at.isoformat(),'same_as_prior':n==1 and value is not None and value==previous,
-                      'other_valid':other is not None,'other_same_as_prior':n==1 and other is not None and other==previous_other,
-                      'equity_schema_exact':columns==expected,
-                      'equity_economics_same_as_prior':n==1 and economic==previous_economic})
-                  previous,previous_other,previous_economic=value,other,economic
-                  if n==1:
-                      result['changed_tables']=[name for name in pieces if pieces[name]!=previous_pieces.get(name)]
-                      result['changed_source_indices']=[index for index in sources if sources[index]!=previous_sources.get(index)]
-                      result['changed_table_rowid_deltas']={name:cursors[name]-previous_cursors.get(name,0)
-                          for name in result['changed_tables'] if name in cursors}
-                      result['daily_risk_changed_fields']=sorted({risk_cols[i]
-                          for currency,row in risk_rows.items() if currency in previous_risk_rows
-                          for i,(old,new) in enumerate(zip(previous_risk_rows[currency],row)) if old!=new})
-                      result['daily_risk_currency_set_same']=set(risk_rows)==set(previous_risk_rows)
-                  previous_pieces,previous_cursors,previous_sources=pieces,cursors,sources
-                  previous_risk_rows=risk_rows
-                  if n==0:time.sleep(32)
-          print(json.dumps(result,sort_keys=True))
-          PY
-          python3 - "$RUNNER_TEMP/a72_probe.json" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]));print('A72_CLOSED_SIGNATURE='+str(r['samples']))
-          PY
-          timeout 135 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a72_runtime.json" <<'PY'
-          """Bounded read-only SHADOW idle proof, run on the RC6 host via Actions."""
-          import datetime
-          import json
-          import os
-          from pathlib import Path
-          import sqlite3
-          import subprocess
-          import time
           
-          UTC = datetime.timezone.utc
-          ROOT = Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          DATABASE = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          START=time.monotonic()
+          UTC=datetime.timezone.utc
+          ROOT=pathlib.Path('/opt/porota-trading')
+          R={'schema':'RC6_A74_READONLY_V1','source_utc':datetime.datetime.now(UTC).isoformat(),
+             'read_only':True,'source_freshness_renewed':False,'warnings':[]}
           
-          
-          def command(argv, seconds=6):
+          def command(args,seconds=5):
               try:
-                  proc = subprocess.run(argv, capture_output=True, text=True, timeout=seconds)
-                  return proc.returncode, proc.stdout[:25000]
-              except (OSError, subprocess.TimeoutExpired):
-                  return 124, ''
+                  p=subprocess.run(args,capture_output=True,text=True,timeout=seconds)
+                  return p.returncode,p.stdout[:250000]
+              except (OSError,subprocess.TimeoutExpired):return 124,''
           
+          def show(unit,props):
+              rc,out=command(['systemctl','show',unit,'--no-pager','--property='+','.join(props)])
+              return {'query_rc':rc,**dict(x.split('=',1) for x in out.splitlines() if '=' in x)}
           
-          def owned(name):
-              path = ROOT / name
-              if not path.is_file() or path.is_symlink() or path.stat().st_size > 2 * 1024 * 1024:
-                  return None
+          def mem_available():
+              try:return int(re.search(r'^MemAvailable:\s+([0-9]+)',pathlib.Path('/proc/meminfo').read_text(),re.M).group(1))*1024
+              except (OSError,AttributeError):return 0
+          
+          R['resources']={'free_bytes':shutil.disk_usage('/').free,'memory_available_bytes':mem_available()}
+          rc,raw=command(['sudo','-n','python3','-c',"import json,pathlib; p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json'); assert p.is_file() and not p.is_symlink() and p.stat().st_size<65536; s=json.loads(p.read_bytes()); print(json.dumps({k:s.get(k) for k in ('candidate_sha','deploy_sha','image_id','mode','real_orders_sent','real_order_routes','ppi_watch_untouched','validation_status','native_acceptance_mode','source_freshness_renewed')}))"])
+          try:R['marker']={'query_rc':rc,**json.loads(raw)}
+          except ValueError:R['marker']={'query_rc':rc,'error':'MARKER_UNAVAILABLE'}
+          R['containers']={}
+          for name in ('porota_production_observer','porota_production_dashboard','porota_critical_approval_rc6'):
+              rc,raw=command(['sudo','-n','docker','inspect','-f','{{.Image}} {{.State.Status}} {{.RestartCount}} {{.State.OOMKilled}} {{.State.StartedAt}}',name])
+              vals=raw.split()
+              if rc==0 and len(vals)==5 and re.fullmatch(r'sha256:[0-9a-f]{64}',vals[0]):
+                  R['containers'][name]={'image':vals[0],'status':vals[1],'restarts':vals[2],'oom':vals[3],'started_at':vals[4]}
+              else:R['containers'][name]={'error':'CONTAINER_QUERY_FAILED','query_rc':rc}
+          
+          rc,raw=command(['systemctl','list-unit-files','porota*.timer','--no-legend','--no-pager'])
+          names=sorted(set(x.split()[0] for x in raw.splitlines() if re.match(r'^porota[A-Za-z0-9@_.-]*\.timer\s',x)))
+          names=[n for n in names if not re.search(r'ppi[-_]?watch',n,re.I)]
+          R['timer_inventory']={'query_rc':rc,'count':len(names),'ppi_watch_excluded':True,'rows':[]}
+          services=set()
+          for unit in names[:64]:
+              row=show(unit,('ActiveState','SubState','UnitFileState','LastTriggerUSec','NextElapseUSecRealtime','NextElapseUSecMonotonic','Triggers','Persistent','AccuracyUSec','RandomizedDelayUSec','TimersCalendar','TimersMonotonic'))
+              row['unit']=unit
+              _,definition=command(['systemctl','cat',unit,'--no-pager'])
+              row['calendar_definition']=[x for x in definition.splitlines() if x.startswith(('OnCalendar=','OnBootSec=','OnUnitActiveSec=','Unit=','Persistent='))][:12]
+              target=next((x[5:] for x in row['calendar_definition'] if x.startswith('Unit=')),None)
+              if not target:
+                  target=next((x for x in row.get('Triggers','').split() if x.endswith('.service')),None)
+              if target and re.fullmatch(r'porota[A-Za-z0-9@_.-]*\.service',target) and not re.search(r'ppi[-_]?watch',target,re.I):services.add(target)
+              row['service']=target
+              R['timer_inventory']['rows'].append(row)
+          
+          R['services']=[]
+          for unit in sorted(services):
+              row=show(unit,('ActiveState','SubState','UnitFileState','Result','ExecMainStatus','CPUUsageNSec','IOReadBytes','IOWriteBytes','MemoryPeak','NRestarts','ExecMainStartTimestamp','ExecMainExitTimestamp','ExecMainStartTimestampMonotonic','ExecMainExitTimestampMonotonic','InvocationID','TimeoutStartUSec','Nice','IOSchedulingClass'))
+              row['unit']=unit
+              rc,definition=command(['systemctl','cat',unit,'--no-pager'])
+              starts=[x for x in definition.splitlines() if x.startswith('ExecStart=')]
+              row['docker_wrapper']=any('docker' in x for x in starts)
+              row['programs']=sorted(set(y for x in starts for y in re.findall(r'(?<![A-Za-z0-9_])[A-Za-z0-9_/-]+\.(?:py|sh)\b',x)))[:12]
+              row['has_explicit_flock']=any('flock' in x for x in starts)
+              R['services'].append(row)
+          
+          # Only lifecycle metadata is emitted. No provider log line leaves the host.
+          R['journal']={'coverage':'BOUNDED_SAMPLE_NOT_COMPLETE','since_utc':'2026-10-23T12:00:00Z','events':[]}
+          if services:
+              args=['sudo','-n','journalctl','--since','2026-10-23 12:00:00 UTC','--no-pager','-o','json','-n','1800']
+              for s in sorted(services):args+=['-u',s]
+              rc,raw=command(args,10)
+              R['journal']['query_rc']=rc
+              R['journal']['possibly_truncated']=len(raw)>=250000
+              for line in raw.splitlines():
+                  try:o=json.loads(line)
+                  except ValueError:continue
+                  msg=o.get('MESSAGE','')
+                  if not isinstance(msg,str):continue
+                  unit=o.get('UNIT') or o.get('_SYSTEMD_UNIT')
+                  if unit not in services:continue
+                  event=next((n for p,n in ((r'^Starting ','STARTING'),(r'^Started ','STARTED'),(r'^Finished ','FINISHED'),(r'Deactivated successfully','SUCCESS'),(r'Failed with result','FAILED'),(r'Consumed [0-9]','RESOURCE_RECORDED')) if re.search(p,msg)),None)
+                  if event:
+                      R['journal']['events'].append({'unit':unit,'at_us':o.get('__REALTIME_TIMESTAMP'),'event':event,'invocation':o.get('INVOCATION_ID') or o.get('_SYSTEMD_INVOCATION_ID')})
+              R['journal']['events']=R['journal']['events'][-512:]
+          
+          def read_envelope(name):
+              p=ROOT/'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'/name
               try:
-                  payload = json.loads(path.read_bytes())
-                  return payload.get('payload') if isinstance(payload, dict) else None
-              except (OSError, ValueError):
-                  return None
+                  if not p.is_file() or p.is_symlink() or p.stat().st_size>262144:return None
+                  o=json.loads(p.read_bytes())
+                  return o.get('payload') if isinstance(o,dict) else None
+              except (OSError,ValueError):return None
           
-          
-          def worker_cpu():
-              rc, raw = command(['sudo', '-n', 'docker', 'top', 'porota_production_observer',
-                                 '-eo', 'pid,ppid,args'])
-              if rc:
-                  return None, None
-              pids = []
+          def proc_sample():
+              result={}
+              rc,raw=command(['sudo','-n','docker','top','porota_production_observer','-eo','pid,ppid,args'])
+              roles={'--dynamic-shadow-worker':'dynamic_shadow','--scanner-worker':'scanner','--performance-worker':'performance','--exit-reader':'exit_reader','--notification-worker':'notifications','--candle-worker':'candles','--intraday-scalping-worker':'intraday_scalping','--caucion-cash-sweep-worker':'caucion_cash_sweep'}
               for line in raw.splitlines()[1:]:
-                  fields = line.split(None, 2)
-                  if len(fields) == 3 and fields[0].isdigit() and '--dynamic-shadow-worker' in fields[2]:
-                      pids.append(int(fields[0]))
-              if len(pids) != 1:
-                  return None, None
-              pid = pids[0]
-              try:
-                  raw = Path('/proc', str(pid), 'stat').read_text()
-                  fields = raw[raw.rfind(')') + 2:].split()
-                  return pid, (int(fields[11]) + int(fields[12])) / os.sysconf('SC_CLK_TCK')
-              except (OSError, ValueError, IndexError):
-                  return None, None
-          
-          
-          def sample():
-              pointer = owned('CURRENT.json') or {}
-              idle = owned('idle.json') or {}
-              status = owned('status.json') or {}
-              pid, cpu = worker_cpu()
-              values = {'utc': datetime.datetime.now(UTC).isoformat(),
-                        'generation_id': pointer.get('generation_id'),
-                        'idle_state': idle.get('state'), 'idle_heartbeat': idle.get('heartbeat_at'),
-                        'idle_generation_id': idle.get('last_generation_id'),
-                        'idle_source_freshness_renewed': idle.get('source_freshness_renewed'),
-                        'phase': status.get('phase'), 'status': status.get('status'),
-                        'source_as_of': status.get('as_of'),
-                        'real_orders_sent': status.get('real_orders_sent'),
-                        'real_routes': status.get('real_routes'), 'pid': pid, 'cpu_seconds': cpu}
-              if DATABASE.is_file():
+                  fields=line.split(None,2)
+                  if len(fields)!=3 or not fields[0].isdigit() or not any(x in fields[2] for x in ('bf_production_paper_observer.py','bv_paper_runtime.py')):continue
+                  pid=int(fields[0]);role=next((v for k,v in roles.items() if k in fields[2]),'scanner' if 'bf_production_paper_observer.py' in fields[2] else 'observer_clock')
                   try:
-                      with sqlite3.connect(DATABASE.as_uri() + '?mode=ro', uri=True, timeout=.005) as c:
+                      stat=(pathlib.Path('/proc')/str(pid)/'stat').read_text()
+                      parts=stat[stat.rfind(')')+2:].split()
+                      item={'pid':pid,'role':role,'cpu_seconds':(int(parts[11])+int(parts[12]))/os.sysconf('SC_CLK_TCK'),'rss_bytes':int(parts[21])*os.sysconf('SC_PAGE_SIZE')}
+                      try:
+                          io=dict(x.split(':',1) for x in (pathlib.Path('/proc')/str(pid)/'io').read_text().splitlines())
+                          item.update({k:int(io[k]) for k in ('read_bytes','write_bytes','rchar','wchar')})
+                      except OSError:item['io_error']='PERMISSION_UNAVAILABLE'
+                      result[str(pid)]=item
+                  except (OSError,ValueError,IndexError):continue
+              return result
+          
+          before=proc_sample();wall=time.monotonic()
+          time.sleep(12)
+          after=proc_sample();elapsed=time.monotonic()-wall
+          R['process_sample']={'elapsed_seconds':round(elapsed,3),'rows':[],'count_before':len(before),'count_after':len(after)}
+          for pid,a in after.items():
+              b=before.get(pid)
+              if not b:R['process_sample']['rows'].append(dict(a,continuity=False));continue
+              out={k:a[k] for k in ('pid','role','rss_bytes')}
+              out.update(continuity=True,cpu_delta_seconds=round(a['cpu_seconds']-b['cpu_seconds'],3))
+              out['cpu_fraction_one_core']=round(out['cpu_delta_seconds']/elapsed,4)
+              for k in ('read_bytes','write_bytes','rchar','wchar'):
+                  if k in a and k in b:out[k+'_delta']=a[k]-b[k]
+              R['process_sample']['rows'].append(out)
+          R['shadow']={}
+          for name in ('CURRENT.json','idle.json','status.json'):
+              o=read_envelope(name) or {}
+              R['shadow'][name]={k:o.get(k) for k in ('generation_id','as_of','status','phase','state','heartbeat_at','last_generation_id','source_freshness_renewed','real_orders_sent','real_routes','generation_timing','poll_seconds') if k in o}
+          
+          R['databases']={}
+          if R['resources']['memory_available_bytes']>=256*1024*1024:
+              for label,p in (('paper',ROOT/'data/paper_v17/observer_v17.db'),('history',ROOT/'data/market_history.db')):
+                  d={'state':'NO_VERIFICADO','read_only':True,'full_scan':False,'deletion_allowed':False}
+                  if not p.is_file() or p.is_symlink():R['databases'][label]=dict(d,reason='SOURCE_UNAVAILABLE');continue
+                  d['files']={suffix or 'main':pathlib.Path(str(p)+suffix).stat().st_size for suffix in ('','-wal','-shm') if pathlib.Path(str(p)+suffix).is_file()}
+                  try:
+                      with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True,timeout=.05) as c:
                           c.execute('PRAGMA query_only=ON')
-                          values['equity_max_id'] = c.execute(
-                              'SELECT COALESCE(MAX(id),0) FROM paper_equity_by_currency').fetchone()[0]
-                  except sqlite3.Error:
-                      values['equity_max_id'] = None
-              return values
-          
-          
-          before = sample()
-          time.sleep(95)
-          after = sample()
-          same_worker = (before['pid'] is not None and before['pid'] == after['pid']
-                         and before['cpu_seconds'] is not None and after['cpu_seconds'] is not None)
-          result = {
-              'source_start_utc': before['utc'], 'source_end_utc': after['utc'],
-              'before': before, 'after': after,
-              'same_worker': same_worker,
-              'cpu_delta_seconds': (round(after['cpu_seconds'] - before['cpu_seconds'], 3)
-                                    if same_worker else None),
-              'equity_id_delta': (after['equity_max_id'] - before['equity_max_id']
-                                  if isinstance(before.get('equity_max_id'), int)
-                                  and isinstance(after.get('equity_max_id'), int) else None),
-              'same_generation': (before['generation_id'] is not None
-                                  and before['generation_id'] == after['generation_id']),
-              'idle_heartbeat_advanced': (before['idle_heartbeat'] is not None
-                                          and after['idle_heartbeat'] is not None
-                                          and after['idle_heartbeat'] > before['idle_heartbeat']),
-          }
-          print(json.dumps(result, sort_keys=True, separators=(',', ':')))
+                          deadline=time.monotonic()+2
+                          c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                          d['pragmas']={k:c.execute('PRAGMA '+k).fetchone()[0] for k in ('page_size','page_count','freelist_count','journal_mode')}
+                          meta=c.execute("SELECT name,type,sql FROM sqlite_master WHERE type IN ('table','index') LIMIT 500").fetchall()
+                          d['tables']={name:{'columns':[r[1] for r in c.execute('PRAGMA table_info("'+name.replace('"','""')+'")')]} for name,kind,sql in meta if kind=='table'}
+                          d['indexes']=[name for name,kind,sql in meta if kind=='index']
+                          if label=='paper':
+                              c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                              if 'observer_state' in d['tables']:
+                                  row=c.execute('SELECT mode,process_state,session_state,heartbeat_at,real_orders_sent FROM observer_state ORDER BY id DESC LIMIT 1').fetchone()
+                                  d['observer_state']=dict(zip(('mode','process_state','session_state','heartbeat_at','real_orders_sent'),row)) if row else None
+                              for table in ('financial_instrument_catalog','candidate_universe'):
+                                  if table not in d['tables']:continue
+                                  columns=d['tables'][table]['columns']
+                                  projection=['instrument_type']+[k for k in ('status','capability','can_simulate') if k in columns]
+                                  q=','.join('"'+k+'"' for k in projection)
+                                  try:
+                                      deadline=time.monotonic()+.5
+                                      rows=c.execute('SELECT '+q+',count(*) FROM "'+table+'" GROUP BY '+q+' LIMIT 200').fetchall()
+                                      d[table+'_groups']=[dict(zip(projection+['count'],r)) for r in rows]
+                                  except sqlite3.Error:d[table+'_groups']={'state':'NO_VERIFICADO','reason':'BOUNDED_QUERY_ABORTED'}
+                          d['state']='VALIDADO_RUNTIME'
+                  except (OSError,sqlite3.Error) as exc:d.update(state='NO_VERIFICADO',reason=type(exc).__name__)
+                  R['databases'][label]=d
+          else:R['warnings'].append('SQL_METADATA_SKIPPED_MEMORY_RESERVE')
+          R['source_end_utc']=datetime.datetime.now(UTC).isoformat()
+          R['source_art']=datetime.datetime.fromisoformat(R['source_utc']).astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat()
+          R['elapsed_seconds']=round(time.monotonic()-START,3)
+          print(json.dumps(R,sort_keys=True,separators=(',',':')))
           PY
-          python3 - "$RUNNER_TEMP/a72_runtime.json" <<'PY'
+          python3 - "$RUNNER_TEMP/a74_readonly.json" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1]))
-          print("A72_RUNTIME_PROOF="+str({k:r.get(k) for k in ("same_worker","cpu_delta_seconds","equity_id_delta","same_generation","idle_heartbeat_advanced")}))
+          print('A74_METADATA_COMPLETE='+str({'timers':r['timer_inventory']['count'],'workers':r['process_sample']['count_after'],'source_utc':r['source_utc'],'mode':r.get('marker',{}).get('mode'),'real_orders_sent':r.get('marker',{}).get('real_orders_sent')}))
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: rc6-a71-final-readonly
-          path: |
-            ${{ runner.temp }}/a71_final.json
-            ${{ runner.temp }}/a72_probe.json
-            ${{ runner.temp }}/a72_runtime.json
+          name: rc6-a74-readonly
+          path: ${{ runner.temp }}/a74_readonly.json
           retention-days: 7
+      - name: Remove runner SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/rc6_a74"
