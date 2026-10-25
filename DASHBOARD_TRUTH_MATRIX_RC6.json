@@ -3328,32 +3328,35 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "learning_history"
+        "validation_campaign",
+        "safety",
+        "history",
+        "iol_current"
       ],
-      "canonical_view": "analitica/contrafactuales",
+      "canonical_view": "validacion/m0-m11",
       "datasets": [
-        "counterfactual_learning_rc6.json",
-        "decision_evidence_latest.json",
-        "trade_gate_evaluations",
-        "paper_positions",
-        "committed historical economic_exit_lab"
+        "validation_milestones_rc6.json",
+        "validation_campaign_rc6.jsonl",
+        "operational daily PAPER evidence",
+        "Action 4 published audit",
+        "IOL SHADOW view"
       ],
       "endpoint": "bg_paper_dashboard.validacion",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
-      "legacy_compatible_alias": true,
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
       ],
       "mode_authority": "observer_state",
       "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "pagination": "12 hitos M0–M11 visibles; actividad diaria acotada a 10 jornadas",
       "path": "/validacion",
-      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "presentation_endpoint": "en_validation_project_dashboard_rc6.rc6_validation_project_view",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "Analítica > Contrafácticos",
+      "title_or_surface": "Validación > Camino a Producción M0–M11",
       "write_route": false
     },
     {
