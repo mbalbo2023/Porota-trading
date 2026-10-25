@@ -150,3 +150,31 @@ def test_intraday_reconcile_keeps_exact_active_timer_paused(tmp_path, monkeypatc
         'unit':'porota-preopen-rc6.timer','state':'enabled|inactive'}]
     assert ('systemctl','enable','porota-preopen-rc6.timer') in calls
     assert not any('--now' in command for command in calls)
+
+
+def test_failed_a3_timer_is_removed_and_masked_during_deploy(tmp_path, monkeypatch):
+    installed = tmp_path / 'installed'
+    installed.mkdir()
+    name = 'porota-a3-history-daily-rc6.timer'
+    old = installed / name
+    old.write_text('[Timer]\nOnCalendar=*-*-* 18:30:00\n')
+    calls = []
+    def fake_run(*args, check=True):
+        calls.append(args)
+        if args[:2] == ('systemctl', 'is-enabled'):
+            return SimpleNamespace(stdout='masked\n')
+        if args[:2] == ('systemctl', 'is-active'):
+            return SimpleNamespace(stdout='inactive\n')
+        return SimpleNamespace(stdout='')
+    monkeypatch.setattr(host_control, '_run', fake_run)
+    policy = {'units':{'systemd/' + name:{
+        'role':'QUARANTINED_TIMER','install':False,'enabled':False,
+        'active':False,'masked':True}}}
+    result = host_control.apply(tmp_path, policy, installed,
+                                keep_active_timers_paused=True)
+    assert not old.exists()
+    assert ('systemctl', 'disable', '--now', name) in calls
+    assert ('systemctl', 'mask', name) in calls
+    assert ('systemctl', 'stop', name) in calls
+    assert not any(args[:3] == ('systemctl','enable',name) for args in calls)
+    assert result['verification'] == [{'unit':name,'state':'masked|inactive'}]
