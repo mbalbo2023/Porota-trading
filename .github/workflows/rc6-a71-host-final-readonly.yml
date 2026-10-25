@@ -111,6 +111,17 @@ jobs:
                   '-p','ExecMainStatus','-p','ExecMainStartTimestamp','-p','ExecMainExitTimestamp',
                   '-p','CPUUsageNSec'],5)
               output['timer'][unit]={'rc':rc,**dict(x.split('=',1) for x in out.splitlines() if '=' in x)}
+          for unit in ('porota-live-decision-cockpit-rc6.service','porota-private-snapshot.service',
+                       'porota-1016-github-verify.service'):
+              rc,raw=call(['sudo','-n','systemctl','cat',unit,'--no-pager'],5)
+              program=[];settings=[]
+              for line in raw.splitlines():
+                  if line.startswith('ExecStart='):
+                      program.extend(re.findall(r'/(?:opt|usr/local|app)/[A-Za-z0-9_./-]+',line)[:8])
+                      settings.extend(x for x in ('docker','python','curl','sqlite','snapshot','cockpit','8766') if x in line.lower())
+                  elif line.startswith(('OnCalendar=','OnUnitActiveSec=','Description=')):
+                      settings.append(line[:120])
+              output['timer'][unit+'_wiring']={'rc':rc,'programs':program[:12],'settings':settings[:12]}
           output['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
           print(json.dumps(output,sort_keys=True,separators=(',',':')))
           PY
