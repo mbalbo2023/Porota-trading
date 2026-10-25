@@ -45,3 +45,35 @@ def test_offline_no_db_network_orders():
         if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
         elif isinstance(n,ast.ImportFrom) and n.module: imports.append(n.module)
     assert not any(x in {'sqlite3','requests','httpx'} or 'order' in x.lower() for x in imports)
+
+
+def test_full_ohlcv_cannot_be_completed_by_close_only_or_ungraded_day():
+    for grade in ({'2026-09-04':'CLOSE_ONLY'}, {'2026-09-04':'FULL_OHLC'}, {}):
+        r=m.plan(identity=ID,expected_dates=['2026-09-04'],canonical_dates=['2026-09-04'],
+                 canonical_quality=grade,minimum_quality='FULL_OHLCV',as_of_date='2026-09-07')
+        assert r['status']=='GAPS_FOUND' and r['gaps']==['2026-09-04']
+        assert r['jobs'][0]['reason']=='CANONICAL_QUALITY_INSUFFICIENT'
+        assert r['jobs'][0]['minimum_quality']=='FULL_OHLCV'
+        assert r['jobs'][0]['canonical_write']=='DENY'
+
+
+def test_full_ohlcv_requires_explicit_matching_grade():
+    r=m.plan(identity=ID,expected_dates=['2026-09-04'],canonical_dates=['2026-09-04'],
+             canonical_quality={'2026-09-04':'FULL_OHLCV'},minimum_quality='FULL_OHLCV',
+             as_of_date='2026-09-07')
+    assert r['status']=='COMPLETE' and r['jobs']==[]
+
+
+def test_missing_date_and_bad_grade_fail_closed():
+    import pytest
+    r=m.plan(identity=ID,expected_dates=['2026-09-04'],canonical_dates=[],
+             minimum_quality='FULL_OHLCV',as_of_date='2026-09-07')
+    assert r['jobs'][0]['reason']=='MISSING_CANONICAL_DAY'
+    with pytest.raises(m.BackfillPlanError,match='MINIMUM_QUALITY_INVALID'):
+        m.plan(identity=ID,expected_dates=[],canonical_dates=[],minimum_quality='UNKNOWN')
+    with pytest.raises(m.BackfillPlanError,match='CANONICAL_QUALITY_INVALID'):
+        m.plan(identity=ID,expected_dates=[],canonical_dates=['2026-09-04'],
+               canonical_quality={'2026-09-04':'UNKNOWN'},minimum_quality='FULL_OHLCV')
+    with pytest.raises(m.BackfillPlanError,match='CANONICAL_QUALITY_DATE_NOT_OBSERVED'):
+        m.plan(identity=ID,expected_dates=[],canonical_dates=[],
+               canonical_quality={'2026-09-04':'FULL_OHLCV'},minimum_quality='FULL_OHLCV')
