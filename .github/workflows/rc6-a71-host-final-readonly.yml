@@ -220,6 +220,8 @@ jobs:
           timeout 55 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' > "$RUNNER_TEMP/a72_probe.json" <<'PY'
           import datetime,hashlib,json,sqlite3,time
           from pathlib import Path
+          from zoneinfo import ZoneInfo
+          from cg_paper_workspace import artifact_root
           from rc6_shadow_runtime.worker import ShadowRuntime,closed_input_signature
           from rc6_shadow_runtime import worker as module
           path=Path('/app/data/paper_v17/observer_v17.db')
@@ -227,7 +229,7 @@ jobs:
                   'probe':'SHADOW_CLOSED_SIGNATURE_READ_ONLY','db_exists':path.is_file(),
                   'samples':[]}
           if path.is_file():
-              worker=ShadowRuntime(path)
+              worker=ShadowRuntime(path,evidence_root=artifact_root(path)/'dynamic-shadow')
               original_tables=module._CLOSED_INPUT_TABLES
               expected=('id','measured_at','currency','cash','exposure',
                   'pending_proceeds','caucion_principal','caucion_accrued',
@@ -273,6 +275,11 @@ jobs:
                       columns=tuple(r[1] for r in c.execute(
                           'PRAGMA table_info("paper_equity_by_currency")'))
                       raw=c.execute('SELECT * FROM paper_equity_by_currency ORDER BY id DESC LIMIT 501').fetchall()
+                      risk_cols=tuple(r[1] for r in c.execute(
+                          'PRAGMA table_info("paper_daily_risk")'))
+                      risk_day=at.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+                      risk_rows={r[1]:tuple(r) for r in c.execute(
+                          'SELECT * FROM paper_daily_risk WHERE day=? LIMIT 9',(risk_day,))}
                   latest={}
                   for row in raw[:500]:
                       measured=datetime.datetime.fromisoformat(row[1])
@@ -292,7 +299,12 @@ jobs:
                       result['changed_source_indices']=[index for index in sources if sources[index]!=previous_sources.get(index)]
                       result['changed_table_rowid_deltas']={name:cursors[name]-previous_cursors.get(name,0)
                           for name in result['changed_tables'] if name in cursors}
+                      result['daily_risk_changed_fields']=sorted({risk_cols[i]
+                          for currency,row in risk_rows.items() if currency in previous_risk_rows
+                          for i,(old,new) in enumerate(zip(previous_risk_rows[currency],row)) if old!=new})
+                      result['daily_risk_currency_set_same']=set(risk_rows)==set(previous_risk_rows)
                   previous_pieces,previous_cursors,previous_sources=pieces,cursors,sources
+                  previous_risk_rows=risk_rows
                   if n==0:time.sleep(32)
           print(json.dumps(result,sort_keys=True))
           PY
