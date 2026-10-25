@@ -1,0 +1,137 @@
+name: RC6 A71 disk timers workers read-only
+on:
+  push:
+    branches: [ops/rc6-a71-host-audit-20261025]
+    paths: [.github/workflows/rc6-a71-host-audit-readonly.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Bounded host metadata only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a71"
+          chmod 600 "$HOME/.ssh/rc6_a71"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71.json" <<'PY'
+          import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, time
+
+          def call(argv, seconds=6):
+              try:
+                  p=subprocess.run(argv, capture_output=True, text=True, timeout=seconds)
+                  return {'rc':p.returncode,'out':p.stdout[:150000], 'err':p.stderr[:300] if p.returncode else ''}
+              except (subprocess.TimeoutExpired, OSError) as e:
+                  return {'rc':124,'out':'','err':type(e).__name__}
+
+          def fields(unit, props):
+              p=call(['sudo','-n','systemctl','show',unit,'--no-pager']+
+                     [v for k in props for v in ('-p',k)], 5)
+              return dict(line.split('=',1) for line in p['out'].splitlines() if '=' in line) if p['rc']==0 else {'ERROR':p['err'] or str(p['rc'])}
+
+          now=datetime.datetime.now(datetime.timezone.utc).isoformat()
+          mem={}
+          for line in pathlib.Path('/proc/meminfo').read_text().splitlines():
+              if line.startswith(('MemAvailable:','SwapFree:')):
+                  k,v=line.split(':',1);mem[k]=int(v.strip().split()[0])*1024
+          r={'source_utc':now,'host_repo_head':'UNKNOWN','mem_bytes':mem,'warnings':[],
+             'filesystems':{},'du':{},'systemd':{},'docker':{},'journald':{},'db_files':[]}
+          p=call(['git','-C','/opt/porota-trading','rev-parse','HEAD'],4)
+          if p['rc']==0:r['host_repo_head']=p['out'].strip()
+          for path in ('/','/opt/porota-trading','/var/lib/docker'):
+              try:
+                  s=os.statvfs(path)
+                  r['filesystems'][path]={'total':s.f_blocks*s.f_frsize,'available':s.f_bavail*s.f_frsize,
+                                          'inodes_free':s.f_favail,'inodes_total':s.f_files}
+              except OSError:r['filesystems'][path]={'error':'STATVFS_FAILED'}
+
+          units=call(['sudo','-n','systemctl','list-unit-files','porota-*','--no-pager','--no-legend'],8)
+          names=sorted({line.split()[0] for line in units['out'].splitlines() if line.startswith('porota-')
+                        and line.split()[0].endswith(('.timer','.service')) and 'ppi-watch' not in line.lower()})
+          r['systemd']['enumeration_rc']=units['rc']
+          r['systemd']['enumerated_count']=len(names)
+          unit_props=('LoadState','UnitFileState','ActiveState','SubState','Result','ExecMainStatus',
+                      'ExecMainStartTimestamp','ExecMainExitTimestamp','CPUUsageNSec','MemoryPeak',
+                      'MemoryCurrent','TasksCurrent','NRestarts','FragmentPath','LastTriggerUSec',
+                      'NextElapseUSecRealtime','OnCalendar','Triggers','TriggeredBy')
+          for unit in names:
+              r['systemd'][unit]=fields(unit,unit_props)
+          r['systemd']['failed_names']=[x.split()[0] for x in call(['sudo','-n','systemctl','--failed','--no-pager','--no-legend'],5)['out'].splitlines()
+                                       if x.startswith('porota-') and 'ppi-watch' not in x.lower()]
+
+          j=call(['sudo','-n','journalctl','--disk-usage','--no-pager'],5)
+          r['journald']={'disk_usage':j['out'].strip()[:200], 'rc':j['rc']}
+          r['docker']['ps']=[]
+          p=call(['sudo','-n','docker','ps','-aq','--no-trunc'],7)
+          r['docker']['ps_enumeration_rc']=p['rc']
+          for cid in p['out'].splitlines()[:60]:
+              if not re.fullmatch(r'[a-f0-9]{64}',cid):continue
+              x=call(['sudo','-n','docker','inspect','-f','{{.Id}}|{{.Image}}|{{.State.Status}}|{{.Name}}|{{.RestartCount}}|{{.State.OOMKilled}}',cid],5)
+              if x['rc']!=0:continue
+              vals=x['out'].strip().split('|')
+              if len(vals)!=6:continue
+              iid,img,state,name,restarts,oom=vals
+              safe_name=name if name.startswith(('/porota_','/sre_')) else 'EXTERNAL_'+hashlib.sha256(name.encode()).hexdigest()[:8]
+              r['docker']['ps'].append({'id':iid,'image_id':img,'status':state,'name':safe_name,'restarts':restarts,'oom':oom})
+          d=call(['sudo','-n','docker','system','df','--format','{{json .}}'],18)
+          r['docker']['system_df']={'rc':d['rc'],'rows':d['out'].splitlines()[:10] if d['rc']==0 else [],'error':d['err']}
+          st=call(['sudo','-n','docker','stats','--no-stream','--format','{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}'],12)
+          r['docker']['stats']={'rc':st['rc'],'rows':[x for x in st['out'].splitlines() if '|porota_' in x or '|sre_' in x][:12]}
+
+          if mem.get('MemAvailable',0)<192*1024*1024:
+              r['warnings'].append('DU_SKIPPED_LOW_MEM')
+          else:
+              for path in ('/opt/porota-trading','/var/lib/docker','/var/log','/var/cache/apt'):
+                  if not os.path.isdir(path):continue
+                  d=call(['timeout','12s','nice','-n','15','ionice','-c3','sudo','-n','du','-x','-B1','-d1',path],14)
+                  rows=[]
+                  for line in d['out'].splitlines():
+                      parts=line.split('\t',1)
+                      if len(parts)==2 and parts[0].isdigit():rows.append({'bytes':int(parts[0]),'path':parts[1]})
+                  r['du'][path]={'rc':d['rc'],'rows':rows,'error':d['err']}
+
+          base=pathlib.Path('/opt/porota-trading/data')
+          if base.exists():
+              for root, dirs, files in os.walk(base):
+                  depth=len(pathlib.Path(root).relative_to(base).parts)
+                  if depth>=3:dirs[:]=[]
+                  for f in files:
+                      if len(r['db_files'])>=40:break
+                      if f.endswith(('.db','.db-wal','.db-shm','.sqlite','.sqlite-wal','.sqlite-shm')):
+                          path=pathlib.Path(root)/f
+                          try:r['db_files'].append({'path':str(path),'bytes':path.stat().st_size})
+                          except OSError:pass
+
+          print(json.dumps(r,ensure_ascii=False,sort_keys=True,separators=(',',':')))
+          PY
+          python3 - "$RUNNER_TEMP/a71.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          print('A71_READ_ONLY=COMPLETE')
+          print('SOURCE_UTC='+d['source_utc'])
+          print('HOST_HEAD='+d['host_repo_head'])
+          print('ROOT_AVAILABLE_BYTES='+str(d['filesystems'].get('/',{}).get('available','NO_VERIFICADO')))
+          print('POROTA_UNITS='+str(d['systemd']['enumerated_count']))
+          print('FAILED_UNITS='+str(len(d['systemd']['failed_names'])))
+          print('DOCKER_CONTAINERS='+str(len(d['docker']['ps'])))
+          print('DU_COVERAGE='+','.join(k+':'+str(v['rc']) for k,v in d['du'].items()))
+          print('WARNINGS='+','.join(d['warnings']))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a71-host-readonly
+          path: ${{ runner.temp }}/a71.json
+          retention-days: 7
