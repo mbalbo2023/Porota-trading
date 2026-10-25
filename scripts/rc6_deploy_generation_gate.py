@@ -10,7 +10,8 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rc6_shadow_runtime.persistence import read_committed_generation
+from rc6_shadow_runtime.persistence import EvidenceFiles, read_committed_generation
+from rc6_shadow_runtime.worker import session_context
 from rc6_shadow_runtime.timing import generation_budget
 from scripts.porota_image_source_identity import verify_source_identity
 
@@ -78,6 +79,67 @@ def advances(first, second):
             and datetime.fromisoformat(second['as_of']) > datetime.fromisoformat(first['as_of']))
 
 
+def closed_idle_receipt(root, health, expected_sha, expected_tree, at,
+                        *, reader=read_committed_generation):
+    """Attest live CLOSED liveness, never the freshness of its historical cut."""
+    if session_context(at)['phase'] != 'CLOSED':
+        raise ValueError('GENERATION_IDLE_SESSION_UNVERIFIED')
+    if health.get('source_sha') != expected_sha or health.get('candidate_tree_sha') != expected_tree:
+        raise ValueError('WORKER_SOURCE_IDENTITY_UNVERIFIED')
+    files = EvidenceFiles(root, payload_limit=4 * 1024**2)
+    for _ in range(3):
+        pointer, live, idle = (files.read(name) for name in
+                               ('CURRENT.json', 'status.json', 'idle.json'))
+        if not all(isinstance(value, dict) for value in (pointer, live, idle)):
+            raise ValueError('GENERATION_IDLE_INCONSISTENT')
+        # The immutable cut remains checked for manifest/member digests and
+        # PAPER safety. Historical mode cannot itself attest worker liveness.
+        cut = reader(root, payload_limit=4 * 1024**2, require_current_status=False)
+        after = [files.read(name) for name in ('CURRENT.json', 'status.json', 'idle.json')]
+        if [pointer, live, idle] == after and cut['pointer'] == pointer:
+            break
+    else:
+        raise ValueError('GENERATION_IDLE_INCONSISTENT')
+    status = cut['status']
+    if (idle.get('schema') != 'rc6.shadow-closed-idle.v1'
+            or idle.get('state') != 'SHADOW_IDLE_MARKET_CLOSED'
+            or idle.get('source_freshness_renewed') is not False
+            or type(idle.get('real_orders_sent')) is not int or idle['real_orders_sent'] != 0
+            or idle.get('real_routes') != 'NOT_CALLED'
+            or idle.get('last_generation_id') != pointer.get('generation_id')
+            or idle.get('last_source_as_of') != status.get('as_of')
+            or status.get('phase') != live.get('phase') or status.get('phase') != 'CLOSED'
+            or status.get('mode') != live.get('mode') or status.get('mode') != 'SHADOW'
+            or status.get('status') != live.get('status') or status.get('status') != 'SHADOW_OBSERVING'
+            or type(live.get('provider_requests')) is not int or live['provider_requests'] != 0
+            or type(live.get('real_orders_sent')) is not int or live['real_orders_sent'] != 0
+            or live.get('real_routes') != 'NOT_CALLED'
+            or any(status.get(key) != live.get(key) for key in
+                   ('as_of', 'report_digest', 'configuration_fingerprint'))):
+        raise ValueError('GENERATION_IDLE_INCONSISTENT')
+    if (not isinstance(pointer.get('generation_id'), str)
+            or not re.fullmatch('[0-9a-f]{64}', pointer['generation_id'])
+            or not isinstance(pointer.get('manifest_sha256'), str)
+            or not re.fullmatch('[0-9a-f]{64}', pointer['manifest_sha256'])
+            or type(pointer.get('sequence')) is not int or pointer['sequence'] <= 0):
+        raise ValueError('GENERATION_IDLE_INCONSISTENT')
+    try:
+        heartbeat = datetime.fromisoformat(idle['heartbeat_at'].replace('Z', '+00:00'))
+        source = datetime.fromisoformat(status['as_of'].replace('Z', '+00:00'))
+        age = (at - heartbeat).total_seconds()
+    except (KeyError, TypeError, AttributeError, ValueError, OverflowError) as exc:
+        raise ValueError('GENERATION_IDLE_CLOCK_UNVERIFIED') from exc
+    if (heartbeat.tzinfo is None or source.tzinfo is None or
+            not 0 <= age <= 90 or not source <= heartbeat <= at):
+        raise ValueError('GENERATION_IDLE_CLOCK_UNVERIFIED')
+    return {'generation_id':pointer['generation_id'], 'sequence':pointer['sequence'],
+            'manifest_sha256':pointer['manifest_sha256'], 'source_as_of':status['as_of'],
+            'heartbeat_at':heartbeat.isoformat(), 'heartbeat_age_seconds':round(age,3),
+            'source_freshness_renewed':False, 'source_sha':health['source_sha'],
+            'candidate_tree_sha':health['candidate_tree_sha'], 'real_orders_sent':0,
+            'provider_requests':0, 'real_routes':'NOT_CALLED'}
+
+
 
 _SAFE_FAILURE_REASONS = {
     'GENERATION_PUBLICATION_COST_UNVERIFIED', 'GENERATION_ORDER_REGRESSION',
@@ -90,6 +152,8 @@ _SAFE_FAILURE_REASONS = {
     'GENERATION_CUT_MISSING', 'GENERATION_ENVELOPE_MISMATCH',
     'GENERATION_MEMBER_MISMATCH', 'GENERATION_REVOKED_OR_PUBLICATION_IN_PROGRESS',
     'GENERATION_IDLE_MARKET_CLOSED',
+    'GENERATION_IDLE_SESSION_UNVERIFIED', 'GENERATION_IDLE_INCONSISTENT',
+    'GENERATION_IDLE_CLOCK_UNVERIFIED', 'GENERATION_IDLE_TRANSITION_UNVERIFIED',
     'GENERATION_SAFETY_UNVERIFIED', 'SHADOW_EVIDENCE_DIGEST_MISMATCH',
     'SHADOW_PAYLOAD_LIMIT',
     'NATIVE_SOAK_SERVICE_CHANGED', 'NATIVE_SOAK_SERVICE_UNAVAILABLE',
@@ -140,11 +204,13 @@ def _observation_context(cut, at):
 
 def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monotonic,
             wait=time.sleep, now=lambda: datetime.now(timezone.utc), reader=read_committed_generation,
-            minimum_generations=2, strict=False, sample=None):
-    if type(minimum_generations) is not int or not 2 <= minimum_generations <= 100 or type(strict) is not bool:
+            minimum_generations=2, strict=False, sample=None, allow_closed_idle=False):
+    if (type(minimum_generations) is not int or not 2 <= minimum_generations <= 100
+            or type(strict) is not bool or type(allow_closed_idle) is not bool):
         raise ValueError('GENERATION_COLLECTION_CONTRACT_INVALID')
     start = clock(); first = None; last_error = None; last_reason = None; last_observation = {}
     history = []; rejection_count = 0; generations = []; resources = []
+    idle_first = None; idle_observations = []; idle_heartbeat_count = 0; last_idle = None
     def remember(kind, detail):
         row = {'kind':kind, 'elapsed_seconds':round(clock()-start,6), **detail}
         # Bound the series without mistaking the last null error for a clean run.
@@ -164,7 +230,54 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
             health = json.loads(health_path.read_text())
             if not isinstance(health, dict):
                 raise ValueError('WORKER_HEALTH_UNVERIFIED')
-            cut = reader(root, payload_limit=4 * 1024**2, require_current_status=True)
+            try:
+                cut = reader(root, payload_limit=4 * 1024**2, require_current_status=True)
+            except ValueError as exc:
+                if not allow_closed_idle or str(exc) != 'GENERATION_IDLE_MARKET_CLOSED':
+                    raise
+                observed_at = now()
+                idle = closed_idle_receipt(root, health, expected_sha, expected_tree,
+                                           observed_at, reader=reader)
+                if idle_first is None:
+                    idle_first = idle
+                    idle_observations.append({'elapsed_seconds':round(clock()-start,6), **idle})
+                    idle_heartbeat_count = 1
+                    remember('FIRST_CLOSED_IDLE', {'heartbeat_at':idle['heartbeat_at']})
+                else:
+                    same = ('generation_id','sequence','manifest_sha256','source_as_of',
+                            'source_sha','candidate_tree_sha')
+                    if any(idle[key] != idle_first[key] for key in same):
+                        raise ValueError('GENERATION_IDLE_TRANSITION_UNVERIFIED')
+                    previous = datetime.fromisoformat(last_idle['heartbeat_at'])
+                    current_heartbeat = datetime.fromisoformat(idle['heartbeat_at'])
+                    if current_heartbeat < previous:
+                        raise ValueError('GENERATION_IDLE_CLOCK_UNVERIFIED')
+                    if current_heartbeat > previous:
+                        idle_heartbeat_count += 1
+                        remember('ADVANCING_CLOSED_HEARTBEAT',
+                                 {'heartbeat_at':idle['heartbeat_at']})
+                    if clock()-start-idle_observations[-1]['elapsed_seconds'] >= 10:
+                        idle_observations.append({'elapsed_seconds':round(clock()-start,6), **idle})
+                        if len(idle_observations) > 100:
+                            del idle_observations[0]
+                last_idle = idle
+                span = (clock()-start-idle_observations[0]['elapsed_seconds'])
+                if (len(idle_observations) >= minimum_generations
+                        and idle_heartbeat_count >= 2
+                        and span >= (90 if strict else 30)):
+                    return {'schema':'rc6.deploy-generation-gate.v1','status':'GREEN',
+                            'acceptance_mode':'CLOSED_IDLE','read_only':True,
+                            'generations':[], 'idle_observations':idle_observations,
+                            'idle_heartbeat_count':idle_heartbeat_count,
+                            'source_freshness_renewed':False,
+                            'rejection_count':rejection_count,'observations':history,
+                            'minimum_generations':minimum_generations,'strict':strict,
+                            'resources':resources}
+                last_error = None; last_reason = None
+                wait(2)
+                continue
+            if idle_first is not None:
+                raise ValueError('GENERATION_IDLE_TRANSITION_UNVERIFIED')
             observed_at = now()
             last_observation = _observation_context(cut, observed_at)
             current = receipt(cut, health, expected_sha, expected_tree, observed_at)
@@ -194,6 +307,7 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
                 first = current
                 if len(generations) >= minimum_generations:
                     return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'GREEN',
+                            'acceptance_mode':'FRESH_GENERATIONS',
                             'read_only': True, 'generations': generations,
                             'rejection_count':rejection_count,'observations':history,
                             'minimum_generations':minimum_generations,'strict':strict,'resources':resources}
@@ -228,16 +342,18 @@ def collect(root, expected_sha, expected_tree, *, timeout=180, clock=time.monoto
                         'reason':'SUSTAINED_NATIVE_GENERATIONS_REJECTED','error_class':last_error,
                         'error_reason':last_reason,'rejection_count':rejection_count,'observations':history,
                         'generations':generations,'minimum_generations':minimum_generations,
-                        'strict':strict,'resources':resources}
+                        'strict':strict,'resources':resources,'idle_observations':idle_observations}
             first = None
             generations = []
+            idle_first = None; idle_observations = []; idle_heartbeat_count = 0; last_idle = None
         wait(2)
     return {'schema': 'rc6.deploy-generation-gate.v1', 'status': 'RED',
             'read_only': True, 'reason': 'TWO_COHERENT_NATIVE_GENERATIONS_NOT_OBSERVED',
             'error_class': last_error, 'error_reason': last_reason,
             'rejection_count':rejection_count,'observations':history,
             'last_observation': last_observation, 'generations': generations,
-            'minimum_generations':minimum_generations,'strict':strict,'resources':resources}
+            'minimum_generations':minimum_generations,'strict':strict,'resources':resources,
+            'idle_observations':idle_observations}
 
 
 def main():
@@ -245,10 +361,12 @@ def main():
     parser.add_argument('--expected-sha', required=True)
     parser.add_argument('--expected-tree', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--allow-closed-idle', action='store_true')
     args = parser.parse_args()
     verify_source_identity(args.expected_sha, args.expected_tree)
     db = Path(os.getenv('PAPER_V17_DB_PATH', '/app/data/paper_v17/observer_v17.db'))
-    report = collect(db.parent / 'artifacts' / db.name / 'dynamic-shadow', args.expected_sha, args.expected_tree)
+    report = collect(db.parent / 'artifacts' / db.name / 'dynamic-shadow', args.expected_sha,
+                     args.expected_tree, allow_closed_idle=args.allow_closed_idle)
     output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.tmp'); temporary.write_text(json.dumps(report, sort_keys=True) + '\n')
     temporary.replace(output)

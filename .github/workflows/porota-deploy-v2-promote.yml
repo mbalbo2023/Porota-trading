@@ -1344,18 +1344,45 @@ jobs:
           test -z "$RECENT_CRITICAL"
           echo "RC6_RECENT_CRITICAL_LOG_SIGNATURES=0"
 
-          # HTTP/worker health alone did not expose the SHADOW transform
-          # failure in run 38982377181. Require direct native progress before
-          # granting VALIDATED_RUNTIME. The gate only reads committed bytes.
+          # Require direct native progress before granting VALIDATED_RUNTIME.
+          # CLOSED idle has a separate, explicit liveness/safety receipt and
+          # never claims a fresh financial generation; OPEN keeps the native
+          # advancement and ten-generation resource gates unchanged.
           sudo -n docker exec porota_production_dashboard timeout 195 \
             python /app/scripts/rc6_deploy_generation_gate.py \
               --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
+              --allow-closed-idle \
               --output /app/data/deploy/native-generation-acceptance.json
-          echo "RC6_TWO_NATIVE_GENERATIONS=GREEN"
+          echo "RC6_NATIVE_GENERATION_OR_CLOSED_IDLE_ACCEPTANCE=GREEN"
           sudo -n python3 "$REPO/scripts/rc6_native_soak.py" \
             --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
+            --allow-closed-idle \
             --output "$REPO/data/deploy/native-ten-generation-soak.json"
-          echo "RC6_TEN_NATIVE_GENERATIONS_WITH_RESERVES=GREEN"
+          echo "RC6_NATIVE_TEN_GENERATIONS_OR_CLOSED_IDLE_WITH_RESERVES=GREEN"
+          sudo -n python3 - "$REPO/data/deploy/native-generation-acceptance.json" \
+            "$REPO/data/deploy/native-ten-generation-soak.json" "$CANDIDATE_SHA" "$CANDIDATE_TREE" <<'PY'
+          import json, sys
+          first, sustained = (json.load(open(path, encoding='utf-8')) for path in sys.argv[1:3])
+          candidate, tree = sys.argv[3:]
+          mode = first.get('acceptance_mode')
+          assert first.get('status') == sustained.get('status') == 'GREEN'
+          assert mode == sustained.get('acceptance_mode')
+          assert mode in ('FRESH_GENERATIONS', 'CLOSED_IDLE')
+          assert sustained.get('strict') is True and sustained.get('all_services_sampled_running') is True
+          if mode == 'CLOSED_IDLE':
+              assert first.get('generations') == sustained.get('generations') == []
+              assert first.get('source_freshness_renewed') is sustained.get('source_freshness_renewed') is False
+              assert len(first['idle_observations']) >= 2 and len(sustained['idle_observations']) >= 10
+              assert first['idle_heartbeat_count'] >= 2 and sustained['idle_heartbeat_count'] >= 2
+              receipts = [first['idle_observations'][-1], sustained['idle_observations'][-1]]
+          else:
+              assert len(first['generations']) >= 2 and len(sustained['generations']) >= 10
+              receipts = [first['generations'][-1], sustained['generations'][-1]]
+          assert all(row['source_sha'] == candidate and row['candidate_tree_sha'] == tree
+                     and row['real_orders_sent'] == 0 and row['real_routes'] == 'NOT_CALLED'
+                     for row in receipts)
+          print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)
+          PY
 
           PPI_WATCH_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
@@ -1647,6 +1674,15 @@ jobs:
                   json.loads(backup.read_bytes()).get('status') != 'DONE'):
               raise ValueError('FINAL_RECEIPT_INCOMPLETE')
           state['dashboard_health_http'] = 200
+          first = json.loads((root / 'native-generation-acceptance.json').read_bytes())
+          sustained = json.loads((root / 'native-ten-generation-soak.json').read_bytes())
+          mode = first.get('acceptance_mode')
+          if (mode not in ('FRESH_GENERATIONS', 'CLOSED_IDLE') or
+                  sustained.get('acceptance_mode') != mode or
+                  first.get('status') != 'GREEN' or sustained.get('status') != 'GREEN'):
+              raise ValueError('FINAL_NATIVE_ACCEPTANCE_RED')
+          state['native_acceptance_mode'] = mode
+          state['source_freshness_renewed'] = False if mode == 'CLOSED_IDLE' else None
           state['validation_status'] = 'VALIDATED_RUNTIME'
           state['recorded_at'] = datetime.now(timezone.utc).isoformat()
           fd, tmp = tempfile.mkstemp(prefix='.CURRENT_STATE_V2.', suffix='.tmp', dir=root)
