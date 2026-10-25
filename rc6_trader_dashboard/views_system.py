@@ -52,6 +52,10 @@ def render(p, destination, tab):
                "observation_coverage": ("COBERTURA_PARCIAL" if truncated is True else
                                         "SCOPE_COMPLETO" if truncated is False else "NO_VERIFICADO")}
         return (notice("Sólo CURRENT.json y su generación comprometida/coherente. El adapter requiere el reader canónico de #466; latest/checkpoint/status independientes no son autoridad.") +
+                "<section class='panel'><h2>Validación — Camino a Producción</h2>"
+                "<p>Consultar el estado y las brechas de M0–M11, uno por uno. "
+                "El dinero real continúa bloqueado por política RC6.</p>"
+                "<a class='text-link' href='/validacion'>Ver hitos M0–M11</a></section>" +
                 "<section class='panel'><h2>Integridad de generación SHADOW</h2>" + definition_list(row, fields(
                     "state|Estado de verificación|status;as_of|Watermark as_of|time;reason|Motivo"))
                 + detail(row, fields("observation_coverage|Cobertura de observaciones SHADOW|status;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
