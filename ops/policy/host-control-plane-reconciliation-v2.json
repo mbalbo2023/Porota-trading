@@ -71,12 +71,13 @@
       "reason": "Schedules the dedicated read-only runtime evidence publication without restarting or mutating runtime services"
     },
     "systemd/porota-a3-history-daily-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "QUARANTINED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "masked": true,
       "remove_on_deploy": false,
-      "reason": "Current all-family PAPER/SHADOW coverage keeps A3 read-only historical evidence active for FUTUROS/OPCIONES"
+      "reason": "A71 host evidence 40200904783: SOURCE_BYTE_BUDGET_EXHAUSTED; disabled after guarded receipt 40201675943 until copy migration and byte budget are proved"
     },
     "systemd/porota-a3-history-rc6@.service": {
       "role": "ACTIVE_SERVICE",
@@ -87,20 +88,22 @@
       "reason": "Read-only A3 historical template used by active FUTUROS/OPCIONES background timers; no order methods"
     },
     "systemd/porota-a3-history-reconcile-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "QUARANTINED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "masked": true,
       "remove_on_deploy": false,
-      "reason": "Current all-family PAPER/SHADOW coverage keeps A3 read-only historical evidence active for FUTUROS/OPCIONES"
+      "reason": "A71 host evidence 40200904783: HISTORY_COPY_MIGRATION_REQUIRED; disabled after guarded receipt 40201675943 until copied history schema is proved"
     },
     "systemd/porota-a3-history-weekend-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
+      "role": "QUARANTINED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "masked": true,
       "remove_on_deploy": false,
-      "reason": "Current all-family PAPER/SHADOW coverage keeps A3 read-only historical evidence active for FUTUROS/OPCIONES"
+      "reason": "A71 host evidence 40200904783: HISTORY_COPY_MIGRATION_REQUIRED; disabled after guarded receipt 40201675943 until copied history schema is proved"
     },
     "systemd/porota-candle-integrity-rc6.service": {
       "role": "ACTIVE_SERVICE",
