@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 import pytest
@@ -119,16 +120,30 @@ def test_installed_systemd_calendar_stays_in_watch_window_and_avoids_publisher()
     assert expressions
     events = set()
     for expression in expressions:
-        result = subprocess.run(
-            ["systemd-analyze", "calendar", "--base-time=2026-10-26 00:00 UTC",
-             "--iterations=40", expression], check=True, capture_output=True,
-            text=True, env={**os.environ, "TZ": "UTC"})
-        stamps = re.findall(
-            r"(?m)^\s+(?:Next elapse|Iteration #\d+): \w{3} "
-            r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC$", result.stdout)
-        assert len(stamps) == 40
-        events.update(datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc) for stamp in stamps)
+        if shutil.which("systemd-analyze"):
+            result = subprocess.run(
+                ["systemd-analyze", "calendar", "--base-time=2026-10-26 00:00 UTC",
+                 "--iterations=40", expression], check=True, capture_output=True,
+                text=True, env={**os.environ, "TZ": "UTC"})
+            stamps = re.findall(
+                r"(?m)^\s+(?:Next elapse|Iteration #\d+): \w{3} "
+                r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC$", result.stdout)
+            assert len(stamps) == 40
+            events.update(datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=timezone.utc) for stamp in stamps)
+        else:
+            # The exact runtime image does not ship systemd. Interpret only
+            # this explicit unit grammar; unsupported expressions fail closed.
+            spec = re.fullmatch(
+                r"Mon\.\.Fri \*-\*-\* (\d\d)(?:\.\.(\d\d))?:"
+                r"(\d\d(?:,\d\d)*):00 America/Argentina/Buenos_Aires", expression)
+            assert spec is not None
+            first, last = int(spec[1]), int(spec[2] or spec[1])
+            minutes = [int(x) for x in spec[3].split(",")]
+            assert 0 <= first <= last <= 23 and all(0 <= x < 60 for x in minutes)
+            events.update(datetime(2026, 10, 26, hour, minute,
+                                   tzinfo=watch.ART).astimezone(timezone.utc)
+                          for hour in range(first, last + 1) for minute in minutes)
     monday = sorted(moment for moment in events
                     if moment.astimezone(watch.ART).date().isoformat() == "2026-10-26")
     assert len(monday) == 38
