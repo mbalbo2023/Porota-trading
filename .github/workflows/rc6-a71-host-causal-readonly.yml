@@ -1,0 +1,159 @@
+name: RC6 A71 causal family and timer read-only
+on:
+  push:
+    branches: [ops/rc6-a71-host-audit-20261025]
+    paths: [.github/workflows/rc6-a71-host-causal-readonly.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Bounded cause and family evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a71"
+          chmod 600 "$HOME/.ssh/rc6_a71"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_causal.json" <<'PY'
+          import datetime, itertools, json, os, pathlib, re, sqlite3, subprocess, time
+
+          def call(argv, seconds=5):
+              try:
+                  p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
+                  return p.returncode,p.stdout[:100000]
+              except (subprocess.TimeoutExpired,OSError):return 124,''
+          r={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+             'a3':{},'shadow':{},'families':{},'timer_outputs':{},'service_code':{},'warnings':[]}
+          for mode in ('DAILY_INCREMENTAL','RECONCILE','WEEKEND_DEEP'):
+              unit=f'porota-a3-history-rc6@{mode}.service'
+              rc,out=call(['sudo','-n','systemctl','show',unit,'--no-pager','-p','LoadState',
+                           '-p','Result','-p','ExecMainStatus','-p','ExecMainStartTimestamp',
+                           '-p','ExecMainExitTimestamp','-p','CPUUsageNSec'],4)
+              r['a3'][mode]={'unit_rc':rc,'fields':dict(x.split('=',1) for x in out.splitlines() if '=' in x)}
+              rc,out=call(['sudo','-n','journalctl','-u',unit,'-n','12','--no-pager','-o','json'],5)
+              findings=[]
+              for line in out.splitlines():
+                  try:entry=json.loads(line);msg=entry.get('MESSAGE','')
+                  except (ValueError,TypeError):continue
+                  finding={'at_us':entry.get('__REALTIME_TIMESTAMP'), 'priority':entry.get('PRIORITY')}
+                  try:
+                      p=json.loads(msg)
+                      if isinstance(p,dict):
+                          finding['result']={k:p.get(k) for k in ('ran','reason','mode','selected','matched','unmatched','failed','empty','complete') if k in p}
+                  except (ValueError,TypeError):
+                      finding['classes']=sorted(set(re.findall(r'\b(?:[A-Z][A-Za-z]+Error|A3_[A-Z_]+|SQLITE_[A-Z_]+|NO_NEW_A3_SESSION_GAP)\b',msg)))[:5]
+                  findings.append(finding)
+              r['a3'][mode]['journal_rc']=rc;r['a3'][mode]['journal_last']=findings[-8:]
+
+          rc,out=call(['sudo','-n','systemctl','show','porota-rc6-candle-inmarket-verify.service',
+                       '-p','ExecStart','--no-pager'],4)
+          r['service_code']['candle_inmarket']={'rc':rc,'script_basenames':sorted(set(
+              re.findall(r'[A-Za-z0-9_\-]+\.(?:py|sh)',out)))[:12],
+              'flags':[x for x in ('docker','sqlite','candle_integrity','inmarket') if x in out.lower()]}
+
+          # Docker inspect is read into this process; only explicit non-secret keys leave it.
+          rc,out=call(['sudo','-n','docker','inspect','-f','{{range .Config.Env}}{{println .}}{{end}}',
+                       'porota_production_observer'],6)
+          allow=('POROTA_OPERATIONAL_FAMILIES','OPERATIONAL_SCOPE','PAPER_SCALPING_MODE',
+                 'PAPER_CAUCION_SWEEP_MODE','POROTA_SHADOW_DEFERRED_AUDIT_MODE',
+                 'PAPER_ECONOMIC_GATE_MODE','PAPER_V17_DB_PATH')
+          values={}
+          if rc==0:
+              for line in out.splitlines():
+                  key,sep,value=line.partition('=')
+                  if sep and key in allow:values[key]=value[:180]
+          r['families']['runtime_config']={'rc':rc,'values':values}
+
+          root=pathlib.Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
+          r['shadow']['root_exists']=root.is_dir()
+          if root.is_dir():
+              for name in ('status.json','idle.json','publication.json','CURRENT.json'):
+                  p=root/name
+                  if not p.is_file() or p.is_symlink() or p.stat().st_size>2000000:continue
+                  try:
+                      obj=json.loads(p.read_text(encoding='utf-8'))
+                      safe={k:obj.get(k) for k in ('schema','as_of','phase','status','error_class',
+                          'error_module','runtime_read_stage','runtime_deadline_expired',
+                          'source_as_of','source_freshness_renewed','heartbeat_at',
+                          'last_source_as_of','last_generation_id','provider_requests',
+                          'real_orders_sent','real_routes','catalog_ready_count',
+                          'entry_signal_lab_status','operational_funnel_status') if k in obj}
+                      if name=='status.json' and isinstance(obj.get('generation_timing'),dict):
+                          t=obj['generation_timing']
+                          safe['timing']={k:t.get(k) for k in ('poll_seconds','tick_seconds',
+                              'tick_cpu_seconds','stages_seconds','stages_cpu_seconds',
+                              'process_peak_rss_kib') if k in t}
+                      r['shadow'][name]={'mtime_utc':datetime.datetime.fromtimestamp(
+                          p.stat().st_mtime,datetime.timezone.utc).isoformat(),'bytes':p.stat().st_size,
+                          'safe':safe}
+                  except (ValueError,OSError,TypeError):r['shadow'][name]={'error':'READ_FAILED'}
+
+          db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          try:
+              c=sqlite3.connect('file:'+db+'?mode=ro',uri=True,timeout=.1)
+              c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=100')
+              def query(key,sql):
+                  deadline=time.monotonic()+1.0
+                  c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                  try:r['families'][key]={'rows':[list(row) for row in c.execute(sql).fetchall()][:100]}
+                  except sqlite3.Error as e:r['families'][key]={'error':type(e).__name__+':'+str(getattr(e,'sqlite_errorname','SQLITE_ERROR'))}
+                  finally:c.set_progress_handler(None,0)
+              query('safety','SELECT mode,process_state,session_state,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1')
+              tables={x[0] for x in c.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1500")}
+              for name in ('financial_instrument_catalog','candidate_identity_v2','paper_positions',
+                           'paper_fills','paper_cauciones','paper_family_lifecycle'):
+                  if name not in tables:continue
+                  cols={x[1] for x in c.execute('PRAGMA table_info("'+name+'")')}
+                  r['families'][name+'_columns']=sorted(cols)
+                  family=next((f for f in ('instrument_type','asset_class','family') if f in cols),None)
+                  if family:
+                      other=next((f for f in ('status','state','can_simulate') if f in cols),None)
+                      select='"'+family+'"'+(',"'+other+'"' if other else '')
+                      query(name+'_counts','SELECT '+select+',COUNT(*) FROM "'+name+'" GROUP BY '+select)
+                  elif name in ('paper_fills','paper_cauciones'):
+                      query(name+'_total','SELECT COUNT(*) FROM "'+name+'"')
+              c.close()
+          except (sqlite3.Error,OSError) as e:r['families']['db_error']=type(e).__name__
+
+          for dirname in ('market','scheduler','introspection','reports'):
+              path=pathlib.Path('/opt/porota-trading/data')/dirname
+              if not path.is_dir():continue
+              rows=[]
+              for p in itertools.islice(path.iterdir(),2000):
+                  try:
+                      if not p.is_file() or p.is_symlink():continue
+                      st=p.stat()
+                      rows.append({'name':p.name[:90],'size':st.st_size,
+                                   'mtime_utc':datetime.datetime.fromtimestamp(st.st_mtime,datetime.timezone.utc).isoformat()})
+                  except OSError:pass
+              r['timer_outputs'][dirname]=sorted(rows,key=lambda x:x['mtime_utc'],reverse=True)[:35]
+          r['source_end_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+          print(json.dumps(r,ensure_ascii=False,sort_keys=True,separators=(',',':')))
+          PY
+          python3 - "$RUNNER_TEMP/a71_causal.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          print('A71_CAUSAL_READ_ONLY=COMPLETE')
+          print('SOURCE_UTC='+r['source_utc'])
+          print('A3_RESULTS='+','.join(k+':'+str(v['fields'].get('Result')) for k,v in r['a3'].items()))
+          print('SHADOW_STATUS='+str(r['shadow'].get('status.json',{}).get('safe',{}).get('status')))
+          print('FAMILY_DATASETS='+','.join(k for k in r['families'] if k.endswith('_counts')))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a71-causal-readonly
+          path: ${{ runner.temp }}/a71_causal.json
+          retention-days: 7
