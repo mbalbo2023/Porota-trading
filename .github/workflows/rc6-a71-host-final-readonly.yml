@@ -30,7 +30,7 @@ jobs:
           ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'python3 -' > "$RUNNER_TEMP/a71_final.json" <<'PY'
           import datetime,gzip,json,pathlib,re,subprocess,time
           root=pathlib.Path('/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow')
-          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'shadow':{},'timer':{},'warnings':[]}
+          output={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'a3':{},'a3_schema':{},'shadow':{},'timer':{},'warnings':[]}
           def call(argv,seconds=5):
               try:
                   p=subprocess.run(argv,capture_output=True,text=True,timeout=seconds)
@@ -46,13 +46,19 @@ jobs:
                   except (ValueError,TypeError):continue
                   match=re.search(r'File "[^"]*/([A-Za-z0-9_]+\.py)", line ([0-9]{1,5})',message)
                   if match:frames.append({'module':match.group(1),'line':int(match.group(2))})
-                  match=re.search(r'\b(SnapshotError|ValueError|sqlite3\.OperationalError):([A-Z_]{3,90})\b',message)
+                  match=re.search(r'\b(SnapshotError|ValueError|sqlite3\.OperationalError):\s*([A-Z][A-Z0-9_]{2,90})\b',message)
                   if match:errors.append([match.group(1),match.group(2)])
                   try:
                       j=json.loads(message)
                       if isinstance(j,dict):results.append({k:j.get(k) for k in ('ran','reason','mode','selected','failed','complete') if k in j})
                   except (ValueError,TypeError):pass
               output['a3'][mode]={'journal_rc':rc,'frames':frames[-12:],'errors':errors[-3:],'results':results[-2:]}
+          code="import sqlite3,json; c=sqlite3.connect('file:/app/data/market_history.db?mode=ro',uri=True,timeout=.1); c.execute('PRAGMA query_only=ON'); print(json.dumps({n:[r[1] for r in c.execute('PRAGMA table_info('+n+')')] for n in ('history_versions_v2','history_canonical_v2','history_close_versions_v1','history_close_canonical_v1')})); c.close()"
+          rc,raw=call(['sudo','-n','docker','exec','porota_production_observer','python','-c',code],6)
+          output['a3_schema']={'rc':rc}
+          if rc==0:
+              try:output['a3_schema']['columns']=json.loads(raw)
+              except ValueError:output['a3_schema']['error']='PARSE_FAILED'
           if root.is_dir():
               def safe_read(p,compressed=False):
                   if not p.is_file() or p.is_symlink() or p.stat().st_size>4*1024*1024:return None
@@ -76,6 +82,14 @@ jobs:
                               'stages_cpu_seconds') if k in t}
                       output['shadow'][name]=safe
                   except (OSError,ValueError,TypeError):output['shadow'][name]={'error':'READ_FAILED'}
+              evidence=pathlib.Path('/opt/porota-trading/data/validation/candle_inmarket_latest.json')
+              try:
+                  if evidence.is_file() and not evidence.is_symlink() and evidence.stat().st_size<65536:
+                      value=json.loads(evidence.read_text())
+                      output['timer']['candle_inmarket_evidence']={k:value.get(k) for k in
+                          ('status','observed_at','expires_at','worker_state','current_cursor',
+                           'baseline_cursor','dirty_due_bars','collection_error','checks')}
+              except (OSError,ValueError,TypeError):output['timer']['candle_inmarket_evidence']={'error':'READ_FAILED'}
               try:
                   current=safe_read(root/'CURRENT.json') or {}
                   cut_name=current.get('file','')
