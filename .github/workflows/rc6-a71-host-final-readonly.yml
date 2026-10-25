@@ -218,23 +218,46 @@ jobs:
           print('A3_ERRORS='+str({k:v['errors'] for k,v in r['a3'].items()}))
           PY
           timeout 55 ssh -i "$HOME/.ssh/rc6_a71" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' > "$RUNNER_TEMP/a72_probe.json" <<'PY'
-          import datetime,json,time
+          import datetime,json,sqlite3,time
           from pathlib import Path
           from rc6_shadow_runtime.worker import ShadowRuntime,closed_input_signature
+          from rc6_shadow_runtime import worker as module
           path=Path('/app/data/paper_v17/observer_v17.db')
           result={'source_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   'probe':'SHADOW_CLOSED_SIGNATURE_READ_ONLY','db_exists':path.is_file(),
                   'samples':[]}
           if path.is_file():
               worker=ShadowRuntime(path)
+              original_tables=module._CLOSED_INPUT_TABLES
+              expected=('id','measured_at','currency','cash','exposure',
+                  'pending_proceeds','caucion_principal','caucion_accrued',
+                  'unrealized_pnl','realized_pnl','equity')
               for n in range(2):
                   at=datetime.datetime.now(datetime.timezone.utc)
                   started=time.monotonic()
                   value=closed_input_signature(worker,at)
+                  module._CLOSED_INPUT_TABLES=tuple(t for t in original_tables
+                      if t[0]!='paper_equity_by_currency')
+                  try:other=closed_input_signature(worker,at)
+                  finally:module._CLOSED_INPUT_TABLES=original_tables
+                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.005) as c:
+                      c.execute('PRAGMA query_only=ON')
+                      columns=tuple(r[1] for r in c.execute(
+                          'PRAGMA table_info("paper_equity_by_currency")'))
+                      raw=c.execute('SELECT * FROM paper_equity_by_currency ORDER BY id DESC LIMIT 501').fetchall()
+                  latest={}
+                  for row in raw[:500]:
+                      measured=datetime.datetime.fromisoformat(row[1])
+                      if row[2] not in latest or measured>latest[row[2]][0]:
+                          latest[row[2]]=(measured,tuple(row[2:]))
+                  economic=(len(raw)>500,tuple(sorted((k,v) for k,(_,v) in latest.items())))
                   result['samples'].append({'valid':value is not None,
                       'elapsed_ms':round(1000*(time.monotonic()-started),2),
-                      'utc':at.isoformat(),'same_as_prior':n==1 and value is not None and value==previous})
-                  previous=value
+                      'utc':at.isoformat(),'same_as_prior':n==1 and value is not None and value==previous,
+                      'other_valid':other is not None,'other_same_as_prior':n==1 and other is not None and other==previous_other,
+                      'equity_schema_exact':columns==expected,
+                      'equity_economics_same_as_prior':n==1 and economic==previous_economic})
+                  previous,previous_other,previous_economic=value,other,economic
                   if n==0:time.sleep(32)
           print(json.dumps(result,sort_keys=True))
           PY
