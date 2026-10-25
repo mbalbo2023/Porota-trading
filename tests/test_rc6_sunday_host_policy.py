@@ -34,10 +34,15 @@ def test_rc6_monotonic_timers_do_not_persist():
 
 def test_rc6_preopen_and_backup_calendar_timers_are_explicit():
     pre = (ROOT / 'systemd' / 'porota-preopen-rc6.timer').read_text(encoding='utf-8')
+    snapshot = (ROOT / 'systemd' / 'porota-snapshot-preopen-rc6.timer').read_text(encoding='utf-8')
+    snapshot_service = (ROOT / 'systemd' / 'porota-snapshot-preopen-rc6.service').read_text(encoding='utf-8')
     backup = (ROOT / 'systemd' / 'porota-host-general-backup-rc6.timer').read_text(encoding='utf-8')
     assert '09:45:00 America/Argentina/Buenos_Aires' in pre
-    assert '10:15:00 America/Argentina/Buenos_Aires' in pre
     assert '10:20:00 America/Argentina/Buenos_Aires' in pre
+    assert [line for line in snapshot.splitlines() if line.startswith('OnCalendar=')] == [
+        'OnCalendar=Mon..Fri *-*-* 10:15:00 America/Argentina/Buenos_Aires']
+    assert 'Unit=porota-snapshot-preopen-rc6.service' in snapshot
+    assert 'rc6_snapshot.py --phase preopen' in snapshot_service
     assert 'Persistent=' not in pre
     assert '04:15:00 America/Argentina/Buenos_Aires' in backup
     assert 'Persistent=true' in backup

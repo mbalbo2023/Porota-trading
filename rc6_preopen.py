@@ -204,10 +204,8 @@ def iol_reference_state(today):
 def preopen_phase(now):
     local = now.astimezone(TZ)
     minutes = local.hour*60 + local.minute
-    if 9*60+45 <= minutes < 10*60+15:
+    if 9*60+45 <= minutes < 10*60+20:
         return 'T_MINUS_45'
-    if 10*60+15 <= minutes < 10*60+20:
-        return 'T_MINUS_15'
     if 10*60+20 <= minutes < 10*60+30:
         return 'T_MINUS_10'
     return 'MANUAL_OR_OUTSIDE_SCHEDULE'
