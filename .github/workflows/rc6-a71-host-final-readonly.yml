@@ -44,7 +44,7 @@ jobs:
                  '/var/lib/containerd','/var/lib/docker','/var/log','/var/cache/apt')
           for path in paths:
               rc,raw=call(['sudo','-n','du','-s','-B1','-x',path],12)
-              m=re.match(r'([0-9]+)\\s',raw)
+              m=re.match(r'([0-9]+)\s',raw)
               disk['paths'][path]={'rc':rc,'bytes':int(m.group(1)) if rc==0 and m else None}
           rc,raw=call(['sudo','-n','docker','system','df','--format','{{json .}}'],12)
           disk['docker_df_rc']=rc
@@ -64,6 +64,7 @@ jobs:
           disk['container_list_rc']=rc2
           disk['container_list_complete']=rc2==0 and len(containers)<=40
           used=set()
+          disk['reference_inspect_rc']=None
           if containers and disk['container_list_complete']:
               ri,ri_raw=call(['sudo','-n','docker','inspect','-f','{{.Image}}',*containers],12)
               disk['reference_inspect_rc']=ri
