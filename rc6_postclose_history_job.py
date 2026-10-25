@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
+import os
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
 from bd_ppi_readonly_guard import ProductionMarketReader
-from bf_production_paper_observer import _download_histories, _secret, _support_schema
+from bf_production_paper_observer import (_download_histories, _history_cutoff_repair_complete,
+                                           _secret, _support_schema)
 from cg_paper_workspace import runtime_store
+from cv_history_store_adapter_hf6 import default_history_store
+from cu_history_store_v2_hf6 import init_schema as init_history_schema
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 MIN_RETRY = timedelta(hours=2)
@@ -39,16 +43,13 @@ def main() -> int:
         'real_order_capability': 'BLOCKED',
         'network_order_test_performed': False,
     }
-    # RC6 policy: full-history completed and post-close recovery is quarantined.
-    # Keep this executable as a visible, fail-closed audit surface; it must
-    # never create a PPI client or write historical rows unless a separate,
-    # explicitly authorized recovery project replaces this guard.
-    print(json.dumps(base | {
-        'status': 'BLOCKED_BY_POLICY',
-        'reason': 'RC6_HISTORY_QUARANTINE',
-        'history_writes_started': False,
-    }, sort_keys=True))
-    return 0
+    # Both the host ConditionPathExists gate and this container-local gate
+    # must be deliberately opened after migration and exact cutoff review.
+    if os.getenv('RC6_POSTCLOSE_HISTORY_RECOVERY') != 'APPROVED':
+        print(json.dumps(base | {'status': 'BLOCKED_BY_POLICY',
+                                 'reason': 'RC6_HISTORY_QUARANTINE',
+                                 'history_writes_started': False}, sort_keys=True))
+        return 0
 
     if not byma.es_dia_habil_operativo(now.date()):
         print(json.dumps(base | {'status': 'NOT_DUE', 'reason': 'BYMA_NON_OPERATIONAL_DAY'}, sort_keys=True))
@@ -59,6 +60,20 @@ def main() -> int:
 
     store = runtime_store()
     _support_schema(store)
+    with store.connect() as c:
+        runtime=c.execute('SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+    if (not runtime or str(runtime[0]) != 'PRODUCTION_PAPER'
+            or str(runtime[1]) != 'MARKET_CLOSED' or int(runtime[2] or 0) != 0):
+        print(json.dumps(base | {'status':'BLOCKED','reason':'RUNTIME_NOT_CLOSED_PAPER_SAFE'},sort_keys=True))
+        return 2
+    if not _history_cutoff_repair_complete():
+        print(json.dumps(base | {'status':'BLOCKED','reason':'HISTORY_CUTOFF_REPAIR_INCOMPLETE'},sort_keys=True))
+        return 2
+    try:
+        init_history_schema(default_history_store())
+    except (ValueError, OSError) as exc:
+        print(json.dumps(base | {'status':'BLOCKED','reason':type(exc).__name__+':'+str(exc)},sort_keys=True))
+        return 2
     with store.connect() as c:
         row = c.execute('SELECT MAX(attempted_at) FROM production_history_attempts').fetchone()
     last = parse(row[0]) if row and row[0] else None
@@ -71,15 +86,19 @@ def main() -> int:
     try:
         reader = ProductionMarketReader(*_secret(), audit=store.audit_http)
         reader.login_once()
-        _download_histories(reader, store)
+        _download_histories(reader, store, incremental_only=True)
         with store.connect() as c:
             recent = c.execute('''SELECT state,COUNT(*) n FROM production_history_attempts
                                   WHERE julianday(attempted_at)>=julianday(?) GROUP BY state''',
                                ((now - timedelta(minutes=30)).isoformat(),)).fetchall()
             orders = c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0]
+            sync=c.execute("SELECT status FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'").fetchone()
+        sync_state=str(sync[0]) if sync else 'NO_SYNC_EVIDENCE'
         result = base | {
-            'status': 'GREEN' if int(orders or 0) == 0 else 'RED',
+            'status': ('RED' if int(orders or 0) != 0 or any(str(r[0]) == 'ERROR' for r in recent)
+                       else 'GREEN' if sync_state == 'VERDE' else 'PARTIAL'),
             'recent_attempt_states': {str(r[0]): int(r[1]) for r in recent},
+            'source_sync_state': sync_state,
             'real_orders_sent': int(orders or 0),
         }
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
