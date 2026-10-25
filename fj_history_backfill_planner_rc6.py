@@ -9,6 +9,7 @@ ineligible unless an explicit future policy says otherwise.
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
+from history_source_policy_rc6 import QUALITY_ORDER, eligible as quality_eligible
 
 SOURCE_ORDER=('PPI','IOL','A3_BYMA','DATA912')
 
@@ -55,13 +56,28 @@ def eligible_sources(policy:SourcePolicy):
     return out
 
 
-def plan(*,identity:Identity,expected_dates,canonical_dates,attempt_states=(),policy=SourcePolicy(),as_of_date=None):
+def plan(*,identity:Identity,expected_dates,canonical_dates,attempt_states=(),policy=SourcePolicy(),as_of_date=None,
+         canonical_quality=None,minimum_quality='CLOSE_ONLY'):
+    """Plan gaps for one validated identity using caller-supplied canonical quality.
+
+    A date alone is sufficient only for the legacy CLOSE_ONLY requirement. A
+    stricter requirement needs an explicit quality grade for every covered day;
+    ungraded observations remain gaps. No canonical write is authorized.
+    """
     identity.validate()
     expected=sorted({_day(x) for x in expected_dates}); observed={_day(x) for x in canonical_dates}
+    if minimum_quality not in QUALITY_ORDER: raise BackfillPlanError('MINIMUM_QUALITY_INVALID')
+    grades={_day(k):str(v).strip().upper() for k,v in (canonical_quality or {}).items()}
+    if any(v not in QUALITY_ORDER for v in grades.values()):
+        raise BackfillPlanError('CANONICAL_QUALITY_INVALID')
+    if any(d not in observed for d in grades):
+        raise BackfillPlanError('CANONICAL_QUALITY_DATE_NOT_OBSERVED')
     if not expected: return {'status':'NO_EXPECTED_DATES','jobs':[],'gaps':[],'canonical_write':'DENY'}
     if as_of_date is not None:
         cutoff=_day(as_of_date); expected=[d for d in expected if d < cutoff]  # never backfill an in-progress/current day
-    gaps=[d for d in expected if d not in observed]
+    covered={d for d in observed if d in grades and quality_eligible(grades[d],minimum_quality)} \
+        if minimum_quality!='CLOSE_ONLY' else observed
+    gaps=[d for d in expected if d not in covered]
     state={( _day(x.day),str(x.source).upper()):x for x in attempt_states}
     sources=eligible_sources(policy); jobs=[]
     for d in gaps:
@@ -72,9 +88,12 @@ def plan(*,identity:Identity,expected_dates,canonical_dates,attempt_states=(),po
                 chosen=(source,a.attempts+1); break
             blocked.append({'source':source,'attempts':a.attempts,'last_error':a.last_error})
         if chosen:
-            jobs.append({'identity':identity.normalized(),'date':d.isoformat(),'source':chosen[0],'attempt_number':chosen[1],'canonical_write':'DENY','reason':'MISSING_CANONICAL_DAY'})
+            jobs.append({'identity':identity.normalized(),'date':d.isoformat(),'source':chosen[0],'attempt_number':chosen[1],'canonical_write':'DENY',
+                         'minimum_quality':minimum_quality,
+                         'reason':'MISSING_CANONICAL_DAY' if d not in observed else 'CANONICAL_QUALITY_INSUFFICIENT'})
         else:
-            jobs.append({'identity':identity.normalized(),'date':d.isoformat(),'source':None,'attempt_number':None,'canonical_write':'DENY','reason':'SOURCES_EXHAUSTED','blocked_sources':blocked})
+            jobs.append({'identity':identity.normalized(),'date':d.isoformat(),'source':None,'attempt_number':None,'canonical_write':'DENY',
+                         'minimum_quality':minimum_quality,'reason':'SOURCES_EXHAUSTED','blocked_sources':blocked})
     return {'status':'GAPS_FOUND' if gaps else 'COMPLETE','jobs':jobs,'gaps':[d.isoformat() for d in gaps],'canonical_write':'DENY','source_policy':sources}
 
 
