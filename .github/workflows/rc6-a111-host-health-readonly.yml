@@ -1,4 +1,5 @@
 name: RC6 A111 host health read only
+# A111 bounded passive resample 2; no operational change.
 
 on:
   push:
