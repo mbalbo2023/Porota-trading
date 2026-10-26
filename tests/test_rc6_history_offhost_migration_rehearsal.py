@@ -21,7 +21,7 @@ def _legacy(tmp_path):
             INSERT INTO history_versions_v2 VALUES
               (1,'AAA','ACCIONES','BYMA','A-24HS','2026-09-30',100,102,98,
                100,1000,'PPI_API',0,'2026-10-01T16:00:00Z','h1',
-               '{"currency":"ARS"}'),
+               '{"currency":"ARS","price_basis":"RAW","adjustment_basis":"RAW_NO_ADJUSTMENT","version_known_at":"2026-10-01T16:00:00Z","volume_kind":"QUANTITY"}'),
               (2,'BBB','ACCIONES','BYMA','A-24HS','2026-09-30',100,102,98,
                100,1000,'PPI_API',0,'2026-10-01T16:00:00Z','h2','{}');
             INSERT INTO history_canonical_v2 VALUES

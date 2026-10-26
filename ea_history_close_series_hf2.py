@@ -333,8 +333,15 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
             if row.get('currency') and meta.get('currency') and cash_currency(row['currency'])!=cash_currency(meta['currency']):
                 raise ValueError('HISTORY_CURRENCY_CONFLICT')
             currency=resolve_legacy_currency(explicit,mapped)
+            if row['source']!=SOURCE or row['quality']!=QUALITY:
+                raise ValueError('HISTORY_CLOSE_SOURCE_QUALITY_UNVERIFIED')
+            if not meta.get('version_known_at'):
+                raise ValueError('HISTORY_CLOSE_PIT_CLOCK_PROVENANCE_REQUIRED')
+            known_at=utc(meta['version_known_at'])
+            if instant(known_at)>instant(row['observed_at']):
+                raise ValueError('HISTORY_CLOSE_PIT_CLOCK_AFTER_OBSERVATION')
             item=CloseEvidence(row['symbol'],row['instrument_type'],row['market'],row['settlement'],
-                row['date'],row['close'],utc(row['observed_at']),meta.get('rejection_reason_full_ohlc','LEGACY_PARTIAL'),
+                row['date'],row['close'],known_at,meta.get('rejection_reason_full_ohlc','LEGACY_PARTIAL'),
                 int(meta.get('row_index',0)),{'date':row['date'],'price':row['close'],'legacy_raw_row_hash':row['raw_row_hash'],
                     'copy_migration_currency':{'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
                         'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}},currency)
