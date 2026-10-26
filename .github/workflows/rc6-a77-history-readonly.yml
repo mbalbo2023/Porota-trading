@@ -329,6 +329,151 @@ jobs:
           print(json.dumps(result,sort_keys=True))
           c.close()
           PY
+      - name: Trace complete SHADOW to PAPER native ledger read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 105 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          """Bounded, read-only RC6 causal trace inventory for a GitHub Actions probe."""
+          import hashlib
+          import json
+          import sqlite3
+          from collections import Counter, defaultdict
+          from datetime import datetime, timedelta, timezone
+          
+          from cg_paper_workspace import artifact_root, database_path
+          from rc6_shadow_runtime.persistence import read_committed_generation
+          
+          
+          def safe_json(raw):
+              try:
+                  return json.loads(raw or "{}")
+              except (TypeError, ValueError):
+                  return {}
+          
+          
+          db_path = database_path()
+          db = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=0.5)
+          db.row_factory = sqlite3.Row
+          db.execute("PRAGMA query_only=ON")
+          db.execute("PRAGMA busy_timeout=500")
+          since = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+          tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          cut = read_committed_generation(artifact_root(db_path) / "dynamic-shadow", require_current_status=False)
+          report = cut["report"]
+          funnel = report.get("operational_funnel") or {}
+          stages = defaultdict(Counter)
+          for row in funnel.get("cohorts") or []:
+              stages[(row.get("family"), row.get("channel"))].update(row.get("stages") or {})
+          
+          native = Counter()
+          families = defaultdict(Counter)
+          gaps = Counter()
+          examples = []
+          last_gate_id = db.execute("SELECT COALESCE(MAX(id),0) FROM trade_gate_evaluations").fetchone()[0] if "trade_gate_evaluations" in tables else 0
+          if last_gate_id:
+              rows = db.execute("""SELECT g.id,g.decision_key,g.evaluated_at,g.technical_gate,g.patrimonial_gate,
+                  g.final_result,g.reason,g.paper_id,g.detail_json,
+                  d.action AS decision_action,d.decided_at AS decision_at,
+                  p.symbol AS position_symbol,p.asset_class AS position_family,
+                  p.settlement AS position_settlement,p.currency AS position_currency,
+                  p.market AS position_market,p.opened_at AS opened_at,
+                  f.id AS buy_fill_id,f.filled_at AS buy_filled_at,
+                  e.payload_json,e.payload_sha256
+                  FROM trade_gate_evaluations AS g
+                  LEFT JOIN paper_decisions AS d ON d.decision_key=g.decision_key
+                  LEFT JOIN paper_positions AS p ON p.paper_id=g.paper_id
+                  LEFT JOIN paper_fills AS f ON f.paper_id=g.paper_id AND f.side='BUY_SIMULATED'
+                  LEFT JOIN decision_evidence_snapshots AS e ON e.decision_key=g.decision_key
+                  WHERE g.id>? AND julianday(g.evaluated_at)>=julianday(?)
+                  ORDER BY g.id LIMIT 2001""", (max(0,last_gate_id-10000),since)).fetchall()
+              native["gate_rows_bounded"] = min(len(rows),2000)
+              native["gate_rows_truncated"] = int(len(rows)>2000)
+              for r in rows[:2000]:
+                  payload = safe_json(r["payload_json"])
+                  quote = payload.get("quote_used") or {}
+                  family = quote.get("asset_class") or r["position_family"] or "UNKNOWN"
+                  target = families[family]
+                  target["gate_rows"] += 1
+                  result = r["final_result"]
+                  target["final_"+str(result)] += 1
+                  if not r["payload_json"]:
+                      gaps["GATE_EVIDENCE_MISSING"] += 1
+                  elif hashlib.sha256(r["payload_json"].encode()).hexdigest()!=r["payload_sha256"]:
+                      gaps["GATE_EVIDENCE_HASH_MISMATCH"] += 1
+                  elif payload.get("decision_key")!=r["decision_key"]:
+                      gaps["GATE_EVIDENCE_KEY_MISMATCH"] += 1
+                  if not r["decision_action"]:
+                      gaps["GATE_PAPER_DECISION_MISSING"] += 1
+                  if result=="OPENED_SIMULATED":
+                      target["opened_gates"] += 1
+                      if not (r["paper_id"] and r["position_symbol"] and r["buy_fill_id"]):
+                          gaps["OPEN_GATE_WITHOUT_POSITION_AND_BUY_FILL"] += 1
+                      else:
+                          target["exact_buy_fill_linked"] += 1
+                          expected=(r["position_symbol"],r["position_family"],r["position_settlement"],r["position_currency"],r["position_market"])
+                          observed=tuple(quote.get(k) for k in ("symbol","asset_class","settlement","currency","market"))
+                          if expected!=observed:
+                              gaps["OPEN_GATE_QUOTE_IDENTITY_MISMATCH"] += 1
+                          if r["buy_filled_at"]!=r["opened_at"]:
+                              gaps["OPEN_GATE_FILL_CLOCK_MISMATCH"] += 1
+                          if r["decision_action"]!="BUY":
+                              gaps["OPEN_GATE_WITHOUT_BUY_DECISION"] += 1
+                          details=safe_json(r["detail_json"])
+                          adm_key=details.get("financial_admission_snapshot_key")
+                          adm_sha=details.get("financial_admission_snapshot_sha256")
+                          if not adm_key or not adm_sha:
+                              gaps["OPEN_GATE_ADMISSION_SNAPSHOT_UNLINKED"] += 1
+                          else:
+                              admission=db.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots WHERE decision_key=?",(adm_key,)).fetchone()
+                              if not admission or admission["payload_sha256"]!=adm_sha or hashlib.sha256(admission["payload_json"].encode()).hexdigest()!=adm_sha:
+                                  gaps["OPEN_GATE_ADMISSION_SNAPSHOT_INVALID"] += 1
+                              else:
+                                  frozen=safe_json(admission["payload_json"])
+                                  if frozen.get("native_decision_key")!=r["decision_key"] or (frozen.get("decision") or {}).get("paper_id")!=r["paper_id"]:
+                                      gaps["OPEN_GATE_ADMISSION_SNAPSHOT_CAUSAL_MISMATCH"] += 1
+                                  else:
+                                      target["atomic_admission_linked"] += 1
+                  elif r["paper_id"] and r["buy_fill_id"]:
+                      gaps["NON_OPEN_GATE_WITH_BUY_FILL"] += 1
+                  if len(examples)<10 and result=="OPENED_SIMULATED":
+                      examples.append({"family":family,"gate_id":r["id"],"time":r["evaluated_at"],"filled_at":r["buy_filled_at"]})
+          
+          fill_counts=[]
+          if {"paper_fills","paper_positions"}<=tables:
+              fill_counts=[dict(r) for r in db.execute("""SELECT p.asset_class family,f.side,COUNT(*) n,MAX(f.filled_at) last_at
+                  FROM paper_fills f JOIN paper_positions p ON p.paper_id=f.paper_id
+                  WHERE julianday(f.filled_at)>=julianday(?)
+                  GROUP BY p.asset_class,f.side ORDER BY p.asset_class,f.side""",(since,))]
+          candidate_counts=[]
+          if "scalping_candidates" in tables:
+              candidate_counts=[dict(r) for r in db.execute("""SELECT asset_class family,action,COUNT(*) n,MAX(evaluated_at) last_at
+                  FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?)
+                  GROUP BY asset_class,action ORDER BY asset_class,action""",(since,))]
+          future_counts=[]
+          if "paper_family_lifecycle_events" in tables:
+              future_counts=[dict(r) for r in db.execute("""SELECT family,to_state,COUNT(*) n,MAX(occurred_at) last_at
+                  FROM paper_family_lifecycle_events WHERE julianday(occurred_at)>=julianday(?)
+                  GROUP BY family,to_state ORDER BY family,to_state""",(since,))]
+          observer=dict(db.execute("SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1").fetchone())
+          db.close()
+          out={"schema":"rc6-a78-causal-trace-readonly-v1","read_only":True,"as_of_utc":datetime.now(timezone.utc).isoformat(),
+               "window_since_utc":since,"shadow_generation":{"as_of":report.get("as_of"),"phase":report.get("phase"),
+               "status":report.get("status"),"sequence":cut["pointer"].get("sequence")},
+               "funnel":{"status":funnel.get("status"),"sessions_retained":funnel.get("sessions_retained"),
+               "source_gaps":funnel.get("source_gaps"),"source_read_truncated":funnel.get("source_read_truncated"),
+               "shadow_to_factual_causality":funnel.get("shadow_to_factual_causality"),
+               "family_channel_stages":[{"family":family,"channel":channel,"stages":dict(counts)}
+                                        for (family,channel),counts in sorted(stages.items())]},
+               "native_gate_rows":{"bounds":dict(native),"by_family":{k:dict(v) for k,v in sorted(families.items())},
+                                   "gaps":dict(gaps),"opened_examples":examples},
+               "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,
+               "future_lifecycle_counts":future_counts,"observer":observer,
+               "history_writes":False,"provider_requests":0,"ppi_watch_accessed":False,"real_routes":"NOT_CALLED"}
+          print(json.dumps(out,sort_keys=True,default=str))
+          PY
       - name: Remove SSH material
         if: always()
         shell: bash
