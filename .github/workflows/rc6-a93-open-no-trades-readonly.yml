@@ -46,7 +46,7 @@ jobs:
           done
           systemctl show porota-preopen-rc6.timer --property=LastTriggerUSec --property=NextElapseUSecRealtime --no-pager | sed 's/^/PREOPEN_TIMER_/'
           sudo -n python3 - <<'PYHOST'
-          import json, os, subprocess, time
+          import json, os, subprocess, sys, time
           from datetime import datetime, timezone
           from zoneinfo import ZoneInfo
 
@@ -135,6 +135,36 @@ jobs:
                   'rss_kib': last[3]})
 
           now = datetime.now(timezone.utc)
+          journal = command(['journalctl', '-u',
+                             'porota-local-eod-history-rc6.service',
+                             '--lines=120', '--no-pager', '--output=cat'])
+          eod = {'state': 'NO_VERIFICADO'}
+          if journal is not None:
+              for line in reversed(journal.splitlines()):
+                  try:
+                      item = json.loads(line)
+                  except (ValueError, TypeError):
+                      continue
+                  if isinstance(item, dict) and item.get('schema') == 'rc6.local-eod.v1':
+                      fields = ('as_of', 'state', 'reason', 'imported',
+                                'rejected', 'daily_groups', 'cursor',
+                                'scope', 'real_orders_sent')
+                      eod = {field: item.get(field) for field in fields}
+                      break
+
+          sys.path.insert(0, '/opt/porota-trading')
+          try:
+              from rc6_preopen import iol_reference_state
+              iol = iol_reference_state(now.astimezone(
+                  ZoneInfo('America/Argentina/Buenos_Aires')).date())
+              fields = ('state', 'reason', 'cache_state',
+                        'effective_cache_state', 'age_seconds',
+                        'last_good_age_seconds', 'caucion_ars_state',
+                        'caucion_ars_records', 'never_zero_fill')
+              iol = {field: iol.get(field) for field in fields}
+          except Exception as exc:
+              iol = {'state': 'NO_VERIFICADO',
+                     'error_type': type(exc).__name__}
           result = {'schema': 'rc6-postclose-host-units-readonly-v1',
                     'at_utc': now.isoformat(),
                     'at_ar': now.astimezone(
@@ -148,6 +178,8 @@ jobs:
                                'service': show(name[:-6] + '.service',
                                                service_properties)}
                               for name in names],
+                    'local_eod_latest_report': eod,
+                    'iol_reference_current_contract': iol,
                     'ppi_watch_accessed': False, 'mutation_attempted': False}
           print('RC6_POSTCLOSE_HOST=' + json.dumps(result, sort_keys=True))
           PYHOST
