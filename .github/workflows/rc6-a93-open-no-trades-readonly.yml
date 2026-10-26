@@ -48,7 +48,7 @@ jobs:
           done
           systemctl show porota-preopen-rc6.timer --property=LastTriggerUSec --property=NextElapseUSecRealtime --no-pager | sed 's/^/PREOPEN_TIMER_/'
           sudo -n python3 - <<'PYHOST'
-          import json, os, subprocess, sys, time
+          import collections, json, os, re, subprocess, sys, time
           from datetime import datetime, timezone
           from zoneinfo import ZoneInfo
 
@@ -139,6 +139,31 @@ jobs:
                   'rss_kib': last[3]})
 
           now = datetime.now(timezone.utc)
+          traceback_summary = {'state': 'NO_VERIFICADO'}
+          try:
+              logs = subprocess.run(['docker', 'logs', '--since=10m',
+                                     '--tail=900', 'porota_production_observer'],
+                                    check=False, text=True, capture_output=True,
+                                    timeout=8)
+              if logs.returncode == 0:
+                  lines = (logs.stdout + logs.stderr)[-250000:].splitlines()
+                  errors = collections.Counter()
+                  frames = []
+                  for line in lines:
+                      error = re.match(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):', line)
+                      if error:
+                          errors[error.group(1)[:80]] += 1
+                      frame = re.match(r'^\s*File "(/app/[A-Za-z0-9_./-]+)", line ([0-9]{1,6}), in ([A-Za-z0-9_]+)', line)
+                      if frame:
+                          frames.append({'file': os.path.basename(frame.group(1)),
+                                         'line': int(frame.group(2)),
+                                         'function': frame.group(3)})
+                  traceback_summary = {'state': 'SANITIZED',
+                      'lines_examined': len(lines),
+                      'exception_counts': dict(errors.most_common(12)),
+                      'last_frames': frames[-12:]}
+          except (OSError, subprocess.SubprocessError):
+              pass
           journal = command(['journalctl', '-u',
                              'porota-local-eod-history-rc6.service',
                              '--lines=120', '--no-pager', '--output=cat'])
@@ -188,6 +213,7 @@ jobs:
                                          service_properties)}
                         for name in expected_watch_named],
                     'local_eod_latest_report': eod,
+                    'observer_traceback_sanitized': traceback_summary,
                     'iol_reference_current_contract': iol,
                     'ppi_watch_accessed': False, 'mutation_attempted': False}
           print('RC6_POSTCLOSE_HOST=' + json.dumps(result, sort_keys=True))
