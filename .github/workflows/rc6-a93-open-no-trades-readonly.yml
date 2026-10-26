@@ -51,6 +51,11 @@ jobs:
           from pathlib import Path
           from zoneinfo import ZoneInfo
           from rc6_paper_admission_gate import admission_status,focus_contracts
+          from bu_instrument_catalog import (
+              PAPER_PPI_IDENTITY_LKG_SECONDS,
+              _candidate_has_ppi_primary,
+              _candidate_timestamp_is_fresh,
+          )
 
           now=datetime.now(timezone.utc)
           tz=ZoneInfo('America/Argentina/Buenos_Aires')
@@ -62,7 +67,53 @@ jobs:
           db.execute('PRAGMA busy_timeout=300')
           deadline=time.monotonic()+25
           db.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
+          db.execute('BEGIN')
           tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          def candidate_reconciliation():
+              if not {'financial_instrument_catalog','candidate_identity_v2'}<=tables:
+                  return {'state':'EXACT_LEDGER_NOT_PRESENT'}
+              refresh='UNKNOWN'
+              if 'candidate_refresh_state' in tables:
+                  item=db.execute('SELECT state FROM candidate_refresh_state WHERE id=1').fetchone()
+                  refresh=str(item[0]) if item else 'MISSING'
+              counts=collections.Counter()
+              query='''SELECT c.last_seen_at,c.status,c.capability,c.settlement_source,
+                        c.metadata_json,l.can_simulate,l.status,l.checked_at
+                        FROM financial_instrument_catalog c LEFT JOIN candidate_identity_v2 l
+                        ON c.ticker=l.ticker AND c.instrument_type=l.instrument_type
+                        AND c.market=l.market AND c.currency=l.currency
+                        AND c.settlement=l.settlement'''
+              for seen,catalog_status,capability,source,metadata,ready,status,checked in db.execute(query):
+                  counts['catalog_rows']+=1
+                  if ready is None:
+                      counts['exact_missing']+=1
+                      continue
+                  if not ready:
+                      counts['exact_blocked']+=1
+                      continue
+                  counts['exact_ready']+=1
+                  if status!='AVAILABLE':counts['ready_status_mismatch']+=1
+                  if catalog_status!='AVAILABLE' or not str(capability).startswith('READY_PAPER_'):
+                      counts['ready_contract_mismatch']+=1
+                  if not _candidate_has_ppi_primary(source,metadata):
+                      counts['ready_nonprimary']+=1
+                  if not _candidate_timestamp_is_fresh(seen,checked,PAPER_PPI_IDENTITY_LKG_SECONDS):
+                      counts['ready_invalid_at_writer_clock']+=1
+                  if _candidate_timestamp_is_fresh(seen,now.isoformat(),86400):
+                      counts['ready_fresh_24h']+=1
+                  elif _candidate_timestamp_is_fresh(seen,now.isoformat(),PAPER_PPI_IDENTITY_LKG_SECONDS):
+                      counts['ready_document_stale_writer_lkg_valid']+=1
+                  else:
+                      counts['ready_identity_expired_or_invalid_now']+=1
+              counts['orphan_exact_rows']=db.execute('''SELECT COUNT(*) FROM candidate_identity_v2 l
+                  WHERE NOT EXISTS(SELECT 1 FROM financial_instrument_catalog c
+                    WHERE c.ticker=l.ticker AND c.instrument_type=l.instrument_type
+                    AND c.market=l.market AND c.currency=l.currency
+                    AND c.settlement=l.settlement)''').fetchone()[0]
+              return {'state':'SNAPSHOT' if refresh in {'COMPLETE','UNKNOWN'} else 'REFRESH_IN_PROGRESS',
+                      'refresh_state':refresh,'counts':dict(sorted(counts.items())),
+                      'writer_lkg_seconds':PAPER_PPI_IDENTITY_LKG_SECONDS,
+                      'document_freshness_seconds':86400,'exact_keys_only':True}
           def today(raw):
               try:
                   d=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
@@ -98,6 +149,7 @@ jobs:
               intraday=[{'state':r[0],'n':r[1],'last_checked_at':r[2]} for r in db.execute(
                   'SELECT state,COUNT(*),MAX(checked_at) FROM ppi_intraday_contract_state GROUP BY state ORDER BY COUNT(*) DESC LIMIT 30')]
           focus=focus_contracts(path)
+          candidate_ledger=candidate_reconciliation()
           decisions=compact(aggregate('paper_decisions','decided_at,action,reason','decided_at'),['action'],'reason')
           gates=compact(aggregate('trade_gate_evaluations','evaluated_at,final_result,reason','evaluated_at'),['final_result'],'reason')
           scalping=compact(aggregate('scalping_candidates','evaluated_at,asset_class,action,reason','evaluated_at'),['asset_class','action'],'reason')
@@ -118,6 +170,7 @@ jobs:
                   'build_sha':os.getenv('POROTA_BUILD_SHA','NO_VERIFICADO'),
                   'admission':{'allowed':allowed,'reason':reason,'receipt':receipt},
                   'focus_contracts':focus,'intraday_contract_states':intraday,
+                  'candidate_ledger':candidate_ledger,
                   'scalping_worker':worker,'decisions':decisions,'gates':gates,'scalping':scalping,
                   'fills':fills,'positions':positions,'cauciones':cauciones,'lifecycle':lifecycle,
                   'market_snapshots':snapshots,'read_only':True,'provider_requests':0,
