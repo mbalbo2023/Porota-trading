@@ -157,6 +157,10 @@ hipótesis positiva usando una punta de salida 3 declarada; FCI dio positivo
 con rescate al día seis y horizonte de evaluación al día cinco. Todos los
 ejemplos fueron fixtures, no mercados ni rendimientos observados. La prueba
 105 PASS validaba reglas programadas, no pronóstico, OOS ni compra simulada.
+Una opción aún puede conservar valor temporal si el subyacente está por debajo
+del strike antes del vencimiento: ese caso adversario no demuestra que la
+prima deba valer cero. Demuestra que el código no derivaba ni justificaba la
+punta futura 3 a partir de volatilidad, tiempo, ejercicio o un libro futuro.
 
 La integración recorría todas las especies SHADOW en cada corte, aunque el
 worker no entrega `family_strategy_research` en producción: añadía trabajo a
