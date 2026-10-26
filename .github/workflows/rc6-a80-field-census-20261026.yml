@@ -1,0 +1,138 @@
+name: RC6 A80 exact field census read only
+
+on:
+  push:
+    branches:
+      - ops/rc6-a80-field-census-20261026
+    paths:
+      - .github/workflows/rc6-a80-field-census-20261026.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Bounded SQLite and source clocks census
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo -n timeout 45 docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3, time
+          from datetime import datetime, timezone
+
+          target = (
+              ("ACCIONES", "GGAL"), ("CEDEARS", "AAPL"), ("BONOS", "AL30"),
+              ("LETRAS", "D30N6"), ("OBLIGACIONES", "YMCJO"),
+              ("OPCIONES", "GFGC5400NO"), ("FCI", "IOLCAMA"),
+          )
+          fields = {
+              "identity": ("market", "currency", "settlement", "term"),
+              "nominal": ("nominalesEnPrecio", "quote_basis_nominal", "cash_multiplier",
+                          "laminaMinima", "multiploMinimo", "minimum_quantity", "quantity_step"),
+              "bond": ("fechaVencimiento", "maturity_date", "intereses", "amortizacion",
+                       "modifiedDuration", "modified_duration", "tir", "emisor"),
+              "flows": ("cash_flows", "cashflow", "cashflows", "flows", "flow_unit",
+                        "simulation_payment_currency"),
+              "forecast": ("curve", "curve_reference", "credit_review", "model_id"),
+              "option": ("underlying", "option_right", "strike", "strike_price",
+                         "expires_at", "cash_multiplier", "implied_volatility"),
+              "fund": ("nav", "nav_value", "nav_date", "cutoff_time", "redemption_term",
+                       "subscription_status"),
+          }
+          wanted = {name.lower() for names in fields.values() for name in names}
+          deadline = time.monotonic() + 12
+          path = "/app/data/paper_v17/observer_v17.db"
+          db = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=1)
+          db.row_factory = sqlite3.Row
+          db.execute("PRAGMA query_only=ON")
+          db.execute("BEGIN")
+          db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+          tables = {row[0] for row in db.execute(
+              "SELECT name FROM sqlite_master WHERE type='table'")}
+          state = dict(db.execute(
+              "SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1"
+          ).fetchone())
+          assert state["mode"] == "PRODUCTION_PAPER" and state["real_orders_sent"] == 0
+
+          def keys(raw):
+              if raw is None:
+                  return {"status": "EMPTY", "present": []}
+              if len(raw) > 100000:
+                  return {"status": "OVERSIZE_UNREAD", "present": []}
+              try:
+                  value = json.loads(raw)
+              except (TypeError, ValueError):
+                  return {"status": "INVALID_JSON", "present": []}
+              found = set()
+              def walk(node, depth):
+                  if depth > 3 or not isinstance(node, dict):
+                      return
+                  for name, entry in node.items():
+                      if name.lower() in wanted and entry not in (None, "", [], {}):
+                          found.add(name.lower())
+                      if isinstance(entry, dict):
+                          walk(entry, depth + 1)
+              walk(value, 0)
+              return {"status": "PARSED", "present": sorted(found)}
+
+          out = {"schema": "rc6-a80-exact-field-census-v1",
+                 "as_of": datetime.now(timezone.utc).isoformat(),
+                 "observer": state, "read_only": True,
+                 "provider_requests": 0, "ppi_watch_accessed": False,
+                 "targets": [], "errors": []}
+          if "contract_evidence_v2_current" in tables:
+              out["evidence_counts"] = [dict(row) for row in db.execute(
+                  "SELECT family,COUNT(*) n FROM contract_evidence_v2_current GROUP BY family")]
+          else:
+              out["errors"].append("CONTRACT_CURRENT_TABLE_MISSING")
+          for family, symbol in target:
+              item = {"family": family, "symbol": symbol, "catalog": [],
+                      "contract_evidence": []}
+              if "financial_instrument_catalog" in tables:
+                  for row in db.execute("""SELECT market,currency,settlement,status,
+                        capability,last_seen_at,metadata_json
+                        FROM financial_instrument_catalog
+                        WHERE ticker=? AND instrument_type=? LIMIT 12""", (symbol, family)):
+                      data = dict(row)
+                      data["fields"] = keys(data.pop("metadata_json"))
+                      item["catalog"].append(data)
+              if {"contract_evidence_v2_current", "contract_evidence_v2_snapshots"} <= tables:
+                  for row in db.execute("""SELECT c.market,c.currency,c.settlement,
+                        c.source_class,c.observed_at,s.evidence_json
+                        FROM contract_evidence_v2_current c
+                        JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=c.snapshot_id
+                        WHERE c.ticker=? AND c.family=? LIMIT 20""", (symbol, family)):
+                      data = dict(row)
+                      data["fields"] = keys(data.pop("evidence_json"))
+                      item["contract_evidence"].append(data)
+              out["targets"].append(item)
+          db.close()
+          print("A80_FIELD_CENSUS=" + json.dumps(out, sort_keys=True, separators=(",", ":")))
+          PY
+          REMOTE
+      - name: Remove SSH material
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
