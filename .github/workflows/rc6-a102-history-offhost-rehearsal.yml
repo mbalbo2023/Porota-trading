@@ -23,8 +23,8 @@ jobs:
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-      CANDIDATE_SHA: 6bfd999642cab21490ae478be90c139e2544d7e3
-      CANDIDATE_TREE: 4fdfa07c720921feeb73b672ad7ef68b9a1774a8
+      CANDIDATE_SHA: 292adddc4f0bcb20c3fbd251bbf4a6179e8f1efc
+      CANDIDATE_TREE: 51b31597e0ffc09d4a3c832fbe66b0a6aee03f02
     steps:
       - name: Checkout isolated audit control
         uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
           set -Eeuo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
           test "$(git -C candidate rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE"
-          python -m compileall -q candidate/scripts/rc6_history_offhost_preflight.py candidate/scripts/rc6_history_offhost_migration_rehearsal.py scripts/rc6_history_capture_stdout.py
+          python -m compileall -q candidate/scripts/rc6_history_offhost_preflight.py candidate/scripts/rc6_history_offhost_migration_rehearsal.py candidate/scripts/rc6_history_offhost_retention_rehearsal.py scripts/rc6_history_capture_stdout.py
       - name: Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -87,6 +87,8 @@ jobs:
           from pathlib import Path
           from scripts.rc6_history_offhost_preflight import census
           from scripts.rc6_history_offhost_migration_rehearsal import rehearse
+          from scripts.rc6_history_offhost_retention_rehearsal import rehearse as retention_rehearse
+          from datetime import datetime, timezone
           root=Path(os.environ['RUNNER_TEMP'])
           source=root/'history.sqlite'
           capture=json.loads((root/'history-capture.json').read_text())
@@ -100,6 +102,9 @@ jobs:
               'retention_allowed':before['retention_allowed']},sort_keys=True))
           result=rehearse(source,capture,runner_root=root,seconds=1800)
           print('RC6_OFFHOST_MIGRATION='+json.dumps(result,sort_keys=True))
+          retention=retention_rehearse(source,capture,runner_root=root,
+                                      now=datetime.now(timezone.utc),seconds=1200)
+          print('RC6_OFFHOST_RETENTION='+json.dumps(retention,sort_keys=True))
           PY
       - name: Destroy runner copy and SSH material
         if: always()
