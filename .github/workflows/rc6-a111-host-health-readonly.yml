@@ -46,6 +46,7 @@ jobs:
               -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
               -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PYHOST'
           import json
+          import os
           import re
           import sqlite3
           import subprocess
@@ -117,12 +118,16 @@ jobs:
                   age = None
                   if heartbeat != 'NO_VERIFICADO':
                       age = round((now - datetime.fromisoformat(heartbeat).astimezone(timezone.utc)).total_seconds(), 1)
+                  sqlite_meta = {key: db.execute('PRAGMA ' + key).fetchone()[0]
+                                 for key in ('temp_store', 'page_size', 'page_count',
+                                             'freelist_count', 'max_page_count')}
                   db_result = {'state': 'OK', 'mode': code(row[0]),
                                'process_state': code(row[1]),
                                'session_state': code(row[2]),
                                'ppi_auth': code(row[3]),
                                'real_orders_sent': row[4] if type(row[4]) is int else 'NO_VERIFICADO',
                                'heartbeat_at': heartbeat, 'heartbeat_age_seconds': age,
+                               'sqlite_metadata': sqlite_meta,
                                'ppi_production_auth': {
                                    'state': code(auth[0]), 'checked_at': stamp(auth[1]),
                                    'last_success_at': stamp(auth[2])} if auth else {'state': 'NO_VERIFICADO'}}
@@ -166,7 +171,7 @@ jobs:
 
           exception_events = {'state': 'NO_VERIFICADO'}
           try:
-              logs = subprocess.run(['docker', 'logs', '--since=5m', '--tail=400',
+              logs = subprocess.run(['docker', 'logs', '--since=5m', '--tail=400', '--timestamps',
                                      'porota_production_observer'],
                                     text=True, capture_output=True, check=False, timeout=8)
               if logs.returncode == 0:
@@ -182,11 +187,76 @@ jobs:
                                       'exception_counts': dict(sorted(classes.items())[:12]),
                                       'child_exited_mentions': sum('CHILD_EXITED' in line
                                                                    for line in lines)}
+                  starts = [n for n, line in enumerate(lines)
+                            if 'Traceback (most recent call last):' in line]
+                  if starts:
+                      recent = lines[starts[-1]:]
+                      allowed = {'bf_production_paper_observer.py',
+                                 'bi_operational_services.py', 'bv_paper_runtime.py'}
+                      frames = []
+                      for line in recent[:50]:
+                          match = re.search(r'File "[^"]*/([^/"]+)", line ([0-9]{1,6}), in ', line)
+                          if match and match.group(1) in allowed:
+                              frames.append(match.group(1) + ':' + match.group(2))
+                      failure = next((line for line in reversed(recent[:80])
+                                      if 'sqlite3.OperationalError:' in line), '')
+                      message = failure.split('sqlite3.OperationalError:', 1)[-1].lower()
+                      error_class = ('FULL' if 'database or disk is full' in message else
+                                     'LOCKED' if 'database is locked' in message else
+                                     'BUSY' if 'database is busy' in message else
+                                     'READONLY' if 'readonly database' in message else
+                                     'IO' if 'disk i/o error' in message else 'OTHER')
+                      named = re.search(r'\bSQLITE_[A-Z0-9_]{2,40}\b', failure)
+                      numbered = re.search(r'\bsqlite_errorcode[=: ]+([0-9]{1,5})\b', failure)
+                      at = re.match(r'^([0-9TZ:.+-]{19,35})\s', failure)
+                      exception_events['last_sqlite'] = {
+                          'message_class': error_class if failure else 'NO_VERIFICADO',
+                          'sqlite_error_name': named.group(0) if named else 'NO_VERIFICADO',
+                          'sqlite_error_code': int(numbered.group(1)) if numbered else 'NO_VERIFICADO',
+                          'at_utc': stamp(at.group(1)) if at else 'NO_VERIFICADO',
+                          'frames_module_line': frames[-12:]}
           except (OSError, subprocess.SubprocessError):
               pass
 
+          def statvfs(path):
+              try:
+                  fs = os.statvfs(path)
+                  return {'state': 'OK', 'free_bytes': fs.f_bavail * fs.f_frsize,
+                          'total_bytes': fs.f_blocks * fs.f_frsize,
+                          'free_inodes': fs.f_favail, 'total_inodes': fs.f_files}
+              except OSError:
+                  return {'state': 'NO_VERIFICADO'}
+          storage = {'host_db_parent': statvfs(db_path.parent),
+                     'host_tmp': statvfs('/tmp')}
+          inside = command(['docker', 'exec', '-e', 'PYTHONDONTWRITEBYTECODE=1',
+              'porota_production_observer', 'python', '-c',
+              'import json,os; '
+              'p=("/tmp","/app/data/paper_v17"); '
+              'r={q:{"free_bytes":os.statvfs(q).f_bavail*os.statvfs(q).f_frsize,'
+              '"free_inodes":os.statvfs(q).f_favail} for q in p}; '
+              'r["tmpdir"]=(os.environ.get("TMPDIR") if os.environ.get("TMPDIR") in '
+              '("/tmp","/proof/tmp","/app/tmp") else "OTHER"); '
+              'print(json.dumps(r))'], 5)
+          try:
+              storage['container'] = json.loads(inside or '')
+          except (ValueError, TypeError):
+              storage['container'] = {'state': 'NO_VERIFICADO'}
+          raw = command(['docker', 'inspect', '--format', '{{json .}}',
+                         'porota_production_observer'])
+          try:
+              inspected = json.loads(raw or '')
+              mounts = inspected.get('Mounts') or []
+              data_mount = next((m for m in mounts if m.get('Destination') == '/app/data'), {})
+              storage['mount'] = {
+                  'app_data_type': code(str(data_mount.get('Type', '')).upper()),
+                  'app_data_source_expected': data_mount.get('Source') == '/opt/porota-trading/data',
+                  'tmpfs_configured': '/tmp' in (inspected.get('HostConfig', {}).get('Tmpfs') or {})}
+          except (ValueError, TypeError):
+              storage['mount'] = {'state': 'NO_VERIFICADO'}
+
           critical_health = {'state': 'NO_VERIFICADO'}
-          raw = command(['docker', 'exec', 'porota_critical_approval_rc6', 'python', '-c',
+          raw = command(['docker', 'exec', '-e', 'PYTHONDONTWRITEBYTECODE=1',
+              'porota_critical_approval_rc6', 'python', '-c',
               'import json; from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; '
               'h=UnixGithubIssuesClient().health(); '
               'print(json.dumps({"status":h.get("status"),"capability":h.get("capability")}))'], 5)
@@ -206,6 +276,7 @@ jobs:
                     'critical_broker': critical_health,
                     'runtime_child_health': child_health,
                     'scanner_exception_events': exception_events,
+                    'storage': storage,
                     'critical_units': {
                         name: code(str((command(['systemctl', 'is-active', name]) or '')).strip().upper())
                         for name in ('porota-critical-github-proxy-rc6.service',
