@@ -52,13 +52,13 @@ class HistoricalStore:
         """
         path, identity = self._path_identity()
         if identity is not None and identity != self._initialized_identity:
-            from rc6_audit_evidence.sqlite_scratch import MAX_BYTES
+            from rc6_audit_evidence.sqlite_scratch import DEFAULT_BYTES
             source_bytes = sum(
                 Path(str(path) + suffix).stat().st_size
                 for suffix in ('', '-wal', '-shm', '-journal')
                 if Path(str(path) + suffix).exists()
             )
-            if source_bytes <= MAX_BYTES:
+            if source_bytes <= DEFAULT_BYTES:
                 from rc6_audit_evidence.sqlite_snapshot import readonly_copy
                 with readonly_copy(path, validate=False) as source_copy:
                     validator(source_copy)

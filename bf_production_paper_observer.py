@@ -1496,7 +1496,7 @@ def _history_migration_blocked(store, reason):
     return 0
 
 
-def _download_histories(reader, store):
+def _download_histories(reader, store, *, incremental_only=False):
     # The one-time cutoff repair must finish before scheduled PPI history writes.
     # This prevents startup/manual sync from repeating an annual request or racing
     # the resumable importer.
@@ -1511,21 +1511,26 @@ def _download_histories(reader, store):
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             store.event("HISTORY_V2_LOCKED", "La reparación histórica RC6 está activa; no se duplica la consulta.")
+            if incremental_only:
+                raise ValueError('HISTORY_RECOVERY_LOCK_HELD') from None
             return 0
         try:
-            source = Path(history_store.path)
-            # The verified-copy reader is capped at 512 MiB. The deployed
-            # legacy source exceeds it; never attempt a partial copy or a
-            # schema write merely to make the scheduled job appear healthy.
-            if source.exists() and source.stat().st_size > 512 * 1024 * 1024:
-                return _history_migration_blocked(store, "HISTORY_SOURCE_COPY_BUDGET_EXHAUSTED")
+            # HistoricalStore validates schema metadata directly in a bounded
+            # read-only transaction when the database exceeds the private-copy
+            # budget. A size-only veto here would also reject a *migrated*
+            # database and cannot repair the legacy schema. Keep the scratch
+            # limit for smaller sources; fail closed on the actual schema.
             try:
-                return _download_histories_locked(reader, store, history_store)
+                return _download_histories_locked(reader, store, history_store,
+                                                  incremental_only=incremental_only)
             except ValueError as exc:
                 if str(exc) in {"HISTORY_COPY_MIGRATION_REQUIRED",
                                 "HISTORY_CLOSE_COPY_MIGRATION_REQUIRED",
                                 "SOURCE_BYTE_BUDGET_EXHAUSTED"}:
-                    return _history_migration_blocked(store, str(exc))
+                    _history_migration_blocked(store, str(exc))
+                    if incremental_only:
+                        raise
+                    return 0
                 raise
         finally:
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
@@ -1575,7 +1580,7 @@ def _history_covered_target_count(connection, targets):
     return len(target_keys & covered_keys)
 
 
-def _download_histories_locked(reader, store, history_store):
+def _download_histories_locked(reader, store, history_store, *, incremental_only=False):
     end = _history_end_date()
     if end is None:
         return 0
@@ -1603,12 +1608,17 @@ def _download_histories_locked(reader, store, history_store):
                 AND settlement=? AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
               identity).fetchone()
         latest=str(row[0])[:10] if row and row[0] else None
+        if incremental_only and not latest:
+            # A post-close recovery cannot silently turn into an annual
+            # bootstrap when an exact series has no canonical baseline.
+            continue
         start=date.fromisoformat(latest)+timedelta(days=1) if latest else end-timedelta(days=365)
         if start<=end:
-            requests.append((identity,start,metadata))
+            request_end=min(end,start+timedelta(days=29)) if incremental_only else end
+            requests.append((identity,start,request_end,metadata))
     from bl_candle_engine import canonical
     from fb_raw_evidence_exact_v1 import enabled as exact_enabled, archive_wrapper as archive_exact
-    for identity,start,metadata in requests[:HISTORY_BATCH_LIMIT]:
+    for identity,start,request_end,metadata in requests[:HISTORY_BATCH_LIMIT]:
         symbol,family,market,currency,settlement=identity
         attempted=now_iso()
         try:
@@ -1618,11 +1628,11 @@ def _download_histories_locked(reader, store, history_store):
             with store.connect() as c:
                 if _ppi_history_request_is_ambiguous(c,identity):
                     raise ValueError('HISTORY_PROVIDER_IDENTITY_AMBIGUOUS')
-            payload=reader.history(symbol,_history_provider_instrument_type(metadata,family),settlement,start,end)
+            payload=reader.history(symbol,_history_provider_instrument_type(metadata,family),settlement,start,request_end)
             attempted=now_iso()
-            row_key=canonical([list(identity),start.isoformat(),end.isoformat(),attempted])
+            row_key=canonical([list(identity),start.isoformat(),request_end.isoformat(),attempted])
             wrapper={'symbol':symbol,'asset_class':family,'market':market,'currency':currency,
-                'settlement':settlement,'date_from':start.isoformat(),'date_to':end.isoformat(),
+                'settlement':settlement,'date_from':start.isoformat(),'date_to':request_end.isoformat(),
                 'metadata':metadata,'payload_json':json.dumps(payload,ensure_ascii=False,default=str),
                 'authority':'RAW_PROVIDER_EVIDENCE_ONLY'}
             if exact_enabled():
@@ -1636,7 +1646,7 @@ def _download_histories_locked(reader, store, history_store):
             # own accepted rows. Filtering a bad provider row here would hide it.
             result=history_salvage.ingest_ppi_payload(store,symbol=symbol,instrument_type=family,
                 market=market,currency=currency,settlement=settlement,payload=payload,
-                requested_from=start,requested_to=end,attempted_at=attempted,history_store=history_store)
+                requested_from=start,requested_to=request_end,attempted_at=attempted,history_store=history_store)
             count=int(result['full_ohlc_rows'])
             status=result['storage_quality']
             total+=count
@@ -1652,7 +1662,7 @@ def _download_histories_locked(reader, store, history_store):
                         (symbol,family,settlement,attempted,status,count,'NON_BINDING_LEGACY_CACHE; canonical full identity in v2 ledger'))
                     if status=='VALID_PAYLOAD':
                         c.execute('INSERT OR REPLACE INTO production_history VALUES(?,?,?,?,?,?,?,?)',
-                            (symbol,family,settlement,start.isoformat(),end.isoformat(),attempted,count,
+                            (symbol,family,settlement,start.isoformat(),request_end.isoformat(),attempted,count,
                              json.dumps(payload,ensure_ascii=False,default=str)))
             store.event('HISTORY_V2_INGEST',f'{symbol}: accepted={count}; rejected={result["rejected_rows"]}; full_key={identity}; readiness=NONE')
         except Exception as exc:
@@ -1664,7 +1674,7 @@ def _download_histories_locked(reader, store, history_store):
                     else type(exc).__name__)
             history_ledger.append_attempt(store,history_ledger.HistoryAttempt(
                 symbol=symbol,instrument_type=family,settlement=settlement,source='PPI_PRODUCTION_HISTORY',
-                attempted_at=attempted,state='ERROR',requested_from=start.isoformat(),requested_to=end.isoformat(),
+                attempted_at=attempted,state='ERROR',requested_from=start.isoformat(),requested_to=request_end.isoformat(),
                 error_class=type(exc).__name__,detail=f'{reason}; retry follows durable full-key saga',
                 metadata={'market':market,'currency':currency,'identity':list(identity),
                           'guard_reason':reason,'readiness_implication':'NONE'}))

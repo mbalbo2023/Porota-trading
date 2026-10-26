@@ -2,8 +2,8 @@
 """Build the RC6 full-universe evidence ledger from read-only sources.
 
 This process never places orders and never changes the execution gate.  It
-records an explicit status for every catalog instrument, including missing or
-stale evidence, so the dashboard cannot silently turn a gap into READY.
+records source/contract status for every catalog instrument, including gaps.
+Its READY_PAPER* labels do not imply a signal or automatic PAPER admission.
 """
 from __future__ import annotations
 
@@ -302,7 +302,9 @@ def family_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         result.append({
             "family": family,
             "instrument_count": len(members),
-            "paper_shadow_ready": sum(bool(row["paper_auto_enabled"]) for row in members),
+            "paper_shadow_ready": sum(bool(row["paper_contract_ready"]) for row in members),
+            "paper_contract_ready": sum(bool(row["paper_contract_ready"]) for row in members),
+            "paper_auto_enabled": 0,
             "pending": sum(row["status"] == "PENDING_EVIDENCE" for row in members),
             "blocked": sum(row["status"].startswith("BLOCKED") for row in members),
             "ingestion_attempted": sum(bool(row["ingestion"]["any_source_attempted"]) for row in members),
@@ -339,19 +341,19 @@ def build() -> dict[str, Any]:
         capability = str(item.get("capability") or "UNKNOWN")
         contract_ready = capability.startswith("READY_PAPER_") and key is not None
         if source_conflict or item.get("review_status"):
-            status, paper_enabled = "BLOCKED_SOURCE_REVIEW", False
+            status, contract_ready = "BLOCKED_SOURCE_REVIEW", False
             reason = "SOURCE_OR_CATALOG_CONFLICT_REVIEW_REQUIRED"
         elif contract_ready and "PPI" in fresh and len(available) >= 2:
-            status, paper_enabled = "READY_PAPER_SHADOW", True
+            status, contract_ready = "READY_PAPER_SHADOW", True
             reason = "CONTRACT_READY_PPI_PRIMARY_PLUS_COMPLEMENTARY_SOURCE"
         elif contract_ready and "PPI" in fresh:
-            status, paper_enabled = "READY_PAPER_PARTIAL_SOURCE", True
+            status, contract_ready = "READY_PAPER_PARTIAL_SOURCE", True
             reason = "CONTRACT_READY_WITH_FRESH_SOURCE"
         elif fresh:
-            status, paper_enabled = "READY_SHADOW_PARTIAL", False
+            status, contract_ready = "READY_SHADOW_PARTIAL", False
             reason = "SOURCE_READY_BUT_CONTRACT_OR_EXECUTOR_NOT_READY:" + capability
         else:
-            status, paper_enabled = "PENDING_EVIDENCE", False
+            status, contract_ready = "PENDING_EVIDENCE", False
             reason = "NO_FRESH_STRUCTURED_SOURCE:" + capability
         rows.append({
             "family": item["family"], "symbol": symbol,
@@ -361,7 +363,9 @@ def build() -> dict[str, Any]:
             "source_reconciliation": joined,
             "entry_authority": False,
             "settlement": item.get("settlement") or item.get("term") or "",
-            "status": status, "paper_auto_enabled": paper_enabled,
+            "status": status, "paper_contract_ready": contract_ready,
+            "paper_auto_enabled": False,
+            "signal_authorized": False,
             "contract_capability": capability,
             "real_money_authorized": False,
             "sources": sources,
@@ -392,7 +396,9 @@ def build() -> dict[str, Any]:
             "byma_capture": byma_meta,
         },
         "counts": {
-            "paper_shadow_ready": sum(row["paper_auto_enabled"] for row in rows),
+            "paper_shadow_ready": sum(row["paper_contract_ready"] for row in rows),
+            "paper_contract_ready": sum(row["paper_contract_ready"] for row in rows),
+            "paper_auto_enabled": 0,
             "ready_paper_shadow": sum(row["status"] == "READY_PAPER_SHADOW" for row in rows),
             "ready_shadow_partial": sum(row["status"] == "READY_SHADOW_PARTIAL" for row in rows),
             "ready_paper_partial_source": sum(row["status"] == "READY_PAPER_PARTIAL_SOURCE" for row in rows),
@@ -406,6 +412,7 @@ def build() -> dict[str, Any]:
         "families": family_summary(rows),
         "instruments": rows,
         "decision_effect": "OBSERVE_ONLY",
+        "readiness_scope": "SOURCE_AND_CONTRACT_ONLY",
         "paper_shadow_only": True,
         "real_money_authorized": False,
     }

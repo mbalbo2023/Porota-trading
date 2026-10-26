@@ -6,7 +6,7 @@ Persists evidence with provenance; missing terms remain missing.
 from __future__ import annotations
 import json, os, sqlite3, math, re
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -122,6 +122,121 @@ def _quote_price_bases(quote: dict):
     if lot is None:
         lot = _number(trade.get("lot_price"))
     return unit, lot
+
+
+def _fixed_flow_reference(analytics: dict, simulation: dict, units_per_lot: object,
+                          *, received_at: str) -> dict:
+    """Reconcile two IOL calculation units; never certify an issuer cashflow.
+
+    Analytics reports flows for the quoted lot, while the simulation requests
+    exactly one nominal.  A provider calculation clock is not a trade/book
+    clock and two responses from the same provider are not independent terms.
+    """
+    base = {"status": "NO_VERIFICADO", "entry_authority": False,
+            "contractual_authority": "ISSUER_TERMS_NOT_VERIFIED",
+            "market_quote_freshness": "NO_VERIFICADO"}
+
+    def reject(reason):
+        return {**base, "reason": reason}
+
+    def decimal(value):
+        result = Decimal(str(value))
+        if not result.is_finite():
+            raise ValueError("NONFINITE")
+        return result
+
+    def day(value):
+        if not isinstance(value, str):
+            raise ValueError("DATE_MISSING")
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+
+    try:
+        lot = decimal(units_per_lot)
+        if lot != lot.to_integral_value() or not 1 <= lot <= 1000000:
+            return reject("LOT_UNIT_UNVERIFIED")
+        if decimal(simulation.get("nominals")) != 1:
+            return reject("ONE_NOMINAL_SIMULATION_REQUIRED")
+        payment_currency = simulation.get("payment_currency")
+        if payment_currency not in {"ARS", "USD"}:
+            return reject("PAYMENT_CURRENCY_UNVERIFIED")
+        calc_times = []
+        capture = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+        if capture.tzinfo is None:
+            return reject("CAPTURE_CLOCK_UNVERIFIED")
+        # The analytics endpoint can return a cached calculation while the
+        # one-nominal simulator refreshes. These are schedule references, not
+        # synchronous executable quotes; preserve their separate ages.
+        for response in (analytics, simulation):
+            clock = datetime.fromisoformat(str(response["calculation_date"]).replace("Z", "+00:00"))
+            if clock.tzinfo is None or not 0 <= (capture-clock).total_seconds() <= 86400:
+                return reject("CALCULATION_CLOCK_UNVERIFIED")
+            calc_times.append(clock)
+        if abs((calc_times[0]-calc_times[1]).total_seconds()) > 86400:
+            return reject("CALCULATION_COHORT_MISMATCH")
+        maturity = day((analytics.get("calculation_inputs") or {}).get("maturity_date"))
+        if day(simulation.get("maturity_date")) != maturity:
+            return reject("MATURITY_MISMATCH")
+        settlement = day(simulation.get("settlement_date"))
+        analytic_rows, simulated_rows = analytics.get("cashflow"), simulation.get("cash_flows")
+        if (not isinstance(analytic_rows, list) or not isinstance(simulated_rows, list)
+                or not 0 < len(analytic_rows) == len(simulated_rows) <= 250):
+            return reject("FLOW_ROWS_UNAVAILABLE_OR_MISMATCHED")
+        prior = settlement
+        previous_balance = None
+        previous_period = None
+        flows = []
+        for a, s in zip(analytic_rows, simulated_rows):
+            if not isinstance(a, dict) or not isinstance(s, dict):
+                return reject("FLOW_ROW_INVALID")
+            payable = day(a.get("date"))
+            if (payable != day(s.get("date")) or not prior < payable <= maturity
+                    or a.get("period_number") != s.get("period_number")):
+                return reject("FLOW_DATE_OR_PERIOD_MISMATCH")
+            period = s.get("period_number")
+            if (type(period) is not int or period < 1 or
+                    (previous_period is not None and period != previous_period + 1)):
+                return reject("FLOW_PERIOD_SEQUENCE_INVALID")
+            for field in ("opening_balance", "interest", "amortization", "cash_flow", "residual_balance"):
+                left, right = decimal(a.get(field)), decimal(s.get(field))
+                if left < 0 or right < 0 or abs(left/lot-right) > Decimal("0.000001"):
+                    return reject("FLOW_UNIT_MISMATCH")
+            opening = decimal(s["opening_balance"])
+            interest = decimal(s["interest"])
+            amortization = decimal(s["amortization"])
+            amount = decimal(s["cash_flow"])
+            residual = decimal(s["residual_balance"])
+            if (opening <= 0 or amortization > opening or
+                    abs(opening-amortization-residual) > Decimal("0.000001") or
+                    (previous_balance is not None and
+                     abs(previous_balance-opening) > Decimal("0.000001"))):
+                return reject("FLOW_BALANCE_CONSERVATION_INVALID")
+            if abs(interest+amortization-amount) > Decimal("0.000001"):
+                return reject("FLOW_COMPONENT_MISMATCH")
+            flows.append({"payment_date": payable.isoformat(), "amount": str(amount),
+                          "currency": payment_currency})
+            prior = payable
+            previous_balance = residual
+            previous_period = period
+        if prior != maturity or decimal(simulated_rows[-1]["residual_balance"]) != 0:
+            return reject("TERMINAL_FLOW_UNVERIFIED")
+        total = decimal(simulation.get("total_to_collect"))
+        if abs(sum((Decimal(flow["amount"]) for flow in flows), Decimal(0))-total) > Decimal("0.000001"):
+            return reject("FLOW_TOTAL_MISMATCH")
+    except (ValueError, TypeError, KeyError, OverflowError, InvalidOperation):
+        return reject("FLOW_EVIDENCE_INCOMPLETE")
+    return {**base, "status": "RECONCILED_PROVIDER_CALCULATION", "reason": "",
+            "payment_currency": payment_currency, "nominal_unit": "CASH_PER_NOMINAL",
+            # TTL starts with the older calculation, never the convenient
+            # newer simulation that could extend a stale analytics schedule.
+            "source_calculated_at": min(calc_times).isoformat(),
+            "analytics_calculated_at": calc_times[0].isoformat(),
+            "simulation_calculated_at": calc_times[1].isoformat(),
+            "calculation_gap_seconds": int(abs((calc_times[0]-calc_times[1]).total_seconds())),
+            "received_at": capture.isoformat(), "flows": flows,
+            "provider_independence": "SAME_IOL_PROVIDER_ONLY"}
 
 
 def _fixed_contract(symbol:str, asset:dict, analytics:dict, simulation:dict, quote:dict,
@@ -351,6 +466,30 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
                 identity_settlement=settlement)
             if not contract:
                 raise ValueError("FIXED_CONTRACT_INCOMPLETE")
+            flow_reference=_fixed_flow_reference(
+                analytics, simulation, asset.get("units_per_lot"),
+                received_at=(now or datetime.now(timezone.utc)).isoformat())
+            flow_analytics={
+                "provider_flow_status":flow_reference["status"],
+                "provider_flow_reason":flow_reference["reason"],
+                "provider_flow_authority":"IOL_SAME_PROVIDER_REFERENCE_ONLY",
+            }
+            if flow_reference["status"]=="RECONCILED_PROVIDER_CALCULATION":
+                flow_analytics["flows"]={
+                    "value":flow_reference["flows"],
+                    "source":"IOL_FIXED_INCOME_ANALYTICS+ONE_NOMINAL_SIMULATION",
+                    "source_at":flow_reference["source_calculated_at"],
+                    "analytics_calculated_at":flow_reference["analytics_calculated_at"],
+                    "simulation_calculated_at":flow_reference["simulation_calculated_at"],
+                    "calculation_gap_seconds":flow_reference["calculation_gap_seconds"],
+                    "received_at":flow_reference["received_at"],
+                    "clock_basis":"FEATURE_COMPUTED_AT",
+                    "unit":flow_reference["nominal_unit"],
+                    "payment_currency":flow_reference["payment_currency"],
+                    "provider_independence":flow_reference["provider_independence"],
+                    "contractual_authority":flow_reference["contractual_authority"],
+                    "entry_authority":False,
+                }
             row={"ticker":fixed_symbol,"instrument_type":family,
                  "market":canonical_market(identity.get("market") or asset.get("market") or "BYMA"),
                  "currency":currency,"settlement":settlement,
@@ -364,6 +503,7 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
                    "dirty_price":(analytics.get("prices") or {}).get("dirty_price"),
                    "technical_value":(analytics.get("prices") or {}).get("technical_value"),
                    "simulation_payment_currency":simulation.get("payment_currency"),
+                   **flow_analytics,
                  }}
             by_key[(family,fixed_symbol,row["market"],currency,settlement)]=row
             successful_sections=["fixed_income"]

@@ -1,13 +1,14 @@
-"""RC6 family/instrument readiness contract.
+"""RC6 family/instrument source and contract readiness contract.
 
 PPI is primary and IOL is complementary. This module only evaluates published
-read-only evidence and exposes a PAPER/SHADOW promotion decision. It cannot
-authorize real orders or remove the permanent real-money block.
+read-only evidence. Source readiness never grants an automated entry signal or
+PAPER admission, and cannot authorize real orders.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Iterable, Mapping
+from rc6_multisource_discovery import canonical_market, canonical_settlement
 
 # All of these states are simulation-ready. They never authorize real money.
 READY_STATES = frozenset({
@@ -27,9 +28,9 @@ FAMILY_ALIASES = {
     "CEDEARS": "CEDEARS",
     "CEDEAR": "CEDEARS",
     "BONOS": "BONOS",
-    "ON": "ON",
-    "OBLIGACIONES": "ON",
-    "OBLIGACIONES_NEGOCIABLES": "ON",
+    "ON": "OBLIGACIONES",
+    "OBLIGACIONES": "OBLIGACIONES",
+    "OBLIGACIONES_NEGOCIABLES": "OBLIGACIONES",
     "CAUCIONES": "CAUCIONES",
     "CAUCION": "CAUCIONES",
     "FUTUROS": "FUTUROS",
@@ -46,7 +47,7 @@ FAMILY_ALIASES = {
 
 # Familias que deben aparecer siempre en la auditoría, aunque su captura sea cero.
 READINESS_FAMILIES = frozenset({
-    "ACCIONES", "CEDEARS", "BONOS", "ON", "CAUCIONES", "LETRAS",
+    "ACCIONES", "CEDEARS", "BONOS", "OBLIGACIONES", "CAUCIONES", "LETRAS",
     "ETFS", "FCI", "FUTUROS", "OPCIONES", "LEBAC", "NOBAC", "LICITACIONES",
 })
 
@@ -97,7 +98,7 @@ def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
     if complemented:
         reasons.append(f"IOL_COMPLEMENTS_NONCRITICAL_FIELDS:{complemented}")
     if not reasons and contract in PAPER_SIMULATABLE_STATES:
-        reasons.append("NO_OPEN_READINESS_GAP")
+        reasons.append("NO_OPEN_SOURCE_CONTRACT_GAP")
     return reasons
 
 
@@ -120,74 +121,98 @@ def _effective_contract(comparison: Mapping[str, Any]) -> str:
             return "INSUFFICIENT_EVIDENCE"
     return state
 
-def _key(family: str, symbol: Any, market: Any = "", settlement: Any = "") -> tuple[str, str, str, str]:
-    return (normalize_family(family), _text(symbol).upper(), _text(market).upper(), _text(settlement).upper())
+def _key(family: str, symbol: Any, market: Any = "", currency: Any = "",
+         settlement: Any = "") -> tuple[str, str, str, str, str]:
+    # Normalize only supplied aliases. The helper's family default for an
+    # absent settlement must never fabricate a missing identity field.
+    term = _text(settlement)
+    return (normalize_family(family), _text(symbol).upper(),
+            canonical_market(market) if _text(market) else "",
+            _text(currency).upper(), canonical_settlement(term) if term else "")
+
+
+def _observed_key(row: Mapping[str, Any]) -> tuple[str, str, str, str, str] | None:
+    """Never promote a ticker-only complementary row to a catalog identity."""
+    key = _key(_row_family(row), row.get("symbol"), row.get("market"), row.get("currency"),
+               row.get("settlement") or row.get("term"))
+    return key if all(key) else None
 
 def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mapping[str, Any]] = ()) -> dict[str, Any]:
-    """Return family summaries and per-instrument PAPER promotion decisions.
+    """Return source/contract summaries; no automated PAPER promotion.
 
     A missing IOL row is explicit pending evidence, never treated as green.
     The current operational universe is not reduced when complementary data is
-    absent; this is an expansion/readiness layer for automatic PAPER promotion.
+    absent; this layer has no native signal, economics or admission evidence.
     """
     catalog_rows = [dict(row) for row in catalog if isinstance(row, Mapping)]
     observed = [dict(row) for row in iol_rows if isinstance(row, Mapping)]
-    by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_identity: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in observed:
-        symbol = _text(row.get("symbol")).upper()
-        if symbol:
-            by_symbol[symbol].append(row)
+        key = _observed_key(row)
+        if key:
+            by_identity[key].append(row)
 
     instruments: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     for item in catalog_rows:
         family = normalize_family(item.get("family") or item.get("instrument_type"))
         symbol = _text(item.get("symbol")).upper()
         if not symbol:
             continue
-        key = _key(family, symbol, item.get("market"), item.get("settlement"))
+        key = _key(family, symbol, item.get("market"), item.get("currency"), item.get("settlement"))
         if key in seen:
             continue
         seen.add(key)
-        matches = by_symbol.get(symbol, [])
-        row = next((candidate for candidate in matches
-                    if not item.get("market") or not candidate.get("market")
-                    or _text(item.get("market")).upper() == _text(candidate.get("market")).upper()), None)
+        matches = by_identity.get(key, []) if all(key) else []
+        # Duplicate exact identities are review evidence, not a first-row
+        # authority. The caller can reconcile them before a future evaluation.
+        row = matches[0] if len(matches) == 1 else None
         if row is None:
-            contract = "INSUFFICIENT_EVIDENCE"
+            contract = "BLOCKED_CONFLICT" if len(matches) > 1 else "INSUFFICIENT_EVIDENCE"
             comparison = {}
             source_row = {}
         else:
             source_row = row
             comparison = _comparison(row)
             contract = _effective_contract(comparison)
-        paper_enabled = contract in PAPER_SIMULATABLE_STATES
+        contract_ready = contract in PAPER_SIMULATABLE_STATES
+        reasons = _reason(source_row, contract)
+        if len(matches) > 1:
+            reasons.append("DUPLICATE_EXACT_IDENTITY_REVIEW_REQUIRED")
+        if contract_ready:
+            reasons.append("ENTRY_SIGNAL_ECONOMICS_AND_ADMISSION_NOT_EVALUATED")
         instruments.append({
             "family": family,
             "symbol": symbol,
             "market": _text(item.get("market") or (source_row.get("market") if source_row else "")),
+            "currency": _text(item.get("currency")),
             "settlement": _text(item.get("settlement") or (source_row.get("term") if source_row else "")),
             "contract_state": contract,
-            "paper_auto_enabled": paper_enabled,
+            "paper_contract_ready": contract_ready,
+            "paper_auto_enabled": False,
+            "entry_authority": False,
             "real_money_authorized": False,
-            "reasons": _reason(source_row, contract),
+            "reasons": reasons,
             "comparison": comparison,
         })
 
     # Include observed symbols that are not in the historical catalog so they
     # remain visible rather than silently disappearing.
-    catalog_symbols = {item["symbol"] for item in instruments}
+    catalog_keys = {_key(item["family"], item["symbol"], item["market"], item["currency"], item["settlement"])
+                    for item in instruments}
     for row in observed:
         symbol = _text(row.get("symbol")).upper()
-        if not symbol or symbol in catalog_symbols:
+        if not symbol or (_observed_key(row) in catalog_keys):
             continue
         family = _row_family(row)
         comparison = _comparison(row)
         contract = _effective_contract(comparison)
         instruments.append({
             "family": family, "symbol": symbol, "market": _text(row.get("market")),
+            "currency": _text(row.get("currency")),
             "settlement": _text(row.get("term") or row.get("settlement")),
-            "contract_state": contract, "paper_auto_enabled": False,
+            "contract_state": contract, "paper_contract_ready": False,
+            "paper_auto_enabled": False, "entry_authority": False,
             "real_money_authorized": False, "reasons": _reason(row, contract) + ["PPI_CATALOG_IDENTITY_NOT_VERIFIED"],
             "comparison": comparison,
         })
@@ -202,11 +227,11 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
     families: list[dict[str, Any]] = []
     for family in sorted(grouped):
         rows = grouped[family]
-        ready = sum(item["paper_auto_enabled"] for item in rows)
+        ready = sum(item["paper_contract_ready"] for item in rows)
         blocked = sum(item["contract_state"].startswith(BLOCKED_PREFIX) for item in rows)
         pending = len(rows) - ready - blocked
         if ready == len(rows) and rows:
-            state = "READY"
+            state = "READY_CONTRACT_ONLY"
         elif blocked:
             state = "BLOCKED"
         elif ready:
@@ -220,17 +245,18 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
                     gaps.append(reason)
         families.append({
             "family": family, "state": state, "instrument_count": len(rows),
-            "paper_auto_enabled": ready, "blocked": blocked, "pending": pending,
+            "paper_contract_ready": ready, "paper_auto_enabled": 0,
+            "entry_authority": False, "blocked": blocked, "pending": pending,
             "real_money_authorized": False, "gaps": gaps[:8],
-            "next_action": ("Mantener y operar en PAPER; no hay brechas abiertas."
-                            if state == "READY" else
+            "next_action": ("Evaluar señal, costos, riesgo y admisión PAPER por instrumento."
+                            if state == "READY_CONTRACT_ONLY" else
                             "Resolver: " + ", ".join(gaps[:3]) if gaps else
                             "Publicar capturas PPI/IOL comparables."),
         })
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY",
-        "paper_auto_promotion": True,
+        "paper_auto_promotion": False,
         "paper_simulatable_states": sorted(PAPER_SIMULATABLE_STATES),
         "real_money_authorized": False,
         "families": families,

@@ -128,9 +128,51 @@ def test_no_exact_symbol_family_match_writes_no_history(tmp_path):
     class Mismatch(Client):
         def symbols(self):return {'data':[{'symbol':'OTHER','cfiCode':'FXXXXX'}]}
     r=a3.run(s,client=Mismatch(),history_store=s,now=NOW,mode='BOOTSTRAP')
-    assert r['unmatched']==1
+    assert r['unmatched']==1 and r['state']=='BLOCKED_NO_ALIGNED_TARGETS'
+    assert r['provider_requests']==1
     with s.connect() as c:
         assert c.execute("SELECT COUNT(*) FROM history_versions_v2").fetchone()[0]==0
+
+
+def test_a3_job_cannot_report_green_when_all_local_targets_are_unaligned(monkeypatch,capsys):
+    import ex_a3_history_job_rc6 as job
+    monkeypatch.setattr(job.runner,'run',lambda *args,**kwargs: {
+        'ran':True,'state':'BLOCKED_NO_ALIGNED_TARGETS','failed':0,
+        'selected':40,'unmatched':40,'provider_requests':1})
+    assert job.main(['DAILY_INCREMENTAL'])==2
+    assert json.loads(capsys.readouterr().out)['state']=='BLOCKED_NO_ALIGNED_TARGETS'
+
+
+def test_no_exact_targets_is_explicit_and_never_calls_a3(tmp_path):
+    s=make_store(tmp_path)
+    with s.connect() as c:c.execute("UPDATE candidate_universe SET status='UNVERIFIED'")
+    client=Client()
+    result=a3.run(s,client=client,history_store=s,now=NOW,mode='RECONCILE')
+    assert result=={'ran':False,'reason':'NO_EXACT_A3_TARGETS',
+                    'execution_allowed':False,'mode':'RECONCILE','selected':0,'provider_requests':0}
+    assert client.calls==[]
+
+
+def test_byma_options_do_not_issue_a3_catalog_request(tmp_path):
+    s=make_store(tmp_path)
+    with s.connect() as c:
+        c.execute("UPDATE candidate_universe SET ticker='YPF1234C',instrument_type='OPCIONES',market='BYMA'")
+    class NoCatalog(Client):
+        def symbols(self):raise AssertionError('BYMA option cannot be inferred as an A3 contract')
+    result=a3.run(s,client=NoCatalog(),history_store=s,now=NOW,mode='RECONCILE')
+    assert result['reason']=='NO_EXACT_A3_TARGETS'
+    assert result['provider_requests']==0
+
+
+def test_legacy_sink_rejected_before_a3_catalog_request(tmp_path):
+    s=make_store(tmp_path)
+    history=Store(tmp_path/'legacy.sqlite')
+    with history.connect() as c:c.execute('CREATE TABLE history_versions_v2(id INTEGER)')
+    class NoCatalog(Client):
+        def symbols(self):raise AssertionError('A3 request before sink validation')
+    import pytest
+    with pytest.raises(ValueError,match='HISTORY_COPY_MIGRATION_REQUIRED'):
+        a3.run(s,client=NoCatalog(),history_store=history,now=NOW,mode='RECONCILE')
 
 
 def test_open_market_or_real_orders_fails_closed(tmp_path):

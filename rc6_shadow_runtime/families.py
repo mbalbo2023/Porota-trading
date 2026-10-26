@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Mapping
+from datetime import date
 import json
 import math
 from pathlib import Path
@@ -183,10 +184,18 @@ def _field(name, rows, *, at, ttl=QUOTE_TTL_SECONDS, static=False, signed=False,
                 if not isinstance(flow, Mapping):
                     continue
                 payment_at = _time(flow.get("payment_at") or flow.get("at"))
+                payment_date = None
+                if flow.get("payment_date") is not None:
+                    try:
+                        payment_date = date.fromisoformat(flow["payment_date"]).isoformat()
+                    except (TypeError, ValueError):
+                        pass
                 amount = _number(flow.get("amount"), signed=True)
                 currency = flow.get("currency")
-                if payment_at and amount is not None and currency in {"ARS", "USD", "USD_MEP", "USD_CCL"}:
-                    cleaned.append({"payment_at": payment_at.isoformat(), "amount": amount, "currency": currency})
+                if (bool(payment_at) != bool(payment_date) and amount is not None
+                        and currency in {"ARS", "USD", "USD_MEP", "USD_CCL"}):
+                    cleaned.append({"payment_at": payment_at.isoformat(), "amount": amount, "currency": currency}
+                                   if payment_at else {"payment_date": payment_date, "amount": amount, "currency": currency})
             valid = valid and len(cleaned) == len(value)
             value = cleaned if valid else None
         else:
@@ -464,10 +473,14 @@ def _fixed_income_priority(instruments, at):
             result["selection"] = {"status": "EXCLUDED_OBSERVATION", **item}
             continue
         maturity = _time(result.get("maturity", {}).get("value"))
-        flow_times = [_time(flow["payment_at"]) for flow in analytics.get("flows", {}).get("value") or []]
+        flow_times = [_time(flow.get("payment_at")) for flow in analytics.get("flows", {}).get("value") or []]
+        flow_dates = [date.fromisoformat(flow["payment_date"]) for flow in analytics.get("flows", {}).get("value") or []
+                      if flow.get("payment_date")]
         future_flows = [value for value in flow_times if value and value > at]
+        future_dates = [value for value in flow_dates if value > at.date()]
         horizon = (maturity-at).total_seconds()/86400 if maturity and maturity > at else (
-            (min(future_flows)-at).total_seconds()/86400 if future_flows else None)
+            (min(future_flows)-at).total_seconds()/86400 if future_flows else
+            (min(future_dates)-at.date()).days if future_dates else None)
         if maturity and maturity <= at:
             item = {"identity": key, "reason_codes": ["FIXED_INCOME_MATURED"], "entry_authority": False}
             excluded.append(item)
@@ -593,13 +606,21 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
             valid = False
         conflict = _conflicted(rows, at) or any(value["review_required"] for value in terms.values())
         valid = valid and not conflict
-        analytics = {name: _field(name, rows, at=at, ttl=300, numeric=name not in {"flows", "curve"}, signed=name in {"yield", "carry"})
+        # A reconciled IOL payment schedule is a same-provider reference, not
+        # a native market quote or issuer-certified cashflow. Keep it bounded
+        # to one day and outside the PAPER decision route.
+        analytics = {name: _field(name, rows, at=at, ttl=86400 if name == "flows" else 300,
+                                  numeric=name not in {"flows", "curve"}, signed=name in {"yield", "carry"})
                      for name in ("yield", "duration", "parity", "carry", "flows", "curve")}
         maturity = _field("maturity_at", rows, at=at, ttl=None, static=True)
         return {"status": "OBSERVE_ONLY", "quote": quote_for(key), "terms": terms,
                 "nominal_contract_status": "VERIFIED_NOMINAL_CONTRACT" if valid else "NO_VERIFICADO",
                 "analytics": analytics, "maturity": maturity, "cash_per_nominal_currency": key[3], "cash_per_nominal": (
                     quotes[key]["price"]*multiplier if valid and quotes.get(key, {}).get("price") is not None else None),
+                "flow_reference_authority": "IOL_SAME_PROVIDER_REFERENCE_ONLY" if analytics["flows"].get("source") ==
+                    "IOL_FIXED_INCOME_ANALYTICS+ONE_NOMINAL_SIMULATION" else "NO_VERIFICADO",
+                "flow_payment_currency": (analytics["flows"]["value"][0]["currency"]
+                    if analytics["flows"].get("value") else None),
                 "reason_codes": ["CONTRACT_CONFLICT_NO_VERIFICADO"] if conflict else [] if valid else ["QUOTE_BASIS_MULTIPLIER_OR_VN_NO_VERIFICADO"],
                 "flow_application": "OBSERVATION_ONLY", "entry_authority": False}
 

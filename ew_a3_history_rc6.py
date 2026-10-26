@@ -48,7 +48,7 @@ def load_targets(store):
         needed={'ticker','instrument_type','market','settlement','status'}
         if not needed.issubset(cols): return []
         if 'candidate_identity_v2' in _tables(c):
-            table='candidate_identity_v2';predicate="can_simulate=1"
+            table='candidate_identity_v2';predicate="can_simulate=1 AND status='AVAILABLE'"
         elif 'financial_instrument_catalog' in _tables(c):
             table='financial_instrument_catalog';predicate="status='AVAILABLE'"
         elif 'currency' in cols:
@@ -59,7 +59,9 @@ def load_targets(store):
     out=[]
     for row in rows:
         symbol,family,market,currency,settlement=(str(x or '').upper().strip() for x in row)
-        if family not in FAMILIES: continue
+        # CEM is A3 history. BYMA options may be PAPER-ready, but their
+        # symbol alone does not establish an A3 contract or quote basis.
+        if family not in FAMILIES or market not in {'A3','ROFEX'}: continue
         if any(x in {'','UNKNOWN'} for x in (symbol,market,currency,settlement)): continue
         out.append((symbol,family,market,currency,settlement))
     return out
@@ -155,6 +157,9 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
             return {'ran':False,'reason':'RUNTIME_NOT_CLOSED_OR_SAFE','execution_allowed':False,'mode':mode}
     targets=load_targets(store)[:max(1,int(batch_limit))]
     init_state(store)
+    if not targets:
+        return {'ran':False,'reason':'NO_EXACT_A3_TARGETS','execution_allowed':False,
+                'mode':mode,'selected':0,'provider_requests':0}
     # Daily and weekend jobs have a durable per-identity high-water mark.
     # Check it before asking A3 for the entire symbol catalog. RECONCILE is
     # deliberately exempt: its purpose is to discover source corrections to
@@ -165,11 +170,14 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
             for target in targets):
         return {'ran':False,'reason':'NO_NEW_A3_SESSION_GAP','execution_allowed':False,
                 'mode':mode,'selected':len(targets),'provider_requests':0}
+    # Validate the local sink before any provider request. A legacy schema
+    # must not consume A3 calls and then fail before committing a checkpoint.
+    hstore=history_store or default_history_store();init_history_schema(hstore)
     cem=client or A3CEMPublicReadOnlyClient()
     catalog=normalize_symbols(cem.symbols())
     by_identity={(x.symbol,x.family):x for x in catalog if x.family in FAMILIES}
-    hstore=history_store or default_history_store();init_history_schema(hstore)
     stats={'selected':len(targets),'matched':0,'unmatched':0,'failed':0,'empty':0,'complete':0,
+           'provider_requests':1,
            'versions_appended':0,'canonical_updates':0,'protected_by_precedence':0,
            'deterministic_mapped':0}
     per_target=[]
@@ -186,6 +194,7 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
         if start>end:
             per_target.append({'target':target,'status':'NOT_DUE'});continue
         try:
+            stats['provider_requests']+=1
             payload=cem.closing_prices(symbol=source_symbol,date_from=start.isoformat(),date_to=end.isoformat(),page=1,page_size=500)
             raw=_payload_rows(payload);candles=[]
             for row in raw:
@@ -224,5 +233,8 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
             _record(store,target,status='FAILED',day=(state or {}).get('last_complete_day'),rows=0,error=f'{type(exc).__name__}:{exc}')
             per_target.append({'target':target,'status':'FAILED','error':type(exc).__name__})
         if throttle_seconds: time.sleep(max(0,float(throttle_seconds)))
-    return {'ran':True,'source':'A3_CEM_CLOSING','execution_allowed':False,'hot_path':False,
+    state=('BLOCKED_NO_ALIGNED_TARGETS' if stats['unmatched']==len(targets)
+           else 'PARTIAL' if stats['failed'] or stats['unmatched'] or stats['empty']
+           else 'COMPLETE')
+    return {'ran':True,'state':state,'source':'A3_CEM_CLOSING','execution_allowed':False,'hot_path':False,
             'mode':mode,**stats,'targets':per_target}

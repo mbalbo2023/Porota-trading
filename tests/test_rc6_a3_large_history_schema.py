@@ -14,7 +14,7 @@ import rc6_audit_evidence.sqlite_snapshot as snapshot
 def _large_for_fixture(monkeypatch):
     # A real host source is 749,617,152 B. Keep the regression small while
     # forcing the same >512 MiB admission branch.
-    monkeypatch.setattr(scratch, 'MAX_BYTES', 1)
+    monkeypatch.setattr(scratch, 'DEFAULT_BYTES', 1)
     monkeypatch.setattr(snapshot, 'readonly_copy',
                         lambda *args, **kwargs: pytest.fail('full copy on large history'))
 

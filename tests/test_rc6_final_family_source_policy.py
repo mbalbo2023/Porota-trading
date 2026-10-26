@@ -420,6 +420,30 @@ def test_full_evidence_public_capture_is_not_freshness_or_paper_authority(tmp_pa
     assert not row["sources"]["BYMA"]["entry_authority"]
 
 
+def test_full_evidence_ready_contract_does_not_claim_automatic_paper_entry(tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    record = instrument("GGAL", "ACCIONES") | {"symbol": "GGAL", "family": "ACCIONES",
+                                                "capability": "READY_PAPER_SPOT"}
+    ppi = quote_claim(record, source="PPI", last=100,
+                      source_at=AT.isoformat(), received_at=AT.isoformat())
+    key = evidence._exact_key(record)
+    assert key == evidence._exact_key(ppi)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [record])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {key: ppi})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    result = evidence.build()
+    row = result["instruments"][0]
+    assert row["status"] == "READY_PAPER_PARTIAL_SOURCE"
+    assert row["paper_contract_ready"] is True
+    assert row["paper_auto_enabled"] is False and row["signal_authorized"] is False
+    assert row["entry_authority"] is False
+    assert result["counts"]["paper_shadow_ready"] == 1
+    assert result["counts"]["paper_auto_enabled"] == 0
+
+
 def test_full_evidence_unavailable_iol_is_path_scoped_with_native_reference_visible(tmp_path, monkeypatch):
     import scripts.rc6_full_universe_evidence as evidence
     record = instrument("GGAL", "ACCIONES")

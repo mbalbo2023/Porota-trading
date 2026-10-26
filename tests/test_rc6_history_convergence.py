@@ -651,12 +651,103 @@ def test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_curren
         assert c.execute('SELECT COUNT(*) FROM history_close_versions_v1_legacy').fetchone()[0]==1
 
 
+def test_AUD07_close_only_row_failure_rolls_back_partial_insert(tmp_path,monkeypatch):
+    import ea_history_close_series_hf2 as close_history
+    source=tmp_path/'legacy.sqlite';target=tmp_path/'migrated.sqlite'
+    with sqlite3.connect(source) as c:
+        c.executescript('''CREATE TABLE history_close_versions_v1(
+          id INTEGER PRIMARY KEY,symbol,instrument_type,market,settlement,date,
+          close,source,quality,observed_at,raw_row_hash,metadata_json);
+          CREATE TABLE history_close_canonical_v1(symbol,instrument_type,market,settlement,date,close);''')
+        for row_id,price in ((1,100),(2,101)):
+            c.execute('INSERT INTO history_close_versions_v1 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                (row_id,'AUDIT'+str(row_id),'ACCIONES','BYMA','A-24HS','2026-09-30',
+                 price,'PPI_PRODUCTION_HISTORY_CLOSE_ONLY','CLOSE_ONLY_PROVIDER_PARTIAL',
+                 '2026-10-01T16:00:00Z','hash'+str(row_id),'{}'))
+    before=source.read_bytes()
+    original=close_history.append_close_evidence
+    def fail_after_insert(store,item,*,connection=None):
+        result=original(store,item,connection=connection)
+        if item.close==101:raise ValueError('HISTORY_CLOSE_FORCED_ROW_FAILURE')
+        return result
+    monkeypatch.setattr(close_history,'append_close_evidence',fail_after_insert)
+    result=history.migrate_copy(source,target,currency_map={
+        ('AUDIT1','ACCIONES','BYMA','A-24HS'):'ARS',
+        ('AUDIT2','ACCIONES','BYMA','A-24HS'):'ARS'})
+    assert result['close_only']=={'migrated_rows':1,'quarantined_rows':1}
+    assert source.read_bytes()==before
+    with sqlite3.connect(target) as c:
+        assert c.execute('SELECT close FROM history_close_versions_v1').fetchall()==[(100,)]
+        assert c.execute('SELECT old_version_id,reason FROM history_close_migration_quarantine_v2').fetchone()==(2,'HISTORY_CLOSE_FORCED_ROW_FAILURE')
+        assert c.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
 def test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort():
     assert history.resolve_legacy_currency('ARS',['ARS','USD_MEP'])=='ARS'
     with pytest.raises(ValueError,match='CURRENCY_AMBIGUOUS'):
         history.resolve_legacy_currency(None,['ARS','USD_MEP'])
     with pytest.raises(ValueError,match='CURRENCY_MAPPING_CONFLICT'):
         history.resolve_legacy_currency('USD',['ARS','USD_MEP'])
+
+
+def test_AUD07_migration_orders_revisions_by_actual_instant_and_rolls_back_bad_row(tmp_path,monkeypatch):
+    source=tmp_path/'legacy.sqlite';target=tmp_path/'migrated.sqlite'
+    with sqlite3.connect(source) as c:
+        c.executescript('''CREATE TABLE history_versions_v2(
+          id INTEGER PRIMARY KEY,symbol,instrument_type,market,settlement,date,open,high,low,close,
+          volume,source,adjusted,observed_at,payload_hash,metadata_json);
+          CREATE TABLE history_canonical_v2(symbol,instrument_type,market,settlement,date,close);''')
+        for row_id,close,known in ((1,100,'2026-10-01T18:00:00+02:00'),
+                                   (2,101,'2026-10-01T15:00:00Z'),
+                                   (3,102,'2026-10-01T14:00:00-03:00')):
+            c.execute('INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (row_id,'AUDIT','ACCIONES','BYMA','A-24HS','2026-09-30',100,102,98,close,
+                 1000,'PPI_API',0,known,'oldhash'+str(row_id),'{}'))
+    before=source.read_bytes()
+    original=history._append_connection
+    def fail_after_insert(connection,value):
+        result=original(connection,value)
+        if value.close==101:raise ValueError('HISTORY_FORCED_ROW_FAILURE')
+        return result
+    monkeypatch.setattr(history,'_append_connection',fail_after_insert)
+    outcome=history.migrate_copy(source,target,
+        currency_map={('AUDIT','ACCIONES','BYMA','A-24HS'):'ARS'})
+    assert outcome['source_rows']==3 and outcome['migrated_rows']==2 and outcome['quarantined_rows']==1
+    assert source.read_bytes()==before
+    with sqlite3.connect(target) as c:
+        assert c.execute('SELECT close FROM history_versions_v2 ORDER BY version_known_at').fetchall()==[(100,),(102,)]
+        assert c.execute('SELECT previous_version_id FROM history_versions_v2 WHERE close=102').fetchone()==(1,)
+        assert c.execute('SELECT old_version_id FROM history_migration_map_v2 ORDER BY old_version_id').fetchall()==[(1,),(3,)]
+        assert c.execute('SELECT old_version_id,reason FROM history_migration_quarantine_v2').fetchone()==(2,'HISTORY_FORCED_ROW_FAILURE')
+        assert c.execute('PRAGMA quick_check').fetchone()==('ok',)
+        assert c.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
+def test_AUD07_large_copy_requires_dedicated_scratch_budget_before_source_access(tmp_path):
+    with pytest.raises(ValueError,match='HISTORY_MIGRATION_DEDICATED_SCRATCH_REQUIRED'):
+        history.migrate_copy(tmp_path/'unopened.sqlite',tmp_path/'unwritten.sqlite',
+            max_source_bytes=1024**3)
+    assert not (tmp_path/'unwritten.sqlite').exists()
+
+
+def test_AUD07_explicit_large_budget_uses_private_disk_scratch_and_cleans_up(tmp_path):
+    source=tmp_path/'source.sqlite';target=tmp_path/'result.sqlite'
+    scratch=tmp_path/'migration-scratch';scratch.mkdir(mode=0o700)
+    with sqlite3.connect(source) as c:
+        c.executescript('''CREATE TABLE history_versions_v2(
+          id INTEGER PRIMARY KEY,symbol,instrument_type,market,settlement,date,open,high,low,close,
+          volume,source,adjusted,observed_at,payload_hash,metadata_json);
+          CREATE TABLE history_canonical_v2(symbol,instrument_type,market,settlement,date,close);
+          INSERT INTO history_versions_v2 VALUES(1,'AUDIT','ACCIONES','BYMA','A-24HS',
+            '2026-09-30',100,102,98,100,1000,'PPI_API',0,'2026-10-01T16:00:00Z','oldhash','{}');''')
+    before=source.read_bytes()
+    result=history.migrate_copy(source,target,
+        currency_map={('AUDIT','ACCIONES','BYMA','A-24HS'):'ARS'},
+        max_source_bytes=1024**3,scratch_root=scratch,max_scratch_bytes=1024**3)
+    assert result['migrated_rows']==1 and source.read_bytes()==before
+    assert not any(path.is_dir() for path in scratch.iterdir())
+    with sqlite3.connect(target) as c:
+        assert c.execute('SELECT currency FROM history_versions_v2').fetchone()==('ARS',)
 
 
 def test_AUD07_A3_quote_currency_is_not_underlying_currency_and_old_targets_fail_closed(tmp_path):

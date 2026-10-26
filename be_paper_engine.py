@@ -913,7 +913,7 @@ class PaperBroker:
             if connection.execute("""SELECT 1
                 FROM paper_family_lifecycle_events e
                 JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
-                WHERE e.family='FUTUROS' AND l.currency=?
+                WHERE e.family IN ('FUTUROS','FCI') AND l.currency=?
                   AND rc6_instant_us(e.occurred_at)>rc6_instant_us(?) LIMIT 1""",
                 (currency,at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
@@ -928,11 +928,12 @@ class PaperBroker:
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
                          for p in opened if p['currency']==currency), ZERO)
-        from rc6_paper_family_lifecycle import future_cash_effect
+        from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
+        funds = fund_cash_effect(self.store, currency, at, connection=connection)
         return (self.initial_balances[currency] + realized - committed
                 + self.cauciones.cash_effect(currency,at,connection=connection)
-                + futures
+                + futures + funds
                 - pending_proceeds(self.store, at, currency, connection=connection))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
