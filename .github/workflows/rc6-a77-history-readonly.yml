@@ -157,6 +157,72 @@ jobs:
           except Exception as exc:result.update(state='NO_VERIFICADO',error_class=type(exc).__name__)
           print(json.dumps(result,sort_keys=True))
           PY
+      - name: Probe scalping PAPER preopen readiness read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 50 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          for unit in porota-preopen-rc6.timer porota-preopen-1015-rc6.timer; do
+            printf 'SCALPING_PREOPEN_TIMER=%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          sudo -n docker inspect --format 'SCALPING_OBSERVER_CONTAINER={{.State.Status}}|{{.RestartCount}}' porota_production_observer
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,os,sqlite3
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from rc6_paper_admission_gate import FOCUS
+          from cf_intraday_scalping import DEFAULT_INTRADAY_SCAN_SECONDS,DEFAULT_INTRADAY_BATCH_LIMIT
+          db=Path('/app/data/paper_v17/observer_v17.db')
+          c=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.3)
+          c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=300')
+          observer=c.execute('SELECT mode,session_state,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+          worker=c.execute('SELECT heartbeat_at,state,cursor,selected,successful,failed,points_inserted,confirmed_identities,candidates,real_orders_sent FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+          ready=[]
+          for symbol,family,settlement in FOCUS:
+              n=c.execute("""SELECT COUNT(*) FROM financial_instrument_catalog f
+                  JOIN candidate_identity_v2 r USING(ticker,instrument_type,market,currency,settlement)
+                  WHERE f.ticker=? AND f.instrument_type=? AND f.settlement=?
+                    AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
+                    AND r.status='AVAILABLE' AND r.can_simulate=1""",(symbol,family,settlement)).fetchone()[0]
+              ready.append({'symbol':symbol,'exact_ready':n==1,'cardinality':n})
+          eligible=c.execute("""SELECT COUNT(*) FROM candidate_identity_v2
+              WHERE status='AVAILABLE' AND can_simulate=1
+                AND instrument_type IN ('ACCIONES','CEDEARS','ETFS')""").fetchone()[0]
+          latest_candidate=c.execute('SELECT MAX(evaluated_at) FROM scalping_candidates').fetchone()[0]
+          c.close()
+          now=datetime.now(timezone.utc)
+          def age(value):
+              try:return round((now-datetime.fromisoformat(value.replace('Z','+00:00')).astimezone(timezone.utc)).total_seconds(),1)
+              except Exception:return None
+          receipt=Path('/app/data/deploy/paper_scalping_preopen_gate_v1.json')
+          try:
+              raw=json.loads(receipt.read_text(encoding='utf-8'))
+              gate={k:raw.get(k) for k in ('status','trade_day_ar','phase','reason')}
+              gate['build_matches']=raw.get('candidate_sha')==os.getenv('POROTA_BUILD_SHA')
+          except Exception:gate={'status':'NO_VERIFICADO'}
+          mode=os.getenv('PAPER_SCALPING_MODE','ACTIVE_OBSERVE')
+          result={'schema':'rc6-a77-scalping-preopen-v1','as_of_utc':now.isoformat(),
+                  'observer':{'mode':observer['mode'],'session':observer['session_state'],
+                      'real_orders_sent':observer['real_orders_sent'],'heartbeat_age_seconds':age(observer['heartbeat_at'])},
+                  'worker':dict(worker) if worker else None,'worker_heartbeat_age_seconds':age(worker['heartbeat_at']) if worker else None,
+                  'scalping_mode':mode,'scan_seconds':os.getenv('PAPER_INTRADAY_SCAN_SECONDS',str(DEFAULT_INTRADAY_SCAN_SECONDS)),
+                  'batch_limit':os.getenv('PAPER_INTRADAY_BATCH_LIMIT',str(DEFAULT_INTRADAY_BATCH_LIMIT)),
+                  'exact_focus':ready,'eligible_spot_identities':eligible,
+                  'latest_candidate_at':latest_candidate,'preopen_receipt':gate,
+                  'real_routes':'NOT_CALLED','provider_requests':0,'ppi_watch_accessed':False,
+                  'history_writes':False}
+          result['state']='CLOSED_PREOPEN_READY_FOR_LIVE_CHECK' if (
+              observer['mode']=='PRODUCTION_PAPER' and observer['real_orders_sent']==0
+              and worker and worker['state']=='WAITING_MARKET' and worker['real_orders_sent']==0
+              and result['worker_heartbeat_age_seconds'] is not None
+              and 0<=result['worker_heartbeat_age_seconds']<=120 and mode=='ACTIVE_PAPER'
+              and all(item['exact_ready'] for item in ready)) else 'NO_VERIFICADO_OR_BLOCKED'
+          print(json.dumps(result,sort_keys=True,default=str))
+          PY
+          REMOTE
       - name: Remove SSH material
         if: always()
         shell: bash
