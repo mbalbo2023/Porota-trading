@@ -26,6 +26,7 @@ SOURCES = {"PPI", "IOL", "IOL_CONNECTOR", "DATA912", "A3_CEM", "BYMA"}
 MAX_TARGETS = 40
 MAX_ROWS = 1000
 MAX_PAYLOAD_BYTES = 10_000_000
+MAX_CLOCK_SKEW_SECONDS = 300
 
 DDL = """
 CREATE TABLE fresh_generation_rc6(
@@ -193,9 +194,10 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
     """
     if not callable(fetch):
         raise ValueError("FRESH_SOURCE_UNVERIFIED")
-    captured_at = instant(now or datetime.now(timezone.utc))
-    if captured_at > datetime.now(timezone.utc):
-        raise ValueError("FRESH_CLOCK_IN_FUTURE")
+    system_now = datetime.now(timezone.utc)
+    captured_at = instant(now or system_now)
+    if abs((captured_at - system_now).total_seconds()) > MAX_CLOCK_SKEW_SECONDS:
+        raise ValueError("FRESH_CLOCK_UNVERIFIED")
     from_day, to_day = daily_start(captured_at), captured_at.astimezone(ART).date()
     resolved = preflight(targets, source)
     path = preflight_destination(destination, protected_paths)

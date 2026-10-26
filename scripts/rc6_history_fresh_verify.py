@@ -15,7 +15,8 @@ from pathlib import Path
 from cu_history_store_v2_hf6 import instant
 from rc6_data_retention import daily_start
 from scripts.rc6_history_fresh_sidecar import (ART, _body, _day, _explicit_currency,
-                                              _identity_conflicts, MAX_ROWS, SOURCES)
+                                              _identity_conflicts, MAX_CLOCK_SKEW_SECONDS,
+                                              MAX_ROWS, SOURCES)
 
 
 def _sha256(path):
@@ -31,7 +32,10 @@ def verify(path, *, now=None):
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or path.resolve() != path:
         raise ValueError('FRESH_VERIFY_ALIAS_FORBIDDEN')
-    clock = instant(now or datetime.now(timezone.utc))
+    system_now = datetime.now(timezone.utc)
+    clock = instant(now or system_now)
+    if abs((clock - system_now).total_seconds()) > MAX_CLOCK_SKEW_SECONDS:
+        raise ValueError('FRESH_VERIFY_CLOCK_UNVERIFIED')
     uri = path.as_uri() + '?mode=ro&immutable=1'
     with sqlite3.connect(uri, uri=True) as connection:
         connection.row_factory = sqlite3.Row

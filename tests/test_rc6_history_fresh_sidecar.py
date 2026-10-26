@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import scripts.rc6_history_fresh_sidecar as fresh_module
+import scripts.rc6_history_fresh_verify as verify_module
 from scripts.rc6_history_fresh_sidecar import capture, preflight
 from scripts.rc6_history_fresh_verify import verify
 
@@ -21,6 +23,15 @@ def no_network(monkeypatch):
         raise AssertionError('NETWORK_FORBIDDEN_IN_FRESH_FIXTURE')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(socket, 'create_connection', forbidden)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = NOW + timedelta(minutes=1)
+            return fixed.astimezone(tz) if tz else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(fresh_module, 'datetime', FrozenDatetime)
+    monkeypatch.setattr(verify_module, 'datetime', FrozenDatetime)
 
 
 def _records(path):
@@ -146,6 +157,19 @@ def test_preflight_blocks_oversized_batch_without_calling_source(tmp_path):
         capture(tmp_path / 'fresh.sqlite', targets, 'PPI',
                 lambda *_: pytest.fail('source called'), now=NOW)
     assert not (tmp_path / 'fresh.sqlite').exists()
+
+
+def test_stale_or_advanced_clock_cannot_reopen_expired_data(tmp_path):
+    called = []
+    for clock in (NOW - timedelta(days=1), NOW + timedelta(days=1)):
+        with pytest.raises(ValueError, match='FRESH_CLOCK_UNVERIFIED'):
+            capture(tmp_path / 'fresh.sqlite', [TARGET], 'PPI',
+                    lambda *_: called.append(1), now=clock)
+    assert not called and not (tmp_path / 'fresh.sqlite').exists()
+    capture(tmp_path / 'fresh.sqlite', [TARGET], 'PPI',
+            lambda *_: [dict(date='2026-10-23', price=100)], now=NOW)
+    with pytest.raises(ValueError, match='FRESH_VERIFY_CLOCK_UNVERIFIED'):
+        verify(tmp_path / 'fresh.sqlite', now=NOW + timedelta(days=1))
 
 
 def test_independent_verifier_rejects_expired_payload_and_fake_basis(tmp_path):
