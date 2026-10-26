@@ -50,6 +50,24 @@ READY del catálogo no demuestra señal. El ledger `scalping_candidates` de los
 Las diez aperturas spot recientes con claves y gates auditadas son de ACCIONES
 (9) y CEDEARS (1); no extrapolarlas a las otras familias.
 
+Diagnóstico adicional read-only [Action 40250769811](https://github.com/mbalbo2023/Porota-trading/actions/runs/40250769811),
+2026-10-26 00:44 UTC, `MARKET_CLOSED`/PAPER/0 y cero consultas al proveedor:
+los 10.680 HOLD de scalping de diez días se particionan exactamente en 4.898
+`PPI_VOLUME_CONTRACT_UNVERIFIED` (1.578 ACCIONES, 3.320 CEDEARS), 3.469
+`REJECTED_MUTABLE_CLOSED_POINTS` (2.950 ACCIONES, 519 CEDEARS) y 2.313
+`EMPTY_INTRADAY_PAYLOAD` (1.291 ACCIONES, 1.022 CEDEARS). El motor exige
+unidad/acumulación del volumen PPI con provenance y rechaza revisiones de
+puntos ya cerrados. Un payload vacío no proporciona una señal. Ninguno de estos
+estados se arregla abriendo un flag o usando el reloj de captura como cotización.
+Para resolver por instrumento hay que probar la semántica del endpoint y la
+estabilidad de sus puntos durante una rueda OPEN; sólo entonces validar una
+reconciliación de volumen/velas y recalentar 15 muestras nativas.
+
+De 62 gates spot de esa ventana, ACCIONES registró 15 bloqueos por concentración
+financiera, 15 por cantidad ejecutable agotada por caja y 7 por marcas de riesgo
+viejas; CEDEARS 5 por `SECTOR_UNMAPPED_BINDING`. Son límites y evidencia
+faltante distintos de un defecto de estrategia; no se desactivan globalmente.
+
 ## Revalidación de rutas
 
 `be_paper_engine.PaperBroker.decide` admite la señal spot genérica sólo en
