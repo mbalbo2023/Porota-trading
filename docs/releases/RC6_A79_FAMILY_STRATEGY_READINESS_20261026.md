@@ -96,8 +96,8 @@ simulado falla cerrado con `PPI_READ_ERROR`/capacidad cero tanto en base como
 en A79; no es una regresión de scalping. Pruebas de no cruce de familia,
 moneda, plazo, ticker sin identidad y duplicado exacto: PASS.
 
-Estado: corrección de falsos verdes **VALIDADA EN CÓDIGO/TEST**; publicación,
-Predeploy y runtime de A79 **NO_VERIFICADO**. El snapshot anterior no verifica
+Estado: corrección de falsos verdes **EN_GITHUB** en PR #744 DRAFT; Predeploy,
+artefacto, despliegue y runtime de A79 **NO_VERIFICADO**. El snapshot anterior no verifica
 una colocación en la rueda siguiente. E09/E10 no ejecutados.
 
 ## A79 continuación — caja FCI y cierre de bypass directo
@@ -131,3 +131,48 @@ ETFS cero candidatos READY; CAUCIONES conserva su treasury especializado.
 Un test sintético demuestra seguridad y semántica de caja, no una oportunidad
 real ni un fill en la rueda OPEN. Predeploy/artefacto/despliegue/runtime de
 este fix: **NO_VERIFICADO**.
+
+## A79 continuación — hipótesis especializadas y camino hacia compra PAPER
+
+Se desarrolló `rc6_shadow_runtime/family_strategies.py` y se conectó a
+`family_reports` para **BONOS, LETRAS, OBLIGACIONES, OPCIONES y FCI**. El mismo
+catálogo PPI y las mismas cinco claves exactas se usan para unir un research
+explícito fechado; un research duplicado, posterior al corte o sin modelo
+congelado queda en HOLD. No se utiliza `READY_PAPER` como señal, ni un yield,
+paridad, NAV o moneyness alto por sí solo como tesis de compra. La salida
+`POSITIVE_HYPOTHESIS` compara un escenario explícito con el ask disponible,
+comisiones PAPER, oportunidad, pérdidas de estrés y liquidez. Su estado de
+evidencia permanece `NO_VERIFICADO` y `entry_authority=false`; los escenarios
+de prueba son deliberadamente sintéticos.
+
+| Familia | Tesis codificada | Comprobaciones adicionales antes de una hipótesis positiva |
+| --- | --- | --- |
+| BONOS | Flujos/duración y salida a bid de escenario | VN y multiplicador, curva fechada, duración máxima, shock de tasa cubierto, cantidad nominal, profundidad y costos. |
+| LETRAS | Descuento y cobro al vencimiento | Mismo vencimiento y moneda, único flujo nativo con unidad `CASH_PER_NOMINAL` que reconcilia el importe; prohíbe sumar venta y rescate. |
+| OBLIGACIONES | Flujos, duración y riesgo de emisor | Lo de bonos más emisor identificado, revisión de crédito vigente y límite de exposición por emisor. |
+| OPCIONES | Compra de prima de call/put ligada al subyacente | Punta y tesis direccional del subyacente, vencimiento posterior al horizonte, multiplicador exacto del contrato, lotes enteros, sólo LONG y riesgo de perder toda la prima. |
+| FCI | Caja excedente con rescate anterior a necesidad de liquidez | NAV fechado, fondo abierto y antes de cutoff, caja observada, reserva de compromisos, importe y costos de suscripción/rescate y escenario de NAV adverso. |
+
+`family_strategy_research` es un input acotado opcional, no un feed productivo
+certificado. El worker no fabrica pronósticos. En el runtime previo no existen
+modelos causales congelados por instrumento para estas familias ni una muestra
+OOS de su rendimiento. Una hipótesis positiva de test **no** acredita un
+`BUY_CANDIDATE`, la admisión bajo bloqueo de DB ni un `BUY_SIMULATED` real.
+
+La traza necesaria para un fill auténtico sigue siendo: research registrado
+antes de decidir → observación exacta OPEN → evaluación OOS prospectiva
+independiente con libros/eventos futuros → costos/riesgo/caja y fuente
+revalidados en la transacción → apertura por el lifecycle propio y supervisor
+de salida → fill PAPER `BUY_SIMULATED`/suscripción por importe → evidencia DB.
+El ejecutor spot actual aplica stop/target intradiarios genéricos; no se debe
+conectar la hipótesis de bonos/letras/ON/opciones a ese BUY sin resolver el
+vencimiento, cupones, ejercicio y salida específica. FCI usa `SUBSCRIBE_REQUESTED`,
+no un fill `BUY_SIMULATED` de spot. Esta diferencia es parte del bloqueo de
+integración que resta, no una exclusión deseada de las familias.
+
+Pruebas locales: cinco escenarios sintéticos positivos sin autoridad de entrada;
+adversariales de reloj futuro, modelo no congelado, identidad, profundidad,
+riesgo de emisor, prima opcional, caja FCI, doble cómputo de letra y despacho
+read-only; suites de observer/source policy y costo de consulta PASS.
+Estado del desarrollo: **DESARROLLADO** hasta publicar el commit exacto;
+runtime OPEN/OOS/fills **NO_VERIFICADO**. No se lanzó Predeploy ni Deploy.
