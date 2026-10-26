@@ -1,0 +1,84 @@
+name: RC6 A110 postclose SQLite metadata read only
+
+on:
+  push:
+    branches: [audit/rc6-a110-report-sqlite-meta-20261026]
+    paths:
+      - .github/workflows/rc6-a110-postclose-sqlite-meta-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Read bounded container and SQLite metadata
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cid=porota_production_observer
+          echo "RC6_SQLITE_META_START"
+          sudo -n docker inspect -f 'CONTAINER={{.State.Running}}|RESTARTS={{.RestartCount}}|ROOTFS_RO={{.HostConfig.ReadonlyRootfs}}|MEMORY_LIMIT={{.HostConfig.Memory}}|IMAGE={{.Image}}' "$cid"
+          sudo -n docker inspect -f 'TMPFS={{index .HostConfig.Tmpfs "/tmp"}}' "$cid"
+          sudo -n docker exec -i "$cid" python - <<'PY'
+          import json
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          db = Path(os.environ.get('PAPER_V17_DB_PATH', '/app/data/paper_v17/observer_v17.db'))
+          def fs(path):
+              stat = os.statvfs(path)
+              return {'bytes_total': stat.f_blocks * stat.f_frsize,
+                      'bytes_free': stat.f_bavail * stat.f_frsize,
+                      'inodes_free': stat.f_favail,
+                      'inodes_total': stat.f_files}
+          print('FILESYSTEMS=' + json.dumps({'tmp': fs('/tmp'), 'db_parent': fs(db.parent)}, sort_keys=True))
+          connection = sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True, timeout=3)
+          try:
+              connection.execute('PRAGMA query_only=ON')
+              pragmas = {key: connection.execute('PRAGMA ' + key).fetchone()[0]
+                         for key in ('temp_store', 'page_count', 'max_page_count', 'freelist_count')}
+              pragmas['temp_compile_options'] = [row[0] for row in connection.execute('PRAGMA compile_options')
+                                                 if row[0].startswith('TEMP_STORE=')]
+              indexes = [row[0] for row in connection.execute(
+                  "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='paper_decisions'")]
+              query = '''SELECT * FROM paper_decisions
+                  WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?)
+                  ORDER BY decided_at'''
+              plan = [row[3] for row in connection.execute('EXPLAIN QUERY PLAN ' + query,
+                                                            ('2026-10-26', '2026-10-27'))]
+              print('SQLITE_META=' + json.dumps({'pragmas': pragmas, 'indexes': indexes,
+                                                 'report_query_plan': plan}, sort_keys=True))
+          finally:
+              connection.close()
+          PY
+          echo "RC6_SQLITE_META_END"
+          REMOTE
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts
