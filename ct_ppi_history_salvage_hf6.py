@@ -25,7 +25,7 @@ VERIFIED_PPI_HISTORY_CONTRACTS = frozenset()
 
 
 def _row_provenance_error(row, currency, contract_id):
-    if contract_id not in VERIFIED_PPI_HISTORY_CONTRACTS:
+    if not isinstance(contract_id, str) or contract_id not in VERIFIED_PPI_HISTORY_CONTRACTS:
         return 'HISTORY_PROVENANCE_UNVERIFIED'
     if not isinstance(row, dict):
         return 'HISTORY_PROVENANCE_UNVERIFIED'
