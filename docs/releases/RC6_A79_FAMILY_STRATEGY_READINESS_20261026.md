@@ -206,7 +206,7 @@ que haya un valor en la base instalada para una especie concreta.
 | --- | --- | --- | --- |
 | Identidad, moneda, plazo, precio y libro | PPI catálogo/market snapshots/points; IOL/BYMA complementan sólo por clave exacta; precios `last/bid/ask` en cascada validada | Catálogo y snapshots se leen de SQLite; 9.923 READY exactos y 23.344 evidencias current en corte CLOSED; no prueba de libro fresco OPEN por especie | Parcial, por identidad; OPEN NO_VERIFICADO |
 | VN, precio por nominal, mínimo, múltiplo y vencimiento | `bond_technical` PPI conserva `nominalesEnPrecio`, `laminaMinima`, `multiploMinimo`, `fechaVencimiento`; IOL `_fixed_contract` verifica unit/lot/simulación de un nominal y persiste `fixed_income_evidence` | El catálogo/evidence JSON puede almacenar esos términos; la cuenta READY prueba admisión de contrato para un subconjunto, no cobertura homogénea ni tarifa broker | Parcial; medir valor y reloj por ticker |
-| Cupón, amortización, flujos y `flow_unit` | PPI conserva `intereses`/`amortizacion`; `rc6_on_validation` exige `cash_flows` IOL en una composición offline; el colector IOL operativo persiste sólo madurez, precio dirty, valor técnico y moneda de simulación | El SHADOW admite alias `flows/cash_flows`, pero **no se halló productor de `flow_unit=CASH_PER_NOMINAL` ni persistencia normalizada del calendario de flujos en el colector operativo**; raw técnico puede existir sin conversión por unidad | NO_VERIFICADO; no usar rescate supuesto |
+| Cupón, amortización, flujos y unidad | PPI conserva `intereses`/`amortizacion`; IOL expone analítica por lote y simulación por un nominal | En el producto b183 sólo madurez, dirty, valor técnico y moneda llegan al colector. El cambio A82 de este Draft reconcilia fecha, moneda, monto, lote y clocks, y lleva hasta SHADOW una referencia IOL de un nominal sin autoridad contractual ni entrada; la instalación/runtime siguen NO_VERIFICADO | Parcial EN_GITHUB en #744; no usar cobro supuesto como BUY |
 | TIR, duration y curva | PPI técnico trae `tir`/`modifiedDuration`; IOL API tiene analítica y validador offline los exige; SHADOW reconoce alias de yield/duration y `curve` | IOL collector no persiste duration de la respuesta analítica en su fila; no se halló un productor de curva fechada por emisor/moneda/plazo para A79; 23.344 current no certifican esas claves | TIR/duration parcial en PPI; curva/modelo de tasas NO_VERIFICADO |
 | Emisor, riesgo de crédito y exposición por emisor | PPI técnico `emisor`; no se halló productor de `credit_review=CURRENT`, probabilidad de incumplimiento, límite o exposición ligado a ledger | Un string de emisor no es una evaluación crediticia ni un límite de riesgo respaldado | NO_VERIFICADO |
 | Opción: subyacente, CALL/PUT, strike, vencimiento, lote, IV/griegas | IOL `get_options_chain` persiste evidence/contrato en JSON para serie estándar no ajustada de ACCIONES; PPI libro y catálogo son autoridad operativa; SHADOW selecciona estructura | 1.329 opciones READY y 1.719 pausadas por contrato en censo; no se midió presencia de cada clave/libro por las 1.329, ni se modeló ejercicio/ajustes/exit por serie | Parcial estructural; tesis/salida/OOS NO_VERIFICADO |
@@ -301,4 +301,92 @@ Semáforo para el próximo candidato: corrección del falso verde y protección
 de caja FCI **EN_GITHUB DRAFT / runtime NO_VERIFICADO**; A77 historia/A3/PPI
 en #743 aparte **DRAFT**; estrategias nuevas, retención 365d, OOS, UI/voz
 52/52 y desempeño de workers OPEN **NO_VERIFICADO** o **BLOQUEADO** según
-la matriz #732. No iniciar Predeploy antes de aprobación explícita.
+la matriz #732. La autorización posterior del operador permite preparar
+Predeploy/Deploy de un candidato coherente que supere sus gates exactos; no
+convierte hipótesis, datos CLOSED ni estos dos Draft en aceptación financiera.
+
+## A82 — teoría comprobable para cerrar el ciclo especializado (25/10 ART)
+
+### Hechos y prueba adversaria
+
+- El producto b183 observa diez familias, pero su `PaperBroker.decide` sólo
+  hereda señal spot para ACCIONES/CEDEARS/ETFS. El runtime A78 acredita 135 BUY
+  históricos en las dos primeras, seis cauciones con lifecycle propio y cero
+  BUY de las otras ocho. Eso demuestra una brecha de autoridad/estrategia, no
+  que el broker carezca de precios ni que forzar ocho BUY sea correcto.
+- IOL leyó el domingo AL30 y YMCJO: analítica con 8 y 14 fechas de pago por
+  lote 100, respectivamente, y simulación de **un nominal** con moneda de
+  cobro USD. Las tablas se reconcilian dimensionalmente en el probe A82, pero
+  la analítica tenía cálculo 21:00 ART y la simulación 23:50 ART: distancia
+  aproximada 10.228/10.201 segundos. `next_coupon_date` de AL30 en esa
+  respuesta apunta a 2021 pese al corte 2026. Ese campo NO se propaga.
+  Mismo proveedor y cálculo dominical no certifican términos de emisor ni
+  punta negociable el lunes.
+- En #744, `rc6_iol_family_reference._fixed_flow_reference` comprueba un
+  nominal, lote, período, fechas, componentes, residual, total, moneda y
+  relojes separados; falla cerrado ante inconsistencias. Persiste únicamente
+  calendario normalizado y provenance en el cache IOL, con importe USD por
+  nominal sin sumarlo a caja ARS. `rc6_shadow_runtime.families` lo consume como
+  observación fechada (máximo 24 h desde el cálculo **más antiguo**), nunca
+  como autorización. El reloj de captura se toma al acabar las respuestas;
+  `collect()` antes sólo marcaba el inicio del ciclo. Prueba local: 119 casos
+  focales PASS, incluidos conflictos de unidad, reloj, moneda y horizonte;
+  dos respuestas reales CLOSED reconciliaron 8/14 flujos sin señal ni BUY.
+
+### Hipótesis por familia: protocolo de ensayo, ninguna declarada rentable
+
+| Familia | Hipótesis de decisión que debe registrarse antes de calibrar | Unión causal y ciclo PAPER exigidos | Estado ahora |
+| --- | --- | --- | --- |
+| ACCIONES | Baseline spot ya produce candidatos; comparar retorno neto contra no operar y contra alternativa de misma sesión, con costes y cierres reales | PPI trades distintos+book OPEN, preopen, riesgo, fill al ask y salida al bid; medir OOS, no reutilizar HOLD de scalping HF5 | Fill histórico VALIDADO_RUNTIME, ventaja OOS NO_VERIFICADO |
+| CEDEARS | Mismo baseline local; una tesis de desvío contra subyacente requeriría ratio, sesión US y FX de modalidad correcta | PPI clave exacta ARS/USD y book; ratio Caja, subyacente/FX sólo si esa tesis los usa; mismo ledger spot | Fill histórico VALIDADO_RUNTIME, tesis adicional NO_VERIFICADO |
+| ETFS | Baseline spot como hipótesis sólo si hay ETF local con clave PPI READY; no confundirlo con CEDEAR de ETF | Descubrimiento/clase/ratio exactos, book y costes; mismo ledger spot sólo tras readiness | Cero READY instalado, BLOQUEADO |
+| BONOS | Comparar precio de salida ARS al bid con entrada ARS al ask dentro de un horizonte; carry USD requiere escenarios FX separados y términos del emisor | PPI libro/nominal, IOL referencia de flujos, versión de emisor, cupones y amortizaciones en ledger por moneda, salida y costes | Flujos IOL A82 observacionales; señal/OOS y issuer NO_VERIFICADO |
+| LETRAS | Si contrato demuestra cero cupón y moneda única, ensayar descuento al vencimiento; una letra indexada exige fórmula y fijación publicadas | Clave PPI, vencimiento, facial/fórmula por serie, libro OPEN, cashflow y salida. D30N6 no tiene analítica/simulación IOL disponible | BLOQUEADO por términos exactos de testigo y OOS |
+| OBLIGACIONES | Comparar precio y flujos con instrumentos del mismo riesgo/duración/moneda bajo límites de emisor definidos externamente | Alias ON/OBLIGACIONES exacto, PPI/IOL y documento de emisor, capital pendiente, pagos, exposición y salida; nunca inferir crédito desde ticker | YMCJO 14 flujos IOL de referencia; crédito/OOS NO_VERIFICADO |
+| OPCIONES | Tesis del subyacente y regla de prima/volatilidad definida ex ante; limitar long a prima+costes | Serie exacta, lote/strike/ajustes, book de opción+subyacente sincronizados, expiración/ejercicio BYMA, mark-to-bid y eventos de salida | Contrato GFGC5400NO en revisión, libro CLOSED nulo, BLOQUEADO |
+| FUTUROS | Tesis DLR específica, no trasplante de MEP/CCL ni momentum spot | A3 identidad/multiplicador/tick/vencimiento/margen, book, ajuste diario, variación, cierre y límite de exposición en lifecycle existente #453 | 207 pausados/0 READY; A77 y rueda OPEN BLOQUEADO |
+| CAUCIONES | Tesorería: elegir oferta neta realizable por plazo sobre caja no comprometida; no predicción direccional | Tasa colocadora/lado/volumen frescos, principal, vencimiento, comisiones y reserva atómica, evento MATURED | Seis ciclos PAPER históricos; oferta de próxima rueda NO_VERIFICADO |
+| FCI | Asignación de liquidez con horizonte de rescate y reglamento; no extrapolar NAV de cierre para ejecución previa | Clase exacta, NAV publicado, cutoff, plazo, suscripción/rescate y caja reservada; A79 cierra bypass de reserva pero aún no conecta allocator | Inventario IOL sin NAV/cutoff/clase PPI exacta; BLOQUEADO |
+
+Para spot, el cash inicial es `ask × cantidad × multiplicador + costos`; el
+valor liquidable de salida usa **bid** y costes de salida. En renta fija,
+cupones/rescates son movimientos en su moneda contractual: ningún PnL neto
+mezcla ARS y USD sin un escenario FX explícito, fechado y por modalidad. En
+futuro, variación diaria es `(precio_ajuste_nuevo − anterior) × cantidad ×
+multiplicador` y margen reservado permanece separado de PnL. En opción larga,
+la pérdida máxima en la compra es prima más costes; antes de vencer su valor
+se marca al bid, no a un payoff intrínseco inventado. En FCI, NAV publicado
+no libera caja: sólo evento de rescate efectivamente liquidado. Estas son
+identidades contables/hipótesis de modelado, no una ventaja de mercado.
+
+### Implementación y prueba de falsación
+
+1. Sellar por campo `family,ticker,market,currency,settlement`, fuente,
+   unidad, `source_at`, `received_at`, revisión de contrato y hash. PPI manda
+   identidad; complementos nunca la sobreescriben. La unión exige
+   `source_at ≤ received_at ≤ decision_at` y documento válido para la fecha.
+2. Registrar un `strategy_id` versionado, hipótesis, features disponibles en
+   ese instante, universo y parámetros **antes** de mirar el holdout. Un
+   evaluador especializado devuelve `HOLD` con código causal si falta unidad,
+   libro, salida, contrato o riesgo; `READY` de catálogo no emite BUY.
+3. Replay por fecha de disponibilidad real, con etiquetas sólo después del
+   horizonte, bloques temporales y embargo suficiente para no compartir
+   resultados de una misma posición entre train/test. Registrar todas las
+   variantes intentadas y comparar costo neto, drawdown, capital, cobertura,
+   sensibilidad al spread/slippage y benchmark de misma moneda/familia. PBO
+   y Sharpe deflactado son diagnósticos de selección múltiple, no garantía de
+   beneficio futuro. Referencias metodológicas primarias:
+   [Bailey et al., PBO](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf)
+   y [Bailey & López de Prado, DSR](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf).
+4. Si el holdout carece de muestra/puntas/PIT suficiente o el neto no supera
+   costos bajo estrés de supuestos, conservar `STRATEGY_NOT_VALIDATED`.
+   Sólo una estrategia aceptada por evidencia puede crear candidato; aun así
+   debe pasar preopen, contrato, riesgo, caja, mercado OPEN y asiento PAPER
+   atómico con trazabilidad de decisión, admisión, fill y salida.
+
+La [norma BYMA de opciones](https://www.byma.com.ar/productos/productos-financieros/opciones)
+fija lotes y ejercicio, mientras la [CNV sobre FCI](https://www.argentina.gob.ar/cnv/proteccion-al-publico-inversor/preguntas-frecuentes-cnv)
+sitúa NAV/reglamento/valor de cuotaparte en el ciclo del fondo. Esas reglas
+se consultan por serie/clase vigente antes de parametrizar un ejecutor. Los
+umbrales numéricos de ventaja/riesgo y el tamaño mínimo de muestra no están
+estimados con datos PIT suficientes: quedan deliberadamente NO_VERIFICADO.
