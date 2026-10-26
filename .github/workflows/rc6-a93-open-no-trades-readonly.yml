@@ -153,6 +153,7 @@ jobs:
                       selected.append({key:entry.get(key) for key in
                           ('generated_at_ar','phase','status','red_checks','paper_admission_receipt')}
                           |{'release_identity':entry.get('checks',{}).get('release_identity'),
+                            'iol_reference_fallback':entry.get('checks',{}).get('iol_reference_fallback'),
                             'paper_focus_contracts':entry.get('checks',{}).get('paper_focus_contracts')})
               report['preopen_journal']['reports']=selected
           print('RC6_PPI_WATCH_INVENTORY='+json.dumps(report,sort_keys=True))
