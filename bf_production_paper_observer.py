@@ -191,6 +191,27 @@ def _market_open(now=None):
     return _market_phase(now) == "OPEN"
 
 
+def _cooldown_session_state(phase, now=None):
+    """Certify the local postclose window even when PPI login is cooling down.
+
+    The local EOD copier needs a fresh, explicit closed heartbeat. A failed
+    login must not turn BOOT_CALENDAR into a synthetic OPEN/PREOPEN receipt.
+    Only the independently audited BYMA calendar and postclose clock can
+    produce MARKET_CLOSED here; an unknown year or calendar error stays boot.
+    """
+    local = (now or datetime.now(TZ)).astimezone(TZ)
+    if phase != "CLOSED" or local.hour * 60 + local.minute < 17 * 60 + 15:
+        return "BOOT_CALENDAR"
+    try:
+        import ak_byma_calendar as calendar
+        if (local.year in calendar.ANIOS_AUDITADOS and
+                calendar.es_dia_habil_operativo(local.date())):
+            return "MARKET_CLOSED"
+    except Exception:
+        pass
+    return "BOOT_CALENDAR"
+
+
 def _candidate_universe():
     """Plan de discovery automático.
 
@@ -2028,6 +2049,7 @@ def run():
             if reader is None:
                 if time.time() < next_login_at:
                     store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
+                                session_state=_cooldown_session_state(phase),
                                 heartbeat_at=now_iso(), real_orders_sent=0,
                                 detail="PPI en espera de reintento; no se abre una tormenta de logins.")
                     time.sleep(COMMAND_POLL_SECONDS)
