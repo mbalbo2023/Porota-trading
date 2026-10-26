@@ -46,7 +46,7 @@ jobs:
           done
           systemctl show porota-preopen-rc6.timer --property=LastTriggerUSec --property=NextElapseUSecRealtime --no-pager | sed 's/^/PREOPEN_TIMER_/'
           sudo -n python3 - <<'PYWATCH'
-          import collections,json,os,subprocess
+          import collections,json,os,re,subprocess
           from pathlib import Path
 
           def read(command):
@@ -61,7 +61,8 @@ jobs:
 
           report={'schema':'rc6-a96-ppi-watch-host-inventory-v1',
                   'mode':'METADATA_ONLY','mutation_attempted':False,
-                  'systemd':{},'docker':{},'process_names':{},'directories':{},'crontab':{}}
+                  'systemd':{},'docker':{},'process_names':{},'directories':{},'crontab':{},
+                  'release_state':{}}
           for scope,command in (
               ('installed',['systemctl','list-unit-files','--all','--no-legend','--no-pager']),
               ('loaded',['systemctl','list-units','--all','--plain','--no-legend','--no-pager'])):
@@ -70,6 +71,18 @@ jobs:
                             if line.split() and matches(line.split()[0])})[:60]
               report['systemd'][scope]={'enumeration':'OK' if raw is not None else 'UNAVAILABLE',
                                          'names':names}
+          # A differently named unit may describe the independent Watch.
+          # Inspect local unit text for keywords but publish file names only.
+          for unit_root in ('/etc/systemd/system','/lib/systemd/system'):
+              found=[]
+              try:
+                  for unit in Path(unit_root).glob('*.service'):
+                      if unit.is_symlink() or unit.stat().st_size>65536:continue
+                      if matches(unit.name) or matches(unit.read_text(errors='replace')):
+                          found.append(unit.name)
+                  report['systemd'][unit_root]={'enumeration':'OK','matches':sorted(found)[:80]}
+              except OSError:
+                  report['systemd'][unit_root]={'enumeration':'UNAVAILABLE'}
           containers=read(['docker','ps','-a','--format','{{.Names}}|{{.Image}}|{{.Status}}'])
           report['docker']['enumeration']='OK' if containers is not None else 'UNAVAILABLE'
           report['docker']['matches']=[dict(zip(('name','image','status'),line.split('|',2)))
@@ -82,6 +95,20 @@ jobs:
           report['process_names']={'enumeration':'OK' if processes is not None else 'UNAVAILABLE',
               'counts':dict(collections.Counter(name.strip() for name in
                   (processes or '').splitlines() if matches(name)).most_common(30))}
+          # Argv and environment may carry secrets; scan in memory and emit
+          # only PID, executable basename and cgroup basename for matches.
+          matches_by_pid=[]
+          for proc in Path('/proc').iterdir():
+              if not proc.name.isdecimal():continue
+              try:
+                  cmd=proc.joinpath('cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
+                  if not matches(cmd):continue
+                  name=proc.joinpath('comm').read_text().strip()
+                  group=proc.joinpath('cgroup').read_text().splitlines()
+                  matches_by_pid.append({'pid':int(proc.name),'comm':name[:45],
+                      'cgroup_leaf':os.path.basename(group[0].split(':')[-1])[:75] if group else ''})
+              except (OSError,UnicodeError):continue
+          report['process_names']['cmdline_keyword_metadata']=matches_by_pid[:35]
           for root in ('/opt','/srv','/home'):
               try:
                   report['directories'][root]=[entry.name for entry in Path(root).iterdir()
@@ -95,6 +122,19 @@ jobs:
                        if line.strip() and not line.lstrip().startswith('#') and matches(line)]
               report['crontab'][owner]={'enumeration':'OK' if raw is not None else 'UNAVAILABLE',
                   'matching_entries':len(matched)}
+          state=Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          try:
+              if state.is_symlink() or state.stat().st_size>65536:raise ValueError('UNSAFE_STATE')
+              release=json.loads(state.read_text())
+              keep=('candidate_sha','deploy_sha','validation_status','mode','real_orders_sent','status')
+              report['release_state']={'read':'OK',**{key:release.get(key) for key in keep}}
+          except (OSError,ValueError,TypeError):report['release_state']={'read':'UNAVAILABLE'}
+          inspected=read(['docker','inspect','porota_production_observer','--format','{{json .Config.Env}}'])
+          try:
+              sha=next((value.split('=',1)[1] for value in json.loads(inspected or '[]')
+                  if value.startswith('POROTA_BUILD_SHA=')),'')
+              report['release_state']['observer_build_sha']=sha if re.fullmatch('[0-9a-f]{40}',sha) else 'NO_VERIFICADO'
+          except (ValueError,TypeError):report['release_state']['observer_build_sha']='NO_VERIFICADO'
           print('RC6_PPI_WATCH_INVENTORY='+json.dumps(report,sort_keys=True))
           PYWATCH
           sudo -n docker exec -i porota_production_observer python - <<'PY'
