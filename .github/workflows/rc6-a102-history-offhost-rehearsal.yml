@@ -1,0 +1,109 @@
+name: RC6 A102 history offhost rehearsal
+
+on:
+  push:
+    branches: [audit/rc6-a102-offhost-history-20261026]
+    paths:
+      - '.github/workflows/rc6-a102-history-offhost-rehearsal.yml'
+      - 'scripts/rc6_history_capture_stdout.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  copy-and-rehearse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      CANDIDATE_SHA: 6bfd999642cab21490ae478be90c139e2544d7e3
+      CANDIDATE_TREE: 4fdfa07c720921feeb73b672ad7ef68b9a1774a8
+    steps:
+      - name: Checkout isolated audit control
+        uses: actions/checkout@v4
+      - name: Checkout exact candidate tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+      - name: Verify exact candidate
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE"
+          python -m compileall -q candidate/scripts/rc6_history_offhost_preflight.py candidate/scripts/rc6_history_offhost_migration_rehearsal.py scripts/rc6_history_capture_stdout.py
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Capture one bounded online SQLite snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 360s \
+            ssh -T -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n docker exec -i porota_production_observer python -' \
+              < scripts/rc6_history_capture_stdout.py \
+              > "$RUNNER_TEMP/history.sqlite"
+          test -s "$RUNNER_TEMP/history.sqlite"
+      - name: Reconcile copy and migrate only on runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          source=Path(os.environ['RUNNER_TEMP'])/'history.sqlite'
+          digest=hashlib.sha256()
+          with source.open('rb') as h:
+              for chunk in iter(lambda:h.read(1024*1024),b''):
+                  digest.update(chunk)
+          receipt={'source_capture':{'source_bytes':source.stat().st_size,
+                                     'source_sha256':digest.hexdigest()}}
+          (source.parent/'history-capture.json').write_text(json.dumps(receipt))
+          print('RC6_OFFHOST_COPY_IDENTITY=VERIFIED')
+          PY
+          cd candidate
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          from scripts.rc6_history_offhost_preflight import census
+          from scripts.rc6_history_offhost_migration_rehearsal import rehearse
+          root=Path(os.environ['RUNNER_TEMP'])
+          source=root/'history.sqlite'
+          capture=json.loads((root/'history-capture.json').read_text())
+          before=census(source,capture,runner_root=root,seconds=600)
+          print('RC6_OFFHOST_PREFLIGHT='+json.dumps({
+              'copy_sha256':before['copy_sha256'],
+              'copy_bytes':before['copy_bytes'],
+              'legacy_versions':before['legacy_versions'],
+              'pointers':before['pointers'],
+              'migration_allowed':before['migration_allowed'],
+              'retention_allowed':before['retention_allowed']},sort_keys=True))
+          result=rehearse(source,capture,runner_root=root,seconds=1800)
+          print('RC6_OFFHOST_MIGRATION='+json.dumps(result,sort_keys=True))
+          PY
+      - name: Destroy runner copy and SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/history.sqlite" "$RUNNER_TEMP/history-capture.json" \
+            "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
