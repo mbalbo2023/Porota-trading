@@ -514,10 +514,14 @@ jobs:
                   SUM(CASE WHEN status='PAUSED_EXPLICIT' THEN 1 ELSE 0 END) paused
                   FROM candidate_identity_v2 GROUP BY instrument_type ORDER BY instrument_type""")]
           candidate_counts=[]
+          candidate_reason_counts=[]
           if "scalping_candidates" in tables:
               candidate_counts=[dict(r) for r in db.execute("""SELECT asset_class family,action,COUNT(*) n,MAX(evaluated_at) last_at
                   FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?)
                   GROUP BY asset_class,action ORDER BY asset_class,action""",(since,))]
+              candidate_reason_counts=[dict(r) for r in db.execute("""SELECT asset_class family,reason,COUNT(*) n,MAX(evaluated_at) last_at
+                  FROM scalping_candidates WHERE action='HOLD' AND julianday(evaluated_at)>=julianday(?)
+                  GROUP BY asset_class,reason ORDER BY n DESC LIMIT 30""",(since,))]
               lifetime["scalping_candidates"]=[dict(r) for r in db.execute("""SELECT asset_class family,action,
                   COUNT(*) n,MAX(evaluated_at) last_at FROM scalping_candidates
                   GROUP BY asset_class,action ORDER BY asset_class,action""")]
@@ -560,7 +564,8 @@ jobs:
                                    "missing_temporal":missing_temporal,
                                    "blocked_reasons":{k:v.most_common(12) for k,v in sorted(blocked_reasons.items())},
                                    "opened_examples":examples},
-               "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,"lifetime":lifetime,"routes":routes,
+               "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,
+               "scalping_hold_reasons":candidate_reason_counts,"lifetime":lifetime,"routes":routes,
                "future_lifecycle_counts":future_counts,"specialized":specialized,"observer":observer,
                "history_writes":False,"provider_requests":0,"ppi_watch_accessed":False,"real_routes":"NOT_CALLED"}
           print(json.dumps(out,sort_keys=True,default=str))
