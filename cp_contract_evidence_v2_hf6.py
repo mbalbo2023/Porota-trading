@@ -588,8 +588,10 @@ def family_readiness_state(records, *, family, max_age_seconds=None, now=None,
     paper_ready = result.get("status") == "READY_PAPER_CANDIDATE"
     return {**result, "evidence": merged, "conflicts": conflicts,
             "paper_simulatable": paper_ready,
-            "paper_execution_mode": "PAPER" if paper_ready else "SHADOW_OBSERVE_ONLY",
-            "paper_auto_enabled": paper_ready,
+            "paper_contract_ready": paper_ready,
+            "paper_execution_mode": "SHADOW_OBSERVE_ONLY",
+            "paper_auto_enabled": False,
+            "entry_authority": False,
             "auto_activation_allowed": False,
             "real_money_authorized": False,
             "legacy_global_ttl_ignored": True}

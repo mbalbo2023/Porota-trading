@@ -125,7 +125,9 @@ def test_complete_multi_source_contract_stays_fail_closed_without_executor_and_c
         simulator_ready=True, cost_ready=True,
     )
     assert ready["status"] == "READY_PAPER_CANDIDATE"
-    assert ready["paper_auto_enabled"] is True
+    assert ready["paper_contract_ready"] is True
+    assert ready["paper_auto_enabled"] is False
+    assert ready["paper_execution_mode"] == "SHADOW_OBSERVE_ONLY"
     assert ready["real_money_authorized"] is False
 
 
