@@ -296,6 +296,11 @@ jobs:
                   'SELECT state,COUNT(*),MAX(checked_at) FROM ppi_intraday_contract_state GROUP BY state ORDER BY COUNT(*) DESC LIMIT 30')]
           focus=focus_contracts(path)
           candidate_ledger=candidate_reconciliation()
+          families=[{'family':r[0],'market':r[1],'status':r[2],
+                     'can_simulate':int(r[3]),'n':r[4]}
+              for r in db.execute('''SELECT instrument_type,market,status,can_simulate,COUNT(*)
+                  FROM candidate_identity_v2 GROUP BY instrument_type,market,status,can_simulate
+                  ORDER BY instrument_type,market,status,can_simulate''')]
           volume=volume_patterns()
           decisions=compact(aggregate('paper_decisions','decided_at,action,reason','decided_at'),['action'],'reason')
           gates=compact(aggregate('trade_gate_evaluations','evaluated_at,final_result,reason','evaluated_at'),['final_result'],'reason')
@@ -317,7 +322,8 @@ jobs:
                   'build_sha':os.getenv('POROTA_BUILD_SHA','NO_VERIFICADO'),
                   'admission':{'allowed':allowed,'reason':reason,'receipt':receipt},
                   'focus_contracts':focus,'intraday_contract_states':intraday,
-                  'candidate_ledger':candidate_ledger,'volume_patterns':volume,
+                  'candidate_ledger':candidate_ledger,'family_matrix':families,
+                  'volume_patterns':volume,
                   'scalping_worker':worker,'decisions':decisions,'gates':gates,'scalping':scalping,
                   'fills':fills,'positions':positions,'cauciones':cauciones,'lifecycle':lifecycle,
                   'market_snapshots':snapshots,'read_only':True,'provider_requests':0,
