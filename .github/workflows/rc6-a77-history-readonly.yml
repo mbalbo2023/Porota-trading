@@ -371,6 +371,7 @@ jobs:
           native = Counter()
           families = defaultdict(Counter)
           gaps = Counter()
+          signal_metrics = Counter()
           examples = []
           last_gate_id = db.execute("SELECT COALESCE(MAX(id),0) FROM trade_gate_evaluations").fetchone()[0] if "trade_gate_evaluations" in tables else 0
           if last_gate_id:
@@ -409,6 +410,30 @@ jobs:
                       gaps["GATE_PAPER_DECISION_MISSING"] += 1
                   if result=="OPENED_SIMULATED":
                       target["opened_gates"] += 1
+                      runtime=payload.get("runtime") or {}
+                      inputs=payload.get("inputs_used") or {}
+                      vector=inputs.get("entry_signal_inputs") or {}
+                      source_status=runtime.get("source_status") or "MISSING"
+                      signal_metrics["source_"+str(source_status)] += 1
+                      signal_metrics["clock_"+str(runtime.get("clock_mode") or "MISSING")] += 1
+                      signal_metrics["vector_"+str(vector.get("price_sample_status") or "MISSING")] += 1
+                      signal_metrics["temporal_ready_"+str((vector.get("temporal_contract") or {}).get("temporal_ready"))] += 1
+                      signal_metrics["economics_passed_"+str((inputs.get("economics") or {}).get("passed"))] += 1
+                      for key in ("signal_at","decision_at","intent_at"):
+                          signal_metrics[key+("_present" if runtime.get(key) else "_missing")] += 1
+                      if not isinstance(runtime.get("git_sha"),str) or len(runtime["git_sha"])!=40:
+                          gaps["OPEN_GATE_FROZEN_SOURCE_SHA_MISSING"] += 1
+                      if not runtime.get("configuration_fingerprint"):
+                          gaps["OPEN_GATE_CONFIGURATION_FINGERPRINT_MISSING"] += 1
+                      if r["technical_gate"]!="APPROVE" or r["patrimonial_gate"]!="APPROVE":
+                          gaps["OPEN_GATE_PORTON_CONTRADICTION"] += 1
+                      samples=vector.get("price_samples") or []
+                      if samples:
+                          observed=tuple(quote.get(k) for k in ("symbol","asset_class","settlement","currency","market"))
+                          if any(tuple(s.get(k) for k in ("symbol","asset_class","settlement","currency","market"))!=observed for s in samples):
+                              gaps["OPEN_GATE_SIGNAL_SAMPLE_IDENTITY_MISMATCH"] += 1
+                      if vector.get("price_sample_status")=="NATIVE_EXACT_VECTOR" and len(samples)<3:
+                          gaps["OPEN_GATE_EXACT_VECTOR_SHORT"] += 1
                       if not (r["paper_id"] and r["position_symbol"] and r["buy_fill_id"]):
                           gaps["OPEN_GATE_WITHOUT_POSITION_AND_BUY_FILL"] += 1
                       else:
@@ -472,7 +497,7 @@ jobs:
                "entry_signal_lab":{k:(report.get("entry_signal_lab") or {}).get(k) for k in
                                    ("status","native_decisions_observed","source_read_truncated","cohort_total")},
                "native_gate_rows":{"bounds":dict(native),"by_family":{k:dict(v) for k,v in sorted(families.items())},
-                                   "gaps":dict(gaps),"opened_examples":examples},
+                                   "gaps":dict(gaps),"signal_metrics":dict(signal_metrics),"opened_examples":examples},
                "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,
                "future_lifecycle_counts":future_counts,"observer":observer,
                "history_writes":False,"provider_requests":0,"ppi_watch_accessed":False,"real_routes":"NOT_CALLED"}
