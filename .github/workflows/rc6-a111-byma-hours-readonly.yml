@@ -17,7 +17,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          url='https://cdn.prod.website-files.com/6697a441a50c6b926e1972e0/6ab2dda27ea9e2c80e659a15_BYMA-COM19024-Horarios_de_Negociacion_Liquidacion_Recepcion-v2.pdf'
+          url='https://cdn.prod.website-files.com/6697a441a50c6b926e1972e0/68878cdd37aee2ce2cedef85_BYMA-COM18782-Horarios-desde-Julio-2025.pdf'
           curl --fail --silent --show-error --location --max-time 30 --retry 1 \
             --max-filesize 2000000 "$url" -o /tmp/byma-com19024.pdf
           test "$(head -c 4 /tmp/byma-com19024.pdf)" = '%PDF'
