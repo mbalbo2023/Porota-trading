@@ -461,12 +461,16 @@ jobs:
           db.close()
           out={"schema":"rc6-a78-causal-trace-readonly-v1","read_only":True,"as_of_utc":datetime.now(timezone.utc).isoformat(),
                "window_since_utc":since,"shadow_generation":{"as_of":report.get("as_of"),"phase":report.get("phase"),
-               "status":report.get("status"),"sequence":cut["pointer"].get("sequence")},
+               "status":report.get("status"),"sequence":cut["pointer"].get("sequence"),
+               "computed_audit_state":(cut.get("computed_audit") or {}).get("state")},
                "funnel":{"status":funnel.get("status"),"sessions_retained":funnel.get("sessions_retained"),
                "source_gaps":funnel.get("source_gaps"),"source_read_truncated":funnel.get("source_read_truncated"),
                "shadow_to_factual_causality":funnel.get("shadow_to_factual_causality"),
+               "durable_counts":funnel.get("counts"),"by_currency_channel":funnel.get("by_currency_channel"),
                "family_channel_stages":[{"family":family,"channel":channel,"stages":dict(counts)}
                                         for (family,channel),counts in sorted(stages.items())]},
+               "entry_signal_lab":{k:(report.get("entry_signal_lab") or {}).get(k) for k in
+                                   ("status","native_decisions_observed","source_read_truncated","cohort_total")},
                "native_gate_rows":{"bounds":dict(native),"by_family":{k:dict(v) for k,v in sorted(families.items())},
                                    "gaps":dict(gaps),"opened_examples":examples},
                "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,
