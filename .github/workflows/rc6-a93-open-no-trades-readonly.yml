@@ -62,7 +62,7 @@ jobs:
           report={'schema':'rc6-a96-ppi-watch-host-inventory-v1',
                   'mode':'METADATA_ONLY','mutation_attempted':False,
                   'systemd':{},'docker':{},'process_names':{},'directories':{},'crontab':{},
-                  'release_state':{}}
+                  'release_state':{},'preopen_journal':{}}
           for scope,command in (
               ('installed',['systemctl','list-unit-files','--all','--no-legend','--no-pager']),
               ('loaded',['systemctl','list-units','--all','--plain','--no-legend','--no-pager'])):
@@ -135,6 +135,26 @@ jobs:
                   if value.startswith('POROTA_BUILD_SHA=')),'')
               report['release_state']['observer_build_sha']=sha if re.fullmatch('[0-9a-f]{40}',sha) else 'NO_VERIFICADO'
           except (ValueError,TypeError):report['release_state']['observer_build_sha']='NO_VERIFICADO'
+          journal=read(['journalctl','-u','porota-preopen-rc6.service','--since',
+              '2026-10-26 13:00:00 UTC','--until','2026-10-26 14:00:00 UTC',
+              '--no-pager','--output=cat'])
+          report['preopen_journal']['enumeration']='OK' if journal is not None else 'UNAVAILABLE'
+          if journal:
+              selected=[]
+              decoder=json.JSONDecoder()
+              offset=0
+              while offset<len(journal) and len(selected)<12:
+                  pos=journal.find('{',offset)
+                  if pos<0:break
+                  try: entry,end=decoder.raw_decode(journal[pos:])
+                  except ValueError:offset=pos+1;continue
+                  offset=pos+end
+                  if isinstance(entry,dict) and entry.get('schema')=='POROTA_RC6_PREOPEN_V3':
+                      selected.append({key:entry.get(key) for key in
+                          ('generated_at_ar','phase','status','red_checks','paper_admission_receipt')}
+                          |{'release_identity':entry.get('checks',{}).get('release_identity'),
+                            'paper_focus_contracts':entry.get('checks',{}).get('paper_focus_contracts')})
+              report['preopen_journal']['reports']=selected
           print('RC6_PPI_WATCH_INVENTORY='+json.dumps(report,sort_keys=True))
           PYWATCH
           sudo -n docker exec -i porota_production_observer python - <<'PY'
