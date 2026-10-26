@@ -64,6 +64,83 @@ def resolve_closed_recovery():
     raise ValueError('SCHEDULER_CLOSED_RECOVERY_MIXED_OR_UNKNOWN')
 
 
+def require_rescue_degraded_hold(candidate):
+    """Leave timers paused only with the exact A92 incident and PAPER book."""
+    sys.path.insert(0, '/opt/porota-trading')
+    from scripts import rc6_deploy_quiescence as q
+    path = q.ROOT/'data/deploy'/('quiescence-' + candidate + '.json')
+    if path.is_symlink() or (path.exists() and
+                            (not path.is_file() or path.stat().st_size > 65536)):
+        raise ValueError('SCHEDULER_RESCUE_RECEIPT_UNSAFE')
+    if not path.exists():
+        # Scheduler suspension can succeed before the first quiescence
+        # persist. Keep it paused only if the exact original A92 image is
+        # still running, with the same bounded incident admission and broker.
+        observed = {name: q.inspect(name) for name in q.OWNED}
+        if any(value['State']['Status'] != 'running' or
+               value['Image'] != q.RESCUE_IMAGE_ID or
+               not re.fullmatch('[0-9a-f]{64}', value['Id'])
+               for value in observed.values()):
+            raise ValueError('SCHEDULER_RESCUE_NO_DRAIN_RUNTIME_CHANGED')
+        if q.admit(allow_degraded_closed_rescue=True) != 'DEGRADED':
+            raise ValueError('SCHEDULER_RESCUE_NO_DRAIN_BOOK_CHANGED')
+        q.critical_admission()
+        return 'RESCUE_NO_DRAIN_ORIGINAL_DEGRADED_HELD'
+    receipt = json.loads(path.read_bytes())
+    if (receipt.get('candidate_sha') != candidate or
+            receipt.get('degraded_closed_rescue') is not True or
+            receipt.get('rescue_pre_state') != ['DEGRADED', 'BOOT_CALENDAR'] or
+            receipt.get('rescue_source_sha') != q.RESCUE_SOURCE_SHA or
+            receipt.get('rescue_image_id') != q.RESCUE_IMAGE_ID or
+            type(receipt.get('real_orders_sent')) is not int or
+            receipt['real_orders_sent'] != 0 or
+            receipt.get('ppi_watch_accessed') is not False or
+            set(receipt.get('containers', {})) != set(q.OWNED)):
+        raise ValueError('SCHEDULER_RESCUE_RECEIPT_CHANGED')
+    q.exact_rescue_receipt(receipt)
+    observed = {name: q.inspect(name) for name in q.OWNED}
+    candidate_runtime = receipt.get('candidate_runtime_after_failure')
+    if candidate_runtime is not None:
+        intent = receipt.get('candidate_image_intent')
+        if (receipt.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+                receipt.get('installation_started') is not True or
+                not isinstance(intent, dict) or not isinstance(candidate_runtime, dict) or
+                candidate_runtime.get('status') not in {'exited', 'running'} or
+                set(candidate_runtime.get('containers', {})) != set(q.OWNED) or
+                candidate_runtime.get('flat_book') != q.rescue_flat_book() or
+                candidate_runtime.get('critical_admission') != q.critical_admission()):
+            raise ValueError('SCHEDULER_RESCUE_CANDIDATE_PROVENANCE_RED')
+        for name, value in observed.items():
+            expected = candidate_runtime['containers'][name]
+            if (value['Id'] != expected.get('id') or
+                    value['Image'] != expected.get('image') or
+                    value['Image'] != intent.get('image_id') or
+                    q.lifecycle(value) != expected.get('lifecycle') or
+                    value['State']['Status'] != candidate_runtime['status']):
+                raise ValueError('SCHEDULER_RESCUE_CANDIDATE_IDENTITY_CHANGED')
+        return 'RESCUE_CANDIDATE_UNVALIDATED_HELD'
+    if any(observed[name]['Id'] != receipt['containers'][name]['id'] or
+           observed[name]['Image'] != q.RESCUE_IMAGE_ID for name in q.OWNED):
+        raise ValueError('SCHEDULER_RESCUE_RUNTIME_IDENTITY_CHANGED')
+    states = {value['State']['Status'] for value in observed.values()}
+    if (states == {'running'} and
+            receipt.get('status') == 'ORIGINAL_RUNTIME_DEGRADED_RESUMED' and
+            receipt.get('installation_started') is False):
+        if q.admit(allow_degraded_closed_rescue=True) != 'DEGRADED':
+            raise ValueError('SCHEDULER_RESCUE_RUNNING_BOOK_CHANGED')
+    elif (states == {'exited'} and
+          receipt.get('status') == 'FIX_FORWARD_VALIDATION_REQUIRED' and
+          receipt.get('installation_started') is True):
+        q.exact_clean_stopped(receipt)
+        if q.admit(stopped=True, allow_degraded_closed_rescue=True,
+                   stopped_receipt=receipt) not in {'DEGRADED', 'STOPPED'}:
+            raise ValueError('SCHEDULER_RESCUE_STOPPED_BOOK_CHANGED')
+    else:
+        raise ValueError('SCHEDULER_RESCUE_RUNTIME_UNVERIFIED')
+    q.critical_admission()
+    return 'RESCUE_DEGRADED_HELD'
+
+
 def require_exact_stopped_closed_flat(candidate):
     """Prove the installed failed candidate's exact clean stop and flat PAPER ledger."""
     sys.path.insert(0, '/opt/porota-trading')
@@ -308,6 +385,29 @@ def run(candidate, action, policy_b64):
             action = resolve_open_recovery()
         if action == 'recover-closed':
             action = resolve_closed_recovery()
+        if action == 'recover-degraded-closed':
+            action = 'hold-rescue-degraded'
+        if action == 'hold-rescue-degraded':
+            if (receipt.get('status') != 'SUSPENDED' or
+                    set(receipt.get('attempted', [])) != set(names)):
+                raise ValueError('SCHEDULER_RESCUE_PAUSE_RECEIPT_RED')
+            for name in names:
+                service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+                if (command('systemctl', 'is-active', name)[0] != 'inactive' or
+                        command('systemctl', 'is-enabled', name)[0] != 'enabled' or
+                        code or not service.endswith('.service') or
+                        command('systemctl', 'is-active', service)[0] in
+                        ('active', 'activating', 'reloading', 'deactivating')):
+                    raise ValueError('SCHEDULER_RESCUE_TIMER_OR_JOB_CHANGED:' + name)
+            status = require_rescue_degraded_hold(candidate)
+            if ppi_snapshot() != before:
+                raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
+            receipt['rescue_failure_disposition'] = status
+            receipt['rescue_failure_recorded_at'] = datetime.now(timezone.utc).isoformat()
+            persist(path, receipt)
+            print(json.dumps({'status': status, 'candidate_sha': candidate,
+                              'timer_count': len(names), 'ppi_watch_accessed': False}, sort_keys=True))
+            return receipt
         if action in ('hold-open-flat', 'hold-closed-flat'):
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
@@ -360,7 +460,8 @@ def main():
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['suspend', 'restore', 'verify',
                                            'hold-open-flat', 'recover-open',
-                                           'hold-closed-flat', 'recover-closed'], required=True)
+                                           'hold-closed-flat', 'recover-closed',
+                                           'recover-degraded-closed'], required=True)
     parser.add_argument('--policy-b64', required=True)
     args = parser.parse_args()
     run(args.candidate_sha, args.action, args.policy_b64)

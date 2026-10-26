@@ -17,6 +17,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+import types
 from zoneinfo import ZoneInfo
 
 ROOT = Path('/opt/porota-trading')
@@ -25,6 +26,151 @@ FAILED_INSTALL_CANDIDATE = '38b04252f5e25d43bf40c2fa332a9d01d3eb8fb1'
 FAILED_ADMIN_CANDIDATE = '7ae4d088d8cf90f670f8675d220244638f35d7f6'
 FAILED_COLD2_CANDIDATE = '48a981cf327a637c0c074879fcdcd17475de8111'
 ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+RESCUE_MODE = 'DEGRADED_CLOSED_20261026'
+RESCUE_SOURCE_SHA = '3fd020f408275a490e911e06f60a1ddc89153fe5'
+RESCUE_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+RESCUE_CALENDAR_SHA256 = '32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
+RESCUE_HOURS_SHA256 = '380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
+
+
+def degraded_closed_rescue_proof():
+    """The one 26 October postclose incident, not a new healthy phase."""
+    local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+    if local.date().isoformat() != '2026-10-26' or (local.hour, local.minute) < (20, 0):
+        raise ValueError('QUIESCENCE_RESCUE_WINDOW_RED')
+    calendar_path = ROOT / 'ak_byma_calendar.py'
+    if (calendar_path.is_symlink() or not calendar_path.is_file() or
+            hashlib.sha256(calendar_path.read_bytes()).hexdigest() != RESCUE_CALENDAR_SHA256):
+        raise ValueError('QUIESCENCE_RESCUE_CALENDAR_SOURCE_RED')
+    # Compile the exact pinned bytes in memory; no importlib pycache write on
+    # the installed host before the durable drain receipt is committed.
+    calendar = types.ModuleType('rc6_rescue_byma_calendar')
+    exec(compile(calendar_path.read_bytes(), str(calendar_path), 'exec'), calendar.__dict__)
+    if (2026 not in calendar.ANIOS_AUDITADOS or
+            calendar.CALENDARIO_ACTUALIZADO_EL.isoformat() != '2026-10-14' or
+            not calendar.es_dia_habil_operativo(local.date())):
+        raise ValueError('QUIESCENCE_RESCUE_CALENDAR_DAY_RED')
+    return {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
+            'observed_at_art': local.isoformat(), 'business_day': '2026-10-26',
+            'calendar_sha256': RESCUE_CALENDAR_SHA256,
+            'calendar_url': 'https://www.byma.com.ar/mercado/calendario-bursatil',
+            'byma_hours_com18782_sha256': RESCUE_HOURS_SHA256,
+            'byma_hours_url': 'https://www.byma.com.ar/comunicados/comunicado-18782-horarios',
+            'byma_latest_session_end_art': '19:00',
+            'a3_latest_session_end_art': '17:30'}
+
+
+def exact_rescue_receipt(receipt):
+    """Prevent a replayed, future-dated or mode-switched rescue receipt."""
+    proof = receipt.get('rescue_calendar_and_hours')
+    if (receipt.get('degraded_closed_rescue') is not True or
+            receipt.get('rescue_source_sha') != RESCUE_SOURCE_SHA or
+            receipt.get('rescue_image_id') != RESCUE_IMAGE_ID or
+            receipt.get('rescue_pre_state') != ['DEGRADED', 'BOOT_CALENDAR'] or
+            not isinstance(proof, dict) or proof.get('business_day') != '2026-10-26' or
+            proof.get('calendar_sha256') != RESCUE_CALENDAR_SHA256 or
+            proof.get('byma_hours_com18782_sha256') != RESCUE_HOURS_SHA256 or
+            proof.get('byma_latest_session_end_art') != '19:00' or
+            proof.get('a3_latest_session_end_art') != '17:30' or
+            set(receipt.get('containers', {})) != set(OWNED) or
+            any(receipt['containers'][name].get('image') != RESCUE_IMAGE_ID
+                for name in OWNED)):
+        raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CHANGED')
+    try:
+        at = datetime.fromisoformat(proof['observed_at_utc'])
+        art = datetime.fromisoformat(proof['observed_at_art'])
+        now = datetime.now(timezone.utc)
+        if (at.tzinfo is None or art.tzinfo is None or
+                at.utcoffset().total_seconds() != 0 or
+                art.utcoffset().total_seconds() != -10800 or
+                at != art.astimezone(timezone.utc) or at > now or
+                art.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+                != '2026-10-26' or (art.hour, art.minute) < (20, 0)):
+            raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED')
+        recorded = receipt.get('recorded_at')
+        if recorded:
+            recorded_at = datetime.fromisoformat(recorded)
+            if recorded_at.tzinfo is None or not at <= recorded_at <= now:
+                raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED')
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED') from exc
+    return proof
+
+
+def rescue_flat_book():
+    """Bounded committed PAPER/0 proof, independent of the unhealthy phase."""
+    path = ROOT / 'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        end = time.monotonic() + 2
+        c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
+        row = c.execute('SELECT mode,real_orders_sent,process_state,session_state,source_sha '
+                        'FROM observer_state WHERE id=1').fetchone()
+        if not row or row[0] != 'PRODUCTION_PAPER' or type(row[1]) is not int or row[1] != 0:
+            raise ValueError('QUIESCENCE_RESCUE_PAPER_ZERO_RED')
+        for table, state in (('paper_positions', 'OPEN'), ('paper_cauciones', 'OPEN'),
+                             ('paper_future_positions', 'ACTIVE')):
+            if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1', (state,)).fetchone():
+                raise ValueError('QUIESCENCE_RESCUE_BOOK_NOT_FLAT')
+        return {'process_state': row[2], 'session_state': row[3],
+                'source_sha': row[4], 'real_orders_sent': 0}
+
+
+def candidate_image_intent(candidate, image_id, manifest_path):
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id or ''):
+        raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_IMAGE_INVALID')
+    path = Path(manifest_path or '')
+    if (not path.is_absolute() or path.is_symlink() or not path.is_file() or
+            path.stat().st_size > 65536):
+        raise ValueError('QUIESCENCE_RESCUE_FROZEN_MANIFEST_UNSAFE')
+    raw = path.read_bytes()
+    frozen = json.loads(raw)
+    if (frozen.get('candidate_sha') != candidate or
+            not re.fullmatch('[0-9a-f]{64}', frozen.get('image_tar_sha256', ''))):
+        raise ValueError('QUIESCENCE_RESCUE_FROZEN_IDENTITY_RED')
+    tag = 'porota-trading-bot:17.0.0-rc6-candidate-' + candidate
+    images = json.loads(command(['docker', 'image', 'inspect', tag]))
+    if len(images) != 1 or images[0].get('Id') != image_id:
+        raise ValueError('QUIESCENCE_RESCUE_IMAGE_TAG_CHANGED')
+    return {'image_id': image_id, 'manifest_sha256': hashlib.sha256(raw).hexdigest(),
+            'image_tar_sha256': frozen['image_tar_sha256'],
+            'recorded_at': datetime.now(timezone.utc).isoformat()}
+
+
+def candidate_runtime_after_failed_install(receipt):
+    intent = receipt.get('candidate_image_intent')
+    if not isinstance(intent, dict):
+        raise ValueError('QUIESCENCE_RESCUE_IMAGE_INTENT_MISSING')
+    recorded = datetime.fromisoformat(intent['recorded_at'])
+    if recorded.tzinfo is None or recorded > datetime.now(timezone.utc):
+        raise ValueError('QUIESCENCE_RESCUE_IMAGE_INTENT_CLOCK_RED')
+    observed = {name: inspect(name) for name in OWNED}
+    if (any(not re.fullmatch('[0-9a-f]{64}', v['Id']) or
+            v['Image'] != intent['image_id'] for v in observed.values()) or
+            len({v['State']['Status'] for v in observed.values()}) != 1):
+        raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_RUNTIME_MIXED')
+    status = next(iter(observed.values()))['State']['Status']
+    if status not in {'running', 'exited'}:
+        raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_STATUS_RED')
+    proof = {}
+    for name, value in observed.items():
+        state = lifecycle(value)
+        if status == 'exited':
+            finished = datetime.fromisoformat(state['FinishedAt'].replace('Z', '+00:00'))
+            if (type(state['ExitCode']) is not int or state['ExitCode'] != 0 or
+                    state['OOMKilled'] is not False or finished.tzinfo is None or
+                    not recorded <= finished <= datetime.now(timezone.utc)):
+                raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_STOP_UNCLEAN')
+        proof[name] = {'id': value['Id'], 'image': value['Image'],
+                       'lifecycle': state}
+    book = rescue_flat_book()
+    if book['source_sha'] not in {receipt['candidate_sha'], RESCUE_SOURCE_SHA}:
+        raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_SOURCE_RED')
+    critical = critical_admission()
+    return {'status': status, 'containers': proof, 'flat_book': book,
+            'critical_admission': critical,
+            'observed_at': datetime.now(timezone.utc).isoformat()}
 
 
 def admin_issue624_target(c):
@@ -100,8 +246,14 @@ def clean_stop(before, after):
 def admit(*, stopped=False, allow_admin_issue624=False,
           allow_market_open_suspend=False, allow_open_paper_carryover=False,
           allow_postclose_pending=False, allow_intraday_caucion=False,
-          allow_pending_caucion=False,
+          allow_pending_caucion=False, allow_degraded_closed_rescue=False,
           initial=False, stopped_receipt=None):
+    if allow_degraded_closed_rescue:
+        if (allow_admin_issue624 or allow_market_open_suspend or
+                allow_open_paper_carryover or allow_postclose_pending or
+                allow_intraday_caucion or allow_pending_caucion):
+            raise ValueError('QUIESCENCE_RESCUE_MODE_INVALID')
+        degraded_closed_rescue_proof()
     if allow_pending_caucion and (allow_market_open_suspend or
                                   allow_open_paper_carryover or allow_postclose_pending or
                                   allow_intraday_caucion or allow_admin_issue624):
@@ -130,7 +282,19 @@ def admit(*, stopped=False, allow_admin_issue624=False,
             'FROM observer_state WHERE id=1').fetchone()
         if mode != 'PRODUCTION_PAPER' or type(orders) is not int or orders != 0:
             raise ValueError('QUIESCENCE_PAPER_REQUIRED')
-        if allow_postclose_pending and (not stopped or
+        if allow_degraded_closed_rescue:
+            source = c.execute('SELECT source_sha FROM observer_state WHERE id=1').fetchone()
+            if not source or source[0] != RESCUE_SOURCE_SHA:
+                raise ValueError('QUIESCENCE_RESCUE_SOURCE_CHANGED')
+            if stopped:
+                if (not stopped_receipt or process not in {'DEGRADED', 'STOPPED'} or
+                        session != 'BOOT_CALENDAR'):
+                    raise ValueError('QUIESCENCE_RESCUE_STOP_RECEIPT_RED')
+                exact_rescue_receipt(stopped_receipt)
+                exact_clean_stopped(stopped_receipt)
+            elif (process, session) != ('DEGRADED', 'BOOT_CALENDAR'):
+                raise ValueError('QUIESCENCE_RESCUE_STATE_CHANGED')
+        elif allow_postclose_pending and (not stopped or
                 (stopped_receipt or {}).get('postclose_live_closed') is True):
             # Postclose is a distinct authorized window. Demand a fresh
             # closed-session observer before stop, then its stopped ack or
@@ -196,7 +360,7 @@ def admit(*, stopped=False, allow_admin_issue624=False,
 
 def admit_poststart_flat(pre_mode, candidate=None):
     """Recheck live PAPER book and the exact untouched pending receipt."""
-    if pre_mode not in {'OPEN', 'CLOSED', 'CLOSED_CAUCION'}:
+    if pre_mode not in {'OPEN', 'CLOSED', 'CLOSED_CAUCION', RESCUE_MODE}:
         raise ValueError('QUIESCENCE_PRESTART_MODE_UNKNOWN')
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
@@ -210,6 +374,8 @@ def admit_poststart_flat(pre_mode, candidate=None):
         actual, expected = 'CLOSED', 'WAITING_MARKET'
     else:
         raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED')
+    if pre_mode == RESCUE_MODE and actual != 'CLOSED':
+        raise ValueError('QUIESCENCE_RESCUE_POSTSTART_CLOSED_REQUIRED')
     # admit rereads committed mode, integer zero orders, a fresh heartbeat and
     # all three flat ledgers. A phase change between reads fails closed.
     pending = pre_mode == 'CLOSED_CAUCION'
@@ -218,6 +384,21 @@ def admit_poststart_flat(pre_mode, candidate=None):
     if admit(allow_market_open_suspend=actual == 'OPEN',
              allow_pending_caucion=pending) != expected:
         raise ValueError('QUIESCENCE_POSTSTART_BOOK_CHANGED')
+    if pre_mode == RESCUE_MODE:
+        if not candidate or not re.fullmatch('[0-9a-f]{40}', candidate):
+            raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_INVALID')
+        receipt_path = ROOT / 'data/deploy' / ('quiescence-' + candidate + '.json')
+        if (receipt_path.is_symlink() or not receipt_path.is_file() or
+                receipt_path.stat().st_size > 65536):
+            raise ValueError('QUIESCENCE_RESCUE_RECEIPT_INVALID')
+        receipt = json.loads(receipt_path.read_text())
+        if (receipt.get('candidate_sha') != candidate or
+                receipt.get('degraded_closed_rescue') is not True or
+                receipt.get('rescue_pre_state') != ['DEGRADED', 'BOOT_CALENDAR'] or
+                receipt.get('installation_started') is not True or
+                receipt.get('real_orders_sent') != 0 or
+                receipt.get('ppi_watch_accessed') is not False):
+            raise ValueError('QUIESCENCE_RESCUE_POSTSTART_RECEIPT_CHANGED')
     if pending:
         if not candidate or not re.fullmatch('[0-9a-f]{40}', candidate):
             raise ValueError('QUIESCENCE_PENDING_CANDIDATE_INVALID')
@@ -751,7 +932,12 @@ def wait_for_admin_resources(*, sample=None, clock=None, pause=None):
 def run(candidate, action, *, allow_admin_issue624=False,
         allow_market_open_suspend=False, allow_open_paper_carryover=False,
         allow_postclose_pending=False, allow_intraday_caucion=False,
-        allow_pending_caucion=False):
+         allow_pending_caucion=False, allow_degraded_closed_rescue=False,
+         candidate_image_id=None, frozen_manifest=None):
+    if allow_degraded_closed_rescue and (allow_admin_issue624 or allow_market_open_suspend or
+            allow_open_paper_carryover or allow_postclose_pending or
+            allow_intraday_caucion or allow_pending_caucion or action not in {'drain', 'install'}):
+        raise ValueError('QUIESCENCE_RESCUE_MODE_INVALID')
     if allow_pending_caucion and (allow_admin_issue624 or allow_market_open_suspend or
                                   allow_open_paper_carryover or allow_postclose_pending or
                                   allow_intraday_caucion or action not in {'drain', 'install'}):
@@ -779,6 +965,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
             if receipt is not None:
                 if (receipt.get('candidate_sha') != candidate or receipt.get('status') != 'DRAINED' or
                         receipt.get('installation_started') is not False or
+                        receipt.get('degraded_closed_rescue', False) != allow_degraded_closed_rescue or
                         receipt.get('market_open_suspended') != allow_market_open_suspend or
                         receipt.get('open_paper_carryover') != allow_open_paper_carryover or
                         receipt.get('paused_postclose', False) != allow_postclose_pending or
@@ -792,6 +979,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
                       allow_postclose_pending=allow_postclose_pending,
                       allow_intraday_caucion=allow_intraday_caucion,
                       allow_pending_caucion=allow_pending_caucion,
+                      allow_degraded_closed_rescue=allow_degraded_closed_rescue,
                       stopped_receipt=receipt)
                 if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
                     raise ValueError('QUIESCENCE_PAUSED_LEDGER_CHANGED')
@@ -807,6 +995,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 return receipt
             originals = {name: inspect(name) for name in OWNED}
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
+            if allow_degraded_closed_rescue and (
+                    stopped_owned or any(v['Image'] != RESCUE_IMAGE_ID or
+                                           v['State']['Status'] != 'running'
+                                           for v in originals.values())):
+                raise ValueError('QUIESCENCE_RESCUE_ORIGINAL_RUNTIME_CHANGED')
             # After an installed OPEN failure SQLite may still say RUNNING,
             # including a completely flat book. Select the exact previous
             # stop receipt before considering that stale live heartbeat.
@@ -814,12 +1007,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 admin_paper_id = None
                 process = None
             else:
-                process = admit(stopped=not allow_postclose_pending, allow_admin_issue624=allow_admin_issue624,
+                process = admit(stopped=not (allow_postclose_pending or allow_degraded_closed_rescue),
+                                allow_admin_issue624=allow_admin_issue624,
                                 allow_market_open_suspend=allow_market_open_suspend,
                                 allow_open_paper_carryover=allow_open_paper_carryover,
                                 allow_postclose_pending=allow_postclose_pending,
                                 allow_intraday_caucion=allow_intraday_caucion,
-                                allow_pending_caucion=allow_pending_caucion, initial=True)
+                                allow_pending_caucion=allow_pending_caucion,
+                                allow_degraded_closed_rescue=allow_degraded_closed_rescue, initial=True)
                 admin_paper_id = admin_target_on_host() if allow_admin_issue624 else None
             if allow_market_open_suspend and admin_paper_id:
                 raise ValueError('QUIESCENCE_OPEN_ADMIN_CANCEL_FORBIDDEN')
@@ -834,7 +1029,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     allow_pending_caucion=allow_pending_caucion)
                 persist(path, receipt)
             else:
-                required_process = ('WAITING_MARKET' if allow_postclose_pending else
+                required_process = ('DEGRADED' if allow_degraded_closed_rescue else
+                                    'WAITING_MARKET' if allow_postclose_pending else
                                     'RUNNING' if allow_market_open_suspend else 'WAITING_MARKET')
                 if process != required_process or any(v['State']['Status'] != 'running' for v in originals.values()):
                     raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
@@ -843,7 +1039,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
                       allow_open_paper_carryover=allow_open_paper_carryover,
                       allow_postclose_pending=allow_postclose_pending,
                       allow_intraday_caucion=allow_intraday_caucion,
-                      allow_pending_caucion=allow_pending_caucion)
+                      allow_pending_caucion=allow_pending_caucion,
+                      allow_degraded_closed_rescue=allow_degraded_closed_rescue)
+                rescue_proof = degraded_closed_rescue_proof() if allow_degraded_closed_rescue else None
+                critical = critical_admission() if allow_degraded_closed_rescue else None
                 caucion_before = (verified_pending_caucion_snapshot() if allow_pending_caucion
                                   else pending_caucion_snapshot() if allow_intraday_caucion else None)
                 receipt = {'candidate_sha': candidate, 'status': 'DRAINING',
@@ -857,6 +1056,12 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     'paused_postclose': allow_postclose_pending,
                     'intraday_caucion': allow_intraday_caucion,
                     'pending_caucion': allow_pending_caucion,
+                    'degraded_closed_rescue': allow_degraded_closed_rescue,
+                    'rescue_pre_state': ['DEGRADED', 'BOOT_CALENDAR'] if allow_degraded_closed_rescue else None,
+                    'rescue_source_sha': RESCUE_SOURCE_SHA if allow_degraded_closed_rescue else None,
+                    'rescue_image_id': RESCUE_IMAGE_ID if allow_degraded_closed_rescue else None,
+                    'rescue_calendar_and_hours': rescue_proof,
+                    'critical_admission': critical,
                     'postclose_live_closed': allow_postclose_pending}
                 persist(path, receipt)
                 for name in OWNED:
@@ -876,7 +1081,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
                       allow_postclose_pending=allow_postclose_pending,
                       allow_intraday_caucion=allow_intraday_caucion,
                       allow_pending_caucion=allow_pending_caucion,
+                      allow_degraded_closed_rescue=allow_degraded_closed_rescue,
                       stopped_receipt=receipt)
+                if allow_degraded_closed_rescue:
+                    if critical_admission() != critical:
+                        raise ValueError('QUIESCENCE_RESCUE_CRITICAL_CHANGED_AFTER_STOP')
                 if allow_intraday_caucion and pending_caucion_snapshot() != caucion_before:
                     raise ValueError('QUIESCENCE_INTRADAY_CAUCION_CHANGED_AFTER_STOP')
                 if allow_pending_caucion and verified_pending_caucion_snapshot() != caucion_before:
@@ -944,11 +1153,18 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 raise ValueError('QUIESCENCE_INSTALL_INTRADAY_CAUCION_MODE_CHANGED')
             if bool(receipt.get('pending_caucion', False)) != allow_pending_caucion:
                 raise ValueError('QUIESCENCE_INSTALL_PENDING_CAUCION_MODE_CHANGED')
+            if bool(receipt.get('degraded_closed_rescue', False)) != allow_degraded_closed_rescue:
+                raise ValueError('QUIESCENCE_INSTALL_RESCUE_MODE_CHANGED')
+            if allow_degraded_closed_rescue:
+                exact_rescue_receipt(receipt)
+                if critical_admission() != receipt.get('critical_admission'):
+                    raise ValueError('QUIESCENCE_INSTALL_RESCUE_PROOF_RED')
             admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
                   allow_open_paper_carryover=allow_open_paper_carryover,
                   allow_postclose_pending=allow_postclose_pending,
                   allow_intraday_caucion=allow_intraday_caucion,
                   allow_pending_caucion=allow_pending_caucion,
+                  allow_degraded_closed_rescue=allow_degraded_closed_rescue,
                   stopped_receipt=receipt)
             if allow_open_paper_carryover and spot_carryover_snapshot() != receipt.get('spot_carryover'):
                 raise ValueError('QUIESCENCE_INSTALL_CARRYOVER_CHANGED')
@@ -979,10 +1195,59 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     raise ValueError('QUIESCENCE_PENDING_CAUCION_CARRYOVER_CHANGED')
                 receipt['caucion_verified_count'] = 1
             receipt['carryover_verified_at'] = datetime.now(timezone.utc).isoformat()
+        elif action == 'image-intent':
+            if (not receipt or receipt.get('candidate_sha') != candidate or
+                    receipt.get('status') != 'HOST_INSTALLATION_STARTED' or
+                    receipt.get('installation_started') is not True or
+                    receipt.get('degraded_closed_rescue') is not True or
+                    receipt.get('candidate_image_intent') is not None):
+                raise ValueError('QUIESCENCE_RESCUE_IMAGE_INTENT_STATE_RED')
+            exact_rescue_receipt(receipt)
+            receipt['candidate_image_intent'] = candidate_image_intent(
+                candidate, candidate_image_id, frozen_manifest)
+        elif action == 'capture-runtime':
+            if (not receipt or receipt.get('candidate_sha') != candidate or
+                    receipt.get('status') != 'HOST_INSTALLATION_STARTED' or
+                    receipt.get('installation_started') is not True or
+                    receipt.get('degraded_closed_rescue') is not True or
+                    not isinstance(receipt.get('candidate_image_intent'), dict) or
+                    receipt.get('candidate_runtime_initial') is not None):
+                raise ValueError('QUIESCENCE_RESCUE_CAPTURE_STATE_RED')
+            observed = candidate_runtime_after_failed_install(receipt)
+            if observed['status'] != 'running':
+                raise ValueError('QUIESCENCE_RESCUE_CAPTURE_RUNNING_REQUIRED')
+            receipt['candidate_runtime_initial'] = observed
         elif action == 'recover':
             if not receipt: return {'status': 'NO_DRAIN_RECEIPT'}
             if receipt['installation_started']:
                 receipt['status'] = 'FIX_FORWARD_VALIDATION_REQUIRED'
+                if receipt.get('degraded_closed_rescue') is True:
+                    try:
+                        observed = {name: inspect(name) for name in OWNED}
+                        old_stopped = all(
+                            observed[name]['Id'] == receipt['containers'][name]['id'] and
+                            observed[name]['Image'] == receipt['containers'][name]['image'] and
+                            observed[name]['State']['Status'] == 'exited' for name in OWNED)
+                        if old_stopped:
+                            # Even after loading the new image, a failure
+                            # before mode_manager leaves the original clean
+                            # stop intact. An intent does not imply install.
+                            exact_clean_stopped(receipt)
+                            admit(stopped=True, allow_degraded_closed_rescue=True,
+                                  stopped_receipt=receipt)
+                            critical_admission()
+                        else:
+                            observed = candidate_runtime_after_failed_install(receipt)
+                            initial = receipt.get('candidate_runtime_initial')
+                            if initial is not None and any(
+                                    observed['containers'][name]['id'] != initial['containers'][name]['id'] or
+                                    observed['containers'][name]['image'] != initial['containers'][name]['image']
+                                    for name in OWNED):
+                                raise ValueError('QUIESCENCE_RESCUE_CAPTURE_IDENTITY_CHANGED')
+                            receipt['candidate_runtime_after_failure'] = observed
+                    except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
+                        receipt['status'] = 'RECOVERY_UNVERIFIED'
+                        receipt['rescue_failure_reason'] = type(exc).__name__ + ':' + str(exc)
             else:
                 failures = []
                 for name in receipt['stop_attempted']:
@@ -993,7 +1258,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
                         command(['docker', 'start', name])
                         if inspect(name)['State']['Status'] != 'running': raise ValueError('QUIESCENCE_RECOVERY_NOT_RUNNING')
                     except Exception as error: failures.append(type(error).__name__)
-                receipt['status'] = 'ORIGINAL_RUNTIME_RESUMED' if not failures else 'RECOVERY_UNVERIFIED'
+                receipt['status'] = ('ORIGINAL_RUNTIME_DEGRADED_RESUMED' if
+                                     receipt.get('degraded_closed_rescue') is True and not failures else
+                                     'ORIGINAL_RUNTIME_RESUMED' if not failures else 'RECOVERY_UNVERIFIED')
+                if receipt.get('degraded_closed_rescue') is True:
+                    receipt['runtime_health'] = 'DEGRADED_UNVERIFIED_AFTER_RECOVERY'
                 receipt['recovery_errors'] = failures
         else: raise ValueError('QUIESCENCE_ACTION_INVALID')
         receipt['recorded_at'] = datetime.now(timezone.utc).isoformat()
@@ -1008,13 +1277,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['drain', 'admin-begin', 'admin-commit',
-                                            'install', 'verify-carryover', 'recover'], required=True)
+                                            'install', 'image-intent', 'capture-runtime',
+                                            'verify-carryover', 'recover'], required=True)
     parser.add_argument('--admin-cancel-issue624', action='store_true')
     parser.add_argument('--market-open-suspend', action='store_true')
     parser.add_argument('--carry-open-paper-spots', action='store_true')
     parser.add_argument('--paused-postclose', action='store_true')
     parser.add_argument('--intraday-caucion', action='store_true')
     parser.add_argument('--pending-paper-caucion', action='store_true')
+    parser.add_argument('--rescue-degraded-closed-20261026', action='store_true')
+    parser.add_argument('--candidate-image-id')
+    parser.add_argument('--frozen-manifest')
     parser.add_argument('--allow-validation-pending',action='store_true',
                         help='classify installed validation pending during failure cleanup; never validates runtime')
     args = parser.parse_args(argv)
@@ -1039,6 +1312,15 @@ def main(argv=None):
                                        args.paused_postclose or args.intraday_caucion or
                                        args.admin_cancel_issue624 or args.action not in {'drain','install'}):
         parser.error('--pending-paper-caucion requires isolated closed PAPER drain/install')
+    if args.rescue_degraded_closed_20261026 and (
+            args.market_open_suspend or args.carry_open_paper_spots or
+            args.paused_postclose or args.intraday_caucion or args.pending_paper_caucion or
+            args.admin_cancel_issue624 or args.action not in {'drain', 'install'}):
+        parser.error('--rescue-degraded-closed-20261026 requires isolated incident drain/install')
+    if ((args.candidate_image_id or args.frozen_manifest) and args.action != 'image-intent') or (
+            args.action == 'image-intent' and
+            (not args.candidate_image_id or not args.frozen_manifest)):
+        parser.error('--candidate-image-id and --frozen-manifest require image-intent')
     options = {}
     if args.admin_cancel_issue624:
         options['allow_admin_issue624'] = True
@@ -1052,6 +1334,11 @@ def main(argv=None):
         options['allow_intraday_caucion'] = True
     if args.pending_paper_caucion:
         options['allow_pending_caucion'] = True
+    if args.rescue_degraded_closed_20261026:
+        options['allow_degraded_closed_rescue'] = True
+    if args.action == 'image-intent':
+        options.update(candidate_image_id=args.candidate_image_id,
+                       frozen_manifest=args.frozen_manifest)
     receipt = run(args.candidate_sha, args.action, **options)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
