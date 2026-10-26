@@ -43,6 +43,10 @@ def test_configuracion_desplegada_no_es_un_noop(tmp_path):
     for family in ("ACCIONES", "CEDEARS", "BONOS", "LETRAS"):
         result = broker._economic_diagnostics(quote(family))
         assert result["modeled_tariff"] == "PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
+        if family == "LETRAS":
+            assert not result["passed"]
+            assert result["reason_code"] == "COST_POLICY_NOT_KNOWN_OR_EFFECTIVE"
+            continue  # La corrección pública observada en octubre no existía en septiembre.
         assert result["passed"], (family, result)
         assert D(result["net_reward_risk"]) >= D("1.20")
     assert broker.economics_mode == "SHADOW"

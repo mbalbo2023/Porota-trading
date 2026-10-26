@@ -16,21 +16,22 @@ ZERO = Decimal(0)
 SPOT_LEDGER_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"})
 
 
-def ledger_leg_rate(family, *, rebated=False):
+def ledger_leg_rate(family, *, currency=None, rebated=False):
     """Existing eight-decimal PAPER tariff, including the option premium charge."""
     import au_fee_schedule as schedule
     if family not in SPOT_LEDGER_FAMILIES:
         raise ValueError("FAMILY_ECONOMICS_NOT_VALIDATED")
+    exact = {"currency": currency} if family == "LETRAS" else {}
     if rebated and family in schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA:
-        return number(schedule.costo_por_tramo_bonificado(family), nonnegative=True)
-    return number(schedule.costo_por_tramo(family), nonnegative=True)
+        return number(schedule.costo_por_tramo_bonificado(family, **exact), nonnegative=True)
+    return number(schedule.costo_por_tramo(family, **exact), nonnegative=True)
 
 
-def ledger_leg_cost(price, quantity, family):
+def ledger_leg_cost(price, quantity, family, *, currency=None):
     # Preserve the factual ledger's per-fill cent rounding, distinct from the
     # unrounded unit-price sensitivity used before execution.
     return (number(price, positive=True) * number(quantity, positive=True)
-            * ledger_leg_rate(family)).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
+            * ledger_leg_rate(family, currency=currency)).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
 
 
 def smaller_leg_rebate(buy_notional, sell_notional, full_rate, low_rate, *, rounded=False):
@@ -226,15 +227,26 @@ def paper_cost_contract(family, currency, decision_at):
     if family not in SPOT_LEDGER_FAMILIES:
         raise ValueError("FAMILY_ECONOMICS_NOT_VALIDATED")
     at = aware_datetime(decision_at)
-    fee = schedule.arancel_de(family)
+    currency = cash_currency(currency)
+    fee = schedule.arancel_de(family, currency=currency)
+    revised = family in {"LETRAS", "OBLIGACIONES"}
+    # The pre-existing BYMA rights assumption for ARS Letras has no proved
+    # currency-specific mapping to USD/MEP/CCL. Keep the public broker rate
+    # visible, but never bind a dollar PAPER decision on an invented right.
+    unbound_dollar_rights = family == "LETRAS" and currency != "ARS"
     contract = VersionedPaperCostContract(
-        family=family, currency=cash_currency(currency),
-        policy_version="POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V1",
-        effective_at="2026-07-01T00:00:00-03:00", known_at="2026-08-21T00:00:00-03:00",
-        source="PAPER:au_fee_schedule:PPI_2026-07-01+BYMA_2026-08-21:ACCOUNT_UNVERIFIED",
-        commission=number(fee.comision), rights=number(fee.derecho), clearing=ZERO,
+        family=family, currency=currency,
+        policy_version=("POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"
+                        if revised else "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V1"),
+        effective_at="2026-07-01T00:00:00-03:00",
+        known_at=("2026-10-26T19:12:00Z" if revised else "2026-08-21T00:00:00-03:00"),
+        source=("PAPER:PPI_PUBLIC_2026-07-01:OBSERVED_2026-10-26:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
+                if revised else "PAPER:au_fee_schedule:PPI_2026-07-01+BYMA_2026-08-21:ACCOUNT_UNVERIFIED"),
+        commission=number(fee.comision),
+        rights=(None if unbound_dollar_rights else number(fee.derecho)), clearing=ZERO,
         premium_rights=number(fee.derecho_sobre_prima), vat=number(schedule.IVA_PCT),
-        commission_vat=fee.comision_iva, rights_vat=fee.derecho_iva,
+        commission_vat=fee.comision_iva,
+        rights_vat=(None if unbound_dollar_rights else fee.derecho_iva),
         clearing_vat=False, premium_rights_vat=fee.prima_iva,
         minimum_commission=ZERO, tiers=(),
         rebate_policy=("COMMISSION_ON_SMALLER_INTRADAY_LEG"

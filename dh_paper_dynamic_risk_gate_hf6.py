@@ -68,7 +68,8 @@ def position_stop_risk(broker, position) -> Decimal:
         return entry * qty * factor + entry_cost
     stop = decimal_value(position.get("stop_price"), "stop", positive=True)
     modeled_stop_fill = (stop * (Decimal("1") - broker.slippage)).quantize(Decimal("0.0001"))
-    exit_cost = broker._cost(modeled_stop_fill * factor, qty, position.get("asset_class"))
+    exit_cost = broker._cost(modeled_stop_fill * factor, qty, position.get("asset_class"),
+                             currency=position.get("currency"))
     return full_trade_stop_risk(
         entry_price=entry,
         modeled_stop_fill=modeled_stop_fill,
@@ -86,16 +87,16 @@ def open_stop_risk(broker, currency, at, *, connection) -> Decimal:
 
 
 def candidate_stop_risk(broker, *, entry_price, stop_price, quantity,
-                        cash_multiplier, asset_class) -> Decimal:
+                        cash_multiplier, asset_class, currency=None) -> Decimal:
     qty = decimal_value(quantity, "cantidad candidata", positive=True)
     entry = decimal_value(entry_price, "entrada candidata", positive=True)
     factor = decimal_value(cash_multiplier, "multiplicador candidato", positive=True)
-    entry_cost = broker._cost(entry * factor, qty, asset_class)
+    entry_cost = broker._cost(entry * factor, qty, asset_class, currency=currency)
     if family_name(asset_class) == "OPCIONES":
         return entry * qty * factor + entry_cost
     stop = decimal_value(stop_price, "stop candidato", positive=True)
     modeled_stop_fill = (stop * (Decimal("1") - broker.slippage)).quantize(Decimal("0.0001"))
-    exit_cost = broker._cost(modeled_stop_fill * factor, qty, asset_class)
+    exit_cost = broker._cost(modeled_stop_fill * factor, qty, asset_class, currency=currency)
     return full_trade_stop_risk(
         entry_price=entry,
         modeled_stop_fill=modeled_stop_fill,

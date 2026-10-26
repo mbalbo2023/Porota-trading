@@ -169,6 +169,7 @@ IMPORTER=r'''
 import json,sqlite3,sys,uuid
 from pathlib import Path
 import cp_contract_evidence_v2_hf6 as ce
+from rc6_ppi_contract_normalizer import separate_unbound_fee_estimate
 
 DB="/app/data/paper_v17/observer_v17.db"
 CAP=sys.argv[1]
@@ -260,7 +261,12 @@ for ek,item in (raw.get("endpoints") or {}).items():
         for ev0 in item.get("rows") or []:
             ticker=str(ev0.get("ticker") or "").upper()
             if not ticker: continue
-            ev=nonempty({k:v for k,v in ev0.items() if k not in {"ticker","currency"}})
+            contract_fields, unbound_fees = separate_unbound_fee_estimate(ev0)
+            if unbound_fees:
+                # The sanitized capture retains these hints. No ticker-only
+                # fanout may attach them to ARS/USD or settlement variants.
+                notes.append("FEE_ESTIMATE_UNBOUND_IDENTITY_"+ticker)
+            ev=nonempty({k:v for k,v in contract_fields.items() if k not in {"ticker","currency"}})
             if ev0.get("currency") not in (None,"",[],{}):
                 ev["provider_currency"]=ev0["currency"]
             ev.update({"evidence_scope":"PARTIAL_AUTHENTICATED_XHR","source_job":job,

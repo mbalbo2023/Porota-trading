@@ -22,21 +22,19 @@ en acciones y CEDEARs es 0,05% y en títulos públicos 0,01%.
 
 FUENTE Y FECHA DE LOS VALORES
 -----------------------------
-Tarifario comercial de Portfolio Personal Inversiones vigente desde el
-1/07/2026, y grilla de derechos de mercado de BYMA vigente. Verificados el
-21/08/2026.
+Tarifario público de Portfolio Personal Inversiones vigente desde el
+1/07/2026 (releído el 26/10/2026); derechos BYMA modelados por separado en
+la grilla histórica del 21/08/2026, pendientes de revalidar contra PDF
+oficial y comprobante de la cuenta.
 
 Los aranceles comerciales cambian. Por eso NO son constantes de código: cada
-número de este módulo es sobreescribible por variable de entorno, y
-`conciliar_contra_broker()` permite contrastar el modelo contra el costo que
-informa PPI en el presupuesto de la orden ANTES de operar, no solo después.
-Un modelo de costos que solo se audita contra el resumen de cuenta se entera
-del desvío cuando ya operó.
+número de este módulo es sobreescribible por variable de entorno. La ruta
+heredada de presupuesto no se ejecuta en PRODUCTION_PAPER; los términos de
+cuenta deben corroborarse por GET, comprobantes y movimientos sólo lectores.
 
-TRATAMIENTO DEL IVA — no es uniforme, y esa es la parte que se suele errar:
-  · Comisión del agente: tributa IVA 21% en todas las clases.
-  · Derechos de mercado: tributan IVA, EXCEPTO en títulos públicos y
-    obligaciones negociables, donde están exentos.
+TRATAMIENTO DEL IVA — se toma de la fila de cada operación del tarifario
+  público, no de una regla universal: ON y títulos públicos figuran 0,60%
+  sin "+ IVA". Las condiciones efectivas de una cuenta requieren cotejo.
 
 CUSTODIA: PPI no cobra cargo de apertura, administración ni custodia de Caja
 de Valores. Verificado contra el tarifario vigente. Por eso este módulo no
@@ -45,6 +43,7 @@ costo que no existe y endurecer el piso de rentabilidad sin motivo.
 """
 
 import logging
+import math
 import os
 from dataclasses import dataclass
 from typing import Optional, Dict
@@ -104,21 +103,21 @@ ARANCELES: Dict[str, Arancel] = {
         comision_iva=False, derecho_iva=False,
         nota="Títulos públicos: comisión 0,60% SIN IVA y derecho de mercado "
              "0,01% exento. Es la clase donde el costo plano erraba más: el "
-             "modelo anterior cobraba 1,6456% redondo contra un real de "
-             "1,22%."),
+             "modelo anterior cobraba 1,6456% redondo contra 1,22% del "
+             "modelo PAPER público, sin verificar la cuenta."),
     "TITULOSPUBLICOS": Arancel(
         comision=0.0060, derecho=0.0001,
         comision_iva=False, derecho_iva=False,
         nota="Alias de BONOS."),
     "OBLIGACIONES": Arancel(
         comision=0.0060, derecho=0.0001,
-        comision_iva=True, derecho_iva=False,
-        nota="Renta fija privada (ON, FF, VCP): la comisión tributa IVA, el "
-             "derecho de mercado está exento."),
+        comision_iva=False, derecho_iva=False,
+        nota="PPI público, renta fija privada (ON, FF, VCP): 0,60% sin +IVA; "
+             "derecho BYMA modelado por separado. Cuenta no verificada."),
     "LETRAS": Arancel(
         comision=0.0020, derecho=0.00001,
         comision_iva=False, derecho_iva=False,
-        nota="Letras y notas en pesos."),
+        nota="Compra/venta de Letras y Notas en pesos; no licitación."),
     "OPCIONES": Arancel(
         comision=0.0100, derecho=0.0005,
         comision_iva=True, derecho_iva=True,
@@ -147,6 +146,15 @@ ARANCELES: Dict[str, Arancel] = {
         nota="Sin comisión de suscripción/rescate por el agente; los costos "
              "están dentro del fondo."),
 }
+
+# Tarifa pública de compra/venta, no licitación. La moneda viene de la
+# identidad negociada: no se deduce del ticker ni de la moneda de emisión.
+# USD_MEP y USD_CCL preservan la caja/plaza aun cuando esta sensibilidad
+# comercial usa la misma fila pública de PPI para Letras en dólares.
+LETRAS_DOLARES = Arancel(
+    comision=0.0100, derecho=0.00001,
+    comision_iva=False, derecho_iva=False,
+    nota="Compra/venta de Letras y Notas en dólares; cuenta/plaza no verificada.")
 
 CLASE_POR_DEFECTO = "ACCIONES"
 
@@ -193,30 +201,43 @@ def _override(clase: str, campo: str, valor: float) -> float:
     env = os.getenv(f"FEE_{clase}_{campo.upper()}")
     if env:
         try:
-            return float(env)
+            value = float(env)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError("FEE_OVERRIDE_INVALID")
+            return value
         except ValueError:
             logger.warning("FEE_%s_%s no es un número: %r. Se ignora.",
                            clase, campo.upper(), env)
     return valor
 
 
-def arancel_de(clase: Optional[str]) -> Arancel:
+def arancel_de(clase: Optional[str], *, currency: Optional[str] = None) -> Arancel:
     c = normalizar_clase(clase)
-    base = ARANCELES[c]
+    if c == "LETRAS":
+        if currency is None:
+            raise ValueError("FEE_CURRENCY_REQUIRED:LETRAS")
+        from bs_instrument_contracts import cash_currency
+        moneda = cash_currency(currency)
+        base = ARANCELES[c] if moneda == "ARS" else LETRAS_DOLARES
+        override_key = f"LETRAS_{moneda}"
+    else:
+        base = ARANCELES[c]
+        override_key = c
     return Arancel(
-        comision=_override(c, "comision", base.comision),
-        derecho=_override(c, "derecho", base.derecho),
+        comision=_override(override_key, "comision", base.comision),
+        derecho=_override(override_key, "derecho", base.derecho),
         comision_iva=base.comision_iva,
         derecho_iva=base.derecho_iva,
-        derecho_sobre_prima=_override(c, "derecho_sobre_prima", base.derecho_sobre_prima),
+        derecho_sobre_prima=_override(override_key, "derecho_sobre_prima", base.derecho_sobre_prima),
         prima_iva=base.prima_iva,
         nota=base.nota,
     )
 
 
-def costo_por_tramo(clase: Optional[str], stress_factor: float = 1.0) -> float:
+def costo_por_tramo(clase: Optional[str], stress_factor: float = 1.0,
+                    *, currency: Optional[str] = None) -> float:
     """Fracción del monto que se lleva UNA punta de la operación."""
-    a = arancel_de(clase)
+    a = arancel_de(clase, currency=currency)
     comision = (a.comision * stress_factor) * (1 + IVA_PCT if a.comision_iva else 1)
     derecho = a.derecho * (1 + IVA_PCT if a.derecho_iva else 1)
     prima = a.derecho_sobre_prima * (1 + IVA_PCT if a.prima_iva else 1)
@@ -233,7 +254,7 @@ FAMILIAS_CON_BONIFICACION_INTRADIARIA = frozenset({
 })
 
 
-def costo_por_tramo_bonificado(clase: Optional[str]) -> float:
+def costo_por_tramo_bonificado(clase: Optional[str], *, currency: Optional[str] = None) -> float:
     """Costo de la punta menor tras la bonificacion intradiaria de PPI.
 
     Devuelve solamente derechos de mercado y sus impuestos aplicables. La
@@ -243,24 +264,24 @@ def costo_por_tramo_bonificado(clase: Optional[str]) -> float:
     normalizada = normalizar_clase(clase)
     if normalizada not in FAMILIAS_CON_BONIFICACION_INTRADIARIA:
         raise ValueError("Familia sin bonificacion intradiaria modelada")
-    a = arancel_de(normalizada)
+    a = arancel_de(normalizada, currency=currency)
     derecho = a.derecho * (1 + IVA_PCT if a.derecho_iva else 1)
     prima = a.derecho_sobre_prima * (1 + IVA_PCT if a.prima_iva else 1)
     return round(derecho + prima, 8)
 
 
 def costo_redondo(clase: Optional[str], spread_pct: float = 0.0,
-                  stress_factor: float = 1.0) -> float:
+                  stress_factor: float = 1.0, *, currency: Optional[str] = None) -> float:
     """Fracción del monto que se lleva la operación completa (ida y vuelta).
 
     El spread se suma UNA sola vez, no dos: es la diferencia entre puntas que
     se paga al cruzar, no un arancel por tramo.
     """
-    return round(costo_por_tramo(clase, stress_factor) * 2 + (spread_pct / 100.0), 8)
+    return round(costo_por_tramo(clase, stress_factor, currency=currency) * 2 + (spread_pct / 100.0), 8)
 
 
 def costo_redondo_pct(clase: Optional[str], spread_pct: float = 0.0,
-                      stress_factor: float = 1.0) -> float:
+                      stress_factor: float = 1.0, *, currency: Optional[str] = None) -> float:
     """El mismo costo en PUNTOS PORCENTUALES (1.6456, no 0.016456).
 
     Las dos unidades siguen separadas y con nombres explícitos. Es la lección
@@ -269,7 +290,7 @@ def costo_redondo_pct(clase: Optional[str], spread_pct: float = 0.0,
     filtro de rentabilidad restaba cien veces menos fricción de la real
     durante versiones enteras, sin que nada fallara ni apareciera en el log.
     """
-    return round(costo_redondo(clase, spread_pct, stress_factor) * 100, 6)
+    return round(costo_redondo(clase, spread_pct, stress_factor, currency=currency) * 100, 6)
 
 
 def costo_caucion(monto_ars: float, dias: int, stress_factor: float = 1.0) -> float:
@@ -289,7 +310,7 @@ def costo_caucion(monto_ars: float, dias: int, stress_factor: float = 1.0) -> fl
 
 
 def desglose(clase: Optional[str], monto_ars: float, spread_pct: float = 0.0,
-             stress_factor: float = 1.0) -> dict:
+             stress_factor: float = 1.0, *, currency: Optional[str] = None) -> dict:
     """Detalle línea por línea, para el panel y para el reporte de cierre.
 
     El sistema tiene que poder explicar de dónde sale cada peso de fricción:
@@ -298,7 +319,9 @@ def desglose(clase: Optional[str], monto_ars: float, spread_pct: float = 0.0,
     la responde.
     """
     c = normalizar_clase(clase)
-    a = arancel_de(c)
+    if currency is not None and currency != "ARS":
+        raise ValueError("FEE_BREAKDOWN_ARS_ONLY")
+    a = arancel_de(c, currency=currency)
     comision_tramo = monto_ars * a.comision * stress_factor
     iva_comision = comision_tramo * (IVA_PCT if a.comision_iva else 0)
     derecho_tramo = monto_ars * a.derecho
@@ -317,7 +340,7 @@ def desglose(clase: Optional[str], monto_ars: float, spread_pct: float = 0.0,
         "total_por_tramo_ars": round(total_tramo, 2),
         "total_redondo_ars": round(total_tramo * 2 + spread_ars, 2),
         "spread_ars": round(spread_ars, 2),
-        "costo_redondo_pct": costo_redondo_pct(c, spread_pct, stress_factor),
+        "costo_redondo_pct": costo_redondo_pct(c, spread_pct, stress_factor, currency=currency),
         "nota": a.nota,
     }
 
@@ -331,22 +354,22 @@ TOLERANCIA_CONCILIACION_PCT = float(os.getenv("FEE_RECONCILE_TOLERANCE_PCT", "5.
 
 def conciliar_contra_broker(ppi_client, account_number: str, ticker: str,
                             clase: str, cantidad: int, precio: float,
-                            settlement: str = "A-24HS") -> dict:
+                            settlement: str = "A-24HS", *, currency: Optional[str] = None) -> dict:
     """Compara el costo estimado por este módulo contra el que informa PPI en
     el presupuesto de la orden.
 
-    `budget_order()` simula y devuelve el costo SIN colocar nada, así que es
-    seguro llamarlo en el camino de evaluación. Que exista esta función es lo
-    que convierte el tarifario de arriba en algo verificable: los números de
-    la grilla salen de un PDF comercial que puede cambiar sin aviso, y este
-    es el control que detecta que cambió.
+    Ruta heredada para un entorno de pruebas autorizado: budget_order está
+    bloqueado explícitamente por c_ppi_client en PRODUCTION_PAPER. Nunca usar
+    esta función como evidencia de tarifas de una cuenta PAPER. Comparar
+    primero GET autenticados de términos, comprobantes y movimientos en un
+    proceso sólo lector; un presupuesto tampoco prueba costo all-in.
 
     Un desvío por encima de la tolerancia no bloquea por sí solo: devuelve
     `dentro_de_tolerancia=False` y quien llama decide. Bloquear acá
     convertiría un cambio de arancel en una parada total del sistema.
     """
     monto = cantidad * precio
-    estimado = desglose(clase, monto)["total_por_tramo_ars"]
+    estimado = desglose(clase, monto, currency=currency)["total_por_tramo_ars"]
     resultado = {"estimado_ars": estimado, "broker_ars": None,
                  "desvio_pct": None, "dentro_de_tolerancia": None, "motivo": ""}
     try:
@@ -393,16 +416,19 @@ def tabla_para_documentacion() -> list:
     desincronizarse del código: la inconsistencia de inventario fue un
     hallazgo propio de la auditoría anterior."""
     filas = []
-    for clase in ("ACCIONES", "CEDEARS", "BONOS", "OBLIGACIONES", "OPCIONES",
-                  "FUTUROS", "LETRAS", "CAUCIONES"):
-        a = arancel_de(clase)
+    for clase, currency in (("ACCIONES", None), ("CEDEARS", None), ("BONOS", None),
+                            ("OBLIGACIONES", None), ("OPCIONES", None),
+                            ("FUTUROS", None), ("LETRAS", "ARS"),
+                            ("LETRAS", "USD"), ("CAUCIONES", None)):
+        a = arancel_de(clase, currency=currency)
         filas.append({
             "clase": clase,
+            "moneda": currency,
             "comision_pct": round(a.comision * 100, 4),
             "iva_comision": "sí" if a.comision_iva else "exento",
             "derecho_pct": round(a.derecho * 100, 4),
             "iva_derecho": "sí" if a.derecho_iva else "exento",
-            "redondo_pct": costo_redondo_pct(clase),
+            "redondo_pct": costo_redondo_pct(clase, currency=currency),
             "nota": a.nota,
         })
     return filas

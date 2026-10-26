@@ -48,6 +48,11 @@ PERFIL = settings(max_examples=200, deadline=None,
 CLASES = st.sampled_from(["ACCIONES", "CEDEARS", "BONOS", "OPCIONES",
                           "FUTUROS", "OBLIGACIONES", "LETRAS"])
 
+
+def moneda_de_fixture(clase):
+    # La muestra de Letras se declara ARS; producción exige la identidad real.
+    return "ARS" if clase == "LETRAS" else None
+
 precios = st.floats(min_value=0.01, max_value=1_000_000, allow_nan=False,
                     allow_infinity=False)
 montos = st.floats(min_value=1.0, max_value=5_000_000_000, allow_nan=False,
@@ -73,8 +78,8 @@ class TestUnidadesDeCosto:
         otra, esta propiedad se rompe antes de que el filtro de rentabilidad
         empiece a aprobar operaciones que pierden plata.
         """
-        fraccion = tarifario.costo_redondo(clase, spread)
-        porcentaje = tarifario.costo_redondo_pct(clase, spread)
+        fraccion = tarifario.costo_redondo(clase, spread, currency=moneda_de_fixture(clase))
+        porcentaje = tarifario.costo_redondo_pct(clase, spread, currency=moneda_de_fixture(clase))
         assert math.isclose(porcentaje, fraccion * 100, rel_tol=1e-6), (
             f"{clase}: {porcentaje} no es cien veces {fraccion}")
 
@@ -84,7 +89,7 @@ class TestUnidadesDeCosto:
         """Una fracción de costo por encima de 1.0 significaría que operar
         cuesta más del 100% del monto. Es el síntoma exacto de que alguien
         confundió las unidades en el sentido inverso."""
-        assert 0 < tarifario.costo_redondo(clase, spread) < 1.0
+        assert 0 < tarifario.costo_redondo(clase, spread, currency=moneda_de_fixture(clase)) < 1.0
 
     @PERFIL
     @given(clase=CLASES, spread=spreads)
@@ -93,8 +98,8 @@ class TestUnidadesDeCosto:
         el sistema tendría dos modelos de costo distintos según por dónde se
         entre — que es como empezó el problema original."""
         assert math.isclose(
-            economics.calculate_trade_costs_fraction(spread, clase),
-            tarifario.costo_redondo(clase, spread),
+            economics.calculate_trade_costs_fraction(spread, clase, currency=moneda_de_fixture(clase)),
+            tarifario.costo_redondo(clase, spread, currency=moneda_de_fixture(clase)),
             rel_tol=1e-9)
 
 
@@ -108,8 +113,8 @@ class TestTarifario:
     @given(clase=CLASES, spread=spreads)
     def test_el_costo_crece_con_el_spread(self, clase, spread):
         """Monotonía: más spread nunca puede costar menos."""
-        base = tarifario.costo_redondo(clase, 0.0)
-        con_spread = tarifario.costo_redondo(clase, spread)
+        base = tarifario.costo_redondo(clase, 0.0, currency=moneda_de_fixture(clase))
+        con_spread = tarifario.costo_redondo(clase, spread, currency=moneda_de_fixture(clase))
         assert con_spread >= base - 1e-12
 
     @PERFIL
@@ -164,7 +169,7 @@ class TestTarifario:
         """El panel muestra el detalle línea por línea. Si las líneas no suman
         el total, la reconciliación diaria contra el back-office no se puede
         auditar: no habría forma de saber qué componente se estimó mal."""
-        d = tarifario.desglose(clase, monto, spread)
+        d = tarifario.desglose(clase, monto, spread, currency=moneda_de_fixture(clase))
         suma = (d["comision_ars"] + d["iva_comision_ars"] +
                 d["derecho_mercado_ars"] + d["iva_derecho_ars"] +
                 d["derecho_prima_ars"])
@@ -198,10 +203,12 @@ class TestDimensionamiento:
         stop = entrada * (1 - distancia_pct / 100)
         assume(stop > 0)
         cantidad = economics.calculate_position_size(
-            capital, entrada, stop, riesgo, spread_pct=0.0, asset_class=clase)
+            capital, entrada, stop, riesgo, spread_pct=0.0, asset_class=clase,
+            currency=moneda_de_fixture(clase))
         if cantidad == 0:
             return
-        friccion_unitaria = entrada * economics.calculate_trade_costs_fraction(0.0, clase)
+        friccion_unitaria = entrada * economics.calculate_trade_costs_fraction(
+            0.0, clase, currency=moneda_de_fixture(clase))
         perdida_real = cantidad * ((entrada - stop) + friccion_unitaria)
         permitido = capital * (riesgo / 100)
         # Se admite el redondeo hacia abajo de una unidad, nunca hacia arriba.
@@ -286,7 +293,8 @@ class TestRetornoNeto:
         """No hay operación en la que la fricción sume. Si esta propiedad se
         rompe, el signo del descuento está invertido y el sistema cree ganar
         con los costos."""
-        neto = economics.calculate_net_return_pct(bruto, spread, clase)
+        neto = economics.calculate_net_return_pct(bruto, spread, clase,
+                                                 currency=moneda_de_fixture(clase))
         assert neto < bruto
 
     @PERFIL
@@ -312,8 +320,9 @@ class TestRetornoNeto:
         La tolerancia absoluta cubre el redondeo: calculate_net_return_pct
         redondea a cuatro decimales y costo_redondo a ocho.
         """
-        descuento = bruto - economics.calculate_net_return_pct(bruto, 0.0, clase)
-        fraccion = tarifario.costo_redondo(clase, 0.0)
+        descuento = bruto - economics.calculate_net_return_pct(
+            bruto, 0.0, clase, currency=moneda_de_fixture(clase))
+        fraccion = tarifario.costo_redondo(clase, 0.0, currency=moneda_de_fixture(clase))
         assert math.isclose(descuento, fraccion * 100, rel_tol=1e-3, abs_tol=1e-3), (
             f"{clase}: el descuento {descuento:.6f} no es cien veces la "
             f"fracción {fraccion:.6f}")

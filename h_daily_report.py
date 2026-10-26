@@ -127,12 +127,9 @@ def _get_closed_trades_today():
     """Detalle de k_position_manager.closed_trades para el día de hoy — para
     el desglose operación por operación del resumen de cierre.
 
-    AMPLIADO v12.0 (decisión de experto, pendiente #3 resuelta): se agregan
-    entry_price/quantity, necesarios para reconstruir el costo ESTIMADO
-    (el que ya se descontó en tiempo real al cerrar cada operación, vía
-    economics.calculate_trade_costs_pct) y compararlo contra el costo REAL
-    reportado por PPI (get_tax_report) — ver _reconcile_real_costs_today()
-    más abajo."""
+    La tabla legacy carece de familia, moneda, liquidación e ID de cargo
+    facturado; entry_price/quantity no bastan para reconciliar tarifas.
+    _reconcile_real_costs_today falla cerrado hasta disponer de ese vínculo."""
     conn = ac_db.connect_raw()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -149,121 +146,23 @@ def _get_closed_trades_today():
 
 
 def _reconcile_real_costs_today(ppi, closed_today: list) -> dict:
-    """NUEVO EN v12.0 — DECISIÓN DE EXPERTO (pendiente #3 resuelta, ver
-    Documento_Maestro_v12.pdf sección 6 anterior).
+    """Reject unverifiable cross-family/account totals before reading broker data.
 
-    NO reemplaza el costo estimado que ya se descuenta en tiempo real
-    dentro de k_position_manager._close_position() (vía
-    economics.calculate_trade_costs_pct): ese cálculo tiene que ser
-    SINCRÓNICO — el stop-loss/take-profit y el kill switch necesitan el
-    PnL neto en el momento mismo del cierre, y el costo real devengado
-    (comisión + IVA + derechos de Caja de Valores) no está disponible en
-    PPI hasta que la liquidación se procesa, no al instante del cierre.
-
-    En cambio, RECONCILIA una vez al día (acá, en el cierre de rueda):
-    compara el costo total ESTIMADO de las operaciones cerradas hoy
-    contra el costo REAL que reporta get_tax_report() (comisiones/IVA/
-    derechos ya liquidados), y expone la diferencia — la fuente de verdad
-    para contabilidad es PPI, pero la fuente de verdad para DECISIONES en
-    tiempo real (kill switch, stop-loss) sigue siendo la estimación
-    rápida. Mismo patrón que usa cualquier mesa de trading real: un
-    blotter intradía estimado + una conciliación contra el back-office al
-    cierre."""
-    import d_economics as economics
-
-    estimated_cost_ars = 0.0
-    for t in closed_today:
-        try:
-            costs_pct = economics.calculate_trade_costs_fraction()
-            estimated_cost_ars += t["entry_price"] * t["quantity"] * costs_pct
-        except Exception as e:
-            logger.warning("Reconciliación de costos: no se pudo estimar costo de %s (%s)", t.get("ticker"), e)
-
+    closed_trades has no family, trading currency, settlement or billed charge
+    key. get_tax_report returns daily movements, not charges linked to these
+    fills. Summing them and adjusting a global fee stress factor would mix
+    currencies, unrelated charges and contract types. Re-enable only after an
+    exact operation-to-invoice join and component/rounding proof exists.
+    """
     runtime_mode = (os.getenv("DASHBOARD_OPERATION_MODE") or
                     os.getenv("ENVIRONMENT") or "").strip().upper()
     execution_mode = os.getenv("ORDER_EXECUTION_MODE", "").strip().upper()
-    # PRODUCTION_PAPER/SANDBOX have no broker-billed commission for simulated
-    # fills. Never query a tax report and label it as reconciliation evidence.
     if runtime_mode != "PRODUCTION_REAL" or execution_mode not in {"REAL", "PRODUCTION_REAL"}:
-        return {
-            "state": "NOT_OBSERVABLE_IN_PAPER",
-            "estimated_cost_ars": round(estimated_cost_ars, 2),
-            "real_cost_ars": None,
-            "diff_ars": None,
-        }
-
-    real_cost_ars = None
-    try:
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        tax_movements = ppi.get_tax_report(today_start, datetime.now())
-        if tax_movements is not None:
-            real_cost_ars = round(sum(abs(float(m.get("amount", 0))) for m in tax_movements), 2)
-    except Exception as e:
-        logger.warning("Reconciliación de costos: no se pudo obtener get_tax_report() (%s)", e)
-
-    diff_ars = round(real_cost_ars - estimated_cost_ars, 2) if real_cost_ars is not None else None
-
-    # NUEVO EN v13.0 — cierra el loop de la Amenaza "cambios de aranceles
-    # de BYMA/PPI" (Auditoria_version_12.pdf, 4.1): la diferencia real vs.
-    # estimado de HOY se traduce en el factor de estrés que
-    # calculate_trade_costs_pct() va a usar a partir de MAÑANA (ver
-    # d_economics.dynamic_fee_adjustment/save_fee_stress_factor).
-    if diff_ars is not None:
-        try:
-            import d_economics as economics
-            notional_ars = sum(t["entry_price"] * t["quantity"] for t in closed_today) if closed_today else 0.0
-            new_factor = economics.dynamic_fee_adjustment(
-                base_estimated_fee_pct=economics.PPI_COMMISSION_PCT,
-                daily_reconciliation_diff_ars=diff_ars,
-                reference_notional_ars=notional_ars,
-            )
-            stress_factor = round(new_factor / economics.PPI_COMMISSION_PCT, 4) if economics.PPI_COMMISSION_PCT else 1.0
-            economics.save_fee_stress_factor(stress_factor)
-            logger.info("Reconciliación de costos: factor de estrés de comisiones actualizado a %sx para mañana.",
-                        stress_factor)
-        except Exception as e:
-            logger.warning("No se pudo actualizar el factor de estrés de comisiones: %s", e)
-
-    # NUEVO EN v14.0 (Instrucción 7, mejora de reportes) — hasta v13.0 esta
-    # reconciliación se calculaba todos los días, se usaba para ajustar el
-    # factor de estrés de comisiones... y se tiraba. No quedaba registro
-    # histórico, así que era imposible responder "¿los costos reales se
-    # están despegando de lo estimado con el tiempo?" — que es justamente
-    # la pregunta que motivó el mecanismo. Ahora se persiste, y el informe
-    # mensual (z_reports_engine) la usa como serie.
-    try:
-        notional_total = sum(t["entry_price"] * t["quantity"] for t in closed_today) if closed_today else 0.0
-        diff_pct = round(diff_ars / notional_total * 100, 4) if (diff_ars is not None and notional_total) else None
-        conn = ac_db.connect_raw()
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS cost_reconciliation (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                trades_count INTEGER,
-                notional_ars REAL,
-                estimated_cost_ars REAL,
-                real_cost_ars REAL,
-                diff_ars REAL,
-                diff_pct REAL
-            )
-        """)
-        conn.execute(
-            "INSERT INTO cost_reconciliation (trades_count, notional_ars, estimated_cost_ars, "
-            "real_cost_ars, diff_ars, diff_pct) VALUES (?, ?, ?, ?, ?, ?)",
-            (len(closed_today), round(notional_total, 2), round(estimated_cost_ars, 2),
-             real_cost_ars, diff_ars, diff_pct),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.warning("No se pudo persistir la reconciliación de costos: %s", e)
-
-    return {
-        "state": "RECONCILED_REAL" if real_cost_ars is not None else "REAL_COST_UNAVAILABLE",
-        "estimated_cost_ars": round(estimated_cost_ars, 2),
-        "real_cost_ars": real_cost_ars,
-        "diff_ars": diff_ars,
-    }
+        state = "NOT_OBSERVABLE_IN_PAPER"
+    else:
+        state = "NO_GO_UNLINKED_FAMILY_CURRENCY_AND_BROKER_CHARGES"
+    return {"state": state, "estimated_cost_ars": None,
+            "real_cost_ars": None, "diff_ars": None}
 
 
 def _get_today_alert_tickers():
@@ -402,8 +301,13 @@ def send_market_close_summary(ppi, notifier):
         if cost_reconciliation.get("state") == "NOT_OBSERVABLE_IN_PAPER":
             reconciliation_txt = (
                 "\nCostos realmente cobrados por PPI: NOT_OBSERVABLE_IN_PAPER. "
-                "El informe conserva únicamente el costo modelado; no ajusta el tarifario "
-                "con fills simulados.\n"
+                "No se atribuyen cargos de cuenta a fills simulados ni se ajusta el tarifario.\n"
+            )
+        elif cost_reconciliation.get("state") == "NO_GO_UNLINKED_FAMILY_CURRENCY_AND_BROKER_CHARGES":
+            reconciliation_txt = (
+                "\nReconciliación de costos: NO_GO, falta vincular cada operación "
+                "por familia, moneda y liquidación a su comprobante de cargos. "
+                "No se calcula desvío ni se ajusta el tarifario.\n"
             )
         elif cost_reconciliation["real_cost_ars"] is not None:
             reconciliation_txt = (

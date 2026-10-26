@@ -145,8 +145,9 @@ def test_pre_signal_rejection_preserves_missing_signal_and_native_reason(tmp_pat
 def test_factual_cost_rounding_matches_existing_authority(family):
     import au_fee_schedule as fees
     price, qty = D("100.0123"), D("137")
-    expected = (price*qty*D(fees.costo_por_tramo(family))).quantize(D(".01"))
-    assert ledger_leg_cost(price, qty, family) == expected
+    currency = "ARS" if family == "LETRAS" else None
+    expected = (price*qty*D(fees.costo_por_tramo(family, currency=currency))).quantize(D(".01"))
+    assert ledger_leg_cost(price, qty, family, currency=currency) == expected
 
 
 @pytest.mark.parametrize("exit_price", ["99", "100", "105"])

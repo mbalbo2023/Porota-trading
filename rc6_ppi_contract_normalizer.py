@@ -9,6 +9,25 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 
+UNBOUND_FEE_FIELDS = frozenset({
+    "commission_minimum", "commission_rate_estimated",
+    "commission_vat_rate_estimated", "market_fee_rate",
+})
+
+
+def separate_unbound_fee_estimate(row):
+    """Keep GET rate hints away from exact trading identities.
+
+    InstrumentosOperables supplies a ticker and instrument denomination but
+    no proved trading market/currency/settlement, tariff channel, or billed
+    account terms. Its estimates can be audited at source scope only.
+    """
+    if not isinstance(row, dict):
+        raise ValueError("FEE_SOURCE_ROW_INVALID")
+    return ({key: value for key, value in row.items() if key not in UNBOUND_FEE_FIELDS},
+            {key: row[key] for key in UNBOUND_FEE_FIELDS if row.get(key) is not None})
+
+
 def _positive(value):
     try:
         number = Decimal(str(value))
