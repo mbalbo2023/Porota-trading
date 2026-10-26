@@ -1,15 +1,19 @@
 """A disposable copy may measure deletion; source and local pins remain intact."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import sqlite3
 
 import pytest
 
 from scripts.rc6_history_offhost_retention_rehearsal import rehearse
+from rc6_data_retention import ART
 
 
 def _source(tmp_path, *, bad_date=False):
     source = tmp_path / 'history.sqlite'
+    today = datetime.now(ART).date()
+    old = (today - timedelta(days=400)).isoformat()
+    recent = (today - timedelta(days=2)).isoformat()
     with sqlite3.connect(source) as connection:
         connection.executescript('''
             CREATE TABLE history_versions_v2(
@@ -20,15 +24,15 @@ def _source(tmp_path, *, bad_date=False):
             CREATE TABLE history_close_versions_v1(id INTEGER PRIMARY KEY,date TEXT);
             CREATE TABLE market_historical_ohlcv(
               symbol TEXT,date TEXT,close REAL,PRIMARY KEY(symbol,date));
-            INSERT INTO history_versions_v2 VALUES
-              (1,'AAA','ACCIONES','BYMA','A-24HS','2025-01-02','PPI','{}'),
-              (2,'BBB','ACCIONES','BYMA','A-24HS','2026-10-22','PPI','{}');
             INSERT INTO history_canonical_v2 VALUES(1);
             INSERT INTO history_canonical_v2_quarantine_rc6 VALUES(2);
-            INSERT INTO history_close_versions_v1 VALUES(1,'2025-01-02');
-            INSERT INTO market_historical_ohlcv VALUES
-              ('AAA','2025-01-02',10),('AAA','2026-10-22',12);
         ''')
+        connection.executemany('INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?)',
+            [(1,'AAA','ACCIONES','BYMA','A-24HS',old,'PPI','{}'),
+             (2,'BBB','ACCIONES','BYMA','A-24HS',recent,'PPI','{}')])
+        connection.execute('INSERT INTO history_close_versions_v1 VALUES(1,?)', (old,))
+        connection.executemany('INSERT INTO market_historical_ohlcv VALUES(?,?,?)',
+                               [('AAA',old,10),('AAA',recent,12)])
         if bad_date:
             connection.execute("INSERT INTO market_historical_ohlcv VALUES('BBB','unknown',13)")
     return source, {'source_bytes': source.stat().st_size,
