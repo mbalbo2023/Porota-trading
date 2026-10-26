@@ -159,13 +159,13 @@ jobs:
           print('RC6_PPI_WATCH_INVENTORY='+json.dumps(report,sort_keys=True))
           PYWATCH
           sudo -n docker exec -i porota_production_observer python - <<'PY'
-          import collections,json,os,re,sqlite3,time
+          import collections,gzip,hashlib,json,os,re,sqlite3,time
           from datetime import datetime,timezone
           from pathlib import Path
           from zoneinfo import ZoneInfo
           from rc6_paper_admission_gate import FOCUS,admission_status,focus_contracts
           from decimal import Decimal,InvalidOperation
-          from fb_raw_evidence_exact_v1 import manifest_path as exact_history_manifest
+          from fb_raw_evidence_exact_v1 import manifest_path as exact_history_manifest,object_path as exact_object
           from bu_instrument_catalog import (
               PAPER_PPI_IDENTITY_LKG_SECONDS,
               _candidate_has_ppi_primary,
@@ -339,6 +339,26 @@ jobs:
                                   newest=recorded if newest is None or recorded>newest else newest
                               archive['valid_headers']=dict(headers)
                               archive['recorded_at_min_max']=[oldest,newest]
+                              samples=[]
+                              for wrapper,digest in evidence.execute('''SELECT wrapper_json,inner_sha256
+                                  FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
+                                  ORDER BY rowid DESC LIMIT 3'''):
+                                  if time.monotonic()>deadline:break
+                                  obj=exact_object(digest)
+                                  if obj.is_symlink() or not obj.is_file() or obj.stat().st_size>1024**2:
+                                      samples.append({'state':'OBJECT_UNAVAILABLE_OR_OVERSIZE'});continue
+                                  try:
+                                      with gzip.open(obj,'rb') as stream:raw=stream.read(512*1024+1)
+                                      if len(raw)>512*1024:raise ValueError('DECOMPRESSED_SIZE_CAP')
+                                      if hashlib.sha256(raw).hexdigest()!=digest:raise ValueError('HASH_MISMATCH')
+                                      payload=json.loads(raw)
+                                      head=payload[0] if isinstance(payload,list) and payload else payload
+                                      samples.append({'state':'SHA256_VERIFIED',
+                                          'wrapper_keys':sorted(json.loads(wrapper))[:35],
+                                          'payload_kind':type(payload).__name__,
+                                          'row_keys':sorted(head)[:35] if isinstance(head,dict) else []})
+                                  except (OSError,ValueError,TypeError):samples.append({'state':'OBJECT_INVALID'})
+                              archive['bounded_object_samples']=samples
                       else:archive={'state':'SCHEMA_MISSING'}
               except (OSError,sqlite3.Error):archive={'state':'NO_VERIFICADO'}
           volume=volume_patterns()
