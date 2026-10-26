@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: rc6-unified-paper-deploy
@@ -37,7 +38,7 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee field_census.txt
           set -Eeuo pipefail
           sudo -n timeout 45 docker exec -i porota_production_observer python - <<'PY'
           import json, sqlite3, time
@@ -133,6 +134,42 @@ jobs:
           print("A80_FIELD_CENSUS=" + json.dumps(out, sort_keys=True, separators=(",", ":")))
           PY
           REMOTE
+      - name: Publish sanitized exact result to ownership issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY' > comment.json
+          import json, os
+          from pathlib import Path
+          raw = Path("field_census.txt").read_text()
+          lines = [line[len("A80_FIELD_CENSUS="):] for line in raw.splitlines()
+                   if line.startswith("A80_FIELD_CENSUS=")]
+          if len(lines) != 1:
+              raise ValueError("EXACT_CENSUS_LINE_MISSING_OR_DUPLICATE")
+          data = json.loads(lines[0])
+          assert data["read_only"] is True and data["provider_requests"] == 0
+          assert data["ppi_watch_accessed"] is False
+          assert data["observer"]["mode"] == "PRODUCTION_PAPER"
+          assert data["observer"]["real_orders_sent"] == 0
+          body = ("A80 — censo READ_ONLY de campos para siete testigos; "
+                  "no son señales ni autorización PAPER. "
+                  "Los nombres de claves y timestamps de captura no prueban "
+                  "contenido correcto, reloj nativo o frescura OPEN. "
+                  "Run: https://github.com/" + os.environ["GH_REPOSITORY"] +
+                  "/actions/runs/" + os.environ["GH_RUN_ID"] +
+                  "\n\n```json\n" + json.dumps(data, sort_keys=True, indent=2) +
+                  "\n```\n")
+          print(json.dumps({"body": body}))
+          PY
+          curl --fail --silent --show-error --retry 2 \
+            -X POST -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data-binary @comment.json \
+            "https://api.github.com/repos/$GH_REPOSITORY/issues/732/comments" > /dev/null
       - name: Remove SSH material
         if: always()
         run: rm -f "$HOME/.ssh/key"
