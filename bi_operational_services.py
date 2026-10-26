@@ -52,6 +52,7 @@ DATOS_AR_SERIES = {
     "Tipo de cambio mayorista": "168.1_T_CAMBIOR_D_0_0_26",
 }
 BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
+REPORT_SQLITE_RETRY_SECONDS = 15 * 60
 
 
 def now_iso():
@@ -144,6 +145,14 @@ def _job(store, key, state, detail, success=False):
           ON CONFLICT(job_key) DO UPDATE SET last_run_at=excluded.last_run_at,
           last_success_at=excluded.last_success_at,state=excluded.state,detail=excluded.detail""",
           (key, stamp, last_success, state, str(detail)[:1000]))
+
+
+def _reports_due(store):
+    with store.connect() as c:
+        row = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
+    interval = (REPORT_SQLITE_RETRY_SECONDS if row and row[0] == "ROJO" and
+                row[1] == "POSTCLOSE_SQLITE_FULL" else 6 * 3600)
+    return _job_due(store, "REPORTS", interval)
 
 
 def collect_sre(store):
@@ -719,6 +728,32 @@ def service_tick(store, phase, force=False):
     except Exception:
         business_day = False  # fail closed for routine weekend/holiday messaging
     if phase == "CLOSED" and business_day and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
-        if force or _job_due(store, "REPORTS", 6 * 3600):
-            ensure_reports(store, include_today=True)
-        send_closing_summary(store)
+        # These jobs are ancillary to PAPER admission. SQLITE_FULL caused by a
+        # report query must not restart the scanner on every tick. Persist a
+        # separate RED receipt and throttle the retry across process restarts;
+        # a truly full main DB cannot persist it and still fails closed.
+        if force or _reports_due(store):
+            try:
+                ensure_reports(store, include_today=True)
+            except sqlite3.OperationalError as exc:
+                if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
+                    raise
+                _job(store, "REPORTS", "ROJO", "POSTCLOSE_SQLITE_FULL", success=False)
+                return
+        elif not force:
+            with store.connect() as c:
+                state = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
+            if state and state[0] == "ROJO" and state[1] == "POSTCLOSE_SQLITE_FULL":
+                return
+        if not force and not _job_due(store, "CLOSING_SUMMARY_RETRY", REPORT_SQLITE_RETRY_SECONDS):
+            return
+        try:
+            send_closing_summary(store)
+        except sqlite3.OperationalError as exc:
+            if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
+                raise
+            _job(store, "CLOSING_SUMMARY_RETRY", "ROJO", "POSTCLOSE_SQLITE_FULL", success=False)
+            return
+        # Delivery is owned by the outbox worker/ACK. This receipt only says
+        # the summarizer returned without a SQLite error, not that it was sent.
+        _job(store, "CLOSING_SUMMARY_RETRY", "VERDE", "SUMMARY_CHECK_COMPLETED", success=True)
