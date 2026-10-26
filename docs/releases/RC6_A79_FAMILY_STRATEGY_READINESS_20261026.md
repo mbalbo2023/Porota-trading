@@ -99,3 +99,35 @@ moneda, plazo, ticker sin identidad y duplicado exacto: PASS.
 Estado: corrección de falsos verdes **VALIDADA EN CÓDIGO/TEST**; publicación,
 Predeploy y runtime de A79 **NO_VERIFICADO**. El snapshot anterior no verifica
 una colocación en la rueda siguiente. E09/E10 no ejecutados.
+
+## A79 continuación — caja FCI y cierre de bypass directo
+
+Se encontró un bloqueo adicional reproducible: `FamilyPaperExecutor.subscribe_fund`
+persiste `SUBSCRIBE_REQUESTED` por importe, pero `PaperBroker._cash` omitía por
+completo los eventos FCI. Una integración automática futura podía reservar FCI
+y simultáneamente gastar esa misma caja en spot/cauciones/futuros. Ahora la caja
+PAPER descuenta una única vez la suscripción, no considera `NAV_APPLIED` como
+efectivo y suma un rescate sólo al evento explícito `REDEEMED`. El corte as-of
+es por instante UTC y moneda; un retroceso de reloj bloquea nuevas ejecuciones.
+Se agregó índice de familia/lifecycle para la proyección sin cambiar datos
+históricos ni inferir unidades de participación o rentabilidad.
+
+Una nueva suscripción FCI contra la DB efectiva de runtime se comprueba dentro
+de `BEGIN IMMEDIATE`: candidato exacto AVAILABLE/can_simulate, capability
+`READY_PAPER_FCI_SUBSCRIPTION`, contrato `PaperFundTerms` idéntico al catálogo,
+callback de admisión, caja suficiente y recibo global GO del release. Una
+repetición idéntica del evento retorna idempotente sin otra reserva; una
+colisión de ID se rechaza por el fingerprint existente. Ensayos aislados cubren
+NO_GO, falta de guardas, insuficiencia de caja, candidato revocado, cambio de
+términos, reintento, frontera temporal y otra moneda; la suite focal de
+futuros/preopen/FCI y la batería de broker/familias se ejecutaron en local.
+Este cambio no conecta el disparador automático FCI, no acredita NAV/cutoff
+fresco, no prueba la política económica ni genera `BUY_SIMULATED`.
+
+Para BONOS/LETRAS/OBLIGACIONES/OPCIONES sigue faltando una tesis direccional
+registrada y medida fuera de muestra; `STRATEGY_NOT_VALIDATED` permanece como
+gate explícito. FUTUROS conserva motor DLR pero 207 identidades estaban pausadas;
+ETFS cero candidatos READY; CAUCIONES conserva su treasury especializado.
+Un test sintético demuestra seguridad y semántica de caja, no una oportunidad
+real ni un fill en la rueda OPEN. Predeploy/artefacto/despliegue/runtime de
+este fix: **NO_VERIFICADO**.
