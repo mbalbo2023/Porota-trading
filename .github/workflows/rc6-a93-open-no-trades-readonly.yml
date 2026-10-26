@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: rc6-unified-paper-deploy
@@ -33,6 +34,7 @@ jobs:
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
       - name: Read bounded PAPER admission and native ledger aggregates
+        id: probe
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -531,6 +533,43 @@ jobs:
           print('RC6_OPEN_ADMISSION='+json.dumps(result,sort_keys=True,ensure_ascii=False,default=str))
           PY
           REMOTE
+
+      - name: Link diagnostic run from the canonical issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          outcome = os.environ['PROBE_OUTCOME']
+          if outcome not in {'success', 'failure', 'skipped', 'cancelled'}:
+              raise SystemExit('INVALID_PROBE_OUTCOME')
+          run_id = os.environ['RUN_ID']
+          sha = os.environ['COMMIT_SHA']
+          if not run_id.isdecimal() or len(sha) != 40:
+              raise SystemExit('INVALID_RUN_IDENTITY')
+          body = ('A109 diagnóstico POSTCLOSE/PREOPEN de sólo lectura en el '
+                  'droplet (sin promoción ni mutación del host). '
+                  'probe=' + outcome + '; SHA diagnóstico=' + sha + '. '
+                  'Log y recibos: https://github.com/mbalbo2023/Porota-trading/actions/runs/' + run_id +
+                  '. El SHA candidato de #747 no cambia. Interpretar los códigos '
+                  'RC6_POSTCLOSE_HOST y RC6_OPEN_ADMISSION antes de decidir el gate.')
+          data = json.dumps({'body': body}).encode()
+          url = ('https://api.github.com/repos/mbalbo2023/Porota-trading/'
+                 'issues/732/comments')
+          request = urllib.request.Request(url, data=data, method='POST', headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+              'X-GitHub-Api-Version': '2022-11-28'})
+          with urllib.request.urlopen(request, timeout=15) as response:
+              if response.status != 201:
+                  raise SystemExit('DIAGNOSTIC_LINK_NOT_CREATED')
+          PY
 
       - name: Remove SSH material
         if: always()
