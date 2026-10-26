@@ -1,0 +1,131 @@
+name: RC6 A112 exact installed image browser audit
+
+# The branch can be published without touching the host. A separate, reviewed
+# run-request commit is the only trigger after canonical Deploy V2 succeeds.
+on:
+  push:
+    branches:
+      - audit/rc6-a112-full-browser-20261026
+    paths:
+      - ops/audit/rc6-a112-run-request.json
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate isolated source and canonical Deploy receipt
+        id: request
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          CANDIDATE=55e66d6c72e3cdbda0d6c8a4da561607158f1e8b
+          TREE=3946caa04db76db56b8f2f86b4bf7b4dbca436d4
+          test "$(git merge-base HEAD "$CANDIDATE")" = "$CANDIDATE"
+          test "$(git rev-parse "$CANDIDATE^{tree}")" = "$TREE"
+          test "$GITHUB_REF_NAME" = audit/rc6-a112-full-browser-20261026
+          while IFS= read -r changed; do
+            case "$changed" in
+              .github/workflows/rc6-a112-full-browser-readonly.yml|scripts/rc6_a112_full_browser_readonly.py|ops/audit/rc6-a112-run-request.json) ;;
+              *) echo "A112_AUDIT_RED=DIAGNOSTIC_SCOPE_CHANGED"; exit 2 ;;
+            esac
+          done < <(git diff --name-only "$CANDIDATE" HEAD)
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          python3 -m py_compile scripts/rc6_a112_full_browser_readonly.py
+          python3 scripts/rc6_a112_full_browser_readonly.py validate-request \
+            --file ops/audit/rc6-a112-run-request.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --output "$GITHUB_OUTPUT"
+          install -m 700 -d "$RUNNER_TEMP/rc6_a112_ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_a112_ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_a112_ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_a112_ssh/key" "$RUNNER_TEMP/rc6_a112_ssh/known_hosts"
+
+      - name: Read only host guard before browser
+        id: preflight
+        shell: bash
+        timeout-minutes: 1
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$RUNNER_TEMP/rc6_a112_ssh/key" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a112_ssh/known_hosts")
+          timeout 40 "${SSH[@]}" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - host-preflight --candidate-sha '${{ steps.request.outputs.candidate_sha }}' --candidate-tree '${{ steps.request.outputs.candidate_tree }}' --image-id '${{ steps.request.outputs.image_id }}'" \
+            < scripts/rc6_a112_full_browser_readonly.py
+
+      - name: Bounded authenticated Chrome audit
+        if: ${{ steps.preflight.outcome == 'success' }}
+        shell: bash
+        timeout-minutes: 13
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          command -v google-chrome >/dev/null
+          SSH=(ssh -i "$RUNNER_TEMP/rc6_a112_ssh/key" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a112_ssh/known_hosts")
+          TOKEN="$(timeout 15 "${SSH[@]}" "$DO_USER@$DO_HOST" \
+            'sudo -n docker exec porota_production_dashboard printenv DASHBOARD_ACCESS_TOKEN')"
+          test "${#TOKEN}" -ge 24
+          echo "::add-mask::$TOKEN"
+          ssh -N -L 127.0.0.1:18085:127.0.0.1:8000 \
+            -i "$RUNNER_TEMP/rc6_a112_ssh/key" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a112_ssh/known_hosts" "$DO_USER@$DO_HOST" &
+          TUNNEL_PID=$!
+          trap 'kill "$TUNNEL_PID" 2>/dev/null || true' EXIT
+          for attempt in 1 2 3 4 5; do
+            if DASHBOARD_ACCESS_TOKEN="$TOKEN" python3 -c 'import os,urllib.request; u="http://127.0.0.1:18085/api/dashboard/truth"; r=urllib.request.urlopen(urllib.request.Request(u,headers={"Authorization":"Bearer "+os.environ["DASHBOARD_ACCESS_TOKEN"]}),timeout=2); assert r.status==200'; then break; fi
+            sleep 1
+          done
+          DASHBOARD_ACCESS_TOKEN="$TOKEN" python3 scripts/rc6_a112_full_browser_readonly.py browser \
+            --output audit-evidence/report.json
+          unset TOKEN
+
+      - name: Recheck exact host image and flat PAPER book
+        if: ${{ always() && steps.preflight.outcome == 'success' }}
+        shell: bash
+        timeout-minutes: 1
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$RUNNER_TEMP/rc6_a112_ssh/key" -o BatchMode=yes \
+            -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a112_ssh/known_hosts")
+          timeout 40 "${SSH[@]}" "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - host-preflight --candidate-sha '${{ steps.request.outputs.candidate_sha }}' --candidate-tree '${{ steps.request.outputs.candidate_tree }}' --image-id '${{ steps.request.outputs.image_id }}'" \
+            < scripts/rc6_a112_full_browser_readonly.py
+
+      - name: Preserve no content report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a112-no-content-browser-report
+          path: audit-evidence/report.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Erase runner SSH material
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/rc6_a112_ssh"
