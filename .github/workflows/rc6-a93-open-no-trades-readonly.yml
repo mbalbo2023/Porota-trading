@@ -446,6 +446,20 @@ jobs:
                       'last_success_at':row['last_success_at'],
                       'exception_type':prefix.group(1) if prefix else 'NO_VERIFICADO',
                       'http_status_code':status.group(0) if status else 'NO_VERIFICADO'}
+          child_health={'state':'NO_VERIFICADO'}
+          child_path=path.parent/'artifacts'/path.name/'runtime-health.json'
+          try:
+              if child_path.is_symlink() or child_path.stat().st_size>65536:
+                  raise ValueError('UNSAFE_CHILD_HEALTH')
+              payload=json.loads(child_path.read_text(encoding='utf-8'))
+              scanner=(payload.get('children') or {}).get('scanner') or {}
+              fields=('state','restarts','spawn_failures','started_at',
+                      'last_exit_at','last_error')
+              child_health={'recorded_at':payload.get('recorded_at'),
+                  'source_sha':payload.get('source_sha'),
+                  'scanner':{key:scanner.get(key) for key in fields},
+                  'state':'OK'}
+          except (OSError,ValueError,TypeError):pass
           worker=None
           if 'intraday_scalping_worker_state' in tables:
               row=db.execute('SELECT heartbeat_at,state,cursor,selected,successful,failed,points_inserted,confirmed_identities,candidates,real_orders_sent FROM intraday_scalping_worker_state WHERE id=1').fetchone()
@@ -540,6 +554,7 @@ jobs:
                   'at_ar':now.astimezone(tz).isoformat(),'day_ar':day,'observer':dict(state),
                   'build_sha':os.getenv('POROTA_BUILD_SHA','NO_VERIFICADO'),
                   'ppi_auth_health_sanitized':auth_health,
+                  'scanner_child_health_sanitized':child_health,
                   'admission':{'allowed':allowed,'reason':reason,'receipt':receipt},
                   'focus_contracts':focus,'intraday_contract_states':intraday,
                   'candidate_ledger':candidate_ledger,'family_matrix':families,
