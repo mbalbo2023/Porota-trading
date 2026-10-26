@@ -45,4 +45,7 @@ jobs:
               raise SystemExit('BYMA_TIMETABLE_EXTRACTION_UNVERIFIED')
           for n, line in matches:
               print(f'BYMA_HOURS_LINE={n}|{line[:220]}')
+          for n, line in enumerate(lines, 1):
+              if 156 <= n <= 165:
+                  print(f'BYMA_VIGENCIA_LINE={n}|{" ".join(line.split())[:220]}')
           PY
