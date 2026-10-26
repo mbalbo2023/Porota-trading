@@ -45,6 +45,112 @@ jobs:
             printf 'TIMER=%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
           done
           systemctl show porota-preopen-rc6.timer --property=LastTriggerUSec --property=NextElapseUSecRealtime --no-pager | sed 's/^/PREOPEN_TIMER_/'
+          sudo -n python3 - <<'PYHOST'
+          import json, os, subprocess, time
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+
+          def command(args):
+              try:
+                  result = subprocess.run(args, check=False, text=True,
+                                          capture_output=True, timeout=5)
+              except (OSError, subprocess.SubprocessError):
+                  return None
+              return result.stdout if result.returncode == 0 else None
+
+          raw = command(['systemctl', 'list-unit-files', '--type=timer',
+                         '--all', '--no-legend', '--no-pager'])
+          if raw is None:
+              raise SystemExit('RC6_TIMER_ENUMERATION_UNAVAILABLE')
+          names = sorted({line.split()[0] for line in raw.splitlines()
+                          if line.split() and line.split()[0].startswith('porota-')
+                          and 'watch' not in line.split()[0].lower()})[:48]
+          properties = ('Id', 'LoadState', 'ActiveState', 'UnitFileState',
+                        'LastTriggerUSec', 'NextElapseUSecRealtime')
+          service_properties = ('Id', 'LoadState', 'ActiveState', 'Result',
+                                'ExecMainStatus', 'ExecMainStartTimestamp',
+                                'ExecMainExitTimestamp')
+
+          def show(unit, fields):
+              raw = command(['systemctl', 'show', unit, '--no-pager',
+                             '--property=' + ','.join(fields)])
+              if raw is None:
+                  return {'state': 'NO_VERIFICADO'}
+              values = dict(line.split('=', 1) for line in raw.splitlines()
+                            if '=' in line)
+              return {field: values.get(field) or 'NO_VERIFICADO'
+                      for field in fields}
+
+          roles = ('--dynamic-shadow-worker', '--performance-worker',
+                   '--exit-reader', '--notification-worker', '--candle-worker',
+                   '--intraday-scalping-worker', '--caucion-cash-sweep-worker')
+          top = command(['docker', 'top', 'porota_production_observer',
+                         '-eo', 'pid,args'])
+          observed = {}
+          if top is not None:
+              for line in top.splitlines()[1:80]:
+                  parts = line.strip().split(None, 1)
+                  if len(parts) != 2 or not parts[0].isdecimal():
+                      continue
+                  argv = parts[1]
+                  if 'bf_production_paper_observer.py' in argv:
+                      role = 'scanner'
+                  elif 'bv_paper_runtime.py' in argv:
+                      role = next((flag[2:] for flag in roles if flag in argv),
+                                  'paper_runtime')
+                  else:
+                      continue
+                  observed[int(parts[0])] = role
+
+          def counters(pid):
+              try:
+                  proc = '/proc/' + str(pid)
+                  stat = open(proc + '/stat', encoding='ascii').read().rsplit(')', 1)[1].split()
+                  io = dict(line.split(':', 1) for line in
+                            open(proc + '/io', encoding='ascii').read().splitlines()
+                            if ':' in line)
+                  return (int(stat[11]) + int(stat[12]),
+                          int(io.get('read_bytes', '0')),
+                          int(io.get('write_bytes', '0')),
+                          int(stat[21]) * os.sysconf('SC_PAGE_SIZE') // 1024)
+              except (OSError, ValueError, IndexError):
+                  return None
+
+          before = {pid: counters(pid) for pid in observed}
+          start = time.monotonic()
+          time.sleep(2)
+          elapsed = round(time.monotonic() - start, 3)
+          process_sample = []
+          for pid, role in sorted(observed.items(), key=lambda item: (item[1], item[0])):
+              first, last = before[pid], counters(pid)
+              if first is None or last is None:
+                  process_sample.append({'role': role, 'state': 'SAMPLE_UNAVAILABLE'})
+                  continue
+              deltas = [last[i] - first[i] for i in range(3)]
+              process_sample.append({'role': role,
+                  'state': 'OK' if all(value >= 0 for value in deltas) else 'COUNTER_RESET',
+                  'cpu_ticks_delta': max(0, deltas[0]),
+                  'read_bytes_delta': max(0, deltas[1]),
+                  'write_bytes_delta': max(0, deltas[2]),
+                  'rss_kib': last[3]})
+
+          now = datetime.now(timezone.utc)
+          result = {'schema': 'rc6-postclose-host-units-readonly-v1',
+                    'at_utc': now.isoformat(),
+                    'at_ar': now.astimezone(
+                        ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+                    'timer_enumeration': 'OK', 'timer_count': len(names),
+                    'timer_limit_hit': len(names) == 48,
+                    'process_enumeration': 'OK' if top is not None else 'NO_VERIFICADO',
+                    'process_sample_seconds': elapsed,
+                    'processes': process_sample,
+                    'units': [{'timer': show(name, properties),
+                               'service': show(name[:-6] + '.service',
+                                               service_properties)}
+                              for name in names],
+                    'ppi_watch_accessed': False, 'mutation_attempted': False}
+          print('RC6_POSTCLOSE_HOST=' + json.dumps(result, sort_keys=True))
+          PYHOST
           sudo -n python3 - <<'PYWATCH'
           import collections,json,os,re,subprocess
           from pathlib import Path
