@@ -67,6 +67,8 @@ jobs:
           names = sorted({line.split()[0] for line in raw.splitlines()
                           if line.split() and line.split()[0].startswith('porota-')
                           and 'watch' not in line.split()[0].lower()})[:48]
+          expected_watch_named = ('porota-byma-morning-watch-rc6.timer',
+                                  'porota-market-watch-silence-rc6.timer')
           properties = ('Id', 'LoadState', 'ActiveState', 'UnitFileState',
                         'LastTriggerUSec', 'NextElapseUSecRealtime')
           service_properties = ('Id', 'LoadState', 'ActiveState', 'Result',
@@ -180,6 +182,11 @@ jobs:
                                'service': show(name[:-6] + '.service',
                                                service_properties)}
                               for name in names],
+                    'expected_watch_named_units': [
+                        {'timer': show(name, properties),
+                         'service': show(name[:-6] + '.service',
+                                         service_properties)}
+                        for name in expected_watch_named],
                     'local_eod_latest_report': eod,
                     'iol_reference_current_contract': iol,
                     'ppi_watch_accessed': False, 'mutation_attempted': False}
