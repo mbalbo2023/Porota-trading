@@ -22,8 +22,17 @@ jobs:
             --max-filesize 2000000 "$url" -o /tmp/byma-com19024.pdf
           test "$(head -c 4 /tmp/byma-com19024.pdf)" = '%PDF'
           test "$(stat -c %s /tmp/byma-com19024.pdf)" -le 2000000
-          pdfinfo /tmp/byma-com19024.pdf | awk '/^Pages:/ {if ($2>20) exit 1}'
-          pdftotext -layout /tmp/byma-com19024.pdf /tmp/byma-com19024.txt
+          python3 -m pip install --quiet --disable-pip-version-check --no-input pypdf==5.9.0
+          python3 - <<'PY'
+          from pathlib import Path
+          from pypdf import PdfReader
+          pages = PdfReader('/tmp/byma-com19024.pdf').pages
+          if not 1 <= len(pages) <= 20:
+              raise SystemExit('BYMA_PAGE_BUDGET_UNVERIFIED')
+          Path('/tmp/byma-com19024.txt').write_text('\n'.join(
+              page.extract_text(extraction_mode='layout') or '' for page in pages))
+          print('PDF_PAGES=' + str(len(pages)))
+          PY
           sha256sum /tmp/byma-com19024.pdf | awk '{print "OFFICIAL_PDF_SHA256=" $1}'
           python3 - <<'PY'
           from pathlib import Path
