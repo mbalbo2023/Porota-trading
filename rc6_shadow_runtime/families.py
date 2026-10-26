@@ -25,7 +25,6 @@ from rc6_dynamic_universe.routing import (
 from rc6_dynamic_universe.sources import MARKETS, TERMS, SOURCE_ALIASES
 from .persistence import FrozenJSONDict
 from .source_authority import VERSION as SOURCE_POLICY_VERSION, resolve_field
-from .family_strategies import STRATEGIES as SPECIALIZED_HYPOTHESES, evaluate_family_strategy
 
 MAX_ROWS = 20000
 QUERY_BUDGET_SECONDS = 0.5
@@ -557,19 +556,6 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
     empty_fields={} if compact_missing else None
     quotes = {}
     selected_options, excluded_options = [], []
-    # Optional research is a bounded, explicitly clocked input. It is never
-    # inferred from broad IOL reference inventories or an observed yield/NAV.
-    research_rows = (sources or {}).get("family_strategy_research", [])
-    if not isinstance(research_rows, list) or len(research_rows) > 1000:
-        raise ValueError("FAMILY_RESEARCH_BUDGET_OR_SCHEMA_INVALID")
-    research_by_key = {}
-    for research in research_rows:
-        try:
-            research_key = _key(research) if isinstance(research, Mapping) else None
-        except (ValueError, TypeError):
-            research_key = None
-        if research_key is not None and research_key in primary_keys:
-            research_by_key.setdefault(research_key, []).append(research)
 
     def quote_for(key):
         # Resolve only quotes actually consumed by a family/underlying. Keep
@@ -597,7 +583,6 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
         rows = _FieldRows(evidence[key],empty_fields)
         terms = {name: _field(name, rows, at=at, ttl=None, static=True, numeric=True)
                  for name in ("quote_basis_nominal", "quantity_step_nominal", "minimum_nominal", "cash_multiplier")}
-        terms["flow_unit"] = _field("flow_unit", rows, at=at, ttl=None, static=True)
         basis = terms["quote_basis_nominal"]
         nominal = nominal_contract(NominalEvidence(key[0], key[1], key[2], key[3], key[4],
             basis["value"], terms["quantity_step_nominal"]["value"], terms["minimum_nominal"]["value"],
@@ -623,35 +608,14 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
         rows, quote = _FieldRows(evidence[key],empty_fields), quote_for(key)
         terms = {name: _field(name, rows, at=at, ttl=None, static=True, numeric=name == "strike")
                  for name in ("underlying", "strike", "expires_at", "strike_unit", "option_right")}
-        contract_candidates = set()
-        for row in rows:
-            for view in _views(row):
-                if not view.get("metadata_source") or not _fresh(
-                        view.get("source_at") or view.get("observed_at"), view.get("received_at"), at, None):
-                    continue
-                try:
-                    candidate = contract_from_metadata(key[0], "OPCIONES", view)
-                    if (candidate.market, candidate.currency, candidate.settlement) == key[2:5]:
-                        contract_candidates.add((str(candidate.cash_multiplier), candidate.underlying,
-                                                 candidate.option_right, candidate.expires_at))
-                except (ValueError, TypeError):
-                    continue
-        unique_contract = next(iter(contract_candidates)) if len(contract_candidates) == 1 else None
-        option_contract = {"status": "VERIFIED_EXACT_CONTRACT" if unique_contract and not _conflicted(rows, at)
-                           else "NO_VERIFICADO", "cash_multiplier": unique_contract[0] if unique_contract else None,
-                           "underlying": unique_contract[1] if unique_contract else None,
-                           "option_right": unique_contract[2] if unique_contract else None,
-                           "expires_at": unique_contract[3] if unique_contract else None}
         underlying = terms["underlying"]["value"]
         matches = underlying_index.get((str(underlying or "").upper(), *key[2:4]), ())
         same_settlement = [k for k in matches if k[4] == key[4]]
         matches = same_settlement or matches
         underlying_rows = {}
-        underlying_quote = {}
         if len(matches) == 1:
             match = matches[0]
-            underlying_quote = quote_for(match)
-            underlying_rows[match[0]] = {**dict(zip(IDENTITY_KEYS, match)), **underlying_quote}
+            underlying_rows[match[0]] = {**dict(zip(IDENTITY_KEYS, match)), **quote_for(match)}
             # Existing standard BYMA contracts prove a strike per underlying
             # share. This is a dimensional contract derivation, not a ticker
             # parse or a guessed lot. Other contracts still need explicit units.
@@ -685,9 +649,7 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
             universe["excluded"] = [{"identity": key, "reason_codes": ["CONTRACT_CONFLICT_NO_VERIFICADO"]}]
         selected_options.extend(universe["selected"])
         excluded_options.extend(universe["excluded"])
-        return {"status": "OBSERVE_ONLY", "terms": terms, "option_contract": option_contract,
-                "underlying_quote": underlying_quote,
-                "quote": quote, "ancillary": ancillary,
+        return {"status": "OBSERVE_ONLY", "terms": terms, "quote": quote, "ancillary": ancillary,
                 "structurally_selected": bool(universe["selected"]),
                 "reason_codes": [] if universe["selected"] else universe["excluded"][0]["reason_codes"],
                 "selector": "UNDERLYING_EXPIRY_MONEYNESS_BOOK", "blind_round_robin": False,
@@ -716,14 +678,7 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
         rows = _FieldRows(evidence[key],empty_fields)
         terms = {name: _field(name, rows, at=at, ttl=86400, numeric=name == "nav")
                  for name in ("nav", "nav_date", "subscription_status", "redemption_term", "cutoff_time")}
-        cash_rows = [row for row in data["cash"] if row.get("currency") == key[3]]
-        cash_row = max(cash_rows, key=lambda row: stamp(row["measured_at"])) if cash_rows else {}
-        cash_value = _number(cash_row.get("cash"))
-        cash = {"value": cash_value, "measured_at": cash_row.get("measured_at"),
-                "status": "OBSERVED_PAPER_CASH" if cash_value is not None and
-                _fresh(cash_row.get("measured_at"), cash_row.get("measured_at"), at) else "NO_VERIFICADO"}
-        return {"status": "OBSERVE_ONLY", "terms": terms, "cash": cash,
-                "trigger": "NAV_SUBSCRIPTION_REDEMPTION_EVENT",
+        return {"status": "OBSERVE_ONLY", "terms": terms, "trigger": "NAV_SUBSCRIPTION_REDEMPTION_EVENT",
                 "intraday_equity_scanner": False, "event_signature": digest({name: {"value": value["value"], "status": value["status"]} for name, value in terms.items()}),
                 "cadence_class": "EVENT_DRIVEN_NAV_PUBLICATION", "event_authority": "OBSERVATION_ONLY",
                 "reason_codes": ["FUND_NAV_OR_LIFECYCLE_NO_VERIFICADO"] if any(value["value"] is None for value in terms.values()) else [],
@@ -743,13 +698,6 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
         if key[1] == "FUTUROS":
             report["handler_result"] = {"status": "DELEGATED", "owner_issue": 453, "owner_workstream": "WS_MOTOR_16",
                                         "lifecycle_called": False, "entry_authority": False}
-        if key[1] in SPECIALIZED_HYPOTHESES and report.get("handler_result") is not None:
-            research = research_by_key.get(key, [])
-            hypothesis = evaluate_family_strategy(key, report["handler_result"],
-                research[0] if len(research) == 1 else None, as_of=at)
-            if len(research) > 1:
-                hypothesis["reason_code"] = "DUPLICATE_EXACT_IDENTITY_RESEARCH"
-            report["handler_result"]["strategy_hypothesis"] = hypothesis
         instruments.append({"identity": list(key), **report, "status": "OBSERVE_ONLY"})
     counts = Counter(str(row["identity"][1] or "UNKNOWN") for row in instruments)
     fixed_income_selection = _fixed_income_priority(instruments, at)
