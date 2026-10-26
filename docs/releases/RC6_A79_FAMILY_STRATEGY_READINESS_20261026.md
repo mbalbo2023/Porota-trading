@@ -390,3 +390,17 @@ sitúa NAV/reglamento/valor de cuotaparte en el ciclo del fondo. Esas reglas
 se consultan por serie/clase vigente antes de parametrizar un ejecutor. Los
 umbrales numéricos de ventaja/riesgo y el tamaño mínimo de muestra no están
 estimados con datos PIT suficientes: quedan deliberadamente NO_VERIFICADO.
+
+### A83 — falsación adicional del calendario IOL
+
+La primera reconciliación A82 cotejaba cada campo de analítica por lote contra
+la simulación por nominal, pero ambas vistas del **mismo** proveedor podían
+coincidir y a la vez violar conservación de capital. Se añadió el chequeo
+`saldo_inicial − amortización = saldo_residual`, continuidad entre períodos y
+numeración sucesiva en los períodos mostrados; montos no negativos y saldo
+terminal cero ya estaban exigidos. Una alteración concordante de las dos
+respuestas, y un salto de numeración, ahora dan `NO_VERIFICADO` con motivo.
+Los dos payloads IOL consultados en CLOSED (AL30 8 e YMCJO 14 períodos)
+superaron esos controles; 24 pruebas focales de collector y SHADOW PASS. Esto
+valida coherencia aritmética interna de una referencia de un proveedor, no la
+autenticidad de términos del emisor, book, TIR OOS ni admisión PAPER.

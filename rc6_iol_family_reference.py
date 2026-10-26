@@ -185,6 +185,8 @@ def _fixed_flow_reference(analytics: dict, simulation: dict, units_per_lot: obje
                 or not 0 < len(analytic_rows) == len(simulated_rows) <= 250):
             return reject("FLOW_ROWS_UNAVAILABLE_OR_MISMATCHED")
         prior = settlement
+        previous_balance = None
+        previous_period = None
         flows = []
         for a, s in zip(analytic_rows, simulated_rows):
             if not isinstance(a, dict) or not isinstance(s, dict):
@@ -193,18 +195,31 @@ def _fixed_flow_reference(analytics: dict, simulation: dict, units_per_lot: obje
             if (payable != day(s.get("date")) or not prior < payable <= maturity
                     or a.get("period_number") != s.get("period_number")):
                 return reject("FLOW_DATE_OR_PERIOD_MISMATCH")
+            period = s.get("period_number")
+            if (type(period) is not int or period < 1 or
+                    (previous_period is not None and period != previous_period + 1)):
+                return reject("FLOW_PERIOD_SEQUENCE_INVALID")
             for field in ("opening_balance", "interest", "amortization", "cash_flow", "residual_balance"):
                 left, right = decimal(a.get(field)), decimal(s.get(field))
                 if left < 0 or right < 0 or abs(left/lot-right) > Decimal("0.000001"):
                     return reject("FLOW_UNIT_MISMATCH")
+            opening = decimal(s["opening_balance"])
             interest = decimal(s["interest"])
             amortization = decimal(s["amortization"])
             amount = decimal(s["cash_flow"])
+            residual = decimal(s["residual_balance"])
+            if (opening <= 0 or amortization > opening or
+                    abs(opening-amortization-residual) > Decimal("0.000001") or
+                    (previous_balance is not None and
+                     abs(previous_balance-opening) > Decimal("0.000001"))):
+                return reject("FLOW_BALANCE_CONSERVATION_INVALID")
             if abs(interest+amortization-amount) > Decimal("0.000001"):
                 return reject("FLOW_COMPONENT_MISMATCH")
             flows.append({"payment_date": payable.isoformat(), "amount": str(amount),
                           "currency": payment_currency})
             prior = payable
+            previous_balance = residual
+            previous_period = period
         if prior != maturity or decimal(simulated_rows[-1]["residual_balance"]) != 0:
             return reject("TERMINAL_FLOW_UNVERIFIED")
         total = decimal(simulation.get("total_to_collect"))

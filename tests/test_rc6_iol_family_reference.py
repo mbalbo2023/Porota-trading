@@ -96,6 +96,39 @@ def test_iol_flow_reference_rejects_unit_currency_clock_and_horizon_conflicts():
     assert reference(a=changed)["reason"]=="CALCULATION_CLOCK_UNVERIFIED"
 
 
+def test_iol_flow_reference_checks_internal_balance_and_period_even_when_provider_views_agree():
+    analytics,simulation=_flow_pair()
+    analytics["cashflow"][0]["opening_balance"]=65
+    simulation["cash_flows"][0]["opening_balance"]=0.65
+    assert m._fixed_flow_reference(analytics,simulation,100,
+        received_at="2026-10-26T02:00:03+00:00")["reason"]=="FLOW_BALANCE_CONSERVATION_INVALID"
+
+    analytics,simulation=_flow_pair()
+    analytics["cashflow"][0].update(date="2027-07-09T00:00:00",
+        amortization=32,cash_flow=32.24,residual_balance=32)
+    analytics["cashflow"].append({"period_number":2,"date":"2030-07-09T00:00:00",
+        "opening_balance":32,"interest":0.12,"amortization":32,
+        "cash_flow":32.12,"residual_balance":0})
+    simulation["cash_flows"][0].update(date="2027-07-09T00:00:00",
+        amortization=0.32,cash_flow=0.3224,residual_balance=0.32)
+    simulation["cash_flows"].append({"period_number":2,"date":"2030-07-09T00:00:00",
+        "opening_balance":0.32,"interest":0.0012,"amortization":0.32,
+        "cash_flow":0.3212,"residual_balance":0})
+    simulation["total_to_collect"]=0.6436
+
+    def result():
+        return m._fixed_flow_reference(analytics,simulation,100,
+            received_at="2026-10-26T02:00:03+00:00")
+
+    assert result()["status"]=="RECONCILED_PROVIDER_CALCULATION"
+    analytics["cashflow"][1].update(opening_balance=33,amortization=33)
+    simulation["cash_flows"][1].update(opening_balance=0.33,amortization=0.33)
+    assert result()["reason"]=="FLOW_BALANCE_CONSERVATION_INVALID"
+    analytics["cashflow"][1].update(opening_balance=32,amortization=32,period_number=4)
+    simulation["cash_flows"][1].update(opening_balance=0.32,amortization=0.32,period_number=4)
+    assert result()["reason"]=="FLOW_PERIOD_SEQUENCE_INVALID"
+
+
 def test_option_contract_uses_byma_underlying_lot_not_iol_order_step():
     chain={"underlying":"GGAL","options":[{"symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
       "expiration":"2026-10-16T15:30:00-03:00","bid_price":87,"ask_price":88,"volume":10,"is_stale":False}]}
