@@ -104,6 +104,59 @@ jobs:
           print(json.dumps(result,sort_keys=True))
           PY
           REMOTE
+      - name: Inventory verified migration capacity and currency provenance read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 45 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          import json,os,sqlite3,time
+          from pathlib import Path
+          history='/app/data/market_history.db'
+          paper='/app/data/paper_v17/observer_v17.db'
+          def ro(path):
+              c=sqlite3.connect(Path(path).as_uri()+'?mode=ro',uri=True,timeout=.3)
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=300')
+              deadline=time.monotonic()+15
+              c.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
+              return c
+          def cgroup(name):
+              try:return Path('/sys/fs/cgroup/'+name).read_text().strip()
+              except OSError:return 'NO_VERIFICADO'
+          result={'schema':'rc6-a77-migration-capacity-v1','read_only':True,
+                  'source_bytes':os.stat(history).st_size,
+                  'volume_free_bytes':os.statvfs(history).f_bavail*os.statvfs(history).f_frsize,
+                  'scratch_configured_max_bytes':os.getenv('POROTA_SQLITE_SCRATCH_MAX_BYTES','UNSET'),
+                  'scratch_configured_reserve_bytes':os.getenv('POROTA_SQLITE_SCRATCH_RESERVE_BYTES','UNSET'),
+                  'cgroup_memory_max':cgroup('memory.max'),'cgroup_memory_current':cgroup('memory.current'),
+                  'real_routes':'NOT_CALLED','provider_requests':0,'history_writes':False}
+          try:
+              with ro(history) as c:
+                  r=c.execute("""SELECT COUNT(*),
+                      SUM(CASE WHEN json_valid(metadata_json) AND
+                          json_extract(metadata_json,'$.currency') IS NOT NULL THEN 1 ELSE 0 END)
+                      FROM history_versions_v2""").fetchone()
+                  result['legacy_versions']=r[0];result['explicit_metadata_currency']=r[1]
+                  result['legacy_canonical']=c.execute('SELECT COUNT(*) FROM history_canonical_v2').fetchone()[0]
+              with ro(paper) as c:
+                  result['catalog_unique_currency_keys']=c.execute("""SELECT COUNT(*) FROM (
+                      SELECT ticker,instrument_type,market,settlement
+                      FROM financial_instrument_catalog
+                      WHERE currency NOT IN ('','UNKNOWN') AND status='AVAILABLE'
+                      GROUP BY ticker,instrument_type,market,settlement
+                      HAVING COUNT(DISTINCT currency)=1)""").fetchone()[0]
+                  result['catalog_ambiguous_currency_keys']=c.execute("""SELECT COUNT(*) FROM (
+                      SELECT ticker,instrument_type,market,settlement
+                      FROM financial_instrument_catalog
+                      WHERE currency NOT IN ('','UNKNOWN') AND status='AVAILABLE'
+                      GROUP BY ticker,instrument_type,market,settlement
+                      HAVING COUNT(DISTINCT currency)>1)""").fetchone()[0]
+              result['state']='VALIDATED'
+          except Exception as exc:result.update(state='NO_VERIFICADO',error_class=type(exc).__name__)
+          print(json.dumps(result,sort_keys=True))
+          PY
       - name: Remove SSH material
         if: always()
         shell: bash
