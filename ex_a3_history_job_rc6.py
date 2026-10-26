@@ -29,6 +29,7 @@ def main(argv=None):
     print(json.dumps(result,ensure_ascii=False,sort_keys=True,default=str))
     if not result.get('ran'):
         return 0 if result.get('reason')=='RUNTIME_NOT_CLOSED_OR_SAFE' else 2
-    return 2 if int(result.get('failed') or 0)>0 else 0
+    return 2 if (int(result.get('failed') or 0)>0 or
+                 result.get('state')=='BLOCKED_NO_ALIGNED_TARGETS') else 0
 
 if __name__=='__main__': raise SystemExit(main())

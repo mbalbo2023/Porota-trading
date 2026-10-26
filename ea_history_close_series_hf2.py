@@ -303,8 +303,8 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
     columns={r[1] for r in connection.execute('PRAGMA table_info(history_close_versions_v1)')}
     if not columns or {'currency','previous_version_id'}<=columns:
         return {'migrated_rows':0,'quarantined_rows':0}
-    records=[dict(r) for r in connection.execute('SELECT * FROM history_close_versions_v1 LIMIT ?', (max_rows+1,))]
-    if len(records)>max_rows:raise ValueError('HISTORY_MIGRATION_ROW_BUDGET_EXHAUSTED')
+    count=int(connection.execute('SELECT COUNT(*) FROM history_close_versions_v1').fetchone()[0])
+    if count>max_rows:raise ValueError('HISTORY_MIGRATION_ROW_BUDGET_EXHAUSTED')
     check()
     connection.execute('ALTER TABLE history_close_canonical_v1 RENAME TO history_close_canonical_v1_legacy')
     connection.execute('ALTER TABLE history_close_versions_v1 RENAME TO history_close_versions_v1_legacy')
@@ -315,11 +315,15 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
     connection.execute('CREATE TABLE history_close_migration_quarantine_v2(old_version_id INTEGER PRIMARY KEY,reason TEXT NOT NULL)')
     connection.execute('CREATE TABLE history_close_migration_map_v2(old_version_id INTEGER PRIMARY KEY,new_version_id INTEGER NOT NULL)')
     migrated=quarantined=0
-    def ordering(row):
-        try:return (utc(row['observed_at']),row['id'])
-        except ValueError:return ('',row['id'])
-    for row in sorted(records,key=ordering):
+    def ordering(value):
+        try:return utc(value)
+        except ValueError:return ''
+    connection.create_function('rc6_close_migration_utc',1,ordering,deterministic=True)
+    for record in connection.execute('SELECT * FROM history_close_versions_v1_legacy '
+                                     'ORDER BY rc6_close_migration_utc(observed_at),id'):
         check()
+        row=dict(record)
+        connection.execute('SAVEPOINT history_close_migration_row')
         try:
             meta=json.loads(row['metadata_json'] or '{}')
             if not isinstance(meta,dict):raise ValueError('HISTORY_METADATA_INVALID')
@@ -336,8 +340,11 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
                         'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}},currency)
             result=append_close_evidence(None,item,connection=connection)
             connection.execute('INSERT INTO history_close_migration_map_v2 VALUES(?,?)',(row['id'],result['version_id']))
+            connection.execute('RELEASE SAVEPOINT history_close_migration_row')
             migrated+=1
         except (ValueError,TypeError,KeyError) as exc:
+            connection.execute('ROLLBACK TO SAVEPOINT history_close_migration_row')
+            connection.execute('RELEASE SAVEPOINT history_close_migration_row')
             reason=str(exc) if str(exc).startswith('HISTORY_') else 'HISTORY_CLOSE_CURRENCY_UNVERIFIED'
             connection.execute('INSERT INTO history_close_migration_quarantine_v2 VALUES(?,?)',(row['id'],reason))
             quarantined+=1

@@ -393,22 +393,74 @@ def test_identidad_de_mercado_ausente_sigue_fallando_cerrado(store,history_pipel
                for r in rows(store,'paper_events'))
 
 
-def test_legacy_history_larger_than_copy_budget_is_observable_and_never_queried(
+def test_large_legacy_history_is_blocked_by_schema_not_file_size(
         store,history_pipeline,monkeypatch):
     import cv_history_store_adapter_hf6 as adapter
     observer._support_schema(store)
     source=adapter.default_history_store().path
     with open(source,'r+b') as stream:
         stream.truncate(512*1024*1024+1)
+    reached=[]
+    def reject_legacy(*args,**kwargs):
+        reached.append(True)
+        raise ValueError('HISTORY_COPY_MIGRATION_REQUIRED')
+    monkeypatch.setattr(observer,'_download_histories_locked',reject_legacy)
     class Reader:
         def history(self,*args):
             pytest.fail('oversized legacy source must not reach PPI')
     assert observer._download_histories(Reader(),store)==0
+    assert reached==[True]
     assert any(r['event_type']=='HISTORY_V2_BLOCKED'
-               and r['detail']=='HISTORY_SOURCE_COPY_BUDGET_EXHAUSTED'
+               and r['detail']=='HISTORY_COPY_MIGRATION_REQUIRED'
                for r in rows(store,'paper_events'))
     health=next(r for r in rows(store,'api_health') if r['component']=='PPI_PRODUCTION_HISTORY')
     assert health['state']=='AMARILLO' and 'NO_VERIFICADO' in health['detail']
+
+
+def test_large_migrated_history_reaches_incremental_reader(store,history_pipeline,monkeypatch):
+    import cv_history_store_adapter_hf6 as adapter
+    observer._support_schema(store)
+    source=adapter.default_history_store().path
+    with open(source,'r+b') as stream:
+        stream.truncate(512*1024*1024+1)
+    reached=[]
+    monkeypatch.setattr(observer,'_download_histories_locked',
+                        lambda *args,**kwargs: reached.append(True) or 7)
+    assert observer._download_histories(object(),store)==7
+    assert reached==[True]
+    assert not any(r['event_type']=='HISTORY_V2_BLOCKED' for r in rows(store,'paper_events'))
+
+
+def test_postclose_incremental_skips_missing_baseline_without_annual_request(
+        store,history_pipeline,monkeypatch):
+    observer._support_schema(store)
+    seed_ppi_history_identity(store,'GGAL')
+    monkeypatch.setattr(observer,'_historical_targets',lambda _: [('GGAL','ACCIONES','A-24HS')])
+    class Reader:
+        def history(self,*_): pytest.fail('No canonical baseline: no annual PPI request')
+    assert observer._download_histories(Reader(),store,incremental_only=True)==0
+    assert rows(history_pipeline,'history_versions_v2')==[]
+
+
+def test_postclose_incremental_caps_one_exact_request_to_thirty_days(
+        store,history_pipeline,monkeypatch):
+    from cu_history_store_v2_hf6 import Candle,append_candle
+    observer._support_schema(store)
+    seed_ppi_history_identity(store,'GGAL')
+    monkeypatch.setattr(observer,'_historical_targets',lambda _: [('GGAL','ACCIONES','A-24HS')])
+    monkeypatch.setattr(observer,'_history_end_date',lambda now=None: date(2026,10,23))
+    append_candle(history_pipeline,Candle('GGAL','ACCIONES','BYMA','A-24HS','2026-08-25',
+        100,105,99,102,123,'PPI_PRODUCTION_HISTORY',currency='ARS',
+        observed_at='2026-08-26T12:00:00-03:00'))
+    class Reader:
+        calls=[]
+        def history(self,*args):
+            self.calls.append(args)
+            return []
+    reader=Reader()
+    assert observer._download_histories(reader,store,incremental_only=True)==0
+    assert len(reader.calls)==1
+    assert reader.calls[0][-2:]==(date(2026,8,26),date(2026,9,24))
 
 
 def test_panel_no_presenta_muestras_como_cobertura_validada(store,monkeypatch):

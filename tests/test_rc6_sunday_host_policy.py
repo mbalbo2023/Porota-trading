@@ -24,12 +24,15 @@ def test_catalog_quote_terms_wires_opening_block_helper():
 
 def test_rc6_monotonic_timers_do_not_persist():
     for name in ('porota-functional-health-rc6.timer',
-                 'porota-history-postclose-rc6.timer',
                  'porota-candle-integrity-rc6.timer'):
         text = (ROOT / 'systemd' / name).read_text(encoding='utf-8')
         assert 'OnUnitActiveSec=' in text
         assert 'Persistent=' not in text
         assert 'rc4' not in text.lower()
+    history=(ROOT / 'systemd' / 'porota-history-postclose-rc6.timer').read_text(encoding='utf-8')
+    assert 'OnCalendar=Mon..Fri *-*-* 18:45:00 America/Argentina/Buenos_Aires' in history
+    assert 'OnUnitActiveSec=' not in history and 'OnBootSec=' not in history
+    assert 'Persistent=' not in history
 
 
 def test_rc6_preopen_and_backup_calendar_timers_are_explicit():

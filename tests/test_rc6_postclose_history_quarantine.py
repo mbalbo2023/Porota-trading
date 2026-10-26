@@ -9,6 +9,9 @@ def test_postclose_history_job_is_policy_quarantined_before_pii_client_creation(
     client = "ProductionMarketReader(*_secret(), audit=store.audit_http)"
     assert guard in source
     assert source.index(guard) < source.index(client)
+    assert "_history_cutoff_repair_complete()" in source
+    assert "init_history_schema(default_history_store())" in source
+    assert "incremental_only=True" in source
 
 
 def test_preopen_requires_the_postclose_timer_to_be_disabled():
@@ -22,4 +25,6 @@ def test_systemd_unit_requires_explicit_recovery_authorization_and_timer_cannot_
     service = (ROOT / "systemd/porota-history-postclose-rc6.service").read_text(encoding="utf-8")
     timer = (ROOT / "systemd/porota-history-postclose-rc6.timer").read_text(encoding="utf-8")
     assert "ConditionPathExists=/etc/porota/rc6-postclose-history-explicitly-authorized" in service
+    assert "-e RC6_POSTCLOSE_HISTORY_RECOVERY=APPROVED" in service
     assert "[Install]" not in timer
+    assert "18:45:00 America/Argentina/Buenos_Aires" in timer

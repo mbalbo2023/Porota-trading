@@ -112,6 +112,11 @@ TRANSITIONS = {
     },
 }
 
+# An initial FCI commitment in the effective runtime book must pass the
+# executor's locked catalog, cash and preopen checks. The generic lifecycle
+# primitive remains available for offline fixtures and subsequent NAV events.
+_FCI_LOCKED_SUBSCRIPTION = object()
+
 
 def _positive(value, name):
     try:
@@ -198,18 +203,70 @@ class FamilyPaperExecutor:
         self.store = store
         ensure_initialized(store)
 
-    def subscribe_fund(self, terms, *, lifecycle_id, event_id, amount, occurred_at=None):
+    def subscribe_fund(self, terms, *, lifecycle_id, event_id, amount, occurred_at=None,
+                       cash_guard=None, admission_guard=None):
         if not isinstance(terms, PaperFundTerms):
             raise ValueError("FCI_TERMS_REQUIRED")
         subscribed = terms.subscription_amount(amount)
-        return apply_paper_event(
-            self.store, lifecycle_id=lifecycle_id, event_id=event_id,
-            family="FCI", instrument=terms.symbol, currency=terms.currency,
-            to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
-            detail={"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
-                    "subscription_amount": _number_text(subscribed),
-                    "metadata_source": terms.metadata_source,
-                    "fund_terms": json.loads(_canonical_json(asdict(terms)))})
+        detail = {"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
+                  "subscription_amount": _number_text(subscribed),
+                  "metadata_source": terms.metadata_source,
+                  "fund_terms": json.loads(_canonical_json(asdict(terms)))}
+        with self.store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            # A retry is checked against the immutable original intent; it
+            # creates no new commitment when the current gate is closed.
+            prior = connection.execute(
+                "SELECT 1 FROM paper_family_lifecycle_events WHERE event_id=?",
+                (str(event_id),)).fetchone()
+            if not prior:
+                try:
+                    from cg_paper_workspace import database_path
+                    runtime_book = Path(self.store.path).resolve() == database_path()
+                except (OSError, ValueError, TypeError) as exc:
+                    raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+                if runtime_book and (cash_guard is None or admission_guard is None):
+                    raise ValueError("FCI_PAPER_ADMISSION_GUARDS_REQUIRED")
+                if runtime_book:
+                    from bu_instrument_catalog import lookup, contract_for
+                    record = lookup(self.store, terms.symbol, "FCI", terms.settlement,
+                                    market=terms.market, currency=terms.currency)
+                    if (not record or record.get("status") != "AVAILABLE"
+                            or record.get("capability") != "READY_PAPER_FCI_SUBSCRIPTION"
+                            or record.get("_admission_reason")):
+                        raise ValueError("FCI_EXACT_CATALOG_NOT_READY")
+                    try:
+                        current_terms = contract_for(record)
+                    except (ValueError, TypeError) as exc:
+                        raise ValueError("FCI_EXACT_TERMS_UNAVAILABLE") from exc
+                    if (not isinstance(current_terms, PaperFundTerms)
+                            or asdict(current_terms) != asdict(terms)
+                            or (record["market"], record["currency"], record["settlement"])
+                               != (terms.market, terms.currency, terms.settlement)):
+                        raise ValueError("FCI_EXACT_TERMS_MISMATCH")
+                if cash_guard is not None:
+                    available = decimal_value(cash_guard(connection),
+                                              "caja FCI disponible", nonnegative=True)
+                    if available < subscribed:
+                        raise ValueError("FCI_PAPER_INSUFFICIENT_CASH")
+                if admission_guard is not None:
+                    blocked = str(admission_guard(connection) or "")
+                    if blocked:
+                        raise ValueError(blocked)
+                if runtime_book:
+                    try:
+                        from rc6_paper_admission_gate import admission_status
+                        allowed, reason = admission_status()
+                    except Exception as exc:
+                        raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+                    if not allowed:
+                        raise ValueError(reason or "NO_GO_PAPER_SCALPING")
+            return apply_paper_event(
+                self.store, lifecycle_id=lifecycle_id, event_id=event_id,
+                family="FCI", instrument=terms.symbol, currency=terms.currency,
+                to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
+                detail=detail, connection=connection,
+                _subscription_authority=_FCI_LOCKED_SUBSCRIPTION)
 
     def future_event(self, contract, *, lifecycle_id, event_id, to_state,
                      amount="0", occurred_at=None, detail=None, connection=None):
@@ -653,6 +710,8 @@ def init_schema(store):
         );
         CREATE INDEX IF NOT EXISTS idx_paper_family_lifecycle_state
           ON paper_family_lifecycle(family,state,updated_at);
+        CREATE INDEX IF NOT EXISTS idx_paper_family_events_family_lifecycle
+          ON paper_family_lifecycle_events(family,lifecycle_id);
         CREATE TABLE IF NOT EXISTS paper_family_schema(
           schema_key TEXT PRIMARY KEY, version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS paper_future_positions(
@@ -706,7 +765,7 @@ def ensure_initialized(store):
 
 def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                       currency, to_state, amount="0", occurred_at=None,
-                      detail=None, connection=None):
+                      detail=None, connection=None, _subscription_authority=None):
     """Apply one idempotent PAPER transition or fail closed.
 
     A repeated event_id returns the original result without a second ledger
@@ -724,11 +783,20 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 store, lifecycle_id=lifecycle_id, event_id=event_id,
                 family=family, instrument=instrument, currency=currency,
                 to_state=to_state, amount=amount, occurred_at=occurred_at,
-                detail=detail, connection=owned)
+                detail=detail, connection=owned,
+                _subscription_authority=_subscription_authority)
     existing_event = connection.execute(
         "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
         (str(event_id),),
     ).fetchone()
+    if family == "FCI" and to_state in {"SUBSCRIBE", "SUBSCRIBE_REQUESTED"} and not existing_event:
+        try:
+            from cg_paper_workspace import database_path
+            runtime_book = Path(store.path).resolve() == database_path()
+        except (OSError, ValueError, TypeError) as exc:
+            raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+        if runtime_book and _subscription_authority is not _FCI_LOCKED_SUBSCRIPTION:
+            raise ValueError("FCI_DIRECT_RUNTIME_SUBSCRIPTION_BLOCKED")
     # Retrying an implicitly timestamped request reuses its original instant.
     # Supplying another explicit instant remains a conflicting intention.
     stamp = aware_datetime(occurred_at or (existing_event["occurred_at"]
@@ -916,6 +984,38 @@ def future_cash_effect(store, currency, at, *, connection=None, exclusive=False)
       ) AND rc6_instant_us(occurred_at)""" + operator + "?",
       (cash_currency(currency), utc_microseconds(point)))
     return sum((decimal_value(row[0], "flujo futuro") for row in rows), Decimal("0"))
+
+
+def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
+    """FCI cash committed on request and released only on recorded redemption.
+
+    NAV application changes fund units/value, not settled cash. The legacy
+    lifecycle permits nonzero NAV events; counting its ledger_total as cash
+    would manufacture buying power. This projection uses immutable events and
+    preserves exact currency and event-time boundaries.
+    """
+    point = aware_datetime(at)
+    if connection is None:
+        ensure_initialized(store)
+        with store.connect() as owned:
+            return fund_cash_effect(store, currency, point, connection=owned,
+                                    exclusive=exclusive)
+    register_exact_time_sql(connection)
+    operator = "<" if exclusive else "<="
+    rows = connection.execute("""SELECT e.to_state,e.amount FROM paper_family_lifecycle_events e
+      JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
+      WHERE e.family='FCI' AND l.family='FCI' AND l.currency=?
+        AND e.to_state IN ('SUBSCRIBE_REQUESTED','SUBSCRIBE','REDEEMED')
+        AND rc6_instant_us(e.occurred_at)""" + operator + "?",
+      (cash_currency(currency), utc_microseconds(point)))
+    total = Decimal("0")
+    for state, raw_amount in rows:
+        amount = decimal_value(raw_amount, "flujo FCI")
+        if ((state in {"SUBSCRIBE_REQUESTED", "SUBSCRIBE"} and amount > 0)
+                or (state == "REDEEMED" and amount < 0)):
+            raise ValueError("FCI_CASH_EVENT_DIRECTION_INVALID")
+        total += amount
+    return total
 
 
 FUTURE_PROJECTION_FIELDS = (

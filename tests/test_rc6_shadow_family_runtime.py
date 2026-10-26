@@ -265,6 +265,29 @@ def test_existing_iol_family_reference_is_bound_by_contract_and_capture_cannot_v
     assert next(row for row in later_capture["families"] if row["family"] == "FCI")["reference_evidence"]["inventory_count"] is None
 
 
+def test_reconciled_iol_schedule_is_visible_only_as_dated_shadow_reference(tmp_path):
+    record=instrument("AL30","BONOS")
+    path=fixture_db(tmp_path,[record])
+    flow={"value":[{"payment_date":"2030-07-09","amount":"0.6424","currency":"USD"}],
+          "source":"IOL_FIXED_INCOME_ANALYTICS+ONE_NOMINAL_SIMULATION",
+          "source_at":AT.isoformat(),"received_at":AT.isoformat(),
+          "clock_basis":"FEATURE_COMPUTED_AT","unit":"CASH_PER_NOMINAL",
+          "entry_authority":False,"contractual_authority":"ISSUER_TERMS_NOT_VERIFIED"}
+    row={**record,"observed_at":AT.isoformat(),"fixed_income_analytics":{"flows":flow}}
+    reference={"refreshed_at":AT.isoformat(),"records":[row]}
+    report=family_reports(path,as_of=AT,catalog=[record],sources={"IOL_FAMILY_REFERENCE":reference})
+    fixed=by_ticker(report)["AL30"]["handler_result"]
+    assert fixed["analytics"]["flows"]["value"]==[
+        {"payment_date":"2030-07-09","amount":0.6424,"currency":"USD"}]
+    assert fixed["flow_payment_currency"]=="USD"
+    assert fixed["flow_reference_authority"]=="IOL_SAME_PROVIDER_REFERENCE_ONLY"
+    assert not fixed["entry_authority"] and not report["instruments"][0]["entry_authority"]
+    # Replacing a provider calculation clock with the later cache capture is forbidden.
+    flow["source_at"]=(AT+timedelta(seconds=1)).isoformat()
+    invalid=family_reports(path,as_of=AT,catalog=[record],sources={"IOL_FAMILY_REFERENCE":reference})
+    assert by_ticker(invalid)["AL30"]["handler_result"]["analytics"]["flows"]["value"] is None
+
+
 def test_real_catalog_standard_option_contract_proves_strike_dimension_without_ticker_parsing(tmp_path):
     catalog = [instrument("GGAL", "ACCIONES"), instrument("NON_PARSEABLE_OPTION", "OPCIONES", settlement="INMEDIATA")]
     path = fixture_db(tmp_path, catalog)

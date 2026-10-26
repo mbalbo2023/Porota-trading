@@ -392,6 +392,38 @@ def test_admission_fails_closed_when_native_writer_exceeds_bounded_wait(tmp_path
     assert budget.metrics()["global"] == {"requested": 0, "allowed": 0, "used": 0, "dropped": 0}
 
 
+def test_finish_lock_contention_preserves_started_wire_debt_and_lease(tmp_path):
+    import sqlite3
+
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", policy(clock), clock=clock.now)
+    admitted = budget.acquire("book", consumer="SCANNER")
+    assert admitted["allowed"]
+    budget.start(admitted["lease"])
+    ctx = multiprocessing.get_context("fork")
+    ready, release = ctx.Event(), ctx.Event()
+    writer = ctx.Process(target=_hold_native_sqlite_writer, args=(str(budget.path), ready, release))
+    writer.start()
+    assert ready.wait(timeout=2)
+    try:
+        with pytest.raises(BudgetBackpressure, match="PPI_BUDGET_STATE_UNAVAILABLE"):
+            budget.finish(admitted["lease"])
+    finally:
+        release.set()
+        writer.join(timeout=2)
+    assert writer.exitcode == 0
+    with sqlite3.connect(budget.path) as connection:
+        active = json.loads(connection.execute(
+            "SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0])
+        used = connection.execute(
+            "SELECT used FROM budget_requests WHERE lease=?", (admitted["lease"],)).fetchone()[0]
+    assert active["lease"] == admitted["lease"] and used == 1
+    blocked = budget.acquire("book", consumer="SCANNER")
+    assert not blocked["allowed"] and blocked["reason"] == "PPI_SERIAL_BACKPRESSURE"
+    budget.finish(admitted["lease"])
+    assert budget.metrics()["global"] == {"requested": 2, "allowed": 1, "used": 1, "dropped": 1}
+
+
 def _process_admission(path, config, at, ready, initialized, output):
     clock = Clock(at)
     budget = GlobalPPIBudget(path, config, clock=clock.now)
@@ -399,6 +431,7 @@ def _process_admission(path, config, at, ready, initialized, output):
     assert ready.wait(timeout=10), "admission barrier was not released"
     count = 0
     bounded_contention = 0
+    finish_contention = 0
     for _ in range(4):
         try:
             result = budget.acquire("book", consumer="SCANNER")
@@ -411,9 +444,16 @@ def _process_admission(path, config, at, ready, initialized, output):
             continue
         if result["allowed"]:
             budget.start(result["lease"])
-            budget.finish(result["lease"])
             count += 1
-    output.put((count, bounded_contention))
+            try:
+                budget.finish(result["lease"])
+            except BudgetBackpressure as error:
+                if str(error) != "PPI_BUDGET_STATE_UNAVAILABLE":
+                    raise
+                # A started call already owns durable wire debt. A bounded
+                # finish refusal must retain its lease and block further wire.
+                finish_contention += 1
+    output.put((count, bounded_contention, finish_contention))
 
 
 def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
@@ -437,10 +477,22 @@ def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
         outcomes = [output.get(timeout=2) for _ in workers]
         count = sum(row[0] for row in outcomes)
         bounded_contention = sum(row[1] for row in outcomes)
+        finish_contention = sum(row[2] for row in outcomes)
         assert 0 < count <= 3
         metrics = budget.metrics()["global"]
         assert metrics["allowed"] == metrics["used"] == count
         assert metrics["requested"] == metrics["allowed"] + metrics["dropped"] == 8 - bounded_contention
+        assert finish_contention <= 1
+        if finish_contention:
+            # No other process may replace an unfinished used lease. Read the
+            # durable sidecar directly; metrics alone omit its inflight owner.
+            import sqlite3
+            with sqlite3.connect(path) as connection:
+                active = json.loads(connection.execute(
+                    "SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0])
+                used = connection.execute(
+                    "SELECT used FROM budget_requests WHERE lease=?", (active["lease"],)).fetchone()[0]
+            assert used == 1
     finally:
         ready.set()
         for p in workers:

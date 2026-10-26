@@ -45,6 +45,90 @@ def test_fixed_contract_fails_closed_without_explicit_lot_price():
         identity_settlement="A-24HS") is None
 
 
+def _flow_pair():
+    analytics={"calculation_date":"2026-10-25T23:00:00-03:00",
+               "calculation_inputs":{"maturity_date":"2030-07-09T00:00:00"},
+               "cashflow":[{"period_number":1,"date":"2030-07-09T00:00:00",
+                            "opening_balance":64,"interest":0.24,"amortization":64,
+                            "cash_flow":64.24,"residual_balance":0}],
+               "next_coupon_date":"2021-07-09T00:00:00"}
+    simulation={"calculation_date":"2026-10-25T23:00:01-03:00",
+                "settlement_date":"2026-10-26T00:00:00-03:00",
+                "maturity_date":"2030-07-09T00:00:00","nominals":1,
+                "payment_currency":"USD","total_to_collect":0.6424,
+                "cash_flows":[{"period_number":1,"date":"2030-07-09T00:00:00",
+                               "opening_balance":0.64,"interest":0.0024,
+                               "amortization":0.64,"cash_flow":0.6424,
+                               "residual_balance":0}]}
+    return analytics,simulation
+
+
+def test_iol_flow_units_reconcile_without_confusing_ars_price_with_usd_payment():
+    analytics,simulation=_flow_pair()
+    result=m._fixed_flow_reference(analytics,simulation,100,
+                                   received_at="2026-10-26T02:00:03+00:00")
+    assert result["status"]=="RECONCILED_PROVIDER_CALCULATION"
+    assert result["flows"]==[{"payment_date":"2030-07-09","amount":"0.6424","currency":"USD"}]
+    assert result["nominal_unit"]=="CASH_PER_NOMINAL"
+    assert result["contractual_authority"]=="ISSUER_TERMS_NOT_VERIFIED"
+    assert result["market_quote_freshness"]=="NO_VERIFICADO"
+    assert result["entry_authority"] is False
+    assert result["source_calculated_at"]==analytics["calculation_date"]
+    # The stale next-coupon field is neither trusted nor serialized as a flow.
+    assert "2021" not in json.dumps(result)
+
+
+def test_iol_flow_reference_rejects_unit_currency_clock_and_horizon_conflicts():
+    analytics,simulation=_flow_pair()
+    def reference(a=analytics,s=simulation,lot=100,received="2026-10-26T02:00:03+00:00"):
+        return m._fixed_flow_reference(a,s,lot,received_at=received)
+    changed=json.loads(json.dumps(simulation));changed["cash_flows"][0]["cash_flow"]=0.6425
+    assert reference(s=changed)["status"]=="NO_VERIFICADO"
+    assert reference(lot=1)["reason"]=="FLOW_UNIT_MISMATCH"
+    changed=json.loads(json.dumps(simulation));changed.pop("payment_currency")
+    assert reference(s=changed)["reason"]=="PAYMENT_CURRENCY_UNVERIFIED"
+    assert reference(received="2026-10-26T01:59:59+00:00")["status"]=="NO_VERIFICADO"
+    changed=json.loads(json.dumps(simulation));changed["cash_flows"][0]["date"]="2030-07-10"
+    assert reference(s=changed)["reason"]=="FLOW_DATE_OR_PERIOD_MISMATCH"
+    changed=json.loads(json.dumps(simulation));changed["cash_flows"][0]["interest"]="NaN"
+    assert reference(s=changed)["status"]=="NO_VERIFICADO"
+    changed=json.loads(json.dumps(analytics));changed["calculation_date"]="2026-10-24T22:59:00-03:00"
+    assert reference(a=changed)["reason"]=="CALCULATION_CLOCK_UNVERIFIED"
+
+
+def test_iol_flow_reference_checks_internal_balance_and_period_even_when_provider_views_agree():
+    analytics,simulation=_flow_pair()
+    analytics["cashflow"][0]["opening_balance"]=65
+    simulation["cash_flows"][0]["opening_balance"]=0.65
+    assert m._fixed_flow_reference(analytics,simulation,100,
+        received_at="2026-10-26T02:00:03+00:00")["reason"]=="FLOW_BALANCE_CONSERVATION_INVALID"
+
+    analytics,simulation=_flow_pair()
+    analytics["cashflow"][0].update(date="2027-07-09T00:00:00",
+        amortization=32,cash_flow=32.24,residual_balance=32)
+    analytics["cashflow"].append({"period_number":2,"date":"2030-07-09T00:00:00",
+        "opening_balance":32,"interest":0.12,"amortization":32,
+        "cash_flow":32.12,"residual_balance":0})
+    simulation["cash_flows"][0].update(date="2027-07-09T00:00:00",
+        amortization=0.32,cash_flow=0.3224,residual_balance=0.32)
+    simulation["cash_flows"].append({"period_number":2,"date":"2030-07-09T00:00:00",
+        "opening_balance":0.32,"interest":0.0012,"amortization":0.32,
+        "cash_flow":0.3212,"residual_balance":0})
+    simulation["total_to_collect"]=0.6436
+
+    def result():
+        return m._fixed_flow_reference(analytics,simulation,100,
+            received_at="2026-10-26T02:00:03+00:00")
+
+    assert result()["status"]=="RECONCILED_PROVIDER_CALCULATION"
+    analytics["cashflow"][1].update(opening_balance=33,amortization=33)
+    simulation["cash_flows"][1].update(opening_balance=0.33,amortization=0.33)
+    assert result()["reason"]=="FLOW_BALANCE_CONSERVATION_INVALID"
+    analytics["cashflow"][1].update(opening_balance=32,amortization=32,period_number=4)
+    simulation["cash_flows"][1].update(opening_balance=0.32,amortization=0.32,period_number=4)
+    assert result()["reason"]=="FLOW_PERIOD_SEQUENCE_INVALID"
+
+
 def test_option_contract_uses_byma_underlying_lot_not_iol_order_step():
     chain={"underlying":"GGAL","options":[{"symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
       "expiration":"2026-10-16T15:30:00-03:00","bid_price":87,"ask_price":88,"volume":10,"is_stale":False}]}
