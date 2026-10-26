@@ -34,13 +34,13 @@ certificado de datos frescos durante la próxima rueda.
 | ACCIONES | 167 | 122 `BUY_SIMULATED` acumulados | Señal y admisión genuinas OPEN; scalping reciente sin `BUY_CANDIDATE` |
 | CEDEARS | 1.278 | 13 `BUY_SIMULATED` acumulados | Igual; además mercado subyacente y relación CEDEAR verificables |
 | ETFS | 0 | ninguno | Descubrimiento y contrato PPI exactos; no se puede abrir sin candidato |
-| BONOS | 2.429 | ninguno | Contrato nominal por especie y estrategia direccional/OOS, costos y fills |
+| BONOS | 2.429 | ninguno | Contrato nominal exacto para la especie elegida y estrategia direccional/OOS, costos y fills |
 | LETRAS | 34 | ninguno | Descuento, vencimiento, unidades, señal/OOS y costos |
 | OBLIGACIONES | 3.624 | ninguno | Identidad/flujo de caja, crédito, señal/OOS y costos; otras 1.427 pausadas |
 | OPCIONES | 1.329 | ninguno | Contrato/estructura y tesis del subyacente, señal/OOS; otras 1.719 pausadas |
 | FUTUROS | 0 | ninguno | 207 pausados por contrato/margen; motor DLR dedicado sujeto a A3, costos y admisión |
 | CAUCIONES | 5 | 6 colocaciones PAPER especializadas acumuladas | Nueva oferta/libro, obligaciones, efectivo y ventana de cierre verificables |
-| FCI | 1.057 | ninguno; lifecycle vacío | Política de suscripción, NAV/cutoff, costos, caja y admisión integrada |
+| FCI | 1.057 | ninguno; lifecycle vacío | La policy PAPER por importe ya existe; falta decisión/allocator conectado a caja y admisión, NAV/cutoff/eventos verificados |
 
 READY del catálogo no demuestra señal. El ledger `scalping_candidates` de los
 últimos diez días contiene 5.819 HOLD ACCIONES y 4.861 HOLD CEDEARS, cero
@@ -57,7 +57,8 @@ su observador calcula métricas no direccionales. FUTUROS usa `_on_future_quote`
 y contrato A3 exacto, pero los candidatos observados estaban pausados.
 CAUCIONES usa `di_caucion_cash_sweep_runtime_hf6` y el allocator PAPER; una
 colocación no es `BUY_SIMULATED` de spot. FCI tiene transición aislada
-`SUBSCRIBE_REQUESTED` sin puente de decisión/admisión en el runtime observado.
+`SUBSCRIBE_REQUESTED` y policy interna `INTERNAL_RISK_BUDGET_BY_AMOUNT`, pero
+sin puente de decisión/admisión en el runtime observado.
 
 No hay base factual para habilitar automáticamente las otras rutas
 por nombre de familia. Para cada instrumento se exige contrato/identidad,
