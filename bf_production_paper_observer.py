@@ -1584,6 +1584,8 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
     end = _history_end_date()
     if end is None:
         return 0
+    from rc6_data_retention import bounded_daily_start
+    retention_now = datetime.now(TZ)
     import cu_history_store_v2_hf6 as history_v2
     import ct_ppi_history_salvage_hf6 as history_salvage
     import cq_history_attempt_ledger_hf6 as history_ledger
@@ -1612,7 +1614,9 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
             # A post-close recovery cannot silently turn into an annual
             # bootstrap when an exact series has no canonical baseline.
             continue
-        start=date.fromisoformat(latest)+timedelta(days=1) if latest else end-timedelta(days=365)
+        requested_start=(date.fromisoformat(latest)+timedelta(days=1)
+                         if latest else end-timedelta(days=365))
+        start=bounded_daily_start(requested_start,retention_now)
         if start<=end:
             request_end=min(end,start+timedelta(days=29)) if incremental_only else end
             requests.append((identity,start,request_end,metadata))
