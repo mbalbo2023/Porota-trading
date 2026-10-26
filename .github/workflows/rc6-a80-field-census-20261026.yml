@@ -121,11 +121,14 @@ jobs:
                       data["fields"] = keys(data.pop("metadata_json"))
                       item["catalog"].append(data)
               if {"contract_evidence_v2_current", "contract_evidence_v2_snapshots"} <= tables:
-                  for row in db.execute("""SELECT c.market,c.currency,c.settlement,
+                  raw_families = ("ON", "OBLIGACIONES") if family == "OBLIGACIONES" else (family,)
+                  slots = ",".join("?" for _ in raw_families)
+                  query = """SELECT c.family,c.market,c.currency,c.settlement,
                         c.source_class,c.observed_at,s.evidence_json
                         FROM contract_evidence_v2_current c
                         JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=c.snapshot_id
-                        WHERE c.ticker=? AND c.family=? LIMIT 20""", (symbol, family)):
+                        WHERE c.ticker=? AND c.family IN (""" + slots + """) LIMIT 20"""
+                  for row in db.execute(query, (symbol, *raw_families)):
                       data = dict(row)
                       data["fields"] = keys(data.pop("evidence_json"))
                       item["contract_evidence"].append(data)
