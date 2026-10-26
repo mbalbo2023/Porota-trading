@@ -33,8 +33,8 @@ certificado de datos frescos durante la próxima rueda.
 
 | Familia | Catálogo READY | Asiento PAPER constatado | Bloqueo restante para nueva apertura automática |
 | --- | ---: | --- | --- |
-| ACCIONES | 167 | 122 `BUY_SIMULATED` acumulados | Señal y admisión genuinas OPEN; scalping reciente sin `BUY_CANDIDATE` |
-| CEDEARS | 1.278 | 13 `BUY_SIMULATED` acumulados | Igual; además mercado subyacente y relación CEDEAR verificables |
+| ACCIONES | 167 | 122 `BUY_SIMULATED` acumulados | Ruta spot acreditada históricamente; reconfirmar rueda nueva. Scalping HF5 es otra estrategia y no tuvo `BUY_CANDIDATE` reciente |
+| CEDEARS | 1.278 | 13 `BUY_SIMULATED` acumulados | Ruta spot acreditada históricamente; reconfirmar rueda nueva y guard de mercado subyacente. Ratio sólo si la tesis lo necesita |
 | ETFS | 0 | ninguno | Descubrimiento y contrato PPI exactos; no se puede abrir sin candidato |
 | BONOS | 2.429 | ninguno | Contrato nominal exacto para la especie elegida y estrategia direccional/OOS, costos y fills |
 | LETRAS | 34 | ninguno | Descuento, vencimiento, unidades, señal/OOS y costos |
@@ -49,6 +49,14 @@ READY del catálogo no demuestra señal. El ledger `scalping_candidates` de los
 `BUY_CANDIDATE`. Hubo una candidatura CEDEARS el 30/09, anterior a esa ventana.
 Las diez aperturas spot recientes con claves y gates auditadas son de ACCIONES
 (9) y CEDEARS (1); no extrapolarlas a las otras familias.
+
+La lectura RO también enlazó esas diez compras de la ventana 16–26/10 con
+`decision_key`, gate, hash, identidad, snapshot atómico y relojes. Las diez
+guardan vector `NATIVE_EXACT_VECTOR`; ocho marcan `temporal_ready=True` y dos
+del 16/10 no conservan ese resultado explícito. Esto valida funcionamiento
+PAPER spot histórico de ambas familias con ese límite, no una compra de GGAL o
+AAPL específica ni una señal/fill de la próxima rueda. El diagnóstico HF5 de
+scalping de abajo es un camino distinto: sus HOLD no revocan los BUY spot.
 
 Diagnóstico adicional read-only [Action 40250769811](https://github.com/mbalbo2023/Porota-trading/actions/runs/40250769811),
 2026-10-26 00:44 UTC, `MARKET_CLOSED`/PAPER/0 y cero consultas al proveedor:
@@ -79,6 +87,19 @@ CAUCIONES usa `di_caucion_cash_sweep_runtime_hf6` y el allocator PAPER; una
 colocación no es `BUY_SIMULATED` de spot. FCI tiene transición aislada
 `SUBSCRIBE_REQUESTED` y policy interna `INTERNAL_RISK_BUDGET_BY_AMOUNT`, pero
 sin puente de decisión/admisión en el runtime observado.
+
+En el runtime spot existente, `bf_production_paper_observer.run` consulta
+`current+book` a PPI sólo en OPEN, persiste la observación y rechaza relojes
+stale antes de llamar a `PaperBroker.on_quote`. `decide` usa precios de eventos
+nativos distintos, verifica cobertura temporal, compara medias cortas/largas y
+spread, y deja BUY o HOLD trazable. El candidato BUY atraviesa preopen,
+contrato exacto, economía, caja, riesgo concurrente y profundidad; un fill
+aceptado escribe posición, `BUY_SIMULATED` y snapshot de admisión bajo la misma
+transacción. Los diez enlaces recientes del recibo A78 muestran que este
+camino efectivamente produjo compras PAPER en ACCIONES/CEDEARS. El censo IOL
+de domingo no interrogó ese libro PPI y su `bids=[]` no es evidencia de una
+falla del scanner. La ventaja estadística OOS de esa señal sigue separada de
+la capacidad histórica de simular una compra.
 
 No hay base factual para habilitar automáticamente las otras rutas
 por nombre de familia. Para cada instrumento se exige contrato/identidad,
@@ -204,8 +225,8 @@ recibo se marcó parcial y el probe corregido leyó ambas etiquetas.
 
 | Testigo | Catálogo instalado exacto | `contract_evidence_v2_current` por fuente | Qué acredita |
 | --- | --- | --- | --- |
-| GGAL ACCIONES | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplicador/mínimo/step presentes | PPI estructurada con identidad; regla derivada con multiplier/step | Contrato spot, no señal ni libro fresco |
-| AAPL CEDEARS | Igual, con READY_PAPER_SPOT | PPI estructurada y regla derivada | Contrato spot; el stale `UNKNOWN` histórico es fila distinta |
+| GGAL ACCIONES | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplicador/mínimo/step presentes | PPI estructurada con identidad; regla derivada con multiplier/step | Contrato exacto en DB; este censo no consultó `market_snapshots` ni el ledger por símbolo |
+| AAPL CEDEARS | Igual, con READY_PAPER_SPOT | PPI estructurada y regla derivada | Contrato exacto; el stale `UNKNOWN` histórico es fila distinta; este censo no leyó fill por símbolo |
 | AL30 BONOS | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplier/mínimo/step presentes | IOL 14/10 con multiplier y maturity; PPI estructurada 23/10 sólo identidad en claves censadas; XHR viejo con moneda serializada no canónica | No hay calendario de ocho flujos/USD ni duration/curva en el `current` inspeccionado |
 | D30N6 LETRAS | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplier/mínimo/step | PPI estructurada con identidad y regla derivada, **sin vencimiento/flujo** en claves censadas | READY de contrato de apertura, no valor de cobro ni estrategia al vencimiento |
 | YMCJO ON | Catálogo `OBLIGACIONES` ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT` | Tabla usa familia **ON**: IOL 14/10 con multiplier/maturity, PPI estructurada 21/10 con identidad; otras fuentes históricas | El cero del primer probe era falso negativo; no persiste aquí el calendario USD de 14 flujos consultable en IOL |
@@ -249,12 +270,12 @@ obtenida hoy; ningún libro vacío se promueve a spread ejecutable.
 
 | Familia / testigo | Observación concreta de PPI/IOL | Datos y camino que faltan para entrada PAPER nueva |
 | --- | --- | --- |
-| ACCIONES / GGAL | IOL BCBA ARS T1, precio último 6.235 ARS, `timestamp=23/10 17:00:03` ART, `bids=[]`, `asks=[]`; en historial PAPER hay BUY de ACCIONES, no atribuible a esta especie | Clave PPI GGAL exacta, libro/volumen de sesión, señal causal y recibo preopen del lunes; resultado actual HOLD |
-| CEDEARS / AAPL | IOL BCBA ARS T1, último 28.660 ARS viernes 17:00:03, libro vacío; CEDEARS tiene 13 BUY acumulados en runtime, no necesariamente AAPL | Igual más semántica de subyacente/ratio si la tesis la usa; sin precio ni señal OPEN |
+| ACCIONES / GGAL | PPI ya tiene clave exacta y contrato spot READY. IOL complementario muestra último 6.235 ARS de viernes 17:00:03 ART, `bids=[]`, `asks=[]` al consultar domingo; esto no mide el libro PPI en OPEN. Nueve BUY spot recientes de ACCIONES constan en PAPER, sin atribución aquí a GGAL | El scanner PPI **sí** consume current+book y decide/llena spot en rueda; para afirmar una compra de GGAL el lunes hay que observar su señal, gates y fill específicos. CLOSED no genera una decisión HOLD nueva |
+| CEDEARS / AAPL | PPI tiene identidad/contrato spot READY. IOL complementario mostró último 28.660 ARS viernes y libro vacío domingo; no mide libro PPI OPEN. Hubo un BUY spot CEDEAR en la ventana reciente y 13 acumulados, no atribuibles aquí a AAPL | Ruta spot histórica operativa, con guard de subyacente US; reconfirmar reloj/libro/señal/fill del lunes por símbolo. Ratio/CCL sólo si la tesis específica los usa |
 | ETFS / sin testigo PPI READY | Censo instalado devolvió **0** candidatos ETF simulables | Primero encontrar una clave PPI exacta y contrato; no extrapolar desde AAPL ni inventar ticker |
-| BONOS / AL30 | IOL: ARS T1, lote 100, quote 85.960 ARS por lote = 859,6 por nominal, `bids/asks=[]` y precio del viernes; analítica con duration modificada ~1,68 y 8 cashflows. Simulación de 1 nominal: inversión 859,6 ARS, cobros denominados **USD**, `payment_currency=USD` | PPI DatosTecnicos y matching 5-part actuales por especie; IOL no persiste los 8 flujos en el collector operativo. No sumar ARS de compra y USD de cupones sin cambio/clock/regla; tesis, OOS, salida y fill especializados faltan |
-| LETRAS / D30N6 | IOL info: letra ARS T1, lote 100; la descripción dice vinculada USD cero cupón 30/11/26. Analítica `not_found`, simulación por nominal `not_found`, quote `INVALID_ARGUMENT`; matriz PPI septiembre no tenía identidad recapturada | Documento nativo de pago, fórmula/moneda y clave PPI exacta; no atribuir flujo único ni valor facial sin dato. Otra letra puede diferir |
-| OBLIGACIONES / YMCJO | IOL ON ARS T1 lote 100, quote 159.330 por lote / 1.593,3 por nominal, viernes 17:00:27 y libro vacío; analítica 14 flujos y duration modificada ~4,45. Simulación de 1 nominal: compra 1.593,3 ARS y `payment_currency=USD` | PPI exacto y libro OPEN, FX/moneda de cupones, riesgo de emisor/capital, OOS/lifecycle. Identidad PPI existía en testigo septiembre, no es prueba de frescura actual |
+| BONOS / AL30 | IOL: ARS T1, lote 100, quote 85.960 ARS por lote = 859,6 por nominal, `bids/asks=[]` y precio del viernes; analítica con duration modificada ~1,68 y 8 cashflows. Simulación de 1 nominal: inversión 859,6 ARS, cobros denominados **USD**, `payment_currency=USD` | Identidad PPI exacta ya existe en DB; falta dato técnico/quote OPEN y matching temporal. IOL no persiste los 8 flujos en el collector operativo. Para carry no sumar ARS y USD sin conversión explícita; para un fill spot en ARS esos flujos no son requisito. Estrategia especializada/OOS/salida aún sin validar |
+| LETRAS / D30N6 | IOL info: letra ARS T1, lote 100; la descripción dice vinculada USD cero cupón 30/11/26. Analítica `not_found`, simulación por nominal `not_found`, quote `INVALID_ARGUMENT`; PPI identidad exacta aparece en DB actual aunque faltaba en matriz septiembre | Documento nativo de pago y fórmula/moneda no presentes en las claves current censadas; no atribuir flujo único ni valor facial sin dato. Otra letra puede diferir |
+| OBLIGACIONES / YMCJO | IOL ON ARS T1 lote 100, quote 159.330 por lote / 1.593,3 por nominal, viernes 17:00:27 y libro vacío; analítica 14 flujos y duration modificada ~4,45. Simulación de 1 nominal: compra 1.593,3 ARS y `payment_currency=USD` | Identidad PPI exacta existe en DB; faltan libro OPEN y flujo normalizado para tesis de cobros, riesgo de emisor/capital, OOS/lifecycle. No confundir ausencia de esos campos en dos JSON current con ausencia en IOL |
 | OPCIONES / GFGC5400NO | Cadena IOL de GGAL: CALL strike 5.400, vencimiento 20/11 15:30 ART. Devuelve `spot_price=0`, bid/ask/IV/griegas `null`; IOL GGAL spot último 6.235 del viernes y libro vacío. El normalizador sólo forma contrato estándar sin ajustes verificados | Clave PPI por serie, lote/moneda y ejercicio exactos, libro y subyacente OPEN, regla de salida/OOS; no interpretar spot cero ni precio de opción nulo como cotización |
 | FUTUROS / DLR-DIC26 (testigo histórico) | Matriz PPI septiembre tenía identidad, A3 términos parciales; censo octubre: 207 futuros pausados, 0 READY. A77 #743 aún Draft | Contrato/margen/tick/settlement exactos por vencimiento, historia V2 y señal DLR, recibo/punta/admisión, sin activar los tres timers A3 |
 | CAUCIONES / ARS colocadora 1 día | IOL responde mínimo 100.000 ARS y vencimiento 27/10, pero `rate=null` en este corte, sin oferta/profundidad; seis colocaciones PAPER previas en runtime para familia | Oferta y tasa nativas frescas y principal disponible en ventana EOD, riesgo/caja/fee, nueva adjudicación simulada; no transformar `null` en 0 o tasa del viernes |
