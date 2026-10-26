@@ -1,9 +1,11 @@
 import json
+import hashlib
 from datetime import date
 from pathlib import Path
 
 import rc6_preopen as preopen
 import scripts.rc6_byma_morning_watch as watch
+from scripts import rc6_deploy_scheduler_suspend as suspend
 
 
 TODAY=date(2026,9,25)
@@ -180,6 +182,79 @@ def test_iol_source_unavailable_without_exact_fallback_is_red(tmp_path, monkeypa
     }), encoding="utf-8")
     monkeypatch.setattr(preopen, "IOL_FAMILY_REFERENCE", path)
     assert preopen.iol_reference_state(TODAY)["state"] == "RED"
+
+
+def test_friday_iol_live_label_becomes_bounded_stale_lkg_on_monday(tmp_path, monkeypatch):
+    path = tmp_path / "iol_family_reference_latest.json"
+    payload = {
+        "refreshed_at": "2026-10-23T19:58:58.965443+00:00",
+        "last_known_good_at": "2026-10-23T19:58:58.965443+00:00",
+        "cache_state": "LIVE_FRESH", "cauciones": {"ARS": [{"id": n} for n in range(3)]},
+        "section_states": {"caucion:ARS": "LIVE_FRESH"},
+        "fallback_order": preopen.IOL_FALLBACK_ORDER,
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+    }
+    path.write_text(json.dumps(payload))
+    monkeypatch.setattr(preopen, "IOL_FAMILY_REFERENCE", path)
+    original_datetime = preopen.datetime
+
+    class FixedDateTime:
+        fromisoformat = staticmethod(original_datetime.fromisoformat)
+
+        @staticmethod
+        def now(tz):
+            return original_datetime.fromisoformat("2026-10-26T10:14:30-03:00")
+
+    monkeypatch.setattr(preopen, "datetime", FixedDateTime)
+    row = preopen.iol_reference_state(date(2026, 10, 26))
+    assert row["state"] == "AMBER"
+    assert row["effective_cache_state"] == "CACHE_STALE"
+    assert row["reason"] == "IOL_STALE_LKG_WITH_ALTERNATIVES"
+    assert row["never_zero_fill"] is True
+    payload["last_known_good_at"] = "2026-10-18T19:58:58+00:00"
+    path.write_text(json.dumps(payload))
+    assert preopen.iol_reference_state(date(2026, 10, 26))["state"] == "RED"
+    payload["last_known_good_at"] = payload["refreshed_at"]
+    payload["fallback_order"] = ["IOL_LAST_KNOWN_GOOD"]
+    path.write_text(json.dumps(payload))
+    assert preopen.iol_reference_state(date(2026, 10, 26))["state"] == "RED"
+
+
+def test_deploy_preopen_accepts_exact_suspended_sixteen_timer_policy(tmp_path, monkeypatch):
+    raw = Path("ops/policy/host-control-plane-reconciliation-v2.json").read_bytes()
+    units = suspend.timer_policy(raw)
+    assert len(units) == 16
+    policy = tmp_path / "ops/policy/host-control-plane-reconciliation-v2.json"
+    policy.parent.mkdir(parents=True)
+    policy.write_bytes(raw)
+    candidate = "a" * 40
+    receipt = tmp_path / "data/deploy" / f"scheduler-suspend-{candidate}.json"
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text(json.dumps({
+        "candidate_sha": candidate, "status": "SUSPENDED",
+        "policy_sha256": hashlib.sha256(raw).hexdigest(),
+        "timers": units, "attempted": units, "ppi_before": [],
+    }))
+    monkeypatch.setattr(preopen, "ROOT", tmp_path)
+    monkeypatch.setattr(suspend, "ppi_snapshot", lambda: [])
+
+    def systemctl(args, timeout=20):
+        if args[1] == "is-enabled":
+            return 0, "enabled", ""
+        if args[1] == "is-active":
+            return 3, "inactive", ""
+        if args[1] == "show":
+            return 0, args[2].replace(".timer", ".service"), ""
+        raise AssertionError(args)
+
+    monkeypatch.setattr(preopen, "cmd", systemctl)
+    assert preopen.required_timers(candidate)["state"] == "GREEN"
+    receipt.write_text(json.dumps({
+        "candidate_sha": candidate, "status": "SUSPENDED",
+        "policy_sha256": hashlib.sha256(raw).hexdigest(),
+        "timers": units[:-1], "attempted": units[:-1], "ppi_before": [],
+    }))
+    assert preopen.required_timers(candidate)["state"] == "RED"
 
 
 def test_degraded_watch_is_red(tmp_path, monkeypatch):
