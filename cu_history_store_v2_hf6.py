@@ -490,12 +490,14 @@ def resolve_legacy_currency(explicit, mapped):
 
 
 def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_bytes=512*1024*1024,
-                 max_rows=1000000):
+                 max_rows=1000000,scratch_root=None,max_scratch_bytes=None):
     """Preserve source and legacy tables; migrate only explicit currency.
 
     Mapping keys are exact (symbol,family,market,settlement), with a single
     externally evidenced currency. Missing/conflicting/ambiguous rows remain
     in quarantine with their original immutable source records preserved.
+    A larger source requires an explicit disk-backed scratch budget and never
+    raises the runtime reader's global 512 MiB budget.
     """
     from rc6_audit_evidence.sqlite_snapshot import readonly_copy
     source,destination=Path(source).absolute(),Path(destination).absolute()
@@ -513,13 +515,22 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
         except ValueError:raise ValueError('HISTORY_CURRENCY_UNVERIFIED') from None
     currency_map=frozen_map
     mapping_digest=sha256(_canonical_json(sorted((list(key),value) for key,value in currency_map.items())).encode()).hexdigest()
-    if not 0<seconds<=300 or type(max_rows) is not int or not 0<max_rows<=5000000:
+    if (isinstance(seconds,bool) or not isinstance(seconds,(int,float)) or
+            not 0<seconds<=3600 or type(max_rows) is not int or not 0<max_rows<=5000000):
         raise ValueError('HISTORY_MIGRATION_BOUNDED_BUDGET_REQUIRED')
+    if type(max_source_bytes) is not int or not 0<max_source_bytes<=2*1024**3:
+        raise ValueError('HISTORY_MIGRATION_SOURCE_BUDGET_REQUIRED')
+    if (max_source_bytes>512*1024**2 or seconds>300) and (scratch_root is None or max_scratch_bytes is None):
+        raise ValueError('HISTORY_MIGRATION_DEDICATED_SCRATCH_REQUIRED')
+    if scratch_root is not None and (source==Path(scratch_root).absolute() or
+                                     Path(scratch_root).absolute() in source.parents):
+        raise ValueError('HISTORY_MIGRATION_SOURCE_SCRATCH_OVERLAP')
     deadline=time.monotonic()+seconds
     def check(*_):
         if time.monotonic()>=deadline:raise ValueError('HISTORY_MIGRATION_TIME_BUDGET_EXHAUSTED')
     try:
-        with readonly_copy(source,deadline=deadline,max_source_bytes=max_source_bytes) as original:
+        with readonly_copy(source,deadline=deadline,max_source_bytes=max_source_bytes,
+                           scratch_root=scratch_root,max_scratch_bytes=max_scratch_bytes) as original:
             output=sqlite3.connect(destination)
             try: original.backup(output,pages=256,progress=check)
             finally: output.close()
@@ -539,8 +550,8 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
             if not columns and not close_legacy:raise ValueError('HISTORY_MIGRATION_SOURCE_SCHEMA_REQUIRED')
             if 'currency' in columns and not close_legacy:raise ValueError('HISTORY_MIGRATION_ALREADY_CURRENT')
             full_legacy=bool(columns) and 'currency' not in columns
-            versions=[dict(r) for r in c.execute("SELECT * FROM history_versions_v2 LIMIT ?",(max_rows+1,))] if full_legacy else []
-            if len(versions)>max_rows:raise ValueError('HISTORY_MIGRATION_ROW_BUDGET_EXHAUSTED')
+            version_count=int(c.execute("SELECT COUNT(*) FROM history_versions_v2").fetchone()[0]) if full_legacy else 0
+            if version_count>max_rows:raise ValueError('HISTORY_MIGRATION_ROW_BUDGET_EXHAUSTED')
             if full_legacy:
                 c.execute("ALTER TABLE history_canonical_v2 RENAME TO history_canonical_v2_legacy")
                 c.execute("ALTER TABLE history_versions_v2 RENAME TO history_versions_v2_legacy")
@@ -549,38 +560,51 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
             c.execute("CREATE TABLE history_migration_quarantine_v2(old_version_id INTEGER PRIMARY KEY,reason TEXT NOT NULL,payload_hash TEXT NOT NULL)")
             c.execute("CREATE TABLE history_migration_map_v2(old_version_id INTEGER PRIMARY KEY,new_version_id INTEGER NOT NULL)")
         migrated=quarantined=0
-        def ordering(row):
-            try: return (utc(row["observed_at"]),row["id"])
-            except ValueError: return ("",row["id"])
-        for row in sorted(versions,key=ordering):
-            check()
-            try:
-                metadata=json.loads(row["metadata_json"] or "{}")
-                if not isinstance(metadata,dict):raise ValueError('HISTORY_METADATA_INVALID')
-                oldkey=tuple(str(row[f] or '').strip().upper() for f in ("symbol","instrument_type","market","settlement"))
-                mapped=currency_map.get(oldkey)
-                explicit=metadata.get("currency")
-                monetary=resolve_legacy_currency(explicit,mapped)
-                metadata['copy_migration_currency']={'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
-                    'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}
-                value=Candle(**{f:row[f] for f in ("symbol","instrument_type","market","settlement","date","open","high","low","close","volume","source","adjusted","observed_at")},metadata=metadata,currency=monetary)
-                result=append_candle(store,value)
-                with store.connect() as c: c.execute("INSERT INTO history_migration_map_v2 VALUES(?,?)",(row["id"],result["version_id"]))
-                migrated+=1
-            except (ValueError,TypeError,KeyError) as exc:
-                reason=str(exc) if str(exc).startswith("HISTORY_") else "HISTORY_MIGRATION_ROW_INVALID"
-                # Non-finite legacy bytes remain in the preserved legacy table;
-                # hash the representation without trying to store unsafe JSON.
-                raw_hash=sha256(json.dumps(row,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
-                with store.connect() as c:c.execute("INSERT INTO history_migration_quarantine_v2 VALUES(?,?,?)",(row["id"],reason,raw_hash))
-                quarantined+=1
+        def ordering(value):
+            try:return utc(value)
+            except ValueError:return ""
         with store.connect() as c:
             c.set_progress_handler(lambda:int(time.monotonic()>=deadline),100)
+            c.create_function('rc6_migration_utc',1,ordering,deterministic=True)
+            # Read the immutable legacy table with SQLite's bounded cursor and
+            # insert into distinct v2 tables on this same transaction. A full
+            # Python list and per-row schema/init connections scale poorly.
+            rows=c.execute("SELECT * FROM history_versions_v2_legacy "
+                           "ORDER BY rc6_migration_utc(observed_at),id") if full_legacy else ()
+            for record in rows:
+                check()
+                row=dict(record)
+                c.execute('SAVEPOINT history_migration_row')
+                try:
+                    metadata=json.loads(row["metadata_json"] or "{}")
+                    if not isinstance(metadata,dict):raise ValueError('HISTORY_METADATA_INVALID')
+                    oldkey=tuple(str(row[f] or '').strip().upper() for f in ("symbol","instrument_type","market","settlement"))
+                    mapped=currency_map.get(oldkey)
+                    explicit=metadata.get("currency")
+                    monetary=resolve_legacy_currency(explicit,mapped)
+                    metadata['copy_migration_currency']={'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
+                        'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}
+                    value=Candle(**{f:row[f] for f in ("symbol","instrument_type","market","settlement","date","open","high","low","close","volume","source","adjusted","observed_at")},metadata=metadata,currency=monetary).normalized()
+                    value.validate()
+                    result=_append_connection(c,value)
+                    c.execute("INSERT INTO history_migration_map_v2 VALUES(?,?)",(row["id"],result["version_id"]))
+                    c.execute('RELEASE SAVEPOINT history_migration_row')
+                    migrated+=1
+                except (ValueError,TypeError,KeyError) as exc:
+                    c.execute('ROLLBACK TO SAVEPOINT history_migration_row')
+                    c.execute('RELEASE SAVEPOINT history_migration_row')
+                    reason=str(exc) if str(exc).startswith("HISTORY_") else "HISTORY_MIGRATION_ROW_INVALID"
+                    # Preserve invalid source bytes in the legacy table and
+                    # record a bounded reason/hash without promoting them.
+                    raw_hash=sha256(json.dumps(row,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
+                    c.execute("INSERT INTO history_migration_quarantine_v2 VALUES(?,?,?)",(row["id"],reason,raw_hash))
+                    quarantined+=1
             from ea_history_close_series_hf2 import migrate_legacy_tables
-            close_migration=migrate_legacy_tables(c,currency_map=currency_map,max_rows=max_rows-len(versions),check=check,
+            close_migration=migrate_legacy_tables(c,currency_map=currency_map,max_rows=max_rows-version_count,check=check,
                                                   mapping_digest=mapping_digest)
             if c.execute("PRAGMA quick_check").fetchone()[0]!="ok": raise ValueError("HISTORY_MIGRATION_INTEGRITY_FAILED")
-        return {"state":"COPY_MIGRATED","source_rows":len(versions),"migrated_rows":migrated,"quarantined_rows":quarantined,
+            if c.execute("PRAGMA foreign_key_check").fetchone():raise ValueError("HISTORY_MIGRATION_FOREIGN_KEY_FAILED")
+        return {"state":"COPY_MIGRATED","source_rows":version_count,"migrated_rows":migrated,"quarantined_rows":quarantined,
                 "close_only":close_migration,"currency_mapping_sha256":mapping_digest,
                 "source_mutation":False,"full_ingestion_repeated":False}
     except BaseException:

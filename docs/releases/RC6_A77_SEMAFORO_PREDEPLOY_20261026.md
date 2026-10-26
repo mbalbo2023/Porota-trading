@@ -74,9 +74,9 @@ El veto de 512 MiB retirado en #743 era una condición por tamaño anterior al
 validador real. El presupuesto general de scratch sigue en 512 MiB; no se lo
 aumenta globalmente porque `HistoricalStore.prepare_history_schema` pasaría a
 copiar los 821 MB de historia al inicializar el writer en vez de leer su esquema
-mediante transacción RO acotada. Además, `migrate_copy` conserva por defecto
-un límite de 512 MiB y carga todas las 596.196 versiones en memoria antes del
-loop, con 60 s de presupuesto por defecto. Hacer ese método sobre el Droplet
+mediante transacción RO acotada. En el corte A84 `migrate_copy` conservaba por
+defecto 512 MiB y cargaba todas las 596.196 versiones en memoria antes del
+loop, con 60 s de presupuesto. Hacer ese método sobre el Droplet
 sin aislar una copia, mapear moneda por cada clave y medir pico físico/tiempo
 sería una migración incompleta o una interferencia con la rueda. Los datos del
 corte A74: 67.445 versiones históricas previas a 365d, 439.833 referencias
@@ -89,3 +89,26 @@ contención SQLite sea cero. Los cuatro timers históricos suspendidos no pueden
 solaparse mientras sigan masked; la eficiencia real de IOL, publisher, SHADOW,
 preopen, scalping y locks exige correlación en una rueda OPEN. No se agrega
 otro timer ni se habilitan A3/PPI sólo para obtener un estado verde.
+
+## A85 — migrador de copia explícita, todavía sin datos de host migrados
+
+El candidato #743 ahora separa el **default de 512 MiB** de los lectores
+normales del techo máximo de 2 GiB disponible únicamente para una migración
+de copia con `scratch_root` privado, en disco, presupuesto físico explícito y
+reserva de 2 GiB. Si el entorno runtime fija su scratch a 512 MiB, una
+invocación mayor en esa raíz falla cerrada: hace falta un proceso aislado con
+custodia propia. El preflight `HistoricalStore` continúa usando el default
+512 MiB; por encima de éste lee sólo esquema con transacción RO acotada.
+
+El migrador dejó de cargar todas las versiones en Python y de reinicializar
+SQLite por cada fila. Ordena por instante UTC real, recorre un cursor, valida
+cada fila y usa savepoint para que una fila fallida no deje inserts parciales.
+La fuente y las tablas legadas se preservan; destino nuevo con `quick_check`,
+FK y mapping/cuarentena por fila. El plazo por defecto sigue 60 s; una copia
+aislada puede solicitar hasta 3600 s. Pruebas locales de source inmóvil,
+revisiones con offsets, rollback después de inserción, scratch privado y
+preflight >512 MiB pasan. Una muestra sintética de 3000 filas tardó 7,802 s;
+**no extrapolar linealmente** esa cifra a 596.196 filas ni declararla medida
+de host. No se creó un mapping histórico de moneda confiable para todas las
+claves; no se ejecutó migración del archivo real, ni promoción, ni purga 365d,
+ni timers. El resultado sigue **EN_GITHUB DRAFT / runtime NO_VERIFICADO**.

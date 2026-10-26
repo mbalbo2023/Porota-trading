@@ -20,7 +20,11 @@ import tempfile
 import threading
 
 
-MAX_BYTES = 512 * 1024 * 1024
+# Normal readers retain the historical 512 MiB admission. A one-time copy
+# migration may opt in to a larger *separate* disk-backed scratch with an
+# explicit byte budget; the runtime environment can still cap its own root.
+DEFAULT_BYTES = 512 * 1024 * 1024
+MAX_BYTES = 2 * 1024 * 1024 * 1024
 RESERVE_BYTES = 2 * 1024 * 1024 * 1024
 MIN_FREE_INODE_PERCENT = 10
 ENV_PREFIX = "POROTA_SQLITE_SCRATCH_"
@@ -102,7 +106,7 @@ def _configuration(scratch_root, max_scratch_bytes, reserve_bytes, min_free_inod
         return None
     else:
         limits = tuple(default if value is None else value for default, value in
-                       zip((MAX_BYTES, RESERVE_BYTES, MIN_FREE_INODE_PERCENT), limits))
+                       zip((DEFAULT_BYTES, RESERVE_BYTES, MIN_FREE_INODE_PERCENT), limits))
     limits = (
         _bounded_integer(limits[0], minimum=1, maximum=MAX_BYTES),
         _bounded_integer(limits[1], minimum=0),
@@ -370,7 +374,7 @@ class _Lease:
             self.root_fd = None
 
 
-def inspect_scratch(root, *, max_bytes=MAX_BYTES, reserve_bytes=RESERVE_BYTES,
+def inspect_scratch(root, *, max_bytes=DEFAULT_BYTES, reserve_bytes=RESERVE_BYTES,
                     min_free_inode_percent=MIN_FREE_INODE_PERCENT):
     """Inspect existing private disk scratch without SQLite or deleting files.
 
