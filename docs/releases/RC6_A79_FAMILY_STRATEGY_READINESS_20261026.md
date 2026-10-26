@@ -200,6 +200,46 @@ atómico auditables. Ninguno de estos criterios se satisface por contar
 `READY_PAPER`, añadir columnas ni obtener un test sintético positivo. Esta
 secuencia es un contrato de aceptación propuesto, no una predicción rentable.
 
+### Casos prácticos: consultas complementarias y unión PPI pendiente
+
+Corte de consultas **read-only** al conector IOL 26/10/2026 01:42Z
+(25/10 22:42 ART, mercado cerrado). Los resultados de IOL sirven para
+demostrar qué expone ese proveedor **ahora**; no prueban que el worker haya
+persistido esos valores en SQLite ni la identidad PPI exacta del lunes. La
+matriz histórica de 20 testigos/222 campos de
+`docs/WS_MOTOR_11_FIELD_SOURCE_MATRIX.md` corresponde al 28–29/09 y tampoco
+representa la base actual. Se distingue el precio del viernes de la respuesta
+obtenida hoy; ningún libro vacío se promueve a spread ejecutable.
+
+| Familia / testigo | Observación concreta de PPI/IOL | Datos y camino que faltan para entrada PAPER nueva |
+| --- | --- | --- |
+| ACCIONES / GGAL | IOL BCBA ARS T1, precio último 6.235 ARS, `timestamp=23/10 17:00:03` ART, `bids=[]`, `asks=[]`; en historial PAPER hay BUY de ACCIONES, no atribuible a esta especie | Clave PPI GGAL exacta, libro/volumen de sesión, señal causal y recibo preopen del lunes; resultado actual HOLD |
+| CEDEARS / AAPL | IOL BCBA ARS T1, último 28.660 ARS viernes 17:00:03, libro vacío; CEDEARS tiene 13 BUY acumulados en runtime, no necesariamente AAPL | Igual más semántica de subyacente/ratio si la tesis la usa; sin precio ni señal OPEN |
+| ETFS / sin testigo PPI READY | Censo instalado devolvió **0** candidatos ETF simulables | Primero encontrar una clave PPI exacta y contrato; no extrapolar desde AAPL ni inventar ticker |
+| BONOS / AL30 | IOL: ARS T1, lote 100, quote 85.960 ARS por lote = 859,6 por nominal, `bids/asks=[]` y precio del viernes; analítica con duration modificada ~1,68 y 8 cashflows. Simulación de 1 nominal: inversión 859,6 ARS, cobros denominados **USD**, `payment_currency=USD` | PPI DatosTecnicos y matching 5-part actuales por especie; IOL no persiste los 8 flujos en el collector operativo. No sumar ARS de compra y USD de cupones sin cambio/clock/regla; tesis, OOS, salida y fill especializados faltan |
+| LETRAS / D30N6 | IOL info: letra ARS T1, lote 100; la descripción dice vinculada USD cero cupón 30/11/26. Analítica `not_found`, simulación por nominal `not_found`, quote `INVALID_ARGUMENT`; matriz PPI septiembre no tenía identidad recapturada | Documento nativo de pago, fórmula/moneda y clave PPI exacta; no atribuir flujo único ni valor facial sin dato. Otra letra puede diferir |
+| OBLIGACIONES / YMCJO | IOL ON ARS T1 lote 100, quote 159.330 por lote / 1.593,3 por nominal, viernes 17:00:27 y libro vacío; analítica 14 flujos y duration modificada ~4,45. Simulación de 1 nominal: compra 1.593,3 ARS y `payment_currency=USD` | PPI exacto y libro OPEN, FX/moneda de cupones, riesgo de emisor/capital, OOS/lifecycle. Identidad PPI existía en testigo septiembre, no es prueba de frescura actual |
+| OPCIONES / GFGC5400NO | Cadena IOL de GGAL: CALL strike 5.400, vencimiento 20/11 15:30 ART. Devuelve `spot_price=0`, bid/ask/IV/griegas `null`; IOL GGAL spot último 6.235 del viernes y libro vacío. El normalizador sólo forma contrato estándar sin ajustes verificados | Clave PPI por serie, lote/moneda y ejercicio exactos, libro y subyacente OPEN, regla de salida/OOS; no interpretar spot cero ni precio de opción nulo como cotización |
+| FUTUROS / DLR-DIC26 (testigo histórico) | Matriz PPI septiembre tenía identidad, A3 términos parciales; censo octubre: 207 futuros pausados, 0 READY. A77 #743 aún Draft | Contrato/margen/tick/settlement exactos por vencimiento, historia V2 y señal DLR, recibo/punta/admisión, sin activar los tres timers A3 |
+| CAUCIONES / ARS colocadora 1 día | IOL responde mínimo 100.000 ARS y vencimiento 27/10, pero `rate=null` en este corte, sin oferta/profundidad; seis colocaciones PAPER previas en runtime para familia | Oferta y tasa nativas frescas y principal disponible en ventana EOD, riesgo/caja/fee, nueva adjudicación simulada; no transformar `null` en 0 o tasa del viernes |
+| FCI / IOLCAMA | IOL inventario renta fija pesos: ARS y `operable=true` sin fecha nativa, NAV, clase PPI exacta, cutoff o rescate en respuesta; testigo septiembre no ligaba la clase a PPI | Unión PPI exacta, reglamento y evento NAV/cutoff/rescate por fondo, caja y admisión atómica; el guard A79 sigue Draft y no genera allocator |
+
+**Caso AL30, cálculo dimensional antes de cualquier estrategia:**
+la observación IOL presenta la compra de 1 nominal en ARS 859,6 y el
+simulador da `amount_invested=0.557815...` en USD con `payment_currency=USD`.
+El `applied_exchange_rate=1` de esa respuesta no concilia por sí solo ambos
+importes. La analítica reporta precios clean/dirty por 100 en otra base; por
+eso un algoritmo que multiplique `ask × nominales × 0,01` y sume cupones
+USD a caja ARS calcula una magnitud sin sentido. Además la respuesta de
+analítica fue calculada el domingo con última cotización del viernes. El
+umbral correcto aquí es `NO_VERIFICADO`, no un BUY ni una TIR propia.
+
+**Caso YMCJO:** el mismo choque ARS de compra/USD de flujos se repite y hay
+riesgo crediticio/emisor que no se deduce de conocer el nombre YPF. La
+duration de IOL se puede consultar, pero no constituye un límite de riesgo
+autorizado ni una curva de crédito observada. Ninguna de estas consultas
+tocó cuenta, saldo, validación ni ruta de orden.
+
 Semáforo para el próximo candidato: corrección del falso verde y protección
 de caja FCI **EN_GITHUB DRAFT / runtime NO_VERIFICADO**; A77 historia/A3/PPI
 en #743 aparte **DRAFT**; estrategias nuevas, retención 365d, OOS, UI/voz
