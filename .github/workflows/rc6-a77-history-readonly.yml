@@ -492,11 +492,35 @@ jobs:
                   FROM paper_fills f JOIN paper_positions p ON p.paper_id=f.paper_id
                   WHERE julianday(f.filled_at)>=julianday(?)
                   GROUP BY p.asset_class,f.side ORDER BY p.asset_class,f.side""",(since,))]
+          lifetime={}
+          if {"paper_positions","paper_fills"}<=tables:
+              lifetime["positions"]=[dict(r) for r in db.execute("""SELECT asset_class family,status,
+                  COUNT(*) n,MIN(opened_at) first_at,MAX(opened_at) last_at
+                  FROM paper_positions GROUP BY asset_class,status ORDER BY asset_class,status""")]
+              lifetime["fills"]=[dict(r) for r in db.execute("""SELECT p.asset_class family,f.side,
+                  COUNT(*) n,MAX(f.filled_at) last_at
+                  FROM paper_fills f JOIN paper_positions p ON p.paper_id=f.paper_id
+                  GROUP BY p.asset_class,f.side ORDER BY p.asset_class,f.side""")]
+          if "trade_gate_evaluations" in tables:
+              by_family=defaultdict(Counter)
+              for r in db.execute("""SELECT g.final_result,e.payload_json FROM trade_gate_evaluations g
+                  LEFT JOIN decision_evidence_snapshots e ON e.decision_key=g.decision_key ORDER BY g.id LIMIT 10000"""):
+                  family=(safe_json(r["payload_json"]).get("quote_used") or {}).get("asset_class") or "UNKNOWN"
+                  by_family[family][r["final_result"]] += 1
+              lifetime["gate_results"]={k:dict(v) for k,v in sorted(by_family.items())}
+          if "candidate_identity_v2" in tables:
+              lifetime["candidate_authority"]=[dict(r) for r in db.execute("""SELECT instrument_type family,
+                  SUM(CASE WHEN status='AVAILABLE' AND can_simulate=1 THEN 1 ELSE 0 END) ready,
+                  SUM(CASE WHEN status='PAUSED_EXPLICIT' THEN 1 ELSE 0 END) paused
+                  FROM candidate_identity_v2 GROUP BY instrument_type ORDER BY instrument_type""")]
           candidate_counts=[]
           if "scalping_candidates" in tables:
               candidate_counts=[dict(r) for r in db.execute("""SELECT asset_class family,action,COUNT(*) n,MAX(evaluated_at) last_at
                   FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?)
                   GROUP BY asset_class,action ORDER BY asset_class,action""",(since,))]
+              lifetime["scalping_candidates"]=[dict(r) for r in db.execute("""SELECT asset_class family,action,
+                  COUNT(*) n,MAX(evaluated_at) last_at FROM scalping_candidates
+                  GROUP BY asset_class,action ORDER BY asset_class,action""")]
           future_counts=[]
           if "paper_family_lifecycle_events" in tables:
               future_counts=[dict(r) for r in db.execute("""SELECT family,to_state,COUNT(*) n,MAX(occurred_at) last_at
@@ -515,6 +539,10 @@ jobs:
                   FROM paper_family_lifecycle_events GROUP BY family,to_state ORDER BY family,to_state""",(since,))]
           observer=dict(db.execute("SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1").fetchone())
           db.close()
+          from rc6_dynamic_universe.routing import strategy_route
+          families_to_check=("ACCIONES","CEDEARS","ETFS","BONOS","LETRAS","OBLIGACIONES","OPCIONES","FUTUROS","CAUCIONES","FCI")
+          routes=[{k:strategy_route(family).get(k) for k in ("family","engine","status","generic_equity","strategy_status","reason_codes")}
+                  for family in families_to_check]
           out={"schema":"rc6-a78-causal-trace-readonly-v1","read_only":True,"as_of_utc":datetime.now(timezone.utc).isoformat(),
                "window_since_utc":since,"shadow_generation":{"as_of":report.get("as_of"),"phase":report.get("phase"),
                "status":report.get("status"),"sequence":cut["pointer"].get("sequence"),
@@ -532,7 +560,7 @@ jobs:
                                    "missing_temporal":missing_temporal,
                                    "blocked_reasons":{k:v.most_common(12) for k,v in sorted(blocked_reasons.items())},
                                    "opened_examples":examples},
-               "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,
+               "spot_fill_counts":fill_counts,"scalping_candidates":candidate_counts,"lifetime":lifetime,"routes":routes,
                "future_lifecycle_counts":future_counts,"specialized":specialized,"observer":observer,
                "history_writes":False,"provider_requests":0,"ppi_watch_accessed":False,"real_routes":"NOT_CALLED"}
           print(json.dumps(out,sort_keys=True,default=str))
