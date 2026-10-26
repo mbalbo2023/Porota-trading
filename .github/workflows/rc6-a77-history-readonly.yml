@@ -223,6 +223,77 @@ jobs:
           print(json.dumps(result,sort_keys=True,default=str))
           PY
           REMOTE
+      - name: Probe SHADOW generation and ten-family intake read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 75 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' <<'PY'
+          import json,os,sqlite3,time
+          from pathlib import Path
+          from cg_paper_workspace import artifact_root,database_path
+          from rc6_shadow_runtime.persistence import EvidenceFiles,read_committed_generation
+          db=database_path()
+          root=artifact_root(db)/'dynamic-shadow'
+          c=sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.3)
+          c.row_factory=sqlite3.Row;c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=300')
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          candidate=[{'family':r[0],'status':r[1],'can_simulate':r[2],'n':r[3]}
+              for r in c.execute("""SELECT instrument_type,status,can_simulate,COUNT(*)
+                  FROM candidate_identity_v2 GROUP BY instrument_type,status,can_simulate
+                  ORDER BY instrument_type,status,can_simulate""")]
+          catalog=[{'family':r[0],'status':r[1],'n':r[2]}
+              for r in c.execute("""SELECT instrument_type,status,COUNT(*)
+                  FROM financial_instrument_catalog GROUP BY instrument_type,status
+                  ORDER BY instrument_type,status""")]
+          sync=[{'source':r[0],'status':r[1],'attempt':r[2],'success':r[3]}
+              for r in c.execute("""SELECT source,status,last_attempt_at,last_success_at
+                  FROM source_sync ORDER BY source LIMIT 60""")] if 'source_sync' in tables else []
+          intraday=[{'state':r[0],'n':r[1]} for r in c.execute(
+              'SELECT state,COUNT(*) FROM ppi_intraday_contract_state GROUP BY state ORDER BY COUNT(*) DESC LIMIT 20'
+              )] if 'ppi_intraday_contract_state' in tables else []
+          observer=dict(c.execute('SELECT mode,session_state,ppi_auth,real_orders_sent,http_blocked FROM observer_state WHERE id=1').fetchone())
+          c.close()
+          files=EvidenceFiles(root,payload_limit=4*1024**2)
+          status=files.read('status.json')
+          pointer=files.read('CURRENT.json')
+          idle=files.read('idle.json')
+          verified=None
+          try:
+              cut=read_committed_generation(root,require_current_status=False)
+              report=cut['report']
+              family=report.get('family_routing') or {}
+              verified={'manifest_valid':True,'generation_id':cut['pointer']['generation_id'],
+                  'sequence':cut['pointer']['sequence'],'report_phase':report.get('phase'),
+                  'report_status':report.get('status'),
+                  'family_statuses':[{'family':r.get('family'),'catalog_count':r.get('catalog_count'),
+                      'status':r.get('status'),'entry_authority':r.get('entry_authority')}
+                      for r in family.get('families',[])],
+                  'source_errors_count':len(report.get('source_errors') or []),
+                  'native_ppi_errors_count':len(report.get('native_ppi_errors') or [])}
+          except Exception as exc:verified={'manifest_valid':False,'error_class':type(exc).__name__}
+          now=time.time()
+          sources=[]
+          for name in ('rc6_public_sources_latest.json','iol_shadow_latest.json',
+                       'iol_family_reference_latest.json','rc6_ppi_capacity_latest.json'):
+              p=Path('/app/data/market')/name
+              sources.append({'name':name,'exists':p.is_file(),
+                  'age_seconds':round(now-p.stat().st_mtime) if p.is_file() else None})
+          result={'schema':'rc6-a77-shadow-family-preopen-v1','read_only':True,
+                  'observer':observer,'candidate_families':candidate,'catalog_families':catalog,
+                  'source_sync':sync,'intraday_contract_states':intraday,
+                  'shadow_status':{k:status.get(k) for k in ('as_of','phase','status','catalog_ready_count',
+                      'provider_requests','real_orders_sent','real_routes','capacity_policy_status',
+                      'entry_signal_lab_status','operational_funnel_status','ppi_watch')} if isinstance(status,dict) else None,
+                  'pointer_sequence':pointer.get('sequence') if isinstance(pointer,dict) else None,
+                  'idle':{k:idle.get(k) for k in ('schema','last_generation_id','source_freshness_renewed',
+                      'real_orders_sent')} if isinstance(idle,dict) else None,
+                  'validated_last_cut':verified,'source_artifacts':sources,
+                  'history_writes':False,'provider_requests':0,'ppi_watch_accessed':False,
+                  'real_routes':'NOT_CALLED'}
+          print(json.dumps(result,sort_keys=True,default=str))
+          PY
       - name: Remove SSH material
         if: always()
         shell: bash
