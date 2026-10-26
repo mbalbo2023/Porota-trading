@@ -124,6 +124,17 @@ futuros/preopen/FCI y la batería de broker/familias se ejecutaron en local.
 Este cambio no conecta el disparador automático FCI, no acredita NAV/cutoff
 fresco, no prueba la política económica ni genera `BUY_SIMULATED`.
 
+Una segunda pasada de autoauditoría halló un bypass de interfaz: un llamador
+podía iniciar `SUBSCRIBE` o `SUBSCRIBE_REQUESTED` directamente mediante la
+primitiva genérica `apply_paper_event` contra la DB runtime y así omitir los
+guards del ejecutor. El fix posterior bloquea ambas transiciones iniciales
+en la DB efectiva salvo cuando las emite el ejecutor bajo su transacción
+cerrada. Una prueba negativa confirma cero eventos tras ambos intentos y
+preserva el retry idempotente legítimo. El callback de caja sigue siendo
+autoridad de código confiable provista por el broker; no es una API de
+seguridad frente a código arbitrario que modifique el proceso. La aceptación
+OPEN del allocator y sus efectos aún no existe.
+
 Para BONOS/LETRAS/OBLIGACIONES/OPCIONES sigue faltando una tesis direccional
 registrada y medida fuera de muestra; `STRATEGY_NOT_VALIDATED` permanece como
 gate explícito. FUTUROS conserva motor DLR pero 207 identidades estaban pausadas;

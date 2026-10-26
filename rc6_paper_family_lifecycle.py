@@ -112,6 +112,11 @@ TRANSITIONS = {
     },
 }
 
+# An initial FCI commitment in the effective runtime book must pass the
+# executor's locked catalog, cash and preopen checks. The generic lifecycle
+# primitive remains available for offline fixtures and subsequent NAV events.
+_FCI_LOCKED_SUBSCRIPTION = object()
+
 
 def _positive(value, name):
     try:
@@ -260,7 +265,8 @@ class FamilyPaperExecutor:
                 self.store, lifecycle_id=lifecycle_id, event_id=event_id,
                 family="FCI", instrument=terms.symbol, currency=terms.currency,
                 to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
-                detail=detail, connection=connection)
+                detail=detail, connection=connection,
+                _subscription_authority=_FCI_LOCKED_SUBSCRIPTION)
 
     def future_event(self, contract, *, lifecycle_id, event_id, to_state,
                      amount="0", occurred_at=None, detail=None, connection=None):
@@ -759,7 +765,7 @@ def ensure_initialized(store):
 
 def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                       currency, to_state, amount="0", occurred_at=None,
-                      detail=None, connection=None):
+                      detail=None, connection=None, _subscription_authority=None):
     """Apply one idempotent PAPER transition or fail closed.
 
     A repeated event_id returns the original result without a second ledger
@@ -777,11 +783,20 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 store, lifecycle_id=lifecycle_id, event_id=event_id,
                 family=family, instrument=instrument, currency=currency,
                 to_state=to_state, amount=amount, occurred_at=occurred_at,
-                detail=detail, connection=owned)
+                detail=detail, connection=owned,
+                _subscription_authority=_subscription_authority)
     existing_event = connection.execute(
         "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
         (str(event_id),),
     ).fetchone()
+    if family == "FCI" and to_state in {"SUBSCRIBE", "SUBSCRIBE_REQUESTED"} and not existing_event:
+        try:
+            from cg_paper_workspace import database_path
+            runtime_book = Path(store.path).resolve() == database_path()
+        except (OSError, ValueError, TypeError) as exc:
+            raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+        if runtime_book and _subscription_authority is not _FCI_LOCKED_SUBSCRIPTION:
+            raise ValueError("FCI_DIRECT_RUNTIME_SUBSCRIPTION_BLOCKED")
     # Retrying an implicitly timestamped request reuses its original instant.
     # Supplying another explicit instant remains a conflicting intention.
     stamp = aware_datetime(occurred_at or (existing_event["occurred_at"]

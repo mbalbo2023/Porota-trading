@@ -162,6 +162,13 @@ def test_runtime_fci_subscription_requires_global_and_atomic_cash_gates(tmp_path
     at = "2026-10-26T12:00:00+00:00"
     request = dict(lifecycle_id="fund-1", event_id="subscription-1", amount="1000",
                    occurred_at=at)
+    for initial in ("SUBSCRIBE", "SUBSCRIBE_REQUESTED"):
+        with pytest.raises(ValueError, match="FCI_DIRECT_RUNTIME_SUBSCRIPTION_BLOCKED"):
+            lifecycle.apply_paper_event(store, lifecycle_id="bypass-"+initial,
+                event_id="bypass-"+initial, family="FCI", instrument="FUND1",
+                currency="ARS", to_state=initial, amount="-1000", occurred_at=at)
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
     with pytest.raises(ValueError, match="FCI_PAPER_ADMISSION_GUARDS_REQUIRED"):
         broker.family_paper.subscribe_fund(terms, **request)
     callbacks = dict(cash_guard=lambda c: broker._cash(at, "ARS", connection=c,
