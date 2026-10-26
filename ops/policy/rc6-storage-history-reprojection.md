@@ -16,6 +16,12 @@ Status: **candidate only**. No runtime deletion, migration or reprojection is au
 - Legacy `history_versions_v2` without currency, price basis, adjustment basis and `version_known_at` cannot be silently assigned these values. The observed annual legacy rows remain quarantined until original provider evidence supplies them by row. The 512 MiB default copy budget must not be bypassed on the live host. No mass reingestion or postclose PPI unlock.
 - A promotion needs a separate approved, idempotent fix-forward migration with exact SHA/tree, disk/RAM admission, atomic swap plan, read-only before/after counts and foreign-key checks, fail-closed partial outcome, and direct runtime evidence. No rollback and no overwrite of original revisions.
 
+### A74 offhost baseline and the next proof
+
+- The verified quiescent capture on 2026-10-25 was 821,477,376 bytes, SHA-256 `3ce6dc18122b3a6187cb27c006f3db53f4af4f738b1d69a5f95c9bf97ea3e6d9`. The report counted 596,196 legacy `history_versions_v2` rows and 111,905 close-only revisions. No legacy version metadata had an explicit currency key; `historical_raw_archive` had zero rows. The two known canonical/quarantine pointer tables held 439,833 and 235,884 rows. These counts do not identify monetary currency or certify external consumers and pins.
+- `scripts/rc6_history_offhost_preflight.py` accepts only a hashed, quiescent copy in a GitHub runner scratch directory. It streams the entire legacy table and checks the two known SQLite pointer tables, records dangling references and checks the copy hash again. Even a metadata currency value is only an unverified candidate, not independent provider provenance. The report always leaves migration, deletion and A3 timer unmasking blocked.
+- The next authorizing evidence must trace each promoted row to original provider payload and its quote currency, price/adjustment basis and PIT version clock; reconcile all canonical/quarantine and cross-database/artifact pins; verify old/new source-rank pointers and an exact, idempotent fix-forward copy on a new snapshot; then verify runtime after a single promotion. An offhost census is a prerequisite, not a reason to bypass these checks. Unknown rows remain preserved in quarantine.
+
 ## Python/module retirement
 
 - Static imports alone do not define reachability: inspect workflow triggers on `main` and deploy branch, systemd units, shell/CLI entrypoints, dynamic imports, tests and external callers. The existing `rc4_module_inventory.py` and the bounded wiring report provide review candidates, not deletion authority.
