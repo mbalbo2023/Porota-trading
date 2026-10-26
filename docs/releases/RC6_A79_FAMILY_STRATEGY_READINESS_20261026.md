@@ -192,15 +192,36 @@ que haya un valor en la base instalada para una especie concreta.
 | FCI: NAV, fecha, cutoff, rescate y caja | Contrato `cq_family_contract_rules_hf6` distingue términos/eventos; SHADOW acepta `nav/nav_date/subscription_status/redemption_term/cutoff_time`; IOL `get_fci_funds` colecta inventario y `rc6_broker_parity_evidence` sólo liga identidad, descripción y operable | No se verificó snapshot instalado con NAV/cutoff/plazo vinculados y frescos para un fondo; `paper_equity_by_currency` no es, por sí solo, una reserva atómica de efectivo | NO_VERIFICADO por fondo; FCI guard de caja en #744 aún no desplegado |
 | Pronóstico, modelo congelado, costos ejecutables, slippage y OOS | `family_strategy_research` era una clave opcional inventada por A79 sin productor; comisiones PAPER son policy de simulación | No hay registro de features/labels causales, calibración, holdout y tarifas reales de cuenta para las cinco tesis; ni ledger de salidas por sus ciclos propios | NO_VERIFICADO; cero autoridad de entrada |
 
-Esta matriz es una **auditoría de adaptadores y un censo agregado RO**, no
-una consulta JSON por clave a la base instalada ni una captura live del
-proveedor. El paso comprobable antes de mercado es un probe RO acotado que
-cuente por familia/identidad/campo la presencia, origen y clocks en
-`financial_instrument_catalog.metadata_json`, `contract_evidence_v2_current`
-→`snapshots.evidence_json`, `market_snapshots.contract_json` y
-`iol_family_reference_latest.json`; publicar sólo agregados y unas identidades
-redactadas, nunca credenciales. En OPEN, volver a comprobar fuente y libro
-frescos. Mientras ese probe no exista, no afirmar "tenemos esos datos".
+Esta matriz inicial era una **auditoría de adaptadores y un censo agregado
+RO**. Se completó después una consulta JSON por clave a la base instalada
+para siete testigos: [Action 40256594412](https://github.com/mbalbo2023/Porota-trading/actions/runs/40256594412),
+[recibo saneado #732](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6406507750),
+26/10/2026 01:56:04Z, SQLite `mode=ro`/`query_only=ON`, PAPER/0 CLOSED,
+0 solicitudes al proveedor y 0 acceso PPI Watch. Un primer probe
+[40256468132](https://github.com/mbalbo2023/Porota-trading/actions/runs/40256468132)
+omitió YMCJO al buscar `OBLIGACIONES` donde la tabla guarda `ON`; su
+recibo se marcó parcial y el probe corregido leyó ambas etiquetas.
+
+| Testigo | Catálogo instalado exacto | `contract_evidence_v2_current` por fuente | Qué acredita |
+| --- | --- | --- | --- |
+| GGAL ACCIONES | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplicador/mínimo/step presentes | PPI estructurada con identidad; regla derivada con multiplier/step | Contrato spot, no señal ni libro fresco |
+| AAPL CEDEARS | Igual, con READY_PAPER_SPOT | PPI estructurada y regla derivada | Contrato spot; el stale `UNKNOWN` histórico es fila distinta |
+| AL30 BONOS | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplier/mínimo/step presentes | IOL 14/10 con multiplier y maturity; PPI estructurada 23/10 sólo identidad en claves censadas; XHR viejo con moneda serializada no canónica | No hay calendario de ocho flujos/USD ni duration/curva en el `current` inspeccionado |
+| D30N6 LETRAS | ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT`; multiplier/mínimo/step | PPI estructurada con identidad y regla derivada, **sin vencimiento/flujo** en claves censadas | READY de contrato de apertura, no valor de cobro ni estrategia al vencimiento |
+| YMCJO ON | Catálogo `OBLIGACIONES` ARS/BYMA/A-24HS AVAILABLE `READY_PAPER_SPOT` | Tabla usa familia **ON**: IOL 14/10 con multiplier/maturity, PPI estructurada 21/10 con identidad; otras fuentes históricas | El cero del primer probe era falso negativo; no persiste aquí el calendario USD de 14 flujos consultable en IOL |
+| GFGC5400NO OPCIONES | AVAILABLE pero capability **`CONTRACT_EVIDENCE_REVIEW_REQUIRED`**, no READY; strike/right/underlying/expiry/multiplier en JSON | Regla derivada 25/10 y IOL 23/10 con parte del contrato; PPI sólo identidad | Contrato en revisión; book IOL actual null, ningún BUY |
+| IOLCAMA FCI | `OBSERVED_SHADOW` / `NEEDS_FUND_SETTLEMENT`; sólo identidad en claves censadas | **0** filas current ligadas a la clave consultada | Inventario IOL operable no demuestra clase/NAV/cutoff/rescate o PAPER admission |
+
+El probe contó nombres de claves con valores no vacíos hasta profundidad tres
+en los JSON actuales; no inspeccionó valores financieros, semántica, hashes de
+documento, `market_snapshots.contract_json`, revisiones históricas ni cache
+IOL fuera de la DB. Su `observed_at` es el reloj del snapshot, no siempre
+el reloj nativo de cada campo. Por tanto "ausente en estas claves current" no
+significa "inexistente en toda fuente o toda tabla". El complemento IOL
+consultado más abajo demuestra varios valores externos que **no atravesaron
+el collector hasta este JSON**. Antes de cualquier entrada PAPER todavía
+hay que resolver la unión exacta y el reloj nativo por campo, luego medir el
+libro y la fuente en OPEN.
 
 ### Condiciones de una estrategia apta para prueba PAPER
 
