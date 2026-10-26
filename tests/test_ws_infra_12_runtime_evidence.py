@@ -11,6 +11,7 @@ import subprocess
 import pytest
 
 import ops_runtime_evidence_rc6 as evidence
+from bu_instrument_catalog import PAPER_PPI_IDENTITY_LKG_SECONDS
 from scripts.porota_consume_runtime_evidence_rc6 import ConsumerError, consume
 
 
@@ -149,6 +150,90 @@ def build(tmp_path: Path, **db_options):
     )
 
 
+def exact_ledger(db: Path, *rows):
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE candidate_identity_v2(
+          ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,
+          settlement TEXT,can_simulate INTEGER,status TEXT,detail TEXT,
+          checked_at TEXT)""")
+        conn.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)", rows)
+
+
+def exact_ggal(*, currency="ARS", ready=1):
+    return ("GGAL", "ACCIONES", "BYMA", currency, "A-24HS", ready,
+            "AVAILABLE", "READY_PAPER_SPOT", "2026-09-27T16:59:00+00:00")
+
+
+def test_evidence_and_candidate_writer_use_the_same_identity_lkg():
+    assert evidence.PPI_IDENTITY_LKG_SECONDS == PAPER_PPI_IDENTITY_LKG_SECONDS
+
+
+def test_documentary_freshness_is_not_a_candidate_ledger_contradiction(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(
+        tmp_path, last_seen="2026-09-20T16:59:00+00:00")
+    exact_ledger(db, exact_ggal())
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    evidence.validate_bundle(payload)
+    assert payload["status"] == "COMPLETE"
+    assert payload["database"]["exact_candidate_rows"] == 1
+    row = payload["instruments"][0]
+    assert row["readiness"]["status"] == "NO_READY"
+    assert "PPI_FRESHNESS_STALE" in row["readiness"]["reasons"]
+    assert "CANDIDATE_LEDGER_CONTRADICTION" not in payload["gaps"]
+
+
+def test_exact_ledger_keeps_unique_ready_currency_without_promoting_sibling(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute("""INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                     ("GGAL", "ACCIONES", "BYMA", "USD_CCL", "A-24HS", "PPI_FIELD",
+                      "2026-09-27T16:59:00+00:00", "run-2", "AVAILABLE",
+                      "READY_PAPER_SPOT", json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+    exact_ledger(db, exact_ggal(), exact_ggal(currency="USD_CCL", ready=0))
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    evidence.validate_bundle(payload)
+    by_currency = {row["identity"]["currency"]: row for row in payload["instruments"]}
+    assert by_currency["ARS"]["readiness"]["status"] == "READY_PAPER"
+    assert by_currency["USD_CCL"]["readiness"]["status"] == "NO_READY"
+    assert "CANDIDATE_GATE:NO_GO" in by_currency["USD_CCL"]["readiness"]["reasons"]
+    assert by_currency["ARS"]["identity_flags"]["duplicate"] is True
+    assert by_currency["ARS"]["identity_flags"]["ambiguous"] is False
+    assert "CANDIDATE_LEDGER_CONTRADICTION" not in payload["gaps"]
+
+
+def test_exact_ledger_still_rejects_genuinely_expired_identity(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(
+        tmp_path, last_seen="2026-09-10T16:59:00+00:00")
+    exact_ledger(db, exact_ggal())
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert payload["status"] == "INCOMPLETE"
+    assert "CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]
+
+
+def test_exact_ledger_missing_row_is_never_ready(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    exact_ledger(db)
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert "CANDIDATE_LEDGER_CARDINALITY" in payload["gaps"]
+    assert payload["instruments"][0]["readiness"]["status"] == "NO_READY"
+
+
 def test_complete_bundle_has_readonly_proof_and_instrument_contract(tmp_path):
     payload = build(tmp_path)
     evidence.validate_bundle(payload)
@@ -265,7 +350,7 @@ def test_candidate_ledger_contradiction_is_exact_for_each_fail_closed_gate(
     conn = sqlite3.connect(db)
     if case == "freshness":
         conn.execute("UPDATE financial_instrument_catalog SET last_seen_at=?",
-                     ("2026-09-20T16:59:00+00:00",))
+                     ("2026-09-10T16:59:00+00:00",))
     elif case == "primary":
         conn.execute("""UPDATE financial_instrument_catalog
           SET settlement_source='IOL_COMPLEMENTARY',metadata_json='{}'""")
