@@ -1,0 +1,125 @@
+name: RC6 A93 OPEN admission diagnostic read only
+
+on:
+  push:
+    branches: [audit/rc6-a93-open-no-trades-20261026]
+    paths: ['.github/workflows/rc6-a93-open-no-trades-readonly.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read bounded PAPER admission and native ledger aggregates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 90s \
+            ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          for unit in porota-preopen-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer porota-history-postclose-rc6.timer; do
+            printf 'TIMER=%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import collections,json,os,re,sqlite3,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          from rc6_paper_admission_gate import admission_status
+
+          now=datetime.now(timezone.utc)
+          tz=ZoneInfo('America/Argentina/Buenos_Aires')
+          day=now.astimezone(tz).date().isoformat()
+          path=Path('/app/data/paper_v17/observer_v17.db')
+          db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.3)
+          db.row_factory=sqlite3.Row
+          db.execute('PRAGMA query_only=ON')
+          db.execute('PRAGMA busy_timeout=300')
+          deadline=time.monotonic()+25
+          db.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
+          tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          def today(raw):
+              try:
+                  d=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
+                  return d.tzinfo is not None and d.astimezone(tz).date().isoformat()==day
+              except (ValueError,TypeError):return False
+          def code(raw):
+              s=str(raw or '')
+              m=re.match(r'^[A-Z][A-Z0-9_]{2,69}(?=$|[: ;])',s)
+              return m.group(0) if m else 'NATURAL_LANGUAGE_OR_OTHER'
+          def aggregate(table,fields,at,limit=4000):
+              if table not in tables:return {'state':'TABLE_MISSING'}
+              rows=[dict(r) for r in db.execute('SELECT '+fields+' FROM '+table+' ORDER BY rowid DESC LIMIT ?',(limit,))]
+              selected=[r for r in rows if today(r[at])]
+              return {'state':'BOUNDED','sampled':len(rows),'today_in_sample':len(selected),
+                      'today_may_be_truncated':len(rows)==limit and today(rows[-1][at]),
+                      'latest_at':rows[0][at] if rows else None,'rows':selected}
+          def compact(result,group_fields,reason_field=None):
+              rows=result.pop('rows',[])
+              counts=collections.Counter(tuple(str(r.get(k) or 'UNKNOWN') for k in group_fields) for r in rows)
+              result['counts']=[{'group':list(k),'n':v} for k,v in counts.most_common(30)]
+              if reason_field:
+                  reasons=collections.Counter(code(r.get(reason_field)) for r in rows)
+                  result['reason_codes']=[{'code':k,'n':v} for k,v in reasons.most_common(20)]
+              return result
+          state=db.execute('SELECT mode,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at,process_state FROM observer_state WHERE id=1').fetchone()
+          assert state and state['mode']=='PRODUCTION_PAPER' and state['real_orders_sent']==0
+          worker=None
+          if 'intraday_scalping_worker_state' in tables:
+              row=db.execute('SELECT heartbeat_at,state,cursor,selected,successful,failed,points_inserted,confirmed_identities,candidates,real_orders_sent FROM intraday_scalping_worker_state WHERE id=1').fetchone()
+              worker=dict(row) if row else None
+          decisions=compact(aggregate('paper_decisions','decided_at,action,reason','decided_at'),['action'],'reason')
+          gates=compact(aggregate('trade_gate_evaluations','evaluated_at,final_result,reason','evaluated_at'),['final_result'],'reason')
+          scalping=compact(aggregate('scalping_candidates','evaluated_at,asset_class,action,reason','evaluated_at'),['asset_class','action'],'reason')
+          fills=compact(aggregate('paper_fills','filled_at,side','filled_at',1000),['side'])
+          positions=compact(aggregate('paper_positions','opened_at,asset_class,status','opened_at',1000),['asset_class','status']) if 'paper_positions' in tables else {'state':'TABLE_MISSING'}
+          cauciones=compact(aggregate('paper_cauciones','opened_at,status','opened_at',1000),['status'])
+          lifecycle=compact(aggregate('paper_family_lifecycle_events','occurred_at,family,to_state','occurred_at',1000),['family','to_state'])
+          snapshots=compact(aggregate('market_snapshots','observed_at,source,asset_class','observed_at',500),['source','asset_class'])
+          db.close()
+          receipt_path=Path('/app/data/deploy/paper_scalping_preopen_gate_v1.json')
+          try:
+              raw=json.loads(receipt_path.read_text(encoding='utf-8'))
+              receipt={k:raw.get(k) for k in ('status','candidate_sha','trade_day_ar','issued_at_ar','phase','reason')}
+          except (OSError,ValueError,TypeError):receipt={'status':'NO_VERIFICADO'}
+          allowed,reason=admission_status(now=now.astimezone(tz))
+          result={'schema':'rc6-a93-open-paper-admission-readonly-v1','at_utc':now.isoformat(),
+                  'at_ar':now.astimezone(tz).isoformat(),'day_ar':day,'observer':dict(state),
+                  'build_sha':os.getenv('POROTA_BUILD_SHA','NO_VERIFICADO'),
+                  'admission':{'allowed':allowed,'reason':reason,'receipt':receipt},
+                  'scalping_worker':worker,'decisions':decisions,'gates':gates,'scalping':scalping,
+                  'fills':fills,'positions':positions,'cauciones':cauciones,'lifecycle':lifecycle,
+                  'market_snapshots':snapshots,'read_only':True,'provider_requests':0,
+                  'ppi_watch_accessed':False,'real_routes':'NOT_CALLED'}
+          print('RC6_OPEN_ADMISSION='+json.dumps(result,sort_keys=True,ensure_ascii=False,default=str))
+          PY
+          REMOTE
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
