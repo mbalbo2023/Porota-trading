@@ -1,5 +1,4 @@
 name: RC6 A111 host health read only
-# A111 bounded passive resample 2; no operational change.
 
 on:
   push:
@@ -144,6 +143,48 @@ jobs:
           except (OSError, ValueError, TypeError):
               pass
 
+          child_health = {'state': 'NO_VERIFICADO'}
+          child_path = db_path.parent / 'artifacts' / db_path.name / 'runtime-health.json'
+          try:
+              if child_path.is_symlink() or child_path.stat().st_size > 65536:
+                  raise ValueError('CHILD_HEALTH_PATH_INVALID')
+              item = json.loads(child_path.read_text(encoding='utf-8'))
+              scanner = (item.get('children') or {}).get('scanner') or {}
+              def count(value):
+                  return value if type(value) is int and 0 <= value <= 1000000 else 'NO_VERIFICADO'
+              child_health = {
+                  'state': 'OK', 'recorded_at': stamp(item.get('recorded_at')),
+                  'source_sha': sha(item.get('source_sha')),
+                  'scanner': {'state': code(scanner.get('state')),
+                              'restarts': count(scanner.get('restarts')),
+                              'spawn_failures': count(scanner.get('spawn_failures')),
+                              'started_at': stamp(scanner.get('started_at')),
+                              'last_exit_at': stamp(scanner.get('last_exit_at')),
+                              'last_error': code(scanner.get('last_error'))}}
+          except (OSError, ValueError, TypeError):
+              pass
+
+          exception_events = {'state': 'NO_VERIFICADO'}
+          try:
+              logs = subprocess.run(['docker', 'logs', '--since=5m', '--tail=400',
+                                     'porota_production_observer'],
+                                    text=True, capture_output=True, check=False, timeout=8)
+              if logs.returncode == 0:
+                  lines = (logs.stdout + logs.stderr)[-200000:].splitlines()
+                  classes = {}
+                  for line in lines:
+                      match = re.search(r'\b((?:[A-Za-z_][A-Za-z0-9_]*\.){0,2}'
+                                        r'[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception))\s*:', line)
+                      if match:
+                          name = match.group(1)
+                          classes[name] = classes.get(name, 0) + 1
+                  exception_events = {'state': 'SANITIZED', 'lines_examined': len(lines),
+                                      'exception_counts': dict(sorted(classes.items())[:12]),
+                                      'child_exited_mentions': sum('CHILD_EXITED' in line
+                                                                   for line in lines)}
+          except (OSError, subprocess.SubprocessError):
+              pass
+
           critical_health = {'state': 'NO_VERIFICADO'}
           raw = command(['docker', 'exec', 'porota_critical_approval_rc6', 'python', '-c',
               'import json; from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; '
@@ -163,6 +204,8 @@ jobs:
                     'at_ar': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
                     'observer': db_result, 'release': release, 'containers': containers,
                     'critical_broker': critical_health,
+                    'runtime_child_health': child_health,
+                    'scanner_exception_events': exception_events,
                     'critical_units': {
                         name: code(str((command(['systemctl', 'is-active', name]) or '')).strip().upper())
                         for name in ('porota-critical-github-proxy-rc6.service',
