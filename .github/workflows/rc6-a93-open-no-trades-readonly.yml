@@ -427,6 +427,18 @@ jobs:
               return result
           state=db.execute('SELECT mode,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at,process_state FROM observer_state WHERE id=1').fetchone()
           assert state and state['mode']=='PRODUCTION_PAPER' and state['real_orders_sent']==0
+          auth_health={'state':'NO_VERIFICADO'}
+          if 'api_health' in tables:
+              row=db.execute('''SELECT state,detail,checked_at,last_success_at
+                  FROM api_health WHERE component='PPI_PRODUCTION_AUTH' ''').fetchone()
+              if row:
+                  prefix=re.match(r'^([A-Za-z_][A-Za-z0-9_]{0,59}):',str(row['detail'] or ''))
+                  status=re.search(r'(?<![0-9])(?:401|403|408|429|500|502|503|504)(?![0-9])',
+                                   str(row['detail'] or ''))
+                  auth_health={'state':row['state'],'checked_at':row['checked_at'],
+                      'last_success_at':row['last_success_at'],
+                      'exception_type':prefix.group(1) if prefix else 'NO_VERIFICADO',
+                      'http_status_code':status.group(0) if status else 'NO_VERIFICADO'}
           worker=None
           if 'intraday_scalping_worker_state' in tables:
               row=db.execute('SELECT heartbeat_at,state,cursor,selected,successful,failed,points_inserted,confirmed_identities,candidates,real_orders_sent FROM intraday_scalping_worker_state WHERE id=1').fetchone()
@@ -520,6 +532,7 @@ jobs:
           result={'schema':'rc6-a93-open-paper-admission-readonly-v1','at_utc':now.isoformat(),
                   'at_ar':now.astimezone(tz).isoformat(),'day_ar':day,'observer':dict(state),
                   'build_sha':os.getenv('POROTA_BUILD_SHA','NO_VERIFICADO'),
+                  'ppi_auth_health_sanitized':auth_health,
                   'admission':{'allowed':allowed,'reason':reason,'receipt':receipt},
                   'focus_contracts':focus,'intraday_contract_states':intraday,
                   'candidate_ledger':candidate_ledger,'family_matrix':families,
