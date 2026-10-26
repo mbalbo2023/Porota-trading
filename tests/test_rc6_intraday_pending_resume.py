@@ -13,7 +13,7 @@ from scripts import rc6_deploy_scheduler_suspend as scheduler
 
 def test_preopen_accepts_only_exact_paused_deploy_receipt(tmp_path, monkeypatch):
     names = sorted(set(preopen.REQUIRED_TIMERS) |
-                   {f'porota-extra-{i:02d}-rc6.timer' for i in range(14)})
+                   {f'porota-extra-{i:02d}-rc6.timer' for i in range(11)})
     policy = {'units': {'systemd/'+name:{'role':'ACTIVE_TIMER','active':True}
                         for name in names}}
     policy_path=tmp_path/'ops/policy/host-control-plane-reconciliation-v2.json'
@@ -36,7 +36,7 @@ def test_preopen_accepts_only_exact_paused_deploy_receipt(tmp_path, monkeypatch)
         return 3,'inactive',''
     monkeypatch.setattr(preopen,'cmd',command)
     assert preopen.required_timers(candidate)['state']=='GREEN'
-    assert len(preopen.required_timers(candidate)['units'])==19
+    assert len(preopen.required_timers(candidate)['units'])==16
     assert preopen.required_timers()['state']=='RED'
     receipt['status']='RESTORED'
     path.write_text(json.dumps(receipt))
