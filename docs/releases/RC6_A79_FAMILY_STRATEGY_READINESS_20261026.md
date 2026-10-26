@@ -159,6 +159,16 @@ modelos causales congelados por instrumento para estas familias ni una muestra
 OOS de su rendimiento. Una hipótesis positiva de test **no** acredita un
 `BUY_CANDIDATE`, la admisión bajo bloqueo de DB ni un `BUY_SIMULATED` real.
 
+**Separación de requisitos:** el gate vigente de `PaperBroker.decide` para
+BONOS/LETRAS/OBLIGACIONES/OPCIONES es `STRATEGY_NOT_VALIDATED` incluso si
+existe contrato. Los nuevos campos de `flow_unit`, curva/riesgo de duración,
+crédito por emisor y modelo/escenario fechado son requisitos que A79 define
+para su hipótesis SHADOW, no chequeos que el motor PAPER antiguo ya ejecutara.
+El repositorio no tiene un productor conectado de `family_strategy_research`;
+no atribuir automáticamente esos huecos a PPI ni afirmar ausencia global por
+familia. La disponibilidad y frescura por instrumento durante OPEN siguen
+`NO_VERIFICADO` hasta una medición nativa.
+
 La traza necesaria para un fill auténtico sigue siendo: research registrado
 antes de decidir → observación exacta OPEN → evaluación OOS prospectiva
 independiente con libros/eventos futuros → costos/riesgo/caja y fuente
