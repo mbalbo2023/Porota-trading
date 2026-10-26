@@ -408,6 +408,21 @@ def refresh_news(store, timeout=8):
     return {"state": state, "rows": inserted, "failures": failures}
 
 
+DECISION_REPORT_SQL = """SELECT * FROM paper_decisions
+  WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?)"""
+
+
+def _period_decisions(connection, start, end):
+    # The report already owns the complete result as Python dicts. SQLite's
+    # ORDER BY spilled a second copy into the observer's 32 MiB /tmp, with no
+    # decided_at index. Sort references to those existing rows instead, using
+    # the same text order and a deterministic id tie break. Do not change the
+    # julianday interval filter: legacy timestamps may contain mixed offsets.
+    rows = [dict(row) for row in connection.execute(DECISION_REPORT_SQL, (start, end))]
+    rows.sort(key=lambda row: (row["decided_at"], row["id"]))
+    return rows
+
+
 def _period_data(store, start, end):
     with store.connect() as c:
         c.execute("BEGIN")
@@ -430,8 +445,7 @@ def _period_data(store, start, end):
         if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_cauciones'").fetchone():
             cauciones = [p for p in CaucionBook(store).positions(status='MATURED',connection=c)
                          if aware_datetime(start)<=aware_datetime(p['settled_at'])<aware_datetime(end)]
-        decisions = [dict(r) for r in c.execute("""SELECT * FROM paper_decisions
-          WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?) ORDER BY decided_at""", (start, end))]
+        decisions = _period_decisions(c, start, end)
         news = [dict(r) for r in c.execute("""SELECT * FROM financial_news
           WHERE julianday(fetched_at)>=julianday(?) AND julianday(fetched_at)<julianday(?) ORDER BY COALESCE(published_at,fetched_at) DESC LIMIT 25""",
           (start, end))]

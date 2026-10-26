@@ -144,3 +144,24 @@ def test_full_main_db_cannot_be_silenced_by_failed_receipt(postclose, monkeypatc
     monkeypatch.setattr(services, "_job", reject_receipt)
     with pytest.raises(sqlite3.OperationalError):
         services.service_tick(postclose, "CLOSED")
+
+
+def test_report_decision_order_keeps_legacy_offsets_without_sql_temp_sort(tmp_path):
+    with sqlite3.connect(tmp_path / "decisions.db") as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE paper_decisions(id INTEGER PRIMARY KEY, "
+                     "decision_key TEXT UNIQUE, decided_at TEXT NOT NULL)")
+        for key, stamp in (("later", "2026-10-26T10:01:00-03:00"),
+                           ("utc", "2026-10-26T13:00:00+00:00"),
+                           ("first", "2026-10-26T10:00:00-03:00"),
+                           ("tie", "2026-10-26T10:00:00-03:00"),
+                           ("outside", "2026-10-27T00:01:00-03:00")):
+            conn.execute("INSERT INTO paper_decisions(decision_key,decided_at) VALUES(?,?)", (key, stamp))
+        start, end = "2026-10-26T00:00:00-03:00", "2026-10-27T00:00:00-03:00"
+        old = [row["decision_key"] for row in conn.execute(
+            services.DECISION_REPORT_SQL + " ORDER BY decided_at,id", (start, end))]
+        new = [row["decision_key"] for row in services._period_decisions(conn, start, end)]
+        assert new == old == ["first", "tie", "later", "utc"]
+        plan = [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " +
+                                           services.DECISION_REPORT_SQL, (start, end))]
+        assert not any("TEMP B-TREE" in detail for detail in plan)
