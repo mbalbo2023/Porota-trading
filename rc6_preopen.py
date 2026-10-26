@@ -162,7 +162,8 @@ def iol_reference_state(today):
         if refreshed.tzinfo is None:
             raise ValueError('naive timestamp')
         cache = str(payload.get('cache_state') or '').upper()
-        age = (datetime.now(TZ)-refreshed.astimezone(TZ)).total_seconds()
+        now = datetime.now(TZ)
+        age = (now-refreshed.astimezone(TZ)).total_seconds()
         fallback = payload.get('fallback_order') or []
         continuation = payload.get('continuation_state')
         no_zero = continuation == 'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL'
@@ -172,14 +173,22 @@ def iol_reference_state(today):
         usable_ars = bool(caucion_ars) and caucion_state != 'SOURCE_UNAVAILABLE_NO_LKG'
         exact_fallback = fallback == IOL_FALLBACK_ORDER
         last_good = payload.get('last_known_good_at')
+        try:
+            last_good_time = datetime.fromisoformat(str(last_good).replace('Z','+00:00'))
+            last_good_age = (now-last_good_time.astimezone(TZ)).total_seconds() if last_good_time.tzinfo else None
+        except (TypeError, ValueError):
+            last_good_age = None
+        recent_lkg = last_good_age is not None and 0 <= last_good_age <= 7*86400
         sections = payload.get('section_states') or {}
         if (cache in {'LIVE_FRESH','CACHE_FRESH'} and no_zero and exact_fallback
-                and last_good and usable_ars and 0 <= age <= 86400):
+                and recent_lkg and usable_ars and 0 <= age <= 86400):
             state = 'GREEN'
             reason = 'IOL_LIVE_OR_LKG_READY'
-        elif (cache == 'CACHE_STALE' and no_zero and exact_fallback and last_good
-              and usable_ars
+        elif (cache in {'LIVE_FRESH','CACHE_FRESH','CACHE_STALE'}
+              and no_zero and exact_fallback and recent_lkg and usable_ars
               and 0 <= age <= 7*86400):
+            # The collector's label is historical provenance, not a live tick.
+            # After a weekend, accept only a bounded LKG as AMBER.
             state = 'AMBER'
             reason = 'IOL_STALE_LKG_WITH_ALTERNATIVES'
         elif (cache == 'SOURCE_UNAVAILABLE' and no_zero and exact_fallback
@@ -192,6 +201,8 @@ def iol_reference_state(today):
                 'reason':reason if state != 'RED' else 'IOL_FAILSAFE_CONTRACT_INVALID',
                 'refreshed_at':refreshed.isoformat(),
                 'age_seconds':round(age,1),
+                'effective_cache_state':'CACHE_STALE' if state == 'AMBER' and reason == 'IOL_STALE_LKG_WITH_ALTERNATIVES' else cache,
+                'last_good_age_seconds':round(last_good_age,1) if last_good_age is not None else None,
                 'caucion_ars_state':caucion_state,
                 'caucion_ars_records':len(caucion_ars),
                 'fallback_order':fallback,'continuation_state':continuation,
@@ -252,7 +263,7 @@ def required_timers(deploy_scheduler_candidate=None):
             units = tuple(suspend.timer_policy(raw))
             path = ROOT/'data/deploy'/('scheduler-suspend-'+deploy_scheduler_candidate+'.json')
             if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
-                    len(units) != 19 or not set(REQUIRED_TIMERS) <= set(units)):
+                    len(units) != 16 or not set(REQUIRED_TIMERS) <= set(units)):
                 raise ValueError('PREOPEN_DEPLOY_RECEIPT_UNSAFE')
             receipt = json.loads(path.read_bytes())
             if (receipt.get('candidate_sha') != deploy_scheduler_candidate or
