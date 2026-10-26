@@ -1,5 +1,6 @@
 """RC4-HF2 candidate tests for explicit close-only historical evidence."""
 import sqlite3
+import pytest
 
 import ct_ppi_history_salvage_hf6 as salvage
 import ea_history_close_series_hf2 as close_series
@@ -19,6 +20,12 @@ class _NonClosing:
     def __exit__(self,*_): self.connection.commit(); return False
 
 
+@pytest.fixture(autouse=True)
+def synthetic_contract(monkeypatch):
+    monkeypatch.setattr(salvage, 'VERIFIED_PPI_HISTORY_CONTRACTS',
+                        frozenset({'SYNTHETIC_TEST_CONTRACT'}))
+
+
 def _ingest(payload, *, attempted_at="2026-09-05T12:00:00+00:00", observer=None, history=None):
     observer=observer or MemoryStore()
     history=history or MemoryStore()
@@ -29,11 +36,14 @@ def _ingest(payload, *, attempted_at="2026-09-05T12:00:00+00:00", observer=None,
         market="BYMA",
         currency="ARS",
         settlement="A-24HS",
-        payload=payload,
+        payload=[dict(row,currency='ARS',priceBasis='RAW',
+                      adjustmentBasis='RAW_NO_ADJUSTMENT',adjusted=False)
+                 for row in payload],
         requested_from="2026-09-01",
         requested_to="2026-09-04",
         attempted_at=attempted_at,
         history_store=history,
+        provider_contract_id='SYNTHETIC_TEST_CONTRACT',
     )
     return observer,history,result
 

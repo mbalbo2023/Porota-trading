@@ -99,6 +99,18 @@ def test_explicit_conflicting_identity_or_currency_never_reaches_canonical(tmp_p
     assert row['price_basis_status'] == 'UNVERIFIED' and row['status'] == 'STAGED_REVIEW_REQUIRED'
 
 
+def test_conflicting_currency_aliases_are_dropped_even_when_first_alias_matches(tmp_path):
+    rows = [dict(date='2026-10-23', currency='ARS', moneda='USD', price=100),
+            dict(date='2026-10-24', currency='ARS', quoteCurrency='ARS', price=101)]
+    path = tmp_path / 'fresh.sqlite'
+    capture(path, [TARGET], 'PPI', lambda *_: rows, now=NOW)
+    capture_row = _records(path)[0]
+    assert capture_row['dropped_invalid'] == 1
+    assert json.loads(capture_row['retained_rows_json']) == [rows[1]]
+    assert capture_row['provider_currency_status'] == 'EXPLICIT_ROWS'
+    assert verify(path)['state'] == 'EVIDENCE_ONLY_NO_GO'
+
+
 def test_separate_sources_never_override_each_other_or_reuse_generation(tmp_path):
     first = tmp_path / 'ppi.sqlite'
     alternative = tmp_path / 'data912.sqlite'
@@ -186,3 +198,31 @@ def test_independent_verifier_rejects_expired_payload_and_fake_basis(tmp_path):
                    "retained_rows_json=?", (json.dumps([dict(date='2020-01-01', price=100)]),))
     with pytest.raises(ValueError, match='FRESH_VERIFY_ROW_OUTSIDE_RETENTION'):
         verify(sidecar)
+
+
+def test_verifier_recomputes_currency_and_duplicate_day_quarantine(tmp_path):
+    path = tmp_path / 'fresh.sqlite'
+    capture(path, [TARGET], 'PPI', lambda *_: [dict(date='2026-10-23', price=100)], now=NOW)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE fresh_captures_rc6 SET provider_currency_status='EXPLICIT_ROWS'")
+    with pytest.raises(ValueError, match='FRESH_VERIFY_STATUS_INCONSISTENT'):
+        verify(path)
+
+    conflict = tmp_path / 'conflict.sqlite'
+    capture(conflict, [TARGET], 'PPI', lambda *_: [
+        dict(date='2026-10-23', price=100), dict(date='2026-10-23', price=101)], now=NOW)
+    with sqlite3.connect(conflict) as db:
+        db.execute("UPDATE fresh_captures_rc6 SET status='STAGED_REVIEW_REQUIRED', "
+                   "reason='FRESH_REVIEW_REQUIRED'")
+    with pytest.raises(ValueError, match='FRESH_VERIFY_STATUS_INCONSISTENT'):
+        verify(conflict)
+
+
+def test_verifier_rejects_duplicate_provider_request_key(tmp_path):
+    path = tmp_path / 'fresh.sqlite'
+    second = ('PAMP', 'ACCIONES', 'BYMA', 'USD', 'A-24HS')
+    capture(path, [TARGET, second], 'PPI', lambda *_: [], now=NOW)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE fresh_captures_rc6 SET symbol='GGAL' WHERE symbol='PAMP'")
+    with pytest.raises(ValueError, match='FRESH_VERIFY_REQUEST_AMBIGUOUS'):
+        verify(path)

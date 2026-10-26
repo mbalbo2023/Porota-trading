@@ -15,7 +15,8 @@ from pathlib import Path
 from cu_history_store_v2_hf6 import instant
 from rc6_data_retention import daily_start
 from scripts.rc6_history_fresh_sidecar import (ART, _body, _day, _explicit_currency,
-                                              _identity_conflicts, MAX_CLOCK_SKEW_SECONDS,
+                                              _identity_conflicts, _request_key,
+                                              MAX_CLOCK_SKEW_SECONDS,
                                               MAX_ROWS, SOURCES)
 
 
@@ -59,6 +60,7 @@ def verify(path, *, now=None):
         counts = {'captures': 0, 'retained_rows': 0, 'quarantined': 0,
                   'request_only_currency': 0, 'row_revisions': 0}
         seen = set()
+        request_keys = set()
         for row in connection.execute('SELECT * FROM fresh_captures_rc6'):
             source = row['source']
             identity = tuple(row[field] for field in (
@@ -66,6 +68,10 @@ def verify(path, *, now=None):
             if source not in SOURCES or (source, identity) in seen:
                 raise ValueError('FRESH_VERIFY_IDENTITY_INVALID')
             seen.add((source, identity))
+            request_key = (source, _request_key(source, identity))
+            if request_key in request_keys:
+                raise ValueError('FRESH_VERIFY_REQUEST_AMBIGUOUS')
+            request_keys.add(request_key)
             known = instant(row['first_known_at'])
             if known < created or known > clock:
                 raise ValueError('FRESH_VERIFY_PIT_CLOCK_INVALID')
@@ -86,10 +92,16 @@ def verify(path, *, now=None):
             retained = json.loads(row['retained_rows_json'])
             if not isinstance(retained, list) or len(retained) > MAX_ROWS or len(retained) != row['retained_rows']:
                 raise ValueError('FRESH_VERIFY_ROW_COUNT_INVALID')
+            if row['dropped_expired'] < 0 or row['dropped_invalid'] < 0:
+                raise ValueError('FRESH_VERIFY_ROW_COUNT_INVALID')
             revisions = connection.execute('''SELECT * FROM fresh_row_revisions_rc6
               WHERE capture_id=? ORDER BY retained_ordinal''', (row['id'],)).fetchall()
             if len(revisions) != len(retained):
                 raise ValueError('FRESH_VERIFY_REVISION_LINK_MISSING')
+            explicit = 0
+            days = {}
+            conflict = False
+            prior_index = -1
             for ordinal, evidence in enumerate(retained):
                 if not isinstance(evidence, dict) or _identity_conflicts(evidence, identity):
                     raise ValueError('FRESH_VERIFY_ROW_IDENTITY_CONFLICT')
@@ -99,13 +111,33 @@ def verify(path, *, now=None):
                 monetary = _explicit_currency(evidence)
                 if monetary is not None and monetary != identity[3]:
                     raise ValueError('FRESH_VERIFY_ROW_CURRENCY_CONFLICT')
+                explicit += monetary is not None
+                signature = _body(evidence)
+                if day in days and days[day] != signature:
+                    conflict = True
+                days[day] = signature
                 revision = revisions[ordinal]
                 if (revision['retained_ordinal'] != ordinal or
-                        revision['provider_row_index'] < ordinal or
+                        revision['provider_row_index'] <= prior_index or
+                        revision['provider_row_index'] >= MAX_ROWS or
                         revision['economic_day'] != day.isoformat() or
                         revision['first_known_at'] != row['first_known_at'] or
-                        revision['canonical_row_sha256'] != sha256(_body(evidence)).hexdigest()):
+                        revision['canonical_row_sha256'] != sha256(signature).hexdigest()):
                     raise ValueError('FRESH_VERIFY_REVISION_LINK_INVALID')
+                prior_index = revision['provider_row_index']
+            currency_status = ('EXPLICIT_ROWS' if retained and explicit == len(retained)
+                               else 'REQUEST_ONLY')
+            reason = ('FRESH_DUPLICATE_DAY_CONFLICT' if conflict else
+                      'FRESH_REVIEW_REQUIRED' if retained else None)
+            status = 'STAGED_REVIEW_REQUIRED' if retained and not conflict else 'QUARANTINED'
+            if (row['provider_currency_status'] != currency_status or
+                    row['status'] != status or
+                    (reason is not None and row['reason'] != reason) or
+                    (not retained and row['reason'] not in {
+                        'FRESH_NO_VALID_IN_WINDOW_ROWS', 'FRESH_SOURCE_ERROR',
+                        'FRESH_RESPONSE_BUDGET_EXCEEDED', 'FRESH_ROW_BUDGET_EXCEEDED',
+                        'FRESH_PROVIDER_SHAPE_UNVERIFIED'})):
+                raise ValueError('FRESH_VERIFY_STATUS_INCONSISTENT')
             counts['captures'] += 1
             counts['retained_rows'] += len(retained)
             counts['row_revisions'] += len(revisions)

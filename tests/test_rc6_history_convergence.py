@@ -34,6 +34,10 @@ def offline(monkeypatch):
     def forbidden(*_,**__):raise AssertionError('NETWORK_FORBIDDEN_IN_HISTORY_REGRESSION')
     monkeypatch.setattr(socket.socket,'connect',forbidden)
     monkeypatch.setattr(socket,'create_connection',forbidden)
+    # Only these synthetic fixtures model a separately reviewed source schema.
+    # Production's pinned contract set remains empty until evidence exists.
+    monkeypatch.setattr(salvage,'VERIFIED_PPI_HISTORY_CONTRACTS',
+                        frozenset({'SYNTHETIC_TEST_CONTRACT'}))
 
 
 class Store:
@@ -442,7 +446,9 @@ def test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready(tm
 
 
 def ppi_row(**changes):
-    row=dict(date='2026-09-30T17:00:00-03:00',openingPrice=100,max=102,min=98,price=100,volume=1000)
+    row=dict(date='2026-09-30T17:00:00-03:00',openingPrice=100,max=102,min=98,
+             price=100,volume=1000,currency='ARS',priceBasis='RAW',
+             adjustmentBasis='RAW_NO_ADJUSTMENT',adjusted=False)
     row.update(changes);return row
 
 
@@ -450,7 +456,8 @@ def test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplica
     observer=Store(tmp_path/'observer.sqlite');archive=Store(tmp_path/'history.sqlite')
     args=dict(symbol='AUDIT',instrument_type='ACCIONES',market='BYMA',currency='ARS',settlement='A-24HS',
               payload=[ppi_row(),ppi_row(date='2026-09-29T17:00:00-03:00',openingPrice=0)],
-              attempted_at='2026-10-01T16:00:00Z',history_store=archive)
+              attempted_at='2026-10-01T16:00:00Z',history_store=archive,
+              provider_contract_id='SYNTHETIC_TEST_CONTRACT')
     original=salvage._append_attempt_once
     monkeypatch.setattr(salvage,'_append_attempt_once',lambda *_:(_ for _ in ()).throw(OSError('injected observer failure')))
     with pytest.raises(OSError):salvage.ingest_ppi_payload(observer,**args)
@@ -485,7 +492,8 @@ def test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch(tmp_path):
 def test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data(tmp_path):
     observer=Store(tmp_path/'observer.sqlite');archive=Store(tmp_path/'history.sqlite')
     args=dict(symbol='AUDIT',instrument_type='ACCIONES',market='BYMA',currency='ARS',settlement='A-24HS',
-              payload=[ppi_row()],attempted_at='2026-10-01T16:00:00Z',history_store=archive)
+              payload=[ppi_row()],attempted_at='2026-10-01T16:00:00Z',history_store=archive,
+              provider_contract_id='SYNTHETIC_TEST_CONTRACT')
     first=salvage.ingest_ppi_payload(observer,**args)
     history.append_candle(archive,candle(source='PPI_PRODUCTION_HISTORY',close=101,
                                         provider_at=ppi_row()['date'],observed_at='2026-10-01T17:00:00Z'))
@@ -502,7 +510,8 @@ def test_AUD10_conflicting_daily_PPI_duplicates_are_all_quarantined_with_exact_i
     observer=Store(tmp_path/'observer.sqlite');archive=Store(tmp_path/'history.sqlite')
     result=salvage.ingest_ppi_payload(observer,symbol='AUDIT',instrument_type='ACCIONES',market='BYMA',
         currency='ARS',settlement='A-24HS',payload=[ppi_row(),ppi_row(price=101),ppi_row(price=99)],
-        attempted_at='2026-10-01T16:00:00Z',history_store=archive)
+        attempted_at='2026-10-01T16:00:00Z',history_store=archive,
+        provider_contract_id='SYNTHETIC_TEST_CONTRACT')
     assert result['provider_rows']==result['rejected_rows']==3 and result['valid_rows']==result['close_only_rows']==0
     assert [row['row_index'] for row in table(observer,'history_row_rejections_v2')]==[0,1,2]
     assert table(archive,'history_versions_v2')==[]

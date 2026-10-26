@@ -120,13 +120,15 @@ def _rows(payload, source):
 
 
 def _explicit_currency(row):
-    value = row.get("currency", row.get("quoteCurrency", row.get("moneda")))
-    if value is None:
+    values = [row[name] for name in ("currency", "quoteCurrency", "moneda")
+              if name in row]
+    if not values:
         return None
     try:
-        return cash_currency(value)
-    except ValueError:
+        normalized = {cash_currency(value) for value in values}
+    except (ValueError, TypeError):
         return "UNVERIFIED"
+    return normalized.pop() if len(normalized) == 1 else "UNVERIFIED"
 
 
 def _identity_conflicts(row, target):
