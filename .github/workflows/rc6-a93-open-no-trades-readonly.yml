@@ -320,6 +320,25 @@ jobs:
                                           FROM exact_attempts_v1 GROUP BY origin,quality''')],
                                    'external_objects_verified':'NO_VERIFICADO',
                                    'legacy_version_row_links':'NO_VERIFICADO'}
+                          if not wal_bytes:
+                              headers=collections.Counter()
+                              oldest=newest=None
+                              for legacy_id,wrapper,recorded in evidence.execute('''SELECT legacy_id,wrapper_json,recorded_at
+                                  FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD' '''):
+                                  if time.monotonic()>deadline:raise sqlite3.OperationalError('bounded census timeout')
+                                  headers['valid_attempts']+=1
+                                  headers['legacy_id_present']+=int(legacy_id is not None)
+                                  try:
+                                      body=json.loads(wrapper)
+                                      metadata=body.get('metadata') or {}
+                                      money=body.get('currency') or (metadata.get('currency') if isinstance(metadata,dict) else None)
+                                      headers['explicit_currency']+=int(money in ('ARS','USD','USD_MEP','USD_CCL'))
+                                      headers['request_date_range']+=int(bool(body.get('date_from') and body.get('date_to')))
+                                  except (ValueError,TypeError,AttributeError):headers['invalid_wrapper']+=1
+                                  oldest=recorded if oldest is None or recorded<oldest else oldest
+                                  newest=recorded if newest is None or recorded>newest else newest
+                              archive['valid_headers']=dict(headers)
+                              archive['recorded_at_min_max']=[oldest,newest]
                       else:archive={'state':'SCHEMA_MISSING'}
               except (OSError,sqlite3.Error):archive={'state':'NO_VERIFICADO'}
           volume=volume_patterns()
