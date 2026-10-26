@@ -20,6 +20,8 @@ no promete una compra PAPER. La reconciliación de readiness exige identidad
 exacta de cinco campos: familia, ticker, mercado, moneda y plazo; una fila
 complementaria sin identidad, de otra moneda o duplicada no promociona al
 instrumento del catálogo. ON se normaliza a OBLIGACIONES, igual que el motor.
+Las equivalencias publicadas BCBA/BYMA y T1/A-24HS sí se canonizan antes de
+comparar, sin inventar campos faltantes.
 Esto no cambia las rutas de órdenes ni fabrica una señal.
 
 ## Evidencia factual previa al cambio

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Iterable, Mapping
+from rc6_multisource_discovery import canonical_market, canonical_settlement
 
 # All of these states are simulation-ready. They never authorize real money.
 READY_STATES = frozenset({
@@ -122,8 +123,12 @@ def _effective_contract(comparison: Mapping[str, Any]) -> str:
 
 def _key(family: str, symbol: Any, market: Any = "", currency: Any = "",
          settlement: Any = "") -> tuple[str, str, str, str, str]:
-    return (normalize_family(family), _text(symbol).upper(), _text(market).upper(),
-            _text(currency).upper(), _text(settlement).upper())
+    # Normalize only supplied aliases. The helper's family default for an
+    # absent settlement must never fabricate a missing identity field.
+    term = _text(settlement)
+    return (normalize_family(family), _text(symbol).upper(),
+            canonical_market(market) if _text(market) else "",
+            _text(currency).upper(), canonical_settlement(term) if term else "")
 
 
 def _observed_key(row: Mapping[str, Any]) -> tuple[str, str, str, str, str] | None:

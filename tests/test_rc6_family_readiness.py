@@ -109,3 +109,16 @@ def test_duplicate_exact_identity_requires_review():
     assert instrument["contract_state"] == "BLOCKED_CONFLICT"
     assert "DUPLICATE_EXACT_IDENTITY_REVIEW_REQUIRED" in instrument["reasons"]
     assert not instrument["paper_auto_enabled"]
+
+
+def test_published_market_and_settlement_aliases_match_exact_identity():
+    result = readiness.evaluate(
+        [{"family": "ACCIONES", "symbol": "YPFD", "market": "BYMA",
+          "currency": "ARS", "settlement": "A-24HS"}],
+        [{"asset_type": "ACCIONES", "symbol": "YPFD", "market": "BCBA",
+          "currency": "ARS", "term": "T1",
+          "primary_comparison": {"contract_state": "READY_PAPER_SHADOW"}}],
+    )
+    assert len(result["instruments"]) == 1
+    assert result["instruments"][0]["paper_contract_ready"] is True
+    assert result["instruments"][0]["paper_auto_enabled"] is False
