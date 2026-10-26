@@ -1,0 +1,178 @@
+name: RC6 A111 host health read only
+
+on:
+  push:
+    branches: [audit/rc6-a111-host-health-20261026]
+    paths:
+      - .github/workflows/rc6-a111-host-health-readonly.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Read bounded PAPER health without provider requests
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 70s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PYHOST'
+          import json
+          import re
+          import sqlite3
+          import subprocess
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(timezone.utc)
+          def code(value):
+              value = str(value or '')
+              return value if re.fullmatch(r'[A-Z][A-Z0-9_]{0,39}', value) else 'NO_VERIFICADO'
+          def sha(value):
+              value = str(value or '')
+              return value if re.fullmatch(r'[0-9a-f]{40}', value) else 'NO_VERIFICADO'
+          def stamp(value):
+              value = str(value or '')
+              try:
+                  parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                  return parsed.isoformat() if parsed.tzinfo else 'NO_VERIFICADO'
+              except ValueError:
+                  return 'NO_VERIFICADO'
+          def command(args, seconds=5):
+              try:
+                  done = subprocess.run(args, text=True, capture_output=True,
+                                        check=False, timeout=seconds)
+                  return done.stdout if done.returncode == 0 else None
+              except (OSError, subprocess.SubprocessError):
+                  return None
+          def docker(name):
+              raw = command(['docker', 'inspect', '--format', '{{json .}}', name])
+              try:
+                  item = json.loads(raw or '')
+                  state = item['State']
+                  health = state.get('Health') or {}
+                  image = str(item.get('Image') or '')
+                  return {'state': code(str(state.get('Status', '')).upper()),
+                          'running': state.get('Running') is True,
+                          'restart_count': state.get('RestartCount', item.get('RestartCount')),
+                          'oom_killed': state.get('OOMKilled') is True,
+                          'health': code(str(health.get('Status', '')).upper()),
+                          'image_id': image if re.fullmatch(r'sha256:[0-9a-f]{64}', image) else 'NO_VERIFICADO'}
+              except (ValueError, TypeError, KeyError):
+                  return {'state': 'NO_VERIFICADO'}
+
+          containers = {name: docker(name) for name in (
+              'porota_production_observer', 'porota_production_dashboard',
+              'porota_critical_approval_rc6')}
+          db_result = {'state': 'NO_VERIFICADO'}
+          db_path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          try:
+              if db_path.is_symlink() or not db_path.is_file():
+                  raise ValueError('DB_PATH_INVALID')
+              db = sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True, timeout=.3)
+              try:
+                  db.execute('PRAGMA query_only=ON')
+                  db.execute('PRAGMA busy_timeout=300')
+                  deadline = time.monotonic() + 4
+                  db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+                  row = db.execute('''SELECT mode, process_state, session_state, ppi_auth,
+                                            real_orders_sent, heartbeat_at
+                                     FROM observer_state WHERE id=1 LIMIT 1''').fetchone()
+                  auth = db.execute('''SELECT state, checked_at, last_success_at
+                                      FROM api_health WHERE component=? LIMIT 1''',
+                                    ('PPI_PRODUCTION_AUTH',)).fetchone()
+                  if row is None:
+                      raise ValueError('OBSERVER_STATE_MISSING')
+                  heartbeat = stamp(row[5])
+                  age = None
+                  if heartbeat != 'NO_VERIFICADO':
+                      age = round((now - datetime.fromisoformat(heartbeat).astimezone(timezone.utc)).total_seconds(), 1)
+                  db_result = {'state': 'OK', 'mode': code(row[0]),
+                               'process_state': code(row[1]),
+                               'session_state': code(row[2]),
+                               'ppi_auth': code(row[3]),
+                               'real_orders_sent': row[4] if type(row[4]) is int else 'NO_VERIFICADO',
+                               'heartbeat_at': heartbeat, 'heartbeat_age_seconds': age,
+                               'ppi_production_auth': {
+                                   'state': code(auth[0]), 'checked_at': stamp(auth[1]),
+                                   'last_success_at': stamp(auth[2])} if auth else {'state': 'NO_VERIFICADO'}}
+              finally:
+                  db.close()
+          except (OSError, ValueError, sqlite3.Error) as exc:
+              db_result = {'state': 'NO_VERIFICADO', 'error_type': type(exc).__name__}
+
+          release = {'state': 'NO_VERIFICADO'}
+          release_path = Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          try:
+              if release_path.is_symlink() or release_path.stat().st_size > 65536:
+                  raise ValueError('RELEASE_PATH_INVALID')
+              item = json.loads(release_path.read_text(encoding='utf-8'))
+              release = {'state': 'OK', 'candidate_sha': sha(item.get('candidate_sha')),
+                         'deploy_sha': sha(item.get('deploy_sha')),
+                         'validation_status': code(item.get('validation_status'))}
+          except (OSError, ValueError, TypeError):
+              pass
+
+          critical_health = {'state': 'NO_VERIFICADO'}
+          raw = command(['docker', 'exec', 'porota_critical_approval_rc6', 'python', '-c',
+              'import json; from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; '
+              'h=UnixGithubIssuesClient().health(); '
+              'print(json.dumps({"status":h.get("status"),"capability":h.get("capability")}))'], 5)
+          if raw is not None:
+              try:
+                  health = json.loads(raw)
+                  critical_health = {'state': 'OK' if health.get('status') == 'ok' and
+                                     health.get('capability') == 'issues_only' else 'RED',
+                                     'status': code(str(health.get('status', '')).upper()),
+                                     'capability': code(str(health.get('capability', '')).upper())}
+              except (ValueError, TypeError):
+                  pass
+          result = {'schema': 'rc6-a111-host-health-readonly-v1',
+                    'at_utc': now.isoformat(),
+                    'at_ar': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+                    'observer': db_result, 'release': release, 'containers': containers,
+                    'critical_broker': critical_health,
+                    'critical_units': {
+                        name: code(str((command(['systemctl', 'is-active', name]) or '')).strip().upper())
+                        for name in ('porota-critical-github-proxy-rc6.service',
+                                     'porota-critical-approval-rc6.service')},
+                    'read_only': True, 'provider_requests': 0,
+                    'ppi_watch_accessed': False, 'mutation_attempted': False}
+          print('RC6_A111_HOST_HEALTH=' + json.dumps(result, sort_keys=True))
+          PYHOST
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts
