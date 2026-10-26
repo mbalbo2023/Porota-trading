@@ -148,11 +148,21 @@ jobs:
               if logs.returncode == 0:
                   lines = (logs.stdout + logs.stderr)[-250000:].splitlines()
                   errors = collections.Counter()
+                  sqlite_causes = collections.Counter()
                   frames = []
                   for line in lines:
                       error = re.match(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):', line)
                       if error:
                           errors[error.group(1)[:80]] += 1
+                      if line.startswith('sqlite3.OperationalError:'):
+                          detail = line.split(':', 1)[1].strip().lower()
+                          cause = next((label for label in (
+                              'interrupted', 'database is locked', 'database table is locked',
+                              'database or disk is full', 'disk i/o error',
+                              'no such table', 'no such column', 'out of memory',
+                              'unable to open database file') if label in detail),
+                              'OTHER_SANITIZED')
+                          sqlite_causes[cause] += 1
                       frame = re.match(r'^\s*File "(/app/[A-Za-z0-9_./-]+)", line ([0-9]{1,6}), in ([A-Za-z0-9_]+)', line)
                       if frame:
                           frames.append({'file': os.path.basename(frame.group(1)),
@@ -161,6 +171,7 @@ jobs:
                   traceback_summary = {'state': 'SANITIZED',
                       'lines_examined': len(lines),
                       'exception_counts': dict(errors.most_common(12)),
+                      'sqlite_causes': dict(sqlite_causes.most_common(12)),
                       'last_frames': frames[-12:]}
           except (OSError, subprocess.SubprocessError):
               pass
