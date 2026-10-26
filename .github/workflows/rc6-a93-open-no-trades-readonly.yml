@@ -48,7 +48,7 @@ jobs:
           done
           systemctl show porota-preopen-rc6.timer --property=LastTriggerUSec --property=NextElapseUSecRealtime --no-pager | sed 's/^/PREOPEN_TIMER_/'
           sudo -n python3 - <<'PYHOST'
-          import collections, json, os, re, subprocess, sys, time
+          import collections, json, os, re, shutil, subprocess, sys, time
           from datetime import datetime, timezone
           from zoneinfo import ZoneInfo
 
@@ -139,6 +139,16 @@ jobs:
                   'rss_kib': last[3]})
 
           now = datetime.now(timezone.utc)
+          disk = {}
+          for path in ('/', '/opt/porota-trading/data'):
+              try:
+                  usage = shutil.disk_usage(path)
+                  disk['root' if path == '/' else 'porota_data'] = {
+                      'total_bytes': usage.total, 'free_bytes': usage.free,
+                      'used_bytes': usage.used}
+              except OSError:
+                  disk['root' if path == '/' else 'porota_data'] = {
+                      'state': 'NO_VERIFICADO'}
           traceback_summary = {'state': 'NO_VERIFICADO'}
           try:
               logs = subprocess.run(['docker', 'logs', '--since=10m',
@@ -225,6 +235,7 @@ jobs:
                         for name in expected_watch_named],
                     'local_eod_latest_report': eod,
                     'observer_traceback_sanitized': traceback_summary,
+                    'host_disk': disk,
                     'iol_reference_current_contract': iol,
                     'ppi_watch_accessed': False, 'mutation_attempted': False}
           print('RC6_POSTCLOSE_HOST=' + json.dumps(result, sort_keys=True))
@@ -368,6 +379,8 @@ jobs:
           db.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
           db.execute('BEGIN')
           tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          sqlite_limits={name:db.execute('PRAGMA '+name).fetchone()[0]
+              for name in ('page_size','page_count','freelist_count','max_page_count','temp_store')}
           def candidate_reconciliation():
               if not {'financial_instrument_catalog','candidate_identity_v2'}<=tables:
                   return {'state':'EXACT_LEDGER_NOT_PRESENT'}
@@ -592,6 +605,7 @@ jobs:
                   'build_sha':os.getenv('POROTA_BUILD_SHA','NO_VERIFICADO'),
                   'ppi_auth_health_sanitized':auth_health,
                   'scanner_child_health_sanitized':child_health,
+                  'sqlite_page_budget':sqlite_limits,
                   'admission':{'allowed':allowed,'reason':reason,'receipt':receipt},
                   'focus_contracts':focus,'intraday_contract_states':intraday,
                   'candidate_ledger':candidate_ledger,'family_matrix':families,
