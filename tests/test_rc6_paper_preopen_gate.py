@@ -53,6 +53,22 @@ def test_only_real_t_minus_ten_can_publish_go(tmp_path):
     assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
 
 
+def test_operator_pause_vetoes_even_a_valid_go_for_the_argentine_day(tmp_path):
+    release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
+    state(release)
+    day = DAY.replace(day=27)
+    issued = gate.publish_preopen(result(), now=day, state_path=release, receipt_path=receipt)
+    assert issued["status"] == "GO_PAPER_SCALPING"
+    for at in (day, day + timedelta(hours=1), day.replace(hour=23, minute=59)):
+        assert gate.admission_status(now=at, candidate_sha=SHA, receipt_path=receipt) == (
+            False, "OPERATOR_PAPER_PAUSE_2026_10_27")
+    # 02:59 UTC is still the Argentine 27th, even though UTC is the 28th.
+    assert gate.admission_status(now=datetime(2026, 10, 28, 2, 59, tzinfo=ZoneInfo("UTC")),
+                                 candidate_sha=SHA, receipt_path=receipt)[0] is False
+    assert gate.admission_status(now=day + timedelta(days=1), candidate_sha=SHA,
+                                 receipt_path=receipt)[0] is False  # prior-day GO expires
+
+
 def test_focus_requires_eight_exact_ready_contracts(tmp_path):
     from bf_production_paper_observer import DEFAULT_FOCUS_SYMBOLS
     assert gate.FOCUS == DEFAULT_FOCUS_SYMBOLS

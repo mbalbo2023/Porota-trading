@@ -26,6 +26,10 @@ FOCUS = (
     ("CEPU", "ACCIONES", "A-24HS"), ("AAPL", "CEDEARS", "A-24HS"),
 )
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+# Operator decision for the 2026-10-27 Argentine trading day: no new PAPER
+# positions while the scanner, histories and family strategies are repaired.
+# This is an additive veto, independent of any T-10 receipt issued by a timer.
+OPERATOR_PAUSED_TRADE_DAYS_AR = frozenset({"2026-10-27"})
 
 
 def focus_contracts(db_path):
@@ -102,6 +106,8 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
 
 def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     now = (now or datetime.now(TZ)).astimezone(TZ)
+    if now.date().isoformat() in OPERATOR_PAUSED_TRADE_DAYS_AR:
+        return False, "OPERATOR_PAPER_PAUSE_2026_10_27"
     candidate_sha = candidate_sha if candidate_sha is not None else os.getenv("POROTA_BUILD_SHA", "")
     path = Path(receipt_path or RUNTIME_RECEIPT)
     if not isinstance(candidate_sha, str) or not SHA.fullmatch(candidate_sha):
