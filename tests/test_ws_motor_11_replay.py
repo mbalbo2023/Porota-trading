@@ -49,9 +49,12 @@ def test_evidence_candidates_cross_the_real_catalog_gate():
     assert rows["GD30"]["after_evidence"] == "READY_PAPER_CANDIDATE"
     assert rows["GD30"]["after"] == "READY_PAPER_SPOT"
     assert rows["GFGC6000OC"]["after_evidence"] == "READY_PAPER_CANDIDATE"
-    assert rows["GFGC6000OC"]["after"] == "READY_PAPER_OPTION_LONG"
+    # Evidence-only readiness cannot become an executable option without an
+    # effective-dated adjustment and exact series authority. A124 deliberately
+    # quarantines the old chain-derived multiplier, even for this witness.
+    assert rows["GFGC6000OC"]["after"] == "READY_PAPER_CANDIDATE"
     assert rows["ADCAP.AP.A"]["after"] == "READY_PAPER_FCI_SUBSCRIPTION"
-    assert result["after"]["ready_by_instrument"] == 3
+    assert result["after"]["ready_by_instrument"] == 2
 
 
 def test_matrix_has_one_row_per_required_field_and_provenance_columns():

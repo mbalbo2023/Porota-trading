@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 from decimal import Decimal
 import pytest
 
@@ -43,6 +44,9 @@ def test_runtime_future_executor_cannot_bypass_preopen_on_direct_call(tmp_path, 
                    quantity="1", entry_cost="100", occurred_at="2026-10-03T12:00:00-03:00")
     with pytest.raises(ValueError, match="PAPER_ADMISSION_GUARD_MISSING"):
         executor.open_future(dlr(), **request)
+    # Exercise the missing-receipt contract independently from the operator's
+    # temporary 27-Oct veto. Otherwise this assertion changes with CI day.
+    monkeypatch.setattr(gate, "OPERATOR_PAUSED_TRADE_DAYS_AR", frozenset())
     with pytest.raises(ValueError, match="PAPER_PREOPEN_RECEIPT_UNSAFE"):
         executor.open_future(dlr(), admission_guard=lambda _c: "", **request)
     with executor.store.connect() as db:
@@ -52,6 +56,19 @@ def test_runtime_future_executor_cannot_bypass_preopen_on_direct_call(tmp_path, 
     assert executor.open_future(dlr(), admission_guard=lambda _c: "", **request)["state"] == "ACTIVE"
     monkeypatch.setattr(gate, "admission_status", lambda: (False, "NO_GO_PAPER_SCALPING"))
     assert executor.open_future(dlr(), admission_guard=lambda _c: "", **request)["idempotent"] is True
+
+
+def test_operator_pause_rejects_missing_receipt_without_weakening_other_gates(tmp_path):
+    # A125's veto has precedence over any receipt lookup on the exact day.
+    # This is an explicit fixture, not an assertion against today's clock.
+    stamp = datetime.fromisoformat("2026-10-27T11:00:00-03:00")
+    assert gate.admission_status(now=stamp, candidate_sha="a" * 40,
+                                 receipt_path=tmp_path / "missing.json") == (
+                                     False, "OPERATOR_PAPER_PAUSE_2026_10_27")
+    assert gate.admission_status(now=datetime.fromisoformat("2026-10-28T11:00:00-03:00"),
+                                 candidate_sha="a" * 40,
+                                 receipt_path=tmp_path / "missing.json") == (
+                                     False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
 
 
 def test_future_lifecycle_reserve_mark_variation_close_and_cash(tmp_path):

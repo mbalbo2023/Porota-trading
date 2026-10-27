@@ -93,9 +93,12 @@ def test_iol_paper_units_are_not_relabelled_as_broker_terms():
             "option_right": "CALL", "premium_basis": "PER_UNDERLYING_UNIT",
         },
     })
-    assert option["cash_multiplier"] == "100"
-    assert option["paper_quantity_min"] == option["paper_quantity_step"] == "1"
-    assert "quantity_min" not in option and "quantity_step" not in option
+    # A124 quarantines chain-level/legacy option terms with no effective-dated
+    # proof of the exact option series and adjustment history. IOL may supply
+    # identity context, but NEVER an executable lot, multiplier or strike.
+    assert option == {"market": "BYMA", "currency": "ARS", "settlement": "INMEDIATA"}
+    assert not {"cash_multiplier", "paper_quantity_min", "paper_quantity_step",
+                "quantity_min", "quantity_step", "underlying", "strike"} & set(option)
 
 
 def test_fci_without_broker_minimum_uses_internal_risk_budget(tmp_path):
