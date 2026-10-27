@@ -326,24 +326,33 @@ def test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready(tmp_path
 def test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original(tmp_path,monkeypatch):
     monkeypatch.setattr(legacy,'HIST_DB_PATH',str(tmp_path/'legacy.sqlite'));legacy.init_db()
     row=('2026-09-30',100,100,100,100,1000)
-    legacy.guardar_velas('AUDIT','ACCIONES',[row],'IOL',False)
+    legacy.guardar_velas('AUDIT','ACCIONES',[row],'DATA912',False)
     with pytest.raises(ValueError,match='FAMILY_COLLISION'):
-        legacy.guardar_velas('AUDIT','BONOS',[row],'DATA912',False)
+        legacy.guardar_velas('AUDIT','BONOS',[row],'YAHOO',False)
     with legacy._conn() as c:
         assert c.execute('SELECT asset_class,close FROM market_historical_ohlcv').fetchone()==('ACCIONES',100)
 
 
-def test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate(tmp_path,monkeypatch):
+def test_U_IOL_NORMALIZER_keeps_money_and_quantity_separate_without_archiving(tmp_path,monkeypatch):
     monkeypatch.setattr(legacy,'HIST_DB_PATH',str(tmp_path/'legacy.sqlite'));legacy.init_db()
     row=legacy._normalizar_fila_iol(dict(fecha='2026-09-30',ultimoPrecio=100,apertura=100,maximo=100,
         minimo=100,montoOperado=100000,volumen=1000,currency='ARS',volume_kind='QUANTITY'))
     assert row[5]==1000 and row.cash_turnover==100000
-    legacy.guardar_velas('AUDIT','ACCIONES',[row],'IOL',True)
+    with pytest.raises(ValueError,match='IOL_HISTORICAL_PROVENANCE_UNVERIFIED'):
+        legacy.guardar_velas('AUDIT','ACCIONES',[row],'IOL',True)
+    assert data912.archived_liquidity('AUDIT','ACCIONES',currency='ARS') is None
+    money_only=legacy._normalizar_fila_iol(dict(fecha='2026-09-30',ultimoPrecio=100,montoOperado=100000))
+    assert money_only[5] is None and money_only.cash_turnover==100000
+
+
+def test_U_ARCHIVED_LIQUIDITY_requires_explicit_currency(tmp_path,monkeypatch):
+    monkeypatch.setattr(legacy,'HIST_DB_PATH',str(tmp_path/'legacy.sqlite'));legacy.init_db()
+    row=legacy.HistoricalRow(('2026-09-30',100,100,100,100,1000),currency='ARS',
+                             volume_kind='QUANTITY',cash_turnover=100000)
+    legacy.guardar_velas('AUDIT','ACCIONES',[row],'DATA912',False)
     assert data912.archived_liquidity('AUDIT','ACCIONES',currency='ARS')==100000
     assert data912.archived_liquidity('AUDIT','ACCIONES') is None
     assert data912.archived_liquidity('AUDIT','ACCIONES',currency='USD') is None
-    money_only=legacy._normalizar_fila_iol(dict(fecha='2026-09-30',ultimoPrecio=100,montoOperado=100000))
-    assert money_only[5] is None and money_only.cash_turnover==100000
 
 
 def test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence(tmp_path):
@@ -543,7 +552,7 @@ def test_AUD10_legacy_writer_shares_numeric_validation_and_rolls_back_entire_bat
     valid=('2026-09-30',100,102,98,100,1000)
     invalid=('2026-10-01',100,102,98,float('inf'),1000)
     with pytest.raises(ValueError,match='HISTORY_CLOSE_NONFINITE'):
-        legacy.guardar_velas('AUDIT','ACCIONES',[valid,invalid],'IOL',False)
+        legacy.guardar_velas('AUDIT','ACCIONES',[valid,invalid],'DATA912',False)
     with legacy._conn() as c:assert c.execute('SELECT COUNT(*) FROM market_historical_ohlcv').fetchone()[0]==0
 
 

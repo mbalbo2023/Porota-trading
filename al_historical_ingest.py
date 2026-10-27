@@ -24,11 +24,11 @@ Está cumplido A MEDIAS, y conviene ser preciso con la mitad de cada cosa:
 
 LAS FUENTES, EN ORDEN, Y POR QUÉ ESE ORDEN
 ---------------------------------------------------------------------------
-  1. IOL (api.invertironline.com). Primera opción cuando haya credenciales.
-     Es un bróker regulado, publica series ajustadas por splits y dividendos,
-     y cubre acciones, bonos, opciones, cauciones y futuros. Ajustada es la
-     palabra clave: una serie sin ajustar tiene saltos falsos que arruinan
-     cualquier backtest sin dar ninguna señal de que algo anda mal.
+  1. IOL (api.invertironline.com). Ofrece series históricas y una variante
+     denominada ajustada. El parámetro de la solicitud no prueba la base de
+     cada barra ni un contrato histórico de moneda, plazo y unidad de volumen.
+     El backfill legado de IOL queda bloqueado hasta disponer de esa evidencia;
+     las capturas aisladas sirven para revisión, no para backtesting certificado.
 
   2. BYMA Open Data (open.bymadata.com.ar). Es el portal abierto del propio
      mercado, así que como fuente de VERDAD sobre qué instrumentos existen es
@@ -73,7 +73,6 @@ import logging
 import math
 import os
 import sqlite3
-import time
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
@@ -182,6 +181,8 @@ def guardar_velas(symbol: str, asset_class: str, velas: List[tuple],
     Existing data are retained; a different family/currency never overwrites
     the same symbol/day merely because the historical PK omitted them.
     """
+    if str(source or "").strip().upper() == "IOL":
+        raise ValueError("IOL_HISTORICAL_PROVENANCE_UNVERIFIED")
     if not velas:
         return 0
     from cu_history_store_v2_hf6 import validate_daily_values,MAX_BATCH_ROWS
@@ -230,47 +231,18 @@ def guardar_velas(symbol: str, asset_class: str, velas: List[tuple],
 
 def backfill_desde_iol(iol_client, simbolos: List[str], asset_class: str = "ACCIONES",
                        dias: int = HIST_DEFAULT_DAYS) -> dict:
-    """
-    Descarga histórica completa desde IOL, con ritmo autoimpuesto.
+    """Reject the old IOL writer until source identity and basis are proven.
 
-    Corre como tarea de fondo, nunca dentro del ciclo de evaluación: bajar
-    cuatrocientos instrumentos lleva minutos, y el bucle de trading no puede
-    quedar esperando eso. j_main la programa fuera del horario de rueda.
+    The endpoint's ``true`` suffix is a request, not evidence that every row
+    has a certified split/dividend adjustment. This table's symbol/day key
+    cannot represent market, settlement, currency and price basis separately.
+    Evidence-only captures belong in the isolated fresh-history sidecar.
     """
     if not _operable_family(asset_class):
         return {"ok": False, "motivo": "FAMILIA_FUERA_DE_ALCANCE_OPERATIVO",
                 "asset_class": str(asset_class or "").upper()}
-    if not getattr(iol_client, "enabled", False):
-        return {"ok": False, "motivo": "El conector de IOL está desactivado o sin credenciales."}
-
-    init_db()
-    inicio = datetime.now().isoformat()
-    ok = fallidos = escritas = 0
-
-    for simbolo in simbolos:
-        try:
-            crudas = iol_client.get_serie_historica(simbolo, dias=dias, ajustada=True)
-            velas = [v for v in (_normalizar_fila_iol(p) for p in crudas) if v]
-            if len(velas) < HIST_MIN_DAYS_USABLE:
-                logger.info("%s: solo %d velas (mínimo útil %d). Se guarda igual, marcado como corto.",
-                            simbolo, len(velas), HIST_MIN_DAYS_USABLE)
-            escritas += guardar_velas(simbolo, asset_class, velas, "IOL", adjusted=True)
-            ok += 1
-        except Exception as e:
-            logger.warning("Falló el histórico de %s: %s", simbolo, e)
-            fallidos += 1
-        time.sleep(HIST_BATCH_SLEEP)
-
-    with _conn() as conn:
-        conn.execute("""INSERT INTO ingest_runs
-                        (started_at, finished_at, source, symbols_ok, symbols_failed, rows_written, notes)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                     (inicio, datetime.now().isoformat(), "IOL", ok, fallidos, escritas,
-                      f"{dias} días, series ajustadas"))
-        conn.commit()
-
-    logger.info("Backfill IOL terminado: %d instrumentos ok, %d fallidos, %d velas.", ok, fallidos, escritas)
-    return {"ok": True, "instrumentos_ok": ok, "fallidos": fallidos, "velas": escritas}
+    return {"ok": False, "motivo": "IOL_HISTORICAL_PROVENANCE_UNVERIFIED",
+            "asset_class": str(asset_class or "").upper(), "velas": 0}
 
 
 from datetime import timedelta as _timedelta
