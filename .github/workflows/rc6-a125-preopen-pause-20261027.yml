@@ -1,0 +1,266 @@
+name: RC6 A125 operator preopen pause 2026-10-27
+
+on:
+  push:
+    branches: [audit/rc6-a125-preopen-pause-20261027]
+    paths: [.github/workflows/rc6-a125-preopen-pause-20261027.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  contain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Disable exact preopen timer and publish today's NO GO
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          timeout --signal=TERM --kill-after=5s 120s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading python3 - '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'" <<'PYHOST'
+          import hashlib
+          import json
+          import os
+          import sqlite3
+          import subprocess
+          import sys
+          import tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          DAY = '2026-10-27'
+          SOURCE = '3fd020f408275a490e911e06f60a1ddc89153fe5'
+          IMAGE = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+          PRODUCT = '2bd9dbf576b253b8f83aab159c784d7fa7d06d89'
+          ROOT = Path('/opt/porota-trading')
+          DEPLOY = ROOT / 'data/deploy'
+          GATE = DEPLOY / 'paper_scalping_preopen_gate_v1.json'
+          RECEIPT = DEPLOY / 'operator-preopen-pause-20261027.json'
+          TIMER = 'porota-preopen-rc6.timer'
+          SERVICE = 'porota-preopen-rc6.service'
+          HASHES = {
+              'rc6_paper_admission_gate.py':'e1cfd19550e39edb84b31255e1ba02eda66080025c98ba3eb272e45e3143f7bb',
+              'rc6_preopen.py':'a0cbfee811fcde8d690bb181ebc15f927b449c652104357c7cac6edb98c9c1a6',
+              TIMER:'d83c8e24e3c22efd224cd4f2ffc35acf50b995590a18e04cd7cbedcd546c578c',
+              SERVICE:'92980903fe9d5e08be470bf19bf1ca351fdd199584c7d4dd72cf13fb280035f3',
+          }
+          stage = 'PREFLIGHT'
+          def require(value, reason):
+              if not value:
+                  raise ValueError(reason)
+          def read_file(path, limit):
+              require(not path.is_symlink() and path.is_file() and
+                      path.stat().st_size <= limit, 'PATH_UNSAFE')
+              return path.read_bytes()
+          def command(args, *, check=True):
+              done = subprocess.run(args, capture_output=True, text=True,
+                                    check=False, timeout=20)
+              if check:
+                  require(done.returncode == 0, 'COMMAND_FAILED')
+              return done.stdout.strip()
+          def state(name):
+              enabled = command(['systemctl','is-enabled',name],check=False)
+              active = command(['systemctl','is-active',name],check=False)
+              require(enabled in {'enabled','disabled','static','masked'} and
+                      active in {'active','inactive','failed'}, 'UNIT_STATE_UNKNOWN')
+              return {'enabled':enabled,'active':active}
+          def docker(name):
+              item = json.loads(command(['docker','inspect','--format','{{json .}}',name]))
+              ident = item.get('Id')
+              require(isinstance(ident,str) and len(ident)==64 and
+                      all(ch in '0123456789abcdef' for ch in ident), 'DOCKER_ID_UNKNOWN')
+              status = item.get('State') or {}
+              return {'id':ident,'image':item.get('Image'),
+                      'state':status.get('Status'), 'running':status.get('Running'),
+                      'restart_count':item.get('RestartCount'),
+                      'oom_killed':status.get('OOMKilled'),
+                      'health':(status.get('Health') or {}).get('Status')}
+          def paper():
+              path = ROOT/'data/paper_v17/observer_v17.db'
+              require(not path.is_symlink() and path.is_file(), 'DB_PATH_UNSAFE')
+              with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.3) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  db.execute('PRAGMA busy_timeout=300')
+                  row = db.execute('''SELECT mode,real_orders_sent,process_state,
+                                     session_state,heartbeat_at FROM observer_state
+                                     WHERE id=1 LIMIT 1''').fetchone()
+              require(row is not None and row[0]=='PRODUCTION_PAPER' and
+                      type(row[1]) is int and row[1]==0, 'PAPER_ZERO_REQUIRED')
+              beat = datetime.fromisoformat(row[4])
+              require(beat.tzinfo is not None and 0 <=
+                      (datetime.now(timezone.utc)-beat).total_seconds() <= 60,
+                      'OBSERVER_HEARTBEAT_STALE')
+              return {'mode':row[0], 'real_orders_sent':row[1],
+                      'process':row[2], 'session':row[3]}
+          def persist(value):
+              require(DEPLOY.is_dir() and not DEPLOY.is_symlink() and
+                      not RECEIPT.is_symlink(), 'RECEIPT_PATH_UNSAFE')
+              fd,tmp=tempfile.mkstemp(prefix='.operator-preopen-pause-',dir=DEPLOY)
+              try:
+                  with os.fdopen(fd,'w',encoding='utf-8') as out:
+                      os.fchmod(out.fileno(),0o600)
+                      json.dump(value,out,sort_keys=True,separators=(',',':'))
+                      out.write('\n')
+                      out.flush(); os.fsync(out.fileno())
+                  os.replace(tmp,RECEIPT)
+                  dfd=os.open(DEPLOY,os.O_RDONLY|os.O_DIRECTORY)
+                  try: os.fsync(dfd)
+                  finally: os.close(dfd)
+              finally:
+                  if os.path.exists(tmp): os.unlink(tmp)
+
+          lock=None
+          try:
+              require(len(sys.argv)==3 and all(x.isdecimal() and int(x)>0
+                                                for x in sys.argv[1:]), 'RUN_ID_INVALID')
+              now=datetime.now(timezone.utc)
+              art=now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+              require(art.date().isoformat()==DAY and
+                      (art.hour,art.minute)<(10,20), 'OPERATOR_DAY_WINDOW_CLOSED')
+              from scripts.rc6_deploy_host_mutex import open_lock,_read_barrier,LOCK_DIR
+              lock=open_lock()
+              require(_read_barrier(LOCK_DIR) is None, 'DEPLOY_BARRIER_PRESENT')
+              for name,want in HASHES.items():
+                  path=(Path('/etc/systemd/system')/name if name.endswith(('.timer','.service'))
+                        else ROOT/name)
+                  require(hashlib.sha256(read_file(path,131072)).hexdigest()==want,
+                          'INSTALLED_SOURCE_MISMATCH')
+              marker_raw=read_file(DEPLOY/'CURRENT_STATE_V2.json',65536)
+              marker=json.loads(marker_raw)
+              require(marker.get('candidate_sha')==SOURCE and
+                      marker.get('deploy_sha')==PRODUCT and
+                      marker.get('image_id')==IMAGE and
+                      marker.get('validation_status')=='VALIDATED_RUNTIME' and
+                      marker.get('mode')=='PRODUCTION_PAPER' and
+                      type(marker.get('real_orders_sent')) is int and
+                      marker['real_orders_sent']==0 and
+                      marker.get('real_order_routes')=='NOT_CALLED',
+                      'RELEASE_IDENTITY_RED')
+              before={name:docker(name) for name in
+                      ('porota_production_observer','porota_production_dashboard',
+                       'porota_critical_approval_rc6')}
+              require(all(before[name]['image']==IMAGE and
+                          before[name]['state']=='running' and
+                          before[name]['running'] is True and
+                          before[name]['restart_count']==0 and
+                          before[name]['oom_killed'] is False for name in before),
+                      'DOCKER_SOURCE_RED')
+              require(before['porota_critical_approval_rc6']['health']=='healthy',
+                      'CRITICAL_HEALTH_RED')
+              book=paper()
+              require(book['process']=='WAITING_MARKET' and
+                      book['session'] in {'MARKET_CLOSED','CLOSED'},
+                      'SESSION_NOT_CLOSED')
+              before_timer=state(TIMER); before_service=state(SERVICE)
+              require(before_timer=={'enabled':'enabled','active':'active'} and
+                      before_service['enabled']=='static' and
+                      before_service['active'] in {'failed','inactive'},
+                      'PREOPEN_UNIT_UNEXPECTED')
+              gate_raw=read_file(GATE,4096)
+              prior=json.loads(gate_raw)
+              require(prior.get('schema')=='RC6_PAPER_PREOPEN_GATE_V1' and
+                      prior.get('status')=='NO_GO_PAPER_SCALPING' and
+                      prior.get('trade_day_ar')<DAY,
+                      'PRIOR_GATE_UNEXPECTED')
+              require(not RECEIPT.exists(), 'PAUSE_RECEIPT_EXISTS')
+              intent={'schema':'rc6.operator-preopen-pause.v1','status':'INTENT',
+                      'operation_id':'A125-'+sys.argv[1]+'-'+sys.argv[2],
+                      'issued_at_utc':now.isoformat(),'trade_day_ar':DAY,
+                      'source_sha':SOURCE,'image_id':IMAGE,'product_sha':PRODUCT,
+                      'marker_sha256':hashlib.sha256(marker_raw).hexdigest(),
+                      'gate_before_sha256':hashlib.sha256(gate_raw).hexdigest(),
+                      'timer_before':before_timer,'service_before':before_service,
+                      'containers_before':before,'paper_before':book,
+                      'ppi_watch_accessed':False,'provider_requests':0}
+              stage='INTENT';persist(intent)
+              stage='DISABLE_TIMER'
+              command(['systemctl','disable','--now',TIMER])
+              require(state(TIMER)=={'enabled':'disabled','active':'inactive'},
+                      'TIMER_NOT_DISABLED')
+              require(state(SERVICE)==before_service,'SERVICE_CHANGED')
+              stage='PUBLISH_NO_GO'
+              from rc6_paper_admission_gate import admission_status,publish_preopen
+              issued=publish_preopen({'status':'RED','phase':'OPERATOR_PAUSE','checks':{}},
+                                     now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')))
+              require(issued['schema']=='RC6_PAPER_PREOPEN_GATE_V1' and
+                      issued['status']=='NO_GO_PAPER_SCALPING' and
+                      issued['trade_day_ar']==DAY and issued['candidate_sha']==SOURCE,
+                      'NO_GO_PUBLICATION_RED')
+              stage='POSTCHECK'
+              raw=read_file(GATE,4096); actual=json.loads(raw)
+              require(actual==issued,'NO_GO_READBACK_MISMATCH')
+              allowed,reason=admission_status(
+                  now=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')),
+                  candidate_sha=SOURCE,receipt_path=GATE)
+              require(allowed is False and reason=='NO_GO_PAPER_SCALPING',
+                      'ADMISSION_DID_NOT_VETO')
+              after={name:docker(name) for name in before}
+              require(all(after[name]==before[name] for name in before),
+                      'CONTAINER_CHANGED')
+              after_book=paper()
+              require(after_book['mode']=='PRODUCTION_PAPER' and
+                      after_book['real_orders_sent']==0, 'PAPER_POST_RED')
+              require(state(TIMER)=={'enabled':'disabled','active':'inactive'} and
+                      state(SERVICE)==before_service,'UNIT_POST_RED')
+              receipt={**intent,'status':'PAUSED_NO_GO','completed_at_utc':
+                       datetime.now(timezone.utc).isoformat(),
+                       'gate_after_sha256':hashlib.sha256(raw).hexdigest(),
+                       'gate_after':{'status':actual['status'],
+                                     'trade_day_ar':actual['trade_day_ar'],
+                                     'candidate_sha':actual['candidate_sha'],
+                                     'phase':actual['phase']},
+                       'timer_after':state(TIMER),'service_after':state(SERVICE),
+                       'paper_after':after_book,'containers_after':after,
+                       'admission_allowed':False}
+              stage='COMMIT_RECEIPT';persist(receipt)
+              print('RC6_A125_PAUSE='+json.dumps({
+                  'status':'PAUSED_NO_GO','at_utc':receipt['completed_at_utc'],
+                  'trade_day_ar':DAY,'timer':receipt['timer_after'],
+                  'service':receipt['service_after'],
+                  'gate':receipt['gate_after'],'admission_allowed':False,
+                  'paper':after_book,'observer_dashboard_unchanged':True,
+                  'critical_unchanged':True,'provider_requests':0,
+                  'ppi_watch_accessed':False},sort_keys=True))
+          except Exception as exc:
+              print('RC6_A125_PAUSE=RED|stage='+stage+'|class='+type(exc).__name__,
+                    file=sys.stderr)
+              raise SystemExit(1)
+          finally:
+              if lock is not None: os.close(lock)
+          PYHOST
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts
