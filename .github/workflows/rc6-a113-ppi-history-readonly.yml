@@ -2,6 +2,9 @@ name: RC6 A113 PPI history read-only evidence
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - audit/rc6-a113-ppi-history-readonly-20261027
 
 permissions:
   contents: read
@@ -12,21 +15,22 @@ concurrency:
 
 jobs:
   history:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/audit/rc6-a113-ppi-history-readonly-20261027' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 3
       - name: Pin isolated diagnostic source before credentials
         run: |
           python - <<'PY'
           import os, subprocess
           head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip()
+          base = subprocess.check_output(['git', 'rev-parse', 'HEAD^^'], text=True).strip()
           if (head != os.environ['GITHUB_SHA'] or
-                  parent != '55e66d6c72e3cdbda0d6c8a4da561607158f1e8b'):
+                  base != '55e66d6c72e3cdbda0d6c8a4da561607158f1e8b'):
               raise SystemExit('PPI_HISTORY_AUDIT_SHA_RED')
           print('PPI_HISTORY_AUDIT_SOURCE=ISOLATED')
           PY
