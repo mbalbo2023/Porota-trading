@@ -1,5 +1,5 @@
 name: RC6 A111 host health read only
-# One passive post-cooldown sample on 2026-10-27; no provider requests.
+# A125 bounded preopen containment preflight; no provider requests or host writes.
 
 on:
   push:
@@ -595,6 +595,137 @@ jobs:
                     'read_only': True, 'provider_requests': 0,
                     'ppi_watch_accessed': False, 'mutation_attempted': False}
           print('RC6_A111_HOST_HEALTH=' + json.dumps(result, sort_keys=True))
+          PYHOST
+
+      - name: Read exact preopen gate and PAPER obligations
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 40s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import hashlib
+          import json
+          import re
+          import sqlite3
+          import subprocess
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(timezone.utc)
+          art = now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+          def unit_state(name):
+              result = {}
+              for action in ('is-active', 'is-enabled'):
+                  try:
+                      output = subprocess.run(['systemctl', action, name], text=True,
+                                              capture_output=True, timeout=3).stdout.strip()
+                  except (OSError, subprocess.SubprocessError):
+                      output = ''
+                  result[action] = output if output in {
+                      'active','inactive','failed','activating','deactivating',
+                      'enabled','disabled','masked','static','not-found'} else 'NO_VERIFICADO'
+              path = Path('/etc/systemd/system') / name
+              try:
+                  if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+                      raise ValueError('UNIT_UNSAFE')
+                  result['unit_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+              except (OSError, ValueError):
+                  result['unit_sha256'] = 'NO_VERIFICADO'
+              return result
+
+          units = {name: unit_state(name) for name in
+                   ('porota-preopen-rc6.timer','porota-preopen-rc6.service')}
+          sources = {}
+          for name in ('rc6_paper_admission_gate.py','rc6_preopen.py'):
+              source = Path('/opt/porota-trading') / name
+              try:
+                  if source.is_symlink() or not source.is_file() or source.stat().st_size > 131072:
+                      raise ValueError('SOURCE_UNSAFE')
+                  sources[name] = hashlib.sha256(source.read_bytes()).hexdigest()
+              except (OSError, ValueError):
+                  sources[name] = 'NO_VERIFICADO'
+          gate = {'state':'NO_VERIFICADO'}
+          path = Path('/opt/porota-trading/data/deploy/paper_scalping_preopen_gate_v1.json')
+          try:
+              if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+                  raise ValueError('GATE_PATH_INVALID')
+              raw = path.read_bytes()
+              item = json.loads(raw)
+              gate = {'state':'OK', 'sha256':hashlib.sha256(raw).hexdigest(),
+                      'schema_valid':item.get('schema')=='RC6_PAPER_PREOPEN_GATE_V1',
+                      'status':item.get('status') if item.get('status') in
+                          ('GO_PAPER_SCALPING','NO_GO_PAPER_SCALPING') else 'NO_VERIFICADO',
+                      'trade_day_ar':item.get('trade_day_ar') if re.fullmatch(
+                          r'20\d{2}-\d{2}-\d{2}',str(item.get('trade_day_ar'))) else 'NO_VERIFICADO',
+                      'candidate_sha':item.get('candidate_sha') if re.fullmatch(
+                          r'[0-9a-f]{40}',str(item.get('candidate_sha'))) else 'NO_VERIFICADO',
+                      'issued_at_ar':item.get('issued_at_ar') if re.fullmatch(
+                          r'20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-03:00',
+                          str(item.get('issued_at_ar'))) else 'NO_VERIFICADO',
+                      'phase':item.get('phase') if item.get('phase') in
+                          ('T_MINUS_45','T_MINUS_10','OPERATOR_PAUSE') else 'OTHER'}
+          except (OSError, ValueError, TypeError):
+              pass
+
+          db_path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          obligations = {'state':'NO_VERIFICADO'}
+          checks = {
+              'paper_positions': ('status','status=\'OPEN\''),
+              'paper_cauciones': ('status','status=\'OPEN\''),
+              'paper_future_positions': ('status','status=\'ACTIVE\''),
+              'paper_family_lifecycle': ('family','state',
+                  "(family='FCI' AND state<>'REDEEMED') OR "
+                  "(family='FUTUROS' AND state NOT IN ('CLOSE','EXPIRY')) OR "
+                  "family NOT IN ('FCI','FUTUROS')"),
+              'paper_exit_intents': ('state',"state NOT IN ('CLOSED','CANCELLED','CANCELLED_ADMIN')"),
+              'paper_future_exit_intents': ('state',"state NOT IN ('CLOSED','CANCELLED','CANCELLED_ADMIN')"),
+              'paper_sale_receivables': ('available_at','basis',
+                  "available_at IS NULL OR julianday(available_at) IS NULL OR "
+                  "julianday(available_at)>julianday('now') OR basis='PENDING_CONFIRMATION'"),
+              'paper_spot_sales': ('available_at','basis',
+                  "available_at IS NULL OR julianday(available_at) IS NULL OR "
+                  "julianday(available_at)>julianday('now') OR basis='PENDING_CONFIRMATION'"),
+              'paper_notification_outbox': ('state',
+                  "state NOT IN ('SENT','CANCELLED','DROPPED')"),
+          }
+          try:
+              if db_path.is_symlink() or not db_path.is_file():
+                  raise ValueError('DB_UNSAFE')
+              with sqlite3.connect(db_path.as_uri()+'?mode=ro', uri=True, timeout=.3) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  db.execute('PRAGMA busy_timeout=300')
+                  deadline = time.monotonic()+6
+                  db.set_progress_handler(lambda: int(time.monotonic()>deadline),1000)
+                  db.execute('BEGIN')
+                  witness = {}
+                  for table, spec in checks.items():
+                      columns = {row[1] for row in db.execute('PRAGMA table_info('+table+')')}
+                      if not set(spec[:-1]) <= columns:
+                          raise ValueError('MISSING_SCHEMA:'+table)
+                      found = db.execute('SELECT 1 FROM '+table+' WHERE '+spec[-1]+' LIMIT 1').fetchone()
+                      witness[table] = bool(found)
+                  obligations = {'state':'OK','unresolved_exists':witness,
+                                 'all_clear':not any(witness.values())}
+          except (OSError, ValueError, sqlite3.Error) as exc:
+              obligations = {'state':'NO_VERIFICADO',
+                             'failure_type':type(exc).__name__,
+                             'failure_table':next((name for name in checks if name in str(exc)),
+                                                  'NO_VERIFICADO')}
+          print('RC6_A125_PRECONTAINMENT=' + json.dumps({
+              'at_utc':now.isoformat(), 'at_ar':art.isoformat(),
+              'gate':gate, 'preopen_units':units,'source_hashes':sources,
+              'obligations':obligations,
+              'read_only':True,'provider_requests':0,'ppi_watch_accessed':False,
+              'mutation_attempted':False},sort_keys=True))
           PYHOST
 
       - name: Remove SSH material
