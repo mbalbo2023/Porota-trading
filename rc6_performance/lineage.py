@@ -93,7 +93,9 @@ def resolved_configuration(broker):
     config = {name: getattr(broker, name) for name in names}
     config['signal_temporal_safety_policy'] = 'PAPER_EVENT_COVERAGE_60S_V1'
     config["tariff"] = {family: asdict(fees.arancel_de(family)) for family in
-                        ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES")}
+                        ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "OBLIGACIONES", "OPCIONES")}
+    config["tariff"].update({f"LETRAS:{currency}": asdict(fees.arancel_de("LETRAS", currency=currency))
+                              for currency in ("ARS", "USD", "USD_MEP", "USD_CCL")})
     config["vat"] = fees.IVA_PCT
     policy = broker.session_policy
     config["session_policy"] = asdict(policy) if is_dataclass(policy) else {

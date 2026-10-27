@@ -17,6 +17,34 @@ import cu_history_store_v2_hf6 as history_v2
 import ea_history_close_series_hf2 as close_series
 from cv_history_store_adapter_hf6 import default_history_store
 
+# A provider request identifies a target, not the monetary and adjustment
+# semantics of each returned bar. No PPI history schema contract has yet been
+# verified for those fields. A future contract must be pinned here by review;
+# an environment flag or request wrapper must never grant promotion authority.
+VERIFIED_PPI_HISTORY_CONTRACTS = frozenset()
+
+
+def _row_provenance_error(row, currency, contract_id):
+    if not isinstance(contract_id, str) or contract_id not in VERIFIED_PPI_HISTORY_CONTRACTS:
+        return 'HISTORY_PROVENANCE_UNVERIFIED'
+    if not isinstance(row, dict):
+        return 'HISTORY_PROVENANCE_UNVERIFIED'
+    aliases = [row[name] for name in ('currency', 'quoteCurrency', 'moneda')
+               if name in row]
+    if not aliases:
+        return 'HISTORY_CURRENCY_UNVERIFIED'
+    try:
+        currencies = {cash_currency(value) for value in aliases}
+    except (TypeError, ValueError):
+        return 'HISTORY_CURRENCY_UNVERIFIED'
+    if currencies != {currency}:
+        return 'HISTORY_CURRENCY_CONFLICT'
+    if (row.get('priceBasis') != 'RAW' or
+            row.get('adjustmentBasis') != 'RAW_NO_ADJUSTMENT' or
+            row.get('adjusted') is not False):
+        return 'HISTORY_BASIS_UNVERIFIED'
+    return None
+
 
 def _date_bound(value):
     if value in (None, ""):
@@ -94,12 +122,16 @@ def _v2_candles(*, symbol, instrument_type, market,currency, settlement,
 
 
 def _validate_payload(payload, *, symbol, instrument_type, market, currency,
-                      settlement, attempted_dt, attempted_iso, requested_from_date,
+                      settlement, contract_id, attempted_dt, attempted_iso, requested_from_date,
                       requested_to_date):
     """Preserve original row indices and quarantine every conflicting day."""
     rejected = []
     days = {}
     for index, row in enumerate(payload):
+        provenance_error = _row_provenance_error(row, currency, contract_id)
+        if provenance_error:
+            rejected.append(policy.RejectedRow(index, provenance_error))
+            continue
         checked = policy.validate_provider_history([row], as_of=attempted_dt,
             date_from=requested_from_date, date_to=requested_to_date)
         if not checked.valid_rows:
@@ -136,7 +168,8 @@ def _validate_payload(payload, *, symbol, instrument_type, market, currency,
 def _ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
                        market: str, settlement: str, payload,
                        requested_from=None, requested_to=None,
-                       attempted_at=None, history_store=None,currency=None,ingest_key=None) -> dict:
+                       attempted_at=None, history_store=None,currency=None,ingest_key=None,
+                       provider_contract_id=None) -> dict:
     """Persist full OHLC and, separately, safe close-only evidence.
 
     ``store`` is observer evidence/readiness storage. ``history_store`` defaults
@@ -153,7 +186,8 @@ def _ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
         raise ValueError("HISTORY_MARKET_UNVERIFIED")
 
     result = _validate_payload(payload, symbol=symbol, instrument_type=instrument_type,
-        market=market, currency=currency, settlement=settlement, attempted_dt=attempted_dt,
+        market=market, currency=currency, settlement=settlement,
+        contract_id=provider_contract_id, attempted_dt=attempted_dt,
         attempted_iso=attempted_iso, requested_from_date=requested_from_date,
         requested_to_date=requested_to_date)
 
@@ -218,6 +252,7 @@ def _ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
             "currency": currency,
             "identity":[str(symbol).upper(),str(instrument_type).upper(),market,currency,str(settlement).upper()],
             "price_basis":"RAW",
+            "provider_contract_id":provider_contract_id,
             "ingest_key":ingest_key,
             "batch_semantics":"BOUNDED_ATOMIC_STEPS_WITH_DURABLE_RETRY",
             "context_state": result.context_state,
@@ -308,7 +343,7 @@ def _append_attempt_once(store,attempt,key):
 
 def ingest_ppi_payload(store, *, symbol, instrument_type,market,settlement,payload,
                        currency=None,requested_from=None,requested_to=None,
-                       attempted_at=None,history_store=None):
+                       attempted_at=None,history_store=None,provider_contract_id=None):
     currency=cash_currency(currency)
     if not isinstance(payload,list):
         raise ValueError('HISTORY_PAYLOAD_NOT_LIST')
@@ -325,7 +360,8 @@ def ingest_ppi_payload(store, *, symbol, instrument_type,market,settlement,paylo
     bounds=[_date_bound(x).isoformat() if _date_bound(x) is not None else None for x in (requested_from,requested_to)]
     if all(bounds) and bounds[0]>bounds[1]:
         raise ValueError('HISTORY_REQUEST_BOUNDS_REVERSED')
-    key=sha256(json.dumps([identity,bounds,ledger.body_hash(payload)],
+    key=sha256(json.dumps(['PPI_PROVENANCE_GATE_V1',identity,bounds,
+                          ledger.body_hash(payload),provider_contract_id],
                          sort_keys=True,default=str,separators=(',',':')).encode()).hexdigest()
     hstore=history_store or default_history_store()
     history_v2.init_schema(hstore)
@@ -348,6 +384,7 @@ def ingest_ppi_payload(store, *, symbol, instrument_type,market,settlement,paylo
     # never shifts to the retry wall clock after an intermediate commit.
     result=_ingest_ppi_payload(store,symbol=identity[0],instrument_type=identity[1],market=identity[2],
         currency=currency,settlement=identity[4],payload=payload,requested_from=requested_from,
-        requested_to=requested_to,attempted_at=first_at,history_store=hstore,ingest_key=key)
+        requested_to=requested_to,attempted_at=first_at,history_store=hstore,
+        ingest_key=key,provider_contract_id=provider_contract_id)
     _step(hstore,key,'OBSERVER_COMMITTED',result)
     return result

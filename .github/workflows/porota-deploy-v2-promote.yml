@@ -187,7 +187,8 @@ jobs:
           print('RC6_BACKUP_RETIRE_PRECHECK=GREEN|files=0', file=sys.stderr)
           from scripts.rc6_deploy_quiescence import (
               ROOT, OWNED, admit, inspect, exact_clean_stopped,
-              adopt_stopped_after_failed_install)
+               adopt_stopped_after_failed_install)
+          from scripts import rc6_deploy_quiescence as quiescence
           path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
           with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
               c.execute('PRAGMA query_only=ON')
@@ -222,6 +223,128 @@ jobs:
           elif statuses=={'running'} and state==('RUNNING','MARKET_OPEN'):
               assert admit(allow_market_open_suspend=True)=='RUNNING'
               print('OPEN')
+          elif statuses=={'running'} and state in (
+                  ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
+              # Incident-specific postclose rescue of the installed A92 image.
+              # This is a RED runtime and never counts as a healthy CLOSED state.
+              from datetime import datetime,timezone
+              from zoneinfo import ZoneInfo
+              import hashlib,json,re,subprocess,time
+              from scripts.rc6_deploy_quiescence import critical_admission
+              RESCUE_SOURCE_SHA='3fd020f408275a490e911e06f60a1ddc89153fe5'
+              RESCUE_IMAGE_ID='sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+              RESCUE_CALENDAR_SHA256='32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
+              RESCUE_HOURS_SHA256='380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
+              local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+              if local.date().isoformat()!='2026-10-26' or (local.hour,local.minute)<(20,0):
+                  raise SystemExit('RC6_RESCUE_WINDOW_RED')
+              calendar_path=ROOT/'ak_byma_calendar.py'
+              if (calendar_path.is_symlink() or not calendar_path.is_file() or
+                  hashlib.sha256(calendar_path.read_bytes()).hexdigest()!=RESCUE_CALENDAR_SHA256):
+                  raise SystemExit('RC6_RESCUE_CALENDAR_SOURCE_RED')
+              calendar=types.ModuleType('rc6_rescue_calendar')
+              exec(compile(calendar_path.read_bytes(),str(calendar_path),'exec'),calendar.__dict__)
+              if (calendar.CALENDARIO_ACTUALIZADO_EL.isoformat()!='2026-10-14' or
+                  2026 not in calendar.ANIOS_AUDITADOS or
+                  not calendar.es_dia_habil_operativo(local.date())):
+                  raise SystemExit('RC6_RESCUE_CALENDAR_DAY_RED')
+              # BYMA COM18782, PDF SHA256 pinned in the candidate; its latest
+              # exercise-expiry segment ends at 19:00 ART. A3 ends by 17:30.
+              if any(not re.fullmatch('[0-9a-f]{64}',v['Id']) or
+                     v['Image']!=RESCUE_IMAGE_ID for v in originals.values()):
+                  raise SystemExit('RC6_RESCUE_DOCKER_IDENTITY_RED')
+              marker_path=ROOT/'data/deploy/CURRENT_STATE_V2.json'
+              if (marker_path.is_symlink() or not marker_path.is_file() or
+                  marker_path.stat().st_size>65536):
+                  raise SystemExit('RC6_RESCUE_CURRENT_STATE_UNSAFE')
+              marker=json.loads(marker_path.read_bytes())
+              marker_at=datetime.fromisoformat(marker['recorded_at'])
+              if (marker_at.tzinfo is None or marker_at>datetime.now(timezone.utc) or
+                  marker.get('schema_version')!=2 or
+                  marker.get('candidate_sha')!=RESCUE_SOURCE_SHA or
+                  marker.get('image_id')!=RESCUE_IMAGE_ID or
+                  marker.get('validation_status')!='VALIDATED_RUNTIME' or
+                  marker.get('mode')!='PRODUCTION_PAPER' or
+                  type(marker.get('real_orders_sent')) is not int or
+                  marker['real_orders_sent']!=0 or
+                  marker.get('real_order_routes')!='NOT_CALLED'):
+                  raise SystemExit('RC6_RESCUE_CURRENT_SOURCE_RED')
+              health_path=ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+              if (health_path.is_symlink() or not health_path.is_file() or
+                  health_path.stat().st_size>131072 or health_path.stat().st_nlink!=1):
+                  raise SystemExit('RC6_RESCUE_CHILD_HEALTH_UNSAFE')
+              health=json.loads(health_path.read_bytes())
+              health_at=datetime.fromisoformat(health['recorded_at'])
+              now=datetime.now(timezone.utc)
+              if (health_at.tzinfo is None or not 0<=(now-health_at).total_seconds()<=30 or
+                  health.get('schema')!='rc6.runtime-child-health.v1' or
+                  health.get('source_sha')!=RESCUE_SOURCE_SHA or
+                  health.get('mode')!='PRODUCTION_PAPER' or
+                  type(health.get('real_orders_sent')) is not int or
+                  health['real_orders_sent']!=0 or
+                  health.get('real_routes')!='NOT_CALLED'):
+                  raise SystemExit('RC6_RESCUE_CHILD_SOURCE_RED')
+              if state==('STOPPED','CLOSED'):
+                  # The A92 observer parent still runs while its scanner child
+                  # crashes in the exact report query. Require a fresh child
+                  # record and bounded traceback; this is never healthy CLOSED.
+                  scanner=health.get('children',{}).get('scanner',{})
+                  try:
+                      last_exit=datetime.fromisoformat(scanner['last_exit_at'])
+                  except (KeyError,TypeError,ValueError) as exc:
+                      raise SystemExit('RC6_RESCUE_CHILD_CLOCK_RED') from exc
+                  phase=scanner.get('state')
+                  if phase=='CRASH_BACKOFF':
+                      phase_ok=(scanner.get('pid') is None and
+                                scanner.get('last_error')=='CHILD_EXITED')
+                  elif phase=='RUNNING':
+                      try: started=datetime.fromisoformat(scanner['started_at'])
+                      except (KeyError,TypeError,ValueError) as exc:
+                          raise SystemExit('RC6_RESCUE_CHILD_STARTED_RED') from exc
+                      phase_ok=(type(scanner.get('pid')) is int and scanner['pid']>0 and
+                                scanner.get('last_error') is None and started.tzinfo is not None and
+                                last_exit<=started<=now and
+                                0<=(now-last_exit).total_seconds()<=60)
+                  else:
+                      phase_ok=False
+                  if (last_exit.tzinfo is None or
+                      not 0<=(now-last_exit).total_seconds()<=60 or
+                      not phase_ok or
+                      type(scanner.get('restarts')) is not int or scanner['restarts']<90):
+                      raise SystemExit('RC6_RESCUE_CHILD_CRASH_UNVERIFIED')
+                  logs=subprocess.run(['docker','logs','--since','90s','--tail','500',OWNED[0]],
+                                      capture_output=True,text=True,timeout=8)
+                  raw_log=logs.stdout+logs.stderr
+                  if logs.returncode or len(raw_log)>256*1024 or not re.search(
+                      r'File [^\n]*bi_operational_services\.py", line 424, in _period_data'
+                      r'[\s\S]{0,3000}?sqlite3\.OperationalError: database or disk is full',
+                      raw_log):
+                      raise SystemExit('RC6_RESCUE_SQLITE_FULL_TRACE_MISSING')
+              with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                  c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=200')
+                  deadline=time.monotonic()+2
+                  c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                  row=c.execute('SELECT mode,real_orders_sent,heartbeat_at, '
+                                'process_state,session_state '
+                                'FROM observer_state WHERE id=1').fetchone()
+                  if not row or row[:2]!=('PRODUCTION_PAPER',0) or type(row[1]) is not int:
+                      raise SystemExit('RC6_RESCUE_PAPER_SOURCE_RED')
+                  stamp=datetime.fromisoformat(row[2])
+                  if stamp.tzinfo is None or not 0<=(datetime.now(timezone.utc)-stamp).total_seconds()<=180:
+                      raise SystemExit('RC6_RESCUE_HEARTBEAT_RED')
+                  if row[3:]!=state:
+                      raise SystemExit('RC6_RESCUE_PHASE_CHANGED')
+                  for table,status in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                                       ('paper_future_positions','ACTIVE')):
+                      if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(status,)).fetchone():
+                          raise SystemExit('RC6_RESCUE_BOOK_NOT_FLAT')
+              latest={name:inspect(name) for name in OWNED}
+              if any(latest[name]['Id']!=originals[name]['Id'] or
+                     latest[name]['Image']!=RESCUE_IMAGE_ID or
+                     latest[name]['State']['Status']!='running' for name in OWNED):
+                  raise SystemExit('RC6_RESCUE_RUNTIME_CHANGED')
+              critical_admission()
+              print('DEGRADED_CLOSED_20261026')
           elif (statuses=={'running'} and state and state[0]=='WAITING_MARKET' and
                 state[1] in ('CLOSED','MARKET_CLOSED')):
               try:
@@ -263,6 +386,19 @@ jobs:
                       if len(alloc)!=1 or _validated(alloc[0],c)[1]['status']!='OPEN':
                           raise SystemExit('RC6_PENDING_ALLOCATION_RED')
                   print('CLOSED_CAUCION')
+          elif (statuses=={'exited'} and state and
+                state[0] in ('DEGRADED','STOPPED') and
+                state[1] in ('BOOT_CALENDAR','CLOSED','MARKET_CLOSED') and
+                hasattr(quiescence,'failed_rescue_candidate_matches') and
+                quiescence.failed_rescue_candidate_matches(ROOT/'data/deploy',originals)):
+              receipt=quiescence.adopt_failed_rescue_candidate_stopped(
+                  sys.argv[1],ROOT/'data/deploy',originals)
+              if (receipt.get('status')!='DRAINED' or
+                  receipt.get('adopted_failed_rescue') is not True or
+                  receipt.get('real_orders_sent')!=0 or
+                  receipt.get('ppi_watch_accessed') is not False):
+                  raise SystemExit('RC6_ADOPTED_RESCUE_RECEIPT_RED')
+              print('CLOSED_STOPPED_FAILED_RESCUE')
           elif (statuses=={'exited'} and state and state[0]=='STOPPED' and
                 state[1] in ('CLOSED','MARKET_CLOSED')):
               # A failed installed promotion leaves its exact prior image
@@ -288,9 +424,15 @@ jobs:
               raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
           PY
           )"
-          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
+          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
           echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
-          echo "RC6_PAPER_SESSION=GREEN|mode=$SESSION_MODE|EXACT_PENDING_LEDGER_REQUIRED"
+          if [ "$SESSION_MODE" = DEGRADED_CLOSED_20261026 ]; then
+            echo 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = CLOSED_STOPPED_FAILED_RESCUE ]; then
+            echo 'RC6_PAPER_SESSION=PRIOR_RESCUE_STOP_ADMITTED|runtime=STOPPED|health=RED|PAPER=0'
+          else
+            echo "RC6_PAPER_SESSION=GREEN|mode=$SESSION_MODE|EXACT_PENDING_LEDGER_REQUIRED"
+          fi
 
       - name: Dynamic pre-transfer disk guard and conditional safe cleanup
         id: diskguard
@@ -347,6 +489,11 @@ jobs:
 
           RC6_DISK_PRECLEAN_TRIGGERED=0
           if [ "$GATE_RC" -ne 0 ]; then
+            if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ] || \
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_STOPPED_FAILED_RESCUE ]; then
+              echo 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer'
+              exit 37
+            fi
             # COLD2 can leave the owned runtime stopped and the stable tag on
             # an older, unreferenced image. Reconcile only under PAPER admission.
             OWNED_STATE="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
@@ -532,7 +679,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
-          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; *) exit 31;; esac
           AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
@@ -688,7 +835,7 @@ jobs:
 
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
-          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; *) exit 31;; esac
           QUIESCENCE_AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
@@ -736,6 +883,14 @@ jobs:
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
+          if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ]; then
+            # Persist the exact frozen image identity before mode_manager can
+            # replace either container. Failure before this receipt is RED.
+            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action image-intent \
+              --candidate-image-id "$RUNTIME_IMAGE_ID" \
+              --frozen-manifest "$REMOTE_DIR/porota-frozen-candidate.json"
+          fi
 
           # Docker may retain both compressed/content-store and materialized
           # layers. Verify measured reserve now, before starting services and
@@ -797,6 +952,12 @@ jobs:
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
+          if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ]; then
+            # Capture both new IDs immediately after creation. Failure in the
+            # manager itself is captured only by guarded failure recovery.
+            sudo -n python3 "$REPO/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action capture-runtime
+          fi
 
           OBSERVER_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
           DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
@@ -1757,6 +1918,20 @@ jobs:
             # cleanly stopped. Verify its exact stop and keep timers suspended;
             # rearm only if both runtimes are running with PAPER/0.
             SCHEDULER_ACTION=recover-closed
+          fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = DEGRADED_CLOSED_20261026 ] && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # Never rearm RC6 timers against the original degraded scanner.
+            # The dedicated action requires exact A92 identities, a flat book,
+            # the durable stop/recovery receipt and an issues-only broker.
+            SCHEDULER_ACTION=recover-degraded-closed
+          fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_STOPPED_FAILED_RESCUE ] && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # The exact failed candidate may have been restarted by a
+            # preinstall recovery; it is not a healthy runtime. Never restore
+            # timers until a new candidate passes poststart admission.
+            SCHEDULER_ACTION=recover-adopted-rescue
           fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \

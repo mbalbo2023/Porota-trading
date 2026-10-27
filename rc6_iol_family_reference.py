@@ -17,8 +17,8 @@ from rc6_multisource_discovery import canonical_family, canonical_market, canoni
 SCHEMA="rc6-iol-family-reference-v1"
 DEFAULT_ROOT=Path(os.getenv("POROTA_IOL_SHADOW_ROOT","/opt/porota-trading/data/market"))
 DEFAULT_DB=os.getenv("POROTA_IOL_OPERATIONAL_DB","/opt/porota-trading/data/paper_v17/observer_v17.db")
-OPTION_CONTRACT_LOT_BY_UNDERLYING_FAMILY={"ACCIONES":100,"CEDEARS":10,"BONOS":1000,"LETRAS":1000}
 MAX_OPTION_UNDERLYINGS=4
+MAX_OPTION_SERIES_INFO=1
 
 
 def _brief_call(client, name, arguments):
@@ -338,65 +338,86 @@ def _option_expiry(value):
 
 def _option_records(chain:dict, infos:dict[str,dict], observed_at:str, *,
                     underlying_info:dict|None=None):
-    """Normalize IOL option-chain rows and attach the current BYMA lot policy.
+    """Preserve option-chain observations without certifying a series contract.
 
-    Only standard, unadjusted options on local shares are promoted.  BYMA's
-    standard contract rule supplies the 100-share multiplier; Porota's PAPER
-    policy supplies one-contract quantity units. Neither value is represented
-    as an unpublished broker minimum.
+    The chain has no currency or adjustment state per series. Asset info can
+    identify an exact series, but does not establish that its strike and lot
+    survived corporate actions unchanged. A contract needs independent,
+    effective-dated series adjustment evidence; this IOL path has none.
     """
     underlying=str(chain.get("underlying") or "").upper()
     underlying_info=underlying_info if isinstance(underlying_info,dict) else {}
     underlying_family=canonical_family(underlying_info.get("type") or underlying_info.get("asset_type"))
-    contract_lot=100 if underlying_family=="ACCIONES" else None
+    underlying_exact=str(underlying_info.get("symbol") or "").strip().upper()==underlying
+    contract_lot=100 if underlying_exact and underlying_family=="ACCIONES" else None
     rows=[]
     options=[r for r in chain.get("options",[]) if isinstance(r,dict)]
     options.sort(key=lambda r:(bool(r.get("is_stale")), -(float(r.get("volume") or 0))))
     for raw in options:
-        symbol=str(raw.get("symbol") or "").upper()
+        symbol=str(raw.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
         info=infos.get(symbol,{}) if isinstance(infos,dict) else {}
-        try: strike=float(raw.get("strike_price"))
-        except (TypeError,ValueError): strike=0
+        info=info if isinstance(info,dict) else {}
+        exact_info=(str(info.get("symbol") or "").strip().upper()==symbol
+                    and bool(symbol) and canonical_family(info.get("type"))=="OPCIONES")
         expiry=_option_expiry(raw.get("expiration"))
-        right={"C":"CALL","V":"PUT","CALL":"CALL","PUT":"PUT"}.get(str(raw.get("option_type") or "").upper())
-        market=canonical_market(info.get("market") or underlying_info.get("market") or "BYMA")
-        currency=str(info.get("currency") or underlying_info.get("currency") or "UNKNOWN").upper()
+        market=canonical_market(info.get("market")) if exact_info and info.get("market") else None
+        currency=str(info.get("currency") or "").strip().upper() if exact_info else None
+        if currency not in {"ARS","USD","USD_MEP","USD_CCL"}:
+            currency=None
         # BYMA option premium settles T+0 under the current clearing contract.
         settlement="INMEDIATA"
-        contract=None
-        if (contract_lot and strike>0 and expiry and underlying and right
-                and market=="BYMA" and currency in {"ARS","USD","USD_MEP","USD_CCL"}
-                and not raw.get("adjusted_series_unverified") and not info.get("adjusted_series_unverified")):
-            contract={
-              "family":"OPCIONES","currency":currency,"market":market,
-              "settlement":settlement,
-              "cash_multiplier":str(contract_lot),"quantity_step":"1",
-              "minimum_quantity":"1","paper_quantity_min":"1","paper_quantity_step":"1",
-              "broker_minimum_quantity":"NO_VERIFICADO","broker_quantity_step":"NO_VERIFICADO",
-              "premium_basis":"PER_UNDERLYING_UNIT",
-              "metadata_source":"IOL_OPTIONS_CHAIN+IOL_UNDERLYING_INFO+BYMA_STANDARD_EQUITY_OPTION_RULE_2026",
-              "expires_at":expiry,"underlying":underlying,"strike":str(strike),
-              "option_right":right,
-            }
         rows.append({
           "ticker":symbol,"instrument_type":"OPCIONES","market":market,
           "currency":currency,"settlement":settlement,
-          "description":str(info.get("description") or ""),
+          "description":str(info.get("description") or "") if exact_info else "",
           "source":"IOL_COMPLEMENTARY","observed_at":observed_at,
           "quote":{"bid":raw.get("bid_price"),"ask":raw.get("ask_price"),
                    "volume":raw.get("volume"),"is_stale":raw.get("is_stale")},
-          "financial_contract_v17":contract,
+          "financial_contract_v17":None,
           "option_chain_evidence":{
               **{k:raw.get(k) for k in ("option_id","option_type","strike_price","expiration",
                                         "implied_volatility","delta","gamma","theta","vega","rho")},
               "underlying":underlying,
               "expires_at":expiry,
               "underlying_family":underlying_family,
-              "contract_lot":contract_lot,
-              "contract_lot_source":"BYMA_OPTION_LOT_POLICY_2026" if contract_lot else None,
+              # The standard exchange lot is a reference, not an assertion
+              # about this series after an extraordinary adjustment.
+              "standard_lot_reference":contract_lot,
+              "standard_lot_reference_source":"BYMA_OPTION_LOT_POLICY_2026" if contract_lot else None,
+              "series_identity_state":"EXACT_IOL_ASSET_INFO" if exact_info and market=="BYMA" and currency else "NO_VERIFICADO",
+              "series_adjustment_state":"NO_VERIFICADO",
+              "contract_state":"NO_VERIFICADO",
           },
         })
     return rows
+
+
+def _sanitize_prior_option(row:dict):
+    """Never carry a formerly inferred option identity/contract through LKG."""
+    safe=dict(row)
+    prior_evidence=safe.get("option_chain_evidence")
+    evidence=dict(prior_evidence) if isinstance(prior_evidence,dict) else {}
+    if safe.get("financial_contract_v17") is not None:
+        evidence["legacy_financial_contract_unverified"]=safe["financial_contract_v17"]
+    if safe.get("market") is not None:
+        evidence["legacy_market_unverified"]=safe["market"]
+    if safe.get("currency") is not None:
+        evidence["legacy_currency_unverified"]=safe["currency"]
+    if "contract_lot" in evidence:
+        evidence["legacy_contract_lot_unverified"]=evidence.pop("contract_lot")
+    if "contract_lot_source" in evidence:
+        evidence["legacy_contract_lot_source_unverified"]=evidence.pop("contract_lot_source")
+    evidence.update(series_identity_state="NO_VERIFICADO",
+                    series_adjustment_state="NO_VERIFICADO",
+                    contract_state="NO_VERIFICADO")
+    safe["option_chain_evidence"]=evidence
+    safe.update(market=None,currency=None,financial_contract_v17=None)
+    quote=safe.get("quote")
+    if isinstance(quote,dict):
+        safe["quote"]={**quote,"is_stale":True}
+    return safe
 
 
 def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None):
@@ -443,7 +464,8 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     option_underlyings=(underlyings[start:]+underlyings[:start])[:MAX_OPTION_UNDERLYINGS]
     state["option_underlying_index"]=(start+len(option_underlyings))%max(1,len(underlyings))
 
-    records=[r for r in prior.get("records",[]) if isinstance(r,dict)]
+    records=[(_sanitize_prior_option(r) if canonical_family(r.get("instrument_type"))=="OPCIONES" else r)
+             for r in prior.get("records",[]) if isinstance(r,dict)]
     by_key={(r.get("instrument_type"),r.get("ticker"),r.get("market"),r.get("currency"),r.get("settlement")):r for r in records}
     errors=[]
 
@@ -527,15 +549,37 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
             if chain_underlying != str(underlying).strip().upper():
                 raise ValueError("IOL_OPTION_CHAIN_UNDERLYING_MISMATCH")
             underlying_info=_brief_call(client,"get_asset_info",{"symbol":underlying,"market":"BCBA"})
-            if str(underlying_info.get("symbol") or underlying).strip().upper() != chain_underlying:
+            if str(underlying_info.get("symbol") or "").strip().upper() != chain_underlying:
                 raise ValueError("IOL_OPTION_UNDERLYING_INFO_MISMATCH")
             candidates=[r for r in chain.get("options",[]) if isinstance(r,dict) and r.get("symbol")]
             candidates.sort(key=lambda r:(bool(r.get("is_stale")), -(float(r.get("volume") or 0))))
-            option_rows=_option_records(chain,{},at,underlying_info=underlying_info)
+            infos={}
+            for candidate in candidates:
+                symbol=str(candidate["symbol"]).strip().upper()
+                if not symbol:
+                    continue
+                if symbol in infos:
+                    continue
+                if len(infos)>=MAX_OPTION_SERIES_INFO:
+                    break
+                try:
+                    # One identity read per underlying, without retry. A
+                    # failed optional lookup must not amplify provider load.
+                    infos[symbol]=client.call("get_asset_info",{
+                        "symbol":symbol,"market":"BCBA"})
+                except Exception:
+                    infos[symbol]={}
+                    errors.append("OPTIONS:"+underlying+":SERIES_INFO_UNAVAILABLE:"+symbol)
+            option_rows=_option_records(chain,infos,at,underlying_info=underlying_info)
             if not option_rows:
                 errors.append("OPTIONS:"+underlying+":EMPTY_UNEXPECTED")
                 section_states["options:"+underlying]="EMPTY_UNEXPECTED"
                 continue
+            # A fresh chain supersedes old rows for this underlying, including
+            # legacy records keyed with currency inherited from the share.
+            by_key={key:row for key,row in by_key.items()
+                    if not (canonical_family(row.get("instrument_type"))=="OPCIONES"
+                            and str((row.get("option_chain_evidence") or {}).get("underlying") or "").upper()==underlying)}
             for row in option_rows:
                 by_key[("OPCIONES",row["ticker"],row["market"],row["currency"],row["settlement"])]=row
             successful_sections.append("options:"+underlying)

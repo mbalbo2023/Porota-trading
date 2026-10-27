@@ -369,7 +369,8 @@ def map_complex_instrument_params(instrument_type: str, base_params: dict) -> di
 
 
 def calculate_trade_costs_fraction(spread_pct: float = 0.0,
-                                   asset_class: str = "ACCIONES") -> float:
+                                   asset_class: str = "ACCIONES", *,
+                                   currency: Optional[str] = None) -> float:
     """Costo total de la operación redonda (compra + venta) como FRACCIÓN del
     monto operado. 0.016456 significa que la fricción se lleva el 1,6456% del
     capital puesto en la operación.
@@ -406,11 +407,13 @@ def calculate_trade_costs_fraction(spread_pct: float = 0.0,
     # con IVA diferenciado por componente y por clase.
     try:
         import au_fee_schedule
-        return au_fee_schedule.costo_redondo(asset_class, spread_pct, stress_factor)
+        return au_fee_schedule.costo_redondo(asset_class, spread_pct, stress_factor,
+                                             currency=currency)
     except ImportError:
-        # Degradación explícita: si el tarifario no está, se usa la grilla de
-        # renta variable, que es la más cara. Errar por caro descarta de más;
-        # errar por barato aprueba lo que pierde plata.
+        # La renta variable no es cota superior de opciones ni Letras USD.
+        # Sin tarifario de la familia no hay cálculo vinculante.
+        if asset_class != "ACCIONES":
+            raise ValueError("FEE_SCHEDULE_UNAVAILABLE_FOR_FAMILY")
         logger.warning("au_fee_schedule no disponible: se usa la grilla de renta variable.")
         comision_por_tramo = (PPI_COMMISSION_PCT * stress_factor) * (1 + IVA_PCT)
         byma_por_tramo = BYMA_FEE_PCT * (1 + IVA_PCT) if BYMA_FEE_TAXED else BYMA_FEE_PCT
@@ -418,7 +421,8 @@ def calculate_trade_costs_fraction(spread_pct: float = 0.0,
 
 
 def calculate_trade_costs_pct(spread_pct: float = 0.0,
-                              asset_class: str = "ACCIONES") -> float:
+                              asset_class: str = "ACCIONES", *,
+                              currency: Optional[str] = None) -> float:
     """El mismo costo, expresado en PUNTOS PORCENTUALES: 1.6456 en vez de
     0.016456. Esta es la versión que se compara contra retornos esperados.
 
@@ -455,13 +459,15 @@ def calculate_trade_costs_pct(spread_pct: float = 0.0,
     fijan las dos escalas para que esto no pueda volver a pasar sin que algo
     se ponga en rojo.
     """
-    return round(calculate_trade_costs_fraction(spread_pct, asset_class) * 100, 4)
+    return round(calculate_trade_costs_fraction(spread_pct, asset_class,
+                                                currency=currency) * 100, 4)
 
 
 def calculate_net_return_pct(
     expected_gross_return_pct: float,
     spread_pct: float = 0.0,
     asset_class: str = "ACCIONES",
+    *, currency: Optional[str] = None,
 ) -> float:
     """Retorno neto esperado = retorno bruto proyectado - fricción total.
     No hay ningún clamp/cap acá: si expected_gross_return_pct es alto, el
@@ -471,7 +477,7 @@ def calculate_net_return_pct(
     instrumento que se está evaluando. Antes se descontaba siempre la de
     renta variable, así que el filtro de rentabilidad de un bono y el de una
     opción usaban un número que no era el suyo."""
-    costs_pct = calculate_trade_costs_pct(spread_pct, asset_class)
+    costs_pct = calculate_trade_costs_pct(spread_pct, asset_class, currency=currency)
     return round(expected_gross_return_pct - costs_pct, 4)
 
 
@@ -502,7 +508,8 @@ def calculate_position_size(available_capital_ars: float, entry_price: float,
                              stop_loss_price: float, risk_pct: float = 1.0,
                              spread_pct: float = 0.0,
                              asset_class: str = "ACCIONES",
-                             max_affordable_ars: float = 0.0) -> int:
+                             max_affordable_ars: float = 0.0, *,
+                             currency: Optional[str] = None) -> int:
     """
     NUEVO EN v6.0 — antes el bot solo sugería un precio y nunca decía
     cuánto comprar. Tamaño de posición basado en RIESGO, no en "meter todo
@@ -561,7 +568,7 @@ def calculate_position_size(available_capital_ars: float, entry_price: float,
     # 5% — es decir que el peor caso previsto rozaba el corte sin que nadie
     # lo hubiera decidido.
     friccion_por_unidad = entry_price * calculate_trade_costs_fraction(
-        spread_pct, asset_class)
+        spread_pct, asset_class, currency=currency)
     per_share_risk = (entry_price - stop_loss_price) + friccion_por_unidad
     if per_share_risk <= 0:
         return 0

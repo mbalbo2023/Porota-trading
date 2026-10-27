@@ -307,6 +307,12 @@ def history_payload():
 def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,history_pipeline,monkeypatch):
     observer._support_schema(store)
     seed_ppi_history_identity(store, 'GGAL')
+    # The old diagnostic cache may predate the provenance gate. A new PPI
+    # response with only request-level currency must not replace it or enter v2.
+    with store.connect() as connection:
+        connection.execute('INSERT INTO production_history VALUES(?,?,?,?,?,?,?,?)',
+            ('GGAL','ACCIONES','A-24HS','2026-08-25','2026-08-25',AT,1,
+             json.dumps(history_payload())))
     monkeypatch.setattr(observer,'_historical_targets',lambda _: [('GGAL','ACCIONES','A-24HS')])
     clock=[AT]
     monkeypatch.setattr(observer,'now_iso',lambda:clock[0])
@@ -314,8 +320,9 @@ def test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva(store,history_
         payload=history_payload()
         def history(self,*a): return self.payload
     reader=Reader()
-    assert observer._download_histories(reader,store)==1
+    assert observer._download_histories(reader,store)==0
     original=rows(store,'production_history')[0]
+    assert rows(history_pipeline,'history_versions_v2')==[]
     reader.payload=[]; clock[0]=END
     assert observer._download_histories(reader,store)==0
     assert rows(store,'production_history')[0]==original

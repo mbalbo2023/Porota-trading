@@ -3,6 +3,7 @@ import datetime as dt
 import sys
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 def load_business_day():
@@ -13,18 +14,20 @@ def load_business_day():
     return ns['_business_day']
 
 class TestBymaCalendarFailClosed(unittest.TestCase):
-    def tearDown(self):
-        sys.modules.pop('ak_byma_calendar',None)
     def test_calendar_exception_closes_business_day(self):
         fake=types.ModuleType('ak_byma_calendar')
         def boom(_day): raise RuntimeError('injected calendar failure')
         fake.es_dia_habil_operativo=boom
-        sys.modules['ak_byma_calendar']=fake
-        self.assertFalse(load_business_day()(dt.date(2026,9,9)))
+        original=sys.modules.get('ak_byma_calendar')
+        with patch.dict(sys.modules, {'ak_byma_calendar':fake}):
+            self.assertFalse(load_business_day()(dt.date(2026,9,9)))
+        self.assertIs(sys.modules.get('ak_byma_calendar'),original)
     def test_calendar_true_is_preserved(self):
         fake=types.ModuleType('ak_byma_calendar')
         fake.es_dia_habil_operativo=lambda _day: True
-        sys.modules['ak_byma_calendar']=fake
-        self.assertTrue(load_business_day()(dt.date(2026,9,9)))
+        original=sys.modules.get('ak_byma_calendar')
+        with patch.dict(sys.modules, {'ak_byma_calendar':fake}):
+            self.assertTrue(load_business_day()(dt.date(2026,9,9)))
+        self.assertIs(sys.modules.get('ak_byma_calendar'),original)
 
 if __name__=='__main__': unittest.main()

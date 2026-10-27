@@ -489,6 +489,28 @@ def resolve_legacy_currency(explicit, mapped):
     return next(iter(choices))
 
 
+def _legacy_version_provenance(metadata, observed_at):
+    """Never turn a legacy ingest clock or adjustment flag into PIT/basis proof."""
+    basis=metadata.get('price_basis')
+    adjustment=metadata.get('adjustment_basis')
+    known_at=metadata.get('version_known_at')
+    volume_kind=metadata.get('volume_kind')
+    if basis not in {'RAW','SPLIT','DIVIDEND','TOTAL_RETURN'}:
+        raise ValueError('HISTORY_PRICE_BASIS_PROVENANCE_REQUIRED')
+    if not adjustment or adjustment=='UNKNOWN':
+        raise ValueError('HISTORY_ADJUSTMENT_PROVENANCE_REQUIRED')
+    if basis=='RAW' and adjustment!='RAW_NO_ADJUSTMENT':
+        raise ValueError('HISTORY_ADJUSTMENT_CONFLICT')
+    if not known_at:
+        raise ValueError('HISTORY_PIT_CLOCK_PROVENANCE_REQUIRED')
+    known=utc(known_at)
+    if instant(known)>instant(observed_at):
+        raise ValueError('HISTORY_PIT_CLOCK_AFTER_OBSERVATION')
+    if volume_kind not in {'UNKNOWN','QUANTITY','NOMINAL','CONTRACTS','MONEY'}:
+        raise ValueError('HISTORY_VOLUME_UNIT_PROVENANCE_REQUIRED')
+    return basis,adjustment,known,volume_kind
+
+
 def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_bytes=512*1024*1024,
                  max_rows=1000000,scratch_root=None,max_scratch_bytes=None):
     """Preserve source and legacy tables; migrate only explicit currency.
@@ -582,9 +604,15 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
                     mapped=currency_map.get(oldkey)
                     explicit=metadata.get("currency")
                     monetary=resolve_legacy_currency(explicit,mapped)
+                    basis,adjustment,known_at,volume_kind=_legacy_version_provenance(
+                        metadata,row['observed_at'])
                     metadata['copy_migration_currency']={'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
                         'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}
-                    value=Candle(**{f:row[f] for f in ("symbol","instrument_type","market","settlement","date","open","high","low","close","volume","source","adjusted","observed_at")},metadata=metadata,currency=monetary).normalized()
+                    metadata['legacy_observed_at']=row['observed_at']
+                    value=Candle(**{f:row[f] for f in ("symbol","instrument_type","market","settlement","date","open","high","low","close","volume","source","adjusted")},
+                                 observed_at=known_at,metadata=metadata,currency=monetary,
+                                 price_basis=basis,adjustment_basis=adjustment,
+                                 volume_kind=volume_kind,provider_at=metadata.get('provider_at')).normalized()
                     value.validate()
                     result=_append_connection(c,value)
                     c.execute("INSERT INTO history_migration_map_v2 VALUES(?,?)",(row["id"],result["version_id"]))

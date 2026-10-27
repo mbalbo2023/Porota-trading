@@ -233,20 +233,23 @@ def test_parcial_informes_panel_y_caja_historica_concuerdan(partial_spot,monkeyp
 @pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
 def test_parcial_renta_fija_conserva_nominal_lote_y_ganancia(tmp_path,family):
     b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
-    q=replace(quote(ask_size='100'),asset_class=family,settlement='INMEDIATA',ask=D(100))
+    cut = "2026-10-26T19:12:01Z" if family in {'LETRAS','ON'} else None
+    q=replace(quote(ask_size='100',at=cut),asset_class=family,settlement='INMEDIATA',ask=D(100))
     spec=InstrumentContract(q.symbol,family,'ARS','BYMA','INMEDIATA',D('.01'),D(2),'TEST_FIXTURE')
     q=replace(q,contract=spec)
     assert b._open(q,D('.8'),{})[0]
     p=b.store.open_positions()[0]
     assert D(p['quantity'])==10
+    first_at = "2026-10-26T19:13:01Z" if cut else quote(minute=1).observed_at
     first=replace(q,bid=D(110),ask=D(111),bid_size=D(30),
-                  observed_at=quote(minute=1).observed_at,book_at=quote(minute=1).book_at)
+                  observed_at=first_at,book_at=first_at)
     assert not b._close(p,replace(first,contract=replace(spec,quantity_step=D(1))),'TEST')
     assert b._close(p,first,'TEST')
     remaining=b.store.open_positions()[0]
     assert D(remaining['quantity'])==8
+    final_at = "2026-10-26T19:14:01Z" if cut else quote(minute=2).observed_at
     final=replace(first,bid=D(120),ask=D(121),bid_size=D(100),
-                  observed_at=quote(minute=2).observed_at,book_at=quote(minute=2).book_at)
+                  observed_at=final_at,book_at=final_at)
     assert b._close(remaining,final,'TEST')
     closed=b.store.recent_closed()[0]
     assert D(closed['gross_pnl'])==D('1.80')
@@ -1066,7 +1069,8 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
     path = str(tmp_path / "paper.db")
     broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", daily_loss_pct="100",
                          max_position_pct="1", max_total_exposure_pct="1", slippage_bps="0")
-    q = replace(quote(ask_size="1000000", bid_size="1000000"), asset_class=family,
+    cut = "2026-10-26T19:12:01Z" if family in {"LETRAS", "ON"} else None
+    q = replace(quote(ask_size="1000000", bid_size="1000000", at=cut), asset_class=family,
                 ask=D("100"), settlement="INMEDIATA")
     assert broker._open(q, D("0.8"), {})[0] is False  # No inventa el factor VN.
     spec = InstrumentContract(q.symbol, family, "ARS", "BYMA", "INMEDIATA",
@@ -1080,13 +1084,14 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
     broker.mark_equity({q.symbol: q}, as_of=q.observed_at)
     with broker.store.connect() as c:
         assert D(c.execute("SELECT exposure FROM paper_equity ORDER BY id DESC LIMIT 1").fetchone()[0]) == q.bid * 99
-    closing = replace(q, bid=D("110"), ask=D("111"), observed_at='2026-08-25T14:01:00+00:00', book_at='2026-08-25T14:01:00+00:00')
+    closing_at = '2026-10-26T19:13:01Z' if cut else '2026-08-25T14:01:00+00:00'
+    closing = replace(q, bid=D("110"), ask=D("111"), observed_at=closing_at, book_at=closing_at)
     assert broker._close(position, replace(closing, contract=replace(spec, cash_multiplier=D("1"))), "TEST") is False
     assert broker._close(position, closing, "TEST")
     closed = broker.store.recent_closed()[0]
     assert D(closed["gross_pnl"]) == 990
-    assert D(closed["entry_cost"]) == broker._cost(D("1"), D("9900"), family)
-    assert D(closed["exit_cost"]) == broker._cost(D("1.1"), D("9900"), family)
+    assert D(closed["entry_cost"]) == broker._cost(D("1"), D("9900"), family, currency=q.currency)
+    assert D(closed["exit_cost"]) == broker._cost(D("1.1"), D("9900"), family, currency=q.currency)
     assert broker._cash(as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
 
 

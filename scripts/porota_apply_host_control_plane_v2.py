@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]*rc6[A-Za-z0-9_.@-]*\.(?:service|timer)$")
@@ -96,6 +97,27 @@ def build_legacy_retire_plan(policy: dict) -> list[str]:
 def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_paused: bool = False) -> dict:
     plan=build_plan(policy)
     legacy_retire=build_legacy_retire_plan(policy)
+    operator_preopen_paused=False
+    if any(item['role']=='ACTIVE_TIMER' and
+           item['unit_name']=='porota-preopen-rc6.timer' for item in plan):
+        current=_run('systemctl','is-enabled','porota-preopen-rc6.timer',check=False).stdout.strip()
+        if current=='disabled':
+            # A125 operator stop has independent authority until the end of
+            # 2026-10-27 ART. Reinstalling unit files must not enable it.
+            # The exact proof is local, read-only and shared with the
+            # scheduler. Every unrelated disabled-timer condition stays RED.
+            if root.is_symlink() or not (root/'scripts/rc6_deploy_scheduler_suspend.py').is_file():
+                raise RuntimeError('HOST_OPERATOR_PAUSE_HELPER_MISSING')
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            from scripts.rc6_deploy_scheduler_suspend import (
+                exact_operator_preopen_pause, operator_preopen_timer_disabled)
+            exact_operator_preopen_pause()
+            if not operator_preopen_timer_disabled():
+                raise RuntimeError('HOST_OPERATOR_PREOPEN_STATE_CHANGED')
+            if not keep_active_timers_paused:
+                raise RuntimeError('HOST_OPERATOR_PREOPEN_REARM_FORBIDDEN')
+            operator_preopen_paused=True
     changed=[]
     for item in plan:
         src=(root / item["source_path"]).resolve()
@@ -139,7 +161,8 @@ def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_pa
                 # The deploy owns an exact scheduler suspension receipt. Unit
                 # reconciliation must not fire these timers during COLD2 or
                 # contract evidence materialization.
-                _run("systemctl","enable",name)
+                if not (operator_preopen_paused and name=='porota-preopen-rc6.timer'):
+                    _run("systemctl","enable",name)
             else:
                 _run("systemctl","enable","--now",name)
         elif role=="QUARANTINED_TIMER":
@@ -153,12 +176,16 @@ def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_pa
         name=item["unit_name"]
         role=item["role"]
         if role=="ACTIVE_TIMER":
-            enabled=_run("systemctl","is-enabled",name).stdout.strip()
+            enabled=_run("systemctl","is-enabled",name,
+                         check=not (operator_preopen_paused and
+                                    name=='porota-preopen-rc6.timer')).stdout.strip()
             active=_run("systemctl","is-active",name,check=False).stdout.strip()
             expected_active = "inactive" if keep_active_timers_paused else "active"
-            if enabled!="enabled" or active!=expected_active:
+            expected_enabled = ("disabled" if operator_preopen_paused and
+                                name=='porota-preopen-rc6.timer' else "enabled")
+            if enabled!=expected_enabled or active!=expected_active:
                 raise RuntimeError(f"ACTIVE_TIMER_VERIFY_FAILED:{name}:{enabled}:{active}")
-            verification.append({"unit":name,"state":f"enabled|{expected_active}"})
+            verification.append({"unit":name,"state":f"{expected_enabled}|{expected_active}"})
         elif role=="QUARANTINED_TIMER":
             enabled=_run("systemctl","is-enabled",name,check=False).stdout.strip()
             active=_run("systemctl","is-active",name,check=False).stdout.strip()

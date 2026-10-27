@@ -31,6 +31,8 @@ from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_source_consolidation import collect_public_sources
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
+from rc6_scanner_login_interlock import ScannerLoginInterlock
+from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -189,6 +191,27 @@ def _market_phase(now=None):
 
 def _market_open(now=None):
     return _market_phase(now) == "OPEN"
+
+
+def _cooldown_session_state(phase, now=None):
+    """Certify the local postclose window even when PPI login is cooling down.
+
+    The local EOD copier needs a fresh, explicit closed heartbeat. A failed
+    login must not turn BOOT_CALENDAR into a synthetic OPEN/PREOPEN receipt.
+    Only the independently audited BYMA calendar and postclose clock can
+    produce MARKET_CLOSED here; an unknown year or calendar error stays boot.
+    """
+    local = (now or datetime.now(TZ)).astimezone(TZ)
+    if phase != "CLOSED" or local.hour * 60 + local.minute < 17 * 60 + 15:
+        return "BOOT_CALENDAR"
+    try:
+        import ak_byma_calendar as calendar
+        if (local.year in calendar.ANIOS_AUDITADOS and
+                calendar.es_dia_habil_operativo(local.date())):
+            return "MARKET_CLOSED"
+    except Exception:
+        pass
+    return "BOOT_CALENDAR"
 
 
 def _candidate_universe():
@@ -1584,6 +1607,8 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
     end = _history_end_date()
     if end is None:
         return 0
+    from rc6_data_retention import bounded_daily_start
+    retention_now = datetime.now(TZ)
     import cu_history_store_v2_hf6 as history_v2
     import ct_ppi_history_salvage_hf6 as history_salvage
     import cq_history_attempt_ledger_hf6 as history_ledger
@@ -1612,7 +1637,9 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
             # A post-close recovery cannot silently turn into an annual
             # bootstrap when an exact series has no canonical baseline.
             continue
-        start=date.fromisoformat(latest)+timedelta(days=1) if latest else end-timedelta(days=365)
+        requested_start=(date.fromisoformat(latest)+timedelta(days=1)
+                         if latest else end-timedelta(days=365))
+        start=bounded_daily_start(requested_start,retention_now)
         if start<=end:
             request_end=min(end,start+timedelta(days=29)) if incremental_only else end
             requests.append((identity,start,request_end,metadata))
@@ -1814,7 +1841,7 @@ def _background_ingest(reader, store, *, force=False):
         return None
 
 
-def _run_command(store, reader, command, gemini_gate=None):
+def _run_command(store, reader, command, gemini_gate=None, login_interlock=None):
     command_id, name = command
     if name == "GEMINI_PREFLIGHT":
         if gemini_gate is None:
@@ -1827,6 +1854,17 @@ def _run_command(store, reader, command, gemini_gate=None):
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
         return reader
+    if reader is None:
+        gate = login_interlock or ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
+        decision = gate.reserve()
+        if decision != "ALLOWED":
+            _finish_command(store, command_id,
+                            "COOLDOWN" if decision == "COOLDOWN" else "ERROR",
+                            "PPI_LOGIN_INTERLOCK_" + decision)
+            store.state(process_state="DEGRADED",
+                        ppi_auth="COOLDOWN" if decision == "COOLDOWN" else "ERROR",
+                        real_orders_sent=0, detail="Login local bloqueado por interlock.")
+            return None
     try:
         if reader is None:
             key, secret = _secret()
@@ -1980,6 +2018,7 @@ def run():
     # BOOT_COMMAND/BOOT_CALENDAR. Así un calendario lento nunca deja al
     # operador con STARTING/CHECKING sin evidencia del punto de arranque.
     reader = None
+    login_interlock = ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
     quotes = {}
     last_public_check = 0.0
     last_structured_capture = 0.0
@@ -2008,7 +2047,7 @@ def run():
             # No se bloquea una rueda recién abierta con backups/reportes.
             command = _claim_command(store)
             if command:
-                reader = _run_command(store, reader, command, None)
+                reader = _run_command(store, reader, command, None, login_interlock)
             if reader is None:
                 store.state(session_state="BOOT_CALENDAR", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
@@ -2024,8 +2063,18 @@ def run():
             if reader is None:
                 if time.time() < next_login_at:
                     store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
+                                session_state=_cooldown_session_state(phase),
                                 heartbeat_at=now_iso(), real_orders_sent=0,
                                 detail="PPI en espera de reintento; no se abre una tormenta de logins.")
+                    time.sleep(COMMAND_POLL_SECONDS)
+                    continue
+                decision = login_interlock.reserve()
+                if decision != "ALLOWED":
+                    store.state(process_state="DEGRADED",
+                                ppi_auth="COOLDOWN" if decision == "COOLDOWN" else "ERROR",
+                                session_state=_cooldown_session_state(phase),
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="Login local bloqueado por interlock persistente.")
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
                 store.state(session_state="BOOT_PPI_SECRET", ppi_auth="NOT_ATTEMPTED",
@@ -2232,4 +2281,10 @@ def run():
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # SQLITE_FULL/ENOSPC must not turn a degraded PAPER scanner into hundreds
+    # of container restarts. Quarantine is in-process and never writes SQLite;
+    # it stays red/stale until normal startup succeeds after disk recovery.
+    sys.exit(scanner_with_storage_quarantine(
+        run, stopped=lambda: STOP,
+        emit=lambda item: print(json.dumps(item, sort_keys=True),
+                                file=sys.stderr, flush=True)))

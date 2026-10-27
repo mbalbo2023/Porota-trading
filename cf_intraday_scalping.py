@@ -817,7 +817,8 @@ def evaluate_candidate(store, record, *, at):
             spread = ask / bid - 1
             observed_range = max(prices[-15:]) / min(prices[-15:]) - 1
             import au_fee_schedule
-            one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(family_name(record["instrument_type"]))))
+            one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(
+                family_name(record["instrument_type"]), currency=record["currency"])))
             modeled_roundtrip = one_leg * 2 + spread + Decimal("0.0004")
             required_move = modeled_roundtrip + Decimal(os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"))
             score = max(Decimal(0), min(Decimal(1), Decimal("0.5") + momentum*40 - spread*10))

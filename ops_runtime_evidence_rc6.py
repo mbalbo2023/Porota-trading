@@ -55,6 +55,14 @@ CANDIDATE_COLUMNS = (
     "ticker", "instrument_type", "market", "settlement", "can_simulate",
     "status", "detail", "last_checked_at",
 )
+EXACT_CANDIDATE_COLUMNS = (
+    "ticker", "instrument_type", "market", "currency", "settlement",
+    "can_simulate", "status", "detail", "checked_at",
+)
+# The candidate writer and the PAPER quote guard use a fourteen-day identity
+# LKG.  The bundle's shorter --freshness-seconds is an evidence-quality clock,
+# not the candidate admission contract.  A parity test guards against drift.
+PPI_IDENTITY_LKG_SECONDS = 14 * 86400
 SOURCE_SYNC_COLUMNS = (
     "source", "status", "last_attempt_at", "last_success_at", "items", "detail",
 )
@@ -63,6 +71,7 @@ ALLOWED_TABLES = {
     "financial_instrument_catalog": CATALOG_COLUMNS,
     "complementary_contract_retry": RETRY_COLUMNS,
     "candidate_universe": CANDIDATE_COLUMNS,
+    "candidate_identity_v2": EXACT_CANDIDATE_COLUMNS,
     "source_sync": SOURCE_SYNC_COLUMNS,
 }
 
@@ -239,7 +248,8 @@ def _catalog_key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
 
 
 def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]],
-                     candidates: list[dict[str, Any]], current: datetime,
+                     candidates: list[dict[str, Any]], exact_candidates: list[dict[str, Any]],
+                     exact_ledger_present: bool, current: datetime,
                      freshness_seconds: int) -> tuple[list[dict[str, Any]], list[str]]:
     issues: list[str] = []
     retry_by_key: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -248,12 +258,17 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
     candidate_by_key: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for candidate in candidates:
         candidate_by_key[_candidate_key(candidate)].append(candidate)
+    exact_by_key: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    exact_ready_by_short_key: Counter[tuple[str, str, str]] = Counter()
+    for candidate in exact_candidates:
+        exact_by_key[_catalog_key(candidate)].append(candidate)
+        if (candidate.get("can_simulate") == 1 and candidate.get("status") == "AVAILABLE"):
+            exact_ready_by_short_key[_candidate_key(candidate)] += 1
 
-    symbol_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    primary_symbol_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    symbol_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    primary_symbol_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in catalog:
-        symbol_key = (str(row.get("ticker") or "").upper(),
-                      str(row.get("instrument_type") or "").upper())
+        symbol_key = _candidate_key(row)
         symbol_groups[symbol_key].append(row)
         if _primary_identity(row, _metadata(row.get("metadata_json"))):
             primary_symbol_groups[symbol_key].append(row)
@@ -279,10 +294,10 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
         }
         key = _catalog_key(row)
         retry_rows = retry_by_key.get(key, [])
-        symbol_key = (str(row.get("ticker") or "").upper(),
-                      str(row.get("instrument_type") or "").upper())
+        symbol_key = _candidate_key(row)
         primary_count = len(primary_symbol_groups[symbol_key])
-        ambiguity = (primary_count > 1
+        ambiguity = ((exact_ready_by_short_key[symbol_key] > 1 if exact_ledger_present
+                      else primary_count > 1)
                      or (primary_count == 0 and len(symbol_groups[symbol_key]) > 1))
         retry_ambiguity = any("AMBIG" in str(item.get("reason") or "").upper() for item in retry_rows)
         capability = safe_text(row.get("capability"), "UNKNOWN_CAPABILITY")
@@ -300,18 +315,36 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
         if ambiguity or retry_ambiguity:
             reasons.append("IDENTITY_AMBIGUOUS")
 
-        projected = candidate_by_key.get(_candidate_key(row), [])
-        candidate_applies = primary or primary_count == 0
+        projected = (exact_by_key.get(key, []) if exact_ledger_present
+                     else candidate_by_key.get(_candidate_key(row), []))
+        candidate_applies = exact_ledger_present or primary or primary_count == 0
         if len(projected) != 1:
-            reasons.append("CANDIDATE_LEDGER_CARDINALITY:" + str(len(projected)))
+            reasons.append(("EXACT_CANDIDATE_LEDGER_CARDINALITY:" if exact_ledger_present
+                            else "CANDIDATE_LEDGER_CARDINALITY:") + str(len(projected)))
             issues.append("CANDIDATE_LEDGER_CARDINALITY")
         elif int(projected[0].get("can_simulate") or 0) not in {0, 1}:
             reasons.append("CANDIDATE_LEDGER_INVALID")
             issues.append("CANDIDATE_LEDGER_INVALID")
-        elif (candidate_applies
-              and int(projected[0].get("can_simulate") or 0) == 1 and reasons):
-            reasons.append("CANDIDATE_LEDGER_CONTRADICTS_FAIL_CLOSED")
-            issues.append("CANDIDATE_LEDGER_CONTRADICTION")
+        else:
+            projected_row = projected[0]
+            can_simulate = int(projected_row.get("can_simulate") or 0)
+            candidate_status = str(projected_row.get("status") or "")
+            # 24-hour evidence may be stale even when the writer's exact
+            # identity remains admissible for fourteen days.  Preserve NO_READY
+            # for this bundle, but do not call the two clocks contradictory.
+            hard_reasons = [reason for reason in reasons if not (
+                reason == "PPI_FRESHNESS_STALE" and
+                _freshness(row.get("last_seen_at"), current,
+                           PPI_IDENTITY_LKG_SECONDS)["state"] == "FRESH")]
+            if candidate_status != "AVAILABLE":
+                status_reason = "CANDIDATE_STATUS:" + safe_text(candidate_status)
+                reasons.append(status_reason)
+                hard_reasons.append(status_reason)
+            if candidate_applies and can_simulate == 1 and hard_reasons:
+                reasons.append("CANDIDATE_LEDGER_CONTRADICTS_FAIL_CLOSED")
+                issues.append("CANDIDATE_LEDGER_CONTRADICTION")
+            elif candidate_applies and can_simulate == 0:
+                reasons.append("CANDIDATE_GATE:NO_GO")
 
         readiness = "READY_PAPER" if not reasons else "NO_READY"
         if readiness == "READY_PAPER" and any(
@@ -372,7 +405,7 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
             "identity_flags": {
                 "ymc_special": ticker.startswith("YMC"),
                 "ambiguous": ambiguity or retry_ambiguity,
-                "duplicate": ambiguity,
+                "duplicate": primary_count > 1,
                 "ghost": False,
             },
         }
@@ -382,6 +415,10 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
     ghosts = sorted(set(candidate_by_key) - catalog_candidates)
     if ghosts:
         issues.append(f"CANDIDATE_GHOSTS:{len(ghosts)}")
+    if exact_ledger_present:
+        exact_ghosts = set(exact_by_key) - {_catalog_key(row) for row in catalog}
+        if exact_ghosts:
+            issues.append(f"EXACT_CANDIDATE_GHOSTS:{len(exact_ghosts)}")
     for rows in candidate_by_key.values():
         if len(rows) != 1:
             issues.append("CANDIDATE_DUPLICATE_KEY")
@@ -722,17 +759,23 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             ("source_sync", SOURCE_SYNC_COLUMNS),
         ):
             gaps.extend(_require_columns(schema, table, columns))
+        exact_ledger_present = "candidate_identity_v2" in schema
+        if exact_ledger_present:
+            gaps.extend(_require_columns(schema, "candidate_identity_v2", EXACT_CANDIDATE_COLUMNS))
         if gaps:
             observer_rows = _rows(conn, "observer_state", OBSERVER_COLUMNS) if not _require_columns(schema, "observer_state", OBSERVER_COLUMNS) else []
             catalog = []
             retries = []
             candidates = []
+            exact_candidates = []
             sync_rows = []
         else:
             observer_rows = _rows(conn, "observer_state", OBSERVER_COLUMNS)
             catalog = _rows(conn, "financial_instrument_catalog", CATALOG_COLUMNS)
             retries = _rows(conn, "complementary_contract_retry", RETRY_COLUMNS)
             candidates = _rows(conn, "candidate_universe", CANDIDATE_COLUMNS)
+            exact_candidates = (_rows(conn, "candidate_identity_v2", EXACT_CANDIDATE_COLUMNS)
+                                if exact_ledger_present else [])
             sync_rows = _rows(conn, "source_sync", SOURCE_SYNC_COLUMNS)
     if len(observer_rows) != 1 or int(observer_rows[0].get("id") or 0) != 1:
         gaps.append("OBSERVER_STATE_CARDINALITY")
@@ -743,7 +786,8 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
         gaps.append("CATALOG_EMPTY")
 
     instruments, ledger_issues = _instrument_rows(
-        catalog, retries, candidates, current, freshness_seconds
+        catalog, retries, candidates, exact_candidates, exact_ledger_present,
+        current, freshness_seconds
     )
     gaps.extend(ledger_issues)
     if len(instruments) != len(catalog):
@@ -799,6 +843,7 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             "schema_allowlist": sorted(ALLOWED_TABLES),
             "catalog_rows": len(catalog),
             "candidate_rows": len(candidates),
+            "exact_candidate_rows": len(exact_candidates) if exact_ledger_present else None,
             # Compatibility alias: unlike the previous implementation this now
             # counts the actual candidate ledger, never catalog projections.
             "ledger_rows": len(candidates),

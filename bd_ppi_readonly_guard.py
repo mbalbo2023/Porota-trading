@@ -71,6 +71,30 @@ class ReadOnlyPolicyViolation(RuntimeError):
     """La solicitud fue bloqueada localmente; no salio a la red."""
 
 
+class ProductionAuthResponseError(RuntimeError):
+    """Login no JSON con metadatos HTTP enumerados, sin cuerpo ni headers crudos."""
+
+
+def _login_response_metadata(response, body) -> str:
+    """Only fixed labels and the byte count may leave the login wire boundary."""
+    try:
+        status = response.status_code
+        status = status if type(status) is int and 100 <= status <= 599 else "UNKNOWN"
+        header = response.headers.get("Content-Type")
+        media = header.split(";", 1)[0].strip().lower() if isinstance(header, str) else ""
+        media_class = {
+            "application/json": "APPLICATION_JSON",
+            "application/problem+json": "APPLICATION_PROBLEM_JSON",
+            "text/html": "TEXT_HTML",
+            "text/plain": "TEXT_PLAIN",
+        }.get(media, "OTHER" if header else "ABSENT")
+        length = len(body) if isinstance(body, (bytes, bytearray)) else "UNKNOWN"
+        return f"HTTP={status}; Content-Type={media_class}; Content-Length={length}"
+    except Exception:
+        # A diagnostic must never interrupt or loosen the existing login.
+        return "HTTP=UNKNOWN; Content-Type=UNKNOWN; Content-Length=UNKNOWN"
+
+
 def session_invalid(error: BaseException) -> bool:
     """Reconoce autenticación expirada sin depender de una clase privada del SDK."""
     current = error
@@ -279,6 +303,10 @@ class ReadOnlyTransportGuard:
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
             budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
             lease = None
+            if checked_method != "POST" or checked_path != "/api/1.0/account/loginapi":
+                # Never attribute a later SDK JSON parse failure to an older
+                # login response from the same thread.
+                guard._scope.login_http_metadata = None
             if budget is not None:
                 from rc6_ppi_global_budget import BudgetBackpressure
                 admitted = budget.acquire(endpoint, consumer=guard.consumer,
@@ -303,7 +331,9 @@ class ReadOnlyTransportGuard:
                     response = original_send(adapter, request, **kwargs)
                     if response.status_code >= 400:
                         guard._read_error(f"PPI_HTTP_{response.status_code}")
-                    response.content
+                    body = response.content
+                    if checked_method == "POST" and checked_path == "/api/1.0/account/loginapi":
+                        guard._scope.login_http_metadata = _login_response_metadata(response, body)
                 except Exception as error:
                     status = response.status_code if response is not None else None
                     code = (f"PPI_HTTP_{status}" if status and status >= 400 else
@@ -388,7 +418,22 @@ class ProductionMarketReader:
         from ppi_client.ppi import PPI
 
         client = PPI(sandbox=False)
-        client.account.login_api(self.__api_key, self.__api_secret)
+        self.__guard._scope.login_http_metadata = None
+        non_json_metadata = None
+        try:
+            client.account.login_api(self.__api_key, self.__api_secret)
+        except JSONDecodeError:
+            non_json_metadata = self.__guard._scope.login_http_metadata
+            if not non_json_metadata:
+                raise
+        finally:
+            self.__guard._scope.login_http_metadata = None
+        if non_json_metadata:
+            # Raise outside the SDK exception handler: the new error must not
+            # retain a context object whose JSONDecodeError.doc is the body.
+            raise ProductionAuthResponseError(
+                "PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: " + non_json_metadata
+            )
         self.__client = client
         self.__authenticated = True
 

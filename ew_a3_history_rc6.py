@@ -18,6 +18,7 @@ from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient, assert_cem_i
 from db_a3_cem_normalizer_hf6 import normalize_symbols, closing_to_candle, assert_cem_normalizer_invariants
 from cy_market_source_arbitration_hf6 import assert_source_invariants
 from fd_a3_identity_mapper_rc6 import A3IdentityError, align_dlr, porota_to_a3_dlr
+from rc6_data_retention import bounded_daily_start, daily_start
 
 TZ=ZoneInfo('America/Argentina/Buenos_Aires')
 FAMILIES={'FUTUROS','OPCIONES'}
@@ -130,18 +131,21 @@ def _record(store,target,*,status,day,rows,error='',empty=False,success=False,at
 
 def _range_for(mode,current,state):
     today=current.date()
+    # A daily session series may contain at most 365 calendar dates including
+    # today.  A stale checkpoint never authorizes a wider provider request.
+    oldest_retained=daily_start(current)
     last=None
     try: last=date.fromisoformat(str((state or {}).get('last_complete_day') or ''))
     except Exception: last=None
     if mode=='BOOTSTRAP':
-        start=max(today-timedelta(days=365), (last+timedelta(days=1)) if last else today-timedelta(days=365))
+        start=max(oldest_retained, (last+timedelta(days=1)) if last else oldest_retained)
     elif mode=='WEEKEND_DEEP':
         start=max(today-timedelta(days=180),(last+timedelta(days=1)) if last else today-timedelta(days=180))
     elif mode=='RECONCILE':
         start=today-timedelta(days=10)
     else:  # DAILY_INCREMENTAL
         start=(last+timedelta(days=1)) if last else today-timedelta(days=7)
-    return start,today
+    return bounded_daily_start(start,current),today
 
 
 def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL',batch_limit=40,throttle_seconds=0.0):
@@ -209,6 +213,9 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
                     candle=replace(candle,symbol=symbol,metadata=metadata)
                     if candle.symbol!=symbol or candle.instrument_type!=family: continue
                     candle.validate()
+                    # The provider may return rows outside the requested
+                    # interval.  Never persist expired or future sessions.
+                    if not start.isoformat()<=candle.date<=end.isoformat(): continue
                     candles.append(candle)
                 except (TypeError,ValueError): continue
             if not candles:

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import sqlite3
@@ -97,6 +97,36 @@ def test_incremental_uses_day_after_last_complete(tmp_path):
     a3.run(s,client=client,history_store=s,now=NOW,mode='DAILY_INCREMENTAL')
     assert client.calls[0]['date_from']=='2026-09-05'
     assert client.calls[0]['date_to']=='2026-09-05'
+
+
+def test_a3_bootstrap_and_stale_cursor_never_request_more_than_365_dates(tmp_path):
+    s=make_store(tmp_path)
+    oldest=(NOW.date()-timedelta(days=364)).isoformat()
+    client=Client(rows=False)
+    a3.run(s,client=client,history_store=s,now=NOW,mode='BOOTSTRAP')
+    assert client.calls[0]['date_from']==oldest
+    a3.init_state(s)
+    with s.connect() as c:
+        c.execute('''UPDATE a3_history_ingest_state_rc6_v2 SET last_complete_day=?''',
+                  ((NOW.date()-timedelta(days=1000)).isoformat(),))
+    client.calls.clear()
+    a3.run(s,client=client,history_store=s,now=NOW,mode='DAILY_INCREMENTAL')
+    assert client.calls[0]['date_from']==oldest
+
+
+def test_a3_provider_rows_outside_requested_dates_are_not_persisted(tmp_path):
+    s=make_store(tmp_path)
+    class OutOfRange(Client):
+        def closing_prices(self,**kwargs):
+            self.calls.append(kwargs)
+            old=(NOW.date()-timedelta(days=365)).isoformat()+'T21:00:00Z'
+            return {'data':[{'symbol':'DLR/OCT26','dateTime':old,
+                'open':100,'high':110,'low':95,'close':105,'volume':10,'settlement':104}]}
+    client=OutOfRange()
+    result=a3.run(s,client=client,history_store=s,now=NOW,mode='BOOTSTRAP')
+    assert result['versions_appended']==0
+    with s.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM history_versions_v2').fetchone()[0]==0
 
 
 def test_completed_a3_cursor_avoids_catalog_request_but_reconcile_checks_corrections(tmp_path):

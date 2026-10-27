@@ -172,6 +172,29 @@ def _rows(path: Path, source: str):
         return out
     return []
 
+def _iol_option_observation(raw: dict) -> dict:
+    """Read a legacy IOL option sidecar without granting contract authority."""
+    row=dict(raw)
+    original=row.get("option_chain_evidence")
+    detail=dict(original) if isinstance(original,dict) else {}
+    if row.get("financial_contract_v17") is not None:
+        detail["legacy_financial_contract_unverified"]=row["financial_contract_v17"]
+    if "contract_lot" in detail:
+        detail["legacy_contract_lot_unverified"]=detail.pop("contract_lot")
+    if "contract_lot_source" in detail:
+        detail["legacy_contract_lot_source_unverified"]=detail.pop("contract_lot_source")
+    if detail.get("series_identity_state") != "EXACT_IOL_ASSET_INFO":
+        if row.get("market") is not None:
+            detail["legacy_market_unverified"]=row["market"]
+        if row.get("currency") is not None:
+            detail["legacy_currency_unverified"]=row["currency"]
+        row.update(market=None,currency=None)
+    detail.update(series_adjustment_state="NO_VERIFICADO",contract_state="NO_VERIFICADO")
+    row["option_chain_evidence"]=detail
+    row["financial_contract_v17"]=None
+    return row
+
+
 def _family_reference_rows(path: Path):
     payload=_load(path)
     out=[]
@@ -180,18 +203,22 @@ def _family_reference_rows(path: Path):
         family=canonical_family(raw.get("instrument_type") or raw.get("family"))
         ticker=str(raw.get("ticker") or raw.get("symbol") or "").strip().upper()
         if not family or not ticker: continue
-        row=dict(raw)
+        row=_iol_option_observation(raw) if family=="OPCIONES" else dict(raw)
+        explicit_market=bool(row.get("market"))
+        explicit_currency=bool(row.get("currency"))
+        explicit_settlement=bool(row.get("settlement") or row.get("term"))
         row["ticker"]=ticker
         row["instrument_type"]=family
-        row["market"]=canonical_market(raw.get("market") or "BYMA")
-        row["settlement"]=canonical_settlement(raw.get("settlement") or raw.get("term"),family)
+        row["market"]=canonical_market(
+            row.get("market") or ("UNKNOWN" if family=="OPCIONES" else "BYMA"))
+        row["settlement"]=canonical_settlement(row.get("settlement") or row.get("term"),family)
         row["source"]="IOL_COMPLEMENTARY"
         row["source_channel"]="IOL_FAMILY_REFERENCE"
-        row["observed_at"]=raw.get("observed_at") or payload.get("refreshed_at")
+        row["observed_at"]=row.get("observed_at") or payload.get("refreshed_at")
         row["identity_evidence"]={
-            "market_explicit":bool(raw.get("market")),
-            "currency_explicit":bool(raw.get("currency")),
-            "settlement_explicit":bool(raw.get("settlement") or raw.get("term")),
+            "market_explicit":explicit_market,
+            "currency_explicit":explicit_currency,
+            "settlement_explicit":explicit_settlement,
         }
         out.append(row)
     # FCI inventory is discovery evidence, not a complete trading contract.

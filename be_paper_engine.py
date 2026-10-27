@@ -836,21 +836,22 @@ class PaperBroker:
             return self.daily_risk.admission_error(currency,at,connection=connection,quotes={q.symbol:q})
         return ""
 
-    def _cost(self, price, qty, asset_class="ACCIONES"):
+    def _cost(self, price, qty, asset_class="ACCIONES", *, currency=None):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
         from rc6_performance.costs import ledger_leg_cost
         family = family_name(asset_class)
         if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
-        return ledger_leg_cost(price, qty, family)
+        return ledger_leg_cost(price, qty, family, currency=currency)
 
-    def _leg_rate(self, asset_class, *, rebated=False):
+    def _leg_rate(self, asset_class, *, currency=None, rebated=False):
         """Tasa de una punta; la reducida exige elegibilidad intradiaria."""
         from rc6_performance.costs import ledger_leg_rate
         family = family_name(asset_class)
         if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
-        return ledger_leg_rate(family, rebated=rebated and self.intraday_fee_rebate)
+        return ledger_leg_rate(family, currency=currency,
+                               rebated=rebated and self.intraday_fee_rebate)
 
     def record_observation_rejection(self, q, reason_code):
         """Persist a pre-signal rejection through the existing decision writer."""
@@ -1306,8 +1307,8 @@ class PaperBroker:
         target = entry * (1 + self.target_gain_pct)
         stop_fill = stop * (1 - self.slippage)
         target_fill = target * (1 - self.slippage)
-        full = self._leg_rate(q.asset_class, rebated=False)
-        low = self._leg_rate(q.asset_class, rebated=True)
+        full = self._leg_rate(q.asset_class, currency=q.currency, rebated=False)
+        low = self._leg_rate(q.asset_class, currency=q.currency, rebated=True)
         # La bonificacion corresponde a la operacion de menor valor. En una
         # ganancia es la compra; en una perdida, la venta. Si no es elegible,
         # low == full y se conserva el modelo previo.
@@ -2116,15 +2117,15 @@ class PaperBroker:
             # nominal stop distance used by spot families.
             by_risk = self._quantity_in_budget(
                 entry * factor, concurrent_risk_budget,
-                lambda qty: self._cost(entry * factor, qty, q.asset_class))
+                lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
         else:
             by_risk = self._quantity_in_budget(
                 (entry - modeled_stop_fill) * factor, concurrent_risk_budget,
-                lambda qty: self._cost(entry * factor, qty, q.asset_class) +
-                            self._cost(modeled_stop_fill * factor, qty, q.asset_class))
+                lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency) +
+                            self._cost(modeled_stop_fill * factor, qty, q.asset_class, currency=currency))
         by_cash = self._quantity_in_budget(
             entry * factor, max(ZERO, self._cash(as_of=at, currency=currency)),
-            lambda qty: self._cost(entry * factor, qty, q.asset_class))
+            lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
         try:
             with self.store.connect() as c:
                 by_book = spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation).to_integral_value(ROUND_DOWN)
@@ -2188,7 +2189,7 @@ class PaperBroker:
                            f"ejecutable en {limits[binding]}"), None
         candidate_risk_value = candidate_stop_risk(
             self, entry_price=entry, stop_price=stop, quantity=qty,
-            cash_multiplier=factor, asset_class=q.asset_class)
+            cash_multiplier=factor, asset_class=q.asset_class, currency=currency)
         try:
             concurrent_preview = portfolio_capacity(
                 self, currency, at, candidate_risk=candidate_risk_value,
@@ -2202,7 +2203,7 @@ class PaperBroker:
             candidate_stop_risk=str(candidate_risk_value),
             concurrent_risk_preview=snapshot_dict(concurrent_preview))
         paper_id = "PAPER-" + uuid.uuid4().hex
-        cost = self._cost(entry * factor, qty, q.asset_class)
+        cost = self._cost(entry * factor, qty, q.asset_class, currency=currency)
         with self.store.connect() as c:
             # Serializa contra otras compras y colocaciones de caución.
             # No se hace red ni IA dentro de esta transacción.
@@ -2400,15 +2401,15 @@ class PaperBroker:
             exit_price = (q.bid*(1-self.slippage)).quantize(Decimal('0.0001'))
             if exit_price <= 0:
                 return False
-            exit_cost = self._cost(exit_price*factor,qty,p['asset_class'])
+            exit_cost = self._cost(exit_price*factor,qty,p['asset_class'], currency=p['currency'])
             rebate = ZERO
             family = family_name(p['asset_class'])
             same_day = opened.astimezone(TZ).date() == observed.astimezone(TZ).date()
             if (self.intraday_fee_rebate and same_day and p['market'] == 'BYMA'):
                 import au_fee_schedule
                 if family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA:
-                    full = self._leg_rate(family, rebated=False)
-                    low = self._leg_rate(family, rebated=True)
+                    full = self._leg_rate(family, currency=p['currency'], rebated=False)
+                    low = self._leg_rate(family, currency=p['currency'], rebated=True)
                     matched_buy = D(root['entry_price']) * qty * factor
                     matched_sell = exit_price * qty * factor
                     # Por fills parciales se acredita por la porcion

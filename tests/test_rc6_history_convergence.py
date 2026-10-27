@@ -34,6 +34,10 @@ def offline(monkeypatch):
     def forbidden(*_,**__):raise AssertionError('NETWORK_FORBIDDEN_IN_HISTORY_REGRESSION')
     monkeypatch.setattr(socket.socket,'connect',forbidden)
     monkeypatch.setattr(socket,'create_connection',forbidden)
+    # Only these synthetic fixtures model a separately reviewed source schema.
+    # Production's pinned contract set remains empty until evidence exists.
+    monkeypatch.setattr(salvage,'VERIFIED_PPI_HISTORY_CONTRACTS',
+                        frozenset({'SYNTHETIC_TEST_CONTRACT'}))
 
 
 class Store:
@@ -322,24 +326,33 @@ def test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready(tmp_path
 def test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original(tmp_path,monkeypatch):
     monkeypatch.setattr(legacy,'HIST_DB_PATH',str(tmp_path/'legacy.sqlite'));legacy.init_db()
     row=('2026-09-30',100,100,100,100,1000)
-    legacy.guardar_velas('AUDIT','ACCIONES',[row],'IOL',False)
+    legacy.guardar_velas('AUDIT','ACCIONES',[row],'DATA912',False)
     with pytest.raises(ValueError,match='FAMILY_COLLISION'):
-        legacy.guardar_velas('AUDIT','BONOS',[row],'DATA912',False)
+        legacy.guardar_velas('AUDIT','BONOS',[row],'YAHOO',False)
     with legacy._conn() as c:
         assert c.execute('SELECT asset_class,close FROM market_historical_ohlcv').fetchone()==('ACCIONES',100)
 
 
-def test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate(tmp_path,monkeypatch):
+def test_U_IOL_NORMALIZER_keeps_money_and_quantity_separate_without_archiving(tmp_path,monkeypatch):
     monkeypatch.setattr(legacy,'HIST_DB_PATH',str(tmp_path/'legacy.sqlite'));legacy.init_db()
     row=legacy._normalizar_fila_iol(dict(fecha='2026-09-30',ultimoPrecio=100,apertura=100,maximo=100,
         minimo=100,montoOperado=100000,volumen=1000,currency='ARS',volume_kind='QUANTITY'))
     assert row[5]==1000 and row.cash_turnover==100000
-    legacy.guardar_velas('AUDIT','ACCIONES',[row],'IOL',True)
+    with pytest.raises(ValueError,match='IOL_HISTORICAL_PROVENANCE_UNVERIFIED'):
+        legacy.guardar_velas('AUDIT','ACCIONES',[row],'IOL',True)
+    assert data912.archived_liquidity('AUDIT','ACCIONES',currency='ARS') is None
+    money_only=legacy._normalizar_fila_iol(dict(fecha='2026-09-30',ultimoPrecio=100,montoOperado=100000))
+    assert money_only[5] is None and money_only.cash_turnover==100000
+
+
+def test_U_ARCHIVED_LIQUIDITY_requires_explicit_currency(tmp_path,monkeypatch):
+    monkeypatch.setattr(legacy,'HIST_DB_PATH',str(tmp_path/'legacy.sqlite'));legacy.init_db()
+    row=legacy.HistoricalRow(('2026-09-30',100,100,100,100,1000),currency='ARS',
+                             volume_kind='QUANTITY',cash_turnover=100000)
+    legacy.guardar_velas('AUDIT','ACCIONES',[row],'DATA912',False)
     assert data912.archived_liquidity('AUDIT','ACCIONES',currency='ARS')==100000
     assert data912.archived_liquidity('AUDIT','ACCIONES') is None
     assert data912.archived_liquidity('AUDIT','ACCIONES',currency='USD') is None
-    money_only=legacy._normalizar_fila_iol(dict(fecha='2026-09-30',ultimoPrecio=100,montoOperado=100000))
-    assert money_only[5] is None and money_only.cash_turnover==100000
 
 
 def test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence(tmp_path):
@@ -442,7 +455,9 @@ def test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready(tm
 
 
 def ppi_row(**changes):
-    row=dict(date='2026-09-30T17:00:00-03:00',openingPrice=100,max=102,min=98,price=100,volume=1000)
+    row=dict(date='2026-09-30T17:00:00-03:00',openingPrice=100,max=102,min=98,
+             price=100,volume=1000,currency='ARS',priceBasis='RAW',
+             adjustmentBasis='RAW_NO_ADJUSTMENT',adjusted=False)
     row.update(changes);return row
 
 
@@ -450,7 +465,8 @@ def test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplica
     observer=Store(tmp_path/'observer.sqlite');archive=Store(tmp_path/'history.sqlite')
     args=dict(symbol='AUDIT',instrument_type='ACCIONES',market='BYMA',currency='ARS',settlement='A-24HS',
               payload=[ppi_row(),ppi_row(date='2026-09-29T17:00:00-03:00',openingPrice=0)],
-              attempted_at='2026-10-01T16:00:00Z',history_store=archive)
+              attempted_at='2026-10-01T16:00:00Z',history_store=archive,
+              provider_contract_id='SYNTHETIC_TEST_CONTRACT')
     original=salvage._append_attempt_once
     monkeypatch.setattr(salvage,'_append_attempt_once',lambda *_:(_ for _ in ()).throw(OSError('injected observer failure')))
     with pytest.raises(OSError):salvage.ingest_ppi_payload(observer,**args)
@@ -485,7 +501,8 @@ def test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch(tmp_path):
 def test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data(tmp_path):
     observer=Store(tmp_path/'observer.sqlite');archive=Store(tmp_path/'history.sqlite')
     args=dict(symbol='AUDIT',instrument_type='ACCIONES',market='BYMA',currency='ARS',settlement='A-24HS',
-              payload=[ppi_row()],attempted_at='2026-10-01T16:00:00Z',history_store=archive)
+              payload=[ppi_row()],attempted_at='2026-10-01T16:00:00Z',history_store=archive,
+              provider_contract_id='SYNTHETIC_TEST_CONTRACT')
     first=salvage.ingest_ppi_payload(observer,**args)
     history.append_candle(archive,candle(source='PPI_PRODUCTION_HISTORY',close=101,
                                         provider_at=ppi_row()['date'],observed_at='2026-10-01T17:00:00Z'))
@@ -502,7 +519,8 @@ def test_AUD10_conflicting_daily_PPI_duplicates_are_all_quarantined_with_exact_i
     observer=Store(tmp_path/'observer.sqlite');archive=Store(tmp_path/'history.sqlite')
     result=salvage.ingest_ppi_payload(observer,symbol='AUDIT',instrument_type='ACCIONES',market='BYMA',
         currency='ARS',settlement='A-24HS',payload=[ppi_row(),ppi_row(price=101),ppi_row(price=99)],
-        attempted_at='2026-10-01T16:00:00Z',history_store=archive)
+        attempted_at='2026-10-01T16:00:00Z',history_store=archive,
+        provider_contract_id='SYNTHETIC_TEST_CONTRACT')
     assert result['provider_rows']==result['rejected_rows']==3 and result['valid_rows']==result['close_only_rows']==0
     assert [row['row_index'] for row in table(observer,'history_row_rejections_v2')]==[0,1,2]
     assert table(archive,'history_versions_v2')==[]
@@ -534,7 +552,7 @@ def test_AUD10_legacy_writer_shares_numeric_validation_and_rolls_back_entire_bat
     valid=('2026-09-30',100,102,98,100,1000)
     invalid=('2026-10-01',100,102,98,float('inf'),1000)
     with pytest.raises(ValueError,match='HISTORY_CLOSE_NONFINITE'):
-        legacy.guardar_velas('AUDIT','ACCIONES',[valid,invalid],'IOL',False)
+        legacy.guardar_velas('AUDIT','ACCIONES',[valid,invalid],'DATA912',False)
     with legacy._conn() as c:assert c.execute('SELECT COUNT(*) FROM market_historical_ohlcv').fetchone()[0]==0
 
 
@@ -615,7 +633,12 @@ def test_AUD07_copy_migration_retains_source_and_quarantines_unknown_ambiguous_c
           volume,source,adjusted,observed_at,payload_hash,metadata_json);
           CREATE TABLE history_canonical_v2(symbol,instrument_type,market,settlement,date,close);
           CREATE TABLE unrelated_evidence(value);INSERT INTO unrelated_evidence VALUES('preserve');''')
-        for i,meta in enumerate(({'currency':'ARS'},{},{'currency':'USD'}),1):
+        for i,meta in enumerate((
+                {'currency':'ARS','price_basis':'RAW','adjustment_basis':'RAW_NO_ADJUSTMENT',
+                 'version_known_at':'2026-10-01T16:00:00Z','volume_kind':'QUANTITY'},
+                {},
+                {'currency':'USD','price_basis':'RAW','adjustment_basis':'RAW_NO_ADJUSTMENT',
+                 'version_known_at':'2026-10-01T16:00:00Z','volume_kind':'QUANTITY'}),1):
             c.execute('INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (i,'AUDIT'+str(i),'ACCIONES','BYMA','A-24HS','2026-09-30',100,102,98,100,1000,'PPI_API',0,
                  '2026-10-01T16:00:00Z','oldhash'+str(i),json.dumps(meta)))
@@ -641,13 +664,31 @@ def test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_curren
           CREATE TABLE history_close_canonical_v1(symbol,instrument_type,market,settlement,date,close);
           INSERT INTO history_close_versions_v1 VALUES(1,'AUDIT','ACCIONES','BYMA','A-24HS',
             '2026-09-30',100,'PPI_PRODUCTION_HISTORY_CLOSE_ONLY','CLOSE_ONLY_PROVIDER_PARTIAL',
-            '2026-10-01T16:00:00Z','hash','{}');''')
+            '2026-10-01T16:00:00Z','hash','{"version_known_at":"2026-10-01T16:00:00Z"}');''')
     before=source.read_bytes()
     result=history.migrate_copy(source,target,currency_map={('AUDIT','ACCIONES','BYMA','A-24HS'):'ARS'})
     assert result['close_only']=={'migrated_rows':1,'quarantined_rows':0}
     assert source.read_bytes()==before
     with sqlite3.connect(target) as c:
         assert c.execute('SELECT currency,close FROM history_close_canonical_v1').fetchone()==('ARS',100)
+        assert c.execute('SELECT COUNT(*) FROM history_close_versions_v1_legacy').fetchone()[0]==1
+
+
+def test_AUD07_close_only_currency_mapping_does_not_invent_pit_clock(tmp_path):
+    source=tmp_path/'legacy.sqlite';target=tmp_path/'migrated.sqlite'
+    with sqlite3.connect(source) as c:
+        c.executescript('''CREATE TABLE history_close_versions_v1(
+          id INTEGER PRIMARY KEY,symbol,instrument_type,market,settlement,date,
+          close,source,quality,observed_at,raw_row_hash,metadata_json);
+          CREATE TABLE history_close_canonical_v1(symbol,instrument_type,market,settlement,date,close);
+          INSERT INTO history_close_versions_v1 VALUES(1,'AUDIT','ACCIONES','BYMA','A-24HS',
+            '2026-09-30',100,'PPI_PRODUCTION_HISTORY_CLOSE_ONLY','CLOSE_ONLY_PROVIDER_PARTIAL',
+            '2026-10-01T16:00:00Z','oldhash','{}');''')
+    result=history.migrate_copy(source,target,currency_map={('AUDIT','ACCIONES','BYMA','A-24HS'):'ARS'})
+    assert result['close_only']=={'migrated_rows':0,'quarantined_rows':1}
+    with sqlite3.connect(target) as c:
+        assert c.execute('SELECT reason FROM history_close_migration_quarantine_v2').fetchone()==(
+            'HISTORY_CLOSE_PIT_CLOCK_PROVENANCE_REQUIRED',)
         assert c.execute('SELECT COUNT(*) FROM history_close_versions_v1_legacy').fetchone()[0]==1
 
 
@@ -663,7 +704,8 @@ def test_AUD07_close_only_row_failure_rolls_back_partial_insert(tmp_path,monkeyp
             c.execute('INSERT INTO history_close_versions_v1 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                 (row_id,'AUDIT'+str(row_id),'ACCIONES','BYMA','A-24HS','2026-09-30',
                  price,'PPI_PRODUCTION_HISTORY_CLOSE_ONLY','CLOSE_ONLY_PROVIDER_PARTIAL',
-                 '2026-10-01T16:00:00Z','hash'+str(row_id),'{}'))
+                 '2026-10-01T16:00:00Z','hash'+str(row_id),
+                 json.dumps({'version_known_at':'2026-10-01T16:00:00Z'})))
     before=source.read_bytes()
     original=close_history.append_close_evidence
     def fail_after_insert(store,item,*,connection=None):
@@ -690,6 +732,34 @@ def test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort
         history.resolve_legacy_currency('USD',['ARS','USD_MEP'])
 
 
+def test_AUD07_copy_quarantines_currency_mapped_rows_without_basis_or_pit(tmp_path):
+    source=tmp_path/'legacy.sqlite';target=tmp_path/'migrated.sqlite'
+    with sqlite3.connect(source) as c:
+        c.executescript('''CREATE TABLE history_versions_v2(
+          id INTEGER PRIMARY KEY,symbol,instrument_type,market,settlement,date,open,high,low,close,
+          volume,source,adjusted,observed_at,payload_hash,metadata_json);
+          CREATE TABLE history_canonical_v2(symbol,instrument_type,market,settlement,date,close);''')
+        for row_id,meta in enumerate((
+                {'currency':'ARS'},
+                {'currency':'ARS','price_basis':'RAW','adjustment_basis':'RAW_NO_ADJUSTMENT',
+                 'volume_kind':'QUANTITY'},
+                {'currency':'ARS','price_basis':'RAW','adjustment_basis':'RAW_NO_ADJUSTMENT',
+                 'volume_kind':'QUANTITY','version_known_at':'2026-10-02T16:00:00Z'}),1):
+            c.execute('INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (row_id,'AUDIT','ACCIONES','BYMA','A-24HS','2026-09-30',100,102,98,100,
+                 1000,'PPI_API',0,'2026-10-01T16:00:00Z','oldhash'+str(row_id),json.dumps(meta)))
+    before=source.read_bytes()
+    result=history.migrate_copy(source,target,currency_map={('AUDIT','ACCIONES','BYMA','A-24HS'):'ARS'})
+    assert result['migrated_rows']==0 and result['quarantined_rows']==3
+    assert source.read_bytes()==before
+    with sqlite3.connect(target) as c:
+        assert c.execute('SELECT reason FROM history_migration_quarantine_v2 ORDER BY old_version_id').fetchall()==[
+            ('HISTORY_PRICE_BASIS_PROVENANCE_REQUIRED',),
+            ('HISTORY_PIT_CLOCK_PROVENANCE_REQUIRED',),
+            ('HISTORY_PIT_CLOCK_AFTER_OBSERVATION',)]
+        assert c.execute('SELECT COUNT(*) FROM history_versions_v2').fetchone()[0]==0
+
+
 def test_AUD07_migration_orders_revisions_by_actual_instant_and_rolls_back_bad_row(tmp_path,monkeypatch):
     source=tmp_path/'legacy.sqlite';target=tmp_path/'migrated.sqlite'
     with sqlite3.connect(source) as c:
@@ -702,7 +772,9 @@ def test_AUD07_migration_orders_revisions_by_actual_instant_and_rolls_back_bad_r
                                    (3,102,'2026-10-01T14:00:00-03:00')):
             c.execute('INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (row_id,'AUDIT','ACCIONES','BYMA','A-24HS','2026-09-30',100,102,98,close,
-                 1000,'PPI_API',0,known,'oldhash'+str(row_id),'{}'))
+                 1000,'PPI_API',0,known,'oldhash'+str(row_id),
+                 json.dumps({'price_basis':'RAW','adjustment_basis':'RAW_NO_ADJUSTMENT',
+                             'version_known_at':known,'volume_kind':'QUANTITY'})))
     before=source.read_bytes()
     original=history._append_connection
     def fail_after_insert(connection,value):
@@ -739,7 +811,8 @@ def test_AUD07_explicit_large_budget_uses_private_disk_scratch_and_cleans_up(tmp
           volume,source,adjusted,observed_at,payload_hash,metadata_json);
           CREATE TABLE history_canonical_v2(symbol,instrument_type,market,settlement,date,close);
           INSERT INTO history_versions_v2 VALUES(1,'AUDIT','ACCIONES','BYMA','A-24HS',
-            '2026-09-30',100,102,98,100,1000,'PPI_API',0,'2026-10-01T16:00:00Z','oldhash','{}');''')
+            '2026-09-30',100,102,98,100,1000,'PPI_API',0,'2026-10-01T16:00:00Z','oldhash',
+            '{"price_basis":"RAW","adjustment_basis":"RAW_NO_ADJUSTMENT","version_known_at":"2026-10-01T16:00:00Z","volume_kind":"QUANTITY"}');''')
     before=source.read_bytes()
     result=history.migrate_copy(source,target,
         currency_map={('AUDIT','ACCIONES','BYMA','A-24HS'):'ARS'},

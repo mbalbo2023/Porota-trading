@@ -129,19 +129,20 @@ def test_iol_flow_reference_checks_internal_balance_and_period_even_when_provide
     assert result()["reason"]=="FLOW_PERIOD_SEQUENCE_INVALID"
 
 
-def test_option_contract_uses_byma_underlying_lot_not_iol_order_step():
+def test_option_observation_keeps_byma_lot_without_certifying_series_adjustment():
     chain={"underlying":"GGAL","options":[{"symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
       "expiration":"2026-10-16T15:30:00-03:00","bid_price":87,"ask_price":88,"volume":10,"is_stale":False}]}
-    infos={"GFGC7000OC":{"market":"BCBA","currency":"ARS","term":"T0","units_per_lot":1,"order_terms":{"quantity_step":"1","minimum_quantity":"1","source_ref":"fixture:quantity-rule"},"premium_basis":"PER_UNDERLYING_UNIT","description":"Call"}}
+    infos={"GFGC7000OC":{"symbol":"GFGC7000OC","type":"OPCIONES","market":"BCBA","currency":"ARS","term":"T1","units_per_lot":1,"order_terms":{"quantity_step":"1","minimum_quantity":"1","source_ref":"fixture:quantity-rule"},"premium_basis":"PER_UNDERLYING_UNIT","description":"Call"}}
     rows=m._option_records(
         chain,infos,"2026-09-25T18:00:00+00:00",
-        underlying_info={"type":"ACCIONES","currency":"ARS"})
-    contract=rows[0]["financial_contract_v17"]
-    assert contract["family"]=="OPCIONES" and contract["underlying"]=="GGAL"
-    assert contract["strike"]=="7000.0" and contract["option_right"]=="CALL"
-    assert contract["market"]=="BYMA" and contract["settlement"]=="INMEDIATA"
-    assert contract["cash_multiplier"]=="100"
-    assert contract["quantity_step"]=="1"
+        underlying_info={"symbol":"GGAL","type":"ACCIONES","currency":"USD"})
+    row=rows[0]
+    assert row["financial_contract_v17"] is None
+    assert (row["market"],row["currency"],row["settlement"]) == ("BYMA","ARS","INMEDIATA")
+    assert row["option_chain_evidence"]["standard_lot_reference"]==100
+    assert "contract_lot" not in row["option_chain_evidence"]
+    assert row["option_chain_evidence"]["series_identity_state"]=="EXACT_IOL_ASSET_INFO"
+    assert row["option_chain_evidence"]["series_adjustment_state"]=="NO_VERIFICADO"
 
 
 def test_option_lot_policy_pauses_non_equity_standard_series():
@@ -212,6 +213,9 @@ def test_collect_builds_fixed_option_fci_and_caucion_evidence_together(tmp_path)
             if name=="get_asset_info" and args["symbol"]=="GGAL":
                 return {"symbol":"GGAL","type":"ACCIONES","currency":"ARS",
                         "market":"BCBA","term":"T1","units_per_lot":1,"order_terms":{"quantity_step":"1","minimum_quantity":"1","source_ref":"fixture:quantity-rule"},"premium_basis":"PER_UNDERLYING_UNIT"}
+            if name=="get_asset_info" and args["symbol"]=="GFGC7000OC":
+                return {"symbol":"GFGC7000OC","type":"OPCIONES","currency":"ARS",
+                        "market":"BCBA","term":"T1","units_per_lot":1}
             if name=="get_fci_funds":
                 return {"result":[{"asset":"FUND1","currency":"ARS","operable":True}]}
             if name=="get_caucion_rates":
@@ -221,7 +225,10 @@ def test_collect_builds_fixed_option_fci_and_caucion_evidence_together(tmp_path)
     result=m.collect(Fake(),root=tmp_path,db_path=str(db))
     keyed={(r["instrument_type"],r["ticker"]):r for r in result["records"]}
     assert keyed[("BONOS","GD30")]["financial_contract_v17"]["cash_multiplier"]=="0.01"
-    assert keyed[("OPCIONES","GFGC7000OC")]["financial_contract_v17"]["cash_multiplier"]=="100"
+    option=keyed[("OPCIONES","GFGC7000OC")]
+    assert option["financial_contract_v17"] is None
+    assert option["option_chain_evidence"]["standard_lot_reference"]==100
+    assert option["currency"]=="ARS"
     assert result["fci"][0]["asset"]=="FUND1"
     assert result["cauciones"]["ARS"][0]["days"]==3
     assert result["cauciones"]["USD"][0]["days"]==3
@@ -233,16 +240,99 @@ def test_option_expiry_without_offset_is_bound_to_argentina_time():
     assert m._option_expiry("2026-10-16T18:30:00+00:00") == "2026-10-16T18:30:00+00:00"
 
 
-def test_option_contract_expiry_is_aware_and_accepted_by_financial_contract():
-    from bs_instrument_contracts import contract_from_metadata
+def test_option_observation_expiry_is_aware_without_contract():
     chain={"underlying":"GGAL","options":[{
         "symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
         "expiration":"2026-10-16T15:30:00","bid_price":87,"ask_price":88,
         "volume":10,"is_stale":False}]}
-    infos={"GFGC7000OC":{"market":"BCBA","currency":"ARS","units_per_lot":1,"order_terms":{"quantity_step":"1","minimum_quantity":"1","source_ref":"fixture:quantity-rule"},"premium_basis":"PER_UNDERLYING_UNIT"}}
+    infos={"GFGC7000OC":{"symbol":"GFGC7000OC","type":"OPCIONES","market":"BCBA","currency":"ARS","units_per_lot":1}}
     row=m._option_records(
         chain,infos,"2026-09-25T18:00:00+00:00",
         underlying_info={"symbol":"GGAL","type":"ACCIONES","currency":"ARS"})[0]
-    spec=contract_from_metadata("GFGC7000OC","OPCIONES",row["financial_contract_v17"])
-    assert spec.expires_at == "2026-10-16T15:30:00-03:00"
-    assert spec.cash_multiplier == Decimal("100")
+    assert row["option_chain_evidence"]["expires_at"] == "2026-10-16T15:30:00-03:00"
+    assert row["option_chain_evidence"]["standard_lot_reference"] == 100
+    assert row["financial_contract_v17"] is None
+
+
+def test_option_identity_cannot_inherit_underlying_or_boolean_adjustment():
+    chain={"underlying":"GGAL","options":[{
+        "symbol":"GFGC7000OC","option_type":"C","strike_price":7000,
+        "expiration":"2026-12-18T15:30:00","is_stale":False,
+        "adjusted_series_unverified":False}]}
+    underlying={"symbol":"GGAL","type":"ACCIONES","market":"BCBA","currency":"ARS"}
+    row=m._option_records(chain,{},"2026-10-27T01:00:00Z",underlying_info=underlying)[0]
+    assert row["market"] is None and row["currency"] is None
+    assert row["financial_contract_v17"] is None
+    mismatch={"GFGC7000OC":{"symbol":"OTHER","type":"OPCIONES","market":"BCBA",
+                            "currency":"USD","adjusted_series_unverified":False}}
+    row=m._option_records(chain,mismatch,"2026-10-27T01:00:00Z",underlying_info=underlying)[0]
+    assert row["market"] is None and row["currency"] is None
+    exact={"GFGC7000OC":dict(mismatch["GFGC7000OC"],symbol="GFGC7000OC")}
+    row=m._option_records(chain,exact,"2026-10-27T01:00:00Z",underlying_info=underlying)[0]
+    assert row["currency"]=="USD"  # The series differs from its ARS share.
+    assert row["financial_contract_v17"] is None
+    assert row["option_chain_evidence"]["series_adjustment_state"]=="NO_VERIFICADO"
+
+
+def test_collect_bounds_series_info_calls_and_keeps_unlooked_series_unknown(tmp_path):
+    db=tmp_path/"catalog.db"
+    con=sqlite3.connect(db)
+    con.execute("CREATE TABLE financial_instrument_catalog(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,status TEXT)")
+    con.execute("INSERT INTO financial_instrument_catalog VALUES('GGAL','ACCIONES','BYMA','ARS','A-24HS','AVAILABLE')")
+    con.commit();con.close()
+    options=[{"symbol":f"OPT{i}","option_type":"C","strike_price":100+i,
+              "expiration":"2026-12-18T15:30:00","volume":10-i,"is_stale":False}
+             for i in range(m.MAX_OPTION_SERIES_INFO+2)]
+    class Fake:
+        def __init__(self,fail=False): self.info=[];self.fail=fail
+        def call(self,name,args):
+            if name=="get_options_chain": return {"underlying":"GGAL","options":options}
+            if name=="get_asset_info":
+                self.info.append(args["symbol"])
+                if args["symbol"]=="GGAL":
+                    return {"symbol":"GGAL","type":"ACCIONES","market":"BCBA","currency":"ARS"}
+                if self.fail: raise RuntimeError("series info unavailable")
+                return {"symbol":args["symbol"],"type":"OPCIONES","market":"BCBA","currency":"ARS"}
+            if name in {"get_fci_funds","get_caucion_rates"}: return {"result":[{"sample":True}]}
+            raise AssertionError((name,args))
+    client=Fake()
+    result=m.collect(client,root=tmp_path,db_path=str(db))
+    assert client.info==["GGAL"]+[f"OPT{i}" for i in range(m.MAX_OPTION_SERIES_INFO)]
+    assert len(result["records"])==len(options)
+    assert all(row["financial_contract_v17"] is None for row in result["records"])
+    assert [row["currency"] for row in result["records"]]==["ARS"]*m.MAX_OPTION_SERIES_INFO+[None,None]
+    failed=Fake(fail=True)
+    fallback=m.collect(failed,root=tmp_path/"failed",db_path=str(db))
+    assert failed.info==["GGAL","OPT0"]  # No retry storm for optional identity.
+    assert fallback["errors"]==["OPTIONS:GGAL:SERIES_INFO_UNAVAILABLE:OPT0"]
+    assert fallback["section_states"]["options:GGAL"]=="LIVE_FRESH"
+    assert all(row["currency"] is None and row["financial_contract_v17"] is None
+               for row in fallback["records"])
+
+
+def test_collect_sanitizes_legacy_option_contract_when_chain_fails(tmp_path):
+    db=tmp_path/"catalog.db"
+    con=sqlite3.connect(db)
+    con.execute("CREATE TABLE financial_instrument_catalog(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,status TEXT)")
+    con.execute("INSERT INTO financial_instrument_catalog VALUES('GGAL','ACCIONES','BYMA','ARS','A-24HS','AVAILABLE')")
+    con.commit();con.close()
+    path=tmp_path/"iol_family_reference_latest.json"
+    path.write_text(json.dumps({"section_observed_at":{"options:GGAL":"2026-10-26T17:00:00Z"},
+        "records":[{"ticker":"GFGC7000OC","instrument_type":"OPCIONES","market":"BYMA",
+                    "currency":"ARS","settlement":"INMEDIATA",
+                    "quote":{"bid":10,"ask":12,"is_stale":False},
+                    "financial_contract_v17":{"family":"OPCIONES","cash_multiplier":"100"},
+                    "option_chain_evidence":{"underlying":"GGAL","contract_lot":100}}]}),encoding="utf-8")
+    class Fake:
+        def call(self,name,args):
+            if name=="get_options_chain": raise RuntimeError("offline")
+            if name in {"get_fci_funds","get_caucion_rates"}: return {"result":[{"sample":True}]}
+            raise AssertionError((name,args))
+    result=m.collect(Fake(),root=tmp_path,db_path=str(db))
+    row=result["records"][0]
+    assert row["financial_contract_v17"] is None
+    assert row["market"] is None and row["currency"] is None
+    assert row["quote"]["is_stale"] is True
+    assert row["option_chain_evidence"]["series_adjustment_state"]=="NO_VERIFICADO"
+    assert row["option_chain_evidence"]["legacy_contract_lot_unverified"]==100
+    assert row["option_chain_evidence"]["legacy_financial_contract_unverified"]["cash_multiplier"]=="100"

@@ -52,6 +52,7 @@ DATOS_AR_SERIES = {
     "Tipo de cambio mayorista": "168.1_T_CAMBIOR_D_0_0_26",
 }
 BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
+REPORT_SQLITE_RETRY_SECONDS = 15 * 60
 
 
 def now_iso():
@@ -144,6 +145,14 @@ def _job(store, key, state, detail, success=False):
           ON CONFLICT(job_key) DO UPDATE SET last_run_at=excluded.last_run_at,
           last_success_at=excluded.last_success_at,state=excluded.state,detail=excluded.detail""",
           (key, stamp, last_success, state, str(detail)[:1000]))
+
+
+def _reports_due(store):
+    with store.connect() as c:
+        row = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
+    interval = (REPORT_SQLITE_RETRY_SECONDS if row and row[0] == "ROJO" and
+                row[1] == "POSTCLOSE_SQLITE_FULL" else 6 * 3600)
+    return _job_due(store, "REPORTS", interval)
 
 
 def collect_sre(store):
@@ -399,6 +408,21 @@ def refresh_news(store, timeout=8):
     return {"state": state, "rows": inserted, "failures": failures}
 
 
+DECISION_REPORT_SQL = """SELECT * FROM paper_decisions
+  WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?)"""
+
+
+def _period_decisions(connection, start, end):
+    # The report already owns the complete result as Python dicts. SQLite's
+    # ORDER BY spilled a second copy into the observer's 32 MiB /tmp, with no
+    # decided_at index. Sort references to those existing rows instead, using
+    # the same text order and a deterministic id tie break. Do not change the
+    # julianday interval filter: legacy timestamps may contain mixed offsets.
+    rows = [dict(row) for row in connection.execute(DECISION_REPORT_SQL, (start, end))]
+    rows.sort(key=lambda row: (row["decided_at"], row["id"]))
+    return rows
+
+
 def _period_data(store, start, end):
     with store.connect() as c:
         c.execute("BEGIN")
@@ -421,8 +445,7 @@ def _period_data(store, start, end):
         if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_cauciones'").fetchone():
             cauciones = [p for p in CaucionBook(store).positions(status='MATURED',connection=c)
                          if aware_datetime(start)<=aware_datetime(p['settled_at'])<aware_datetime(end)]
-        decisions = [dict(r) for r in c.execute("""SELECT * FROM paper_decisions
-          WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?) ORDER BY decided_at""", (start, end))]
+        decisions = _period_decisions(c, start, end)
         news = [dict(r) for r in c.execute("""SELECT * FROM financial_news
           WHERE julianday(fetched_at)>=julianday(?) AND julianday(fetched_at)<julianday(?) ORDER BY COALESCE(published_at,fetched_at) DESC LIMIT 25""",
           (start, end))]
@@ -599,6 +622,32 @@ def generate_report(store, period_type, period_key, start, end):
         return None, None
 
 
+REPORT_DAY_PROJECTIONS = (
+    "SELECT date(opened_at,'-3 hours') FROM paper_positions",
+    "SELECT date(closed_at,'-3 hours') FROM paper_positions WHERE status='CLOSED'",
+    "SELECT date(filled_at,'-3 hours') FROM paper_fills WHERE side='SELL_SIMULATED'",
+    "SELECT date(settled_at,'-3 hours') FROM paper_cauciones WHERE status='MATURED'",
+    "SELECT date(decided_at,'-3 hours') FROM paper_decisions",
+)
+
+
+def _observed_report_days(connection):
+    """Find exactly the historical report dates without an SQLite temp B-tree.
+
+    SQLite's UNION DISTINCT + ORDER BY over every historical fill/decision
+    can exhaust the scanner's 32 MiB /tmp even while the persistent DB is
+    healthy. Project the same SQLite date expression one table at a time,
+    stream rows, and deduplicate only the small set of ISO dates in Python.
+    The caller owns a read transaction to preserve a consistent snapshot.
+    """
+    days = set()
+    for query in REPORT_DAY_PROJECTIONS:
+        for row in connection.execute(query):
+            if row[0]:
+                days.add(row[0])
+    return sorted(days)
+
+
 def ensure_reports(store, include_today=False):
     """PDF diario y consolidaciones; un único paquete IA móvil de siete días."""
     init_schema(store)
@@ -611,15 +660,12 @@ def ensure_reports(store, include_today=False):
     generate_report(store, "IA_SEMANAL", f"{rolling_start}_{target}",
                     datetime.combine(rolling_start, datetime.min.time(), TZ).isoformat(), end)
     # Backfill de fechas observadas: deja descarga día por día aun si el
-    # servicio fue instalado después de esas operaciones.
+    # servicio fue instalado después de esas operaciones. El antiguo UNION
+    # DISTINCT construía un B-tree temporal para toda la historia y podía
+    # agotar el /tmp limitado del escáner (SQLITE_FULL).
     with store.connect() as c:
-        observed = [r[0] for r in c.execute("""SELECT DISTINCT day FROM (
-          SELECT date(opened_at,'-3 hours') day FROM paper_positions
-          UNION SELECT date(closed_at,'-3 hours') day FROM paper_positions WHERE status='CLOSED'
-          UNION SELECT date(filled_at,'-3 hours') day FROM paper_fills WHERE side='SELL_SIMULATED'
-          UNION SELECT date(settled_at,'-3 hours') day FROM paper_cauciones WHERE status='MATURED'
-          UNION SELECT date(decided_at,'-3 hours') day FROM paper_decisions)
-          WHERE day IS NOT NULL AND day<>'' ORDER BY day""").fetchall()]
+        c.execute("BEGIN")
+        observed = _observed_report_days(c)
         existing = {r[0] for r in c.execute(
             "SELECT period_key FROM report_registry WHERE period_type='DIARIO'").fetchall()}
     for day_text in observed:
@@ -719,6 +765,32 @@ def service_tick(store, phase, force=False):
     except Exception:
         business_day = False  # fail closed for routine weekend/holiday messaging
     if phase == "CLOSED" and business_day and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
-        if force or _job_due(store, "REPORTS", 6 * 3600):
-            ensure_reports(store, include_today=True)
-        send_closing_summary(store)
+        # These jobs are ancillary to PAPER admission. SQLITE_FULL caused by a
+        # report query must not restart the scanner on every tick. Persist a
+        # separate RED receipt and throttle the retry across process restarts;
+        # a truly full main DB cannot persist it and still fails closed.
+        if force or _reports_due(store):
+            try:
+                ensure_reports(store, include_today=True)
+            except sqlite3.OperationalError as exc:
+                if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
+                    raise
+                _job(store, "REPORTS", "ROJO", "POSTCLOSE_SQLITE_FULL", success=False)
+                return
+        elif not force:
+            with store.connect() as c:
+                state = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
+            if state and state[0] == "ROJO" and state[1] == "POSTCLOSE_SQLITE_FULL":
+                return
+        if not force and not _job_due(store, "CLOSING_SUMMARY_RETRY", REPORT_SQLITE_RETRY_SECONDS):
+            return
+        try:
+            send_closing_summary(store)
+        except sqlite3.OperationalError as exc:
+            if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
+                raise
+            _job(store, "CLOSING_SUMMARY_RETRY", "ROJO", "POSTCLOSE_SQLITE_FULL", success=False)
+            return
+        # Delivery is owned by the outbox worker/ACK. This receipt only says
+        # the summarizer returned without a SQLite error, not that it was sent.
+        _job(store, "CLOSING_SUMMARY_RETRY", "VERDE", "SUMMARY_CHECK_COMPLETED", success=True)

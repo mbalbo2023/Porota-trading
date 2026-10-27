@@ -64,6 +64,24 @@ def test_cem_settlement_price_is_metadata_not_identity():
     assert candle.source == "A3_CEM_CLOSING"
 
 
+def test_cem_explicit_quote_currency_conflict_fails_closed():
+    row={"dateTime":"2026-09-02T17:00:00Z","symbol":"DLR/OCT26",
+         "close":1455.0,"currency":"USD","quoteCurrency":"USD"}
+    with pytest.raises(ValueError,match="CEM_QUOTE_CURRENCY_CONFLICT"):
+        cem.closing_to_candle(row,instrument_type="FUTUROS",market="A3",
+                              currency="ARS",settlement_identity="DAILY_ADJUSTMENT")
+
+
+def test_cem_consistent_quote_preserves_distinct_reference_currency():
+    row={"dateTime":"2026-09-02T17:00:00Z","symbol":"DLR/OCT26",
+         "close":1455.0,"currency":"USD","quoteCurrency":"ARS"}
+    candle=cem.closing_to_candle(row,instrument_type="FUTUROS",market="A3",
+                                 currency="ARS",settlement_identity="DAILY_ADJUSTMENT")
+    assert candle.currency == "ARS"
+    assert candle.metadata["currency"] == "ARS"
+    assert candle.metadata["cem_reference_currency"] == "USD"
+
+
 def test_cem_tick_never_becomes_execution_source():
     tick=cem.normalize_tick({"symbol":"DLR/OCT26","price":1455.0,"volume":3,"dateTime":"2026-09-02T16:59:59Z"})
     assert tick["execution_allowed"] is False

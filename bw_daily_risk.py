@@ -180,7 +180,8 @@ class DailyRisk:
                     qty = decimal_value(p['quantity'],'cantidad',positive=True)
                     exit_price = (q.bid*(1-self.broker.slippage)).quantize(Decimal('0.0001'))
                     unrealized += ((exit_price-Decimal(p['entry_price']))*qty*factor -
-                        Decimal(p['entry_cost']) - self.broker._cost(exit_price*factor,qty,p['asset_class']))
+                        Decimal(p['entry_cost']) - self.broker._cost(
+                            exit_price*factor, qty, p['asset_class'], currency=p['currency']))
                 before += future_before["realized"]
                 realized += future_now["realized"]
                 today_realized += future_now["realized"] - future_before["realized"]

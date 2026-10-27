@@ -320,7 +320,8 @@ def _register(row, evidence, checkpoint, settings, session_policy, at):
     expected_entry = (number(evidence["quote"]["ask"], positive=True)*(1+number(settings["slippage"]))).quantize(Decimal(".0001"))
     if expected_entry != price:
         raise ValueError("EXECUTED_ENTRY_COST_ANCHOR_MISMATCH")
-    if number(row.get("entry_cost"), nonnegative=True) != ledger_leg_cost(price, entry["quantity"], ident[1]):
+    if number(row.get("entry_cost"), nonnegative=True) != ledger_leg_cost(
+            price, entry["quantity"], ident[1], currency=ident[3]):
         raise ValueError("FACTUAL_ENTRY_COST_AUTHORITY_MISMATCH")
     fees = paper_fee_model(ident[1])
     baseline = ExitPolicy("FACTUAL_BASELINE", 1-stop/price, target/price-1, hold*60)

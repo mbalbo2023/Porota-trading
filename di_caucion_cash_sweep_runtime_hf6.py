@@ -282,6 +282,7 @@ def offers_from_store(store, *, now):
     No network is reachable here. Missing/stale/no-bid dynamic evidence stays HOLD.
     """
     from datetime import datetime, time as dt_time
+    from ak_byma_calendar import ANIOS_AUDITADOS, es_dia_habil_operativo
     from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
     from rc6_cauciones_contract import parse_ticker, theoretical_liquidity_date
     from cp_contract_evidence_v2_hf6 import pending_material_changes
@@ -334,6 +335,14 @@ def offers_from_store(store, *, now):
             identity=parse_ticker(row["ticker"])
             start=quoted.astimezone(TZ).date()
             maturity=theoretical_liquidity_date(start,row["ticker"])
+            # The ticker-derived date is a theoretical settlement date, not a
+            # provider receipt. Never shift a Saturday, holiday or an
+            # unaudited-year date to the next business day: that would change
+            # the tenor, interest and cash availability without authority.
+            if maturity.year not in ANIOS_AUDITADOS:
+                raise ValueError("CAUCION_MATURITY_CALENDAR_UNVERIFIED")
+            if not es_dia_habil_operativo(maturity):
+                raise ValueError("CAUCION_MATURITY_NON_SETTLEMENT_DAY")
             maturity_at=datetime.combine(maturity,dt_time(17,0),TZ).isoformat()
             offer=CaucionOffer(
                 instrument_id=row["ticker"],currency="ARS",
@@ -345,7 +354,8 @@ def offers_from_store(store, *, now):
                 principal_step=Decimal(str(policy["paper_principal_step"])),
                 day_count_basis=int(Decimal(str(policy["day_count_basis"]))),
                 fee_payment=str(policy["fee_payment"]),
-                metadata_source="PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1",
+                metadata_source=("PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1;"
+                                 "THEORETICAL_MATURITY_BYMA_CALENDAR_CHECKED"),
                 paper_fill_policy="LIVE_PPI_BID_PARTICIPATION_CAP",
                 fee_authority=CAUCION_PAPER_FEE_AUTHORITY)
             if identity.term_days != int(row["term_days"]):

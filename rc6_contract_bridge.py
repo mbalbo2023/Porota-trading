@@ -71,7 +71,18 @@ def normalize_group(records, *, now=None):
     """Full keys/provenance required; conflicts and changed terms fail closed."""
     now = now or datetime.now(timezone.utc)
     fields, provenance, keys, errors = {}, {}, set(), []
+    usable=[]
+    ignored_iol_options=[]
     for r in sorted(records, key=lambda item: SOURCE_RANK.get(item.get("source_class"), 999)):
+        if (canonical_family(r.get("family")) == "OPCIONES"
+                and r.get("source_class") == "IOL_STRUCTURED_API"):
+            # Existing v2 snapshots remain immutable. Earlier IOL captures
+            # inferred a standard lot/adjustment from a chain with no
+            # effective-dated series proof. Do not merge those fields with
+            # otherwise valid PPI/BYMA evidence.
+            ignored_iol_options.append(r)
+            continue
+        usable.append(r)
         e = r.get("evidence") or {}
         source = r.get("source_class")
         if source not in SOURCE_RANK or source == "POROTA_LEGACY_EVIDENCE":
@@ -123,6 +134,12 @@ def normalize_group(records, *, now=None):
                 provenance[dst] = {"source_class": source, "source_ref": r["source_ref"],
                     "evidence_hash": r["evidence_hash"], "observed_at": r["observed_at"],
                     "effective_at": r.get("effective_at")}
+    if ignored_iol_options and not usable:
+        errors.append("OPTION_IOL_SERIES_CONTRACT_UNVERIFIED")
+        for r in ignored_iol_options:
+            keys.add((str(r.get("ticker") or "").upper(), "OPCIONES",
+                      canonical_market(r.get("market")), str(r.get("currency") or "").upper(),
+                      canonical_settlement(r.get("settlement"))))
     if len(keys) != 1:
         errors.append("IDENTITY_CONFLICT")
     key = next(iter(keys)) if len(keys)==1 else ("", "", "", "", "")
@@ -196,15 +213,17 @@ def normalize_group(records, *, now=None):
             contract_from_metadata(ticker, family, contract)
         except ValueError as exc:
             errors.append("CONTRACT_INVALID:" + str(exc))
+    observed_records=usable or ignored_iol_options
+    observed_at=max((r.get("observed_at") or "" for r in observed_records), default="")
     return {"ticker": ticker, "instrument_type": family, "market": market,
             "currency": currency, "settlement": settlement,
-            "source": "CONTRACT_EVIDENCE_V2", "observed_at": max((r.get("observed_at") or "" for r in records), default=""),
+            "source": "CONTRACT_EVIDENCE_V2", "observed_at": observed_at,
             "financial_contract_v17": contract if not errors and family not in {"FCI", "CAUCIONES"} else None,
             "paper_family_contract_v1": family_contract if not errors else None,
             "paper_caucion_contract_v1": caucion_contract if not errors else None,
             "contract_bridge": {"status": "NORMALIZED" if not errors else "BLOCKED",
                 "gaps": sorted(set(errors)), "field_provenance": provenance,
-                "observed_at": max((r.get("observed_at") or "" for r in records), default="") },
+                "observed_at": observed_at},
             "identity_evidence": {"market_explicit": True, "currency_explicit": True, "settlement_explicit": True}}
 
 
@@ -221,6 +240,7 @@ def hard_blocked_bridge(bridge):
         "CONFLICT:", "INVALID_", "INVALID_PROVENANCE", "UNVERIFIED_SOURCE",
         "IDENTITY_", "EVIDENCE_NOT_CURRENT", "CHANGE_REVIEW_REQUIRED",
         "CONTRACT_V2_CURRENCY_MISMATCH", "CONTRACT_INVALID:",
+        "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED",
     )
     return any(str(gap).startswith(hard_prefixes)
                for gap in bridge.get("gaps", []))
