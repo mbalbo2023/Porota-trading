@@ -165,3 +165,46 @@ def test_report_decision_order_keeps_legacy_offsets_without_sql_temp_sort(tmp_pa
         plan = [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " +
                                            services.DECISION_REPORT_SQL, (start, end))]
         assert not any("TEMP B-TREE" in detail for detail in plan)
+
+
+def test_historical_report_dates_match_legacy_union_with_mixed_offsets():
+    with sqlite3.connect(":memory:") as conn:
+        conn.execute("CREATE TABLE paper_positions(opened_at TEXT,closed_at TEXT,status TEXT)")
+        conn.execute("CREATE TABLE paper_fills(filled_at TEXT,side TEXT)")
+        conn.execute("CREATE TABLE paper_cauciones(settled_at TEXT,status TEXT)")
+        conn.execute("CREATE TABLE paper_decisions(decided_at TEXT)")
+        conn.executemany("INSERT INTO paper_positions VALUES(?,?,?)", [
+            ("2026-10-26T00:15:00-03:00", "2026-10-27T00:10:00-03:00", "CLOSED"),
+            ("2026-10-26T23:50:00+00:00", "2026-10-27T01:00:00+00:00", "OPEN"),
+            (None, None, "OPEN"),
+        ])
+        conn.executemany("INSERT INTO paper_fills VALUES(?,?)", [
+            ("2026-10-25T23:20:00-03:00", "SELL_SIMULATED"),
+            ("2026-10-24T02:00:00-03:00", "BUY_SIMULATED"),
+        ])
+        conn.execute("INSERT INTO paper_cauciones VALUES(?,?)",
+                     ("2026-10-28T00:30:00+00:00", "MATURED"))
+        conn.execute("INSERT INTO paper_decisions VALUES(?)",
+                     ("2026-10-26T01:00:00-03:00",))
+        legacy = [r[0] for r in conn.execute("""SELECT DISTINCT day FROM (
+          SELECT date(opened_at,'-3 hours') day FROM paper_positions
+          UNION SELECT date(closed_at,'-3 hours') day FROM paper_positions WHERE status='CLOSED'
+          UNION SELECT date(filled_at,'-3 hours') day FROM paper_fills WHERE side='SELL_SIMULATED'
+          UNION SELECT date(settled_at,'-3 hours') day FROM paper_cauciones WHERE status='MATURED'
+          UNION SELECT date(decided_at,'-3 hours') day FROM paper_decisions)
+          WHERE day IS NOT NULL AND day<>'' ORDER BY day""")]
+        assert services._observed_report_days(conn) == legacy
+        assert len(legacy) >= 3
+
+
+def test_historical_backfill_projections_have_no_sqlite_temp_sort_or_union():
+    with sqlite3.connect(":memory:") as conn:
+        conn.execute("CREATE TABLE paper_positions(opened_at TEXT,closed_at TEXT,status TEXT)")
+        conn.execute("CREATE TABLE paper_fills(filled_at TEXT,side TEXT)")
+        conn.execute("CREATE TABLE paper_cauciones(settled_at TEXT,status TEXT)")
+        conn.execute("CREATE TABLE paper_decisions(decided_at TEXT)")
+        assert len(services.REPORT_DAY_PROJECTIONS) == 5
+        for query in services.REPORT_DAY_PROJECTIONS:
+            assert "UNION" not in query and "ORDER BY" not in query and "DISTINCT" not in query
+            detail = [r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + query)]
+            assert not any("TEMP B-TREE" in item for item in detail)

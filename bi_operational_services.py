@@ -622,6 +622,32 @@ def generate_report(store, period_type, period_key, start, end):
         return None, None
 
 
+REPORT_DAY_PROJECTIONS = (
+    "SELECT date(opened_at,'-3 hours') FROM paper_positions",
+    "SELECT date(closed_at,'-3 hours') FROM paper_positions WHERE status='CLOSED'",
+    "SELECT date(filled_at,'-3 hours') FROM paper_fills WHERE side='SELL_SIMULATED'",
+    "SELECT date(settled_at,'-3 hours') FROM paper_cauciones WHERE status='MATURED'",
+    "SELECT date(decided_at,'-3 hours') FROM paper_decisions",
+)
+
+
+def _observed_report_days(connection):
+    """Find exactly the historical report dates without an SQLite temp B-tree.
+
+    SQLite's UNION DISTINCT + ORDER BY over every historical fill/decision
+    can exhaust the scanner's 32 MiB /tmp even while the persistent DB is
+    healthy. Project the same SQLite date expression one table at a time,
+    stream rows, and deduplicate only the small set of ISO dates in Python.
+    The caller owns a read transaction to preserve a consistent snapshot.
+    """
+    days = set()
+    for query in REPORT_DAY_PROJECTIONS:
+        for row in connection.execute(query):
+            if row[0]:
+                days.add(row[0])
+    return sorted(days)
+
+
 def ensure_reports(store, include_today=False):
     """PDF diario y consolidaciones; un único paquete IA móvil de siete días."""
     init_schema(store)
@@ -634,15 +660,12 @@ def ensure_reports(store, include_today=False):
     generate_report(store, "IA_SEMANAL", f"{rolling_start}_{target}",
                     datetime.combine(rolling_start, datetime.min.time(), TZ).isoformat(), end)
     # Backfill de fechas observadas: deja descarga día por día aun si el
-    # servicio fue instalado después de esas operaciones.
+    # servicio fue instalado después de esas operaciones. El antiguo UNION
+    # DISTINCT construía un B-tree temporal para toda la historia y podía
+    # agotar el /tmp limitado del escáner (SQLITE_FULL).
     with store.connect() as c:
-        observed = [r[0] for r in c.execute("""SELECT DISTINCT day FROM (
-          SELECT date(opened_at,'-3 hours') day FROM paper_positions
-          UNION SELECT date(closed_at,'-3 hours') day FROM paper_positions WHERE status='CLOSED'
-          UNION SELECT date(filled_at,'-3 hours') day FROM paper_fills WHERE side='SELL_SIMULATED'
-          UNION SELECT date(settled_at,'-3 hours') day FROM paper_cauciones WHERE status='MATURED'
-          UNION SELECT date(decided_at,'-3 hours') day FROM paper_decisions)
-          WHERE day IS NOT NULL AND day<>'' ORDER BY day""").fetchall()]
+        c.execute("BEGIN")
+        observed = _observed_report_days(c)
         existing = {r[0] for r in c.execute(
             "SELECT period_key FROM report_registry WHERE period_type='DIARIO'").fetchall()}
     for day_text in observed:
