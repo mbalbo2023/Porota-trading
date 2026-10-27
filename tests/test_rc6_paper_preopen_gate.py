@@ -58,7 +58,11 @@ def test_operator_pause_vetoes_even_a_valid_go_for_the_argentine_day(tmp_path):
     state(release)
     day = DAY.replace(day=27)
     issued = gate.publish_preopen(result(), now=day, state_path=release, receipt_path=receipt)
-    assert issued["status"] == "GO_PAPER_SCALPING"
+    assert issued["status"] == "NO_GO_PAPER_SCALPING"
+    assert issued["reason"] == "OPERATOR_PAPER_PAUSE_2026_10_27"
+    # Even a pre-existing or externally written valid-looking GO cannot bypass
+    # the independent admission veto inside the PAPER write transaction.
+    receipt.write_text(json.dumps({**issued, "status": "GO_PAPER_SCALPING"}))
     for at in (day, day + timedelta(hours=1), day.replace(hour=23, minute=59)):
         assert gate.admission_status(now=at, candidate_sha=SHA, receipt_path=receipt) == (
             False, "OPERATOR_PAPER_PAUSE_2026_10_27")
