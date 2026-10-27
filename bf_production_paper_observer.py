@@ -32,6 +32,7 @@ from rc6_source_consolidation import collect_public_sources
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
+from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -2280,4 +2281,10 @@ def run():
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # SQLITE_FULL/ENOSPC must not turn a degraded PAPER scanner into hundreds
+    # of container restarts. Quarantine is in-process and never writes SQLite;
+    # it stays red/stale until normal startup succeeds after disk recovery.
+    sys.exit(scanner_with_storage_quarantine(
+        run, stopped=lambda: STOP,
+        emit=lambda item: print(json.dumps(item, sort_keys=True),
+                                file=sys.stderr, flush=True)))
