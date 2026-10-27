@@ -97,9 +97,13 @@ jobs:
                   state = item['State']
                   health = state.get('Health') or {}
                   image = str(item.get('Image') or '')
+                  identity = str(item.get('Id') or '')
                   return {'state': code(str(state.get('Status', '')).upper()),
+                          'container_id_valid': bool(re.fullmatch(r'[0-9a-f]{64}', identity)),
                           'running': state.get('Running') is True,
-                          'restart_count': state.get('RestartCount', item.get('RestartCount')),
+                          'restart_count': (item.get('RestartCount') if
+                                            type(item.get('RestartCount')) is int
+                                            else 'NO_VERIFICADO'),
                           'oom_killed': state.get('OOMKilled') is True,
                           'health': code(str(health.get('Status', '')).upper()),
                           'image_id': image if re.fullmatch(r'sha256:[0-9a-f]{64}', image) else 'NO_VERIFICADO'}
@@ -186,6 +190,8 @@ jobs:
               item = json.loads(release_path.read_text(encoding='utf-8'))
               release = {'state': 'OK', 'candidate_sha': sha(item.get('candidate_sha')),
                          'deploy_sha': sha(item.get('deploy_sha')),
+                         'schema_version_2': item.get('schema_version') == 2,
+                         'recorded_at': stamp(item.get('recorded_at')),
                          'image_id': (item.get('image_id') if re.fullmatch(
                              r'sha256:[0-9a-f]{64}', str(item.get('image_id') or ''))
                              else 'NO_VERIFICADO'),
@@ -193,6 +199,7 @@ jobs:
                          'real_orders_sent': (item.get('real_orders_sent') if
                                               type(item.get('real_orders_sent')) is int
                                               else 'NO_VERIFICADO'),
+                         'real_order_routes': code(item.get('real_order_routes')),
                          'validation_status': code(item.get('validation_status'))}
           except (OSError, ValueError, TypeError):
               pass
@@ -208,17 +215,27 @@ jobs:
                   return value if type(value) is int and 0 <= value <= 1000000 else 'NO_VERIFICADO'
               child_health = {
                   'state': 'OK', 'recorded_at': stamp(item.get('recorded_at')),
+                  'schema_valid': item.get('schema') == 'rc6.runtime-child-health.v1',
                   'recorded_age_seconds': age_seconds(item.get('recorded_at')),
                   'recorded_recent_30s': (age_seconds(item.get('recorded_at')) is not None and
                                           0 <= age_seconds(item.get('recorded_at')) <= 30),
                   'source_sha': sha(item.get('source_sha')),
+                  'mode': code(item.get('mode')),
+                  'real_orders_sent': (item.get('real_orders_sent') if
+                                       type(item.get('real_orders_sent')) is int
+                                       else 'NO_VERIFICADO'),
+                  'real_routes': code(item.get('real_routes')),
                   'scanner': {'state': code(scanner.get('state')),
+                              'pid_positive': (type(scanner.get('pid')) is int and
+                                               scanner['pid'] > 0),
+                              'pid_absent': scanner.get('pid') is None,
                               'restarts': count(scanner.get('restarts')),
                               'spawn_failures': count(scanner.get('spawn_failures')),
                               'started_at': stamp(scanner.get('started_at')),
                               'last_exit_at': stamp(scanner.get('last_exit_at')),
                               'last_exit_age_seconds': age_seconds(scanner.get('last_exit_at')),
-                              'last_error': code(scanner.get('last_error'))}}
+                              'last_error': code(scanner.get('last_error')),
+                              'last_error_absent': scanner.get('last_error') is None}}
           except (OSError, ValueError, TypeError):
               pass
 
@@ -382,6 +399,72 @@ jobs:
                                      'capability': code(str(health.get('capability', '')).upper())}
               except (ValueError, TypeError):
                   pass
+          a92_sha = '3fd020f408275a490e911e06f60a1ddc89153fe5'
+          a92_image = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+          scanner = child_health.get('scanner') or {}
+          phase = (db_result.get('process_state'), db_result.get('session_state'))
+          stopped_crash = bool(
+              phase == ('STOPPED', 'CLOSED') and
+              type(scanner.get('restarts')) is int and scanner['restarts'] >= 90 and
+              scanner.get('last_exit_age_seconds') is not None and
+              0 <= scanner['last_exit_age_seconds'] <= 60 and
+              ((scanner.get('state') == 'CRASH_BACKOFF' and scanner.get('pid_absent') and
+                scanner.get('last_error') == 'CHILD_EXITED') or
+               (scanner.get('state') == 'RUNNING' and scanner.get('pid_positive') and
+                scanner.get('last_error_absent') and
+                scanner.get('started_at') != 'NO_VERIFICADO' and
+                scanner.get('last_exit_at') != 'NO_VERIFICADO' and
+                scanner['last_exit_at'] <= scanner['started_at'] <= now.isoformat())) and
+              exception_events.get('scanner_report_sqlite_full_trace') is True)
+          checks = {
+              'incident_window': local.date().isoformat() == '2026-10-26' and
+                                 (local.hour, local.minute) >= (20, 0),
+              'calendar_hours': (calendar.get('state') == 'HASH_MATCH' and
+                                 calendar.get('operational_day') is True and
+                                 calendar.get('after_official_latest_session') is True),
+              'a92_marker': (release.get('schema_version_2') is True and
+                             release.get('candidate_sha') == a92_sha and
+                             release.get('image_id') == a92_image and
+                             release.get('mode') == 'PRODUCTION_PAPER' and
+                             release.get('real_orders_sent') == 0 and
+                             release.get('real_order_routes') == 'NOT_CALLED' and
+                             release.get('validation_status') == 'VALIDATED_RUNTIME' and
+                             release.get('recorded_at') != 'NO_VERIFICADO' and
+                             age_seconds(release.get('recorded_at')) is not None and
+                             age_seconds(release.get('recorded_at')) >= 0),
+              'a92_child': (child_health.get('schema_valid') is True and
+                            child_health.get('recorded_recent_30s') is True and
+                            child_health.get('source_sha') == a92_sha and
+                            child_health.get('mode') == 'PRODUCTION_PAPER' and
+                            child_health.get('real_orders_sent') == 0 and
+                            child_health.get('real_routes') == 'NOT_CALLED'),
+              'owned_docker': all(containers[n].get('state') == 'RUNNING' and
+                                  containers[n].get('container_id_valid') is True and
+                                  containers[n].get('image_id') == a92_image
+                                  for n in ('porota_production_observer',
+                                            'porota_production_dashboard')),
+              'paper_zero_flat': (db_result.get('state') == 'OK' and
+                                  db_result.get('mode') == 'PRODUCTION_PAPER' and
+                                  type(db_result.get('real_orders_sent')) is int and
+                                  db_result['real_orders_sent'] == 0 and
+                                  db_result.get('heartbeat_age_seconds') is not None and
+                                  0 <= db_result['heartbeat_age_seconds'] <= 180 and
+                                  all(db_result.get('exposure_exists',{}).get(k) is False
+                                      for k in ('open_paper_spot','open_paper_caucion',
+                                                'active_paper_future'))),
+              'critical_issues_only': (critical_health.get('state') == 'OK' and
+                                       containers['porota_critical_approval_rc6'].get('state') == 'RUNNING' and
+                                       containers['porota_critical_approval_rc6'].get('health') == 'HEALTHY' and
+                                       containers['porota_critical_approval_rc6'].get('restart_count') == 0 and
+                                       containers['porota_critical_approval_rc6'].get('oom_killed') is False),
+              'incident_phase': phase == ('DEGRADED','BOOT_CALENDAR') or stopped_crash}
+          admission = {'sample_only': True, 'checks': checks,
+                       'all_snapshot_checks': all(checks.values()),
+                       'phase': '/'.join(str(value or 'NO_VERIFICADO') for value in phase),
+                       'stopped_recent_full': stopped_crash,
+                       'ppi_auth_ok_now': db_result.get('ppi_auth') == 'OK' and
+                                          db_result.get('ppi_production_auth',{}).get('state') == 'OK',
+                       'pretransfer_artifact_reserve': 'NO_VERIFICADO'}
           result = {'schema': 'rc6-a111-host-health-readonly-v1',
                     'at_utc': now.isoformat(),
                     'at_ar': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
@@ -398,6 +481,7 @@ jobs:
                     'scanner_exception_events': exception_events,
                     'storage': storage, 'disk_guard': disk_guard,
                     'calendar_and_hours': calendar,
+                    'a116_rescue_admission_sample': admission,
                     'critical_units': {
                         name: code(str((command(['systemctl', 'is-active', name]) or '')).strip().upper())
                         for name in ('porota-critical-github-proxy-rc6.service',
