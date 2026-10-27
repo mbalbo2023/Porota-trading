@@ -75,6 +75,14 @@ jobs:
               parsed = stamp(value)
               return (round((now - datetime.fromisoformat(parsed).astimezone(timezone.utc)).total_seconds(), 1)
                       if parsed != 'NO_VERIFICADO' else None)
+          def db_error_class(exc):
+              message = str(exc).lower()
+              return ('FULL' if 'database or disk is full' in message else
+                      'LOCKED' if 'database is locked' in message else
+                      'BUSY' if 'database is busy' in message else
+                      'INTERRUPTED' if 'interrupted' in message else
+                      'READONLY' if 'readonly' in message else
+                      'IO' if 'disk i/o' in message else 'OTHER')
           def command(args, seconds=5):
               try:
                   done = subprocess.run(args, text=True, capture_output=True,
@@ -103,6 +111,7 @@ jobs:
               'porota_critical_approval_rc6')}
           db_result = {'state': 'NO_VERIFICADO'}
           db_path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          db_stage = 'CONNECT'
           try:
               if db_path.is_symlink() or not db_path.is_file():
                   raise ValueError('DB_PATH_INVALID')
@@ -112,9 +121,11 @@ jobs:
                   db.execute('PRAGMA busy_timeout=300')
                   deadline = time.monotonic() + 4
                   db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+                  db_stage = 'OBSERVER_STATE'
                   row = db.execute('''SELECT mode, process_state, session_state, ppi_auth,
                                             real_orders_sent, heartbeat_at, source_sha
                                      FROM observer_state WHERE id=1 LIMIT 1''').fetchone()
+                  db_stage = 'PPI_AUTH_HEALTH'
                   auth = db.execute('''SELECT state, checked_at, last_success_at
                                       FROM api_health WHERE component=? LIMIT 1''',
                                     ('PPI_PRODUCTION_AUTH',)).fetchone()
@@ -124,16 +135,23 @@ jobs:
                   age = None
                   if heartbeat != 'NO_VERIFICADO':
                       age = round((now - datetime.fromisoformat(heartbeat).astimezone(timezone.utc)).total_seconds(), 1)
-                  sqlite_meta = {key: db.execute('PRAGMA ' + key).fetchone()[0]
-                                 for key in ('temp_store', 'page_size', 'page_count',
-                                             'freelist_count', 'max_page_count')}
+                  sqlite_meta = {}
+                  for key in ('temp_store', 'page_size', 'page_count',
+                              'freelist_count', 'max_page_count'):
+                      db_stage = 'PRAGMA_' + key.upper()
+                      sqlite_meta[key] = db.execute('PRAGMA ' + key).fetchone()[0]
+                  db_stage = 'EXPOSURE_SPOT'
+                  spot = db.execute(
+                      "SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1").fetchone() is not None
+                  db_stage = 'EXPOSURE_CAUCION'
+                  caucion = db.execute(
+                      "SELECT 1 FROM paper_cauciones WHERE status='OPEN' LIMIT 1").fetchone() is not None
+                  db_stage = 'EXPOSURE_FUTURE'
+                  future = db.execute(
+                      "SELECT 1 FROM paper_future_positions WHERE status='ACTIVE' LIMIT 1").fetchone() is not None
                   exposures = {
-                      'open_paper_spot': db.execute(
-                          "SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1").fetchone() is not None,
-                      'open_paper_caucion': db.execute(
-                          "SELECT 1 FROM paper_cauciones WHERE status='OPEN' LIMIT 1").fetchone() is not None,
-                      'active_paper_future': db.execute(
-                          "SELECT 1 FROM paper_future_positions WHERE status='ACTIVE' LIMIT 1").fetchone() is not None}
+                      'open_paper_spot': spot, 'open_paper_caucion': caucion,
+                      'active_paper_future': future}
                   db_result = {'state': 'OK', 'mode': code(row[0]),
                                'process_state': code(row[1]),
                                'session_state': code(row[2]),
@@ -148,7 +166,16 @@ jobs:
               finally:
                   db.close()
           except (OSError, ValueError, sqlite3.Error) as exc:
-              db_result = {'state': 'NO_VERIFICADO', 'error_type': type(exc).__name__}
+              db_result = {'state': 'NO_VERIFICADO', 'failure_stage': db_stage,
+                           'error_type': type(exc).__name__,
+                           'sqlite_error_class': db_error_class(exc),
+                           'sqlite_error_code': (exc.sqlite_errorcode if isinstance(exc, sqlite3.Error)
+                                                 and type(getattr(exc, 'sqlite_errorcode', None)) is int
+                                                 else 'NO_VERIFICADO'),
+                           'sqlite_error_name': (exc.sqlite_errorname if isinstance(exc, sqlite3.Error)
+                                                 and re.fullmatch(r'SQLITE_[A-Z0-9_]{2,40}',
+                                                                  str(getattr(exc, 'sqlite_errorname', '')))
+                                                 else 'NO_VERIFICADO')}
 
           release = {'state': 'NO_VERIFICADO'}
           release_path = Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
