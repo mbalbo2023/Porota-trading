@@ -72,11 +72,11 @@ class ReadOnlyPolicyViolation(RuntimeError):
 
 
 class ProductionAuthResponseError(RuntimeError):
-    """Login no JSON con metadatos HTTP enumerados, sin cuerpo ni headers crudos."""
+    """Login JSON decoding failed; only enumerated wire facts are exposed."""
 
 
 def _login_response_metadata(response, body) -> str:
-    """Only fixed labels and the byte count may leave the login wire boundary."""
+    """Only fixed labels and observed body bytes may leave the login wire boundary."""
     try:
         status = response.status_code
         status = status if type(status) is int and 100 <= status <= 599 else "UNKNOWN"
@@ -89,10 +89,10 @@ def _login_response_metadata(response, body) -> str:
             "text/plain": "TEXT_PLAIN",
         }.get(media, "OTHER" if header else "ABSENT")
         length = len(body) if isinstance(body, (bytes, bytearray)) else "UNKNOWN"
-        return f"HTTP={status}; Content-Type={media_class}; Content-Length={length}"
+        return f"HTTP={status}; Content-Type={media_class}; Body-Bytes={length}"
     except Exception:
         # A diagnostic must never interrupt or loosen the existing login.
-        return "HTTP=UNKNOWN; Content-Type=UNKNOWN; Content-Length=UNKNOWN"
+        return "HTTP=UNKNOWN; Content-Type=UNKNOWN; Body-Bytes=UNKNOWN"
 
 
 def session_invalid(error: BaseException) -> bool:
@@ -419,20 +419,20 @@ class ProductionMarketReader:
 
         client = PPI(sandbox=False)
         self.__guard._scope.login_http_metadata = None
-        non_json_metadata = None
+        login_response_metadata = None
         try:
             client.account.login_api(self.__api_key, self.__api_secret)
         except JSONDecodeError:
-            non_json_metadata = self.__guard._scope.login_http_metadata
-            if not non_json_metadata:
+            login_response_metadata = self.__guard._scope.login_http_metadata
+            if not login_response_metadata:
                 raise
         finally:
             self.__guard._scope.login_http_metadata = None
-        if non_json_metadata:
+        if login_response_metadata:
             # Raise outside the SDK exception handler: the new error must not
             # retain a context object whose JSONDecodeError.doc is the body.
             raise ProductionAuthResponseError(
-                "PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: " + non_json_metadata
+                "PPI_PRODUCTION_AUTH_JSON_DECODE_ERROR: " + login_response_metadata
             )
         self.__client = client
         self.__authenticated = True
