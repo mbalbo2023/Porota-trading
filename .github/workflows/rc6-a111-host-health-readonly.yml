@@ -831,6 +831,61 @@ jobs:
               'mutation_attempted':False,'ppi_watch_accessed':False},sort_keys=True))
           PYHOST
 
+      - name: Count A128 witness tables before any row hashing
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 30s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import json
+          import sqlite3
+          import time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          names=('paper_positions','paper_fills','paper_admin_cancellations',
+                 'paper_spot_sales','paper_sale_receivables','paper_cauciones',
+                 'paper_caucion_allocations','paper_family_lifecycle',
+                 'paper_family_lifecycle_events','paper_future_positions',
+                 'paper_future_marks','paper_exit_intents','paper_future_exit_intents',
+                 'paper_events','paper_learning_samples','paper_notification_outbox')
+          counts={'state':'NO_VERIFICADO'}
+          try:
+              path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+              if path.is_symlink() or not path.is_file():
+                  raise ValueError('DB_UNSAFE')
+              with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.3) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  db.execute('PRAGMA busy_timeout=300')
+                  deadline=time.monotonic()+6
+                  db.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                  db.execute('BEGIN')
+                  values={}
+                  for name in names:
+                      if not db.execute('SELECT 1 FROM sqlite_master WHERE type=\'table\' AND name=?',(name,)).fetchone():
+                          raise ValueError('TABLE_MISSING:'+name)
+                      values[name]=db.execute('SELECT COUNT(*) FROM '+name).fetchone()[0]
+                  counts={'state':'OK','rows':values,
+                          'all_below_10000':all(type(v) is int and v<=10000
+                                                for v in values.values())}
+          except (OSError,ValueError,sqlite3.Error) as exc:
+              counts={'state':'NO_VERIFICADO','error_type':type(exc).__name__,
+                      'table':next((name for name in names if name in str(exc)),
+                                   'NO_VERIFICADO')}
+          now=datetime.now(timezone.utc)
+          print('RC6_A128_CAPACITY='+json.dumps({
+              'at_utc':now.isoformat(),
+              'at_ar':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+              'counts':counts,'read_only':True,'provider_requests':0,
+              'ppi_watch_accessed':False,'mutation_attempted':False},sort_keys=True))
+          PYHOST
+
       - name: Remove SSH material
         if: always()
         shell: bash
