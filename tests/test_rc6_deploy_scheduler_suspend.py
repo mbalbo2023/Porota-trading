@@ -229,6 +229,105 @@ class SuspendTests(unittest.TestCase):
                     suspend.run('c'*40, 'suspend', self.policy())
                 self.assertFalse((Path(directory)/('scheduler-suspend-'+'c'*40+'.json')).exists())
 
+    def test_a141_adopts_only_original_a138_operator_paused_full_timer_set(self):
+        names = suspend.timer_policy(base64.b64decode(self.policy()))
+        prior_sha = suspend.FAILED_A138_SUSPENSION_CANDIDATE
+        candidate = 'c'*40
+        original_pause_sha = 'e'*64
+        raw = base64.b64decode(self.policy())
+        original = dict(candidate_sha=prior_sha,policy_sha256=suspend.hashlib.sha256(raw).hexdigest(),
+                        timers=names,ppi_before=[],attempted=names,status='SUSPENDED',
+                        operator_pause_timer=suspend.OPERATOR_PREOPEN_TIMER,
+                        operator_pause_receipt_sha256=original_pause_sha,
+                        recorded_at='2026-10-27T22:13:25+00:00')
+        states = {n:('inactive','disabled') if n == suspend.OPERATOR_PREOPEN_TIMER
+                  else ('inactive','enabled') for n in names}
+        services = {n.removesuffix('.timer')+'.service':'inactive' for n in names}
+        calls = []
+        def command(*args):
+            calls.append(args)
+            if args[:2] == ('systemctl','list-unit-files'): return '',0
+            if args[1] == 'is-active':
+                return (states[args[2]][0] if args[2] in states
+                        else services.get(args[2],'inactive')),0
+            if args[1] == 'is-enabled':return states[args[2]][1],0
+            if args[1] == 'show': return args[2].removesuffix('.timer')+'.service',0
+            raise AssertionError('no systemd mutation allowed: '+str(args))
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            prior_path=root/('scheduler-suspend-'+prior_sha+'.json')
+            prior_path.write_text(json.dumps(original))
+            with patch.object(suspend,'ROOT',root),patch.object(suspend,'command',command),\
+                 patch.object(suspend,'exact_operator_preopen_pause',return_value=original_pause_sha) as a125,\
+                 patch.object(suspend,'operator_preopen_timer_disabled',return_value=True),\
+                 patch.object(suspend,'require_rescue_degraded_hold',
+                              return_value='RESCUE_A92_STOPPED_A138_UNVALIDATED_HELD') as proof:
+                row=suspend.run(candidate,'suspend',self.policy())
+                self.assertEqual(row['status'],'SUSPENDED')
+                self.assertTrue(row['adopted_a138_operator_hold'])
+                self.assertEqual(row['paused_from'],prior_sha)
+                self.assertEqual(row['operator_pause_receipt_sha256'],original_pause_sha)
+                self.assertEqual(row['attempted'],names)
+                self.assertEqual(row['prior_receipt_sha256'],
+                                 suspend.hashlib.sha256(prior_path.read_bytes()).hexdigest())
+                self.assertEqual(json.loads((root/('scheduler-suspend-'+candidate+'.json')).read_text()),row)
+                self.assertEqual(suspend.run(candidate,'suspend',self.policy()),row)
+                a125.assert_any_call(require_original_marker=True)
+                proof.assert_called_once_with(candidate)
+                self.assertFalse(any(x[1] in {'stop','start'} for x in calls))
+
+    def test_a141_stale_receipt_running_job_and_changed_a125_fail_before_mutation(self):
+        names=suspend.timer_policy(base64.b64decode(self.policy()))
+        prior_sha=suspend.FAILED_A138_SUSPENSION_CANDIDATE
+        digest=suspend.hashlib.sha256(base64.b64decode(self.policy())).hexdigest()
+        original=dict(candidate_sha=prior_sha,policy_sha256=digest,timers=names,
+                      ppi_before=[],attempted=names,status='SUSPENDED',
+                      operator_pause_timer=suspend.OPERATOR_PREOPEN_TIMER,
+                      operator_pause_receipt_sha256='e'*64)
+        jobs={n.removesuffix('.timer')+'.service':'inactive' for n in names}
+        states={n:('inactive','disabled') if n==suspend.OPERATOR_PREOPEN_TIMER
+                else ('inactive','enabled') for n in names}
+        def command(*args):
+            if args[:2]==('systemctl','list-unit-files'):return '',0
+            if args[1]=='is-active':return (states[args[2]][0] if args[2] in states
+                                              else jobs.get(args[2],'inactive')),0
+            if args[1]=='is-enabled':return states[args[2]][1],0
+            if args[1]=='show':return args[2].removesuffix('.timer')+'.service',0
+            raise AssertionError('no systemd mutation allowed')
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            prior_path=root/('scheduler-suspend-'+prior_sha+'.json')
+            target=root/('scheduler-suspend-'+'c'*40+'.json')
+            with patch.object(suspend,'ROOT',root),patch.object(suspend,'command',command),\
+                 patch.object(suspend,'exact_operator_preopen_pause',return_value='e'*64) as a125,\
+                 patch.object(suspend,'operator_preopen_timer_disabled',return_value=True),\
+                 patch.object(suspend,'require_rescue_degraded_hold',
+                              return_value='RESCUE_A92_STOPPED_A138_UNVALIDATED_HELD') as proof:
+                for changed in (dict(original,status='RESTORED'),
+                                dict(original,candidate_sha='f'*40),
+                                dict(original,policy_sha256='0'*64),
+                                dict(original,operator_pause_receipt_sha256='0'*64),
+                                dict(original,attempted=[])):
+                    prior_path.write_text(json.dumps(changed))
+                    with self.assertRaisesRegex(ValueError,'SCHEDULER_A141_A138_RECEIPT_CHANGED'):
+                        suspend.run('c'*40,'suspend',self.policy())
+                    self.assertFalse(target.exists())
+                prior_path.write_text(json.dumps(original))
+                jobs[names[0].removesuffix('.timer')+'.service']='active'
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_A141_TIMER_OR_JOB_CHANGED'):
+                    suspend.run('c'*40,'suspend',self.policy())
+                self.assertFalse(target.exists())
+                jobs[names[0].removesuffix('.timer')+'.service']='inactive'
+                a125.side_effect=ValueError('SCHEDULER_OPERATOR_PAUSE_DAY_EXPIRED')
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_OPERATOR_PAUSE_DAY_EXPIRED'):
+                    suspend.run('c'*40,'suspend',self.policy())
+                self.assertFalse(target.exists())
+                a125.side_effect=None
+                proof.return_value='RESCUE_NO_DRAIN_A92_UNVALIDATED_HELD'
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_A141_A92_STOP_PROOF_RED'):
+                    suspend.run('c'*40,'suspend',self.policy())
+                self.assertFalse(target.exists())
+
     def test_failed_pretransfer_open_keeps_exact_paused_timers_without_rearming(self):
         names = {'porota-runtime-evidence-rc6.timer', 'porota-preopen-rc6.timer'}
         states = dict.fromkeys(names, 'active')

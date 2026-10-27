@@ -26,6 +26,7 @@ OPERATOR_PAUSE_RUN = 'A125-40501523106-1'
 OPERATOR_PAUSE_SOURCE = '3fd020f408275a490e911e06f60a1ddc89153fe5'
 OPERATOR_PAUSE_PRODUCT = '2bd9dbf576b253b8f83aab159c784d7fa7d06d89'
 OPERATOR_PAUSE_IMAGE = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+FAILED_A138_SUSPENSION_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
 
 
 def _operator_pause_json(path, limit):
@@ -452,6 +453,64 @@ def persist(path, payload):
             os.unlink(temp)
 
 
+def adopt_a138_operator_paused_timers(candidate, path, names, digest, before, states):
+    """A141: adopt the exact A138 16-timer hold without stopping another job.
+
+    A125 intentionally disabled preopen while A138 stopped all other owned
+    timers. The generic 'all inactive/enabled' recovery missed that one
+    disabled timer and attempted to start a new suspension, failing before
+    writing its receipt. Never infer a healthy runtime or rearm old A92.
+    """
+    if (candidate == FAILED_A138_SUSPENSION_CANDIDATE or
+            OPERATOR_PREOPEN_TIMER not in names or
+            any(state != (('inactive', 'disabled') if name == OPERATOR_PREOPEN_TIMER
+                          else ('inactive', 'enabled'))
+                for name, state in zip(names, states))):
+        raise ValueError('SCHEDULER_A141_EXACT_PREPAUSED_STATES_REQUIRED')
+    operator_sha = exact_operator_preopen_pause(require_original_marker=True)
+    if not operator_preopen_timer_disabled():
+        raise ValueError('SCHEDULER_A141_OPERATOR_TIMER_CHANGED')
+    prior_path = ROOT/('scheduler-suspend-' + FAILED_A138_SUSPENSION_CANDIDATE + '.json')
+    if (prior_path.is_symlink() or not prior_path.is_file() or
+            prior_path.stat().st_size > 65536 or prior_path.stat().st_nlink != 1):
+        raise ValueError('SCHEDULER_A141_A138_RECEIPT_UNSAFE')
+    prior, prior_sha = _operator_pause_json(prior_path, 65536)
+    if (prior.get('candidate_sha') != FAILED_A138_SUSPENSION_CANDIDATE or
+            prior.get('status') != 'SUSPENDED' or
+            prior.get('policy_sha256') != digest or prior.get('timers') != names or
+            prior.get('ppi_before') != before or
+            prior.get('operator_pause_timer') != OPERATOR_PREOPEN_TIMER or
+            prior.get('operator_pause_receipt_sha256') != operator_sha or
+            set(prior.get('attempted', [])) != set(names) or
+            len(prior['attempted']) != len(names)):
+        raise ValueError('SCHEDULER_A141_A138_RECEIPT_CHANGED')
+    # Read-only PAPER/0 + flat A92 clean-stopped proof must precede the new
+    # receipt. It is not a request to launch or restart old containers.
+    if require_rescue_degraded_hold(candidate) != 'RESCUE_A92_STOPPED_A138_UNVALIDATED_HELD':
+        raise ValueError('SCHEDULER_A141_A92_STOP_PROOF_RED')
+    for name, expected in zip(names, states):
+        active, _ = command('systemctl', 'is-active', name)
+        enabled, _ = command('systemctl', 'is-enabled', name)
+        service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+        if ((active, enabled) != expected or code or not service.endswith('.service') or
+                command('systemctl', 'is-active', service)[0] in
+                {'active', 'activating', 'reloading', 'deactivating'}):
+            raise ValueError('SCHEDULER_A141_TIMER_OR_JOB_CHANGED:' + name)
+    if ppi_snapshot() != before or not operator_preopen_timer_disabled():
+        raise ValueError('SCHEDULER_A141_OPERATOR_OR_PROVIDER_CHANGED')
+    receipt = dict(prior, candidate_sha=candidate,
+                   paused_from=FAILED_A138_SUSPENSION_CANDIDATE,
+                   prior_receipt_sha256=prior_sha,
+                   adopted_a138_operator_hold=True,
+                   recorded_at=datetime.now(timezone.utc).isoformat())
+    persist(path, receipt)
+    print(json.dumps({'status':'SUSPENDED','candidate_sha':candidate,
+                      'timer_count':len(names),'a138_operator_hold_adopted':True,
+                      'prior_receipt_sha256':prior_sha,'real_orders_sent':0,
+                      'systemd_mutations':0},sort_keys=True))
+    return receipt
+
+
 def run(candidate, action, policy_b64):
     if not re.fullmatch(r'[0-9a-f]{40}', candidate):
         raise ValueError('SCHEDULER_CANDIDATE_INVALID')
@@ -494,6 +553,12 @@ def run(candidate, action, policy_b64):
             return receipt
         states = [(command('systemctl', 'is-active', name)[0],
                    command('systemctl', 'is-enabled', name)[0]) for name in names]
+        if OPERATOR_PREOPEN_TIMER in names and all(
+                state == (('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
+                          else ('inactive','enabled'))
+                for name,state in zip(names,states)):
+            return adopt_a138_operator_paused_timers(
+                candidate,path,names,digest,before,states)
         if all(state == ('inactive', 'enabled') for state in states):
             # A failed installation can leave the exact owned timers paused
             # under a prior candidate receipt. Adopt only its latest durable
