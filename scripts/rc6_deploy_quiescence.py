@@ -34,12 +34,18 @@ RESCUE_SOURCE_SHA = '3fd020f408275a490e911e06f60a1ddc89153fe5'
 RESCUE_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 RESCUE_CALENDAR_SHA256 = '32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
 RESCUE_HOURS_SHA256 = '380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
+# The original wire-mode/CLI label contains the first incident date.  Keep it
+# stable for receipts, but bound admission to the verified COM18782 week.
+# Any later date or a pre-20:00 ART attempt remains strictly fail-closed.
+RESCUE_FIRST_DAY = '2026-10-26'
+RESCUE_LAST_DAY = '2026-10-30'
 
 
 def degraded_closed_rescue_proof():
-    """The one 26 October postclose incident, not a new healthy phase."""
+    """Exact A92 postclose incident, not a new healthy CLOSED phase."""
     local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-    if local.date().isoformat() != '2026-10-26' or (local.hour, local.minute) < (20, 0):
+    day = local.date().isoformat()
+    if not RESCUE_FIRST_DAY <= day <= RESCUE_LAST_DAY or (local.hour, local.minute) < (20, 0):
         raise ValueError('QUIESCENCE_RESCUE_WINDOW_RED')
     calendar_path = ROOT / 'ak_byma_calendar.py'
     if (calendar_path.is_symlink() or not calendar_path.is_file() or
@@ -54,7 +60,7 @@ def degraded_closed_rescue_proof():
             not calendar.es_dia_habil_operativo(local.date())):
         raise ValueError('QUIESCENCE_RESCUE_CALENDAR_DAY_RED')
     return {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
-            'observed_at_art': local.isoformat(), 'business_day': '2026-10-26',
+            'observed_at_art': local.isoformat(), 'business_day': day,
             'calendar_sha256': RESCUE_CALENDAR_SHA256,
             'calendar_url': 'https://www.byma.com.ar/mercado/calendario-bursatil',
             'byma_hours_com18782_sha256': RESCUE_HOURS_SHA256,
@@ -135,7 +141,8 @@ def exact_rescue_receipt(receipt):
             receipt.get('degraded_closed_rescue') is not True or
             receipt.get('rescue_source_sha') != RESCUE_SOURCE_SHA or
             receipt.get('rescue_image_id') != RESCUE_IMAGE_ID or
-            not isinstance(proof, dict) or proof.get('business_day') != '2026-10-26' or
+            not isinstance(proof, dict) or
+            not RESCUE_FIRST_DAY <= str(proof.get('business_day')) <= RESCUE_LAST_DAY or
             proof.get('calendar_sha256') != RESCUE_CALENDAR_SHA256 or
             proof.get('byma_hours_com18782_sha256') != RESCUE_HOURS_SHA256 or
             proof.get('byma_latest_session_end_art') != '19:00' or
@@ -153,7 +160,8 @@ def exact_rescue_receipt(receipt):
                 art.utcoffset().total_seconds() != -10800 or
                 at != art.astimezone(timezone.utc) or at > now or
                 art.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
-                != '2026-10-26' or (art.hour, art.minute) < (20, 0)):
+                != proof['business_day'] or
+                (art.hour, art.minute) < (20, 0)):
             raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED')
         if prior_state == ['STOPPED', 'CLOSED']:
             health_at = datetime.fromisoformat(crash['recorded_at'])
