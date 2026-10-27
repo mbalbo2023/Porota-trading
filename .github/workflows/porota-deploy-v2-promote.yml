@@ -173,11 +173,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
+          CANDIDATE_A125_B64="$(base64 -w0 scripts/rc6_deploy_scheduler_suspend.py)"
           SESSION_MODE="$(timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64'" <<'PY'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64'" <<'PY'
           import base64,os,sqlite3,sys,types
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
@@ -227,8 +228,9 @@ jobs:
                   ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
               # Incident-specific postclose rescue of the installed A92 image.
               # Wire-mode/CLI retain the 26-Oct label for receipt compatibility.
-              # Calendar COM18782 is pinned only through 30 Oct, never earlier
-              # than 20:00 ART on a verified operating day.
+              # Calendar COM18782 is pinned only through 30 Oct. Owner's
+              # 27-Oct immediate PAPER pause is independently evidenced by
+              # exact A125 NO_GO/timer proof; other days require postclose.
               # This is a RED runtime and never counts as a healthy CLOSED state.
               from datetime import datetime,timezone
               from zoneinfo import ZoneInfo
@@ -239,9 +241,26 @@ jobs:
               RESCUE_CALENDAR_SHA256='32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
               RESCUE_HOURS_SHA256='380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
               local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-              if (not '2026-10-26'<=local.date().isoformat()<='2026-10-30' or
-                  (local.hour,local.minute)<(20,0)):
+              if not '2026-10-26'<=local.date().isoformat()<='2026-10-30':
                   raise SystemExit('RC6_RESCUE_WINDOW_RED')
+              if (local.hour,local.minute)<(20,0):
+                  if local.date().isoformat()!='2026-10-27':
+                      raise SystemExit('RC6_RESCUE_WINDOW_RED')
+                  try:
+                      operator_source=base64.b64decode(sys.argv[3],validate=True)
+                      if not 0<len(operator_source)<110000:
+                          raise ValueError('OPERATOR_SOURCE_SIZE_RED')
+                      operator=types.ModuleType('rc6_candidate_a125_verifier')
+                      exec(compile(operator_source,'candidate/a125-verifier.py','exec'),
+                           operator.__dict__)
+                      exact_digest=operator.exact_operator_preopen_pause(
+                          require_original_marker=True)
+                      if not operator.operator_preopen_timer_disabled() or not re.fullmatch(
+                          '[0-9a-f]{64}',exact_digest):
+                          raise ValueError('PAUSE_TIMER_OR_DIGEST')
+                  except (OSError,ValueError,ImportError) as exc:
+                      raise SystemExit('RC6_RESCUE_OPERATOR_PAUSE_RED') from exc
+                  print('RC6_RESCUE_OPERATOR_PAPER_EARLY=GREEN|NO_GO_HELD',file=sys.stderr)
               calendar_path=ROOT/'ak_byma_calendar.py'
               if (calendar_path.is_symlink() or not calendar_path.is_file() or
                   hashlib.sha256(calendar_path.read_bytes()).hexdigest()!=RESCUE_CALENDAR_SHA256):
@@ -688,11 +707,12 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
           fi
+          A125_ENV="RC6_A125_CANDIDATE_SOURCE_B64=$(base64 -w0 scripts/rc6_deploy_scheduler_suspend.py)"
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Transfer frozen artifact
@@ -844,7 +864,8 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
           fi
-          sudo -n env $QUIESCENCE_AUDIT_ENV python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+          A125_CANDIDATE_SOURCE_B64="$(base64 -w0 "$STAGE/scripts/rc6_deploy_scheduler_suspend.py")"
+          sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_B64="$A125_CANDIDATE_SOURCE_B64" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
             --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
 
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'

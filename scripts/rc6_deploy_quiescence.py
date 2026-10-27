@@ -41,12 +41,55 @@ RESCUE_FIRST_DAY = '2026-10-26'
 RESCUE_LAST_DAY = '2026-10-30'
 
 
+def operator_paper_no_go_proof(*, require_original_marker=False):
+    """Verify A125 without trusting pre-candidate host code in streamed steps.
+
+    The promote runner streams this exact candidate source before it installs
+    anything. Once installed, the same function exists in the candidate repo.
+    Neither route changes systemd or grants PAPER trading permission.
+    """
+    encoded = os.environ.get('RC6_A125_CANDIDATE_SOURCE_B64')
+    if encoded:
+        if len(encoded) > 150000:
+            raise ValueError('QUIESCENCE_OPERATOR_SOURCE_TOO_LARGE')
+        try:
+            source = base64.b64decode(encoded, validate=True)
+            if not 0 < len(source) < 110000:
+                raise ValueError('QUIESCENCE_OPERATOR_SOURCE_SIZE_RED')
+            module = types.ModuleType('rc6_candidate_operator_no_go')
+            exec(compile(source,'candidate/rc6_deploy_scheduler_suspend.py','exec'),
+                 module.__dict__)
+        except (binascii.Error,ValueError) as exc:
+            raise ValueError('QUIESCENCE_OPERATOR_SOURCE_INVALID') from exc
+    else:
+        from scripts import rc6_deploy_scheduler_suspend as module
+    digest = module.exact_operator_preopen_pause(
+        require_original_marker=require_original_marker)
+    if (not re.fullmatch('[0-9a-f]{64}',digest or '') or
+            not module.operator_preopen_timer_disabled()):
+        raise ValueError('QUIESCENCE_OPERATOR_PAUSE_TIMER_RED')
+    return digest
+
+
 def degraded_closed_rescue_proof():
     """Exact A92 postclose incident, not a new healthy CLOSED phase."""
     local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
     day = local.date().isoformat()
-    if not RESCUE_FIRST_DAY <= day <= RESCUE_LAST_DAY or (local.hour, local.minute) < (20, 0):
+    if not RESCUE_FIRST_DAY <= day <= RESCUE_LAST_DAY:
         raise ValueError('QUIESCENCE_RESCUE_WINDOW_RED')
+    operator_pause_sha = None
+    # The owner explicitly authorized immediate PAPER downtime on 27 Oct.
+    # A92 is known STOPPED/CLOSED with a failing scanner. Earlier than the
+    # normal postclose gate, require the independent exact A125 no-GO receipt
+    # and a still-disabled preopen timer; absence always blocks host writes.
+    if (local.hour, local.minute) < (20, 0):
+        if day != '2026-10-27':
+            raise ValueError('QUIESCENCE_RESCUE_WINDOW_RED')
+        try:
+            operator_pause_sha = operator_paper_no_go_proof(
+                require_original_marker=True)
+        except (OSError, ValueError) as exc:
+            raise ValueError('QUIESCENCE_RESCUE_OPERATOR_PAUSE_RED') from exc
     calendar_path = ROOT / 'ak_byma_calendar.py'
     if (calendar_path.is_symlink() or not calendar_path.is_file() or
             hashlib.sha256(calendar_path.read_bytes()).hexdigest() != RESCUE_CALENDAR_SHA256):
@@ -61,6 +104,8 @@ def degraded_closed_rescue_proof():
         raise ValueError('QUIESCENCE_RESCUE_CALENDAR_DAY_RED')
     return {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
             'observed_at_art': local.isoformat(), 'business_day': day,
+            'operator_paper_early': operator_pause_sha is not None,
+            'operator_pause_sha256': operator_pause_sha,
             'calendar_sha256': RESCUE_CALENDAR_SHA256,
             'calendar_url': 'https://www.byma.com.ar/mercado/calendario-bursatil',
             'byma_hours_com18782_sha256': RESCUE_HOURS_SHA256,
@@ -147,6 +192,12 @@ def exact_rescue_receipt(receipt):
             proof.get('byma_hours_com18782_sha256') != RESCUE_HOURS_SHA256 or
             proof.get('byma_latest_session_end_art') != '19:00' or
             proof.get('a3_latest_session_end_art') != '17:30' or
+            type(proof.get('operator_paper_early', False)) is not bool or
+            (proof.get('operator_paper_early', False) and
+             (proof['business_day'] != '2026-10-27' or
+              not re.fullmatch('[0-9a-f]{64}', proof.get('operator_pause_sha256') or ''))) or
+            (not proof.get('operator_paper_early', False) and
+             proof.get('operator_pause_sha256') is not None) or
             set(receipt.get('containers', {})) != set(OWNED) or
             any(receipt['containers'][name].get('image') != RESCUE_IMAGE_ID
                 for name in OWNED)):
@@ -161,7 +212,10 @@ def exact_rescue_receipt(receipt):
                 at != art.astimezone(timezone.utc) or at > now or
                 art.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
                 != proof['business_day'] or
-                (art.hour, art.minute) < (20, 0)):
+                ((art.hour, art.minute) < (20, 0) and
+                 not proof.get('operator_paper_early', False)) or
+                ((art.hour, art.minute) >= (20, 0) and
+                 proof.get('operator_paper_early', False))):
             raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED')
         if prior_state == ['STOPPED', 'CLOSED']:
             health_at = datetime.fromisoformat(crash['recorded_at'])
@@ -667,7 +721,29 @@ def admit_poststart_flat(pre_mode, candidate=None):
     else:
         raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED')
     if pre_mode in {RESCUE_MODE, ADOPTED_RESCUE_MODE} and actual != 'CLOSED':
-        raise ValueError('QUIESCENCE_RESCUE_POSTSTART_CLOSED_REQUIRED')
+        # Only the explicitly owner-paused 27-Oct A92 rescue can validate a
+        # genuinely OPEN PAPER observer after installation.  This is never a
+        # trading GO: the A125 no-GO gate and disabled timer must survive.
+        if pre_mode != RESCUE_MODE or actual != 'OPEN' or not candidate or not re.fullmatch(
+                '[0-9a-f]{40}',candidate):
+            raise ValueError('QUIESCENCE_RESCUE_POSTSTART_CLOSED_REQUIRED')
+        receipt_path = ROOT/'data/deploy'/('quiescence-'+candidate+'.json')
+        if (receipt_path.is_symlink() or not receipt_path.is_file() or
+                receipt_path.stat().st_size > 65536):
+            raise ValueError('QUIESCENCE_RESCUE_EARLY_RECEIPT_UNSAFE')
+        receipt = json.loads(receipt_path.read_bytes())
+        exact_rescue_receipt(receipt)
+        proof = receipt['rescue_calendar_and_hours']
+        if proof.get('operator_paper_early') is not True:
+            raise ValueError('QUIESCENCE_RESCUE_POSTSTART_CLOSED_REQUIRED')
+        if (receipt.get('candidate_sha') != candidate or
+                receipt.get('installation_started') is not True):
+            raise ValueError('QUIESCENCE_RESCUE_EARLY_RECEIPT_RED')
+        try:
+            if operator_paper_no_go_proof() != proof['operator_pause_sha256']:
+                raise ValueError('PAUSE_RECEIPT_HASH_CHANGED')
+        except (OSError,ValueError) as exc:
+            raise ValueError('QUIESCENCE_RESCUE_EARLY_PAUSE_LOST') from exc
     # admit rereads committed mode, integer zero orders, a fresh heartbeat and
     # all three flat ledgers. A phase change between reads fails closed.
     pending = pre_mode == 'CLOSED_CAUCION'
