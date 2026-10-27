@@ -49,23 +49,23 @@
   "currency_funnel": [
     {
       "currency": "ARS",
-      "last_observed_at": "2026-10-27T16:35:02.495377+00:00",
-      "observed_symbols": 107
+      "last_observed_at": "2026-10-27T17:34:21.167093+00:00",
+      "observed_symbols": 130
     },
     {
       "currency": "USD_CCL",
-      "last_observed_at": "2026-10-27T16:35:04.641442+00:00",
-      "observed_symbols": 16
+      "last_observed_at": "2026-10-27T17:34:07.911531+00:00",
+      "observed_symbols": 24
     },
     {
       "currency": "USD_MEP",
-      "last_observed_at": "2026-10-27T16:31:57.863799+00:00",
-      "observed_symbols": 25
+      "last_observed_at": "2026-10-27T17:34:17.312521+00:00",
+      "observed_symbols": 38
     }
   ],
   "economics": {
-    "blocked_1h": 3,
-    "evaluated_1h": 3,
+    "blocked_1h": 2,
+    "evaluated_1h": 2,
     "opened_1h": 0
   },
   "family_readiness": [
@@ -357,16 +357,16 @@
     "branch": "runtime-observability",
     "day": "2026-10-27",
     "detail": null,
-    "recorded_at": "2026-10-27T15:42:15.795887+00:00",
+    "recorded_at": "2026-10-27T16:42:10.498272+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 133067,
+    "candle_versions": 133479,
     "instruments": 1151,
     "last_download": "2026-09-25T20:02:13.939573+00:00",
     "last_market_date": "2026-09-25",
-    "latest_candle_known_at": "2026-10-27T16:35:06.473507+00:00",
+    "latest_candle_known_at": "2026-10-27T17:35:01.815806+00:00",
     "raw": 0,
     "rows": 242636
   },
@@ -406,20 +406,20 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 15,
+    "falling": 18,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 4,
+    "rising": 6,
     "state": "MIXED_OR_POSITIVE",
-    "symbols": 24,
+    "symbols": 29,
     "unchanged": 5
   },
   "observer": {
-    "heartbeat_at": "2026-10-27T16:34:39.908225+00:00",
-    "http_allowed": 4221,
+    "heartbeat_at": "2026-10-27T17:34:22.667060+00:00",
+    "http_allowed": 5567,
     "http_blocked": 0,
-    "last_market_data_at": "2026-10-27T16:34:58.434410+00:00",
+    "last_market_data_at": "2026-10-27T17:34:17.312521+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "OK",
     "process_state": "RUNNING",
@@ -428,18 +428,6 @@
   },
   "ppi_errors_1h": [
     {
-      "count": 8,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 7,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 7,
-      "event_type": "DATA_ERROR"
-    },
-    {
       "count": 7,
       "event_type": "DATA_ERROR"
     },
@@ -460,7 +448,31 @@
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 5,
+      "count": 6,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
       "event_type": "DATA_ERROR"
     },
     {
@@ -493,27 +505,15 @@
     },
     {
       "count": 5,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 5,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 5,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 4,
       "event_type": "DATA_ERROR"
     }
   ],
   "quick_check": "DELEGATED_TO_RC6_FULL_DB_INTEGRITY",
   "scalping": {
     "approved_1h": 0,
-    "evaluated_1h": 382,
+    "evaluated_1h": 408,
     "paper_positions_today": 0,
-    "rejected_1h": 382
+    "rejected_1h": 408
   },
   "schema": "porota-introspection-public-v1",
   "sector_concentration": {
@@ -527,11 +527,11 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 2191609856,
-    "filesystem_free": 7404838912,
+    "database_bytes": 2207252480,
+    "filesystem_free": 7290204160,
     "filesystem_total": 24883167232,
-    "filesystem_used": 17461551104,
-    "filesystem_used_pct": 70.17,
+    "filesystem_used": 17576185856,
+    "filesystem_used_pct": 70.63,
     "wal_bytes": 61470432
   },
   "telegram": {
@@ -539,11 +539,11 @@
     "SENT": 581,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-10-27T13:35:01-03:00",
+  "timestamp": "2026-10-27T14:35:01-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
-    "decisions_1h": 483,
+    "decisions_1h": 464,
     "net_pnl_today": 0,
     "open": 0,
     "sells_1h": 0
@@ -557,32 +557,32 @@
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-27T16:35:06.473507+00:00",
+      "heartbeat_at": "2026-10-27T17:35:05.884553+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 19.317027,
-      "heartbeat_at": "2026-10-27T16:34:42.571686+00:00",
+      "heartbeat_age_seconds": 12.923263,
+      "heartbeat_at": "2026-10-27T17:34:48.951466+00:00",
       "state": "WAITING_WINDOW"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": 2.129284,
-      "heartbeat_at": "2026-10-27T16:34:59.759429+00:00",
+      "heartbeat_age_seconds": 0.0,
+      "heartbeat_at": "2026-10-27T17:35:02.738357+00:00",
       "state": "READY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 132.423841,
-      "heartbeat_at": "2026-10-27T16:32:49.464872+00:00",
+      "heartbeat_age_seconds": 19.322372,
+      "heartbeat_at": "2026-10-27T17:34:42.552357+00:00",
       "state": "RUNNING"
     },
     "supervisor": {
-      "heartbeat_age_seconds": 0.852932,
-      "heartbeat_at": "2026-10-27T16:35:01.035781+00:00",
+      "heartbeat_age_seconds": 1.105947,
+      "heartbeat_at": "2026-10-27T17:35:00.768782+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-27T16:35:06.464443+00:00",
+      "heartbeat_at": "2026-10-27T17:35:05.987916+00:00",
       "state": "RUNNING"
     }
   }
