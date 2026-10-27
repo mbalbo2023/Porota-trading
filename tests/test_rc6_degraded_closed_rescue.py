@@ -478,8 +478,170 @@ def test_classifier_pins_same_a92_and_calendar_as_drain():
         assert value in block
     assert 'DEGRADED_CLOSED_20261026' in block
     assert 'critical_admission()' in block
+    assert 'CANDIDATE_A125_B64' in block
+    assert 'require_original_marker=True' in block
+    assert 'RC6_A125_CANDIDATE_SOURCE_B64' in workflow
     assert 'RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED' in block
     assert 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer' in workflow
+
+
+def test_a138_exact_a92_rescue_admits_operator_paused_27oct_not_unproven_day(
+        incident, monkeypatch):
+    """Owner-approved PAPER pause can admit 27 Oct without clock magic."""
+    previous = FrozenDateTime.current
+    try:
+        calls = []
+        def exact_pause(*, require_original_marker=False):
+            calls.append(require_original_marker)
+            return 'e'*64
+        monkeypatch.setattr(scheduler,'exact_operator_preopen_pause',exact_pause)
+        monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',lambda:True)
+        FrozenDateTime.current = RealDateTime(2026, 10, 27, 21, 27,
+                                              tzinfo=timezone.utc)
+        early = q.degraded_closed_rescue_proof()
+        assert early['business_day']=='2026-10-27'
+        assert early['operator_paper_early'] is True
+        assert early['operator_pause_sha256']=='e'*64
+        assert calls==[True]
+        monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',lambda:False)
+        with pytest.raises(ValueError,match='RESCUE_OPERATOR_PAUSE_RED'):
+            q.degraded_closed_rescue_proof()
+        FrozenDateTime.current = RealDateTime(2026, 10, 27, 23, 5,
+                                              tzinfo=timezone.utc)
+        proof = q.degraded_closed_rescue_proof()
+        assert proof['business_day'] == '2026-10-27'
+        assert proof['operator_paper_early'] is False
+        assert proof['byma_latest_session_end_art'] == '19:00'
+        FrozenDateTime.current = RealDateTime(2026, 10, 31, 23, 5,
+                                              tzinfo=timezone.utc)
+        with pytest.raises(ValueError, match='RESCUE_WINDOW_RED'):
+            q.degraded_closed_rescue_proof()
+    finally:
+        FrozenDateTime.current = previous
+
+
+def test_a138_rescue_receipt_business_day_cannot_be_relabelled(incident):
+    receipt = q.run(SHA, 'drain', allow_degraded_closed_rescue=True)
+    # The original incident's postclose receipt predates these optional fields.
+    legacy = json.loads(json.dumps(receipt))
+    legacy['rescue_calendar_and_hours'].pop('operator_paper_early')
+    legacy['rescue_calendar_and_hours'].pop('operator_pause_sha256')
+    assert q.exact_rescue_receipt(legacy)['business_day']=='2026-10-26'
+    altered = json.loads(json.dumps(receipt))
+    altered['rescue_calendar_and_hours']['business_day'] = '2026-10-27'
+    with pytest.raises(ValueError, match='RESCUE_RECEIPT_CLOCK_RED'):
+        q.exact_rescue_receipt(altered)
+
+
+def test_a138_early_rescue_accepts_actual_open_only_with_paper_no_go(
+        incident, monkeypatch):
+    db, states, calls = incident
+    previous = FrozenDateTime.current
+    now = RealDateTime(2026, 10, 27, 21, 27, tzinfo=timezone.utc)
+    FrozenDateTime.current = now
+    try:
+        with sqlite3.connect(db) as c:
+            c.execute('UPDATE observer_state SET heartbeat_at=?',
+                      ((now-timedelta(seconds=5)).isoformat(),))
+        health_path=(q.ROOT/'data/paper_v17/artifacts/observer_v17.db/'
+                     'runtime-health.json')
+        health=json.loads(health_path.read_text())
+        health['recorded_at']=(now-timedelta(seconds=5)).isoformat()
+        health_path.write_text(json.dumps(health))
+        monkeypatch.setattr(scheduler,'exact_operator_preopen_pause',
+                            lambda **_: 'e'*64)
+        monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',
+                            lambda:True)
+        receipt=q.run(SHA,'drain',allow_degraded_closed_rescue=True)
+        assert receipt['rescue_calendar_and_hours']['operator_paper_early'] is True
+        q.run(SHA,'install',allow_degraded_closed_rescue=True)
+        with sqlite3.connect(db) as c:
+            c.execute("UPDATE observer_state SET process_state='RUNNING',"
+                      "session_state='MARKET_OPEN',heartbeat_at=?",
+                      ((now-timedelta(seconds=2)).isoformat(),))
+        assert q.admit_poststart_flat(q.RESCUE_MODE,SHA)=='OPEN'
+        monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',
+                            lambda:False)
+        with pytest.raises(ValueError,match='RESCUE_EARLY_PAUSE_LOST'):
+            q.admit_poststart_flat(q.RESCUE_MODE,SHA)
+    finally:
+        FrozenDateTime.current=previous
+
+
+@pytest.mark.parametrize('when,paused,admitted,error', [
+    (RealDateTime(2026, 10, 27, 21, 27, tzinfo=timezone.utc), True, True, ''),
+    (RealDateTime(2026, 10, 27, 21, 27, tzinfo=timezone.utc), False, False,
+     'RC6_RESCUE_OPERATOR_PAUSE_RED'),
+    (RealDateTime(2026, 10, 27, 23, 5, tzinfo=timezone.utc), False, True, ''),
+    (RealDateTime(2026, 10, 31, 23, 5, tzinfo=timezone.utc), False, False,
+     'RC6_RESCUE_WINDOW_RED'),
+])
+def test_a138_pretransfer_classifier_window_fails_closed(
+        incident, monkeypatch, capsys, when, paused, admitted, error):
+    db, states, calls = incident
+    previous = FrozenDateTime.current
+    FrozenDateTime.current = when
+    try:
+        with sqlite3.connect(db) as c:
+            c.execute('UPDATE observer_state SET heartbeat_at=?',
+                      ((when-timedelta(seconds=5)).isoformat(),))
+        health_path = (q.ROOT/'data/paper_v17/artifacts/observer_v17.db/'
+                       'runtime-health.json')
+        health = json.loads(health_path.read_text())
+        health['recorded_at'] = (when-timedelta(seconds=5)).isoformat()
+        health_path.write_text(json.dumps(health))
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        block = workflow.split(
+            '- name: Classify current flat PAPER session before host writes', 1)[1]
+        code = block.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0]
+        code = '\n'.join(line.removeprefix('          ')
+                         for line in code.splitlines())
+        module = ModuleType('scripts.rc6_deploy_quiescence')
+        module.ROOT, module.OWNED = q.ROOT, q.OWNED
+        module.inspect = lambda name: states[name]
+        module.admit = lambda **_: pytest.fail('NO_UNPROVEN_HEALTHY_CLOSED')
+        module.exact_clean_stopped = lambda *_: pytest.fail('NO_PRIOR_STOP')
+        module.adopt_stopped_after_failed_install = (
+            lambda *_, **__: pytest.fail('NO_PRIOR_STOP'))
+        critical = []
+        module.critical_admission = lambda: critical.append('issues_only')
+        backup = ModuleType('scripts.rc6_679_backup_suspension')
+        backup.inventory = lambda: []
+        operator_source = (
+            "def exact_operator_preopen_pause(*,require_original_marker=False):\n"
+            "    if require_original_marker is not True:\n"
+            "        raise ValueError('ORIGINAL_MARKER_REQUIRED')\n"
+            "    return 'e'*64\n"
+            "def operator_preopen_timer_disabled():\n"
+            f"    return {paused!r}\n"
+        )
+        clock = ModuleType('datetime')
+        clock.datetime, clock.timezone, clock.date = (
+            FrozenDateTime, timezone, RealDate)
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+        monkeypatch.setitem(sys.modules, backup.__name__, backup)
+        monkeypatch.setitem(sys.modules, 'datetime', clock)
+        monkeypatch.setattr(sys, 'argv', ['-', SHA, '',
+            base64.b64encode(operator_source.encode()).decode()])
+        real_connect = sqlite3.connect
+        def connect(target, *args, **kwargs):
+            if str(target).startswith(
+                    'file:///opt/porota-trading/data/paper_v17/'):
+                target = db.as_uri() + '?mode=ro'
+            return real_connect(target, *args, **kwargs)
+        monkeypatch.setattr(sqlite3, 'connect', connect)
+        if admitted:
+            exec(compile(code, 'a138-classifier', 'exec'), {})
+            assert capsys.readouterr().out == q.RESCUE_MODE + '\n'
+            assert critical == ['issues_only']
+        else:
+            with pytest.raises(SystemExit, match=error):
+                exec(compile(code, 'a138-classifier', 'exec'), {})
+            assert critical == []
+        assert not any(call[1] in {'stop', 'start'} for call in calls)
+    finally:
+        FrozenDateTime.current = previous
 
 
 @pytest.mark.parametrize('source_ok', [True, False])
