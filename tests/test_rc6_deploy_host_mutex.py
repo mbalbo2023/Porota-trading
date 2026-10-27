@@ -354,6 +354,82 @@ class HostMutexTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_ATTEMPT_UNRESOLVED'):
                 mutex.run(self.args('classify'))
 
+    def test_a140_exact_clean_idle_old_failure_reconciles_under_same_flock(self):
+        from contextlib import ExitStack
+        old = dict(candidate=mutex.FAILED_A138_CANDIDATE,
+                   run=mutex.FAILED_A138_RUN,
+                   attempt=mutex.FAILED_A138_ATTEMPT,
+                   phase='cleanup_recover', status='IDLE')
+        mutex._write_barrier(self.root, old)
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            proof = stack.enter_context(patch.object(
+                mutex, '_exact_a138_stopped_host_proof', return_value='b'*64))
+            writers = stack.enter_context(patch.object(
+                mutex, '_contract_writers', return_value=set()))
+            stack.enter_context(patch.object(mutex.subprocess, 'run',
+                return_value=SimpleNamespace(returncode=0, stdout='')))
+            self.assertEqual(mutex.run(self.args('reconcile',['--exact-a138-idle'])), 0)
+            self.assertFalse(self.barrier.exists())
+            self.assertEqual(proof.call_count, 1)
+            self.assertGreaterEqual(writers.call_count, 2)
+            self.assertEqual(mutex.run(self.args('classify')), 0)
+
+    def test_a140_never_retire_uncertain_or_unrelated_barrier(self):
+        from contextlib import ExitStack
+        valid = dict(candidate=mutex.FAILED_A138_CANDIDATE,
+                     run=mutex.FAILED_A138_RUN,attempt=mutex.FAILED_A138_ATTEMPT,
+                     phase='cleanup_recover',status='IDLE')
+        cases = [dict(valid,status='INFLIGHT'),dict(valid,status='CONTRACT_ONLY'),
+                 dict(valid,run='999999'),dict(valid,candidate='f'*40),
+                 dict(valid,phase='suspend'),dict(valid,attempt='1')]
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            proof = stack.enter_context(patch.object(mutex,
+                '_exact_a138_stopped_host_proof', return_value='c'*64))
+            stack.enter_context(patch.object(mutex,'_contract_writers',return_value=set()))
+            for prior in cases:
+                mutex._write_barrier(self.root, prior)
+                with self.assertRaisesRegex(RuntimeError,'BARRIER_A138_NOT_EXACT_CLEAN_IDLE'):
+                    mutex.run(self.args('reconcile',['--exact-a138-idle']))
+                self.assertEqual(json.loads(self.barrier.read_text()),prior)
+            proof.assert_not_called()
+
+    def test_a140_writer_or_failed_runtime_proof_never_clears_barrier(self):
+        from contextlib import ExitStack
+        old = dict(candidate=mutex.FAILED_A138_CANDIDATE,
+                   run=mutex.FAILED_A138_RUN,attempt=mutex.FAILED_A138_ATTEMPT,
+                   phase='cleanup_recover',status='IDLE')
+        mutex._write_barrier(self.root,old)
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            writers = stack.enter_context(patch.object(mutex,'_contract_writers',
+                return_value={'porota-deploy-contract-'+SHA}))
+            proof = stack.enter_context(patch.object(mutex,
+                '_exact_a138_stopped_host_proof',return_value='d'*64))
+            with self.assertRaisesRegex(RuntimeError,'BARRIER_A138_CONTRACT_WRITER_ALIVE'):
+                mutex.run(self.args('reconcile',['--exact-a138-idle']))
+            self.assertTrue(self.barrier.exists())
+            proof.assert_not_called()
+            writers.return_value=set()
+            proof.side_effect=RuntimeError('BARRIER_A138_STOPPED_PAPER_CHANGED')
+            with self.assertRaisesRegex(RuntimeError,'BARRIER_A138_STOPPED_PAPER_CHANGED'):
+                mutex.run(self.args('reconcile',['--exact-a138-idle']))
+            self.assertEqual(json.loads(self.barrier.read_text()),old)
+
+    def test_a140_missing_barrier_is_noop_but_reconcile_argument_is_exact(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            proof=stack.enter_context(patch.object(mutex,'_exact_a138_stopped_host_proof'))
+            self.assertEqual(mutex.run(self.args('reconcile',['--exact-a138-idle'])),0)
+            proof.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError,'BARRIER_RECONCILE_INVOCATION_INVALID'):
+                mutex.run(self.args('reconcile',['--unsafe']))
+            with self.assertRaisesRegex(RuntimeError,'BARRIER_RECONCILE_INVOCATION_INVALID'):
+                mutex.run(['nobody','user','--attempt',SHA,RUN,ATTEMPT,
+                           '--phase','reconcile','--exact-a138-idle'])
+
 
 class TransferTests(unittest.TestCase):
     def setUp(self):
@@ -427,11 +503,18 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 4)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 17)
+        self.assertEqual(len(boundaries), 18)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
         self.assertEqual(sum('--phase classify ' in line for line in boundaries), 1)
+        reconcile = next(step['run'] for step in steps
+                         if step['name'] == 'Reconcile only exact A138 cleanly exited host barrier')
+        self.assertIn('--phase reconcile --exact-a138-idle', reconcile)
+        self.assertLess(workflow.index('name: Require later exact owner authorization'),
+                        workflow.index('name: Reconcile only exact A138 cleanly exited host barrier'))
+        self.assertLess(workflow.index('name: Reconcile only exact A138 cleanly exited host barrier'),
+                        workflow.index('name: Classify current flat PAPER session'))
         self.assertIn('--phase offline_preclean python3 -', by_id['diskguard'])
         self.assertNotIn('--phase disk_probe python3 -', by_id['diskguard'])
         self.assertIn('rc6_offline_current_image_cleanup.py', by_id['diskguard'])
