@@ -71,6 +71,9 @@ def test_operator_pause_vetoes_even_a_valid_go_for_the_argentine_day(tmp_path):
                                  candidate_sha=SHA, receipt_path=receipt)[0] is False
     assert gate.admission_status(now=day + timedelta(days=1), candidate_sha=SHA,
                                  receipt_path=receipt)[0] is False  # prior-day GO expires
+    next_day = day + timedelta(days=1)
+    gate.publish_preopen(result(), now=next_day, state_path=release, receipt_path=receipt)
+    assert gate.admission_status(now=next_day, candidate_sha=SHA, receipt_path=receipt) == (True, "")
 
 
 def test_focus_requires_eight_exact_ready_contracts(tmp_path):
