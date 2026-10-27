@@ -31,6 +31,7 @@ from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_source_consolidation import collect_public_sources
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
+from rc6_scanner_login_interlock import ScannerLoginInterlock
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -1839,7 +1840,7 @@ def _background_ingest(reader, store, *, force=False):
         return None
 
 
-def _run_command(store, reader, command, gemini_gate=None):
+def _run_command(store, reader, command, gemini_gate=None, login_interlock=None):
     command_id, name = command
     if name == "GEMINI_PREFLIGHT":
         if gemini_gate is None:
@@ -1852,6 +1853,17 @@ def _run_command(store, reader, command, gemini_gate=None):
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
         return reader
+    if reader is None:
+        gate = login_interlock or ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
+        decision = gate.reserve()
+        if decision != "ALLOWED":
+            _finish_command(store, command_id,
+                            "COOLDOWN" if decision == "COOLDOWN" else "ERROR",
+                            "PPI_LOGIN_INTERLOCK_" + decision)
+            store.state(process_state="DEGRADED",
+                        ppi_auth="COOLDOWN" if decision == "COOLDOWN" else "ERROR",
+                        real_orders_sent=0, detail="Login local bloqueado por interlock.")
+            return None
     try:
         if reader is None:
             key, secret = _secret()
@@ -2005,6 +2017,7 @@ def run():
     # BOOT_COMMAND/BOOT_CALENDAR. Así un calendario lento nunca deja al
     # operador con STARTING/CHECKING sin evidencia del punto de arranque.
     reader = None
+    login_interlock = ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
     quotes = {}
     last_public_check = 0.0
     last_structured_capture = 0.0
@@ -2033,7 +2046,7 @@ def run():
             # No se bloquea una rueda recién abierta con backups/reportes.
             command = _claim_command(store)
             if command:
-                reader = _run_command(store, reader, command, None)
+                reader = _run_command(store, reader, command, None, login_interlock)
             if reader is None:
                 store.state(session_state="BOOT_CALENDAR", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
@@ -2052,6 +2065,15 @@ def run():
                                 session_state=_cooldown_session_state(phase),
                                 heartbeat_at=now_iso(), real_orders_sent=0,
                                 detail="PPI en espera de reintento; no se abre una tormenta de logins.")
+                    time.sleep(COMMAND_POLL_SECONDS)
+                    continue
+                decision = login_interlock.reserve()
+                if decision != "ALLOWED":
+                    store.state(process_state="DEGRADED",
+                                ppi_auth="COOLDOWN" if decision == "COOLDOWN" else "ERROR",
+                                session_state=_cooldown_session_state(phase),
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="Login local bloqueado por interlock persistente.")
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
                 store.state(session_state="BOOT_PPI_SECRET", ppi_auth="NOT_ATTEMPTED",

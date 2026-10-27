@@ -4,6 +4,8 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+import pytest
+
 import bf_production_paper_observer as observer
 import bu_instrument_catalog as catalog
 import cr_contract_evidence_v2_mass_hf6 as mass
@@ -16,13 +18,13 @@ from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
 TZ=ZoneInfo("America/Argentina/Buenos_Aires")
 NOW=datetime(2026,10,2,16,59,57,tzinfo=TZ)
 
-def _store(tmp_path):
+def _store(tmp_path, *, ticker="PESOS7", at=NOW):
     store=PaperStore(str(tmp_path/"observer.db"))
     observer._support_schema(store)
-    raw={"ticker":"PESOS7","description":"PESOS 7","currency":"Pesos",
+    raw={"ticker":ticker,"description":ticker,"currency":"Pesos",
          "type":"CAUCIONES","market":"BYMA","nominalInPrice":1,
          "_provider_instrument_type":"CAUCIONES","_discovery_source":"PPI_PRIMARY"}
-    record=catalog.normalize_record(raw,"INMEDIATA",NOW.isoformat(),"test")
+    record=catalog.normalize_record(raw,"INMEDIATA",at.isoformat(),"test")
     with store.connect() as c:
         catalog.persist(c,record)
     return store
@@ -95,3 +97,82 @@ def test_live_collector_has_no_client_constructor_or_order_route():
     assert ".order" not in source.lower()
     assert ".budget" not in source.lower()
     assert "contract_evidence_v2" not in source
+
+
+@pytest.mark.parametrize("ticker,at,expected", [
+    ("PESOS1", datetime(2026, 10, 23, 16, 59, 57, tzinfo=TZ),
+     "CAUCION_MATURITY_NON_SETTLEMENT_DAY"),  # Saturday 24 Oct
+    ("PESOS7", datetime(2026, 10, 30, 16, 59, 57, tzinfo=TZ),
+     "CAUCION_MATURITY_NON_SETTLEMENT_DAY"),  # 6 Nov: no settlement
+    ("PESOS120", datetime(2026, 10, 27, 16, 59, 57, tzinfo=TZ),
+     "CAUCION_MATURITY_CALENDAR_UNVERIFIED"),  # 2027 not audited
+    ("PESOS7", datetime(2026, 10, 23, 16, 59, 57, tzinfo=TZ), None),
+])
+def test_theoretical_maturity_never_rolls_to_unverified_settlement(
+        tmp_path, monkeypatch, ticker, at, expected):
+    store = _store(tmp_path, ticker=ticker, at=at)
+    mass.collect(store, run_id="caucion-maturity")
+    for claim in bridge.complements_from_store(store, now=at):
+        with store.connect() as c:
+            records = [dict(r) for r in c.execute(
+                "SELECT * FROM financial_instrument_catalog WHERE ticker=?", (claim["ticker"],))]
+        for primary in records:
+            primary["raw"] = json.loads(primary.pop("metadata_json"))
+            with store.connect() as c:
+                catalog.persist(c, catalog.complete_with_complement(primary, claim))
+
+    class Reader:
+        def book(self, symbol, family, settlement):
+            assert (symbol, family, settlement) == (ticker, "CAUCIONES", "INMEDIATA")
+            return {"date": at.isoformat(),
+                    "bids": [{"price": 19.1, "quantity": 30_000_000}], "offers": []}
+
+    monkeypatch.setattr(live, "collection_window", lambda _at: True)
+    assert live.refresh(Reader(), store, now=at)["ready"] == 1
+    offers, errors = offers_from_store(store, now=at)
+    if expected:
+        assert offers == []
+        assert errors == [f"{ticker}:{expected}"]
+    else:
+        assert errors == [] and len(offers) == 1
+        assert offers[0].maturity_at.startswith("2026-10-30T17:00:00")
+        assert "THEORETICAL_MATURITY_BYMA_CALENDAR_CHECKED" in offers[0].metadata_source
+
+
+def test_no_bid_does_not_create_theoretical_maturity_offer(tmp_path, monkeypatch):
+    at = datetime(2026, 10, 23, 16, 59, 57, tzinfo=TZ)
+    store = _store(tmp_path, ticker="PESOS7", at=at)
+
+    class Reader:
+        def book(self, *_args):
+            return {"date": at.isoformat(), "bids": [],
+                    "offers": [{"price": 30, "quantity": 40_000_000}]}
+
+    monkeypatch.setattr(live, "collection_window", lambda _at: True)
+    assert live.refresh(Reader(), store, now=at)["ready"] == 0
+    offers, errors = offers_from_store(store, now=at)
+    assert offers == []
+    assert errors == ["PESOS7:NO_PLACED_BID"]
+
+
+@pytest.mark.parametrize("rate", [None, 0])
+def test_null_or_zero_live_rate_never_becomes_a_positive_caucion(tmp_path, monkeypatch, rate):
+    at = datetime(2026, 10, 23, 16, 59, 57, tzinfo=TZ)
+    store = _store(tmp_path, ticker="PESOS7", at=at)
+    mass.collect(store, run_id="caucion-null-rate")
+    for claim in bridge.complements_from_store(store, now=at):
+        with store.connect() as c:
+            row = dict(c.execute("SELECT * FROM financial_instrument_catalog WHERE ticker='PESOS7'").fetchone())
+        row["raw"] = json.loads(row.pop("metadata_json"))
+        with store.connect() as c:
+            catalog.persist(c, catalog.complete_with_complement(row, claim))
+
+    class Reader:
+        def book(self, *_args):
+            return {"date": at.isoformat(),
+                    "bids": [{"price": rate, "quantity": 30_000_000}], "offers": []}
+
+    monkeypatch.setattr(live, "collection_window", lambda _at: True)
+    assert live.refresh(Reader(), store, now=at)["ready"] == 0
+    offers, errors = offers_from_store(store, now=at)
+    assert offers == [] and len(errors) == 1

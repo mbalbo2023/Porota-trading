@@ -310,14 +310,49 @@ def test_usd_caucion_still_requires_explicit_fee_budget():
 
 def test_option_price_base_quantity_and_adjusted_series_cannot_be_inferred():
     chain={"underlying":"GGAL","options":[dict(symbol="OPT",strike_price=6000,option_type="C",expiration="2026-10-16T15:30:00",volume=1)]}
-    info=dict(market="BCBA",currency="ARS",units_per_lot=1)
-    standard=iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES","currency":"ARS"})[0]["financial_contract_v17"]
-    assert standard["cash_multiplier"] == "100"
-    assert standard["broker_quantity_step"] == "NO_VERIFICADO"
+    info=dict(symbol="OPT",type="OPCIONES",market="BCBA",currency="ARS",units_per_lot=1)
+    observed=iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"symbol":"GGAL","type":"ACCIONES","currency":"ARS"})[0]
+    assert observed["financial_contract_v17"] is None
+    assert observed["option_chain_evidence"]["standard_lot_reference"] == 100
+    assert "contract_lot" not in observed["option_chain_evidence"]
+    assert observed["option_chain_evidence"]["series_adjustment_state"] == "NO_VERIFICADO"
     info.update(order_terms=dict(quantity_step=1,minimum_quantity=1,source_ref="fixture"),premium_basis="PER_CONTRACT")
-    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"]["cash_multiplier"]=="100"
+    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"symbol":"GGAL","type":"ACCIONES"})[0]["financial_contract_v17"] is None
+    # An unversioned Boolean does not prove no adjustment after a corporate action.
+    info["adjusted_series_unverified"]=False
+    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"symbol":"GGAL","type":"ACCIONES"})[0]["financial_contract_v17"] is None
     info["adjusted_series_unverified"]=True
-    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"type":"ACCIONES"})[0]["financial_contract_v17"] is None
+    assert iol._option_records(chain,{"OPT":info},NOW.isoformat(),underlying_info={"symbol":"GGAL","type":"ACCIONES"})[0]["financial_contract_v17"] is None
+
+
+def test_persisted_iol_option_catalog_contract_is_blocked_on_read_and_projection(tmp_path):
+    s=store(tmp_path)
+    catalog.init_schema(s)
+    primary=catalog.normalize_record({"ticker":"OPT","type":"OPCIONES",
+        "market":"BYMA","currency":"ARS"},"INMEDIATA",NOW.isoformat(),"fixture-ppi")
+    old_contract={"family":"OPCIONES","currency":"ARS","market":"BYMA",
+        "settlement":"INMEDIATA","cash_multiplier":"100","quantity_step":"1",
+        "minimum_quantity":"1","underlying":"GGAL","strike":"6000",
+        "option_right":"CALL","expires_at":"2026-10-16T15:30:00-03:00",
+        "metadata_source":"IOL_OPTIONS_CHAIN+IOL_UNDERLYING_INFO+BYMA_STANDARD_EQUITY_OPTION_RULE_2026"}
+    primary["raw"].update(financial_contract_v17=old_contract,
+                          _contract_complement_source="IOL_COMPLEMENTARY")
+    primary.update(status="AVAILABLE",capability="READY_PAPER_OPTION_LONG")
+    assert catalog.capability(primary)=="OPTION_IOL_SERIES_CONTRACT_UNVERIFIED"
+    with pytest.raises(ValueError,match="OPTION_IOL_SERIES_CONTRACT_UNVERIFIED"):
+        catalog.contract_for(primary)
+    with s.connect() as c:
+        catalog.persist(c,primary)
+        catalog.sync_candidate_universe(c,NOW.isoformat())
+        first=c.execute("SELECT can_simulate,status,detail FROM candidate_identity_v2 WHERE ticker='OPT'").fetchone()
+        catalog.sync_candidate_universe(c,NOW.isoformat())
+        second=c.execute("SELECT can_simulate,status,detail FROM candidate_identity_v2 WHERE ticker='OPT'").fetchone()
+        stored=c.execute("SELECT metadata_json,capability FROM financial_instrument_catalog WHERE ticker='OPT'").fetchone()
+    assert tuple(first)==tuple(second)
+    assert first[0]==0 and first[1]=="PAUSED_EXPLICIT"
+    assert "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED" in first[2]
+    assert stored[1]=="READY_PAPER_OPTION_LONG"  # No retroactive source mutation.
+    assert json.loads(stored[0])["financial_contract_v17"]==old_contract
 
 
 def test_byma_pagination_reconciles_source_count_and_preserves_dimensions(monkeypatch):

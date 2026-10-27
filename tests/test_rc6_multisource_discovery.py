@@ -2,6 +2,7 @@ import json
 from datetime import date
 from pathlib import Path
 import rc6_multisource_discovery as m
+import bu_instrument_catalog as catalog
 
 def test_ppi_query_plan_is_generated_not_ticker_allowlist():
     plan=m.ppi_query_plan(day=date(2026,9,25),prefixes_per_family=2)
@@ -31,6 +32,46 @@ def test_complementary_discovery_includes_family_reference_and_fci(tmp_path: Pat
     assert by[("BONOS","GD30")]["settlement"]=="A-24HS"
     assert by[("BONOS","GD30")]["financial_contract_v17"]["cash_multiplier"]=="0.01"
     assert by[("FCI","IOLCAMA")]["source"]=="IOL_COMPLEMENTARY"
+
+
+def test_legacy_iol_option_sidecar_is_observed_without_repromoting_contract(tmp_path: Path):
+    path=tmp_path/"iol_family_reference_latest.json"
+    legacy={"records":[{"ticker":"GFGC6000OC","instrument_type":"OPCIONES",
+        "market":"BYMA","currency":"ARS","settlement":"INMEDIATA",
+        "financial_contract_v17":{"family":"OPCIONES","cash_multiplier":"100",
+                                  "premium_basis":"PER_UNDERLYING_UNIT"},
+        "option_chain_evidence":{"underlying":"GGAL","strike_price":6000,
+                                 "contract_lot":100}}]}
+    path.write_text(json.dumps(legacy),encoding="utf-8")
+    row=m._family_reference_rows(path)[0]
+    assert row["financial_contract_v17"] is None
+    assert row["market"] == "UNKNOWN"
+    assert row["currency"] is None
+    assert row["identity_evidence"]["currency_explicit"] is False
+    assert row["identity_evidence"]["market_explicit"] is False
+    assert row["option_chain_evidence"]["legacy_contract_lot_unverified"]==100
+    assert row["option_chain_evidence"]["legacy_financial_contract_unverified"]["cash_multiplier"]=="100"
+    normalized=catalog.normalize_complementary_record(row,"2026-10-27T01:00:00Z","fixture")
+    assert not normalized["capability"].startswith("READY_PAPER_")
+    primary=catalog.normalize_record({"ticker":"GFGC6000OC","type":"OPCIONES",
+        "market":"BYMA","currency":"ARS"},"INMEDIATA", "2026-10-27T01:00:00Z","fixture-ppi")
+    assert catalog.complete_with_complement(primary,row)["capability"]=="NEEDS_OPTION_CONTRACT"
+    assert m._family_reference_rows(path)==[row]
+    assert json.loads(path.read_text(encoding="utf-8"))==legacy  # Pure read; raw evidence unchanged.
+
+
+def test_exact_iol_option_identity_still_does_not_supply_adjustment_contract(tmp_path: Path):
+    path=tmp_path/"iol_family_reference_latest.json"
+    path.write_text(json.dumps({"records":[{"ticker":"GFGC6000OC",
+        "instrument_type":"OPCIONES","market":"BCBA","currency":"ARS",
+        "settlement":"INMEDIATA","financial_contract_v17":None,
+        "option_chain_evidence":{"underlying":"GGAL","strike_price":6000,
+            "series_identity_state":"EXACT_IOL_ASSET_INFO",
+            "series_adjustment_state":"NO_VERIFICADO"}}]}),encoding="utf-8")
+    row=m._family_reference_rows(path)[0]
+    assert row["market"]=="BYMA" and row["currency"]=="ARS"
+    assert row["identity_evidence"]["currency_explicit"] is True
+    assert row["financial_contract_v17"] is None
 
 
 def test_iol_shadow_propagates_provider_timestamp_for_freshness(tmp_path: Path):

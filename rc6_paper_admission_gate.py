@@ -26,6 +26,10 @@ FOCUS = (
     ("CEPU", "ACCIONES", "A-24HS"), ("AAPL", "CEDEARS", "A-24HS"),
 )
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+# Operator decision for the 2026-10-27 Argentine trading day: no new PAPER
+# positions while the scanner, histories and family strategies are repaired.
+# This is an additive veto, independent of any T-10 receipt issued by a timer.
+OPERATOR_PAUSED_TRADE_DAYS_AR = frozenset({"2026-10-27"})
 
 
 def focus_contracts(db_path):
@@ -69,7 +73,8 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                          and state.get("real_orders_sent") == 0)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         valid_release = False
-    allowed = (result.get("status") == "GREEN" and result.get("phase") == "T_MINUS_10"
+    paused = now.date().isoformat() in OPERATOR_PAUSED_TRADE_DAYS_AR
+    allowed = (not paused and result.get("status") == "GREEN" and result.get("phase") == "T_MINUS_10"
                and 10 * 60 + 20 <= now.hour * 60 + now.minute < 10 * 60 + 30
                and result.get("checks", {}).get("paper_focus_contracts", {}).get("state") == "GREEN"
                and valid_release)
@@ -77,7 +82,8 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
                "candidate_sha": candidate if valid_release else "", "trade_day_ar": now.date().isoformat(),
                "issued_at_ar": now.isoformat(timespec="seconds"), "phase": result.get("phase"),
-               "reason": "PREOPEN_GREEN_EXACT_FOCUS" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN"}
+               "reason": ("OPERATOR_PAPER_PAUSE_2026_10_27" if paused else
+                          "PREOPEN_GREEN_EXACT_FOCUS" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN")}
     if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir() or receipt_path.is_symlink():
         raise ValueError("UNSAFE_GATE_PATH")
     fd, temporary = tempfile.mkstemp(prefix=".paper-gate-", dir=receipt_path.parent)
@@ -102,6 +108,8 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
 
 def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     now = (now or datetime.now(TZ)).astimezone(TZ)
+    if now.date().isoformat() in OPERATOR_PAUSED_TRADE_DAYS_AR:
+        return False, "OPERATOR_PAPER_PAUSE_2026_10_27"
     candidate_sha = candidate_sha if candidate_sha is not None else os.getenv("POROTA_BUILD_SHA", "")
     path = Path(receipt_path or RUNTIME_RECEIPT)
     if not isinstance(candidate_sha, str) or not SHA.fullmatch(candidate_sha):
