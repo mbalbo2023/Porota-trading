@@ -123,7 +123,7 @@ jobs:
                   db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
                   db_stage = 'OBSERVER_STATE'
                   row = db.execute('''SELECT mode, process_state, session_state, ppi_auth,
-                                            real_orders_sent, heartbeat_at, source_sha
+                                            real_orders_sent, heartbeat_at
                                      FROM observer_state WHERE id=1 LIMIT 1''').fetchone()
                   db_stage = 'PPI_AUTH_HEALTH'
                   auth = db.execute('''SELECT state, checked_at, last_success_at
@@ -158,7 +158,8 @@ jobs:
                                'ppi_auth': code(row[3]),
                                'real_orders_sent': row[4] if type(row[4]) is int else 'NO_VERIFICADO',
                                'heartbeat_at': heartbeat, 'heartbeat_age_seconds': age,
-                               'source_sha': sha(row[6]), 'exposure_exists': exposures,
+                               'source_authority': 'CURRENT_STATE_V2_AND_CHILD_HEALTH',
+                               'exposure_exists': exposures,
                                'sqlite_metadata': sqlite_meta,
                                'ppi_production_auth': {
                                    'state': code(auth[0]), 'checked_at': stamp(auth[1]),
@@ -385,6 +386,13 @@ jobs:
                     'at_utc': now.isoformat(),
                     'at_ar': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
                     'observer': db_result, 'release': release, 'containers': containers,
+                    'source_image_agreement': (
+                        release.get('state') == 'OK' and child_health.get('state') == 'OK' and
+                        release.get('candidate_sha') != 'NO_VERIFICADO' and
+                        release.get('image_id') != 'NO_VERIFICADO' and
+                        release.get('candidate_sha') == child_health.get('source_sha') and
+                        release.get('image_id') == containers['porota_production_observer'].get('image_id') ==
+                        containers['porota_production_dashboard'].get('image_id')),
                     'critical_broker': critical_health,
                     'runtime_child_health': child_health,
                     'scanner_exception_events': exception_events,
