@@ -196,11 +196,32 @@ def normalize_complementary_record(raw, observed_at, run_id):
         value["capability"]="DISCOVERED_COMPLEMENTARY_METADATA_INCOMPLETE"
     return value
 
+def _option_iol_contract_unverified(raw):
+    """Detect an already persisted option contract derived from IOL alone."""
+    if not isinstance(raw,dict):
+        return False
+    contract=raw.get("financial_contract_v17")
+    if not isinstance(contract,dict) or not contract:
+        return False
+    origin=str(raw.get("_contract_complement_source") or "").upper()
+    discovery=str(raw.get("_discovery_source") or "").upper()
+    declared=str(contract.get("metadata_source") or "").upper()
+    if (origin=="IOL_COMPLEMENTARY" or discovery=="IOL_COMPLEMENTARY"
+            or declared.startswith("IOL_OPTIONS_CHAIN")):
+        return True
+    provenance=contract.get("field_provenance")
+    return (isinstance(provenance,dict)
+            and any(isinstance(p,dict) and p.get("source_class")=="IOL_STRUCTURED_API"
+                    for p in provenance.values()))
+
+
 def contract_for(record):
     if record["currency"] == "UNKNOWN" or record["market"] == "UNKNOWN":
         raise ValueError("MISSING_CURRENCY_OR_MARKET")
     family = family_name(record["instrument_type"])
     raw = record.get("raw", {})
+    if family == "OPCIONES" and _option_iol_contract_unverified(raw):
+        raise ValueError("OPTION_IOL_SERIES_CONTRACT_UNVERIFIED")
     from rc6_contract_bridge import hard_blocked_bridge
     if hard_blocked_bridge(raw.get("_contract_bridge")):
         raise ValueError("CONTRACT_EVIDENCE_REVIEW_REQUIRED")
@@ -532,6 +553,13 @@ def sync_candidate_universe(connection, checked_at, *,
             reasons.append("CATALOG_STATUS:" + str(row[6]))
         if not str(row[7]).startswith("READY_PAPER_"):
             reasons.append("CAPABILITY:" + str(row[7]))
+        if str(row[1]).upper() == "OPCIONES":
+            try:
+                stored_raw=json.loads(row[9] or "{}")
+            except (TypeError,ValueError):
+                stored_raw={}
+            if _option_iol_contract_unverified(stored_raw):
+                reasons.append("OPTION_IOL_SERIES_CONTRACT_UNVERIFIED")
         if identity_key in retry_ambiguities:
             reasons.append("RETRY_IDENTITY_AMBIGUOUS")
         return list(dict.fromkeys(reasons))

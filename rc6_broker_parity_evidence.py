@@ -65,6 +65,12 @@ def _map_iol_contract(row):
     contract = row.get("financial_contract_v17")
     contract = contract if isinstance(contract, dict) else {}
     family = canonical_family(row.get("instrument_type"))
+    if family == "OPCIONES":
+        # Old IOL caches built a full contract from the share's currency and
+        # treated a missing adjustment flag as an unadjusted series. Neither
+        # that contract nor a chain-level standard lot proves the current
+        # series' effective terms. Preserve chain observations, not authority.
+        contract = {}
     broker_minimum = contract.get("broker_minimum_quantity")
     broker_step = contract.get("broker_quantity_step")
     explicit_paper_units = any(contract.get(name) not in (None, "", [], {}) for name in (
@@ -96,23 +102,9 @@ def _map_iol_contract(row):
             "price_quote_unit": detail.get("quote_basis_nominal"),
             "maturity_date": detail.get("maturity_date"),
         })
-    elif family == "OPCIONES":
-        detail = row.get("option_chain_evidence") or {}
-        multiplier = contract.get("cash_multiplier")
-        mapped.update({
-            "underlying": contract.get("underlying") or detail.get("underlying"),
-            "put_call": contract.get("option_right") or {
-                "C": "CALL", "V": "PUT", "CALL": "CALL", "PUT": "PUT",
-            }.get(str(detail.get("option_type") or "").upper()),
-            "strike": contract.get("strike") or detail.get("strike_price"),
-            "expiry_at": contract.get("expires_at") or detail.get("expires_at"),
-            "lot_size": multiplier or detail.get("contract_lot"),
-            "contract_multiplier": multiplier or detail.get("contract_lot"),
-            # cash_multiplier needs both lot and premium basis; a partial chain
-            # must not invent it merely because the exchange publishes a lot.
-            "cash_multiplier": multiplier,
-            "premium_basis": contract.get("premium_basis"),
-        })
+    # Option series lack effective-dated adjustment proof in this source.
+    # Even partial option terms could combine with another incomplete source
+    # into a purported contract, so none enter the broker-parity contract map.
     result = {key: value for key, value in mapped.items()
               if value not in (None, "", [], {})}
     return result or None
@@ -269,6 +261,10 @@ def iol_structured_records(payload: dict, ppi_catalog: Iterable[dict]):
         identity = FullIdentity.from_mapping(row)
         if identity not in ppi:
             blocked.append({"identity": identity.__dict__, "blocker": "BLOCKED_IDENTITY"})
+            continue
+        if identity.family == "OPCIONES":
+            blocked.append({"identity": identity.__dict__,
+                            "blocker": "OPTION_SERIES_CONTRACT_UNVERIFIED"})
             continue
         mapped = _map_iol_contract(row)
         if not mapped:

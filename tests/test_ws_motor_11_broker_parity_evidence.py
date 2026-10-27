@@ -6,6 +6,7 @@ import cq_family_contract_rules_hf6 as rules
 import rc6_broker_parity_evidence as parity
 import rc6_contract_bridge as bridge
 import bu_instrument_catalog as catalog
+import rc6_ppi_option_contract_policy as ppi_option
 
 
 NOW = datetime(2026, 9, 28, 18, 0, tzinfo=timezone.utc)
@@ -62,22 +63,48 @@ def test_iol_cannot_create_or_overwrite_ppi_identity():
     assert unknown["blocked"][0]["blocker"] == "BLOCKED_IDENTITY"
 
 
-def test_partial_iol_option_chain_survives_until_ppi_completes_order_terms():
+def test_legacy_iol_option_lot_and_contract_never_gain_series_authority():
     payload = {"schema": "rc6-iol-family-reference-v1", "refreshed_at": NOW.isoformat(),
                "records": [{"ticker": "GFGC6000OC", "instrument_type": "OPCIONES",
                             "market": "BCBA", "currency": "ARS", "settlement": "T0",
-                            "financial_contract_v17": None,
+                            "financial_contract_v17": {"family":"OPCIONES","cash_multiplier":"100",
+                                "underlying":"GGAL","strike":"6000","option_right":"CALL",
+                                "premium_basis":"PER_UNDERLYING_UNIT"},
                             "option_chain_evidence": {"underlying": "GGAL", "option_type": "C",
                                 "strike_price": 6000, "expires_at": "2026-10-16T15:30:00-03:00",
                                 "contract_lot": 100}}]}
     ppi = [{"ticker": "GFGC6000OC", "instrument_type": "OPCIONES", "market": "BYMA",
             "currency": "ARS", "settlement": "INMEDIATA", "settlement_source": "PPI_FIELD",
             "metadata_json": '{"_discovery_source":"PPI_PRIMARY"}'}]
+    assert payload["records"][0]["option_chain_evidence"]["contract_lot"] == 100
+    mapped = parity._map_iol_contract(payload["records"][0])
+    assert not {"underlying","strike","expiry_at","lot_size","contract_multiplier",
+                "cash_multiplier","premium_basis","paper_quantity_min","quantity_min"} & mapped.keys()
     result = parity.iol_structured_records(payload, ppi)
-    assert len(result["accepted"]) == 1
-    partial = result["accepted"][0]["evidence"]
-    assert partial["underlying"] == "GGAL" and partial["lot_size"] == 100
-    assert "cash_multiplier" not in partial
+    assert result["accepted"] == []
+    assert result["blocked"][0]["blocker"] == "OPTION_SERIES_CONTRACT_UNVERIFIED"
+    assert payload["records"][0]["financial_contract_v17"]["cash_multiplier"] == "100"
+
+
+def test_iol_option_quarantine_does_not_block_independent_ppi_byma_policy(tmp_path):
+    ppi = {"ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BYMA",
+           "currency":"ARS","settlement":"INMEDIATA","status":"AVAILABLE",
+           "capability":"NEEDS_OPTION_CONTRACT",
+           "description":"Opción compra GGAL AR$ 6000 Vto. 16/10/2026",
+           "metadata_json":'{"_discovery_source":"PPI_PRIMARY"}'}
+    assert ppi_option.standard_long_option_evidence(
+        ppi,{"GGAL":"ACCIONES"})["cash_multiplier"] == "100"
+    store=Store(tmp_path / "option-quarantine.db")
+    iol={"schema":"rc6-iol-family-reference-v1","records":[{
+        "ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BCBA",
+        "currency":"ARS","settlement":"T0","financial_contract_v17":{
+            "cash_multiplier":"100","premium_basis":"PER_UNDERLYING_UNIT"},
+        "option_chain_evidence":{"underlying":"GGAL","strike_price":6000,
+                                 "contract_lot":100}}]}
+    ingested=parity.ingest_iol_structured_cache(store,iol,[ppi])
+    assert ingested["written"] == []
+    assert ingested["blocked"][0]["blocker"] == "OPTION_SERIES_CONTRACT_UNVERIFIED"
+    assert iol["records"][0]["option_chain_evidence"]["contract_lot"] == 100
 
 
 def test_scraping_is_only_last_resort_for_required_unresolved_field():
@@ -199,7 +226,7 @@ def test_fci_inventory_and_caucion_sections_are_not_dropped_but_require_ppi_bind
     assert caucion["evidence"]["paper_fill_policy"] == "CONSERVATIVE_NOTIONAL_CAP"
 
 
-def test_complementary_option_fields_reach_real_catalog_capability(tmp_path):
+def test_persisted_iol_option_terms_cannot_complete_ppi_contract(tmp_path):
     store = Store(tmp_path / "option-complement.db")
     identity = dict(family="OPCIONES", ticker="GFGC6000OC", market="BYMA",
                     currency="ARS", settlement="INMEDIATA")
@@ -214,9 +241,21 @@ def test_complementary_option_fields_reach_real_catalog_capability(tmp_path):
         evidence.record_snapshot(store, **identity, source_class=source,
                                  source_ref=ref, observed_at=NOW.isoformat(), evidence=payload)
     claim = bridge.complements_from_store(store, now=NOW)[0]
-    assert claim["financial_contract_v17"] is not None
+    assert claim["financial_contract_v17"] is None
     primary = catalog.normalize_record(
         {"ticker": "GFGC6000OC", "type": "OPCIONES", "market": "BYMA",
          "currency": "ARS"}, "INMEDIATA", NOW.isoformat(), "ppi-primary")
     completed = catalog.complete_with_complement(primary, claim)
-    assert completed["capability"] == "READY_PAPER_OPTION_LONG"
+    assert completed["capability"] == "NEEDS_OPTION_CONTRACT"
+    # An independent per-series PPI snapshot may complete the terms; the
+    # older IOL v2 snapshot remains stored and is ignored on every read.
+    evidence.record_snapshot(store, **identity, source_class="PPI_AUTHENTICATED_XHR",
+        source_ref="ppi:ticket:series-terms", observed_at=NOW.isoformat(),
+        evidence={"underlying":"GGAL","put_call":"CALL","strike":6000,
+                  "expiry_at":"2026-10-16T15:30:00-03:00"})
+    claim = bridge.complements_from_store(store, now=NOW)[0]
+    assert claim["financial_contract_v17"] is not None
+    assert claim == bridge.complements_from_store(store, now=NOW)[0]
+    assert all(p["source_class"] != "IOL_STRUCTURED_API"
+               for p in claim["financial_contract_v17"]["field_provenance"].values())
+    assert catalog.complete_with_complement(primary, claim)["capability"] == "READY_PAPER_OPTION_LONG"
