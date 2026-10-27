@@ -114,6 +114,7 @@ jobs:
               'porota_production_observer', 'porota_production_dashboard',
               'porota_critical_approval_rc6')}
           db_result = {'state': 'NO_VERIFICADO'}
+          auth_chronology = {'state': 'NO_VERIFICADO'}
           db_path = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
           db_stage = 'CONNECT'
           try:
@@ -168,6 +169,42 @@ jobs:
                                'ppi_production_auth': {
                                    'state': code(auth[0]), 'checked_at': stamp(auth[1]),
                                    'last_success_at': stamp(auth[2])} if auth else {'state': 'NO_VERIFICADO'}}
+                  # Bounded reverse-rowid scans: timestamp and fixed enums only.
+                  # Never read notification bodies, health detail, or HTTP payloads.
+                  try:
+                      db_stage = 'AUTH_CHRONOLOGY'
+                      login_attempts = db.execute('''SELECT happened_at,result FROM http_audit
+                          WHERE method='POST' AND path='/api/1.0/account/loginapi'
+                          ORDER BY id DESC LIMIT 24''').fetchall()
+                      login_successes = db.execute('''SELECT event_at FROM paper_events
+                          WHERE event_type='PPI_LOGIN' ORDER BY id DESC LIMIT 24''').fetchall()
+                      transitions = db.execute('''SELECT created_at,kind,event_key
+                          FROM paper_notification_outbox
+                          WHERE event_key LIKE 'operational-health:PPI_PRODUCTION_AUTH:%'
+                          ORDER BY id DESC LIMIT 24''').fetchall()
+                      auth_chronology = {
+                          'state': 'SANITIZED',
+                          'login_transport_attempts': [
+                              {'at_utc': stamp(at), 'guard_result':
+                               result if result in ('ALLOWED','BLOCKED') else 'NO_VERIFICADO'}
+                              for at,result in login_attempts],
+                          'scanner_login_success_events': [stamp(item[0])
+                                                           for item in login_successes],
+                          'auth_alert_transitions': [
+                              {'at_utc':stamp(at),
+                               'class':('BAD' if key.split(':')[2]=='BAD' else
+                                        'GOOD' if key.split(':')[2]=='GOOD' else 'NO_VERIFICADO'),
+                               'kind':kind if kind in ('OPERATIONAL_HEALTH_RED',
+                                                       'OPERATIONAL_HEALTH_RECOVERY')
+                                      else 'NO_VERIFICADO'}
+                              for at,kind,key in transitions],
+                          'login_response_status': 'NOT_PERSISTED',
+                          'login_response_content_type': 'NOT_PERSISTED',
+                          'login_response_body_length': 'NOT_PERSISTED'}
+                  except (sqlite3.Error, ValueError, IndexError) as exc:
+                      auth_chronology = {'state':'NO_VERIFICADO',
+                                         'error_type':type(exc).__name__,
+                                         'sqlite_error_class':db_error_class(exc)}
               finally:
                   db.close()
           except (OSError, ValueError, sqlite3.Error) as exc:
@@ -294,6 +331,30 @@ jobs:
           except (OSError, subprocess.SubprocessError):
               pass
 
+          auth_log_classes = {'state':'NO_VERIFICADO'}
+          try:
+              auth_logs = subprocess.run(
+                  ['docker','logs','--since=90m','--tail=2000','--timestamps',
+                   'porota_production_observer'],
+                  text=True,capture_output=True,check=False,timeout=8)
+              if auth_logs.returncode == 0:
+                  entries = (auth_logs.stdout+auth_logs.stderr)[-256000:].splitlines()
+                  def log_at(line):
+                      match = re.match(r'^([0-9TZ:.+-]{19,35})\s',line)
+                      return stamp(match.group(1)) if match else 'NO_VERIFICADO'
+                  auth_log_classes = {
+                      'state':'SANITIZED','window_seconds':5400,
+                      'lines_examined':len(entries),
+                      'json_decode_error_times_utc':[
+                          log_at(line) for line in entries
+                          if 'JSONDecodeError:' in line][-12:],
+                      'sqlite_full_times_utc':[
+                          log_at(line) for line in entries
+                          if 'sqlite3.OperationalError: database or disk is full' in line][-24:],
+                      'child_exited_count':sum('CHILD_EXITED' in line for line in entries)}
+          except (OSError, subprocess.SubprocessError):
+              pass
+
           def statvfs(path):
               try:
                   fs = os.statvfs(path)
@@ -401,8 +462,20 @@ jobs:
               storage['container'] = {'state': 'NO_VERIFICADO'}
           raw = command(['docker', 'inspect', '--format', '{{json .}}',
                          'porota_production_observer'])
+          auth_cooldown = {'state':'NO_VERIFICADO'}
           try:
               inspected = json.loads(raw or '')
+              values = [v.split('=',1)[1] for v in
+                        ((inspected.get('Config') or {}).get('Env') or [])
+                        if isinstance(v,str) and v.startswith('PPI_LOGIN_COOLDOWN_SECONDS=')]
+              if len(values)==1 and re.fullmatch(r'[0-9]{1,6}',values[0]):
+                  seconds = max(300,int(values[0]))
+                  auth_cooldown = {'state':'CONFIGURED','seconds':seconds,
+                                   'breaker_scope':'SCANNER_PROCESS_IN_MEMORY'}
+              elif not values:
+                  auth_cooldown = {'state':'ABSENT_SOURCE_DEFAULT_900',
+                                   'seconds':900,
+                                   'breaker_scope':'SCANNER_PROCESS_IN_MEMORY'}
               mounts = inspected.get('Mounts') or []
               data_mount = next((m for m in mounts if m.get('Destination') == '/app/data'), {})
               storage['mount'] = {
@@ -508,6 +581,9 @@ jobs:
                     'critical_broker': critical_health,
                     'runtime_child_health': child_health,
                     'scanner_exception_events': exception_events,
+                    'auth_chronology':auth_chronology,
+                    'auth_log_classes':auth_log_classes,
+                    'auth_cooldown':auth_cooldown,
                     'storage': storage, 'disk_guard': disk_guard,
                     'calendar_and_hours': calendar,
                     'a116_rescue_admission_sample': admission,
