@@ -44,13 +44,15 @@ jobs:
             ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
               -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PYHOST'
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import hashlib
           import json
           import os
           import re
           import sqlite3
           import subprocess
           import time
+          import types
           from datetime import datetime, timezone
           from pathlib import Path
           from zoneinfo import ZoneInfo
@@ -69,6 +71,10 @@ jobs:
                   return parsed.isoformat() if parsed.tzinfo else 'NO_VERIFICADO'
               except ValueError:
                   return 'NO_VERIFICADO'
+          def age_seconds(value):
+              parsed = stamp(value)
+              return (round((now - datetime.fromisoformat(parsed).astimezone(timezone.utc)).total_seconds(), 1)
+                      if parsed != 'NO_VERIFICADO' else None)
           def command(args, seconds=5):
               try:
                   done = subprocess.run(args, text=True, capture_output=True,
@@ -107,7 +113,7 @@ jobs:
                   deadline = time.monotonic() + 4
                   db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
                   row = db.execute('''SELECT mode, process_state, session_state, ppi_auth,
-                                            real_orders_sent, heartbeat_at
+                                            real_orders_sent, heartbeat_at, source_sha
                                      FROM observer_state WHERE id=1 LIMIT 1''').fetchone()
                   auth = db.execute('''SELECT state, checked_at, last_success_at
                                       FROM api_health WHERE component=? LIMIT 1''',
@@ -121,12 +127,20 @@ jobs:
                   sqlite_meta = {key: db.execute('PRAGMA ' + key).fetchone()[0]
                                  for key in ('temp_store', 'page_size', 'page_count',
                                              'freelist_count', 'max_page_count')}
+                  exposures = {
+                      'open_paper_spot': db.execute(
+                          "SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1").fetchone() is not None,
+                      'open_paper_caucion': db.execute(
+                          "SELECT 1 FROM paper_cauciones WHERE status='OPEN' LIMIT 1").fetchone() is not None,
+                      'active_paper_future': db.execute(
+                          "SELECT 1 FROM paper_future_positions WHERE status='ACTIVE' LIMIT 1").fetchone() is not None}
                   db_result = {'state': 'OK', 'mode': code(row[0]),
                                'process_state': code(row[1]),
                                'session_state': code(row[2]),
                                'ppi_auth': code(row[3]),
                                'real_orders_sent': row[4] if type(row[4]) is int else 'NO_VERIFICADO',
                                'heartbeat_at': heartbeat, 'heartbeat_age_seconds': age,
+                               'source_sha': sha(row[6]), 'exposure_exists': exposures,
                                'sqlite_metadata': sqlite_meta,
                                'ppi_production_auth': {
                                    'state': code(auth[0]), 'checked_at': stamp(auth[1]),
@@ -144,6 +158,13 @@ jobs:
               item = json.loads(release_path.read_text(encoding='utf-8'))
               release = {'state': 'OK', 'candidate_sha': sha(item.get('candidate_sha')),
                          'deploy_sha': sha(item.get('deploy_sha')),
+                         'image_id': (item.get('image_id') if re.fullmatch(
+                             r'sha256:[0-9a-f]{64}', str(item.get('image_id') or ''))
+                             else 'NO_VERIFICADO'),
+                         'mode': code(item.get('mode')),
+                         'real_orders_sent': (item.get('real_orders_sent') if
+                                              type(item.get('real_orders_sent')) is int
+                                              else 'NO_VERIFICADO'),
                          'validation_status': code(item.get('validation_status'))}
           except (OSError, ValueError, TypeError):
               pass
@@ -159,19 +180,23 @@ jobs:
                   return value if type(value) is int and 0 <= value <= 1000000 else 'NO_VERIFICADO'
               child_health = {
                   'state': 'OK', 'recorded_at': stamp(item.get('recorded_at')),
+                  'recorded_age_seconds': age_seconds(item.get('recorded_at')),
+                  'recorded_recent_30s': (age_seconds(item.get('recorded_at')) is not None and
+                                          0 <= age_seconds(item.get('recorded_at')) <= 30),
                   'source_sha': sha(item.get('source_sha')),
                   'scanner': {'state': code(scanner.get('state')),
                               'restarts': count(scanner.get('restarts')),
                               'spawn_failures': count(scanner.get('spawn_failures')),
                               'started_at': stamp(scanner.get('started_at')),
                               'last_exit_at': stamp(scanner.get('last_exit_at')),
+                              'last_exit_age_seconds': age_seconds(scanner.get('last_exit_at')),
                               'last_error': code(scanner.get('last_error'))}}
           except (OSError, ValueError, TypeError):
               pass
 
           exception_events = {'state': 'NO_VERIFICADO'}
           try:
-              logs = subprocess.run(['docker', 'logs', '--since=5m', '--tail=400', '--timestamps',
+              logs = subprocess.run(['docker', 'logs', '--since=90s', '--tail=400', '--timestamps',
                                      'porota_production_observer'],
                                     text=True, capture_output=True, check=False, timeout=8)
               if logs.returncode == 0:
@@ -184,9 +209,15 @@ jobs:
                           name = match.group(1)
                           classes[name] = classes.get(name, 0) + 1
                   exception_events = {'state': 'SANITIZED', 'lines_examined': len(lines),
+                                      'window_seconds': 90,
                                       'exception_counts': dict(sorted(classes.items())[:12]),
                                       'child_exited_mentions': sum('CHILD_EXITED' in line
                                                                    for line in lines)}
+                  bounded_trace = '\n'.join(lines)
+                  exception_events['scanner_report_sqlite_full_trace'] = bool(re.search(
+                      r'File [^\n]*bi_operational_services\.py", line 424, in _period_data'
+                      r'[\s\S]{0,3000}?sqlite3\.OperationalError: database or disk is full',
+                      bounded_trace))
                   starts = [n for n, line in enumerate(lines)
                             if 'Traceback (most recent call last):' in line]
                   if starts:
@@ -227,7 +258,61 @@ jobs:
               except OSError:
                   return {'state': 'NO_VERIFICADO'}
           storage = {'host_db_parent': statvfs(db_path.parent),
-                     'host_tmp': statvfs('/tmp')}
+                     'host_tmp': statvfs('/tmp'), 'host_root': statvfs('/')}
+          disk_guard = {'state': 'NO_VERIFICADO'}
+          policy_path = Path('/opt/porota-trading/ops/policy/rc6-disk-housekeeping-v1.json')
+          try:
+              if (policy_path.is_symlink() or not policy_path.is_file() or
+                      policy_path.stat().st_size > 16384):
+                  raise ValueError('DISK_POLICY_PATH_INVALID')
+              policy_bytes = policy_path.read_bytes()
+              policy = json.loads(policy_bytes)
+              disk = policy['disk']
+              root_fs = os.statvfs('/')
+              free = root_fs.f_bavail * root_fs.f_frsize
+              inode_percent = 100 * root_fs.f_favail / root_fs.f_files
+              residual = disk['post_cleanup_min_free_bytes']
+              inode_floor = disk['min_inode_free_percent']
+              if (policy.get('schema_version') != 1 or type(residual) is not int or
+                      residual < 0 or type(inode_floor) not in (int, float) or
+                      not 0 <= inode_floor <= 100):
+                  raise ValueError('DISK_POLICY_INVALID')
+              disk_guard = {'state': 'OK',
+                            'policy_sha256': hashlib.sha256(policy_bytes).hexdigest(),
+                            'postload_residual_bytes': residual,
+                            'min_inode_free_percent': inode_floor,
+                            'available_bytes': free,
+                            'inode_free_percent': round(inode_percent, 2),
+                            'postload_metadata_status': 'GREEN' if
+                            free >= residual and inode_percent >= inode_floor else 'RED'}
+          except (OSError, ValueError, TypeError, KeyError, ZeroDivisionError):
+              pass
+
+          calendar = {'state': 'NO_VERIFICADO'}
+          local = now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+          calendar_path = Path('/opt/porota-trading/ak_byma_calendar.py')
+          expected_calendar_sha = '32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
+          try:
+              if (calendar_path.is_symlink() or not calendar_path.is_file() or
+                      calendar_path.stat().st_size > 65536):
+                  raise ValueError('CALENDAR_PATH_INVALID')
+              raw_calendar = calendar_path.read_bytes()
+              actual_sha = hashlib.sha256(raw_calendar).hexdigest()
+              calendar = {'state': 'HASH_MATCH' if actual_sha == expected_calendar_sha else 'HASH_RED',
+                          'sha256': actual_sha, 'expected_sha256': expected_calendar_sha,
+                          'business_day_art': local.date().isoformat(),
+                          'sample_time_art': local.isoformat(),
+                          'com18782_latest_session_end_art': '19:00',
+                          'com18782_sha256': '380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'}
+              if actual_sha == expected_calendar_sha:
+                  module = types.ModuleType('rc6_a111_audit_byma_calendar')
+                  exec(compile(raw_calendar, str(calendar_path), 'exec'), module.__dict__)
+                  calendar['operational_day'] = (module.CALENDARIO_ACTUALIZADO_EL.isoformat() == '2026-10-14' and
+                                                 2026 in module.ANIOS_AUDITADOS and
+                                                 module.es_dia_habil_operativo(local.date()))
+                  calendar['after_official_latest_session'] = (local.hour, local.minute) >= (19, 0)
+          except (OSError, ValueError, TypeError, AttributeError):
+              calendar = {'state': 'NO_VERIFICADO'}
           inside = command(['docker', 'exec', '-e', 'PYTHONDONTWRITEBYTECODE=1',
               'porota_production_observer', 'python', '-c',
               'import json,os; '
@@ -276,7 +361,8 @@ jobs:
                     'critical_broker': critical_health,
                     'runtime_child_health': child_health,
                     'scanner_exception_events': exception_events,
-                    'storage': storage,
+                    'storage': storage, 'disk_guard': disk_guard,
+                    'calendar_and_hours': calendar,
                     'critical_units': {
                         name: code(str((command(['systemctl', 'is-active', name]) or '')).strip().upper())
                         for name in ('porota-critical-github-proxy-rc6.service',
