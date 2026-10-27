@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from bs_instrument_contracts import cash_currency
 from cu_history_store_v2_hf6 import Candle,instant,ART
 
 CEM_HISTORY_SOURCE = "A3_CEM_CLOSING"
@@ -100,8 +101,18 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         raise ValueError("CEM_CLOSING_NOT_OBJECT")
     # CEM reference currency may denote the underlying (DLR: USD), while the
     # quote/compensation currency is ARS. Only explicit quote identity counts.
-    currency=currency or row.get('quoteCurrency')
-    if not currency: raise ValueError('CEM_QUOTE_CURRENCY_IDENTITY_REQUIRED')
+    target_currency = currency
+    quote_currency = row.get('quoteCurrency')
+    if not target_currency and not quote_currency:
+        raise ValueError('CEM_QUOTE_CURRENCY_IDENTITY_REQUIRED')
+    try:
+        target_currency = cash_currency(target_currency) if target_currency else None
+        quote_currency = cash_currency(quote_currency) if quote_currency else None
+    except ValueError as exc:
+        raise ValueError('CEM_QUOTE_CURRENCY_INVALID') from exc
+    if target_currency and quote_currency and target_currency != quote_currency:
+        raise ValueError('CEM_QUOTE_CURRENCY_CONFLICT')
+    currency = target_currency or quote_currency
     symbol = str(row.get("symbol") or "").strip().upper()
     date_time = str(row.get("dateTime") or "")
     if not symbol or not date_time:

@@ -53,11 +53,15 @@ logger = logging.getLogger("fee_schedule")
 IVA_PCT = float(os.getenv("IVA_PCT", "0.21"))
 
 # Provenance token used by PAPER-only caucion policies.  This is deliberately
-# not a broker quote: it names the versioned commercial tariff and market-right
-# verification already documented above.  Automatic simulation may use this
+# not a broker quote: it names the versioned public tariff and the unresolved
+# market-right assumption documented above. Automatic simulation may use this
 # model for ARS only; foreign-currency cauciones still require an exact quote.
+# This token is persisted with PAPER caucion evidence.  The old token claimed
+# BYMA rights were verified although the official rights PDF and the account's
+# pass-through have not been reconciled.  Rejecting that old token on replay is
+# intentional: a historical assumption cannot become broker authority.
 CAUCION_PAPER_FEE_AUTHORITY = (
-    "PPI_TARIFF_EFFECTIVE_2026-07-01+BYMA_RIGHTS_VERIFIED_2026-08-21"
+    "PAPER_PPI_PUBLIC_TARIFF_2026-07-01+BYMA_RIGHTS_UNVERIFIED"
 )
 
 
@@ -332,6 +336,9 @@ def desglose(clase: Optional[str], monto_ars: float, spread_pct: float = 0.0,
     spread_ars = monto_ars * (spread_pct / 100.0)
     return {
         "clase": c,
+        "cost_model_scope": "PAPER_PUBLIC_TARIFF_SENSITIVITY",
+        "account_terms": "NO_VERIFICADO",
+        "market_rights": "PAPER_ASSUMPTION_NOT_RECONCILED",
         "comision_ars": round(comision_tramo, 2),
         "iva_comision_ars": round(iva_comision, 2),
         "derecho_mercado_ars": round(derecho_tramo, 2),
@@ -412,7 +419,7 @@ def conciliar_contra_broker(ppi_client, account_number: str, ticker: str,
 
 def tabla_para_documentacion() -> list:
     """Filas listas para renderizar en el panel y en el documento maestro.
-    Se genera desde la grilla real para que la tabla del documento no pueda
+    Se genera desde la grilla PAPER para que la tabla del documento no pueda
     desincronizarse del código: la inconsistencia de inventario fue un
     hallazgo propio de la auditoría anterior."""
     filas = []
@@ -424,6 +431,9 @@ def tabla_para_documentacion() -> list:
         filas.append({
             "clase": clase,
             "moneda": currency,
+            "cost_model_scope": "PAPER_PUBLIC_TARIFF_SENSITIVITY",
+            "account_terms": "NO_VERIFICADO",
+            "market_rights": "PAPER_ASSUMPTION_NOT_RECONCILED",
             "comision_pct": round(a.comision * 100, 4),
             "iva_comision": "sí" if a.comision_iva else "exento",
             "derecho_pct": round(a.derecho * 100, 4),

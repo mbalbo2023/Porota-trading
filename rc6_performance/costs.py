@@ -234,21 +234,29 @@ def paper_cost_contract(family, currency, decision_at):
     # currency-specific mapping to USD/MEP/CCL. Keep the public broker rate
     # visible, but never bind a dollar PAPER decision on an invented right.
     unbound_dollar_rights = family == "LETRAS" and currency != "ARS"
+    # An ETF abroad has a USD minimum (which differs between PPI channels),
+    # while a local CEDEAR of an ETF is a different instrument.  The generic
+    # ETFS family carries neither that identity nor the execution venue.
+    unbound_etf_terms = family == "ETFS"
     contract = VersionedPaperCostContract(
         family=family, currency=currency,
         policy_version=("POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"
-                        if revised else "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V1"),
+                        if revised or unbound_etf_terms else "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V1"),
         effective_at="2026-07-01T00:00:00-03:00",
-        known_at=("2026-10-26T19:12:00Z" if revised else "2026-08-21T00:00:00-03:00"),
+        known_at=("2026-10-27T00:13:27Z" if unbound_etf_terms else
+                  "2026-10-26T19:12:00Z" if revised else "2026-08-21T00:00:00-03:00"),
         source=("PAPER:PPI_PUBLIC_2026-07-01:OBSERVED_2026-10-26:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
-                if revised else "PAPER:au_fee_schedule:PPI_2026-07-01+BYMA_2026-08-21:ACCOUNT_UNVERIFIED"),
+                if revised else
+                "PAPER:PPI_PUBLIC_2026-07-01:ETF_VENUE_AND_MINIMUM_UNVERIFIED:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
+                if unbound_etf_terms else
+                "PAPER:au_fee_schedule:PPI_PUBLIC_2026-07-01:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"),
         commission=number(fee.comision),
-        rights=(None if unbound_dollar_rights else number(fee.derecho)), clearing=ZERO,
+        rights=(None if unbound_dollar_rights or unbound_etf_terms else number(fee.derecho)), clearing=ZERO,
         premium_rights=number(fee.derecho_sobre_prima), vat=number(schedule.IVA_PCT),
         commission_vat=fee.comision_iva,
-        rights_vat=(None if unbound_dollar_rights else fee.derecho_iva),
+        rights_vat=(None if unbound_dollar_rights or unbound_etf_terms else fee.derecho_iva),
         clearing_vat=False, premium_rights_vat=fee.prima_iva,
-        minimum_commission=ZERO, tiers=(),
+        minimum_commission=(None if unbound_etf_terms else ZERO), tiers=(),
         rebate_policy=("COMMISSION_ON_SMALLER_INTRADAY_LEG"
                        if family in schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA else "NONE"),
         fee_currency=cash_currency(currency), fx_rate=Decimal("1"),
@@ -269,7 +277,7 @@ def paper_fee_model(family):
     fee = schedule.arancel_de(family)
     return FeeModel(number(fee.comision), number(fee.derecho), number(schedule.IVA_PCT),
                     fee.comision_iva, fee.derecho_iva,
-                    "PAPER:au_fee_schedule:PPI_2026-07-01+BYMA_2026-08-21")
+                    "PAPER:au_fee_schedule:PPI_PUBLIC_2026-07-01:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED")
 
 
 def expected_round_trip_cost(entry, exit_price, quantity, multiplier, model, *,

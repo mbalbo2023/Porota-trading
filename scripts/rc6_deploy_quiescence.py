@@ -172,15 +172,63 @@ def exact_rescue_receipt(receipt):
     return proof
 
 
+def current_runtime_marker():
+    """Read the installed provenance; observer_state has no source_sha column."""
+    path = ROOT/'data/deploy/CURRENT_STATE_V2.json'
+    if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536):
+        raise ValueError('QUIESCENCE_RESCUE_CURRENT_STATE_UNSAFE')
+    current = json.loads(path.read_bytes())
+    at = datetime.fromisoformat(current['recorded_at'])
+    if (current.get('schema_version') != 2 or at.tzinfo is None or
+            at > datetime.now(timezone.utc) or
+            not re.fullmatch('[0-9a-f]{40}',current.get('candidate_sha','')) or
+            not re.fullmatch('sha256:[0-9a-f]{64}',current.get('image_id','')) or
+            current.get('mode') != 'PRODUCTION_PAPER' or
+            type(current.get('real_orders_sent')) is not int or
+            current['real_orders_sent'] != 0 or
+            current.get('real_order_routes') != 'NOT_CALLED' or
+            current.get('validation_status') not in
+            {'VALIDATED_RUNTIME','DEPLOYED_VALIDATION_PENDING'}):
+        raise ValueError('QUIESCENCE_RESCUE_CURRENT_STATE_RED')
+    return current
+
+
+def exact_a92_marker():
+    current = current_runtime_marker()
+    if (current['candidate_sha'] != RESCUE_SOURCE_SHA or
+            current['image_id'] != RESCUE_IMAGE_ID or
+            current['validation_status'] != 'VALIDATED_RUNTIME'):
+        raise ValueError('QUIESCENCE_RESCUE_A92_PROVENANCE_RED')
+    return current
+
+
+def fresh_a92_child_source():
+    path = ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+    if (path.is_symlink() or not path.is_file() or path.stat().st_size > 131072 or
+            path.stat().st_nlink != 1):
+        raise ValueError('QUIESCENCE_RESCUE_CHILD_HEALTH_UNSAFE')
+    health = json.loads(path.read_bytes())
+    at = datetime.fromisoformat(health['recorded_at'])
+    if (at.tzinfo is None or not 0 <= (datetime.now(timezone.utc)-at).total_seconds() <= 30 or
+            health.get('schema') != 'rc6.runtime-child-health.v1' or
+            health.get('source_sha') != RESCUE_SOURCE_SHA or
+            health.get('mode') != 'PRODUCTION_PAPER' or
+            type(health.get('real_orders_sent')) is not int or
+            health['real_orders_sent'] != 0 or health.get('real_routes') != 'NOT_CALLED'):
+        raise ValueError('QUIESCENCE_RESCUE_CHILD_SOURCE_RED')
+    return health
+
+
 def rescue_flat_book():
-    """Bounded committed PAPER/0 proof, independent of the unhealthy phase."""
+    """Bounded PAPER/0 book with separate installed marker provenance."""
+    marker = current_runtime_marker()
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
         c.execute('PRAGMA query_only=ON')
         c.execute('PRAGMA busy_timeout=200')
         end = time.monotonic() + 2
         c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
-        row = c.execute('SELECT mode,real_orders_sent,process_state,session_state,source_sha '
+        row = c.execute('SELECT mode,real_orders_sent,process_state,session_state '
                         'FROM observer_state WHERE id=1').fetchone()
         if not row or row[0] != 'PRODUCTION_PAPER' or type(row[1]) is not int or row[1] != 0:
             raise ValueError('QUIESCENCE_RESCUE_PAPER_ZERO_RED')
@@ -189,7 +237,7 @@ def rescue_flat_book():
             if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1', (state,)).fetchone():
                 raise ValueError('QUIESCENCE_RESCUE_BOOK_NOT_FLAT')
         return {'process_state': row[2], 'session_state': row[3],
-                'source_sha': row[4], 'real_orders_sent': 0}
+                'source_sha': marker['candidate_sha'], 'real_orders_sent': 0}
 
 
 def candidate_image_intent(candidate, image_id, manifest_path):
@@ -375,24 +423,12 @@ def adopt_failed_rescue_candidate_stopped(candidate, folder, originals):
             {('DEGRADED', 'BOOT_CALENDAR'), ('STOPPED', 'BOOT_CALENDAR'),
              ('STOPPED', 'CLOSED'), ('STOPPED', 'MARKET_CLOSED')}):
         raise ValueError('QUIESCENCE_ADOPTED_SOURCE_BOOK_CHANGED')
-    state_path = folder/'CURRENT_STATE_V2.json'
-    if state_path.exists() or state_path.is_symlink():
-        if (state_path.is_symlink() or not state_path.is_file() or
-                state_path.stat().st_size > 65536):
-            raise ValueError('QUIESCENCE_ADOPTED_CURRENT_STATE_UNSAFE')
-        current = json.loads(state_path.read_bytes())
-        state_at = datetime.fromisoformat(current['recorded_at'])
-        if state_at.tzinfo is None:
-            raise ValueError('QUIESCENCE_ADOPTED_CURRENT_CLOCK_RED')
-        if current.get('candidate_sha') == prior_sha:
-            if (current.get('image_id') != intent['image_id'] or
-                    current.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
-                    current.get('mode') != 'PRODUCTION_PAPER' or
-                    current.get('real_orders_sent') != 0 or
-                    current.get('real_order_routes') != 'NOT_CALLED'):
-                raise ValueError('QUIESCENCE_ADOPTED_CURRENT_PROVENANCE_RED')
-        elif state_at >= intent_at:
-            raise ValueError('QUIESCENCE_ADOPTED_CURRENT_STATE_LATER_UNRELATED')
+    current = current_runtime_marker()
+    if (current['candidate_sha'] != prior_sha or
+            current['image_id'] != intent['image_id'] or
+            current['validation_status'] != 'DEPLOYED_VALIDATION_PENDING' or
+            datetime.fromisoformat(current['recorded_at']) < intent_at):
+        raise ValueError('QUIESCENCE_ADOPTED_CURRENT_PROVENANCE_RED')
     return {'candidate_sha': candidate, 'status': 'DRAINED',
             'installation_started': False, 'inflight': 'ABSENT_OWNED_RUNTIME_STOPPED',
             'real_orders_sent': 0, 'ppi_watch_accessed': False,
@@ -523,9 +559,7 @@ def admit(*, stopped=False, allow_admin_issue624=False,
         if mode != 'PRODUCTION_PAPER' or type(orders) is not int or orders != 0:
             raise ValueError('QUIESCENCE_PAPER_REQUIRED')
         if allow_degraded_closed_rescue:
-            source = c.execute('SELECT source_sha FROM observer_state WHERE id=1').fetchone()
-            if not source or source[0] != RESCUE_SOURCE_SHA:
-                raise ValueError('QUIESCENCE_RESCUE_SOURCE_CHANGED')
+            exact_a92_marker()
             if stopped:
                 prior = (stopped_receipt or {}).get('rescue_pre_state')
                 valid = ((prior == ['DEGRADED','BOOT_CALENDAR'] and
@@ -537,9 +571,12 @@ def admit(*, stopped=False, allow_admin_issue624=False,
                 exact_rescue_receipt(stopped_receipt)
                 exact_clean_stopped(stopped_receipt)
             elif (process, session) == ('STOPPED','CLOSED'):
+                fresh_a92_child_source()
                 scanner_crash_full_proof()
             elif (process, session) != ('DEGRADED', 'BOOT_CALENDAR'):
                 raise ValueError('QUIESCENCE_RESCUE_STATE_CHANGED')
+            else:
+                fresh_a92_child_source()
         elif allow_postclose_pending and (not stopped or
                 (stopped_receipt or {}).get('postclose_live_closed') is True):
             # Postclose is a distinct authorized window. Demand a fresh
@@ -1300,7 +1337,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
             originals = {name: inspect(name) for name in OWNED}
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
             if allow_degraded_closed_rescue and (
-                    stopped_owned or any(v['Image'] != RESCUE_IMAGE_ID or
+                    stopped_owned or any(not re.fullmatch('[0-9a-f]{64}',v['Id']) or
+                                           v['Image'] != RESCUE_IMAGE_ID or
                                            v['State']['Status'] != 'running'
                                            for v in originals.values())):
                 raise ValueError('QUIESCENCE_RESCUE_ORIGINAL_RUNTIME_CHANGED')

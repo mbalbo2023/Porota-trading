@@ -75,6 +75,52 @@ def test_table_names_both_letras_currencies_without_inventing_account_terms():
     rows = [r for r in fees.tabla_para_documentacion() if r["clase"] == "LETRAS"]
     assert {(r["moneda"], r["comision_pct"]) for r in rows} == {
         ("ARS", .2), ("USD", 1.0)}
+    assert all(r["cost_model_scope"] == "PAPER_PUBLIC_TARIFF_SENSITIVITY"
+               and r["account_terms"] == "NO_VERIFICADO"
+               and r["market_rights"] == "PAPER_ASSUMPTION_NOT_RECONCILED"
+               for r in rows)
+
+
+def test_public_paper_fee_sources_never_claim_reconciled_broker_terms():
+    from bt_caucion_paper import CaucionOffer
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    assert "PAPER" in fees.CAUCION_PAPER_FEE_AUTHORITY
+    assert "BYMA_RIGHTS_UNVERIFIED" in fees.CAUCION_PAPER_FEE_AUTHORITY
+    assert "BYMA_RIGHTS_VERIFIED" not in fees.CAUCION_PAPER_FEE_AUTHORITY
+    breakdown = fees.desglose("ACCIONES", 10000, currency="ARS")
+    assert breakdown["cost_model_scope"] == "PAPER_PUBLIC_TARIFF_SENSITIVITY"
+    assert breakdown["account_terms"] == "NO_VERIFICADO"
+    assert breakdown["market_rights"] == "PAPER_ASSUMPTION_NOT_RECONCILED"
+    for family in ("ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"):
+        source = paper_cost_contract(family, "ARS", AFTER).diagnostic()["source"]
+        assert "PAPER:" in source and "BYMA_RIGHTS_UNVERIFIED" in source
+        assert "ACCOUNT_UNVERIFIED" in source
+
+    at = datetime(2026, 10, 27, 15, tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
+    values = dict(instrument_id="PESOS1", currency="ARS", annual_rate_fraction=Decimal("0.30"),
+                  start_date=at.date().isoformat(), maturity_at=(at+timedelta(days=1)).isoformat(),
+                  quoted_at=at.isoformat(), available_principal=Decimal("100000"),
+                  minimum_principal=Decimal("1000"), principal_step=Decimal("1"),
+                  day_count_basis=365, fee_payment="MATURITY",
+                  metadata_source="CONTRACT_EVIDENCE_V2:TEST",
+                  paper_fill_policy="CONSERVATIVE_NOTIONAL_CAP")
+    offer = CaucionOffer(**values, fee_authority=fees.CAUCION_PAPER_FEE_AUTHORITY)
+    assert offer.fee_authority == fees.CAUCION_PAPER_FEE_AUTHORITY
+    with pytest.raises(ValueError, match="Autoridad de costos PAPER incompatible"):
+        CaucionOffer(**values, fee_authority=(
+            "PPI_TARIFF_EFFECTIVE_2026-07-01+BYMA_RIGHTS_VERIFIED_2026-08-21"))
+
+
+def test_generic_etf_fee_binding_requires_venue_and_minimum():
+    contract = paper_cost_contract("ETFS", "ARS", "2026-10-27T00:13:28Z")
+    assert contract.binding_error("2026-10-27T00:13:28Z") == "COST_COMPONENT_UNKNOWN:rights"
+    assert contract.minimum_commission is None
+    assert contract.rights_vat is None
+    assert "ETF_VENUE_AND_MINIMUM_UNVERIFIED" in contract.diagnostic()["source"]
+    with pytest.raises(ValueError, match="COST_COMPONENT_UNKNOWN:rights"):
+        contract.leg_cost(Decimal("1000"), decision_at="2026-10-27T00:13:28Z")
 
 
 def test_authenticated_get_estimate_is_not_fanned_out_to_cash_identities(tmp_path, monkeypatch):

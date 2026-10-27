@@ -206,13 +206,13 @@ class IOLClient:
     def get_serie_historica(self, simbolo: str, mercado: str = "bcba",
                             dias: int = 365, ajustada: bool = True) -> List[dict]:
         """
-        Serie diaria OHLCV.
+        Consulta la variante histórica solicitada, conservando las filas literales.
 
-        `ajustada=True` pide la serie corregida por splits y dividendos, y esto
-        no es un detalle: una serie sin ajustar tiene saltos artificiales el día
-        del split que cualquier indicador técnico lee como un derrumbe o un
-        salto real. Un backtest sobre series sin ajustar produce resultados que
-        parecen buenos y no significan nada.
+        ``ajustada`` selecciona el sufijo ``true``/``false`` del endpoint.
+        Ese parámetro no certifica qué acciones corporativas se aplicaron a
+        cada precio ni la moneda, el plazo, la unidad del volumen o cuándo se
+        publicó cada revisión. El resultado sólo es evidencia de la consulta;
+        no habilita un backfill legado ni una versión canónica de History v2.
         """
         hasta = datetime.now().strftime("%Y-%m-%d")
         desde = (datetime.now() - timedelta(days=dias)).strftime("%Y-%m-%d")
