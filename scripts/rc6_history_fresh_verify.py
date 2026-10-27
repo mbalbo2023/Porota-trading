@@ -15,7 +15,8 @@ from pathlib import Path
 from cu_history_store_v2_hf6 import instant
 from rc6_data_retention import daily_start
 from scripts.rc6_history_fresh_sidecar import (ART, _body, _day, _explicit_currency,
-                                              _identity_conflicts, _request_key,
+                                              _identity_conflicts, _ohlc_range_conflict,
+                                              _request_key,
                                               MAX_CLOCK_SKEW_SECONDS,
                                               MAX_ROWS, SOURCES)
 
@@ -58,7 +59,8 @@ def verify(path, *, now=None):
         if generation[0]['cutoff_day'] < cutoff.isoformat():
             raise ValueError('FRESH_VERIFY_RETENTION_OVERDUE')
         counts = {'captures': 0, 'retained_rows': 0, 'quarantined': 0,
-                  'request_only_currency': 0, 'row_revisions': 0}
+                  'request_only_currency': 0, 'row_revisions': 0,
+                  'ohlc_range_conflict_rows': 0}
         seen = set()
         request_keys = set()
         for row in connection.execute('SELECT * FROM fresh_captures_rc6'):
@@ -101,6 +103,8 @@ def verify(path, *, now=None):
             explicit = 0
             days = {}
             conflict = False
+            ohlc_conflict = False
+            ohlc_count = 0
             prior_index = -1
             for ordinal, evidence in enumerate(retained):
                 if not isinstance(evidence, dict) or _identity_conflicts(evidence, identity):
@@ -115,6 +119,9 @@ def verify(path, *, now=None):
                 signature = _body(evidence)
                 if day in days and days[day] != signature:
                     conflict = True
+                if _ohlc_range_conflict(evidence, source):
+                    ohlc_conflict = True
+                    ohlc_count += 1
                 days[day] = signature
                 revision = revisions[ordinal]
                 if (revision['retained_ordinal'] != ordinal or
@@ -128,8 +135,10 @@ def verify(path, *, now=None):
             currency_status = ('EXPLICIT_ROWS' if retained and explicit == len(retained)
                                else 'REQUEST_ONLY')
             reason = ('FRESH_DUPLICATE_DAY_CONFLICT' if conflict else
+                      'FRESH_OHLC_RANGE_CONFLICT' if ohlc_conflict else
                       'FRESH_REVIEW_REQUIRED' if retained else None)
-            status = 'STAGED_REVIEW_REQUIRED' if retained and not conflict else 'QUARANTINED'
+            status = ('STAGED_REVIEW_REQUIRED' if retained and not conflict and
+                      not ohlc_conflict else 'QUARANTINED')
             if (row['provider_currency_status'] != currency_status or
                     row['status'] != status or
                     (reason is not None and row['reason'] != reason) or
@@ -141,6 +150,7 @@ def verify(path, *, now=None):
             counts['captures'] += 1
             counts['retained_rows'] += len(retained)
             counts['row_revisions'] += len(revisions)
+            counts['ohlc_range_conflict_rows'] += ohlc_count
             counts['quarantined'] += int(row['status'] == 'QUARANTINED')
             counts['request_only_currency'] += int(row['provider_currency_status'] == 'REQUEST_ONLY')
     if not counts['captures']:

@@ -30,7 +30,8 @@ from pathlib import Path
 
 from rc6_data_retention import daily_start
 from scripts.rc6_history_fresh_sidecar import (
-    ART, MAX_PAYLOAD_BYTES, MAX_ROWS, _body, _day, capture, preflight,
+    ART, MAX_PAYLOAD_BYTES, MAX_ROWS, _body, _day, _ohlc_range_conflict,
+    capture, preflight,
     preflight_destination,
 )
 from scripts.rc6_history_fresh_verify import verify
@@ -109,9 +110,10 @@ def _response(value, start, end, clock):
     if not _exact_keys(value, {"bars"}) or not isinstance(value["bars"], list):
         raise ValueError("IOL_MCP_RESPONSE_SHAPE_INVALID")
     bars = value["bars"]
+    anomalies = []
     if len(bars) > MAX_ROWS or len(_body(bars)) > MAX_PAYLOAD_BYTES:
         raise ValueError("IOL_MCP_RESPONSE_BUDGET_EXCEEDED")
-    for bar in bars:
+    for index, bar in enumerate(bars):
         if not _exact_keys(bar, BAR_KEYS):
             raise ValueError("IOL_MCP_BAR_SHAPE_INVALID")
         if not isinstance(bar["date"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", bar["date"]):
@@ -128,11 +130,11 @@ def _response(value, start, end, clock):
             number = bar[field]
             if type(number) not in (int, float) or not math.isfinite(number) or number < 0:
                 raise ValueError("IOL_MCP_BAR_NUMBER_INVALID")
-        if bar["low"] > min(bar["open"], bar["close"], bar["high"]) or bar["high"] < max(
-            bar["open"], bar["close"], bar["low"]
-        ):
-            raise ValueError("IOL_MCP_BAR_RANGE_INVALID")
-    return bars
+        # Some actual MCP bars report close outside low/high. Preserve those
+        # original values as evidence; the sidecar quarantines the capture.
+        if _ohlc_range_conflict(bar, "IOL_CONNECTOR"):
+            anomalies.append({"provider_row_index": index, "economic_day": day.isoformat()})
+    return bars, anomalies
 
 
 def import_response(manifest_path, response_path, sidecar_path, receipt_path, *, now=None):
@@ -145,7 +147,7 @@ def import_response(manifest_path, response_path, sidecar_path, receipt_path, *,
     if manifest_path == response_path:
         raise ValueError("IOL_MCP_INPUT_ALIAS_FORBIDDEN")
     target, start, end = _manifest(manifest, clock)
-    bars = _response(response, start, end, clock)
+    bars, anomalies = _response(response, start, end, clock)
     sidecar_path = preflight_destination(sidecar_path, protected_paths=(manifest_path, response_path, receipt_path))
     receipt_path = preflight_destination(receipt_path, protected_paths=(manifest_path, response_path, sidecar_path))
     if not receipt_path.parent.is_dir():
@@ -155,7 +157,9 @@ def import_response(manifest_path, response_path, sidecar_path, receipt_path, *,
     checked = verify(sidecar_path)
     canonical_hash = sha256(_body(bars)).hexdigest()
     if (checked["state"] != "EVIDENCE_ONLY_NO_GO" or checked["captures"] != 1 or
-            result["results"][0]["canonical_payload_sha256"] != canonical_hash):
+            result["results"][0]["canonical_payload_sha256"] != canonical_hash or
+            checked["ohlc_range_conflict_rows"] != len(anomalies) or
+            (anomalies and result["results"][0]["status"] != "QUARANTINED")):
         raise ValueError("IOL_MCP_LOCAL_INTEGRITY_INVALID")
     result.pop("generation_path")
     result["local_fetch_invocations"] = result.pop("fetch_invocations")
@@ -174,6 +178,9 @@ def import_response(manifest_path, response_path, sidecar_path, receipt_path, *,
         "currency_verified_from_bars": False,
         "adjustment_basis_verified": False,
         "first_known_at_semantics": "LOCAL_IMPORT_OBSERVATION_ONLY",
+        "ohlc_range_conflicts": {"count": len(anomalies),
+                                 "sample": anomalies[:20], "sample_limit": 20,
+                                 "sample_truncated": len(anomalies) > 20},
     })
     receipt = (json.dumps(result, sort_keys=True, indent=2) + "\n").encode("utf-8")
     descriptor = os.open(receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -196,6 +203,8 @@ def main(argv=None):
         parser.exit(2, code + "\n")
     print(json.dumps({"state": result["state"], "source": result["source"],
                       "retained_rows": result["results"][0]["retained_rows"],
+                      "capture_status": result["results"][0]["status"],
+                      "ohlc_range_conflict_rows": result["ohlc_range_conflicts"]["count"],
                       "history_v2_writes": 0, "execution_allowed": False}, sort_keys=True))
     return 0
 

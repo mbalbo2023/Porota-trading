@@ -126,7 +126,6 @@ def test_manifest_target_conflicts_or_malformed_identity_fail_closed(tmp_path, t
     (lambda row: row.update(time=True), "IOL_MCP_BAR_CLOCK_INVALID"),
     (lambda row: row.update(date="2020-01-01"), "IOL_MCP_BAR_CLOCK_INVALID"),
     (lambda row: row.update(close="100"), "IOL_MCP_BAR_NUMBER_INVALID"),
-    (lambda row: row.update(low=999), "IOL_MCP_BAR_RANGE_INVALID"),
     (lambda row: row.update(currency="ARS"), "IOL_MCP_BAR_SHAPE_INVALID"),
     (lambda row: row.update(volume=-1), "IOL_MCP_BAR_NUMBER_INVALID"),
 ])
@@ -174,6 +173,56 @@ def test_conflicting_same_day_export_stays_quarantined(tmp_path):
     assert result["results"][0]["status"] == "QUARANTINED"
     assert result["results"][0]["reason"] == "FRESH_DUPLICATE_DAY_CONFLICT"
     assert verify(tmp_path / "fresh.sqlite")["quarantined"] == 1
+
+
+@pytest.mark.parametrize("symbol,family,currency,opening,high,low,close,observed_day", [
+    # Exact contradictory fields from bounded MCP observations; opening/high
+    # or opening/low here are minimal context, not a verbatim provider row.
+    ("GGALD", "ACCIONES", "USD", 4.5, 4.6, 4.39, 4.30, "2026-03-27"),
+    ("GGALD", "ACCIONES", "USD", 4.5, 4.515, 4.4, 4.52, "2026-05-11"),
+    ("AL30", "BONOS", "ARS", 93650, 93700, 93610, 93600, "2025-11-13"),
+])
+def test_observed_ohlc_anomaly_is_preserved_and_quarantined(
+    tmp_path, symbol, family, currency, opening, high, low, close, observed_day
+):
+    today = datetime.now(timezone.utc).astimezone(ART).date()
+    day = today - timedelta(days=1)
+    bar = _bar(day, close)
+    bar.update(open=opening, high=high, low=low)
+    manifest_path, response_path, manifest, clock = _documents(tmp_path, [bar])
+    manifest["request"]["symbol"] = symbol
+    manifest["target"] = [symbol, family, "BCBA", currency, "T1"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = _import(tmp_path, manifest_path, response_path, clock)
+    capture = result["results"][0]
+    assert capture["retained_rows"] == 1 and capture["status"] == "QUARANTINED"
+    assert capture["reason"] == "FRESH_OHLC_RANGE_CONFLICT"
+    assert result["ohlc_range_conflicts"] == {
+        "count": 1, "sample": [{"provider_row_index": 0, "economic_day": day.isoformat()}],
+        "sample_limit": 20, "sample_truncated": False,
+    }
+    assert verify(tmp_path / "fresh.sqlite")["ohlc_range_conflict_rows"] == 1
+    with sqlite3.connect(tmp_path / "fresh.sqlite") as db:
+        stored, = db.execute("SELECT retained_rows_json FROM fresh_captures_rc6").fetchone()
+    assert json.loads(stored) == [bar]
+    receipt = (tmp_path / "receipt.json").read_text()
+    assert '"open"' not in receipt and '"high"' not in receipt and '"low"' not in receipt
+    assert '"close"' not in receipt
+    assert observed_day not in receipt  # historical example is never a PIT claim
+
+
+def test_many_ohlc_anomalies_have_bounded_receipt_sample(tmp_path):
+    today = datetime.now(timezone.utc).astimezone(ART).date()
+    bars = [_bar(today - timedelta(days=day), 100) for day in range(1, 26)]
+    for bar in bars:
+        bar["close"] = 110  # above every bar's high of 101
+    manifest_path, response_path, _manifest, clock = _documents(tmp_path, bars)
+    result = _import(tmp_path, manifest_path, response_path, clock)
+    assert result["results"][0]["retained_rows"] == 25
+    assert result["results"][0]["status"] == "QUARANTINED"
+    assert result["ohlc_range_conflicts"]["count"] == 25
+    assert len(result["ohlc_range_conflicts"]["sample"]) == 20
+    assert result["ohlc_range_conflicts"]["sample_truncated"] is True
 
 
 def test_duplicate_json_keys_nonfinite_and_row_budget_are_rejected(tmp_path):

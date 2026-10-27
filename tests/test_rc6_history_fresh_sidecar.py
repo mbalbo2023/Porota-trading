@@ -161,6 +161,27 @@ def test_connector_bars_require_consistent_real_timestamp(tmp_path):
     assert result['results'][0]['provider_currency_status'] == 'REQUEST_ONLY'
 
 
+def test_connector_ohlc_conflict_is_preserved_but_quarantined_and_rechecked(tmp_path):
+    target = ('GGALD', 'ACCIONES', 'BCBA', 'USD', 'T1')
+    # GGALD provider observation 2026-03-27: close 4.30 below low 4.39.
+    # The test's economic date is kept inside the independent frozen window.
+    bar = dict(date='2026-10-23', time=1792785603, open=4.5,
+               high=4.6, low=4.39, close=4.30, volume=123)
+    sidecar = tmp_path / 'fresh.sqlite'
+    result = capture(sidecar, [target], 'IOL_CONNECTOR', lambda *_: [bar], now=NOW)
+    assert result['state'] == 'EVIDENCE_ONLY_NO_GO'
+    assert result['results'][0]['retained_rows'] == 1
+    assert result['results'][0]['status'] == 'QUARANTINED'
+    assert result['results'][0]['reason'] == 'FRESH_OHLC_RANGE_CONFLICT'
+    assert json.loads(_records(sidecar)[0]['retained_rows_json']) == [bar]
+    assert verify(sidecar)['ohlc_range_conflict_rows'] == 1
+    with sqlite3.connect(sidecar) as db:
+        db.execute("UPDATE fresh_captures_rc6 SET status='STAGED_REVIEW_REQUIRED', "
+                   "reason='FRESH_REVIEW_REQUIRED'")
+    with pytest.raises(ValueError, match='FRESH_VERIFY_STATUS_INCONSISTENT'):
+        verify(sidecar)
+
+
 def test_preflight_blocks_oversized_batch_without_calling_source(tmp_path):
     targets = [(f'Q{i}', 'ACCIONES', 'BYMA', 'ARS', 'A-24HS') for i in range(41)]
     with pytest.raises(ValueError, match='FRESH_TARGET_BUDGET_EXCEEDED'):

@@ -8,6 +8,7 @@ reviewed promotion. The legacy database and all runtime consumers stay put.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -142,6 +143,18 @@ def _identity_conflicts(row, target):
     return False
 
 
+def _ohlc_range_conflict(row, source):
+    """Flag contradictory connector OHLC without rewriting provider evidence."""
+    if source != "IOL_CONNECTOR":
+        return False
+    values = [row.get(field) for field in ("open", "high", "low", "close")]
+    if any(type(value) not in (int, float) or not math.isfinite(value)
+           for value in values):
+        return False
+    opening, high, low, close = values
+    return low > min(opening, close, high) or high < max(opening, close, low)
+
+
 def _safe_path(destination, protected_paths):
     path = Path(destination).absolute()
     if path.resolve() != path or any(parent.is_symlink() for parent in path.parents):
@@ -234,6 +247,7 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
                 explicit = 0
                 days = {}
                 conflict = False
+                ohlc_conflict = False
                 for provider_index, row in enumerate(original_rows):
                     if not isinstance(row, dict):
                         invalid += 1
@@ -261,6 +275,7 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
                     signature = _body(row)
                     if day in days and days[day] != signature:
                         conflict = True
+                    ohlc_conflict |= _ohlc_range_conflict(row, source)
                     days[day] = signature
                     rows.append(row)
                     row_evidence.append((provider_index, day.isoformat(),
@@ -268,11 +283,13 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
                 if rows and explicit == len(rows):
                     currency_status = "EXPLICIT_ROWS"
                 reason = ("FRESH_DUPLICATE_DAY_CONFLICT" if conflict else
+                          "FRESH_OHLC_RANGE_CONFLICT" if ohlc_conflict else
                           "FRESH_REVIEW_REQUIRED" if rows else
                           "FRESH_NO_VALID_IN_WINDOW_ROWS")
                 # Even complete monetary rows cannot prove adjustment basis,
                 # settlement-term attribution and their historical PIT clock.
-                status = "STAGED_REVIEW_REQUIRED" if rows and not conflict else "QUARANTINED"
+                status = ("STAGED_REVIEW_REQUIRED" if rows and not conflict and
+                          not ohlc_conflict else "QUARANTINED")
             except (Exception,) as exc:
                 # Never put provider error text, tokens, URL or payload in a
                 # public result. A local row records only an allowlisted code.
