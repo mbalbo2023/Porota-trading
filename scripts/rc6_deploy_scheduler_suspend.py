@@ -179,6 +179,32 @@ def require_rescue_degraded_hold(candidate):
         # The clock or child-health phase may have moved after suspension;
         # holding timers is safe, but this never authorizes a new drain.
         observed = {name: q.inspect(name) for name in q.OWNED}
+        if (all(value['State']['Status'] == 'exited' and
+                value['Image'] == q.RESCUE_IMAGE_ID and
+                re.fullmatch('[0-9a-f]{64}',value['Id'])
+                for value in observed.values())):
+            # A138 died after the original A92 pair was cleanly stopped but
+            # before the new runtime existed.  With no new candidate receipt,
+            # leave its already-paused timers alone only after the exact old
+            # receipt proves both stops and the PAPER/0 book.  No restart.
+            prior_sha='dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
+            prior_path=q.ROOT/'data/deploy'/('quiescence-'+prior_sha+'.json')
+            if (prior_path.is_symlink() or not prior_path.is_file() or
+                    prior_path.stat().st_size > 65536):
+                raise ValueError('SCHEDULER_A139_PRIOR_RECEIPT_UNSAFE')
+            prior=json.loads(prior_path.read_bytes())
+            if (prior.get('candidate_sha') != prior_sha or
+                    prior.get('status') not in {'HOST_INSTALLATION_STARTED',
+                                                'FIX_FORWARD_VALIDATION_REQUIRED'} or
+                    prior.get('installation_started') is not True):
+                raise ValueError('SCHEDULER_A139_PRIOR_RECEIPT_RED')
+            q.exact_rescue_receipt(prior)
+            q.exact_clean_stopped(prior)
+            if q.admit(stopped=True,allow_degraded_closed_rescue=True,
+                       stopped_receipt=prior) != 'STOPPED':
+                raise ValueError('SCHEDULER_A139_STOPPED_BOOK_CHANGED')
+            q.critical_admission()
+            return 'RESCUE_A92_STOPPED_A138_UNVALIDATED_HELD'
         if any(value['State']['Status'] != 'running' or
                value['Image'] != q.RESCUE_IMAGE_ID or
                not re.fullmatch('[0-9a-f]{64}', value['Id'])
