@@ -1,4 +1,5 @@
 name: RC6 A111 host health read only
+# A136 operator-authorized bounded re-probe on 2026-10-27 before #747 promotion; read-only unchanged.
 # A125 bounded preopen containment preflight; no provider requests or host writes.
 
 on:
