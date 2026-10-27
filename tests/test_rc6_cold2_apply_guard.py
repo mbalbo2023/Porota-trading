@@ -86,6 +86,41 @@ def test_each_archive_boundary_rechecks_live_stopped_identity_and_ppi(tmp_path):
         assert guard.apply(tmp_path, CANDIDATE)['original']['state'] == 'QUARANTINED_FAILED'
 
 
+@pytest.mark.parametrize('changed', [False, True])
+def test_a139_cold2_archive_accepts_only_exact_stopped_a92_rescue_receipt(tmp_path,changed):
+    """Regression for actual #40592426296 COLD2 QUIESCENCE_CLOSED_REQUIRED."""
+    value=receipt()
+    value.update(degraded_closed_rescue=True,market_open_suspended=False,
+                 open_paper_carryover=False,paused_postclose=False,
+                 intraday_caucion=False,pending_caucion=False,
+                 spot_carryover=None,caucion_carryover=None)
+    folder(tmp_path,value)
+    ids={name:value['containers'][name]['id'] for name in NAMES}
+    live={name:{'Id':ids[name], 'Image':'sha256:'+'a'*64,
+                'State':{'Status':'exited','ExitCode':0}} for name in NAMES}
+    live['porota_critical_approval_rc6']={
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    def archive(root, *, admission, expected_owned_ids):
+        assert expected_owned_ids==ids
+        return {'state':'QUARANTINED_FAILED','old_cut_revoked':True,
+                'checked':admission()['status']}
+    with (patch.object(guard,'ppi_units',return_value={}),
+          patch.object(guard.drain,'exact_rescue_receipt'),
+          patch.object(guard.drain,'exact_clean_stopped'),
+          patch.object(guard.drain,'admit',return_value='WAITING_MARKET' if changed else 'STOPPED') as admit,
+          patch.object(guard.drain,'inspect',side_effect=lambda name:live[name]),
+          patch.object(guard.cold,'envelope',return_value={
+              'status':'FAIL_CLOSED','real_routes':'NOT_CALLED'}),
+          patch.object(guard.cold,'quarantine',side_effect=archive)):
+        if changed:
+            with pytest.raises(ValueError,match='COLD2_RESCUE_A92_STOPPED_REQUIRED'):
+                guard.apply(tmp_path,CANDIDATE)
+        else:
+            assert guard.apply(tmp_path,CANDIDATE)['original']['checked']=='DRAINED'
+        assert admit.call_args.kwargs['allow_degraded_closed_rescue'] is True
+        assert admit.call_args.kwargs['stopped_receipt']==value
+
+
 def test_missing_exclusive_lock_refuses_before_archive(tmp_path):
     target = folder(tmp_path, receipt())
     (target/'.deploy-quiescence.lock').unlink()

@@ -39,6 +39,8 @@ RESCUE_HOURS_SHA256 = '380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c
 # Any later date or a pre-20:00 ART attempt remains strictly fail-closed.
 RESCUE_FIRST_DAY = '2026-10-26'
 RESCUE_LAST_DAY = '2026-10-30'
+FAILED_A92_RESCUE_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
+FAILED_A92_RESCUE_DEPLOY = '7df3c8fb1d2e32f3eb07b9d969c5b00d16e49b21'
 
 
 def operator_paper_no_go_proof(*, require_original_marker=False):
@@ -62,6 +64,11 @@ def operator_paper_no_go_proof(*, require_original_marker=False):
         except (binascii.Error,ValueError) as exc:
             raise ValueError('QUIESCENCE_OPERATOR_SOURCE_INVALID') from exc
     else:
+        # The recovery script is also streamed over SSH on stdin before the
+        # candidate is fully installed.  There is no __file__ or guaranteed
+        # working directory in that route: bind imports to the fixed host root.
+        if ROOT.is_dir() and str(ROOT) not in os.sys.path:
+            os.sys.path.insert(0, str(ROOT))
         from scripts import rc6_deploy_scheduler_suspend as module
     digest = module.exact_operator_preopen_pause(
         require_original_marker=require_original_marker)
@@ -972,6 +979,85 @@ def exact_clean_stopped(receipt):
             raise ValueError('QUIESCENCE_STOP_PROOF_CHANGED')
 
 
+def adopt_stopped_a92_after_failed_rescue(candidate, folder, originals):
+    """A139: adopt only the two old A92 containers stopped by failed A138.
+
+    The previous promotion copied its candidate files and archived COLD, but
+    aborted before mode_manager started new containers.  A92 remains the
+    installed *Docker/runtime marker* identity.  Never start that broken image
+    and never treat its BOOT_CALENDAR as a healthy CLOSED state.
+    """
+    if candidate == FAILED_A92_RESCUE_CANDIDATE or not re.fullmatch('[0-9a-f]{40}',candidate):
+        raise ValueError('QUIESCENCE_A139_NEW_CANDIDATE_REQUIRED')
+    prior_path = folder/('quiescence-'+FAILED_A92_RESCUE_CANDIDATE+'.json')
+    if (prior_path.is_symlink() or not prior_path.is_file() or
+            prior_path.stat().st_size > 65536):
+        raise ValueError('QUIESCENCE_A139_PRIOR_RECEIPT_UNSAFE')
+    raw = prior_path.read_bytes()
+    previous = json.loads(raw)
+    if (previous.get('candidate_sha') != FAILED_A92_RESCUE_CANDIDATE or
+            previous.get('status') not in {'HOST_INSTALLATION_STARTED',
+                                           'FIX_FORWARD_VALIDATION_REQUIRED'} or
+            previous.get('installation_started') is not True or
+            previous.get('degraded_closed_rescue') is not True or
+            previous.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+            previous.get('market_open_suspended') is not False or
+            previous.get('open_paper_carryover') is not False or
+            previous.get('spot_carryover') is not None or
+            previous.get('caucion_carryover') is not None or
+            previous.get('pending_caucion') is not False or
+            previous.get('ppi_watch_accessed') is not False or
+            type(previous.get('real_orders_sent')) is not int or
+            previous['real_orders_sent'] != 0 or
+            previous.get('candidate_runtime_initial') is not None or
+            previous.get('candidate_runtime_after_failure') is not None or
+            not isinstance(previous.get('candidate_image_intent'), dict)):
+        raise ValueError('QUIESCENCE_A139_PRIOR_PHASE_RED')
+    exact_rescue_receipt(previous)
+    exact_clean_stopped(previous)
+    for name in OWNED:
+        now = originals[name]
+        if (now['Id'] != previous['containers'][name]['id'] or
+                now['Image'] != RESCUE_IMAGE_ID or
+                now['State']['Status'] != 'exited' or
+                lifecycle(now) != previous['stop_evidence'][name]['after']):
+            raise ValueError('QUIESCENCE_A139_OLD_A92_IDENTITY_CHANGED')
+    marker = exact_a92_marker()
+    if marker.get('deploy_sha') not in (None,'2bd9dbf576b253b8f83aab159c784d7fa7d06d89'):
+        raise ValueError('QUIESCENCE_A139_OLD_DEPLOY_CHANGED')
+    book = rescue_flat_book()
+    if ((book['process_state'],book['session_state']) not in
+            {('STOPPED','BOOT_CALENDAR'),('STOPPED','CLOSED')} or
+            book['source_sha'] != RESCUE_SOURCE_SHA or
+            admit(stopped=True, allow_degraded_closed_rescue=True,
+                  stopped_receipt=previous) != 'STOPPED'):
+        raise ValueError('QUIESCENCE_A139_STOPPED_BOOK_CHANGED')
+    critical = critical_admission()
+    if critical != previous.get('critical_admission'):
+        raise ValueError('QUIESCENCE_A139_CRITICAL_CHANGED')
+    proof = degraded_closed_rescue_proof()
+    return {'candidate_sha':candidate, 'status':'DRAINED',
+            'installation_started':False, 'inflight':'ABSENT_OWNED_RUNTIME_STOPPED',
+            'stop_attempted':list(OWNED),
+            'stop_evidence':previous['stop_evidence'],
+            'containers':previous['containers'],
+            'real_orders_sent':0, 'ppi_watch_accessed':False,
+            'admin_cancel_paper_id':None, 'market_open_suspended':False,
+            'open_paper_carryover':False, 'paused_postclose':False,
+            'intraday_caucion':False, 'pending_caucion':False,
+            'spot_carryover':None, 'caucion_carryover':None,
+            'degraded_closed_rescue':True,
+            'rescue_pre_state':previous['rescue_pre_state'],
+            'rescue_child_crash_proof':previous.get('rescue_child_crash_proof'),
+            'rescue_source_sha':RESCUE_SOURCE_SHA,
+            'rescue_image_id':RESCUE_IMAGE_ID,
+            'rescue_calendar_and_hours':proof,
+            'critical_admission':critical,
+            'adopted_stopped_a92_rescue':True,
+            'adopted_from_candidate':FAILED_A92_RESCUE_CANDIDATE,
+            'prior_receipt_sha256':hashlib.sha256(raw).hexdigest()}
+
+
 def admin_target_on_host():
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
@@ -1420,12 +1506,19 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 return receipt
             originals = {name: inspect(name) for name in OWNED}
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
-            if allow_degraded_closed_rescue and (
-                    stopped_owned or any(not re.fullmatch('[0-9a-f]{64}',v['Id']) or
+            if allow_degraded_closed_rescue and not stopped_owned and any(
+                    not re.fullmatch('[0-9a-f]{64}',v['Id']) or
                                            v['Image'] != RESCUE_IMAGE_ID or
                                            v['State']['Status'] != 'running'
-                                           for v in originals.values())):
+                                           for v in originals.values()):
                 raise ValueError('QUIESCENCE_RESCUE_ORIGINAL_RUNTIME_CHANGED')
+            if allow_degraded_closed_rescue and stopped_owned:
+                receipt=adopt_stopped_a92_after_failed_rescue(candidate,folder,originals)
+                persist(path,receipt)
+                print(json.dumps({'status':'DRAINED','candidate_sha':candidate,
+                                  'adopted_stopped_a92_rescue':True,
+                                  'real_orders_sent':0,'ppi_watch_accessed':False}),flush=True)
+                return receipt
             # After an installed OPEN failure SQLite may still say RUNNING,
             # including a completely flat book. Select the exact previous
             # stop receipt before considering that stale live heartbeat.

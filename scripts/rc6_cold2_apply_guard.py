@@ -185,9 +185,30 @@ def apply(root, candidate):
                                receipt.get('intraday_caucion') is False and
                                receipt.get('paused_postclose') is False and
                                receipt.get('spot_carryover') is None)
+            rescued_a92_flat = (receipt.get('degraded_closed_rescue') is True and
+                                receipt.get('market_open_suspended') is False and
+                                receipt.get('open_paper_carryover') is False and
+                                receipt.get('paused_postclose') is False and
+                                receipt.get('intraday_caucion') is False and
+                                receipt.get('pending_caucion') is False and
+                                receipt.get('spot_carryover') is None and
+                                receipt.get('caucion_carryover') is None)
             if intraday_spots and receipt.get('intraday_caucion') is True:
                 raise ValueError('COLD2_SESSION_MODE_CHANGED')
-            if intraday_spots:
+            if rescued_a92_flat:
+                # A139: the A92 observer's stopped BOOT_CALENDAR is *not*
+                # healthy CLOSED.  Reuse only the exact immutable rescue
+                # receipt, original clean Docker stop, A92 provenance and
+                # all-three-ledgers-flat checks from the quiescence guard.
+                drain.exact_rescue_receipt(receipt)
+                drain.exact_clean_stopped(receipt)
+                state = drain.admit(stopped=True, allow_degraded_closed_rescue=True,
+                                    stopped_receipt=receipt)
+                if state not in {'DEGRADED','STOPPED'}:
+                    raise ValueError('COLD2_RESCUE_A92_STOPPED_REQUIRED')
+                carry = None
+                caucion = None
+            elif intraday_spots:
                 drain.exact_clean_stopped(receipt)
                 state = drain.admit(stopped=True, allow_market_open_suspend=True,
                                     allow_open_paper_carryover=True,

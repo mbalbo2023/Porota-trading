@@ -443,6 +443,115 @@ def test_image_loaded_but_original_stop_intact_is_held(incident):
     assert scheduler.require_rescue_degraded_hold(SHA)=='RESCUE_DEGRADED_HELD'
 
 
+def make_a138_original_stopped(incident):
+    """Exact A138 failure: bundle loaded, old A92 STOPPED/BOOT_CALENDAR."""
+    db,states,calls=incident
+    prior=q.FAILED_A92_RESCUE_CANDIDATE
+    q.run(prior,'drain',allow_degraded_closed_rescue=True)
+    q.run(prior,'install',allow_degraded_closed_rescue=True)
+    frozen=q.ROOT/'prior-frozen.json'
+    frozen.write_text(json.dumps({'candidate_sha':prior,
+                                  'candidate_tree_sha':'6'*40,
+                                  'image_tar_sha256':'5'*64}))
+    q.run(prior,'image-intent',candidate_image_id='sha256:'+'4'*64,
+          frozen_manifest=str(frozen))
+    assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
+    with sqlite3.connect(db) as c:
+        assert c.execute('SELECT process_state,session_state FROM observer_state').fetchone()==(
+            'STOPPED','BOOT_CALENDAR')
+    return db,states,calls
+
+
+def test_a139_failed_a138_old_a92_stopped_can_drain_without_stopping_again(incident):
+    _,_,calls=make_a138_original_stopped(incident)
+    before=len([call for call in calls if call[1]=='stop'])
+    preview=q.adopt_stopped_a92_after_failed_rescue(
+        NEXT,q.ROOT/'data/deploy',{name:q.inspect(name) for name in q.OWNED})
+    assert preview['adopted_stopped_a92_rescue'] is True
+    assert preview['rescue_pre_state']==['DEGRADED','BOOT_CALENDAR']
+    assert len(preview['prior_receipt_sha256'])==64
+    receipt=q.run(NEXT,'drain',allow_degraded_closed_rescue=True)
+    assert receipt['status']=='DRAINED'
+    assert len([call for call in calls if call[1]=='stop'])==before
+    installed=q.run(NEXT,'install',allow_degraded_closed_rescue=True)
+    assert installed['status']=='HOST_INSTALLATION_STARTED'
+    assert installed['real_orders_sent']==0
+
+
+@pytest.mark.parametrize('change',['prior_status','missing_intent','prior_hash',
+    'old_id','dirty_stop','book','orders','marker','critical','wrong_phase'])
+def test_a139_adoption_rejects_any_missing_stopped_a92_evidence(incident,change):
+    db,states,calls=make_a138_original_stopped(incident)
+    prior_path=q.ROOT/'data/deploy'/('quiescence-'+q.FAILED_A92_RESCUE_CANDIDATE+'.json')
+    previous=json.loads(prior_path.read_text())
+    if change=='prior_status': previous['status']='DRAINED'
+    elif change=='missing_intent': previous.pop('candidate_image_intent')
+    elif change=='prior_hash': previous['rescue_calendar_and_hours']['calendar_sha256']='x'*64
+    elif change=='old_id': states[q.OWNED[0]]['Id']='f'*64
+    elif change=='dirty_stop': states[q.OWNED[1]]['State']['ExitCode']=137
+    elif change=='marker': write_marker(q.ROOT,candidate='c'*40)
+    elif change=='critical': states['porota_critical_approval_rc6']['State']['Health']['Status']='unhealthy'
+    elif change=='wrong_phase':
+        with sqlite3.connect(db) as c:
+            c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+    else:
+        with sqlite3.connect(db) as c:
+            if change=='book': c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+            else: c.execute('UPDATE observer_state SET real_orders_sent=1')
+    prior_path.write_text(json.dumps(previous))
+    before=len([call for call in calls if call[1] in {'stop','start'}])
+    with pytest.raises((ValueError,KeyError,TypeError)):
+        q.run(NEXT,'drain',allow_degraded_closed_rescue=True)
+    assert not (q.ROOT/'data/deploy'/('quiescence-'+NEXT+'.json')).exists()
+    assert len([call for call in calls if call[1] in {'stop','start'}])==before
+
+
+def test_a139_failure_before_new_drain_holds_timers_on_prior_a92_stop(incident):
+    _,states,calls=make_a138_original_stopped(incident)
+    assert scheduler.require_rescue_degraded_hold(NEXT)==(
+        'RESCUE_A92_STOPPED_A138_UNVALIDATED_HELD')
+    assert not any(states[name]['State']['Status']=='running' for name in q.OWNED)
+    assert not any(call[1]=='start' for call in calls)
+
+
+def test_a139_classifier_adopts_exact_prior_stopped_a92_readonly(
+        incident,monkeypatch,capsys):
+    db,_,calls=make_a138_original_stopped(incident)
+    installed_source=q.ROOT/'scripts/rc6_deploy_quiescence.py'
+    installed_source.parent.mkdir(parents=True,exist_ok=True)
+    installed_source.write_bytes(b'A138_FULLY_HASHED_STAGED_SOURCE_FIXTURE')
+    real_sha256=hashlib.sha256
+    def sha256(data=b''):
+        if data==b'A138_FULLY_HASHED_STAGED_SOURCE_FIXTURE':
+            return SimpleNamespace(hexdigest=lambda:
+                'dcb0ed996a6be9aefb0a609139285f6160248909ccde92f189a24b77fb617662')
+        return real_sha256(data)
+    monkeypatch.setattr(hashlib,'sha256',sha256)
+    backup=ModuleType('scripts.rc6_679_backup_suspension')
+    backup.inventory=lambda:[]
+    monkeypatch.setitem(sys.modules,backup.__name__,backup)
+    monkeypatch.setitem(sys.modules,'scripts.rc6_deploy_quiescence',q)
+    monkeypatch.setattr(sys,'argv',['-',NEXT,'',''])
+    real_connect=sqlite3.connect
+    def connect(target,*args,**kwargs):
+        if str(target).startswith('file:///opt/porota-trading/data/paper_v17/'):
+            target=db.as_uri()+'?mode=ro'
+        return real_connect(target,*args,**kwargs)
+    monkeypatch.setattr(sqlite3,'connect',connect)
+    workflow=(Path(__file__).resolve().parents[1]/
+              '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    block=workflow.split('- name: Classify current flat PAPER session before host writes',1)[1]
+    code=block.split("<<'PY'\n",1)[1].split('\n          PY',1)[0]
+    code='\n'.join(line.removeprefix('          ') for line in code.splitlines())
+    capsys.readouterr()
+    before=len(calls)
+    exec(compile(code,'a139-preflight-classifier','exec'),{})
+    out=capsys.readouterr()
+    assert out.out==q.RESCUE_MODE+'\n'
+    assert 'RC6_A139_A92_FAILED_RESCUE_PRIOR_STOP=GREEN' in out.err
+    assert not any(call[1] in {'stop','start'} for call in calls[before:])
+
+
 @pytest.mark.parametrize('change',['missing_intent','mixed_image','unclean_exit'])
 def test_failed_replacement_never_rearms_without_provenance(incident,change):
     _,states,_=incident

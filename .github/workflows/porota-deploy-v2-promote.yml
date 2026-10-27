@@ -368,6 +368,49 @@ jobs:
                   raise SystemExit('RC6_RESCUE_RUNTIME_CHANGED')
               critical_admission()
               print('DEGRADED_CLOSED_20261026')
+          elif (statuses=={'exited'} and state==('STOPPED','BOOT_CALENDAR') and
+                all(value['Image']==quiescence.RESCUE_IMAGE_ID
+                    for value in originals.values())):
+              # A139 fix-forward: A138 #40592426296 passed drain/transfer,
+              # copied exact product files and loaded the frozen image but
+              # its COLD2 guard rejected a healthy CLOSED classification.
+              # The original A92 pair is cleanly STOPPED, not healthy CLOSED.
+              # No fallback to an arbitrary stopped runtime is permitted.
+              import hashlib,json,re
+              from scripts import rc6_deploy_quiescence as old
+              old_source=old.ROOT/'scripts/rc6_deploy_quiescence.py'
+              if (old_source.is_symlink() or not old_source.is_file() or
+                  hashlib.sha256(old_source.read_bytes()).hexdigest()!=
+                      'dcb0ed996a6be9aefb0a609139285f6160248909ccde92f189a24b77fb617662'):
+                  raise SystemExit('RC6_A139_PREVIOUS_SOURCE_HASH_RED')
+              previous_path=old.ROOT/'data/deploy'/(
+                  'quiescence-dd22a1b0761cc4f231813edb6b502d1dd21bb8de.json')
+              if (previous_path.is_symlink() or not previous_path.is_file() or
+                  previous_path.stat().st_size>65536):
+                  raise SystemExit('RC6_A139_PRIOR_RECEIPT_MISSING')
+              previous=json.loads(previous_path.read_bytes())
+              if (previous.get('candidate_sha')!=
+                      'dd22a1b0761cc4f231813edb6b502d1dd21bb8de' or
+                  previous.get('status') not in
+                      {'HOST_INSTALLATION_STARTED','FIX_FORWARD_VALIDATION_REQUIRED'} or
+                  previous.get('installation_started') is not True or
+                  previous.get('degraded_closed_rescue') is not True or
+                  previous.get('candidate_runtime_initial') is not None or
+                  not isinstance(previous.get('candidate_image_intent'),dict)):
+                  raise SystemExit('RC6_A139_PRIOR_PHASE_RED')
+              old.exact_rescue_receipt(previous)
+              old.exact_clean_stopped(previous)
+              if (old.exact_a92_marker().get('candidate_sha')!=old.RESCUE_SOURCE_SHA or
+                  old.admit(stopped=True,allow_degraded_closed_rescue=True,
+                            stopped_receipt=previous)!='STOPPED' or
+                  old.rescue_flat_book().get('real_orders_sent')!=0 or
+                  any(originals[name]['Id']!=previous['containers'][name]['id'] or
+                      originals[name]['Image']!=old.RESCUE_IMAGE_ID
+                      for name in old.OWNED)):
+                  raise SystemExit('RC6_A139_STOPPED_A92_PROOF_RED')
+              old.critical_admission()
+              print('RC6_A139_A92_FAILED_RESCUE_PRIOR_STOP=GREEN',file=sys.stderr)
+              print('DEGRADED_CLOSED_20261026')
           elif (statuses=={'running'} and state and state[0]=='WAITING_MARKET' and
                 state[1] in ('CLOSED','MARKET_CLOSED')):
               try:
