@@ -251,6 +251,8 @@ def required_timers(deploy_scheduler_candidate=None):
     values = {}
     ok = True
     units = REQUIRED_TIMERS
+    operator_pause_timer = None
+    operator_pause_sha = None
     if deploy_scheduler_candidate is not None:
         # A canonical intraday deployment intentionally pauses its exact
         # versioned timer set until runtime acceptance. Daily preopen calls
@@ -273,6 +275,14 @@ def required_timers(deploy_scheduler_candidate=None):
                     set(receipt.get('attempted', [])) != set(units) or
                     receipt.get('ppi_before') != suspend.ppi_snapshot()):
                 raise ValueError('PREOPEN_DEPLOY_RECEIPT_CHANGED')
+            if receipt.get('operator_pause_timer') is not None:
+                operator_pause_timer = receipt['operator_pause_timer']
+                operator_pause_sha = suspend.exact_operator_preopen_pause()
+                if (operator_pause_timer != suspend.OPERATOR_PREOPEN_TIMER or
+                        operator_pause_timer not in units or
+                        receipt.get('operator_pause_receipt_sha256') != operator_pause_sha or
+                        not suspend.operator_preopen_timer_disabled()):
+                    raise ValueError('PREOPEN_OPERATOR_PAUSE_EVIDENCE_CHANGED')
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
             return {'state':'RED','units':values,'reason':type(exc).__name__}
     for unit in units:
@@ -283,11 +293,22 @@ def required_timers(deploy_scheduler_candidate=None):
         else:
             service_rc, service, _ = cmd(['systemctl','show',unit,'-p','Unit','--value'])
             service_state = cmd(['systemctl','is-active',service])[1] if service_rc == 0 and service.endswith('.service') else 'unknown'
-            good = (rc1 == 0 and enabled == 'enabled' and rc2 == 3 and active == 'inactive'
-                    and service_state not in {'unknown','active','activating','reloading','deactivating'})
+            if unit == operator_pause_timer:
+                good = (rc1 == 1 and enabled == 'disabled' and rc2 == 3 and active == 'inactive'
+                        and service == 'porota-preopen-rc6.service' and
+                        service_state in {'inactive','failed'})
+            else:
+                good = (rc1 == 0 and enabled == 'enabled' and rc2 == 3 and active == 'inactive'
+                        and service_state not in {'unknown','active','activating','reloading','deactivating'})
         values[unit] = {'state':'GREEN' if good else 'RED','enabled':enabled,'active':active}
         ok = ok and good
-    return {'state':'GREEN' if ok else 'RED','units':values}
+    output = {'state':'GREEN' if ok else 'RED','units':values}
+    if operator_pause_timer is not None:
+        output.update(operator_paper_paused=True,
+                      operator_pause_day_ar=suspend.OPERATOR_PAUSE_DAY,
+                      operator_pause_operation_id=suspend.OPERATOR_PAUSE_RUN,
+                      operator_pause_receipt_sha256=operator_pause_sha)
+    return output
 
 
 def byma_morning_watch(today, *, allow_latest_safe=False):
@@ -432,11 +453,19 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
     if publish_paper_gate:
         checks['paper_focus_contracts'] = focus_contracts(DB)
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
+    paused = bool(deploy_scheduler_candidate is not None and
+                  checks['required_rc6_timers'].get('operator_paper_paused') is True)
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
               'phase':phase_override or preopen_phase(now),
-              'status':'GREEN' if not reds else 'RED','red_checks':reds,'checks':checks,
+              'status':'RED' if reds else 'PAUSED_NO_GO' if paused else 'GREEN',
+              'red_checks':reds,'checks':checks,
               'dry_equivalent':phase_override is not None,
               'read_only':not publish_paper_gate,'network_order_test_performed':False,'direct_telegram_send':False}
+    if paused:
+        result['operator_paper_paused'] = True
+        result['operator_pause_day_ar'] = checks['required_rc6_timers']['operator_pause_day_ar']
+        result['operator_pause_operation_id'] = checks['required_rc6_timers']['operator_pause_operation_id']
+        result['operator_pause_receipt_sha256'] = checks['required_rc6_timers']['operator_pause_receipt_sha256']
     if publish_paper_gate:
         try:
             result['paper_admission_receipt'] = publish_preopen(result, now=now)
@@ -446,7 +475,7 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
             result['paper_admission_receipt'] = {'status':'NO_GO_PAPER_SCALPING',
                                                   'reason':type(exc).__name__}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-    return 0 if result['status'] == 'GREEN' else 2
+    return 0 if result['status'] in {'GREEN','PAUSED_NO_GO'} else 2
 
 
 if __name__ == '__main__':
