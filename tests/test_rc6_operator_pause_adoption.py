@@ -108,3 +108,84 @@ def test_future_clock_and_missing_database_rejected(tmp_path):
         snapshot_paper_obligations(tmp_path / "missing.db", as_of="3000-01-01T00:00:00Z")
     with pytest.raises(ValueError, match="DB_UNSAFE"):
         snapshot_paper_obligations(tmp_path / "missing.db", as_of=AT)
+
+
+def test_467170_events_stream_in_primary_key_order_without_export(tmp_path, monkeypatch):
+    import scripts.rc6_operator_pause_receipt as witness_module
+    path = str(tmp_path / "large-events.db")
+    store = PaperStore(path)
+    with store.connect() as db:
+        db.executemany("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) "
+                       "VALUES(?,?,?,?,?)",
+                       ((AT, "FIXTURE", "SCANNER_DIAGNOSTIC", None, "synthetic")
+                        for _ in range(467_170)))
+    a = snapshot_paper_obligations(path, as_of=AT)
+    assert a["tables"]["paper_events"]["count"] == 467_170
+    assert "SCANNER_DIAGNOSTIC" not in str(a) and "synthetic" not in str(a)
+    assert assert_pause_book_preserved(a, snapshot_paper_obligations(path, as_of=AT))
+    with store.connect() as db:
+        db.execute("UPDATE paper_events SET detail='changed' WHERE id=467170")
+    b = snapshot_paper_obligations(path, as_of=AT)
+    assert b["tables"]["paper_events"]["sha256"] != a["tables"]["paper_events"]["sha256"]
+    with pytest.raises(ValueError, match="OBLIGATIONS_CHANGED_OR_OPEN"):
+        assert_pause_book_preserved(a, b)
+    monkeypatch.setattr(witness_module, "MAX_STREAM_EVENTS", 467_169)
+    with pytest.raises(ValueError, match="ROWS_EXCEEDED:paper_events"):
+        snapshot_paper_obligations(path, as_of=AT)
+
+
+def test_global_scan_budget_and_unindexed_schema_fail_closed(tmp_path, monkeypatch):
+    import scripts.rc6_operator_pause_receipt as witness_module
+    path = str(tmp_path / "bounds.db")
+    store = PaperStore(path)
+    with store.connect() as db:
+        db.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) "
+                   "VALUES(?,?,?,?,?)", (AT, "FIXTURE", "DIAGNOSTIC", None, "synthetic"))
+    monkeypatch.setattr(witness_module, "MAX_TOTAL_ROWS", 0)
+    with pytest.raises(ValueError, match="ROWS_EXCEEDED"):
+        snapshot_paper_obligations(path, as_of=AT)
+    monkeypatch.setattr(witness_module, "MAX_TOTAL_ROWS", 800_000)
+    monkeypatch.setattr(witness_module, "MAX_CANONICAL_BYTES", 1)
+    with pytest.raises(ValueError, match="SCAN_BOUNDS_EXCEEDED"):
+        snapshot_paper_obligations(path, as_of=AT)
+    monkeypatch.setattr(witness_module, "MAX_CANONICAL_BYTES", 256 * 1024 * 1024)
+    with store.connect() as db:
+        db.execute("DROP TABLE paper_events")
+        db.execute("CREATE TABLE paper_events(id INTEGER, event_at TEXT, source TEXT, "
+                   "event_type TEXT, paper_id TEXT, detail TEXT)")
+    with pytest.raises(ValueError, match="UNINDEXED_KEY:paper_events"):
+        snapshot_paper_obligations(path, as_of=AT)
+
+
+def test_wal_writer_cannot_mix_rows_into_one_snapshot(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import scripts.rc6_operator_pause_receipt as witness_module
+    path = str(tmp_path / "wal-snapshot.db")
+    store = PaperStore(path)
+    with store.connect() as db:
+        db.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) "
+                   "VALUES(?,?,?,?,?)", (AT, "FIXTURE", "DIAGNOSTIC", None, "first"))
+    entered, release = Event(), Event()
+    feed = witness_module._Budget.feed
+
+    def pause_first_event(self, digest, value, *, row=False, retained=False):
+        if row and not retained and not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+        return feed(self, digest, value, row=row, retained=retained)
+
+    monkeypatch.setattr(witness_module._Budget, "feed", pause_first_event)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        future = worker.submit(snapshot_paper_obligations, path, as_of=AT)
+        assert entered.wait(5)
+        try:
+            with store.connect() as db:
+                db.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) "
+                           "VALUES(?,?,?,?,?)", (AT, "FIXTURE", "DIAGNOSTIC", None, "second"))
+        finally:
+            release.set()
+        before = future.result(timeout=10)
+    assert before["tables"]["paper_events"]["count"] == 1
+    after = snapshot_paper_obligations(path, as_of=AT)
+    assert after["tables"]["paper_events"]["count"] == 2
