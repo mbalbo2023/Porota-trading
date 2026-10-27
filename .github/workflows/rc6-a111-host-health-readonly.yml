@@ -728,6 +728,89 @@ jobs:
               'mutation_attempted':False},sort_keys=True))
           PYHOST
 
+      - name: Read alternate preopen writers and report query shapes
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 40s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import json
+          import re
+          import sqlite3
+          import subprocess
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          def cmd(*args):
+              try:
+                  p = subprocess.run(args,text=True,capture_output=True,timeout=5)
+                  return p.stdout if p.returncode==0 else None
+              except (OSError,subprocess.SubprocessError):
+                  return None
+          raw=cmd('systemctl','list-unit-files','--no-legend','--no-pager')
+          related=sorted({line.split()[0] for line in (raw or '').splitlines() if line.split()
+                          if re.fullmatch(r'porota-[a-z0-9-]*preopen[a-z0-9-]*\.(?:service|timer)',
+                                          line.split()[0])}) if raw is not None else []
+          cron=[]
+          for folder in ('/etc/cron.d','/etc/cron.daily','/etc/cron.hourly'):
+              directory=Path(folder)
+              try:
+                  files=list(directory.iterdir())[:101]
+                  if len(files)>100: raise ValueError('CRON_BOUND')
+                  for p in files:
+                      if not p.name.startswith('porota-') or 'ppi' in p.name.lower() or 'watch' in p.name.lower():
+                          continue
+                      if p.is_symlink() or not p.is_file() or p.stat().st_size>65536:
+                          continue
+                      content=p.read_bytes()
+                      if b'rc6_preopen.py' in content or b'paper_scalping_preopen_gate_v1' in content:
+                          cron.append(p.name if re.fullmatch(r'[A-Za-z0-9_.-]{1,80}',p.name)
+                                      else 'OTHER')
+              except (OSError,ValueError):
+                  cron=['NO_VERIFICADO']; break
+          table_count={}
+          plans={}
+          db_path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          try:
+              with sqlite3.connect(db_path.as_uri()+'?mode=ro',uri=True,timeout=.3) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  db.execute('PRAGMA busy_timeout=300')
+                  deadline=time.monotonic()+6
+                  db.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                  queries={
+                    'paper_decisions':"SELECT * FROM paper_decisions WHERE julianday(decided_at)>=julianday(?) AND julianday(decided_at)<julianday(?) ORDER BY decided_at,id",
+                    'paper_positions':"SELECT * FROM paper_positions WHERE (julianday(opened_at)>=julianday(?) AND julianday(opened_at)<julianday(?)) OR (status='CLOSED' AND julianday(closed_at)>=julianday(?) AND julianday(closed_at)<julianday(?)) ORDER BY opened_at",
+                    'trade_gate_evaluations':"SELECT * FROM trade_gate_evaluations WHERE julianday(evaluated_at)>=julianday(?) AND julianday(evaluated_at)<julianday(?) ORDER BY evaluated_at",
+                  }
+                  for name,sql in queries.items():
+                      count=db.execute('SELECT COUNT(*) FROM '+name).fetchone()[0]
+                      table_count[name]=count if type(count) is int else 'NO_VERIFICADO'
+                      args=('2026-10-26T00:00:00-03:00','2026-10-27T00:00:00-03:00')
+                      if name=='paper_positions':args=args+args
+                      steps=[row[3] for row in db.execute('EXPLAIN QUERY PLAN '+sql,args)]
+                      plans[name]={'temp_btree':any('USE TEMP B-TREE' in step for step in steps),
+                                   'full_scan':any('SCAN '+name in step and 'INDEX' not in step
+                                                   for step in steps)}
+          except (OSError,ValueError,sqlite3.Error) as exc:
+              table_count={'state':'NO_VERIFICADO','error_type':type(exc).__name__}
+              plans={'state':'NO_VERIFICADO'}
+          now=datetime.now(timezone.utc)
+          print('RC6_A125_WRITERS_PLANS='+json.dumps({
+              'at_utc':now.isoformat(),
+              'at_ar':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+              'preopen_units':related if raw is not None else 'NO_VERIFICADO',
+              'cron_preopen_matches':cron,'report_table_rows':table_count,
+              'a92_query_plans':plans,'read_only':True,'provider_requests':0,
+              'mutation_attempted':False,'ppi_watch_accessed':False},sort_keys=True))
+          PYHOST
+
       - name: Remove SSH material
         if: always()
         shell: bash
