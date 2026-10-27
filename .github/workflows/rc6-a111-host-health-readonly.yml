@@ -886,6 +886,76 @@ jobs:
               'ppi_watch_accessed':False,'mutation_attempted':False},sort_keys=True))
           PYHOST
 
+      - name: Read durable A125 pause receipt and SQLite inode
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 30s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import hashlib
+          import json
+          import os
+          import stat
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          root=Path('/opt/porota-trading/data')
+          receipt_path=root/'deploy/operator-preopen-pause-20261027.json'
+          gate_path=root/'deploy/paper_scalping_preopen_gate_v1.json'
+          marker_path=root/'deploy/CURRENT_STATE_V2.json'
+          db_path=root/'paper_v17/observer_v17.db'
+          state={'state':'NO_VERIFICADO'}
+          try:
+              def safe(path,limit):
+                  if path.is_symlink() or not path.is_file() or path.stat().st_size>limit:
+                      raise ValueError('PATH_UNSAFE')
+                  return path.read_bytes()
+              raw=safe(receipt_path,65536)
+              meta=receipt_path.stat()
+              item=json.loads(raw)
+              gate=safe(gate_path,4096)
+              marker=safe(marker_path,65536)
+              dbstat=db_path.stat()
+              wal=db_path.with_name(db_path.name+'-wal')
+              walstat=wal.stat() if wal.is_file() and not wal.is_symlink() else None
+              checks={
+                  'root_private':meta.st_uid==0 and stat.S_IMODE(meta.st_mode)==0o600,
+                  'schema':item.get('schema')=='rc6.operator-preopen-pause.v1',
+                  'status':item.get('status')=='PAUSED_NO_GO',
+                  'operation_id':item.get('operation_id')=='A125-40501523106-1',
+                  'source':item.get('source_sha')=='3fd020f408275a490e911e06f60a1ddc89153fe5',
+                  'paper_zero':item.get('paper_after',{}).get('mode')=='PRODUCTION_PAPER'
+                                and item.get('paper_after',{}).get('real_orders_sent')==0,
+                  'timer_disabled':item.get('timer_after')=={'enabled':'disabled','active':'inactive'},
+                  'gate_no_go_today':item.get('gate_after',{}).get('status')=='NO_GO_PAPER_SCALPING'
+                                    and item.get('gate_after',{}).get('trade_day_ar')=='2026-10-27',
+                  'gate_hash':item.get('gate_after_sha256')==hashlib.sha256(gate).hexdigest(),
+                  'marker_hash':item.get('marker_sha256')==hashlib.sha256(marker).hexdigest(),
+                  'same_containers':item.get('containers_before')==item.get('containers_after'),
+                  'ppi_untouched':item.get('ppi_watch_accessed') is False,
+              }
+              state={'state':'OK','receipt_sha256':hashlib.sha256(raw).hexdigest(),
+                     'checks':checks,'all_checks':all(checks.values()),
+                     'db_dev':dbstat.st_dev,'db_inode':dbstat.st_ino,
+                     'db_bytes':dbstat.st_size,
+                     'wal_exists':walstat is not None,
+                     'wal_bytes':walstat.st_size if walstat else None}
+          except (OSError,ValueError,TypeError,KeyError) as exc:
+              state={'state':'NO_VERIFICADO','error_type':type(exc).__name__}
+          now=datetime.now(timezone.utc)
+          print('RC6_A125_RECEIPT='+json.dumps({
+              'at_utc':now.isoformat(),
+              'at_ar':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+              'receipt':state,'read_only':True,'provider_requests':0,
+              'ppi_watch_accessed':False,'mutation_attempted':False},sort_keys=True))
+          PYHOST
+
       - name: Remove SSH material
         if: always()
         shell: bash
