@@ -13,6 +13,7 @@ import pytest
 
 from scripts import rc6_deploy_quiescence as q
 from scripts import rc6_deploy_scheduler_suspend as scheduler
+from be_paper_engine import PaperStore
 
 
 SHA = 'a' * 40
@@ -33,6 +34,17 @@ class FrozenDateTime(RealDateTime):
         return cls.current.astimezone(tz) if tz else cls.current.replace(tzinfo=None)
 
 
+def write_marker(root, candidate=q.RESCUE_SOURCE_SHA, image=q.RESCUE_IMAGE_ID,
+                 status='VALIDATED_RUNTIME'):
+    path=root/'data/deploy/CURRENT_STATE_V2.json'
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(json.dumps({'schema_version':2,'recorded_at':NOW.isoformat(),
+                                'candidate_sha':candidate,'image_id':image,
+                                'validation_status':status,'mode':'PRODUCTION_PAPER',
+                                'real_orders_sent':0,'real_order_routes':'NOT_CALLED'}))
+    return path
+
+
 @pytest.fixture
 def incident(tmp_path, monkeypatch):
     monkeypatch.setattr(q, 'ROOT', tmp_path)
@@ -43,13 +55,29 @@ def incident(tmp_path, monkeypatch):
     target.mkdir(parents=True)
     db = target / 'observer_v17.db'
     with sqlite3.connect(db) as c:
-        c.execute('''CREATE TABLE observer_state(id,mode,real_orders_sent,process_state,
-                     session_state,heartbeat_at,source_sha)''')
-        c.execute('INSERT INTO observer_state VALUES(1,?,?,?,?,?,?)',
-                  ('PRODUCTION_PAPER', 0, 'DEGRADED', 'BOOT_CALENDAR',
-                   (NOW-timedelta(seconds=5)).isoformat(), q.RESCUE_SOURCE_SHA))
+        c.execute('''CREATE TABLE observer_state(
+                     id INTEGER PRIMARY KEY CHECK(id=1), mode TEXT NOT NULL,
+                     process_state TEXT NOT NULL, session_state TEXT NOT NULL,
+                     ppi_auth TEXT NOT NULL, heartbeat_at TEXT, last_market_data_at TEXT,
+                     real_orders_sent INTEGER NOT NULL DEFAULT 0,
+                     http_allowed INTEGER NOT NULL DEFAULT 0,
+                     http_blocked INTEGER NOT NULL DEFAULT 0,
+                     detail TEXT NOT NULL DEFAULT '')''')
+        c.execute('''INSERT INTO observer_state
+                     (id,mode,process_state,session_state,ppi_auth,heartbeat_at,
+                      real_orders_sent) VALUES(1,?,?,?,?,?,0)''',
+                  ('PRODUCTION_PAPER','DEGRADED','BOOT_CALENDAR','OK',
+                   (NOW-timedelta(seconds=5)).isoformat()))
         for table in ('paper_positions', 'paper_cauciones', 'paper_future_positions'):
             c.execute('CREATE TABLE ' + table + '(status)')
+    write_marker(tmp_path)
+    health_path=target/'artifacts/observer_v17.db/runtime-health.json'
+    health_path.parent.mkdir(parents=True)
+    health_path.write_text(json.dumps({'schema':'rc6.runtime-child-health.v1',
+        'recorded_at':(NOW-timedelta(seconds=5)).isoformat(),
+        'source_sha':q.RESCUE_SOURCE_SHA,'mode':'PRODUCTION_PAPER',
+        'real_orders_sent':0,'real_routes':'NOT_CALLED',
+        'children':{'scanner':{'state':'RUNNING','pid':1234,'restarts':0}}}))
     states = {name: {'Id': str(index) * 64, 'Image': q.RESCUE_IMAGE_ID,
                      'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0,
                                'StartedAt': (NOW-timedelta(hours=1)).isoformat(),
@@ -79,12 +107,24 @@ def incident(tmp_path, monkeypatch):
     return db, states, calls
 
 
+def test_rescue_fixture_observer_schema_matches_production(incident, tmp_path):
+    fixture_db,_,_=incident
+    production_db=tmp_path/'production-observer.db'
+    PaperStore(str(production_db))
+    with sqlite3.connect(fixture_db) as fixture, sqlite3.connect(production_db) as production:
+        fixture_columns=[row[1] for row in fixture.execute('PRAGMA table_info(observer_state)')]
+        production_columns=[row[1] for row in production.execute('PRAGMA table_info(observer_state)')]
+    assert fixture_columns == production_columns
+    assert 'source_sha' not in production_columns
+    assert q.rescue_flat_book()['source_sha'] == q.RESCUE_SOURCE_SHA
+
+
 def stopped_crash_incident(incident, monkeypatch, *, running_child=False):
     db, states, calls = incident
     with sqlite3.connect(db) as c:
         c.execute("UPDATE observer_state SET process_state='STOPPED',session_state='CLOSED'")
     path = q.ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True,exist_ok=True)
     health = {'schema':'rc6.runtime-child-health.v1',
               'recorded_at':(NOW-timedelta(seconds=5)).isoformat(),
               'source_sha':q.RESCUE_SOURCE_SHA, 'mode':'PRODUCTION_PAPER',
@@ -123,7 +163,7 @@ def test_exact_a92_scanner_full_closed_drain_and_red_recovery(
     assert scheduler.require_rescue_degraded_hold(SHA)=='RESCUE_DEGRADED_HELD'
 
 
-@pytest.mark.parametrize('change',['stale_health','old_exit','few_restarts','wrong_source',
+@pytest.mark.parametrize('change',['stale_health','old_exit','few_restarts','wrong_source','wrong_schema',
     'live_routes','scanner_unknown','missing_trace','wrong_trace','image','book','critical'])
 def test_a92_scanner_full_uncertainty_never_stops(incident,monkeypatch,change):
     db,states,calls,path,log=stopped_crash_incident(incident,monkeypatch)
@@ -133,6 +173,7 @@ def test_a92_scanner_full_uncertainty_never_stops(incident,monkeypatch,change):
     elif change=='old_exit': scanner['last_exit_at']=(NOW-timedelta(seconds=61)).isoformat()
     elif change=='few_restarts': scanner['restarts']=89
     elif change=='wrong_source': health['source_sha']='c'*40
+    elif change=='wrong_schema': health['schema']='unexpected'
     elif change=='live_routes': health['real_routes']='CALLED'
     elif change=='scanner_unknown': scanner['state']='SPAWN_FAILED'
     elif change=='missing_trace': log['text']='no traceback'
@@ -181,10 +222,10 @@ def test_no_drain_cleanup_rejects_changed_a92_invariants(incident,change):
     if change=='image': states[q.OWNED[0]]['Image']='sha256:'+'f'*64
     elif change=='critical':
         states['porota_critical_approval_rc6']['State']['Health']['Status']='unhealthy'
+    elif change=='source': write_marker(q.ROOT,candidate='c'*40)
     else:
         with sqlite3.connect(db) as c:
-            if change=='source': c.execute("UPDATE observer_state SET source_sha='wrong'")
-            elif change=='open_book': c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+            if change=='open_book': c.execute("INSERT INTO paper_positions VALUES('OPEN')")
             else: c.execute("UPDATE observer_state SET process_state='RUNNING'")
     with pytest.raises(ValueError,match='SCHEDULER|QUIESCENCE'):
         scheduler.require_rescue_degraded_hold(SHA)
@@ -202,23 +243,31 @@ def test_exact_incident_drain_install_and_healthy_closed_poststart(incident):
     assert installed['status'] == 'HOST_INSTALLATION_STARTED'
     with sqlite3.connect(db) as c:
         c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',session_state='CLOSED',"
-                  "heartbeat_at=?,source_sha=?", (FrozenDateTime.now(timezone.utc).isoformat(), SHA))
+                  "heartbeat_at=?", (FrozenDateTime.now(timezone.utc).isoformat(),))
     assert q.admit_poststart_flat(q.RESCUE_MODE, SHA) == 'CLOSED'
 
 
-@pytest.mark.parametrize('change', ['early', 'next_day', 'calendar', 'source', 'image',
-    'heartbeat', 'open_spot', 'open_caucion', 'active_future', 'real_orders', 'critical'])
+@pytest.mark.parametrize('change', ['early', 'next_day', 'calendar', 'source', 'marker_missing',
+    'marker_image','child_source','child_schema','image','heartbeat', 'open_spot',
+    'open_caucion', 'active_future', 'real_orders', 'critical'])
 def test_uncertain_incident_cannot_stop_either_container(incident, change):
     db, states, calls = incident
     if change == 'early': FrozenDateTime.current = RealDateTime(2026,10,26,22,59,tzinfo=timezone.utc)
     elif change == 'next_day': FrozenDateTime.current = RealDateTime(2026,10,27,3,0,tzinfo=timezone.utc)
     elif change == 'calendar': (q.ROOT/'ak_byma_calendar.py').write_text('tampered')
+    elif change == 'marker_missing': (q.ROOT/'data/deploy/CURRENT_STATE_V2.json').unlink()
+    elif change == 'marker_image': write_marker(q.ROOT,image='sha256:'+'f'*64)
+    elif change in {'child_source','child_schema'}:
+        path=q.ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+        health=json.loads(path.read_text())
+        health['source_sha' if change=='child_source' else 'schema']='wrong'
+        path.write_text(json.dumps(health))
     elif change == 'image': states[q.OWNED[1]]['Image'] = 'sha256:'+'f'*64
+    elif change == 'source': write_marker(q.ROOT,candidate='c'*40)
     elif change == 'critical': states['porota_critical_approval_rc6']['State']['Health']['Status'] = 'unhealthy'
     else:
         with sqlite3.connect(db) as c:
-            if change == 'source': c.execute("UPDATE observer_state SET source_sha='wrong'")
-            elif change == 'heartbeat': c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+            if change == 'heartbeat': c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
             elif change == 'real_orders': c.execute('UPDATE observer_state SET real_orders_sent=1')
             else:
                 table, status = {'open_spot':('paper_positions','OPEN'),
@@ -312,7 +361,7 @@ def test_cleanup_no_drain_persists_explicit_hold_without_timer_start(incident,mo
                              for n in names}}).encode()
     policy=base64.b64encode(raw).decode()
     target=q.ROOT/'data/deploy'
-    target.mkdir(parents=True)
+    target.mkdir(parents=True,exist_ok=True)
     row={'candidate_sha':SHA,'policy_sha256':hashlib.sha256(raw).hexdigest(),
          'timers':names,'ppi_before':[],'attempted':names,'status':'SUSPENDED'}
     (target/('scheduler-suspend-'+SHA+'.json')).write_text(json.dumps(row))
@@ -363,8 +412,7 @@ def test_candidate_image_intent_and_exact_exited_replacement_hold(incident):
         states[name]['Image'] = intent['image_id']
         states[name]['State'].update(Status='exited',ExitCode=0,OOMKilled=False,
                                       FinishedAt=NOW.isoformat())
-    with sqlite3.connect(db) as c:
-        c.execute('UPDATE observer_state SET source_sha=?',(SHA,))
+    write_marker(q.ROOT,SHA,'sha256:'+'4'*64,'DEPLOYED_VALIDATION_PENDING')
     for name in q.OWNED:
         states[name]['State']['Status']='running'
     captured=q.run(SHA,'capture-runtime')['candidate_runtime_initial']
@@ -439,8 +487,7 @@ def test_pretransfer_classifier_replays_observed_host_without_writes(
         incident, monkeypatch, capsys, source_ok):
     db, states, _ = incident
     if not source_ok:
-        with sqlite3.connect(db) as c:
-            c.execute("UPDATE observer_state SET source_sha='wrong'")
+        write_marker(q.ROOT,candidate='c'*40)
     workflow = (Path(__file__).resolve().parents[1] /
                 '.github/workflows/porota-deploy-v2-promote.yml').read_text()
     block = workflow.split('- name: Classify current flat PAPER session before host writes',1)[1]
@@ -473,7 +520,7 @@ def test_pretransfer_classifier_replays_observed_host_without_writes(
         assert capsys.readouterr().out == q.RESCUE_MODE+'\n'
         assert critical == ['issues_only']
     else:
-        with pytest.raises(SystemExit,match='RC6_RESCUE_PAPER_SOURCE_RED'):
+        with pytest.raises(SystemExit,match='RC6_RESCUE_CURRENT_SOURCE_RED'):
             exec(compile(code,'deploy-v2-rescue-classifier','exec'),{})
         assert critical == []
 
@@ -540,11 +587,35 @@ def failed_candidate_stopped(incident,monkeypatch=None,*,from_stopped=False):
         states[name]['Image']='sha256:'+'4'*64
         states[name]['State'].update(Status='exited',ExitCode=0,OOMKilled=False,
                                       FinishedAt=NOW.isoformat())
-    with sqlite3.connect(db) as c:
-        c.execute('UPDATE observer_state SET source_sha=?',(SHA,))
+    write_marker(q.ROOT,SHA,'sha256:'+'4'*64,'DEPLOYED_VALIDATION_PENDING')
     assert q.run(SHA,'recover')['status']=='FIX_FORWARD_VALIDATION_REQUIRED'
     FrozenDateTime.current=RealDateTime(2026,10,27,23,5,tzinfo=timezone.utc)
     return db,states,calls
+
+
+def test_failed_candidate_without_provisional_marker_cannot_be_adopted(incident):
+    db,states,_=incident
+    q.run(SHA,'drain',allow_degraded_closed_rescue=True)
+    q.run(SHA,'install',allow_degraded_closed_rescue=True)
+    frozen=q.ROOT/'frozen.json'
+    frozen.write_text(json.dumps({'candidate_sha':SHA,'candidate_tree_sha':'6'*40,
+                                  'image_tar_sha256':'5'*64}))
+    q.run(SHA,'image-intent',candidate_image_id='sha256:'+'4'*64,
+          frozen_manifest=str(frozen))
+    for index,name in enumerate(q.OWNED,7):
+        states[name]['Id']=str(index)*64
+        states[name]['Image']='sha256:'+'4'*64
+        states[name]['State'].update(Status='exited',ExitCode=0,OOMKilled=False,
+                                      FinishedAt=NOW.isoformat())
+    assert q.run(SHA,'recover')['status']=='FIX_FORWARD_VALIDATION_REQUIRED'
+    FrozenDateTime.current=RealDateTime(2026,10,27,23,5,tzinfo=timezone.utc)
+    try:
+        with pytest.raises(ValueError,match='SOURCE_BOOK_CHANGED'):
+            q.adopt_failed_rescue_candidate_stopped(
+                NEXT,q.ROOT/'data/deploy',{n:q.inspect(n) for n in q.OWNED})
+        assert not (q.ROOT/'data/deploy'/('quiescence-'+NEXT+'.json')).exists()
+    finally:
+        FrozenDateTime.current=NOW
 
 
 def test_next_day_adopts_failed_candidate_from_scanner_full_incident(
@@ -575,8 +646,8 @@ def test_next_day_exact_stopped_candidate_adopts_then_only_healthy_closed_passes
         assert installed['installation_started'] is True
         with sqlite3.connect(db) as c:
             c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',"
-                      "session_state='CLOSED',source_sha=?,heartbeat_at=?",
-                      (NEXT,FrozenDateTime.now(timezone.utc).isoformat()))
+                      "session_state='CLOSED',heartbeat_at=?",
+                      (FrozenDateTime.now(timezone.utc).isoformat(),))
         assert q.admit_poststart_flat(q.ADOPTED_RESCUE_MODE,NEXT)=='CLOSED'
         prior=q.ROOT/'data/deploy'/('quiescence-'+SHA+'.json')
         prior.write_text(prior.read_text()+' ')
@@ -633,8 +704,7 @@ def test_adoption_rejects_tamper_or_unverified_current_market(incident,change):
     elif change=='new_id': states[q.OWNED[0]]['Id']='f'*64
     elif change=='dirty_exit': states[q.OWNED[0]]['State']['ExitCode']=137
     elif change=='source_a92':
-        with sqlite3.connect(db) as c:
-            c.execute('UPDATE observer_state SET source_sha=?',(q.RESCUE_SOURCE_SHA,))
+        write_marker(q.ROOT)
     elif change=='preopen': FrozenDateTime.current=RealDateTime(2026,10,28,14,tzinfo=timezone.utc)
     elif change=='november': FrozenDateTime.current=RealDateTime(2026,11,2,23,5,tzinfo=timezone.utc)
     elif change=='critical': states['porota_critical_approval_rc6']['State']['Health']['Status']='unhealthy'

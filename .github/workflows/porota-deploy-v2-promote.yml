@@ -253,22 +253,46 @@ jobs:
               if any(not re.fullmatch('[0-9a-f]{64}',v['Id']) or
                      v['Image']!=RESCUE_IMAGE_ID for v in originals.values()):
                   raise SystemExit('RC6_RESCUE_DOCKER_IDENTITY_RED')
+              marker_path=ROOT/'data/deploy/CURRENT_STATE_V2.json'
+              if (marker_path.is_symlink() or not marker_path.is_file() or
+                  marker_path.stat().st_size>65536):
+                  raise SystemExit('RC6_RESCUE_CURRENT_STATE_UNSAFE')
+              marker=json.loads(marker_path.read_bytes())
+              marker_at=datetime.fromisoformat(marker['recorded_at'])
+              if (marker_at.tzinfo is None or marker_at>datetime.now(timezone.utc) or
+                  marker.get('schema_version')!=2 or
+                  marker.get('candidate_sha')!=RESCUE_SOURCE_SHA or
+                  marker.get('image_id')!=RESCUE_IMAGE_ID or
+                  marker.get('validation_status')!='VALIDATED_RUNTIME' or
+                  marker.get('mode')!='PRODUCTION_PAPER' or
+                  type(marker.get('real_orders_sent')) is not int or
+                  marker['real_orders_sent']!=0 or
+                  marker.get('real_order_routes')!='NOT_CALLED'):
+                  raise SystemExit('RC6_RESCUE_CURRENT_SOURCE_RED')
+              health_path=ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+              if (health_path.is_symlink() or not health_path.is_file() or
+                  health_path.stat().st_size>131072 or health_path.stat().st_nlink!=1):
+                  raise SystemExit('RC6_RESCUE_CHILD_HEALTH_UNSAFE')
+              health=json.loads(health_path.read_bytes())
+              health_at=datetime.fromisoformat(health['recorded_at'])
+              now=datetime.now(timezone.utc)
+              if (health_at.tzinfo is None or not 0<=(now-health_at).total_seconds()<=30 or
+                  health.get('schema')!='rc6.runtime-child-health.v1' or
+                  health.get('source_sha')!=RESCUE_SOURCE_SHA or
+                  health.get('mode')!='PRODUCTION_PAPER' or
+                  type(health.get('real_orders_sent')) is not int or
+                  health['real_orders_sent']!=0 or
+                  health.get('real_routes')!='NOT_CALLED'):
+                  raise SystemExit('RC6_RESCUE_CHILD_SOURCE_RED')
               if state==('STOPPED','CLOSED'):
                   # The A92 observer parent still runs while its scanner child
                   # crashes in the exact report query. Require a fresh child
                   # record and bounded traceback; this is never healthy CLOSED.
-                  health_path=ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
-                  if (health_path.is_symlink() or not health_path.is_file() or
-                      health_path.stat().st_size>131072 or health_path.stat().st_nlink!=1):
-                      raise SystemExit('RC6_RESCUE_CHILD_HEALTH_UNSAFE')
-                  health=json.loads(health_path.read_bytes())
                   scanner=health.get('children',{}).get('scanner',{})
                   try:
-                      stamp=datetime.fromisoformat(health['recorded_at'])
                       last_exit=datetime.fromisoformat(scanner['last_exit_at'])
                   except (KeyError,TypeError,ValueError) as exc:
                       raise SystemExit('RC6_RESCUE_CHILD_CLOCK_RED') from exc
-                  now=datetime.now(timezone.utc)
                   phase=scanner.get('state')
                   if phase=='CRASH_BACKOFF':
                       phase_ok=(scanner.get('pid') is None and
@@ -283,15 +307,8 @@ jobs:
                                 0<=(now-last_exit).total_seconds()<=60)
                   else:
                       phase_ok=False
-                  if (stamp.tzinfo is None or last_exit.tzinfo is None or
-                      not 0<=(now-stamp).total_seconds()<=30 or
+                  if (last_exit.tzinfo is None or
                       not 0<=(now-last_exit).total_seconds()<=60 or
-                      health.get('schema')!='rc6.runtime-child-health.v1' or
-                      health.get('source_sha')!=RESCUE_SOURCE_SHA or
-                      health.get('mode')!='PRODUCTION_PAPER' or
-                      type(health.get('real_orders_sent')) is not int or
-                      health['real_orders_sent']!=0 or
-                      health.get('real_routes')!='NOT_CALLED' or
                       not phase_ok or
                       type(scanner.get('restarts')) is not int or scanner['restarts']<90):
                       raise SystemExit('RC6_RESCUE_CHILD_CRASH_UNVERIFIED')
@@ -307,15 +324,15 @@ jobs:
                   c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=200')
                   deadline=time.monotonic()+2
                   c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
-                  row=c.execute('SELECT mode,real_orders_sent,source_sha,heartbeat_at, '
+                  row=c.execute('SELECT mode,real_orders_sent,heartbeat_at, '
                                 'process_state,session_state '
                                 'FROM observer_state WHERE id=1').fetchone()
-                  if not row or row[:3]!=('PRODUCTION_PAPER',0,RESCUE_SOURCE_SHA) or type(row[1]) is not int:
+                  if not row or row[:2]!=('PRODUCTION_PAPER',0) or type(row[1]) is not int:
                       raise SystemExit('RC6_RESCUE_PAPER_SOURCE_RED')
-                  stamp=datetime.fromisoformat(row[3])
+                  stamp=datetime.fromisoformat(row[2])
                   if stamp.tzinfo is None or not 0<=(datetime.now(timezone.utc)-stamp).total_seconds()<=180:
                       raise SystemExit('RC6_RESCUE_HEARTBEAT_RED')
-                  if row[4:]!=state:
+                  if row[3:]!=state:
                       raise SystemExit('RC6_RESCUE_PHASE_CHANGED')
                   for table,status in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
                                        ('paper_future_positions','ACTIVE')):
