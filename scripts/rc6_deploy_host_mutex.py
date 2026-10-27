@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fcntl
 import ctypes
+import hashlib
 import json
 import os
 import pwd
@@ -27,6 +28,7 @@ LOCK_DIR = Path('/run/lock')
 LOCK_PATH = LOCK_DIR / 'porota-rc6-deploy-v2.lock'
 BARRIER_NAME = 'porota-rc6-deploy-v2-attempt.json'
 PHASES = frozenset({
+    'reconcile',
     'classify', 'offline_preclean', 'preclean', 'suspend', 'drain', 'transfer',
     'promotion', 'flat_book', 'verify_carryover', 'timers_restore',
     'timers_restored', 'backup_retire', 'finalize', 'cleanup_contract',
@@ -36,6 +38,11 @@ FINAL_PHASES = frozenset({'finalize', 'cleanup_final'})
 IDENTITY = re.compile(r'[0-9a-f]{40}')
 NUMBER = re.compile(r'[1-9][0-9]*')
 PR_SET_CHILD_SUBREAPER = 36
+FAILED_A138_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
+FAILED_A138_RUN = '40592426296'
+FAILED_A138_ATTEMPT = '2'
+FAILED_A138_SOURCE_SHA256 = 'dcb0ed996a6be9aefb0a609139285f6160248909ccde92f189a24b77fb617662'
+FAILED_A92_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 
 
 def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
@@ -206,6 +213,94 @@ def _contract_writers() -> set[str]:
     return names
 
 
+def _exact_a138_stopped_host_proof() -> str:
+    """Read-only validation before retiring exactly one cleanly exited barrier.
+
+    The old A138 files were copied to the host before its COLD2 failure. They
+    must still be byte-for-byte identical. Do not trust arbitrary host Python
+    or promote an unverified stopped observer to a healthy session.
+    """
+    root = Path('/opt/porota-trading')
+    script = root / 'scripts/rc6_deploy_quiescence.py'
+    if (script.is_symlink() or not script.is_file() or
+            script.stat().st_size != 111053 or script.stat().st_nlink != 1 or
+            hashlib.sha256(script.read_bytes()).hexdigest() != FAILED_A138_SOURCE_SHA256):
+        raise RuntimeError('BARRIER_A138_HOST_SOURCE_CHANGED')
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts import rc6_deploy_quiescence as q
+
+    prior_path = root / 'data/deploy' / ('quiescence-' + FAILED_A138_CANDIDATE + '.json')
+    if (prior_path.is_symlink() or not prior_path.is_file() or
+            prior_path.stat().st_size > 65536 or prior_path.stat().st_nlink != 1):
+        raise RuntimeError('BARRIER_A138_PRIOR_RECEIPT_UNSAFE')
+    raw = prior_path.read_bytes()
+    prior = json.loads(raw)
+    if (prior.get('candidate_sha') != FAILED_A138_CANDIDATE or
+            prior.get('status') not in {'HOST_INSTALLATION_STARTED',
+                                        'FIX_FORWARD_VALIDATION_REQUIRED'} or
+            prior.get('installation_started') is not True or
+            prior.get('degraded_closed_rescue') is not True or
+            prior.get('candidate_runtime_initial') is not None or
+            prior.get('candidate_runtime_after_failure') is not None or
+            not isinstance(prior.get('candidate_image_intent'), dict)):
+        raise RuntimeError('BARRIER_A138_INSTALLATION_PHASE_CHANGED')
+    q.exact_rescue_receipt(prior)
+    q.exact_clean_stopped(prior)
+    if (q.exact_a92_marker().get('candidate_sha') != q.RESCUE_SOURCE_SHA or
+            q.admit(stopped=True, allow_degraded_closed_rescue=True,
+                    stopped_receipt=prior) != 'STOPPED'):
+        raise RuntimeError('BARRIER_A138_STOPPED_PAPER_CHANGED')
+    for name in q.OWNED:
+        now = q.inspect(name)
+        if (now['Id'] != prior['containers'][name]['id'] or
+                now['Image'] != FAILED_A92_IMAGE_ID or
+                now['State']['Status'] != 'exited' or
+                q.lifecycle(now) != prior['stop_evidence'][name]['after']):
+            raise RuntimeError('BARRIER_A138_ORIGINAL_CONTAINER_CHANGED')
+    book = q.rescue_flat_book()
+    if (book.get('real_orders_sent') != 0 or
+            (book.get('process_state'), book.get('session_state')) not in
+            {('STOPPED', 'BOOT_CALENDAR'), ('STOPPED', 'CLOSED')} or
+            q.critical_admission() != prior.get('critical_admission')):
+        raise RuntimeError('BARRIER_A138_BOOK_OR_CRITICAL_CHANGED')
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _reconcile_exact_a138_idle(directory_path: Path, identity: tuple[str, str, str]) -> None:
+    """A140: close A138's *IDLE* barrier, never an uncertain INFLIGHT barrier.
+
+    All validations run under the same exclusive flock used for mutating host
+    operations. The only disk mutation is unlinking this exact prior barrier;
+    every other failure leaves it intact. A successful audit is captured by
+    this workflow's immutable GitHub Actions log before normal classification.
+    """
+    existing = _read_barrier(directory_path)
+    if existing is None:
+        print('RC6_A140_BARRIER_RECONCILE=ALREADY_EMPTY', file=sys.stderr, flush=True)
+        return
+    expected = dict(candidate=FAILED_A138_CANDIDATE, run=FAILED_A138_RUN,
+                    attempt=FAILED_A138_ATTEMPT)
+    if (identity[0] == FAILED_A138_CANDIDATE or
+            any(existing.get(k) != v for k, v in expected.items()) or
+            existing['status'] != 'IDLE' or
+            existing['phase'] not in {'promotion', 'cleanup_recover', 'cleanup_restore'}):
+        raise RuntimeError('BARRIER_A138_NOT_EXACT_CLEAN_IDLE')
+    if _contract_writers():
+        raise RuntimeError('BARRIER_A138_CONTRACT_WRITER_ALIVE')
+    digest = _exact_a138_stopped_host_proof()
+    # Re-check after host proof, before unlinking; the flock excludes every
+    # Deploy V2 writer but does not excuse any unexpected external mutation.
+    if _read_barrier(directory_path) != existing or _contract_writers():
+        raise RuntimeError('BARRIER_A138_CHANGED_DURING_PROOF')
+    _barrier(directory_path).unlink()
+    _sync_directory(directory_path)
+    print('RC6_A140_BARRIER_RECONCILE=GREEN|prior_candidate=' + FAILED_A138_CANDIDATE +
+          '|prior_run=' + FAILED_A138_RUN + '|prior_attempt=' + FAILED_A138_ATTEMPT +
+          '|prior_receipt_sha256=' + digest + '|previous_status=IDLE|PAPER=0',
+          file=sys.stderr, flush=True)
+
+
 def run(argv: list[str]) -> int:
     if (os.geteuid() != 0 or len(argv) < 9 or argv[1] not in ('user', 'root') or
             argv[2] != '--attempt' or argv[6] != '--phase'):
@@ -217,11 +312,14 @@ def run(argv: list[str]) -> int:
         raise RuntimeError('MUTEX_ATTEMPT_INVALID')
     phase = argv[7]
     observe = phase == 'classify'
+    reconcile = phase == 'reconcile'
     user = pwd.getpwnam(argv[0])
     if user.pw_uid == 0:
         raise RuntimeError('MUTEX_REMOTE_USER_MUST_BE_UNPRIVILEGED')
     allow_contract_lifecycle = argv[8] == '--allow-contract-lifecycle'
     command = argv[9:] if allow_contract_lifecycle else argv[8:]
+    if reconcile and (argv[1] != 'root' or command != ['--exact-a138-idle']):
+        raise RuntimeError('BARRIER_RECONCILE_INVOCATION_INVALID')
     if not command:
         raise RuntimeError('MUTEX_COMMAND_MISSING')
     if (allow_contract_lifecycle != (phase == 'cleanup_contract') or
@@ -231,6 +329,9 @@ def run(argv: list[str]) -> int:
     fd = open_lock(LOCK_DIR)
     try:
         _enable_subreaper()
+        if reconcile:
+            _reconcile_exact_a138_idle(LOCK_DIR, identity)
+            return 0
         existing = _read_barrier(LOCK_DIR)
         if observe and existing is not None:
             raise RuntimeError('BARRIER_PRIOR_ATTEMPT_UNRESOLVED')

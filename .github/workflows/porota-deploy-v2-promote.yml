@@ -168,6 +168,21 @@ jobs:
           echo "RC6_MUTEX_B64=$(base64 -w0 scripts/rc6_deploy_host_mutex.py)" >> "$GITHUB_ENV"
           echo "RC6_STAGE_B64=$(base64 -w0 scripts/rc6_deploy_stage_transfer.py)" >> "$GITHUB_ENV"
 
+      - name: Reconcile only exact A138 cleanly exited host barrier
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The A138 cleanup child exited cleanly but returned RED before
+          # cleanup_final could retire its IDLE attempt barrier. Reconcile
+          # only that exact failure under the same root-owned flock. An
+          # INFLIGHT/CONTRACT_ONLY barrier, live writer or changed host proof
+          # always stops the job before normal host classification.
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase reconcile --exact-a138-idle"
+
       - name: Classify current flat PAPER session before host writes
         shell: bash
         run: |
