@@ -226,6 +226,9 @@ jobs:
           elif statuses=={'running'} and state in (
                   ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
               # Incident-specific postclose rescue of the installed A92 image.
+              # Wire-mode/CLI retain the 26-Oct label for receipt compatibility.
+              # Calendar COM18782 is pinned only through 30 Oct, never earlier
+              # than 20:00 ART on a verified operating day.
               # This is a RED runtime and never counts as a healthy CLOSED state.
               from datetime import datetime,timezone
               from zoneinfo import ZoneInfo
@@ -236,7 +239,8 @@ jobs:
               RESCUE_CALENDAR_SHA256='32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
               RESCUE_HOURS_SHA256='380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
               local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-              if local.date().isoformat()!='2026-10-26' or (local.hour,local.minute)<(20,0):
+              if (not '2026-10-26'<=local.date().isoformat()<='2026-10-30' or
+                  (local.hour,local.minute)<(20,0)):
                   raise SystemExit('RC6_RESCUE_WINDOW_RED')
               calendar_path=ROOT/'ak_byma_calendar.py'
               if (calendar_path.is_symlink() or not calendar_path.is_file() or
