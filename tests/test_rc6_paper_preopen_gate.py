@@ -314,7 +314,13 @@ def test_runtime_future_contract_revoked_under_locked_admission_rolls_back(tmp_p
 
 
 def test_runtime_future_locked_gate_rejects_missing_receipt(tmp_path, monkeypatch):
+    class BeforeOperatorPause(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return DAY.astimezone(tz or TZ)
+
     path = tmp_path / "runtime.db"
+    monkeypatch.setattr(gate, "datetime", BeforeOperatorPause)
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
     monkeypatch.setenv("POROTA_BUILD_SHA", SHA)
     monkeypatch.setattr(gate, "RUNTIME_RECEIPT", tmp_path / "missing.json")
