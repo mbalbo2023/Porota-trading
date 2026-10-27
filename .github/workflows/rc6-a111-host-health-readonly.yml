@@ -322,14 +322,42 @@ jobs:
                       residual < 0 or type(inode_floor) not in (int, float) or
                       not 0 <= inode_floor <= 100):
                   raise ValueError('DISK_POLICY_INVALID')
+              # Exact A116 artifact dimensions were read and hash-verified from
+              # Predeploy 40426635931 artifact 12701220778 off host. Only the
+              # current free space and installed policy are sampled here.
+              formula=policy['deploy']['pretransfer_formula']
+              policy_sha=hashlib.sha256(policy_bytes).hexdigest()
+              frozen_sizes={'image_tar_bytes':278159538,
+                            'image_unpacked_bytes':808853852,
+                            'bundle_bytes':1672451}
+              required=max(disk['deploy_pretransfer_min_free_bytes'],
+                           frozen_sizes['image_tar_bytes']*formula['image_tar_multiplier']+
+                           frozen_sizes['image_unpacked_bytes']*formula['image_unpacked_multiplier']+
+                           frozen_sizes['bundle_bytes']*formula['bundle_multiplier']+
+                           formula['fixed_headroom_bytes'])
+              pinned_policy=(policy_sha=='66de5407eb003923f08f1ae06ef4a63a74b9f320f6168b06925d15d6e23ac7ad' and
+                  formula=={'image_tar_multiplier':1,'image_unpacked_multiplier':2,
+                            'bundle_multiplier':2,'fixed_headroom_bytes':2147483648} and
+                  required==4046695792)
               disk_guard = {'state': 'OK',
-                            'policy_sha256': hashlib.sha256(policy_bytes).hexdigest(),
+                            'policy_sha256': policy_sha,
                             'postload_residual_bytes': residual,
                             'min_inode_free_percent': inode_floor,
                             'available_bytes': free,
                             'inode_free_percent': round(inode_percent, 2),
                             'postload_metadata_status': 'GREEN' if
-                            free >= residual and inode_percent >= inode_floor else 'RED'}
+                            free >= residual and inode_percent >= inode_floor else 'RED',
+                            'a116_exact_pretransfer': {
+                                'artifact_id':12701220778,
+                                'candidate_sha':'9f5a4de307a5493f1cb2c414cfbc2b1a8468efaa',
+                                'candidate_tree':'2d534c75748fd715ef3f532eb491aaac85f95ef4',
+                                'image_id':'sha256:0805cbc2d2a172a892cdb3884a4e6583cc2f6e481269c72e2e48526ac440f37d',
+                                'artifact_zip_sha256':'61b88552a52dba8638e6d92fa811da1bf0d0962941af784e4929dc0a3019359a',
+                                **frozen_sizes, 'required_bytes':required,
+                                'available_bytes':free,'margin_bytes':free-required,
+                                'policy_matches_frozen_formula':pinned_policy,
+                                'status':'GREEN' if pinned_policy and free>=required and
+                                         inode_percent>=inode_floor else 'RED'}}
           except (OSError, ValueError, TypeError, KeyError, ZeroDivisionError):
               pass
 
@@ -463,8 +491,9 @@ jobs:
                        'phase': '/'.join(str(value or 'NO_VERIFICADO') for value in phase),
                        'stopped_recent_full': stopped_crash,
                        'ppi_auth_ok_now': db_result.get('ppi_auth') == 'OK' and
-                                          db_result.get('ppi_production_auth',{}).get('state') == 'OK',
-                       'pretransfer_artifact_reserve': 'NO_VERIFICADO'}
+                                          db_result.get('ppi_production_auth',{}).get('state') == 'VERDE',
+                       'pretransfer_artifact_reserve':
+                           disk_guard.get('a116_exact_pretransfer',{}).get('status','NO_VERIFICADO')}
           result = {'schema': 'rc6-a111-host-health-readonly-v1',
                     'at_utc': now.isoformat(),
                     'at_ar': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
