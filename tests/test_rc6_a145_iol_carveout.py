@@ -159,8 +159,14 @@ def test_a172_exact_failed_a171_running_hold_never_starts_any_timer(
                            A170_FAILED_CANDIDATE=q.A170_FAILED_CANDIDATE,
                            A169_PRIOR_RECEIPT_SHA256=q.A169_PRIOR_RECEIPT_SHA256,
                            A170_FAILED_RECEIPT_SHA256=q.A170_FAILED_RECEIPT_SHA256,
+                           current_runtime_marker=lambda:{'candidate_sha':q.A171_FAILED_CANDIDATE},
                            a171_failed_running_proof=lambda *a,**kw:proof)
     monkeypatch.setattr(scheduler,'a143_staged_module',lambda:staged)
+    # The installed A171 helper has no A172 continuation constant. A
+    # dispatcher using that old import selects the stopped A169 path and
+    # fails with QUIESCENCE_A143_STOP_SOURCE_CHANGED on the real host.
+    import scripts
+    monkeypatch.setattr(scripts,'rc6_deploy_quiescence',SimpleNamespace())
     parent={'candidate_sha':q.A171_FAILED_CANDIDATE,'status':'SUSPENDED',
             'policy_sha256':digest,'timers':names,'attempted':names,'ppi_before':[],
             'preserved_iol_timer':scheduler.IOL_OAUTH_GUARD_TIMER,
