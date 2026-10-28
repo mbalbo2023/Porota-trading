@@ -1,0 +1,92 @@
+name: RC6 A172 reclaim exactly two old unreferenced candidate images
+
+on:
+  push:
+    branches: [audit/rc6-a172-exact-image-reclaim-20261028]
+    paths:
+      - .github/workflows/rc6-a172-exact-image-reclaim-20261028.yml
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Checkout exact audited source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Adversarial Docker ownership fixtures
+        run: python3 -m unittest tests.test_rc6_a172_exact_image_reclaim -v
+
+      - name: Revalidate exact historical Predeploy and Deploy provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          base="https://api.github.com/repos/mbalbo2023/Porota-trading/actions"
+          for spec in 40603564980:40607685153 40761278095:40765366297; do
+            pre="${spec%%:*}"
+            deploy="${spec#*:}"
+            for suffix in "runs/$pre" "runs/$pre/artifacts?per_page=100" "runs/$deploy"; do
+              case "$suffix" in
+                "runs/$pre") path="$RUNNER_TEMP/pre-$pre.json" ;;
+                "runs/$pre/artifacts?per_page=100") path="$RUNNER_TEMP/art-$pre.json" ;;
+                *) path="$RUNNER_TEMP/deploy-$deploy.json" ;;
+              esac
+              curl -fsSL --retry 2 -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' "$base/$suffix" -o "$path"
+            done
+          done
+          python3 scripts/rc6_a172_artifact_provenance.py \
+            "$RUNNER_TEMP/pre-40603564980.json" "$RUNNER_TEMP/art-40603564980.json" \
+            "$RUNNER_TEMP/deploy-40607685153.json" \
+            "$RUNNER_TEMP/pre-40761278095.json" "$RUNNER_TEMP/art-40761278095.json" \
+            "$RUNNER_TEMP/deploy-40765366297.json"
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Recheck and remove only pinned unreferenced image IDs
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 180s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+              < scripts/rc6_a172_exact_image_reclaim.py
+
+      - name: Erase runner provenance and SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP"/{pre-40603564980,art-40603564980,deploy-40607685153,pre-40761278095,art-40761278095,deploy-40765366297}.json \
+            "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
