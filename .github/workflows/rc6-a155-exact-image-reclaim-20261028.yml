@@ -2,6 +2,11 @@ name: RC6 A155 exact orphan candidate image reclaim
 
 # REVIEW ONLY. A scoped push trigger is added after root checks every guard.
 on:
+  push:
+    branches:
+      - audit/rc6-a155-exact-image-reclaim-20261028
+    paths:
+      - '.github/workflows/rc6-a155-exact-image-reclaim-20261028.yml'
   workflow_dispatch:
 
 permissions:
