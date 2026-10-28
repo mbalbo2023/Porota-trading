@@ -211,10 +211,12 @@ def test_a151_held_open_rejects_outside_exact_window(a151,monkeypatch,utc_clock)
 def test_a151_intraday_literal_is_exact_and_required_before_suspend():
     from pathlib import Path
     workflow=(Path(__file__).parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    assert workflow.index('Require exact intraday owner authorization for A151 held OPEN') < \
+    assert workflow.index('Require exact intraday owner authorization for OPEN suspension') < \
            workflow.index('Suspend versioned RC6 schedulers for guarded promotion')
-    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' }}" in workflow
+    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}" in workflow
     assert "decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY'" in workflow
+    assert 'RC6_A151_OWNER_INTRADAY_ID=$COMMENT' in workflow
+    assert '--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID"' in workflow
     assert "A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open'" in workflow
     assert "A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open'" in workflow
     candidate,tree='a'*40,'b'*40

@@ -290,7 +290,8 @@ class FailureCleanupTests(unittest.TestCase):
         full = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         outcomes = {'host_reconcile': 'success', 'classify': 'failure',
                     'a151_intraday_auth': 'skipped',
-                    'pre_suspend_snapshot': 'skipped', 'diskguard': 'skipped',
+                    'pre_suspend_snapshot': 'skipped',
+                    'restatement_continuity': 'skipped', 'diskguard': 'skipped',
                     'suspend': 'skipped', 'drain': 'skipped',
                     'transfer': 'skipped', 'promotion': 'skipped',
                     'flat_book': 'skipped', 'timers_restore': 'skipped',
@@ -341,6 +342,10 @@ print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
         self.assertTrue(selected(pre))
         self.assertFalse(selected(full))
         self.assertIn("steps.a151_intraday_auth.outcome == 'failure'", retire)
+        outcomes.update(a151_intraday_auth='success', restatement_continuity='failure')
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        self.assertIn("steps.restatement_continuity.outcome == 'failure'", retire)
         self.assertIn("steps.diskguard.outcome == 'failure'", retire)
         self.assertIn("steps.suspend.outcome == 'skipped'", retire)
         self.assertIn("steps.pre_suspend_account.outcome == 'success'", retire)
