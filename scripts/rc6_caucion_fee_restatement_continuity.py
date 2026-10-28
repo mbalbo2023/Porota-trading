@@ -20,7 +20,7 @@ import urllib.request
 ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
 PROBE_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_ORIGIN_PROBE_V1"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
-INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN"})
+INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED"})
 QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
     "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
     "CLOSED_A143_PENDING_FIX_FORWARD",
@@ -28,6 +28,8 @@ QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
 A143_SOURCE_SHA = "2325eba329878c62a61cb47bb66d33ccf279bd4a"
 A143_TREE_SHA = "e66e3756769e297687a062bec2fa6e8599c0a275"
 A143_IMAGE_ID = "sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7"
+A169_STOPPED_CANDIDATE = "b778c8063e96574ddf859907abb99fae6f4e3484"
+A169_STOPPED_RECEIPT_SHA256 = "ac2d6ec4bb3fe2a2ce809d89034cb564c1a3ce790de21838b654abc787471f81"
 OWNED = {"porota_production_observer", "porota_production_dashboard"}
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -61,7 +63,11 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
     elif receipt.get("market_open_suspended") is not False:
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     prior = receipt.get("a143_previous_proof")
-    if quiescence_mode == "A151_HELD_OPEN":
+    if quiescence_mode == "A151_HELD_STOPPED" and (
+            receipt.get("a169_origin_candidate") != A169_STOPPED_CANDIDATE or
+            receipt.get("a169_origin_sha256") != A169_STOPPED_RECEIPT_SHA256):
+        raise ValueError("PAPER_RESTATEMENT_A169_STOPPED_ORIGIN_RED")
+    if quiescence_mode in {"A151_HELD_OPEN", "A151_HELD_STOPPED"}:
         if (receipt.get("a143_pending_adopted") is not True or
                 any(receipt.get(k) is not False for k in (
                     "open_paper_carryover", "paused_postclose", "intraday_caucion",
@@ -133,7 +139,8 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED") from exc
     if (recorded.tzinfo is None or recorded.utcoffset() is None or
             recorded > datetime.now(timezone.utc) or
-            (quiescence_mode == "A151_HELD_OPEN" and recorded < observed)):
+            (quiescence_mode in {"A151_HELD_OPEN", "A151_HELD_STOPPED"} and
+             recorded < observed)):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED")
     return recorded
 

@@ -39,6 +39,7 @@ A151_OPERATOR_RECEIPT = 'operator-preopen-pause-20261028.json'
 A151_PAPER_HOLD = 'paper_scalping_operator_hold_20261028.json'
 FAILED_A138_SUSPENSION_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
 A143_PENDING_CANDIDATE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
+A169_STOPPED_CANDIDATE = 'b778c8063e96574ddf859907abb99fae6f4e3484'
 IOL_OAUTH_GUARD_TIMER = 'porota-iol-oauth-health-rc6.timer'
 IOL_OAUTH_GUARD_SERVICE = 'porota-iol-oauth-health-rc6.service'
 # Legacy 16-timer policy that generated A138/A143 immutable receipts.
@@ -652,6 +653,16 @@ def require_a143_fix_forward_hold(candidate):
             raise ValueError('SCHEDULER_A151_HOLD_RECEIPT_RED')
         previous = pause.get('a145_pending_proof')
         held = previous.get('operator_hold') if type(previous) is dict else None
+        if pause.get('a169_stopped_origin') is True:
+            parent, digest, _ = q.a169_prior_a143_stopped_proof(
+                candidate,
+                operator_a151_proof=exact_a151_operator_preopen_pause,
+                operator_timer_disabled=operator_preopen_timer_disabled)
+            if (pause.get('paused_from') != A169_STOPPED_CANDIDATE or
+                    pause.get('a169_origin_sha256') != digest or
+                    parent.get('status') != 'PRIOR_A143_UNVALIDATED_HELD_STOPPED'):
+                raise ValueError('SCHEDULER_A169_STOPPED_ORIGIN_CHANGED')
+            return 'A143_STOPPED_UNVALIDATED_HELD_BEFORE_DRAIN'
         # A cleanup from a 16:59 stop may cross 17:00. Recheck the same A151
         # receipt and live flat #751 pair until the independent 20:00 close;
         # this continuation cannot admit a fresh drain or reactivate timers.
@@ -664,6 +675,11 @@ def require_a143_fix_forward_hold(candidate):
             receipt.get('ppi_watch_accessed') is not False or
             set(receipt.get('containers',{})) != set(q.OWNED)):
         raise ValueError('SCHEDULER_A143_CANDIDATE_RECEIPT_RED')
+    if receipt.get('a169_origin_candidate') is not None:
+        if (receipt.get('a169_origin_candidate') != A169_STOPPED_CANDIDATE or
+                receipt.get('a169_origin_sha256') !=
+                q.A169_PRIOR_RECEIPT_SHA256):
+            raise ValueError('SCHEDULER_A169_CANDIDATE_ORIGIN_CHANGED')
     observed = {name:q.inspect(name) for name in q.OWNED}
     if receipt.get('installation_started') is False:
         if receipt.get('status') in {'DRAINED',
@@ -827,6 +843,62 @@ def adopt_a143_legacy_hold_with_iol(candidate,path,names,digest,before,states):
     return receipt
 
 
+def adopt_a169_stopped_hold(candidate, path, names, digest, before, states):
+    """Carry A169's exact stopped PAPER hold without any systemd mutation."""
+    if (candidate in {A143_PENDING_CANDIDATE, A169_STOPPED_CANDIDATE} or
+            len(names) != 16 or IOL_OAUTH_GUARD_TIMER not in names or
+            OPERATOR_PREOPEN_TIMER not in names or
+            any(state != (('active','enabled') if name == IOL_OAUTH_GUARD_TIMER
+                          else ('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
+                          else ('inactive','enabled'))
+                for name, state in zip(names, states))):
+        raise ValueError('SCHEDULER_A169_TIMER_STATE_CHANGED')
+    prior_path = ROOT/('scheduler-suspend-'+A169_STOPPED_CANDIDATE+'.json')
+    prior, prior_sha = _operator_pause_json(prior_path,65536)
+    historical = operator_preopen_hold_evidence()
+    if (prior.get('candidate_sha') != A169_STOPPED_CANDIDATE or
+            prior.get('status') != 'SUSPENDED' or
+            prior.get('policy_sha256') != digest or
+            prior.get('timers') != names or
+            prior.get('ppi_before') != before or
+            prior.get('preserved_iol_timer') != IOL_OAUTH_GUARD_TIMER or
+            prior.get('operator_pause_timer') != OPERATOR_PREOPEN_TIMER or
+            prior.get('operator_pause_receipt_sha256') != historical or
+            set(prior.get('attempted', [])) != set(names) or
+            len(prior['attempted']) != 16):
+        raise ValueError('SCHEDULER_A169_PARENT_RECEIPT_CHANGED')
+    q = a143_staged_module()
+    parent, origin_sha, book = q.a169_prior_a143_stopped_proof(
+        candidate,
+        operator_a151_proof=exact_a151_operator_preopen_pause,
+        operator_timer_disabled=operator_preopen_timer_disabled)
+    if parent.get('status') != 'PRIOR_A143_UNVALIDATED_HELD_STOPPED' or book.get('real_orders_sent') != 0:
+        raise ValueError('SCHEDULER_A169_STOPPED_PAPER_CHANGED')
+    for name in names:
+        service, code = command('systemctl','show',name,'-p','Unit','--value')
+        if (code or service != name.removesuffix('.timer')+'.service' or
+                command('systemctl','is-active',service)[0] in
+                {'active','activating','reloading','deactivating'}):
+            raise ValueError('SCHEDULER_A169_WORKER_ACTIVE:' + name)
+    _iol_guard_status(('active','enabled'))
+    if ppi_snapshot()!=before or not operator_preopen_timer_disabled():
+        raise ValueError('SCHEDULER_A169_PPI_OR_OPERATOR_CHANGED')
+    receipt = dict(prior,candidate_sha=candidate,
+                   paused_from=A169_STOPPED_CANDIDATE,
+                   prior_receipt_sha256=prior_sha,
+                   a169_origin_sha256=origin_sha,
+                   a169_stopped_origin=True,
+                   recorded_at=datetime.now(timezone.utc).isoformat())
+    persist(path,receipt)
+    print(json.dumps({'status':'SUSPENDED','candidate_sha':candidate,
+                      'timer_count':16,'paused_timers':15,
+                      'a169_stopped_origin_sha256':origin_sha,
+                      'prior_receipt_sha256':prior_sha,
+                      'real_orders_sent':0,'ppi_watch_accessed':False,
+                      'systemd_mutations':0},sort_keys=True))
+    return receipt
+
+
 def persist(path, payload):
     fd, temp = tempfile.mkstemp(prefix='.scheduler-suspend-', dir=path.parent)
     try:
@@ -951,6 +1023,13 @@ def run(candidate, action, policy_b64):
             return receipt
         states = [(command('systemctl', 'is-active', name)[0],
                    command('systemctl', 'is-enabled', name)[0]) for name in names]
+        if preserved is not None and all(
+                state == (('active','enabled') if name == preserved
+                          else ('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
+                          else ('inactive','enabled'))
+                for name,state in zip(names,states)):
+            return adopt_a169_stopped_hold(
+                candidate,path,names,digest,before,states)
         if preserved is not None and all(
                 state == (('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
                           else ('inactive','enabled'))

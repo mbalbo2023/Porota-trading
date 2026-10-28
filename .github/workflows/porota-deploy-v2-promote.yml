@@ -215,11 +215,11 @@ jobs:
           CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
           # The raw base64 source was ~91 KB; combined with the other staged
           # proofs it exceeded Linux's per-argument exec limit before SSH ran.
-          CANDIDATE_A125_B64="$(gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
+          CANDIDATE_A125_B64="$(gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
           CANDIDATE_A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
           # The host still runs the FAILED #751 source. Stream the new A145
           # read-only admission; never trust an uninstalled helper by import.
-          CANDIDATE_A143_B64="$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          CANDIDATE_A143_B64="$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
           CANDIDATE_A143_SHA256="$(sha256sum scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)"
           CLASSIFY_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#CANDIDATE_AUDIT_B64} +
             ${#CANDIDATE_A125_B64} + ${#CANDIDATE_A143_B64} + 4096 ))
@@ -245,6 +245,22 @@ jobs:
                       hashlib.sha256(source).hexdigest()!=sys.argv[5]):
                   raise SystemExit('RC6_A151_OPERATOR_SOURCE_HASH_RED')
               return source
+          def staged_a143_candidate():
+              packed=base64.b64decode(sys.argv[4],validate=True)
+              if not 0<len(packed)<110000:
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_BOUNDS_RED')
+              inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+              source=inflater.decompress(packed,190000)
+              if (not 20000<len(source)<190000 or not inflater.eof or
+                      inflater.unconsumed_tail or inflater.unused_data or
+                      hashlib.sha256(source).hexdigest()!=sys.argv[6]):
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_HASH_RED')
+              candidate=types.ModuleType('rc6_a170_staged_quiescence')
+              exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),
+                   candidate.__dict__)
+              if candidate.A143_PENDING_IMAGE_ID!=A143_PENDING_IMAGE_ID:
+                  raise SystemExit('RC6_A143_PINNED_IMAGE_CHANGED')
+              return candidate
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_679_backup_suspension import inventory as backup_inventory
           if backup_inventory():
@@ -301,20 +317,7 @@ jobs:
               # The source SHA, image, two Docker IDs, immutable marker,
               # frozen manifest, failed-receipt chain and PAPER/0 are all
               # checked by the staged candidate helper. This is NEVER GO.
-              compressed=base64.b64decode(sys.argv[4],validate=True)
-              if not 0<len(compressed)<110000:
-                  raise SystemExit('RC6_A143_STAGED_SOURCE_BOUNDS_RED')
-              inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
-              source=inflater.decompress(compressed,190000)
-              if (not 20000<len(source)<190000 or not inflater.eof or
-                      inflater.unconsumed_tail or inflater.unused_data or
-                      hashlib.sha256(source).hexdigest()!=sys.argv[6]):
-                  raise SystemExit('RC6_A143_STAGED_SOURCE_HASH_RED')
-              candidate=types.ModuleType('rc6_a145_staged_quiescence')
-              exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),
-                   candidate.__dict__)
-              if candidate.A143_PENDING_IMAGE_ID!=A143_PENDING_IMAGE_ID:
-                  raise SystemExit('RC6_A143_PINNED_IMAGE_CHANGED')
+              candidate=staged_a143_candidate()
               operator_source=staged_operator_source()
               operator=types.ModuleType('rc6_a151_staged_operator')
               exec(compile(operator_source,'candidate/a151-operator.py','exec'),
@@ -331,6 +334,28 @@ jobs:
                     file=sys.stderr)
               print('A151_HELD_OPEN' if proof.get('operator_hold') else
                     'CLOSED_A143_PENDING_FIX_FORWARD')
+          elif (statuses=={'exited'} and state==('STOPPED','BOOT_CALENDAR') and
+                all(value['Image']==A143_PENDING_IMAGE_ID
+                    for value in originals.values())):
+              # The exact A169 administrative receipt proves both stopped
+              # #751 IDs, A151 hold, flat PAPER books and the failed attempt.
+              # No old container may be restarted or declared healthy.
+              candidate=staged_a143_candidate()
+              operator=types.ModuleType('rc6_a170_staged_operator')
+              exec(compile(staged_operator_source(),'candidate/a170-operator.py','exec'),
+                   operator.__dict__)
+              prior,prior_sha,book=candidate.a169_prior_a143_stopped_proof(
+                  sys.argv[1],originals,
+                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_timer_disabled=operator.operator_preopen_timer_disabled)
+              if (prior.get('status')!='PRIOR_A143_UNVALIDATED_HELD_STOPPED' or
+                      prior['a143_previous_proof'].get('image_id')!=A143_PENDING_IMAGE_ID or
+                      book.get('real_orders_sent')!=0 or
+                      not isinstance(prior_sha,str) or len(prior_sha)!=64):
+                  raise SystemExit('RC6_A169_PRIOR_STOPPED_PROOF_RED')
+              print('RC6_A169_HELD_STOPPED_RECOVERY=ADMITTED|health=RED|PAPER=0',
+                    file=sys.stderr)
+              print('A151_HELD_STOPPED')
           elif statuses=={'running'} and state in (
                   ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
               # Incident-specific postclose rescue of the installed A92 image.
@@ -595,7 +620,7 @@ jobs:
               raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
           PY
           )"
-          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|A151_HELD_OPEN) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
+          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
           echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
           if [ "$SESSION_MODE" = DEGRADED_CLOSED_20261026 ]; then
             echo 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED|PAPER=0'
@@ -603,6 +628,8 @@ jobs:
             echo 'RC6_PAPER_SESSION=PRIOR_RESCUE_STOP_ADMITTED|runtime=STOPPED|health=RED|PAPER=0'
           elif [ "$SESSION_MODE" = A151_HELD_OPEN ]; then
             echo 'RC6_PAPER_SESSION=A151_EXACT_NO_GO_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = A151_HELD_STOPPED ]; then
+            echo 'RC6_PAPER_SESSION=A169_EXACT_NO_GO_ADMITTED|runtime=STOPPED|health=RED|PAPER=0'
           elif [ "$SESSION_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
             echo 'RC6_PAPER_SESSION=A143_UNVALIDATED_RECOVERY_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
           else
@@ -628,7 +655,7 @@ jobs:
 
       - name: Require exact intraday owner authorization for OPEN suspension
         id: a151_intraday_auth
-        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}
+        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -730,7 +757,8 @@ jobs:
             if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ] || \
                [ "$RC6_QUIESCENCE_MODE" = CLOSED_STOPPED_FAILED_RESCUE ] || \
                [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
-               [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ]; then
+               [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || \
+               [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ]; then
               echo 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer'
               exit 37
             fi
@@ -907,8 +935,9 @@ jobs:
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
           A143_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
-             [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ]; then
-            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+             [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || \
+             [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
           fi
           timeout 240 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
@@ -924,12 +953,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
-          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) FLAG='--adopt-a143-stopped-pending --a151-held-open';; *) exit 31;; esac
           AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
           fi
-          A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
+          A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
           A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
           DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + 4096 ))
           if [ "$DRAIN_ARG_BOUND" -gt 110000 ]; then
@@ -1119,12 +1148,14 @@ jobs:
 
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
-          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) QUIESCENCE_FLAG='--adopt-a143-stopped-pending --a151-held-open';; *) exit 31;; esac
           QUIESCENCE_AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
           fi
-          A125_CANDIDATE_SOURCE_GZIP_B64="$(gzip -9 -c "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | base64 -w0)"
+          # The reproducible bundle records mtime=0. GNU gzip reads fstat
+          # even from stdin; -n omits file metadata so pipefail remains GREEN.
+          A125_CANDIDATE_SOURCE_GZIP_B64="$(gzip -9 -n -c < "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | base64 -w0)"
           A125_CANDIDATE_SOURCE_SHA256="$(sha256sum "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | cut -d' ' -f1)"
           sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_GZIP_B64="$A125_CANDIDATE_SOURCE_GZIP_B64" RC6_A125_CANDIDATE_SOURCE_SHA256="$A125_CANDIDATE_SOURCE_SHA256" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
             --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
@@ -1135,7 +1166,7 @@ jobs:
           # still must pass the independent flat-book verification below.
           case "$RC6_QUIESCENCE_MODE" in
             CLOSED_CAUCION) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|OPEN_CARRYOVER'; exit 31;;
-            OPEN|CLOSED|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|A151_HELD_OPEN) ;;
+            OPEN|CLOSED|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;;
             *) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|QUIESCENCE_UNKNOWN'; exit 31;;
           esac
 
@@ -1195,6 +1226,7 @@ jobs:
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
           if [[ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ||
                 "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ||
+                "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ||
                 "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]]; then
             # Persist frozen manifest digest and materialized Docker identity
             # before mode_manager can replace either container. A failure
@@ -1267,7 +1299,7 @@ jobs:
           # allocation, fill or real broker route may be updated. An identical
           # post-failure replay is idempotent (inserted=0), not a second fill.
           INTRADAY_OWNER_FLAG=()
-          if [ "$RC6_QUIESCENCE_MODE" = OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ]; then
+          if [ "$RC6_QUIESCENCE_MODE" = OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ]; then
             [[ "$RC6_A151_OWNER_INTRADAY_ID" =~ ^[1-9][0-9]*$ ]]
             INTRADAY_OWNER_FLAG=(--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID")
           else
@@ -2301,11 +2333,20 @@ jobs:
               "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_payload timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'" \
               < scripts/rc6_deploy_failure_cleanup.py
           }
+          RECOVERY_A125_ENV=''
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_STOPPED ]; then
+            # Recovery executes from stdin before this source is installed.
+            # A151 stopped continuation requires the exact candidate callback;
+            # the old #751 host module cannot prove it.
+            RECOVERY_A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py | base64 -w0) RC6_A125_CANDIDATE_SOURCE_SHA256=$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
+          fi
           RECOVERY_OUTPUT="$(timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_recover python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_recover env $RECOVERY_A125_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
             < scripts/rc6_deploy_quiescence.py)"
           RECOVERY_RC=$?
           echo "$RECOVERY_OUTPUT"
@@ -2351,7 +2392,8 @@ jobs:
             SCHEDULER_ACTION=recover-adopted-rescue
           fi
           if { [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
-               [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ]; } && \
+               [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ] || \
+               [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_STOPPED ]; } && \
              [ '${{ steps.suspend.outcome }}' = success ]; then
             # Keep 15 paused + the one OAuth guardian on any failed A145
             # install; #751 was never VALIDADO_RUNTIME.
@@ -2359,8 +2401,9 @@ jobs:
           fi
           A143_ENV=''
           if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
-             [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ]; then
-            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+             [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_STOPPED ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
           fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \

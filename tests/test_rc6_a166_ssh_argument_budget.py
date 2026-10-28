@@ -84,7 +84,7 @@ def test_workflow_bounds_both_preinstall_and_drain_routes():
     assert 'Bound source-bearing SSH arguments before host contact' in workflow
     assert 'RC6_CLASSIFY_REMOTE_ARGUMENT=RED' in workflow
     assert 'RC6_DRAIN_REMOTE_ARGUMENT=RED' in workflow
-    assert workflow.count('gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py') >= 2
+    assert workflow.count('gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py') >= 2
     assert "RC6_A125_CANDIDATE_SOURCE_GZIP_B64=\"$A125_CANDIDATE_SOURCE_GZIP_B64\"" in workflow
     assert "RC6_A125_CANDIDATE_SOURCE_SHA256=\"$A125_CANDIDATE_SOURCE_SHA256\"" in workflow
     assert "sys.argv[5]" in workflow and 'staged_operator_source()' in workflow

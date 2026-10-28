@@ -505,6 +505,104 @@ def a151_open_incident(incident, monkeypatch):
     return root,folder,db,states
 
 
+def a169_stopped_incident(incident, monkeypatch):
+    """Create the exact preinstall failure from an already proven A151 drain."""
+    root, folder, db, states = a151_open_incident(incident, monkeypatch)
+    drained = q.run(SHA, 'drain', allow_a143_pending_running=True,
+                    allow_a151_held_open=True)
+    prior = dict(drained, candidate_sha=q.A169_PRIOR_CANDIDATE,
+                 status='PRIOR_A143_UNVALIDATED_HELD_STOPPED',
+                 runtime_health='PRIOR_A143_PENDING_NOT_GO',
+                 administrative_reconciliation={
+                     'schema':'rc6.a169.exact-held-stop.v1',
+                     'failure_signature':'GZIP_STAGED_MTIME_OUT_OF_RANGE',
+                     'host_attempt':[q.A169_PRIOR_CANDIDATE,q.A169_PRIOR_RUN,
+                                     q.A169_PRIOR_ATTEMPT],
+                     'prior_receipt_sha256':q.A169_FAILED_RECEIPT_SHA256})
+    target=folder/('quiescence-'+q.A169_PRIOR_CANDIDATE+'.json')
+    q.persist(target,prior)
+    digest=hashlib.sha256(target.read_bytes()).hexdigest()
+    monkeypatch.setattr(q,'A169_PRIOR_RECEIPT_SHA256',digest)
+    return root,folder,db,states,prior,target,digest
+
+
+def test_a169_stopped_parent_is_adopted_without_docker_stop_or_restart(
+        incident,monkeypatch):
+    _,folder,_,states,prior,_,digest=a169_stopped_incident(incident,monkeypatch)
+    monkeypatch.setattr(q,'command',lambda *_:pytest.fail('no Docker mutation permitted'))
+    candidate='f'*40
+    receipt=q.run(candidate,'drain',allow_a143_pending_stopped=True,
+                  allow_a151_held_open=True)
+    assert receipt['status']=='DRAINED' and receipt['installation_started'] is False
+    assert receipt['a169_origin_candidate']==q.A169_PRIOR_CANDIDATE
+    assert receipt['a169_origin_sha256']==digest
+    assert receipt['a143_previous_proof']==prior['a143_previous_proof']
+    assert receipt['stop_evidence']==prior['stop_evidence']
+    assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
+    assert q.run(candidate,'install',allow_a143_pending_stopped=True,
+                 allow_a151_held_open=True)['installation_started'] is True
+    assert json.loads((folder/('quiescence-'+candidate+'.json')).read_text())['status']=='HOST_INSTALLATION_STARTED'
+
+
+@pytest.mark.parametrize('mutation', [None,'origin','new_image','live_docker','no_go'])
+def test_a169_poststart_requires_new_image_flat_paper_and_exact_no_go(
+        incident,monkeypatch,mutation):
+    _,folder,db,states,_,prior_path,digest=a169_stopped_incident(incident,monkeypatch)
+    candidate='f'*40
+    q.run(candidate,'drain',allow_a143_pending_stopped=True,
+          allow_a151_held_open=True)
+    receipt=q.run(candidate,'install',allow_a143_pending_stopped=True,
+                  allow_a151_held_open=True)
+    new_image='sha256:'+'d'*64
+    receipt['candidate_image_intent']={'image_id':new_image}
+    new_path=folder/('quiescence-'+candidate+'.json')
+    q.persist(new_path,receipt)
+    for index,name in enumerate(q.OWNED):
+        states[name]['Id']=str(index+1)*64
+        states[name]['Image']=new_image
+        states[name]['State']['Status']='running'
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='RUNNING',session_state='MARKET_OPEN',heartbeat_at='2026-10-28T14:03:55+00:00'")
+    if mutation=='origin':
+        prior_path.write_bytes(prior_path.read_bytes()+b' ')
+    elif mutation=='new_image':
+        receipt['candidate_image_intent']['image_id']='sha256:'+'e'*64
+        q.persist(new_path,receipt)
+    elif mutation=='live_docker':
+        states[q.OWNED[0]]['State']['Status']='exited'
+    elif mutation=='no_go':
+        monkeypatch.setattr(q,'candidate_operator_module',lambda **_:
+            SimpleNamespace(exact_a151_operator_preopen_pause=lambda:('a'*64,'A151-1-1'),
+                            operator_preopen_timer_disabled=lambda:True))
+    if mutation is None:
+        assert q.admit_poststart_flat(q.A151_HELD_STOPPED_MODE,candidate)=='OPEN'
+        assert digest==receipt['a169_origin_sha256']
+    else:
+        with pytest.raises(ValueError,match='QUIESCENCE_A169_POSTSTART'):
+            q.admit_poststart_flat(q.A151_HELD_STOPPED_MODE,candidate)
+
+
+@pytest.mark.parametrize('change', ['parent_digest','admin_attempt','docker_id','paper_order'])
+def test_a169_stopped_parent_tamper_fails_before_next_candidate_receipt(
+        incident,monkeypatch,change):
+    _,folder,db,states,prior,target,_=a169_stopped_incident(incident,monkeypatch)
+    if change=='parent_digest':
+        target.write_bytes(target.read_bytes()+b' ')
+    elif change=='admin_attempt':
+        prior['administrative_reconciliation']['host_attempt'][-1]='3'
+        q.persist(target,prior)
+        monkeypatch.setattr(q,'A169_PRIOR_RECEIPT_SHA256',hashlib.sha256(target.read_bytes()).hexdigest())
+    elif change=='docker_id':
+        states[q.OWNED[0]]['Id']='f'*64
+    else:
+        with sqlite3.connect(db) as c:
+            c.execute('UPDATE observer_state SET real_orders_sent=1')
+    with pytest.raises(ValueError):
+        q.run('f'*40,'drain',allow_a143_pending_stopped=True,
+              allow_a151_held_open=True)
+    assert not (folder/('quiescence-'+'f'*40+'.json')).exists()
+
+
 def test_a151_held_open_exact_a143_flat_drain_and_stopped_boot_calendar(
         incident,monkeypatch):
     _,_,db,states=a151_open_incident(incident,monkeypatch)
