@@ -1,0 +1,466 @@
+name: RC6 A151 operator PAPER hold 2026-10-28 (manual review only)
+
+# Initial diagnostic commit: intentionally no automatic event trigger.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  operator-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Issue append-only A151 hold and independent NO GO sidecar
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          timeout --signal=TERM --kill-after=5s 160s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading timeout 145 python3 - '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'" <<'PYHOST'
+          """A151 operator hold: no service/timer/DB/container/provider mutations.
+
+          Preserve the exact historical A125 LIVE gate. A151 publishes only
+          two independent dated sidecars; new runtime code must separately
+          verify and consume those sidecars. This workflow NEVER grants GO.
+          """
+          import hashlib
+          import json
+          import os
+          import re
+          import sqlite3
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          DAY = '2026-10-28'
+          SOURCE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
+          PRODUCT = '6676267140907a17e342a664f718cfdcf9b3ce72'
+          IMAGE = 'sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
+          OLD_SOURCE = '3fd020f408275a490e911e06f60a1ddc89153fe5'
+          OLD_PRODUCT = '2bd9dbf576b253b8f83aab159c784d7fa7d06d89'
+          OLD_IMAGE = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+          ROOT = Path('/opt/porota-trading')
+          DEPLOY = ROOT / 'data/deploy'
+          LIVE = DEPLOY / 'paper_scalping_preopen_gate_v1.json'
+          OLD = DEPLOY / 'operator-preopen-pause-20261027.json'
+          RECEIPT = DEPLOY / 'operator-preopen-pause-20261028.json'
+          SIDECAR = DEPLOY / 'paper_scalping_operator_hold_20261028.json'
+          MARKER = DEPLOY / 'CURRENT_STATE_V2.json'
+          A138 = DEPLOY / 'scheduler-suspend-dd22a1b0761cc4f231813edb6b502d1dd21bb8de.json'
+          TIMER = 'porota-preopen-rc6.timer'
+          SERVICE = 'porota-preopen-rc6.service'
+          TZ = ZoneInfo('America/Argentina/Buenos_Aires')
+          stage = 'INIT'
+
+          def require(condition, code):
+              if not condition:
+                  raise ValueError(code)
+
+          def unique(items):
+              result = {}
+              for key, value in items:
+                  require(key not in result, 'DUPLICATE_JSON_KEY')
+                  result[key] = value
+              return result
+
+          def reject_constant(_):
+              raise ValueError('NONFINITE_JSON')
+
+          def safe_bytes(path, limit, mode=None):
+              st = os.lstat(path)
+              require(stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and
+                      0 < st.st_size <= limit and
+                      (mode is None or (st.st_uid == 0 and
+                       stat.S_IMODE(st.st_mode) == mode)), 'FILE_UNSAFE')
+              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+              try:
+                  opened = os.fstat(fd)
+                  require((opened.st_dev, opened.st_ino) == (st.st_dev, st.st_ino),
+                          'FILE_RACED')
+                  raw = os.read(fd, limit + 1)
+                  require(len(raw) == st.st_size and len(raw) <= limit, 'FILE_BOUNDS')
+                  return raw
+              finally:
+                  os.close(fd)
+
+          def digest(raw):
+              return hashlib.sha256(raw).hexdigest()
+
+          def load_json(path, limit, mode=None):
+              raw = safe_bytes(path, limit, mode)
+              value = json.loads(raw, object_pairs_hook=unique,
+                                 parse_constant=reject_constant)
+              require(type(value) is dict, 'OBJECT_EXPECTED')
+              return value, digest(raw)
+
+          def command(args, check=True):
+              done = subprocess.run(args, capture_output=True, text=True,
+                                    check=False, timeout=10)
+              if check:
+                  require(done.returncode == 0, 'READ_ONLY_COMMAND_RED')
+              return done.stdout.strip()
+
+          def unit_state(name):
+              enabled = command(['systemctl', 'is-enabled', name], check=False)
+              active = command(['systemctl', 'is-active', name], check=False)
+              require(enabled in {'enabled','disabled','static','masked'} and
+                      active in {'active','inactive','failed'}, 'UNIT_STATE_UNKNOWN')
+              return {'enabled': enabled, 'active': active}
+
+          def docker(name):
+              item = json.loads(command(['docker', 'inspect', '--format',
+                                         '{{json .}}', name]))
+              state = item.get('State') or {}
+              ident = item.get('Id')
+              require(type(ident) is str and re.fullmatch('[0-9a-f]{64}', ident),
+                      'CONTAINER_ID_RED')
+              return {'id': ident, 'image': item.get('Image'),
+                      'state': state.get('Status'), 'running': state.get('Running'),
+                      'restart_count': item.get('RestartCount'),
+                      'oom_killed': state.get('OOMKilled'),
+                      'health': (state.get('Health') or {}).get('Status')}
+
+          def paper():
+              db_path = ROOT / 'data/paper_v17/observer_v17.db'
+              require(not db_path.is_symlink() and db_path.is_file(), 'PAPER_DB_UNSAFE')
+              uri = db_path.as_uri() + '?mode=ro'
+              with sqlite3.connect(uri, uri=True, timeout=.3) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  db.execute('PRAGMA busy_timeout=300')
+                  row = db.execute('SELECT mode,real_orders_sent,process_state,session_state '
+                                   'FROM observer_state WHERE id=1 LIMIT 1').fetchone()
+                  require(row is not None and row[0] == 'PRODUCTION_PAPER' and
+                          type(row[1]) is int and row[1] == 0, 'PAPER_MODE_OR_ORDERS_RED')
+                  counts = [db.execute(query).fetchone() is not None for query in (
+                      "SELECT 1 FROM paper_positions WHERE status='OPEN' LIMIT 1",
+                      "SELECT 1 FROM paper_cauciones WHERE status='OPEN' LIMIT 1",
+                      "SELECT 1 FROM paper_future_positions WHERE status='ACTIVE' LIMIT 1",
+                  )]
+              require(not any(counts), 'PAPER_OPEN_EXPOSURE_PRESENT')
+              return {'mode': row[0], 'real_orders_sent': row[1],
+                      'process': row[2], 'session': row[3],
+                      'open_spot': int(counts[0]),
+                      'open_caucion': int(counts[1]),
+                      'active_future': int(counts[2])}
+
+          def timer_hold():
+              old, a138_sha = load_json(A138, 65536)
+              names = old.get('timers')
+              require(old.get('candidate_sha') == 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de' and
+                      old.get('status') == 'SUSPENDED' and
+                      type(names) is list and len(names) == 16 and
+                      len(set(names)) == 16 and TIMER in names and
+                      old.get('operator_pause_timer') == TIMER, 'A138_HOLD_RECEIPT_RED')
+              result = {}
+              for name in names:
+                  require(type(name) is str and
+                          re.fullmatch(r'porota-[a-z0-9-]+\.timer', name) and
+                          not ({'ppi', 'watch', 'critical'} & set(name.split('-'))),
+                          'OWNED_TIMER_NAME_RED')
+                  actual = unit_state(name)
+                  want = ({'enabled':'disabled', 'active':'inactive'} if name == TIMER
+                          else {'enabled':'enabled', 'active':'inactive'})
+                  require(actual == want, 'OWNED_TIMER_NOT_HELD')
+                  service = command(['systemctl','show',name,'-p','Unit','--value'])
+                  require(re.fullmatch(r'porota-[a-z0-9-]+\.service', service),
+                          'OWNED_TIMER_SERVICE_RED')
+                  require(unit_state(service)['active'] in {'inactive', 'failed'},
+                          'OWNED_SERVICE_RUNNING')
+                  result[name] = {'unit': actual, 'service': service}
+              return result, a138_sha
+
+          def old_hold():
+              historic, old_sha = load_json(OLD, 65536)
+              live, live_sha = load_json(LIVE, 4096)
+              try:
+                  issued = datetime.fromisoformat(historic['issued_at_utc'])
+                  completed = datetime.fromisoformat(historic['completed_at_utc'])
+                  timely = (issued.tzinfo is not None and completed.tzinfo is not None
+                            and 0 <= (completed-issued).total_seconds() <= 300
+                            and completed.astimezone(TZ).date().isoformat() == '2026-10-27')
+              except (ValueError, KeyError, TypeError, AttributeError):
+                  timely = False
+              require(timely and historic.get('schema') == 'rc6.operator-preopen-pause.v1' and
+                      historic.get('status') == 'PAUSED_NO_GO' and
+                      historic.get('operation_id') == 'A125-40501523106-1' and
+                      historic.get('trade_day_ar') == '2026-10-27' and
+                      historic.get('source_sha') == OLD_SOURCE and
+                      historic.get('product_sha') == OLD_PRODUCT and
+                      historic.get('image_id') == OLD_IMAGE and
+                      historic.get('gate_after_sha256') == live_sha and
+                      historic.get('timer_after') == {'enabled':'disabled','active':'inactive'} and
+                      historic.get('service_after',{}).get('enabled') == 'static' and
+                      historic.get('service_after',{}).get('active') in {'failed','inactive'} and
+                      historic.get('containers_before') == historic.get('containers_after') and
+                      historic.get('paper_before',{}).get('real_orders_sent') == 0 and
+                      historic.get('paper_after',{}).get('real_orders_sent') == 0 and
+                      historic.get('ppi_watch_accessed') is False and
+                      historic.get('provider_requests') == 0 and
+                      historic.get('admission_allowed') is False and
+                      live.get('schema') == 'RC6_PAPER_PREOPEN_GATE_V1' and
+                      live.get('status') == 'NO_GO_PAPER_SCALPING' and
+                      live.get('trade_day_ar') == '2026-10-27' and
+                      live.get('candidate_sha') == OLD_SOURCE and
+                      live.get('phase') == 'OPERATOR_PAUSE' and
+                      historic.get('gate_after') == {k:live.get(k) for k in
+                          ('status','trade_day_ar','candidate_sha','phase')},
+                      'A125_HISTORICAL_PROOF_RED')
+              return old_sha, live_sha
+
+          def create_once(path, value, mode):
+              require(not path.is_symlink() and not path.exists(), 'TARGET_ALREADY_EXISTS')
+              raw = (json.dumps(value, sort_keys=True, separators=(',',':'),
+                                allow_nan=False)+'\n').encode('utf-8')
+              require(len(raw) < 65536, 'PAYLOAD_TOO_LARGE')
+              fd, temp = tempfile.mkstemp(prefix='.a151-hold-', dir=DEPLOY)
+              try:
+                  with os.fdopen(fd, 'wb') as out:
+                      os.fchmod(out.fileno(), mode)
+                      out.write(raw); out.flush(); os.fsync(out.fileno())
+                  # Atomic creation without overwriting existing evidence.
+                  os.link(temp, path, follow_symlinks=False)
+                  dirfd = os.open(DEPLOY, os.O_RDONLY | os.O_DIRECTORY)
+                  try: os.fsync(dirfd)
+                  finally: os.close(dirfd)
+              finally:
+                  if os.path.exists(temp): os.unlink(temp)
+              return digest(raw)
+
+          def finalize_receipt(value):
+              current, _ = load_json(RECEIPT, 65536, 0o600)
+              require(current.get('status') == 'INTENT' and
+                      current.get('operation_id') == value['operation_id'],
+                      'INTENT_REPLACED_OR_UNSAFE')
+              raw = (json.dumps(value, sort_keys=True, separators=(',',':'),
+                                allow_nan=False)+'\n').encode('utf-8')
+              require(len(raw) < 65536, 'FINAL_RECEIPT_TOO_LARGE')
+              fd, temp = tempfile.mkstemp(prefix='.a151-final-', dir=DEPLOY)
+              try:
+                  with os.fdopen(fd, 'wb') as out:
+                      os.fchmod(out.fileno(), 0o600)
+                      out.write(raw); out.flush(); os.fsync(out.fileno())
+                  os.replace(temp, RECEIPT)
+                  dirfd = os.open(DEPLOY, os.O_RDONLY | os.O_DIRECTORY)
+                  try: os.fsync(dirfd)
+                  finally: os.close(dirfd)
+              finally:
+                  if os.path.exists(temp): os.unlink(temp)
+
+          lock = None
+          try:
+              stage = 'HOST_MUTEX'
+              require(os.geteuid() == 0 and len(sys.argv) == 3 and
+                      all(re.fullmatch(r'[1-9][0-9]*', x) for x in sys.argv[1:]),
+                      'INVOCATION_RED')
+              now = datetime.now(timezone.utc)
+              art = now.astimezone(TZ)
+              require(art.date().isoformat() == DAY and
+                      (art.hour, art.minute) < (10, 20), 'OPERATOR_WINDOW_CLOSED')
+              require(DEPLOY.is_dir() and not DEPLOY.is_symlink(), 'DEPLOY_ROOT_UNSAFE')
+              from scripts.rc6_deploy_host_mutex import (open_lock, _read_barrier,
+                                                        _contract_writers, LOCK_DIR)
+              lock = open_lock()
+              require(_read_barrier(LOCK_DIR) is None and not _contract_writers(),
+                      'DEPLOY_BARRIER_OR_WRITER_ACTIVE')
+
+              stage = 'READ_ONLY_PREFLIGHT'
+              marker, marker_sha = load_json(MARKER, 65536)
+              require(marker.get('candidate_sha') == SOURCE and
+                      marker.get('deploy_sha') == PRODUCT and
+                      marker.get('image_id') == IMAGE and
+                      marker.get('validation_status') == 'DEPLOYED_VALIDATION_PENDING' and
+                      marker.get('mode') == 'PRODUCTION_PAPER' and
+                      type(marker.get('real_orders_sent')) is int and
+                      marker['real_orders_sent'] == 0 and
+                      marker.get('real_order_routes') == 'NOT_CALLED',
+                      'A143_PENDING_IDENTITY_RED')
+              marker_before = {key: marker.get(key) for key in
+                               ('candidate_sha','deploy_sha','image_id','validation_status',
+                                'mode','real_orders_sent','real_order_routes')}
+              old_sha, live_sha = old_hold()
+              held_before, a138_sha = timer_hold()
+              before_timer = unit_state(TIMER)
+              before_service = unit_state(SERVICE)
+              require(before_timer == {'enabled':'disabled','active':'inactive'} and
+                      before_service['enabled'] == 'static' and
+                      before_service['active'] in {'failed','inactive'},
+                      'PREOPEN_HOLD_RED')
+              names = ('porota_production_observer','porota_production_dashboard',
+                       'porota_critical_approval_rc6')
+              before = {name: docker(name) for name in names}
+              require(all(before[name]['image'] == IMAGE and
+                          before[name]['state'] == 'running' and
+                          before[name]['running'] is True and
+                          before[name]['oom_killed'] is False
+                          for name in names[:2]), 'A143_RUNTIME_RED')
+              require(before[names[2]]['state'] == 'running' and
+                      before[names[2]]['health'] == 'healthy', 'CRITICAL_ADMISSION_RED')
+              book = paper()
+              from rc6_paper_admission_gate import admission_status
+              allowed, reason = admission_status(now=art, candidate_sha=SOURCE,
+                                                 receipt_path=LIVE)
+              require(allowed is False and reason == 'NO_GO_PAPER_SCALPING',
+                      'BEFORE_ADMISSION_VETO_RED')
+
+              stage = 'IDEMPOTENCY'
+              if RECEIPT.exists() or SIDECAR.exists():
+                  require(RECEIPT.exists() and SIDECAR.exists(), 'PARTIAL_PRIOR_HOLD')
+                  existing, _ = load_json(RECEIPT, 65536, 0o600)
+                  previous, previous_sha = load_json(SIDECAR, 65536, 0o644)
+                  require(existing.get('schema') == 'rc6.operator-preopen-pause.v2' and
+                          existing.get('status') == 'PAUSED_NO_GO' and
+                          existing.get('trade_day_ar') == DAY and
+                          re.fullmatch(r'A151-[1-9][0-9]*-[1-9][0-9]*',
+                                       existing.get('operation_id','')) and
+                          existing.get('source_sha') == SOURCE and
+                          existing.get('deploy_sha') == PRODUCT and
+                          existing.get('image_id') == IMAGE and
+                          existing.get('marker_before_sha256') == marker_sha and
+                          existing.get('a125_receipt_sha256') == old_sha and
+                          existing.get('gate_before_sha256') == live_sha and
+                          existing.get('sidecar_after_sha256') == previous_sha and
+                          previous.get('operation_id') == existing['operation_id'] and
+                          previous.get('execution_authorized') is False and
+                          previous.get('status') == 'NO_GO_PAPER_SCALPING' and
+                          previous.get('trade_day_ar') == DAY,
+                          'EXISTING_HOLD_UNVERIFIED')
+                  print('RC6_A151_HOLD=ALREADY_PUBLISHED|NO_GO=TRUE|PAPER=0|MUTATIONS=0')
+                  raise SystemExit(0)
+
+              stage = 'ISSUE_INTENT'
+              operation = 'A151-' + sys.argv[1] + '-' + sys.argv[2]
+              intent = {'schema':'rc6.operator-preopen-pause.v2', 'status':'INTENT',
+                        'trade_day_ar':DAY, 'operation_id':operation,
+                        'issued_at_utc':now.isoformat(),
+                        'source_sha':SOURCE, 'deploy_sha':PRODUCT, 'image_id':IMAGE,
+                        'marker_before_sha256':marker_sha,
+                        'marker_before':marker_before,
+                        'a125_receipt_sha256':old_sha,
+                        'gate_before_sha256':live_sha,
+                        'a138_receipt_sha256':a138_sha,
+                        'timer_before':before_timer, 'service_before':before_service,
+                        'paper_before':book, 'containers_before':before,
+                        'owned_timers_before':held_before,
+                        'operator_paper_paused':True, 'ppi_watch_accessed':False,
+                        'provider_requests':0, 'admission_allowed':False}
+              # Timing and current-state preflight must be fresh at publication.
+              now_pub = datetime.now(timezone.utc)
+              require(now_pub.astimezone(TZ).date().isoformat() == DAY and
+                      (now_pub.astimezone(TZ).hour,
+                       now_pub.astimezone(TZ).minute) < (10,20),
+                      'OPERATOR_WINDOW_CLOSED_BEFORE_WRITE')
+              create_once(RECEIPT, intent, 0o600)
+
+              stage = 'PUBLISH_INDEPENDENT_NO_GO'
+              sidecar = {'schema':'RC6_PAPER_OPERATOR_HOLD_V1',
+                         'status':'NO_GO_PAPER_SCALPING',
+                         'trade_day_ar':DAY, 'phase':'OPERATOR_PAUSE',
+                         'candidate_sha':SOURCE, 'source_sha':SOURCE,
+                         'deploy_sha':PRODUCT, 'image_id':IMAGE,
+                         'operation_id':operation, 'issued_at_ar':now_pub.astimezone(TZ).isoformat(),
+                         'operator_paper_paused':True,
+                         'execution_authorized':False, 'readiness_verified':False,
+                         'a125_receipt_sha256':old_sha,
+                         'gate_before_sha256':live_sha,
+                         'marker_before_sha256':marker_sha,
+                         'mode':'PRODUCTION_PAPER', 'real_orders_sent':0,
+                         'reason':'OPERATOR_PAPER_PAUSE_2026_10_28'}
+              sidecar_sha = create_once(SIDECAR, sidecar, 0o644)
+
+              stage = 'POSTCHECK'
+              require(load_json(LIVE, 4096)[1] == live_sha and
+                      load_json(MARKER, 65536)[1] == marker_sha,
+                      'HISTORICAL_GATE_OR_A143_MARKER_CHANGED')
+              held_after, after_a138_sha = timer_hold()
+              require(held_after == held_before and after_a138_sha == a138_sha and
+                      unit_state(TIMER) == before_timer and
+                      unit_state(SERVICE) == before_service,
+                      'TIMER_OR_SERVICE_CHANGED')
+              after = {name: docker(name) for name in names}
+              require(after == before, 'CONTAINER_CHANGED')
+              after_book = paper()
+              require(after_book['mode'] == 'PRODUCTION_PAPER' and
+                      after_book['real_orders_sent'] == 0 and
+                      all(after_book[name] == 0 for name in
+                          ('open_spot','open_caucion','active_future')),
+                      'PAPER_AFTER_RED')
+              allowed, reason = admission_status(now=datetime.now(TZ),
+                                                 candidate_sha=SOURCE,
+                                                 receipt_path=LIVE)
+              require(allowed is False and reason == 'NO_GO_PAPER_SCALPING',
+                      'ADMISSION_VETO_AFTER_RED')
+              require(load_json(SIDECAR, 65536, 0o644)[1] == sidecar_sha,
+                      'SIDECAR_READBACK_RED')
+
+              stage = 'COMMIT_RECEIPT'
+              completed = datetime.now(timezone.utc)
+              require(0 <= (completed-now).total_seconds() <= 155,
+                      'PUBLICATION_TIME_BOUND')
+              receipt = {**intent, 'status':'PAUSED_NO_GO',
+                         'completed_at_utc':completed.isoformat(),
+                         'timer_after':unit_state(TIMER),
+                         'service_after':unit_state(SERVICE),
+                         'paper_after':after_book, 'containers_after':after,
+                         'owned_timers_after':held_after,
+                         'sidecar_after_sha256':sidecar_sha,
+                         'sidecar_after':{key:sidecar[key] for key in
+                             ('status','trade_day_ar','candidate_sha','phase','operation_id')},
+                         'gate_after_sha256':live_sha,
+                         'admission_allowed':False}
+              finalize_receipt(receipt)
+              committed, _ = load_json(RECEIPT, 65536, 0o600)
+              require(committed == receipt and
+                      load_json(LIVE, 4096)[1] == live_sha,
+                      'FINAL_READBACK_RED')
+              print('RC6_A151_HOLD=PAUSED_NO_GO|day=2026-10-28|NO_GO=TRUE|'
+                    'sidecar_sha256='+sidecar_sha+'|PAPER=0|open_spot=0|'
+                    'open_caucion=0|active_future=0|owned_timers=16|MUTATIONS=2_SIDECARS')
+          except SystemExit:
+              raise
+          except Exception as exc:
+              print('RC6_A151_HOLD=RED|stage='+stage+'|class='+type(exc).__name__,
+                    file=sys.stderr)
+              raise SystemExit(1)
+          finally:
+              if lock is not None:
+                  os.close(lock)
+          PYHOST
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
