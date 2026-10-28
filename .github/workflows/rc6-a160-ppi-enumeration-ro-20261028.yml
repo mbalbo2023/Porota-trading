@@ -1,0 +1,112 @@
+name: RC6 A160 systemctl PPI enumeration timing read-only
+
+on:
+  push:
+    branches: [diagnostic/rc6-iol-source-health-ro-20261028]
+    paths: [.github/workflows/rc6-a160-ppi-enumeration-ro-20261028.yml]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  timing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a160_timing"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a160_timing" "$HOME/.ssh/known_hosts"
+      - name: Time bounded read-only systemd enumeration on exact Droplet
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 35s \
+            ssh -T -i "$HOME/.ssh/rc6_a160_timing" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -B -' <<'PY' | tee "$RUNNER_TEMP/rc6-a160-ppi-timing.jsonl"
+          import json,re,sqlite3,subprocess,time,urllib.request
+          from pathlib import Path
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          def metadata(key):
+              with opener.open('http://169.254.169.254/metadata/v1/'+key,timeout=2) as response:
+                  return response.read(64).decode('ascii').strip()
+          identity={'id':metadata('id'),'region':metadata('region')}
+          if identity!={'id':'594077619','region':'nyc1'}:
+              raise SystemExit('DROPLET_IDENTITY_RED')
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          if row!=('PRODUCTION_PAPER',0):
+              raise SystemExit('PAPER_SAFETY_RED')
+          attempts=[]
+          for limit in (1.5,6.0,6.0):
+              start=time.monotonic()
+              try:
+                  p=subprocess.run(['systemctl','list-unit-files','--no-legend'],
+                                   text=True,capture_output=True,timeout=limit,check=False)
+                  lines=p.stdout.splitlines()
+                  count=sum({'ppi','watch'}<=set(re.split(r'[-_.@]',s.split()[0].lower()))
+                            for s in lines if s.split())
+                  attempts.append({'timeout_seconds':limit,'elapsed_seconds':round(time.monotonic()-start,3),
+                                   'exit_code':p.returncode,'stdout_bytes':len(p.stdout.encode()),
+                                   'stderr_bytes':len(p.stderr.encode()),'unit_count':len(lines),
+                                   'ppi_watch_match_count':count})
+              except subprocess.TimeoutExpired:
+                  attempts.append({'timeout_seconds':limit,'elapsed_seconds':round(time.monotonic()-start,3),
+                                   'exit_code':124,'timed_out':True})
+          report={'schema':'RC6_A160_PPI_ENUMERATION_RO_V1','droplet_identity':identity,
+                  'paper_safety':{'mode':row[0],'real_orders_sent':row[1]},
+                  'host_mutations':0,'ppi_watch_mutations':0,'attempts':attempts}
+          print('RC6_A160_PPI_TIMING='+json.dumps(report,sort_keys=True,separators=(',',':')))
+          PY
+      - name: Publish sanitized timing receipt
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - "$RUNNER_TEMP/rc6-a160-ppi-timing.jsonl" <<'PY'
+          import json,os,sys,urllib.request
+          from pathlib import Path
+          path=Path(sys.argv[1]); evidence='NO_HOST_RECEIPT'
+          if path.is_file():
+              lines=path.read_text().splitlines()
+              if len(lines)==1 and lines[0].startswith('RC6_A160_PPI_TIMING='):
+                  data=json.loads(lines[0].split('=',1)[1])
+                  if data.get('schema')=='RC6_A160_PPI_ENUMERATION_RO_V1':
+                      evidence=json.dumps(data,sort_keys=True,separators=(',',':'))
+          body=('RC6 A160 read-only PPI Watch enumeration timing RCA.\n\n'
+                f'- Run: {os.environ["GITHUB_SERVER_URL"]}/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GITHUB_RUN_ID"]}\n'
+                '- No PPI Watch or host mutation.\n\n```json\n'+evidence+'\n```')
+          request=urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/issues/732/comments',
+              data=json.dumps({'body':body}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                       'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=15) as response:
+              assert response.status==201
+          print('RC6_A160_PPI_TIMING_PUBLISHED=YES')
+          PY
+      - name: Clean runner key and receipt
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a160_timing" "$HOME/.ssh/known_hosts" "$RUNNER_TEMP/rc6-a160-ppi-timing.jsonl"
