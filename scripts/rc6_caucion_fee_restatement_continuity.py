@@ -14,6 +14,7 @@ import re
 import sqlite3
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import urllib.request
 
 ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
@@ -24,6 +25,10 @@ QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
     "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
     "CLOSED_A143_PENDING_FIX_FORWARD",
 })
+A143_SOURCE_SHA = "2325eba329878c62a61cb47bb66d33ccf279bd4a"
+A143_TREE_SHA = "e66e3756769e297687a062bec2fa6e8599c0a275"
+A143_IMAGE_ID = "sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7"
+OWNED = {"porota_production_observer", "porota_production_dashboard"}
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
@@ -35,22 +40,111 @@ def _seal(payload):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def validate_prior_receipt(receipt, candidate, quiescence_mode):
+    """Bind the failed host receipt to its exact original safety admission.
+
+    A151_HELD_OPEN is an A143 NO_GO hold, never a market-open suspension.
+    Keep the recorded operator hold, flat A143 identity and clean stop chain.
+    The normal Deploy admission still checks live host state separately.
+    """
+    if (type(receipt) is not dict or quiescence_mode not in QUIESCENCE_MODES or
+            receipt.get("candidate_sha") != candidate or
+            receipt.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
+            receipt.get("installation_started") is not True or
+            type(receipt.get("real_orders_sent")) is not int or
+            receipt["real_orders_sent"] != 0 or
+            receipt.get("ppi_watch_accessed") is not False):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
+    if quiescence_mode == "OPEN":
+        if receipt.get("market_open_suspended") is not True:
+            raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
+    elif receipt.get("market_open_suspended") is not False:
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
+    prior = receipt.get("a143_previous_proof")
+    if quiescence_mode == "A151_HELD_OPEN":
+        if (receipt.get("a143_pending_adopted") is not True or
+                any(receipt.get(k) is not False for k in (
+                    "open_paper_carryover", "paused_postclose", "intraday_caucion",
+                    "pending_caucion")) or
+                receipt.get("spot_carryover") is not None or
+                receipt.get("caucion_carryover") is not None or
+                type(prior) is not dict or prior.get("close") is not None or
+                prior.get("source_sha") != A143_SOURCE_SHA or
+                prior.get("candidate_tree_sha") != A143_TREE_SHA or
+                prior.get("image_id") != A143_IMAGE_ID or
+                any(type(prior.get(k)) is not str or
+                    re.fullmatch(r"[0-9a-f]{64}", prior[k]) is None
+                    for k in ("marker_sha256", "frozen_sha256", "prior_receipt_sha256"))):
+            raise ValueError("PAPER_RESTATEMENT_A151_HELD_PROOF_RED")
+        book, hold = prior.get("flat_book"), prior.get("operator_hold")
+        if (type(book) is not dict or
+                (book.get("process_state"), book.get("session_state"),
+                 book.get("source_sha"), book.get("real_orders_sent")) != (
+                    "DEGRADED", "BOOT_CALENDAR", A143_SOURCE_SHA, 0) or
+                type(book.get("real_orders_sent")) is not int or
+                type(prior.get("critical_admission")) is not dict or
+                type(hold) is not dict or hold.get("admission") != "A151_HELD_OPEN" or
+                hold.get("business_day_art") != "2026-10-28" or
+                hold.get("paper_execution_authorized") is not False or
+                type(hold.get("operator_receipt_sha256")) is not str or
+                re.fullmatch(r"[0-9a-f]{64}", hold["operator_receipt_sha256"]) is None or
+                type(hold.get("operator_operation_id")) is not str or
+                re.fullmatch(r"A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}",
+                             hold["operator_operation_id"]) is None):
+            raise ValueError("PAPER_RESTATEMENT_A151_HELD_PROOF_RED")
+        try:
+            observed = datetime.fromisoformat(hold["observed_at_utc"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("PAPER_RESTATEMENT_A151_HELD_CLOCK_RED") from exc
+        if (observed.tzinfo is None or observed.utcoffset() is None or
+                observed.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
+                .date().isoformat() != "2026-10-28"):
+            raise ValueError("PAPER_RESTATEMENT_A151_HELD_CLOCK_RED")
+        containers = prior.get("containers")
+        stopped = receipt.get("containers")
+        stop_evidence = receipt.get("stop_evidence")
+        if (type(containers) is not dict or set(containers) != OWNED or
+                type(stopped) is not dict or set(stopped) != OWNED or
+                type(stop_evidence) is not dict or set(stop_evidence) != OWNED or
+                set(receipt.get("stop_attempted", [])) != OWNED):
+            raise ValueError("PAPER_RESTATEMENT_A151_HELD_IDENTITY_RED")
+        for name in OWNED:
+            row, installed, stop = containers[name], stopped[name], stop_evidence[name]
+            if (type(row) is not dict or type(installed) is not dict or
+                    type(stop) is not dict or type(row.get("lifecycle")) is not dict or
+                    type(stop.get("after")) is not dict or
+                    type(row.get("id")) is not str or
+                    re.fullmatch(r"[0-9a-f]{64}", row["id"]) is None or
+                    row.get("image") != A143_IMAGE_ID or
+                    installed != {"id": row["id"], "image": A143_IMAGE_ID} or
+                    row["lifecycle"].get("Status") != "running" or
+                    stop.get("before") != row["lifecycle"] or
+                    stop["after"].get("Status") != "exited" or
+                    type(stop["after"].get("ExitCode")) is not int or
+                    stop["after"]["ExitCode"] != 0 or
+                    stop.get("classification") not in (
+                        "CLEAN_EXIT", "INHERITED_OOM_FLAG_CLEAN_EXIT")):
+                raise ValueError("PAPER_RESTATEMENT_A151_HELD_IDENTITY_RED")
+    elif type(prior) is dict and prior.get("operator_hold") is not None:
+        raise ValueError("PAPER_RESTATEMENT_UNEXPECTED_A151_HELD_PROOF")
+    try:
+        recorded = datetime.fromisoformat(receipt["recorded_at"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED") from exc
+    if (recorded.tzinfo is None or recorded.utcoffset() is None or
+            recorded > datetime.now(timezone.utc) or
+            (quiescence_mode == "A151_HELD_OPEN" and recorded < observed)):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED")
+    return recorded
+
+
 def _receipt(path, candidate, quiescence_mode):
     if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
             path.stat().st_nlink != 1):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     raw = path.read_bytes()
     receipt = json.loads(raw)
-    if (type(receipt) is not dict or receipt.get("candidate_sha") != candidate or
-            receipt.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
-            receipt.get("installation_started") is not True or
-            type(receipt.get("real_orders_sent")) is not int or
-            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False or
-            receipt.get("market_open_suspended") is not (quiescence_mode in INTRADAY_MODES)):
-        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
-    recorded = datetime.fromisoformat(receipt["recorded_at"])
-    if recorded.tzinfo is None or recorded.utcoffset() is None or recorded > datetime.now(timezone.utc):
-        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED")
+    recorded = validate_prior_receipt(receipt, candidate, quiescence_mode)
     return hashlib.sha256(raw).hexdigest(), recorded.isoformat()
 
 

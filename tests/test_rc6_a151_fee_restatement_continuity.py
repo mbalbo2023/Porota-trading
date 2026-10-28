@@ -1,5 +1,7 @@
 """A151: a failed Deploy may carry six sealed PAPER fees to a new SHA once."""
 
+from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -21,13 +23,54 @@ OPEN_ORIGIN = dict(ORIGIN, quiescence_mode="OPEN", owner_intraday_comment_id=100
 HELD_ORIGIN = dict(OPEN_ORIGIN, quiescence_mode="A151_HELD_OPEN")
 
 
-def failed_receipt(tmp_path, *, market_open=False):
+def failed_receipt(tmp_path, *, market_open=False, held_a143=False):
     folder = tmp_path / "deploy"
     folder.mkdir()
     payload = {"candidate_sha": CANDIDATE, "status": "FIX_FORWARD_VALIDATION_REQUIRED",
                "installation_started": True, "real_orders_sent": 0,
                "ppi_watch_accessed": False, "market_open_suspended": market_open,
-               "recorded_at": "2026-10-28T07:00:00+00:00"}
+               "recorded_at": "2026-10-28T13:40:00+00:00"}
+    if held_a143:
+        lifecycle = {"Status": "running", "StartedAt": "2026-10-28T12:59:00Z",
+                     "FinishedAt": "0001-01-01T00:00:00Z", "ExitCode": 0,
+                     "OOMKilled": False}
+        after = dict(lifecycle, Status="exited", ExitCode=0,
+                     FinishedAt="2026-10-28T13:30:00Z")
+        from scripts.rc6_caucion_fee_restatement_continuity import (
+            A143_SOURCE_SHA, A143_TREE_SHA, A143_IMAGE_ID,
+        )
+        containers = {name: {"id": str(n) * 64, "image": A143_IMAGE_ID,
+                             "lifecycle": lifecycle}
+                      for n, name in enumerate(("porota_production_observer",
+                                               "porota_production_dashboard"), start=1)}
+        payload.update(market_open_suspended=False, a143_pending_adopted=True,
+                       open_paper_carryover=False, paused_postclose=False,
+                       intraday_caucion=False, pending_caucion=False,
+                       spot_carryover=None, caucion_carryover=None,
+                       containers={name: {"id": row["id"], "image": row["image"]}
+                                   for name, row in containers.items()},
+                       stop_attempted=list(containers),
+                       stop_evidence={name: {"before": lifecycle, "after": after,
+                                             "classification": "CLEAN_EXIT"}
+                                      for name in containers},
+                       a143_previous_proof={
+                           "source_sha": A143_SOURCE_SHA, "candidate_tree_sha": A143_TREE_SHA,
+                           "image_id": A143_IMAGE_ID,
+                           "marker_sha256": "a" * 64, "frozen_sha256": "b" * 64,
+                           "prior_receipt_sha256": "c" * 64,
+                           "flat_book": {"process_state": "DEGRADED",
+                                         "session_state": "BOOT_CALENDAR",
+                                         "source_sha": A143_SOURCE_SHA,
+                                         "real_orders_sent": 0},
+                           "containers": containers, "critical_admission": {"paper": 0},
+                           "close": None,
+                           "operator_hold": {
+                               "admission": "A151_HELD_OPEN",
+                               "business_day_art": "2026-10-28",
+                               "observed_at_utc": "2026-10-28T13:10:00+00:00",
+                               "operator_receipt_sha256": "d" * 64,
+                               "operator_operation_id": "A151-40686116017-1",
+                               "paper_execution_authorized": False}})
     (folder / ("quiescence-" + CANDIDATE + ".json")).write_text(json.dumps(payload))
     return folder
 
@@ -44,8 +87,8 @@ def github_get(*, conclusion="failure", owner="mbalbo2023", tree="c" * 40,
             "path": WORKFLOW, "event": "push", "head_branch": branch,
             "status": "completed",
             "conclusion": conclusion, "head_sha": origin["deploy_sha"],
-            "run_attempt": attempt, "run_started_at": "2026-10-28T06:00:00Z",
-            "updated_at": "2026-10-28T08:00:00Z"},
+            "run_attempt": attempt, "run_started_at": "2026-10-28T13:00:00Z",
+            "updated_at": "2026-10-28T14:00:00Z"},
         f"repos/{REPO}/commits/{origin['deploy_sha']}": {
             "sha": origin["deploy_sha"], "parents": [
                 {"sha": "e" * 40}, {"sha": CANDIDATE}],
@@ -212,7 +255,8 @@ def test_open_origin_needs_exact_third_literal_before_run_and_keeps_cash_once(
     assert apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT,
                              origin=origin)["inserted"] == 6
     before = _sealed(six_positions)
-    folder = failed_receipt(tmp_path, market_open=True)
+    folder = failed_receipt(tmp_path, market_open=origin["quiescence_mode"] == "OPEN",
+                            held_a143=origin["quiescence_mode"] == "A151_HELD_OPEN")
     p = probe(six_positions, NEXT, folder)
     proof = authorize(p, NEXT, REPO, github_get(origin=origin))
     assert preflight_restatement(six_positions, NEXT, continuity_proof=proof,
@@ -224,7 +268,7 @@ def test_open_origin_needs_exact_third_literal_before_run_and_keeps_cash_once(
         authorize(p, NEXT, REPO, github_get(origin=origin, intraday_literal=False))
     with pytest.raises(ValueError, match="PRIOR_OWNER_AUTHORIZATION_RED"):
         authorize(p, NEXT, REPO, github_get(origin=origin,
-                  intraday_created_at="2026-10-28T06:30:00Z"))
+                  intraday_created_at="2026-10-28T13:30:00Z"))
 
 
 @pytest.mark.parametrize("origin,reason", [
@@ -254,6 +298,47 @@ def test_open_origin_rejects_forged_third_id_or_closed_host_receipt(six_position
     path.write_text(json.dumps(receipt))
     with pytest.raises(ValueError, match="HOST_RECEIPT_RED"):
         probe(six_positions, NEXT, folder)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    (("market_open_suspended",), True, "HOST_RECEIPT_RED"),
+    (("a143_pending_adopted",), False, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "operator_hold"), None, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "operator_hold", "admission"), "NOT_HELD", "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "operator_hold", "paper_execution_authorized"), True, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "source_sha"), "f" * 40, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "image_id"), "sha256:" + "f" * 64, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "flat_book", "session_state"), "MARKET_OPEN", "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "close"), {"green": True}, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "containers", "porota_production_observer", "id"), "f" * 64, "A151_HELD_IDENTITY_RED"),
+    (("stop_evidence", "porota_production_dashboard", "after", "ExitCode"), 1, "A151_HELD_IDENTITY_RED"),
+])
+def test_held_open_receipt_tampering_fails_probe_and_apply(
+        six_positions, tmp_path, field, value, reason):
+    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=HELD_ORIGIN)
+    folder = failed_receipt(tmp_path, held_a143=True)
+    good = probe(six_positions, NEXT, folder)
+    proof = authorize(good, NEXT, REPO, github_get(origin=HELD_ORIGIN))
+    assert preflight_restatement(six_positions, NEXT, continuity_proof=proof,
+                                  receipt_dir=folder)["continuity_adopted"]
+    before = _sealed(six_positions)
+    path = folder / ("quiescence-" + CANDIDATE + ".json")
+    tampered = deepcopy(json.loads(path.read_text()))
+    target = tampered
+    for key in field[:-1]:
+        target = target[key]
+    target[field[-1]] = value
+    path.write_text(json.dumps(tampered))
+    with pytest.raises(ValueError, match=reason):
+        probe(six_positions, NEXT, folder)
+    forged = dict(proof, prior_receipt_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    with pytest.raises(ValueError, match=reason):
+        preflight_restatement(six_positions, NEXT, continuity_proof=forged,
+                              receipt_dir=folder)
+    with pytest.raises(ValueError, match=reason):
+        apply_restatement(six_positions, NEXT, continuity_proof=forged,
+                          receipt_dir=folder)
+    assert _sealed(six_positions) == before
 
 
 def test_missing_or_tampered_atomic_origin_fails_economic_reader(six_positions, tmp_path):
