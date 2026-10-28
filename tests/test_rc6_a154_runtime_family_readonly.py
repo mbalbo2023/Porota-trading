@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -13,6 +14,74 @@ from scripts import rc6_a154_runtime_family_readonly as probe
 
 
 class ProbeTests(unittest.TestCase):
+    def test_a162_exact_invocation_decodes_preopen_red_checks_without_sensitive_fields(self):
+        start = datetime(2026, 10, 27, 12, 9, 0, tzinfo=timezone.utc)
+        payload = {'schema': 'POROTA_RC6_PREOPEN_V3', 'status': 'RED',
+                   'red_checks': ['required_rc6_timers', 'observer_db'],
+                   'checks': {'required_rc6_timers': {'state': 'RED', 'reason': 'PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED',
+                                                     'private_secret': 'DONT_PUBLISH'},
+                              'observer_db': {'state': 'RED', 'detail': 'ACCOUNT_PRIVATE'}},
+                   'secret': 'DONT_PUBLISH'}
+        lines = json.dumps(payload, indent=2).splitlines()
+        messages = [(start + timedelta(seconds=i / 100), line) for i, line in enumerate(lines)]
+        output = probe._failure_reports(messages, unit='porota-preopen-rc6.service',
+                                        started=start, ended=start + timedelta(seconds=30))
+        self.assertEqual(output['red_checks'], ['observer_db', 'required_rc6_timers'])
+        self.assertEqual(output['check_reasons']['required_rc6_timers'],
+                         'PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED')
+        self.assertNotIn('ACCOUNT_PRIVATE', json.dumps(output))
+        self.assertNotIn('DONT_PUBLISH', json.dumps(output))
+
+    def test_a162_local_eod_reason_is_exact_and_stale_report_does_not_count(self):
+        start = datetime(2026, 10, 27, 22, 10, 0, tzinfo=timezone.utc)
+        payload = {'schema': 'rc6.local-eod.v1', 'state': 'BLOCKED',
+                   'reason': 'RUNTIME_CLOSED_UNVERIFIED', 'account': 'DONT_PUBLISH'}
+        messages = [(start + timedelta(seconds=1), json.dumps(payload))]
+        output = probe._failure_reports(messages, unit='porota-local-eod-history-rc6.service',
+                                        started=start, ended=start + timedelta(seconds=10))
+        self.assertEqual(output['reason'], 'RUNTIME_CLOSED_UNVERIFIED')
+        self.assertEqual(output['classification'], 'MATCHED')
+        self.assertNotIn('DONT_PUBLISH', json.dumps(output))
+        stale = probe._failure_reports(messages, unit='porota-local-eod-history-rc6.service',
+                                       started=start + timedelta(hours=1),
+                                       ended=start + timedelta(hours=1, seconds=10))
+        self.assertEqual(stale['classification'], 'NO_VERIFICADO')
+        payload['reason'] = 'ACCOUNT_PRIVATE'
+        unknown = probe._failure_reports([(start, json.dumps(payload))],
+                                         unit='porota-local-eod-history-rc6.service',
+                                         started=start, ended=start + timedelta(seconds=1))
+        self.assertEqual(unknown['reason'], 'EOD_FAILURE_UNCLASSIFIED')
+
+    def test_a162_systemd_exit2_and_timestamp_must_match_report(self):
+        started = 'Tue 2026-10-27 22:10:00 UTC'
+        ended = 'Tue 2026-10-27 22:10:15 UTC'
+        props = ('LoadState=loaded\nActiveState=failed\nResult=exit-code\nExecMainStatus=2\n'
+                 f'ExecMainStartTimestamp={started}\nExecMainExitTimestamp={ended}\n')
+        report = {'schema': 'rc6.local-eod.v1', 'state': 'BLOCKED', 'reason': 'OPEN_POSITIONS'}
+        with patch.object(probe, 'command', return_value=props), \
+             patch.object(probe, '_journal_messages', return_value=[
+                 (datetime(2026, 10, 27, 22, 10, 5, tzinfo=timezone.utc), json.dumps(report))]):
+            output = probe.failed_unit_reason('porota-local-eod-history-rc6.service')
+        self.assertEqual(output['exit'], '2')
+        self.assertEqual(output['reason'], 'OPEN_POSITIONS')
+        with patch.object(probe, 'command', return_value=props.replace('ExecMainStatus=2', 'ExecMainStatus=0')), \
+             patch.object(probe, '_journal_messages', side_effect=AssertionError('journal read on success')):
+            output = probe.failed_unit_reason('porota-local-eod-history-rc6.service')
+        self.assertEqual(output['reason'], 'EXIT2_INVOCATION_UNPROVEN')
+        with self.assertRaisesRegex(ValueError, 'UNIT_NOT_ALLOWED'):
+            probe.failed_unit_reason('ppi-watch.service')
+
+    def test_a162_wrong_product_identity_stops_before_systemd(self):
+        marker = {'candidate_sha': 'a' * 40, 'deploy_sha': probe.EXPECTED_A155_DEPLOY,
+                  'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0,
+                  'real_order_routes': 'NOT_CALLED'}
+        with patch.object(probe, 'metadata', side_effect=[probe.EXPECTED_DROPLET_ID,
+                                                         probe.EXPECTED_DROPLET_REGION]), \
+             patch.object(probe, 'safe_json', return_value=marker), \
+             patch.object(probe, 'failed_unit_reason', side_effect=AssertionError('unit read')):
+            with self.assertRaisesRegex(ValueError, 'A155_PRODUCT_IDENTITY_CHANGED'):
+                probe.unit_exit2_forensics()
+
     def test_shadow_envelope_digest_and_tamper_rejection(self):
         payload = {'generation_id': 'a' * 64, 'status': 'SHADOW_OBSERVING',
                    'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'}

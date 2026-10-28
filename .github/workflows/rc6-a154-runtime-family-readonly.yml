@@ -1,8 +1,8 @@
-name: RC6 A155 corrected runtime and family READ ONLY
+name: RC6 A162 failed preopen and local EOD READ ONLY
 
 on:
   push:
-    branches: [diagnostic/rc6-a155-runtime-probe-correction-20261028]
+    branches: [diagnostic/rc6-a162-unit-exit2-readonly-20261028]
     paths:
       - .github/workflows/rc6-a154-runtime-family-readonly.yml
       - scripts/rc6_a154_runtime_family_readonly.py
@@ -37,10 +37,10 @@ jobs:
           test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           umask 077
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a154_readonly"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a162_readonly"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/rc6_a154_readonly" "$HOME/.ssh/known_hosts"
-      - name: Observe one bounded RC6 host window
+          chmod 600 "$HOME/.ssh/rc6_a162_readonly" "$HOME/.ssh/known_hosts"
+      - name: Classify two historical failed invocations without starting units
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -48,23 +48,22 @@ jobs:
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER"
           mkdir -p evidence
-          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
-          timeout --signal=TERM --kill-after=5s 90s \
-            ssh -i "$HOME/.ssh/rc6_a154_readonly" -o BatchMode=yes \
+          timeout --signal=TERM --kill-after=5s 45s \
+            ssh -i "$HOME/.ssh/rc6_a162_readonly" -o BatchMode=yes \
               -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
               -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
-              "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - '$POLICY_B64'" \
-              < scripts/rc6_a154_runtime_family_readonly.py | tee evidence/rc6-a154-runtime-family.jsonl
-          test "$(wc -c < evidence/rc6-a154-runtime-family.jsonl)" -lt 32768
-          grep -q '^RC6_A154_RUNTIME_FAMILY_RO=' evidence/rc6-a154-runtime-family.jsonl
+              "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - '--unit-forensics-only'" \
+              < scripts/rc6_a154_runtime_family_readonly.py | tee evidence/rc6-a162-unit-exit2.jsonl
+          test "$(wc -c < evidence/rc6-a162-unit-exit2.jsonl)" -lt 8192
+          grep -q '^RC6_A162_UNIT_EXIT2_RO=' evidence/rc6-a162-unit-exit2.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-a155-runtime-family-readonly-${{ github.sha }}
-          path: evidence/rc6-a154-runtime-family.jsonl
+          name: rc6-a162-unit-exit2-readonly-${{ github.sha }}
+          path: evidence/rc6-a162-unit-exit2.jsonl
           if-no-files-found: ignore
           retention-days: 7
       - name: Remove SSH key
         if: always()
-        run: rm -f "$HOME/.ssh/rc6_a154_readonly"
+        run: rm -f "$HOME/.ssh/rc6_a162_readonly"

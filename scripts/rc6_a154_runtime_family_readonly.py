@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
@@ -174,6 +174,168 @@ def journal_classes(service: str) -> dict:
         classes.append('LOCAL_EOD_BLOCKED_REPORT')
     return {'read': 'BOUNDED', 'classes': sorted(classes),
             'classification': 'MATCHED' if classes else 'NO_VERIFICADO'}
+
+
+EXIT2_UNITS = ('porota-preopen-rc6.service',
+               'porota-local-eod-history-rc6.service')
+PREOPEN_CHECKS = frozenset({
+    'release_identity', 'observer_container', 'dashboard_container',
+    'observer_db', 'disk', 'required_rc6_timers', 'byma_morning_watch',
+    'iol_reference_fallback', 'history_quarantine', 'foreign_market_policy',
+    'paper_focus_contracts', 'paper_admission_receipt',
+})
+EOD_BLOCK_REASONS = frozenset({
+    'CALENDAR_UNVERIFIED', 'RUNTIME_CLOSED_UNVERIFIED', 'OPEN_POSITIONS',
+    'LOCAL_EOD_HOT_CURSOR_REGRESSION', 'HOST_RESERVE_REQUIRED',
+    'COLD_ARCHIVE_PHYSICAL_BUDGET',
+})
+EXPECTED_A155_SOURCE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
+EXPECTED_A155_DEPLOY = '6676267140907a17e342a664f718cfdcf9b3ce72'
+
+
+def _systemd_utc(value: str) -> datetime | None:
+    try:
+        if not value.endswith(' UTC'):
+            return None
+        return datetime.strptime(value, '%a %Y-%m-%d %H:%M:%S UTC').replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _failure_reports(messages: list[tuple[datetime, str]], *, unit: str,
+                     started: datetime, ended: datetime) -> dict:
+    """Decode only the completed failed invocation, never echo journal text."""
+    if unit not in EXIT2_UNITS:
+        raise ValueError('UNIT_NOT_ALLOWED')
+    decoder = json.JSONDecoder()
+    reports = []
+    bounded = [(at, body[:8192]) for at, body in messages
+               if started <= at <= ended and isinstance(body, str)]
+    for index, (at, body) in enumerate(bounded):
+        if not body.lstrip().startswith('{'):
+            continue
+        # EOD is one JSON line. Preopen prints a pretty JSON document that
+        # journald may split into separate MESSAGE entries.
+        candidate = '\n'.join(part for _, part in bounded[index:index + 512])
+        try:
+            parsed, _ = decoder.raw_decode(candidate.lstrip())
+        except (ValueError, TypeError):
+            continue
+        if isinstance(parsed, dict) and parsed.get('schema') in {
+                'POROTA_RC6_PREOPEN_V3', 'rc6.local-eod.v1'}:
+            reports.append((at, parsed))
+    if not reports:
+        return {'classification': 'NO_VERIFICADO', 'reason': 'FAILURE_REPORT_UNAVAILABLE'}
+    at, report = reports[-1]
+    output = {'classification': 'MATCHED', 'report_at_utc': at.isoformat()}
+    if unit == EXIT2_UNITS[0]:
+        checks = report.get('red_checks')
+        if report.get('status') != 'RED' or not isinstance(checks, list) or not checks:
+            return {'classification': 'NO_VERIFICADO', 'reason': 'PREOPEN_RED_UNPROVEN'}
+        if any(not isinstance(check, str) or check not in PREOPEN_CHECKS
+               for check in checks):
+            return {'classification': 'NO_VERIFICADO', 'reason': 'PREOPEN_CHECK_UNCLASSIFIED'}
+        detail = report.get('checks')
+        if not isinstance(detail, dict):
+            detail = {}
+        output['status'] = 'RED'
+        output['red_checks'] = sorted(set(checks))
+        output['check_reasons'] = {
+            check: enum((detail.get(check) or {}).get('reason'))
+            for check in output['red_checks']
+            if isinstance(detail.get(check), dict)
+        }
+        if 'paper_admission_receipt' in checks:
+            receipt = report.get('paper_admission_receipt') or {}
+            output['paper_admission_reason'] = enum(receipt.get('reason'))
+        return output
+    state = report.get('state')
+    reason = report.get('reason')
+    if state not in {'BLOCKED', 'DEFERRED_DISK'} or reason not in EOD_BLOCK_REASONS:
+        return {'classification': 'NO_VERIFICADO', 'reason': 'EOD_FAILURE_UNCLASSIFIED'}
+    output['state'] = state
+    output['reason'] = reason
+    return output
+
+
+def _journal_messages(unit: str, started: datetime, ended: datetime) -> list[tuple[datetime, str]] | None:
+    if unit not in EXIT2_UNITS:
+        raise ValueError('UNIT_NOT_ALLOWED')
+    # Both endpoints are derived from the failed ExecMain invocation, never
+    # from a broad day-wide query. No raw lines leave this process.
+    since = (started - timedelta(seconds=2)).strftime('%Y-%m-%d %H:%M:%S UTC')
+    until = (ended + timedelta(seconds=2)).strftime('%Y-%m-%d %H:%M:%S UTC')
+    try:
+        result = subprocess.run(
+            ['journalctl', '-u', unit, '--since', since, '--until', until,
+             '-n', '512', '--no-pager', '--output=json'],
+            capture_output=True, timeout=8, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0 or len(result.stdout) > 512 * 1024:
+        return None
+    messages = []
+    for line in result.stdout.splitlines():
+        try:
+            entry = json.loads(line)
+            at = datetime.fromtimestamp(int(entry['__REALTIME_TIMESTAMP']) / 1_000_000,
+                                        timezone.utc)
+            body = entry.get('MESSAGE')
+            if isinstance(body, str):
+                messages.append((at, body))
+        except (ValueError, TypeError, KeyError, OverflowError):
+            continue
+    return messages
+
+
+def failed_unit_reason(unit: str) -> dict:
+    if unit not in EXIT2_UNITS:
+        raise ValueError('UNIT_NOT_ALLOWED')
+    fields = ('LoadState', 'ActiveState', 'Result', 'ExecMainStatus',
+              'ExecMainStartTimestamp', 'ExecMainExitTimestamp')
+    raw = command(['systemctl', 'show', unit, '--property=' + ','.join(fields)], 2.0)
+    if raw is None:
+        return {'classification': 'NO_VERIFICADO', 'reason': 'SYSTEMD_UNAVAILABLE'}
+    props = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+    started = _systemd_utc(props.get('ExecMainStartTimestamp', ''))
+    ended = _systemd_utc(props.get('ExecMainExitTimestamp', ''))
+    output = {'active': enum(props.get('ActiveState', '').upper()),
+              'result': service_result(props.get('Result')),
+              'exit': props.get('ExecMainStatus') if
+              re.fullmatch(r'[0-9]{1,3}', str(props.get('ExecMainStatus'))) else None,
+              'started_at_utc': started.isoformat() if started else None,
+              'ended_at_utc': ended.isoformat() if ended else None}
+    if (props.get('LoadState') != 'loaded' or props.get('ActiveState') != 'failed'
+            or props.get('Result') != 'exit-code' or props.get('ExecMainStatus') != '2'
+            or not started or not ended or not started <= ended
+            or (ended - started).total_seconds() > 360):
+        return output | {'classification': 'NO_VERIFICADO', 'reason': 'EXIT2_INVOCATION_UNPROVEN'}
+    messages = _journal_messages(unit, started, ended)
+    if messages is None:
+        return output | {'classification': 'NO_VERIFICADO', 'reason': 'BOUNDED_JOURNAL_UNAVAILABLE'}
+    return output | _failure_reports(messages, unit=unit, started=started, ended=ended)
+
+
+def unit_exit2_forensics() -> dict:
+    host_id, region = metadata('id'), metadata('region')
+    if host_id != EXPECTED_DROPLET_ID or region != EXPECTED_DROPLET_REGION:
+        raise ValueError('DROPLET_IDENTITY_MISMATCH')
+    marker = safe_json(MARKER)
+    if (marker.get('candidate_sha') != EXPECTED_A155_SOURCE or
+            marker.get('deploy_sha') != EXPECTED_A155_DEPLOY or
+            marker.get('mode') != 'PRODUCTION_PAPER' or
+            type(marker.get('real_orders_sent')) is not int or
+            marker.get('real_orders_sent') != 0 or
+            marker.get('real_order_routes') != 'NOT_CALLED'):
+        raise ValueError('A155_PRODUCT_IDENTITY_CHANGED')
+    return {'schema': 'rc6.a162.failed-unit-forensics.v1',
+            'droplet': {'id': host_id, 'region': region},
+            'release': {'candidate_sha': marker['candidate_sha'],
+                        'deploy_sha': marker['deploy_sha']},
+            'units': {unit: failed_unit_reason(unit) for unit in EXIT2_UNITS},
+            'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0,
+            'host_mutations': 0, 'provider_requests': 0,
+            'ppi_watch': 'NOT_ACCESSED'}
 
 
 def age(value, now: datetime) -> float | None:
@@ -469,6 +631,10 @@ def main(encoded_policy: str) -> None:
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['--unit-forensics-only']:
+        print('RC6_A162_UNIT_EXIT2_RO=' + json.dumps(unit_exit2_forensics(),
+              sort_keys=True, separators=(',', ':'), allow_nan=False))
+        raise SystemExit(0)
     if len(sys.argv) != 2:
         raise SystemExit('POLICY_B64_REQUIRED')
     main(sys.argv[1])
