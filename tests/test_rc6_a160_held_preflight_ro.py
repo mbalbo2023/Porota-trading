@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from types import SimpleNamespace
 import types
 import unittest
 from unittest.mock import patch
@@ -56,8 +57,18 @@ class HostProbeTests(unittest.TestCase):
             lock.write_bytes(b'original-lock-byte-sequence')
             lock.chmod(0o600)
             before=(lock.stat().st_mtime_ns,lock.read_bytes())
+            real_lstat=Path.lstat
+            real_fstat=os.fstat
+            def root_owned(info):
+                return SimpleNamespace(st_mode=info.st_mode,st_uid=0,
+                    st_nlink=info.st_nlink,st_dev=info.st_dev,st_ino=info.st_ino)
+            def fixture_lstat(path,*args,**kwargs):
+                info=real_lstat(path,*args,**kwargs)
+                return root_owned(info) if path in {lock,lock.parent} else info
             with patch.object(host,'LOCK',lock), patch.object(host,'BARRIER',barrier), \
-                 patch.object(host.os,'geteuid',return_value=0):
+                 patch.object(host.os,'geteuid',return_value=0), \
+                 patch.object(Path,'lstat',fixture_lstat), \
+                 patch.object(host.os,'fstat',side_effect=lambda fd:root_owned(real_fstat(fd))):
                 fd=host.read_lock()
                 self.assertFalse(barrier.exists())
                 probe=os.open(lock,os.O_RDONLY)
