@@ -266,6 +266,10 @@ def test_deploy_preopen_timer_check_requires_matching_a125_receipt(monkeypatch, 
                     'operator_pause_receipt_sha256': 'f'*64}
     write_json(receipt, receipt_data)
     monkeypatch.setattr(rc6_preopen, 'ROOT', tmp_path)
+    # A131 tests the historical 27-Oct contract. A151's independent 28-Oct
+    # sidecar is intentionally mandatory when the current trading day is 28.
+    monkeypatch.setattr(rc6_preopen, 'datetime', OperatorDay)
+    monkeypatch.setattr(suspend, 'datetime', OperatorDay)
     monkeypatch.setattr(suspend, 'ppi_snapshot', lambda: [])
     monkeypatch.setattr(suspend, 'exact_operator_preopen_pause', lambda: 'f'*64)
     monkeypatch.setattr(suspend, 'operator_preopen_timer_disabled', lambda: True)

@@ -26,10 +26,17 @@ FOCUS = (
     ("CEPU", "ACCIONES", "A-24HS"), ("AAPL", "CEDEARS", "A-24HS"),
 )
 SHA = re.compile(r"[0-9a-f]{40}\Z")
-# Operator decision for the 2026-10-27 Argentine trading day: no new PAPER
-# positions while the scanner, histories and family strategies are repaired.
-# This is an additive veto, independent of any T-10 receipt issued by a timer.
-OPERATOR_PAUSED_TRADE_DAYS_AR = frozenset({"2026-10-27"})
+# Date-scoped operator decisions: no new PAPER positions on 27-Oct (A125)
+# or 28-Oct (A151) while the candidate is repaired and validated. The veto is
+# independent of a timer's T-10 GO, including one from a newly deployed image.
+# Never carry it automatically to another trading day.
+OPERATOR_PAUSED_TRADE_DAYS_AR = frozenset({"2026-10-27", "2026-10-28"})
+
+
+def operator_pause_reason(now):
+    day = now.date().isoformat()
+    return ("OPERATOR_PAPER_PAUSE_" + day.replace("-", "_")
+            if day in OPERATOR_PAUSED_TRADE_DAYS_AR else "")
 
 
 def focus_contracts(db_path):
@@ -73,8 +80,8 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                          and state.get("real_orders_sent") == 0)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         valid_release = False
-    paused = now.date().isoformat() in OPERATOR_PAUSED_TRADE_DAYS_AR
-    allowed = (not paused and result.get("status") == "GREEN" and result.get("phase") == "T_MINUS_10"
+    pause_reason = operator_pause_reason(now)
+    allowed = (not pause_reason and result.get("status") == "GREEN" and result.get("phase") == "T_MINUS_10"
                and 10 * 60 + 20 <= now.hour * 60 + now.minute < 10 * 60 + 30
                and result.get("checks", {}).get("paper_focus_contracts", {}).get("state") == "GREEN"
                and valid_release)
@@ -82,8 +89,15 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
                "candidate_sha": candidate if valid_release else "", "trade_day_ar": now.date().isoformat(),
                "issued_at_ar": now.isoformat(timespec="seconds"), "phase": result.get("phase"),
-               "reason": ("OPERATOR_PAPER_PAUSE_2026_10_27" if paused else
+               "reason": (pause_reason if pause_reason else
                           "PREOPEN_GREEN_EXACT_FOCUS" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN")}
+    # A125's 27-Oct LIVE gate is an immutable link in the A138/A143 scheduler
+    # recovery chain. Neither a manual preopen nor a subsequent day's T-10
+    # may overwrite it while that chain is active. The separate A151 sidecar
+    # attests today's NO_GO; any future rearm requires a reviewed migration.
+    if (receipt_path == HOST_RECEIPT and
+            now.date().isoformat() >= "2026-10-27"):
+        raise ValueError("HISTORICAL_A125_LIVE_GATE_IMMUTABLE")
     if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir() or receipt_path.is_symlink():
         raise ValueError("UNSAFE_GATE_PATH")
     fd, temporary = tempfile.mkstemp(prefix=".paper-gate-", dir=receipt_path.parent)
@@ -108,8 +122,9 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
 
 def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     now = (now or datetime.now(TZ)).astimezone(TZ)
-    if now.date().isoformat() in OPERATOR_PAUSED_TRADE_DAYS_AR:
-        return False, "OPERATOR_PAPER_PAUSE_2026_10_27"
+    pause_reason = operator_pause_reason(now)
+    if pause_reason:
+        return False, pause_reason
     candidate_sha = candidate_sha if candidate_sha is not None else os.getenv("POROTA_BUILD_SHA", "")
     path = Path(receipt_path or RUNTIME_RECEIPT)
     if not isinstance(candidate_sha, str) or not SHA.fullmatch(candidate_sha):
