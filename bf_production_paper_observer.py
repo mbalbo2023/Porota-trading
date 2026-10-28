@@ -427,6 +427,15 @@ def _public_probe(store, *, structured=False):
 
 def _claim_command(store):
     with store.connect() as c:
+        # The ordinary scanner poll is empty.  An unconditional BEGIN
+        # IMMEDIATE every five seconds would reserve the sole SQLite writer
+        # despite there being no command to claim.  The first look is only a
+        # hint: ALWAYS reselect under the writer lock before claiming one.
+        pending = c.execute(
+            "SELECT 1 FROM observer_commands WHERE status='QUEUED' LIMIT 1"
+        ).fetchone()
+        if pending is None:
+            return None
         c.execute("BEGIN IMMEDIATE")
         row = c.execute(
             "SELECT id,command FROM observer_commands WHERE status='QUEUED' ORDER BY id LIMIT 1"
