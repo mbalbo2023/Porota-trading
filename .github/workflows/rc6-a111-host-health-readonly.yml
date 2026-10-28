@@ -956,6 +956,40 @@ jobs:
               'at_ar':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
               'receipt':state,'read_only':True,'provider_requests':0,
               'ppi_watch_accessed':False,'mutation_attempted':False},sort_keys=True))
+
+          def a144_lease_probe():
+              import time
+              target=root/'paper_v17/artifacts/observer_v17.db/scanner-login-interlock-v1.json'
+              if target.is_symlink():
+                  return {'state':'PATH_SYMLINK'}
+              if not target.is_file():
+                  return {'state':'MARKER_ABSENT'}
+              meta=target.stat()
+              if meta.st_size>512 or meta.st_nlink!=1:
+                  return {'state':'MARKER_UNTRUSTED','size':meta.st_size}
+              item=json.loads(target.read_bytes())
+              if (item.get('schema')!='RC6_SCANNER_LOGIN_INTERLOCK_V1'
+                      or item.get('kind') not in ('ATTEMPT','QUARANTINE')):
+                  return {'state':'MARKER_SCHEMA_INVALID'}
+              hostboot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+              tick=time.monotonic_ns()
+              previous=item.get('monotonic_ns')
+              cooldown=item.get('cooldown_ns')
+              valid=type(previous) is int and type(cooldown) is int and cooldown>=300000000000
+              same=item.get('boot_id')==hostboot
+              elapsed=round((tick-previous)/1e9,1) if valid and same else None
+              remaining=round(max(0,(max(cooldown,900000000000)-(tick-previous))/1e9),1) if valid and same else None
+              return {'state':'OK' if valid else 'MARKER_INVALID','kind':item.get('kind'),
+                      'owner_uid':meta.st_uid,'mode_octal':oct(stat.S_IMODE(meta.st_mode)),
+                      'same_host_boot':same,'monotonic_age_s':elapsed,
+                      'remaining_cooldown_s':remaining,'mtime_age_s':round(time.time()-meta.st_mtime,1)}
+          try:
+              lease=a144_lease_probe()
+          except (OSError,ValueError,TypeError) as exc:
+              lease={'state':'NO_VERIFICADO','error_type':type(exc).__name__}
+          print('RC6_A144_LOGIN_INTERLOCK='+json.dumps({
+              'lease':lease,'read_only':True,'provider_requests':0,
+              'ppi_watch_accessed':False,'mutation_attempted':False},sort_keys=True))
           PYHOST
 
       - name: Remove SSH material
