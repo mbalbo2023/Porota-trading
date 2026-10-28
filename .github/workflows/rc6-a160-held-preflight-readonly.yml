@@ -24,10 +24,10 @@ jobs:
     env:
       # Exact candidate/Predeploy run; artifact ID remains blocked until this
       # run finishes GREEN and its digest is inspected before publication.
-      RC6_CANDIDATE_SHA: 'b56b714771b417e1fce5ed2047badc3d62e7e88c'
-      RC6_CANDIDATE_TREE: '99350d554b5a70156f6b087046a3a21bb179a00b'
-      RC6_PREDEPLOY_RUN_ID: '40732838077'
-      RC6_PREDEPLOY_ARTIFACT_ID: '12837461896'
+      RC6_CANDIDATE_SHA: 'f1a565d9a08e153b93d75d2e3586b4ecdd0845ef'
+      RC6_CANDIDATE_TREE: '739c52bfa410870e9ebc2f64d1d40a4fe439aa8b'
+      RC6_PREDEPLOY_RUN_ID: '40744907689'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12843405251'
       RC6_INTERIM_NONPROMOTABLE: 'false'
       GH_TOKEN: ${{ github.token }}
     steps:
