@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from be_paper_engine import PaperStore
+import bf_production_paper_observer as observer
 from bf_production_paper_observer import _source_sync_due, _support_schema
 
 
@@ -51,4 +52,23 @@ def test_source_sync_advances_at_local_midnight_not_utc_midnight(tmp_path):
                                 datetime(2026, 10, 27, 23, 59, tzinfo=ART))
     assert _source_sync_due(store, "PPI_PRODUCTION_CATALOG",
                             datetime(2026, 10, 28, 0, 1, tzinfo=ART))
+
+
+@pytest.mark.parametrize("local_day", [
+    datetime(2026, 10, 31, 12, 0, tzinfo=ART),  # Saturday
+    datetime(2026, 11, 1, 12, 0, tzinfo=ART),  # Sunday
+    datetime(2026, 11, 6, 12, 0, tzinfo=ART),  # Audited BYMA holiday
+    datetime(2027, 1, 4, 12, 0, tzinfo=ART),  # Unaudited year: fail closed
+])
+def test_scheduled_daily_sync_skips_nontrading_dates_without_provider_or_db(
+        monkeypatch, local_day):
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("Closed-day sync attempted a provider or source_sync read")
+
+    monkeypatch.setattr(observer, "_source_sync_due", unexpected)
+    monkeypatch.setattr(observer, "_download_catalog", unexpected)
+    monkeypatch.setattr(observer, "_download_histories", unexpected)
+
+    assert observer._daily_sync_needed(object(), now=local_day) is False
+    assert observer._daily_sync(object(), object(), now=local_day) is None
 

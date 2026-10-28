@@ -1778,7 +1778,12 @@ def _history_daily_sync_due(store, now=None):
 
 
 def _daily_sync_needed(store, now=None):
-    """Bound each daily source independently; never let history retrigger catalog."""
+    """Trade-session sync only; never redownload Friday on a closed weekend."""
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=TZ)
+    if not _business_day(now.astimezone(TZ).date()):
+        return False
     return (
         _source_sync_due(store, "PPI_PRODUCTION_CATALOG", now)
         or _history_daily_sync_due(store, now)
@@ -1786,6 +1791,16 @@ def _daily_sync_needed(store, now=None):
 
 
 def _daily_sync(reader, store, now=None):
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=TZ)
+    now = now.astimezone(TZ)
+    # A CLOSED scanner may remain alive across weekends/holidays.  The
+    # historical backfill has a separate explicit business-day admission.
+    # Do not re-fetch the previous session's catalog/history just because a
+    # non-trading calendar date changed.
+    if not _business_day(now.date()):
+        return
     catalog_due = _source_sync_due(store, "PPI_PRODUCTION_CATALOG", now)
     history_due = _history_daily_sync_due(store, now)
     if not catalog_due and not history_due:
