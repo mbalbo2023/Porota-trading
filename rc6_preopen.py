@@ -189,7 +189,11 @@ def iol_reference_state(today):
                 cache not in {'LIVE_FRESH','CACHE_FRESH','CACHE_STALE','SOURCE_UNAVAILABLE'}):
             state = 'RED'
             effective = 'SOURCE_UNAVAILABLE'
-        elif (cache == 'LIVE_FRESH' and recent_lkg and usable_ars
+        elif (cache == 'LIVE_FRESH' and payload.get('source') == 'IOL_MCP'
+              and isinstance(payload.get('live_sections'), list)
+              and any(sections.get(key) == 'LIVE_FRESH'
+                      for key in payload['live_sections'])
+              and recent_lkg and usable_ars
               and last_good_age is not None and last_good_age <= 240
               and age is not None and 0 <= age <= 240):
             state = 'GREEN'

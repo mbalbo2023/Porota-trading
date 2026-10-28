@@ -75,3 +75,29 @@ def test_wrong_fallback_or_real_money_flag_still_blocks_preopen(
                    {"continuation_state": "ZERO_FILL"}):
         cache.write_text(json.dumps({**base, **change}))
         assert preopen.iol_reference_state(NOW.date())["state"] == "RED"
+
+
+def test_iol_green_requires_a_genuine_recent_live_section(tmp_path, monkeypatch):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz or TZ)
+
+    cache = tmp_path / "iol_family_reference_latest.json"
+    payload = {
+        "source": "IOL_MCP", "cache_state": "LIVE_FRESH",
+        "last_known_good_at": (NOW - timedelta(seconds=30)).isoformat(),
+        "refreshed_at": (NOW - timedelta(seconds=30)).isoformat(),
+        "live_sections": ["caucion:ARS"],
+        "section_states": {"caucion:ARS": "LIVE_FRESH"},
+        "cauciones": {"ARS": [{"term_days": 1}]},
+        "fallback_order": preopen.IOL_FALLBACK_ORDER,
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
+    }
+    monkeypatch.setattr(preopen, "IOL_FAMILY_REFERENCE", cache)
+    monkeypatch.setattr(preopen, "datetime", Clock)
+    cache.write_text(json.dumps(payload))
+    assert preopen.iol_reference_state(NOW.date())["state"] == "GREEN"
+    cache.write_text(json.dumps({**payload, "live_sections": []}))
+    assert preopen.iol_reference_state(NOW.date())["state"] == "AMBER"
