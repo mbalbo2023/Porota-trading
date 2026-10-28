@@ -1,0 +1,98 @@
+name: RC6 A159 exact failed attempt stage reclaim
+
+# Review only. No push trigger until owner checks scope and host mutex.
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact forensic cleanup code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Hermetic fail-closed regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m unittest discover -s tests -p test_rc6_a159_\*.py -v
+
+      - name: Revalidate exact unexpired Predeploy artifact and frozen bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          base="https://api.github.com/repos/mbalbo2023/Porota-trading/actions"
+          token_header="Authorization: Bearer $GH_TOKEN"
+          curl -fsSL --retry 2 -H "$token_header" -H 'Accept: application/vnd.github+json' \
+            "$base/runs/40589182858" -o "$RUNNER_TEMP/a159-run.json"
+          curl -fsSL --retry 2 -H "$token_header" -H 'Accept: application/vnd.github+json' \
+            "$base/runs/40589182858/artifacts?per_page=100" -o "$RUNNER_TEMP/a159-artifacts.json"
+          python3 - "$RUNNER_TEMP/a159-run.json" "$RUNNER_TEMP/a159-artifacts.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          from scripts.rc6_a159_artifact_gate import verify_metadata
+          verify_metadata(json.loads(Path(sys.argv[1]).read_text()), json.loads(Path(sys.argv[2]).read_text()))
+          PY
+          timeout --signal=TERM --kill-after=5s 240s \
+            curl -fsSL --retry 2 -H "$token_header" -H 'Accept: application/vnd.github+json' \
+              "$base/artifacts/12775190272/zip" -o "$RUNNER_TEMP/a159-frozen.zip"
+          python3 scripts/rc6_a159_artifact_gate.py \
+            --run-json "$RUNNER_TEMP/a159-run.json" \
+            --artifact-json "$RUNNER_TEMP/a159-artifacts.json" \
+            --zip "$RUNNER_TEMP/a159-frozen.zip" \
+            --base64-out "$RUNNER_TEMP/a159-frozen-hashes.b64"
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Archive exact A138 receipt and reclaim only matching stage
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          frozen_hashes="$(cat "$RUNNER_TEMP/a159-frozen-hashes.b64")"
+          [[ "$frozen_hashes" =~ ^[A-Za-z0-9+/=]+$ ]]
+          timeout --signal=TERM --kill-after=5s 110s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              "sudo -n env RC6_A159_FROZEN_HASHES_B64=$frozen_hashes PYTHONDONTWRITEBYTECODE=1 python3 -" \
+              < scripts/rc6_a159_stage_reclaim.py
+
+      - name: Erase runner artifact and SSH material
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$RUNNER_TEMP/a159-run.json" "$RUNNER_TEMP/a159-artifacts.json" \
+            "$RUNNER_TEMP/a159-frozen.zip" "$RUNNER_TEMP/a159-frozen-hashes.b64" \
+            "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
