@@ -355,9 +355,25 @@ class CaucionBook:
     def used_principal(self, offer, *, connection):
         """La misma fotografía de liquidez no se repone por otro request_id."""
         used = ZERO
-        for p in connection.execute('SELECT * FROM paper_cauciones WHERE instrument_id=? AND currency=?',
-                                    (offer.instrument_id,offer.currency)):
-            previous = validate_position(p)
+        # Validate the entire ledger and all six historical fee receipts in the
+        # caller's transaction before considering available depth. A retired
+        # PAPER fee authority can only be read as a sealed historical position;
+        # it must never become an authority for a new placement.
+        for p in self.positions(connection=connection):
+            if p['instrument_id'] != offer.instrument_id or p['currency'] != offer.currency:
+                continue
+            if p.get('fee_evidence_scope') == 'PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED':
+                from scripts.rc6_caucion_fee_ro_provenance import LEGACY_AUTHORITY
+                try:
+                    terms = json.loads(p['terms_json'])
+                    if (not isinstance(terms, dict) or terms.get('fee_authority') != LEGACY_AUTHORITY
+                            or p.get('broker_account_fees_verified') is not False):
+                        raise ValueError('HISTORICAL_FEE_SCOPE_MISMATCH')
+                    previous = CaucionOffer(**(terms | {'fee_authority': None}))
+                except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError) as exc:
+                    raise ValueError('CAUCION_LEDGER_INVALID: HISTORICAL_TERMS_INVALID') from exc
+            else:
+                previous = validate_position(p)
             if aware_datetime(previous.quoted_at) > aware_datetime(offer.quoted_at):
                 raise ValueError('CAUCION_OLDER_BOOK')
             if book_key(previous) == book_key(offer):

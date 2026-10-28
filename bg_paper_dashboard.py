@@ -687,15 +687,25 @@ def _caucion_allocations_panel():
                 f"<td>{_e(candidate.get('net_profit'))}</td><td>{_e(candidate.get('net_return_per_day'))}</td>"
                 f"<td>{_e(reason)}</td></tr>")
         placement = record['placement']
+        restated = placement is not None and placement.get('fee_evidence_scope') == 'PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED'
         placement_text = ('Sin colocación para esta solicitud' if placement is None else
             f"Registro {_e(placement['paper_id'])} · Estado guardado: {_e(placement['status'])} · "
             f"Acreditación simulada: {_local_time(placement['settled_at'])}")
         selected_text = ('Sin inversión' if selected is None else
             f"Capital colocado: {_e(selected['principal'])} · Débito inicial: {_e(selected['cash_debit'])} · "
-            f"Neto estimado al vencimiento: {_e(selected['net_profit'])}")
+            + (f"Costo original modelado: {_e(placement['original_total_fees'])} · "
+             f"Costo público PAPER revisado: {_e(placement['effective_total_fees'])} · "
+             f"Neto PAPER revisado: {_e(placement['effective_net_profit'])} · "
+             "Costo de la cuenta PPI: NO VERIFICADO; no habilita operar."
+             if restated else f"Neto estimado al vencimiento: {_e(selected['net_profit'])}"))
+        historical_note = ("<p class='paper-warning'>Decisión histórica preservada. Los presupuestos y "
+                           "resultados de la tabla corresponden al modelo original del día de la decisión; "
+                           "el resultado PAPER revisado figura arriba. Costos de la cuenta: NO VERIFICADOS.</p>"
+                           if restated else "")
         cards.append(f"<details class='paper-trade'><summary>{label} · {_e(decision['currency'])} · "
             f"{'Colocación simulada registrada' if selected else 'Abstención'}</summary><div class='trade-body'>"
             f"<p>{_e(_allocation_reason(decision['code']))}. {selected_text}</p><p>{placement_text}</p>"
+            + historical_note +
             f"<p>Criterio: {_e(metric)}. Desempate: menor plazo, menor débito, identificador de oferta.</p>"
             f"<p>Caja liquidada evaluada: {_e(decision['cash'])} {_e(decision['currency'])} · "
             f"Reserva: {_e(policy['reserve_cash'])} · Fracción por solicitud (0–1): {_e(policy['maximum_cash_fraction'])} · "
