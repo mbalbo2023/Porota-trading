@@ -21,9 +21,11 @@ REPO = "mbalbo2023/Porota-trading"
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 OPEN_ORIGIN = dict(ORIGIN, quiescence_mode="OPEN", owner_intraday_comment_id=1003)
 HELD_ORIGIN = dict(OPEN_ORIGIN, quiescence_mode="A151_HELD_OPEN")
+STOPPED_ORIGIN = dict(OPEN_ORIGIN, quiescence_mode="A151_HELD_STOPPED")
 
 
-def failed_receipt(tmp_path, *, market_open=False, held_a143=False):
+def failed_receipt(tmp_path, *, market_open=False, held_a143=False,
+                   stopped_a169=False):
     folder = tmp_path / "deploy"
     folder.mkdir()
     payload = {"candidate_sha": CANDIDATE, "status": "FIX_FORWARD_VALIDATION_REQUIRED",
@@ -71,6 +73,12 @@ def failed_receipt(tmp_path, *, market_open=False, held_a143=False):
                                "operator_receipt_sha256": "d" * 64,
                                "operator_operation_id": "A151-40686116017-1",
                                "paper_execution_authorized": False}})
+    if stopped_a169:
+        from scripts.rc6_caucion_fee_restatement_continuity import (
+            A169_STOPPED_CANDIDATE, A169_STOPPED_RECEIPT_SHA256,
+        )
+        payload.update(a169_origin_candidate=A169_STOPPED_CANDIDATE,
+                       a169_origin_sha256=A169_STOPPED_RECEIPT_SHA256)
     (folder / ("quiescence-" + CANDIDATE + ".json")).write_text(json.dumps(payload))
     return folder
 
@@ -98,7 +106,7 @@ def github_get(*, conclusion="failure", owner="mbalbo2023", tree="c" * 40,
     }
     decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
                  ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")]
-    if origin["quiescence_mode"] in ("OPEN", "A151_HELD_OPEN"):
+    if origin["quiescence_mode"] in ("OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED"):
         decisions.append(("owner_intraday_comment_id", "RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY"))
     for field, decision in decisions:
         comment_body = body(decision)
@@ -249,14 +257,15 @@ def test_same_candidate_replay_needs_no_failed_prior_proof(six_positions, tmp_pa
     assert preflight_restatement(six_positions, CANDIDATE)["previously_applied"] is True
 
 
-@pytest.mark.parametrize("origin", [OPEN_ORIGIN, HELD_ORIGIN])
+@pytest.mark.parametrize("origin", [OPEN_ORIGIN, HELD_ORIGIN, STOPPED_ORIGIN])
 def test_open_origin_needs_exact_third_literal_before_run_and_keeps_cash_once(
         six_positions, tmp_path, origin):
     assert apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT,
                              origin=origin)["inserted"] == 6
     before = _sealed(six_positions)
     folder = failed_receipt(tmp_path, market_open=origin["quiescence_mode"] == "OPEN",
-                            held_a143=origin["quiescence_mode"] == "A151_HELD_OPEN")
+                            held_a143=origin["quiescence_mode"] in {"A151_HELD_OPEN", "A151_HELD_STOPPED"},
+                            stopped_a169=origin["quiescence_mode"] == "A151_HELD_STOPPED")
     p = probe(six_positions, NEXT, folder)
     proof = authorize(p, NEXT, REPO, github_get(origin=origin))
     assert preflight_restatement(six_positions, NEXT, continuity_proof=proof,
@@ -264,6 +273,13 @@ def test_open_origin_needs_exact_third_literal_before_run_and_keeps_cash_once(
     assert apply_restatement(six_positions, NEXT, continuity_proof=proof,
                              receipt_dir=folder)["inserted"] == 0
     assert _sealed(six_positions) == before
+    if origin["quiescence_mode"] == "A151_HELD_STOPPED":
+        path = folder / ("quiescence-" + CANDIDATE + ".json")
+        changed = json.loads(path.read_text())
+        changed["a169_origin_sha256"] = "0" * 64
+        path.write_text(json.dumps(changed))
+        with pytest.raises(ValueError, match="A169_STOPPED_ORIGIN_RED"):
+            probe(six_positions, NEXT, folder)
     with pytest.raises(ValueError, match="PRIOR_OWNER_AUTHORIZATION_RED"):
         authorize(p, NEXT, REPO, github_get(origin=origin, intraday_literal=False))
     with pytest.raises(ValueError, match="PRIOR_OWNER_AUTHORIZATION_RED"):
@@ -274,6 +290,7 @@ def test_open_origin_needs_exact_third_literal_before_run_and_keeps_cash_once(
 @pytest.mark.parametrize("origin,reason", [
     (dict(OPEN_ORIGIN, owner_intraday_comment_id=None), "INTRADAY_OWNER_REQUIRED"),
     (dict(HELD_ORIGIN, owner_intraday_comment_id=1001), "INTRADAY_OWNER_REQUIRED"),
+    (dict(STOPPED_ORIGIN, owner_intraday_comment_id=None), "INTRADAY_OWNER_REQUIRED"),
     (dict(ORIGIN, owner_intraday_comment_id=1003), "UNEXPECTED_INTRADAY_OWNER"),
 ])
 def test_inconsistent_intraday_origin_rolls_back_without_six_receipts(

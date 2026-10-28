@@ -213,7 +213,7 @@ def test_a151_intraday_literal_is_exact_and_required_before_suspend():
     workflow=(Path(__file__).parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
     assert workflow.index('Require exact intraday owner authorization for OPEN suspension') < \
            workflow.index('Suspend versioned RC6 schedulers for guarded promotion')
-    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}" in workflow
+    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}" in workflow
     assert "decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY'" in workflow
     assert 'RC6_A151_OWNER_INTRADAY_ID=$COMMENT' in workflow
     assert '--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID"' in workflow

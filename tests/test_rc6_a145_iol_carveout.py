@@ -96,6 +96,43 @@ def test_iol_policy_exception_only_exact_oauth_unit():
         build_plan(policy)
 
 
+def test_a169_stopped_hold_adopts_prior_receipt_without_systemd_mutation(
+        hold16,monkeypatch,tmp_path):
+    raw,names,states,starts,_=hold16
+    states[scheduler.IOL_OAUTH_GUARD_TIMER][0]='active'
+    digest=hashlib.sha256(raw).hexdigest()
+    parent={'candidate_sha':scheduler.A169_STOPPED_CANDIDATE,
+            'status':'SUSPENDED','policy_sha256':digest,'timers':names,
+            'attempted':names,'ppi_before':[],
+            'preserved_iol_timer':scheduler.IOL_OAUTH_GUARD_TIMER,
+            'operator_pause_timer':scheduler.OPERATOR_PREOPEN_TIMER,
+            'operator_pause_receipt_sha256':'e'*64,
+            'a145_pending_proof':{'operator_hold':{'admission':'A151_HELD_OPEN'}}}
+    prior=scheduler.ROOT/('scheduler-suspend-'+scheduler.A169_STOPPED_CANDIDATE+'.json')
+    prior.write_text(json.dumps(parent))
+    origin_sha='d'*64
+    staged=SimpleNamespace(ROOT=tmp_path/'porota',
+                           A169_PRIOR_RECEIPT_SHA256=origin_sha,
+                           a169_prior_a143_stopped_proof=lambda *a,**kw:
+                             ({'status':'PRIOR_A143_UNVALIDATED_HELD_STOPPED'},
+                              origin_sha,{'real_orders_sent':0}))
+    monkeypatch.setattr(scheduler,'a143_staged_module',lambda:staged)
+    candidate='f'*40
+    receipt=scheduler.run(candidate,'suspend',base64.b64encode(raw).decode())
+    assert receipt['status']=='SUSPENDED' and receipt['a169_stopped_origin'] is True
+    assert receipt['a169_origin_sha256']==origin_sha
+    assert receipt['paused_from']==scheduler.A169_STOPPED_CANDIDATE
+    assert starts==[]
+    assert REAL_REQUIRE_A143_HOLD(candidate)=='A143_STOPPED_UNVALIDATED_HELD_BEFORE_DRAIN'
+    assert scheduler.run(candidate,'suspend',base64.b64encode(raw).decode())['status']=='SUSPENDED'
+    assert starts==[]
+    parent['status']='RESTORED'
+    prior.write_text(json.dumps(parent))
+    with pytest.raises(ValueError,match='PARENT_RECEIPT_CHANGED'):
+        scheduler.adopt_a169_stopped_hold('a'*40,scheduler.ROOT/'next.json',names,
+                                         digest,[],[tuple(states[name]) for name in names])
+
+
 def test_a145_exact_old16_hold_migrates_once_to_15_plus_guard(hold16):
     raw,names,states,starts,_ = hold16
     target='f'*40
