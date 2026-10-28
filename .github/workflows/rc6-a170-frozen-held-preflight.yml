@@ -1,0 +1,126 @@
+name: RC6 A170 frozen artifact and stopped host preflight READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a170-frozen-held-preflight-20261028]
+    paths:
+      - .github/workflows/rc6-a170-frozen-held-preflight.yml
+      - scripts/rc6_a160_preflight_runner.py
+      - scripts/rc6_a160_held_preflight_ro.py
+      - scripts/rc6_a169_reconcile_held_stop.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RC6_CANDIDATE_SHA: '33ea6d365c47d415fc5480a23b1338c208c2a29f'
+      RC6_CANDIDATE_TREE: '6879e49ae3a02f64f6c52582147ca76e55576776'
+      RC6_PREDEPLOY_RUN_ID: '40761278095'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12849642784'
+      RC6_OLD_SHA: 'b778c8063e96574ddf859907abb99fae6f4e3484'
+      RC6_Q_SHA: '11e482553e0989113f22aa6fc022736d9b123993eb70baf16ce08edd091015fb'
+      RC6_S_SHA: 'edc7b597f47cbdb70224eaa4371a03069d447b5d80e0098829e43a877ce7d826'
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC6_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC6_OLD_SHA }}
+          path: old
+          persist-credentials: false
+      - name: Verify candidate SHA, artifact digest, frozen sources and exact disk formula
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
+          test "$(git -C old rev-parse HEAD)" = "$RC6_OLD_SHA"
+          test "$(sha256sum old/scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)" = "$RC6_Q_SHA"
+          test "$(sha256sum old/scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)" = "$RC6_S_SHA"
+          test "$RC6_PREDEPLOY_ARTIFACT_ID" != 0
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/rc6_a160_preflight_runner.py \
+            "$RC6_CANDIDATE_SHA" "$RC6_CANDIDATE_TREE" \
+            "$RC6_PREDEPLOY_RUN_ID" "$RC6_PREDEPLOY_ARTIFACT_ID" \
+            "$GITHUB_REPOSITORY" candidate .
+          python3 - <<'PY'
+          import base64,gzip,os
+          from pathlib import Path
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              for name,path in [('RC6_Q_B64','old/scripts/rc6_deploy_quiescence.py'),
+                                ('RC6_S_B64','old/scripts/rc6_deploy_scheduler_suspend.py')]:
+                  out.write(name+'='+base64.b64encode(gzip.compress(Path(path).read_bytes(),mtime=0)).decode()+'\n')
+          PY
+      - name: Strict SSH identity
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a170"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a170" "$HOME/.ssh/known_hosts"
+      - name: Bound frozen candidate to exact stopped host, timers, PPI state and capacity
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 120s ssh -T -i "$HOME/.ssh/rc6_a170" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - post '$RC6_Q_B64' '$RC6_S_B64' '$RC6_Q_SHA' '$RC6_S_SHA'" \
+            < scripts/rc6_a169_reconcile_held_stop.py | tee evidence/host.jsonl
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          lines=Path('evidence/host.jsonl').read_text().splitlines()
+          assert len(lines)==1 and len(lines[0])<4096 and lines[0].startswith('RC6_A169_HELD_STOP=')
+          row=json.loads(lines[0].split('=',1)[1])
+          policy=json.loads(base64.b64decode(os.environ['RC6_A160_DISK_POLICY_B64'],validate=True))
+          required=int(os.environ['RC6_A160_REQUIRED_BYTES'])
+          assert row['status']=='POST_PROVEN' and row['host_mutations']==0
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['containers']=='BOTH_EXACT_STOPPED' and row['timers_held']==16
+          assert row['real_orders_sent']==0 and row['ppi_watch']=='STATE_ONLY'
+          assert row['disk_free_bytes']>=required
+          assert row['inode_free_percent']>=float(policy['disk']['min_inode_free_percent'])
+          receipt={'schema':'rc6.a170.exact-frozen-held-preflight.v1',
+                   'status':'GREEN','candidate_sha':os.environ['RC6_CANDIDATE_SHA'],
+                   'candidate_tree':os.environ['RC6_CANDIDATE_TREE'],
+                   'predeploy_run_id':os.environ['RC6_PREDEPLOY_RUN_ID'],
+                   'artifact_id':os.environ['RC6_PREDEPLOY_ARTIFACT_ID'],
+                   'host':row,'required_pretransfer_bytes':required,
+                   'margin_bytes':row['disk_free_bytes']-required,
+                   'host_mutations':0,'operational_go':False}
+          Path('evidence/frozen-held.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print('RC6_A170_FROZEN_HELD_PREFLIGHT=GREEN|'+json.dumps(receipt,sort_keys=True,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a170-frozen-held-preflight-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a170"
