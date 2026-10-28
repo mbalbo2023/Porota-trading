@@ -1,0 +1,110 @@
+name: RC6 A171 frozen artifact and failed host preflight READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a171-frozen-failed-preflight-20261028]
+    paths:
+      - .github/workflows/rc6-a171-frozen-failed-preflight.yml
+      - scripts/rc6_a160_preflight_runner.py
+      - scripts/rc6_a171_failed_install_probe_ro.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RC6_CANDIDATE_SHA: '4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6'
+      RC6_CANDIDATE_TREE: '18693659202fc1a5cc0fa98113f0a1f9ad8a416d'
+      RC6_PREDEPLOY_RUN_ID: '40767794099'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12852892173'
+      RC6_SOURCE_SHA: 'de52d69dc64b97d0520a5451ee409966654aa5838c1729d4a2f41d513b463b47'
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC6_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact frozen artifact, staged source and disk formula
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
+          test "$(sha256sum scripts/rc6_a171_failed_install_probe_ro.py | cut -d' ' -f1)" = "$RC6_SOURCE_SHA"
+          [[ "$RC6_PREDEPLOY_ARTIFACT_ID" =~ ^[1-9][0-9]+$ ]]
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/rc6_a160_preflight_runner.py \
+            "$RC6_CANDIDATE_SHA" "$RC6_CANDIDATE_TREE" \
+            "$RC6_PREDEPLOY_RUN_ID" "$RC6_PREDEPLOY_ARTIFACT_ID" \
+            "$GITHUB_REPOSITORY" candidate .
+      - name: Strict SSH identity
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a171_preflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a171_preflight" "$HOME/.ssh/known_hosts"
+      - name: Recheck exact stopped host and pretransfer capacity without writes
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 100s ssh -T -i "$HOME/.ssh/rc6_a171_preflight" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+            < scripts/rc6_a171_failed_install_probe_ro.py | tee evidence/host.jsonl
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          lines=Path('evidence/host.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A171_FAILED_INSTALL_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          policy=json.loads(base64.b64decode(os.environ['RC6_A160_DISK_POLICY_B64'],validate=True))
+          required=int(os.environ['RC6_A160_REQUIRED_BYTES'])
+          assert row['status']=='PROVEN' and row['host_mutations']==0
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['failed_receipt_sha256']=='2052b78c67f4385e662caeb1448d357f804d0605e6f2c710447b4130fa1df0e8'
+          assert row['runtime']=='BOTH_EXACT_OLD_EXITED_0'
+          assert row['real_orders_sent']==0 and row['timers_held']==16
+          assert row['barrier']=='ABSENT' and row['operational_go'] is False
+          assert row['disk_free_bytes']>=required
+          assert row['inode_free_percent']>=float(policy['disk']['min_inode_free_percent'])
+          receipt={'schema':'rc6.a171.exact-frozen-failed-preflight.v1',
+                   'status':'GREEN','candidate_sha':os.environ['RC6_CANDIDATE_SHA'],
+                   'candidate_tree':os.environ['RC6_CANDIDATE_TREE'],
+                   'predeploy_run_id':os.environ['RC6_PREDEPLOY_RUN_ID'],
+                   'artifact_id':os.environ['RC6_PREDEPLOY_ARTIFACT_ID'],
+                   'host':row,'required_pretransfer_bytes':required,
+                   'margin_bytes':row['disk_free_bytes']-required,
+                   'host_mutations':0,'operational_go':False}
+          Path('evidence/frozen-failed.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print('RC6_A171_FROZEN_FAILED_PREFLIGHT=GREEN|'+json.dumps(receipt,sort_keys=True,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a171-frozen-failed-preflight-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a171_preflight"

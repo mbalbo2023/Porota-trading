@@ -1,8 +1,0 @@
-[Unit]
-Description=Porota RC6 retired GDELT tombstone
-Documentation=GDELT_DEPRECATED_EXCLUDED
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/true
-NoNewPrivileges=true
