@@ -215,7 +215,7 @@ def run(mode, q, operator):
                 'containers':'BOTH_EXACT_STOPPED','operator_hold':'EXACT_DISABLED',
                 'timers_held':count,'ppi_watch':'STATE_ONLY',
                 'disk_free_bytes':shutil.disk_usage('/').free,
-                'host_mutations':0 if mode == 'probe' else 1}
+                'host_mutations':0 if mode in {'probe', 'post'} else 1}
     finally:
         if fd is not None:
             os.close(fd)

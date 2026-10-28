@@ -52,13 +52,13 @@ class ReconcileHeldStopGuards(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'NOT_PREINSTALL_FAILURE'):
                         a169.exact_receipt(q, 'probe')
 
-    def test_workflow_serializes_single_exact_phase_after_probe(self):
-        source = (SOURCE.parents[1] / '.github/workflows/rc6-a169-reconcile-exact-held-stop.yml').read_text()
+    def test_post_workflow_proves_exact_state_without_mutation(self):
+        source = (SOURCE.parents[1] / '.github/workflows/rc6-a169-independent-postproof.yml').read_text()
         self.assertIn('group: rc6-unified-paper-deploy', source)
-        self.assertIn('--phase cleanup_final', source)
-        self.assertLess(source.index('id: probe'), source.index('--phase cleanup_final'))
+        self.assertIn("python3 - post '$RC6_Q_B64'", source)
         self.assertIn("gzip.compress(Path(path).read_bytes(),mtime=0)", source)
         self.assertNotIn('systemctl start', source)
+        self.assertNotIn('--phase cleanup_final', source)
 
 
 if __name__ == '__main__':
