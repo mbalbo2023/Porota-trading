@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 read-only preopen gates T-45 and T-10 Argentina
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09:45:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 10:20:00 America/Argentina/Buenos_Aires
+AccuracySec=30s
+Unit=porota-preopen-rc6.service
+
+[Install]
+WantedBy=timers.target

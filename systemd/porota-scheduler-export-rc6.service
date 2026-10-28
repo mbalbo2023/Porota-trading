@@ -1,0 +1,17 @@
+[Unit]
+Description=Porota RC6 scheduler state export
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=porotaadmin
+Group=porotaadmin
+WorkingDirectory=/opt/porota-trading
+# The deployed checkout may be materialized with 0644 scripts. Bash can read
+# the root-owned source while systemd cannot exec that file directly (203/EXEC).
+ExecStart=/usr/bin/bash /opt/porota-trading/scripts/porota_export_scheduler_state_rc6.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/porota-trading/data/scheduler /run/lock

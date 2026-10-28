@@ -1,0 +1,13 @@
+[Unit]
+Description=Off-hours IOL MCP OAuth guardian plus pre-market checks for Porota RC6
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+OnCalendar=Mon..Fri *-*-* 09:30:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 10:20:00 America/Argentina/Buenos_Aires
+AccuracySec=30s
+Unit=porota-iol-oauth-health-rc6.service
+
+[Install]
+WantedBy=timers.target

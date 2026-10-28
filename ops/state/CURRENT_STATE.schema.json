@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://porota.local/schemas/current-state-v1.json",
+  "title": "Porota Runtime Current State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "git_sha",
+    "image_digest",
+    "mode",
+    "real_orders_sent",
+    "deployment_result",
+    "observer",
+    "dashboard",
+    "cleanup"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "mode": {"const": "PRODUCTION_PAPER"},
+    "real_orders_sent": {"const": 0},
+    "deployment_result": {
+      "enum": [
+        "SUCCESS",
+        "FAILED_PREDEPLOY_NO_RUNTIME_CHANGE",
+        "FAILED_FIX_FORWARD_REQUIRED"
+      ]
+    },
+    "observer": {
+      "type": "object",
+      "required": ["status", "git_sha", "image_digest"],
+      "properties": {
+        "status": {"enum": ["RUNNING", "STOPPED", "ERROR"]},
+        "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "required": ["status", "git_sha", "image_digest"],
+      "properties": {
+        "status": {"enum": ["RUNNING", "STOPPED", "ERROR"]},
+        "git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "required": ["status", "available_bytes_after"],
+      "properties": {
+        "status": {"enum": ["GREEN", "FAILED"]},
+        "available_bytes_before": {"type": ["integer", "null"], "minimum": 0},
+        "available_bytes_after": {"type": "integer", "minimum": 0},
+        "reclaimed_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "images_removed": {"type": ["integer", "null"], "minimum": 0},
+        "build_cache_reclaimed_bytes": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "failure_signature": {"type": ["string", "null"]},
+    "deploy_run_id": {"type": ["integer", "null"], "minimum": 1}
+  }
+}

@@ -1,0 +1,128 @@
+name: RC6 WS CONTROLPLANE 16 Bounded Runtime Probe
+
+on:
+  push:
+    branches:
+      - work/ws-controlplane-16-bounded-observer-20261001
+    paths:
+      - '.github/workflows/rc6-ws-controlplane-16-bounded-probe.yml'
+      - 'CHECKPOINT_00_WS_CONTROLPLANE_16_2026-10-01.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  bounded-readonly-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Bounded read-only runtime status
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          SSH_OPTS=(
+            -i "$HOME/.ssh/key"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o ConnectTimeout=10
+            -o ConnectionAttempts=2
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
+          set +e
+          timeout --signal=TERM --kill-after=10s 90s \
+            ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime-probe.txt 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          echo "PROBE_AT=$(date -u +%FT%TZ)"
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+
+          echo "REPAIR_PROCESS_BEGIN"
+          REPAIR_LINES="$(sudo -n docker top porota_production_observer -eo pid,cmd 2>/dev/null | grep -F 'rc6_history_cutoff_repair_once.py' || true)"
+          if [ -n "$REPAIR_LINES" ]; then
+            echo "REPAIR_ACTIVE=true"
+            printf '%s\n' "$REPAIR_LINES"
+          else
+            echo "REPAIR_ACTIVE=false"
+          fi
+          echo "REPAIR_PROCESS_END"
+
+          python3 - "$DB" <<'PY'
+          import json, sqlite3, sys
+          db=sys.argv[1]
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1").fetchone()
+          print("OBSERVER_STATE="+json.dumps(dict(row),sort_keys=True,default=str))
+          assert row["mode"]=="PRODUCTION_PAPER"
+          assert int(row["real_orders_sent"] or 0)==0
+          c.close()
+          PY
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from cv_history_store_adapter_hf6 import default_history_store
+          out={}
+          db=default_history_store()
+          with db.connect() as c:
+              c.row_factory=sqlite3.Row
+              c.execute("PRAGMA query_only=ON")
+              tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              if "rc6_history_cutoff_repair_runs" in tables:
+                  out["repair_runs"]=[dict(r) for r in c.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff")]
+              if "rc6_history_cutoff_repair" in tables:
+                  out["repair_states"]=[dict(r) for r in c.execute(
+                      "SELECT state,COUNT(*) n,MAX(updated_at) as_of FROM rc6_history_cutoff_repair GROUP BY state ORDER BY state"
+                  )]
+              if "history_canonical_v2" in tables:
+                  out["canonical_rows"]=c.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]
+                  out["canonical_latest"]=c.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+          print("HISTORY_STATUS="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          PY
+
+          echo "PPI_WATCH_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_END"
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "BOUNDED_RUNTIME_PROBE=GREEN"
+          REMOTE
+          RC=$?
+          set -e
+          cat evidence/runtime-probe.txt || true
+          echo "BOUNDED_PROBE_RC=$RC"
+          test "$RC" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-controlplane-16-bounded-runtime-probe
+          path: evidence/runtime-probe.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup SSH
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"

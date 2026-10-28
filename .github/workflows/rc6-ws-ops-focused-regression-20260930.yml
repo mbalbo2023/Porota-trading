@@ -1,0 +1,53 @@
+name: RC6 WS OPS Focused Regression 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/ws-ops-preopen-closure-20260930
+    paths:
+      - '.github/workflows/rc6-ws-ops-focused-regression-20260930.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prove PAPER identity and compile changed scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q             scripts/rc6_zero_known_error_runtime_audit.py             zz_wave8_dashboard_live_rc6.py             rc6_multisource_discovery.py             bf_production_paper_observer.py             cp_history_ingest_policy_hf6.py             tests/test_ws_ops_risk_layout.py             tests/test_ws_ops_history_all_families.py
+          git diff --check
+          echo PAPER_STATIC_GUARD=GREEN
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+
+      - name: Run focused regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q             tests/test_ws_dash_05_dashboard_performance.py             tests/test_ws_ops_risk_layout.py             tests/test_rc6_multisource_discovery.py             tests/test_rc6_cauciones_official_contract.py             tests/test_ws_ops_history_all_families.py             tests/test_rc6_history_partial_semantics.py             tests/test_rc6_postclose_history_quarantine.py             tests/test_rc6_internal_history_scheduler_guard.py
+          echo WS_OPS_FOCUSED_REGRESSION=GREEN
+
+      - name: Reassert no real route capability
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo PAPER_SAFETY_FINAL=GREEN

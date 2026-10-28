@@ -1,0 +1,67 @@
+name: RC6 Isolate Ledger Fixtures From W10 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-isolate-legacy-ledger-fixtures-from-w10-20260910.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-w10-sector-map-binding-20260910
+          fetch-depth: 0
+      - name: Assert RC6 PAPER safety identity
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Patch only legacy accounting fixtures
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_production_paper_v1634.py')
+          s=p.read_text(encoding='utf-8')
+          old='''@pytest.fixture\ndef partial_spot(tmp_path):\n    def make(settlement='INMEDIATA',currency='ARS',**options):'''
+          new='''@pytest.fixture(autouse=True)\ndef rc6_isolate_legacy_accounting_scenarios_from_policy_admission(monkeypatch):\n    # These are synthetic ledger/currency/settlement unit scenarios, not W10\n    # admission tests. Production RC6 and dedicated W10 tests remain BINDING.\n    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")\n\n\n@pytest.fixture\ndef partial_spot(tmp_path, monkeypatch):\n    # This fixture is imported by other ledger test modules; keep its isolation\n    # explicit because module-level autouse fixtures do not follow that import.\n    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")\n    def make(settlement='INMEDIATA',currency='ARS',**options):'''
+          if old not in s:
+              raise SystemExit('expected fixture block not found or already changed')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
+          python -m py_compile tests/test_production_paper_v1634.py
+          git diff --check
+          git diff -- tests/test_production_paper_v1634.py
+      - name: Persist forward fix before tests
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test_production_paper_v1634.py
+          git commit -m 'test(rc6): isolate synthetic ledger scenarios from W10 admission'
+          git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Prove ledger semantics and W10 binding coexist
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_ledger_copy_preflight_v17.py::test_copy_wal_audits_and_removes_only_copy
+          PYTHONPATH=. pytest -q tests/test_production_paper_v1634.py
+          PYTHONPATH=. python scripts/rc6_w10_sector_map_preflight.py
+          PYTHONPATH=. pytest -q tests/test_rc6_wave10_sector_binding_default.py tests/test_caucion_ledger_v17.py::test_caucion_rota_no_detiene_supervision_ni_salidas_spot
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+      - name: Continue complete suite to next deterministic failure
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -x -vv --tb=short

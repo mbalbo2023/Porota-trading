@@ -1,0 +1,15 @@
+name: RC6 write probe
+on:
+  push:
+    branches:
+      - candidate/v17.0.0-rc6-weekend-20260905
+    paths:
+      - .github/workflows/rc6-write-probe.yml
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe
+        run: echo WRITE_WORKFLOW_STARTUP_OK

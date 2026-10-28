@@ -1,0 +1,58 @@
+name: RC6 WS Instrumentation 09 Oct-01
+
+on:
+  push:
+    branches:
+      - work/ws-instrumentation-09-oct01-ci-handoff-20260930
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAPER static guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q scripts/rc6_zero_known_error_runtime_audit.py
+          git diff --check
+          echo PAPER_STATIC_GUARD=GREEN
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Audit marker regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_ws_dash_05_dashboard_performance.py
+          echo DASHBOARD_AUDIT_MARKER_REGRESSION=GREEN
+      - name: Publish handoff evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p evidence
+          {
+            echo "# WS-INSTRUMENTATION-09"
+            echo
+            echo "branch=$GITHUB_REF_NAME"
+            echo "sha=$GITHUB_SHA"
+            echo "paper_static_guard=required"
+            echo "real_order_test=NOT_PERFORMED"
+            echo "ppi_watch=UNTOUCHED_BY_THIS_WORKFLOW"
+          } > evidence/ws-instrumentation-09.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-instrumentation-09-evidence
+          path: evidence/ws-instrumentation-09.md
+          if-no-files-found: error

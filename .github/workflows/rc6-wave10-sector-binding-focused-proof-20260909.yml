@@ -1,0 +1,47 @@
+name: RC6 Wave10 Focused Sector Binding Proof 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave10-currentbase-20260909]
+    paths: [.github/workflows/rc6-wave10-sector-binding-focused-proof-20260909.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  focused-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise policy gate directly
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import os
+          import ck_policy_gate_hf6 as g
+          os.environ['PAPER_SECTOR_CONCENTRATION_POLICY']='BINDING'
+          # Below limit: entry remains possible.
+          a=g.evaluate(sectors={'groups':[{'sector':'ENERGIA','open_positions':1}]},candidate_sector='ENERGIA',sector_limit=2)
+          assert a['gates']['sector']['authority']=='BINDING'
+          assert a['gates']['sector']['execute_block'] is False, a
+          # At limit: new entry is blocked.
+          b=g.evaluate(sectors={'groups':[{'sector':'ENERGIA','open_positions':2}]},candidate_sector='ENERGIA',sector_limit=2)
+          assert b['gates']['sector']['execute_block'] is True, b
+          assert b['verdict']=='SECTOR_CONCENTRATION_LIMIT_ENERGIA', b
+          # Missing mapping under BINDING is fail-closed.
+          c=g.evaluate(sectors={'groups':[]},candidate_sector='',sector_limit=2)
+          assert c['gates']['sector']['evidence_block'] is True and c['execute_block'] is True, c
+          print('BELOW_LIMIT=PASS')
+          print('AT_LIMIT=BLOCK')
+          print('MISSING_SECTOR=FAIL_CLOSED')
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('be_paper_engine.py').read_text(encoding='utf-8')
+          assert 'candidate_sector' in p and 'sectors' in p
+          assert 'execute_block' in p
+          print('ENGINE_CONSUMER_WIRING=GREEN')
+          PY
+          ! grep -REn 'api/Orders|/Operar|send_order|place_order|new_order' ck_policy_gate_hf6.py be_paper_engine.py
+          echo 'W10_FOCUSED_SEMANTIC_PROOF=GREEN'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'

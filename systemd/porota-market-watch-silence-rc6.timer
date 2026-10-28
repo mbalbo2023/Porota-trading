@@ -1,0 +1,14 @@
+[Unit]
+Description=Porota RC6 PAPER GitHub market watch silence during monitored wheel
+
+[Timer]
+# The service's fail-closed active_window is 11:02..17:15 ART. Keep the first
+# and last probe inside it, avoiding the hourly evidence publisher at :50.
+OnCalendar=Mon..Fri *-*-* 11..16:03,13,23,33,43,53:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 17:03,13:00 America/Argentina/Buenos_Aires
+Persistent=false
+AccuracySec=30s
+Unit=porota-market-watch-silence-rc6.service
+
+[Install]
+WantedBy=timers.target

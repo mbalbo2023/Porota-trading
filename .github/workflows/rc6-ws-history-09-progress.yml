@@ -1,0 +1,104 @@
+name: RC6 WS HISTORY 09 Progress Audit
+
+on:
+  push:
+    branches:
+      - work/ws-history-09-progress-audit-20261001
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  progress-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Capture repair and exact history coverage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > evidence/history-progress.txt <<'REMOTE'
+          set -Eeuo pipefail
+          echo "REPAIR_PROCESS_BEGIN"
+          sudo -n docker top porota_production_observer -eo pid,cmd 2>/dev/null | grep -F 'rc6_history_cutoff_repair_once.py' || true
+          echo "REPAIR_PROCESS_END"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from cg_paper_workspace import database_path
+          from cv_history_store_adapter_hf6 import default_history_store
+          odb=database_path()
+          o=sqlite3.connect(f"file:{odb}?mode=ro",uri=True,timeout=5)
+          o.row_factory=sqlite3.Row;o.execute("PRAGMA query_only=ON")
+          state=dict(o.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          ready=[tuple(r) for r in o.execute("""SELECT upper(ticker),upper(instrument_type),upper(market),upper(settlement)
+              FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'""")]
+          o.close()
+          hstore=default_history_store()
+          with hstore.connect() as h:
+              h.row_factory=sqlite3.Row
+              h.execute("PRAGMA query_only=ON")
+              tables={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              ids=set()
+              out={"observer":state,"ready_total":len(ready)}
+              if "history_canonical_v2" in tables:
+                  ids={tuple(r) for r in h.execute("""SELECT upper(symbol),upper(instrument_type),upper(market),upper(settlement)
+                      FROM history_canonical_v2 GROUP BY 1,2,3,4""")}
+                  out["canonical_rows"]=h.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]
+                  out["canonical_latest"]=h.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+              if "rc6_history_cutoff_repair" in tables:
+                  out["repair_states"]=[dict(r) for r in h.execute("""SELECT state,COUNT(*) n,MAX(updated_at) as_of
+                      FROM rc6_history_cutoff_repair GROUP BY state ORDER BY state""")]
+              if "rc6_history_cutoff_repair_runs" in tables:
+                  out["repair_runs"]=[dict(r) for r in h.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff")]
+              for name in ("candle_versions","candle_samples","candle_worker_state"):
+                  if name in tables:
+                      cols={r[1] for r in h.execute(f'PRAGMA table_info("{name}")')}
+                      item={"count":h.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]}
+                      for col in ("known_at","bar_start","received_at","heartbeat_at"):
+                          if col in cols:
+                              item["max_"+col]=h.execute(f'SELECT MAX("{col}") FROM "{name}"').fetchone()[0]
+                      out[name]=item
+              by={}
+              for ident in ready:
+                  fam=ident[1]
+                  row=by.setdefault(fam,{"ready":0,"with_history":0,"without_history":0})
+                  row["ready"]+=1
+                  if ident in ids: row["with_history"]+=1
+                  else: row["without_history"]+=1
+              out["coverage_by_family"]=by
+              out["ready_with_history_total"]=sum(1 for x in ready if x in ids)
+              out["ready_without_history_total"]=sum(1 for x in ready if x not in ids)
+          print("HISTORY_PROGRESS="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          assert state["mode"]=="PRODUCTION_PAPER"
+          assert int(state["real_orders_sent"] or 0)==0
+          PY
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          REMOTE
+          cat evidence/history-progress.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-history-09-progress
+          path: evidence/history-progress.txt
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"

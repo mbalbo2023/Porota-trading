@@ -1,0 +1,148 @@
+name: RC6 CP2-CP5 Exact RCA 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp2-cp5-exact-rca-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-cp2-cp5-exact-rca
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp2_validation_writer:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Locate validation ledger writers and current ledger
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          sudo -n docker exec porota_production_observer sh -lc "grep -RInE 'append_record\(|validation_campaign_rc6|POROTA_VALIDATION_ROOT' /app --include='*.py' --include='*.sh' --include='*.service' --include='*.timer' 2>/dev/null | head -n 240" || true
+          echo '--- VALIDATION DIR ---'
+          sudo -n docker exec porota_production_observer sh -lc "ls -la /app/data/validation 2>/dev/null || true; stat -c '%n|%a|%u|%g|%s|%y' /app/data/validation/* 2>/dev/null || true"
+          echo '--- RELATED UNITS ---'
+          sudo -n systemctl list-unit-files --type=service --type=timer --no-pager --no-legend | grep -Ei 'porota.*(valid|campaign|daily|signoff)' || true
+          echo CP2_RCA_COMPLETE=YES
+          HOST
+
+  cp3_ce_pipeline:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Trace CE producer to importer/materializer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          echo '--- HOST RUNTIME SCRIPT ---'
+          sudo -n sed -n '1,360p' /usr/local/sbin/porota-contract-evidence-rc6-runtime.sh 2>/dev/null || true
+          echo '--- UNIT ---'
+          sudo -n systemctl cat porota-contract-evidence-rc6.service || true
+          echo '--- CAPTURE PERMISSIONS ---'
+          sudo -n find /opt/porota-trading/data/contract_evidence/rc6_trusted -maxdepth 1 -type f -name 'contract_*.json' -printf '%T@|%m|%u|%g|%s|%p\n' 2>/dev/null | sort -nr | head -n 12 || true
+          echo '--- IMPORT/MATERIALIZER CALL GRAPH ---'
+          sudo -n docker exec porota_production_observer sh -lc "grep -RInE 'contract_evidence_v2|FULL_BROWSER|DOM_SEMANTIC|rc6_trusted|import.*capture|capture.*import|materializ' /app --include='*.py' --include='*.sh' 2>/dev/null | head -n 320" || true
+          echo '--- LATEST JOURNAL ---'
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 220 --no-pager || true
+          echo CP3_RCA_COMPLETE=YES
+          HOST
+
+  cp4_history_futures:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Trace A3 Futures and overnight history wiring
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          echo '--- UNITS ---'
+          for u in porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer porota-history-postclose-rc6.timer porota-candle-integrity-rc6.timer; do sudo -n systemctl cat "$u" || true; done
+          sudo -n systemctl cat 'porota-a3-history-rc6@.service' || true
+          echo '--- SOURCE ---'
+          sudo -n docker exec porota_production_observer sh -lc "for f in /app/ew_a3_history_rc6.py /app/ex_a3_history_job_rc6.py /app/fj_history_backfill_planner_rc6.py /app/fb_history_reconciler_rc6.py /app/rc6_postclose_history_job.py; do echo ===\$f===; sed -n '1,360p' \$f 2>/dev/null; done"
+          echo '--- FUTURES STATE SAMPLE ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          for r in c.execute("select * from a3_history_ingest_state_rc6 where instrument_type='FUTURES' order by last_attempt_at desc limit 60"): print(dict(r))
+          c.close()
+          PY
+          echo CP4_RCA_COMPLETE=YES
+          HOST
+
+  cp5_w11_design:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recover W11 intended GDELT/event-risk wiring without generic news
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo MUTATIONS=NONE
+          echo GENERAL_NEWS_FEED=INTENTIONALLY_OFF
+          for ref in origin/wave11/rc6-event-risk-gdelt-binding-20260909 origin/integration/rc6-wave7-event-risk-binding-20260908; do
+            echo "=== REF=$ref ==="
+            git log -n 20 --oneline "$ref" -- || true
+            git ls-tree -r --name-only "$ref" | grep -Ei '(gdelt|event.?risk|wave11|risk.*event|systemd|timer)' | head -n 160 || true
+          done
+          echo '--- CURRENT REFERENCES ---'
+          git grep -n -Ei 'GDELT|gdelt|event_risk|EVENT_RISK' HEAD -- '*.py' '*.yml' '*.yaml' '*.service' '*.timer' | head -n 320 || true
+          echo '--- W11 BRANCH REFERENCES ---'
+          git grep -n -Ei 'GDELT|gdelt|event_risk|EVENT_RISK' origin/wave11/rc6-event-risk-gdelt-binding-20260909 -- '*.py' '*.yml' '*.yaml' '*.service' '*.timer' | head -n 320 || true
+          echo CP5_RCA_COMPLETE=YES

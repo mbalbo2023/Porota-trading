@@ -1,0 +1,11 @@
+[Unit]
+Description=RC6 bounded local archive postclose
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:15/5:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 18..22:00/5:00 America/Argentina/Buenos_Aires
+Persistent=false
+Unit=porota-local-eod-history-rc6.service
+
+[Install]
+WantedBy=timers.target

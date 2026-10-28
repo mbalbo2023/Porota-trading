@@ -1,0 +1,111 @@
+name: RC6 CP4 A3 Final Green Proof V4 2026-09-11
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: [.github/workflows/rc6-cp4-a3-final-green-proof-v4-20260911.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp4_final:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Prove A3 overlay and post-close persistence safely
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          CONTAINER=porota_production_observer
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo '--- EFFECTIVE A3 WIRING ---'
+          UNIT="$(sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager)"
+          printf '%s\n' "$UNIT" | grep -F '/app/data/rc6_a3_overlay/ex_a3_history_job_rc6.py'
+          printf '%s\n' "$UNIT" | grep -F 'PYTHONPATH=/app/data/rc6_a3_overlay:/app'
+          echo '--- MAPPER/IMPORT GATE ---'
+          sudo -n docker exec -i -w /tmp -e PYTHONPATH=/app/data/rc6_a3_overlay:/app "$CONTAINER" python - <<'PY'
+          import ew_a3_history_rc6 as h, fd_a3_identity_mapper_rc6 as m
+          print('EW_FILE='+h.__file__); print('FD_FILE='+m.__file__)
+          assert h.__file__.startswith('/app/data/rc6_a3_overlay/')
+          assert m.__file__.startswith('/app/data/rc6_a3_overlay/')
+          assert m.porota_to_a3_dlr('DLR/SEP26') == 'DLR092026'
+          for s in ('DLR/SEP26/OCT26','DLR/SEP26M'):
+              try: m.porota_to_a3_dlr(s)
+              except Exception as e: print(s+'=FAIL_CLOSED:'+type(e).__name__)
+              else: raise SystemExit('FAIL_OPEN:'+s)
+          print('CP4_IMPORT_GATE=GREEN')
+          PY
+          echo '--- SAFETY/PRESTATE ---'
+          state="$(sudo -n docker exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(json.dumps({'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None}))
+          PY
+          )"
+          echo "$state"
+          STATE="$state" python3 - <<'PY'
+          import os,json,sys
+          d=json.loads(os.environ['STATE'])
+          if d.get('mode')!='PRODUCTION_PAPER' or int(d.get('orders') or 0)!=0: sys.exit(1)
+          PY
+          session="$(STATE="$state" python3 -c "import os,json; print(json.loads(os.environ['STATE']).get('session') or '')")"
+          if test "$session" = MARKET_OPEN; then
+            echo CP4_RUNTIME_WIRING=GREEN
+            echo CP4_PERSISTENCE=YELLOW_MARKET_OPEN_SAFE_GUARD
+            echo REAL_ORDERS_SENT=0
+            echo CP4_FINAL=YELLOW_POSTCLOSE_REQUIRED
+            exit 0
+          fi
+          echo '--- POST-CLOSE CONTROLLED RUN ---'
+          set +e
+          sudo -n systemctl start porota-a3-history-rc6@DAILY_INCREMENTAL.service
+          rc=$?
+          set -e
+          echo A3_SERVICE_START_RC="$rc"
+          sudo -n journalctl -u porota-a3-history-rc6@DAILY_INCREMENTAL.service --since '-8 min' --no-pager -l | tail -n 180
+          test "$rc" -eq 0
+          echo '--- PERSISTENCE/SAFETY POST ---'
+          sudo -n docker exec -i "$CONTAINER" python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          cols=[x['name'] for x in c.execute("pragma table_info(a3_history_ingest_state_rc6)")]
+          keep=[x for x in ('symbol','instrument_type','status','last_complete_day','last_success_at','rows_last') if x in cols]
+          rows=[]
+          if keep:
+              sql='select '+','.join(keep)+" from a3_history_ingest_state_rc6 where instrument_type='FUTUROS' order by coalesce(last_success_at,'') desc,symbol"
+              rows=[dict(x) for x in c.execute(sql)]
+          c.close()
+          complete=[x for x in rows if str(x.get('status','')).upper()=='COMPLETE' and int(x.get('rows_last') or 0)>0]
+          print(json.dumps({'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None,'columns':cols,'future_rows':len(rows),'complete_with_rows':len(complete),'examples':complete[:8]},default=str))
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          assert rows, 'NO_FUTURES_STATE_ROWS'
+          assert complete, 'NO_PERSISTED_SIMPLE_FUTURES_AFTER_POSTCLOSE_RUN'
+          print('CP4_RUNTIME_WIRING=GREEN')
+          print('CP4_PERSISTENCE=GREEN')
+          print('CP4_SAFETY=GREEN')
+          print('REAL_ORDERS_SENT=0')
+          print('CP4_FINAL=GREEN')
+          PY
+          HOST

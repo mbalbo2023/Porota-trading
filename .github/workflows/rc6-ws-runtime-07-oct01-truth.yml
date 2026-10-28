@@ -1,0 +1,144 @@
+name: RC6 WS RUNTIME 07 Oct-01 Truth Audit
+
+on:
+  push:
+    branches:
+      - work/ws-runtime-07-oct01-truth-health-20260930
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  runtime-truth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read-only truth snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime-truth.txt <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          TOKEN="$(sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_dashboard | sed -n 's/^DASHBOARD_ACCESS_TOKEN=//p' | head -n1)"
+          test -n "$TOKEN"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json,sqlite3
+          from pathlib import Path
+          from cg_paper_workspace import database_path
+          db=database_path()
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute("PRAGMA query_only=ON")
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          def rows(sql,p=()):
+              return [dict(r) for r in c.execute(sql,p).fetchall()]
+          out={}
+          out["observer"]=dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,ppi_auth,heartbeat_at,last_market_data_at,detail FROM observer_state WHERE id=1").fetchone())
+          out["daily_risk"]=rows("SELECT * FROM paper_daily_risk ORDER BY evaluated_at DESC LIMIT 24") if "paper_daily_risk" in tables else []
+          out["gate_reasons"]=rows("""SELECT reason,final_result,COUNT(*) n,MAX(evaluated_at) as_of FROM trade_gate_evaluations
+              WHERE date(evaluated_at,'-3 hours')=date('now','-3 hours')
+              GROUP BY reason,final_result ORDER BY n DESC LIMIT 40""") if "trade_gate_evaluations" in tables else []
+          out["families"]=rows("""SELECT upper(instrument_type) family,status,can_simulate,COUNT(*) n,MAX(checked_at) as_of
+              FROM candidate_identity_v2 GROUP BY upper(instrument_type),status,can_simulate
+              ORDER BY family,status,can_simulate""") if "candidate_identity_v2" in tables else []
+          out["evidence_v2"]=rows("""SELECT upper(family) family,COUNT(*) rows,COUNT(DISTINCT ticker||'|'||market||'|'||currency||'|'||settlement) identities,
+              COUNT(DISTINCT source_class) sources,MIN(observed_at) oldest,MAX(observed_at) newest
+              FROM contract_evidence_v2_current GROUP BY upper(family) ORDER BY family""") if "contract_evidence_v2_current" in tables else []
+          out["validation_tables"]=sorted(t for t in tables if "valid" in t.lower() or "audit" in t.lower())
+          out["validation_counts"]={}
+          for t in out["validation_tables"]:
+              try: out["validation_counts"][t]=c.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+              except sqlite3.Error: pass
+          out["workers"]={}
+          for name in ("intraday_scalping_worker_state","paper_caucion_cash_sweep_state","paper_supervisor_state","candle_worker_state"):
+              if name in tables:
+                  try: out["workers"][name]=dict(c.execute(f"SELECT * FROM {name} WHERE id=1").fetchone() or {})
+                  except sqlite3.Error: pass
+          c.close()
+          p=Path("/app/data/market/iol_family_reference_latest.json")
+          try: out["iol_family_cache"]=json.loads(p.read_text(encoding="utf-8"))
+          except Exception as exc: out["iol_family_cache"]={"read_error":type(exc).__name__}
+          print("RUNTIME_TRUTH="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          assert out["observer"]["mode"]=="PRODUCTION_PAPER"
+          assert int(out["observer"]["real_orders_sent"] or 0)==0
+          PY
+          for path in /trading /riesgo /validacion /analisis /instrumentos /universo-operativo /api/dashboard/truth; do
+            code="$(curl -sS -o /tmp/porota-ws07.html -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000$path")"
+            bytes="$(wc -c </tmp/porota-ws07.html)"
+            echo "HTTP|$path|$code|bytes=$bytes"
+            test "$code" = 200
+          done
+          echo "VALIDATION_FILES_BEGIN"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json
+          from pathlib import Path
+          import rc6_validation_projection as projection
+          import rc6_action4_audit as action4
+          from cg_paper_workspace import artifact_root,database_path
+          snap=projection.read()
+          print("VALIDATION_SNAPSHOT="+json.dumps(snap,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          target=Path(artifact_root(database_path())).resolve()/"reports"/action4.FILENAME
+          try:
+              payload=json.loads(target.read_text(encoding="utf-8"))
+          except Exception as exc:
+              payload={"read_error":type(exc).__name__,"path":str(target)}
+          print("ACTION4_SNAPSHOT="+json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          PY
+          systemctl list-timers --all --no-pager | grep -Ei 'valid|audit|action4' || true
+          echo "VALIDATION_FILES_END"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          REMOTE
+          echo "EVIDENCE_LOG_BEGIN"
+          cat evidence/runtime-truth.txt
+          echo "EVIDENCE_LOG_END"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-runtime-07-truth
+          path: evidence/runtime-truth.txt
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
+
+  focused-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAPER guard and compile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q bw_daily_risk.py bf_production_paper_observer.py zz_wave8_dashboard_live_rc6.py
+          git diff --check
+      - name: Install test dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Runtime regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_daily_risk_outbox_v17.py tests/test_rc6_risk_gdelt_dashboard.py tests/test_ws_ops_risk_layout.py tests/test_rc6_action4_audit.py
+          echo WS_RUNTIME_07_REGRESSION=GREEN

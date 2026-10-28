@@ -1,0 +1,98 @@
+name: RC6 host enabled failed services forensics
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths:
+      - '.github/workflows/rc6-host-enabled-failures-forensics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Inspect enabled failed POROTA services without writes
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/porota-failures.txt
+          set -euo pipefail
+          echo 'POROTA_ENABLED_FAILURE_FORENSICS=START'
+          cd /opt/porota-trading
+          echo "BRANCH=$(git branch --show-current)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "DIRTY_LINES=$(git status --porcelain | wc -l)"
+          echo 'CONTAINERS:'
+          for c in porota_production_observer porota_production_dashboard; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f '{{.Name}}|running={{.State.Running}}|restarts={{.RestartCount}}|image={{.Config.Image}}|readonly={{.HostConfig.ReadonlyRootfs}}' "$c"
+            else
+              echo "$c|MISSING"
+            fi
+          done
+
+          for u in \
+            porota-host-general-backup-rc4.service \
+            porota-log-export-hf6.service \
+            porota-rc4-auto-check.service \
+            porota-scheduler-export-hf6.service
+          do
+            echo "===== UNIT=$u ====="
+            sudo -n systemctl show "$u" --no-pager \
+              -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus \
+              -p FragmentPath -p User -p Group -p WorkingDirectory -p ExecStart 2>/dev/null || true
+            timer="${u%.service}.timer"
+            echo "TIMER=$timer|enabled=$(sudo -n systemctl is-enabled "$timer" 2>/dev/null || true)|active=$(sudo -n systemctl is-active "$timer" 2>/dev/null || true)"
+            sudo -n systemctl show "$timer" --no-pager -p NextElapseUSecRealtime -p LastTriggerUSec -p OnCalendar 2>/dev/null || true
+            echo 'UNIT_FILE:'
+            sudo -n systemctl cat "$u" --no-pager 2>/dev/null || true
+            echo 'JOURNAL_LAST_25:'
+            sudo -n journalctl -u "$u" -n 25 --no-pager -o short-iso 2>/dev/null || true
+          done
+
+          echo '===== EXECUTABLE_PATHS ====='
+          for p in \
+            /opt/porota-trading/rc4_host_general_backup_job.py \
+            /opt/porota-trading/scripts/porota_export_runtime_logs_hf6.sh \
+            /usr/local/sbin/porota-rc4-auto-check \
+            /opt/porota-trading/scripts/porota_export_scheduler_state_hf6.sh
+          do
+            if [ -e "$p" ] || [ -L "$p" ]; then
+              printf 'PATH=%s|' "$p"
+              stat -Lc 'type=%F|mode=%a|owner=%U:%G|bytes=%s|mtime=%y' "$p" 2>/dev/null || stat -c 'type=%F|mode=%a|owner=%U:%G|bytes=%s|mtime=%y' "$p" || true
+              printf 'EXECUTABLE=%s\n' "$(test -x "$p" && echo YES || echo NO)"
+              head -n 2 "$p" 2>/dev/null | sed 's/^/HEAD=/' || true
+            else
+              echo "PATH=$p|MISSING"
+            fi
+          done
+          echo 'FAILED_POROTA_UNITS_NOW:'
+          sudo -n systemctl --failed --no-pager --no-legend | grep -i porota || true
+          echo 'POROTA_ENABLED_FAILURE_FORENSICS=END'
+          REMOTE
+          {
+            echo '### POROTA enabled failed services — read-only forensics'
+            echo '```text'
+            sed -n '1,420p' /tmp/porota-failures.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Porota RC6 post-close snapshot at 17:08 Argentina on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:08:00 America/Argentina/Buenos_Aires
+# Starting 02-Nov-2026 COM19024 equities/options remain open until 18:00.
+# The service's date-aware ExecCondition selects exactly one of these ticks.
+OnCalendar=Mon..Fri *-*-* 18:08:00 America/Argentina/Buenos_Aires
+AccuracySec=30s
+Unit=porota-snapshot-postclose-rc6.service
+
+[Install]
+WantedBy=timers.target

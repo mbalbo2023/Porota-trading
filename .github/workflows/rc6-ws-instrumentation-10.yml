@@ -1,0 +1,35 @@
+name: RC6 WS Instrumentation 10 Audit Metrics
+
+on:
+  push:
+    branches:
+      - work/ws-instrumentation-10-audit-metrics-20261001
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-metrics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAPER guard and syntax
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q scripts/rc6_zero_known_error_runtime_audit.py tests/test_ws_dash_05_dashboard_performance.py
+          git diff --check
+      - name: Install dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Surface metric regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_ws_dash_05_dashboard_performance.py
+          echo WS_INSTRUMENTATION_10=GREEN

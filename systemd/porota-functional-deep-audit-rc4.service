@@ -1,0 +1,6 @@
+[Unit]
+Description=Porota RC4 deep functional introspection (read-only)
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec porota_production_observer python /app/ops_introspection_hf4.py

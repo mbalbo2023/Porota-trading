@@ -1,0 +1,92 @@
+{
+  "workstream": "WS-INTEG-RC6-20261002",
+  "base_sha": "136453dc5b6d4146057142bcdd76b2f6b8d474e0",
+  "seed_sha": "9a45dd700333924e312f7d412c148692db96de4b",
+  "candidate_branch": "integrate/rc6-unified-20261002",
+  "inputs": {
+    "435": {
+      "sha": "2c55af7ab4407b9fae218a96f06300a7e0670c71",
+      "branch": "fix/rc6-deploy-image-retention-guard-20261001"
+    },
+    "436": {
+      "sha": "fd84b4dd736e9f4ebd011495ab16df282ac51d37",
+      "branch": "fix/rc6-gdelt-retired-20261002"
+    },
+    "437": {
+      "sha": "5ce5927525866ad001348d48a2eb19850557a3c7",
+      "branch": "fix/rc6-scalping-confirmation-capacity-20261002"
+    },
+    "438": {
+      "sha": "217dbadfe418277f10ee0304c2a9ae0e02d723b9",
+      "branch": "fix/rc6-contract-material-hash-20261002"
+    },
+    "439": {
+      "sha": "fe34c2e87d7bb53503cca173209e814b93b45e6e",
+      "branch": "fix/rc6-dashboard-truthful-explanations-20261002"
+    },
+    "440": {
+      "sha": "2c2969e8accf7009ee338ae109258b80d042cb97",
+      "branch": "fix/rc6-exit-reader-sqlite-lock-20261002"
+    },
+    "442": {
+      "sha": "e67612fbba198d6c51ac588b38a56bbb57b73314",
+      "branch": "fix/rc6-bcra-retired-20261002"
+    },
+    "443": {
+      "sha": "67a7e06561337b2aaeff76dcf3ede15af013f764",
+      "branch": "fix/rc6-dashboard-history-tablet-truth-20261002"
+    },
+    "444": {
+      "sha": "9dde0dfa224ffa9301458b61a5fc659524d831ea",
+      "branch": "fix/rc6-caucion-policy-wiring-20261002"
+    }
+  },
+  "excluded_oneoff_workflows": [
+    {
+      "pr": 442,
+      "path": ".github/workflows/rc6-bcra-active-retirement-patch-20261002.yml"
+    },
+    {
+      "pr": 442,
+      "path": ".github/workflows/rc6-bcra-retirement-inventory-20261002.yml"
+    },
+    {
+      "pr": 443,
+      "path": ".github/workflows/rc6-dashboard-bcra-visual-retirement-20261002.yml"
+    },
+    {
+      "pr": 443,
+      "path": ".github/workflows/rc6-dashboard-bcra-visual-retirement-v2-20261002.yml"
+    },
+    {
+      "pr": 443,
+      "path": ".github/workflows/rc6-dashboard-history-tablet-truth-patch-20261002.yml"
+    },
+    {
+      "pr": 444,
+      "path": ".github/workflows/rc6-caucion-live-book-wiring-patch-20261002.yml"
+    },
+    {
+      "pr": 444,
+      "path": ".github/workflows/rc6-caucion-live-ppi-readonly-20261002.yml"
+    }
+  ],
+  "resolved_overlaps": [
+    "rc6_contract_bridge.py: disjoint hunks",
+    "tests/test_rc6_dashboard_truthful_explanations.py",
+    "tests/test_rc6_macro_risk_shadow.py"
+  ],
+  "paper_only": true,
+  "ppi_watch": "UNTOUCHED",
+  "deploy": "NOT_EXECUTED",
+  "cross_guards": [
+    "live caucion material contract recheck",
+    "exact live PPI source",
+    "live-book PAPER tariff accepted by sweep",
+    "dynamic freshness preserved",
+    "synthetic ledger placement and durable recovery",
+    "GDELT active cards/engine retired",
+    "nonzero MAE prefix preserved",
+    "STOP normalization idempotent"
+  ]
+}

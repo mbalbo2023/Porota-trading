@@ -1,0 +1,72 @@
+name: RC6 WS TESTS 15 Governed Root Reconciliation
+
+on:
+  push:
+    branches:
+      - work/ws-tests-15-governed-root-reconcile-20261001
+
+permissions:
+  contents: read
+
+jobs:
+  focal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install locked dependencies
+        run: python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+      - name: Root history contract regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q             test_cp_history_ingest_policy_hf6.py             test_hf6_history_data912_v2.py
+          echo WS_TESTS_15_FOCAL=GREEN
+
+  governed-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install locked dependencies
+        run: python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+      - name: Reproduce Predeploy governed root discovery
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          policy=yaml.safe_load(Path('ops/policy/test-policy.yaml').read_text(encoding='utf-8'))
+          scope=policy['productive_scope']
+          assert scope['roots']==['.']
+          args=list(scope['roots'])
+          for item in scope.get('exclusions',[]):
+              path=Path(item['path'])
+              successor=Path(item['successor'])
+              assert path.is_file()
+              assert successor.is_file()
+              assert item.get('classification') and item.get('reason') and item.get('owner')
+              args.append(f'--ignore={path.as_posix()}')
+          Path('/tmp/porota-test-args.txt').write_text('\n'.join(args)+'\n',encoding='utf-8')
+          PY
+          mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/collection.txt
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/tests.xml
+          python - <<'PY'
+          from pathlib import Path
+          import re, xml.etree.ElementTree as ET
+          collection=Path('/tmp/collection.txt').read_text(encoding='utf-8')
+          discovered=sum(int(n) for n in re.findall(r': (\d+)$',collection,re.MULTILINE))
+          suite=ET.parse('/tmp/tests.xml').find('.//testsuite')
+          executed=int(suite.get('tests',0))
+          failures=int(suite.get('failures',0))
+          errors=int(suite.get('errors',0))
+          print(f'WS_TESTS_15_DISCOVERED={discovered}')
+          print(f'WS_TESTS_15_EXECUTED={executed}')
+          print(f'WS_TESTS_15_FAILURES={failures}')
+          print(f'WS_TESTS_15_ERRORS={errors}')
+          assert discovered==executed
+          assert failures==0 and errors==0
+          PY
+          echo WS_TESTS_15_GOVERNED_ROOT=GREEN

@@ -1,0 +1,122 @@
+"""RC6 sanitized normalization of authenticated PPI GET/XHR evidence.
+
+Only explicit provider fields are retained. Decimal precision is not converted
+into quantity step/price tick and account-specific available quantity is
+excluded. This module has no order capability.
+"""
+from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
+
+
+UNBOUND_FEE_FIELDS = frozenset({
+    "commission_minimum", "commission_rate_estimated",
+    "commission_vat_rate_estimated", "market_fee_rate",
+})
+
+
+def separate_unbound_fee_estimate(row):
+    """Keep GET rate hints away from exact trading identities.
+
+    InstrumentosOperables supplies a ticker and instrument denomination but
+    no proved trading market/currency/settlement, tariff channel, or billed
+    account terms. Its estimates can be audited at source scope only.
+    """
+    if not isinstance(row, dict):
+        raise ValueError("FEE_SOURCE_ROW_INVALID")
+    return ({key: value for key, value in row.items() if key not in UNBOUND_FEE_FIELDS},
+            {key: row[key] for key in UNBOUND_FEE_FIELDS if row.get(key) is not None})
+
+
+def _positive(value):
+    try:
+        number = Decimal(str(value))
+        return number if number.is_finite() and number > 0 else None
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _currency(row):
+    value = row.get("moneda") if isinstance(row, dict) else None
+    if isinstance(value, dict):
+        nested = value.get("moneda") if isinstance(value.get("moneda"), dict) else None
+        src = nested or value
+        return {"description": src.get("descripcion"), "symbol": src.get("simbolo"),
+                "provider_id": src.get("id")}
+    return None
+
+
+def instrumentos_operables(payload):
+    rows = (payload or {}).get("payload") if isinstance(payload, dict) else None
+    if isinstance(rows, dict):
+        rows = rows.get("payload")
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        out.append({
+            "instrument_id": row.get("itemId"), "ticker": ticker,
+            "provider_name": row.get("nombre"), "currency": _currency(row),
+            "operable_auction": row.get("operableSubasta"),
+            "commission_minimum": row.get("comisionMontoMinimo"),
+            "commission_rate_estimated": row.get("porcentajeComisionEstimado"),
+            "commission_vat_rate_estimated": row.get("porcentajeIVAComisionEstimado"),
+            "market_fee_rate": row.get("porcentajeDerechoMercadoYBolsa"),
+            "quantity_decimal_places": row.get("cantidadDecimales"),
+            "price_decimal_places": row.get("cantidadDecimalesPrecio"),
+            "derived_instrument_count": len(row.get("instrumentosDerivados") or []),
+            "quantity_step": None, "price_tick": None,
+            "semantic_guard": "DECIMAL_PLACES_ARE_NOT_STEP_OR_TICK",
+        })
+    return out
+
+
+def option_underlyings(payload):
+    rows = (payload or {}).get("payload") if isinstance(payload, dict) else None
+    if isinstance(rows, dict):
+        rows = rows.get("payload")
+    if not isinstance(rows, list):
+        return []
+    return [{"underlying_id": r.get("id"), "ticker": str(r.get("ticker") or "").upper(),
+             "description": r.get("descripcion")}
+            for r in rows if isinstance(r, dict) and r.get("ticker")]
+
+
+def bond_technical(payload):
+    row = (payload or {}).get("payload") if isinstance(payload, dict) else None
+    if isinstance(row, dict) and "payload" in row and isinstance(row.get("payload"), dict):
+        row = row["payload"]
+    if not isinstance(row, dict):
+        return {}
+    keys = ("id","ticker","nombre","emisor","legislacion","isin","laminaMinima","multiploMinimo",
+            "fechaEmision","fechaVencimiento","intereses","amortizacion","pagosPorAnio","tir",
+            "modifiedDuration","paridad","interesesCorridos","valorTecnico","valorResidual")
+    result = {k: row.get(k) for k in keys if row.get(k) not in (None, "")}
+    result["provider_currency"] = _currency(row)
+    basis = _positive(row.get("nominalesEnPrecio"))
+    minimum = _positive(row.get("laminaMinima"))
+    step = _positive(row.get("multiploMinimo"))
+    result["provider_nominales_en_precio"] = row.get("nominalesEnPrecio")
+    result["provider_quantity_decimal_places"] = row.get("cantidadDecimales")
+    result["provider_price_decimal_places"] = row.get("cantidadDecimalesPrecio")
+    # These are explicit contract fields from DatosTecnicos, unlike decimal
+    # display precision.  They feed PAPER only for this exact PPI identity.
+    result["quantity_min"] = str(minimum) if minimum is not None else None
+    result["quantity_step"] = str(step) if step is not None else None
+    result["order_quantity_step"] = result["quantity_step"]
+    result["order_price_tick"] = None
+    result["price_quote_unit"] = str(basis) if basis is not None else None
+    result["cash_multiplier"] = str(Decimal(1) / basis) if basis is not None else None
+    result["maturity_date"] = row.get("fechaVencimiento")
+    result["coupon_terms"] = row.get("intereses")
+    result["amortization_terms"] = row.get("amortizacion")
+    result["derivation_rule"] = (
+        "cash_multiplier = 1 / PPI DatosTecnicos.nominalesEnPrecio"
+        if basis is not None else None)
+    result["semantic_guard"] = "DECIMAL_PLACES_NOT_USED;EXPLICIT_MINIMUM_MULTIPLE_AND_QUOTE_BASIS_ONLY"
+    return result

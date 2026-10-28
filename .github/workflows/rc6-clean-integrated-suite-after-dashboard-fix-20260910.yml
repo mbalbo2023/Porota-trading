@@ -1,0 +1,63 @@
+name: RC6 Clean Integrated Suite After Dashboard Fix 2026-09-10
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: ['.github/workflows/rc6-clean-integrated-suite-after-dashboard-fix-20260910.yml']
+permissions:
+  contents: read
+jobs:
+  integrated-clean:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert immutable RC6 PAPER safety identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo 'RC6_PAPER_SAFETY=GREEN'
+      - name: Install integrated dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Prove W10 binding and causal regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. python scripts/rc6_w10_sector_map_preflight.py
+          PYTHONPATH=. pytest -q tests/test_rc6_wave10_sector_binding_default.py tests/test_caucion_ledger_v17.py::test_caucion_rota_no_detiene_supervision_ni_salidas_spot tests/test_daily_risk_outbox_v17.py::test_aviso_y_fill_comparten_commit_y_rollback
+          echo 'W10_AND_CAUSAL_REGRESSIONS=GREEN'
+      - name: Prove consolidated live dashboard contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_dashboard_paper_v1634.py::test_vivo_esta_enrutado_al_panel_consolidado
+          echo 'LIVE_DASHBOARD_CONTRACT=GREEN'
+      - name: Run complete integrated pytest suite with deterministic RCA
+        shell: bash
+        run: |
+          set +e
+          PYTHONPATH=. pytest -x -vv --tb=short > /tmp/pytest-integrated-clean.txt 2>&1
+          rc=$?
+          echo "PYTEST_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo '===== FIRST FAILURE EXTRACT ====='
+            grep -nE '(^_{3,}|FAILED|ERROR|E   |AssertionError|NameError|TypeError|AttributeError|ImportError|ModuleNotFoundError|KeyError|ValueError)' /tmp/pytest-integrated-clean.txt | tail -n 120 || true
+            echo '===== LAST 180 LINES ====='
+            tail -n 180 /tmp/pytest-integrated-clean.txt || true
+            exit "$rc"
+          fi
+          tail -n 100 /tmp/pytest-integrated-clean.txt
+          echo 'INTEGRATED_TESTS=GREEN'
+      - name: Prove no real order capability introduced
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RC6_CLEAN_INTEGRATED_GATE=GREEN'

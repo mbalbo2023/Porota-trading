@@ -1,0 +1,23 @@
+name: RC6 Wave9 Currentbase Readiness 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave9-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave9-currentbase-readiness-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependency
+        run: python -m pip install -q pytest
+      - name: Compile and targeted tests
+        run: |
+          set -euo pipefail
+          python -m py_compile fe_fixed_income_nominal_contract_rc6.py rc6_cauciones_contract.py
+          python -m pytest -q tests/test_fixed_income_nominal_contract_rc6.py tests/test_rc6_cauciones_contract.py
+      - name: Safety assertions
+        run: |
+          set -euo pipefail
+          python -c "import ast; ps=('fe_fixed_income_nominal_contract_rc6.py','rc6_cauciones_contract.py'); trees=[ast.parse(open(p,encoding='utf-8').read()) for p in ps]; bad=[]; [bad.extend([a.name for n in ast.walk(t) if isinstance(n,ast.Import) for a in n.names if a.name in ('requests','httpx','sqlite3')]) for t in trees]; assert not bad,bad; print('WAVE9_CONTRACTS=CODE_READY_CANDIDATE'); print('RUNTIME_MUTATION=NO'); print('ORDER_ROUTES=NOT_CALLED')"

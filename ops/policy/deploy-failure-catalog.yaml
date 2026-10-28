@@ -1,0 +1,157 @@
+schema_version: 1
+updated_utc: "2026-09-24T15:45:00Z"
+
+failure_classes:
+  - failure_signature: ARTIFACT_DEPENDENCY_MISSING
+    severity: P0
+    evidence_runs:
+      - 36003003312
+      - 36004516917
+      - 36006025923
+    observed_examples:
+      - "ModuleNotFoundError: No module named 'bl_candle_engine'"
+      - "ModuleNotFoundError: No module named 'cb_caucion_audit'"
+    root_cause: >
+      Runtime Python modules existed in Git but the deploy artifact was assembled
+      from a manually curated file list that omitted transitive runtime dependencies.
+      Source-level tests passed because they executed against the complete checkout.
+    earliest_possible_detection_phase: PREDEPLOY_ARTIFACT
+    permanent_guard:
+      - Build one exact deployable artifact before any droplet mutation.
+      - Validate tracked runtime completeness against the exact artifact.
+      - Validate local import closure inside the exact artifact.
+      - Run runtime import smoke inside the exact artifact.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: RUNTIME_SOURCE_PROVENANCE_MISMATCH
+    severity: P0
+    evidence_runs:
+      - 35955587935
+      - 35956813781
+      - 35993915275
+      - 35995950563
+    observed_examples:
+      - "RUNNING_SOURCE_SHA_MISMATCH=dashboard|bg_paper_dashboard.py"
+      - "RUNNING_SOURCE_SHA_MISMATCH=dashboard|zz_wave8_dashboard_live_rc6.py"
+      - "RC6_IMAGE_SOURCE_SHA_MISMATCH=dashboard|zz_wave8_dashboard_live_rc6.py"
+    root_cause: >
+      Candidate, stable tag, host staging tree and running containers were not
+      represented by one immutable promoted artifact identity.
+    earliest_possible_detection_phase: PREPROMOTION
+    permanent_guard:
+      - Build once and identify artifact by immutable digest.
+      - Observer and dashboard must start from the same tested digest.
+      - Promotion validates digest identity, not hand-selected file hashes.
+      - Generate CURRENT_STATE only after both runtime components report the same digest.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: CANDIDATE_IMAGE_REMOVED_BEFORE_VERIFY
+    severity: P0
+    evidence_runs:
+      - 35999160244
+    observed_examples:
+      - "Error response from daemon: No such image: porota-trading-bot:17.0.0-rc6-candidate-..."
+    root_cause: >
+      Candidate image lifecycle and cleanup were interleaved with verification.
+      A verification phase depended on a transient tag that was no longer present.
+    earliest_possible_detection_phase: PIPELINE_CONTRACT
+    permanent_guard:
+      - Verification consumes immutable digest produced by build-once.
+      - Cleanup runs only after the last consumer has released the candidate.
+      - Cleanup must protect every active/referenced artifact by image ID/digest.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: HOST_BOOTSTRAP_QUOTING_ERROR
+    severity: P0
+    evidence_runs:
+      - 36001499257
+    observed_examples:
+      - "FileNotFoundError: [Errno 2] No such file or directory: '/opt/porota-trading/-c'"
+      - "NameError: name 'GREEN' is not defined"
+    root_cause: >
+      Complex nested shell/Python quoting embedded in a large workflow changed command
+      semantics on the remote host.
+    earliest_possible_detection_phase: PREDEPLOY_CI
+    permanent_guard:
+      - Move non-trivial remote logic from YAML heredocs into versioned scripts.
+      - Unit-test script argument parsing locally.
+      - Keep workflow YAML orchestration-only.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: BRITTLE_WORKFLOW_TEXT_ASSERTION
+    severity: P1
+    evidence_runs:
+      - 36008066756
+    observed_examples:
+      - "test_rc6_deploy_runtime_completeness.py ... assert 3 >= 4"
+    root_cause: >
+      A regression test asserted textual occurrence counts inside workflow YAML instead
+      of validating an executable contract or resulting artifact behavior.
+    earliest_possible_detection_phase: PREDEPLOY_CI
+    permanent_guard:
+      - Test semantic policy and artifact behavior.
+      - Do not use line counts, duplicate-string counts or fragile YAML text layout as safety contracts.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: MARKET_STATE_SEMANTIC_CONTRADICTION
+    severity: P1
+    evidence_runs:
+      - 35954212795
+    observed_examples:
+      - "OBSERVER_BEFORE contained CLOSED while runner emitted STATUS=SKIPPED_MARKET_NOT_CLOSED"
+      - "workflow translated the skip to SKIPPED_MARKET_OPEN"
+    root_cause: >
+      Multiple components used different literals/semantics for market session state
+      and the deploy workflow interpreted output strings rather than a typed contract.
+    earliest_possible_detection_phase: PREDEPLOY_CONTRACT_TEST
+    permanent_guard:
+      - Define one typed market-session enum/contract.
+      - Return structured JSON/status codes from reconciliation.
+      - Test every legal state transition before deploy.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: DEPLOY_FAILED_AFTER_RUNTIME_MUTATION
+    severity: P0
+    evidence_runs:
+      - 35955587935
+      - 35956813781
+      - 35993915275
+      - 35995950563
+      - 36003003312
+      - 36004516917
+      - 36006025923
+    observed_examples:
+      - "runtime recreated successfully, later verification failed"
+    root_cause: >
+      Checks that could have been executed against the candidate were placed after
+      stable tag/runtime mutation. GitHub FAILURE therefore did not imply NO CHANGE.
+    earliest_possible_detection_phase: PIPELINE_ARCHITECTURE
+    permanent_guard:
+      - Move all reproducible checks above the promotion gate.
+      - Candidate remains isolated until green.
+      - Deployment result must be one of SUCCESS, FAILED_PREDEPLOY_NO_RUNTIME_CHANGE,
+        FAILED_FIX_FORWARD_REQUIRED.
+      - Runtime rollback remains forbidden; correction is fix-forward.
+    recurrence_policy: FORBIDDEN
+
+  - failure_signature: MANUAL_TEST_DISCOVERY_GAP
+    severity: P0
+    evidence_runs: []
+    observed_examples:
+      - "new validator regression test existed but RC6 unified candidate tests did not discover it"
+    root_cause: >
+      Candidate CI enumerates individual test files manually, so adding a regression
+      test does not guarantee that the CI executes it.
+    earliest_possible_detection_phase: CI_CONFIGURATION
+    permanent_guard:
+      - Use automatic test discovery for the governed test scope.
+      - Explicit exclusions require documented policy, never silent omission.
+      - CI must report discovered/executed test counts.
+    recurrence_policy: FORBIDDEN
+
+global_rules:
+  rollback_allowed: false
+  correction_strategy: FIX_FORWARD_ONLY
+  cleanup_after_every_attempt_when_safe: true
+  ppi_watch_out_of_scope: true
+  user_terminal_required: false

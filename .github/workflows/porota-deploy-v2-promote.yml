@@ -1,0 +1,2506 @@
+name: RC6 Deploy V2 promote frozen candidate
+
+on:
+  push:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    paths-ignore:
+      - 'docs/**'
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    # Ten native cycles before stress and ten after exact restoration add up
+    # to two bounded20-minute observation windows; freshness gates stay120s.
+    timeout-minutes: 150
+    env:
+      RC6_HOST_STRESS_MODE: DEFERRED_BY_EXACT_OWNER_20261020
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout production promotion commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve exact frozen candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t PARTS < <(git rev-list --parents -n 1 HEAD | tr ' ' '\n')
+          if [ "${#PARTS[@]}" -ne 3 ]; then
+            PARENT_COUNT=$(( ${#PARTS[@]} - 1 ))
+            echo "POROTA_DEPLOY_V2_PROMOTION_COMMIT_INVALID=RED|sha=${PARTS[0]:-UNKNOWN}|parents=${PARENT_COUNT}|required=2"
+            echo "::error::Deploy V2 requires a two-parent merge commit so the exact Predeploy candidate remains addressable."
+            exit 31
+          fi
+          CANDIDATE_SHA="${PARTS[2]}"
+          DEPLOY_SHA="${PARTS[0]}"
+          CANDIDATE_TREE="$(git rev-parse "$CANDIDATE_SHA^{tree}")"
+          DEPLOY_TREE="$(git rev-parse "$DEPLOY_SHA^{tree}")"
+          test "$CANDIDATE_TREE" = "$DEPLOY_TREE"
+          {
+            echo "CANDIDATE_SHA=$CANDIDATE_SHA"
+            echo "CANDIDATE_TREE=$CANDIDATE_TREE"
+            echo "DEPLOY_SHA=$DEPLOY_SHA"
+          } >> "$GITHUB_ENV"
+          echo "POROTA_DEPLOY_V2_TREE_IDENTITY=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|tree=$DEPLOY_TREE"
+
+      - name: Locate successful Predeploy V2 artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          repo=os.environ["GITHUB_REPOSITORY"]
+          candidate=os.environ["CANDIDATE_SHA"]
+          token=os.environ["GH_TOKEN"]
+          name=f"porota-predeploy-v2-{candidate}"
+          headers={"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json",
+                   "X-GitHub-Api-Version":"2022-11-28"}
+          def get(url):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  return json.load(r)
+          q=urllib.parse.quote(name,safe="")
+          data=get(f"https://api.github.com/repos/{repo}/actions/artifacts?name={q}&per_page=100")
+          candidates=[]
+          for artifact in data.get("artifacts",[]):
+              if artifact.get("expired") or artifact.get("name") != name:
+                  continue
+              run_id=(artifact.get("workflow_run") or {}).get("id")
+              if not run_id:
+                  continue
+              run=get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}")
+              if run.get("name")!="Porota Predeploy V2" or run.get("conclusion")!="success":
+                  continue
+              candidates.append((artifact.get("created_at") or "",artifact,run))
+          if not candidates:
+              raise SystemExit("NO_SUCCESSFUL_FROZEN_PREDEPLOY_ARTIFACT")
+          _,artifact,run=max(candidates,key=lambda x:x[0])
+          out=os.environ["GITHUB_ENV"]
+          with open(out,"a",encoding="utf-8") as f:
+              f.write(f"PREDEPLOY_ARTIFACT_ID={artifact['id']}\n")
+              f.write(f"PREDEPLOY_RUN_ID={run['id']}\n")
+          print(f"POROTA_FROZEN_PREDEPLOY_FOUND=GREEN|run={run['id']}|artifact={artifact['id']}|name={name}")
+          PY
+
+      - name: Download and verify frozen artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf /tmp/porota-frozen-v2
+          mkdir -p /tmp/porota-frozen-v2
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$PREDEPLOY_ARTIFACT_ID/zip" \
+            -o /tmp/porota-frozen-v2.zip
+          unzip -q /tmp/porota-frozen-v2.zip -d /tmp/porota-frozen-v2
+          for name in porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json; do
+            src="$(find /tmp/porota-frozen-v2 -type f -name "$name" -print -quit)"
+            test -n "$src"
+            cp "$src" "/tmp/$name"
+          done
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          frozen=json.loads(Path("/tmp/porota-frozen-candidate.json").read_text())
+          manifest=json.loads(Path("/tmp/porota-deploy-bundle-v2-manifest.json").read_text())
+          assert frozen["candidate_sha"]==os.environ["CANDIDATE_SHA"]
+          assert frozen["candidate_tree_sha"]==os.environ["CANDIDATE_TREE"]
+          assert frozen["paper_mode_required"]=="PRODUCTION_PAPER"
+          assert int(frozen["real_orders_sent_required"])==0
+          assert frozen["build_once"] is True
+          assert int(frozen.get("image_size_bytes", 0)) > 0
+          def sha(path):
+              h=hashlib.sha256()
+              with open(path,"rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
+              return h.hexdigest()
+          assert sha("/tmp/porota-predeploy-image.tar.gz")==frozen["image_tar_sha256"]
+          assert sha("/tmp/porota-deploy-bundle-v2.tgz")==manifest["bundle_sha256"]
+          print("POROTA_FROZEN_ARTIFACT_VERIFY=GREEN")
+          PY
+
+      - name: Bound source-bearing SSH arguments before host contact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/rc6_deploy_ssh_arg_budget.py
+
+      - name: Require later exact owner authorization before host work
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import os
+          from scripts.rc6_owner_authorization import require_exact_owner_authorization
+          comment = require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'])
+          deferred = require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'],
+              decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'RC6_A151_OWNER_APPROVAL_ID={comment}\n')
+              env.write(f'RC6_A151_OWNER_DEFERRED_ID={deferred}\n')
+          print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
+          print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
+          PY
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
+          # Stream the frozen helper before any host mutation.  Every remote
+          # mutator uses the same root-owned inode under /run/lock.
+          echo "RC6_MUTEX_B64=$(base64 -w0 scripts/rc6_deploy_host_mutex.py)" >> "$GITHUB_ENV"
+          echo "RC6_STAGE_B64=$(base64 -w0 scripts/rc6_deploy_stage_transfer.py)" >> "$GITHUB_ENV"
+
+      - name: Pin exact DigitalOcean Droplet before host mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # DigitalOcean link-local metadata is read on the SSH target. This
+          # is the first host contact; the subsequent barrier reconciliation
+          # and every other host writer are forbidden if identity differs.
+          timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 - --expected-id 594077619 --expected-region nyc1' \
+            < scripts/rc6_droplet_identity_guard.py
+
+      - name: Reconcile only exact A138 cleanly exited host barrier
+        id: host_reconcile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The A138 cleanup child exited cleanly but returned RED before
+          # cleanup_final could retire its IDLE attempt barrier. Reconcile
+          # only that exact failure under the same root-owned flock. An
+          # INFLIGHT/CONTRACT_ONLY barrier, live writer or changed host proof
+          # always stops the job before normal host classification.
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase reconcile --exact-a138-idle"
+
+      - name: Classify current flat PAPER session before host writes
+        id: classify
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
+          # The raw base64 source was ~91 KB; combined with the other staged
+          # proofs it exceeded Linux's per-argument exec limit before SSH ran.
+          CANDIDATE_A125_B64="$(gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
+          CANDIDATE_A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
+          # The host still runs the FAILED #751 source. Stream the new A145
+          # read-only admission; never trust an uninstalled helper by import.
+          CANDIDATE_A143_B64="$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          CANDIDATE_A143_SHA256="$(sha256sum scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)"
+          CLASSIFY_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#CANDIDATE_AUDIT_B64} +
+            ${#CANDIDATE_A125_B64} + ${#CANDIDATE_A143_B64} + 4096 ))
+          if [ "$CLASSIFY_ARG_BOUND" -gt 110000 ]; then
+            echo "RC6_CLASSIFY_REMOTE_ARGUMENT=RED|bound=$CLASSIFY_ARG_BOUND|max=110000"
+            exit 31
+          fi
+          SESSION_MODE="$(timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64' '$CANDIDATE_A143_B64' '$CANDIDATE_A125_SHA256' '$CANDIDATE_A143_SHA256'" <<'PY'
+          import base64,gzip,hashlib,os,sqlite3,sys,types,zlib
+          from pathlib import Path
+          def staged_operator_source():
+              packed=base64.b64decode(sys.argv[3],validate=True)
+              if not 0<len(packed)<30000:
+                  raise SystemExit('RC6_A151_OPERATOR_PACKED_BOUNDS_RED')
+              inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+              source=inflater.decompress(packed,110000)
+              if (not 0<len(source)<110000 or not inflater.eof or
+                      inflater.unconsumed_tail or inflater.unused_data or
+                      hashlib.sha256(source).hexdigest()!=sys.argv[5]):
+                  raise SystemExit('RC6_A151_OPERATOR_SOURCE_HASH_RED')
+              return source
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_679_backup_suspension import inventory as backup_inventory
+          if backup_inventory():
+              raise SystemExit('RC6_BACKUP_RETIRE_NEW_FILES_NEED_REVIEW')
+          print('RC6_BACKUP_RETIRE_PRECHECK=GREEN|files=0', file=sys.stderr)
+          from scripts.rc6_deploy_quiescence import (
+              ROOT, OWNED, admit, inspect, exact_clean_stopped,
+               adopt_stopped_after_failed_install)
+          from scripts import rc6_deploy_quiescence as quiescence
+          # #751 is still installed and has no A143_PENDING_IMAGE_ID symbol.
+          # Pin its observed Docker image here; the staged candidate below
+          # must independently agree before any recovery admission.
+          A143_PENDING_IMAGE_ID='sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
+          path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+          with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+              c.execute('PRAGMA query_only=ON')
+              c.execute('PRAGMA busy_timeout=200')
+              state=c.execute('SELECT process_state,session_state FROM observer_state WHERE id=1').fetchone()
+          originals={name:inspect(name) for name in OWNED}
+          statuses={value['State']['Status'] for value in originals.values()}
+          if (statuses=={'exited'} and state and
+                  state[0] in ('RUNNING','STOPPED') and state[1] in ('MARKET_OPEN','OPEN')):
+              # A failed OPEN installation can leave a stale RUNNING heartbeat
+              # after both owned containers exited. Only the exact prior stop
+              # receipt, Docker identity, flat ledgers and independent critical
+              # broker admission can replace that live heartbeat.
+              receipt=adopt_stopped_after_failed_install(
+                  sys.argv[1],ROOT/'data/deploy',originals,
+                  allow_market_open_suspend=True)
+              exact_clean_stopped(receipt)
+              if (receipt.get('status')!='DRAINED' or
+                      type(receipt.get('real_orders_sent')) is not int or
+                      receipt['real_orders_sent']!=0 or
+                      receipt.get('ppi_watch_accessed') is not False or
+                      receipt.get('market_open_suspended') is not True or
+                      receipt.get('open_paper_carryover') is not False or
+                      receipt.get('spot_carryover') is not None or
+                      receipt.get('caucion_carryover') is not None or
+                      receipt.get('paused_postclose') is not False or
+                      receipt.get('intraday_caucion') is not False or
+                      admit(stopped=True,allow_market_open_suspend=True,
+                            stopped_receipt=receipt) not in ('RUNNING','STOPPED')):
+                  raise SystemExit('RC6_STOPPED_OPEN_FLAT_RECEIPT_RED')
+              print('OPEN')
+          elif statuses=={'running'} and state==('RUNNING','MARKET_OPEN'):
+              assert admit(allow_market_open_suspend=True)=='RUNNING'
+              print('OPEN')
+          elif (statuses=={'running'} and
+                state in (('DEGRADED','BOOT_CALENDAR'),
+                          ('DEGRADED','MARKET_CLOSED'),('STOPPED','CLOSED')) and
+                all(value['Image']==A143_PENDING_IMAGE_ID
+                    for value in originals.values())):
+              # A145 read-only fix-forward classification for *installed* #751.
+              # The source SHA, image, two Docker IDs, immutable marker,
+              # frozen manifest, failed-receipt chain and PAPER/0 are all
+              # checked by the staged candidate helper. This is NEVER GO.
+              compressed=base64.b64decode(sys.argv[4],validate=True)
+              if not 0<len(compressed)<110000:
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_BOUNDS_RED')
+              inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+              source=inflater.decompress(compressed,190000)
+              if (not 20000<len(source)<190000 or not inflater.eof or
+                      inflater.unconsumed_tail or inflater.unused_data or
+                      hashlib.sha256(source).hexdigest()!=sys.argv[6]):
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_HASH_RED')
+              candidate=types.ModuleType('rc6_a145_staged_quiescence')
+              exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),
+                   candidate.__dict__)
+              if candidate.A143_PENDING_IMAGE_ID!=A143_PENDING_IMAGE_ID:
+                  raise SystemExit('RC6_A143_PINNED_IMAGE_CHANGED')
+              operator_source=staged_operator_source()
+              operator=types.ModuleType('rc6_a151_staged_operator')
+              exec(compile(operator_source,'candidate/a151-operator.py','exec'),
+                   operator.__dict__)
+              proof=candidate.a143_pending_running_proof(
+                  originals,allow_a151_held_open=True,
+                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_timer_disabled=operator.operator_preopen_timer_disabled)
+              if (proof.get('source_sha')!=candidate.A143_PENDING_SOURCE_SHA or
+                      proof.get('image_id')!=candidate.A143_PENDING_IMAGE_ID or
+                      proof.get('flat_book',{}).get('real_orders_sent')!=0):
+                  raise SystemExit('RC6_A143_PENDING_PROOF_RED')
+              print('RC6_A143_FAILED_VALIDATION_RECOVERY=ADMITTED|health=RED|PAPER=0',
+                    file=sys.stderr)
+              print('A151_HELD_OPEN' if proof.get('operator_hold') else
+                    'CLOSED_A143_PENDING_FIX_FORWARD')
+          elif statuses=={'running'} and state in (
+                  ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
+              # Incident-specific postclose rescue of the installed A92 image.
+              # Wire-mode/CLI retain the 26-Oct label for receipt compatibility.
+              # Calendar COM18782 is pinned only through 30 Oct. Owner's
+              # 27-Oct immediate PAPER pause is independently evidenced by
+              # exact A125 NO_GO/timer proof; other days require postclose.
+              # This is a RED runtime and never counts as a healthy CLOSED state.
+              from datetime import datetime,timezone
+              from zoneinfo import ZoneInfo
+              import hashlib,json,re,subprocess,time
+              from scripts.rc6_deploy_quiescence import critical_admission
+              RESCUE_SOURCE_SHA='3fd020f408275a490e911e06f60a1ddc89153fe5'
+              RESCUE_IMAGE_ID='sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+              RESCUE_CALENDAR_SHA256='32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
+              RESCUE_HOURS_SHA256='380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
+              local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+              if not '2026-10-26'<=local.date().isoformat()<='2026-10-30':
+                  raise SystemExit('RC6_RESCUE_WINDOW_RED')
+              if (local.hour,local.minute)<(20,0):
+                  if local.date().isoformat()!='2026-10-27':
+                      raise SystemExit('RC6_RESCUE_WINDOW_RED')
+                  try:
+                      operator_source=staged_operator_source()
+                      operator=types.ModuleType('rc6_candidate_a125_verifier')
+                      exec(compile(operator_source,'candidate/a125-verifier.py','exec'),
+                           operator.__dict__)
+                      exact_digest=operator.exact_operator_preopen_pause(
+                          require_original_marker=True)
+                      if not operator.operator_preopen_timer_disabled() or not re.fullmatch(
+                          '[0-9a-f]{64}',exact_digest):
+                          raise ValueError('PAUSE_TIMER_OR_DIGEST')
+                  except (OSError,ValueError,ImportError) as exc:
+                      raise SystemExit('RC6_RESCUE_OPERATOR_PAUSE_RED') from exc
+                  print('RC6_RESCUE_OPERATOR_PAPER_EARLY=GREEN|NO_GO_HELD',file=sys.stderr)
+              calendar_path=ROOT/'ak_byma_calendar.py'
+              if (calendar_path.is_symlink() or not calendar_path.is_file() or
+                  hashlib.sha256(calendar_path.read_bytes()).hexdigest()!=RESCUE_CALENDAR_SHA256):
+                  raise SystemExit('RC6_RESCUE_CALENDAR_SOURCE_RED')
+              calendar=types.ModuleType('rc6_rescue_calendar')
+              exec(compile(calendar_path.read_bytes(),str(calendar_path),'exec'),calendar.__dict__)
+              if (calendar.CALENDARIO_ACTUALIZADO_EL.isoformat()!='2026-10-14' or
+                  2026 not in calendar.ANIOS_AUDITADOS or
+                  not calendar.es_dia_habil_operativo(local.date())):
+                  raise SystemExit('RC6_RESCUE_CALENDAR_DAY_RED')
+              # BYMA COM18782, PDF SHA256 pinned in the candidate; its latest
+              # exercise-expiry segment ends at 19:00 ART. A3 ends by 17:30.
+              if any(not re.fullmatch('[0-9a-f]{64}',v['Id']) or
+                     v['Image']!=RESCUE_IMAGE_ID for v in originals.values()):
+                  raise SystemExit('RC6_RESCUE_DOCKER_IDENTITY_RED')
+              marker_path=ROOT/'data/deploy/CURRENT_STATE_V2.json'
+              if (marker_path.is_symlink() or not marker_path.is_file() or
+                  marker_path.stat().st_size>65536):
+                  raise SystemExit('RC6_RESCUE_CURRENT_STATE_UNSAFE')
+              marker=json.loads(marker_path.read_bytes())
+              marker_at=datetime.fromisoformat(marker['recorded_at'])
+              if (marker_at.tzinfo is None or marker_at>datetime.now(timezone.utc) or
+                  marker.get('schema_version')!=2 or
+                  marker.get('candidate_sha')!=RESCUE_SOURCE_SHA or
+                  marker.get('image_id')!=RESCUE_IMAGE_ID or
+                  marker.get('validation_status')!='VALIDATED_RUNTIME' or
+                  marker.get('mode')!='PRODUCTION_PAPER' or
+                  type(marker.get('real_orders_sent')) is not int or
+                  marker['real_orders_sent']!=0 or
+                  marker.get('real_order_routes')!='NOT_CALLED'):
+                  raise SystemExit('RC6_RESCUE_CURRENT_SOURCE_RED')
+              health_path=ROOT/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+              if (health_path.is_symlink() or not health_path.is_file() or
+                  health_path.stat().st_size>131072 or health_path.stat().st_nlink!=1):
+                  raise SystemExit('RC6_RESCUE_CHILD_HEALTH_UNSAFE')
+              health=json.loads(health_path.read_bytes())
+              health_at=datetime.fromisoformat(health['recorded_at'])
+              now=datetime.now(timezone.utc)
+              if (health_at.tzinfo is None or not 0<=(now-health_at).total_seconds()<=30 or
+                  health.get('schema')!='rc6.runtime-child-health.v1' or
+                  health.get('source_sha')!=RESCUE_SOURCE_SHA or
+                  health.get('mode')!='PRODUCTION_PAPER' or
+                  type(health.get('real_orders_sent')) is not int or
+                  health['real_orders_sent']!=0 or
+                  health.get('real_routes')!='NOT_CALLED'):
+                  raise SystemExit('RC6_RESCUE_CHILD_SOURCE_RED')
+              if state==('STOPPED','CLOSED'):
+                  # The A92 observer parent still runs while its scanner child
+                  # crashes in the exact report query. Require a fresh child
+                  # record and bounded traceback; this is never healthy CLOSED.
+                  scanner=health.get('children',{}).get('scanner',{})
+                  try:
+                      last_exit=datetime.fromisoformat(scanner['last_exit_at'])
+                  except (KeyError,TypeError,ValueError) as exc:
+                      raise SystemExit('RC6_RESCUE_CHILD_CLOCK_RED') from exc
+                  phase=scanner.get('state')
+                  if phase=='CRASH_BACKOFF':
+                      phase_ok=(scanner.get('pid') is None and
+                                scanner.get('last_error')=='CHILD_EXITED')
+                  elif phase=='RUNNING':
+                      try: started=datetime.fromisoformat(scanner['started_at'])
+                      except (KeyError,TypeError,ValueError) as exc:
+                          raise SystemExit('RC6_RESCUE_CHILD_STARTED_RED') from exc
+                      phase_ok=(type(scanner.get('pid')) is int and scanner['pid']>0 and
+                                scanner.get('last_error') is None and started.tzinfo is not None and
+                                last_exit<=started<=now and
+                                0<=(now-last_exit).total_seconds()<=60)
+                  else:
+                      phase_ok=False
+                  if (last_exit.tzinfo is None or
+                      not 0<=(now-last_exit).total_seconds()<=60 or
+                      not phase_ok or
+                      type(scanner.get('restarts')) is not int or scanner['restarts']<90):
+                      raise SystemExit('RC6_RESCUE_CHILD_CRASH_UNVERIFIED')
+                  logs=subprocess.run(['docker','logs','--since','90s','--tail','500',OWNED[0]],
+                                      capture_output=True,text=True,timeout=8)
+                  raw_log=logs.stdout+logs.stderr
+                  if logs.returncode or len(raw_log)>256*1024 or not re.search(
+                      r'File [^\n]*bi_operational_services\.py", line 424, in _period_data'
+                      r'[\s\S]{0,3000}?sqlite3\.OperationalError: database or disk is full',
+                      raw_log):
+                      raise SystemExit('RC6_RESCUE_SQLITE_FULL_TRACE_MISSING')
+              with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                  c.execute('PRAGMA query_only=ON');c.execute('PRAGMA busy_timeout=200')
+                  deadline=time.monotonic()+2
+                  c.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+                  row=c.execute('SELECT mode,real_orders_sent,heartbeat_at, '
+                                'process_state,session_state '
+                                'FROM observer_state WHERE id=1').fetchone()
+                  if not row or row[:2]!=('PRODUCTION_PAPER',0) or type(row[1]) is not int:
+                      raise SystemExit('RC6_RESCUE_PAPER_SOURCE_RED')
+                  stamp=datetime.fromisoformat(row[2])
+                  if stamp.tzinfo is None or not 0<=(datetime.now(timezone.utc)-stamp).total_seconds()<=180:
+                      raise SystemExit('RC6_RESCUE_HEARTBEAT_RED')
+                  if row[3:]!=state:
+                      raise SystemExit('RC6_RESCUE_PHASE_CHANGED')
+                  for table,status in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                                       ('paper_future_positions','ACTIVE')):
+                      if c.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(status,)).fetchone():
+                          raise SystemExit('RC6_RESCUE_BOOK_NOT_FLAT')
+              latest={name:inspect(name) for name in OWNED}
+              if any(latest[name]['Id']!=originals[name]['Id'] or
+                     latest[name]['Image']!=RESCUE_IMAGE_ID or
+                     latest[name]['State']['Status']!='running' for name in OWNED):
+                  raise SystemExit('RC6_RESCUE_RUNTIME_CHANGED')
+              critical_admission()
+              print('DEGRADED_CLOSED_20261026')
+          elif (statuses=={'exited'} and state==('STOPPED','BOOT_CALENDAR') and
+                all(value['Image']==quiescence.RESCUE_IMAGE_ID
+                    for value in originals.values())):
+              # A139 fix-forward: A138 #40592426296 passed drain/transfer,
+              # copied exact product files and loaded the frozen image but
+              # its COLD2 guard rejected a healthy CLOSED classification.
+              # The original A92 pair is cleanly STOPPED, not healthy CLOSED.
+              # No fallback to an arbitrary stopped runtime is permitted.
+              import hashlib,json,re
+              from scripts import rc6_deploy_quiescence as old
+              old_source=old.ROOT/'scripts/rc6_deploy_quiescence.py'
+              if (old_source.is_symlink() or not old_source.is_file() or
+                  hashlib.sha256(old_source.read_bytes()).hexdigest()!=
+                      'dcb0ed996a6be9aefb0a609139285f6160248909ccde92f189a24b77fb617662'):
+                  raise SystemExit('RC6_A139_PREVIOUS_SOURCE_HASH_RED')
+              previous_path=old.ROOT/'data/deploy'/(
+                  'quiescence-dd22a1b0761cc4f231813edb6b502d1dd21bb8de.json')
+              if (previous_path.is_symlink() or not previous_path.is_file() or
+                  previous_path.stat().st_size>65536):
+                  raise SystemExit('RC6_A139_PRIOR_RECEIPT_MISSING')
+              previous=json.loads(previous_path.read_bytes())
+              if (previous.get('candidate_sha')!=
+                      'dd22a1b0761cc4f231813edb6b502d1dd21bb8de' or
+                  previous.get('status') not in
+                      {'HOST_INSTALLATION_STARTED','FIX_FORWARD_VALIDATION_REQUIRED'} or
+                  previous.get('installation_started') is not True or
+                  previous.get('degraded_closed_rescue') is not True or
+                  previous.get('candidate_runtime_initial') is not None or
+                  not isinstance(previous.get('candidate_image_intent'),dict)):
+                  raise SystemExit('RC6_A139_PRIOR_PHASE_RED')
+              old.exact_rescue_receipt(previous)
+              old.exact_clean_stopped(previous)
+              if (old.exact_a92_marker().get('candidate_sha')!=old.RESCUE_SOURCE_SHA or
+                  old.admit(stopped=True,allow_degraded_closed_rescue=True,
+                            stopped_receipt=previous)!='STOPPED' or
+                  old.rescue_flat_book().get('real_orders_sent')!=0 or
+                  any(originals[name]['Id']!=previous['containers'][name]['id'] or
+                      originals[name]['Image']!=old.RESCUE_IMAGE_ID
+                      for name in old.OWNED)):
+                  raise SystemExit('RC6_A139_STOPPED_A92_PROOF_RED')
+              old.critical_admission()
+              print('RC6_A139_A92_FAILED_RESCUE_PRIOR_STOP=GREEN',file=sys.stderr)
+              print('DEGRADED_CLOSED_20261026')
+          elif (statuses=={'running'} and state and state[0]=='WAITING_MARKET' and
+                state[1] in ('CLOSED','MARKET_CLOSED')):
+              try:
+                  assert admit()=='WAITING_MARKET'
+                  print('CLOSED')
+              except ValueError as exc:
+                  if str(exc) != 'QUIESCENCE_OPEN_POSITION':
+                      raise
+                  # The only exception is one intact PAPER caucion in this
+                  # incident. The staged candidate verifies allocation and
+                  # full-row hash repeatedly before any installation.
+                  from datetime import datetime, timezone
+                  from zoneinfo import ZoneInfo
+                  from bt_caucion_paper import validate_position
+                  candidate_audit=types.ModuleType('rc6_candidate_cb_caucion_audit')
+                  exec(compile(base64.b64decode(sys.argv[2],validate=True),
+                               'candidate/cb_caucion_audit.py','exec'),candidate_audit.__dict__)
+                  _validated=candidate_audit._validated
+                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                      c.row_factory=sqlite3.Row
+                      c.execute('PRAGMA query_only=ON')
+                      if (c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0] != 0 or
+                          c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'").fetchone()[0] != 0):
+                          raise SystemExit('RC6_PENDING_OTHER_EXPOSURE_RED')
+                      rows=c.execute("SELECT * FROM paper_cauciones WHERE status='OPEN' LIMIT 2").fetchall()
+                      if len(rows)!=1:
+                          raise SystemExit('RC6_PENDING_EXACT_ONE_REQUIRED')
+                      p=dict(rows[0]); opened=datetime.fromisoformat(p['opened_at']); maturity=datetime.fromisoformat(p['maturity_at'])
+                      local=opened.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+                      if (opened.tzinfo is None or maturity.tzinfo is None or
+                          not opened <= datetime.now(timezone.utc) < maturity or
+                          p['source']!='PRODUCTION_PAPER' or p['currency']!='ARS' or
+                          p['settled_at'] is not None or
+                          (local.date().isoformat(),local.hour,local.minute)!=('2026-10-22',16,30) or
+                          p['maturity_at']!='2026-10-23T17:00:00-03:00'):
+                          raise SystemExit('RC6_PENDING_INCIDENT_IDENTITY_RED')
+                      validate_position(p)
+                      alloc=c.execute('SELECT * FROM paper_caucion_allocations WHERE paper_id=? LIMIT 2',(p['paper_id'],)).fetchall()
+                      if len(alloc)!=1 or _validated(alloc[0],c)[1]['status']!='OPEN':
+                          raise SystemExit('RC6_PENDING_ALLOCATION_RED')
+                  print('CLOSED_CAUCION')
+          elif (statuses=={'exited'} and state and
+                state[0] in ('DEGRADED','STOPPED') and
+                state[1] in ('BOOT_CALENDAR','CLOSED','MARKET_CLOSED') and
+                hasattr(quiescence,'failed_rescue_candidate_matches') and
+                quiescence.failed_rescue_candidate_matches(ROOT/'data/deploy',originals)):
+              receipt=quiescence.adopt_failed_rescue_candidate_stopped(
+                  sys.argv[1],ROOT/'data/deploy',originals)
+              if (receipt.get('status')!='DRAINED' or
+                  receipt.get('adopted_failed_rescue') is not True or
+                  receipt.get('real_orders_sent')!=0 or
+                  receipt.get('ppi_watch_accessed') is not False):
+                  raise SystemExit('RC6_ADOPTED_RESCUE_RECEIPT_RED')
+              print('CLOSED_STOPPED_FAILED_RESCUE')
+          elif (statuses=={'exited'} and state and state[0]=='STOPPED' and
+                state[1] in ('CLOSED','MARKET_CLOSED')):
+              # A failed installed promotion leaves its exact prior image
+              # cleanly stopped. Reuse the established read-only provenance,
+              # ledger and independent critical-broker checks before any write.
+              with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                  c.execute('PRAGMA query_only=ON')
+                  pending=c.execute("SELECT COUNT(*) FROM paper_cauciones WHERE status='OPEN'").fetchone()[0]
+              if pending:
+                  os.environ['RC6_CANDIDATE_CAUCION_AUDIT_B64']=sys.argv[2]
+              receipt=adopt_stopped_after_failed_install(
+                  sys.argv[1],ROOT/'data/deploy',originals,
+                  allow_pending_caucion=bool(pending))
+              exact_clean_stopped(receipt)
+              if (receipt.get('status')!='DRAINED' or
+                      receipt.get('real_orders_sent')!=0 or
+                      receipt.get('ppi_watch_accessed') is not False or
+                      admit(stopped=True,allow_pending_caucion=bool(pending),
+                            stopped_receipt=receipt)!='STOPPED'):
+                  raise SystemExit('RC6_STOPPED_FLAT_RECEIPT_RED')
+              print('CLOSED_CAUCION' if pending else 'CLOSED')
+          else:
+              raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
+          PY
+          )"
+          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|A151_HELD_OPEN) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
+          echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
+          if [ "$SESSION_MODE" = DEGRADED_CLOSED_20261026 ]; then
+            echo 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = CLOSED_STOPPED_FAILED_RESCUE ]; then
+            echo 'RC6_PAPER_SESSION=PRIOR_RESCUE_STOP_ADMITTED|runtime=STOPPED|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = A151_HELD_OPEN ]; then
+            echo 'RC6_PAPER_SESSION=A151_EXACT_NO_GO_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
+            echo 'RC6_PAPER_SESSION=A143_UNVALIDATED_RECOVERY_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
+          else
+            echo "RC6_PAPER_SESSION=GREEN|mode=$SESSION_MODE|EXACT_PENDING_LEDGER_REQUIRED"
+          fi
+
+      - name: Capture exact pre-suspend host fingerprint
+        id: pre_suspend_snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          RECEIPT="$(timeout 60 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_pre_suspend_fingerprint.py)"
+          [[ "$RECEIPT" =~ ^RC6_PRE_SUSPEND_FINGERPRINT=GREEN\|[0-9a-f]{64}$ ]]
+          FINGERPRINT="${RECEIPT##*|}"
+          echo "RC6_PRE_SUSPEND_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+          echo 'RC6_PRE_SUSPEND_SNAPSHOT=GREEN|PAPER=0|containers=ALL|timers=16'
+
+      - name: Require exact intraday owner authorization for OPEN suspension
+        id: a151_intraday_auth
+        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          COMMENT="$(python - <<'PY'
+          import os
+          from scripts.rc6_owner_authorization import require_exact_owner_authorization
+          comment=require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'],os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'],
+              decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY')
+          print(comment)
+          PY
+          )"
+          [[ "$COMMENT" =~ ^[1-9][0-9]*$ ]]
+          echo "RC6_A151_OWNER_INTRADAY_ID=$COMMENT" >> "$GITHUB_ENV"
+          echo "RC6_624_A151_INTRADAY_EXACT_AUTHORIZATION=GREEN|comment=$COMMENT"
+
+      - name: Authorize sealed A151 restatement continuity before suspension
+        id: restatement_continuity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # No DB write and no GitHub token on the Droplet. The runner checks
+          # the exact prior failed Deploy and both prior owner literals.
+          timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --host-probe --db /opt/porota-trading/data/paper_v17/observer_v17.db --candidate-sha '$CANDIDATE_SHA' --receipt-dir /opt/porota-trading/data/deploy" \
+            < scripts/rc6_caucion_fee_restatement_continuity.py \
+            > /tmp/rc6-a151-origin-probe.json
+          PROOF="$(python3 scripts/rc6_caucion_fee_restatement_continuity.py \
+            --authorize-runner --candidate-sha "$CANDIDATE_SHA" \
+            --probe-json /tmp/rc6-a151-origin-probe.json \
+            --repo "$GITHUB_REPOSITORY")"
+          if [ "$PROOF" = null ]; then
+            echo 'RC6_A151_CONTINUITY=FRESH_OR_SAME_CANDIDATE'
+            echo 'RC6_A151_CONTINUITY_PROOF_B64=' >> "$GITHUB_ENV"
+          else
+            echo 'RC6_A151_CONTINUITY=EXACT_PRIOR_FAILED_DEPLOY_AND_OWNER_VERIFIED'
+            echo "RC6_A151_CONTINUITY_PROOF_B64=$(printf '%s' "$PROOF" | base64 -w0)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Dynamic pre-transfer disk guard and conditional safe cleanup
+        id: diskguard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          RC6_DISK_PREFLIGHT_REQUIRED=1
+          IMAGE_TAR_BYTES="$(stat -c '%s' /tmp/porota-predeploy-image.tar.gz)"
+          BUNDLE_BYTES="$(stat -c '%s' /tmp/porota-deploy-bundle-v2.tgz)"
+          IMAGE_UNPACKED_BYTES="$(python -c 'import json; print(int(json.load(open("/tmp/porota-frozen-candidate.json"))["image_size_bytes"]))')"
+          REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
+            --policy ops/policy/rc6-disk-housekeeping-v1.json \
+            --image-tar-bytes "$IMAGE_TAR_BYTES" \
+            --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
+            --bundle-bytes "$BUNDLE_BYTES")"
+          echo "$REQUIRED_LINE"
+          REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
+          [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+
+          probe_disk() {
+            "${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "python3 -c 'import os,shutil; d=shutil.disk_usage(\"/\"); v=os.statvfs(\"/\"); print(d.free); print(f\"{100.0*v.f_ffree/v.f_files:.6f}\")'"
+          }
+
+          evaluate_gate() {
+            local available="$1" inode_free="$2"
+            python scripts/rc6_disk_space_guard.py \
+              --policy ops/policy/rc6-disk-housekeeping-v1.json \
+              --image-tar-bytes "$IMAGE_TAR_BYTES" \
+              --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
+              --bundle-bytes "$BUNDLE_BYTES" \
+              --available-bytes "$available" \
+              --inode-free-percent "$inode_free" \
+              --json
+          }
+
+          mapfile -t METRICS < <(probe_disk)
+          test "${#METRICS[@]}" -eq 2
+          AVAILABLE_BYTES="${METRICS[0]}"
+          INODE_FREE_PERCENT="${METRICS[1]}"
+          AVAILABLE_BEFORE_PRECLEAN="$AVAILABLE_BYTES"
+
+          set +e
+          GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
+          GATE_RC=$?
+          set -e
+          echo "$GATE_OUTPUT"
+
+          RC6_DISK_PRECLEAN_TRIGGERED=0
+          if [ "$GATE_RC" -ne 0 ]; then
+            if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ] || \
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_STOPPED_FAILED_RESCUE ] || \
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
+               [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ]; then
+              echo 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer'
+              exit 37
+            fi
+            # COLD2 can leave the owned runtime stopped and the stable tag on
+            # an older, unreferenced image. Reconcile only under PAPER admission.
+            OWNED_STATE="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
+            if [ "$OWNED_STATE" != $'running\nrunning' ]; then
+              RC6_DISK_PRECLEAN_TRIGGERED=1
+              "${SSH[@]}" "$DO_USER@$DO_HOST" \
+                "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase offline_preclean python3 - '$REQUIRED_PRETRANSFER_FREE'" \
+                < scripts/rc6_offline_current_image_cleanup.py
+              mapfile -t METRICS < <(probe_disk)
+              test "${#METRICS[@]}" -eq 2
+              AVAILABLE_BYTES="${METRICS[0]}"
+              INODE_FREE_PERCENT="${METRICS[1]}"
+              set +e
+              GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
+              GATE_RC=$?
+              set -e
+              echo "$GATE_OUTPUT"
+              if [ "$GATE_RC" -ne 0 ]; then
+                echo "RC6_DISK_OFFLINE_PRECLEAN_INSUFFICIENT=RED|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+                exit 37
+              fi
+            else
+            RC6_DISK_PRECLEAN_TRIGGERED=1
+            echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+            POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
+            IMAGE_CLEANUP_B64="$(base64 -w0 scripts/rc6_pretransfer_image_cleanup.py)"
+            HOUSEKEEPING_B64="$(base64 -w0 scripts/rc6_disk_housekeeping.py)"
+            "${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase preclean env POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' HOUSEKEEPING_B64='$HOUSEKEEPING_B64' bash -s" <<'PRECLEAN_REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
+          printf '%s' "$POLICY_B64" | base64 -d > "$TMP_POLICY"
+          test -f "$REPO/scripts/rc6_disk_housekeeping.py"
+
+          PPI_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+
+          # Host-wide housekeeping is inventory only: /tmp, apt, journal, and
+          # backups may have other owners, including PPI Watch. Reclaim only
+          # proven-unreferenced RC6 images below, then fail closed on space.
+          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
+          printf '%s' "$HOUSEKEEPING_B64" | base64 -d | sudo -n python3 - \
+            --policy "$TMP_POLICY" --mode audit --preserve-backups \
+            --json-out /tmp/porota-predeploy-housekeeping.json
+          echo 'RC6_PRECLEAN_HOSTWIDE_MUTATION=SKIPPED'
+          # Shared Docker images and build caches have no RC6 ownership proof.
+          # The measured reserve below fails closed if owned cleanup is insufficient.
+          echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
+
+          STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=1000")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          # A failed post-soak deploy can leave the critical approval container
+          # pinned to the previous image. Reconcile it to the *already running*
+          # stable image before counting free space for the next frozen artifact.
+          # No candidate bytes or product files are transferred in this step.
+          CURRENT_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          test "$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)" = "$CURRENT_IMAGE"
+          CRIT_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_critical_approval_rc6)"
+          if [ "$CRIT_IMAGE" != "$CURRENT_IMAGE" ]; then
+            STABLE_IMAGE=porota-trading-bot:17.0.0-rc6
+            test "$(sudo -n docker image inspect -f '{{.Id}}' "$STABLE_IMAGE")" = "$CURRENT_IMAGE"
+            sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CURRENT_IMAGE" <<'PY'
+          import json,sys
+          state=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert state.get("validation_status")=="DEPLOYED_VALIDATION_PENDING"
+          assert state.get("image_id")==sys.argv[2]
+          assert state.get("mode")=="PRODUCTION_PAPER"
+          assert type(state.get("real_orders_sent")) is int and state["real_orders_sent"]==0
+          assert state.get("real_order_routes")=="NOT_CALLED"
+          PY
+            test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+            test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+            UNIT_TEXT="$(sudo -n systemctl cat porota-critical-approval-rc6.service)"
+            grep -Fq "$STABLE_IMAGE" <<<"$UNIT_TEXT"
+            grep -Fq '/opt/porota-control-plane-rc6/current:/code:ro' <<<"$UNIT_TEXT"
+            sudo -n docker run --rm --pull never --read-only --user botuser \
+              --cap-drop ALL --security-opt no-new-privileges:true \
+              --pids-limit 32 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+              -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code \
+              -v /opt/porota-control-plane-rc6/current:/code:ro \
+              --entrypoint python "$STABLE_IMAGE" \
+              -c 'import fm_critical_approval_unix_runtime_rc6; print("CRITICAL_PRECLEAN_COMPATIBILITY=GREEN")'
+            sudo -n systemctl restart porota-critical-approval-rc6.service
+            CRIT_READY=0
+            for _ in $(seq 1 40); do
+              CRIT_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6 2>/dev/null || true)"
+              if [ "$CRIT_STATUS" = "running|healthy|0|$CURRENT_IMAGE" ]; then CRIT_READY=1; break; fi
+              sleep 2
+            done
+            test "$CRIT_READY" -eq 1
+            sudo -n docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only"; print("CRITICAL_PRECLEAN_CAPABILITY=GREEN")'
+            OLD_IMAGE_USERS=0
+            for cid in $(sudo -n docker ps -aq); do
+              if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$CRIT_IMAGE" ]; then OLD_IMAGE_USERS=1; fi
+            done
+            if [ "$OLD_IMAGE_USERS" -eq 0 ]; then
+              for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$CRIT_IMAGE" 2>/dev/null | sed '/^<none>:/d' || true); do
+                case "$tag" in
+                  "$STABLE_IMAGE") echo 'RC6_PRECLEAN_STABLE_TAG_COLLISION=RED'; exit 63 ;;
+                  porota-trading-bot:17.0.0-rc6-candidate-*) sudo -n docker image rm "$tag" ;;
+                  *) echo "RC6_PRECLEAN_PRESERVE_NONCANDIDATE_TAG=$tag" ;;
+                esac
+              done
+              sudo -n docker image rm "$CRIT_IMAGE" >/dev/null 2>&1 || true
+              echo 'RC6_UNSCOPED_DOCKER_IMAGE_PRUNE=SKIPPED'
+            fi
+            echo "RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|old_referenced=$OLD_IMAGE_USERS|image=$CURRENT_IMAGE"
+          fi
+          # Execute only the exact checkout's bounded reference-safe cleanup.
+          # This is pretransfer housekeeping, never a product installation.
+          sudo -n timeout 120 python3 -c "import base64; exec(compile(base64.b64decode('$IMAGE_CLEANUP_B64'), '<rc6-pretransfer-cleanup>', 'exec'))"
+          PPI_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          rm -f "$TMP_POLICY"
+          echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
+          PRECLEAN_REMOTE
+
+            mapfile -t METRICS < <(probe_disk)
+            test "${#METRICS[@]}" -eq 2
+            AVAILABLE_BYTES="${METRICS[0]}"
+            INODE_FREE_PERCENT="${METRICS[1]}"
+            set +e
+            GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
+            GATE_RC=$?
+            set -e
+            echo "$GATE_OUTPUT"
+            fi
+          fi
+
+          test "$GATE_RC" -eq 0
+          SAFE_PREFLIGHT_RECLAIM=$((AVAILABLE_BYTES-AVAILABLE_BEFORE_PRECLEAN))
+          echo "SAFE_PREFLIGHT_RECLAIM=$SAFE_PREFLIGHT_RECLAIM"
+          {
+            echo "RC6_DISK_PREFLIGHT_GREEN=1"
+            echo "RC6_DISK_REQUIRED_PRETRANSFER_FREE=$REQUIRED_PRETRANSFER_FREE"
+            echo "RC6_DISK_AVAILABLE_PRETRANSFER=$AVAILABLE_BYTES"
+            echo "RC6_DISK_IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
+            echo "RC6_DISK_IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
+            echo "RC6_DISK_BUNDLE_BYTES=$BUNDLE_BYTES"
+            echo "RC6_DISK_PRECLEAN_TRIGGERED=$RC6_DISK_PRECLEAN_TRIGGERED"
+          } >> "$GITHUB_ENV"
+          echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE|image_tar=$IMAGE_TAR_BYTES|image_unpacked=$IMAGE_UNPACKED_BYTES|bundle=$BUNDLE_BYTES|preclean=$RC6_DISK_PRECLEAN_TRIGGERED"
+
+      - name: Suspend versioned RC6 schedulers for guarded promotion
+        id: suspend
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          A143_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
+             [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          fi
+          timeout 240 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase suspend env $A143_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+
+      - name: Admit PAPER book before draining RC6
+        id: drain
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; *) exit 31;; esac
+          AUDIT_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
+            AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
+          fi
+          A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
+          A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
+          DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + 4096 ))
+          if [ "$DRAIN_ARG_BOUND" -gt 110000 ]; then
+            echo "RC6_DRAIN_REMOTE_ARGUMENT=RED|bound=$DRAIN_ARG_BOUND|max=110000"
+            exit 31
+          fi
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV RC6_A125_CANDIDATE_SOURCE_SHA256='$A125_SHA256' python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
+            < scripts/rc6_deploy_quiescence.py
+
+      - name: Account pre-suspend failure without recovery or timer writes
+        id: pre_suspend_account
+        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.pre_suspend_snapshot.outcome == 'failure' || steps.pre_suspend_snapshot.outcome == 'cancelled' || steps.a151_intraday_auth.outcome == 'failure' || steps.a151_intraday_auth.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_PRE_SUSPEND_FAILURE=NO_RUNTIME_RECOVERY_NO_TIMER_WRITES|barrier_requires_review=true'
+          # No artifact was transferred, no RC6 scheduler was suspended and no
+          # Docker image was loaded by this attempt. The pretransfer guard may
+          # have reclaimed only proven RC6 candidates. Measure capacity only.
+          timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 -c '\''import shutil; print("RC6_PRE_SUSPEND_DISK_FREE=" + str(shutil.disk_usage("/").free))'\'''
+
+      - name: Retire only unchanged own pre-suspend attempt barrier
+        if: ${{ always() && (steps.a151_intraday_auth.outcome == 'failure' || steps.a151_intraday_auth.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' && steps.pre_suspend_account.outcome == 'success' && env.RC6_PRE_SUSPEND_FINGERPRINT != '' }}
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$RC6_PRE_SUSPEND_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_presuspend python3 - --policy-b64 '$POLICY_B64' --expected-fingerprint '$RC6_PRE_SUSPEND_FINGERPRINT'" \
+            < scripts/rc6_pre_suspend_fingerprint.py
+
+      - name: Transfer frozen artifact
+        id: transfer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          tar -C /tmp -cf - porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json | \
+            "${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase transfer python3 -c 'import base64;exec(base64.b64decode(\"$RC6_STAGE_B64\"))' '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'"
+
+      - name: Promote exact frozen candidate and verify
+        id: promotion
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          STAGE="$REMOTE_DIR/stage"
+          STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"
+          FROZEN_IMAGE="porota-predeploy-v2:$CANDIDATE_SHA"
+          CANDIDATE_IMAGE="porota-trading-bot:17.0.0-rc6-candidate-$CANDIDATE_SHA"
+
+          echo "RC6_DEPLOY_V2=START|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA"
+          DISK_BEFORE="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_BEFORE=$DISK_BEFORE"
+          DOCKER_DF_BEFORE="$(sudo -n docker system df 2>&1 || true)"
+          echo "DOCKER_SYSTEM_DF_BEFORE=$DOCKER_DF_BEFORE"
+          REMOTE_TMP_BEFORE="$(du -sb /tmp/porota-deploy-v2-* 2>/dev/null | awk '{sum += $1} END {print sum+0}')"
+          echo "REMOTE_DEPLOY_TMP_BEFORE=$REMOTE_TMP_BEFORE"
+          # The heavy pre-transfer gate already cleaned first when required.
+          # After transfer, re-check the remaining peak needed for bundle staging
+          # + Docker image materialization + the final residual reserve.
+          # Other attempts own their staging.  Cleanup of this attempt happens
+          # only after exact validation, under the same remote mutex.
+          DISK_PREFLIGHT_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          DOCKER_DF_AFTER="$(sudo -n docker system df 2>&1 || true)"
+          IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
+          BUNDLE_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-deploy-bundle-v2.tgz")"
+          IMAGE_UNPACKED_BYTES="$(python3 -c 'import json; print(int(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_size_bytes"]))')"
+          # Keep the post-transfer gate on the exact same candidate-policy
+          # calculation that already passed before transfer. The Droplet's
+          # currently installed repo may still carry an older disk policy until
+          # the candidate bundle is installed, so it is not an authority here.
+          [[ "$RC6_DISK_REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+          REQUIRED_LOAD_FREE=$((RC6_DISK_REQUIRED_PRETRANSFER_FREE - IMAGE_TAR_BYTES - BUNDLE_BYTES))
+          test "$REQUIRED_LOAD_FREE" -gt 0
+          echo "DISK_PREFLIGHT_AFTER=$DISK_PREFLIGHT_AFTER"
+          echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
+          echo "IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
+          echo "IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
+          echo "BUNDLE_BYTES=$BUNDLE_BYTES"
+          echo "RC6_DISK_REQUIRED_PRETRANSFER_FREE=$RC6_DISK_REQUIRED_PRETRANSFER_FREE"
+          echo "REQUIRED_LOAD_FREE=$REQUIRED_LOAD_FREE"
+          test "$DISK_PREFLIGHT_AFTER" -ge "$REQUIRED_LOAD_FREE"
+          echo "RC6_DISK_POSTTRANSFER_LOAD_GATE=GREEN|available=$DISK_PREFLIGHT_AFTER|required=$REQUIRED_LOAD_FREE"
+
+          PRE_STATE="NO_RUNNING_OBSERVER"
+          if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = running ]; then
+            PRE_STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          path=sys.argv[1]
+          c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=2)
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=1000')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(f"STATE_FAST|{mode}|{orders}")
+          PY
+            )"
+          fi
+          echo "PRE_STATE_HOST_READONLY=$PRE_STATE"
+          if [ "$PRE_STATE" != NO_RUNNING_OBSERVER ]; then test "$PRE_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"; fi
+
+          PPI_WATCH_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          printf 'PPI_WATCH_BEFORE=%s\n' "$PPI_WATCH_BEFORE"
+
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          python3 - "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,sys
+          bundle,manifest=sys.argv[1:]
+          data=json.load(open(manifest,encoding='utf-8'))
+          assert data.get('status')=='GREEN' and data.get('bundle_sha256')
+          h=hashlib.sha256()
+          with open(bundle,'rb') as stream:
+              for chunk in iter(lambda:stream.read(1024*1024),b''):h.update(chunk)
+          assert h.hexdigest()==data['bundle_sha256'], 'FROZEN_BUNDLE_TRANSFER_HASH_MISMATCH'
+          PY
+          tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" -C "$STAGE"
+
+          # Verify the entire staged bundle before executing its administrative
+          # transition. No product file is installed and no position is changed
+          # until this candidate's source bytes match the frozen manifest.
+          python3 - "$STAGE" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          stage,manifest=map(Path,sys.argv[1:])
+          data=json.loads(manifest.read_text())
+          assert data.get('status')=='GREEN' and data.get('files')
+          observed=set()
+          for row in data['files']:
+              rel=Path(row['path'])
+              assert not rel.is_absolute() and '..' not in rel.parts and str(rel) not in observed
+              observed.add(str(rel))
+              src=stage/rel
+              assert src.is_file() and not src.is_symlink()
+              assert hashlib.sha256(src.read_bytes()).hexdigest()==row['sha256'], rel
+          assert {'cb_caucion_audit.py','cd_spot_ledger.py','scripts/rc6_paper_admin_cancel.py',
+                  'scripts/rc6_deploy_quiescence.py'} <= observed
+          print(f"RC6_STAGED_BUNDLE_HASHES=GREEN|files={len(observed)}")
+          PY
+
+          ADMIN_STATE="$(sudo -n python3 - "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert value.get('candidate_sha')==sys.argv[1].split('quiescence-')[-1].removesuffix('.json')
+          assert value.get('status') in {'ADMIN_DRAINED_PENDING','DRAINED'}
+          print(value['status'])
+          PY
+          )"
+          if [ "$ADMIN_STATE" = ADMIN_DRAINED_PENDING ]; then
+            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action admin-begin --admin-cancel-issue624
+            sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_paper_admin_cancel.py" \
+              --candidate-sha "$CANDIDATE_SHA" \
+              --receipt "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" --apply
+            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action admin-commit --admin-cancel-issue624
+          fi
+
+          # No candidate host file can change until owned runtime processes
+          # have exited and the financial ledgers were checked again.
+          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open';; *) exit 31;; esac
+          QUIESCENCE_AUDIT_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
+            QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
+          fi
+          A125_CANDIDATE_SOURCE_GZIP_B64="$(gzip -9 -c "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | base64 -w0)"
+          A125_CANDIDATE_SOURCE_SHA256="$(sha256sum "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | cut -d' ' -f1)"
+          sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_GZIP_B64="$A125_CANDIDATE_SOURCE_GZIP_B64" RC6_A125_CANDIDATE_SOURCE_SHA256="$A125_CANDIDATE_SOURCE_SHA256" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+            --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
+
+          # An A151 historical-cost restatement is forbidden while the
+          # intentional CLOSED_CAUCION carryover still owns an OPEN contract.
+          # OPEN requires the already-authorized market-open suspension and
+          # still must pass the independent flat-book verification below.
+          case "$RC6_QUIESCENCE_MODE" in
+            CLOSED_CAUCION) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|OPEN_CARRYOVER'; exit 31;;
+            OPEN|CLOSED|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|A151_HELD_OPEN) ;;
+            *) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|QUIESCENCE_UNKNOWN'; exit 31;;
+          esac
+
+          # A151: exact six historical PAPER cauciones, zero account-fee
+          # authority claims. This staged (manifest-hashed) source opens the
+          # original SQLite file query_only, after admission/quiescence and
+          # BEFORE any financial receipt is written. Unknown/partial rows,
+          # nonflat PAPER, changed source or candidate fail the promotion.
+          CAUCION_FEE_PREFLIGHT="$(sudo -n env PYTHONPATH="$STAGE" python3 -B \
+            "$STAGE/scripts/rc6_caucion_fee_restatement_apply.py" \
+            --db "$REPO/data/paper_v17/observer_v17.db" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64" \
+            --receipt-dir "$REPO/data/deploy" --plan)"
+          printf '%s\n' "$CAUCION_FEE_PREFLIGHT" | python3 -c \
+            'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["read_only"] is True and p["receipts_expected"]==6 and p["paper_book_flat"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_PREFLIGHT=GREEN|PAPER_PUBLIC_MODEL_ONLY|6/6")'
+
+          sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
+          import hashlib,json,os,shutil,sys
+          from pathlib import Path
+          stage,repo,manifest=map(Path,sys.argv[1:])
+          data=json.loads(manifest.read_text())
+          assert data.get("status")=="GREEN" and data.get("files")
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open("rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b""): h.update(chunk)
+              return h.hexdigest()
+          for row in data["files"]:
+              rel=Path(row["path"])
+              assert not rel.is_absolute() and ".." not in rel.parts, rel
+              src=stage/rel
+              assert src.is_file() and sha(src)==row["sha256"], rel
+              dst=repo/rel
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(src,dst)
+              assert sha(dst)==row["sha256"], rel
+          print(f"POROTA_BUNDLE_INSTALL=GREEN|files={len(data['files'])}")
+          PY
+
+          EXPECTED_IMAGE_ID="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_id"])')"
+          gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load
+          LOADED_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$FROZEN_IMAGE" | tr -d '\r\n')"
+          RUNTIME_IMAGE_ID="$LOADED_IMAGE_ID"
+          EXPECTED_IMAGE_ID="$(printf "%s" "$EXPECTED_IMAGE_ID" | tr -d '\r\n')"
+          IMAGE_TAR_SHA="$(sha256sum "$REMOTE_DIR/porota-predeploy-image.tar.gz" | awk '{print $1}')"
+          EXPECTED_TAR_SHA="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_tar_sha256"])')"
+          IMAGE_CONFIG_SHA="$(sudo -n docker image inspect -f '{{json .Config}}' "$FROZEN_IMAGE" | sha256sum | awk '{print $1}')"
+          EXPECTED_CONFIG_SHA="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json")).get("image_config_sha256",""))')"
+          echo "POROTA_IMAGE_ID_VERIFY=loaded=$LOADED_IMAGE_ID|expected=$EXPECTED_IMAGE_ID"
+          echo "POROTA_IMAGE_CONFIG_DIAGNOSTIC=loaded=$IMAGE_CONFIG_SHA|expected=$EXPECTED_CONFIG_SHA|ENGINE_NORMALIZATION=OBSERVED"
+          echo "POROTA_IMAGE_TAR_VERIFY=loaded=$IMAGE_TAR_SHA|expected=$EXPECTED_TAR_SHA"
+          test -n "$LOADED_IMAGE_ID"
+          test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"
+          sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
+          sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
+          echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
+          if [[ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ||
+                "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ||
+                "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]]; then
+            # Persist frozen manifest digest and materialized Docker identity
+            # before mode_manager can replace either container. A failure
+            # before this receipt cannot claim a new candidate runtime.
+            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action image-intent \
+              --candidate-image-id "$RUNTIME_IMAGE_ID" \
+              --frozen-manifest "$REMOTE_DIR/porota-frozen-candidate.json"
+          fi
+
+          # Docker may retain both compressed/content-store and materialized
+          # layers. Verify measured reserve now, before starting services and
+          # the long contract sweep; never lower the residual floor.
+          check_postload_reserve() {
+            local metrics
+            mapfile -t metrics < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
+            python3 "$REPO/scripts/rc6_disk_space_guard.py" \
+              --policy "$REPO/ops/policy/rc6-disk-housekeeping-v1.json" --phase postload \
+              --image-tar-bytes 0 --image-unpacked-bytes 0 --bundle-bytes 0 \
+              --available-bytes "${metrics[0]}" --inode-free-percent "${metrics[1]}" --json
+          }
+          if ! check_postload_reserve; then
+            # No ownership proof exists for host-global build cache or dangling
+            # images. Preserve other owners and fail closed on low reserve.
+            echo "RC6_DISK_POSTLOAD_RESERVE_GATE=RED|FOREIGN_CACHE_PRESERVED"
+            exit 42
+          fi
+          echo "RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN"
+
+          sudo -n python3 "$REPO/scripts/porota_apply_host_control_plane_v2.py" \
+            --root "$REPO" \
+            --policy ops/policy/host-control-plane-reconciliation-v2.json \
+            --keep-active-timers-paused \
+            --json-out "$REMOTE_DIR/host-control-plane-applied.json"
+
+          # Shared /app/data/market is writable only by the unprivileged RC6
+          # runtime UID. Fix the directory itself (not recursively) so atomic
+          # *.tmp -> latest replacements work without broadening privileges.
+          test ! -L "$REPO/data/market"
+          sudo -n install -d -o 1000 -g 1000 -m 0750 "$REPO/data/market"
+          MARKET_DIR_IDENTITY="$(sudo -n stat -c '%u:%g|%a' "$REPO/data/market")"
+          echo "RC6_MARKET_DIR_IDENTITY=$MARKET_DIR_IDENTITY"
+          test "$MARKET_DIR_IDENTITY" = "1000:1000|750"
+          echo "RC6_BYMA_SHARED_PATH_WRITABLE_GUARD=GREEN"
+
+          # The previous exact b346 image left one durable FAILED COLD input.
+          # Quiescence stopped both owned containers before installation. Move
+          # that exact failed namespace to the deploy archive, preserving its
+          # original pack/receipt and leaving the old cut revoked. A fresh
+          # candidate then creates its own active COLD namespace on first tick.
+          COLD_FIX_FORWARD="$(sudo -n python3 "$REPO/scripts/rc6_failed_cold_fix_forward.py" \
+            --candidate-sha "$CANDIDATE_SHA")"
+          echo "$COLD_FIX_FORWARD"
+          grep -Fq '"status": "GREEN"' <<< "$COLD_FIX_FORWARD"
+          grep -Fq '"old_cut_revoked": true' <<< "$COLD_FIX_FORWARD"
+          echo "RC6_FAILED_COLD_FIX_FORWARD=GREEN"
+
+          # The earlier fix-forward applies only to 89e7... . The current
+          # 7dc99... FAILED backlog must receive its own exact, durable archive
+          # under the separately approved candidate and quiescence lock.
+          COLD2_FIX_FORWARD="$(sudo -n python3 -B "$REPO/scripts/rc6_cold2_apply_guard.py" \
+            --candidate-sha "$CANDIDATE_SHA")"
+          echo "$COLD2_FIX_FORWARD"
+          grep -Fq '"status": "GREEN"' <<< "$COLD2_FIX_FORWARD"
+          grep -Fq '"old_cut_revoked": true' <<< "$COLD2_FIX_FORWARD"
+          echo "RC6_624_COLD2_FIX_FORWARD=GREEN"
+
+          # A151: under the same canonical mutex and stopped observer, append
+          # exactly six known-at model receipts atomically. No historical row,
+          # allocation, fill or real broker route may be updated. An identical
+          # post-failure replay is idempotent (inserted=0), not a second fill.
+          INTRADAY_OWNER_FLAG=()
+          if [ "$RC6_QUIESCENCE_MODE" = OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ]; then
+            [[ "$RC6_A151_OWNER_INTRADAY_ID" =~ ^[1-9][0-9]*$ ]]
+            INTRADAY_OWNER_FLAG=(--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID")
+          else
+            test -z "$RC6_A151_OWNER_INTRADAY_ID"
+          fi
+          CAUCION_FEE_APPLY="$(sudo -n env PYTHONPATH="$REPO" python3 -B \
+            "$REPO/scripts/rc6_caucion_fee_restatement_apply.py" \
+            --db "$REPO/data/paper_v17/observer_v17.db" \
+            --candidate-sha "$CANDIDATE_SHA" --candidate-tree "$CANDIDATE_TREE" \
+            --deploy-sha "$DEPLOY_SHA" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --quiescence-mode "$RC6_QUIESCENCE_MODE" \
+            --owner-approval-comment-id "$RC6_A151_OWNER_APPROVAL_ID" \
+            --owner-deferred-comment-id "$RC6_A151_OWNER_DEFERRED_ID" \
+            "${INTRADAY_OWNER_FLAG[@]}" \
+            --continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64" \
+            --receipt-dir "$REPO/data/deploy" --apply)"
+          printf '%s\n' "$CAUCION_FEE_APPLY" | python3 -c \
+            'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["receipts"]==6 and p["inserted"] in (0,6) and p["old_positions_untouched"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_APPLY=GREEN|APPEND_ONLY|PAPER_MODEL|ACCOUNT_FEES_NO_VERIFICADO")'
+
+          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          echo "$MODE_OUTPUT"
+          grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
+          if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ]; then
+            # Capture both new IDs immediately after creation. Failure in the
+            # manager itself is captured only by guarded failure recovery.
+            sudo -n python3 "$REPO/scripts/rc6_deploy_quiescence.py" \
+              --candidate-sha "$CANDIDATE_SHA" --action capture-runtime
+          fi
+
+          OBSERVER_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          echo "POROTA_RUNTIME_IMAGE_ID_VERIFY=observer=$OBSERVER_IMAGE_ID|dashboard=$DASHBOARD_IMAGE_ID|loaded=$RUNTIME_IMAGE_ID"
+          test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
+          test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
+          for IDENTITY_CONTAINER in porota_production_observer porota_production_dashboard; do
+            sudo -n docker exec "$IDENTITY_CONTAINER" python /app/scripts/porota_image_source_identity.py \
+              --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE"
+          done
+          echo "POROTA_RUNNING_SOURCE_IDENTITY=GREEN"
+
+          POST_CONTAINER_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)"
+          POST_CONTAINER_OOM_KILLED="$(sudo -n docker inspect -f '{{.State.OOMKilled}}' porota_production_observer 2>/dev/null || true)"
+          echo "POST_CONTAINER_STATUS=$POST_CONTAINER_STATUS|OOM_KILLED=$POST_CONTAINER_OOM_KILLED"
+          if [ "$POST_CONTAINER_STATUS" != running ]; then
+            sudo -n docker start porota_production_observer >/dev/null
+            POST_CONTAINER_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)"
+            echo "POST_CONTAINER_RESTARTED_STATUS=$POST_CONTAINER_STATUS"
+          fi
+          POST_STATE=""
+          POST_STATE_RC=1
+          for POST_STATE_ATTEMPT in 1 2 3; do
+            set +e
+            POST_STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          path=sys.argv[1]
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=2)
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=1000')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(f"STATE_FAST|{mode}|{orders}")
+          PY
+            )"
+            POST_STATE_RC=$?
+            set -e
+            echo "POST_STATE_HOST_READONLY_ATTEMPT=$POST_STATE_ATTEMPT|RC=$POST_STATE_RC|VALUE=$POST_STATE"
+            [ "$POST_STATE_RC" -eq 0 ] && break
+            sleep 2
+          done
+          test "$POST_STATE_RC" -eq 0
+          echo "POST_STATE=$POST_STATE"
+          test "$POST_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"
+
+          # Fail-safe provenance is materialized immediately after the exact
+          # image is running and PAPER safety is proven. If any later audit
+          # fails, CURRENT_STATE_V2 describes the actual promoted runtime as
+          # DEPLOYED_VALIDATION_PENDING instead of silently describing the
+          # previous image.
+          sudo -n mkdir -p "$REPO/data/deploy"
+          # The promoted runtime already proves the exact frozen artifact
+          # identity. Persist that provenance before any long validation so a
+          # later fail-closed audit cannot leave the previous candidate on disk.
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-frozen-candidate.json"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
+          echo "RC6_FROZEN_PROVENANCE_PROVISIONAL=GREEN|candidate=$CANDIDATE_SHA"
+          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
+          import grp,json,os,sys,tempfile
+          from datetime import datetime,timezone
+          path,candidate,deploy,image_id,post=sys.argv[1:]
+          payload={
+            "schema_version":2,
+            "recorded_at":datetime.now(timezone.utc).isoformat(),
+            "candidate_sha":candidate,
+            "deploy_sha":deploy,
+            "image_id":image_id,
+            "mode":"PRODUCTION_PAPER",
+            "real_orders_sent":0,
+            "real_order_routes":"NOT_CALLED",
+            "observer_state":post,
+            "ppi_watch_untouched":True,
+            "deployment_strategy":"FIX_FORWARD_ONLY",
+            "build_once":True,
+            "validation_status":"DEPLOYED_VALIDATION_PENDING",
+          }
+          directory=os.path.dirname(path)
+          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
+          try:
+              # Keep root ownership while granting the read-only publisher
+              # access to exact installed provenance before atomic replace.
+              os.fchown(fd,0,grp.getgrnam('porotaadmin').gr_gid)
+              os.fchmod(fd,0o640)
+              with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                  json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
+              os.replace(tmp,path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print("RC6_CURRENT_STATE_PROVISIONAL=GREEN")
+          PY
+          echo "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER"
+
+          # Full contract evidence reconciliation remains read-only at the broker
+          # boundary. The remote v1 sweep is closed-session only, but deterministic
+          # local Evidence v2 policy materialization is mandatory in every deploy.
+          # Stop the observer during the database mutation to prevent its startup
+          # catalogue refresh racing the exact deploy reconciliation.  It is
+          # restarted unconditionally before evaluating the runner result.
+          sudo -n docker stop porota_production_observer >/dev/null
+          echo "OBSERVER_PAUSED_FOR_CONTRACT_RECONCILIATION=GREEN"
+          set +e
+          # A completed provider v1 sweep from the last 24h is explicit
+          # complementary provenance, not a fresh market reading. An expired
+          # complete sweep stays STALE; it cannot trigger a broker refresh or
+          # authorize PAPER. Deploy must materialize v2 for the catalogue;
+          # the scheduled v1 collector owns its costly ~2460 bond requests.
+          # Name the container so a killed Docker CLI cannot leave a writer
+          # behind after the observer is restarted.
+          CONTRACT_NAME="porota-deploy-contract-$CANDIDATE_SHA"
+          CONTRACT_OUTPUT="$(sudo -n timeout --signal=TERM --kill-after=10 1200 sudo -n docker run --rm --name "$CONTRACT_NAME" --pull never \
+            --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -e PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json \
+            -e PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db \
+            -e DATA_DIR=/app/data \
+            -e SERVER_TIMEZONE=America/Argentina/Buenos_Aires \
+            -e POROTA_CONTRACT_REMOTE_V1_POLICY=REUSE_RECENT_COMPLETED \
+            --env-file /opt/porota-trading/data/diagnosticos/observer_runtime_v17.env \
+            -v /opt/porota-trading/data:/app/data \
+            -v /opt/porota-trading/.secrets/ppi_production.json:/run/secrets/ppi_production.json:ro \
+            --entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py 2>&1)"
+          CONTRACT_RC=$?
+          CONTRACT_LIFECYCLE="$(sudo -n python3 "$REPO/scripts/rc6_contract_runner_lifecycle.py" --candidate-sha "$CANDIDATE_SHA" 2>&1)"
+          CONTRACT_LIFECYCLE_RC=$?
+          set -e
+          echo "$CONTRACT_LIFECYCLE"
+          sudo -n docker start porota_production_observer >/dev/null
+          echo "OBSERVER_RESTARTED_AFTER_CONTRACT_RECONCILIATION=GREEN"
+          echo "RC6_FULL_CONTRACT_RECONCILIATION_EXIT=$CONTRACT_RC"
+          echo "$CONTRACT_OUTPUT"
+          test "$CONTRACT_LIFECYCLE_RC" -eq 0
+          test "$CONTRACT_RC" -eq 0
+          grep -Fq "STATUS=OK" <<< "$CONTRACT_OUTPUT"
+          if grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN" <<< "$CONTRACT_OUTPUT"; then
+            grep -Fq "DATABASE_READONLY_PROBE=1" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_REMOTE_PPI_V1_REFRESH=SKIPPED_MARKET_OPEN"
+          elif grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_EXPIRED_COMPLETED" <<< "$CONTRACT_OUTPUT"; then
+            grep -Fq "REMOTE_PPI_V1_STATUS=STALE" <<< "$CONTRACT_OUTPUT"
+            grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_REMOTE_PPI_V1=STALE_COMPLETED_NOT_REUSED"
+          else
+            grep -Fq "REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED" <<< "$CONTRACT_OUTPUT"
+            grep -Fq '"total":' <<< "$CONTRACT_OUTPUT"
+            grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
+          fi
+          grep -Fq "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" <<< "$CONTRACT_OUTPUT"
+          echo "RC6_FULL_CONTRACT_RECONCILIATION=GREEN"
+
+          sudo -n docker run --rm --pull never --user botuser --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --entrypoint python -i "$STABLE_IMAGE" - <<'PY'
+          from bs_instrument_contracts import FAMILIES
+          import bf_production_paper_observer as observer
+          assert observer.OPERATIONAL_FAMILIES == FAMILIES
+          assert observer.SAFE_PAPER_TYPES == set(FAMILIES)
+          print("OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES")
+          PY
+
+          # The scanner's fail-closed login cooldown is at least 900 seconds.
+          # A healthy PAPER heartbeat in COOLDOWN may recover without changing
+          # order authority; keep a bounded wait rather than failing at 90s.
+          set +e
+          RUNTIME_CHECK="$(sudo -n timeout 1260 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys,time
+          from datetime import datetime,timezone
+          path=sys.argv[1]
+          started=time.monotonic()
+          startup_deadline=started+90
+          COOLDOWN_GO_SECONDS=1200
+          cooldown_deadline=started+COOLDOWN_GO_SECONDS
+          last=None
+          def fresh(value,seconds):
+              try:
+                  observed=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+                  return observed.tzinfo is not None and 0 <= (datetime.now(timezone.utc)-observed.astimezone(timezone.utc)).total_seconds() <= seconds
+              except (TypeError,ValueError):
+                  return False
+          while time.monotonic() < cooldown_deadline:
+              try:
+                  c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=3)
+                  c.execute('PRAGMA query_only=ON')
+                  last=c.execute(
+                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at '
+                      'FROM observer_state WHERE id=1'
+                  ).fetchone()
+                  c.close()
+              except sqlite3.Error:
+                  last=None
+              paper=bool(last and last[0]=='PRODUCTION_PAPER'
+                         and type(last[1]) is int and last[1]==0)
+              heartbeat=paper and fresh(last[6],120)
+              market_required=bool(last and last[4]=='MARKET_OPEN')
+              market_fresh=(not market_required) or fresh(last[5],300)
+              ready=bool(last and last[3] in {'RUNNING','WAITING_MARKET','READY_PREOPEN'})
+              if paper and last[2]=='OK' and heartbeat and market_fresh and ready:
+                  print('GO_CHECK=GREEN|'+'|'.join(map(str,last))+f'|MARKET_DATA_REQUIRED={market_required}')
+                  break
+              # STARTING can include a full catalog/policy refresh. Wait within
+              # the existing 1200s budget; only an operational state with a
+              # fresh heartbeat can pass GO and establish a stable baseline.
+              startup_pending=bool(paper and last[2]=='OK' and last[3]=='STARTING')
+              if time.monotonic() >= startup_deadline and not (
+                      (paper and heartbeat and last[2]=='COOLDOWN') or startup_pending):
+                  print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
+                  raise SystemExit(1)
+              time.sleep(5)
+          else:
+              print(f'GO_CHECK_FAILED_AFTER_COOLDOWN={last}')
+              raise SystemExit(1)
+          PY
+          )"
+          RUNTIME_RC=$?
+          set -e
+          echo "$RUNTIME_CHECK"
+          test "$RUNTIME_RC" -eq 0
+          grep -q '^GO_CHECK=GREEN' <<< "$RUNTIME_CHECK"
+
+          # The exhaustive contract reconciliation can create a transient host
+          # memory peak.  The dashboard is independently restartable and must
+          # be proven healthy after that peak before any postdeploy assertion.
+          DASHBOARD_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard 2>/dev/null || true)"
+          DASHBOARD_OOM_KILLED="$(sudo -n docker inspect -f '{{.State.OOMKilled}}' porota_production_dashboard 2>/dev/null || true)"
+          echo "DASHBOARD_POST_RECONCILIATION_STATUS=$DASHBOARD_STATUS|OOM_KILLED=$DASHBOARD_OOM_KILLED"
+          if [ "$DASHBOARD_STATUS" != running ]; then
+            sudo -n docker logs --tail 120 porota_production_dashboard 2>&1 || true
+            sudo -n docker start porota_production_dashboard >/dev/null
+            echo "DASHBOARD_POST_RECONCILIATION_RESTART=PERFORMED"
+          fi
+          DASHBOARD_HTTP=000
+          for DASHBOARD_ATTEMPT in $(seq 1 18); do
+            DASHBOARD_HTTP="$(curl -sS -o /tmp/porota-v2-health -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health || true)"
+            echo "DASHBOARD_HEALTH_ATTEMPT=$DASHBOARD_ATTEMPT|HTTP=$DASHBOARD_HTTP"
+            [ "$DASHBOARD_HTTP" = 200 ] && break
+            sleep 5
+          done
+          if [ "$DASHBOARD_HTTP" != 200 ]; then
+            sudo -n docker inspect porota_production_dashboard || true
+            sudo -n docker logs --tail 200 porota_production_dashboard 2>&1 || true
+            exit 1
+          fi
+          test "$DASHBOARD_HTTP" = 200
+          DASHBOARD_IMAGE_ID="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"
+          echo "DASHBOARD_HEALTH_HTTP=200|image=$DASHBOARD_IMAGE_ID"
+
+          # From this point onward no controlled container restart is expected.
+          # A newly recreated exact-image runtime must still have zero automatic
+          # restarts before any postdeploy bootstrap or audit begins.
+          OBSERVER_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+          DASHBOARD_RESTART_BASE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+          echo "RC6_POST_RECONCILIATION_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
+          test "$OBSERVER_RESTART_BASE" = 0
+          test "$DASHBOARD_RESTART_BASE" = 0
+
+          # Bootstrap compacto tras un deploy correcto. Cada tarea es diaria y
+          # acotada; no habilita rutas de orden real.
+          for job in validation_projection action4_audit; do
+            JOB_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 60 python az_maintenance_job.py "$job" 2>&1)"
+            echo "$JOB_OUTPUT"
+            grep -Fq "Tarea $job completada." <<< "$JOB_OUTPUT"
+            echo "BOOTSTRAP_$(tr '[:lower:]' '[:upper:]' <<< "$job")=GREEN"
+          done
+
+          # Migrate only the local cache contract. This preserves every market
+          # value byte-for-byte, never calls IOL and never creates an order route.
+          IOL_MIGRATION_OUTPUT="$(sudo -n python3 "$REPO/scripts/rc6_iol_reference_contract_migrate.py" \
+            --path "$REPO/data/market/iol_family_reference_latest.json" 2>&1)"
+          echo "$IOL_MIGRATION_OUTPUT"
+          grep -Fq 'IOL_REFERENCE_CONTRACT_MIGRATION=GREEN' <<< "$IOL_MIGRATION_OUTPUT"
+          grep -Fq 'ZERO_FILL=false|REAL_ROUTES=[]' <<< "$IOL_MIGRATION_OUTPUT"
+
+          # Unified WS-INTEG-03 runtime truth audit. It is read-only at the DB
+          # and network boundaries and runs inside the exact promoted image.
+          # Its only write is the persisted audit evidence JSON. The dashboard
+          # runs as botuser, so the bind-mounted evidence directory must be owned
+          # by that exact runtime UID/GID before invoking the auditor.
+          AUDIT_HOST_DIR="$REPO/data/deploy"
+          AUDIT_UID="$(sudo -n docker exec porota_production_dashboard id -u)"
+          AUDIT_GID="$(sudo -n docker exec porota_production_dashboard id -g)"
+          [[ "$AUDIT_UID" =~ ^[0-9]+$ ]]
+          [[ "$AUDIT_GID" =~ ^[0-9]+$ ]]
+          sudo -n install -d -o "$AUDIT_UID" -g "$AUDIT_GID" -m 0750 "$AUDIT_HOST_DIR"
+          sudo -n find "$AUDIT_HOST_DIR" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -exec chown "$AUDIT_UID:$AUDIT_GID" {} +
+          sudo -n find "$AUDIT_HOST_DIR" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -exec chmod 0640 {} +
+          AUDIT_HOST_STAT="$(sudo -n stat -c '%u:%g|%a' "$AUDIT_HOST_DIR")"
+          echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH=$AUDIT_HOST_STAT|runtime=$AUDIT_UID:$AUDIT_GID"
+          test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"
+          sudo -n docker exec porota_production_dashboard test -w /app/data/deploy
+          echo "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN"
+
+          # A transient per-symbol market-data failure intentionally marks the
+          # scalping worker DEGRADED for that scan interval. Never treat
+          # DEGRADED as healthy: wait, boundedly and read-only, for the worker
+          # to publish a fresh healthy heartbeat before taking the immediate
+          # Zero-Known-Error snapshot. This closes the race where a healthy
+          # self-recovering worker was sampled between scan cycles.
+          SCALPING_STABILIZATION_SECONDS=420
+          SCALPING_STABILIZATION_POLL_SECONDS=15
+          SCALPING_STABILIZATION_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00)"
+          SCALPING_STABILIZATION_ATTEMPTS=$((SCALPING_STABILIZATION_SECONDS / SCALPING_STABILIZATION_POLL_SECONDS + 1))
+          SCALPING_STABILIZED=false
+          for SCALPING_ATTEMPT in $(seq 1 "$SCALPING_STABILIZATION_ATTEMPTS"); do
+            OBSERVER_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
+            SCALPING_GATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" "$SCALPING_STABILIZATION_STARTED_AT" <<'PY'
+          import sqlite3,sys
+          from datetime import datetime, timezone
+
+          path,started_raw=sys.argv[1:3]
+          started=datetime.fromisoformat(started_raw.replace("Z","+00:00"))
+          c=sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=1000")
+          worker=c.execute("""
+            SELECT heartbeat_at,state,successful,failed,real_orders_sent
+            FROM intraday_scalping_worker_state WHERE id=1
+          """).fetchone()
+          observer=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+
+          if worker is None or observer is None:
+              print("WAIT|reason=missing_state")
+              raise SystemExit(0)
+
+          heartbeat=str(worker["heartbeat_at"] or "")
+          try:
+              dt=datetime.fromisoformat(heartbeat.replace("Z","+00:00"))
+              if dt.tzinfo is None:
+                  raise ValueError("naive heartbeat")
+              age=(datetime.now(timezone.utc)-dt.astimezone(timezone.utc)).total_seconds()
+          except Exception:
+              age=10**9
+
+          state=str(worker["state"] or "")
+          successful=int(worker["successful"] or 0)
+          failed=int(worker["failed"] or 0)
+          worker_orders=worker["real_orders_sent"]
+          observer_mode=str(observer["mode"] or "")
+          observer_orders=observer["real_orders_sent"]
+          healthy_state=state in ("RUNNING","WAITING_MARKET")
+          post_gate_heartbeat=dt >= started if age < 10**9 else False
+          healthy=(healthy_state and failed==0 and 0 <= age <= 300
+                   and post_gate_heartbeat
+                   and worker_orders is not None and int(worker_orders)==0
+                   and observer_mode=="PRODUCTION_PAPER"
+                   and observer_orders is not None and int(observer_orders)==0)
+          prefix="GREEN" if healthy else "WAIT"
+          print(
+              f"{prefix}|state={state}|heartbeat_age_seconds={age:.3f}"
+              f"|post_gate_heartbeat={str(post_gate_heartbeat).lower()}"
+              f"|successful={successful}|failed={failed}"
+              f"|worker_orders={worker_orders}"
+              f"|observer={observer_mode}/{observer_orders}"
+          )
+          PY
+            )"
+            echo "RC6_SCALPING_STABILIZATION_ATTEMPT=$SCALPING_ATTEMPT|$SCALPING_GATE"
+            grep -Fq 'worker_orders=0' <<< "$SCALPING_GATE"
+            grep -Fq 'observer=PRODUCTION_PAPER/0' <<< "$SCALPING_GATE"
+            if [[ "$SCALPING_GATE" == GREEN\|* ]]; then
+              SCALPING_STABILIZED=true
+              break
+            fi
+            if [ "$SCALPING_ATTEMPT" -lt "$SCALPING_STABILIZATION_ATTEMPTS" ]; then
+              sleep "$SCALPING_STABILIZATION_POLL_SECONDS"
+            fi
+          done
+          test "$SCALPING_STABILIZED" = true
+          echo "RC6_SCALPING_STABILIZATION=GREEN"
+
+          # The IOL collector timer remains paused until all deploy gates pass.
+          # An old cache may still say LIVE_FRESH after the policy-only migration.
+          # Run the owned OBSERVE_ONLY one-shot when there is no live sample or
+          # its actual sample is at least 180s old, then prove this invocation
+          # published a new live provider sample. Recheck because the preopen
+          # wait can last 20 minutes; do not invent a timestamp or arm a timer.
+          ensure_iol_refresh() {
+            local label="$1" decision rc started_at verified alert cause
+            set +e
+            decision="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+              --action plan --path "$REPO/data/market/iol_family_reference_latest.json" 2>&1)"
+            rc=$?
+            set -e
+            echo "RC6_IOL_REFRESH_PLAN_$label=$decision|rc=$rc"
+            if [ "$rc" -eq 0 ]; then
+              grep -Fxq 'RC6_IOL_DEPLOY_REFRESH=FRESH' <<< "$decision"
+              return 0
+            fi
+            if [ "$rc" -ne 10 ]; then
+              return "$rc"
+            fi
+            grep -Fxq 'RC6_IOL_DEPLOY_REFRESH=REFRESH_REQUIRED' <<< "$decision"
+            iol_alert() {
+              local cause="$1"
+              # A failed optional source is still an explicit, audited alert.
+              # A broken fallback/no-zero-fill/PAPER contract remains blocking.
+              if ! alert="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+                --action fallback --path "$REPO/data/market/iol_family_reference_latest.json")"; then
+                echo "RC6_IOL_SOURCE_CONTRACT_$label=RED|$alert"
+                return 2
+              fi
+              grep -Fq 'RC6_IOL_DEPLOY_REFRESH=AMBER|effective=' <<< "$alert"
+              echo "RC6_IOL_SOURCE_ALERT_$label=$cause|$alert"
+            }
+            started_at="$(date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00)"
+            # The reconciled systemd unit hardcodes OBSERVE_ONLY and its own
+            # 210s timeout; timeout here bounds the caller as well.
+            if ! sudo -n timeout 230 systemctl start porota-iol-shadow-collector-rc6.service; then
+              echo "RC6_IOL_REFRESH_$label=AMBER|COLLECTOR_SERVICE_FAILED"
+              sudo -n systemctl show porota-iol-shadow-collector-rc6.service \
+                --property=ActiveState,Result,ExecMainStatus,ConditionResult --no-pager || true
+              sudo -n systemctl stop porota-iol-shadow-collector-rc6.service || true
+              iol_alert COLLECTOR_SERVICE_FAILED
+              return $?
+            fi
+            set +e
+            verified="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+              --action verify --path "$REPO/data/market/iol_family_reference_latest.json" \
+              --started-at "$started_at" 2>&1)"
+            rc=$?
+            set -e
+            echo "RC6_IOL_REFRESH_VERIFY_$label=$verified|rc=$rc"
+            if [ "$rc" -eq 0 ]; then
+              return 0
+            fi
+            iol_alert COLLECTOR_SAMPLE_UNPROVEN
+          }
+          ensure_iol_refresh immediate
+
+          AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
+          set +e
+          AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
+            python /app/scripts/rc6_zero_known_error_runtime_audit.py \
+              --label immediate --output "$AUDIT_BASE" 2>&1)"
+          AUDIT_RC=$?
+          set -e
+          echo "$AUDIT_OUTPUT"
+          if [ "$AUDIT_RC" -ne 0 ]; then
+            echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=RED|RC=$AUDIT_RC"
+            sudo -n docker inspect -f 'DASHBOARD={{.State.Status}}|OOM={{.State.OOMKilled}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}' porota_production_dashboard || true
+            sudo -n docker logs --tail 250 porota_production_dashboard 2>&1 || true
+            exit "$AUDIT_RC"
+          fi
+          echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN"
+
+          # The compressed frozen image/bundle and extracted stage are no longer
+          # needed after immutable promotion + immediate audit. Reclaim only these
+          # deploy-transient bytes before the preopen disk guard so the deploy
+          # cannot fail against space it is itself temporarily consuming.
+          rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"
+          rm -rf "$STAGE"
+          DISK_PREOPEN_AFTER_SAFE_RECLAIM="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "RC6_PREOPEN_SAFE_RECLAIM=GREEN|free=$DISK_PREOPEN_AFTER_SAFE_RECLAIM"
+          POST_CLEANUP_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
+          echo "RC6_DISK_POST_CLEANUP_MIN_FREE=$POST_CLEANUP_MIN_FREE"
+          test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"
+
+          # Refresh the official BYMA morning evidence with the just-installed
+          # candidate. The structured public capture remains complementary:
+          # official-page failures are fail-closed, while OPEN_DATA source-path
+          # failures remain visible without impersonating calendar authority.
+          set +e
+          BYMA_MORNING_OUTPUT="$(sudo -n timeout 180 python3 "$REPO/scripts/rc6_byma_morning_pipeline.py" --root "$REPO/data/market" 2>&1)"
+          BYMA_MORNING_RC=$?
+          set -e
+          echo "$BYMA_MORNING_OUTPUT"
+          if [ "$BYMA_MORNING_RC" -ne 0 ]; then
+            echo "RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC"
+            exit "$BYMA_MORNING_RC"
+          fi
+          echo "RC6_BYMA_MORNING_REFRESH=GREEN"
+
+          # The closed-session reconciler may still be publishing its bounded
+          # candidate batches after the contract runner restarts the observer.
+          # Wait for at least one exact equity/CEDEAR PAPER identity under the
+          # same safety invariants; the preopen contract remains unchanged.
+          RC6_PREOPEN_READY=0
+          for attempt in {1..40}; do
+            set +e
+            CANDIDATE_READY="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys,time
+          path=sys.argv[1]
+          try:
+              c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=.5)
+              c.execute('PRAGMA query_only=ON')
+              deadline=time.monotonic()+2
+              c.set_progress_handler(lambda: int(time.monotonic()>deadline),1000)
+              state=c.execute('SELECT mode,real_orders_sent,ppi_auth FROM observer_state WHERE id=1').fetchone()
+              if not state or state[0]!='PRODUCTION_PAPER' or state[1]!=0 or str(state[2]).upper() not in ('OK','AUTHENTICATED'):
+                  print('RED|PAPER_SAFETY_OR_AUTH')
+                  sys.exit(2)
+              row=c.execute("""SELECT 1 FROM candidate_identity_v2
+                  WHERE status='AVAILABLE' AND can_simulate=1
+                    AND instrument_type IN ('ACCIONES','CEDEARS','ETFS') LIMIT 1""").fetchone()
+              print('GREEN' if row else 'WAIT')
+          except sqlite3.Error:
+              print('RED|SQLITE_READ')
+              sys.exit(2)
+          finally:
+              try: c.close()
+              except NameError: pass
+          PY
+            )"
+            CANDIDATE_RC=$?
+            set -e
+            echo "RC6_PREOPEN_CANDIDATE_WAIT_$attempt=$CANDIDATE_READY"
+            if [ "$CANDIDATE_RC" -ne 0 ]; then
+              echo "RC6_PREOPEN_CANDIDATE_WAIT=RED|RC=$CANDIDATE_RC"
+              exit "$CANDIDATE_RC"
+            fi
+            if [ "$CANDIDATE_READY" = GREEN ]; then
+              RC6_PREOPEN_READY=1
+              break
+            fi
+            test "$CANDIDATE_READY" = WAIT
+            sleep 30
+          done
+          if [ "$RC6_PREOPEN_READY" -ne 1 ]; then
+            echo "RC6_PREOPEN_CANDIDATE_WAIT=RED|TIMEOUT_20M"
+            exit 42
+          fi
+          echo "RC6_PREOPEN_CANDIDATE_WAIT=GREEN"
+
+          # Execute the same fail-closed preopen contract under both scheduled
+          # phase labels. No order route, DB write, restart or Telegram send is
+          # performed by rc6_preopen.py.
+          for phase in T_MINUS_45 T_MINUS_10; do
+            set +e
+            PREOPEN_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" --deploy-scheduler-candidate "$CANDIDATE_SHA" 2>&1)"
+            PREOPEN_RC=$?
+            set -e
+            echo "$PREOPEN_OUTPUT"
+            if [ "$PREOPEN_RC" -ne 0 ]; then
+              echo "RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC"
+              exit "$PREOPEN_RC"
+            fi
+            printf '%s\n' "$PREOPEN_OUTPUT" | \
+              PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO" python3 \
+                "$REPO/scripts/rc6_deploy_preopen_gate.py" \
+                --phase "$phase" --return-code "$PREOPEN_RC"
+            echo "RC6_PREOPEN_${phase}=RESULT_ACCEPTED"
+          done
+
+          # Observe several worker/dashboard refresh cycles before success.
+          # Every later snapshot compares against the immediate baseline and
+          # fails if READY regresses, LKG disappears or a worker heartbeat does
+          # not advance. Container restart counters are also invariant: a
+          # self-recovered SIGSEGV/exit-139 is still a failed deployment.
+          echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
+          for cycle in 1 2 3; do
+            sleep 35
+            ensure_iol_refresh "stability-$cycle"
+            set +e
+            AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
+              python /app/scripts/rc6_zero_known_error_runtime_audit.py \
+                --label "stability-$cycle" --baseline "$AUDIT_BASE" \
+                --output "/app/data/deploy/zero-known-error-stability-$cycle.json" 2>&1)"
+            AUDIT_RC=$?
+            set -e
+            echo "$AUDIT_OUTPUT"
+            if [ "$AUDIT_RC" -ne 0 ]; then
+              echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=RED|RC=$AUDIT_RC"
+              sudo -n docker logs --tail 250 porota_production_dashboard 2>&1 || true
+              exit "$AUDIT_RC"
+            fi
+            OBSERVER_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_NOW="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            echo "RC6_STABILITY_RESTART_$cycle=observer=$OBSERVER_RESTART_NOW|dashboard=$DASHBOARD_RESTART_NOW"
+            test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"
+            echo "RC6_ZERO_KNOWN_ERROR_STABILITY_$cycle=GREEN"
+          done
+
+          # Exit-139 incidents appeared after the runtime had initially looked
+          # healthy. Extend the observation window cheaply after the three full
+          # audits: no heavy HTTP sweep, only direct container-liveness and
+          # restart-count invariants once per minute.
+          SOAK_START_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for soak in 1 2 3 4 5; do
+            sleep 60
+            OBSERVER_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)"
+            DASHBOARD_STATUS_SOAK="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)"
+            OBSERVER_RESTART_SOAK="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+            DASHBOARD_RESTART_SOAK="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+            echo "RC6_EXIT139_SOAK_$soak=observer:$OBSERVER_STATUS_SOAK/$OBSERVER_RESTART_SOAK|dashboard:$DASHBOARD_STATUS_SOAK/$DASHBOARD_RESTART_SOAK"
+            test "$OBSERVER_STATUS_SOAK" = running
+            test "$DASHBOARD_STATUS_SOAK" = running
+            test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"
+            test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"
+          done
+          echo "RC6_EXIT139_SOAK=GREEN"
+
+          # The complete five-minute stability soak is the final no-error
+          # window. Startup lock traces before the three full audits are
+          # independently observed, but cannot permanently veto a recovered
+          # PAPER runtime after those audits and this error-free soak.
+          RECENT_CRITICAL="$({
+            sudo -n docker logs --since "$SOAK_START_UTC" porota_production_observer 2>&1 || true
+            sudo -n docker logs --since "$SOAK_START_UTC" porota_production_dashboard 2>&1 || true
+          } | grep -E 'Traceback|REAL_ORDER_CAPABILITY=(ENABLED|REAL)|real_orders_sent=[1-9][0-9]*' || true)"
+          test -z "$RECENT_CRITICAL"
+          echo "RC6_RECENT_CRITICAL_LOG_SIGNATURES=0"
+
+          # Require direct native progress before granting VALIDATED_RUNTIME.
+          # CLOSED idle has a separate, explicit liveness/safety receipt and
+          # never claims a fresh financial generation; OPEN keeps the native
+          # advancement and ten-generation resource gates unchanged.
+          sudo -n docker exec porota_production_dashboard timeout 195 \
+            python /app/scripts/rc6_deploy_generation_gate.py \
+              --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
+              --allow-closed-idle \
+              --output /app/data/deploy/native-generation-acceptance.json
+          echo "RC6_NATIVE_GENERATION_OR_CLOSED_IDLE_ACCEPTANCE=GREEN"
+          sudo -n python3 "$REPO/scripts/rc6_native_soak.py" \
+            --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE" \
+            --allow-closed-idle \
+            --output "$REPO/data/deploy/native-ten-generation-soak.json"
+          echo "RC6_NATIVE_TEN_GENERATIONS_OR_CLOSED_IDLE_WITH_RESERVES=GREEN"
+          sudo -n python3 - "$REPO/data/deploy/native-generation-acceptance.json" \
+            "$REPO/data/deploy/native-ten-generation-soak.json" "$CANDIDATE_SHA" "$CANDIDATE_TREE" <<'PY'
+          import json, sys
+          first, sustained = (json.load(open(path, encoding='utf-8')) for path in sys.argv[1:3])
+          candidate, tree = sys.argv[3:]
+          mode = first.get('acceptance_mode')
+          assert first.get('status') == sustained.get('status') == 'GREEN'
+          assert mode == sustained.get('acceptance_mode')
+          assert mode in ('FRESH_GENERATIONS', 'CLOSED_IDLE')
+          assert sustained.get('strict') is True and sustained.get('all_services_sampled_running') is True
+          if mode == 'CLOSED_IDLE':
+              assert first.get('generations') == sustained.get('generations') == []
+              assert first.get('source_freshness_renewed') is sustained.get('source_freshness_renewed') is False
+              assert len(first['idle_observations']) >= 2 and len(sustained['idle_observations']) >= 10
+              assert first['idle_heartbeat_count'] >= 2 and sustained['idle_heartbeat_count'] >= 2
+              receipts = [first['idle_observations'][-1], sustained['idle_observations'][-1]]
+          else:
+              assert len(first['generations']) >= 2 and len(sustained['generations']) >= 10
+              receipts = [first['generations'][-1], sustained['generations'][-1]]
+          assert all(row['source_sha'] == candidate and row['candidate_tree_sha'] == tree
+                     and row['real_orders_sent'] == 0 and row['real_routes'] == 'NOT_CALLED'
+                     for row in receipts)
+          print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)
+          PY
+
+          PPI_WATCH_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_WATCH_AFTER" = "$PPI_WATCH_BEFORE"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+
+          sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-frozen-candidate.json"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
+          sudo -n python3 - "$REPO/data/deploy/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json" \
+            "$CANDIDATE_SHA" "$CANDIDATE_TREE" "$IMAGE_TAR_SHA" <<'PY'
+          import json,sys
+          frozen_path,manifest_path,candidate,tree,image_tar_sha=sys.argv[1:]
+          frozen=json.load(open(frozen_path,encoding="utf-8"))
+          manifest=json.load(open(manifest_path,encoding="utf-8"))
+          assert frozen["candidate_sha"] == candidate
+          assert frozen["candidate_tree_sha"] == tree
+          assert frozen["image_tar_sha256"] == image_tar_sha
+          assert manifest.get("status") == "GREEN"
+          assert manifest.get("bundle_sha256")
+          print("POROTA_RUNTIME_PROVENANCE_MATERIALIZED=GREEN")
+          PY
+          # Keep the already materialized candidate state PENDING. The final
+          # marker follows the independent flat-book, scheduler and backup
+          # gates below; a successful soak alone is not a completed deploy.
+          echo 'RC6_CURRENT_STATE_STILL_PENDING=1'
+
+          # Reconcile the critical approval gateway to the already-promoted
+          # stable image before image cleanup. The control-plane code remains
+          # host-mounted; this only removes the old immutable image pin.
+          CRIT_CONTAINER=porota_critical_approval_rc6
+          if sudo -n docker inspect "$CRIT_CONTAINER" >/dev/null 2>&1; then
+            CRIT_IMAGE_BEFORE="$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")"
+            if [ "$CRIT_IMAGE_BEFORE" != "$RUNTIME_IMAGE_ID" ]; then
+              test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+              test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+              UNIT_TEXT="$(sudo -n systemctl cat porota-critical-approval-rc6.service)"
+              grep -Fq "$STABLE_IMAGE" <<<"$UNIT_TEXT"
+              grep -Fq '/opt/porota-control-plane-rc6/current:/code:ro' <<<"$UNIT_TEXT"
+
+              sudo -n docker run --rm --pull never --read-only --user botuser \
+                --cap-drop ALL --security-opt no-new-privileges:true \
+                --pids-limit 32 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+                -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code \
+                -v /opt/porota-control-plane-rc6/current:/code:ro \
+                --entrypoint python "$STABLE_IMAGE" \
+                -c 'import fm_critical_approval_unix_runtime_rc6; print("CRITICAL_IMAGE_COMPATIBILITY=GREEN")'
+
+              sudo -n systemctl restart porota-critical-approval-rc6.service
+              CRIT_READY=0
+              for _ in $(seq 1 40); do
+                if [ "$(sudo -n systemctl is-active porota-critical-approval-rc6.service 2>/dev/null || true)" = active ]; then
+                  CRIT_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}' "$CRIT_CONTAINER" 2>/dev/null || true)"
+                  if [ "$CRIT_STATUS" = "running|healthy|0|$RUNTIME_IMAGE_ID" ]; then
+                    CRIT_READY=1
+                    break
+                  fi
+                fi
+                sleep 2
+              done
+              test "$CRIT_READY" -eq 1
+              sudo -n docker exec "$CRIT_CONTAINER" python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only",h; print("ISSUES_CAPABILITY_BROKER=GREEN")'
+
+              OLD_IMAGE_USERS=0
+              for cid in $(sudo -n docker ps -aq); do
+                CID_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' "$cid")"
+                if [ "$CID_IMAGE" = "$CRIT_IMAGE_BEFORE" ]; then
+                  OLD_IMAGE_USERS=1
+                  echo "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED=$cid"
+                fi
+              done
+              test "$OLD_IMAGE_USERS" -eq 0
+
+              for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$CRIT_IMAGE_BEFORE" 2>/dev/null | sed '/^<none>:/d' || true); do
+                case "$tag" in
+                  "$STABLE_IMAGE")
+                    echo "RC6_OLD_CRITICAL_IMAGE_STABLE_TAG_COLLISION=RED"
+                    exit 63
+                    ;;
+                  porota-trading-bot:17.0.0-rc6-candidate-*)
+                    sudo -n docker image rm "$tag"
+                    ;;
+                  *)
+                    echo "RC6_PRESERVE_NONCANDIDATE_IMAGE_TAG=$tag"
+                    ;;
+                esac
+              done
+              sudo -n docker image rm "$CRIT_IMAGE_BEFORE" >/dev/null 2>&1 || true
+              echo "CRITICAL_APPROVAL_IMAGE_RECONCILED=GREEN|image=$RUNTIME_IMAGE_ID"
+            fi
+          fi
+
+          # Remove only tagged RC6 candidate images that no container references.
+          # Other unused images remain untouched; dangling layers are handled below.
+          for image_id in $(sudo -n docker image ls -q --no-trunc | sort -u); do
+            IMAGE_IN_USE=0
+            for cid in $(sudo -n docker ps -aq); do
+              if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$image_id" ]; then
+                IMAGE_IN_USE=1
+                break
+              fi
+            done
+            if [ "$IMAGE_IN_USE" -eq 1 ]; then
+              continue
+            fi
+            for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$image_id" 2>/dev/null | sed '/^<none>:/d' || true); do
+              case "$tag" in
+                porota-trading-bot:17.0.0-rc6-candidate-*)
+                  echo "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE=$tag"
+                  sudo -n docker image rm "$tag"
+                  ;;
+              esac
+            done
+          done
+
+          # Final read-only inventory after runtime validation/provenance.
+          sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
+            --policy "$REPO/ops/policy/rc6-disk-housekeeping-v1.json" \
+            --mode audit --preserve-backups \
+            --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
+          echo 'RC6_FINAL_HOSTWIDE_MUTATION=SKIPPED'
+          sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
+          echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
+          rm -rf "$REMOTE_DIR"
+          mapfile -t FINAL_DISK_METRICS < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
+          DISK_AFTER="${FINAL_DISK_METRICS[0]}"
+          FINAL_INODE_FREE_PERCENT="${FINAL_DISK_METRICS[1]}"
+          echo "DISK_AFTER=$DISK_AFTER"
+          echo "FINAL_INODE_FREE_PERCENT=$FINAL_INODE_FREE_PERCENT"
+          echo "SPACE_RECOVERED=$((DISK_AFTER-DISK_BEFORE))"
+          FINAL_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
+          FINAL_MIN_INODE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["min_inode_free_percent"])')"
+          echo "RC6_DISK_FINAL_MIN_FREE=$FINAL_MIN_FREE"
+          echo "RC6_DISK_FINAL_MIN_INODE_PERCENT=$FINAL_MIN_INODE"
+          test "$DISK_AFTER" -ge "$FINAL_MIN_FREE"
+          python3 - "$FINAL_INODE_FREE_PERCENT" "$FINAL_MIN_INODE" <<'PY'
+          import sys
+          assert float(sys.argv[1]) >= float(sys.argv[2])
+          PY
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          if sudo -n docker inspect "$CRIT_CONTAINER" >/dev/null 2>&1; then
+            test "$(sudo -n docker inspect -f '{{.State.Status}}' "$CRIT_CONTAINER")" = running
+            test "$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")" = "$RUNTIME_IMAGE_ID"
+            test "$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT_CONTAINER")" = healthy
+          fi
+          PPI_WATCH_FINAL="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_WATCH_FINAL" = "$PPI_WATCH_BEFORE"
+          echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
+          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
+          REMOTE
+
+      - name: Verify same flat PAPER session after runtime restart
+        id: flat_book
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase flat_book env PYTHONDONTWRITEBYTECODE=1 python3 - '$RC6_QUIESCENCE_MODE' '$CANDIDATE_SHA'" <<'PY'
+          import sys
+          sys.path.insert(0,'/opt/porota-trading')
+          from scripts.rc6_deploy_quiescence import admit_poststart_flat
+          before,candidate=sys.argv[1:]
+          after=admit_poststart_flat(before,candidate)
+          print('RC6_PAPER_POSTSTART=GREEN|before='+before+'|after='+after+'|PRODUCTION_PAPER|0')
+          PY
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
+            timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase verify_carryover python3 /opt/porota-trading/scripts/rc6_deploy_quiescence.py --candidate-sha '$CANDIDATE_SHA' --action verify-carryover"
+          fi
+
+      - name: Restore RC6 schedulers only after successful promotion
+        id: timers_restore
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase timers_restore python3 - --candidate-sha '$CANDIDATE_SHA' --action restore --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+
+      - name: Verify RC6 schedulers restored after promotion
+        id: timers_restored
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase timers_restored python3 - --candidate-sha '$CANDIDATE_SHA' --action verify --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+
+      - name: Retire exact operator-suspended backup files with a host receipt
+        id: backup_retire
+        if: success()
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase backup_retire bash -s -- '$CANDIDATE_SHA'" <<'REMOTE'
+          set -Eeuo pipefail
+          CANDIDATE_SHA="$1"
+          REPO=/opt/porota-trading
+          SCRIPT="$REPO/scripts/rc6_679_backup_suspension.py"
+          PLAN="$REPO/data/deploy/backup-retire-plan-$CANDIDATE_SHA.json"
+          test -f "$SCRIPT"
+          python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --plan-out "$PLAN" >/dev/null
+          python3 "$SCRIPT" --candidate-sha "$CANDIDATE_SHA" --apply-plan "$PLAN" --require-empty
+          python3 - "$REPO/data/deploy/backup-retire-$CANDIDATE_SHA.json" "$CANDIDATE_SHA" <<'PY'
+          import json,sys
+          receipt=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert receipt['schema']=='RC6_679_BACKUP_RETIRE_V1'
+          assert receipt['status']=='DONE' and receipt['candidate_sha']==sys.argv[2]
+          print('RC6_BACKUP_RETIRE_RECEIPT=GREEN|count='+str(receipt['count']))
+          PY
+          REMOTE
+
+      - name: Finalize runtime marker after all required host gates
+        id: finalize_runtime
+        if: success()
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase finalize python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
+          import grp, json, os, subprocess, sys, tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+          candidate, deploy = sys.argv[1:]
+          root = Path('/opt/porota-trading/data/deploy')
+          path = root / 'CURRENT_STATE_V2.json'
+          if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+              raise ValueError('FINAL_STATE_UNSAFE')
+          state = json.loads(path.read_bytes())
+          if (state.get('candidate_sha') != candidate or state.get('deploy_sha') != deploy or
+                  state.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+                  state.get('mode') != 'PRODUCTION_PAPER' or
+                  type(state.get('real_orders_sent')) is not int or state['real_orders_sent'] != 0 or
+                  state.get('real_order_routes') != 'NOT_CALLED' or
+                  state.get('ppi_watch_untouched') is not True):
+              raise ValueError('FINAL_STATE_IDENTITY_RED')
+          for name in ('porota_production_observer', 'porota_production_dashboard',
+                       'porota_critical_approval_rc6'):
+              raw = subprocess.check_output(['docker', 'inspect', name], timeout=10)
+              container = json.loads(raw)[0]
+              if (container['State']['Status'] != 'running' or
+                      container['Image'] != state.get('image_id')):
+                  raise ValueError('FINAL_CONTAINER_CHANGED:' + name)
+              if name == 'porota_critical_approval_rc6' and container['State']['Health']['Status'] != 'healthy':
+                  raise ValueError('FINAL_CRITICAL_UNHEALTHY')
+          scheduler = root / ('scheduler-suspend-' + candidate + '.json')
+          backup = root / ('backup-retire-' + candidate + '.json')
+          if any(p.is_symlink() or not p.is_file() or p.stat().st_size > 65536
+                 for p in (scheduler, backup)):
+              raise ValueError('FINAL_RECEIPT_UNSAFE')
+          if (json.loads(scheduler.read_bytes()).get('status') != 'RESTORED' or
+                  json.loads(backup.read_bytes()).get('status') != 'DONE'):
+              raise ValueError('FINAL_RECEIPT_INCOMPLETE')
+          state['dashboard_health_http'] = 200
+          first = json.loads((root / 'native-generation-acceptance.json').read_bytes())
+          sustained = json.loads((root / 'native-ten-generation-soak.json').read_bytes())
+          mode = first.get('acceptance_mode')
+          if (mode not in ('FRESH_GENERATIONS', 'CLOSED_IDLE') or
+                  sustained.get('acceptance_mode') != mode or
+                  first.get('status') != 'GREEN' or sustained.get('status') != 'GREEN'):
+              raise ValueError('FINAL_NATIVE_ACCEPTANCE_RED')
+          state['native_acceptance_mode'] = mode
+          state['source_freshness_renewed'] = False if mode == 'CLOSED_IDLE' else None
+          state['validation_status'] = 'VALIDATED_RUNTIME'
+          state['recorded_at'] = datetime.now(timezone.utc).isoformat()
+          fd, tmp = tempfile.mkstemp(prefix='.CURRENT_STATE_V2.', suffix='.tmp', dir=root)
+          try:
+              os.fchown(fd,0,grp.getgrnam('porotaadmin').gr_gid)
+              os.fchmod(fd,0o640)
+              with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                  json.dump(state, handle, indent=2, sort_keys=True)
+                  handle.write('\n')
+                  handle.flush()
+                  os.fsync(handle.fileno())
+              os.replace(tmp, path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print('CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME')
+          PY
+
+      - name: Failure-safe host cleanup
+        if: ${{ always() && (steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
+        # The bounded worst case is 45s writer stop + 120s recovery + 150s
+        # scheduler reconciliation + 180s payload/final cleanup. Four minutes
+        # could kill the job before the owned files were removed.
+        timeout-minutes: 11
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo 'POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true'
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=$CANDIDATE_SHA|rc=$rc"; fi' EXIT
+          set +e
+          # If the runner shell itself was interrupted, stop only its named
+          # exact writer before recovery can restart the observer.
+          timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_contract --allow-contract-lifecycle bash -c 'if sudo -n docker inspect porota-deploy-contract-$CANDIDATE_SHA >/dev/null 2>&1; then sudo -n python3 /opt/porota-trading/scripts/rc6_contract_runner_lifecycle.py --candidate-sha $CANDIDATE_SHA; else echo CONTRACT_WRITER_ABSENT; fi'"
+          CONTRACT_ORPHAN_RC=$?
+          if [ "$CONTRACT_ORPHAN_RC" -ne 0 ]; then
+            echo 'RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED|no recovery permitted'
+            exit "$CONTRACT_ORPHAN_RC"
+          fi
+          cleanup_payload() {
+            # A failed runtime recovery or timer restoration must not leave
+            # attempt-owned upload bytes behind. This nonfinal mutex phase
+            # keeps its IDLE barrier for explicit recovery; INFLIGHT or an
+            # orphan writer blocks the cleanup before any image/stage delete.
+            timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+              -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_payload timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'" \
+              < scripts/rc6_deploy_failure_cleanup.py
+          }
+          RECOVERY_OUTPUT="$(timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_recover python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
+            < scripts/rc6_deploy_quiescence.py)"
+          RECOVERY_RC=$?
+          echo "$RECOVERY_OUTPUT"
+          if [ "$RECOVERY_RC" -ne 0 ]; then
+            echo 'RC6_FAILURE_RECOVERY=RED|no scheduler mutation permitted'
+            cleanup_payload
+            PAYLOAD_RC=$?
+            echo "RC6_FAILURE_PAYLOAD_CLEANUP_RC=$PAYLOAD_RC|barrier_retained=true"
+            exit "$RECOVERY_RC"
+          fi
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          SCHEDULER_ACTION=restore
+          if [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ] && \
+             { { [ '${{ steps.drain.outcome }}' = failure ] && \
+                 [ '${{ steps.transfer.outcome }}' = skipped ]; } || \
+               { [ "$RECOVERY_RC" -eq 0 ] && \
+                 grep -Fq '"status": "FIX_FORWARD_VALIDATION_REQUIRED"' <<< "$RECOVERY_OUTPUT"; }; }; then
+            # A pending installation may have stopped before or after runtime
+            # restart. Select by both current Docker states: both running
+            # restore with PAPER/0; both exited hold with exact stop/book/
+            # critical proof; mixed or unknown fails closed.
+            SCHEDULER_ACTION=recover-open
+          fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED ] && \
+             grep -Fq '"status": "FIX_FORWARD_VALIDATION_REQUIRED"' <<< "$RECOVERY_OUTPUT"; then
+            # A failed CLOSED/flat installation can leave both owned containers
+            # cleanly stopped. Verify its exact stop and keep timers suspended;
+            # rearm only if both runtimes are running with PAPER/0.
+            SCHEDULER_ACTION=recover-closed
+          fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = DEGRADED_CLOSED_20261026 ] && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # Never rearm RC6 timers against the original degraded scanner.
+            # The dedicated action requires exact A92 identities, a flat book,
+            # the durable stop/recovery receipt and an issues-only broker.
+            SCHEDULER_ACTION=recover-degraded-closed
+          fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_STOPPED_FAILED_RESCUE ] && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # The exact failed candidate may have been restarted by a
+            # preinstall recovery; it is not a healthy runtime. Never restore
+            # timers until a new candidate passes poststart admission.
+            SCHEDULER_ACTION=recover-adopted-rescue
+          fi
+          if { [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
+               [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ]; } && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # Keep 15 paused + the one OAuth guardian on any failed A145
+            # install; #751 was never VALIDADO_RUNTIME.
+            SCHEDULER_ACTION=recover-a143-pending
+          fi
+          A143_ENV=''
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          fi
+          timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_restore env $A143_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_deploy_scheduler_suspend.py
+          SCHEDULER_RESTORE_RC=$?
+          if [ "$SCHEDULER_RESTORE_RC" -ne 0 ]; then
+            echo 'RC6_FAILURE_SCHEDULER_RESTORE=RED|barrier_retained=true'
+            cleanup_payload
+            PAYLOAD_RC=$?
+            echo "RC6_FAILURE_PAYLOAD_CLEANUP_RC=$PAYLOAD_RC|barrier_retained=true"
+            exit "$SCHEDULER_RESTORE_RC"
+          fi
+          set -e
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_final timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'" \
+            < scripts/rc6_deploy_failure_cleanup.py
+          test "$RECOVERY_RC" -eq 0
+          test "$SCHEDULER_RESTORE_RC" -eq 0
+          test "$CONTRACT_ORPHAN_RC" -eq 0
+
+      - name: Postdeploy full-session stress in the exact installed image
+        id: stress
+        # This one candidate has a separate, exact, later owner deferral
+        # verified before any host action. Keep the phase available for a
+        # future candidate; do not run it during this promotion.
+        if: ${{ success() && env.RC6_HOST_STRESS_MODE == 'RUN' }}
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          set +e
+          timeout --signal=TERM --kill-after=180s 2100s ssh \
+            -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID'" \
+            < scripts/rc6_postdeploy_stress_host.py > evidence/postdeploy-stress/host-summary.json
+          result=$?
+          set -e
+          cat evidence/postdeploy-stress/host-summary.json
+          echo "RC6_POSTDEPLOY_STRESS_EXIT=$result"
+          test "$result" -eq 0
+
+      - name: Re-establish two current native generations after restoration
+        if: success() && steps.stress.outcome == 'success'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          # An advanced observer heartbeat does not advance SHADOW CURRENT.
+          # Use the same read-only startup gate as promotion, preserving its
+          # rejected observations. The following ten-cycle soak stays strict.
+          timeout 210 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n docker exec porota_production_dashboard timeout 195 python /app/scripts/rc6_deploy_generation_gate.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output /app/data/deploy/native-postrestore-generation-acceptance.json" \
+            > evidence/postdeploy-stress/native-postrestore-generation-acceptance.json
+          cat evidence/postdeploy-stress/native-postrestore-generation-acceptance.json
+
+      - name: Independent sustained native acceptance after stress restoration
+        if: success() && steps.stress.outcome == 'success'
+        timeout-minutes: 22
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          timeout 1260 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 /opt/porota-trading/scripts/rc6_native_soak.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output '/opt/porota-trading/data/deploy/native-postrestore-soak.json'" \
+            > evidence/postdeploy-stress/native-postrestore-soak.json
+          cat evidence/postdeploy-stress/native-postrestore-soak.json
+
+      - name: Collect postdeploy stress evidence even on RED
+        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence/postdeploy-stress
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n tar -C '/opt/porota-trading/data/deploy/stress/$CANDIDATE_SHA/$GITHUB_RUN_ID' -czf - ." \
+            > evidence/postdeploy-stress/isolated-stress.tgz
+          timeout 30 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n cat /opt/porota-trading/data/deploy/native-ten-generation-soak.json" \
+            > evidence/postdeploy-stress/native-prestress-soak.json
+
+      - name: Preserve postdeploy stress and capacity receipts
+        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-postdeploy-stress-${{ github.run_id }}
+          path: evidence/postdeploy-stress
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Deployment summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '### POROTA RC6 Deploy V2'
+            echo "- Deploy commit: $DEPLOY_SHA"
+            echo "- Frozen candidate: $CANDIDATE_SHA"
+            echo "- Predeploy run: $PREDEPLOY_RUN_ID"
+            echo '- BUILD ONCE promotion: GREEN'
+            echo '- PRODUCTION_PAPER: required'
+            echo '- real_orders_sent: 0 required'
+            echo '- PPI Watch: untouched'
+            echo '- MARKET_OPEN: operator-authorized RC6 timer suspend and PAPER quiescence; actual session retained'
+            echo '- Host stress 405 virtual minutes: DEFERRED_BY_EXACT_OWNER (NOT EXECUTED)'
+            echo '- Poststress restoration and native postrestore gates: NOT EXECUTED'
+            echo '- Mission #624 E09/E10: NO_VERIFICADO; no global completion claim'
+            echo '- Strategy: FIX-FORWARD ONLY'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
+          rm -f "$HOME/.ssh/porota_rc6_deploy"
+          echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"

@@ -1,0 +1,75 @@
+name: RC6 IOL Fixed Income Source-Path Read-Only 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-iol-20261001
+    paths:
+      - '.github/workflows/rc6-iol-fixed-income-readonly-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Probe AL30 read-only path
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 120s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, sqlite3, sys
+          sys.path.insert(0,'/opt/porota-trading')
+          from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
+
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
+          c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone(); c.close()
+          assert mode=='PRODUCTION_PAPER' and int(orders or 0)==0
+
+          client=OAuthStoreReadOnlyMCP(timeout_seconds=15)
+          calls=(
+            ('get_asset_info',{'symbol':'AL30','market':'BCBA'}),
+            ('get_fixed_income_analytics',{'ticker':'AL30'}),
+            ('simulate_fixed_income_by_nominals',{'ticker':'AL30','nominals':1,'currency':'ARS'}),
+            ('get_asset_quote',{'symbol':'AL30','market':'BCBA','term':'t1'}),
+          )
+          for name,args in calls:
+              try:
+                  x=client.call(name,args)
+                  rows=x.get('result') if isinstance(x,dict) else None
+                  print('FIXED_CALL='+json.dumps({
+                    'tool':name,'state':'OK',
+                    'keys':sorted(x.keys())[:20] if isinstance(x,dict) else [],
+                    'rows':len(rows) if isinstance(rows,list) else None,
+                  },sort_keys=True))
+              except Exception as exc:
+                  print('FIXED_CALL='+json.dumps({
+                    'tool':name,'state':'ERROR','type':type(exc).__name__,
+                    'message':str(exc)[:160],
+                    'status_code':getattr(exc,'status_code',None),
+                  },sort_keys=True))
+          print('REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED')
+          print('IOL_FIXED_READONLY=GREEN')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"

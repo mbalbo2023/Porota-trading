@@ -1,0 +1,91 @@
+name: RC6 PaperBroker BINDING Forward Fix 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths:
+      - '.github/workflows/rc6-paperbroker-binding-forwardfix-20260910.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assert immutable RC6 PAPER identity
+        run: |
+          set -Eeuo pipefail
+          grep -q 'VERSION = "17.0.0-rc6"' _version.py
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+      - name: Forward-fix PaperBroker economics default
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('be_paper_engine.py')
+          s=p.read_text(encoding='utf-8')
+          changes=[
+            ('economics_mode="SHADOW", min_net_reward_risk="1.20",',
+             'economics_mode="BINDING", min_net_reward_risk="1.20",'),
+            ('self.economics_mode = str(economics_mode or "SHADOW").upper()',
+             'self.economics_mode = str(economics_mode or "BINDING").upper()'),
+          ]
+          for old,new in changes:
+              if s.count(old) != 1:
+                  raise SystemExit(f'UNEXPECTED_MATCH_COUNT:{old}:{s.count(old)}')
+              s=s.replace(old,new)
+          p.write_text(s,encoding='utf-8')
+          PY
+          grep -q 'economics_mode="BINDING"' be_paper_engine.py
+          grep -q 'economics_mode or "BINDING"' be_paper_engine.py
+      - name: Install tests
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Prove exact economic contract
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q \
+            tests/test_hotfix_rc3_hf4.py::test_configuracion_desplegada_no_es_un_noop \
+            tests/test_hotfix_rc3_hf2.py::test_dashboard_expone_binding_y_guardas_hf3 \
+            tests/test_hotfix_rc3_hf2.py::test_economia_shadow_cuenta_apertura_con_fallo
+          echo PAPERBROKER_BINDING_CONTRACT=GREEN
+      - name: Persist forward fix
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add be_paper_engine.py
+          git diff --cached --check
+          git commit -m 'fix(rc6): make PaperBroker economic gate binding by default'
+          git push origin HEAD:fix/rc6-w10-sector-map-binding-20260910
+      - name: Run full integrated suite and expose next failure
+        run: |
+          set +e
+          PYTHONPATH=. pytest -x -vv --tb=short > /tmp/pytest-rc6.txt 2>&1
+          rc=$?
+          echo "PYTEST_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo '===== FIRST FAILURE ====='
+            grep -nE '(^_{3,}|FAILED|ERROR|E   |AssertionError|NameError|TypeError|AttributeError|ImportError|ModuleNotFoundError|KeyError|ValueError)' /tmp/pytest-rc6.txt | tail -n 120 || true
+            echo '===== LAST 180 LINES ====='
+            tail -n 180 /tmp/pytest-rc6.txt || true
+            exit "$rc"
+          fi
+          tail -n 100 /tmp/pytest-rc6.txt
+          echo INTEGRATED_TESTS=GREEN
+      - name: Prove safety invariants
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          echo REAL_ORDER_TEST=NOT_PERFORMED

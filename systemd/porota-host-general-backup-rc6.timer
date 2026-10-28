@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 host general backup daily off-market
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 America/Argentina/Buenos_Aires
+RandomizedDelaySec=10min
+Persistent=true
+Unit=porota-host-general-backup-rc6.service
+
+[Install]
+WantedBy=timers.target

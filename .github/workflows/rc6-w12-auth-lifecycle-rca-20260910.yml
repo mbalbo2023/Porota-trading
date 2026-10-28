@@ -1,0 +1,97 @@
+name: RC6 W12 Auth Lifecycle RCA 2026-09-10
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-w12-auth-lifecycle-rca-20260910.yml
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert immutable RC6 PAPER safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only isolate W12 session lifecycle
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          OUT="$ROOT/data/contract_evidence/rc6_trusted"
+          STATE="$OUT/runtime_state.json"
+
+          echo '=== W12_SERVICE_STATE ==='
+          sudo -n systemctl show porota-contract-evidence-rc6.service \
+            -p ActiveState -p SubState -p Result -p ExecMainStatus \
+            -p ActiveEnterTimestamp -p InactiveExitTimestamp --no-pager
+
+          echo '=== W12_TIMER_STATE ==='
+          sudo -n systemctl show porota-contract-evidence-rc6.timer \
+            -p ActiveState -p SubState -p LastTriggerUSec -p NextElapseUSecRealtime --no-pager
+
+          echo '=== W12_RUNTIME_STATE_SAFE ==='
+          sudo -n python3 - "$STATE" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          if not p.is_file():
+              print('RUNTIME_STATE=MISSING'); raise SystemExit(0)
+          d=json.loads(p.read_text(encoding='utf-8'))
+          allow=('state','status','blocked_at','retry_after_seconds','auth_status','updated_at','generated_at','last_success_at','last_capture_at','attempt','reason','error_code')
+          for k in allow:
+              if k in d: print(f'{k.upper()}={d.get(k)}')
+          PY
+
+          echo '=== W12_RECENT_CAPTURES ==='
+          sudo -n find "$OUT" -maxdepth 1 -type f -name 'contract_*.json' -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ %f\n' 2>/dev/null | sort -r | head -8
+
+          echo '=== W12_AUTH_JOURNAL_REDACTED ==='
+          sudo -n journalctl -u porota-contract-evidence-rc6.service --since '2026-09-10 16:45:00 UTC' --no-pager -o cat 2>/dev/null \
+            | grep -Eia 'auth|login|password|session|trusted|block|fail|error|capture|profile|retry|state|landing|redirect|selector|timeout' \
+            | tail -160 \
+            | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g' || true
+
+          echo '=== W12_UNIT_COMMAND_SAFE ==='
+          sudo -n systemctl show porota-contract-evidence-rc6.service -p ExecStart -p FragmentPath --no-pager \
+            | sed -E 's/([Pp]assword|[Tt]oken|[Ss]ecret|[Cc]ookie|[Aa]uthorization)([=: ]+)[^ ]+/\1\2<REDACTED>/g'
+
+          echo '=== SAFETY ==='
+          sudo -n python3 - "$ROOT/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f'file:{sys.argv[1]}?mode=ro',uri=True); c.execute('pragma query_only=on')
+          row=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print('MODE='+str(row[0] if row else None)); print('REAL_ORDERS_SENT='+str(row[1] if row else None))
+          PY
+          echo 'MUTATIONS=NONE'
+          echo 'COLLECTOR_EXECUTED=NO'
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          HOST

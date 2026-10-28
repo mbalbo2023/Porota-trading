@@ -1,0 +1,8 @@
+POROTA TRADING 17.0.0-rc5
+
+Autorización operativa: desplegar únicamente PRODUCTION_PAPER / SIMULATED.
+Órdenes reales: BLOCKED.
+Destino: runtime PAPER en Droplet.
+Fecha de autorización: 2026-09-05.
+
+Este archivo es un marcador auditable de despliegue y no modifica lógica de trading.

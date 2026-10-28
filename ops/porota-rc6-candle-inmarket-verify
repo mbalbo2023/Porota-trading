@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# RC6 intramarket-candle evidence wrapper. Runs only local Docker read-only query.
+set -Eeuo pipefail
+BASELINE_FILE=/var/lib/porota/rc6-candle-inmarket-baseline-20260917
+SUMMARY_PATH=/app/data/validation/candle_inmarket_latest.json
+
+test -r "$BASELINE_FILE"
+baseline="$(tr -d '[:space:]' < "$BASELINE_FILE")"
+case "$baseline" in ''|*[!0-9]*) echo "INMARKET_CANDLE_EVIDENCE=RED|INVALID_BASELINE"; exit 1;; esac
+
+exec /usr/bin/docker exec -i porota_production_observer \
+  python /app/scripts/rc6_candle_inmarket_evidence.py \
+  --baseline-cursor "$baseline" \
+  --summary-path "$SUMMARY_PATH"
