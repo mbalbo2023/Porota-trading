@@ -25,6 +25,7 @@ from pathlib import Path
 
 
 LOCK_DIR = Path('/run/lock')
+STAGING_DIR = Path('/tmp')
 LOCK_PATH = LOCK_DIR / 'porota-rc6-deploy-v2.lock'
 BARRIER_NAME = 'porota-rc6-deploy-v2-attempt.json'
 PHASES = frozenset({
@@ -339,6 +340,10 @@ def run(argv: list[str]) -> int:
             _reconcile_exact_a138_idle(LOCK_DIR, identity)
             return 0
         existing = _read_barrier(LOCK_DIR)
+        if presuspend:
+            stage = STAGING_DIR / ('porota-deploy-v2-' + '-'.join(identity))
+            if stage.exists() or stage.is_symlink():
+                raise RuntimeError('PRESUSPEND_TRANSFER_STAGE_PRESENT')
         if presuspend and existing is not None:
             if (tuple(existing[k] for k in ('candidate', 'run', 'attempt')) != identity or
                     existing['status'] != 'IDLE' or existing['phase'] not in

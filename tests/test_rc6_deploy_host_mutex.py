@@ -43,6 +43,7 @@ class HostMutexTests(unittest.TestCase):
                 patch.object(mutex, '_enable_subreaper'),
                 patch.object(mutex, '_drain_children'),
                 patch.object(mutex, 'LOCK_DIR', self.root),
+                patch.object(mutex, 'STAGING_DIR', self.root),
                 patch.object(mutex, 'open_lock', side_effect=lambda p: open_lock(p, os.getuid())),
                 patch.object(mutex, '_read_barrier',
                              side_effect=lambda p: read_barrier(p, os.getuid())))
@@ -256,6 +257,21 @@ class HostMutexTests(unittest.TestCase):
             self.assertEqual(mutex.run(self.args('cleanup_presuspend', proof_command)), 0)
             self.assertFalse(self.barrier.exists())
             self.assertEqual(sum(cmd == proof_command for cmd in commands), 1)
+
+    def test_presuspend_cannot_retire_barrier_when_transfer_stage_exists(self):
+        from contextlib import ExitStack
+        proof_command = ['python3', '-', '--policy-b64', 'fixture',
+                         '--expected-fingerprint', 'f' * 64]
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex.subprocess, 'run',
+                                             return_value=SimpleNamespace(returncode=0, stdout='')))
+            self.assertEqual(mutex.run(self.args('preclean')), 0)
+            stage = self.root / f'porota-deploy-v2-{SHA}-{RUN}-{ATTEMPT}'
+            stage.mkdir()
+            with self.assertRaisesRegex(RuntimeError, 'PRESUSPEND_TRANSFER_STAGE_PRESENT'):
+                mutex.run(self.args('cleanup_presuspend', proof_command))
+            self.assertEqual(json.loads(self.barrier.read_text())['phase'], 'preclean')
 
     def test_failed_child_keeps_barrier_and_blocks_cleanup_same_attempt(self):
         from contextlib import ExitStack
