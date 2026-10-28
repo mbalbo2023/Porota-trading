@@ -1,0 +1,126 @@
+name: RC6 A169 reconcile exact failed promotion hold
+
+on:
+  push:
+    branches: [diagnostic/rc6-a169-reconcile-exact-held-stop-20261028]
+    paths:
+      - .github/workflows/rc6-a169-reconcile-exact-held-stop.yml
+      - scripts/rc6_a169_reconcile_held_stop.py
+      - tests/test_rc6_a169_reconcile_held_stop.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-held-stop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RC6_CANDIDATE_SHA: b778c8063e96574ddf859907abb99fae6f4e3484
+      RC6_CANDIDATE_TREE: 48ddaa1a55a267f6f0044eb111d88234e103a384
+      RC6_FAILED_RUN: '40755524824'
+      RC6_FAILED_ATTEMPT: '2'
+      RC6_Q_SHA: 11e482553e0989113f22aa6fc022736d9b123993eb70baf16ce08edd091015fb
+      RC6_S_SHA: edc7b597f47cbdb70224eaa4371a03069d447b5d80e0098829e43a877ce7d826
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact source and bounded regression
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_rc6_a169_reconcile_held_stop.py -q
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC6_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+      - name: Bind staged candidate and exact mutex
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
+          test "$(sha256sum candidate/scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)" = "$RC6_Q_SHA"
+          test "$(sha256sum candidate/scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)" = "$RC6_S_SHA"
+          cmp candidate/scripts/rc6_deploy_host_mutex.py scripts/rc6_deploy_host_mutex.py
+          python3 - <<'PY'
+          import base64,gzip,os
+          from pathlib import Path
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              for name,path in [('RC6_Q_B64','candidate/scripts/rc6_deploy_quiescence.py'),
+                                ('RC6_S_B64','candidate/scripts/rc6_deploy_scheduler_suspend.py')]:
+                  out.write(name+'='+base64.b64encode(gzip.compress(Path(path).read_bytes(),mtime=0)).decode()+'\n')
+              out.write('RC6_MUTEX_B64='+base64.b64encode(Path('scripts/rc6_deploy_host_mutex.py').read_bytes()).decode()+'\n')
+          PY
+          echo RC6_A169_RUNNER_SOURCE=GREEN
+      - name: Strict SSH identity
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a169"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a169" "$HOME/.ssh/known_hosts"
+      - name: Read-only exact host proof before any mutation
+        id: probe
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 120s ssh -T -i "$HOME/.ssh/rc6_a169" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - probe '$RC6_Q_B64' '$RC6_S_B64' '$RC6_Q_SHA' '$RC6_S_SHA'" \
+            < scripts/rc6_a169_reconcile_held_stop.py | tee evidence/probe.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/probe.jsonl').read_text().splitlines()
+          assert len(lines)==1 and len(lines[0])<4096 and lines[0].startswith('RC6_A169_HELD_STOP=')
+          row=json.loads(lines[0].split('=',1)[1]); assert row['status']=='PROVEN'
+          assert row['host_mutations']==0 and row['real_orders_sent']==0
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['containers']=='BOTH_EXACT_STOPPED' and row['timers_held']==16
+          PY
+      - name: Reconcile only exact failed attempt under canonical mutex
+        if: success() && steps.probe.outcome == 'success'
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 150s ssh -T -i "$HOME/.ssh/rc6_a169" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$RC6_CANDIDATE_SHA' '$RC6_FAILED_RUN' '$RC6_FAILED_ATTEMPT' --phase cleanup_final env PYTHONDONTWRITEBYTECODE=1 python3 - reconcile '$RC6_Q_B64' '$RC6_S_B64' '$RC6_Q_SHA' '$RC6_S_SHA'" \
+            < scripts/rc6_a169_reconcile_held_stop.py | tee evidence/reconcile.jsonl
+          rg -q '"status":"RECONCILED"' evidence/reconcile.jsonl
+      - name: Independent post-reconciliation proof
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 120s ssh -T -i "$HOME/.ssh/rc6_a169" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - post '$RC6_Q_B64' '$RC6_S_B64' '$RC6_Q_SHA' '$RC6_S_SHA'" \
+            < scripts/rc6_a169_reconcile_held_stop.py | tee evidence/post.jsonl
+          rg -q '"status":"POST_PROVEN"' evidence/post.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a169-exact-held-stop-${{ github.sha }}
+          path: evidence/*.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a169"
