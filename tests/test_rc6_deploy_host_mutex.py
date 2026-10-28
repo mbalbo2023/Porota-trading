@@ -182,6 +182,32 @@ class HostMutexTests(unittest.TestCase):
             self.assertEqual(mutex.run(self.args('finalize')), 0)
             self.assertFalse(self.barrier.exists())
 
+    def test_payload_cleanup_never_retires_barrier_or_passes_uncertain_writer(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            writer = stack.enter_context(patch.object(mutex, '_contract_writers',
+                                                      return_value=set()))
+            child = stack.enter_context(patch.object(mutex.subprocess, 'run',
+                return_value=SimpleNamespace(returncode=0, stdout='')))
+            self.assertEqual(mutex.run(self.args('promotion')), 0)
+            self.assertEqual(mutex.run(self.args('cleanup_payload')), 0)
+            self.assertEqual(json.loads(self.barrier.read_text())['status'], 'IDLE')
+            self.assertEqual(json.loads(self.barrier.read_text())['phase'], 'cleanup_payload')
+            before = child.call_count
+            state = json.loads(self.barrier.read_text())
+            state['status'] = 'INFLIGHT'
+            self.barrier.write_text(json.dumps(state))
+            with self.assertRaisesRegex(RuntimeError, 'BARRIER_PRIOR_OPERATION_UNCERTAIN'):
+                mutex.run(self.args('cleanup_payload'))
+            self.assertEqual(child.call_count, before)
+            state['status'] = 'IDLE'
+            self.barrier.write_text(json.dumps(state))
+            writer.return_value = {'porota-deploy-contract-' + SHA}
+            with self.assertRaisesRegex(RuntimeError, 'CONTRACT_WRITER_ORPHAN_RUNNING'):
+                mutex.run(self.args('cleanup_payload'))
+            self.assertEqual(child.call_count, before)
+
     def test_only_own_idle_preclean_barrier_can_be_retired_without_scheduler_action(self):
         from contextlib import ExitStack
         proof_command = ['python3', '-', '--policy-b64', 'fixture',
@@ -592,10 +618,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(by_id['flat_book'].count('RC6_MUTEX_B64'), 2)
         failure = next(step['run'] for step in steps
                        if step['name'] == 'Failure-safe host cleanup')
-        self.assertEqual(failure.count('RC6_MUTEX_B64'), 4)
+        self.assertEqual(failure.count('RC6_MUTEX_B64'), 5)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 19)
+        self.assertEqual(len(boundaries), 20)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))

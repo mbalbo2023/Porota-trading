@@ -100,12 +100,11 @@ def image_aliases(image, candidate_sha, *, allow_untagged=False):
     if ((not tags and not allow_untagged) or
             any(tag not in owned_tags(candidate_sha) for tag in tags)):
         return False
-    # A paired RepoDigest can outlive removal of its tag; both repository
-    # names were independently frozen by this exact attempt's tag grammar.
-    repositories = {tag.split(':', 1)[0] for tag in owned_tags(candidate_sha)}
-    return all(re.fullmatch(
-        r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}', digest
-    ) and digest.split('@', 1)[0] in repositories for digest in digests)
+    # A RepoDigest names a repository, not this candidate/run/attempt. Even a
+    # porota-trading-bot digest may belong to a different deploy's registry
+    # reference. No frozen artifact binds a digest to this attempt, so retain
+    # its image until separately proven; never delete it by image ID here.
+    return not digests
 
 
 def container_inventory():
@@ -142,6 +141,34 @@ def overlaps(left, right):
     return left == right or left in right.parents or right in left.parents
 
 
+def host_mountpoints():
+    """Read mountpoints in this namespace; Docker's bind inventory is not enough.
+
+    The kernel escapes spaces, tabs, newlines, and backslashes as octal bytes.
+    Reject malformed records instead of treating them as an empty inventory.
+    """
+    try:
+        raw = Path('/proc/self/mountinfo').read_text(
+            encoding='utf-8', errors='surrogateescape')
+    except OSError as exc:
+        raise CleanupRejected('HOST_MOUNT_INVENTORY_FAILED') from exc
+    points = []
+    for line in raw.splitlines():
+        prefix, separator, _ = line.partition(' - ')
+        fields = prefix.split()
+        if (not separator or len(fields) < 6 or
+                re.fullmatch(r'(?:[^\\]|\\[0-7]{3})*', fields[4]) is None):
+            raise CleanupRejected('HOST_MOUNT_INVENTORY_INVALID')
+        mountpoint = re.sub(r'\\([0-7]{3})',
+                            lambda match: chr(int(match.group(1), 8)), fields[4])
+        if not mountpoint.startswith('/') or '\x00' in mountpoint:
+            raise CleanupRejected('HOST_MOUNT_INVENTORY_INVALID')
+        points.append(Path(os.path.normpath(mountpoint)))
+    if not points:
+        raise CleanupRejected('HOST_MOUNT_INVENTORY_INVALID')
+    return points
+
+
 def cleanup(candidate_sha, run_id=None, attempt=None):
     if not isinstance(candidate_sha, str) or SHA.fullmatch(candidate_sha) is None:
         raise CleanupRejected('CANDIDATE_SHA_INVALID')
@@ -165,6 +192,7 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
     retained_reasons = {}
     # Inspection failure is blocking: an unknown Docker owner is not "unused".
     container_inventory()
+    host_mountpoints()  # Fail before any deletion if the host inventory is unreadable.
     for tag in owned_tags(candidate_sha):
         try:
             current_id = image_id(tag)
@@ -208,7 +236,12 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
             errors.append('IMAGE_ID_CLEANUP_FAILED')
     try:
         _, mounts = container_inventory()
-        if any(overlaps(staging.resolve(), mount) for mount in mounts):
+        # A non-Docker mount nested in staging could make rmtree traverse
+        # someone else's data.  Recheck immediately before deleting the tree.
+        points = host_mountpoints()
+        if any(point == staging or staging in point.parents for point in points):
+            errors.append('STAGING_HOST_MOUNTPOINT')
+        elif any(overlaps(staging.resolve(), mount) for mount in mounts):
             errors.append('STAGING_REFERENCED_BY_CONTAINER')
         elif staging.exists():
             if not staging.is_dir():

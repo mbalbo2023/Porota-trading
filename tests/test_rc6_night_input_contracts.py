@@ -30,7 +30,8 @@ def snapshot():
     return {
         "database": {
             "observer": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
-                         "heartbeat_at": now, "ppi_auth": "OK"},
+                         "heartbeat_at": now, "ppi_auth": "OK",
+                         "process_state": "WAITING_MARKET", "session_state": "MARKET_CLOSED"},
             "readiness": {"source": "candidate_identity_v2", "ready": ready,
                           "by_family": families, "rows": []},
             "invalid_candidate_states": 0, "residual_candidate_state_violations": 0,
