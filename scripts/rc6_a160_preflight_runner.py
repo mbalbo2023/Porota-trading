@@ -16,6 +16,7 @@ import re
 import shutil
 import sys
 import urllib.request
+from urllib.parse import urlsplit
 import zipfile
 
 NAMES = frozenset({'porota-frozen-candidate.json',
@@ -26,6 +27,25 @@ NAMES = frozenset({'porota-frozen-candidate.json',
                    'porota-host-policy-v2.json'})
 SHA = re.compile(r'[0-9a-f]{40}\Z')
 HASH = re.compile(r'[0-9a-f]{64}\Z')
+
+
+class ArtifactRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward the GitHub bearer token to the artifact blob host."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        source = urlsplit(req.full_url)
+        target = urlsplit(newurl)
+        host = (target.hostname or '').lower()
+        if (source.hostname != 'api.github.com' or
+                not source.path.startswith('/repos/') or
+                not source.path.endswith('/zip') or
+                code not in (302, 303, 307) or
+                target.scheme != 'https' or
+                target.port not in (None, 443) or
+                target.username is not None or target.password is not None or
+                not host.endswith('.blob.core.windows.net')):
+            raise ValueError('ARTIFACT_REDIRECT_ORIGIN_RED')
+        return urllib.request.Request(newurl, headers={'Accept':'application/octet-stream'},
+                                      method='GET')
 
 
 def digest(path):
@@ -42,7 +62,8 @@ def api(url, token, *, dest=None):
     req = urllib.request.Request(url,headers={
         'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',
         'X-GitHub-Api-Version':'2022-11-28'})
-    with urllib.request.urlopen(req,timeout=30) as response:
+    opener = urllib.request.build_opener(ArtifactRedirect()) if dest is not None else urllib.request.build_opener()
+    with opener.open(req,timeout=30) as response:
         if dest is None:
             return json.load(response)
         with Path(dest).open('wb') as output:

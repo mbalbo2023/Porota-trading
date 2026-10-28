@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import types
 import unittest
 from unittest.mock import patch
+import urllib.request
 import zipfile
 
 SOURCE=Path(__file__).resolve().parents[1]/'scripts/rc6_a160_held_preflight_ro.py'
@@ -166,6 +167,23 @@ class HostProbeTests(unittest.TestCase):
 
 
 class RunnerBindingTests(unittest.TestCase):
+    def test_artifact_redirect_strips_token_and_rejects_untrusted_host(self):
+        source=urllib.request.Request(
+            'https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/1/zip',
+            headers={'Authorization':'Bearer SECRET','Accept':'application/vnd.github+json'})
+        handler=runner.ArtifactRedirect()
+        blob='https://productionresultssa0.blob.core.windows.net/answers/artifact.zip?sig=PRIVATE'
+        redirected=handler.redirect_request(source,None,302,'Found',{},blob)
+        self.assertEqual(redirected.full_url,blob)
+        self.assertNotIn('authorization',str(redirected.header_items()).lower())
+        self.assertNotIn('SECRET',str(redirected.header_items()))
+        with self.assertRaisesRegex(ValueError,'ARTIFACT_REDIRECT_ORIGIN_RED'):
+            handler.redirect_request(source,None,302,'Found',{},
+                                     'https://attacker.invalid/artifact.zip')
+        with self.assertRaisesRegex(ValueError,'ARTIFACT_REDIRECT_ORIGIN_RED'):
+            handler.redirect_request(source,None,302,'Found',{},
+                                     'http://productionresultssa0.blob.core.windows.net/artifact.zip')
+
     def test_frozen_artifact_and_exact_source_bindings_without_host(self):
         candidate_root=SOURCE.parents[1]
         with tempfile.TemporaryDirectory() as d:
