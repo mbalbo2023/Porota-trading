@@ -42,3 +42,19 @@ exige Predeploy V2 completo en el SHA/tree congelados, preflight de espacio
 recalculado, aprobaciones literales #624 y Deploy V2 canónico. El resultado
 fuera de horario sólo puede certificar CLOSED; OPEN requiere observación real
 de otra rueda. NO_GO operativo continúa hasta una reactivación explícita.
+
+## Replay del primer Predeploy A172
+
+El primer SHA A172 `3be1e9cbed86ee8ddecd1b33370615e1b84e7f6f` pasó
+política, sintaxis, fixtures negativos y replay de transición, pero el
+Predeploy #40776096632 terminó RED **antes de construir o transferir un
+artefacto**: 5.384 pruebas ejecutadas, tres fallos y cero skips/errores.
+Las tres aserciones inspeccionaban texto literal anterior del workflow:
+nombre de la variable de auditoría de caución, lista de modos del gate de
+aprobación intradiaria y cantidad fija de llamadas a `gzip`. El código nuevo
+usa la auditoría acotada a `CLOSED_CAUCION`, exige también la aprobación
+literal para el modo A171 exacto y comprime por stdin con `-n` en todas las
+rutas. Se corrigieron las pruebas para exigir esas propiedades, incluso la
+nueva ruta, sin reducir el gate; 46 casos dirigidos pasaron localmente.
+El SHA anterior queda RED y no es promovible: el sucesor requiere Predeploy
+V2 completo y un artefacto propio.
