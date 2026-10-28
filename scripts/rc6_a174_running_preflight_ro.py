@@ -214,6 +214,62 @@ def guardian_state(s, now):
             'incident_seq':payload['incident_seq']}
 
 
+class PreviewWriteBoundary(Exception):
+    """The complete scheduler proof reached its first persist, which we deny."""
+
+
+def scheduler_adoption_preview(s, q, candidate, raw_policy):
+    """Replay A171 receipt adoption on the real host without a write syscall.
+
+    This calls the candidate's exact adoption proof directly. Unlike run(),
+    it never calls ROOT.mkdir. Every systemctl mutation and the first receipt
+    persist are intercepted before they can reach the host.
+    """
+    if s.ROOT != ROOT/'data/deploy':
+        raise ValueError('SCHEDULER_PREVIEW_ROOT_RED')
+    path=s.ROOT/('scheduler-suspend-'+candidate+'.json')
+    if path.is_symlink() or path.exists():
+        raise ValueError('SCHEDULER_PREVIEW_RECEIPT_EXISTS')
+    original_command=s.command
+    def read_only_command(*argv):
+        if (len(argv)<2 or argv[0]!='systemctl' or
+                argv[1] not in {'is-active','is-enabled','show','list-unit-files'}):
+            raise ValueError('SCHEDULER_PREVIEW_MUTATION_FORBIDDEN')
+        return original_command(*argv)
+    def no_persist(target,payload):
+        if target != path or persisted:
+            raise ValueError('SCHEDULER_PREVIEW_PERSIST_TARGET_RED')
+        persisted.append(payload)
+        raise PreviewWriteBoundary()
+    persisted=[]
+    s.command=read_only_command
+    s.persist=no_persist
+    s.a143_staged_module=lambda:q
+    names=s.timer_policy(raw_policy)
+    if len(names)!=16 or s.preserved_iol_guard(raw_policy)!=s.IOL_OAUTH_GUARD_TIMER:
+        raise ValueError('SCHEDULER_PREVIEW_POLICY_RED')
+    before=s.ppi_snapshot()
+    states=[(s.command('systemctl','is-active',name)[0],
+             s.command('systemctl','is-enabled',name)[0]) for name in names]
+    try:
+        s.adopt_a171_running_hold(candidate,path,names,
+                                 hashlib.sha256(raw_policy).hexdigest(),before,states)
+    except PreviewWriteBoundary:
+        pass
+    else:
+        raise ValueError('SCHEDULER_PREVIEW_NO_WRITE_BOUNDARY')
+    row=persisted[0]
+    if (row.get('candidate_sha')!=candidate or row.get('status')!='SUSPENDED' or
+            row.get('paused_from')!=EXPECTED_PRIOR or
+            row.get('a171_origin_sha256')!=EXPECTED_PRIOR_RECEIPT or
+            row.get('a171_running_origin') is not True or
+            row.get('ppi_before')!=before or
+            set(row.get('attempted',[]))!=set(names)):
+        raise ValueError('SCHEDULER_PREVIEW_RECEIPT_RED')
+    return {'status':'GREEN','write_intercepted':True,'systemd_mutations':0,
+            'receipt_persisted':False,'a171_origin_exact':True,'owned_timers':16}
+
+
 def main(candidate_sha, tree_sha, policy_b64, disk_policy_b64, required_bytes):
     now = datetime.now(timezone.utc)
     receipt = {'schema':'rc6.a174.running-a171-preflight-ro.v1',
@@ -276,6 +332,12 @@ def main(candidate_sha, tree_sha, policy_b64, disk_policy_b64, required_bytes):
             raise ValueError('POLICY_BOUND_RED')
         receipt['timers'] = scheduler_receipt(s,raw_policy,proof,q)
         receipt['iol_guardian'] = guardian_state(s,now)
+        if (not receipt['timers']['all_held_for_migration'] or
+                not receipt['timers']['a171_chain_exact'] or
+                not receipt['iol_guardian']['fresh_under_1900s']):
+            raise ValueError('SCHEDULER_PREVIEW_PREREQUISITE_RED')
+        receipt['scheduler_preview'] = scheduler_adoption_preview(
+            s,q,candidate_sha,raw_policy)
         policy = json.loads(raw_disk_policy)
         min_inode = float(policy['disk']['min_inode_free_percent'])
         if not 0 < min_inode <= 100:
@@ -295,6 +357,7 @@ def main(candidate_sha, tree_sha, policy_b64, disk_policy_b64, required_bytes):
              and receipt['timers']['a171_chain_exact']
              and receipt['timers']['ppi_snapshot_matches_prior']
              and receipt['iol_guardian']['fresh_under_1900s']
+             and receipt['scheduler_preview']['status']=='GREEN'
              and receipt['disk']['bytes_gate']
              and receipt['disk']['inodes_gate'] else 'RED')
     except Exception as exc:

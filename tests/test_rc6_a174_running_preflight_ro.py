@@ -106,6 +106,9 @@ class HostTests(unittest.TestCase):
              patch.object(host,'stage',side_effect=[q,s]),\
              patch.object(host,'scheduler_receipt',return_value=timers),\
              patch.object(host,'guardian_state',return_value=state),\
+             patch.object(host,'scheduler_adoption_preview',return_value={
+                 'status':'GREEN','write_intercepted':True,'systemd_mutations':0,
+                 'receipt_persisted':False,'a171_origin_exact':True,'owned_timers':16}),\
              patch.object(host.shutil,'disk_usage',return_value=types.SimpleNamespace(free=disk)),\
              patch.object(host.os,'statvfs',return_value=types.SimpleNamespace(f_ffree=inodes,f_files=100)):
             return self.result()
@@ -118,6 +121,7 @@ class HostTests(unittest.TestCase):
         self.assertEqual(row['admission']['prior_receipt_sha256'],host.EXPECTED_PRIOR_RECEIPT)
         self.assertFalse(row['operational_go'])
         self.assertEqual(row['host_mutations'],0)
+        self.assertTrue(row['scheduler_preview']['write_intercepted'])
         self.assertNotIn('raw-id-secret',json.dumps(row))
 
     def test_wrong_prior_receipt_and_failed_timer_or_guardian_never_green(self):
@@ -133,6 +137,45 @@ class HostTests(unittest.TestCase):
         encoded=base64.b64encode(gzip.compress(source,mtime=0)).decode()
         with self.assertRaisesRegex(ValueError,'STAGED_SOURCE_HASH_OR_SIZE_RED'):
             host.stage(encoded,'0'*64,'safe',30000)
+
+    def test_scheduler_preview_reaches_exact_receipt_without_writes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)/'porota'
+            path=root/'data/deploy';path.mkdir(parents=True)
+            names=['porota-%02d-rc6.timer'%i for i in range(16)]
+            before=[['ppi-watch.timer','enabled','active']]
+            candidate=host.EXPECTED_CANDIDATE
+            s=types.SimpleNamespace(ROOT=path,IOL_OAUTH_GUARD_TIMER=names[0],
+                timer_policy=lambda _:names,preserved_iol_guard=lambda _:names[0],
+                ppi_snapshot=lambda:before,
+                command=lambda *args:('inactive',0),persist=lambda *args:
+                    self.fail('REAL_PERSIST_CALLED'))
+            def adopt(candidate,target,unit_names,digest,old,states):
+                self.assertEqual(old,before)
+                self.assertEqual(target,path/('scheduler-suspend-'+candidate+'.json'))
+                row={'candidate_sha':candidate,'status':'SUSPENDED',
+                     'paused_from':host.EXPECTED_PRIOR,
+                     'a171_origin_sha256':host.EXPECTED_PRIOR_RECEIPT,
+                     'a171_running_origin':True,'ppi_before':old,'attempted':unit_names}
+                s.persist(target,row)
+            s.adopt_a171_running_hold=adopt
+            with patch.object(host,'ROOT',root):
+                result=host.scheduler_adoption_preview(s,object(),candidate,b'{}')
+            self.assertEqual((result['status'],result['systemd_mutations']),('GREEN',0))
+            self.assertFalse((path/('scheduler-suspend-'+candidate+'.json')).exists())
+
+    def test_scheduler_preview_blocks_mutating_command_before_persist(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)/'porota';path=root/'data/deploy';path.mkdir(parents=True)
+            names=['porota-%02d-rc6.timer'%i for i in range(16)]
+            s=types.SimpleNamespace(ROOT=path,IOL_OAUTH_GUARD_TIMER=names[0],
+                timer_policy=lambda _:names,preserved_iol_guard=lambda _:names[0],
+                ppi_snapshot=lambda:[],command=lambda *args:('inactive',0),
+                persist=lambda *args:self.fail('REAL_PERSIST_CALLED'))
+            s.adopt_a171_running_hold=lambda *args:s.command('systemctl','start',names[0])
+            with patch.object(host,'ROOT',root),self.assertRaisesRegex(
+                    ValueError,'SCHEDULER_PREVIEW_MUTATION_FORBIDDEN'):
+                host.scheduler_adoption_preview(s,object(),host.EXPECTED_CANDIDATE,b'{}')
 
     def test_exact_a171_timer_chain_and_guardian_job(self):
         names=['porota-preopen-rc6.timer','porota-iol-oauth-health-rc6.timer'] + [
