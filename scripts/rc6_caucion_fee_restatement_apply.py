@@ -29,6 +29,7 @@ from scripts.rc6_caucion_fee_ro_provenance import (
     LEGACY_AUTHORITY, _amount, _invalid_constant, _strict_contract,
     _allocation_link, MAX_TERMS_BYTES,
 )
+from scripts.rc6_caucion_fee_restatement_continuity import validate_prior_receipt
 
 SCHEMA = "RC6_PAPER_CAUCION_PUBLIC_FEE_RESTATEMENT_V1"
 ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
@@ -165,17 +166,9 @@ def _verify_continuity(origin, candidate_sha, proof, receipt_dir, known_at):
     if hashlib.sha256(raw).hexdigest() != proof["prior_receipt_sha256"]:
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_CHANGED")
     receipt = json.loads(raw, parse_constant=_invalid_constant)
-    if (type(receipt) is not dict or receipt.get("candidate_sha") != origin["candidate_sha"] or
-            receipt.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
-            receipt.get("installation_started") is not True or
-            type(receipt.get("real_orders_sent")) is not int or
-            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False or
-            receipt.get("market_open_suspended") is not (
-                origin["quiescence_mode"] in INTRADAY_MODES)):
-        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
-    at = datetime.fromisoformat(receipt["recorded_at"])
-    if (at.tzinfo is None or at.utcoffset() is None or
-            at < datetime.fromisoformat(known_at) or at > datetime.now(timezone.utc)):
+    at = validate_prior_receipt(receipt, origin["candidate_sha"],
+                                origin["quiescence_mode"])
+    if at < datetime.fromisoformat(known_at):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED")
 
 
