@@ -1156,10 +1156,14 @@ def run(candidate, action, policy_b64):
                           else ('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
                           else ('inactive','enabled'))
                 for name,state in zip(names,states)):
-            sys.path.insert(0,'/opt/porota-trading')
-            from scripts import rc6_deploy_quiescence as installed
-            if (getattr(installed,'A171_FAILED_CANDIDATE',None) and
-                    (ROOT/('scheduler-suspend-'+installed.A171_FAILED_CANDIDATE+'.json')).exists()):
+            # Before installation the host import is still A171's old source.
+            # Select the next exact continuation from the frozen candidate's
+            # staged helper and the current runtime marker. The adoption
+            # itself verifies the receipt, Docker IDs, flat book and NO_GO.
+            staged = a143_staged_module()
+            if (getattr(staged,'A171_FAILED_CANDIDATE',None) and
+                    staged.current_runtime_marker().get('candidate_sha') ==
+                    staged.A171_FAILED_CANDIDATE):
                 return adopt_a171_running_hold(
                     candidate,path,names,digest,before,states)
             return adopt_a169_stopped_hold(
