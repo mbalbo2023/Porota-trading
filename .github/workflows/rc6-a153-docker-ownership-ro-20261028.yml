@@ -3,6 +3,11 @@ name: RC6 A153 Docker ownership inventory READ ONLY
 # Preparation stage: workflow_dispatch only. A scoped push trigger will be
 # added after /root reviews the exact host probe. No host run on file creation.
 on:
+  push:
+    branches:
+      - audit/rc6-a153-docker-ownership-ro-20261028
+    paths:
+      - '.github/workflows/rc6-a153-docker-ownership-ro-20261028.yml'
   workflow_dispatch:
 
 permissions:
