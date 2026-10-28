@@ -18,6 +18,13 @@ class Day28(datetime):
         return value if tz is None else value.astimezone(tz)
 
 
+class Day27(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        value = datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc)
+        return value if tz is None else value.astimezone(tz)
+
+
 class Day29(datetime):
     @classmethod
     def now(cls, tz=None):
@@ -216,6 +223,95 @@ def test_a151_preopen_requires_both_chains_and_disabled_timer(a151, monkeypatch)
     monkeypatch.setattr(suspend,'operator_preopen_timer_disabled',lambda:False)
     assert rc6_preopen.required_timers(candidate)['state']=='RED'
     monkeypatch.setattr(suspend,'operator_preopen_timer_disabled',lambda:True)
+    monkeypatch.setattr(rc6_preopen,'datetime',Day29)
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+
+
+def test_a145_active_iol_carveout_is_exact_and_a151_still_no_go(a151,monkeypatch):
+    root, _, receipt, receipt_sha, _, _, _ = a151
+    monkeypatch.setattr(rc6_preopen,'ROOT',root)
+    monkeypatch.setattr(rc6_preopen,'datetime',Day28)
+    monkeypatch.setattr(suspend,'ppi_snapshot',lambda:[])
+    iol=suspend.IOL_OAUTH_GUARD_TIMER
+    names=sorted(set(rc6_preopen.REQUIRED_TIMERS) | {iol} |
+                 {f'porota-a145-fixture-{i:02d}-rc6.timer' for i in range(10)})
+    assert len(names)==16
+    units={'systemd/'+name:{'role':'ACTIVE_TIMER','active':True}
+           for name in names}
+    units['systemd/'+iol].update(install=True,enabled=True,
+                                suspend_during_deploy=False)
+    policy=root/'ops/policy/host-control-plane-reconciliation-v2.json'
+    policy.parent.mkdir(parents=True)
+    raw=json.dumps({'units':units},sort_keys=True).encode()
+    policy.write_bytes(raw)
+    assert suspend.preserved_iol_guard(raw)==iol
+    candidate='b'*40
+    scheduler=dict(candidate_sha=candidate,status='SUSPENDED',
+        policy_sha256=hashlib.sha256(raw).hexdigest(),
+        timers=names,attempted=names,ppi_before=[],
+        operator_pause_timer=suspend.OPERATOR_PREOPEN_TIMER,
+        operator_pause_receipt_sha256=receipt['a125_receipt_sha256'],
+        preserved_iol_timer=iol)
+    scheduler_path=root/'data/deploy'/f'scheduler-suspend-{candidate}.json'
+    scheduler_path.parent.mkdir(parents=True)
+    write_json(scheduler_path,scheduler)
+    states={iol:('enabled','active')}
+    services={iol:suspend.IOL_OAUTH_GUARD_SERVICE}
+    service_states={suspend.IOL_OAUTH_GUARD_SERVICE:'active'}
+    def cmd(args,timeout=20):
+        unit=args[2]
+        if args[1]=='is-enabled':
+            value=states.get(unit,('disabled','inactive') if
+                             unit==suspend.OPERATOR_PREOPEN_TIMER else
+                             ('enabled','inactive'))[0]
+            return (0 if value=='enabled' else 1),value,''
+        if args[1]=='is-active':
+            value=states.get(unit,('disabled','inactive') if
+                             unit==suspend.OPERATOR_PREOPEN_TIMER else
+                             ('enabled','inactive'))[1]
+            if unit.endswith('.service'):
+                value=service_states.get(unit,'inactive')
+            return (0 if value=='active' else 3),value,''
+        if args[1]=='show':
+            return 0,services.get(unit,unit.removesuffix('.timer')+'.service'),''
+        raise AssertionError(args)
+    monkeypatch.setattr(rc6_preopen,'cmd',cmd)
+    check=rc6_preopen.required_timers(candidate)
+    assert check['state']=='GREEN'
+    assert check['operator_pause_receipt_sha256']==receipt_sha
+    assert check['operator_pause_day_ar']=='2026-10-28'
+    assert check['units'][iol]==dict(state='GREEN',enabled='enabled',active='active')
+    # The original A125 day still has its distinct operator identity.
+    monkeypatch.setattr(suspend,'datetime',Day27)
+    monkeypatch.setattr(rc6_preopen,'datetime',Day27)
+    old=rc6_preopen.required_timers(candidate)
+    assert old['state']=='GREEN'
+    assert old['operator_pause_operation_id']==suspend.OPERATOR_PAUSE_RUN
+    monkeypatch.setattr(suspend,'datetime',Day28)
+    monkeypatch.setattr(rc6_preopen,'datetime',Day28)
+    # Merely having a live OAuth timer is not a generic exemption.
+    write_json(scheduler_path,dict(scheduler,preserved_iol_timer=None))
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    write_json(scheduler_path,dict(scheduler,preserved_iol_timer='porota-other.timer'))
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    write_json(scheduler_path,scheduler)
+    states[iol]=('enabled','inactive')
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    states[iol]=('enabled','active')
+    services[iol]='porota-impostor.service'
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    services[iol]=suspend.IOL_OAUTH_GUARD_SERVICE
+    service_states[suspend.IOL_OAUTH_GUARD_SERVICE]='failed'
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    service_states[suspend.IOL_OAUTH_GUARD_SERVICE]='unknown'
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    service_states[suspend.IOL_OAUTH_GUARD_SERVICE]='active'
+    bad_units=json.loads(raw)['units']
+    bad_units['systemd/'+names[0]]['suspend_during_deploy']=False
+    policy.write_text(json.dumps({'units':bad_units}))
+    assert rc6_preopen.required_timers(candidate)['state']=='RED'
+    policy.write_bytes(raw)
+    monkeypatch.setattr(suspend,'datetime',Day29)
     monkeypatch.setattr(rc6_preopen,'datetime',Day29)
     assert rc6_preopen.required_timers(candidate)['state']=='RED'
 

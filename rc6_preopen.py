@@ -253,6 +253,7 @@ def required_timers(deploy_scheduler_candidate=None):
     units = REQUIRED_TIMERS
     operator_pause_timer = None
     operator_pause_sha = None
+    preserved_iol_timer = None
     if deploy_scheduler_candidate is not None:
         # A canonical intraday deployment intentionally pauses its exact
         # versioned timer set until runtime acceptance. Daily preopen calls
@@ -263,6 +264,10 @@ def required_timers(deploy_scheduler_candidate=None):
                 raise ValueError('PREOPEN_DEPLOY_CANDIDATE_INVALID')
             raw = (ROOT/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
             units = tuple(suspend.timer_policy(raw))
+            # A145 permits exactly one OAuth guardian timer to stay ACTIVE
+            # throughout the held deploy. Its policy carveout and scheduler
+            # receipt must agree; every other non-preopen timer stays paused.
+            preserved_iol_timer = suspend.preserved_iol_guard(raw)
             path = ROOT/'data/deploy'/('scheduler-suspend-'+deploy_scheduler_candidate+'.json')
             if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
                     len(units) != 16 or not set(REQUIRED_TIMERS) <= set(units)):
@@ -273,6 +278,7 @@ def required_timers(deploy_scheduler_candidate=None):
                     receipt.get('policy_sha256') != hashlib.sha256(raw).hexdigest() or
                     receipt.get('timers') != list(units) or
                     set(receipt.get('attempted', [])) != set(units) or
+                    receipt.get('preserved_iol_timer') != preserved_iol_timer or
                     receipt.get('ppi_before') != suspend.ppi_snapshot()):
                 raise ValueError('PREOPEN_DEPLOY_RECEIPT_CHANGED')
             if receipt.get('operator_pause_timer') is not None:
@@ -309,6 +315,13 @@ def required_timers(deploy_scheduler_candidate=None):
                 good = (rc1 == 1 and enabled == 'disabled' and rc2 == 3 and active == 'inactive'
                         and service == 'porota-preopen-rc6.service' and
                         service_state in {'inactive','failed'})
+            elif unit == preserved_iol_timer:
+                # Periodic OAuth health work may legitimately be running. The
+                # service identity must remain exact, never a generic active
+                # timer exemption or trading/preopen permission.
+                good = (rc1 == 0 and enabled == 'enabled' and rc2 == 0 and active == 'active'
+                        and service == suspend.IOL_OAUTH_GUARD_SERVICE and
+                        service_state in {'inactive','active','activating','deactivating','reloading'})
             else:
                 good = (rc1 == 0 and enabled == 'enabled' and rc2 == 3 and active == 'inactive'
                         and service_state not in {'unknown','active','activating','reloading','deactivating'})
