@@ -68,6 +68,8 @@ El objetivo del operador es **100% de pruebas, contratos, controles y recibos ve
 
 Para cada incidente significativo registrar: error observado (run/host), RCA causal contrastado, cambio fix-forward, guard automático o razón de imposibilidad, test adversarial en CI, evidencia final, documentos afectados, estado de cierre y dueño del pendiente. Si una decisión nueva corrige una instrucción antigua, **corregir además el punto de entrada** que consume el siguiente agente: comentario correctivo aislado no alcanza.
 
+**Lección CI A149 (PR documental a `main`):** el workflow histórico `Checkpoint attestation` exige campos literales en el cuerpo del PR (`Checkpoint ID`, `Continuity checkpoint path`, `Checkpoint commit SHA`, `RC6 baseline SHA`, `Safety invariants`). Conservar etiquetas y valores comprobables; un SHA histórico debe identificarse explícitamente como histórico. Su PASS es compatibilidad documental, **nunca prueba de runtime PAPER/0**. Si el cuerpo de PR causa RED, corregir los campos y activar un evento `synchronize` de contenido pertinente en la rama aislada; no desactivar el guard para conseguir GREEN.
+
 Antes de Predeploy y de cada nuevo chat, reconciliar `AGENTS.md`, política `ops/policy/porota-policy.yaml`, este runbook documental, #732 y el workflow vivo. Los registros históricos deben conservarse con fecha y rótulo *histórico*, no usarse para GO. Actualizar documentación en rama/PR de gobierno fuera de productiva; **un commit sólo documental nunca debe disparar recreación de contenedores**. Los tests/guards de runtime requieren su propio WRITE_OWNER, candidato integrado y pruebas.
 
 ## 8. Handoff mínimo exigible
