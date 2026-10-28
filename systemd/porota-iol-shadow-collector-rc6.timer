@@ -1,5 +1,5 @@
 [Unit]
-Description=Run bounded Porota RC6 IOL SHADOW observation only during BYMA market hours
+Description=Porota RC6 IOL/public 1m with bounded universe evidence TTL
 
 [Timer]
 OnCalendar=Mon..Fri *-*-* 10:30..59:00 America/Argentina/Buenos_Aires

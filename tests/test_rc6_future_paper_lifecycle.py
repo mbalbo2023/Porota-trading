@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal
@@ -68,7 +69,26 @@ def test_operator_pause_rejects_missing_receipt_without_weakening_other_gates(tm
     assert gate.admission_status(now=datetime.fromisoformat("2026-10-28T11:00:00-03:00"),
                                  candidate_sha="a" * 40,
                                  receipt_path=tmp_path / "missing.json") == (
+                                     False, "OPERATOR_PAPER_PAUSE_2026_10_28")
+    assert gate.admission_status(now=datetime.fromisoformat("2026-10-29T11:00:00-03:00"),
+                                 candidate_sha="a" * 40,
+                                 receipt_path=tmp_path / "missing.json") == (
                                      False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
+
+
+def test_day_28_go_receipt_cannot_unlock_day_29_without_fresh_authority(tmp_path):
+    receipt = tmp_path / "old-go.json"
+    receipt.write_text(json.dumps({
+        "schema": "RC6_PAPER_PREOPEN_GATE_V1", "status": "GO_PAPER_SCALPING",
+        "phase": "T_MINUS_10", "candidate_sha": "a" * 40,
+        "trade_day_ar": "2026-10-28", "issued_at_ar": "2026-10-29T10:21:00-03:00",
+    }))
+    assert gate.admission_status(now=datetime.fromisoformat("2026-10-28T11:00:00-03:00"),
+                                 candidate_sha="a" * 40, receipt_path=receipt) == (
+                                     False, "OPERATOR_PAPER_PAUSE_2026_10_28")
+    assert gate.admission_status(now=datetime.fromisoformat("2026-10-29T11:00:00-03:00"),
+                                 candidate_sha="a" * 40, receipt_path=receipt) == (
+                                     False, "NO_GO_PAPER_SCALPING")
 
 
 def test_future_lifecycle_reserve_mark_variation_close_and_cash(tmp_path):

@@ -392,6 +392,7 @@
       "install": true,
       "enabled": true,
       "active": true,
+      "suspend_during_deploy": false,
       "remove_on_deploy": false,
       "reason": "Maintains off-hours OAuth continuity and explicit pre-market checks without replacing the productive complementary IOL collector during BYMA hours"
     },

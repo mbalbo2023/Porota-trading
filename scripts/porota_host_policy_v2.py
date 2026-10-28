@@ -15,6 +15,7 @@ ALLOWED_ROLES = {
     "RETIRED_SERVICE",
     "RETIRED_TIMER",
 }
+IOL_OAUTH_PRESERVE_PATH = 'systemd/porota-iol-oauth-health-rc6.timer'
 
 
 def validate_policy(manifest: dict, policy: dict) -> dict:
@@ -26,6 +27,11 @@ def validate_policy(manifest: dict, policy: dict) -> dict:
     invalid = []
     for path, row in sorted(entries.items()):
         role = row.get("role")
+        if 'suspend_during_deploy' in row and row['suspend_during_deploy'] is not True:
+            if (path != IOL_OAUTH_PRESERVE_PATH or
+                    row['suspend_during_deploy'] is not False or
+                    role != 'ACTIVE_TIMER'):
+                invalid.append({'path': path, 'reason': 'UNAUTHORIZED_DEPLOY_TIMER_CARVEOUT'})
         if role not in ALLOWED_ROLES:
             invalid.append({"path": path, "reason": "INVALID_ROLE"})
             continue

@@ -147,12 +147,38 @@ def _job(store, key, state, detail, success=False):
           (key, stamp, last_success, state, str(detail)[:1000]))
 
 
-def _reports_due(store):
+def _postclose_daily_due(store, key):
     with store.connect() as c:
-        row = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
-    interval = (REPORT_SQLITE_RETRY_SECONDS if row and row[0] == "ROJO" and
-                row[1] == "POSTCLOSE_SQLITE_FULL" else 6 * 3600)
-    return _job_due(store, "REPORTS", interval)
+        row = c.execute("SELECT state,detail,last_run_at FROM operational_jobs "
+                        "WHERE job_key=?", (key,)).fetchone()
+    if row and row[0] == "ROJO" and row[1] == "POSTCLOSE_SQLITE_FULL":
+        # SQLite capacity is recoverable after cleanup: retain the bounded
+        # retry contract, including after a transient outage during postclose.
+        return _job_due(store, key, REPORT_SQLITE_RETRY_SECONDS)
+    if row and row[2]:
+        try:
+            # A report or summary (including a quarantined invalid PAPER
+            # ledger) needs at most one routine POSTCLOSE attempt per local
+            # trading day. A morning/noon report is not today's closing
+            # report and MUST be rebuilt once the wheel actually closes.
+            # COM18782 closes the regular PPT at 17:00 through 01-Nov-2026;
+            # COM19024 extends it to 18:00 beginning 02-Nov-2026.
+            # Forced operator rechecks remain available.
+            attempted = datetime.fromisoformat(row[2])
+            if attempted.tzinfo is None:
+                raise ValueError("POSTCLOSE_REPORT_CLOCK_NAIVE")
+            current = datetime.now(TZ)
+            previous = attempted.astimezone(TZ)
+            cutoff_hour = 18 if current.date() >= date(2026, 11, 2) else 17
+            if previous.date() == current.date() and previous.hour >= cutoff_hour:
+                return False
+        except (TypeError, ValueError):
+            pass
+    return True
+
+
+def _reports_due(store):
+    return _postclose_daily_due(store, "REPORTS")
 
 
 def collect_sre(store):
@@ -513,7 +539,10 @@ def _report_story(title, period, data):
         "cauciones_vencidas": [{"contrato": p["instrument_id"], "moneda_plaza": p["currency"],
                                 "capital": p["principal"], "interes_bruto": p["gross_interest"],
                                 "costos": p["total_fees"], "acreditacion": p["settled_at"],
-                                "interes_neto": str(Decimal(p["gross_interest"]) - Decimal(p["total_fees"]))}
+                                "interes_neto": str(Decimal(p["gross_interest"]) - Decimal(p["total_fees"])),
+                                "autoridad_costos": p.get("fee_evidence_scope", "NO_VERIFICADO"),
+                                "conocido_desde_utc": p.get("fee_known_at_utc"),
+                                "costos_originales": p.get("original_total_fees", p["total_fees"])}
                                for p in data.get("cauciones_matured", [])],
         "decisiones": data["decisions"], "noticias_relevantes": data["news"],
         "nota": "Archivo preparado para discusión de lecciones aprendidas con una IA; no contiene secretos ni datos de cuenta.",
@@ -772,6 +801,16 @@ def service_tick(store, phase, force=False):
         if force or _reports_due(store):
             try:
                 ensure_reports(store, include_today=True)
+            except ValueError as exc:
+                if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+                    raise
+                # Old or ambiguous caucion fee evidence cannot be normalized
+                # into a plausible PnL. Mark the entire report unavailable;
+                # do not modify the ledger, deliver a closing summary or
+                # terminate/restart the scanner for an ancillary PDF job.
+                _job(store, "REPORTS", "ROJO", "POSTCLOSE_CAUCION_LEDGER_INVALID",
+                     success=False)
+                return
             except sqlite3.OperationalError as exc:
                 if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
                     raise
@@ -780,12 +819,19 @@ def service_tick(store, phase, force=False):
         elif not force:
             with store.connect() as c:
                 state = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
-            if state and state[0] == "ROJO" and state[1] == "POSTCLOSE_SQLITE_FULL":
+            if state and state[0] == "ROJO" and state[1] in {
+                    "POSTCLOSE_SQLITE_FULL", "POSTCLOSE_CAUCION_LEDGER_INVALID"}:
                 return
-        if not force and not _job_due(store, "CLOSING_SUMMARY_RETRY", REPORT_SQLITE_RETRY_SECONDS):
+        if not force and not _postclose_daily_due(store, "CLOSING_SUMMARY_RETRY"):
             return
         try:
             send_closing_summary(store)
+        except ValueError as exc:
+            if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+                raise
+            _job(store, "REPORTS", "ROJO", "POSTCLOSE_CAUCION_LEDGER_INVALID",
+                 success=False)
+            return
         except sqlite3.OperationalError as exc:
             if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
                 raise

@@ -200,8 +200,15 @@ def test_deploy_preopen_rejects_forged_or_masked_pause(field, value):
 
 
 def test_host_unit_reconciliation_preserves_a125_disabled_preopen(monkeypatch, tmp_path):
-    repo_root = Path(__file__).resolve().parents[1]
+    # Hermetic host-policy fixture: a sparse checkout may omit systemd/ even
+    # though the packaged Predeploy artifact always includes these units.
+    repo_root = tmp_path / 'isolated_repo'
     names = {'porota-preopen-rc6.timer', 'porota-runtime-evidence-rc6.timer'}
+    (repo_root / 'scripts').mkdir(parents=True)
+    (repo_root / 'scripts/rc6_deploy_scheduler_suspend.py').write_text('# fixture\n')
+    (repo_root / 'systemd').mkdir()
+    for unit_name in names:
+        (repo_root / 'systemd' / unit_name).write_text('[Unit]\nDescription=test-only\n')
     policy = {'units': {'systemd/' + name: {'role': 'ACTIVE_TIMER', 'active': True,
                                          'enabled': True, 'install': True}
                         for name in names}}
@@ -224,12 +231,15 @@ def test_host_unit_reconciliation_preserves_a125_disabled_preopen(monkeypatch, t
         raise AssertionError(args)
 
     monkeypatch.setattr(host_units, '_run', fake_run)
+    # This test is about preserving the historical A125 hold on the next
+    # trading day; it must not depend on the real date of the CI runner.
+    monkeypatch.setattr(suspend, 'datetime', NextDay)
     monkeypatch.setattr(suspend, 'exact_operator_preopen_pause',
-                        lambda: proofs.append('A125') or ('f'*64))
+                        lambda **kwargs: proofs.append(kwargs) or ('f'*64))
     monkeypatch.setattr(suspend, 'operator_preopen_timer_disabled', lambda: True)
     result = host_units.apply(repo_root, policy, tmp_path,
                               keep_active_timers_paused=True)
-    assert proofs == ['A125']
+    assert proofs == [{'historical_hold_only': True}]
     assert mutations == [('systemctl', 'enable', 'porota-runtime-evidence-rc6.timer')]
     assert result['verification'] == [
         {'unit':'porota-preopen-rc6.timer', 'state':'disabled|inactive'},
@@ -259,6 +269,10 @@ def test_deploy_preopen_timer_check_requires_matching_a125_receipt(monkeypatch, 
                     'operator_pause_receipt_sha256': 'f'*64}
     write_json(receipt, receipt_data)
     monkeypatch.setattr(rc6_preopen, 'ROOT', tmp_path)
+    # A131 tests the historical 27-Oct contract. A151's independent 28-Oct
+    # sidecar is intentionally mandatory when the current trading day is 28.
+    monkeypatch.setattr(rc6_preopen, 'datetime', OperatorDay)
+    monkeypatch.setattr(suspend, 'datetime', OperatorDay)
     monkeypatch.setattr(suspend, 'ppi_snapshot', lambda: [])
     monkeypatch.setattr(suspend, 'exact_operator_preopen_pause', lambda: 'f'*64)
     monkeypatch.setattr(suspend, 'operator_preopen_timer_disabled', lambda: True)

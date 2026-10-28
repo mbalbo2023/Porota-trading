@@ -26,5 +26,14 @@ def test_book_price_is_tna_and_quantity_is_tomadora_amount():
 def test_support_confirmed_market_window_in_argentina_timezone():
     assert is_same_day_concertation_window(datetime(2026,9,8,13,30,tzinfo=timezone.utc)); assert is_same_day_concertation_window(datetime(2026,9,8,20,0,tzinfo=timezone.utc)); assert not is_same_day_concertation_window(datetime(2026,9,8,13,29,59,tzinfo=timezone.utc)); assert not is_same_day_concertation_window(datetime(2026,9,8,20,0,1,tzinfo=timezone.utc))
 def test_commission_contract_exact_for_pesos_and_variable_for_dolar(): assert ppi_annual_commission_percent('PESOS7')==Decimal('2') and ppi_annual_commission_percent('DOLAR7') is None
-def test_cost_estimate_excludes_market_rights():
-    e=estimate_ppi_costs_before_market_rights('PESOS7',100000,'20.1',ppi_commission_annual_percent='2',iva_percent='21'); assert e.ppi_commission.quantize(Decimal('0.01'))==Decimal('38.36'); assert e.market_rights_known is False; assert e.budget_is_authoritative_for_full_costs is True
+@pytest.mark.parametrize(('ticker','amount','annual_rate','expected_commission'),[
+    ('PESOS7',100000,'2',Decimal('38.36')),
+    ('DOLAR7',100,'0.5',Decimal('0.01')),
+])
+def test_partial_cost_estimate_never_certifies_full_account_costs(
+        ticker,amount,annual_rate,expected_commission):
+    estimate=estimate_ppi_costs_before_market_rights(
+        ticker,amount,'20.1',ppi_commission_annual_percent=annual_rate,iva_percent='21')
+    assert estimate.ppi_commission.quantize(Decimal('0.01'))==expected_commission
+    assert estimate.market_rights_known is False
+    assert estimate.budget_is_authoritative_for_full_costs is False

@@ -185,3 +185,85 @@ def test_mensual_elimina_semanales_integrados(tmp_path, monkeypatch):
     assert not weekly.exists()
     with store.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM report_registry").fetchone()[0] == 0
+
+
+def _fixed_postclose_clock(monkeypatch):
+    """A real BYMA business day after 17:00, independent of runner wall time."""
+    real_clock = datetime
+
+    class Clock(real_clock):
+        @classmethod
+        def now(cls, tz=None):
+            return real_clock(2026, 10, 27, 18, 30, tzinfo=services.TZ)
+
+    monkeypatch.setattr(services, "datetime", Clock)
+
+
+def test_invalid_caucion_fee_evidence_quarantines_postclose_report_without_restart(
+        tmp_path, monkeypatch):
+    """An invalid PAPER ledger cannot produce a report or crash the scanner."""
+    _fixed_postclose_clock(monkeypatch)
+    store = PaperStore(str(tmp_path / "paper.db"))
+    services.init_schema(store)
+    monkeypatch.setattr(services, "backups_suspended", lambda: True)
+    monkeypatch.setattr(services, "collect_sre", lambda *_: None)
+    monkeypatch.setattr(services, "refresh_financial", lambda *_: None)
+    attempts = []
+    summaries = []
+
+    def invalid_report(*_args, **_kwargs):
+        attempts.append("report")
+        raise ValueError("CAUCION_LEDGER_INVALID: Autoridad de costos PAPER incompatible")
+
+    monkeypatch.setattr(services, "ensure_reports", invalid_report)
+    monkeypatch.setattr(services, "send_closing_summary", lambda *_: summaries.append("sent"))
+
+    services.service_tick(store, "CLOSED")
+    services.service_tick(store, "CLOSED")
+    assert attempts == ["report"]
+    assert summaries == []
+    with store.connect() as connection:
+        record = connection.execute(
+            "SELECT state,detail,last_success_at FROM operational_jobs WHERE job_key='REPORTS'"
+        ).fetchone()
+    assert record[0] == "ROJO"
+    assert record[1] == "POSTCLOSE_CAUCION_LEDGER_INVALID"
+    assert record[2] is None
+
+
+def test_postclose_successful_reports_run_once_per_trading_date(tmp_path, monkeypatch):
+    _fixed_postclose_clock(monkeypatch)
+    store = PaperStore(str(tmp_path / "paper.db"))
+    services.init_schema(store)
+    monkeypatch.setattr(services, "backups_suspended", lambda: True)
+    monkeypatch.setattr(services, "collect_sre", lambda *_: None)
+    monkeypatch.setattr(services, "refresh_financial", lambda *_: None)
+    attempts = []
+
+    def completed_report(*_args, **_kwargs):
+        attempts.append("report")
+        services._job(store, "REPORTS", "VERDE", "Informes actualizados", success=True)
+
+    monkeypatch.setattr(services, "ensure_reports", completed_report)
+    summaries = []
+    monkeypatch.setattr(services, "send_closing_summary", lambda *_:
+                        summaries.append("summary") or "EN_COLA")
+    services.service_tick(store, "CLOSED")
+    services.service_tick(store, "CLOSED")
+    assert attempts == ["report"]
+    assert summaries == ["summary"]
+
+
+def test_unrecognized_report_value_error_is_not_swallowed(tmp_path, monkeypatch):
+    import pytest
+
+    _fixed_postclose_clock(monkeypatch)
+    store = PaperStore(str(tmp_path / "paper.db"))
+    services.init_schema(store)
+    monkeypatch.setattr(services, "backups_suspended", lambda: True)
+    monkeypatch.setattr(services, "collect_sre", lambda *_: None)
+    monkeypatch.setattr(services, "refresh_financial", lambda *_: None)
+    monkeypatch.setattr(services, "ensure_reports", lambda *_args, **_kwargs:
+                        (_ for _ in ()).throw(ValueError("UNEXPECTED_BAD_RESULT")))
+    with pytest.raises(ValueError, match="UNEXPECTED_BAD_RESULT"):
+        services.service_tick(store, "CLOSED")

@@ -25,6 +25,7 @@ from pathlib import Path
 
 
 LOCK_DIR = Path('/run/lock')
+STAGING_DIR = Path('/tmp')
 LOCK_PATH = LOCK_DIR / 'porota-rc6-deploy-v2.lock'
 BARRIER_NAME = 'porota-rc6-deploy-v2-attempt.json'
 PHASES = frozenset({
@@ -32,9 +33,10 @@ PHASES = frozenset({
     'classify', 'offline_preclean', 'preclean', 'suspend', 'drain', 'transfer',
     'promotion', 'flat_book', 'verify_carryover', 'timers_restore',
     'timers_restored', 'backup_retire', 'finalize', 'cleanup_contract',
-    'cleanup_recover', 'cleanup_restore', 'cleanup_final',
+    'cleanup_recover', 'cleanup_restore', 'cleanup_payload', 'cleanup_final',
+    'cleanup_presuspend',
 })
-FINAL_PHASES = frozenset({'finalize', 'cleanup_final'})
+FINAL_PHASES = frozenset({'finalize', 'cleanup_final', 'cleanup_presuspend'})
 IDENTITY = re.compile(r'[0-9a-f]{40}')
 NUMBER = re.compile(r'[1-9][0-9]*')
 PR_SET_CHILD_SUBREAPER = 36
@@ -313,6 +315,7 @@ def run(argv: list[str]) -> int:
     phase = argv[7]
     observe = phase == 'classify'
     reconcile = phase == 'reconcile'
+    presuspend = phase == 'cleanup_presuspend'
     user = pwd.getpwnam(argv[0])
     if user.pw_uid == 0:
         raise RuntimeError('MUTEX_REMOTE_USER_MUST_BE_UNPRIVILEGED')
@@ -326,6 +329,10 @@ def run(argv: list[str]) -> int:
             (phase in FINAL_PHASES | {'classify', 'offline_preclean'} and argv[1] != 'root') or
             (phase == 'cleanup_contract' and argv[1] != 'user')):
         raise RuntimeError('MUTEX_PHASE_INVALID')
+    if presuspend and (command[:2] != ['python3', '-'] or
+                       '--expected-fingerprint' not in command or
+                       '--policy-b64' not in command):
+        raise RuntimeError('PRESUSPEND_PROOF_COMMAND_INVALID')
     fd = open_lock(LOCK_DIR)
     try:
         _enable_subreaper()
@@ -333,6 +340,15 @@ def run(argv: list[str]) -> int:
             _reconcile_exact_a138_idle(LOCK_DIR, identity)
             return 0
         existing = _read_barrier(LOCK_DIR)
+        if presuspend:
+            stage = STAGING_DIR / ('porota-deploy-v2-' + '-'.join(identity))
+            if stage.exists() or stage.is_symlink():
+                raise RuntimeError('PRESUSPEND_TRANSFER_STAGE_PRESENT')
+        if presuspend and existing is not None:
+            if (tuple(existing[k] for k in ('candidate', 'run', 'attempt')) != identity or
+                    existing['status'] != 'IDLE' or existing['phase'] not in
+                    {'preclean', 'offline_preclean', 'cleanup_presuspend'}):
+                raise RuntimeError('PRESUSPEND_BARRIER_NOT_EXACT_IDLE')
         if observe and existing is not None:
             raise RuntimeError('BARRIER_PRIOR_ATTEMPT_UNRESOLVED')
         if existing is not None and not observe:
@@ -346,7 +362,7 @@ def run(argv: list[str]) -> int:
         if not allow_contract_lifecycle:
             if _contract_writers():
                 raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
-        if not observe:
+        if not observe and not (presuspend and existing is None):
             _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
         env['RC6_DEPLOY_MUTEX_FD'] = str(fd)
@@ -373,9 +389,13 @@ def run(argv: list[str]) -> int:
                 _contract_only(LOCK_DIR, identity, phase)
                 raise RuntimeError('CONTRACT_WRITER_REQUIRES_EXACT_STOP')
             raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
-        if not observe:
+        if not observe and not (presuspend and existing is None):
             _finish(LOCK_DIR, identity, phase,
                     result.returncode == 0 and phase in FINAL_PHASES)
+        if presuspend and result.returncode == 0:
+            print('RC6_PRE_SUSPEND_BARRIER=GREEN|exact_attempt=' +
+                  ('RETIRED' if existing is not None else 'ALREADY_EMPTY') +
+                  '|no_scheduler_restore=true', file=sys.stderr, flush=True)
         # An ordinary nonzero exit with no adopted descendants and no contract
         # writer may be recovered by this exact attempt. Timeout, uncertain
         # children or abrupt wrapper death keep INFLIGHT and block all writers.

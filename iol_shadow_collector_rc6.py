@@ -7,7 +7,7 @@ signals, READY/HOLD, sizing, or orders.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time as clock_time, timezone
+from datetime import date, datetime, time as clock_time, timezone
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
@@ -44,15 +44,46 @@ CHECKPOINT_SCHEMA_VERSION = 2
 MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 MARKET_OPEN = clock_time(10, 30)
 MARKET_CLOSE = clock_time(17, 0)
+COM19024_EFFECTIVE = date(2026, 11, 2)
+# BYMA official COM18782 is in force through 01-Nov-2026; COM19024 applies
+# from 02-Nov. This is a *family* contract, not one universal market close.
+# Unverified futures underlyings/FCI/ETF sessions are not assigned a guessed
+# end-of-day window or promoted to PAPER readiness by this observation helper.
+COM19024_1800_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "OPCIONES"})
+COM19024_1700_FAMILIES = frozenset({
+    "CAUCIONES", "BONOS", "LETRAS", "OBLIGACIONES", "ON"})
 
 
-def is_operational_market_window(now: datetime | None = None) -> bool:
-    """True only during a normal BYMA session; unknown dates fail closed."""
+def is_operational_market_window(now: datetime | None = None, *,
+                                 family: str | None = None) -> bool:
+    """Audited regular BYMA window, with optional verified family after 02-Nov.
+
+    The legacy caller without identity retains the 10:30–17:00 composite
+    subset, never treating a mixed family basket as eligible until 18:00.
+    Only an identified regular ACCIONES/CEDEARS/OPCIONES observation can use
+    the COM19024 late session. This never authorizes orders or PAPER opening.
+    """
+    if now is not None and now.tzinfo is None:
+        return False
     local = (now or datetime.now(MARKET_TZ)).astimezone(MARKET_TZ)
-    return (
-        byma.es_dia_habil_operativo(local.date())
-        and MARKET_OPEN <= local.time() < MARKET_CLOSE
-    )
+    if local.year not in byma.ANIOS_AUDITADOS:
+        return False
+    try:
+        if not byma.es_dia_habil_operativo(local.date()):
+            return False
+    except (ValueError, TypeError, KeyError, OSError):
+        return False
+    if local.date() < COM19024_EFFECTIVE:
+        return MARKET_OPEN <= local.time() < MARKET_CLOSE
+    if family is None:
+        # Mixed/unknown identity cannot implicitly stretch all families.
+        return MARKET_OPEN <= local.time() < MARKET_CLOSE
+    normalized = str(family).strip().upper()
+    if normalized in COM19024_1800_FAMILIES:
+        return MARKET_OPEN <= local.time() < clock_time(18, 0)
+    if normalized in COM19024_1700_FAMILIES:
+        return MARKET_OPEN <= local.time() < MARKET_CLOSE
+    return False  # Futures/subtypes and unknown contracts need their own proof.
 
 
 class ReadOnlyMCP(Protocol):

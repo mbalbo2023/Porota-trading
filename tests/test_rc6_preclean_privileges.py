@@ -81,15 +81,19 @@ def test_canonical_preclean_clears_retained_receipt_as_unprivileged_user(record_
         assert calls == ['EXACT_FIXTURE_REMOVED'] and not failures
 
 
-def test_pretransfer_failure_also_enters_measured_failure_cleanup():
+def test_pretransfer_failure_uses_readonly_accounting_before_any_timer_suspend():
     text = WORKFLOW.read_text()
     start = text.index('- name: Dynamic pre-transfer disk guard and conditional safe cleanup')
     end = text.index('- name: Transfer frozen artifact', start)
     assert 'id: diskguard' in text[start:end]
-    start = text.index('- name: Failure-safe host cleanup')
+    start = text.index('- name: Account pre-suspend failure without recovery or timer writes')
     end = text.index('timeout-minutes:', start)
     assert "steps.diskguard.outcome == 'failure'" in text[start:end]
     assert "steps.diskguard.outcome == 'cancelled'" in text[start:end]
+    assert "steps.suspend.outcome == 'skipped'" in text[start:end]
+    full = text[text.index('- name: Failure-safe host cleanup'):]
+    full = full.split('timeout-minutes:', 1)[0]
+    assert "steps.diskguard.outcome == 'failure'" not in full
 
 
 def test_cleanup_before_any_drain_cannot_restart_a_runtime(tmp_path, monkeypatch):

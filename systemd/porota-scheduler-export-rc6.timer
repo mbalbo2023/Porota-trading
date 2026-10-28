@@ -3,7 +3,7 @@ Description=Refresh Porota RC6 scheduler dashboard snapshot
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=1min
+OnUnitActiveSec=5min
 AccuracySec=15s
 Unit=porota-scheduler-export-rc6.service
 

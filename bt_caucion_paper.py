@@ -281,28 +281,99 @@ def validate_position(p):
         raise ValueError('CAUCION_LEDGER_INVALID: '+str(exc)) from exc
 
 
+def paper_caucion_economic_projection(connection, positions, *, as_of=None):
+    """Project booked or separately restated PAPER costs from one DB snapshot.
+
+    A historical BYMA/PPI public cost model is not a broker tariff.  The
+    restatement reader proves all six append-only receipts, original ledger
+    fingerprints and model seals *before* any caller sees a revised amount.
+    A missing, partial or altered restatement fails closed for every consumer.
+    No historical row is modified, and no real-order permission is conferred.
+    ``connection`` must use sqlite3.Row and an already-established snapshot.
+    """
+    from scripts.rc6_caucion_fee_restatement_apply import read_verified_restated_fees
+
+    try:
+        reference = aware_datetime(as_of) if as_of is not None else None
+        restated = read_verified_restated_fees(connection)
+        output = []
+        for original in positions:
+            p = dict(original)
+            receipt = restated.get(p['paper_id'])
+            if receipt is None:
+                validate_position(p)
+                p['fee_evidence_scope'] = 'BOOKED_PAPER_CONTRACT'
+            else:
+                if p['status'] != 'MATURED' or p['currency'] != 'ARS':
+                    raise ValueError('RESTATEMENT_UNEXPECTED_POSITION')
+                p['original_total_fees'] = p['total_fees']
+                known_at = aware_datetime(receipt['known_at_utc'])
+                if reference is not None and reference < known_at:
+                    # Point-in-time cash/valuation cannot know a later
+                    # restatement. This does not erase the sealed receipt.
+                    p['fee_evidence_scope'] = 'HISTORICAL_BOOKED_BEFORE_RESTATEMENT'
+                else:
+                    p['total_fees'] = receipt['effective_total_fees']
+                    p['fee_evidence_scope'] = 'PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED'
+                p['fee_model'] = receipt['model']
+                p['fee_known_at_utc'] = receipt['known_at_utc']
+                p['broker_account_fees_verified'] = False
+            output.append(p)
+        return output
+    except (ValueError, KeyError, TypeError, ArithmeticError) as exc:
+        raise ValueError('CAUCION_LEDGER_INVALID: '+str(exc)) from exc
+
+
 class CaucionBook:
     def __init__(self, store):
         self.store = store
 
-    def positions(self, *, currency=None, status=None, connection=None):
+    def positions(self, *, currency=None, status=None, connection=None, as_of=None):
         if connection is None:
             with self.store.connect() as c:
-                return self.positions(currency=currency, status=status, connection=c)
-        rows = [dict(r) for r in connection.execute('SELECT * FROM paper_cauciones')]
-        # Validar ANTES de filtrar: mover una fila rota de ARS a otra moneda
-        # no puede hacer desaparecer su débito de la caja ARS.
-        for p in rows:
-            validate_position(p)
+                # Pin the original rows and all six append-only receipts to
+                # one WAL snapshot; implicit per-SELECT reads could otherwise
+                # mix generations while a writer commits a restatement.
+                c.execute('BEGIN')
+                return self.positions(currency=currency, status=status, connection=c, as_of=as_of)
+        # External callers sometimes pass an autocommit connection. A bounded
+        # read-only SAVEPOINT pins the row set and all six receipts to the
+        # same WAL generation without committing someone else's transaction.
+        # Validate BEFORE filtering: an altered ARS debit cannot disappear.
+        own_snapshot = not connection.in_transaction
+        if own_snapshot:
+            connection.execute('SAVEPOINT rc6_caucion_fee_snapshot')
+        try:
+            rows = paper_caucion_economic_projection(
+                connection, connection.execute('SELECT * FROM paper_cauciones').fetchall(), as_of=as_of)
+        finally:
+            if own_snapshot:
+                connection.execute('RELEASE SAVEPOINT rc6_caucion_fee_snapshot')
         return [p for p in rows if (currency is None or p['currency']==currency)
                 and (status is None or p['status']==status)]
 
     def used_principal(self, offer, *, connection):
         """La misma fotografía de liquidez no se repone por otro request_id."""
         used = ZERO
-        for p in connection.execute('SELECT * FROM paper_cauciones WHERE instrument_id=? AND currency=?',
-                                    (offer.instrument_id,offer.currency)):
-            previous = validate_position(p)
+        # Validate the entire ledger and all six historical fee receipts in the
+        # caller's transaction before considering available depth. A retired
+        # PAPER fee authority can only be read as a sealed historical position;
+        # it must never become an authority for a new placement.
+        for p in self.positions(connection=connection):
+            if p['instrument_id'] != offer.instrument_id or p['currency'] != offer.currency:
+                continue
+            if p.get('fee_evidence_scope') == 'PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED':
+                from scripts.rc6_caucion_fee_ro_provenance import LEGACY_AUTHORITY
+                try:
+                    terms = json.loads(p['terms_json'])
+                    if (not isinstance(terms, dict) or terms.get('fee_authority') != LEGACY_AUTHORITY
+                            or p.get('broker_account_fees_verified') is not False):
+                        raise ValueError('HISTORICAL_FEE_SCOPE_MISMATCH')
+                    previous = CaucionOffer(**(terms | {'fee_authority': None}))
+                except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError) as exc:
+                    raise ValueError('CAUCION_LEDGER_INVALID: HISTORICAL_TERMS_INVALID') from exc
+            else:
+                previous = validate_position(p)
             if aware_datetime(previous.quoted_at) > aware_datetime(offer.quoted_at):
                 raise ValueError('CAUCION_OLDER_BOOK')
             if book_key(previous) == book_key(offer):
@@ -323,7 +394,7 @@ class CaucionBook:
     def cash_effect(self, currency, as_of, *, connection=None):
         at = aware_datetime(as_of)
         result = ZERO
-        for p in self.positions(currency=currency, connection=connection):
+        for p in self.positions(currency=currency, connection=connection, as_of=as_of):
             state = self.state_at(p, at)
             if state == 'FUTURE':
                 continue
@@ -337,7 +408,7 @@ class CaucionBook:
     def valuation(self, as_of, currency="ARS", *, connection=None):
         at = aware_datetime(as_of).astimezone(TZ)
         principal = accrued = unrealized = realized = ZERO
-        for p in self.positions(currency=currency, connection=connection):
+        for p in self.positions(currency=currency, connection=connection, as_of=as_of):
             state = self.state_at(p, at)
             if state == 'FUTURE':
                 continue

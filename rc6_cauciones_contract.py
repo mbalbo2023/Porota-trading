@@ -53,7 +53,9 @@ def estimate_ppi_costs_before_market_rights(ticker:str,capital:Any,tna_percent:A
     if identity.currency_prefix=="PESOS" and commission_pct!=Decimal("2"): raise CaucionContractError("PESOS colocadora PPI annual commission must be 2 percent")
     if identity.currency_prefix=="DOLAR" and commission_pct>Decimal("1"): raise CaucionContractError("DOLAR colocadora PPI annual commission cannot exceed 1 percent")
     gross=gross_interest(capital_d,tna_percent,identity.term_days); commission=gross_interest(capital_d,commission_pct,identity.term_days); iva=commission*iva_pct/Decimal("100")
-    return CaucionCostEstimate(gross,commission,iva,gross-commission-iva,False,True)
+    # The Order/Budget surface does not certify an account tariff or the
+    # separate market rights.  This estimate is partial for either currency.
+    return CaucionCostEstimate(gross,commission,iva,gross-commission-iva,False,False)
 def placed_side_book_levels(book_payload:Mapping[str,Any])->Iterable[Mapping[str,Any]]:
     for key in ("bids","Bids","BIDS"):
         levels=book_payload.get(key)

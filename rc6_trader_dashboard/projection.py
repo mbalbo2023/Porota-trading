@@ -154,7 +154,7 @@ TABLE_FIELDS = {
     "scalping_candidates": "id evaluated_at symbol asset_class market currency settlement action score price volume points reason economics_json",
     "paper_family_lifecycle": "lifecycle_id family instrument currency state updated_at ledger_total metadata_json",
     "paper_family_lifecycle_events": "event_id lifecycle_id family from_state to_state amount occurred_at detail_json",
-    "paper_cauciones": "paper_id request_id source instrument_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest fee_payment terms_json",
+    "paper_cauciones": "paper_id request_id request_fingerprint source instrument_id currency principal annual_rate_fraction interest_days day_count_basis opened_at maturity_at settled_at status total_fees gross_interest fee_payment terms_json",
     "paper_caucion_allocations": "request_id evaluated_at decision_json paper_id",
     "production_history": "symbol instrument_type settlement date_from date_to downloaded_at row_count",
     "history_canonical_v2": "ticker symbol family instrument_type market currency settlement date price_basis adjustment_basis trading_date quality_state source_class source_ref source status row_count rows first_at last_at downloaded_at observed_at known_at",
@@ -627,6 +627,31 @@ class Projection:
                            entry_authority="PAPER / SIMULATED" if row.get("paper_id") else "HOLD / NO ORDER")
             return page
         page = s.page("paper_cauciones", order="opened_at DESC,paper_id DESC", offset=self.offset)
+        # A page is not sufficient evidence for six legacy fee receipts.  The
+        # reader audits the entire restatement set under Store's single RO
+        # transaction before showing a PnL or net caucion result.
+        if page.state == "AVAILABLE":
+            try:
+                from bt_caucion_paper import paper_caucion_economic_projection
+                if getattr(s, "connection", None) is None:
+                    raise ValueError("CAUCION_READ_SNAPSHOT_UNAVAILABLE")
+                page.rows = paper_caucion_economic_projection(s.connection, page.rows)
+            except (ValueError, KeyError, TypeError, sqlite3.Error):
+                # Keep the factual placement identities navigable even when
+                # the all-or-none economic proof rejects the ledger. Never
+                # render unverified rate, principal, fees, interest or terms.
+                page.rows = [{key: row.get(key) for key in (
+                    "paper_id", "request_id", "instrument_id",
+                    "currency", "opened_at", "maturity_at", "settled_at",
+                    "status") if key in row} for row in page.rows]
+                for row in page.rows:
+                    row.update(as_of=row.get("opened_at"),
+                               fee_evidence_scope="CAUCION_COST_PROVENANCE_NOT_VERIFIED",
+                               broker_account_fees_verified=False,
+                               entry_authority=UNKNOWN)
+                page.state = UNKNOWN
+                page.reason = "CAUCION_COST_PROVENANCE_NOT_VERIFIED"
+                return page
         for row in page.rows:
             principal = decimal_amount(row.get("principal"))
             interest = decimal_amount(row.get("gross_interest"))
@@ -637,7 +662,8 @@ class Projection:
                        terms=json_object(row.pop("terms_json", None)),
                        source=row.get("source") or "paper_cauciones", as_of=row.get("opened_at"),
                        freshness=UNKNOWN, entry_authority="PAPER / SIMULATED",
-                       principal_verified=principal is not None)
+                       principal_verified=principal is not None,
+                       broker_account_fees_verified=row.get("broker_account_fees_verified") is True)
         return page
 
     def risk(self, *, offset=None):

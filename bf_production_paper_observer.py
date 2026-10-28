@@ -28,7 +28,6 @@ import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
-from rc6_source_consolidation import collect_public_sources
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
@@ -50,6 +49,8 @@ PUBLIC_CAPTURE_PATH = Path(os.getenv(
     "POROTA_PUBLIC_SOURCE_CAPTURE_PATH",
     "/app/data/market/rc6_public_sources_latest.json",
 ))
+PUBLIC_CAPTURE_MAX_BYTES = 16 * 1024 * 1024
+PUBLIC_CAPTURE_MAX_AGE_SECONDS = max(1800, 3 * PUBLIC_STRUCTURED_CAPTURE_SECONDS)
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
@@ -375,7 +376,45 @@ def _sync_state(store, source, status, items, detail, success=False):
           (source, status, attempted, last_success, int(items), str(detail)[:1000]))
 
 
+def _observe_structured_public_capture(store):
+    """Consume the host's single public-source publication without HTTP/write.
+
+    The host collector is the only writer of rc6_public_sources_latest.json.
+    The observer must not fetch and atomically replace the same file: two
+    independent writers used the same .tmp path and raced every 15 minutes.
+    """
+    try:
+        stat = PUBLIC_CAPTURE_PATH.stat()
+        if not 0 < stat.st_size <= PUBLIC_CAPTURE_MAX_BYTES:
+            raise ValueError("PUBLIC_CAPTURE_SIZE_INVALID")
+        age = time.time() - stat.st_mtime
+        if not -60 <= age <= PUBLIC_CAPTURE_MAX_AGE_SECONDS:
+            raise ValueError("PUBLIC_CAPTURE_MISSING_OR_STALE")
+        result = json.loads(PUBLIC_CAPTURE_PATH.read_text(encoding="utf-8"))
+        if not isinstance(result, dict) or not isinstance(result.get("sources"), list):
+            raise ValueError("PUBLIC_CAPTURE_SCHEMA_INVALID")
+        byma = next((item for item in result["sources"]
+                     if isinstance(item, dict) and item.get("source") == "BYMA"), {})
+        count = int(byma.get("record_count") or 0)
+        if count < 0:
+            raise ValueError("PUBLIC_CAPTURE_COUNT_INVALID")
+        ok = byma.get("status") == "SCRAPED_PUBLIC_DATA"
+        state = "VERDE" if ok else "AMARILLO"
+        detail = (f"Captura pública compartida, sólo lectura: {count} instrumentos; "
+                  f"age_s={int(age)}; SHADOW_ONLY; single_writer=host_collector.")
+        _health(store, "BYMA_STRUCTURED_CAPTURE", state, detail,
+                "BYMA Open Data", success=ok)
+        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", state, count, detail, success=ok)
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        # A missing or stale publication never authorizes market readiness.
+        detail = "PUBLIC_CAPTURE_UNVERIFIED:" + type(exc).__name__
+        _health(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", detail, "BYMA Open Data")
+        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", 0, detail)
+
+
 def _public_probe(store, *, structured=False):
+    if structured:
+        return _observe_structured_public_capture(store)
     sources = (
         ("BYMA_OPEN_DATA", "https://open.bymadata.com.ar/"),
         ("BYMA_WEB", "https://www.byma.com.ar/"),
@@ -404,29 +443,20 @@ def _public_probe(store, *, structured=False):
     _health(store, "BYMA_CALENDAR", "VERDE",
             f"Calendario operativo auditado; fase actual {_market_phase()}.",
             "ak_byma_calendar", success=True)
-    if not structured:
-        return
-    try:
-        result = collect_public_sources()
-        PUBLIC_CAPTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        temporary = PUBLIC_CAPTURE_PATH.with_suffix(PUBLIC_CAPTURE_PATH.suffix + ".tmp")
-        temporary.write_text(json.dumps(result, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-        os.chmod(temporary, 0o644)
-        temporary.replace(PUBLIC_CAPTURE_PATH)
-        byma = next((item for item in result.get("sources", []) if item.get("source") == "BYMA"), {})
-        count = int(byma.get("record_count") or 0)
-        ok = byma.get("status") == "SCRAPED_PUBLIC_DATA"
-        _health(store, "BYMA_STRUCTURED_CAPTURE", "VERDE" if ok else "AMARILLO",
-                f"Captura pública estructurada: {count} instrumentos; SHADOW_ONLY.", "BYMA Open Data", success=ok)
-        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "VERDE" if ok else "AMARILLO", count,
-                    f"Captura estructurada persistida; SHADOW_ONLY.", success=ok)
-    except Exception as exc:
-        _health(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", f"{type(exc).__name__}: {str(exc)[:180]}", "BYMA Open Data")
-        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", 0, f"{type(exc).__name__}: {str(exc)[:180]}")
+    return None
 
 
 def _claim_command(store):
     with store.connect() as c:
+        # The ordinary scanner poll is empty.  An unconditional BEGIN
+        # IMMEDIATE every five seconds would reserve the sole SQLite writer
+        # despite there being no command to claim.  The first look is only a
+        # hint: ALWAYS reselect under the writer lock before claiming one.
+        pending = c.execute(
+            "SELECT 1 FROM observer_commands WHERE status='QUEUED' LIMIT 1"
+        ).fetchone()
+        if pending is None:
+            return None
         c.execute("BEGIN IMMEDIATE")
         row = c.execute(
             "SELECT id,command FROM observer_commands WHERE status='QUEUED' ORDER BY id LIMIT 1"
@@ -1728,16 +1758,39 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
 
 
 def _source_sync_due(store, source, now=None):
-    """Return True only when this exact source has not been attempted today."""
+    """Use the *local* trading date for UTC-persisted source attempts.
+
+    A UTC timestamp after 21:00 ART already starts the following UTC day.
+    Comparing its literal YYYY-MM-DD to today in Argentina would trigger
+    repeated catalog/history downloads on each CLOSED scanner cycle.
+    """
     now = now or datetime.now(TZ)
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
-    today = now.astimezone(TZ).date().isoformat()
+    today = now.astimezone(TZ).date()
     with store.connect() as connection:
         row = connection.execute(
             "SELECT last_attempt_at FROM source_sync WHERE source=?", (source,)
         ).fetchone()
-    return not row or str(row[0] or "")[:10] != today
+    if not row or not row[0]:
+        return True
+    try:
+        raw = str(row[0]).strip()
+        if len(raw) == 10:
+            # Older local-day receipts predate the UTC timestamp format.
+            attempted_date = date.fromisoformat(raw)
+        else:
+            attempt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            # Interpret legacy naive timestamps as local, never as the host's
+            # possibly different OS timezone.
+            if attempt.tzinfo is None:
+                attempt = attempt.replace(tzinfo=TZ)
+            attempted_date = attempt.astimezone(TZ).date()
+        # A future receipt or clock skew does not authorize a provider storm.
+        return attempted_date < today
+    except (ValueError, TypeError):
+        # Corrupt receipts stay NO_VERIFICADO; do not retry every 5 seconds.
+        return False
 
 
 def _history_daily_sync_due(store, now=None):
@@ -1755,7 +1808,12 @@ def _history_daily_sync_due(store, now=None):
 
 
 def _daily_sync_needed(store, now=None):
-    """Bound each daily source independently; never let history retrigger catalog."""
+    """Trade-session sync only; never redownload Friday on a closed weekend."""
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=TZ)
+    if not _business_day(now.astimezone(TZ).date()):
+        return False
     return (
         _source_sync_due(store, "PPI_PRODUCTION_CATALOG", now)
         or _history_daily_sync_due(store, now)
@@ -1763,6 +1821,16 @@ def _daily_sync_needed(store, now=None):
 
 
 def _daily_sync(reader, store, now=None):
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=TZ)
+    now = now.astimezone(TZ)
+    # A CLOSED scanner may remain alive across weekends/holidays.  The
+    # historical backfill has a separate explicit business-day admission.
+    # Do not re-fetch the previous session's catalog/history just because a
+    # non-trading calendar date changed.
+    if not _business_day(now.date()):
+        return
     catalog_due = _source_sync_due(store, "PPI_PRODUCTION_CATALOG", now)
     history_due = _history_daily_sync_due(store, now)
     if not catalog_due and not history_due:
@@ -1985,6 +2053,28 @@ def _write_scanner_metrics(store, stage, values):
     return True
 
 
+CAUCION_LEDGER_RECHECK_SECONDS = 3600
+
+
+def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
+    """Keep an invalid PAPER caucion ledger out of the admission loop.
+
+    A broken historical fee authority must not be silently migrated, used for
+    cash/equity, or retried on every 5-second scanner tick. The durable DB
+    remains authoritative; an hourly read-validation can detect a separately
+    reviewed reconciliation without any automatic ledger modification.
+    """
+    if broker is None or (blocked and tick < next_retry):
+        return blocked, next_retry
+    try:
+        broker.settle_cauciones()
+    except ValueError as exc:
+        if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+            raise
+        return True, tick + CAUCION_LEDGER_RECHECK_SECONDS
+    return False, 0.0
+
+
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -2025,6 +2115,8 @@ def run():
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
     last_caucion_live_refresh = 0.0
+    caucion_ledger_blocked = False
+    next_caucion_ledger_recheck = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
     startup_watchdog_armed = True
@@ -2033,13 +2125,15 @@ def run():
             if startup_watchdog_armed:
                 faulthandler.cancel_dump_traceback_later()
                 startup_watchdog_armed = False
-            # Una caución vence por contrato, aunque el mercado esté cerrado
-            # o falle el login. No depende de cotizaciones ni de IA.
-            if broker is not None:
-                broker.settle_cauciones()
+            # A contract can mature when CLOSED; invalid historical PAPER fee
+            # evidence blocks every new admission and is rechecked hourly.
+            caucion_ledger_blocked, next_caucion_ledger_recheck = (
+                _settle_cauciones_fail_closed(
+                    broker, caucion_ledger_blocked, next_caucion_ledger_recheck,
+                    time.monotonic()))
             # Breadcrumbs de arranque: permiten distinguir qué paso local
             # antecede al login sin tocar órdenes ni datos de mercado.
-            if reader is None:
+            if reader is None and not caucion_ledger_blocked:
                 store.state(session_state="BOOT_COMMAND", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="Arranque: revisando comandos locales.")
@@ -2048,7 +2142,7 @@ def run():
             command = _claim_command(store)
             if command:
                 reader = _run_command(store, reader, command, None, login_interlock)
-            if reader is None:
+            if reader is None and not caucion_ledger_blocked:
                 store.state(session_state="BOOT_CALENDAR", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="Arranque: verificando calendario operativo.")
@@ -2057,6 +2151,14 @@ def run():
             if phase != last_phase:
                 _announce_phase(store, previous_phase, phase)
                 last_phase = phase
+            if caucion_ledger_blocked:
+                store.state(process_state="DEGRADED",
+                            session_state="MARKET_CLOSED" if phase == "CLOSED" else phase,
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
+                                   "cost evidence requires reconciliation.")
+                time.sleep(max(30, COMMAND_POLL_SECONDS))
+                continue
             # Autenticación, catálogo e históricos son útiles también durante
             # noches, fines de semana y feriados. Sólo current/book y la
             # estrategia quedan condicionados a rueda abierta.

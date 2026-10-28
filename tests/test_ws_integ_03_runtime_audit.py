@@ -27,7 +27,8 @@ def _snapshot():
     return {
         "database": {
             "observer": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
-                         "heartbeat_at": now, "ppi_auth": "OK"},
+                         "heartbeat_at": now, "ppi_auth": "OK",
+                         "process_state": "WAITING_MARKET", "session_state": "MARKET_CLOSED"},
             "readiness": {"source": "candidate_identity_v2", "ready": ready,
                           "by_family": by_family, "rows": []},
             "invalid_candidate_states": 0,
@@ -54,6 +55,53 @@ def test_runtime_audit_accepts_only_complete_paper_truth(monkeypatch):
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
     audit._assert_snapshot(_snapshot())
+
+
+@pytest.mark.parametrize("process,session", (
+    ("RUNNING", "MARKET_OPEN"),
+    ("WAITING_MARKET", "MARKET_CLOSED"),
+    ("READY_PREOPEN", "PREOPEN"),
+))
+def test_observer_exact_phase_is_healthy_in_each_runtime_cycle(monkeypatch, process, session):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    snapshot = _snapshot()
+    snapshot["database"]["observer"].update(process_state=process, session_state=session)
+    audit._assert_snapshot(snapshot)
+
+
+@pytest.mark.parametrize("process,session,auth,error", (
+    ("DEGRADED", "BOOT_CALENDAR", "OK", "OBSERVER_PHASE_UNHEALTHY"),
+    ("DEGRADED", "MARKET_OPEN", "OK", "OBSERVER_PHASE_UNHEALTHY"),
+    ("WAITING_MARKET", "MARKET_OPEN", "OK", "OBSERVER_PHASE_UNHEALTHY"),
+    ("RUNNING", "MARKET_CLOSED", "OK", "OBSERVER_PHASE_UNHEALTHY"),
+    ("WAITING_MARKET", "MARKET_CLOSED", "COOLDOWN", "OBSERVER_PPI_AUTH_UNHEALTHY"),
+    ("RUNNING", "MARKET_OPEN", "ERROR", "OBSERVER_PPI_AUTH_UNHEALTHY"),
+    ("WAITING_MARKET", "MARKET_CLOSED", None, "OBSERVER_PPI_AUTH_UNHEALTHY"),
+))
+def test_fresh_observer_heartbeat_cannot_hide_unhealthy_cycle(
+        monkeypatch, process, session, auth, error):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    snapshot = _snapshot()
+    snapshot["database"]["observer"].update(
+        process_state=process, session_state=session, ppi_auth=auth)
+    with pytest.raises(RuntimeError, match=error):
+        audit._assert_snapshot(snapshot)
+
+
+def test_stability_cycle_does_not_retry_degraded_observer(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    bad = _snapshot()
+    bad["database"]["observer"].update(
+        process_state="DEGRADED", session_state="BOOT_CALENDAR")
+    observations = []
+    monkeypatch.setattr(audit, "collect", lambda _label: observations.append(1) or bad)
+    monkeypatch.setattr(audit.time, "sleep", lambda _: pytest.fail("unsafe retry"))
+    with pytest.raises(RuntimeError, match="OBSERVER_PHASE_UNHEALTHY"):
+        audit.consistent_snapshot("stability-2")
+    assert observations == [1]
 
 
 def test_readiness_race_retries_exact_equality_and_persistent_mismatch_fails(
@@ -270,6 +318,68 @@ def test_iol_snapshot_rejects_fake_cache_fresh_without_lkg(tmp_path, monkeypatch
     monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
     with pytest.raises(RuntimeError, match="IOL_LKG_TIMESTAMP_MISSING"):
         audit._iol_snapshot()
+
+
+@pytest.mark.parametrize("age,accepted", ((-1, False), (0, True), (240, True), (241, False)))
+def test_iol_live_fresh_requires_guardian_240_second_lkg_contract(
+        tmp_path, monkeypatch, age, accepted):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "source": "IOL_MCP", "cache_state": "LIVE_FRESH",
+        "last_known_good_at": "2026-10-28T15:00:00+00:00",
+        "refreshed_at": "2026-10-28T15:00:00+00:00",
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+        "section_states": {"caucion:ARS": "LIVE_FRESH"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    monkeypatch.setattr(audit, "_age_seconds", lambda _stamp: age)
+    if accepted:
+        assert audit._iol_snapshot()["cache_state"] == "LIVE_FRESH"
+    else:
+        with pytest.raises(RuntimeError, match="IOL_LIVE_FRESH_STALE"):
+            audit._iol_snapshot()
+
+
+@pytest.mark.parametrize("stamp", ("unparseable", "2026-10-28T15:00:00"))
+def test_iol_live_fresh_rejects_unparseable_or_naive_lkg(tmp_path, monkeypatch, stamp):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "cache_state": "LIVE_FRESH", "last_known_good_at": stamp,
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+        "section_states": {"caucion:ARS": "LIVE_FRESH"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    with pytest.raises(RuntimeError, match="IOL_LIVE_FRESH_TIMESTAMP_INVALID"):
+        audit._iol_snapshot()
+
+
+def test_iol_live_fresh_rejects_rewritten_cache_with_old_sample(tmp_path, monkeypatch):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "cache_state": "LIVE_FRESH",
+        "last_known_good_at": "2026-09-30T11:00:00+00:00",
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+        "section_states": {"caucion:ARS": "LIVE_FRESH"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    with pytest.raises(RuntimeError, match="IOL_LIVE_FRESH_STALE\\|field=last_known_good_at"):
+        audit._iol_snapshot()
+
+
+def test_iol_historical_cache_stays_explicitly_historical(tmp_path, monkeypatch):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "cache_state": "CACHE_STALE", "last_known_good_at": "2026-09-30T15:00:00+00:00",
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+        "section_states": {"caucion:ARS": "CACHE_STALE"},
+    }), encoding="utf-8")
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    assert audit._iol_snapshot()["cache_state"] == "CACHE_STALE"
 
 
 def test_http_reports_path_status_and_bounded_body(monkeypatch, capsys):

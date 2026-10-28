@@ -98,6 +98,37 @@ def test_report_full_is_red_and_bounded_without_faking_summary(postclose, monkey
     assert status(store, "REPORTS")[0] == "VERDE"
 
 
+def test_2026_november_extended_close_rebuilds_preclose_report_once(postclose, monkeypatch):
+    store = postclose
+
+    class NovemberClose(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            at = datetime(2026, 11, 2, 18, 30, tzinfo=services.TZ)
+            return at if tz is None else at.astimezone(tz)
+
+    monkeypatch.setattr(services, "datetime", NovemberClose)
+    services._job(store, "REPORTS", "VERDE", "prior report", success=True)
+    with store.connect() as conn:
+        conn.execute("UPDATE operational_jobs SET last_run_at=? WHERE job_key='REPORTS'",
+                     (datetime(2026, 11, 2, 17, 30, tzinfo=services.TZ).isoformat(),))
+    calls = {"reports": 0, "summary": 0}
+
+    def report(_store, include_today=False):
+        calls["reports"] += 1
+        services._job(store, "REPORTS", "VERDE", "postclose report", success=True)
+
+    def summary(_store):
+        calls["summary"] += 1
+        return "EN_COLA"
+
+    monkeypatch.setattr(services, "ensure_reports", report)
+    monkeypatch.setattr(services, "send_closing_summary", summary)
+    services.service_tick(store, "CLOSED")
+    services.service_tick(store, "CLOSED")
+    assert calls == {"reports": 1, "summary": 1}
+
+
 def test_summary_full_has_separate_retry_without_delivery_claim(postclose, monkeypatch):
     store = postclose
     services._job(store, "REPORTS", "VERDE", "prior report", success=True)

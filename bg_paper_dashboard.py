@@ -29,7 +29,7 @@ import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from ak_byma_calendar import es_dia_habil_operativo
-from bt_caucion_paper import validate_position, pending_proceeds
+from bt_caucion_paper import paper_caucion_economic_projection, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
 from dd_history_metrics_hf6 import (observer_history_metrics, v2_store_metrics, effective_store_metrics,
@@ -273,9 +273,8 @@ def _caucion_snapshot():
             c.execute('BEGIN')
             if not c.execute("SELECT 1 FROM sqlite_master WHERE name='paper_cauciones' AND type='table'").fetchone():
                 return {'state':'MISSING_TABLE','positions':[]}
-            rows = [dict(r) for r in c.execute('SELECT * FROM paper_cauciones ORDER BY julianday(opened_at) DESC')]
-            for p in rows:
-                validate_position(p)
+            rows = paper_caucion_economic_projection(
+                c, c.execute('SELECT * FROM paper_cauciones ORDER BY julianday(opened_at) DESC').fetchall())
             return {'state':'READY','positions':rows}
     except ValueError:
         return {'state':'INVALID_LEDGER','positions':[]}
@@ -688,15 +687,25 @@ def _caucion_allocations_panel():
                 f"<td>{_e(candidate.get('net_profit'))}</td><td>{_e(candidate.get('net_return_per_day'))}</td>"
                 f"<td>{_e(reason)}</td></tr>")
         placement = record['placement']
+        restated = placement is not None and placement.get('fee_evidence_scope') == 'PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED'
         placement_text = ('Sin colocación para esta solicitud' if placement is None else
             f"Registro {_e(placement['paper_id'])} · Estado guardado: {_e(placement['status'])} · "
             f"Acreditación simulada: {_local_time(placement['settled_at'])}")
         selected_text = ('Sin inversión' if selected is None else
             f"Capital colocado: {_e(selected['principal'])} · Débito inicial: {_e(selected['cash_debit'])} · "
-            f"Neto estimado al vencimiento: {_e(selected['net_profit'])}")
+            + (f"Costo original modelado: {_e(placement['original_total_fees'])} · "
+             f"Costo público PAPER revisado: {_e(placement['effective_total_fees'])} · "
+             f"Neto PAPER revisado: {_e(placement['effective_net_profit'])} · "
+             "Costo de la cuenta PPI: NO VERIFICADO; no habilita operar."
+             if restated else f"Neto estimado al vencimiento: {_e(selected['net_profit'])}"))
+        historical_note = ("<p class='paper-warning'>Decisión histórica preservada. Los presupuestos y "
+                           "resultados de la tabla corresponden al modelo original del día de la decisión; "
+                           "el resultado PAPER revisado figura arriba. Costos de la cuenta: NO VERIFICADOS.</p>"
+                           if restated else "")
         cards.append(f"<details class='paper-trade'><summary>{label} · {_e(decision['currency'])} · "
             f"{'Colocación simulada registrada' if selected else 'Abstención'}</summary><div class='trade-body'>"
             f"<p>{_e(_allocation_reason(decision['code']))}. {selected_text}</p><p>{placement_text}</p>"
+            + historical_note +
             f"<p>Criterio: {_e(metric)}. Desempate: menor plazo, menor débito, identificador de oferta.</p>"
             f"<p>Caja liquidada evaluada: {_e(decision['cash'])} {_e(decision['currency'])} · "
             f"Reserva: {_e(policy['reserve_cash'])} · Fracción por solicitud (0–1): {_e(policy['maximum_cash_fraction'])} · "
@@ -730,15 +739,17 @@ def _cauciones_panel():
         f"<td>{_e(p['principal'])}</td><td>{_e(p['annual_rate_fraction'])}</td>"
         f"<td>{p['interest_days']}</td><td>{_local_time(p['maturity_at'])}</td>"
         f"<td>{_e(p['gross_interest'])}</td><td>{_e(p['total_fees'])}</td>"
+        f"<td>{_e(p.get('fee_evidence_scope') or 'NO_VERIFICADO')}</td>"
         f"<td>{_status(p['status'])}</td></tr>" for p in positions
-    ) or "<tr><td colspan='9'>Sin colocaciones simuladas. El alta requiere términos y cotización validados.</td></tr>"
+    ) or "<tr><td colspan='10'>Sin colocaciones simuladas. El alta requiere términos y cotización validados.</td></tr>"
     return ("<div class='paper-card'><h2>Cauciones colocadoras</h2>"
             "<p>Capital inmovilizado hasta el vencimiento. ARS, USD, MEP y CCL mantienen cajas separadas. "
             "Sin stop ni venta intradiaria. La tasa se muestra como fracción anual: 0,30 equivale a 30%.</p>"
-            "<p class='paper-muted'>Vencimientos y acreditaciones son simulados; no confirman movimientos en PPI.</p>"
+            "<p class='paper-muted'>Vencimientos y acreditaciones son simulados; no confirman movimientos en PPI. "
+            "PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED no certifica comisiones reales de PPI.</p>"
             "<table class='paper-table'><tr><th>Contrato</th><th>Moneda</th><th>Capital</th>"
             "<th>TNA (fracción)</th><th>Días corridos</th><th>Vencimiento</th>"
-            "<th>Interés bruto</th><th>Costos totales</th><th>Estado</th></tr>" + rows + "</table></div>")
+            "<th>Interés bruto</th><th>Costos totales</th><th>Autoridad del costo</th><th>Estado</th></tr>" + rows + "</table></div>")
 
 
 def _trade_metrics(closed):
