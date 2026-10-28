@@ -168,7 +168,22 @@ jobs:
           echo "RC6_MUTEX_B64=$(base64 -w0 scripts/rc6_deploy_host_mutex.py)" >> "$GITHUB_ENV"
           echo "RC6_STAGE_B64=$(base64 -w0 scripts/rc6_deploy_stage_transfer.py)" >> "$GITHUB_ENV"
 
+      - name: Pin exact DigitalOcean Droplet before host mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # DigitalOcean link-local metadata is read on the SSH target. This
+          # is the first host contact; the subsequent barrier reconciliation
+          # and every other host writer are forbidden if identity differs.
+          timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 - --expected-id 594077619 --expected-region nyc1' \
+            < scripts/rc6_droplet_identity_guard.py
+
       - name: Reconcile only exact A138 cleanly exited host barrier
+        id: host_reconcile
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -184,6 +199,7 @@ jobs:
             "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase reconcile --exact-a138-idle"
 
       - name: Classify current flat PAPER session before host writes
+        id: classify
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -2018,7 +2034,7 @@ jobs:
           PY
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |

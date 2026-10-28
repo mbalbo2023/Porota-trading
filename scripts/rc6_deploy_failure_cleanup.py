@@ -22,6 +22,10 @@ STABLE_IMAGE = 'porota-trading-bot:17.0.0-rc6'
 SHA = re.compile(r'[0-9a-f]{40}')
 IMAGE_ID = re.compile(r'sha256:[0-9a-f]{64}')
 
+def owned_tags(sha):
+    return ('porota-predeploy-v2:' + sha,
+            'porota-trading-bot:17.0.0-rc6-candidate-' + sha)
+
 
 class CleanupRejected(RuntimeError):
     pass
@@ -63,6 +67,45 @@ def image_id(tag):
     if IMAGE_ID.fullmatch(value) is None:
         raise CleanupRejected('IMAGE_ID_INVALID')
     return value
+
+
+def image_present(identity):
+    ids = docker('image', 'ls', '-aq', '--no-trunc').splitlines()
+    if len(ids) > 128 or any(IMAGE_ID.fullmatch(value) is None for value in ids):
+        raise CleanupRejected('IMAGE_INVENTORY_INVALID')
+    return identity in ids
+
+
+def image_aliases(image, candidate_sha, *, allow_untagged=False):
+    """Prove the entire image has only this candidate's aliases.
+
+    A Docker tag may point to an image owned by another repository. Removing
+    that tag would free no space and obscures the other owner's identity.
+    """
+    raw = docker('image', 'inspect', '--format',
+                 '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}', image)
+    fields = raw.split('|')
+    if len(fields) != 3:
+        raise CleanupRejected('IMAGE_ALIASES_INVALID')
+    try:
+        identity, tags, digests = (json.loads(field) for field in fields)
+    except (ValueError, TypeError) as exc:
+        raise CleanupRejected('IMAGE_ALIASES_INVALID') from exc
+    if (identity != image or not isinstance(tags, (list, type(None))) or
+            not isinstance(digests, (list, type(None)))):
+        raise CleanupRejected('IMAGE_ALIASES_INVALID')
+    tags, digests = tags or [], digests or []
+    if any(not isinstance(value, str) for value in tags + digests):
+        raise CleanupRejected('IMAGE_ALIASES_INVALID')
+    if ((not tags and not allow_untagged) or
+            any(tag not in owned_tags(candidate_sha) for tag in tags)):
+        return False
+    # A paired RepoDigest can outlive removal of its tag; both repository
+    # names were independently frozen by this exact attempt's tag grammar.
+    repositories = {tag.split(':', 1)[0] for tag in owned_tags(candidate_sha)}
+    return all(re.fullmatch(
+        r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}', digest
+    ) and digest.split('@', 1)[0] in repositories for digest in digests)
 
 
 def container_inventory():
@@ -115,12 +158,14 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
     # Never follow a substituted staging root, even if no Docker mount uses it.
     if staging.is_symlink() or staging.resolve().parent != REMOTE_ROOT.resolve():
         raise CleanupRejected('STAGING_PATH_INVALID')
-    disk_before = shutil.disk_usage(REMOTE_ROOT).free
+    disk_before = shutil.disk_usage('/').free
     removed, retained, errors = [], [], []
+    removed_images = []
+    candidate_images = set()
+    retained_reasons = {}
     # Inspection failure is blocking: an unknown Docker owner is not "unused".
     container_inventory()
-    for tag in ('porota-predeploy-v2:' + candidate_sha,
-                'porota-trading-bot:17.0.0-rc6-candidate-' + candidate_sha):
+    for tag in owned_tags(candidate_sha):
         try:
             current_id = image_id(tag)
             if current_id is None:
@@ -128,13 +173,39 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
             referenced, _ = container_inventory()
             if current_id in referenced or current_id == image_id(STABLE_IMAGE):
                 retained.append(tag)
+                retained_reasons[tag] = ('CONTAINER_REFERENCED' if current_id in referenced
+                                         else 'STABLE_IMAGE_ALIAS')
                 continue
+            if not image_aliases(current_id, candidate_sha):
+                retained.append(tag)
+                retained_reasons[tag] = 'NONCANDIDATE_ALIAS_OR_DIGEST'
+                continue
+            candidate_images.add(current_id)
             # No force: Docker refuses deletion if a new owner references the
             # image between inspection and removal. Never remove a stable tag.
+            referenced, _ = container_inventory()
+            if current_id in referenced or not image_aliases(current_id, candidate_sha):
+                raise CleanupRejected('IMAGE_OWNERSHIP_CHANGED')
             docker('image', 'rm', tag)
             removed.append(tag)
         except (CleanupRejected, subprocess.TimeoutExpired):
             errors.append('IMAGE_CLEANUP_FAILED')
+    # A digest-only or dangling image may remain after removing both tags.
+    # Reclaim only the ID obtained from this exact attempt's proven aliases.
+    for candidate_image in sorted(candidate_images):
+        try:
+            if not image_present(candidate_image):
+                continue
+            referenced, _ = container_inventory()
+            if (candidate_image in referenced or
+                    candidate_image == image_id(STABLE_IMAGE) or
+                    not image_aliases(candidate_image, candidate_sha,
+                                      allow_untagged=True)):
+                raise CleanupRejected('IMAGE_OWNERSHIP_CHANGED')
+            docker('image', 'rm', candidate_image)
+            removed_images.append(candidate_image)
+        except (CleanupRejected, subprocess.TimeoutExpired):
+            errors.append('IMAGE_ID_CLEANUP_FAILED')
     try:
         _, mounts = container_inventory()
         if any(overlaps(staging.resolve(), mount) for mount in mounts):
@@ -145,12 +216,14 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
             shutil.rmtree(staging)
     except (CleanupRejected, subprocess.TimeoutExpired, OSError):
         errors.append('STAGING_CLEANUP_FAILED')
-    disk_after = shutil.disk_usage(REMOTE_ROOT).free
+    disk_after = shutil.disk_usage('/').free
     return {
         'schema': 'POROTA_DEPLOY_FAILURE_CLEANUP_V1',
         'candidate_sha': candidate_sha,
         'status': 'RED' if errors else 'GREEN',
         'removed_tags': removed, 'retained_tags': retained,
+        'removed_image_ids': removed_images,
+        'retained_reasons': retained_reasons,
         'staging_removed': not staging.exists(),
         'disk_before': disk_before, 'disk_after': disk_after,
         'space_recovered': disk_after - disk_before,
@@ -165,6 +238,7 @@ def main(argv=None):
     parser.add_argument('--run-id')
     parser.add_argument('--attempt')
     args = parser.parse_args(argv)
+    host_disk_before = shutil.disk_usage('/').free
     try:
         with promotion_lock():
             report = cleanup(args.candidate_sha, args.run_id, args.attempt)
@@ -172,6 +246,9 @@ def main(argv=None):
         report = {'schema': 'POROTA_DEPLOY_FAILURE_CLEANUP_V1', 'status': 'RED',
                   'candidate_sha': args.candidate_sha,
                   'errors': [str(exc) if isinstance(exc, CleanupRejected) else type(exc).__name__]}
+    report['host_disk_before'] = host_disk_before
+    report['host_disk_after'] = shutil.disk_usage('/').free
+    report['host_space_recovered'] = report['host_disk_after'] - host_disk_before
     print(json.dumps(report, sort_keys=True))
     return 0 if report['status'] == 'GREEN' else 2
 
