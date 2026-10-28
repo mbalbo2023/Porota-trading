@@ -1,0 +1,99 @@
+name: RC6 IOL OAuth controlled refresh probe
+
+on:
+  push:
+    branches: [diagnostic/rc6-iol-source-health-ro-20261028]
+    paths:
+      - .github/workflows/rc6-iol-oauth-refresh-controlled-20261028.yml
+      - scripts/rc6_iol_oauth_refresh_probe_20261028.py
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  oauth-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify probe source and prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_iol_oauth_refresh_probe_20261028.py
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_iol_refresh"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_iol_refresh" "$HOME/.ssh/known_hosts"
+      - name: One bounded OAuth refresh and MCP tools/list on exact Droplet
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 75s \
+            ssh -T -i "$HOME/.ssh/rc6_iol_refresh" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -B -' \
+              < scripts/rc6_iol_oauth_refresh_probe_20261028.py \
+              | tee "$RUNNER_TEMP/rc6-iol-refresh.jsonl"
+          python3 - "$RUNNER_TEMP/rc6-iol-refresh.jsonl" <<'PY'
+          import json,sys
+          from pathlib import Path
+          lines=Path(sys.argv[1]).read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_IOL_OAUTH_PROBE=')
+          report=json.loads(lines[0].split('=',1)[1])
+          assert report['schema']=='RC6_IOL_OAUTH_REFRESH_PROBE_V1'
+          assert report['droplet_identity']=={'id':'594077619','region':'nyc1'}
+          assert report['paper_safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+          assert report['real_routes']=='NOT_CALLED' and not report['timers_changed']
+          assert report['status'] in ('AUTHENTICATED','REAUTH_OR_TRANSPORT_REVIEW_REQUIRED')
+          print('RC6_IOL_OAUTH_RESULT='+report['status'])
+          PY
+      - name: Publish sanitized refresh receipt on RC6 tracking issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - "$RUNNER_TEMP/rc6-iol-refresh.jsonl" <<'PY'
+          import json,os,sys,urllib.request
+          from pathlib import Path
+          path=Path(sys.argv[1]); evidence='NO_HOST_RECEIPT'
+          if path.is_file():
+              lines=path.read_text().splitlines()
+              if len(lines)==1 and lines[0].startswith('RC6_IOL_OAUTH_PROBE=') and len(lines[0])<=8000:
+                  payload=json.loads(lines[0].split('=',1)[1])
+                  if payload.get('schema')=='RC6_IOL_OAUTH_REFRESH_PROBE_V1':
+                      evidence=json.dumps(payload,sort_keys=True,separators=(',',':'))
+          body=('RC6 IOL controlled OAuth refresh diagnostic (Action evidence)\n\n'
+                f'- Run: {os.environ["GITHUB_SERVER_URL"]}/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GITHUB_RUN_ID"]}\n'
+                f'- Diagnostic SHA: `{os.environ["GITHUB_SHA"]}`\n'
+                '- Scope: host OAuth store refresh only through market-only MCP tools/list; no collector, timers, accounts or orders.\n'
+                '- Host receipt (sanitized):\n\n```json\n'+evidence+'\n```')
+          request=urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/issues/732/comments',
+              data=json.dumps({'body':body}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                       'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=15) as response:
+              assert response.status==201
+          print('RC6_IOL_OAUTH_PROBE_PUBLISHED=YES')
+          PY
+      - name: Clean runner secrets and receipt
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_iol_refresh" "$HOME/.ssh/known_hosts" "$RUNNER_TEMP/rc6-iol-refresh.jsonl"
