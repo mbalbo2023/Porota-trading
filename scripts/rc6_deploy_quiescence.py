@@ -43,6 +43,17 @@ A170_FAILED_CANDIDATE = '33ea6d365c47d415fc5480a23b1338c208c2a29f'
 A170_FAILED_RECEIPT_SHA256 = '2052b78c67f4385e662caeb1448d357f804d0605e6f2c710447b4130fa1df0e8'
 A170_INSTALLED_QUIESCENCE_SHA256 = '5346f3b56681056bf91e2324e7e6a2c440d067749272090820057390bc8f3412'
 A170_LOADED_IMAGE_ID = 'sha256:c3af151c90dcf124d38843e4fb99219b01bfc9863cc1d7a96bdedfd419e6d98f'
+A171_FAILED_CANDIDATE = '4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6'
+A171_FAILED_RECEIPT_SHA256 = '7a5e73359e85ef99796607228876443680f56bfe26ce201f4664474f700eabb5'
+A171_CANDIDATE_TREE_SHA = '18693659202fc1a5cc0fa98113f0a1f9ad8a416d'
+A171_DEPLOY_SHA = 'd9e2a4d7e55b27e9799ae6db44dfda9a013912c6'
+A171_INSTALLED_QUIESCENCE_SHA256 = '3b7317deaffbd08d556c35584953e416d8aa02a5dccd21c059347bd121e5b373'
+A171_LOADED_IMAGE_ID = 'sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa'
+A171_RUNNING_IDS = {
+    'porota_production_observer': '9b7d41f04b2e7847318c6f8ded0440b9d6a030a5bbb99c3ac5f31c2815beaa95',
+    'porota_production_dashboard': '3d51f57985d8375f6c06c9a57d8a7f6c6dd4b99ee03bdeb0efac440f92e43aa3',
+}
+A171_PENDING_MODE = 'CLOSED_A171_PENDING_FIX_FORWARD'
 A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
@@ -800,6 +811,191 @@ def a169_prior_a143_stopped_proof(candidate, originals=None, *,
     return prior, digest, book
 
 
+def a171_failed_running_proof(candidate, originals=None, *,
+                              operator_a151_proof=None,
+                              operator_timer_disabled=None,
+                              require_installed_a171_source=False):
+    """Prove the exact failed A171 image is still running CLOSED/PAPER/NO_GO.
+
+    The COLD2 archive and six fee restatements succeeded in A171; its preopen
+    guardian result did not. This proof never declares that partial run GREEN.
+    It binds the cleanup receipt, new Docker IDs, frozen artifact, pending
+    marker, disabled operator timer and current flat book before another stop.
+    """
+    if (not re.fullmatch('[0-9a-f]{40}', candidate) or
+            candidate in {A143_PENDING_SOURCE_SHA, A169_PRIOR_CANDIDATE,
+                          A170_FAILED_CANDIDATE, A171_FAILED_CANDIDATE}):
+        raise ValueError('QUIESCENCE_A171_NEW_CANDIDATE_REQUIRED')
+    local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+    if local.date().isoformat() != '2026-10-28':
+        raise ValueError('QUIESCENCE_A171_DATED_HOLD_EXPIRED')
+    prior, digest = _a143_exact_json(
+        ROOT/'data/deploy'/('quiescence-'+A171_FAILED_CANDIDATE+'.json'),65536)
+    intent, runtime = prior.get('candidate_image_intent'), prior.get('candidate_runtime_after_failure')
+    held = (prior.get('a143_previous_proof') or {}).get('operator_hold')
+    if (digest != A171_FAILED_RECEIPT_SHA256 or
+            prior.get('candidate_sha') != A171_FAILED_CANDIDATE or
+            prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            prior.get('installation_started') is not True or
+            prior.get('a143_pending_adopted') is not True or
+            prior.get('a169_origin_candidate') != A169_PRIOR_CANDIDATE or
+            prior.get('a169_origin_sha256') != A169_PRIOR_RECEIPT_SHA256 or
+            prior.get('a170_origin_candidate') != A170_FAILED_CANDIDATE or
+            prior.get('a170_origin_sha256') != A170_FAILED_RECEIPT_SHA256 or
+            prior.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+            prior.get('prior_a143_stopped_after_install') is not None or
+            prior.get('runtime_health') != 'NEW_A143_CANDIDATE_NOT_GO' or
+            prior.get('market_open_suspended') is not False or
+            any(prior.get(k) is not False for k in
+                ('open_paper_carryover','paused_postclose','intraday_caucion','pending_caucion')) or
+            prior.get('spot_carryover') is not None or
+            prior.get('caucion_carryover') is not None or
+            type(prior.get('real_orders_sent')) is not int or
+            prior['real_orders_sent'] != 0 or
+            prior.get('ppi_watch_accessed') is not False or
+            type(intent) is not dict or type(runtime) is not dict or
+            type(held) is not dict or held.get('admission') != A151_HELD_OPEN_MODE or
+            held.get('business_day_art') != '2026-10-28' or
+            held.get('paper_execution_authorized') is not False or
+            runtime.get('status') != 'running' or
+            set(runtime.get('containers',{})) != set(OWNED) or
+            type(runtime.get('flat_book')) is not dict or
+            runtime['flat_book'].get('source_sha') != A171_FAILED_CANDIDATE or
+            runtime['flat_book'].get('real_orders_sent') != 0 or
+            type(runtime.get('critical_admission')) is not dict or
+            runtime['critical_admission'].get('capability') != 'issues_only'):
+        raise ValueError('QUIESCENCE_A171_EXACT_FAILURE_CHANGED')
+    if operator_a151_proof is None or operator_timer_disabled is None:
+        if operator_a151_proof is not None or operator_timer_disabled is not None:
+            raise ValueError('QUIESCENCE_A171_OPERATOR_CALLBACK_PAIR_REQUIRED')
+        operator = candidate_operator_module(require_staged=True)
+        operator_a151_proof = operator.exact_a151_operator_preopen_pause
+        operator_timer_disabled = operator.operator_preopen_timer_disabled
+    receipt_sha, operation = operator_a151_proof()
+    if (receipt_sha != held.get('operator_receipt_sha256') or
+            operation != held.get('operator_operation_id') or
+            not operator_timer_disabled()):
+        raise ValueError('QUIESCENCE_A171_NO_GO_HOLD_CHANGED')
+    frozen, frozen_sha = _a143_exact_json(
+        ROOT/'data/deploy/porota-frozen-candidate.json',16384)
+    marker = current_runtime_marker()
+    try:
+        encoded = base64.b64decode(intent['frozen_manifest_b64'],validate=True)
+        intent_at = datetime.fromisoformat(intent['recorded_at'])
+        marker_at = datetime.fromisoformat(marker['recorded_at'])
+    except (KeyError,ValueError,TypeError,binascii.Error) as exc:
+        raise ValueError('QUIESCENCE_A171_IMAGE_INTENT_INVALID') from exc
+    if (len(encoded)>16384 or hashlib.sha256(encoded).hexdigest()!=frozen_sha or
+            intent_at.tzinfo is None or marker_at.tzinfo is None or
+            not intent_at<=marker_at<=datetime.now(timezone.utc) or
+            frozen.get('candidate_sha') != A171_FAILED_CANDIDATE or
+            frozen.get('candidate_tree_sha') != A171_CANDIDATE_TREE_SHA or
+            not re.fullmatch('[0-9a-f]{64}',frozen.get('image_tar_sha256','')) or
+            intent.get('manifest_sha256') != frozen_sha or
+            intent.get('candidate_tree_sha') != A171_CANDIDATE_TREE_SHA or
+            intent.get('image_tar_sha256') != frozen['image_tar_sha256'] or
+            intent.get('image_id') != A171_LOADED_IMAGE_ID or
+            marker.get('candidate_sha') != A171_FAILED_CANDIDATE or
+            marker.get('deploy_sha') != A171_DEPLOY_SHA or
+            marker.get('image_id') != A171_LOADED_IMAGE_ID or
+            marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+            marker.get('ppi_watch_untouched') is not True):
+        raise ValueError('QUIESCENCE_A171_INSTALLED_PROVENANCE_CHANGED')
+    observed = originals if originals is not None else {name:inspect(name) for name in OWNED}
+    if set(observed) != set(OWNED):
+        raise ValueError('QUIESCENCE_A171_RUNTIME_SET_CHANGED')
+    for name in OWNED:
+        value, row = observed[name], runtime['containers'][name]
+        if (value['Id'] != A171_RUNNING_IDS[name] or
+                value['Image'] != A171_LOADED_IMAGE_ID or
+                value['State']['Status'] != 'running' or
+                row.get('id') != value['Id'] or row.get('image') != value['Image'] or
+                row.get('lifecycle') != lifecycle(value)):
+            raise ValueError('QUIESCENCE_A171_RUNTIME_IDENTITY_CHANGED')
+    if (rescue_flat_book() != runtime['flat_book'] or
+            runtime['flat_book'].get('process_state') != 'WAITING_MARKET' or
+            runtime['flat_book'].get('session_state') not in {'CLOSED','MARKET_CLOSED'} or
+            admit() != 'WAITING_MARKET' or
+            critical_admission().get('capability') != 'issues_only'):
+        raise ValueError('QUIESCENCE_A171_RUNNING_BOOK_CHANGED')
+    if require_installed_a171_source:
+        installed = ROOT/'scripts/rc6_deploy_quiescence.py'
+        if (installed.is_symlink() or not installed.is_file() or
+                hashlib.sha256(installed.read_bytes()).hexdigest() !=
+                A171_INSTALLED_QUIESCENCE_SHA256):
+            raise ValueError('QUIESCENCE_A171_INSTALLED_SOURCE_CHANGED')
+        for tag in ('porota-trading-bot:17.0.0-rc6',
+                    'porota-trading-bot:17.0.0-rc6-candidate-'+A171_FAILED_CANDIDATE):
+            images=json.loads(command(['docker','image','inspect',tag]))
+            if type(images) is not list or len(images)!=1 or images[0].get('Id')!=A171_LOADED_IMAGE_ID:
+                raise ValueError('QUIESCENCE_A171_DOCKER_TAG_CHANGED')
+    return {'origin_candidate':A171_FAILED_CANDIDATE,'origin_sha256':digest,
+            'image_id':A171_LOADED_IMAGE_ID,
+            'containers':{name:{'id':observed[name]['Id'],'image':observed[name]['Image'],
+                                'lifecycle':lifecycle(observed[name])} for name in OWNED},
+            'flat_book':runtime['flat_book'],
+            'operator_receipt_sha256':receipt_sha,
+            'operator_operation_id':operation}
+
+
+def a171_receipt_origin(receipt):
+    """Bind durable A171 stop intent to the pinned failed runtime receipt."""
+    if (receipt.get('a171_pending_adopted') is not True or
+            receipt.get('a171_origin_candidate') != A171_FAILED_CANDIDATE or
+            receipt.get('a171_origin_sha256') != A171_FAILED_RECEIPT_SHA256 or
+            type(receipt.get('a171_previous_proof')) is not dict or
+            receipt.get('a171_previous_proof',{}).get('origin_sha256') != A171_FAILED_RECEIPT_SHA256 or
+            receipt.get('market_open_suspended') is not False or
+            receipt.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED' or
+            set(receipt.get('containers',{})) != set(OWNED) or
+            set(receipt.get('stop_evidence',{})) != set(OWNED) or
+            set(receipt.get('stop_attempted',[])) != set(OWNED)):
+        raise ValueError('QUIESCENCE_A171_STOPPED_RECEIPT_CHANGED')
+    proof=receipt['a171_previous_proof']
+    original=proof['containers']
+    prior, prior_sha = _a143_exact_json(
+        ROOT/'data/deploy'/('quiescence-'+A171_FAILED_CANDIDATE+'.json'),65536)
+    if (prior_sha != A171_FAILED_RECEIPT_SHA256 or
+            prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            prior.get('candidate_runtime_after_failure',{}).get('status') != 'running' or
+            proof.get('origin_candidate') != A171_FAILED_CANDIDATE or
+            proof.get('image_id') != A171_LOADED_IMAGE_ID or
+            proof.get('flat_book') != prior['candidate_runtime_after_failure'].get('flat_book') or
+            proof.get('operator_receipt_sha256') !=
+                prior.get('a143_previous_proof',{}).get('operator_hold',{}).get('operator_receipt_sha256') or
+            proof.get('operator_operation_id') !=
+                prior.get('a143_previous_proof',{}).get('operator_hold',{}).get('operator_operation_id')):
+        raise ValueError('QUIESCENCE_A171_ORIGIN_RECEIPT_CHANGED')
+    for name in OWNED:
+        previous, stopped = original[name], receipt['containers'][name]
+        if (previous.get('id') != A171_RUNNING_IDS[name] or
+                previous.get('image') != A171_LOADED_IMAGE_ID or
+                stopped != {'id':previous['id'],'image':previous['image']} or
+                previous != prior['candidate_runtime_after_failure']['containers'][name] or
+                receipt['stop_evidence'][name].get('before') != previous.get('lifecycle') or
+                receipt['stop_evidence'][name].get('classification') not in
+                {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'} or
+                receipt['stop_evidence'][name].get('after',{}).get('Status') != 'exited' or
+                receipt['stop_evidence'][name].get('after',{}).get('ExitCode') != 0):
+            raise ValueError('QUIESCENCE_A171_INHERITED_RUNTIME_CHANGED')
+    return prior
+
+
+def a171_stopped_continuation(receipt):
+    """Keep the exact A171 pair stopped after the new candidate has drained."""
+    a171_receipt_origin(receipt)
+    exact_clean_stopped(receipt)
+    book=rescue_flat_book()
+    if (book['source_sha'] != A171_FAILED_CANDIDATE or
+            book['real_orders_sent'] != 0 or
+            (book['process_state'],book['session_state']) not in
+            {('STOPPED','MARKET_CLOSED'),('STOPPED','CLOSED'),
+             ('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')} or
+            critical_admission().get('capability') != 'issues_only'):
+        raise ValueError('QUIESCENCE_A171_STOPPED_BOOK_CHANGED')
+    return book
+
+
 def adopted_rescue_closed_proof():
     """Independent current-day close; the 26 October incident clock is spent."""
     local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
@@ -1146,7 +1342,7 @@ def admit_poststart_flat(pre_mode, candidate=None):
     """Recheck live PAPER book and the exact untouched pending receipt."""
     if pre_mode not in {'OPEN', 'CLOSED', 'CLOSED_CAUCION', RESCUE_MODE,
                         ADOPTED_RESCUE_MODE, A143_PENDING_MODE,
-                        A151_HELD_STOPPED_MODE}:
+                        A151_HELD_STOPPED_MODE, A171_PENDING_MODE}:
         raise ValueError('QUIESCENCE_PRESTART_MODE_UNKNOWN')
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
@@ -1160,7 +1356,8 @@ def admit_poststart_flat(pre_mode, candidate=None):
         actual, expected = 'CLOSED', 'WAITING_MARKET'
     else:
         raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED')
-    if pre_mode in {RESCUE_MODE, ADOPTED_RESCUE_MODE, A143_PENDING_MODE} and actual != 'CLOSED':
+    if pre_mode in {RESCUE_MODE, ADOPTED_RESCUE_MODE, A143_PENDING_MODE,
+                    A171_PENDING_MODE} and actual != 'CLOSED':
         # Only the explicitly owner-paused 27-Oct A92 rescue can validate a
         # genuinely OPEN PAPER observer after installation.  This is never a
         # trading GO: the A125 no-GO gate and disabled timer must survive.
@@ -1243,6 +1440,22 @@ def admit_poststart_flat(pre_mode, candidate=None):
                 running[name]['Id'] == receipt['containers'][name]['id']
                 for name in OWNED)):
             raise ValueError('QUIESCENCE_A169_POSTSTART_CANDIDATE_IMAGE_RED')
+    if pre_mode == A171_PENDING_MODE:
+        receipt,_=_a143_exact_json(
+            ROOT/'data/deploy'/('quiescence-'+str(candidate)+'.json'),65536)
+        intent=receipt.get('candidate_image_intent')
+        if (receipt.get('candidate_sha') != candidate or
+                receipt.get('status') != 'HOST_INSTALLATION_STARTED' or
+                receipt.get('installation_started') is not True or
+                type(intent) is not dict or
+                not re.fullmatch('sha256:[0-9a-f]{64}',intent.get('image_id',''))):
+            raise ValueError('QUIESCENCE_A171_POSTSTART_RECEIPT_CHANGED')
+        a171_receipt_origin(receipt)
+        running={name:inspect(name) for name in OWNED}
+        if any(running[name]['State']['Status'] != 'running' or
+               running[name]['Image'] != intent['image_id'] or
+               running[name]['Id'] == A171_RUNNING_IDS[name] for name in OWNED):
+            raise ValueError('QUIESCENCE_A171_POSTSTART_IMAGE_CHANGED')
     if pre_mode == RESCUE_MODE:
         if not candidate or not re.fullmatch('[0-9a-f]{40}', candidate):
             raise ValueError('QUIESCENCE_RESCUE_CANDIDATE_INVALID')
@@ -1898,8 +2111,18 @@ def run(candidate, action, *, allow_admin_issue624=False,
          allow_adopt_failed_rescue=False, allow_a143_pending_running=False,
          allow_a143_pending_stopped=False,
          allow_a151_held_open=False,
+         allow_a171_running_pending=False,
          candidate_image_id=None,
          frozen_manifest=None):
+    if allow_a171_running_pending and (
+            allow_admin_issue624 or allow_market_open_suspend or
+            allow_open_paper_carryover or allow_postclose_pending or
+            allow_intraday_caucion or allow_pending_caucion or
+            allow_degraded_closed_rescue or allow_adopt_failed_rescue or
+            allow_a143_pending_running or allow_a143_pending_stopped or
+            allow_a151_held_open or action not in {'drain','install'} or
+            candidate == A171_FAILED_CANDIDATE):
+        raise ValueError('QUIESCENCE_A171_PENDING_MODE_INVALID')
     if (allow_a143_pending_running or allow_a143_pending_stopped) and (
             allow_admin_issue624 or allow_market_open_suspend or
             allow_open_paper_carryover or allow_postclose_pending or
@@ -2081,6 +2304,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     raise ValueError('QUIESCENCE_EXISTING_RECEIPT')
                 if receipt.get('pending_caucion', False) != allow_pending_caucion:
                     raise ValueError('QUIESCENCE_EXISTING_PENDING_MODE_CHANGED')
+                if allow_a171_running_pending != (receipt.get('a171_pending_adopted') is True):
+                    raise ValueError('QUIESCENCE_A171_EXISTING_MODE_CHANGED')
+                if allow_a171_running_pending:
+                    a171_stopped_continuation(receipt)
                 exact_clean_stopped(receipt)
                 admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
@@ -2102,6 +2329,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
                                   'ppi_watch_accessed': False}), flush=True)
                 return receipt
             originals = {name: inspect(name) for name in OWNED}
+            a171_proof = None
+            if allow_a171_running_pending:
+                operator=candidate_operator_module(require_staged=True)
+                a171_proof=a171_failed_running_proof(
+                    candidate,originals,
+                    operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                    operator_timer_disabled=operator.operator_preopen_timer_disabled,
+                    require_installed_a171_source=True)
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
             if allow_degraded_closed_rescue and not stopped_owned and any(
                     not re.fullmatch('[0-9a-f]{64}',v['Id']) or
@@ -2185,6 +2420,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     'rescue_calendar_and_hours': rescue_proof,
                     'critical_admission': critical,
                     'postclose_live_closed': allow_postclose_pending}
+                if a171_proof is not None:
+                    receipt.update(a171_pending_adopted=True,
+                                   a171_origin_candidate=A171_FAILED_CANDIDATE,
+                                   a171_origin_sha256=A171_FAILED_RECEIPT_SHA256,
+                                   a171_previous_proof=a171_proof)
                 persist(path, receipt)
                 for name in OWNED:
                     # Durable intent precedes stop: timeout may follow daemon effect.
@@ -2220,6 +2460,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                                caucion_carryover=(verified_pending_caucion_snapshot() if allow_pending_caucion
                                    else pending_caucion_snapshot() if (
                                    allow_postclose_pending or allow_intraday_caucion) else None))
+                if allow_a171_running_pending:
+                    a171_stopped_continuation(receipt)
                 if allow_postclose_pending and receipt['spot_carryover']['open_count'] != 2:
                     raise ValueError('QUIESCENCE_POSTCLOSE_SPOT_COUNT_CHANGED')
         elif action == 'admin-begin':
@@ -2261,6 +2503,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
             receipt.update(status='DRAINED', admin_cancel_status='APPLIED_NO_MARKET_SALE')
         elif action == 'install':
             if not receipt or receipt['status'] != 'DRAINED': raise ValueError('QUIESCENCE_NOT_DRAINED')
+            if allow_a171_running_pending != (receipt.get('a171_pending_adopted') is True):
+                raise ValueError('QUIESCENCE_A171_INSTALL_MODE_CHANGED')
+            if allow_a171_running_pending:
+                a171_stopped_continuation(receipt)
             for name, expected in receipt['containers'].items():
                 value = inspect(name)
                 if value['Id'] != expected['id'] or value['State']['Status'] != 'exited':
@@ -2322,12 +2568,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     receipt.get('status') != 'HOST_INSTALLATION_STARTED' or
                     receipt.get('installation_started') is not True or
                     not (receipt.get('degraded_closed_rescue') is True or
-                         receipt.get('a143_pending_adopted') is True) or
+                         receipt.get('a143_pending_adopted') is True or
+                         receipt.get('a171_pending_adopted') is True) or
                     receipt.get('candidate_image_intent') is not None):
                 raise ValueError('QUIESCENCE_RESCUE_IMAGE_INTENT_STATE_RED')
             if receipt.get('degraded_closed_rescue') is True:
                 exact_rescue_receipt(receipt)
-            else:
+            elif receipt.get('a143_pending_adopted') is True:
                 # A151/A143 is held and flat. Recheck the old stopped pair
                 # before recording the new materialized image identity; this
                 # durable intent precedes mode_manager and any new container.
@@ -2336,6 +2583,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     dict(receipt,status='DRAINED',installation_started=False),
                     operator_a151_proof=operator.exact_a151_operator_preopen_pause,
                     operator_timer_disabled=operator.operator_preopen_timer_disabled)
+            else:
+                a171_stopped_continuation(receipt)
             receipt['candidate_image_intent'] = candidate_image_intent(
                 candidate, candidate_image_id, frozen_manifest)
         elif action == 'capture-runtime':
@@ -2381,6 +2630,28 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
                         receipt['status'] = 'RECOVERY_UNVERIFIED'
                         receipt['rescue_failure_reason'] = type(exc).__name__ + ':' + str(exc)
+                elif receipt.get('a171_pending_adopted') is True:
+                    try:
+                        observed={name:inspect(name) for name in OWNED}
+                        old_stopped=all(
+                            observed[name]['Id']==A171_RUNNING_IDS[name] and
+                            observed[name]['Image']==A171_LOADED_IMAGE_ID and
+                            observed[name]['State']['Status']=='exited'
+                            for name in OWNED)
+                        if old_stopped:
+                            a171_stopped_continuation(receipt)
+                            receipt['prior_a171_stopped_after_install']=True
+                            receipt['runtime_health']='PRIOR_A171_PENDING_NOT_GO'
+                        else:
+                            runtime=candidate_runtime_after_failed_install(receipt)
+                            if (runtime['flat_book']['source_sha'] != candidate or
+                                    runtime['flat_book']['real_orders_sent'] != 0 or
+                                    runtime['critical_admission'].get('capability') != 'issues_only'):
+                                raise ValueError('QUIESCENCE_A171_NEW_RUNTIME_UNVERIFIED')
+                            receipt['candidate_runtime_after_failure']=runtime
+                            receipt['runtime_health']='NEW_A172_CANDIDATE_NOT_GO'
+                    except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
+                        receipt['status']='RECOVERY_UNVERIFIED'
                 elif receipt.get('a143_pending_adopted') is True:
                     # Keep the old pair stopped if failure precedes startup;
                     # after startup require the durable pre-start image intent.
@@ -2409,6 +2680,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
                             receipt['runtime_health'] = 'NEW_A143_CANDIDATE_NOT_GO'
                     except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
                         receipt['status'] = 'RECOVERY_UNVERIFIED'
+            elif receipt.get('a171_pending_adopted') is True:
+                try:
+                    a171_stopped_continuation(receipt)
+                    receipt['status']='PRIOR_A171_UNVALIDATED_HELD_STOPPED'
+                    receipt['runtime_health']='PRIOR_A171_PENDING_NOT_GO'
+                except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
+                    receipt['status']='RECOVERY_UNVERIFIED'
             elif receipt.get('a143_pending_adopted') is True:
                 # A preinstall failure must never restart old #751.
                 try:
@@ -2480,6 +2758,7 @@ def main(argv=None):
     parser.add_argument('--adopt-failed-rescue-candidate', action='store_true')
     parser.add_argument('--adopt-a143-running-pending', action='store_true')
     parser.add_argument('--adopt-a143-stopped-pending', action='store_true')
+    parser.add_argument('--adopt-a171-running-pending', action='store_true')
     parser.add_argument('--a151-held-open', action='store_true')
     parser.add_argument('--candidate-image-id')
     parser.add_argument('--frozen-manifest')
@@ -2529,6 +2808,14 @@ def main(argv=None):
     if args.a151_held_open and not (
             args.adopt_a143_running_pending or args.adopt_a143_stopped_pending):
         parser.error('--a151-held-open requires exact A143 pending recovery drain/install')
+    if args.adopt_a171_running_pending and (
+            args.rescue_degraded_closed_20261026 or args.adopt_failed_rescue_candidate or
+            args.adopt_a143_running_pending or args.adopt_a143_stopped_pending or
+            args.a151_held_open or args.market_open_suspend or
+            args.carry_open_paper_spots or args.paused_postclose or
+            args.intraday_caucion or args.pending_paper_caucion or
+            args.admin_cancel_issue624 or args.action not in {'drain','install'}):
+        parser.error('--adopt-a171-running-pending requires isolated recovery drain/install')
     if ((args.candidate_image_id or args.frozen_manifest) and args.action != 'image-intent') or (
             args.action == 'image-intent' and
             (not args.candidate_image_id or not args.frozen_manifest)):
@@ -2556,6 +2843,8 @@ def main(argv=None):
         options['allow_a143_pending_stopped'] = True
     if args.a151_held_open:
         options['allow_a151_held_open'] = True
+    if args.adopt_a171_running_pending:
+        options['allow_a171_running_pending'] = True
     if args.action == 'image-intent':
         options.update(candidate_image_id=args.candidate_image_id,
                        frozen_manifest=args.frozen_manifest)

@@ -172,7 +172,7 @@ def test_host_calendar_wiring_keeps_a125_a138_and_oauth_scope():
     assert all(row.get("suspend_during_deploy", True) is True for name, row in active.items()
                if name != "porota-iol-oauth-health-rc6.timer")
     oauth = (ROOT / "systemd/porota-iol-oauth-health-rc6.timer").read_text()
-    assert "OnUnitActiveSec=30min" in oauth
+    assert "OnUnitActiveSec=10min" in oauth
     assert "09:30:00" in oauth and "10:20:00" in oauth
     preopen = (ROOT / "systemd/porota-preopen-rc6.timer").read_text()
     assert "10:20:00" in preopen  # A125 remains outside schedule edit

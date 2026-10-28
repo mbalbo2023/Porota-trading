@@ -20,7 +20,8 @@ import urllib.request
 ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
 PROBE_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_ORIGIN_PROBE_V1"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
-INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED"})
+INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED",
+                            "CLOSED_A171_PENDING_FIX_FORWARD"})
 QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
     "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
     "CLOSED_A143_PENDING_FIX_FORWARD",
@@ -30,6 +31,9 @@ A143_TREE_SHA = "e66e3756769e297687a062bec2fa6e8599c0a275"
 A143_IMAGE_ID = "sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7"
 A169_STOPPED_CANDIDATE = "b778c8063e96574ddf859907abb99fae6f4e3484"
 A169_STOPPED_RECEIPT_SHA256 = "ac2d6ec4bb3fe2a2ce809d89034cb564c1a3ce790de21838b654abc787471f81"
+A171_FAILED_CANDIDATE = "4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6"
+A171_FAILED_RECEIPT_SHA256 = "7a5e73359e85ef99796607228876443680f56bfe26ce201f4664474f700eabb5"
+A171_LOADED_IMAGE_ID = "sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa"
 OWNED = {"porota_production_observer", "porota_production_dashboard"}
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -63,6 +67,18 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
     elif receipt.get("market_open_suspended") is not False:
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     prior = receipt.get("a143_previous_proof")
+    if quiescence_mode == "CLOSED_A171_PENDING_FIX_FORWARD":
+        a171 = receipt.get("a171_previous_proof")
+        if (receipt.get("a171_pending_adopted") is not True or
+                receipt.get("a171_origin_candidate") != A171_FAILED_CANDIDATE or
+                receipt.get("a171_origin_sha256") != A171_FAILED_RECEIPT_SHA256 or
+                type(a171) is not dict or
+                a171.get("origin_sha256") != A171_FAILED_RECEIPT_SHA256 or
+                a171.get("image_id") != A171_LOADED_IMAGE_ID or
+                a171.get("flat_book", {}).get("real_orders_sent") != 0 or
+                type(a171.get("operator_receipt_sha256")) is not str or
+                re.fullmatch(r"[0-9a-f]{64}",a171["operator_receipt_sha256"]) is None):
+            raise ValueError("PAPER_RESTATEMENT_A171_ORIGIN_RED")
     if quiescence_mode == "A151_HELD_STOPPED" and (
             receipt.get("a169_origin_candidate") != A169_STOPPED_CANDIDATE or
             receipt.get("a169_origin_sha256") != A169_STOPPED_RECEIPT_SHA256):

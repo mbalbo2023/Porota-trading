@@ -34,7 +34,10 @@ def test_reproducible_bundle_mtime_zero_requires_gzip_no_name(tmp_path):
 
 def test_all_candidate_gzip_sources_ignore_reproducible_mtime():
     workflow = WORKFLOW.read_text()
-    assert workflow.count('gzip -9 -n -c < ') == 7
+    # The exact A172 route adds more sources; every gzip invocation must
+    # continue to ignore reproducible mtime=0 and read through stdin.
+    assert workflow.count('gzip -9 -n -c < ') >= 7
+    assert workflow.count('gzip -9 -n -c < ') == workflow.count('gzip -9 ')
     assert 'gzip -9 -c ' not in workflow
     assert 'gzip -9 -n -c < "$STAGE/scripts/rc6_deploy_scheduler_suspend.py"' in workflow
 
