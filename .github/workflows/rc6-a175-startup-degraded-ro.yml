@@ -68,6 +68,12 @@ jobs:
           detail=state.pop('detail')
           state['detail_code']='CAUCION_LEDGER_INVALID' if detail.startswith('CAUCION_LEDGER_INVALID:') else 'OTHER'
           state['detail_sha256']=hashlib.sha256(detail.encode()).hexdigest()
+          recent_events=[dict(r) for r in c.execute(
+              "SELECT event_at,event_type FROM paper_events WHERE event_at >= ? "
+              "ORDER BY id DESC LIMIT 80",('2026-10-28T23:12:00+00:00',)).fetchall()]
+          recent_health=[dict(r) for r in c.execute(
+              "SELECT component,state,checked_at,last_success_at FROM api_health "
+              "ORDER BY checked_at DESC LIMIT 40").fetchall()]
           positions=c.execute('SELECT * FROM paper_cauciones').fetchall()
           ledger={'positions':len(positions),'statuses':dict(c.execute('SELECT status,count(*) FROM paper_cauciones GROUP BY status').fetchall())}
           try:
@@ -92,10 +98,21 @@ jobs:
               v=json.loads(p.stdout)
               return {'status':v.get('Status'),'oom':v.get('OOMKilled'),
                       'exit_code':v.get('ExitCode'),'restarts':v.get('Restarting')}
+          logs=subprocess.run(['docker','logs','--since','2026-10-28T23:12:00Z',
+                               '--until','2026-10-28T23:30:00Z','--tail','800',
+                               'porota_critical_approval_rc6'],capture_output=True,text=True,
+                              timeout=10)
+          assert len(logs.stdout)+len(logs.stderr)<262144,'LOG_BOUND_RED'
+          log_patterns={pattern:len(re.findall(pattern,logs.stdout+'\n'+logs.stderr)) for pattern in
+              ('CAUCION_LEDGER_INVALID','ReadOnlyPolicyViolation','HTTP_BLOCKED',
+               'PPI_LOGIN_INTERLOCK','Traceback','TimeoutError','OperationalError',
+               'MemoryError','DATA_ERROR','AUTH','error')}
           rows={'schema':'rc6.a175.startup-degraded-ro.v1','candidate_sha':candidate,
                 'at_utc':datetime.now(timezone.utc).isoformat(),
                 'droplet':{'id':'594077619','region':'nyc1'},
                 'state':state,'caucion_ledger':ledger,
+                'recent_events':recent_events,'recent_health':recent_health,
+                'bounded_log_patterns':log_patterns,
                 'containers':{n:inspect(n) for n in
                     ('porota_critical_approval_rc6','porota_production_dashboard')},
                 'barrier_present':Path('/run/lock/porota-rc6-deploy-v2-attempt.json').exists(),
