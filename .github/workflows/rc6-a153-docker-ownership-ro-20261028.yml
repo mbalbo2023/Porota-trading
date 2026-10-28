@@ -1,0 +1,210 @@
+name: RC6 A153 Docker ownership inventory READ ONLY
+
+# Preparation stage: workflow_dispatch only. A scoped push trigger will be
+# added after /root reviews the exact host probe. No host run on file creation.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Inventory global Docker references and exact image sharing
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 75s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import http.client
+          import json
+          import os
+          import re
+          import socket
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          OWNED = {'porota_production_observer',
+                   'porota_production_dashboard',
+                   'porota_critical_approval_rc6'}
+          STAGE = re.compile(r'^porota-deploy-v2-([0-9a-f]{40})-([1-9][0-9]*)-([1-9][0-9]*)$')
+          IMAGE = re.compile(r'^sha256:[0-9a-f]{64}$')
+
+          def cmd(argv, seconds=8):
+              p = subprocess.run(argv, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True,
+                                 timeout=seconds, check=False)
+              if p.returncode:
+                  raise RuntimeError('DOCKER_METADATA_UNAVAILABLE')
+              return p.stdout
+
+          class UnixHTTP(http.client.HTTPConnection):
+              def connect(self):
+                  self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                  self.sock.settimeout(12)
+                  self.sock.connect('/var/run/docker.sock')
+
+          def docker_df_images():
+              # Docker Engine computes per-image exact Size/SharedSize bytes.
+              # One bounded, read-only metadata request; never prune or load.
+              conn = UnixHTTP('localhost', timeout=12)
+              try:
+                  conn.request('GET', '/system/df?type=image')
+                  resp = conn.getresponse()
+                  if resp.status != 200:
+                      raise RuntimeError('DOCKER_DF_UNAVAILABLE')
+                  data = resp.read(8 * 1024 * 1024 + 1)
+                  if len(data) > 8 * 1024 * 1024:
+                      raise RuntimeError('DOCKER_DF_OVERSIZE')
+                  parsed = json.loads(data)
+                  rows = parsed.get('Images')
+                  if not isinstance(rows, list) or len(rows) > 100:
+                      raise RuntimeError('DOCKER_DF_IMAGES_UNBOUNDED')
+                  return {x.get('Id'): {
+                      'size_bytes': x.get('Size'),
+                      'shared_bytes': x.get('SharedSize'),
+                      'containers': x.get('Containers')}
+                      for x in rows if isinstance(x, dict)}
+              finally:
+                  conn.close()
+
+          def id_list(argv):
+              ids = sorted(set(cmd(argv).splitlines()))
+              if len(ids) > 100 or any(not x or len(x) > 80 for x in ids):
+                  raise RuntimeError('DOCKER_OBJECT_INVENTORY_UNBOUNDED')
+              return ids
+
+          now = datetime.now(timezone.utc)
+          free0 = os.statvfs('/').f_bavail * os.statvfs('/').f_frsize
+          container_ids = id_list(['docker', 'container', 'ls', '-aq', '--no-trunc'])
+          containers = []
+          for cid in container_ids:
+              line = cmd(['docker', 'inspect', '--type=container', '--format',
+                          '{{.Id}}|{{.Image}}|{{.State.Status}}|{{.Name}}', cid], 4).strip()
+              parts = line.split('|')
+              if len(parts) != 4 or parts[0] != cid or not IMAGE.fullmatch(parts[1]):
+                  raise RuntimeError('DOCKER_CONTAINER_IDENTITY_RED')
+              name = parts[3].lstrip('/')
+              containers.append({'id': cid[:12], 'image_id': parts[1],
+                                 'status': parts[2],
+                                 'owner': name if name in OWNED else 'OTHER_CONTAINER'})
+          refs = {x['image_id'] for x in containers}
+
+          image_ids = id_list(['docker', 'image', 'ls', '-aq', '--no-trunc'])
+          image_rows = []
+          for iid in image_ids:
+              line = cmd(['docker', 'image', 'inspect', '--format',
+                          '{{.Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .RootFS.Layers}}|{{.Size}}',
+                          iid], 4).strip()
+              parts = line.split('|')
+              if len(parts) != 5 or parts[0] != iid or not IMAGE.fullmatch(iid):
+                  raise RuntimeError('DOCKER_IMAGE_IDENTITY_RED')
+              tags, digests, layers = (json.loads(x) for x in parts[1:4])
+              if not all(isinstance(x, list) for x in (tags, digests, layers)):
+                  raise RuntimeError('DOCKER_IMAGE_METADATA_RED')
+              image_rows.append({'id': iid, 'tags': tags, 'digests': digests,
+                                 'layers': set(layers), 'logical_size_bytes': int(parts[4])})
+          if not refs.issubset(set(image_ids)):
+              raise RuntimeError('CONTAINER_IMAGE_NOT_LISTED')
+          protected_layers = set().union(*(x['layers'] for x in image_rows if x['id'] in refs))
+          df = docker_df_images()
+          images = []
+          for x in image_rows:
+              info = df.get(x['id'], {})
+              size, shared = info.get('size_bytes'), info.get('shared_bytes')
+              unique = size - shared if type(size) is int and type(shared) is int and 0 <= shared <= size else None
+              rc6_tags = [t for t in x['tags'] if re.fullmatch(r'porota-predeploy-v2:[0-9a-f]{40}', t)]
+              safe_tag_shape = len(rc6_tags) == 1 and x['tags'] == rc6_tags and not x['digests']
+              images.append({'id': x['id'], 'tag_count': len(x['tags']),
+                             'rc6_candidate_tag': rc6_tags[0] if safe_tag_shape else None,
+                             'digest_count': len(x['digests']),
+                             'referenced_by_any_container': x['id'] in refs,
+                             'protected_layer_overlap_count': len(x['layers'] & protected_layers),
+                             'layer_count': len(x['layers']),
+                             'logical_size_bytes': x['logical_size_bytes'],
+                             'engine_size_bytes': size, 'engine_shared_bytes': shared,
+                             'engine_unique_bytes': unique,
+                             'engine_container_refs': info.get('containers'),
+                             'eligible_for_separate_review': bool(safe_tag_shape and x['id'] not in refs and
+                                                                  unique is not None and info.get('containers') == 0)})
+
+          tmp = Path('/tmp')
+          root_dev = tmp.stat().st_dev
+          stages = []
+          for entry in list(tmp.iterdir())[:500]:
+              if not STAGE.fullmatch(entry.name) or entry.is_symlink() or not entry.is_dir():
+                  continue
+              st = entry.stat()
+              if st.st_dev != root_dev or st.st_uid != 0:
+                  stages.append({'name': entry.name, 'state': 'UNSAFE_OWNER_OR_MOUNT'})
+                  continue
+              count, allocated, truncated = 0, 0, False
+              stack = [entry]
+              while stack:
+                  p = stack.pop()
+                  for child in p.iterdir():
+                      count += 1
+                      if count > 1000:
+                          truncated = True
+                          break
+                      if child.is_symlink() or child.stat().st_dev != root_dev:
+                          truncated = True
+                          break
+                      allocated += child.stat().st_blocks * 512
+                      if child.is_dir():
+                          stack.append(child)
+                  if truncated:
+                      break
+              stages.append({'name': entry.name, 'allocated_bytes': allocated if not truncated else None,
+                             'entries': count, 'truncated': truncated,
+                             'mtime_utc': datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()})
+
+          free1 = os.statvfs('/').f_bavail * os.statvfs('/').f_frsize
+          out = {'schema': 'RC6_A153_DOCKER_OWNERSHIP_RO_V1',
+                 'at_utc': now.isoformat(),
+                 'at_art': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+                 'no_mutations': True, 'free_before_bytes': free0,
+                 'free_after_probe_bytes': free1,
+                 'container_count': len(containers), 'image_count': len(images),
+                 'containers': containers, 'images': images, 'stages': stages,
+                 'note': 'eligible_for_separate_review is not deletion authorization; image shared bytes and other owner refs are protected'}
+          print('RC6_A153_DOCKER_OWNERSHIP_RO=' + json.dumps(out, sort_keys=True))
+          PYHOST
+
+      - name: Erase SSH material on ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
