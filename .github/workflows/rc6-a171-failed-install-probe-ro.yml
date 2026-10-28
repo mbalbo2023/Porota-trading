@@ -1,0 +1,81 @@
+name: RC6 A171 exact failed-install host probe READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a171-failed-install-probe-20261028]
+    paths:
+      - .github/workflows/rc6-a171-failed-install-probe-ro.yml
+      - scripts/rc6_a171_failed_install_probe_ro.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin exact diagnostic source
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/rc6_a171_failed_install_probe_ro.py
+          test "$(sha256sum scripts/rc6_a171_failed_install_probe_ro.py | cut -d' ' -f1)" = "$RC6_SOURCE_SHA"
+        env:
+          RC6_SOURCE_SHA: '473a5c3766c26a4e1c1950a44462ea250dbb72a69058b61d2e989b0f353c3629'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a171"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a171" "$HOME/.ssh/known_hosts"
+      - name: Check exact failed candidate, timer hold, PAPER and disk
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 100s ssh -T \
+            -i "$HOME/.ssh/rc6_a171" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+            < scripts/rc6_a171_failed_install_probe_ro.py | tee evidence/host.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/host.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A171_FAILED_INSTALL_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='PROVEN' and row['host_mutations']==0
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['real_orders_sent']==0 and row['timers_held']==16
+          assert row['barrier']=='ABSENT' and row['operational_go'] is False
+          print('RC6_A171_FAILED_HOST_PROBE=GREEN|NO_GO')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a171-failed-install-ro-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a171"
