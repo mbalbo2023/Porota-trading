@@ -6,6 +6,7 @@ failure; the deployed host control plane normally restores the timers.
 """
 import argparse
 import base64
+import binascii
 import gzip
 from datetime import datetime, timezone
 import hashlib
@@ -678,20 +679,67 @@ def require_a143_fix_forward_hold(candidate):
         raise ValueError('SCHEDULER_A143_PREINSTALL_STATUS_RED')
     if receipt.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED':
         raise ValueError('SCHEDULER_A143_NEW_INSTALL_STATUS_RED')
+    if receipt.get('prior_a143_stopped_after_install') is True:
+        if receipt.get('candidate_runtime_after_failure') is not None:
+            raise ValueError('SCHEDULER_A143_OLD_NEW_RUNTIME_MIXED')
+        q.a143_stopped_continuation(
+            dict(receipt,status='DRAINED',installation_started=False),
+            operator_a151_proof=exact_a151_operator_preopen_pause,
+            operator_timer_disabled=operator_preopen_timer_disabled)
+        return 'A143_PRIOR_UNVALIDATED_STOPPED_HELD'
     marker = q.current_runtime_marker()
-    frozen,_ = q._a143_exact_json(q.ROOT/'data/deploy/porota-frozen-candidate.json',16384)
+    frozen,frozen_sha = q._a143_exact_json(
+        q.ROOT/'data/deploy/porota-frozen-candidate.json',16384)
+    intent = receipt.get('candidate_image_intent')
+    runtime = receipt.get('candidate_runtime_after_failure')
+    if type(intent) is not dict or type(runtime) is not dict:
+        raise ValueError('SCHEDULER_A143_NEW_INTENT_OR_RUNTIME_MISSING')
+    try:
+        encoded = base64.b64decode(intent['frozen_manifest_b64'],validate=True)
+        intent_at = datetime.fromisoformat(intent['recorded_at'])
+        marker_at = datetime.fromisoformat(marker['recorded_at'])
+    except (KeyError,ValueError,TypeError,binascii.Error) as exc:
+        raise ValueError('SCHEDULER_A143_NEW_INTENT_INVALID') from exc
+    if (len(encoded)>16384 or hashlib.sha256(encoded).hexdigest()!=frozen_sha or
+            intent_at.tzinfo is None or marker_at.tzinfo is None or
+            not intent_at<=marker_at<=datetime.now(timezone.utc) or
+            not re.fullmatch(r'[0-9a-f]{40}',frozen.get('candidate_tree_sha','')) or
+            not re.fullmatch(r'[0-9a-f]{64}',frozen.get('image_tar_sha256','')) or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}',frozen.get('image_id','')) or
+            intent.get('manifest_sha256')!=frozen_sha or
+            intent.get('candidate_tree_sha')!=frozen['candidate_tree_sha'] or
+            intent.get('image_tar_sha256')!=frozen['image_tar_sha256'] or
+            intent.get('image_id')!=marker.get('image_id') or
+            runtime.get('status') not in {'running','exited'} or
+            type(runtime.get('containers')) is not dict or
+            set(runtime['containers'])!=set(q.OWNED) or
+            type(runtime.get('flat_book')) is not dict or
+            runtime['flat_book'].get('source_sha')!=candidate or
+            runtime['flat_book'].get('real_orders_sent')!=0 or
+            type(runtime.get('critical_admission')) is not dict or
+            runtime['critical_admission'].get('capability')!='issues_only'):
+        raise ValueError('SCHEDULER_A143_NEW_INTENT_PROVENANCE_RED')
     if (marker.get('candidate_sha') != candidate or
             marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
-            marker.get('image_id') != frozen.get('image_id') or
+            marker.get('mode') != 'PRODUCTION_PAPER' or
+            type(marker.get('real_orders_sent')) is not int or
+            marker['real_orders_sent'] != 0 or
+            marker.get('real_order_routes') != 'NOT_CALLED' or
+            marker.get('ppi_watch_untouched') is not True or
             frozen.get('candidate_sha') != candidate or
-            any(value['Image'] != marker['image_id'] or
+            any(value['Image'] != intent['image_id'] or
+                value['Id'] != runtime['containers'][name].get('id') or
+                value['Image'] != runtime['containers'][name].get('image') or
+                value['State']['Status'] != runtime['status'] or
+                q.lifecycle(value) != runtime['containers'][name].get('lifecycle') or
                 not re.fullmatch('[0-9a-f]{64}',value['Id']) or
                 value['State']['Status'] not in {'running','exited'}
-                for value in observed.values())):
+                for name,value in observed.items()) or
+            set(observed)!=set(q.OWNED)):
         raise ValueError('SCHEDULER_A143_NEW_RUNTIME_NOT_PROVEN')
     book = q.rescue_flat_book()
     if (book['source_sha'] != candidate or book['real_orders_sent'] != 0 or
-            q.critical_admission().get('real_orders_sent',0) != 0):
+            q.critical_admission() != runtime['critical_admission']):
         raise ValueError('SCHEDULER_A143_NEW_PAPER_BOOK_RED')
     return 'A145_NEW_CANDIDATE_UNVALIDATED_HELD'
 

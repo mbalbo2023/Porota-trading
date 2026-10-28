@@ -253,6 +253,134 @@ def test_a145_drain_install_exact_proof_and_no_second_stop(incident):
     assert json.loads((folder / ("quiescence-" + SHA + ".json")).read_text())["installation_started"] is True
 
 
+def new_a143_normalized_failure(
+        incident,monkeypatch,tmp_path):
+    from scripts import rc6_deploy_scheduler_suspend as scheduler
+    root,folder,db,states=incident
+    q.run(SHA,'drain',allow_a143_pending_running=True)
+    q.run(SHA,'install',allow_a143_pending_running=True)
+    frozen_new={'candidate_sha':SHA,'candidate_tree_sha':'c'*40,
+                'image_id':'sha256:'+'d'*64,'image_tar_sha256':'e'*64,
+                'paper_mode_required':'PRODUCTION_PAPER','real_orders_sent_required':0}
+    raw=json.dumps(frozen_new,sort_keys=True).encode()
+    new_path=tmp_path/'new-frozen.json';new_path.write_bytes(raw)
+    loaded='sha256:'+'f'*64
+    monkeypatch.setattr(q,'candidate_operator_module',lambda **_:SimpleNamespace(
+        exact_a151_operator_preopen_pause=lambda:None,
+        operator_preopen_timer_disabled=lambda:True))
+    monkeypatch.setattr(q,'command',lambda args: json.dumps([{'Id':loaded}])
+                        if args[:3]==['docker','image','inspect'] else '')
+    receipt=q.run(SHA,'image-intent',candidate_image_id=loaded,
+                  frozen_manifest=new_path)
+    intent=receipt['candidate_image_intent']
+    assert receipt['status']=='HOST_INSTALLATION_STARTED'
+    assert intent['manifest_sha256']==q.hashlib.sha256(raw).hexdigest()
+    assert intent['image_id']==loaded!=frozen_new['image_id']
+    # A failure before any new container stays an old stopped hold; the
+    # durable intent alone never claims that a new runtime was installed.
+    before=q.run(SHA,'recover')
+    assert before['status']=='FIX_FORWARD_VALIDATION_REQUIRED'
+    assert before['prior_a143_stopped_after_install'] is True
+    assert before.get('candidate_runtime_after_failure') is None
+    monkeypatch.setattr(scheduler,'a143_staged_module',lambda:q)
+    monkeypatch.setattr(scheduler,'exact_a151_operator_preopen_pause',lambda:None)
+    monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',lambda:True)
+    assert scheduler.require_a143_fix_forward_hold(SHA)== \
+        'A143_PRIOR_UNVALIDATED_STOPPED_HELD'
+
+    # A subsequent canonical attempt can start only the exact intended new
+    # pair; this fixture models its poststart failure and pending marker.
+    for idx,name in enumerate(q.OWNED):
+        states[name]['Id']=('1' if idx==0 else '2')*64
+        states[name]['Image']=loaded
+        states[name]['State']['Status']='running'
+        states[name]['State']['StartedAt']=datetime.now(timezone.utc).isoformat()
+    marker=json.loads((folder/'CURRENT_STATE_V2.json').read_text())
+    marker.update(candidate_sha=SHA,image_id=loaded,
+                  recorded_at=datetime.now(timezone.utc).isoformat())
+    (folder/'CURRENT_STATE_V2.json').write_text(json.dumps(marker))
+    (folder/'porota-frozen-candidate.json').write_bytes(raw)
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE observer_state SET process_state='DEGRADED',session_state='BOOT_CALENDAR'")
+    monkeypatch.setattr(q,'critical_admission',lambda:
+                        {'capability':'issues_only','real_orders_sent':0})
+    # Reestablish the pre-failure receipt state as it would be before the
+    # recover callback in the same attempt; the first branch above tested
+    # old-stopped behavior independently.
+    path=folder/('quiescence-'+SHA+'.json')
+    old=json.loads(path.read_text())
+    old['status']='HOST_INSTALLATION_STARTED';old['installation_started']=True
+    old.pop('prior_a143_stopped_after_install',None)
+    path.write_text(json.dumps(old))
+    after=q.run(SHA,'recover')
+    assert after['status']=='FIX_FORWARD_VALIDATION_REQUIRED'
+    assert after['candidate_runtime_after_failure']['status']=='running'
+    assert scheduler.require_a143_fix_forward_hold(SHA)== \
+        'A145_NEW_CANDIDATE_UNVALIDATED_HELD'
+    return root,folder,states,loaded
+
+
+def test_a143_new_image_intent_precedes_runtime_and_binds_normalized_id(
+        incident,monkeypatch,tmp_path):
+    new_a143_normalized_failure(incident,monkeypatch,tmp_path)
+
+
+@pytest.mark.parametrize('mutation', ['missing_intent','invalid_base64',
+                                      'forged_manifest_hash',
+                                      'frozen_changed','marker_image',
+                                      'docker_image','docker_restart',
+                                      'runtime_proof_missing','critical_drift'])
+def test_a143_new_failure_hold_rejects_unbound_provenance(
+        incident,monkeypatch,tmp_path,mutation):
+    from scripts import rc6_deploy_scheduler_suspend as scheduler
+    _,folder,states,_=new_a143_normalized_failure(incident,monkeypatch,tmp_path)
+    receipt_path=folder/('quiescence-'+SHA+'.json')
+    marker_path=folder/'CURRENT_STATE_V2.json'
+    frozen_path=folder/'porota-frozen-candidate.json'
+    receipt=json.loads(receipt_path.read_text())
+    if mutation=='missing_intent':
+        receipt.pop('candidate_image_intent')
+    elif mutation=='invalid_base64':
+        receipt['candidate_image_intent']['frozen_manifest_b64']='!not-base64'
+    elif mutation=='forged_manifest_hash':
+        receipt['candidate_image_intent']['manifest_sha256']='0'*64
+    elif mutation=='frozen_changed':
+        frozen=json.loads(frozen_path.read_text())
+        frozen['image_id']='sha256:'+'0'*64
+        frozen_path.write_text(json.dumps(frozen,sort_keys=True))
+    elif mutation=='marker_image':
+        marker=json.loads(marker_path.read_text())
+        marker['image_id']='sha256:'+'0'*64
+        marker_path.write_text(json.dumps(marker))
+    elif mutation=='docker_image':
+        states[q.OWNED[0]]['Image']='sha256:'+'0'*64
+    elif mutation=='docker_restart':
+        states[q.OWNED[0]]['State']['StartedAt']=datetime.now(timezone.utc).isoformat()
+    elif mutation=='critical_drift':
+        monkeypatch.setattr(q,'critical_admission',lambda:
+                            {'capability':'issues_only','real_orders_sent':0,
+                             'image':'sha256:'+'0'*64})
+    else:
+        receipt.pop('candidate_runtime_after_failure')
+    receipt_path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError,match='SCHEDULER_A143_NEW_|SCHEDULER_A143_NEW_PAPER_BOOK_RED'):
+        scheduler.require_a143_fix_forward_hold(SHA)
+
+
+def test_a143_failure_after_new_pair_without_prior_intent_never_claims_runtime(
+        incident,monkeypatch):
+    _,folder,_,states=incident
+    q.run(SHA,'drain',allow_a143_pending_running=True)
+    q.run(SHA,'install',allow_a143_pending_running=True)
+    for idx,name in enumerate(q.OWNED):
+        states[name]['Id']=('1' if idx==0 else '2')*64
+        states[name]['Image']='sha256:'+'f'*64
+        states[name]['State']['Status']='running'
+    receipt=q.run(SHA,'recover')
+    assert receipt['status']=='RECOVERY_UNVERIFIED'
+    assert receipt.get('candidate_runtime_after_failure') is None
+
+
 def test_a145_poststop_receipt_mutation_fails_before_install(incident):
     _, folder, _, states = incident
     q.run(SHA, "drain", allow_a143_pending_running=True)

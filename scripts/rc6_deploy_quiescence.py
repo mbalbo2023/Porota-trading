@@ -2109,10 +2109,21 @@ def run(candidate, action, *, allow_admin_issue624=False,
             if (not receipt or receipt.get('candidate_sha') != candidate or
                     receipt.get('status') != 'HOST_INSTALLATION_STARTED' or
                     receipt.get('installation_started') is not True or
-                    receipt.get('degraded_closed_rescue') is not True or
+                    not (receipt.get('degraded_closed_rescue') is True or
+                         receipt.get('a143_pending_adopted') is True) or
                     receipt.get('candidate_image_intent') is not None):
                 raise ValueError('QUIESCENCE_RESCUE_IMAGE_INTENT_STATE_RED')
-            exact_rescue_receipt(receipt)
+            if receipt.get('degraded_closed_rescue') is True:
+                exact_rescue_receipt(receipt)
+            else:
+                # A151/A143 is held and flat. Recheck the old stopped pair
+                # before recording the new materialized image identity; this
+                # durable intent precedes mode_manager and any new container.
+                operator = candidate_operator_module()
+                a143_stopped_continuation(
+                    dict(receipt,status='DRAINED',installation_started=False),
+                    operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                    operator_timer_disabled=operator.operator_preopen_timer_disabled)
             receipt['candidate_image_intent'] = candidate_image_intent(
                 candidate, candidate_image_id, frozen_manifest)
         elif action == 'capture-runtime':
@@ -2158,9 +2169,36 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
                         receipt['status'] = 'RECOVERY_UNVERIFIED'
                         receipt['rescue_failure_reason'] = type(exc).__name__ + ':' + str(exc)
+                elif receipt.get('a143_pending_adopted') is True:
+                    # Keep the old pair stopped if failure precedes startup;
+                    # after startup require the durable pre-start image intent.
+                    try:
+                        observed = {name:inspect(name) for name in OWNED}
+                        old_stopped = all(
+                            observed[name]['Id'] == receipt['containers'][name]['id'] and
+                            observed[name]['Image'] == receipt['containers'][name]['image'] and
+                            observed[name]['State']['Status'] == 'exited'
+                            for name in OWNED)
+                        if old_stopped:
+                            operator = candidate_operator_module()
+                            a143_stopped_continuation(
+                                dict(receipt,status='DRAINED',installation_started=False),
+                                operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                                operator_timer_disabled=operator.operator_preopen_timer_disabled)
+                            receipt['prior_a143_stopped_after_install'] = True
+                            receipt['runtime_health'] = 'PRIOR_A143_PENDING_NOT_GO'
+                        else:
+                            runtime = candidate_runtime_after_failed_install(receipt)
+                            if (runtime['flat_book']['source_sha'] != candidate or
+                                    runtime['flat_book']['real_orders_sent'] != 0 or
+                                    runtime['critical_admission'].get('capability') != 'issues_only'):
+                                raise ValueError('QUIESCENCE_A143_NEW_RUNTIME_UNVERIFIED')
+                            receipt['candidate_runtime_after_failure'] = runtime
+                            receipt['runtime_health'] = 'NEW_A143_CANDIDATE_NOT_GO'
+                    except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
+                        receipt['status'] = 'RECOVERY_UNVERIFIED'
             elif receipt.get('a143_pending_adopted') is True:
-                # A143 never validated, so a failed preinstall must NOT
-                # restart it. Keep its exact stopped pair for fix-forward.
+                # A preinstall failure must never restart old #751.
                 try:
                     a143_stopped_continuation(receipt)
                     receipt['status'] = 'PRIOR_A143_UNVALIDATED_HELD_STOPPED'

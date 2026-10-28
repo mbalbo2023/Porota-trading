@@ -1154,9 +1154,12 @@ jobs:
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
           echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
-          if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ]; then
-            # Persist the exact frozen image identity before mode_manager can
-            # replace either container. Failure before this receipt is RED.
+          if [[ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ||
+                "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ||
+                "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]]; then
+            # Persist frozen manifest digest and materialized Docker identity
+            # before mode_manager can replace either container. A failure
+            # before this receipt cannot claim a new candidate runtime.
             sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
               --candidate-sha "$CANDIDATE_SHA" --action image-intent \
               --candidate-image-id "$RUNTIME_IMAGE_ID" \
