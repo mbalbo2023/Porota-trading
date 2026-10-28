@@ -2163,7 +2163,10 @@ jobs:
 
       - name: Failure-safe host cleanup
         if: ${{ always() && (steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
-        timeout-minutes: 4
+        # The bounded worst case is 45s writer stop + 120s recovery + 150s
+        # scheduler reconciliation + 180s payload/final cleanup. Four minutes
+        # could kill the job before the owned files were removed.
+        timeout-minutes: 11
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -2183,6 +2186,19 @@ jobs:
             echo 'RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED|no recovery permitted'
             exit "$CONTRACT_ORPHAN_RC"
           fi
+          cleanup_payload() {
+            # A failed runtime recovery or timer restoration must not leave
+            # attempt-owned upload bytes behind. This nonfinal mutex phase
+            # keeps its IDLE barrier for explicit recovery; INFLIGHT or an
+            # orphan writer blocks the cleanup before any image/stage delete.
+            timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+              -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_payload timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID' --attempt '$GITHUB_RUN_ATTEMPT'" \
+              < scripts/rc6_deploy_failure_cleanup.py
+          }
           RECOVERY_OUTPUT="$(timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
@@ -2193,6 +2209,9 @@ jobs:
           echo "$RECOVERY_OUTPUT"
           if [ "$RECOVERY_RC" -ne 0 ]; then
             echo 'RC6_FAILURE_RECOVERY=RED|no scheduler mutation permitted'
+            cleanup_payload
+            PAYLOAD_RC=$?
+            echo "RC6_FAILURE_PAYLOAD_CLEANUP_RC=$PAYLOAD_RC|barrier_retained=true"
             exit "$RECOVERY_RC"
           fi
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
@@ -2248,8 +2267,14 @@ jobs:
             "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_restore env $A143_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
           SCHEDULER_RESTORE_RC=$?
+          if [ "$SCHEDULER_RESTORE_RC" -ne 0 ]; then
+            echo 'RC6_FAILURE_SCHEDULER_RESTORE=RED|barrier_retained=true'
+            cleanup_payload
+            PAYLOAD_RC=$?
+            echo "RC6_FAILURE_PAYLOAD_CLEANUP_RC=$PAYLOAD_RC|barrier_retained=true"
+            exit "$SCHEDULER_RESTORE_RC"
+          fi
           set -e
-          test "$SCHEDULER_RESTORE_RC" -eq 0
           timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \

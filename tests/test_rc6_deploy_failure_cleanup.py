@@ -131,11 +131,16 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertEqual(result['removed_tags'], [])
         self.assertEqual(len(result['retained_tags']), 2)
 
-    def test_candidate_digest_can_be_reclaimed_without_external_alias(self):
+    def test_same_repository_digest_without_attempt_provenance_is_retained(self):
         self.docker.digests[IMG] = ['porota-predeploy-v2@sha256:' + 'e' * 64]
         result = cleanup.cleanup(SHA)
         self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(len(result['removed_tags']), 2)
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(result['removed_image_ids'], [])
+        self.assertEqual(set(result['retained_reasons'].values()),
+                         {'NONCANDIDATE_ALIAS_OR_DIGEST'})
+        self.assertIn(IMG, self.docker.images)
+        self.assertFalse(self.staging.exists())
 
     def test_malformed_image_alias_inventory_fails_closed(self):
         original = self.docker.run
@@ -260,6 +265,7 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertIn('promotion', ids)
         block = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         self.assertIn('always()', block)
+        self.assertIn('timeout-minutes: 11', block)
         self.assertNotIn("steps.host_reconcile.outcome == 'failure'", block)
         self.assertNotIn("steps.classify.outcome == 'failure'", block)
         self.assertNotIn("steps.diskguard.outcome == 'failure'", block)
@@ -282,6 +288,55 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertLess(workflow.index('Failure-safe host cleanup'), workflow.index('Runner cleanup'))
         self.assertLess(workflow.index('Pin exact DigitalOcean Droplet before host mutation'),
                         workflow.index('Reconcile only exact A138 cleanly exited host barrier'))
+
+    def test_failed_recovery_or_restore_reclaims_payload_without_rearming(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        block = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split(
+            '      - name:', 1)[0]
+        shell = block.split('        run: |\n', 1)[1]
+        shell = '\n'.join(line[10:] if line.startswith('          ') else line
+                          for line in shell.splitlines())
+        with tempfile.TemporaryDirectory(prefix='rc6-failed-payload-') as folder:
+            fake_ssh = Path(folder) / 'ssh'
+            fake_ssh.write_text('''#!/usr/bin/python3
+import os,re,sys
+from pathlib import Path
+command = ' '.join(sys.argv[1:])
+phase = re.search(r'--phase (cleanup_[a-z_]+)', command).group(1)
+with open(os.environ['RC6_FAKE_LOG'], 'a') as output:
+    output.write(phase + '\\n')
+if phase == 'cleanup_recover':
+    print('{"status":"ORIGINAL_RUNTIME_RESUMED"}')
+if phase in os.environ['RC6_FAKE_FAILURES'].split(','):
+    sys.exit(43 if phase == 'cleanup_restore' else 42)
+''')
+            fake_ssh.chmod(0o755)
+            log = Path(folder) / 'ssh.log'
+            env = dict(os.environ, PATH=folder + ':/usr/bin:/bin', HOME=folder,
+                       DO_USER='fixture', DO_HOST='fixture', RC6_MUTEX_B64='eA==',
+                       CANDIDATE_SHA=SHA, GITHUB_RUN_ID='1234', GITHUB_RUN_ATTEMPT='1',
+                       RC6_QUIESCENCE_MODE='CLOSED', RC6_FAKE_LOG=str(log))
+            cases = (
+                ('cleanup_recover', 42, ['cleanup_contract', 'cleanup_recover',
+                                         'cleanup_payload']),
+                ('cleanup_restore', 43, ['cleanup_contract', 'cleanup_recover',
+                                         'cleanup_restore', 'cleanup_payload']),
+                ('cleanup_recover,cleanup_payload', 42,
+                 ['cleanup_contract', 'cleanup_recover', 'cleanup_payload']),
+                ('cleanup_contract', 42, ['cleanup_contract']),
+            )
+            for failures, expected_rc, expected_phases in cases:
+                log.unlink(missing_ok=True)
+                result = PROCESS_RUN(['bash', '-c', shell], capture_output=True,
+                                     text=True, env=dict(env, RC6_FAKE_FAILURES=failures),
+                                     timeout=15, cwd=Path(__file__).resolve().parents[1])
+                self.assertEqual(result.returncode, expected_rc, (failures, result.stderr))
+                self.assertEqual(log.read_text().splitlines(), expected_phases)
+                self.assertNotIn('cleanup_final', log.read_text())
+                self.assertNotIn('timers_restore', log.read_text())
+                if failures != 'cleanup_contract':
+                    self.assertIn('barrier_retained=true', result.stdout)
 
     def test_classify_red_with_sixteen_held_timers_only_accounts_disk(self):
         workflow = (Path(__file__).resolve().parents[1] /

@@ -100,12 +100,11 @@ def image_aliases(image, candidate_sha, *, allow_untagged=False):
     if ((not tags and not allow_untagged) or
             any(tag not in owned_tags(candidate_sha) for tag in tags)):
         return False
-    # A paired RepoDigest can outlive removal of its tag; both repository
-    # names were independently frozen by this exact attempt's tag grammar.
-    repositories = {tag.split(':', 1)[0] for tag in owned_tags(candidate_sha)}
-    return all(re.fullmatch(
-        r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}', digest
-    ) and digest.split('@', 1)[0] in repositories for digest in digests)
+    # A RepoDigest names a repository, not this candidate/run/attempt. Even a
+    # porota-trading-bot digest may belong to a different deploy's registry
+    # reference. No frozen artifact binds a digest to this attempt, so retain
+    # its image until separately proven; never delete it by image ID here.
+    return not digests
 
 
 def container_inventory():
