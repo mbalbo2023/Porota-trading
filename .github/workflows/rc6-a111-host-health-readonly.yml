@@ -1076,6 +1076,84 @@ jobs:
               'mutation_attempted':False},sort_keys=True))
           PYHOST
 
+
+      - name: A145 aggregate caucion fee predicates and IOL token TTL read only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 35s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import json,os,stat,subprocess,textwrap,time
+          from pathlib import Path
+          src=textwrap.dedent("""
+          import json,sqlite3
+          from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+          db='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          try:
+              c=sqlite3.connect(db,uri=True,timeout=3)
+              c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              rows=c.execute('SELECT status,currency,terms_json FROM paper_cauciones LIMIT 20').fetchall()
+              out={'rows_checked':len(rows),'by_status':{},'fee_authority_mismatch':0,
+                'not_ars':0,'quoted_fees_present':0,'invalid_policy':0,
+                'missing_authority':0,'all_fee_conditions_passed':0}
+              for r in rows:
+                  x=json.loads(r['terms_json'])
+                  status=str(r['status'])
+                  out['by_status'][status]=out['by_status'].get(status,0)+1
+                  mismatched=x.get('fee_authority') != CAUCION_PAPER_FEE_AUTHORITY
+                  notars=r['currency'] != 'ARS'
+                  quoted=x.get('quoted_total_fees') is not None
+                  badpolicy=x.get('paper_fill_policy') not in (
+                    'CONSERVATIVE_NOTIONAL_CAP','LIVE_PPI_BID_PARTICIPATION_CAP')
+                  out['fee_authority_mismatch']+=int(mismatched)
+                  out['not_ars']+=int(notars)
+                  out['quoted_fees_present']+=int(quoted)
+                  out['invalid_policy']+=int(badpolicy)
+                  out['missing_authority']+=int(x.get('fee_authority') is None)
+                  out['all_fee_conditions_passed']+=int(not any((
+                    mismatched,notars,quoted,badpolicy)))
+              c.close()
+              print(json.dumps({'state':'OK','aggregates':out,'read_only':True}))
+          except (OSError,ValueError,TypeError,sqlite3.Error) as exc:
+              print(json.dumps({'state':'NO_VERIFICADO','error_type':type(exc).__name__}))
+          """)
+          try:
+              job=subprocess.run(['docker','exec','-i','porota_production_observer','env',
+                  'PYTHONDONTWRITEBYTECODE=1','python3','-c',src],
+                  capture_output=True,text=True,timeout=12,check=False)
+              fees=json.loads(job.stdout) if job.returncode==0 else {'state':'NO_VERIFICADO'}
+          except (OSError,ValueError,subprocess.SubprocessError):
+              fees={'state':'NO_VERIFICADO'}
+          store=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          oauth={'state':'NO_VERIFICADO'}
+          try:
+              if store.is_symlink() or not store.is_file() or store.stat().st_size>65536:
+                  raise ValueError('UNTRUSTED_OAUTH_STORE')
+              raw=store.read_bytes()
+              meta=store.stat()
+              x=json.loads(raw)
+              tokens=x.get('tokens') if isinstance(x.get('tokens'),dict) else {}
+              expires=float(tokens.get('expires_in') or 0)
+              obtained=float(x.get('token_obtained_at_epoch') or meta.st_mtime)
+              oauth={'state':'OK','private_file':stat.S_IMODE(meta.st_mode)==0o600,
+                     'store_present':True,'access_token_present':bool(tokens.get('access_token')),
+                     'refresh_token_present':bool(tokens.get('refresh_token')),
+                     'access_token_ttl_seconds':max(0,round(obtained+expires-time.time())),
+                     'expired_now':obtained+expires<=time.time()}
+          except (OSError,ValueError,TypeError):
+              pass
+          print('RC6_A145_FEE_IOL='+json.dumps({'fees':fees,'iol_token_metadata':oauth,
+            'read_only':True,'provider_requests':0,'mutation_attempted':False,
+            'ppi_watch_accessed':False},sort_keys=True))
+          PYHOST
+
       - name: Remove SSH material
         if: always()
         shell: bash
