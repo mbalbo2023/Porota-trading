@@ -105,12 +105,19 @@ def inspect_images():
         got, tags, digests, size, layers = fields(docker('image', 'inspect', '--format',
             '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Size}}|{{json .RootFS.Layers}}', iid), 5)
         tags, digests, layers = tags or [], digests or [], layers or []
-        if (got != iid or type(size) is not int or size < 0 or size > 100 * 1024**3
-                or not all(type(v) is list and len(v) <= 256 for v in (tags, digests, layers))
-                or any(type(v) is not str or len(v) > 512 for v in tags + digests)
-                or any(type(v) is not str or not IMAGE.fullmatch(v) for v in layers)
-                or len(layers) != len(set(layers))):
-            raise Unverified('IMAGE_RECORD_INVALID')
+        if got != iid:
+            raise Unverified('IMAGE_RECORD_ID_MISMATCH')
+        if type(size) is not int or size < 0 or size > 100 * 1024**3:
+            raise Unverified('IMAGE_RECORD_SIZE_INVALID')
+        if not all(type(v) is list and len(v) <= 256 for v in (tags, digests, layers)):
+            raise Unverified('IMAGE_RECORD_ARRAY_INVALID')
+        if any(type(v) is not str or len(v) > 512 for v in tags + digests):
+            raise Unverified('IMAGE_RECORD_ALIAS_INVALID')
+        if any(type(v) is not str or not IMAGE.fullmatch(v) for v in layers):
+            raise Unverified('IMAGE_RECORD_LAYER_INVALID')
+        # Equal diffIDs may occur at different positions in a layer chain.
+        # Preserve raw count separately from distinct overlap; ownership is
+        # proven by image ID, aliases, and all-container references.
         records[iid] = dict(tags=tags, digests=digests, size=size, layers=layers)
     return records
 
@@ -174,7 +181,8 @@ def snapshot():
         # This is strictly structural overlap. Docker Size is virtual image
         # size, and diffID counts are not measured reclaimable disk bytes.
         out.append(dict(image_id=iid, virtual_size_bytes=row['size'],
-            layer_count=len(layers), layers_shared_with_referenced_count=len(layers & other_referenced_layers),
+            layer_count=len(row['layers']), distinct_layer_count=len(layers),
+            layers_shared_with_referenced_count=len(layers & other_referenced_layers),
             unique_diffid_count=len(layers - other_layers),
             all_container_refs=len(refs[iid]),
             owned_container_refs=sum(containers[cid][1] in OWNED_CONTAINERS for cid in refs[iid]),
