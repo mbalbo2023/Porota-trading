@@ -9,6 +9,8 @@ import pytest
 import rc6_preopen
 from scripts import rc6_deploy_preopen_gate as deploy_gate
 from scripts import rc6_deploy_scheduler_suspend as suspend
+from scripts import rc6_deploy_quiescence as quiescence
+from scripts.rc6_owner_authorization import require_exact_owner_authorization
 
 
 class Day28(datetime):
@@ -29,6 +31,13 @@ class Day29(datetime):
     @classmethod
     def now(cls, tz=None):
         value = datetime(2026, 10, 29, 12, 6, tzinfo=timezone.utc)
+        return value if tz is None else value.astimezone(tz)
+
+
+class HeldOpenClock(datetime):
+    @classmethod
+    def now(cls,tz=None):
+        value=datetime(2026,10,28,14,4,tzinfo=timezone.utc)
         return value if tz is None else value.astimezone(tz)
 
 
@@ -137,6 +146,89 @@ def test_a151_attests_both_sidecars_preserves_a125_and_survives_new_marker(a151)
         write_json(root/'CURRENT_STATE_V2.json', changed_marker)
         assert suspend.exact_a151_operator_preopen_pause()[0] == expected
     assert (root/'paper_scalping_preopen_gate_v1.json').read_bytes() == original_gate
+
+
+def test_a151_held_open_uses_exact_sidecars_without_paper_go(a151,monkeypatch):
+    _,_,receipt,receipt_sha,_,_,_=a151
+    from pathlib import Path
+    (a151[0]/'ak_byma_calendar.py').write_bytes(
+        (Path(__file__).parents[1]/'ak_byma_calendar.py').read_bytes())
+    monkeypatch.setattr(quiescence,'ROOT',a151[0])
+    monkeypatch.setattr(quiescence,'datetime',HeldOpenClock)
+    proof=quiescence.a151_held_open_proof(
+        operator_a151_proof=suspend.exact_a151_operator_preopen_pause,
+        operator_timer_disabled=suspend.operator_preopen_timer_disabled)
+    assert proof['admission']=='A151_HELD_OPEN'
+    assert proof['operator_receipt_sha256']==receipt_sha
+    assert proof['operator_operation_id']==receipt['operation_id']
+    assert proof['paper_execution_authorized'] is False
+    assert (a151[0]/'paper_scalping_preopen_gate_v1.json').is_file()
+    monkeypatch.setattr(suspend,'operator_preopen_timer_disabled',lambda:False)
+    with pytest.raises(ValueError):
+        quiescence.a151_held_open_proof(
+            operator_a151_proof=suspend.exact_a151_operator_preopen_pause,
+            operator_timer_disabled=suspend.operator_preopen_timer_disabled)
+
+
+def test_a151_held_open_calendar_or_sidecar_drift_blocks(a151,monkeypatch):
+    from pathlib import Path
+    root,receipt_path,receipt,*_=a151
+    calendar=root/'ak_byma_calendar.py'
+    calendar.write_bytes((Path(__file__).parents[1]/'ak_byma_calendar.py').read_bytes())
+    monkeypatch.setattr(quiescence,'ROOT',root)
+    monkeypatch.setattr(quiescence,'datetime',HeldOpenClock)
+    calendar.write_text(calendar.read_text()+'\n# tampered\n')
+    with pytest.raises(ValueError,match='CALENDAR_SOURCE_RED'):
+        quiescence.a151_held_open_proof(
+            operator_a151_proof=suspend.exact_a151_operator_preopen_pause,
+            operator_timer_disabled=suspend.operator_preopen_timer_disabled)
+    calendar.write_bytes((Path(__file__).parents[1]/'ak_byma_calendar.py').read_bytes())
+    write_json(receipt_path,dict(receipt,admission_allowed=True))
+    with pytest.raises(ValueError,match='EVIDENCE_RED'):
+        quiescence.a151_held_open_proof(
+            operator_a151_proof=suspend.exact_a151_operator_preopen_pause,
+            operator_timer_disabled=suspend.operator_preopen_timer_disabled)
+
+
+@pytest.mark.parametrize('utc_clock', [
+    (2026,10,28,13,29),  # 10:29 ART, not OPEN.
+    (2026,10,28,20,0),   # 17:00 ART, not the held OPEN path.
+    (2026,10,29,14,4),   # No automatic carryover to the next day.
+])
+def test_a151_held_open_rejects_outside_exact_window(a151,monkeypatch,utc_clock):
+    class Clock(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            value=datetime(*utc_clock,tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(quiescence,'datetime',Clock)
+    with pytest.raises(ValueError,match='WINDOW_RED'):
+        quiescence.a151_held_open_proof(
+            operator_a151_proof=suspend.exact_a151_operator_preopen_pause,
+            operator_timer_disabled=suspend.operator_preopen_timer_disabled)
+
+
+def test_a151_intraday_literal_is_exact_and_required_before_suspend():
+    from pathlib import Path
+    workflow=(Path(__file__).parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    assert workflow.index('Require exact intraday owner authorization for A151 held OPEN') < \
+           workflow.index('Suspend versioned RC6 schedulers for guarded promotion')
+    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' }}" in workflow
+    assert "decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY'" in workflow
+    assert "A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open'" in workflow
+    assert "A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open'" in workflow
+    candidate,tree='a'*40,'b'*40
+    correct=f'RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY candidate={candidate} tree={tree}'
+    def page(rows):
+        return lambda _:json.dumps(rows).encode()
+    old=[{'user':{'login':'mbalbo2023'},'body':correct.replace(candidate,'c'*40),
+          'created_at':'2026-10-28T13:00:00Z','updated_at':'2026-10-28T13:00:00Z','id':1}]
+    with pytest.raises(ValueError,match='EXACT_POSTERIOR'):
+        require_exact_owner_authorization('o/r',candidate,tree,
+            decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY',get_page=page(old))
+    exact=[dict(old[0],body=correct,id=2)]
+    assert require_exact_owner_authorization('o/r',candidate,tree,
+        decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY',get_page=page(exact))==2
 
 
 @pytest.mark.parametrize('target,key,value,reason', [

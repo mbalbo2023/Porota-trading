@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +13,8 @@ from scripts import rc6_deploy_quiescence as q
 
 
 SHA = "b" * 40
+REAL_A151_HELD_OPEN_PROOF = q.a151_held_open_proof
+REAL_ADOPTED_CLOSE_PROOF = q.adopted_rescue_closed_proof
 
 
 @pytest.fixture
@@ -204,9 +208,164 @@ def test_a145_classifier_and_drain_flag_wiring_is_exact():
     from pathlib import Path
     workflow = (Path(__file__).parents[1] / ".github/workflows/porota-deploy-v2-promote.yml").read_text()
     assert "CLOSED_A143_PENDING_FIX_FORWARD" in workflow
-    assert workflow.count("--adopt-a143-running-pending") == 2
-    assert "candidate.a143_pending_running_proof(originals)" in workflow
+    assert workflow.count("--adopt-a143-running-pending") == 4
+    assert "candidate.a143_pending_running_proof(" in workflow
+    assert "originals,allow_a151_held_open=True" in workflow
+    assert "print('A151_HELD_OPEN' if proof.get('operator_hold')" in workflow
     assert "RC6_A143_FAILED_VALIDATION_RECOVERY=ADMITTED|health=RED|PAPER=0" in workflow
+
+
+class A151OpenClock(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        value=datetime(2026,10,28,14,4,tzinfo=timezone.utc)
+        return value if tz is None else value.astimezone(tz)
+
+
+def a151_open_incident(incident, monkeypatch):
+    root,folder,db,states=incident
+    (root/'ak_byma_calendar.py').write_bytes(
+        (Path(__file__).parents[1]/'ak_byma_calendar.py').read_bytes())
+    monkeypatch.setattr(q,'datetime',A151OpenClock)
+    marker_path=folder/'CURRENT_STATE_V2.json'
+    marker=json.loads(marker_path.read_text())
+    marker['recorded_at']='2026-10-28T13:00:00+00:00'
+    marker_path.write_text(json.dumps(marker))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='DEGRADED',session_state='BOOT_CALENDAR',heartbeat_at='2026-10-28T14:03:55+00:00'")
+    hold={'admission':q.A151_HELD_OPEN_MODE,'business_day_art':'2026-10-28',
+          'operator_receipt_sha256':'e'*64,
+          'operator_operation_id':'A151-40686116017-1',
+          'paper_execution_authorized':False}
+    monkeypatch.setattr(q,'a151_held_open_proof',lambda **_:dict(hold))
+    monkeypatch.setattr(q,'candidate_operator_module',lambda **_:SimpleNamespace(
+        exact_a151_operator_preopen_pause=lambda:('e'*64,'A151-40686116017-1'),
+        operator_preopen_timer_disabled=lambda:True))
+    return root,folder,db,states
+
+
+def test_a151_held_open_exact_a143_flat_drain_and_stopped_boot_calendar(
+        incident,monkeypatch):
+    _,_,db,states=a151_open_incident(incident,monkeypatch)
+    proof=q.a143_pending_running_proof(allow_a151_held_open=True)
+    assert proof['operator_hold']['admission']==q.A151_HELD_OPEN_MODE
+    assert proof['close'] is None
+    original_command=q.command
+    def stop_with_scanner_ack(args):
+        result=original_command(args)
+        if args[-1]=='porota_production_observer':
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE observer_state SET process_state='STOPPED'")
+        return result
+    monkeypatch.setattr(q,'command',stop_with_scanner_ack)
+    receipt=q.run(SHA,'drain',allow_a143_pending_running=True,
+                  allow_a151_held_open=True)
+    assert receipt['status']=='DRAINED'
+    assert receipt['a143_previous_proof']['operator_hold']==proof['operator_hold']
+    assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET session_state='CLOSED'")
+    with pytest.raises(ValueError,match='BOOK_OR_CRITICAL_CHANGED'):
+        q.a143_stopped_continuation(receipt)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET session_state='BOOT_CALENDAR'")
+    with pytest.raises(ValueError,match='RECEIPT_MODE_CHANGED'):
+        q.run(SHA,'install',allow_a143_pending_running=True)
+    assert q.run(SHA,'install',allow_a143_pending_running=True,
+                 allow_a151_held_open=True)['installation_started'] is True
+
+
+@pytest.mark.parametrize('mutation', ['wrong_session','paper_order','spot','caucion',
+                                     'future','stale_heartbeat','marker','docker_id',
+                                     'missing_hold','preopen_rearmed'])
+def test_a151_held_open_adversarial_fails_before_docker_stop(
+        incident,monkeypatch,mutation):
+    _,folder,db,states=a151_open_incident(incident,monkeypatch)
+    if mutation=='docker_id':
+        states[q.OWNED[0]]['Id']='f'*64
+    elif mutation=='marker':
+        path=folder/'CURRENT_STATE_V2.json'; value=json.loads(path.read_text())
+        value['real_order_routes']='CALLED';path.write_text(json.dumps(value))
+    elif mutation=='missing_hold':
+        monkeypatch.setattr(q,'a151_held_open_proof',lambda **_:(_ for _ in ()).throw(
+            ValueError('A151_RECEIPT_MISSING')))
+    elif mutation=='preopen_rearmed':
+        monkeypatch.setattr(q,'a151_held_open_proof',lambda **_:
+            REAL_A151_HELD_OPEN_PROOF(
+                operator_a151_proof=lambda:('e'*64,'A151-40686116017-1'),
+                operator_timer_disabled=lambda:False))
+    else:
+        with sqlite3.connect(db) as c:
+            if mutation=='wrong_session':
+                c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
+            elif mutation=='paper_order':
+                c.execute('UPDATE observer_state SET real_orders_sent=1')
+            elif mutation=='stale_heartbeat':
+                c.execute("UPDATE observer_state SET heartbeat_at='2026-10-27T14:00:00+00:00'")
+            else:
+                name={'spot':'paper_positions','caucion':'paper_cauciones',
+                      'future':'paper_future_positions'}[mutation]
+                c.execute(f'INSERT INTO {name} VALUES(?)',
+                          ('ACTIVE' if mutation=='future' else 'OPEN',))
+    with pytest.raises((ValueError,KeyError)):
+        q.run(SHA,'drain',allow_a143_pending_running=True,
+              allow_a151_held_open=True)
+    assert all(states[name]['State']['Status']=='running' for name in q.OWNED)
+
+
+def test_a151_1700_crossing_allows_only_existing_held_cleanup_not_new_drain(
+        incident,monkeypatch):
+    _,_,db,states=a151_open_incident(incident,monkeypatch)
+    class AfterOpen(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            value=datetime(2026,10,28,20,5,tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(q,'datetime',AfterOpen)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET heartbeat_at='2026-10-28T20:04:55+00:00'")
+    monkeypatch.setattr(q,'a151_held_open_proof',REAL_A151_HELD_OPEN_PROOF)
+    hold={'admission':q.A151_HELD_OPEN_MODE,'business_day_art':'2026-10-28',
+          'operator_receipt_sha256':'e'*64,
+          'operator_operation_id':'A151-40686116017-1',
+          'paper_execution_authorized':False}
+    with pytest.raises(ValueError,match='PHASE_CHANGED'):
+        q.run(SHA,'drain',allow_a143_pending_running=True,
+              allow_a151_held_open=True)
+    assert all(v['State']['Status']=='running' for v in states.values())
+    proof=q.a143_pending_running_proof(allow_a151_held_open=True,
+                                      held_continuation=hold)
+    assert proof['operator_hold']['operator_receipt_sha256']=='e'*64
+    with pytest.raises(ValueError,match='CONTINUATION_RECEIPT_CHANGED'):
+        q.a143_pending_running_proof(allow_a151_held_open=True,
+            held_continuation=dict(hold,operator_receipt_sha256='f'*64))
+
+
+def test_a151_mode_does_not_block_independent_29_postclose_or_admit_29_open(
+        incident,monkeypatch):
+    root,_,db,_=incident
+    (root/'ak_byma_calendar.py').write_bytes(
+        (Path(__file__).parents[1]/'ak_byma_calendar.py').read_bytes())
+    monkeypatch.setattr(q,'adopted_rescue_closed_proof',REAL_ADOPTED_CLOSE_PROOF)
+    class Day29Closed(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            value=datetime(2026,10,29,23,30,tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(q,'datetime',Day29Closed)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET heartbeat_at='2026-10-29T23:29:55+00:00'")
+    proof=q.a143_pending_running_proof(allow_a151_held_open=True)
+    assert proof['close']['business_day_art']=='2026-10-29'
+    assert proof['operator_hold'] is None
+    class Day29Open(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            value=datetime(2026,10,29,14,0,tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(q,'datetime',Day29Open)
+    with pytest.raises(ValueError,match='CLOSE_WINDOW_RED'):
+        q.a143_pending_running_proof(allow_a151_held_open=True)
 
 
 @pytest.mark.parametrize('utc_clock,admitted', [

@@ -31,6 +31,7 @@ ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
 RESCUE_MODE = 'DEGRADED_CLOSED_20261026'
 ADOPTED_RESCUE_MODE = 'CLOSED_STOPPED_FAILED_RESCUE'
 A143_PENDING_MODE = 'CLOSED_A143_PENDING_FIX_FORWARD'
+A151_HELD_OPEN_MODE = 'A151_HELD_OPEN'
 A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
@@ -48,13 +49,8 @@ FAILED_A92_RESCUE_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
 FAILED_A92_RESCUE_DEPLOY = '7df3c8fb1d2e32f3eb07b9d969c5b00d16e49b21'
 
 
-def operator_paper_no_go_proof(*, require_original_marker=False):
-    """Verify A125 without trusting pre-candidate host code in streamed steps.
-
-    The promote runner streams this exact candidate source before it installs
-    anything. Once installed, the same function exists in the candidate repo.
-    Neither route changes systemd or grants PAPER trading permission.
-    """
+def candidate_operator_module(*, require_staged=False):
+    """Use candidate A125/A151 source, never an old host helper for A151."""
     encoded = os.environ.get('RC6_A125_CANDIDATE_SOURCE_B64')
     if encoded:
         if len(encoded) > 150000:
@@ -68,19 +64,87 @@ def operator_paper_no_go_proof(*, require_original_marker=False):
                  module.__dict__)
         except (binascii.Error,ValueError) as exc:
             raise ValueError('QUIESCENCE_OPERATOR_SOURCE_INVALID') from exc
-    else:
+    elif not require_staged:
         # The recovery script is also streamed over SSH on stdin before the
         # candidate is fully installed.  There is no __file__ or guaranteed
         # working directory in that route: bind imports to the fixed host root.
         if ROOT.is_dir() and str(ROOT) not in os.sys.path:
             os.sys.path.insert(0, str(ROOT))
         from scripts import rc6_deploy_scheduler_suspend as module
+    else:
+        raise ValueError('QUIESCENCE_A151_STAGED_OPERATOR_REQUIRED')
+    return module
+
+
+def operator_paper_no_go_proof(*, require_original_marker=False):
+    """Verify A125 without trusting pre-candidate host code in streamed steps.
+
+    The promote runner streams this exact candidate source before it installs
+    anything. Once installed, the same function exists in the candidate repo.
+    Neither route changes systemd or grants PAPER trading permission.
+    """
+    module = candidate_operator_module()
     digest = module.exact_operator_preopen_pause(
         require_original_marker=require_original_marker)
     if (not re.fullmatch('[0-9a-f]{64}',digest or '') or
             not module.operator_preopen_timer_disabled()):
         raise ValueError('QUIESCENCE_OPERATOR_PAUSE_TIMER_RED')
     return digest
+
+
+def a151_held_open_proof(*, operator_a151_proof=None,
+                         operator_timer_disabled=None,
+                         continuation_only=False):
+    """Admit only the exact dated A151 NO_GO for a flat #751 recovery.
+
+    This is a deployment quiescence proof during the guardian's 10:30–17:00
+    OPEN window, not a PAPER trading admission or a replacement for CLOSED.
+    The current flat book, Docker pair and marker are checked separately by
+    a143_pending_running_proof before any stop intent is persisted.
+    """
+    local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+    end = 20 * 60 if continuation_only else 17 * 60
+    if (local.date().isoformat() != '2026-10-28' or
+            not (10 * 60 + 30 <= local.hour * 60 + local.minute < end)):
+        raise ValueError('QUIESCENCE_A151_HELD_OPEN_WINDOW_RED')
+    calendar_path = ROOT/'ak_byma_calendar.py'
+    if calendar_path.is_symlink() or not calendar_path.is_file():
+        raise ValueError('QUIESCENCE_A151_CALENDAR_SOURCE_RED')
+    calendar_source = calendar_path.read_bytes()
+    if hashlib.sha256(calendar_source).hexdigest() != RESCUE_CALENDAR_SHA256:
+        raise ValueError('QUIESCENCE_A151_CALENDAR_SOURCE_RED')
+    calendar = types.ModuleType('rc6_a151_held_open_calendar')
+    exec(compile(calendar_source,str(calendar_path),'exec'),
+         calendar.__dict__)
+    if (calendar.CALENDARIO_ACTUALIZADO_EL.isoformat() != '2026-10-14' or
+            2026 not in calendar.ANIOS_AUDITADOS or
+            not calendar.es_dia_habil_operativo(local.date())):
+        raise ValueError('QUIESCENCE_A151_CALENDAR_DAY_RED')
+    if (operator_a151_proof is None) != (operator_timer_disabled is None):
+        raise ValueError('QUIESCENCE_A151_OPERATOR_CALLBACK_PAIR_REQUIRED')
+    if operator_a151_proof is None:
+        module = candidate_operator_module(require_staged=True)
+        operator_a151_proof = module.exact_a151_operator_preopen_pause
+        operator_timer_disabled = module.operator_preopen_timer_disabled
+    if not callable(operator_a151_proof) or not callable(operator_timer_disabled):
+        raise ValueError('QUIESCENCE_A151_OPERATOR_PROOF_MISSING')
+    receipt_sha, operation = operator_a151_proof()
+    if (not isinstance(receipt_sha, str) or
+            re.fullmatch('[0-9a-f]{64}', receipt_sha) is None or
+            not isinstance(operation, str) or
+            re.fullmatch(r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation) is None):
+        raise ValueError('QUIESCENCE_A151_OPERATOR_RECEIPT_RED')
+    # The receipt verifier attests the two immutable sidecars, historical
+    # A125 digest, original #751 identity, disabled preopen and PAPER/0.
+    # Explicitly recheck the live timer if using a directly supplied callback.
+    if not operator_timer_disabled():
+        raise ValueError('QUIESCENCE_A151_PREOPEN_REARMED')
+    return {'admission': A151_HELD_OPEN_MODE,
+            'business_day_art': '2026-10-28',
+            'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
+            'operator_receipt_sha256': receipt_sha,
+            'operator_operation_id': operation,
+            'paper_execution_authorized': False}
 
 
 def degraded_closed_rescue_proof():
@@ -394,13 +458,47 @@ def _a143_exact_json(path, limit):
     return value, hashlib.sha256(raw).hexdigest()
 
 
-def a143_pending_running_proof(originals=None):
+def a143_pending_running_proof(originals=None, *, allow_a151_held_open=False,
+                               operator_a151_proof=None,
+                               operator_timer_disabled=None,
+                               held_continuation=None):
     """A145: admit ONLY the installed #751 running, failed-validation PAPER pair.
 
     The old A92 and any healthy-successor routes are intentionally excluded.
     This is a pre-stop RECOVERY proof, never a VALIDATED_RUNTIME assertion.
     """
-    close = adopted_rescue_closed_proof()  # Only independently verified postclose.
+    held_open = None
+    close = None
+    if held_continuation is not None and not allow_a151_held_open:
+        raise ValueError('QUIESCENCE_A151_CONTINUATION_MODE_INVALID')
+    if allow_a151_held_open:
+        local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+        # A151 is one single day. Historical independently postclosed
+        # recovery stays available on 29/30; it cannot borrow A151's receipt.
+        day_a151 = local.date().isoformat() == '2026-10-28'
+        if held_continuation is not None and not day_a151:
+            raise ValueError('QUIESCENCE_A151_OPERATOR_DAY_EXPIRED')
+        minute = local.hour * 60 + local.minute
+        if day_a151 and (10 * 60 + 30 <= minute < 17 * 60 or (
+                held_continuation is not None and minute < 20 * 60)):
+            held_open = a151_held_open_proof(
+                operator_a151_proof=operator_a151_proof,
+                operator_timer_disabled=operator_timer_disabled,
+                continuation_only=held_continuation is not None)
+            if held_continuation is not None and (
+                    type(held_continuation) is not dict or
+                    held_continuation.get('admission') != A151_HELD_OPEN_MODE or
+                    held_continuation.get('business_day_art') != '2026-10-28' or
+                    held_continuation.get('operator_receipt_sha256') !=
+                    held_open['operator_receipt_sha256'] or
+                    held_continuation.get('operator_operation_id') !=
+                    held_open['operator_operation_id'] or
+                    held_continuation.get('paper_execution_authorized') is not False):
+                raise ValueError('QUIESCENCE_A151_CONTINUATION_RECEIPT_CHANGED')
+        else:
+            close = adopted_rescue_closed_proof()
+    else:
+        close = adopted_rescue_closed_proof()  # Historical CLOSED route unchanged.
     folder = ROOT/'data/deploy'
     marker, marker_digest = _a143_exact_json(folder/'CURRENT_STATE_V2.json', 65536)
     recorded = datetime.fromisoformat(marker['recorded_at'])
@@ -459,6 +557,9 @@ def a143_pending_running_proof(originals=None):
                 lifecycle(value) != expected.get('lifecycle')):
             raise ValueError('QUIESCENCE_A143_RUNTIME_IMAGE_OR_ID_RED')
     book = rescue_flat_book()
+    if (held_open is not None and
+            (book['process_state'],book['session_state']) != ('DEGRADED','BOOT_CALENDAR')):
+        raise ValueError('QUIESCENCE_A151_HELD_OPEN_BOOK_STATE_RED')
     if ((book['process_state'],book['session_state']) not in
             {('DEGRADED','BOOT_CALENDAR'),('DEGRADED','MARKET_CLOSED'),
              ('STOPPED','CLOSED')} or
@@ -487,10 +588,11 @@ def a143_pending_running_proof(originals=None):
                                 'image':observed[name]['Image'],
                                 'lifecycle':lifecycle(observed[name])} for name in OWNED},
             'flat_book':book, 'critical_admission':critical,
-            'close':close}
+            'close':close, 'operator_hold':held_open}
 
 
-def a143_stopped_continuation(receipt):
+def a143_stopped_continuation(receipt, *, operator_a151_proof=None,
+                              operator_timer_disabled=None):
     """A143 is still unvalidated after stopping. Never restart or forgive drift."""
     if (receipt.get('a143_pending_adopted') is not True or
             receipt.get('installation_started') is not False or
@@ -503,6 +605,27 @@ def a143_stopped_continuation(receipt):
             proof.get('image_id') != A143_PENDING_IMAGE_ID or
             set(proof.get('containers',{})) != set(OWNED)):
         raise ValueError('QUIESCENCE_A143_STOP_PROOF_INVALID')
+    held_open = proof.get('operator_hold')
+    if held_open is not None:
+        if (type(held_open) is not dict or
+                held_open.get('admission') != A151_HELD_OPEN_MODE or
+                held_open.get('business_day_art') != '2026-10-28' or
+                held_open.get('paper_execution_authorized') is not False or
+                proof.get('close') is not None or
+                datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+                .date().isoformat() != '2026-10-28'):
+            raise ValueError('QUIESCENCE_A151_STOP_HOLD_EXPIRED_OR_CHANGED')
+        if (operator_a151_proof is None) != (operator_timer_disabled is None):
+            raise ValueError('QUIESCENCE_A151_STOP_CALLBACK_PAIR_REQUIRED')
+        if operator_a151_proof is None:
+            operator = candidate_operator_module(require_staged=True)
+            operator_a151_proof = operator.exact_a151_operator_preopen_pause
+            operator_timer_disabled = operator.operator_preopen_timer_disabled
+        receipt_sha, operation = operator_a151_proof()
+        if (receipt_sha != held_open.get('operator_receipt_sha256') or
+                operation != held_open.get('operator_operation_id') or
+                not operator_timer_disabled()):
+            raise ValueError('QUIESCENCE_A151_STOP_HOLD_CHANGED')
     folder = ROOT/'data/deploy'
     marker, marker_sha = _a143_exact_json(folder/'CURRENT_STATE_V2.json', 65536)
     frozen, frozen_sha = _a143_exact_json(folder/'porota-frozen-candidate.json', 16384)
@@ -524,8 +647,16 @@ def a143_stopped_continuation(receipt):
                 receipt['containers'][name]['image'] != proof['containers'][name]['image']):
             raise ValueError('QUIESCENCE_A143_STOP_DOCKER_ID_CHANGED')
     book = rescue_flat_book()
-    allowed = {('DEGRADED','BOOT_CALENDAR'),('DEGRADED','MARKET_CLOSED'),
-               ('STOPPED','CLOSED')}
+    # An exact A151 prestate may acknowledge SIGTERM as STOPPED while keeping
+    # BOOT_CALENDAR. No other calendar transition is admitted by that receipt.
+    allowed = ({('DEGRADED','BOOT_CALENDAR'),('STOPPED','BOOT_CALENDAR')}
+               if held_open is not None else
+               {('DEGRADED','BOOT_CALENDAR'),('DEGRADED','MARKET_CLOSED'),
+                ('STOPPED','CLOSED')})
+    if held_open is not None and (proof['flat_book'].get('process_state'),
+                                  proof['flat_book'].get('session_state')) != \
+            ('DEGRADED','BOOT_CALENDAR'):
+        raise ValueError('QUIESCENCE_A151_STOP_PRESTATE_CHANGED')
     # An exact A145 DEGRADED/MARKET_CLOSED parent may acknowledge SIGTERM as
     # STOPPED/MARKET_CLOSED. Admit that transition only after both Docker
     # identities prove the prior A143 clean stop; never as a fresh preflight.
@@ -1584,6 +1715,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
         allow_postclose_pending=False, allow_intraday_caucion=False,
          allow_pending_caucion=False, allow_degraded_closed_rescue=False,
          allow_adopt_failed_rescue=False, allow_a143_pending_running=False,
+         allow_a151_held_open=False,
          candidate_image_id=None,
          frozen_manifest=None):
     if allow_a143_pending_running and (
@@ -1594,6 +1726,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
             action not in {'drain','install'} or
             candidate == A143_PENDING_SOURCE_SHA):
         raise ValueError('QUIESCENCE_A143_PENDING_MODE_INVALID')
+    if allow_a151_held_open and not allow_a143_pending_running:
+        raise ValueError('QUIESCENCE_A151_HELD_OPEN_MODE_INVALID')
     if allow_adopt_failed_rescue and (allow_admin_issue624 or allow_market_open_suspend or
             allow_open_paper_carryover or allow_postclose_pending or
             allow_intraday_caucion or allow_pending_caucion or
@@ -1629,7 +1763,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
         if allow_a143_pending_running:
             if action == 'drain' and receipt is None:
                 originals = {name:inspect(name) for name in OWNED}
-                prior = a143_pending_running_proof(originals)
+                prior = a143_pending_running_proof(
+                    originals, allow_a151_held_open=allow_a151_held_open)
+                if allow_a151_held_open != (prior.get('operator_hold') is not None):
+                    raise ValueError('QUIESCENCE_A151_HELD_OPEN_PHASE_CHANGED')
                 receipt = {'candidate_sha':candidate,'status':'DRAINING',
                            'installation_started':False,
                            'a143_pending_adopted':True,
@@ -1668,6 +1805,10 @@ def run(candidate, action, *, allow_admin_issue624=False,
                         receipt.get('a143_pending_adopted') is not True or
                         receipt.get('installation_started') is not False):
                     raise ValueError('QUIESCENCE_A143_DRAIN_RECEIPT_CHANGED')
+                prior = receipt.get('a143_previous_proof')
+                if (type(prior) is not dict or
+                        allow_a151_held_open != (prior.get('operator_hold') is not None)):
+                    raise ValueError('QUIESCENCE_A151_HELD_OPEN_RECEIPT_MODE_CHANGED')
                 a143_stopped_continuation(receipt)
                 if action == 'install':
                     receipt.update(status='HOST_INSTALLATION_STARTED',
@@ -2079,6 +2220,7 @@ def main(argv=None):
     parser.add_argument('--rescue-degraded-closed-20261026', action='store_true')
     parser.add_argument('--adopt-failed-rescue-candidate', action='store_true')
     parser.add_argument('--adopt-a143-running-pending', action='store_true')
+    parser.add_argument('--a151-held-open', action='store_true')
     parser.add_argument('--candidate-image-id')
     parser.add_argument('--frozen-manifest')
     parser.add_argument('--allow-validation-pending',action='store_true',
@@ -2122,7 +2264,9 @@ def main(argv=None):
             args.paused_postclose or args.intraday_caucion or
             args.pending_paper_caucion or args.admin_cancel_issue624 or
             args.action not in {'drain','install'}):
-        parser.error('--adopt-a143-running-pending requires isolated postclose drain/install')
+        parser.error('--adopt-a143-running-pending requires isolated recovery drain/install')
+    if args.a151_held_open and not args.adopt_a143_running_pending:
+        parser.error('--a151-held-open requires exact A143 pending recovery drain/install')
     if ((args.candidate_image_id or args.frozen_manifest) and args.action != 'image-intent') or (
             args.action == 'image-intent' and
             (not args.candidate_image_id or not args.frozen_manifest)):
@@ -2146,6 +2290,8 @@ def main(argv=None):
         options['allow_adopt_failed_rescue'] = True
     if args.adopt_a143_running_pending:
         options['allow_a143_pending_running'] = True
+    if args.a151_held_open:
+        options['allow_a151_held_open'] = True
     if args.action == 'image-intent':
         options.update(candidate_image_id=args.candidate_image_id,
                        frozen_manifest=args.frozen_manifest)
