@@ -1,6 +1,6 @@
 # POROTA TRADING — CODEX / AGENT ENTRYPOINT
 
-Version: `2026-10-03/1`
+Version: `2026-10-28/1`
 
 This file is the repository entrypoint for agents that start from the default branch. **`main` is NOT the operational truth for RC6.** Do not derive the current production baseline, runtime state, active workstreams, READY universe, or deploy status from `main`.
 
@@ -9,10 +9,11 @@ This file is the repository entrypoint for agents that start from the default br
 For any RC6 analysis, development, audit, CI, deploy, dashboard, broker, market-data, strategy, or runtime task:
 
 1. Resolve the current canonical RC6 product branch from fresh GitHub/release evidence.
-2. Latest verified pointer at this documentation cut:
-   - product branch: `deploy/rc6-pr69-isolated-20260915`
-   - GitHub product HEAD: `da697c6e6c2274579f9e4a112fabc4327475dd35`
-   - this pointer is a bootstrap only; **revalidate before use**.
+2. Governance bootstrap at the A149 (28-Oct-2026 ART) documentary cut:
+   - product branch: `deploy/rc6-pr69-isolated-20260915` (verify the current canonical branch);
+   - **do not pin a product SHA from main**; verify current HEAD/PRs/Actions live;
+   - open the [latest #732 continuity and handoff](https://github.com/mbalbo2023/Porota-trading/issues/732), starting with [A148](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6459266846) and its [GREEN addendum](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6459290988), then all newer corrections;
+   - apply [RC6 Deploy V2 / Continuity A149](docs/governance/RC6_DEPLOY_V2_CONTINUITY_20261028.md) before claiming ownership or deployment.
 3. Read the `AGENTS.md` from that product branch.
 4. Read that branch's `ops/policy/porota-policy.yaml`.
 5. Read the latest release/handoff and machine-generated runtime evidence available on that branch / GitHub Actions.
@@ -189,3 +190,13 @@ The task-specific order is authoritative for scope. This bootstrap is authoritat
 ## 11. Legacy main-branch PR attestation
 
 The default branch still has a legacy PR check that asks for September checkpoint-attestation fields. Supply truthful historical values when that check applies, but treat them only as compatibility metadata for the guard. They do **not** restore the old checkpoint as current RC6 truth; Sections 1 and 9 above still control continuity.
+
+
+## 12. Continuity and 100%-electronic validation update (A149, 28-Oct-2026 ART)
+
+- Treat the A149 governance runbook as **process**, not as runtime truth; reconcile it with the newest #732/#624, protected product workflow and machine receipts before every action.
+- Every meaningful incident must close the loop `ERROR → RCA → FIX → GUARD → TEST/CI/PREFLIGHT → EVIDENCE → DOC UPDATE`; if a permanent automated guard is impossible, document why and retain `NO_VERIFICADO`/`BLOQUEADO` as appropriate.
+- The operator's objective is **100% electronic evidence coverage of the applicable acceptance criteria**, including SHA/tree/artifact/digest, code/tests, host/runtime, PAPER/0, DB, timers/workers, family readiness and UI when in scope. Never call unmeasured or impossible-to-observe criteria GREEN; market-OPEN events cannot be fabricated outside the session.
+- Parallelize independent `READ_ONLY` evidence lanes (PAPER/SHADOW/scalping architecture, readiness by ten families, scheduler/IOL guardian, SQLite/cauciones/disk, QA/PR governance) without overlapping the single integration `WRITE_OWNER` or global `DEPLOY_OWNER`.
+- A125 date-bound permission for 27-Oct cannot automatically authorize 28-Oct timer rearming; E09 host stress is cancelled / E10 not applicable. Exact #624 comments are per candidate SHA/tree. Preserve SHADOW dependencies and source freshness; do not conflate cauciones-accounting NO_GO with a scalping-algorithm failure.
+- Docs-only governance changes belong on a non-deploy branch and must not promote, restart, or mutate the Droplet. Do not add these documentary changes to the live #752 candidate or its frozen artifact.
