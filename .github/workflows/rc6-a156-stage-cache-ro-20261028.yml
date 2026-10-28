@@ -50,6 +50,7 @@ jobs:
           import re
           import stat
           import subprocess
+          import time
           from itertools import islice
           from datetime import datetime, timezone
           from pathlib import Path
@@ -161,17 +162,46 @@ jobs:
           stage['other_direct_stat_bytes'] = unknown_bytes
           stage['direct_entry_count'] = len(children)
 
-          try:
-              p = subprocess.run(['lsof','-nP','+D',str(STAGE)], capture_output=True,
-                                 text=True, timeout=8, check=False)
-              if p.returncode == 0:
-                  fd = {'state':'OK','open_row_count':max(0,len(p.stdout.splitlines())-1)}
-              elif p.returncode == 1 and not p.stdout.strip() and not p.stderr.strip():
-                  fd = {'state':'OK','open_row_count':0}
-              else:
-                  fd = {'state':'UNVERIFIED','exit_code':p.returncode}
-          except (OSError, subprocess.TimeoutExpired):
-              fd = {'state':'UNVERIFIED','reason':'LSOF_UNAVAILABLE_OR_TIMEOUT'}
+          def stage_open_references():
+              # Readlink text only; never dereference any process fd/cwd path.
+              # Bound PID count, fd count per PID, total, and wall time.
+              deadline = time.monotonic() + 4
+              pid_count, fd_count, hits = 0, 0, 0
+              prefix = str(STAGE) + '/'
+              try:
+                  for process in os.scandir('/proc'):
+                      if not process.name.isdigit():
+                          continue
+                      pid_count += 1
+                      if pid_count>500 or time.monotonic()>deadline:
+                          raise RuntimeError('PROC_PID_OR_TIME_CAP')
+                      proc = Path('/proc') / process.name
+                      for target in (proc/'cwd',):
+                          try:
+                              value = os.readlink(target)
+                              hits += int(value==str(STAGE) or value.startswith(prefix))
+                          except FileNotFoundError:
+                              continue
+                      try:
+                          with os.scandir(proc/'fd') as entries:
+                              per_pid = 0
+                              for ent in entries:
+                                  per_pid += 1
+                                  fd_count += 1
+                                  if per_pid>256 or fd_count>5000 or time.monotonic()>deadline:
+                                      raise RuntimeError('PROC_FD_OR_TIME_CAP')
+                                  try:
+                                      value = os.readlink(ent.path)
+                                      hits += int(value==str(STAGE) or value.startswith(prefix))
+                                  except FileNotFoundError:
+                                      continue
+                      except FileNotFoundError:
+                          continue
+                  return {'state':'OK','pid_count':pid_count,
+                          'fd_count':fd_count,'stage_open_refs':hits}
+              except (OSError,RuntimeError):
+                  return {'state':'UNVERIFIED','reason':'PROC_CAP_OR_PERMISSION'}
+          fd = stage_open_references()
           stage['open_fds'] = fd
 
           ids = docker(['container','ls','-aq','--no-trunc']).splitlines()
@@ -196,7 +226,21 @@ jobs:
                   stat.S_IMODE(b.st_mode)!=0o600 or b.st_size>1024):
                   raise RuntimeError('BARRIER_METADATA_RED')
               q = json.loads(BARRIER.read_text())
-              barrier = {k:q.get(k) for k in ('candidate','run','attempt','phase','status')}
+              phases = {'reconcile','classify','offline_preclean','preclean','suspend',
+                        'drain','transfer','promotion','flat_book','verify_carryover',
+                        'timers_restore','timers_restored','backup_retire','finalize',
+                        'cleanup_contract','cleanup_recover','cleanup_restore','cleanup_final'}
+              if (not isinstance(q,dict) or
+                  not isinstance(q.get('candidate'),str) or
+                  not re.fullmatch(r'[0-9a-f]{40}',q['candidate']) or
+                  not isinstance(q.get('run'),str) or
+                  not re.fullmatch(r'[1-9][0-9]*',q['run']) or
+                  not isinstance(q.get('attempt'),str) or
+                  not re.fullmatch(r'[1-9][0-9]*',q['attempt']) or
+                  q.get('phase') not in phases or
+                  q.get('status') not in {'IDLE','INFLIGHT','CONTRACT_ONLY'}):
+                  raise RuntimeError('BARRIER_CONTENT_INVALID')
+              barrier = {k:q[k] for k in ('candidate','run','attempt','phase','status')}
           else:
               barrier = {'state':'ABSENT'}
 
@@ -219,6 +263,11 @@ jobs:
                  'before':free0,'after':fs(),'stage':stage,'barrier':barrier,
                  'docker_usage':usage,'other_storage_metadata':logs,
                  'journal_disk_usage':journal.stdout.strip()[:100] if journal.returncode==0 else 'UNVERIFIED'}
+          stage['cleanup_review_gate'] = (
+              'ELIGIBLE_FOR_SEPARATE_REVIEW' if fd['state']=='OK' and fd['stage_open_refs']==0
+              and stage['container_mount_overlaps']==0 and not stage['is_mountpoint']
+              and stage['other_direct_entry_count']==0 and barrier.get('status')=='IDLE'
+              else 'BLOQUEADO')
           print('RC6_A156_STAGE_CACHE_RO='+json.dumps(out,sort_keys=True))
           PYHOST
 
