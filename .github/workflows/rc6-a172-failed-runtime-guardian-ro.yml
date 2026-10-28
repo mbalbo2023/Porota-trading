@@ -44,7 +44,7 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
             -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
             'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PY' | tee evidence/host.jsonl
-          import fcntl, hashlib, json, os, shutil, sqlite3, stat, subprocess, sys, urllib.request
+          import fcntl, hashlib, json, os, re, shutil, sqlite3, stat, subprocess, sys, urllib.request
           from pathlib import Path
           from datetime import datetime,timezone
           root=Path('/opt/porota-trading')
@@ -115,6 +115,18 @@ jobs:
               timer_meta=show(guardian,('Unit','ActiveState','UnitFileState','Result','LastTriggerUSec'))
               service_meta=show('porota-iol-oauth-health-rc6.service',
                                 ('ActiveState','SubState','Result','ExecMainCode','ExecMainStatus','NRestarts','ExecMainStartTimestamp','ExecMainExitTimestamp'))
+              guard_state,_=bounded(root/'data/market/iol_oauth_guardian_state.json',16384)
+              reason=str(guard_state.get('reason') or '')
+              reason_codes=sorted(set(re.findall(r'IOL_MCP_[A-Z0-9_]+',reason)))
+              if (guard_state.get('schema')!='POROTA_RC6_IOL_OAUTH_GUARDIAN_STATE_V1' or
+                      guard_state.get('state')!='REAUTH_REQUIRED' or
+                      not reason_codes):
+                  raise ValueError('OAUTH_GUARDIAN_STATE_UNCLASSIFIED')
+              journal=subprocess.run(['journalctl','-u','porota-iol-oauth-health-rc6.service',
+                                      '--since','2026-10-28 21:15:00 UTC',
+                                      '--until','2026-10-28 21:15:25 UTC',
+                                      '--no-pager','-o','cat'],capture_output=True,text=True,timeout=8)
+              journal_classes=sorted(set(re.findall(r'HTTP Error [0-9]{3}|IOL_MCP_[A-Z0-9_]+|timed out|Temporary failure',journal.stdout)))
               ppi=[line.split()[0] for line in command('systemctl','list-unit-files','--no-legend').splitlines()
                    if line.split() and 'ppi' in line.split()[0].lower() and 'watch' in line.split()[0].lower()]
               ppi_state={name:[state(name,'active'),state(name,'enabled')] for name in ppi}
@@ -128,7 +140,15 @@ jobs:
                       'container_ids':{name:runtime['containers'][name]['id'] for name in names},
                       'book':[book['process_state'],book['session_state']],
                       'real_orders_sent':0,'timers_held':16,'guardian_timer':timer_meta,
-                      'guardian_service':service_meta,'ppi_watch_state_only':ppi_state,
+                      'guardian_service':service_meta,
+                      'guardian_state':{'state':guard_state['state'],
+                                        'checked_at':guard_state.get('checked_at'),
+                                        'last_authenticated_at':guard_state.get('last_authenticated_at'),
+                                        'incident_seq':guard_state.get('incident_seq'),
+                                        'reason_codes':reason_codes,
+                                        'reason_sha256':hashlib.sha256(reason.encode()).hexdigest(),
+                                        'journal_classes':journal_classes},
+                      'ppi_watch_state_only':ppi_state,
                       'barrier':'ABSENT','disk_free_bytes':usage.free,
                       'inode_free_percent':round(100*vfs.f_ffree/vfs.f_files,6),
                       'host_mutations':0,'operational_go':False}
