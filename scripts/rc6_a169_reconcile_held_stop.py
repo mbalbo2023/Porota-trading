@@ -153,7 +153,7 @@ def prove(q, operator, mode):
 
 
 def held_timers(operator):
-    path = ROOT / ('scheduler-suspend-' + CANDIDATE + '.json')
+    path = operator.ROOT / ('scheduler-suspend-' + CANDIDATE + '.json')
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
         raise ValueError('A169_SUSPENSION_RECEIPT_UNSAFE')
     row = json.loads(path.read_bytes())
