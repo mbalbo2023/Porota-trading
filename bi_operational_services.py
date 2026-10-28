@@ -158,10 +158,19 @@ def _postclose_daily_due(store, key):
     if row and row[2]:
         try:
             # A report or summary (including a quarantined invalid PAPER
-            # ledger) needs at most one routine attempt per local trading day.
+            # ledger) needs at most one routine POSTCLOSE attempt per local
+            # trading day. A morning/noon report is not today's closing
+            # report and MUST be rebuilt once the wheel actually closes.
+            # COM18782 closes the regular PPT at 17:00 through 01-Nov-2026;
+            # COM19024 extends it to 18:00 beginning 02-Nov-2026.
             # Forced operator rechecks remain available.
             attempted = datetime.fromisoformat(row[2])
-            if attempted.astimezone(TZ).date() == datetime.now(TZ).date():
+            if attempted.tzinfo is None:
+                raise ValueError("POSTCLOSE_REPORT_CLOCK_NAIVE")
+            current = datetime.now(TZ)
+            previous = attempted.astimezone(TZ)
+            cutoff_hour = 18 if current.date() >= date(2026, 11, 2) else 17
+            if previous.date() == current.date() and previous.hour >= cutoff_hour:
                 return False
         except (TypeError, ValueError):
             pass
