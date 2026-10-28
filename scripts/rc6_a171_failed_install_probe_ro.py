@@ -18,6 +18,7 @@ OLD = 'b778c8063e96574ddf859907abb99fae6f4e3484'
 CURRENT = '33ea6d365c47d415fc5480a23b1338c208c2a29f'
 OLD_DIGEST = 'ac2d6ec4bb3fe2a2ce809d89034cb564c1a3ce790de21838b654abc787471f81'
 Q_DIGEST = '5346f3b56681056bf91e2324e7e6a2c440d067749272090820057390bc8f3412'
+LOADED_IMAGE = 'sha256:c3af151c90dcf124d38843e4fb99219b01bfc9863cc1d7a96bdedfd419e6d98f'
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
 
 
@@ -76,6 +77,17 @@ def run():
                 new.get('containers') != old.get('containers') or
                 new.get('stop_evidence') != old.get('stop_evidence')):
             raise ValueError('EXACT_RECEIPT_CHAIN_RED')
+        intent = new.get('candidate_image_intent')
+        if (type(intent) is not dict or intent.get('image_id') != LOADED_IMAGE or
+                new.get('candidate_runtime_after_failure') is not None or
+                new.get('prior_a143_stopped_after_install') is not True or
+                new.get('runtime_health') != 'PRIOR_A143_PENDING_NOT_GO'):
+            raise ValueError('EXACT_IMAGE_INTENT_OR_RECOVERY_RED')
+        for tag in ('porota-trading-bot:17.0.0-rc6',
+                    'porota-trading-bot:17.0.0-rc6-candidate-' + CURRENT):
+            images = json.loads(command('docker', 'image', 'inspect', tag))
+            if len(images) != 1 or images[0].get('Id') != LOADED_IMAGE:
+                raise ValueError('EXACT_STABLE_IMAGE_ALIAS_RED')
         actual = json.loads(command('docker', 'inspect', *OWNED))
         if len(actual) != 2:
             raise ValueError('OWNED_RUNTIME_COUNT_RED')
@@ -120,6 +132,7 @@ def run():
                 'prior_receipt_sha256': old_digest, 'failed_receipt_sha256': new_digest,
                 'failed_inflight': 'MISSING', 'failed_status': new['status'],
                 'installation_started': True, 'runtime': 'BOTH_EXACT_OLD_EXITED_0',
+                'loaded_image_id': LOADED_IMAGE, 'stable_image_alias': 'EXACT_A170_FROZEN',
                 'book': [book['process_state'], book['session_state']],
                 'real_orders_sent': 0, 'timers_held': len(names),
                 'iol_guardian': [unit_state(guardian, 'active'), unit_state(guardian, 'enabled')],
