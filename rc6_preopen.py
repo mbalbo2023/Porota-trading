@@ -277,12 +277,24 @@ def required_timers(deploy_scheduler_candidate=None):
                 raise ValueError('PREOPEN_DEPLOY_RECEIPT_CHANGED')
             if receipt.get('operator_pause_timer') is not None:
                 operator_pause_timer = receipt['operator_pause_timer']
-                operator_pause_sha = suspend.exact_operator_preopen_pause()
+                # The scheduler chain still anchors A125's original 27-Oct
+                # gate bytes. A151 is a separate, same-day sidecar; never
+                # replace the historical A125 digest inside that chain.
+                historical_sha = suspend.operator_preopen_hold_evidence()
                 if (operator_pause_timer != suspend.OPERATOR_PREOPEN_TIMER or
                         operator_pause_timer not in units or
-                        receipt.get('operator_pause_receipt_sha256') != operator_pause_sha or
+                        receipt.get('operator_pause_receipt_sha256') != historical_sha or
                         not suspend.operator_preopen_timer_disabled()):
                     raise ValueError('PREOPEN_OPERATOR_PAUSE_EVIDENCE_CHANGED')
+                day = datetime.now(TZ).date().isoformat()
+                if day == suspend.OPERATOR_PAUSE_DAY:
+                    operator_pause_sha = historical_sha
+                    operator_pause_operation = suspend.OPERATOR_PAUSE_RUN
+                elif day == suspend.A151_OPERATOR_PAUSE_DAY:
+                    operator_pause_sha, operator_pause_operation = (
+                        suspend.exact_a151_operator_preopen_pause())
+                else:
+                    raise ValueError('PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED')
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
             return {'state':'RED','units':values,'reason':type(exc).__name__}
     for unit in units:
@@ -305,8 +317,8 @@ def required_timers(deploy_scheduler_candidate=None):
     output = {'state':'GREEN' if ok else 'RED','units':values}
     if operator_pause_timer is not None:
         output.update(operator_paper_paused=True,
-                      operator_pause_day_ar=suspend.OPERATOR_PAUSE_DAY,
-                      operator_pause_operation_id=suspend.OPERATOR_PAUSE_RUN,
+                      operator_pause_day_ar=day,
+                      operator_pause_operation_id=operator_pause_operation,
                       operator_pause_receipt_sha256=operator_pause_sha)
     return output
 

@@ -88,24 +88,31 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                     for item in checks.values()), 'CHECK_NOT_ACCEPTABLE')
         timer = checks['required_rc6_timers']
         if status == 'PAUSED_NO_GO':
-            # A125 is a single operator decision, not a generic exemption for
-            # disabled timers or a future trading day. The installed preopen
-            # code has already checked its immutable host receipt and timer.
-            require(local_now.date().isoformat() == '2026-10-27',
+            # A125 and A151 are separate dated operator decisions. The
+            # installed preopen code attests the corresponding immutable
+            # receipt and the disabled timer; neither represents PAPER GO.
+            day = local_now.date().isoformat()
+            require(day in {'2026-10-27', '2026-10-28'},
                     'OPERATOR_PAUSE_DAY_EXPIRED')
             require(report.get('operator_paper_paused') is True and
                     timer.get('operator_paper_paused') is True,
                     'OPERATOR_PAUSE_NOT_ATTESTED')
-            require(report.get('operator_pause_day_ar') == '2026-10-27' and
-                    timer.get('operator_pause_day_ar') == '2026-10-27' and
-                    report.get('operator_pause_operation_id') == 'A125-40501523106-1' and
-                    timer.get('operator_pause_operation_id') == 'A125-40501523106-1',
+            operation = report.get('operator_pause_operation_id')
+            require(report.get('operator_pause_day_ar') == day and
+                    timer.get('operator_pause_day_ar') == day and
+                    isinstance(operation, str) and
+                    ((day == '2026-10-27' and operation == 'A125-40501523106-1') or
+                     (day == '2026-10-28' and re.fullmatch(
+                         r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation))) and
+                    timer.get('operator_pause_operation_id') == operation,
                     'OPERATOR_PAUSE_IDENTITY_RED')
             digest = report.get('operator_pause_receipt_sha256')
             require(isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest) and
                     timer.get('operator_pause_receipt_sha256') == digest,
                     'OPERATOR_PAUSE_RECEIPT_RED')
         else:
+            require(local_now.date().isoformat() not in {'2026-10-27', '2026-10-28'},
+                    'GREEN_CANNOT_OVERRIDE_OPERATOR_HOLD')
             require(report.get('operator_paper_paused') is not True and
                     timer.get('operator_paper_paused') is not True,
                     'GREEN_CANNOT_MASK_OPERATOR_PAUSE')

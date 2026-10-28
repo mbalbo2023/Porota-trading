@@ -28,6 +28,14 @@ OPERATOR_PAUSE_RUN = 'A125-40501523106-1'
 OPERATOR_PAUSE_SOURCE = '3fd020f408275a490e911e06f60a1ddc89153fe5'
 OPERATOR_PAUSE_PRODUCT = '2bd9dbf576b253b8f83aab159c784d7fa7d06d89'
 OPERATOR_PAUSE_IMAGE = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+# A151 is a fresh, single-day NO_GO decision. Its sidecars do not overwrite
+# A125's live gate, whose exact bytes remain part of the A138/A143 evidence.
+A151_OPERATOR_PAUSE_DAY = '2026-10-28'
+A151_OPERATOR_PAUSE_SOURCE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
+A151_OPERATOR_PAUSE_DEPLOY = '6676267140907a17e342a664f718cfdcf9b3ce72'
+A151_OPERATOR_PAUSE_IMAGE = 'sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
+A151_OPERATOR_RECEIPT = 'operator-preopen-pause-20261028.json'
+A151_PAPER_HOLD = 'paper_scalping_operator_hold_20261028.json'
 FAILED_A138_SUSPENSION_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
 A143_PENDING_CANDIDATE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 IOL_OAUTH_GUARD_TIMER = 'porota-iol-oauth-health-rc6.timer'
@@ -139,6 +147,118 @@ def operator_preopen_hold_evidence():
     today = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
     return (exact_operator_preopen_pause() if today == OPERATOR_PAUSE_DAY
             else exact_operator_preopen_pause(historical_hold_only=True))
+
+
+def exact_a151_operator_preopen_pause():
+    """Attest the 28-Oct A151 sidecar without erasing A125 historical proof.
+
+    The receipt attests the A143/PAPER-0 host at issuance, not a permanently
+    pinned release marker: Deploy V2 is expected to update CURRENT_STATE_V2.
+    It never authorizes PAPER, timer activation or a future trading day.
+    """
+    now_utc = datetime.now(timezone.utc)
+    day = now_utc.astimezone(
+        ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+    if day != A151_OPERATOR_PAUSE_DAY:
+        raise ValueError('SCHEDULER_A151_OPERATOR_DAY_EXPIRED')
+    if ROOT.is_symlink() or not ROOT.is_dir():
+        raise ValueError('SCHEDULER_A151_ROOT_UNSAFE')
+    a125_sha = exact_operator_preopen_pause(historical_hold_only=True)
+    old_gate_path = ROOT/'paper_scalping_preopen_gate_v1.json'
+    if old_gate_path.is_symlink() or not old_gate_path.is_file():
+        raise ValueError('SCHEDULER_A151_LEGACY_GATE_UNSAFE')
+    old_gate_sha = hashlib.sha256(old_gate_path.read_bytes()).hexdigest()
+    receipt_path = ROOT/A151_OPERATOR_RECEIPT
+    hold_path = ROOT/A151_PAPER_HOLD
+    if (any(p.is_symlink() or not p.is_file() or p.stat().st_nlink != 1
+            for p in (receipt_path, hold_path))):
+        raise ValueError('SCHEDULER_A151_SIDECAR_PATH_UNSAFE')
+    receipt, receipt_sha = _operator_pause_json(receipt_path, 65536)
+    hold, hold_sha = _operator_pause_json(hold_path, 4096)
+    try:
+        issued = datetime.fromisoformat(receipt['issued_at_utc'])
+        completed = datetime.fromisoformat(receipt['completed_at_utc'])
+        held_at = datetime.fromisoformat(hold['issued_at_ar'])
+        times_valid = (
+            issued.tzinfo is not None and completed.tzinfo is not None and
+            issued.utcoffset().total_seconds() == 0 and
+            completed.utcoffset().total_seconds() == 0 and
+            held_at.tzinfo is not None and
+            held_at.utcoffset() == held_at.astimezone(
+                ZoneInfo('America/Argentina/Buenos_Aires')).utcoffset() and
+            0 <= (completed - issued).total_seconds() <= 300 and
+            0 <= (now_utc - completed).total_seconds() and
+            issued.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+                .date().isoformat() == A151_OPERATOR_PAUSE_DAY and
+            completed.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+                .date().isoformat() == A151_OPERATOR_PAUSE_DAY and
+            held_at.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+                .date().isoformat() == A151_OPERATOR_PAUSE_DAY and
+            issued <= held_at <= completed)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        times_valid = False
+    operation = receipt.get('operation_id') if type(receipt) is dict else None
+    paper = receipt.get('paper_after') if type(receipt) is dict else None
+    marker = receipt.get('marker_before') if type(receipt) is dict else None
+    summary_keys = ('status', 'trade_day_ar', 'candidate_sha', 'phase',
+                    'operation_id')
+    if (type(receipt) is not dict or type(hold) is not dict or not times_valid or
+            not isinstance(operation, str) or
+            re.fullmatch(r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation) is None or
+            receipt.get('schema') != 'rc6.operator-preopen-pause.v2' or
+            receipt.get('status') != 'PAUSED_NO_GO' or
+            receipt.get('trade_day_ar') != A151_OPERATOR_PAUSE_DAY or
+            receipt.get('source_sha') != A151_OPERATOR_PAUSE_SOURCE or
+            receipt.get('deploy_sha') != A151_OPERATOR_PAUSE_DEPLOY or
+            receipt.get('image_id') != A151_OPERATOR_PAUSE_IMAGE or
+            not isinstance(receipt.get('marker_before_sha256'), str) or
+            re.fullmatch(r'[0-9a-f]{64}', receipt['marker_before_sha256']) is None or
+            type(marker) is not dict or
+            marker.get('candidate_sha') != A151_OPERATOR_PAUSE_SOURCE or
+            marker.get('deploy_sha') != A151_OPERATOR_PAUSE_DEPLOY or
+            marker.get('image_id') != A151_OPERATOR_PAUSE_IMAGE or
+            marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+            marker.get('mode') != 'PRODUCTION_PAPER' or
+            type(marker.get('real_orders_sent')) is not int or
+            marker['real_orders_sent'] != 0 or
+            receipt.get('a125_receipt_sha256') != a125_sha or
+            receipt.get('gate_before_sha256') != old_gate_sha or
+            receipt.get('timer_before') != {'enabled':'disabled','active':'inactive'} or
+            receipt.get('timer_after') != receipt.get('timer_before') or
+            type(receipt.get('service_before')) is not dict or
+            receipt.get('service_before') != receipt.get('service_after') or
+            receipt['service_before'].get('enabled') != 'static' or
+            receipt['service_before'].get('active') not in {'failed','inactive'} or
+            type(receipt.get('containers_before')) is not dict or
+            receipt.get('containers_after') != receipt.get('containers_before') or
+            type(paper) is not dict or
+            receipt.get('paper_before') != paper or
+            paper.get('mode') != 'PRODUCTION_PAPER' or
+            any(type(paper.get(k)) is not int or paper[k] != 0 for k in
+                ('real_orders_sent', 'open_spot', 'open_caucion', 'active_future')) or
+            receipt.get('operator_paper_paused') is not True or
+            receipt.get('ppi_watch_accessed') is not False or
+            receipt.get('provider_requests') != 0 or
+            receipt.get('admission_allowed') is not False or
+            receipt.get('sidecar_after_sha256') != hold_sha or
+            receipt.get('sidecar_after') != {k:hold.get(k) for k in summary_keys} or
+            hold.get('schema') != 'RC6_PAPER_OPERATOR_HOLD_V1' or
+            hold.get('status') != 'NO_GO_PAPER_SCALPING' or
+            hold.get('trade_day_ar') != A151_OPERATOR_PAUSE_DAY or
+            hold.get('candidate_sha') != A151_OPERATOR_PAUSE_SOURCE or
+            hold.get('deploy_sha') != A151_OPERATOR_PAUSE_DEPLOY or
+            hold.get('image_id') != A151_OPERATOR_PAUSE_IMAGE or
+            hold.get('phase') != 'OPERATOR_PAUSE' or
+            hold.get('operation_id') != operation or
+            hold.get('a125_receipt_sha256') != a125_sha or
+            hold.get('gate_before_sha256') != old_gate_sha or
+            hold.get('marker_before_sha256') != receipt['marker_before_sha256'] or
+            hold.get('operator_paper_paused') is not True or
+            hold.get('execution_authorized') is not False or
+            hold.get('readiness_verified') is not False or
+            not operator_preopen_timer_disabled()):
+        raise ValueError('SCHEDULER_A151_OPERATOR_PAUSE_EVIDENCE_RED')
+    return receipt_sha, operation
 
 
 def require_owned_running():

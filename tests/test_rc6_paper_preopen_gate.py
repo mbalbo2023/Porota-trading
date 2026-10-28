@@ -53,27 +53,100 @@ def test_only_real_t_minus_ten_can_publish_go(tmp_path):
     assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
 
 
-def test_operator_pause_vetoes_even_a_valid_go_for_the_argentine_day(tmp_path):
+@pytest.mark.parametrize("paused_day", [27, 28])
+def test_operator_pause_vetoes_even_a_valid_go_for_the_argentine_day(tmp_path, paused_day):
     release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
     state(release)
-    day = DAY.replace(day=27)
+    day = DAY.replace(day=paused_day)
+    reason = f"OPERATOR_PAPER_PAUSE_2026_10_{paused_day:02d}"
     issued = gate.publish_preopen(result(), now=day, state_path=release, receipt_path=receipt)
     assert issued["status"] == "NO_GO_PAPER_SCALPING"
-    assert issued["reason"] == "OPERATOR_PAPER_PAUSE_2026_10_27"
+    assert issued["reason"] == reason
     # Even a pre-existing or externally written valid-looking GO cannot bypass
     # the independent admission veto inside the PAPER write transaction.
     receipt.write_text(json.dumps({**issued, "status": "GO_PAPER_SCALPING"}))
     for at in (day, day + timedelta(hours=1), day.replace(hour=23, minute=59)):
         assert gate.admission_status(now=at, candidate_sha=SHA, receipt_path=receipt) == (
-            False, "OPERATOR_PAPER_PAUSE_2026_10_27")
-    # 02:59 UTC is still the Argentine 27th, even though UTC is the 28th.
-    assert gate.admission_status(now=datetime(2026, 10, 28, 2, 59, tzinfo=ZoneInfo("UTC")),
-                                 candidate_sha=SHA, receipt_path=receipt)[0] is False
+            False, reason)
+    # 02:59 UTC is still the prior Argentine trading day.
+    assert gate.admission_status(now=datetime(2026, 10, paused_day + 1, 2, 59,
+                                              tzinfo=ZoneInfo("UTC")),
+                                 candidate_sha=SHA, receipt_path=receipt) == (False, reason)
     assert gate.admission_status(now=day + timedelta(days=1), candidate_sha=SHA,
                                  receipt_path=receipt)[0] is False  # prior-day GO expires
-    next_day = day + timedelta(days=1)
-    gate.publish_preopen(result(), now=next_day, state_path=release, receipt_path=receipt)
-    assert gate.admission_status(now=next_day, candidate_sha=SHA, receipt_path=receipt) == (True, "")
+
+
+def test_operator_pause_persists_across_candidate_release_validation_and_paper_insert(tmp_path,
+                                                                                       monkeypatch):
+    at = DAY.replace(day=28)
+
+    class OperatorDayClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return at.astimezone(tz or TZ)
+
+    release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
+    monkeypatch.setattr(gate, "datetime", OperatorDayClock)
+    monkeypatch.setattr(gate, "RUNTIME_RECEIPT", receipt)
+    monkeypatch.setenv("POROTA_BUILD_SHA", SHA)
+    for marker in ("DEPLOYED_VALIDATION_PENDING", "VALIDATED_RUNTIME"):
+        state(release)
+        data = json.loads(release.read_text())
+        data["validation_status"] = marker
+        release.write_text(json.dumps(data))
+        issued = gate.publish_preopen(result(), now=at, state_path=release, receipt_path=receipt)
+        assert issued["status"] == "NO_GO_PAPER_SCALPING"
+        assert issued["reason"] == "OPERATOR_PAPER_PAUSE_2026_10_28"
+        # A tampered valid-looking T-10 GO cannot defeat the independent veto.
+        receipt.write_text(json.dumps({**issued, "status": "GO_PAPER_SCALPING",
+                                       "candidate_sha": SHA, "phase": "T_MINUS_10"}))
+        assert gate.admission_status(now=at, candidate_sha=SHA, receipt_path=receipt) == (
+            False, "OPERATOR_PAPER_PAUSE_2026_10_28")
+        db_path = tmp_path / f"paper-{marker}.db"
+        monkeypatch.setenv("PAPER_V17_DB_PATH", str(db_path))
+        store = PaperStore(str(db_path))
+        quote = Quote("GGAL", "ACCIONES", "A-24HS", D("100"), D("99"), D("101"),
+                      D("100"), D("100"), at.isoformat(), currency="ARS", market="BYMA")
+        broker = PaperBroker(store, initial_cash="10000", admission_guard=lambda *_: (True, ""))
+        assert broker._open(quote, D("0.8"), {})[:2] == (
+            False, "OPERATOR_PAPER_PAUSE_2026_10_28")
+        with store.connect() as db:
+            assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+            assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_operator_pause_expires_without_automatically_authorizing_29_october(tmp_path):
+    release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
+    state(release)
+    paused = DAY.replace(day=28)
+    following = DAY.replace(day=29)
+    gate.publish_preopen(result(), now=paused, state_path=release, receipt_path=receipt)
+    assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt)[0] is False
+    assert gate.operator_pause_reason(following) == ""
+    # Merely changing the day or even the candidate cannot grant PAPER GO.
+    state(release, candidate="b" * 40)
+    gate.publish_preopen(result(), now=following, state_path=release, receipt_path=receipt)
+    assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt)[0] is False
+    # A fresh release-valid T-10 receipt for the exact identity is a separate gate.
+    state(release)
+    assert gate.publish_preopen(result(), now=following, state_path=release,
+                                receipt_path=receipt)["status"] == "GO_PAPER_SCALPING"
+    assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt) == (True, "")
+
+
+@pytest.mark.parametrize("day", [28, 29])
+def test_host_publish_never_overwrites_immutable_a125_gate(tmp_path, monkeypatch, day):
+    release, receipt = tmp_path / "release.json", tmp_path / "live-gate.json"
+    state(release)
+    original = ("{\"status\":\"NO_GO_PAPER_SCALPING\","
+                "\"trade_day_ar\":\"2026-10-27\"}\n")
+    receipt.write_text(original)
+    monkeypatch.setattr(gate, "HOST_RECEIPT", receipt)
+    with pytest.raises(ValueError, match="HISTORICAL_A125_LIVE_GATE_IMMUTABLE"):
+        gate.publish_preopen(result(), now=DAY.replace(day=day),
+                             state_path=release, receipt_path=receipt)
+    assert receipt.read_text() == original
 
 
 def test_focus_requires_eight_exact_ready_contracts(tmp_path):
