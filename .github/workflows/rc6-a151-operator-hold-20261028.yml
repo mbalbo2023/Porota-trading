@@ -3,10 +3,6 @@ name: RC6 A151 operator PAPER hold 2026-10-28 (manual review only)
 # Initial diagnostic commit: intentionally no automatic event trigger.
 on:
   workflow_dispatch:
-  push:
-    branches: [audit/rc6-a151-operator-hold-20261028]
-    paths:
-      - .github/workflows/rc6-a151-operator-hold-20261028.yml
 
 permissions:
   contents: read
@@ -20,6 +16,35 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Checkout exact A151 source for policy parity
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Test watch-only timers are owned RC6 units
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          policy=json.loads(Path('ops/policy/host-control-plane-reconciliation-v2.json').read_text())
+          names=sorted(Path(path).name for path, spec in policy['units'].items()
+                       if spec['role']=='ACTIVE_TIMER' and spec['active'] is True)
+          assert len(names)==16
+          assert {'porota-byma-morning-watch-rc6.timer',
+                  'porota-market-watch-silence-rc6.timer'} <= set(names)
+          for name in names:
+              parts=set(name.split('-'))
+              assert re.fullmatch(r'porota-[a-z0-9-]+\.timer', name)
+              assert not ({'ppi','watch'} <= parts) and 'critical' not in parts
+          for name in ('porota-ppi-watch-rc6.timer', 'porota-critical-test.timer'):
+              parts=set(name.split('-'))
+              assert ({'ppi','watch'} <= parts) or 'critical' in parts
+          print('A151_TIMER_POLICY_PARITY=GREEN|owned=16|watch_only_allowed=2')
+          PY
+
       - name: Strict SSH
         shell: bash
         env:
@@ -190,9 +215,14 @@ jobs:
                       old.get('operator_pause_timer') == TIMER, 'A138_HOLD_RECEIPT_RED')
               result = {}
               for name in names:
-                  require(type(name) is str and
-                          re.fullmatch(r'porota-[a-z0-9-]+\.timer', name) and
-                          not ({'ppi', 'watch', 'critical'} & set(name.split('-'))),
+                  require(type(name) is str, 'OWNED_TIMER_NAME_RED')
+                  # Match the canonical rc6_deploy_scheduler_suspend.timer_policy:
+                  # RC6 owns BYMA/market WATCH timers. Only the combined
+                  # PPI+WATCH namespace or a critical timer is excluded.
+                  parts = set(name.split('-'))
+                  require(re.fullmatch(r'porota-[a-z0-9-]+\.timer', name) and
+                          not ({'ppi', 'watch'} <= parts) and
+                          'critical' not in parts,
                           'OWNED_TIMER_NAME_RED')
                   actual = unit_state(name)
                   want = ({'enabled':'disabled', 'active':'inactive'} if name == TIMER
