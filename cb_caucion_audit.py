@@ -140,7 +140,17 @@ def _validated(row, connection):
         _require(decimal_value(placement[field], field) == Decimal(value), 'LEDGER_AMOUNT_MISMATCH')
     terms = _json(placement['terms_json'])
     original_offer = next(p for p in manifest['offers'] if fingerprint(p) == selected['candidate_id'])
-    _require(terms == original_offer, 'LEDGER_OFFER_MISMATCH')
+    if selected['candidate_id'] in historical:
+        _require(isinstance(terms, dict) and terms.get('fee_authority') == LEGACY_AUTHORITY,
+                 'LEDGER_OFFER_MISMATCH')
+        normalized = offer_payload(CaucionOffer(**(terms | {'fee_authority': None}))) | {
+            'fee_authority': LEGACY_AUTHORITY}
+    else:
+        normalized = offer_payload(CaucionOffer(**terms))
+    # The placement stores asdict(offer), whereas the decision stores normalized
+    # UTC timestamps and decimal strings. Verify semantic canonical equivalence;
+    # the historical raw bytes remain fingerprint-sealed by the six receipts.
+    _require(normalized == original_offer, 'LEDGER_OFFER_MISMATCH')
     _require((placement['status'] == 'OPEN' and placement['settled_at'] is None)
              or (placement['status'] == 'MATURED' and placement['settled_at'] is not None
                  and stamp(placement['settled_at']) >= stamp(placement['maturity_at'])), 'LEDGER_STATE_MISMATCH')

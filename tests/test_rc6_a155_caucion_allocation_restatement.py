@@ -21,6 +21,51 @@ from scripts.rc6_caucion_fee_restatement_apply import apply_restatement
 from test_rc6_a150_caucion_ro_provenance import _six_legacy_matured, LEGACY_AUTHORITY
 
 
+ORIGIN = {"candidate_sha": "a" * 40, "candidate_tree": "c" * 40,
+          "deploy_sha": "d" * 40, "run_id": "40700000000", "run_attempt": "1",
+          "quiescence_mode": "CLOSED", "owner_approval_comment_id": 1001,
+          "owner_deferred_comment_id": 1002, "owner_intraday_comment_id": None}
+
+
+def test_new_authority_caucion_audits_semantic_offer_without_six_receipts(tmp_path):
+    from be_paper_engine import PaperBroker, PaperStore
+
+    path = tmp_path / "current-authority.db"
+    broker = PaperBroker(PaperStore(str(path)), initial_cash="10000")
+    offer = CaucionOffer(
+        instrument_id="CAUCION-PAPER-TEST", currency="ARS",
+        annual_rate_fraction=Decimal("0.365"), start_date="2026-08-28",
+        maturity_at="2026-08-31T15:00:00-03:00",
+        quoted_at="2026-08-28T11:00:00-03:00",
+        available_principal=Decimal("100000"), minimum_principal=Decimal("100"),
+        principal_step=Decimal("1"), day_count_basis=365, fee_payment="MATURITY",
+        paper_fill_policy="CONSERVATIVE_NOTIONAL_CAP",
+        metadata_source="CONTRACT_EVIDENCE_V2:SYNTHETIC_TEST_ONLY",
+        fee_authority=CAUCION_PAPER_FEE_AUTHORITY)
+    policy = CaucionPolicy(
+        frozen_at="2026-08-28T10:00:00-03:00", currency="ARS",
+        reserve_cash=Decimal("1000"), maximum_cash_fraction=Decimal("0.5"),
+        maximum_principal=Decimal("1000"),
+        liquidity_deadline="2026-09-01T15:00:00-03:00",
+        maximum_quote_age_seconds=Decimal("60"), participation=Decimal("0.10"),
+        minimum_net_profit=Decimal("0"), ranking="NET_PROFIT",
+        session_open_at="2026-08-28T11:00:00-03:00",
+        session_close_at="2026-08-28T16:00:00-03:00",
+        session_source="SYNTHETIC_TEST_ONLY")
+    decision = broker.allocate_caucion([offer], policy, "current-fee-test",
+                                       as_of=offer.quoted_at)
+    assert decision["status"] == "PLACED_SIMULATED"
+    with sqlite3.connect(path) as db:
+        raw = json.loads(db.execute("SELECT terms_json FROM paper_cauciones").fetchone()[0])
+    # The original timestamp/Decimal representation is intentionally different
+    # from the signed plan's canonical offer; both mean one exact contract.
+    assert raw != decision["manifest"]["offers"][0]
+    history = allocation_history(path)
+    assert history["state"] == "READABLE" and history["records"][0]["issue"] is None
+    assert history["records"][0]["decision"] == decision
+    assert history["records"][0]["placement"]["status"] == "OPEN"
+
+
 @pytest.fixture
 def six_historical_allocations(tmp_path):
     path = _six_legacy_matured(tmp_path)
@@ -102,7 +147,7 @@ def test_six_verified_receipts_overlay_without_rewriting_historical_decisions(
         originals = db.execute("SELECT paper_id,total_fees FROM paper_cauciones ORDER BY paper_id").fetchall()
         decisions = db.execute("SELECT decision_json FROM paper_caucion_allocations ORDER BY paper_id").fetchall()
 
-    applied = apply_restatement(path, "a" * 40)
+    applied = apply_restatement(path, "a" * 40, origin=ORIGIN)
     assert applied["receipts"] == applied["inserted"] == 6
     history = allocation_history(path)
     assert history["state"] == "READABLE" and history["total"] == 6
@@ -130,7 +175,7 @@ def test_six_verified_receipts_overlay_without_rewriting_historical_decisions(
 def test_partial_receipt_or_changed_original_suppresses_all_amounts(
         six_historical_allocations):
     path = six_historical_allocations
-    apply_restatement(path, "a" * 40)
+    apply_restatement(path, "a" * 40, origin=ORIGIN)
     with sqlite3.connect(path) as db:
         db.execute("DROP TRIGGER paper_caucion_fee_restatements_no_delete")
         db.execute("DELETE FROM paper_caucion_fee_restatements WHERE paper_id='PAPER-CAUCION-0'")
@@ -171,7 +216,7 @@ def test_prospective_paper_depth_and_cash_gates_survive_legacy_overlay(
         with pytest.raises(ValueError, match="RESTATEMENT_TABLE_MISSING"):
             book.used_principal(offer, connection=db)
 
-    apply_restatement(path, "a" * 40)
+    apply_restatement(path, "a" * 40, origin=ORIGIN)
     with sqlite3.connect(path) as db:
         db.row_factory = sqlite3.Row
         db.execute("BEGIN IMMEDIATE")
