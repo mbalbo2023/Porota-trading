@@ -1,0 +1,164 @@
+name: RC6 A157 old attempt stage provenance READ ONLY
+
+# Review only; root will add exact scoped push trigger after inspection.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Inspect only two canonical deploy-created stage entries
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 55s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import http.client
+          import json
+          import os
+          import stat
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          ROOT = Path('/tmp/porota-deploy-v2-dd22a1b0761cc4f231813edb6b502d1dd21bb8de-40592426296-2')
+          FROZEN = {'porota-frozen-candidate.json','porota-predeploy-image.tar.gz',
+                    'porota-deploy-bundle-v2.tgz','porota-deploy-bundle-v2-manifest.json',
+                    'porota-host-manifest-v2.json','porota-host-policy-v2.json'}
+          GENERATED = {'stage':'directory','host-control-plane-applied.json':'regular'}
+
+          def metadata(part):
+              c = http.client.HTTPConnection('169.254.169.254',timeout=2)
+              try:
+                  c.request('GET','/metadata/v1/'+part)
+                  r = c.getresponse()
+                  if r.status != 200:
+                      raise RuntimeError('DROPLET_METADATA_RED')
+                  return r.read(128).decode('ascii').strip()
+              finally:
+                  c.close()
+
+          def summary(p):
+              s = os.lstat(p)
+              kind = ('regular' if stat.S_ISREG(s.st_mode) else
+                      'directory' if stat.S_ISDIR(s.st_mode) else
+                      'symlink' if stat.S_ISLNK(s.st_mode) else 'other')
+              return {'kind':kind,'uid':s.st_uid,'gid':s.st_gid,
+                      'device':s.st_dev,'inode':s.st_ino,'links':s.st_nlink,
+                      'size_bytes':s.st_size,'allocated_bytes':s.st_blocks*512,
+                      'mtime_utc':datetime.fromtimestamp(s.st_mtime,timezone.utc).isoformat(),
+                      'is_mountpoint':os.path.ismount(p) if kind=='directory' else False}
+
+          def bounded_tree(base, root_dev):
+              deadline = time.monotonic()+4
+              stats = {'state':'OK','entries':0,'regular':0,'directories':0,
+                       'symlinks':0,'other':0,'allocated_bytes':0,
+                       'db_or_sqlite_files':0,'backup_path_entries':0,
+                       'backup_archive_files':0,
+                       'foreign_device_entries':0,'foreign_owner_entries':0,
+                       'hardlinked_regular_files':0,'mounted_dirs':0}
+              stack = [base]
+              try:
+                  while stack:
+                      p = stack.pop()
+                      with os.scandir(p) as it:
+                          for ent in it:
+                              stats['entries'] += 1
+                              if stats['entries']>2000 or time.monotonic()>deadline:
+                                  raise RuntimeError('TREE_CAP')
+                              child = Path(ent.path)
+                              row = summary(child)
+                              key={'regular':'regular','directory':'directories',
+                                   'symlink':'symlinks','other':'other'}[row['kind']]
+                              stats[key] += 1
+                              stats['allocated_bytes'] += row['allocated_bytes']
+                              stats['foreign_device_entries'] += int(row['device']!=root_dev)
+                              stats['foreign_owner_entries'] += int(row['uid']!=1000)
+                              stats['hardlinked_regular_files'] += int(row['kind']=='regular' and row['links']!=1)
+                              stats['db_or_sqlite_files'] += int(child.suffix.lower() in {'.db','.sqlite','.sqlite3'})
+                              stats['backup_path_entries'] += int(any('backup' in x.lower() for x in child.parts))
+                              stats['backup_archive_files'] += int(child.name.lower().endswith(('.db.gz','.sqlite.gz','.backup','.bak')))
+                              stats['mounted_dirs'] += int(row['is_mountpoint'])
+                              if row['kind']=='directory' and row['device']==root_dev and not row['is_mountpoint']:
+                                  stack.append(child)
+                  return stats
+              except (OSError,RuntimeError):
+                  stats['state']='UNVERIFIED'
+                  return stats
+
+          if (metadata('id'),metadata('region')) != ('594077619','nyc1'):
+              raise RuntimeError('DROPLET_IDENTITY_RED')
+          now=datetime.now(timezone.utc)
+          v=os.statvfs('/')
+          before=v.f_bavail*v.f_frsize
+          root=summary(ROOT)
+          if (root['inode'],root['device'],root['uid'],root['kind'])!=(855,64769,1000,'directory'):
+              raise RuntimeError('EXACT_STAGE_INODE_DRIFT')
+          children=list(ROOT.iterdir())
+          if len(children)>100:
+              raise RuntimeError('STAGE_DIRECT_UNBOUNDED')
+          found={p.name for p in children}
+          if not FROZEN.issubset(found):
+              raise RuntimeError('FROZEN_MEMBER_MISSING')
+          names=found-FROZEN
+          generated={}
+          for name in GENERATED:
+              if name not in names:
+                  continue
+              p=ROOT/name
+              row=summary(p)
+              generated[name]=row
+              if row['kind']=='directory':
+                  row['subtree']=bounded_tree(p,root['device'])
+          out={'schema':'RC6_A157_STAGE_PROVENANCE_RO_V1',
+               'at_utc':now.isoformat(),
+               'at_art':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+               'droplet_id':'594077619','region':'nyc1','no_mutations':True,
+               'root':root,'frozen_member_count':len(FROZEN),
+               'generated_entries':generated,
+               'other_entry_count':len(names-set(GENERATED)),
+               'all_direct_entry_count':len(children),
+               'free_before_bytes':before,
+               'free_after_bytes':os.statvfs('/').f_bavail*os.statvfs('/').f_frsize,
+               'provenance':'stage dir and host-control-plane-applied.json are created by canonical Deploy V2 promotion script; contents not printed'}
+          print('RC6_A157_STAGE_PROVENANCE_RO='+json.dumps(out,sort_keys=True))
+          PYHOST
+
+      - name: Erase SSH material on ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
