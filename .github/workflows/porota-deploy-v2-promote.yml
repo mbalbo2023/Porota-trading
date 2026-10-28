@@ -220,6 +220,7 @@ jobs:
           # The host still runs the FAILED #751 source. Stream the new A145
           # read-only admission; never trust an uninstalled helper by import.
           CANDIDATE_A143_B64="$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          CANDIDATE_A143_SHA256="$(sha256sum scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)"
           CLASSIFY_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#CANDIDATE_AUDIT_B64} +
             ${#CANDIDATE_A125_B64} + ${#CANDIDATE_A143_B64} + 4096 ))
           if [ "$CLASSIFY_ARG_BOUND" -gt 110000 ]; then
@@ -230,7 +231,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64' '$CANDIDATE_A143_B64' '$CANDIDATE_A125_SHA256'" <<'PY'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64' '$CANDIDATE_A143_B64' '$CANDIDATE_A125_SHA256' '$CANDIDATE_A143_SHA256'" <<'PY'
           import base64,gzip,hashlib,os,sqlite3,sys,types,zlib
           from pathlib import Path
           def staged_operator_source():
@@ -253,6 +254,10 @@ jobs:
               ROOT, OWNED, admit, inspect, exact_clean_stopped,
                adopt_stopped_after_failed_install)
           from scripts import rc6_deploy_quiescence as quiescence
+          # #751 is still installed and has no A143_PENDING_IMAGE_ID symbol.
+          # Pin its observed Docker image here; the staged candidate below
+          # must independently agree before any recovery admission.
+          A143_PENDING_IMAGE_ID='sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
           path=Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
           with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
               c.execute('PRAGMA query_only=ON')
@@ -290,7 +295,7 @@ jobs:
           elif (statuses=={'running'} and
                 state in (('DEGRADED','BOOT_CALENDAR'),
                           ('DEGRADED','MARKET_CLOSED'),('STOPPED','CLOSED')) and
-                all(value['Image']==quiescence.A143_PENDING_IMAGE_ID
+                all(value['Image']==A143_PENDING_IMAGE_ID
                     for value in originals.values())):
               # A145 read-only fix-forward classification for *installed* #751.
               # The source SHA, image, two Docker IDs, immutable marker,
@@ -299,12 +304,17 @@ jobs:
               compressed=base64.b64decode(sys.argv[4],validate=True)
               if not 0<len(compressed)<110000:
                   raise SystemExit('RC6_A143_STAGED_SOURCE_BOUNDS_RED')
-              source=gzip.decompress(compressed)
-              if not 20000<len(source)<190000:
-                  raise SystemExit('RC6_A143_STAGED_SOURCE_SIZE_RED')
+              inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+              source=inflater.decompress(compressed,190000)
+              if (not 20000<len(source)<190000 or not inflater.eof or
+                      inflater.unconsumed_tail or inflater.unused_data or
+                      hashlib.sha256(source).hexdigest()!=sys.argv[6]):
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_HASH_RED')
               candidate=types.ModuleType('rc6_a145_staged_quiescence')
               exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),
                    candidate.__dict__)
+              if candidate.A143_PENDING_IMAGE_ID!=A143_PENDING_IMAGE_ID:
+                  raise SystemExit('RC6_A143_PINNED_IMAGE_CHANGED')
               operator_source=staged_operator_source()
               operator=types.ModuleType('rc6_a151_staged_operator')
               exec(compile(operator_source,'candidate/a151-operator.py','exec'),

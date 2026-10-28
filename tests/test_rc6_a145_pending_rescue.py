@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import json
+import base64
+import gzip
+import hashlib
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -402,6 +406,74 @@ def test_a145_classifier_and_drain_flag_wiring_is_exact():
     assert "originals,allow_a151_held_open=True" in workflow
     assert "print('A151_HELD_OPEN' if proof.get('operator_hold')" in workflow
     assert "RC6_A143_FAILED_VALIDATION_RECOVERY=ADMITTED|health=RED|PAPER=0" in workflow
+
+
+@pytest.mark.parametrize('mutation', ['valid', 'source_hash', 'candidate_image'])
+def test_a167_classifier_stages_candidate_with_old_host_missing_a143_constant(
+        incident, monkeypatch, capsys, mutation):
+    """Replay the #407501 prehost failure with the installed #751 API shape."""
+    root, _, db, states = incident
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE observer_state SET process_state='DEGRADED',"
+                           "session_state='BOOT_CALENDAR'")
+    workflow = (Path(__file__).parents[1] /
+                '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    block = workflow.split(
+        '- name: Classify current flat PAPER session before host writes', 1)[1]
+    code = block.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0]
+    code = '\n'.join(line.removeprefix('          ') for line in code.splitlines())
+    old = ModuleType('scripts.rc6_deploy_quiescence')
+    old.ROOT, old.OWNED = root, q.OWNED
+    old.inspect = lambda name: states[name]
+    old.admit = old.exact_clean_stopped = old.adopt_stopped_after_failed_install = (
+        lambda *_, **__: pytest.fail('NO_HOST_WRITE_OR_OLD_ADMISSION'))
+    assert not hasattr(old, 'A143_PENDING_IMAGE_ID')
+    backup = ModuleType('scripts.rc6_679_backup_suspension')
+    backup.inventory = lambda: []
+    monkeypatch.setitem(sys.modules, old.__name__, old)
+    monkeypatch.setitem(sys.modules, backup.__name__, backup)
+    real_connect = sqlite3.connect
+
+    def local_db(path, *args, **kwargs):
+        if str(path).startswith('file:///opt/porota-trading/data/paper_v17/'):
+            path = db.as_uri() + '?mode=ro'
+        return real_connect(path, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', local_db)
+    candidate_source = (Path(__file__).parents[1] /
+        'scripts/rc6_deploy_quiescence.py').read_text()
+    assert q.A143_PENDING_IMAGE_ID in code
+    if mutation == 'candidate_image':
+        candidate_source = candidate_source.replace(
+            f"A143_PENDING_IMAGE_ID = '{q.A143_PENDING_IMAGE_ID}'",
+            "A143_PENDING_IMAGE_ID = 'sha256:" + 'f'*64 + "'", 1)
+    # Isolate the classifier's staging and image identity from the independently
+    # tested A143 receipts; it still executes the real candidate module.
+    candidate_source += (
+        '\ndef a143_pending_running_proof(*args, **kwargs):\n'
+        '    return {"source_sha": A143_PENDING_SOURCE_SHA,\n'
+        '            "image_id": A143_PENDING_IMAGE_ID,\n'
+        '            "flat_book": {"real_orders_sent": 0},\n'
+        '            "operator_hold": None}\n')
+    candidate_bytes = candidate_source.encode()
+    operator_bytes = (b'def operator_preopen_timer_disabled(): return True\n'
+                      b'def exact_a151_operator_preopen_pause(): return ("e"*64,"fixture")\n')
+    candidate_digest = hashlib.sha256(candidate_bytes).hexdigest()
+    if mutation == 'source_hash':
+        candidate_digest = '0'*64
+    monkeypatch.setattr(sys, 'argv', [
+        '-', SHA, '',
+        base64.b64encode(gzip.compress(operator_bytes)).decode(),
+        base64.b64encode(gzip.compress(candidate_bytes)).decode(),
+        hashlib.sha256(operator_bytes).hexdigest(), candidate_digest])
+    if mutation == 'valid':
+        exec(compile(code, 'a167-classifier', 'exec'), {})
+        assert capsys.readouterr().out == 'CLOSED_A143_PENDING_FIX_FORWARD\n'
+    else:
+        expected = ('RC6_A143_STAGED_SOURCE_HASH_RED' if mutation == 'source_hash'
+                    else 'RC6_A143_PINNED_IMAGE_CHANGED')
+        with pytest.raises(SystemExit, match=expected):
+            exec(compile(code, 'a167-classifier', 'exec'), {})
 
 
 class A151OpenClock(datetime):
