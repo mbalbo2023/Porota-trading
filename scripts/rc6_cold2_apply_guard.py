@@ -85,6 +85,48 @@ def receipt_for(root, candidate):
     return value, ids
 
 
+def exact_a169_held_stopped_admission(receipt, candidate):
+    """Attest the exact inherited A143 stop before an intraday COLD2 archive.
+
+    The A143 database remains STOPPED/BOOT_CALENDAR. A generic CLOSED check
+    cannot prove that state; the original A169 receipt, Docker stop evidence,
+    A151 NO_GO sidecar, flat book and critical broker must all agree instead.
+    """
+    if (receipt.get('a143_pending_adopted') is not True or
+            receipt.get('a169_origin_candidate') != drain.A169_PRIOR_CANDIDATE or
+            receipt.get('a169_origin_sha256') != drain.A169_PRIOR_RECEIPT_SHA256 or
+            receipt.get('a170_origin_candidate') != drain.A170_FAILED_CANDIDATE or
+            receipt.get('a170_origin_sha256') != drain.A170_FAILED_RECEIPT_SHA256 or
+            receipt.get('market_open_suspended') is not False or
+            receipt.get('open_paper_carryover') is not False or
+            receipt.get('intraday_caucion') is not False or
+            receipt.get('paused_postclose') is not False or
+            receipt.get('pending_caucion') is not False or
+            receipt.get('spot_carryover') is not None or
+            receipt.get('caucion_carryover') is not None or
+            receipt.get('candidate_image_intent') is None):
+        raise ValueError('COLD2_A169_HELD_RECEIPT_CHANGED')
+    operator = drain.candidate_operator_module()
+    callbacks = dict(operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                     operator_timer_disabled=operator.operator_preopen_timer_disabled)
+    parent, digest, _ = drain.a169_prior_a143_stopped_proof(
+        candidate, **callbacks)
+    if (digest != receipt['a169_origin_sha256'] or
+            receipt.get('a143_previous_proof') != parent.get('a143_previous_proof') or
+            receipt.get('containers') != parent.get('containers') or
+            receipt.get('stop_attempted') != parent.get('stop_attempted') or
+            receipt.get('stop_evidence') != parent.get('stop_evidence')):
+        raise ValueError('COLD2_A169_INHERITED_STOP_CHANGED')
+    book = drain.a143_stopped_continuation(
+        dict(receipt, status='DRAINED', installation_started=False), **callbacks)
+    if ((book.get('process_state'),book.get('session_state')) not in
+            {('STOPPED','BOOT_CALENDAR'),('DEGRADED','BOOT_CALENDAR')} or
+            book.get('source_sha') != drain.A143_PENDING_SOURCE_SHA or
+            book.get('real_orders_sent') != 0):
+        raise ValueError('COLD2_A169_STOPPED_BOOK_CHANGED')
+    return book
+
+
 
 def verify_complete_queue(root):
     """Attest a later COMPLETE generation without moving or revoking it."""
@@ -193,9 +235,17 @@ def apply(root, candidate):
                                 receipt.get('pending_caucion') is False and
                                 receipt.get('spot_carryover') is None and
                                 receipt.get('caucion_carryover') is None)
+            a169_held_flat = (receipt.get('a143_pending_adopted') is True and
+                              receipt.get('a169_origin_candidate') ==
+                                  drain.A169_PRIOR_CANDIDATE)
             if intraday_spots and receipt.get('intraday_caucion') is True:
                 raise ValueError('COLD2_SESSION_MODE_CHANGED')
-            if rescued_a92_flat:
+            if a169_held_flat:
+                book = exact_a169_held_stopped_admission(receipt,candidate)
+                state = book['process_state']
+                carry = None
+                caucion = None
+            elif rescued_a92_flat:
                 # A139: the A92 observer's stopped BOOT_CALENDAR is *not*
                 # healthy CLOSED.  Reuse only the exact immutable rescue
                 # receipt, original clean Docker stop, A92 provenance and
@@ -312,9 +362,10 @@ def apply(root, candidate):
             if ppi_units() != baseline:
                 raise ValueError('COLD2_PPI_UNIT_CHANGED')
             return {'status': 'DRAINED', 'owned_stopped': True,
-                    'market_closed': not (intraday_spots or intraday_caucion or intraday_flat),
+                    'market_closed': not (intraday_spots or intraday_caucion or
+                                          intraday_flat or a169_held_flat),
                     'no_positions': not (intraday_spots or intraday_caucion or pending_caucion),
-                    'market_open_suspended': intraday_spots or intraday_caucion or intraday_flat,
+                    'market_open_suspended': intraday_spots or intraday_caucion or intraday_flat or a169_held_flat,
                     'open_paper_carryover': intraday_spots,
                     'spot_carryover': carry,
                     'intraday_caucion': intraday_caucion,

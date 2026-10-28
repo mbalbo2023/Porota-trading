@@ -3,6 +3,7 @@ import json
 import hashlib
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -119,6 +120,81 @@ def test_a139_cold2_archive_accepts_only_exact_stopped_a92_rescue_receipt(tmp_pa
             assert guard.apply(tmp_path,CANDIDATE)['original']['checked']=='DRAINED'
         assert admit.call_args.kwargs['allow_degraded_closed_rescue'] is True
         assert admit.call_args.kwargs['stopped_receipt']==value
+
+
+@pytest.mark.parametrize('change', [None,'origin','parent','book','docker','ppi'])
+def test_a169_stopped_boot_calendar_archive_requires_exact_held_paper_proof(
+        tmp_path,change):
+    value=receipt()
+    parent={'a143_previous_proof':{'source_sha':guard.drain.A143_PENDING_SOURCE_SHA},
+            'containers':value['containers'],'stop_evidence':value['stop_evidence'],
+            'stop_attempted':list(NAMES)}
+    value.update(a143_pending_adopted=True,
+                 a169_origin_candidate=guard.drain.A169_PRIOR_CANDIDATE,
+                 a169_origin_sha256=guard.drain.A169_PRIOR_RECEIPT_SHA256,
+                 a170_origin_candidate=guard.drain.A170_FAILED_CANDIDATE,
+                 a170_origin_sha256=guard.drain.A170_FAILED_RECEIPT_SHA256,
+                 a143_previous_proof=parent['a143_previous_proof'],
+                 stop_attempted=parent['stop_attempted'],
+                 candidate_image_intent={'image_id':'sha256:'+'f'*64},
+                 market_open_suspended=False,open_paper_carryover=False,
+                 intraday_caucion=False,paused_postclose=False,
+                 pending_caucion=False,spot_carryover=None,caucion_carryover=None)
+    folder(tmp_path,value)
+    ids={name:value['containers'][name]['id'] for name in NAMES}
+    live={name:{'Id':ids[name], 'Image':'sha256:'+'a'*64,
+                'State':{'Status':'exited','ExitCode':0}} for name in NAMES}
+    live['porota_critical_approval_rc6']={
+        'State':{'Status':'running','Health':{'Status':'healthy'},'OOMKilled':False}}
+    units=[{'ppi-watch.service':('active','enabled')}]
+    book=[{'process_state':'STOPPED','session_state':'BOOT_CALENDAR',
+           'source_sha':guard.drain.A143_PENDING_SOURCE_SHA,'real_orders_sent':0}]
+    observed=[parent]
+    callbacks=[]
+    receipt_a151=lambda:('e'*64,'A151-40686116017-1')
+    timer_disabled=lambda:True
+    def check_prior(candidate,**kwargs):
+        assert kwargs == {'operator_a151_proof':receipt_a151,
+                          'operator_timer_disabled':timer_disabled}
+        callbacks.append('prior')
+        return observed[0],guard.drain.A169_PRIOR_RECEIPT_SHA256,book[0]
+    def check_stopped(row,**kwargs):
+        assert kwargs == {'operator_a151_proof':receipt_a151,
+                          'operator_timer_disabled':timer_disabled}
+        callbacks.append('stopped')
+        return book[0]
+    if change=='origin': value['a169_origin_sha256']='f'*64
+    elif change=='parent': observed[0]=dict(parent,containers={})
+    elif change=='book': book[0]=dict(book[0],real_orders_sent=1)
+    elif change=='docker': live[NAMES[0]]['Id']='f'*64
+    elif change=='ppi': pass
+    if change=='origin':
+        (tmp_path/'data/deploy'/('quiescence-'+CANDIDATE+'.json')).write_text(json.dumps(value))
+    def archive(root,*,admission,expected_owned_ids):
+        if change=='ppi': units[0]={'ppi-watch.service':('inactive','enabled')}
+        row=admission()
+        assert row['market_closed'] is False
+        assert row['market_open_suspended'] is True and row['no_positions'] is True
+        from scripts import rc6_cold2_quarantine as quarantine
+        quarantine._admit(tmp_path,lambda:row,expected_owned_ids)
+        return {'state':'QUARANTINED_FAILED','old_cut_revoked':True}
+    with (patch.object(guard,'ppi_units',side_effect=lambda:units[0]),
+          patch.object(guard.drain,'candidate_operator_module',return_value=SimpleNamespace(
+              exact_a151_operator_preopen_pause=receipt_a151,
+              operator_preopen_timer_disabled=timer_disabled)),
+          patch.object(guard.drain,'a169_prior_a143_stopped_proof',side_effect=check_prior),
+          patch.object(guard.drain,'a143_stopped_continuation',side_effect=check_stopped),
+          patch.object(guard.drain,'admit',side_effect=AssertionError('generic CLOSED forbidden')),
+          patch.object(guard.drain,'inspect',side_effect=lambda name:live[name]),
+          patch.object(guard.cold,'envelope',return_value={
+              'status':'FAIL_CLOSED','real_routes':'NOT_CALLED'}),
+          patch.object(guard.cold,'quarantine',side_effect=archive)):
+        if change is None:
+            assert guard.apply(tmp_path,CANDIDATE)['old_cut_revoked'] is True
+            assert callbacks.count('prior')>=1 and callbacks.count('stopped')>=1
+        else:
+            with pytest.raises(ValueError,match='COLD2_'):
+                guard.apply(tmp_path,CANDIDATE)
 
 
 def test_missing_exclusive_lock_refuses_before_archive(tmp_path):

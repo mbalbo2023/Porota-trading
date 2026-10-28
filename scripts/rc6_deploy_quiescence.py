@@ -39,6 +39,10 @@ A169_PRIOR_RUN = '40755524824'
 A169_PRIOR_ATTEMPT = '2'
 A169_PRIOR_RECEIPT_SHA256 = 'ac2d6ec4bb3fe2a2ce809d89034cb564c1a3ce790de21838b654abc787471f81'
 A169_FAILED_RECEIPT_SHA256 = '9ec4cea3e54e05534058020093d00aa55a6ad6c89303b5364010b243493e2659'
+A170_FAILED_CANDIDATE = '33ea6d365c47d415fc5480a23b1338c208c2a29f'
+A170_FAILED_RECEIPT_SHA256 = '2052b78c67f4385e662caeb1448d357f804d0605e6f2c710447b4130fa1df0e8'
+A170_INSTALLED_QUIESCENCE_SHA256 = '5346f3b56681056bf91e2324e7e6a2c440d067749272090820057390bc8f3412'
+A170_LOADED_IMAGE_ID = 'sha256:c3af151c90dcf124d38843e4fb99219b01bfc9863cc1d7a96bdedfd419e6d98f'
 A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
@@ -706,7 +710,8 @@ def a143_stopped_continuation(receipt, *, operator_a151_proof=None,
 
 def a169_prior_a143_stopped_proof(candidate, originals=None, *,
                                   operator_a151_proof=None,
-                                  operator_timer_disabled=None):
+                                  operator_timer_disabled=None,
+                                  require_installed_a170_source=False):
     """Admit only A169's exact stopped #751 pair as an unvalidated parent.
 
     This is an incident-specific read-only continuation.  The former
@@ -714,7 +719,8 @@ def a169_prior_a143_stopped_proof(candidate, originals=None, *,
     and original running proof are reused without restarting either process.
     """
     if (not re.fullmatch('[0-9a-f]{40}', candidate) or
-            candidate in {A143_PENDING_SOURCE_SHA, A169_PRIOR_CANDIDATE}):
+            candidate in {A143_PENDING_SOURCE_SHA, A169_PRIOR_CANDIDATE,
+                          A170_FAILED_CANDIDATE}):
         raise ValueError('QUIESCENCE_A169_NEW_CANDIDATE_REQUIRED')
     local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
     if (local.date().isoformat() != '2026-10-28' or
@@ -752,6 +758,45 @@ def a169_prior_a143_stopped_proof(candidate, originals=None, *,
             book.get('real_orders_sent') != 0 or
             book.get('source_sha') != A143_PENDING_SOURCE_SHA):
         raise ValueError('QUIESCENCE_A169_PARENT_RUNTIME_CHANGED')
+    # A170 loaded and tagged its frozen image, but COLD2 failed before mode
+    # manager could start either new container. Bind that intervening exact
+    # failure, not merely the older A169 stop, before another candidate writes.
+    intermediate, intermediate_sha = _a143_exact_json(
+        ROOT/'data/deploy'/('quiescence-'+A170_FAILED_CANDIDATE+'.json'),65536)
+    intent = intermediate.get('candidate_image_intent')
+    if (intermediate_sha != A170_FAILED_RECEIPT_SHA256 or
+            intermediate.get('candidate_sha') != A170_FAILED_CANDIDATE or
+            intermediate.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            intermediate.get('installation_started') is not True or
+            intermediate.get('a143_pending_adopted') is not True or
+            intermediate.get('prior_a143_stopped_after_install') is not True or
+            intermediate.get('runtime_health') != 'PRIOR_A143_PENDING_NOT_GO' or
+            intermediate.get('candidate_runtime_after_failure') is not None or
+            'inflight' in intermediate or
+            type(intent) is not dict or
+            intent.get('image_id') != A170_LOADED_IMAGE_ID or
+            not re.fullmatch('[0-9a-f]{64}',intent.get('manifest_sha256','')) or
+            intermediate.get('a169_origin_candidate') != A169_PRIOR_CANDIDATE or
+            intermediate.get('a169_origin_sha256') != digest or
+            intermediate.get('a143_previous_proof') != prior.get('a143_previous_proof') or
+            intermediate.get('containers') != prior.get('containers') or
+            intermediate.get('stop_evidence') != prior.get('stop_evidence') or
+            intermediate.get('stop_attempted') != prior.get('stop_attempted') or
+            intermediate.get('real_orders_sent') != 0 or
+            intermediate.get('ppi_watch_accessed') is not False):
+        raise ValueError('QUIESCENCE_A170_INTERMEDIATE_FAILURE_CHANGED')
+    if require_installed_a170_source:
+        installed = ROOT/'scripts/rc6_deploy_quiescence.py'
+        if (installed.is_symlink() or not installed.is_file() or
+                hashlib.sha256(installed.read_bytes()).hexdigest() !=
+                    A170_INSTALLED_QUIESCENCE_SHA256):
+            raise ValueError('QUIESCENCE_A170_INSTALLED_SOURCE_CHANGED')
+        for tag in ('porota-trading-bot:17.0.0-rc6',
+                    'porota-trading-bot:17.0.0-rc6-candidate-'+A170_FAILED_CANDIDATE):
+            images = json.loads(command(['docker','image','inspect',tag]))
+            if (type(images) is not list or len(images) != 1 or
+                    images[0].get('Id') != A170_LOADED_IMAGE_ID):
+                raise ValueError('QUIESCENCE_A170_DOCKER_TAG_CHANGED')
     return prior, digest, book
 
 
@@ -1154,6 +1199,8 @@ def admit_poststart_flat(pre_mode, candidate=None):
         receipt,_=_a143_exact_json(receipt_path,65536)
         prior,origin_sha=_a143_exact_json(
             ROOT/'data/deploy'/('quiescence-'+A169_PRIOR_CANDIDATE+'.json'),65536)
+        interim, interim_sha = _a143_exact_json(
+            ROOT/'data/deploy'/('quiescence-'+A170_FAILED_CANDIDATE+'.json'),65536)
         held=(receipt.get('a143_previous_proof') or {}).get('operator_hold')
         intent=receipt.get('candidate_image_intent')
         if (origin_sha != A169_PRIOR_RECEIPT_SHA256 or
@@ -1164,6 +1211,10 @@ def admit_poststart_flat(pre_mode, candidate=None):
                 receipt.get('a143_pending_adopted') is not True or
                 receipt.get('a169_origin_candidate') != A169_PRIOR_CANDIDATE or
                 receipt.get('a169_origin_sha256') != origin_sha or
+                interim_sha != A170_FAILED_RECEIPT_SHA256 or
+                interim.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+                receipt.get('a170_origin_candidate') != A170_FAILED_CANDIDATE or
+                receipt.get('a170_origin_sha256') != interim_sha or
                 receipt.get('a143_previous_proof') != prior.get('a143_previous_proof') or
                 receipt.get('containers') != prior.get('containers') or
                 receipt.get('stop_evidence') != prior.get('stop_evidence') or
@@ -1898,7 +1949,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 originals = {name:inspect(name) for name in OWNED}
                 if allow_a143_pending_stopped:
                     prior_receipt, origin_sha, _ = a169_prior_a143_stopped_proof(
-                        candidate, originals)
+                        candidate, originals,
+                        require_installed_a170_source=True)
                     prior = prior_receipt['a143_previous_proof']
                 else:
                     prior = a143_pending_running_proof(
@@ -1926,8 +1978,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
                            'recorded_at':datetime.now(timezone.utc).isoformat()}
                 if allow_a143_pending_stopped:
                     receipt.update(a169_origin_candidate=A169_PRIOR_CANDIDATE,
-                                   a169_origin_sha256=origin_sha)
+                                   a169_origin_sha256=origin_sha,
+                                   a170_origin_candidate=A170_FAILED_CANDIDATE,
+                                   a170_origin_sha256=A170_FAILED_RECEIPT_SHA256)
                     a143_stopped_continuation(receipt)
+                    # The inherited pair is proven cleanly exited only after
+                    # the exact A143 stop, PAPER book and hold are rechecked.
+                    receipt['inflight'] = 'ABSENT_OWNED_RUNTIME_STOPPED'
                     persist(path,receipt)  # No Docker mutation; exact inherited stop.
                 else:
                     persist(path,receipt)  # Durable intent precedes Docker stop.
@@ -1945,22 +2002,27 @@ def run(candidate, action, *, allow_admin_issue624=False,
                         persist(path,receipt)
                     a143_stopped_continuation(receipt)
                     receipt.update(status='DRAINED',
+                                   inflight='ABSENT_OWNED_RUNTIME_STOPPED',
                                    recorded_at=datetime.now(timezone.utc).isoformat())
                     persist(path,receipt)
             else:
                 if (not receipt or receipt.get('candidate_sha') != candidate or
                         receipt.get('status') != 'DRAINED' or
                         receipt.get('a143_pending_adopted') is not True or
-                        receipt.get('installation_started') is not False):
+                        receipt.get('installation_started') is not False or
+                        receipt.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED'):
                     raise ValueError('QUIESCENCE_A143_DRAIN_RECEIPT_CHANGED')
                 prior = receipt.get('a143_previous_proof')
                 if (type(prior) is not dict or
                         allow_a151_held_open != (prior.get('operator_hold') is not None)):
                     raise ValueError('QUIESCENCE_A151_HELD_OPEN_RECEIPT_MODE_CHANGED')
                 if allow_a143_pending_stopped:
-                    parent, digest, _ = a169_prior_a143_stopped_proof(candidate)
+                    parent, digest, _ = a169_prior_a143_stopped_proof(
+                        candidate, require_installed_a170_source=True)
                     if (receipt.get('a169_origin_candidate') != A169_PRIOR_CANDIDATE or
                             receipt.get('a169_origin_sha256') != digest or
+                            receipt.get('a170_origin_candidate') != A170_FAILED_CANDIDATE or
+                            receipt.get('a170_origin_sha256') != A170_FAILED_RECEIPT_SHA256 or
                             receipt.get('a143_previous_proof') != parent['a143_previous_proof'] or
                             receipt.get('containers') != parent['containers'] or
                             receipt.get('stop_evidence') != parent['stop_evidence'] or

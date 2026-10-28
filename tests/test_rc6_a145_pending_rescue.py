@@ -14,6 +14,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from scripts import rc6_deploy_quiescence as q
+from scripts import rc6_cold2_apply_guard as cold2
 
 
 SHA = "b" * 40
@@ -523,25 +524,107 @@ def a169_stopped_incident(incident, monkeypatch):
     q.persist(target,prior)
     digest=hashlib.sha256(target.read_bytes()).hexdigest()
     monkeypatch.setattr(q,'A169_PRIOR_RECEIPT_SHA256',digest)
+    intermediate=dict(prior,candidate_sha=q.A170_FAILED_CANDIDATE,
+                      status='FIX_FORWARD_VALIDATION_REQUIRED',
+                      installation_started=True,
+                      prior_a143_stopped_after_install=True,
+                      a169_origin_candidate=q.A169_PRIOR_CANDIDATE,
+                      a169_origin_sha256=digest,
+                      candidate_image_intent={'image_id':q.A170_LOADED_IMAGE_ID,
+                                              'manifest_sha256':'d'*64},
+                      candidate_runtime_after_failure=None)
+    intermediate.pop('inflight',None)  # The old A170 receipt predates the fix.
+    a170_path=folder/('quiescence-'+q.A170_FAILED_CANDIDATE+'.json')
+    q.persist(a170_path,intermediate)
+    monkeypatch.setattr(q,'A170_FAILED_RECEIPT_SHA256',
+                        hashlib.sha256(a170_path.read_bytes()).hexdigest())
+    installed=root/'scripts/rc6_deploy_quiescence.py'
+    installed.parent.mkdir(parents=True,exist_ok=True)
+    installed.write_bytes(b'exact-a170-partial-install')
+    monkeypatch.setattr(q,'A170_INSTALLED_QUIESCENCE_SHA256',
+                        hashlib.sha256(installed.read_bytes()).hexdigest())
+    def only_image_inspect(args):
+        if args[:3]==['docker','image','inspect']:
+            return json.dumps([{'Id':q.A170_LOADED_IMAGE_ID}])
+        pytest.fail('no Docker stop/start permitted')
+    monkeypatch.setattr(q,'command',only_image_inspect)
     return root,folder,db,states,prior,target,digest
 
 
 def test_a169_stopped_parent_is_adopted_without_docker_stop_or_restart(
         incident,monkeypatch):
     _,folder,_,states,prior,_,digest=a169_stopped_incident(incident,monkeypatch)
-    monkeypatch.setattr(q,'command',lambda *_:pytest.fail('no Docker mutation permitted'))
     candidate='f'*40
     receipt=q.run(candidate,'drain',allow_a143_pending_stopped=True,
                   allow_a151_held_open=True)
     assert receipt['status']=='DRAINED' and receipt['installation_started'] is False
     assert receipt['a169_origin_candidate']==q.A169_PRIOR_CANDIDATE
     assert receipt['a169_origin_sha256']==digest
+    assert receipt['inflight']=='ABSENT_OWNED_RUNTIME_STOPPED'
     assert receipt['a143_previous_proof']==prior['a143_previous_proof']
     assert receipt['stop_evidence']==prior['stop_evidence']
     assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
     assert q.run(candidate,'install',allow_a143_pending_stopped=True,
                  allow_a151_held_open=True)['installation_started'] is True
     assert json.loads((folder/('quiescence-'+candidate+'.json')).read_text())['status']=='HOST_INSTALLATION_STARTED'
+
+
+def test_a170_cold2_uses_real_stopped_held_proof_with_a151_callbacks(
+        incident,monkeypatch):
+    from scripts import rc6_cold2_apply_guard as guard
+    _,_,db,states,_,_,_=a169_stopped_incident(incident,monkeypatch)
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='STOPPED'")
+    candidate='f'*40
+    q.run(candidate,'drain',allow_a143_pending_stopped=True,
+          allow_a151_held_open=True)
+    receipt=q.run(candidate,'install',allow_a143_pending_stopped=True,
+                  allow_a151_held_open=True)
+    receipt['candidate_image_intent']={'image_id':'sha256:'+'f'*64}
+    book=guard.exact_a169_held_stopped_admission(receipt,candidate)
+    assert (book['process_state'],book['session_state'])==('STOPPED','BOOT_CALENDAR')
+    assert book['real_orders_sent']==0
+    monkeypatch.setattr(q,'candidate_operator_module',lambda **_:SimpleNamespace(
+        exact_a151_operator_preopen_pause=lambda:('a'*64,'A151-1-1'),
+        operator_preopen_timer_disabled=lambda:True))
+    with pytest.raises(ValueError,match='QUIESCENCE_A151_STOP_HOLD_CHANGED'):
+        guard.exact_a169_held_stopped_admission(receipt,candidate)
+    downstream, ids = cold2.receipt_for(q.ROOT,candidate)
+    assert downstream['inflight']=='ABSENT_OWNED_RUNTIME_STOPPED'
+    assert ids == {name:states[name]['Id'] for name in q.OWNED}
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'unknown', 'stopped_proof'])
+def test_a171_stopped_a143_handoff_rejects_unverified_inflight_or_stop(
+        incident,monkeypatch,mutation):
+    _,folder,_,states,_,_,_=a169_stopped_incident(incident,monkeypatch)
+    candidate='f'*40
+    q.run(candidate,'drain',allow_a143_pending_stopped=True,
+          allow_a151_held_open=True)
+    target=folder/('quiescence-'+candidate+'.json')
+    original=json.loads(target.read_text())
+    receipt=json.loads(target.read_text())
+    if mutation=='missing':
+        receipt.pop('inflight')
+    elif mutation=='unknown':
+        receipt['inflight']='UNKNOWN'
+    else:
+        receipt['stop_evidence'][q.OWNED[0]]['classification']='UNKNOWN'
+    q.persist(target,receipt)
+    with pytest.raises(ValueError,match='QUIESCENCE_A143_DRAIN_RECEIPT_CHANGED|QUIESCENCE_A169_INHERITED_STOP_CHANGED'):
+        q.run(candidate,'install',allow_a143_pending_stopped=True,
+              allow_a151_held_open=True)
+    assert json.loads(target.read_text())['installation_started'] is False
+    q.persist(target,original)
+    installed=q.run(candidate,'install',allow_a143_pending_stopped=True,
+                    allow_a151_held_open=True)
+    assert installed['installation_started'] is True
+    receipt['status']='HOST_INSTALLATION_STARTED'
+    receipt['installation_started']=True
+    q.persist(target,receipt)
+    with pytest.raises(ValueError,match='COLD2_QUIESCENCE_RECEIPT_INVALID|COLD2_STOP_EVIDENCE_INVALID'):
+        cold2.receipt_for(q.ROOT,candidate)
+    assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
 
 
 @pytest.mark.parametrize('mutation', [None,'origin','new_image','live_docker','no_go'])
@@ -605,12 +688,16 @@ def test_a169_stopped_parent_tamper_fails_before_next_candidate_receipt(
 
 def test_a151_held_open_exact_a143_flat_drain_and_stopped_boot_calendar(
         incident,monkeypatch):
-    _,_,db,states=a151_open_incident(incident,monkeypatch)
+    root,folder,db,states=a151_open_incident(incident,monkeypatch)
     proof=q.a143_pending_running_proof(allow_a151_held_open=True)
     assert proof['operator_hold']['admission']==q.A151_HELD_OPEN_MODE
     assert proof['close'] is None
     original_command=q.command
     def stop_with_scanner_ack(args):
+        # Durable DRAINING intent must never claim inflight absent while any
+        # owned Docker container can still be running.
+        partial=json.loads((folder/('quiescence-'+SHA+'.json')).read_text())
+        assert partial['status']=='DRAINING' and 'inflight' not in partial
         result=original_command(args)
         if args[-1]=='porota_production_observer':
             with sqlite3.connect(db) as c:
@@ -620,6 +707,7 @@ def test_a151_held_open_exact_a143_flat_drain_and_stopped_boot_calendar(
     receipt=q.run(SHA,'drain',allow_a143_pending_running=True,
                   allow_a151_held_open=True)
     assert receipt['status']=='DRAINED'
+    assert receipt['inflight']=='ABSENT_OWNED_RUNTIME_STOPPED'
     assert receipt['a143_previous_proof']['operator_hold']==proof['operator_hold']
     assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
     with sqlite3.connect(db) as c:
@@ -632,6 +720,28 @@ def test_a151_held_open_exact_a143_flat_drain_and_stopped_boot_calendar(
         q.run(SHA,'install',allow_a143_pending_running=True)
     assert q.run(SHA,'install',allow_a143_pending_running=True,
                  allow_a151_held_open=True)['installation_started'] is True
+    downstream,ids=cold2.receipt_for(root,SHA)
+    assert downstream['status']=='HOST_INSTALLATION_STARTED'
+    assert ids=={name:states[name]['Id'] for name in q.OWNED}
+
+
+def test_a171_partial_a143_stop_never_issues_inflight_absence(incident,monkeypatch):
+    root,folder,_,states=a151_open_incident(incident,monkeypatch)
+    original_command=q.command
+    def partial_stop(args):
+        if args[-1]==q.OWNED[1]:
+            raise ValueError('SECOND_DOCKER_STOP_FAILED')
+        return original_command(args)
+    monkeypatch.setattr(q,'command',partial_stop)
+    with pytest.raises(ValueError,match='SECOND_DOCKER_STOP_FAILED'):
+        q.run(SHA,'drain',allow_a143_pending_running=True,
+              allow_a151_held_open=True)
+    partial=json.loads((folder/('quiescence-'+SHA+'.json')).read_text())
+    assert partial['status']=='DRAINING' and 'inflight' not in partial
+    assert states[q.OWNED[0]]['State']['Status']=='exited'
+    assert states[q.OWNED[1]]['State']['Status']=='running'
+    with pytest.raises(ValueError,match='COLD2_QUIESCENCE_RECEIPT_INVALID'):
+        cold2.receipt_for(root,SHA)
 
 
 @pytest.mark.parametrize('mutation', ['wrong_session','paper_order','spot','caucion',
