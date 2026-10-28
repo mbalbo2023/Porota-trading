@@ -1,0 +1,117 @@
+name: RC6 A158 stage host receipt hash READ ONLY
+
+# Review stage only; root adds scoped push trigger after verification.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  hash:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Hash exact host receipt and compare bounded durable duplicates
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 45s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import hashlib
+          import http.client
+          import json
+          import os
+          import stat
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          STAGE = Path('/tmp/porota-deploy-v2-dd22a1b0761cc4f231813edb6b502d1dd21bb8de-40592426296-2')
+          RECEIPT = STAGE/'host-control-plane-applied.json'
+          DURABLE = Path('/opt/porota-trading/data/deploy')
+          LOG_RECONSTRUCTED_SHA = '20c6a3dc6a9fa0377032d26d17d8e4626c2ef4745e4c866155f004fabd9b0f41'
+
+          def metadata(part):
+              c=http.client.HTTPConnection('169.254.169.254',timeout=2)
+              try:
+                  c.request('GET','/metadata/v1/'+part)
+                  r=c.getresponse()
+                  if r.status!=200:
+                      raise RuntimeError('DROPLET_METADATA_RED')
+                  return r.read(128).decode('ascii').strip()
+              finally:
+                  c.close()
+
+          if (metadata('id'),metadata('region'))!=('594077619','nyc1'):
+              raise RuntimeError('DROPLET_IDENTITY_RED')
+          root=os.lstat(STAGE)
+          f=os.lstat(RECEIPT)
+          if (root.st_ino,root.st_dev,root.st_uid)!=(855,64769,1000) or not stat.S_ISDIR(root.st_mode):
+              raise RuntimeError('STAGE_ROOT_DRIFT')
+          if (f.st_ino,f.st_dev,f.st_uid,f.st_size,f.st_nlink)!=(30841,64769,0,11851,1) or not stat.S_ISREG(f.st_mode):
+              raise RuntimeError('HOST_RECEIPT_IDENTITY_DRIFT')
+          raw=RECEIPT.read_bytes()
+          actual=hashlib.sha256(raw).hexdigest()
+          payload=json.loads(raw)
+          if (set(payload)!={'changed','count','legacy_retired_count','status','verification'} or
+              payload['status']!='GREEN' or payload['count']!=44 or
+              len(payload['changed'])!=46 or len(payload['verification'])!=46 or
+              actual!=LOG_RECONSTRUCTED_SHA):
+              raise RuntimeError('HOST_RECEIPT_LOG_DUPLICATE_MISMATCH')
+          matches=0
+          seen=0
+          for p in DURABLE.iterdir():
+              seen+=1
+              if seen>500:
+                  raise RuntimeError('DURABLE_DIRECTORY_UNBOUNDED')
+              s=os.lstat(p)
+              if stat.S_ISREG(s.st_mode) and s.st_size==len(raw) and s.st_dev==root.st_dev:
+                  with p.open('rb') as stream:
+                      matches+=int(hashlib.sha256(stream.read(65536)).hexdigest()==actual)
+          now=datetime.now(timezone.utc)
+          out={'schema':'RC6_A158_RECEIPT_DUPLICATE_RO_V1',
+               'at_utc':now.isoformat(),
+               'at_art':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+               'droplet_id':'594077619','region':'nyc1','no_mutations':True,
+               'stage_inode':root.st_ino,'receipt_inode':f.st_ino,'receipt_bytes':len(raw),
+               'host_sha256':actual,'action_log_reconstruction_sha256':LOG_RECONSTRUCTED_SHA,
+               'exact_log_duplicate':True,'payload_status':'GREEN',
+               'payload_units':payload['count'],'changed_count':len(payload['changed']),
+               'verification_count':len(payload['verification']),
+               'durable_directory_entries_seen':seen,'durable_exact_duplicate_count':matches}
+          print('RC6_A158_RECEIPT_DUPLICATE_RO='+json.dumps(out,sort_keys=True))
+          PYHOST
+
+      - name: Erase SSH material on ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
