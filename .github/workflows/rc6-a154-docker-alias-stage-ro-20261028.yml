@@ -1,0 +1,166 @@
+name: RC6 A154 Docker alias and staging metadata READ ONLY
+
+# Review stage: no automatic trigger until /root validates the scoped probe.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Read only exact candidate aliases and old stage inode
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 50s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import http.client
+          import json
+          import os
+          import re
+          import stat
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          IDS = (
+              'sha256:429aa37da444e1121d61f9488c705ebde7eb3623fecbb2e0569bab2022464aa9',
+              'sha256:5f75d0e7e8e4392e795fb2617c90915ba115c24570aa8643e175d2f5aa36d936',
+          )
+          STAGE = Path('/tmp/porota-deploy-v2-dd22a1b0761cc4f231813edb6b502d1dd21bb8de-40592426296-2')
+          SHA = re.compile(r'^[0-9a-f]{40}$')
+
+          def metadata(part):
+              conn = http.client.HTTPConnection('169.254.169.254', timeout=2)
+              try:
+                  conn.request('GET', '/metadata/v1/' + part)
+                  response = conn.getresponse()
+                  if response.status != 200:
+                      raise RuntimeError('DROPLET_METADATA_RED')
+                  return response.read(128).decode('ascii').strip()
+              finally:
+                  conn.close()
+
+          did, region = metadata('id'), metadata('region')
+          if (did, region) != ('594077619', 'nyc1'):
+              raise RuntimeError('DROPLET_IDENTITY_RED')
+
+          def cmd(args, seconds=5):
+              run = subprocess.run(args, capture_output=True, text=True,
+                                   check=False, timeout=seconds)
+              if run.returncode:
+                  raise RuntimeError('DOCKER_METADATA_RED')
+              return run.stdout.strip()
+
+          def inode(p):
+              st = os.lstat(p)
+              return {'device': st.st_dev, 'inode': st.st_ino,
+                      'uid': st.st_uid, 'gid': st.st_gid,
+                      'mode': oct(stat.S_IMODE(st.st_mode)),
+                      'is_directory': stat.S_ISDIR(st.st_mode),
+                      'is_symlink': stat.S_ISLNK(st.st_mode),
+                      'links': st.st_nlink,
+                      'mtime_utc': datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()}
+
+          now = datetime.now(timezone.utc)
+          vfs = os.statvfs('/')
+          free0 = vfs.f_bavail * vfs.f_frsize
+          container_ids = cmd(['docker', 'container', 'ls', '-aq', '--no-trunc']).splitlines()
+          if len(container_ids) > 100:
+              raise RuntimeError('CONTAINER_INVENTORY_UNBOUNDED')
+          all_refs = set()
+          for cid in container_ids:
+              image = cmd(['docker', 'inspect', '--type=container', '--format', '{{.Image}}', cid])
+              if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+                  raise RuntimeError('CONTAINER_IMAGE_RED')
+              all_refs.add(image)
+
+          images = []
+          for iid in IDS:
+              raw = cmd(['docker', 'image', 'inspect', '--format',
+                         '{{.Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Config.Labels}}|{{.Size}}', iid])
+              parts = raw.split('|')
+              if len(parts) != 5 or parts[0] != iid:
+                  raise RuntimeError('IMAGE_IDENTITY_RED')
+              tags, digests, labels = (json.loads(x) for x in parts[1:4])
+              tags = tags or []
+              digests = digests or []
+              labels = labels or {}
+              if not isinstance(tags, list) or not isinstance(digests, list) or not isinstance(labels, dict):
+                  raise RuntimeError('IMAGE_ALIASES_RED')
+              names = sorted({x.split('@', 1)[0] for x in digests if isinstance(x, str)})
+              source = {k: v for k, v in labels.items()
+                        if ('revision' in k.lower() or 'source' in k.lower())
+                        and isinstance(v, str) and SHA.fullmatch(v)}
+              images.append({'id': iid, 'repo_tags': tags,
+                             'digest_repository_names': names,
+                             'digest_count': len(digests),
+                             'source_sha_labels': source,
+                             'inspect_size_bytes': int(parts[4]),
+                             'referenced_by_any_container': iid in all_refs})
+
+          stage = {'exists': STAGE.exists() or STAGE.is_symlink()}
+          if stage['exists']:
+              stage['inode'] = inode(STAGE)
+              stage['parent_inode'] = inode(STAGE.parent)
+              stage['is_mountpoint'] = os.path.ismount(STAGE)
+              # No contents, paths within the stage, open FDs, or data reads.
+              if stage['inode']['is_directory'] and not stage['inode']['is_symlink']:
+                  children = list(STAGE.iterdir())[:100]
+                  stage['direct_children_seen'] = len(children)
+                  stage['direct_child_stat_bytes'] = sum(os.lstat(p).st_size for p in children)
+                  stage['truncated'] = len(children) == 100
+
+          info = cmd(['docker', 'info', '--format', '{{.Driver}}'], 5)
+          version = cmd(['docker', 'version', '--format', '{{.Server.Version}}'], 5)
+          vfs = os.statvfs('/')
+          out = {'schema': 'RC6_A154_ALIASES_STAGE_RO_V1',
+                 'at_utc': now.isoformat(),
+                 'at_art': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+                 'droplet_id': did, 'region': region, 'no_mutations': True,
+                 'free_before_bytes': free0,
+                 'free_after_bytes': vfs.f_bavail * vfs.f_frsize,
+                 'container_count': len(container_ids),
+                 'storage_driver': info, 'docker_server_version': version,
+                 'images': images, 'staging': stage,
+                 'interpretation': 'Docker Engine df size and image inspect size differ; no reclaim estimate or deletion approved by this probe'}
+          print('RC6_A154_ALIASES_STAGE_RO=' + json.dumps(out, sort_keys=True))
+          PYHOST
+
+      - name: Erase SSH material on ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
