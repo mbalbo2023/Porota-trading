@@ -60,6 +60,8 @@ jobs:
           )
           STAGE = Path('/tmp/porota-deploy-v2-dd22a1b0761cc4f231813edb6b502d1dd21bb8de-40592426296-2')
           SHA = re.compile(r'^[0-9a-f]{40}$')
+          RC6_TAG = re.compile(r'^(?:porota-predeploy-v2:[0-9a-f]{40}|porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40})$')
+          RC6_DIGEST_REPOS = {'porota-predeploy-v2', 'porota-trading-bot'}
 
           def metadata(part):
               conn = http.client.HTTPConnection('169.254.169.254', timeout=2)
@@ -119,14 +121,17 @@ jobs:
               labels = labels or {}
               if not isinstance(tags, list) or not isinstance(digests, list) or not isinstance(labels, dict):
                   raise RuntimeError('IMAGE_ALIASES_RED')
-              names = sorted({x.split('@', 1)[0] for x in digests if isinstance(x, str)})
-              source = {k: v for k, v in labels.items()
+              names = {x.split('@', 1)[0] for x in digests if isinstance(x, str)}
+              source = sorted({v for k, v in labels.items()
                         if ('revision' in k.lower() or 'source' in k.lower())
-                        and isinstance(v, str) and SHA.fullmatch(v)}
-              images.append({'id': iid, 'repo_tags': tags,
-                             'digest_repository_names': names,
+                        and isinstance(v, str) and SHA.fullmatch(v)})
+              images.append({'id': iid,
+                             'rc6_candidate_tags': sorted(t for t in tags if isinstance(t, str) and RC6_TAG.fullmatch(t)),
+                             'other_alias_count': sum(not (isinstance(t, str) and RC6_TAG.fullmatch(t)) for t in tags),
+                             'rc6_digest_repositories': sorted(names & RC6_DIGEST_REPOS),
+                             'other_digest_repositories_count': len(names - RC6_DIGEST_REPOS),
                              'digest_count': len(digests),
-                             'source_sha_labels': source,
+                             'source_sha_label_values': source,
                              'inspect_size_bytes': int(parts[4]),
                              'referenced_by_any_container': iid in all_refs})
 
