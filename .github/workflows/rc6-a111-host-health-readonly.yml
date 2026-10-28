@@ -992,6 +992,90 @@ jobs:
               'ppi_watch_accessed':False,'mutation_attempted':False},sort_keys=True))
           PYHOST
 
+
+      - name: A144 read-only postclose workers and IOL OAuth state
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 45s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import json,subprocess,textwrap
+          from pathlib import Path
+          def cmd(args,limit=5):
+              try:
+                  done=subprocess.run(args,text=True,capture_output=True,timeout=limit,check=False)
+                  return done.stdout if done.returncode==0 else None
+              except (OSError,subprocess.SubprocessError):
+                  return None
+          raw=cmd(['systemctl','list-unit-files','--type=timer','--no-pager','--no-legend'])
+          all_names=[]
+          for row in (raw or '').splitlines():
+              fields=row.split()
+              if fields and fields[0].startswith('porota-') and fields[0].endswith('.timer'):
+                  all_names.append(fields[0])
+          states={}
+          for name in all_names[:50]:
+              props=cmd(['systemctl','show',name,
+                         '-p','ActiveState','-p','UnitFileState','-p','LastTriggerUSec',
+                         '-p','NextElapseUSecRealtime'],2)
+              if props is None:
+                  states[name]={'state':'NO_VERIFICADO'}
+              else:
+                  pairs=dict((key,value) for key,value in (
+                      line.split('=',1) for line in props.splitlines() if '=' in line))
+                  states[name]={'active':pairs.get('ActiveState'),'enabled':pairs.get('UnitFileState'),
+                      'last_trigger':pairs.get('LastTriggerUSec'),
+                      'next_elapse':pairs.get('NextElapseUSecRealtime')}
+          guardian=Path('/opt/porota-trading/data/market/iol_oauth_guardian_state.json')
+          if guardian.is_symlink():
+              iol={'state':'UNTRUSTED_SYMLINK'}
+          elif not guardian.is_file() or guardian.stat().st_size>4096:
+              iol={'state':'NO_VERIFICADO','file_present':guardian.is_file()}
+          else:
+              try:
+                  item=json.loads(guardian.read_text())
+                  iol={key:item.get(key) for key in ('state','checked_at',
+                         'last_authenticated_at','incident_seq','market_open')}
+                  iol['collector_cache_state']=(item.get('collector') or {}).get('state')
+              except (OSError,ValueError,TypeError):
+                  iol={'state':'NO_VERIFICADO'}
+          nested=textwrap.dedent("""
+          import json,sqlite3
+          from bt_caucion_paper import validate_position
+          p='file:/app/data/paper_v17/observer_v17.db?mode=ro'
+          try:
+              c=sqlite3.connect(p,uri=True,timeout=3);c.row_factory=sqlite3.Row
+              c.execute('PRAGMA query_only=ON')
+              rows=c.execute('SELECT * FROM paper_cauciones LIMIT 10').fetchall()
+              errors={}
+              for row in rows:
+                  try: validate_position(dict(row))
+                  except (ValueError,TypeError) as exc:
+                      k=str(exc).split(':',1)[-1].strip()[:110]
+                      errors[k]=errors.get(k,0)+1
+              c.close()
+              print(json.dumps({'state':'OK','checked':len(rows),'invalid':sum(errors.values()),
+                'failure_reasons':errors,'read_only':True}))
+          except (OSError,sqlite3.Error,ImportError) as exc:
+              print(json.dumps({'state':'NO_VERIFICADO','error_type':type(exc).__name__}))
+          """)
+          # No probe invokes execution routes. Import and validation are CPU/local-file only.
+          result=cmd(['docker','exec','-i','porota_production_observer',
+                      'env','PYTHONDONTWRITEBYTECODE=1','python3','-c',nested],14)
+          try: cauciones=json.loads(result) if result else {'state':'NO_VERIFICADO'}
+          except (ValueError,TypeError): cauciones={'state':'NO_VERIFICADO'}
+          print('RC6_A144_OFFHOURS='+json.dumps({'iol_guardian':iol,'timers':states,
+              'timer_count':len(all_names),'caucion_validation':cauciones,
+              'read_only':True,'provider_requests':0,'ppi_watch_accessed':False,
+              'mutation_attempted':False},sort_keys=True))
+          PYHOST
+
       - name: Remove SSH material
         if: always()
         shell: bash
