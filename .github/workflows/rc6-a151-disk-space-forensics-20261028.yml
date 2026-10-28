@@ -1,0 +1,245 @@
+name: RC6 A151 disk space forensic metadata READ ONLY
+
+# PROPOSAL ONLY. Do not push or run until /root reviews host/mutex ownership.
+# One-shot path-gated diagnostic; NO cleanup, mutation, broker request, or broad du.
+on:
+  push:
+    branches: [audit/rc6-a151-disk-space-forensics-20261028]
+    paths:
+      - .github/workflows/rc6-a151-disk-space-forensics-20261028.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  sample:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Sample bounded metadata on RC6 host without writes
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 55s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import json
+          import os
+          import re
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          # Only metadata: stat/statvfs and shallow fixed-path scandir. No recursive
+          # traversal, du, Docker prune, journal vacuum, or database connections.
+          ROOT = Path('/opt/porota-trading')
+          MAX_ENTRIES = 1200
+
+          def command(argv, timeout_sec=4):
+              try:
+                  p = subprocess.run(argv, capture_output=True, text=True,
+                                     timeout=timeout_sec, check=False)
+                  return p.stdout if p.returncode == 0 else None
+              except (OSError, subprocess.TimeoutExpired):
+                  return None
+
+          def fs(path):
+              try:
+                  x = os.statvfs(path)
+                  st = os.stat(path)
+                  return {'device': st.st_dev,
+                          'free_bytes': x.f_bavail * x.f_frsize,
+                          'total_bytes': x.f_blocks * x.f_frsize,
+                          'free_inodes': x.f_favail,
+                          'total_inodes': x.f_files}
+              except OSError:
+                  return {'state': 'UNAVAILABLE'}
+
+          def stat_regular(path):
+              try:
+                  if path.is_symlink() or not path.is_file():
+                      return None
+                  s = path.stat()
+                  return {'bytes': s.st_size,
+                          'mtime_utc': datetime.fromtimestamp(s.st_mtime, timezone.utc).isoformat()}
+              except OSError:
+                  return None
+
+          # Shallow scan: aggregate regular-file sizes only in the *immediate*
+          # directory. Non-recursive directory bytes are intentionally unknown.
+          def shallow(path):
+              p = Path(path)
+              result = {'state': 'UNAVAILABLE', 'direct_regular_file_bytes': 0,
+                        'direct_regular_file_count': 0, 'child_dirs': 0,
+                        'entries_seen': 0, 'truncated': False,
+                        'largest_direct_file_bytes': []}
+              try:
+                  largest = []
+                  with os.scandir(p) as entries:
+                      for ent in entries:
+                          if result['entries_seen'] >= MAX_ENTRIES:
+                              result['truncated'] = True
+                              break
+                          result['entries_seen'] += 1
+                          if ent.is_symlink():
+                              continue
+                          try:
+                              if ent.is_dir(follow_symlinks=False):
+                                  result['child_dirs'] += 1
+                              elif ent.is_file(follow_symlinks=False):
+                                  s = ent.stat(follow_symlinks=False)
+                                  result['direct_regular_file_bytes'] += s.st_size
+                                  result['direct_regular_file_count'] += 1
+                                  largest.append(s.st_size)
+                          except OSError:
+                              continue
+                  result['largest_direct_file_bytes'] = sorted(largest, reverse=True)[:5]
+                  result['state'] = 'OK'
+              except OSError:
+                  pass
+              return result
+
+          # Restrict to named RC6-owned containers; do not inspect PPI Watch.
+          containers = {}
+          for name in ('porota_production_observer',
+                       'porota_production_dashboard',
+                       'porota_critical_approval_rc6'):
+              raw = command(['docker', 'inspect', '--format',
+                             '{{json .}}', name], timeout_sec=3)
+              if not raw:
+                  containers[name] = {'state': 'UNAVAILABLE'}
+                  continue
+              try:
+                  data = json.loads(raw)
+                  log_path = Path(data.get('LogPath') or '')
+                  # Docker owns log path. We only stat; never open or read log.
+                  log_stat = stat_regular(log_path) if log_path.is_absolute() else None
+                  containers[name] = {
+                      'state': 'OK',
+                      'image_id': (data.get('Image') or '')[:71],
+                      'restart_count': data.get('RestartCount'),
+                      'log_file': log_stat,
+                      'status': (data.get('State') or {}).get('Status')}
+              except (ValueError, TypeError):
+                  containers[name] = {'state': 'PARSE_ERROR'}
+
+          # docker image ls and journalctl --disk-usage are metadata operations;
+          # each is individually time-bounded. No docker system df / -v.
+          raw_images = command(['docker', 'image', 'ls', '--all', '--no-trunc',
+                                '--format', '{{json .}}'], timeout_sec=4)
+          images = {'state': 'UNAVAILABLE'}
+          if raw_images is not None:
+              ids = set()
+              rows = []
+              for line in raw_images.splitlines()[:100]:
+                  try:
+                      obj = json.loads(line)
+                      id_ = obj.get('ID') or obj.get('Id')
+                      if id_ and id_ not in ids:
+                          ids.add(id_)
+                          rows.append({'id': id_,
+                                       'repository': str(obj.get('Repository') or '')[:128],
+                                       'tag': str(obj.get('Tag') or '')[:80],
+                                       'size_display': str(obj.get('Size') or '')[:30],
+                                       'created': str(obj.get('CreatedAt') or '')[:40]})
+                  except ValueError:
+                      pass
+              exact = {}
+              # One bounded, batch Docker metadata request. Size is each
+              # image's logical bytes; shared layers MUST NOT be summed as
+              # unique space on disk.
+              if ids and len(ids) <= 100:
+                  sizes = command(['docker', 'image', 'inspect', '--format',
+                                   '{{.Id}} {{.Size}}', *sorted(ids)], timeout_sec=6)
+                  if sizes is not None:
+                      for line in sizes.splitlines():
+                          parts = line.split()
+                          if len(parts) == 2 and parts[1].isdigit():
+                              exact[parts[0]] = int(parts[1])
+              rc6_refs = {v.get('image_id') for v in containers.values()
+                          if v.get('state') == 'OK'}
+              for row in rows:
+                  row['logical_size_bytes'] = exact.get(row['id'])
+                  # 'False' only means no reference among these three named
+                  # RC6 containers. Other containers (especially PPI Watch)
+                  # are intentionally not inspected; never classify as
+                  # globally unreferenced or safe to delete.
+                  row['referenced_by_named_rc6'] = row['id'] in rc6_refs
+              images = {'state': 'OK', 'unique_ids_shown': len(rows),
+                        'truncated': len(raw_images.splitlines()) > 100,
+                        'images': rows}
+
+          db = ROOT / 'data/paper_v17/observer_v17.db'
+          known_files = {
+              'observer_db': stat_regular(db),
+              'observer_db_wal': stat_regular(Path(str(db) + '-wal')),
+              'observer_db_shm': stat_regular(Path(str(db) + '-shm')),
+          }
+          direct_paths = {
+              'tmp': '/tmp',
+              'general_backups': '/opt/porota-backups',
+              'rc6_data': '/opt/porota-trading/data',
+              'paper_v17': '/opt/porota-trading/data/paper_v17',
+              'rc6_deploy_data': '/opt/porota-trading/data/deploy',
+              'var_log': '/var/log',
+              'apt_archive': '/var/cache/apt/archives',
+              'docker': '/var/lib/docker',
+          }
+          now = datetime.now(timezone.utc)
+          output = {
+              'schema': 'RC6_A151_DISK_FORENSICS_RO_V1',
+              'at_utc': now.isoformat(),
+              'at_ar': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+              'no_mutations': True,
+              'limitations': ['shallow files only; subdirectories not sized',
+                              'Docker image sizes are logical, not additive',
+                              'not referenced by 3 named RC6 containers is NOT safe to delete'
+                              ' when layers are shared',
+                              'timestamps alone do not establish disk causation'],
+              'filesystem': {label: fs(path) for label, path in {
+                  'root': '/', 'tmp': '/tmp', 'rc6': str(ROOT),
+                  'docker': '/var/lib/docker', 'var_log': '/var/log'
+              }.items()},
+              'paths': {label: shallow(path) for label, path in direct_paths.items()},
+              'known_files': known_files,
+              'rc6_container_logs': containers,
+              'docker_image_metadata': images,
+              'journal_disk_usage_text':
+                  (command(['journalctl', '--disk-usage', '--no-pager'],
+                           timeout_sec=4) or 'UNAVAILABLE')[:250],
+          }
+          print('RC6_A151_DISK_FORENSICS_RO=' + json.dumps(output, sort_keys=True))
+          PYHOST
+
+      - name: Erase SSH material on ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
