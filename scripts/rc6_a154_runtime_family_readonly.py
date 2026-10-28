@@ -249,6 +249,22 @@ def _failure_reports(messages: list[tuple[datetime, str]], *, unit: str,
             for check in output['red_checks']
             if isinstance(detail.get(check), dict)
         }
+        if 'iol_reference_fallback' in checks:
+            iol = detail.get('iol_reference_fallback') or {}
+            if isinstance(iol, dict):
+                order = ['IOL_LIVE_BOUNDED_RETRY', 'IOL_LAST_KNOWN_GOOD',
+                         'PPI_PRIMARY', 'BYMA_PUBLIC_COMPLEMENTARY']
+                output['iol_contract_proof'] = {
+                    'cache_state': enum(iol.get('cache_state')),
+                    'fallback_exact': iol.get('fallback_order') == order,
+                    'continuation_safe': iol.get('continuation_state') ==
+                        'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL',
+                    'never_zero_fill': iol.get('never_zero_fill') is True,
+                    'caucion_ars_state': enum(iol.get('caucion_ars_state')),
+                    'caucion_ars_records': count(iol.get('caucion_ars_records')),
+                    'refresh_age_seconds': safe_age(iol.get('age_seconds')),
+                    'lkg_age_seconds': safe_age(iol.get('last_good_age_seconds')),
+                }
         if 'paper_admission_receipt' in checks:
             receipt = report.get('paper_admission_receipt') or {}
             output['paper_admission_reason'] = enum(receipt.get('reason'))
@@ -348,6 +364,10 @@ def age(value, now: datetime) -> float | None:
         return None
     seconds = (now - datetime.fromisoformat(parsed)).total_seconds()
     return round(seconds, 1) if seconds >= 0 else None
+
+
+def safe_age(value) -> float | None:
+    return round(value, 1) if type(value) in (int, float) and 0 <= value <= 10**8 else None
 
 
 def metadata(name: str) -> str:

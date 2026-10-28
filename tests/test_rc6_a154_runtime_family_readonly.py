@@ -17,18 +17,29 @@ class ProbeTests(unittest.TestCase):
     def test_a162_exact_invocation_decodes_preopen_red_checks_without_sensitive_fields(self):
         start = datetime(2026, 10, 27, 12, 9, 0, tzinfo=timezone.utc)
         payload = {'schema': 'POROTA_RC6_PREOPEN_V3', 'status': 'RED',
-                   'red_checks': ['required_rc6_timers', 'observer_db'],
+                   'red_checks': ['required_rc6_timers', 'observer_db', 'iol_reference_fallback'],
                    'checks': {'required_rc6_timers': {'state': 'RED', 'reason': 'PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED',
                                                      'private_secret': 'DONT_PUBLISH'},
-                              'observer_db': {'state': 'RED', 'detail': 'ACCOUNT_PRIVATE'}},
+                              'observer_db': {'state': 'RED', 'detail': 'ACCOUNT_PRIVATE'},
+                              'iol_reference_fallback': {'state': 'RED',
+                                   'reason': 'IOL_FAILSAFE_CONTRACT_INVALID',
+                                   'cache_state': 'LIVE_FRESH', 'age_seconds': 123.4,
+                                   'last_good_age_seconds': None,
+                                   'caucion_ars_state': 'SOURCE_UNAVAILABLE_NO_LKG',
+                                   'caucion_ars_records': 0,
+                                   'fallback_order': ['PRIVATE_ACCOUNT'],
+                                   'continuation_state': 'UNSAFE'}},
                    'secret': 'DONT_PUBLISH'}
         lines = json.dumps(payload, indent=2).splitlines()
         messages = [(start + timedelta(seconds=i / 100), line) for i, line in enumerate(lines)]
         output = probe._failure_reports(messages, unit='porota-preopen-rc6.service',
                                         started=start, ended=start + timedelta(seconds=30))
-        self.assertEqual(output['red_checks'], ['observer_db', 'required_rc6_timers'])
+        self.assertEqual(output['red_checks'], ['iol_reference_fallback',
+                                               'observer_db', 'required_rc6_timers'])
         self.assertEqual(output['check_reasons']['required_rc6_timers'],
                          'PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED')
+        self.assertEqual(output['iol_contract_proof']['caucion_ars_records'], 0)
+        self.assertFalse(output['iol_contract_proof']['fallback_exact'])
         self.assertNotIn('ACCOUNT_PRIVATE', json.dumps(output))
         self.assertNotIn('DONT_PUBLISH', json.dumps(output))
 
