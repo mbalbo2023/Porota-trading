@@ -150,6 +150,9 @@ jobs:
               os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
               os.environ['CANDIDATE_TREE'],
               decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'RC6_A151_OWNER_APPROVAL_ID={comment}\n')
+              env.write(f'RC6_A151_OWNER_DEFERRED_ID={deferred}\n')
           print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
           print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
           PY
@@ -562,6 +565,32 @@ jobs:
             echo "RC6_PAPER_SESSION=GREEN|mode=$SESSION_MODE|EXACT_PENDING_LEDGER_REQUIRED"
           fi
 
+      - name: Authorize sealed A151 restatement continuity before suspension
+        id: restatement_continuity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # No DB write and no GitHub token on the Droplet. The runner checks
+          # the exact prior failed Deploy and both prior owner literals.
+          timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --host-probe --db /opt/porota-trading/data/paper_v17/observer_v17.db --candidate-sha '$CANDIDATE_SHA' --receipt-dir /opt/porota-trading/data/deploy" \
+            < scripts/rc6_caucion_fee_restatement_continuity.py \
+            > /tmp/rc6-a151-origin-probe.json
+          PROOF="$(python3 scripts/rc6_caucion_fee_restatement_continuity.py \
+            --authorize-runner --candidate-sha "$CANDIDATE_SHA" \
+            --probe-json /tmp/rc6-a151-origin-probe.json \
+            --repo "$GITHUB_REPOSITORY")"
+          if [ "$PROOF" = null ]; then
+            echo 'RC6_A151_CONTINUITY=FRESH_OR_SAME_CANDIDATE'
+            echo 'RC6_A151_CONTINUITY_PROOF_B64=' >> "$GITHUB_ENV"
+          else
+            echo 'RC6_A151_CONTINUITY=EXACT_PRIOR_FAILED_DEPLOY_AND_OWNER_VERIFIED'
+            echo "RC6_A151_CONTINUITY_PROOF_B64=$(printf '%s' "$PROOF" | base64 -w0)" >> "$GITHUB_ENV"
+          fi
+
       - name: Capture exact pre-suspend host fingerprint
         id: pre_suspend_snapshot
         shell: bash
@@ -844,7 +873,7 @@ jobs:
 
       - name: Account pre-suspend failure without recovery or timer writes
         id: pre_suspend_account
-        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.pre_suspend_snapshot.outcome == 'failure' || steps.pre_suspend_snapshot.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
+        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.pre_suspend_snapshot.outcome == 'failure' || steps.pre_suspend_snapshot.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
         timeout-minutes: 1
         shell: bash
         run: |
@@ -895,7 +924,7 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' bash -s" <<'REMOTE'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -1045,7 +1074,9 @@ jobs:
           CAUCION_FEE_PREFLIGHT="$(sudo -n env PYTHONPATH="$STAGE" python3 -B \
             "$STAGE/scripts/rc6_caucion_fee_restatement_apply.py" \
             --db "$REPO/data/paper_v17/observer_v17.db" \
-            --candidate-sha "$CANDIDATE_SHA" --plan)"
+            --candidate-sha "$CANDIDATE_SHA" \
+            --continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64" \
+            --receipt-dir "$REPO/data/deploy" --plan)"
           printf '%s\n' "$CAUCION_FEE_PREFLIGHT" | python3 -c \
             'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["read_only"] is True and p["receipts_expected"]==6 and p["paper_book_flat"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_PREFLIGHT=GREEN|PAPER_PUBLIC_MODEL_ONLY|6/6")'
 
@@ -1162,7 +1193,13 @@ jobs:
           CAUCION_FEE_APPLY="$(sudo -n env PYTHONPATH="$REPO" python3 -B \
             "$REPO/scripts/rc6_caucion_fee_restatement_apply.py" \
             --db "$REPO/data/paper_v17/observer_v17.db" \
-            --candidate-sha "$CANDIDATE_SHA" --apply)"
+            --candidate-sha "$CANDIDATE_SHA" --candidate-tree "$CANDIDATE_TREE" \
+            --deploy-sha "$DEPLOY_SHA" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --owner-approval-comment-id "$RC6_A151_OWNER_APPROVAL_ID" \
+            --owner-deferred-comment-id "$RC6_A151_OWNER_DEFERRED_ID" \
+            --continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64" \
+            --receipt-dir "$REPO/data/deploy" --apply)"
           printf '%s\n' "$CAUCION_FEE_APPLY" | python3 -c \
             'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["receipts"]==6 and p["inserted"] in (0,6) and p["old_positions_untouched"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_APPLY=GREEN|APPEND_ONLY|PAPER_MODEL|ACCOUNT_FEES_NO_VERIFICADO")'
 

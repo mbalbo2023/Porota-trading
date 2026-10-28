@@ -19,6 +19,9 @@ from test_rc6_a150_caucion_ro_provenance import _six_legacy_matured, LEGACY_AUTH
 
 CANDIDATE = "a" * 40
 KNOWN_AT = datetime(2026, 10, 28, 5, 0, tzinfo=timezone.utc)
+ORIGIN = {"candidate_sha": CANDIDATE, "candidate_tree": "c" * 40,
+          "deploy_sha": "d" * 40, "run_id": "40700000000", "run_attempt": "1",
+          "owner_approval_comment_id": 1001, "owner_deferred_comment_id": 1002}
 
 
 @pytest.fixture
@@ -78,7 +81,7 @@ def test_exact_six_append_only_receipts_unify_cash_pnl_and_provenance(six_positi
     with sqlite3.connect(six_positions) as db:
         original = db.execute("SELECT paper_id,total_fees FROM paper_cauciones ORDER BY paper_id").fetchall()
     assert preflight_restatement(six_positions, CANDIDATE, now=KNOWN_AT)["receipts_expected"] == 6
-    applied = apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT)
+    applied = apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=ORIGIN)
     assert applied["inserted"] == applied["receipts"] == 6
     assert applied["broker_account_fees_verified"] is False
     assert apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT)["inserted"] == 0
@@ -110,7 +113,7 @@ def test_exact_six_append_only_receipts_unify_cash_pnl_and_provenance(six_positi
 
 
 def test_external_autocommit_reader_pins_and_releases_one_receipt_snapshot(six_positions):
-    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT)
+    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=ORIGIN)
     with sqlite3.connect(six_positions, isolation_level=None) as db:
         db.row_factory = sqlite3.Row
         assert not db.in_transaction
@@ -124,7 +127,7 @@ def test_external_autocommit_reader_pins_and_releases_one_receipt_snapshot(six_p
 
 
 def test_partial_or_tampered_receipts_fail_before_any_financial_projection(six_positions):
-    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT)
+    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=ORIGIN)
     with sqlite3.connect(six_positions) as db:
         # Immutable no-update trigger really executes, rather than relying on
         # a test-only hypothetical failure.
@@ -140,7 +143,7 @@ def test_partial_or_tampered_receipts_fail_before_any_financial_projection(six_p
 
 
 def test_restated_fee_does_not_hide_changed_historical_row(six_positions):
-    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT)
+    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=ORIGIN)
     with sqlite3.connect(six_positions) as db:
         db.execute("UPDATE paper_cauciones SET total_fees='0.19' WHERE paper_id=(SELECT paper_id FROM paper_cauciones LIMIT 1)")
     with _read(six_positions) as db:
@@ -151,10 +154,10 @@ def test_restated_fee_does_not_hide_changed_historical_row(six_positions):
 
 
 def test_another_candidate_cannot_silently_adopt_existing_fee_receipts(six_positions):
-    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT)
-    with pytest.raises(ValueError, match="PAPER_RESTATEMENT_EXACT_CANDIDATE_REQUIRED"):
+    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=ORIGIN)
+    with pytest.raises(ValueError, match="PAPER_RESTATEMENT_PRIOR_FAILED_DEPLOY_PROOF_RED"):
         preflight_restatement(six_positions, "b" * 40, now=KNOWN_AT)
-    with pytest.raises(ValueError, match="PAPER_RESTATEMENT_EXACT_CANDIDATE_REQUIRED"):
+    with pytest.raises(ValueError, match="PAPER_RESTATEMENT_PRIOR_FAILED_DEPLOY_PROOF_RED"):
         apply_restatement(six_positions, "b" * 40, now=KNOWN_AT)
 
 
