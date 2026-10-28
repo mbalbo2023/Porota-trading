@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: rc6-unified-paper-deploy
@@ -63,6 +64,37 @@ jobs:
           assert data['mutations']=='NONE' and data['real_routes']=='NOT_CALLED'
           assert data['source_health'] in ('GREEN','AMBER')
           print('RC6_IOL_READONLY_DIAGNOSIS='+data['source_health'])
+          PY
+      - name: Publish bounded diagnostic receipt on RC6 tracking issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - "$RUNNER_TEMP/rc6-iol-source-health.jsonl" <<'PY'
+          import json, os, sys, urllib.request
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          evidence='NO_HOST_RECEIPT'
+          if path.is_file():
+              lines=path.read_text().splitlines()
+              if len(lines)==1 and lines[0].startswith('RC6_IOL_READONLY=') and len(lines[0])<=16000:
+                  payload=json.loads(lines[0].split('=',1)[1])
+                  if payload.get('schema')=='RC6_IOL_SOURCE_HEALTH_READONLY_V1':
+                      evidence=json.dumps(payload,sort_keys=True,separators=(',',':'))
+          body=('RC6 IOL read-only source health diagnostic (Action evidence)\n\n'
+                f'- Run: {os.environ["GITHUB_SERVER_URL"]}/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GITHUB_RUN_ID"]}\n'
+                f'- Diagnostic SHA: `{os.environ["GITHUB_SHA"]}`\n'
+                '- Host operations: read-only; no OAuth refresh, collector start or execution route.\n'
+                '- Host receipt (sanitized):\n\n```json\n'+evidence+'\n```')
+          request=urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/issues/732/comments',
+              data=json.dumps({'body':body}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                       'Accept':'application/vnd.github+json',
+                       'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=15) as response:
+              assert response.status==201
+          print('RC6_IOL_DIAGNOSTIC_RECEIPT_PUBLISHED=YES')
           PY
       - name: Clean runner secrets and diagnostic file
         if: always()
