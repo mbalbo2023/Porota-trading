@@ -36,6 +36,13 @@ A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
 A143_PENDING_IMAGE_ID = 'sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
+# #751 Predeploy artifact 12780414186 has a different Docker config ID from
+# the image materialized by Docker load on this host. The exact frozen JSON
+# member SHA256 is independently proven by its archive digest and A160 host
+# read-only probe; the runtime ID is bound by the A143 marker, receipt and
+# both live containers. Never substitute one identity for the other.
+A143_PENDING_FROZEN_IMAGE_ID = 'sha256:092ebfcf75c6b754b53e84d034acde7e4c328a8866ad8f5e3e8f50685d088ff0'
+A143_PENDING_FROZEN_SHA256 = '6a28244fda8549bc9089a27d184e7aa0003715bdf9269f8b90f5a4017c91a304'
 RESCUE_SOURCE_SHA = '3fd020f408275a490e911e06f60a1ddc89153fe5'
 RESCUE_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 RESCUE_CALENDAR_SHA256 = '32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
@@ -517,8 +524,9 @@ def a143_pending_running_proof(originals=None, *, allow_a151_held_open=False,
             marker.get('ppi_watch_untouched') is not True):
         raise ValueError('QUIESCENCE_A143_PENDING_MARKER_RED')
     frozen, frozen_digest = _a143_exact_json(folder/'porota-frozen-candidate.json', 16384)
-    if (frozen.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
-            frozen.get('image_id') != A143_PENDING_IMAGE_ID or
+    if (frozen_digest != A143_PENDING_FROZEN_SHA256 or
+            frozen.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
+            frozen.get('image_id') != A143_PENDING_FROZEN_IMAGE_ID or
             frozen.get('candidate_tree_sha') != A143_PENDING_TREE_SHA or
             not re.fullmatch('[0-9a-f]{64}',frozen.get('image_tar_sha256',''))):
         raise ValueError('QUIESCENCE_A143_FROZEN_IDENTITY_RED')
@@ -633,13 +641,14 @@ def a143_stopped_continuation(receipt, *, operator_a151_proof=None,
         folder/('quiescence-'+A143_PENDING_SOURCE_SHA+'.json'), 65536)
     if (marker_sha != proof.get('marker_sha256') or
             frozen_sha != proof.get('frozen_sha256') or
+            frozen_sha != A143_PENDING_FROZEN_SHA256 or
             prior_sha != proof.get('prior_receipt_sha256') or
             marker.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
             marker.get('deploy_sha') != A143_PENDING_DEPLOY_SHA or
             marker.get('image_id') != A143_PENDING_IMAGE_ID or
             marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
             frozen.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
-            frozen.get('image_id') != A143_PENDING_IMAGE_ID):
+            frozen.get('image_id') != A143_PENDING_FROZEN_IMAGE_ID):
         raise ValueError('QUIESCENCE_A143_STOP_SOURCE_CHANGED')
     exact_clean_stopped(receipt)
     for name in OWNED:

@@ -43,9 +43,19 @@ def incident(tmp_path, monkeypatch):
                       "OOMKilled": False},
         }
     monkeypatch.setattr(q, "inspect", lambda name: json.loads(json.dumps(states[name])))
-    frozen = {"candidate_sha": q.A143_PENDING_SOURCE_SHA,
-              "image_id": q.A143_PENDING_IMAGE_ID,
-              "candidate_tree_sha": q.A143_PENDING_TREE_SHA, "image_tar_sha256": "d" * 64}
+    # Exact JSON member of the #751 frozen Predeploy artifact 12780414186.
+    # Docker load materialized a separate runtime image ID on the Droplet.
+    frozen = {"build_once": True,
+              "candidate_sha": q.A143_PENDING_SOURCE_SHA,
+              "candidate_tree_sha": q.A143_PENDING_TREE_SHA,
+              "image_config_sha256": "e4767d51eb86a27a705f1f5bd0a56aceb07df6b1d46c7d772024b48c9cd01cd2",
+              "image_id": q.A143_PENDING_FROZEN_IMAGE_ID,
+              "image_size_bytes": 810458086,
+              "image_tar_sha256": "879a253d1a714216290edc842ba1065c3cbd139561c5f172e048502ba59a250f",
+              "paper_mode_required": "PRODUCTION_PAPER",
+              "real_order_capability_required": "BLOCKED",
+              "real_orders_sent_required": 0,
+              "schema_version": 1}
     marker = {"schema_version": 2, "candidate_sha": q.A143_PENDING_SOURCE_SHA,
               "deploy_sha": q.A143_PENDING_DEPLOY_SHA,
               "image_id": q.A143_PENDING_IMAGE_ID,
@@ -55,8 +65,9 @@ def incident(tmp_path, monkeypatch):
               "real_order_routes": "NOT_CALLED", "ppi_watch_untouched": True,
               "recorded_at": datetime.now(timezone.utc).isoformat()}
     (folder / "CURRENT_STATE_V2.json").write_text(json.dumps(marker))
-    (folder / "porota-frozen-candidate.json").write_text(json.dumps(frozen))
+    (folder / "porota-frozen-candidate.json").write_text(json.dumps(frozen,sort_keys=True,indent=2)+'\n')
     frozen_hash = q.hashlib.sha256((folder / "porota-frozen-candidate.json").read_bytes()).hexdigest()
+    assert frozen_hash == q.A143_PENDING_FROZEN_SHA256
     prior = {"candidate_sha": q.A143_PENDING_SOURCE_SHA,
              "status": "FIX_FORWARD_VALIDATION_REQUIRED", "installation_started": True,
              "degraded_closed_rescue": True, "real_orders_sent": 0,
@@ -85,12 +96,62 @@ def incident(tmp_path, monkeypatch):
 
 
 def test_a145_exact_running_pending_admits_only_recovery(incident):
-    _, _, _, states = incident
+    _, folder, _, states = incident
     proof = q.a143_pending_running_proof()
     assert proof["source_sha"] == q.A143_PENDING_SOURCE_SHA
     assert proof["image_id"] == q.A143_PENDING_IMAGE_ID
+    assert proof["frozen_sha256"] == q.A143_PENDING_FROZEN_SHA256
+    assert json.loads((folder/"porota-frozen-candidate.json").read_text())["image_id"] == \
+        q.A143_PENDING_FROZEN_IMAGE_ID
+    assert q.A143_PENDING_FROZEN_IMAGE_ID != q.A143_PENDING_IMAGE_ID
     assert proof["flat_book"]["real_orders_sent"] == 0
     assert all(v["State"]["Status"] == "running" for v in states.values())
+
+
+@pytest.mark.parametrize('mutation', ['frozen_runtime_id', 'frozen_other_id',
+                                      'frozen_digest', 'prior_intent',
+                                      'runtime_docker_image'])
+def test_a143_two_exact_image_ids_and_manifest_hash_fail_closed(
+        incident, mutation):
+    _,folder,_,states=incident
+    frozen_path=folder/'porota-frozen-candidate.json'
+    prior_path=folder/('quiescence-'+q.A143_PENDING_SOURCE_SHA+'.json')
+    if mutation in {'frozen_runtime_id','frozen_other_id'}:
+        frozen=json.loads(frozen_path.read_text())
+        frozen['image_id']=(q.A143_PENDING_IMAGE_ID if mutation=='frozen_runtime_id'
+                            else 'sha256:'+'f'*64)
+        frozen_path.write_text(json.dumps(frozen,sort_keys=True,indent=2)+'\n')
+        # Even a forged prior manifest digest cannot override the artifact.
+        prior=json.loads(prior_path.read_text())
+        prior['candidate_image_intent']['manifest_sha256']=q.hashlib.sha256(
+            frozen_path.read_bytes()).hexdigest()
+        prior_path.write_text(json.dumps(prior))
+    elif mutation=='frozen_digest':
+        frozen_path.write_bytes(frozen_path.read_bytes()+b' ')
+    elif mutation=='prior_intent':
+        prior=json.loads(prior_path.read_text())
+        prior['candidate_image_intent']['image_id']=q.A143_PENDING_FROZEN_IMAGE_ID
+        prior_path.write_text(json.dumps(prior))
+    else:
+        states[q.OWNED[0]]['Image']=q.A143_PENDING_FROZEN_IMAGE_ID
+    with pytest.raises(ValueError,match='QUIESCENCE_A143_'):
+        q.a143_pending_running_proof()
+    assert all(v['State']['Status']=='running' for v in states.values())
+
+
+def test_a143_stopped_continuation_rejects_rewritten_frozen_even_if_proof_rehashed(
+        incident):
+    _,folder,_,states=incident
+    receipt=q.run(SHA,'drain',allow_a143_pending_running=True)
+    frozen_path=folder/'porota-frozen-candidate.json'
+    frozen=json.loads(frozen_path.read_text())
+    frozen['image_id']=q.A143_PENDING_IMAGE_ID
+    frozen_path.write_text(json.dumps(frozen,sort_keys=True,indent=2)+'\n')
+    receipt['a143_previous_proof']['frozen_sha256']=q.hashlib.sha256(
+        frozen_path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError,match='QUIESCENCE_A143_STOP_SOURCE_CHANGED'):
+        q.a143_stopped_continuation(receipt)
+    assert all(v['State']['Status']=='exited' for v in states.values())
 
 
 def test_a145_observed_degraded_market_closed_is_exact_preflight_and_poststop(incident):
