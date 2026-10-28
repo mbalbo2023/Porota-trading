@@ -107,12 +107,53 @@ jobs:
               ('CAUCION_LEDGER_INVALID','ReadOnlyPolicyViolation','HTTP_BLOCKED',
                'PPI_LOGIN_INTERLOCK','Traceback','TimeoutError','OperationalError',
                'MemoryError','DATA_ERROR','AUTH','error')}
+          def sealed(path):
+              assert not path.is_symlink() and path.is_file() and path.stat().st_size<65536
+              data=path.read_bytes()
+              return json.loads(data),hashlib.sha256(data).hexdigest()
+          q,qsha=sealed(root/'data/deploy'/('quiescence-'+candidate+'.json'))
+          scheduler,ssha=sealed(root/'data/deploy'/('scheduler-suspend-'+candidate+'.json'))
+          marker,msha=sealed(root/'data/deploy/CURRENT_STATE_V2.json')
+          frozen,fsha=sealed(root/'data/deploy/porota-frozen-candidate.json')
+          runtime=q.get('candidate_runtime_after_failure') or {}
+          flat=runtime.get('flat_book') or {}
+          marker_fields={k:marker.get(k) for k in ('candidate_sha','deploy_sha','image_id',
+                         'validation_status','mode','real_orders_sent','ppi_watch_untouched')}
+          qfields={k:q.get(k) for k in ('candidate_sha','status','installation_started',
+                   'a171_pending_adopted','a171_origin_candidate','a171_origin_sha256',
+                   'inflight','runtime_health','market_open_suspended','real_orders_sent',
+                   'ppi_watch_accessed')}
+          qfields['candidate_image_intent']={k:(q.get('candidate_image_intent') or {}).get(k)
+              for k in ('image_id','candidate_tree_sha','manifest_sha256')}
+          qfields['candidate_runtime_after_failure']={'status':runtime.get('status'),
+              'flat_book':{k:flat.get(k) for k in ('source_sha','process_state',
+                 'session_state','real_orders_sent')},
+              'critical_capability':(runtime.get('critical_admission') or {}).get('capability'),
+              'containers':{n:{k:v.get(k) for k in ('id','image','lifecycle')}
+                 for n,v in (runtime.get('containers') or {}).items()}}
+          sched_fields={k:scheduler.get(k) for k in ('candidate_sha','status','paused_from',
+              'prior_receipt_sha256','a171_running_origin','a171_origin_sha256',
+              'rescue_failure_disposition')}
+          sched_fields['timer_count']=len(scheduler.get('timers') or [])
+          def docker_identity(name):
+              p=subprocess.run(['docker','inspect','--format',
+                  '{{.Id}} {{.Image}} {{.State.Status}}',name],capture_output=True,
+                  text=True,timeout=7)
+              return p.stdout.strip().split() if p.returncode==0 else ['RED']
           rows={'schema':'rc6.a175.startup-degraded-ro.v1','candidate_sha':candidate,
                 'at_utc':datetime.now(timezone.utc).isoformat(),
                 'droplet':{'id':'594077619','region':'nyc1'},
                 'state':state,'caucion_ledger':ledger,
                 'recent_events':recent_events,'recent_health':recent_health,
                 'bounded_log_patterns':log_patterns,
+                'provenance':{'quiescence_sha256':qsha,'quiescence':qfields,
+                    'scheduler_sha256':ssha,'scheduler':sched_fields,
+                    'marker_sha256':msha,'marker':marker_fields,
+                    'frozen_sha256':fsha,'frozen':{k:frozen.get(k) for k in
+                        ('candidate_sha','candidate_tree_sha','image_id')},
+                    'installed_quiescence_sha256':hashlib.sha256((root/'scripts/rc6_deploy_quiescence.py').read_bytes()).hexdigest(),
+                    'docker':{n:docker_identity(n) for n in ('porota_production_observer',
+                                               'porota_production_dashboard')}},
                 'containers':{n:inspect(n) for n in
                     ('porota_critical_approval_rc6','porota_production_dashboard')},
                 'barrier_present':Path('/run/lock/porota-rc6-deploy-v2-attempt.json').exists(),
