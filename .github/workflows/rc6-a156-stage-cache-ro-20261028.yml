@@ -2,6 +2,11 @@ name: RC6 A156 exact stage and Docker cache inventory READ ONLY
 
 # Preparation only. /root will add a scoped push trigger after review.
 on:
+  push:
+    branches:
+      - audit/rc6-a156-stage-cache-ro-20261028
+    paths:
+      - '.github/workflows/rc6-a156-stage-cache-ro-20261028.yml'
   workflow_dispatch:
 
 permissions:
