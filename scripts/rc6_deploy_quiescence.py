@@ -20,6 +20,7 @@ import subprocess
 import tempfile
 import time
 import types
+import zlib
 from zoneinfo import ZoneInfo
 
 ROOT = Path('/opt/porota-trading')
@@ -59,17 +60,34 @@ FAILED_A92_RESCUE_DEPLOY = '7df3c8fb1d2e32f3eb07b9d969c5b00d16e49b21'
 def candidate_operator_module(*, require_staged=False):
     """Use candidate A125/A151 source, never an old host helper for A151."""
     encoded = os.environ.get('RC6_A125_CANDIDATE_SOURCE_B64')
-    if encoded:
-        if len(encoded) > 150000:
-            raise ValueError('QUIESCENCE_OPERATOR_SOURCE_TOO_LARGE')
+    compressed = os.environ.get('RC6_A125_CANDIDATE_SOURCE_GZIP_B64')
+    if encoded and compressed:
+        raise ValueError('QUIESCENCE_OPERATOR_SOURCE_AMBIGUOUS')
+    if compressed or encoded:
         try:
-            source = base64.b64decode(encoded, validate=True)
+            if compressed:
+                if len(compressed) > 40000:
+                    raise ValueError('QUIESCENCE_OPERATOR_COMPRESSED_TOO_LARGE')
+                packed = base64.b64decode(compressed, validate=True)
+                if not 0 < len(packed) < 30000:
+                    raise ValueError('QUIESCENCE_OPERATOR_COMPRESSED_SIZE_RED')
+                inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+                source = inflater.decompress(packed, 110000)
+                if (not inflater.eof or inflater.unconsumed_tail or
+                        inflater.unused_data or
+                        hashlib.sha256(source).hexdigest() !=
+                        os.environ.get('RC6_A125_CANDIDATE_SOURCE_SHA256')):
+                    raise ValueError('QUIESCENCE_OPERATOR_COMPRESSED_HASH_RED')
+            else:
+                if len(encoded) > 150000:
+                    raise ValueError('QUIESCENCE_OPERATOR_SOURCE_TOO_LARGE')
+                source = base64.b64decode(encoded, validate=True)
             if not 0 < len(source) < 110000:
                 raise ValueError('QUIESCENCE_OPERATOR_SOURCE_SIZE_RED')
             module = types.ModuleType('rc6_candidate_operator_no_go')
             exec(compile(source,'candidate/rc6_deploy_scheduler_suspend.py','exec'),
                  module.__dict__)
-        except (binascii.Error,ValueError) as exc:
+        except (binascii.Error,zlib.error,ValueError) as exc:
             raise ValueError('QUIESCENCE_OPERATOR_SOURCE_INVALID') from exc
     elif not require_staged:
         # The recovery script is also streamed over SSH on stdin before the

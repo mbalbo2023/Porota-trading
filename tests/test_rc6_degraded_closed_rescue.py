@@ -1,5 +1,6 @@
 """A111: the observed 26 October A92 degraded/flat runtime is not healthy."""
 import base64
+import gzip
 from datetime import date as RealDate, datetime as RealDateTime, timedelta, timezone
 import hashlib
 import json
@@ -589,7 +590,8 @@ def test_classifier_pins_same_a92_and_calendar_as_drain():
     assert 'critical_admission()' in block
     assert 'CANDIDATE_A125_B64' in block
     assert 'require_original_marker=True' in block
-    assert 'RC6_A125_CANDIDATE_SOURCE_B64' in workflow
+    assert 'RC6_A125_CANDIDATE_SOURCE_GZIP_B64' in workflow
+    assert 'RC6_A125_CANDIDATE_SOURCE_SHA256' in workflow
     assert 'RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED' in block
     assert 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer' in workflow
 
@@ -731,8 +733,10 @@ def test_a138_pretransfer_classifier_window_fails_closed(
         monkeypatch.setitem(sys.modules, module.__name__, module)
         monkeypatch.setitem(sys.modules, backup.__name__, backup)
         monkeypatch.setitem(sys.modules, 'datetime', clock)
+        operator_bytes = operator_source.encode()
         monkeypatch.setattr(sys, 'argv', ['-', SHA, '',
-            base64.b64encode(operator_source.encode()).decode()])
+            base64.b64encode(gzip.compress(operator_bytes, mtime=0)).decode(),
+            '', hashlib.sha256(operator_bytes).hexdigest()])
         real_connect = sqlite3.connect
         def connect(target, *args, **kwargs):
             if str(target).startswith(
