@@ -2,7 +2,7 @@ name: RC6 IOL OAuth controlled refresh probe
 
 on:
   push:
-    branches: [diagnostic/rc6-iol-source-health-ro-20261028]
+    branches: [diagnostic/rc6-iol-oauth-retry-20261028]
     paths:
       - .github/workflows/rc6-iol-oauth-refresh-controlled-20261028.yml
       - scripts/rc6_iol_oauth_refresh_probe_20261028.py

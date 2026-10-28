@@ -17,6 +17,7 @@ import stat
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 ROOT = Path("/opt/porota-trading")
@@ -36,6 +37,32 @@ def metadata(key: str) -> str:
 def reason(exc: Exception) -> str:
     first = str(exc).split(":", 1)[0]
     return first if SAFE_CODE.fullmatch(first) else type(exc).__name__.upper()
+
+
+def failure_class(exc: Exception) -> dict:
+    """Expose only status and an OAuth-standard error enum, never response text."""
+    cause = exc.__cause__
+    if isinstance(cause, urllib.error.HTTPError):
+        result = {"class": "HTTP", "status": cause.code}
+        if cause.code in (400, 401, 403, 429, 500, 502, 503, 504):
+            try:
+                payload = json.loads(cause.read(2048))
+                code = payload.get("error") if isinstance(payload, dict) else None
+                if code in ("invalid_grant", "invalid_client", "unauthorized_client",
+                            "invalid_request", "temporarily_unavailable", "server_error"):
+                    result["oauth_error"] = code
+            except (ValueError, TypeError, OSError):
+                pass
+        return result
+    if isinstance(cause, urllib.error.URLError):
+        return {"class": "TRANSPORT"}
+    if isinstance(cause, TimeoutError):
+        return {"class": "TIMEOUT"}
+    if isinstance(cause, json.JSONDecodeError):
+        return {"class": "INVALID_JSON"}
+    if getattr(exc, "status_code", None) in (400, 401, 403, 429, 500, 502, 503, 504):
+        return {"class": "MCP_HTTP", "status": exc.status_code}
+    return {"class": "OTHER"}
 
 
 def read_store() -> dict:
@@ -107,7 +134,9 @@ def main() -> int:
                 not isinstance(registration.get("client_id"), str) or not registration.get("client_id")):
             raise ValueError("OAUTH_BOOTSTRAP_CONTRACT_RED")
         report["before"] = {"access_token_present": bool(tokens.get("access_token")),
-                            "refresh_token_present": True, "expires_in_seconds": expiry_seconds(before)}
+                            "refresh_token_present": True, "expires_in_seconds": expiry_seconds(before),
+                            "token_endpoint_persisted": approved_url(before.get("token_endpoint")),
+                            "token_obtained_at_present": isinstance(before.get("token_obtained_at_epoch"), (int, float))}
     except Exception as exc:
         report["status"] = "PRECHECK_RED"
         report["reason"] = reason(exc)
@@ -138,6 +167,7 @@ def main() -> int:
     except Exception as exc:
         report["status"] = "REAUTH_OR_TRANSPORT_REVIEW_REQUIRED"
         report["reason"] = reason(exc)
+        report["failure"] = failure_class(exc)
         try:
             after = read_store()
             report["after"] = {"expires_in_seconds": expiry_seconds(after),
