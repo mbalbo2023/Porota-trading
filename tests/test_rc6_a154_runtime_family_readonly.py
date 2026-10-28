@@ -36,7 +36,8 @@ class ProbeTests(unittest.TestCase):
         start = datetime(2026, 10, 27, 22, 10, 0, tzinfo=timezone.utc)
         payload = {'schema': 'rc6.local-eod.v1', 'state': 'BLOCKED',
                    'reason': 'RUNTIME_CLOSED_UNVERIFIED', 'account': 'DONT_PUBLISH'}
-        messages = [(start + timedelta(seconds=1), json.dumps(payload))]
+        # systemctl start/end are whole seconds, journald preserves fractions.
+        messages = [(start + timedelta(seconds=10, milliseconds=400), json.dumps(payload))]
         output = probe._failure_reports(messages, unit='porota-local-eod-history-rc6.service',
                                         started=start, ended=start + timedelta(seconds=10))
         self.assertEqual(output['reason'], 'RUNTIME_CLOSED_UNVERIFIED')

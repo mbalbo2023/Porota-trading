@@ -209,8 +209,12 @@ def _failure_reports(messages: list[tuple[datetime, str]], *, unit: str,
         raise ValueError('UNIT_NOT_ALLOWED')
     decoder = json.JSONDecoder()
     reports = []
+    # systemctl renders the execution endpoints only to whole seconds while
+    # journalctl retains microseconds; keep the same two-second bounded window
+    # used by the journal query around the invocation.
+    lower, upper = started - timedelta(seconds=2), ended + timedelta(seconds=2)
     bounded = [(at, body[:8192]) for at, body in messages
-               if started <= at <= ended and isinstance(body, str)]
+               if lower <= at <= upper and isinstance(body, str)]
     for index, (at, body) in enumerate(bounded):
         if not body.lstrip().startswith('{'):
             continue
