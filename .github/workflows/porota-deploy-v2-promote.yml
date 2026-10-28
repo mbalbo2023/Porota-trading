@@ -825,6 +825,22 @@ jobs:
             "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
+      - name: Account pre-suspend failure without recovery or timer writes
+        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_PRE_SUSPEND_FAILURE=NO_RUNTIME_RECOVERY_NO_TIMER_WRITES|barrier_requires_review=true'
+          # No artifact was transferred, no RC6 scheduler was suspended and no
+          # Docker image was loaded by this attempt. The pretransfer guard may
+          # have reclaimed only proven RC6 candidates. Measure capacity only.
+          timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 -c '\''import shutil; print("RC6_PRE_SUSPEND_DISK_FREE=" + str(shutil.disk_usage("/").free))'\'''
+
       - name: Transfer frozen artifact
         id: transfer
         shell: bash
@@ -2034,7 +2050,7 @@ jobs:
           PY
 
       - name: Failure-safe host cleanup
-        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled' || steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
+        if: ${{ always() && (steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
         timeout-minutes: 4
         shell: bash
         run: |

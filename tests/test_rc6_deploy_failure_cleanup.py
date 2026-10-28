@@ -1,7 +1,9 @@
 """Failure cleanup uses only attempt-owned, unreferenced resources."""
 import json
 import fcntl
+import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -258,8 +260,9 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertIn('promotion', ids)
         block = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         self.assertIn('always()', block)
-        self.assertIn("steps.host_reconcile.outcome == 'failure'", block)
-        self.assertIn("steps.classify.outcome == 'failure'", block)
+        self.assertNotIn("steps.host_reconcile.outcome == 'failure'", block)
+        self.assertNotIn("steps.classify.outcome == 'failure'", block)
+        self.assertNotIn("steps.diskguard.outcome == 'failure'", block)
         self.assertIn("steps.transfer.outcome == 'failure'", block)
         self.assertIn("steps.promotion.outcome == 'failure'", block)
         self.assertIn("steps.promotion.outcome == 'cancelled'", block)
@@ -279,6 +282,54 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertLess(workflow.index('Failure-safe host cleanup'), workflow.index('Runner cleanup'))
         self.assertLess(workflow.index('Pin exact DigitalOcean Droplet before host mutation'),
                         workflow.index('Reconcile only exact A138 cleanly exited host barrier'))
+
+    def test_classify_red_with_sixteen_held_timers_only_accounts_disk(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        pre = workflow.split('      - name: Account pre-suspend failure without recovery or timer writes', 1)[1].split('      - name:', 1)[0]
+        full = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
+        outcomes = {'host_reconcile': 'success', 'classify': 'failure',
+                    'diskguard': 'skipped', 'suspend': 'skipped', 'drain': 'skipped',
+                    'transfer': 'skipped', 'promotion': 'skipped',
+                    'flat_book': 'skipped', 'timers_restore': 'skipped',
+                    'timers_restored': 'skipped', 'backup_retire': 'skipped',
+                    'finalize_runtime': 'skipped'}
+
+        def selected(block):
+            expression = block.split('if: ${{', 1)[1].split('}}', 1)[0]
+            expression = re.sub(r"steps\.([a-z_]+)\.outcome == '([a-z]+)'",
+                                lambda match: str(outcomes[match[1]] == match[2]),
+                                expression)
+            expression = expression.replace('always()', 'True').replace('&&', ' and ').replace('||', ' or ')
+            self.assertRegex(expression, r'^[\s()TrueFalsandor]+$')
+            return eval(expression, {'__builtins__': {}}, {})
+
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        timers = {f'porota-rc6-{number:02d}.timer': 'inactive'
+                  for number in range(16)}
+        with tempfile.TemporaryDirectory(prefix='rc6-held-timers-') as folder:
+            state = Path(folder) / 'timers.json'
+            state.write_text(json.dumps(timers, sort_keys=True))
+            fake_ssh = Path(folder) / 'ssh'
+            fake_ssh.write_text('''#!/usr/bin/python3
+import sys
+command = ' '.join(sys.argv[1:])
+assert 'shutil.disk_usage' in command
+assert all(word not in command for word in ('systemctl', 'docker', 'sudo', '--action', 'rm -rf'))
+print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
+''')
+            fake_ssh.chmod(0o755)
+            shell = pre.split('        run: |\n', 1)[1]
+            shell = '\n'.join(line[10:] if line.startswith('          ') else line
+                              for line in shell.splitlines())
+            env = dict(os.environ, PATH=folder + ':/usr/bin:/bin', HOME=folder,
+                       DO_USER='fixture', DO_HOST='fixture')
+            result = PROCESS_RUN(['bash', '-c', shell], capture_output=True,
+                                 text=True, env=env, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('RC6_PRE_SUSPEND_DISK_FREE=4184719360', result.stdout)
+            self.assertEqual(json.loads(state.read_text()), timers)
 
 
 if __name__ == '__main__':
