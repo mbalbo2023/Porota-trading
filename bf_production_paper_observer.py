@@ -1728,16 +1728,39 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
 
 
 def _source_sync_due(store, source, now=None):
-    """Return True only when this exact source has not been attempted today."""
+    """Use the *local* trading date for UTC-persisted source attempts.
+
+    A UTC timestamp after 21:00 ART already starts the following UTC day.
+    Comparing its literal YYYY-MM-DD to today in Argentina would trigger
+    repeated catalog/history downloads on each CLOSED scanner cycle.
+    """
     now = now or datetime.now(TZ)
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
-    today = now.astimezone(TZ).date().isoformat()
+    today = now.astimezone(TZ).date()
     with store.connect() as connection:
         row = connection.execute(
             "SELECT last_attempt_at FROM source_sync WHERE source=?", (source,)
         ).fetchone()
-    return not row or str(row[0] or "")[:10] != today
+    if not row or not row[0]:
+        return True
+    try:
+        raw = str(row[0]).strip()
+        if len(raw) == 10:
+            # Older local-day receipts predate the UTC timestamp format.
+            attempted_date = date.fromisoformat(raw)
+        else:
+            attempt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            # Interpret legacy naive timestamps as local, never as the host's
+            # possibly different OS timezone.
+            if attempt.tzinfo is None:
+                attempt = attempt.replace(tzinfo=TZ)
+            attempted_date = attempt.astimezone(TZ).date()
+        # A future receipt or clock skew does not authorize a provider storm.
+        return attempted_date < today
+    except (ValueError, TypeError):
+        # Corrupt receipts stay NO_VERIFICADO; do not retry every 5 seconds.
+        return False
 
 
 def _history_daily_sync_due(store, now=None):
