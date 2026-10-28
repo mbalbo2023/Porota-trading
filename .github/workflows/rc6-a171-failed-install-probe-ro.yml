@@ -29,7 +29,7 @@ jobs:
           python3 -m py_compile scripts/rc6_a171_failed_install_probe_ro.py
           test "$(sha256sum scripts/rc6_a171_failed_install_probe_ro.py | cut -d' ' -f1)" = "$RC6_SOURCE_SHA"
         env:
-          RC6_SOURCE_SHA: '473a5c3766c26a4e1c1950a44462ea250dbb72a69058b61d2e989b0f353c3629'
+          RC6_SOURCE_SHA: '6f5f7e582a73c43dbfe4616a3cce9eb8f8c6e26ebc7b9d7a210d2c98433f86b6'
       - name: Prepare strict SSH
         env:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}

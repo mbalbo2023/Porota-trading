@@ -88,7 +88,10 @@ def run():
                 raise ValueError('OLD_DOCKER_IDENTITY_OR_STOP_RED')
         from scripts import rc6_deploy_quiescence as q
         from scripts import rc6_deploy_scheduler_suspend as scheduler
-        book = q.a143_stopped_continuation(old)
+        book = q.a143_stopped_continuation(
+            old,
+            operator_a151_proof=scheduler.exact_a151_operator_preopen_pause,
+            operator_timer_disabled=scheduler.operator_preopen_timer_disabled)
         if (book.get('real_orders_sent') != 0 or
                 book.get('source_sha') != q.A143_PENDING_SOURCE_SHA or
                 (book.get('process_state'), book.get('session_state')) not in
