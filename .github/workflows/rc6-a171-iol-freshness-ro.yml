@@ -1,0 +1,117 @@
+name: RC6 A171 IOL source freshness and collector health READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a171-iol-freshness-20261028]
+    paths:
+      - .github/workflows/rc6-a171-iol-freshness-ro.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  source-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a171_iol"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a171_iol" "$HOME/.ssh/known_hosts"
+      - name: Measure IOL cache age, collector and PAPER safety without refresh
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 100s ssh -T \
+            -i "$HOME/.ssh/rc6_a171_iol" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PY' | tee evidence/iol.jsonl
+          import datetime, json, sqlite3, subprocess, urllib.request
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          droplet={}
+          for key in ('id','region'):
+              with opener.open('http://169.254.169.254/metadata/v1/'+key,timeout=2) as resp:
+                  droplet[key]=resp.read(64).decode().strip()
+          assert droplet=={'id':'594077619','region':'nyc1'}
+          db=root/'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=3) as c:
+              c.execute('PRAGMA query_only=ON')
+              mode,orders,process,session=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+          assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          def show(name,fields):
+              proc=subprocess.run(['systemctl','show',name,*('-p'+field for field in fields),'--no-pager'],
+                                  capture_output=True,text=True,timeout=6,check=True)
+              return dict(line.split('=',1) for line in proc.stdout.splitlines() if '=' in line)
+          cache=root/'data/market/iol_family_reference_latest.json'
+          now=datetime.datetime.now(datetime.timezone.utc)
+          source={'path':'iol_family_reference_latest.json','state':'MISSING'}
+          if cache.is_file() and not cache.is_symlink() and cache.stat().st_size<2*1024*1024:
+              value=json.loads(cache.read_bytes())
+              source={'path':cache.name,'state':'PRESENT',
+                      'refreshed_at':value.get('refreshed_at'),
+                      'cache_state':value.get('cache_state'),
+                      'last_known_good_at':value.get('last_known_good_at'),
+                      'continuation_state':value.get('continuation_state'),
+                      'live_sections':value.get('live_sections'),
+                      'section_states':value.get('section_states'),
+                      'caucion_ars_records':len((value.get('cauciones') or {}).get('ARS') or []),
+                      'caucion_usd_records':len((value.get('cauciones') or {}).get('USD') or [])}
+              try:
+                  dt=datetime.datetime.fromisoformat(str(source['refreshed_at']).replace('Z','+00:00'))
+                  source['age_seconds']=round((now-dt).total_seconds()) if dt.tzinfo else None
+              except (TypeError,ValueError):
+                  source['age_seconds']=None
+          service=show('porota-iol-shadow-collector-rc6.service',('ActiveState','SubState','Result','ExecMainStatus'))
+          timer=show('porota-iol-shadow-collector-rc6.timer',('ActiveState','UnitFileState','LastTriggerUSec'))
+          guardian=show('porota-iol-oauth-health-rc6.timer',('ActiveState','UnitFileState','LastTriggerUSec'))
+          freshness='FRESH' if (source.get('age_seconds') is not None and
+                                0<=source['age_seconds']<=900) else 'AMBER'
+          print('RC6_A171_IOL_SOURCE_RO='+json.dumps({
+              'schema':'rc6.a171.iol-source-readonly.v1','status':'MEASURED',
+              'observed_at_utc':now.isoformat(),'droplet':droplet,'source':source,
+              'freshness':freshness,'collector_service':service,'collector_timer':timer,
+              'oauth_guardian_timer':guardian,'paper':{'mode':mode,'real_orders_sent':orders,
+                  'process_state':process,'session_state':session},
+              'host_mutations':0,'operational_go':False},sort_keys=True,separators=(',',':')))
+          PY
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/iol.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A171_IOL_SOURCE_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='MEASURED' and row['host_mutations']==0
+          assert row['paper']['mode']=='PRODUCTION_PAPER' and row['paper']['real_orders_sent']==0
+          assert row['freshness'] in {'FRESH','AMBER'} and row['operational_go'] is False
+          print('RC6_A171_IOL_SOURCE_HEALTH=MEASURED|freshness='+row['freshness']+'|PAPER_NO_GO')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a171-iol-freshness-${{ github.sha }}
+          path: evidence/iol.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a171_iol"
