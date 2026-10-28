@@ -200,8 +200,15 @@ def test_deploy_preopen_rejects_forged_or_masked_pause(field, value):
 
 
 def test_host_unit_reconciliation_preserves_a125_disabled_preopen(monkeypatch, tmp_path):
-    repo_root = Path(__file__).resolve().parents[1]
+    # Hermetic host-policy fixture: a sparse checkout may omit systemd/ even
+    # though the packaged Predeploy artifact always includes these units.
+    repo_root = tmp_path / 'isolated_repo'
     names = {'porota-preopen-rc6.timer', 'porota-runtime-evidence-rc6.timer'}
+    (repo_root / 'scripts').mkdir(parents=True)
+    (repo_root / 'scripts/rc6_deploy_scheduler_suspend.py').write_text('# fixture\n')
+    (repo_root / 'systemd').mkdir()
+    for unit_name in names:
+        (repo_root / 'systemd' / unit_name).write_text('[Unit]\nDescription=test-only\n')
     policy = {'units': {'systemd/' + name: {'role': 'ACTIVE_TIMER', 'active': True,
                                          'enabled': True, 'install': True}
                         for name in names}}

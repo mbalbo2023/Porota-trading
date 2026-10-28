@@ -6,6 +6,7 @@ failure; the deployed host control plane normally restores the timers.
 """
 import argparse
 import base64
+import gzip
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from zoneinfo import ZoneInfo
 
 ROOT = Path('/opt/porota-trading/data/deploy')
@@ -27,6 +29,11 @@ OPERATOR_PAUSE_SOURCE = '3fd020f408275a490e911e06f60a1ddc89153fe5'
 OPERATOR_PAUSE_PRODUCT = '2bd9dbf576b253b8f83aab159c784d7fa7d06d89'
 OPERATOR_PAUSE_IMAGE = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 FAILED_A138_SUSPENSION_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
+A143_PENDING_CANDIDATE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
+IOL_OAUTH_GUARD_TIMER = 'porota-iol-oauth-health-rc6.timer'
+IOL_OAUTH_GUARD_SERVICE = 'porota-iol-oauth-health-rc6.service'
+# Legacy 16-timer policy that generated A138/A143 immutable receipts.
+A138_ORIGINAL_TIMER_POLICY_SHA256 = 'dbfbe7d7036075bef0cc39eb546093ce1a879b454994c87543726835cf80066e'
 
 
 def _operator_pause_json(path, limit):
@@ -46,7 +53,8 @@ def _operator_pause_json(path, limit):
                       parse_constant=invalid_constant), hashlib.sha256(raw).hexdigest()
 
 
-def exact_operator_preopen_pause(*, require_original_marker=False):
+def exact_operator_preopen_pause(*, require_original_marker=False,
+                                 historical_hold_only=False):
     """Prove the sole A125 operator pause, without changing systemd or PPI.
 
     This is not permission to resume PAPER. It only explains the one disabled
@@ -58,8 +66,12 @@ def exact_operator_preopen_pause(*, require_original_marker=False):
     now_utc = datetime.now(timezone.utc)
     day = now_utc.astimezone(
         ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
-    if day != OPERATOR_PAUSE_DAY:
+    # Historical evidence is useful to explain why preopen remains DISABLED;
+    # it never grants permission to rearm or to resume PAPER on a new day.
+    if day != OPERATOR_PAUSE_DAY and not historical_hold_only:
         raise ValueError('SCHEDULER_OPERATOR_PAUSE_DAY_EXPIRED')
+    if historical_hold_only and require_original_marker:
+        raise ValueError('SCHEDULER_HISTORICAL_HOLD_NOT_ORIGINAL_MARKER')
     receipt, receipt_sha = _operator_pause_json(
         ROOT/'operator-preopen-pause-20261027.json', 65536)
     gate, gate_sha = _operator_pause_json(ROOT/'paper_scalping_preopen_gate_v1.json', 4096)
@@ -120,6 +132,13 @@ def exact_operator_preopen_pause(*, require_original_marker=False):
                 marker.get('real_order_routes') != 'NOT_CALLED'):
             raise ValueError('SCHEDULER_OPERATOR_PAUSE_MARKER_RED')
     return receipt_sha
+
+
+def operator_preopen_hold_evidence():
+    """Verify dated A125 receipt only to KEEP preopen disabled, never rearm."""
+    today = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+    return (exact_operator_preopen_pause() if today == OPERATOR_PAUSE_DAY
+            else exact_operator_preopen_pause(historical_hold_only=True))
 
 
 def require_owned_running():
@@ -431,7 +450,193 @@ def timer_policy(raw):
                 or {'ppi', 'watch'} <= set(name.split('-'))
                 or 'critical' in name.split('-') for name in names)):
         raise ValueError('SCHEDULER_POLICY_UNSAFE')
+    carveouts = [Path(path).name for path,spec in rows.items()
+                 if spec.get('suspend_during_deploy') is False]
+    if carveouts:
+        exact = rows.get('systemd/' + IOL_OAUTH_GUARD_TIMER)
+        if (carveouts != [IOL_OAUTH_GUARD_TIMER] or
+                IOL_OAUTH_GUARD_TIMER not in names or
+                not isinstance(exact, dict) or
+                exact.get('role') != 'ACTIVE_TIMER' or
+                exact.get('install') is not True or
+                exact.get('enabled') is not True or
+                exact.get('active') is not True):
+            raise ValueError('SCHEDULER_IOL_CARVEOUT_POLICY_RED')
+    if any(spec.get('suspend_during_deploy') is not None and
+           spec.get('suspend_during_deploy') is not False
+           for spec in rows.values()):
+        raise ValueError('SCHEDULER_CARVEOUT_VALUE_INVALID')
     return names
+
+
+def preserved_iol_guard(raw):
+    """Only one OAuth timer may run during the failed-install RC6 hold."""
+    names = timer_policy(raw)
+    spec = json.loads(raw)['units'].get('systemd/' + IOL_OAUTH_GUARD_TIMER,{})
+    return IOL_OAUTH_GUARD_TIMER if (
+        spec.get('suspend_during_deploy') is False and
+        IOL_OAUTH_GUARD_TIMER in names) else None
+
+
+def _iol_guard_status(expected):
+    if expected not in {('active','enabled'),('inactive','enabled')}:
+        raise ValueError('SCHEDULER_IOL_EXPECTATION_INVALID')
+    current = (command('systemctl','is-active',IOL_OAUTH_GUARD_TIMER)[0],
+               command('systemctl','is-enabled',IOL_OAUTH_GUARD_TIMER)[0])
+    service, code = command('systemctl','show',IOL_OAUTH_GUARD_TIMER,
+                            '-p','Unit','--value')
+    if current != expected or code or service != IOL_OAUTH_GUARD_SERVICE:
+        raise ValueError('SCHEDULER_IOL_TIMER_OR_SERVICE_RED')
+    return current
+
+
+def a143_staged_module():
+    """Use exact A145 source before host installation, not stale #751 imports."""
+    encoded = os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64','')
+    if not 0 < len(encoded) < 150000:
+        raise ValueError('SCHEDULER_A143_STAGED_HELPER_MISSING')
+    compressed = base64.b64decode(encoded,validate=True)
+    if not 0 < len(compressed) < 110000:
+        raise ValueError('SCHEDULER_A143_STAGED_HELPER_COMPRESSED_RED')
+    source = gzip.decompress(compressed)
+    if not 20000 < len(source) < 190000:
+        raise ValueError('SCHEDULER_A143_STAGED_HELPER_SIZE_RED')
+    module = types.ModuleType('rc6_a145_scheduler_staged_quiescence')
+    exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),module.__dict__)
+    if module.A143_PENDING_SOURCE_SHA != A143_PENDING_CANDIDATE:
+        raise ValueError('SCHEDULER_A143_HELPER_CANDIDATE_CHANGED')
+    return module
+
+
+def a143_staged_pending_proof():
+    return a143_staged_module().a143_pending_running_proof()
+
+
+def require_a143_fix_forward_hold(candidate):
+    """Hold failed A145 without rearming a previously invalid observer."""
+    q = a143_staged_module()
+    path = q.ROOT/'data/deploy'/('quiescence-'+candidate+'.json')
+    if not path.exists():
+        q.a143_pending_running_proof()
+        return 'A143_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
+    receipt,_ = q._a143_exact_json(path,65536)
+    if (receipt.get('candidate_sha') != candidate or
+            receipt.get('a143_pending_adopted') is not True or
+            receipt.get('real_orders_sent') != 0 or
+            receipt.get('ppi_watch_accessed') is not False or
+            set(receipt.get('containers',{})) != set(q.OWNED)):
+        raise ValueError('SCHEDULER_A143_CANDIDATE_RECEIPT_RED')
+    observed = {name:q.inspect(name) for name in q.OWNED}
+    if receipt.get('installation_started') is False:
+        if receipt.get('status') in {'DRAINED',
+                                     'PRIOR_A143_UNVALIDATED_HELD_STOPPED'}:
+            q.a143_stopped_continuation(receipt)
+            return 'A143_PRIOR_UNVALIDATED_STOPPED_HELD'
+        if receipt.get('status') == 'DRAINING':
+            # Any interrupted stop intent is uncertain; never restart.
+            raise ValueError('SCHEDULER_A143_DRAIN_INCOMPLETE')
+        raise ValueError('SCHEDULER_A143_PREINSTALL_STATUS_RED')
+    if receipt.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED':
+        raise ValueError('SCHEDULER_A143_NEW_INSTALL_STATUS_RED')
+    marker = q.current_runtime_marker()
+    frozen,_ = q._a143_exact_json(q.ROOT/'data/deploy/porota-frozen-candidate.json',16384)
+    if (marker.get('candidate_sha') != candidate or
+            marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+            marker.get('image_id') != frozen.get('image_id') or
+            frozen.get('candidate_sha') != candidate or
+            any(value['Image'] != marker['image_id'] or
+                not re.fullmatch('[0-9a-f]{64}',value['Id']) or
+                value['State']['Status'] not in {'running','exited'}
+                for value in observed.values())):
+        raise ValueError('SCHEDULER_A143_NEW_RUNTIME_NOT_PROVEN')
+    book = q.rescue_flat_book()
+    if (book['source_sha'] != candidate or book['real_orders_sent'] != 0 or
+            q.critical_admission().get('real_orders_sent',0) != 0):
+        raise ValueError('SCHEDULER_A143_NEW_PAPER_BOOK_RED')
+    return 'A145_NEW_CANDIDATE_UNVALIDATED_HELD'
+
+
+def adopt_a143_legacy_hold_with_iol(candidate,path,names,digest,before,states):
+    """Migrate A138's *exact* 16-paused hold to 15-paused + OAuth-only timer.
+
+    Durable intent precedes the sole `systemctl start`. Never rearm preopen.
+    A failure remains RED and never retries activation without new review.
+    """
+    if (candidate == A143_PENDING_CANDIDATE or
+            IOL_OAUTH_GUARD_TIMER not in names or len(names)!=16 or
+            any(state != (('inactive','disabled') if name==OPERATOR_PREOPEN_TIMER
+                          else ('inactive','enabled'))
+                for name,state in zip(names,states))):
+        raise ValueError('SCHEDULER_A145_OLD16_HOLD_CHANGED')
+    historical = operator_preopen_hold_evidence()
+    if not operator_preopen_timer_disabled():
+        raise ValueError('SCHEDULER_A145_PREOPEN_REARM_FORBIDDEN')
+    prior_path = ROOT/('scheduler-suspend-'+A143_PENDING_CANDIDATE+'.json')
+    prior, prior_sha = _operator_pause_json(prior_path,65536)
+    a138_path = ROOT/('scheduler-suspend-'+FAILED_A138_SUSPENSION_CANDIDATE+'.json')
+    a138, a138_sha = _operator_pause_json(a138_path,65536)
+    if (prior.get('candidate_sha')!=A143_PENDING_CANDIDATE or
+            prior.get('status')!='SUSPENDED' or
+            prior.get('policy_sha256')!=A138_ORIGINAL_TIMER_POLICY_SHA256 or
+            prior.get('timers')!=names or prior.get('ppi_before')!=before or
+            set(prior.get('attempted',[]))!=set(names) or
+            prior.get('paused_from')!=FAILED_A138_SUSPENSION_CANDIDATE or
+            prior.get('prior_receipt_sha256')!=a138_sha or
+            prior.get('adopted_a138_operator_hold') is not True or
+            prior.get('operator_pause_timer')!=OPERATOR_PREOPEN_TIMER or
+            prior.get('operator_pause_receipt_sha256')!=historical or
+            prior.get('rescue_failure_disposition')!='RESCUE_CANDIDATE_UNVALIDATED_HELD' or
+            a138.get('candidate_sha')!=FAILED_A138_SUSPENSION_CANDIDATE or
+            a138.get('status')!='SUSPENDED' or
+            a138.get('policy_sha256')!=A138_ORIGINAL_TIMER_POLICY_SHA256 or
+            a138.get('timers')!=names or a138.get('ppi_before')!=before or
+            a138.get('operator_pause_receipt_sha256')!=historical):
+        raise ValueError('SCHEDULER_A145_A138_A143_CHAIN_RED')
+    proof = a143_staged_pending_proof()
+    if (proof.get('source_sha')!=A143_PENDING_CANDIDATE or
+            proof.get('flat_book',{}).get('real_orders_sent')!=0):
+        raise ValueError('SCHEDULER_A145_A143_RUNTIME_RED')
+    for name in names:
+        service, code = command('systemctl','show',name,'-p','Unit','--value')
+        if (code or service != name.removesuffix('.timer')+'.service' or
+                command('systemctl','is-active',service)[0] in
+                {'active','activating','reloading','deactivating'}):
+            raise ValueError('SCHEDULER_A145_SERVICE_ACTIVE:' + name)
+    _iol_guard_status(('inactive','enabled'))
+    if ppi_snapshot()!=before:
+        raise ValueError('SCHEDULER_A145_PPI_WATCH_CHANGED')
+    receipt = dict(prior,candidate_sha=candidate,policy_sha256=digest,
+                   status='IOL_START_INTENT',
+                   paused_from=A143_PENDING_CANDIDATE,
+                   prior_receipt_sha256=prior_sha,
+                   preserved_iol_timer=IOL_OAUTH_GUARD_TIMER,
+                   a145_pending_proof=proof,
+                   operator_pause_receipt_sha256=historical,
+                   recorded_at=datetime.now(timezone.utc).isoformat())
+    persist(path,receipt)
+    _,code=command('systemctl','start',IOL_OAUTH_GUARD_TIMER)
+    if code:
+        raise ValueError('SCHEDULER_A145_IOL_START_FAILED')
+    _iol_guard_status(('active','enabled'))
+    for name,state in zip(names,states):
+        if name == IOL_OAUTH_GUARD_TIMER:
+            continue
+        current = (command('systemctl','is-active',name)[0],
+                   command('systemctl','is-enabled',name)[0])
+        if current != state:
+            raise ValueError('SCHEDULER_A145_15_TIMER_HOLD_CHANGED:' + name)
+    if ppi_snapshot()!=before or not operator_preopen_timer_disabled():
+        raise ValueError('SCHEDULER_A145_POSTSTART_GUARD_RED')
+    receipt['status']='SUSPENDED'
+    receipt['iol_guard_migration']='OLD16_PAUSED_TO_15_PLUS_IOL_RUNNING'
+    persist(path,receipt)
+    print(json.dumps({'status':'SUSPENDED','candidate_sha':candidate,
+                      'timer_count':len(names),'paused_timers':len(names)-1,
+                      'preserved_iol_timer':IOL_OAUTH_GUARD_TIMER,
+                      'prior_receipt_sha256':prior_sha,
+                      'ppi_watch_accessed':False,
+                      'systemd_mutations':1},sort_keys=True))
+    return receipt
 
 
 def persist(path, payload):
@@ -518,6 +723,7 @@ def run(candidate, action, policy_b64):
     if len(raw) > 100_000:
         raise ValueError('SCHEDULER_POLICY_BOUND')
     names = timer_policy(raw)
+    preserved = preserved_iol_guard(raw)
     digest = hashlib.sha256(raw).hexdigest()
     ROOT.mkdir(parents=True, exist_ok=True)
     path = ROOT / ('scheduler-suspend-' + candidate + '.json')
@@ -530,6 +736,7 @@ def run(candidate, action, policy_b64):
             if (receipt.get('candidate_sha') != candidate or
                     receipt.get('policy_sha256') != digest or
                     receipt.get('timers') != names or
+                    receipt.get('preserved_iol_timer') != preserved or
                     receipt.get('ppi_before') != before or
                     receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
@@ -537,10 +744,13 @@ def run(candidate, action, policy_b64):
             if receipt.get('operator_pause_timer') is not None:
                 if (receipt['operator_pause_timer'] != OPERATOR_PREOPEN_TIMER or
                         receipt.get('operator_pause_receipt_sha256') !=
-                        exact_operator_preopen_pause() or
+                        operator_preopen_hold_evidence() or
                         not operator_preopen_timer_disabled()):
                     raise ValueError('SCHEDULER_OPERATOR_PAUSE_RECEIPT_CHANGED')
             for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
                 if command('systemctl', 'is-active', name)[0] != 'inactive':
                     raise ValueError('SCHEDULER_PREPAUSE_TIMER_CHANGED:' + name)
                 service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
@@ -553,13 +763,19 @@ def run(candidate, action, policy_b64):
             return receipt
         states = [(command('systemctl', 'is-active', name)[0],
                    command('systemctl', 'is-enabled', name)[0]) for name in names]
+        if preserved is not None and all(
+                state == (('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
+                          else ('inactive','enabled'))
+                for name,state in zip(names,states)):
+            return adopt_a143_legacy_hold_with_iol(
+                candidate,path,names,digest,before,states)
         if OPERATOR_PREOPEN_TIMER in names and all(
                 state == (('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
                           else ('inactive','enabled'))
                 for name,state in zip(names,states)):
             return adopt_a138_operator_paused_timers(
                 candidate,path,names,digest,before,states)
-        if all(state == ('inactive', 'enabled') for state in states):
+        if preserved is None and all(state == ('inactive', 'enabled') for state in states):
             # A failed installation can leave the exact owned timers paused
             # under a prior candidate receipt. Adopt only its latest durable
             # proof after checking every timer and already-running job.
@@ -599,8 +815,7 @@ def run(candidate, action, policy_b64):
                 state == ('active','enabled') if name != OPERATOR_PREOPEN_TIMER
                 else state == ('inactive','disabled')
                 for name, state in zip(names, states)):
-            operator_pause_sha = exact_operator_preopen_pause(
-                require_original_marker=True)
+            operator_pause_sha = operator_preopen_hold_evidence()
             if not operator_preopen_timer_disabled():
                 raise ValueError('SCHEDULER_OPERATOR_PREOPEN_TIMER_CHANGED')
         for name, state in zip(names, states):
@@ -611,6 +826,8 @@ def run(candidate, action, policy_b64):
         receipt = {'candidate_sha': candidate, 'policy_sha256': digest,
                    'timers': names, 'ppi_before': before, 'attempted': [],
                    'status': 'SUSPENDING', 'recorded_at': datetime.now(timezone.utc).isoformat()}
+        if preserved:
+            receipt['preserved_iol_timer'] = preserved
         if operator_pause_sha is not None:
             receipt['operator_pause_timer'] = OPERATOR_PREOPEN_TIMER
             receipt['operator_pause_receipt_sha256'] = operator_pause_sha
@@ -618,6 +835,9 @@ def run(candidate, action, policy_b64):
         for name in names:
             receipt['attempted'].append(name)
             persist(path, receipt)
+            if name == preserved:
+                _iol_guard_status(('active','enabled'))
+                continue
             if operator_pause_sha is not None and name == OPERATOR_PREOPEN_TIMER:
                 if not operator_preopen_timer_disabled():
                     raise ValueError('SCHEDULER_OPERATOR_PREOPEN_TIMER_CHANGED')
@@ -633,6 +853,9 @@ def run(candidate, action, policy_b64):
         while True:
             active = []
             for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
                 service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
                 if code or not service.endswith('.service'):
                     raise ValueError('SCHEDULER_SERVICE_IDENTITY_UNKNOWN:' + name)
@@ -652,6 +875,7 @@ def run(candidate, action, policy_b64):
         if (receipt.get('candidate_sha') != candidate or
                 receipt.get('policy_sha256') != digest or
                 receipt.get('timers') != names or
+                receipt.get('preserved_iol_timer') != preserved or
                 receipt.get('ppi_before') != before or
                 not set(receipt.get('attempted', [])) <= set(names)):
             raise ValueError('SCHEDULER_RECEIPT_IDENTITY_CHANGED')
@@ -660,7 +884,7 @@ def run(candidate, action, policy_b64):
             if (operator_pause_timer != OPERATOR_PREOPEN_TIMER or
                     operator_pause_timer not in names or
                     receipt.get('operator_pause_receipt_sha256') !=
-                    exact_operator_preopen_pause() or
+                    operator_preopen_hold_evidence() or
                     not operator_preopen_timer_disabled()):
                 raise ValueError('SCHEDULER_OPERATOR_PAUSE_RECEIPT_CHANGED')
         if action == 'recover-open':
@@ -671,11 +895,17 @@ def run(candidate, action, policy_b64):
             action = 'hold-rescue-degraded'
         if action == 'recover-adopted-rescue':
             action = 'hold-adopted-rescue'
-        if action in {'hold-rescue-degraded','hold-adopted-rescue'}:
+        if action == 'recover-a143-pending':
+            action = 'hold-a143-pending'
+        if action in {'hold-rescue-degraded','hold-adopted-rescue',
+                      'hold-a143-pending'}:
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_RESCUE_PAUSE_RECEIPT_RED')
             for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
                 service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
                 timer_ok = (operator_preopen_timer_disabled() if name == operator_pause_timer
                             else (command('systemctl', 'is-active', name)[0] == 'inactive' and
@@ -687,7 +917,9 @@ def run(candidate, action, policy_b64):
                     raise ValueError('SCHEDULER_RESCUE_TIMER_OR_JOB_CHANGED:' + name)
             status = (require_rescue_degraded_hold(candidate) if
                       action == 'hold-rescue-degraded' else
-                      require_adopted_rescue_hold(candidate))
+                      require_adopted_rescue_hold(candidate) if
+                      action == 'hold-adopted-rescue' else
+                      require_a143_fix_forward_hold(candidate))
             if ppi_snapshot() != before:
                 raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
             receipt['rescue_failure_disposition'] = status
@@ -701,6 +933,9 @@ def run(candidate, action, policy_b64):
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_OPEN_HOLD_RECEIPT_RED')
             for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
                 timer_ok = (operator_preopen_timer_disabled() if name == operator_pause_timer
                             else (command('systemctl', 'is-active', name)[0] == 'inactive' and
                                   command('systemctl', 'is-enabled', name)[0] == 'enabled'))
@@ -723,6 +958,9 @@ def run(candidate, action, policy_b64):
         if action == 'restore':
             require_owned_running()
             for name in receipt['attempted']:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
                 if name == operator_pause_timer:
                     if not operator_preopen_timer_disabled():
                         raise ValueError('SCHEDULER_OPERATOR_PREOPEN_TIMER_CHANGED')
@@ -736,6 +974,9 @@ def run(candidate, action, policy_b64):
             if receipt.get('status') != 'RESTORED':
                 raise ValueError('SCHEDULER_RESTORE_RECEIPT_MISSING')
             for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
                 if name == operator_pause_timer:
                     if not operator_preopen_timer_disabled():
                         raise ValueError('SCHEDULER_OPERATOR_PREOPEN_TIMER_CHANGED')
@@ -760,7 +1001,8 @@ def main():
                                            'hold-open-flat', 'recover-open',
                                            'hold-closed-flat', 'recover-closed',
                                            'recover-degraded-closed',
-                                           'recover-adopted-rescue'], required=True)
+                                           'recover-adopted-rescue',
+                                           'recover-a143-pending'], required=True)
     parser.add_argument('--policy-b64', required=True)
     args = parser.parse_args()
     run(args.candidate_sha, args.action, args.policy_b64)

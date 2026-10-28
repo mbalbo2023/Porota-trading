@@ -23,6 +23,7 @@ from pathlib import Path
 
 UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]*rc6[A-Za-z0-9_.@-]*\.(?:service|timer)$")
 LEGACY_RETIRE_UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]+\.(?:service|timer)$")
+IOL_OAUTH_GUARD_TIMER = 'porota-iol-oauth-health-rc6.timer'
 
 
 def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -53,6 +54,12 @@ def build_plan(policy: dict) -> list[dict]:
         if "ppi" in name.lower() and "watch" in name.lower():
             raise ValueError("PPI_WATCH_FORBIDDEN")
         role=str(row.get("role") or "")
+        preserved = row.get('suspend_during_deploy') is False
+        if 'suspend_during_deploy' in row and row['suspend_during_deploy'] is not True:
+            if (name != IOL_OAUTH_GUARD_TIMER or not preserved or
+                    role != 'ACTIVE_TIMER' or row.get('install') is not True or
+                    row.get('enabled') is not True or row.get('active') is not True):
+                raise ValueError('HOST_UNAUTHORIZED_TIMER_CARVEOUT:' + name)
         result.append({
             "source_path":source_path,
             "unit_name":name,
@@ -62,6 +69,7 @@ def build_plan(policy: dict) -> list[dict]:
             "active":row.get("active"),
             "masked":bool(row.get("masked")),
             "remove_on_deploy":bool(row.get("remove_on_deploy")),
+            "preserve_during_deploy":preserved,
         })
     return result
 
@@ -102,21 +110,21 @@ def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_pa
            item['unit_name']=='porota-preopen-rc6.timer' for item in plan):
         current=_run('systemctl','is-enabled','porota-preopen-rc6.timer',check=False).stdout.strip()
         if current=='disabled':
-            # A125 operator stop has independent authority until the end of
-            # 2026-10-27 ART. Reinstalling unit files must not enable it.
-            # The exact proof is local, read-only and shared with the
-            # scheduler. Every unrelated disabled-timer condition stays RED.
+            # A125 authorized stopping preopen ONLY on 2026-10-27 ART.
+            # Its immutable receipt may explain a continuing disabled state,
+            # but does not authorize a new day's trading or any rearming.
+            # Every unrelated disabled-timer condition stays RED.
             if root.is_symlink() or not (root/'scripts/rc6_deploy_scheduler_suspend.py').is_file():
                 raise RuntimeError('HOST_OPERATOR_PAUSE_HELPER_MISSING')
             if str(root) not in sys.path:
                 sys.path.insert(0, str(root))
             from scripts.rc6_deploy_scheduler_suspend import (
-                exact_operator_preopen_pause, operator_preopen_timer_disabled)
-            exact_operator_preopen_pause()
-            if not operator_preopen_timer_disabled():
-                raise RuntimeError('HOST_OPERATOR_PREOPEN_STATE_CHANGED')
+                operator_preopen_hold_evidence, operator_preopen_timer_disabled)
             if not keep_active_timers_paused:
                 raise RuntimeError('HOST_OPERATOR_PREOPEN_REARM_FORBIDDEN')
+            operator_preopen_hold_evidence()
+            if not operator_preopen_timer_disabled():
+                raise RuntimeError('HOST_OPERATOR_PREOPEN_STATE_CHANGED')
             operator_preopen_paused=True
     changed=[]
     for item in plan:
@@ -161,7 +169,14 @@ def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_pa
                 # The deploy owns an exact scheduler suspension receipt. Unit
                 # reconciliation must not fire these timers during COLD2 or
                 # contract evidence materialization.
-                if not (operator_preopen_paused and name=='porota-preopen-rc6.timer'):
+                if item['preserve_during_deploy']:
+                    # Scheduler already migrated exactly one OAuth-only timer
+                    # from the A138 16-timer hold. Do not start an unproven
+                    # guardian through the broad host reconciler.
+                    if (_run('systemctl','is-active',name,check=False).stdout.strip() != 'active' or
+                            _run('systemctl','is-enabled',name,check=False).stdout.strip() != 'enabled'):
+                        raise RuntimeError('HOST_IOL_GUARD_CARVEOUT_NOT_ADOPTED')
+                elif not (operator_preopen_paused and name=='porota-preopen-rc6.timer'):
                     _run("systemctl","enable",name)
             else:
                 _run("systemctl","enable","--now",name)
@@ -180,7 +195,7 @@ def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_pa
                          check=not (operator_preopen_paused and
                                     name=='porota-preopen-rc6.timer')).stdout.strip()
             active=_run("systemctl","is-active",name,check=False).stdout.strip()
-            expected_active = "inactive" if keep_active_timers_paused else "active"
+            expected_active = ("active" if item['preserve_during_deploy'] else "inactive") if keep_active_timers_paused else "active"
             expected_enabled = ("disabled" if operator_preopen_paused and
                                 name=='porota-preopen-rc6.timer' else "enabled")
             if enabled!=expected_enabled or active!=expected_active:

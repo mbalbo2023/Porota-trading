@@ -23,12 +23,14 @@ def test_catalog_quote_terms_wires_opening_block_helper():
 
 
 def test_rc6_monotonic_timers_do_not_persist():
-    for name in ('porota-functional-health-rc6.timer',
-                 'porota-candle-integrity-rc6.timer'):
-        text = (ROOT / 'systemd' / name).read_text(encoding='utf-8')
-        assert 'OnUnitActiveSec=' in text
-        assert 'Persistent=' not in text
-        assert 'rc4' not in text.lower()
+    functional = (ROOT / 'systemd/porota-functional-health-rc6.timer').read_text(encoding='utf-8')
+    assert 'OnUnitActiveSec=' in functional
+    assert 'Persistent=' not in functional
+    candle = (ROOT / 'systemd/porota-candle-integrity-rc6.timer').read_text(encoding='utf-8')
+    assert 'OnUnitActiveSec=' not in candle
+    assert 'OnBootSec=' not in candle
+    assert 'OnCalendar=Mon..Fri' in candle
+    assert 'Persistent=false' in candle
     history=(ROOT / 'systemd' / 'porota-history-postclose-rc6.timer').read_text(encoding='utf-8')
     assert 'OnCalendar=Mon..Fri *-*-* 18:45:00 America/Argentina/Buenos_Aires' in history
     assert 'OnUnitActiveSec=' not in history and 'OnBootSec=' not in history

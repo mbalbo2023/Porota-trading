@@ -30,6 +30,11 @@ FAILED_COLD2_CANDIDATE = '48a981cf327a637c0c074879fcdcd17475de8111'
 ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
 RESCUE_MODE = 'DEGRADED_CLOSED_20261026'
 ADOPTED_RESCUE_MODE = 'CLOSED_STOPPED_FAILED_RESCUE'
+A143_PENDING_MODE = 'CLOSED_A143_PENDING_FIX_FORWARD'
+A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
+A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
+A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
+A143_PENDING_IMAGE_ID = 'sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
 RESCUE_SOURCE_SHA = '3fd020f408275a490e911e06f60a1ddc89153fe5'
 RESCUE_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 RESCUE_CALENDAR_SHA256 = '32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
@@ -366,6 +371,173 @@ def candidate_runtime_after_failed_install(receipt):
     return {'status': status, 'containers': proof, 'flat_book': book,
             'critical_admission': critical,
             'observed_at': datetime.now(timezone.utc).isoformat()}
+
+
+def _a143_exact_json(path, limit):
+    """Read an exact local receipt without following aliases or duplicate keys."""
+    if (path.is_symlink() or not path.is_file() or
+            path.stat().st_size > limit or path.stat().st_nlink != 1):
+        raise ValueError('QUIESCENCE_A143_RECEIPT_UNSAFE:' + path.name)
+    raw = path.read_bytes()
+    def no_duplicate(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('QUIESCENCE_A143_DUPLICATE_KEY')
+            result[key] = value
+        return result
+    value = json.loads(raw, object_pairs_hook=no_duplicate,
+                       parse_constant=lambda _: (_ for _ in ()).throw(
+                           ValueError('QUIESCENCE_A143_NONFINITE')))
+    if type(value) is not dict:
+        raise ValueError('QUIESCENCE_A143_JSON_OBJECT_REQUIRED')
+    return value, hashlib.sha256(raw).hexdigest()
+
+
+def a143_pending_running_proof(originals=None):
+    """A145: admit ONLY the installed #751 running, failed-validation PAPER pair.
+
+    The old A92 and any healthy-successor routes are intentionally excluded.
+    This is a pre-stop RECOVERY proof, never a VALIDATED_RUNTIME assertion.
+    """
+    close = adopted_rescue_closed_proof()  # Only independently verified postclose.
+    folder = ROOT/'data/deploy'
+    marker, marker_digest = _a143_exact_json(folder/'CURRENT_STATE_V2.json', 65536)
+    recorded = datetime.fromisoformat(marker['recorded_at'])
+    if (recorded.tzinfo is None or recorded > datetime.now(timezone.utc) or
+            marker.get('schema_version') != 2 or
+            marker.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
+            marker.get('deploy_sha') != A143_PENDING_DEPLOY_SHA or
+            marker.get('image_id') != A143_PENDING_IMAGE_ID or
+            marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+            marker.get('deployment_strategy') != 'FIX_FORWARD_ONLY' or
+            marker.get('build_once') is not True or
+            marker.get('mode') != 'PRODUCTION_PAPER' or
+            type(marker.get('real_orders_sent')) is not int or
+            marker['real_orders_sent'] != 0 or
+            marker.get('real_order_routes') != 'NOT_CALLED' or
+            marker.get('ppi_watch_untouched') is not True):
+        raise ValueError('QUIESCENCE_A143_PENDING_MARKER_RED')
+    frozen, frozen_digest = _a143_exact_json(folder/'porota-frozen-candidate.json', 16384)
+    if (frozen.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
+            frozen.get('image_id') != A143_PENDING_IMAGE_ID or
+            frozen.get('candidate_tree_sha') != A143_PENDING_TREE_SHA or
+            not re.fullmatch('[0-9a-f]{64}',frozen.get('image_tar_sha256',''))):
+        raise ValueError('QUIESCENCE_A143_FROZEN_IDENTITY_RED')
+    prior, prior_digest = _a143_exact_json(
+        folder/('quiescence-'+A143_PENDING_SOURCE_SHA+'.json'), 65536)
+    intent = prior.get('candidate_image_intent')
+    runtime = prior.get('candidate_runtime_after_failure')
+    if (prior.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
+            prior.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+            prior.get('installation_started') is not True or
+            prior.get('degraded_closed_rescue') is not True or
+            type(prior.get('real_orders_sent')) is not int or
+            prior['real_orders_sent'] != 0 or
+            prior.get('ppi_watch_accessed') is not False or
+            not isinstance(intent,dict) or not isinstance(runtime,dict) or
+            intent.get('image_id') != A143_PENDING_IMAGE_ID or
+            intent.get('candidate_tree_sha') != frozen['candidate_tree_sha'] or
+            intent.get('manifest_sha256') != frozen_digest or
+            runtime.get('status') != 'running' or
+            set(runtime.get('containers',{})) != set(OWNED) or
+            not isinstance(runtime.get('flat_book'),dict) or
+            runtime['flat_book'].get('source_sha') != A143_PENDING_SOURCE_SHA or
+            runtime['flat_book'].get('real_orders_sent') != 0):
+        raise ValueError('QUIESCENCE_A143_PRIOR_RECEIPT_RED')
+    observed = originals or {name:inspect(name) for name in OWNED}
+    if set(observed) != set(OWNED):
+        raise ValueError('QUIESCENCE_A143_RUNTIME_SET_CHANGED')
+    for name in OWNED:
+        value = observed[name]
+        expected = runtime['containers'][name]
+        if (not re.fullmatch('[0-9a-f]{64}',value['Id']) or
+                value['Image'] != A143_PENDING_IMAGE_ID or
+                value['State']['Status'] != 'running' or
+                value['Id'] != expected.get('id') or
+                value['Image'] != expected.get('image') or
+                lifecycle(value) != expected.get('lifecycle')):
+            raise ValueError('QUIESCENCE_A143_RUNTIME_IMAGE_OR_ID_RED')
+    book = rescue_flat_book()
+    if ((book['process_state'],book['session_state']) not in
+            {('DEGRADED','BOOT_CALENDAR'),('DEGRADED','MARKET_CLOSED'),
+             ('STOPPED','CLOSED')} or
+            book['source_sha'] != A143_PENDING_SOURCE_SHA or
+            book['real_orders_sent'] != 0):
+        raise ValueError('QUIESCENCE_A143_CLOSED_FLAT_BOOK_RED')
+    db_path = ROOT/'data/paper_v17/observer_v17.db'
+    with closing(sqlite3.connect(db_path.as_uri()+'?mode=ro',uri=True,timeout=.2)) as c:
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        heartbeat = c.execute('SELECT heartbeat_at FROM observer_state WHERE id=1').fetchone()
+    if not heartbeat:
+        raise ValueError('QUIESCENCE_A143_HEARTBEAT_MISSING')
+    stamp = datetime.fromisoformat(heartbeat[0])
+    if (stamp.tzinfo is None or not
+            0 <= (datetime.now(timezone.utc)-stamp).total_seconds() <= 180):
+        raise ValueError('QUIESCENCE_A143_HEARTBEAT_STALE')
+    critical = critical_admission()
+    return {'source_sha':A143_PENDING_SOURCE_SHA,
+            'image_id':A143_PENDING_IMAGE_ID,
+            'candidate_tree_sha':frozen['candidate_tree_sha'],
+            'marker_sha256':marker_digest,
+            'frozen_sha256':frozen_digest,
+            'prior_receipt_sha256':prior_digest,
+            'containers':{name:{'id':observed[name]['Id'],
+                                'image':observed[name]['Image'],
+                                'lifecycle':lifecycle(observed[name])} for name in OWNED},
+            'flat_book':book, 'critical_admission':critical,
+            'close':close}
+
+
+def a143_stopped_continuation(receipt):
+    """A143 is still unvalidated after stopping. Never restart or forgive drift."""
+    if (receipt.get('a143_pending_adopted') is not True or
+            receipt.get('installation_started') is not False or
+            receipt.get('status') not in {'DRAINING','DRAINED',
+                                          'PRIOR_A143_UNVALIDATED_HELD_STOPPED'}):
+        raise ValueError('QUIESCENCE_A143_STOP_MODE_RED')
+    proof = receipt.get('a143_previous_proof')
+    if (not isinstance(proof,dict) or
+            proof.get('source_sha') != A143_PENDING_SOURCE_SHA or
+            proof.get('image_id') != A143_PENDING_IMAGE_ID or
+            set(proof.get('containers',{})) != set(OWNED)):
+        raise ValueError('QUIESCENCE_A143_STOP_PROOF_INVALID')
+    folder = ROOT/'data/deploy'
+    marker, marker_sha = _a143_exact_json(folder/'CURRENT_STATE_V2.json', 65536)
+    frozen, frozen_sha = _a143_exact_json(folder/'porota-frozen-candidate.json', 16384)
+    _, prior_sha = _a143_exact_json(
+        folder/('quiescence-'+A143_PENDING_SOURCE_SHA+'.json'), 65536)
+    if (marker_sha != proof.get('marker_sha256') or
+            frozen_sha != proof.get('frozen_sha256') or
+            prior_sha != proof.get('prior_receipt_sha256') or
+            marker.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
+            marker.get('deploy_sha') != A143_PENDING_DEPLOY_SHA or
+            marker.get('image_id') != A143_PENDING_IMAGE_ID or
+            marker.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+            frozen.get('candidate_sha') != A143_PENDING_SOURCE_SHA or
+            frozen.get('image_id') != A143_PENDING_IMAGE_ID):
+        raise ValueError('QUIESCENCE_A143_STOP_SOURCE_CHANGED')
+    exact_clean_stopped(receipt)
+    for name in OWNED:
+        if (receipt['containers'][name]['id'] != proof['containers'][name]['id'] or
+                receipt['containers'][name]['image'] != proof['containers'][name]['image']):
+            raise ValueError('QUIESCENCE_A143_STOP_DOCKER_ID_CHANGED')
+    book = rescue_flat_book()
+    allowed = {('DEGRADED','BOOT_CALENDAR'),('DEGRADED','MARKET_CLOSED'),
+               ('STOPPED','CLOSED')}
+    # An exact A145 DEGRADED/MARKET_CLOSED parent may acknowledge SIGTERM as
+    # STOPPED/MARKET_CLOSED. Admit that transition only after both Docker
+    # identities prove the prior A143 clean stop; never as a fresh preflight.
+    if proof['flat_book'].get('process_state')=='DEGRADED' and \
+            proof['flat_book'].get('session_state')=='MARKET_CLOSED':
+        allowed.add(('STOPPED','MARKET_CLOSED'))
+    if ((book['process_state'],book['session_state']) not in allowed or
+            book['source_sha'] != A143_PENDING_SOURCE_SHA or
+            book['real_orders_sent'] != 0 or
+            critical_admission() != proof.get('critical_admission')):
+        raise ValueError('QUIESCENCE_A143_STOP_BOOK_OR_CRITICAL_CHANGED')
+    return book
 
 
 def adopted_rescue_closed_proof():
@@ -713,7 +885,7 @@ def admit(*, stopped=False, allow_admin_issue624=False,
 def admit_poststart_flat(pre_mode, candidate=None):
     """Recheck live PAPER book and the exact untouched pending receipt."""
     if pre_mode not in {'OPEN', 'CLOSED', 'CLOSED_CAUCION', RESCUE_MODE,
-                        ADOPTED_RESCUE_MODE}:
+                        ADOPTED_RESCUE_MODE, A143_PENDING_MODE}:
         raise ValueError('QUIESCENCE_PRESTART_MODE_UNKNOWN')
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
@@ -727,7 +899,7 @@ def admit_poststart_flat(pre_mode, candidate=None):
         actual, expected = 'CLOSED', 'WAITING_MARKET'
     else:
         raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED')
-    if pre_mode in {RESCUE_MODE, ADOPTED_RESCUE_MODE} and actual != 'CLOSED':
+    if pre_mode in {RESCUE_MODE, ADOPTED_RESCUE_MODE, A143_PENDING_MODE} and actual != 'CLOSED':
         # Only the explicitly owner-paused 27-Oct A92 rescue can validate a
         # genuinely OPEN PAPER observer after installation.  This is never a
         # trading GO: the A125 no-GO gate and disabled timer must survive.
@@ -1411,8 +1583,17 @@ def run(candidate, action, *, allow_admin_issue624=False,
         allow_market_open_suspend=False, allow_open_paper_carryover=False,
         allow_postclose_pending=False, allow_intraday_caucion=False,
          allow_pending_caucion=False, allow_degraded_closed_rescue=False,
-         allow_adopt_failed_rescue=False, candidate_image_id=None,
+         allow_adopt_failed_rescue=False, allow_a143_pending_running=False,
+         candidate_image_id=None,
          frozen_manifest=None):
+    if allow_a143_pending_running and (
+            allow_admin_issue624 or allow_market_open_suspend or
+            allow_open_paper_carryover or allow_postclose_pending or
+            allow_intraday_caucion or allow_pending_caucion or
+            allow_degraded_closed_rescue or allow_adopt_failed_rescue or
+            action not in {'drain','install'} or
+            candidate == A143_PENDING_SOURCE_SHA):
+        raise ValueError('QUIESCENCE_A143_PENDING_MODE_INVALID')
     if allow_adopt_failed_rescue and (allow_admin_issue624 or allow_market_open_suspend or
             allow_open_paper_carryover or allow_postclose_pending or
             allow_intraday_caucion or allow_pending_caucion or
@@ -1445,6 +1626,60 @@ def run(candidate, action, *, allow_admin_issue624=False,
     with (folder / '.deploy-quiescence.lock').open('a+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         receipt = json.loads(path.read_text()) if path.exists() else None
+        if allow_a143_pending_running:
+            if action == 'drain' and receipt is None:
+                originals = {name:inspect(name) for name in OWNED}
+                prior = a143_pending_running_proof(originals)
+                receipt = {'candidate_sha':candidate,'status':'DRAINING',
+                           'installation_started':False,
+                           'a143_pending_adopted':True,
+                           'a143_previous_proof':prior,
+                           'containers':{name:{'id':originals[name]['Id'],
+                                               'image':originals[name]['Image']}
+                                         for name in OWNED},
+                           'stop_attempted':[],'stop_evidence':{},
+                           'real_orders_sent':0,'ppi_watch_accessed':False,
+                           'market_open_suspended':False,
+                           'open_paper_carryover':False,
+                           'paused_postclose':False,'intraday_caucion':False,
+                           'pending_caucion':False,
+                           'spot_carryover':None,'caucion_carryover':None,
+                           'recorded_at':datetime.now(timezone.utc).isoformat()}
+                persist(path,receipt)  # Durable intent precedes Docker stop.
+                for name in OWNED:
+                    receipt['stop_attempted'].append(name)
+                    persist(path,receipt)
+                    command(['docker','stop','--time','45',name])
+                    stopped = inspect(name)
+                    receipt['stop_evidence'][name] = {
+                        'before':lifecycle(originals[name]),
+                        'after':lifecycle(stopped)}
+                    persist(path,receipt)
+                    receipt['stop_evidence'][name]['classification'] = clean_stop(
+                        originals[name],stopped)
+                    persist(path,receipt)
+                a143_stopped_continuation(receipt)
+                receipt.update(status='DRAINED',
+                               recorded_at=datetime.now(timezone.utc).isoformat())
+                persist(path,receipt)
+            else:
+                if (not receipt or receipt.get('candidate_sha') != candidate or
+                        receipt.get('status') != 'DRAINED' or
+                        receipt.get('a143_pending_adopted') is not True or
+                        receipt.get('installation_started') is not False):
+                    raise ValueError('QUIESCENCE_A143_DRAIN_RECEIPT_CHANGED')
+                a143_stopped_continuation(receipt)
+                if action == 'install':
+                    receipt.update(status='HOST_INSTALLATION_STARTED',
+                                   installation_started=True,
+                                   recorded_at=datetime.now(timezone.utc).isoformat())
+                    persist(path,receipt)
+            print(json.dumps({'status':receipt['status'],
+                              'candidate_sha':candidate,
+                              'a143_pending_adopted':True,
+                              'real_orders_sent':0,
+                              'ppi_watch_accessed':False}),flush=True)
+            return receipt
         if allow_adopt_failed_rescue:
             originals = {name: inspect(name) for name in OWNED}
             expected = adopt_failed_rescue_candidate_stopped(candidate, folder, originals)
@@ -1773,6 +2008,15 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
                         receipt['status'] = 'RECOVERY_UNVERIFIED'
                         receipt['rescue_failure_reason'] = type(exc).__name__ + ':' + str(exc)
+            elif receipt.get('a143_pending_adopted') is True:
+                # A143 never validated, so a failed preinstall must NOT
+                # restart it. Keep its exact stopped pair for fix-forward.
+                try:
+                    a143_stopped_continuation(receipt)
+                    receipt['status'] = 'PRIOR_A143_UNVALIDATED_HELD_STOPPED'
+                    receipt['runtime_health'] = 'PRIOR_A143_PENDING_NOT_GO'
+                except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
+                    receipt['status'] = 'RECOVERY_UNVERIFIED'
             elif receipt.get('adopted_failed_rescue') is True:
                 # The original for this attempt is already a failed candidate.
                 # A preinstall failure must not restart that image and must
@@ -1834,6 +2078,7 @@ def main(argv=None):
     parser.add_argument('--pending-paper-caucion', action='store_true')
     parser.add_argument('--rescue-degraded-closed-20261026', action='store_true')
     parser.add_argument('--adopt-failed-rescue-candidate', action='store_true')
+    parser.add_argument('--adopt-a143-running-pending', action='store_true')
     parser.add_argument('--candidate-image-id')
     parser.add_argument('--frozen-manifest')
     parser.add_argument('--allow-validation-pending',action='store_true',
@@ -1871,6 +2116,13 @@ def main(argv=None):
             args.intraday_caucion or args.pending_paper_caucion or
             args.admin_cancel_issue624 or args.action not in {'drain','install'}):
         parser.error('--adopt-failed-rescue-candidate requires isolated stopped drain/install')
+    if args.adopt_a143_running_pending and (
+            args.rescue_degraded_closed_20261026 or args.adopt_failed_rescue_candidate or
+            args.market_open_suspend or args.carry_open_paper_spots or
+            args.paused_postclose or args.intraday_caucion or
+            args.pending_paper_caucion or args.admin_cancel_issue624 or
+            args.action not in {'drain','install'}):
+        parser.error('--adopt-a143-running-pending requires isolated postclose drain/install')
     if ((args.candidate_image_id or args.frozen_manifest) and args.action != 'image-intent') or (
             args.action == 'image-intent' and
             (not args.candidate_image_id or not args.frozen_manifest)):
@@ -1892,6 +2144,8 @@ def main(argv=None):
         options['allow_degraded_closed_rescue'] = True
     if args.adopt_failed_rescue_candidate:
         options['allow_adopt_failed_rescue'] = True
+    if args.adopt_a143_running_pending:
+        options['allow_a143_pending_running'] = True
     if args.action == 'image-intent':
         options.update(candidate_image_id=args.candidate_image_id,
                        frozen_manifest=args.frozen_manifest)

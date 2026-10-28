@@ -71,4 +71,3 @@ def test_scheduled_daily_sync_skips_nontrading_dates_without_provider_or_db(
 
     assert observer._daily_sync_needed(object(), now=local_day) is False
     assert observer._daily_sync(object(), object(), now=local_day) is None
-

@@ -5,6 +5,9 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+WorkingDirectory=/opt/porota-trading
+Environment=PYTHONPATH=/opt/porota-trading
+ExecCondition=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py --check-phase open
 ExecStart=/usr/local/sbin/porota-rc6-candle-inmarket-verify
 NoNewPrivileges=true
 PrivateTmp=true

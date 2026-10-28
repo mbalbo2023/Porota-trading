@@ -2,7 +2,9 @@
 Description=Porota RC6 full DB integrity once postclose on weekdays
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 17:20:00 America/Argentina/Buenos_Aires
+# The EOD incremental copy can run until 22:55. Do not scan the full HOT DB
+# while the cold-store writer is draining or while the 23:45 candle audit runs.
+OnCalendar=Mon..Fri *-*-* 23:20:00 America/Argentina/Buenos_Aires
 Persistent=false
 RandomizedDelaySec=120
 Unit=porota-full-db-integrity-rc6.service

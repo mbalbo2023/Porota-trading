@@ -102,6 +102,40 @@ def _runtime_block(read, at):
     return None
 
 
+def _committed_ready_cursor(target, source_id):
+    """Read a committed READY checkpoint without opening the COLD writer.
+
+    Missing/in-progress/legacy COLD schemas use the existing locked path.
+    In particular BACKLOG is never eligible for an idle fast path.
+    """
+    if not target.is_file():
+        return None
+    deadline = time.monotonic() + 1
+    try:
+        with closing(sqlite3.connect(target.as_uri() + '?mode=ro',
+                                     uri=True, timeout=.1)) as cold:
+            cold.row_factory = sqlite3.Row
+            cold.execute('PRAGMA query_only=ON')
+            cold.execute('PRAGMA cache_size=-256')
+            cold.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            checkpoint = cold.execute('''SELECT cursor,state FROM local_eod_cursor_v1
+                WHERE source_id=?''', (source_id,)).fetchone()
+            if (not checkpoint or checkpoint['state'] != 'LOCAL_EOD_READY' or
+                    type(checkpoint['cursor']) is not int or checkpoint['cursor'] < 0):
+                return None
+            cursor = checkpoint['cursor']
+            # A READY pointer without its last durable receipt is not enough
+            # evidence to bypass the normal archive writer.
+            if cursor and not cold.execute('''SELECT 1 FROM local_eod_receipts_v1
+                    WHERE source_id=? AND version_id=?''', (source_id, cursor)).fetchone():
+                return None
+            return cursor if time.monotonic() <= deadline else None
+    except sqlite3.Error:
+        # A lock, missing table or unreadable checkpoint cannot authorize
+        # skipping a writer; the original guarded path remains authoritative.
+        return None
+
+
 def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_bytes=None, before_commit=None):
     at = datetime.fromisoformat(stamp(as_of))
     local = at.astimezone(TZ)
@@ -134,11 +168,34 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
         blocked = _runtime_block(read, at)
         if blocked:
             return base | {'state':'BLOCKED','reason':blocked}
+        # AUTOINCREMENT ids are the immutable HOT revision high-water mark.
+        # This bounded indexed lookup does not scan bars or copy the HOT DB.
+        first_high_water = read.execute('SELECT COALESCE(MAX(id),0) FROM candle_versions').fetchone()[0]
         if time.monotonic()>deadline:
             raise ValueError('LOCAL_EOD_SOURCE_READ_BUDGET')
         # Admission is a separate short transaction. Cold schema/lock work
         # must hold neither the HOT snapshot nor its two-second SQL budget.
         read.rollback()
+        ready_cursor = _committed_ready_cursor(target, source_id)
+        if ready_cursor is not None:
+            # The COLD checkpoint is only an optimization hint. A second HOT
+            # transaction closes the race with revisions or safety changes
+            # during that read; any mismatch must use the original writer.
+            deadline = time.monotonic() + 2
+            read.execute('BEGIN')
+            blocked = _runtime_block(read, at)
+            if blocked:
+                return base | {'state':'BLOCKED','reason':blocked}
+            final_high_water = read.execute('SELECT COALESCE(MAX(id),0) FROM candle_versions').fetchone()[0]
+            if time.monotonic() > deadline:
+                raise ValueError('LOCAL_EOD_SOURCE_READ_BUDGET')
+            read.rollback()
+            if final_high_water < ready_cursor:
+                return base | {'state':'BLOCKED','reason':'LOCAL_EOD_HOT_CURSOR_REGRESSION'}
+            if first_high_water == final_high_water == ready_cursor:
+                return base | {'state':'LOCAL_EOD_READY','imported':0,'rejected':0,
+                    'cursor':ready_cursor,'daily_groups':0,'real_orders_sent':0,
+                    'scope':'OBSERVED_BASKET_ONLY','idle_fast_path':True}
         target.parent.mkdir(parents=True, exist_ok=True)
         available = shutil.disk_usage(target.parent).free if free_bytes is None else free_bytes
         if available < RESERVE:

@@ -189,12 +189,15 @@ jobs:
           set -Eeuo pipefail
           CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
           CANDIDATE_A125_B64="$(base64 -w0 scripts/rc6_deploy_scheduler_suspend.py)"
+          # The host still runs the FAILED #751 source. Stream the new A145
+          # read-only admission; never trust an uninstalled helper by import.
+          CANDIDATE_A143_B64="$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
           SESSION_MODE="$(timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64'" <<'PY'
-          import base64,os,sqlite3,sys,types
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64' '$CANDIDATE_A143_B64'" <<'PY'
+          import base64,gzip,os,sqlite3,sys,types
           from pathlib import Path
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_679_backup_suspension import inventory as backup_inventory
@@ -239,6 +242,32 @@ jobs:
           elif statuses=={'running'} and state==('RUNNING','MARKET_OPEN'):
               assert admit(allow_market_open_suspend=True)=='RUNNING'
               print('OPEN')
+          elif (statuses=={'running'} and
+                state in (('DEGRADED','BOOT_CALENDAR'),
+                          ('DEGRADED','MARKET_CLOSED'),('STOPPED','CLOSED')) and
+                all(value['Image']==quiescence.A143_PENDING_IMAGE_ID
+                    for value in originals.values())):
+              # A145 read-only fix-forward classification for *installed* #751.
+              # The source SHA, image, two Docker IDs, immutable marker,
+              # frozen manifest, failed-receipt chain and PAPER/0 are all
+              # checked by the staged candidate helper. This is NEVER GO.
+              compressed=base64.b64decode(sys.argv[4],validate=True)
+              if not 0<len(compressed)<110000:
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_BOUNDS_RED')
+              source=gzip.decompress(compressed)
+              if not 20000<len(source)<190000:
+                  raise SystemExit('RC6_A143_STAGED_SOURCE_SIZE_RED')
+              candidate=types.ModuleType('rc6_a145_staged_quiescence')
+              exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),
+                   candidate.__dict__)
+              proof=candidate.a143_pending_running_proof(originals)
+              if (proof.get('source_sha')!=candidate.A143_PENDING_SOURCE_SHA or
+                      proof.get('image_id')!=candidate.A143_PENDING_IMAGE_ID or
+                      proof.get('flat_book',{}).get('real_orders_sent')!=0):
+                  raise SystemExit('RC6_A143_PENDING_PROOF_RED')
+              print('RC6_A143_FAILED_VALIDATION_RECOVERY=ADMITTED|health=RED|PAPER=0',
+                    file=sys.stderr)
+              print('CLOSED_A143_PENDING_FIX_FORWARD')
           elif statuses=={'running'} and state in (
                   ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
               # Incident-specific postclose rescue of the installed A92 image.
@@ -505,12 +534,14 @@ jobs:
               raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
           PY
           )"
-          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
+          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
           echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
           if [ "$SESSION_MODE" = DEGRADED_CLOSED_20261026 ]; then
             echo 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED|PAPER=0'
           elif [ "$SESSION_MODE" = CLOSED_STOPPED_FAILED_RESCUE ]; then
             echo 'RC6_PAPER_SESSION=PRIOR_RESCUE_STOP_ADMITTED|runtime=STOPPED|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
+            echo 'RC6_PAPER_SESSION=A143_UNVALIDATED_RECOVERY_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
           else
             echo "RC6_PAPER_SESSION=GREEN|mode=$SESSION_MODE|EXACT_PENDING_LEDGER_REQUIRED"
           fi
@@ -571,7 +602,8 @@ jobs:
           RC6_DISK_PRECLEAN_TRIGGERED=0
           if [ "$GATE_RC" -ne 0 ]; then
             if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ] || \
-               [ "$RC6_QUIESCENCE_MODE" = CLOSED_STOPPED_FAILED_RESCUE ]; then
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_STOPPED_FAILED_RESCUE ] || \
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
               echo 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer'
               exit 37
             fi
@@ -746,11 +778,15 @@ jobs:
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          A143_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          fi
           timeout 240 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase suspend python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase suspend env $A143_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action suspend --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
 
       - name: Admit PAPER book before draining RC6
@@ -760,7 +796,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
-          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; *) exit 31;; esac
           AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
@@ -917,7 +953,7 @@ jobs:
 
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
-          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a143-running-pending';; *) exit 31;; esac
           QUIESCENCE_AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
@@ -2016,11 +2052,21 @@ jobs:
             # timers until a new candidate passes poststart admission.
             SCHEDULER_ACTION=recover-adopted-rescue
           fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # Keep 15 paused + the one OAuth guardian on any failed A145
+            # install; #751 was never VALIDADO_RUNTIME.
+            SCHEDULER_ACTION=recover-a143-pending
+          fi
+          A143_ENV=''
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_restore python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_restore env $A143_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action '$SCHEDULER_ACTION' --policy-b64 '$POLICY_B64'" \
             < scripts/rc6_deploy_scheduler_suspend.py
           SCHEDULER_RESTORE_RC=$?
           set -e

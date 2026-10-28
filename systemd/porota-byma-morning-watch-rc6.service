@@ -6,5 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
+Environment=PYTHONPATH=/opt/porota-trading
+ExecCondition=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py --check-phase morning
 ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_byma_morning_pipeline.py
 TimeoutStartSec=5min

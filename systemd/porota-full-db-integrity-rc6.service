@@ -6,6 +6,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/porota-trading
+Environment=PYTHONPATH=/opt/porota-trading
+ExecCondition=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py --check-phase db_postclose
 ExecStart=/usr/bin/docker exec porota_production_observer python /app/rc6_full_db_integrity.py
 TimeoutStartSec=15min
 Nice=15

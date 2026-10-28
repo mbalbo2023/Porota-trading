@@ -39,7 +39,13 @@ def test_operational_catalog_includes_every_available_family(monkeypatch, tmp_pa
 def test_systemd_collector_exposes_repository_root_to_python():
     service = (Path(__file__).parents[1] / "systemd" / "porota-iol-shadow-collector-rc6.service").read_text(encoding="utf-8")
     assert "Environment=PYTHONPATH=/opt/porota-trading" in service
-    assert "rc6_iol_shadow_collect.py && /bin/chmod 0644 /opt/porota-trading/data/market/iol_shadow_latest.json" in service
+    assert "ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py" in service
+    wrapper = (Path(__file__).parents[1] / "scripts/rc6_source_cycle_dispatch.py").read_text(encoding="utf-8")
+    for name in ("rc6_iol_shadow_collect.py", "rc6_public_source_capture.py",
+                 "rc6_full_universe_evidence.py"):
+        assert name in wrapper
+    assert "PUBLIC_TTL_SECONDS = 60" in wrapper
+    assert "EVIDENCE_TTL_SECONDS = 5 * 60" in wrapper
 
 
 def test_configured_universe_is_intersected_with_available_operational_families(monkeypatch, tmp_path):

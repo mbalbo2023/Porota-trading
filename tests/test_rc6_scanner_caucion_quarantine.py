@@ -62,4 +62,3 @@ def test_invalid_ledger_branch_precedes_provider_login_and_service_ticks():
         "# Autenticación, catálogo e históricos son útiles")
     assert "time.sleep(max(30, COMMAND_POLL_SECONDS))" in source
     assert "process_state=\"DEGRADED\"" in source
-
