@@ -1,7 +1,9 @@
 """Failure cleanup uses only attempt-owned, unreferenced resources."""
 import json
 import fcntl
+import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -25,6 +27,8 @@ class Docker:
             'porota-trading-bot:17.0.0-rc6-candidate-' + SHA: IMG,
         }
         self.containers = {CID: (STABLE, [])}
+        self.digests = {}
+        self.images = {IMG, STABLE}
         self.calls = []
         self.failure = None
 
@@ -39,10 +43,24 @@ class Docker:
         elif args[:2] == ['inspect', '--format']:
             image, mounts = self.containers[args[-1]]
             value = image + '|' + json.dumps(mounts)
+        elif args == ['image', 'ls', '-aq', '--no-trunc']:
+            value = '\n'.join(sorted(self.images))
         elif args[:2] == ['image', 'ls']:
-            value = self.tags.get(args[-1], '')
+            value = (args[-1] if args[-1] in self.images else
+                     self.tags.get(args[-1], ''))
+        elif args[:3] == ['image', 'inspect', '--format']:
+            image = args[-1]
+            if image not in self.images:
+                return SimpleNamespace(returncode=1, stdout='')
+            value = '|'.join(json.dumps(item) for item in (
+                image, [tag for tag, identity in self.tags.items() if identity == image],
+                self.digests.get(image, []),
+            ))
         elif args[:2] == ['image', 'rm']:
-            self.tags.pop(args[-1])
+            if args[-1] in self.images:
+                self.images.remove(args[-1])
+            else:
+                self.tags.pop(args[-1])
             value = ''
         else:
             raise AssertionError('Unexpected Docker command')
@@ -75,6 +93,7 @@ class FailureCleanupTests(unittest.TestCase):
         result = cleanup.cleanup(SHA)
         self.assertEqual(result['status'], 'GREEN')
         self.assertEqual(len(result['removed_tags']), 2)
+        self.assertEqual(result['removed_image_ids'], [IMG])
         self.assertEqual(result['shared_cache_action'], 'UNTOUCHED_NO_HOST_BUILD')
         self.assertIn('space_recovered', result)
         self.assertFalse(self.staging.exists())
@@ -95,6 +114,40 @@ class FailureCleanupTests(unittest.TestCase):
         result = cleanup.cleanup(SHA)
         self.assertEqual(result['removed_tags'], [])
         self.assertEqual(len(result['retained_tags']), 2)
+
+    def test_external_alias_or_digest_preserves_image_and_reports_why(self):
+        self.docker.tags['ppi-watch:current'] = IMG
+        result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'GREEN')
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(set(result['retained_reasons'].values()),
+                         {'NONCANDIDATE_ALIAS_OR_DIGEST'})
+        self.assertTrue(all(call[:3] != ['docker', 'image', 'rm']
+                            for call in self.docker.calls))
+        self.docker.tags.pop('ppi-watch:current')
+        self.docker.digests[IMG] = ['foreign@sha256:' + 'e' * 64]
+        self.docker.calls.clear()
+        result = cleanup.cleanup(SHA)
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(len(result['retained_tags']), 2)
+
+    def test_candidate_digest_can_be_reclaimed_without_external_alias(self):
+        self.docker.digests[IMG] = ['porota-predeploy-v2@sha256:' + 'e' * 64]
+        result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'GREEN')
+        self.assertEqual(len(result['removed_tags']), 2)
+
+    def test_malformed_image_alias_inventory_fails_closed(self):
+        original = self.docker.run
+        def malformed(command, **kwargs):
+            if command[1:4] == ['image', 'inspect', '--format']:
+                return SimpleNamespace(returncode=0, stdout='invalid')
+            return original(command, **kwargs)
+        with patch.object(cleanup.subprocess, 'run', side_effect=malformed):
+            result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'RED')
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(len(result['errors']), 2)
 
     def test_bind_mount_protects_staging_and_nested_data(self):
         source = self.staging / 'data'
@@ -161,6 +214,9 @@ class FailureCleanupTests(unittest.TestCase):
             self.assertEqual(cleanup.main(['--candidate-sha', SHA]), 2)
         report = json.loads(output.call_args.args[0])
         self.assertEqual(report['status'], 'RED')
+        self.assertIn('host_disk_before', report)
+        self.assertIn('host_disk_after', report)
+        self.assertIn('host_space_recovered', report)
 
     def test_live_promoter_lock_blocks_cleanup_without_deleting_anything(self):
         lock = self.root / 'porota-rc6-deploy-v2.lock'
@@ -204,6 +260,9 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertIn('promotion', ids)
         block = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         self.assertIn('always()', block)
+        self.assertNotIn("steps.host_reconcile.outcome == 'failure'", block)
+        self.assertNotIn("steps.classify.outcome == 'failure'", block)
+        self.assertNotIn("steps.diskguard.outcome == 'failure'", block)
         self.assertIn("steps.transfer.outcome == 'failure'", block)
         self.assertIn("steps.promotion.outcome == 'failure'", block)
         self.assertIn("steps.promotion.outcome == 'cancelled'", block)
@@ -221,6 +280,69 @@ class FailureCleanupTests(unittest.TestCase):
         syntax = PROCESS_RUN(['bash', '-n'], input=shell, capture_output=True, text=True, timeout=10)
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         self.assertLess(workflow.index('Failure-safe host cleanup'), workflow.index('Runner cleanup'))
+        self.assertLess(workflow.index('Pin exact DigitalOcean Droplet before host mutation'),
+                        workflow.index('Reconcile only exact A138 cleanly exited host barrier'))
+
+    def test_classify_red_with_sixteen_held_timers_only_accounts_disk(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        pre = workflow.split('      - name: Account pre-suspend failure without recovery or timer writes', 1)[1].split('      - name:', 1)[0]
+        full = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
+        outcomes = {'host_reconcile': 'success', 'classify': 'failure',
+                    'pre_suspend_snapshot': 'skipped', 'diskguard': 'skipped',
+                    'suspend': 'skipped', 'drain': 'skipped',
+                    'transfer': 'skipped', 'promotion': 'skipped',
+                    'flat_book': 'skipped', 'timers_restore': 'skipped',
+                    'timers_restored': 'skipped', 'backup_retire': 'skipped',
+                    'finalize_runtime': 'skipped'}
+
+        def selected(block):
+            expression = block.split('if: ${{', 1)[1].split('}}', 1)[0]
+            expression = re.sub(r"steps\.([a-z_]+)\.outcome == '([a-z]+)'",
+                                lambda match: str(outcomes[match[1]] == match[2]),
+                                expression)
+            expression = expression.replace('always()', 'True').replace('&&', ' and ').replace('||', ' or ')
+            self.assertRegex(expression, r'^[\s()TrueFalsandor]+$')
+            return eval(expression, {'__builtins__': {}}, {})
+
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        timers = {f'porota-rc6-{number:02d}.timer': 'inactive'
+                  for number in range(16)}
+        with tempfile.TemporaryDirectory(prefix='rc6-held-timers-') as folder:
+            state = Path(folder) / 'timers.json'
+            state.write_text(json.dumps(timers, sort_keys=True))
+            fake_ssh = Path(folder) / 'ssh'
+            fake_ssh.write_text('''#!/usr/bin/python3
+import sys
+command = ' '.join(sys.argv[1:])
+assert 'shutil.disk_usage' in command
+assert all(word not in command for word in ('systemctl', 'docker', 'sudo', '--action', 'rm -rf'))
+print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
+''')
+            fake_ssh.chmod(0o755)
+            shell = pre.split('        run: |\n', 1)[1]
+            shell = '\n'.join(line[10:] if line.startswith('          ') else line
+                              for line in shell.splitlines())
+            env = dict(os.environ, PATH=folder + ':/usr/bin:/bin', HOME=folder,
+                       DO_USER='fixture', DO_HOST='fixture')
+            result = PROCESS_RUN(['bash', '-c', shell], capture_output=True,
+                                 text=True, env=env, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('RC6_PRE_SUSPEND_DISK_FREE=4184719360', result.stdout)
+            self.assertEqual(json.loads(state.read_text()), timers)
+        outcomes.update(classify='success', pre_suspend_snapshot='success',
+                        diskguard='failure')
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        retire = workflow.split('      - name: Retire only unchanged own pre-suspend attempt barrier', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("steps.diskguard.outcome == 'failure'", retire)
+        self.assertIn("steps.suspend.outcome == 'skipped'", retire)
+        self.assertIn("steps.pre_suspend_account.outcome == 'success'", retire)
+        self.assertIn('--phase cleanup_presuspend python3 -', retire)
+        self.assertIn('rc6_pre_suspend_fingerprint.py', retire)
+        self.assertNotIn('systemctl start', retire)
+        self.assertNotIn('--action restore', retire)
 
 
 if __name__ == '__main__':
