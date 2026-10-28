@@ -245,6 +245,15 @@ def apply(root, candidate):
                 state = book['process_state']
                 carry = None
                 caucion = None
+            elif receipt.get('a171_pending_adopted') is True:
+                # A171's COLD2 archive succeeded, but the overall deployment
+                # failed at preopen. Its exact new running pair was stopped
+                # by this attempt; recheck that provenance at every archive
+                # boundary, not a generic CLOSED receipt alone.
+                book=drain.a171_stopped_continuation(receipt)
+                state=book['process_state']
+                carry=None
+                caucion=None
             elif rescued_a92_flat:
                 # A139: the A92 observer's stopped BOOT_CALENDAR is *not*
                 # healthy CLOSED.  Reuse only the exact immutable rescue

@@ -6,6 +6,8 @@ import time
 import urllib.error
 import urllib.request
 
+import pytest
+
 import iol_mcp_readonly_adapter_rc6 as adapter
 
 
@@ -203,3 +205,32 @@ def test_token_with_one_hundred_seconds_remaining_does_not_rotate(tmp_path, monk
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     assert adapter.OAuthStoreReadOnlyMCP(store).list_tools() == {"tools": []}
+
+
+@pytest.mark.parametrize('status', [400, 401, 429, 503])
+def test_refresh_http_failure_exposes_only_status_not_body_or_tokens(
+        tmp_path,monkeypatch,status):
+    store=tmp_path/'oauth.json'
+    original={'issuer':'https://mcp.example/rpc',
+              'token_endpoint':'https://auth.example/token',
+              'token_obtained_at_epoch':time.time()-1000,
+              'client_registration':{'client_id':'client'},
+              'tokens':{'access_token':'secret-access','refresh_token':'secret-refresh',
+                        'expires_in':900}}
+    store.write_text(json.dumps(original))
+    def fake_urlopen(request,timeout):
+        assert request.full_url=='https://auth.example/token'
+        assert b'secret-refresh' in request.data
+        headers=Message()
+        headers['Retry-After']='1'
+        raise urllib.error.HTTPError(request.full_url,status,'secret-url',headers,
+                                     io.BytesIO(b'secret-response-body'))
+    monkeypatch.setattr(urllib.request,'urlopen',fake_urlopen)
+    with pytest.raises(adapter.IOLMCPError) as raised:
+        adapter.OAuthStoreReadOnlyMCP(store).list_tools()
+    exc=raised.value
+    assert str(exc)=='IOL_MCP_OAUTH_REFRESH_FAILED'
+    assert exc.status_code==status and exc.failure_class=='HTTP'
+    assert exc.retry_after==1 and exc.__cause__ is None
+    assert 'secret' not in str(exc)
+    assert json.loads(store.read_text())==original

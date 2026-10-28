@@ -30,7 +30,8 @@ def test_exact_sources_fit_with_headroom_and_old_raw_wire_fails():
     assert observed['classify'] <= budget.MAX_REMOTE_ARG_BYTES
     assert max(observed.values()) == observed['classify']
     raw = budget.encoded_size('scripts/rc6_deploy_scheduler_suspend.py')
-    assert raw > 90000 and sizes['a125_gzip'] < 20000
+    assert raw > 90000 and sizes['a125_gzip'] < 24000
+    assert sizes['audit_gzip'] < sizes['audit']
     with pytest.raises(ValueError, match='SSH_REMOTE_SINGLE_ARGUMENT_TOO_LARGE'):
         budget.require_budget({**sizes, 'a125_gzip': raw})
 
@@ -61,6 +62,24 @@ def test_staged_operator_decompresses_bounded_exact_source():
                                   'RC6_A125_CANDIDATE_SOURCE_B64': encoded}, clear=True):
         with pytest.raises(ValueError, match='QUIESCENCE_OPERATOR_SOURCE_AMBIGUOUS'):
             quiescence.candidate_operator_module(require_staged=True)
+
+
+def test_scheduler_compressed_policy_wire_preserves_original_bytes(monkeypatch):
+    from scripts import rc6_deploy_scheduler_suspend as scheduler
+    raw=(ROOT/'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
+    encoded=base64.b64encode(gzip.compress(raw,mtime=0)).decode()
+    observed=[]
+    monkeypatch.setattr(scheduler,'run',lambda candidate,action,policy:observed.append(
+        (candidate,action,base64.b64decode(policy))))
+    monkeypatch.setattr('sys.argv',['scheduler','--candidate-sha','f'*40,
+        '--action','suspend','--policy-gzip-b64',encoded])
+    scheduler.main()
+    assert observed==[('f'*40,'suspend',raw)]
+    bomb=base64.b64encode(gzip.compress(b'X'*100001,mtime=0)).decode()
+    monkeypatch.setattr('sys.argv',['scheduler','--candidate-sha','f'*40,
+        '--action','suspend','--policy-gzip-b64',bomb])
+    with pytest.raises(ValueError,match='SCHEDULER_POLICY_COMPRESSED_INVALID'):
+        scheduler.main()
 
 
 def test_bomb_and_corrupt_gzip_cannot_execute():

@@ -56,11 +56,13 @@ class IOLMCPError(RuntimeError):
     def __init__(
         self, message: str, *, status_code: int | None = None,
         retry_after: float | None = None, response_headers: dict[str, str] | None = None,
+        failure_class: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.retry_after = retry_after
         self.response_headers = response_headers or {}
+        self.failure_class = failure_class
 
 
 def _retry_after(headers: dict[str, str]) -> float | None:
@@ -312,8 +314,17 @@ class OAuthStoreReadOnlyMCP:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 refreshed = json.loads(response.read().decode(errors="replace"))
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED") from exc
+        except urllib.error.HTTPError as exc:
+            exc.close()  # Never propagate or log the provider response body.
+            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED", status_code=exc.code,
+                              retry_after=_retry_after(dict(exc.headers or {})),
+                              failure_class="HTTP") from None
+        except (urllib.error.URLError, TimeoutError):
+            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED",
+                              failure_class="TRANSPORT") from None
+        except json.JSONDecodeError:
+            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED",
+                              failure_class="INVALID_JSON") from None
         access_token = refreshed.get("access_token") if isinstance(refreshed, dict) else None
         if not isinstance(access_token, str) or not access_token:
             raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED")

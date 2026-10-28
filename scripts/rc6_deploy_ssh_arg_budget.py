@@ -21,17 +21,17 @@ def encoded_size(path: str, *, compressed: bool = False) -> int:
 
 
 def budgets(sizes: dict[str, int]) -> dict[str, int]:
-    required = {'mutex', 'stage', 'audit', 'a125_gzip', 'a143_gzip',
-                'host_policy', 'disk_policy', 'image_cleanup', 'housekeeping'}
+    required = {'mutex', 'stage', 'audit', 'audit_gzip', 'a125_gzip', 'a143_gzip',
+                'host_policy', 'host_policy_gzip', 'disk_policy', 'image_cleanup', 'housekeeping'}
     if (set(sizes) != required or any(type(value) is not int or value <= 0
                                       for value in sizes.values())):
         raise ValueError('SSH_ARG_SOURCE_INVENTORY_RED')
     o = COMMAND_OVERHEAD_BYTES
     m = sizes['mutex']
     return {
-        'classify': m + sizes['audit'] + sizes['a125_gzip'] + sizes['a143_gzip'] + o,
+        'classify': m + sizes['audit_gzip'] + sizes['a125_gzip'] + sizes['a143_gzip'] + o + 64,
         'drain_caucion': m + sizes['audit'] + sizes['a125_gzip'] + o,
-        'suspend_or_recover': m + sizes['a143_gzip'] + sizes['host_policy'] + o,
+        'suspend_or_recover': m + sizes['a143_gzip'] + sizes['host_policy_gzip'] + o,
         'preclean': m + sizes['disk_policy'] + sizes['image_cleanup'] +
                     sizes['housekeeping'] + o,
         'transfer': m + sizes['stage'] + o,
@@ -50,11 +50,13 @@ def source_sizes() -> dict[str, int]:
         'mutex': encoded_size('scripts/rc6_deploy_host_mutex.py'),
         'stage': encoded_size('scripts/rc6_deploy_stage_transfer.py'),
         'audit': encoded_size('cb_caucion_audit.py'),
+        'audit_gzip': encoded_size('cb_caucion_audit.py',compressed=True),
         'a125_gzip': encoded_size('scripts/rc6_deploy_scheduler_suspend.py',
                                    compressed=True),
         'a143_gzip': encoded_size('scripts/rc6_deploy_quiescence.py',
                                    compressed=True),
         'host_policy': encoded_size('ops/policy/host-control-plane-reconciliation-v2.json'),
+        'host_policy_gzip': encoded_size('ops/policy/host-control-plane-reconciliation-v2.json',compressed=True),
         'disk_policy': encoded_size('ops/policy/rc6-disk-housekeeping-v1.json'),
         'image_cleanup': encoded_size('scripts/rc6_pretransfer_image_cleanup.py'),
         'housekeeping': encoded_size('scripts/rc6_disk_housekeeping.py'),

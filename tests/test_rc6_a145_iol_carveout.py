@@ -143,6 +143,48 @@ def test_a169_stopped_hold_adopts_prior_receipt_without_systemd_mutation(
                                          digest,[],[tuple(states[name]) for name in names])
 
 
+def test_a172_exact_failed_a171_running_hold_never_starts_any_timer(
+        hold16,monkeypatch,tmp_path):
+    from scripts import rc6_deploy_quiescence as q
+    raw,names,states,starts,_=hold16
+    states[scheduler.IOL_OAUTH_GUARD_TIMER][0]='active'
+    digest=hashlib.sha256(raw).hexdigest()
+    monkeypatch.setattr(scheduler,'ppi_snapshot',lambda:[])
+    proof={'origin_candidate':q.A171_FAILED_CANDIDATE,
+           'origin_sha256':q.A171_FAILED_RECEIPT_SHA256,
+           'image_id':q.A171_LOADED_IMAGE_ID,'flat_book':{'real_orders_sent':0}}
+    staged=SimpleNamespace(ROOT=tmp_path/'porota',
+                           A171_FAILED_CANDIDATE=q.A171_FAILED_CANDIDATE,
+                           A171_FAILED_RECEIPT_SHA256=q.A171_FAILED_RECEIPT_SHA256,
+                           A170_FAILED_CANDIDATE=q.A170_FAILED_CANDIDATE,
+                           A169_PRIOR_RECEIPT_SHA256=q.A169_PRIOR_RECEIPT_SHA256,
+                           A170_FAILED_RECEIPT_SHA256=q.A170_FAILED_RECEIPT_SHA256,
+                           a171_failed_running_proof=lambda *a,**kw:proof)
+    monkeypatch.setattr(scheduler,'a143_staged_module',lambda:staged)
+    parent={'candidate_sha':q.A171_FAILED_CANDIDATE,'status':'SUSPENDED',
+            'policy_sha256':digest,'timers':names,'attempted':names,'ppi_before':[],
+            'preserved_iol_timer':scheduler.IOL_OAUTH_GUARD_TIMER,
+            'operator_pause_timer':scheduler.OPERATOR_PREOPEN_TIMER,
+            'operator_pause_receipt_sha256':'e'*64,
+            'paused_from':q.A170_FAILED_CANDIDATE,
+            'a169_origin_sha256':q.A169_PRIOR_RECEIPT_SHA256,
+            'a170_origin_sha256':q.A170_FAILED_RECEIPT_SHA256,
+            'rescue_failure_disposition':'A145_NEW_CANDIDATE_UNVALIDATED_HELD'}
+    prior=scheduler.ROOT/('scheduler-suspend-'+q.A171_FAILED_CANDIDATE+'.json')
+    prior.write_text(json.dumps(parent))
+    candidate='f'*40
+    receipt=scheduler.run(candidate,'suspend',base64.b64encode(raw).decode())
+    assert receipt['paused_from']==q.A171_FAILED_CANDIDATE
+    assert receipt['a171_origin_sha256']==q.A171_FAILED_RECEIPT_SHA256
+    assert starts==[]
+    assert scheduler.run(candidate,'recover-a171-pending',base64.b64encode(raw).decode())['rescue_failure_disposition']=='A171_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
+    assert starts==[]
+    parent['status']='RESTORED';prior.write_text(json.dumps(parent))
+    with pytest.raises(ValueError,match='A171_FAILED_HOLD_CHANGED'):
+        scheduler.adopt_a171_running_hold('a'*40,scheduler.ROOT/'other.json',names,
+                                         digest,[],[tuple(states[name]) for name in names])
+
+
 def test_a145_exact_old16_hold_migrates_once_to_15_plus_guard(hold16):
     raw,names,states,starts,_ = hold16
     target='f'*40
