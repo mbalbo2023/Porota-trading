@@ -262,8 +262,8 @@ jobs:
               if not 0<len(packed)<110000:
                   raise SystemExit('RC6_A143_STAGED_SOURCE_BOUNDS_RED')
               inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
-              source=inflater.decompress(packed,190000)
-              if (not 20000<len(source)<190000 or not inflater.eof or
+              source=inflater.decompress(packed,210000)
+              if (not 20000<len(source)<210000 or not inflater.eof or
                       inflater.unconsumed_tail or inflater.unused_data or
                       hashlib.sha256(source).hexdigest()!=sys.argv[6]):
                   raise SystemExit('RC6_A143_STAGED_SOURCE_HASH_RED')
@@ -557,6 +557,31 @@ jobs:
           elif (statuses=={'running'} and state and state[0]=='WAITING_MARKET' and
                 state[1] in ('CLOSED','MARKET_CLOSED') and
                 (quiescence.current_runtime_marker().get('candidate_sha') ==
+                    'b6e6ce75f29fe117aaa42b0bfcd9386ea93a0aa0' or
+                 any(value['Image']=='sha256:9ca6e7ca98f11bbb82353434f54ffab15b218ec54319c83ae1661aaf897a40e9'
+                     for value in originals.values()))):
+              # A174 started the frozen image but failed before completing
+              # runtime validation. Admit only its exact receipt, Docker IDs,
+              # installed source, flat PAPER book and held control plane.
+              candidate=staged_a143_candidate()
+              operator=types.ModuleType('rc6_a175_staged_operator')
+              exec(compile(staged_operator_source(),'candidate/a175-operator.py','exec'),
+                   operator.__dict__)
+              proof=candidate.a174_failed_running_proof(
+                  sys.argv[1],originals,
+                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_timer_disabled=operator.operator_preopen_timer_disabled,
+                  require_installed_a174_source=True)
+              if (proof.get('origin_sha256')!=candidate.A174_FAILED_RECEIPT_SHA256 or
+                      proof.get('image_id')!=candidate.A174_LOADED_IMAGE_ID or
+                      proof.get('flat_book',{}).get('real_orders_sent')!=0):
+                  raise SystemExit('RC6_A174_PENDING_PROOF_RED')
+              print('RC6_A174_FAILED_VALIDATION_RECOVERY=ADMITTED|health=RED|PAPER=0',
+                    file=sys.stderr)
+              print('CLOSED_A174_PENDING_FIX_FORWARD')
+          elif (statuses=={'running'} and state and state[0]=='WAITING_MARKET' and
+                state[1] in ('CLOSED','MARKET_CLOSED') and
+                (quiescence.current_runtime_marker().get('candidate_sha') ==
                     '4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6' or
                  any(value['Image']=='sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa'
                      for value in originals.values()))):
@@ -659,7 +684,7 @@ jobs:
               raise SystemExit('RC6_FLAT_PAPER_SESSION_UNVERIFIED')
           PY
           )"
-          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|CLOSED_A171_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
+          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|CLOSED_A171_PENDING_FIX_FORWARD|CLOSED_A174_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
           echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
           if [ "$SESSION_MODE" = DEGRADED_CLOSED_20261026 ]; then
             echo 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED|PAPER=0'
@@ -671,6 +696,8 @@ jobs:
             echo 'RC6_PAPER_SESSION=A169_EXACT_NO_GO_ADMITTED|runtime=STOPPED|health=RED|PAPER=0'
           elif [ "$SESSION_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ]; then
             echo 'RC6_PAPER_SESSION=A171_EXACT_NO_GO_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
+          elif [ "$SESSION_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]; then
+            echo 'RC6_PAPER_SESSION=A174_EXACT_NO_GO_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
           elif [ "$SESSION_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ]; then
             echo 'RC6_PAPER_SESSION=A143_UNVALIDATED_RECOVERY_ADMITTED|runtime=RUNNING|health=RED|PAPER=0'
           else
@@ -696,7 +723,7 @@ jobs:
 
       - name: Require exact intraday owner authorization for OPEN suspension
         id: a151_intraday_auth
-        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}
+        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A174_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -800,7 +827,8 @@ jobs:
                [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
                [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || \
                [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ] || \
-               [ "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ]; then
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ] || \
+               [ "$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]; then
               echo 'RC6_RESCUE_DISK_PREFLIGHT=RED|no cleanup or host transfer'
               exit 37
             fi
@@ -979,7 +1007,8 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
              [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || \
              [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ] || \
-             [ "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ]; then
+             [ "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ] || \
+             [ "$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]; then
             A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
           fi
           timeout 240 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
@@ -996,7 +1025,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
-          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) FLAG='--adopt-a143-stopped-pending --a151-held-open';; CLOSED_A171_PENDING_FIX_FORWARD) FLAG='--adopt-a171-running-pending';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) FLAG='--adopt-a143-stopped-pending --a151-held-open';; CLOSED_A171_PENDING_FIX_FORWARD) FLAG='--adopt-a171-running-pending';; CLOSED_A174_PENDING_FIX_FORWARD) FLAG='--adopt-a174-running-pending';; *) exit 31;; esac
           AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
@@ -1191,7 +1220,7 @@ jobs:
 
           # No candidate host file can change until owned runtime processes
           # have exited and the financial ledgers were checked again.
-          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) QUIESCENCE_FLAG='--adopt-a143-stopped-pending --a151-held-open';; CLOSED_A171_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a171-running-pending';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) QUIESCENCE_FLAG='--market-open-suspend';; CLOSED) QUIESCENCE_FLAG='';; CLOSED_CAUCION) QUIESCENCE_FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) QUIESCENCE_FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) QUIESCENCE_FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) QUIESCENCE_FLAG='--adopt-a143-stopped-pending --a151-held-open';; CLOSED_A171_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a171-running-pending';; CLOSED_A174_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a174-running-pending';; *) exit 31;; esac
           QUIESCENCE_AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
@@ -1209,7 +1238,7 @@ jobs:
           # still must pass the independent flat-book verification below.
           case "$RC6_QUIESCENCE_MODE" in
             CLOSED_CAUCION) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|OPEN_CARRYOVER'; exit 31;;
-            OPEN|CLOSED|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|CLOSED_A171_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;;
+            OPEN|CLOSED|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|CLOSED_A171_PENDING_FIX_FORWARD|CLOSED_A174_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;;
             *) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|QUIESCENCE_UNKNOWN'; exit 31;;
           esac
 
@@ -1271,7 +1300,8 @@ jobs:
                 "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ||
                 "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ||
                 "$RC6_QUIESCENCE_MODE" = CLOSED_A143_PENDING_FIX_FORWARD ||
-                "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ]]; then
+                "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ||
+                "$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]]; then
             # Persist frozen manifest digest and materialized Docker identity
             # before mode_manager can replace either container. A failure
             # before this receipt cannot claim a new candidate runtime.
@@ -1343,7 +1373,7 @@ jobs:
           # allocation, fill or real broker route may be updated. An identical
           # post-failure replay is idempotent (inserted=0), not a second fill.
           INTRADAY_OWNER_FLAG=()
-          if [ "$RC6_QUIESCENCE_MODE" = OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ] || [ "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ]; then
+          if [ "$RC6_QUIESCENCE_MODE" = OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ] || [ "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ] || [ "$RC6_QUIESCENCE_MODE" = CLOSED_A171_PENDING_FIX_FORWARD ] || [ "$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]; then
             [[ "$RC6_A151_OWNER_INTRADAY_ID" =~ ^[1-9][0-9]*$ ]]
             INTRADAY_OWNER_FLAG=(--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID")
           else
@@ -2381,7 +2411,8 @@ jobs:
           if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
              [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ] || \
              [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_STOPPED ] || \
-             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A171_PENDING_FIX_FORWARD ]; then
+             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A171_PENDING_FIX_FORWARD ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A174_PENDING_FIX_FORWARD ]; then
             # Recovery executes from stdin before this source is installed.
             # A151 stopped continuation requires the exact candidate callback;
             # the old #751 host module cannot prove it.
@@ -2450,11 +2481,18 @@ jobs:
             # and OAuth-only exception even if A172 managed to start runtime.
             SCHEDULER_ACTION=recover-a171-pending
           fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A174_PENDING_FIX_FORWARD ] && \
+             [ '${{ steps.suspend.outcome }}' = success ]; then
+            # A174's installed pair remains unvalidated. Keep the 15 RC6
+            # workers held and only the OAuth guardian exception active.
+            SCHEDULER_ACTION=recover-a174-pending
+          fi
           A143_ENV=''
           if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
              [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ] || \
              [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_STOPPED ] || \
-             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A171_PENDING_FIX_FORWARD ]; then
+             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A171_PENDING_FIX_FORWARD ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A174_PENDING_FIX_FORWARD ]; then
             A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
           fi
           timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \

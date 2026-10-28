@@ -622,7 +622,7 @@ def a143_staged_module():
     if not 0 < len(compressed) < 110000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_COMPRESSED_RED')
     source = gzip.decompress(compressed)
-    if not 20000 < len(source) < 190000:
+    if not 20000 < len(source) < 210000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_SIZE_RED')
     module = types.ModuleType('rc6_a145_scheduler_staged_quiescence')
     exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),module.__dict__)
@@ -868,6 +868,114 @@ def require_a171_fix_forward_hold(candidate):
             observed.get('critical_admission',{}).get('capability') != 'issues_only'):
         raise ValueError('SCHEDULER_A171_NEW_RUNTIME_CHANGED')
     return 'A172_NEW_CANDIDATE_UNVALIDATED_HELD'
+
+
+def adopt_a174_running_hold(candidate,path,names,digest,before,states):
+    """Adopt only the pinned A174 RUNNING failure with no unit mutation."""
+    q=a143_staged_module()
+    if (candidate==q.A174_FAILED_CANDIDATE or len(names)!=16 or
+            any(state != (('active','enabled') if name==IOL_OAUTH_GUARD_TIMER
+                          else ('inactive','disabled') if name==OPERATOR_PREOPEN_TIMER
+                          else ('inactive','enabled'))
+                for name,state in zip(names,states)) or
+            not operator_preopen_timer_disabled()):
+        raise ValueError('SCHEDULER_A174_HELD_TIMER_CHANGED')
+    prior,prior_sha=_operator_pause_json(
+        ROOT/('scheduler-suspend-'+q.A174_FAILED_CANDIDATE+'.json'),65536)
+    historical=operator_preopen_hold_evidence()
+    if (prior_sha!=q.A174_SCHEDULER_RECEIPT_SHA256 or
+            prior.get('candidate_sha')!=q.A174_FAILED_CANDIDATE or
+            prior.get('status')!='SUSPENDED' or
+            prior.get('policy_sha256')!=digest or
+            prior.get('timers')!=names or
+            prior.get('preserved_iol_timer')!=IOL_OAUTH_GUARD_TIMER or
+            prior.get('ppi_before')!=before or
+            set(prior.get('attempted',[]))!=set(names) or
+            prior.get('operator_pause_timer')!=OPERATOR_PREOPEN_TIMER or
+            prior.get('operator_pause_receipt_sha256')!=historical or
+            prior.get('paused_from')!=q.A171_FAILED_CANDIDATE or
+            prior.get('a171_running_origin') is not True or
+            prior.get('a171_origin_sha256')!=q.A171_FAILED_RECEIPT_SHA256 or
+            prior.get('rescue_failure_disposition')!='A172_NEW_CANDIDATE_UNVALIDATED_HELD'):
+        raise ValueError('SCHEDULER_A174_FAILED_HOLD_CHANGED')
+    proof=q.a174_failed_running_proof(
+        candidate,operator_a151_proof=exact_a151_operator_preopen_pause,
+        operator_timer_disabled=operator_preopen_timer_disabled,
+        require_installed_a174_source=True)
+    for name in names:
+        if name==IOL_OAUTH_GUARD_TIMER:
+            _iol_guard_status(('active','enabled'))
+            continue
+        service,code=command('systemctl','show',name,'-p','Unit','--value')
+        if (code or service!=name.removesuffix('.timer')+'.service' or
+                command('systemctl','is-active',service)[0] in
+                {'active','activating','reloading','deactivating'}):
+            raise ValueError('SCHEDULER_A174_JOB_ACTIVE:'+name)
+    if ppi_snapshot()!=before:
+        raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
+    receipt=dict(prior,candidate_sha=candidate,
+                 paused_from=q.A174_FAILED_CANDIDATE,
+                 prior_receipt_sha256=prior_sha,
+                 a174_running_origin=True,
+                 a174_origin_sha256=q.A174_FAILED_RECEIPT_SHA256,
+                 a174_previous_proof=proof,
+                 recorded_at=datetime.now(timezone.utc).isoformat())
+    receipt.pop('rescue_failure_disposition',None)
+    receipt.pop('rescue_failure_recorded_at',None)
+    persist(path,receipt)
+    print(json.dumps({'status':'SUSPENDED','candidate_sha':candidate,
+                      'paused_from':q.A174_FAILED_CANDIDATE,
+                      'timer_count':len(names),'systemd_mutations':0,
+                      'ppi_watch_mutated':False},sort_keys=True))
+    return receipt
+
+
+def require_a174_fix_forward_hold(candidate):
+    """Keep A174 stopped after drain and hold any failed A175 runtime."""
+    q=a143_staged_module()
+    pause,_=_operator_pause_json(ROOT/('scheduler-suspend-'+candidate+'.json'),65536)
+    if (pause.get('candidate_sha')!=candidate or pause.get('status')!='SUSPENDED' or
+            pause.get('a174_running_origin') is not True or
+            pause.get('paused_from')!=q.A174_FAILED_CANDIDATE or
+            pause.get('prior_receipt_sha256')!=q.A174_SCHEDULER_RECEIPT_SHA256 or
+            pause.get('a174_origin_sha256')!=q.A174_FAILED_RECEIPT_SHA256):
+        raise ValueError('SCHEDULER_A174_CANDIDATE_HOLD_CHANGED')
+    path=q.ROOT/'data/deploy'/('quiescence-'+candidate+'.json')
+    if not path.exists():
+        proof=q.a174_failed_running_proof(
+            candidate,operator_a151_proof=exact_a151_operator_preopen_pause,
+            operator_timer_disabled=operator_preopen_timer_disabled,
+            require_installed_a174_source=True)
+        if proof!=pause.get('a174_previous_proof'):
+            raise ValueError('SCHEDULER_A174_PREDRAIN_PROOF_CHANGED')
+        return 'A174_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
+    receipt,_=q._a143_exact_json(path,65536)
+    if (receipt.get('candidate_sha')!=candidate or
+            receipt.get('a174_pending_adopted') is not True or
+            receipt.get('a174_previous_proof')!=pause.get('a174_previous_proof') or
+            receipt.get('a174_origin_sha256')!=q.A174_FAILED_RECEIPT_SHA256):
+        raise ValueError('SCHEDULER_A174_DRAIN_PROOF_CHANGED')
+    if receipt.get('installation_started') is False:
+        if receipt.get('status') not in {'DRAINED','PRIOR_A174_UNVALIDATED_HELD_STOPPED'}:
+            raise ValueError('SCHEDULER_A174_DRAIN_INCOMPLETE')
+        q.a174_stopped_continuation(receipt)
+        return 'A174_PRIOR_UNVALIDATED_STOPPED_HELD'
+    if receipt.get('status')!='FIX_FORWARD_VALIDATION_REQUIRED':
+        raise ValueError('SCHEDULER_A174_NEW_INSTALL_STATUS_RED')
+    runtime=receipt.get('candidate_runtime_after_failure')
+    if receipt.get('prior_a174_stopped_after_install') is True and runtime is None:
+        q.a174_stopped_continuation(receipt)
+        return 'A174_PRIOR_UNVALIDATED_STOPPED_HELD'
+    if type(runtime) is not dict or runtime.get('status')!='running':
+        raise ValueError('SCHEDULER_A174_NEW_RUNTIME_MISSING')
+    observed=q.candidate_runtime_after_failed_install(receipt)
+    if (observed.get('status')!='running' or
+            observed.get('containers')!=runtime.get('containers') or
+            observed.get('flat_book',{}).get('source_sha')!=candidate or
+            observed.get('flat_book',{}).get('real_orders_sent')!=0 or
+            observed.get('critical_admission',{}).get('capability')!='issues_only'):
+        raise ValueError('SCHEDULER_A174_NEW_RUNTIME_CHANGED')
+    return 'A175_NEW_CANDIDATE_UNVALIDATED_HELD'
 
 
 def adopt_a143_legacy_hold_with_iol(candidate,path,names,digest,before,states):
@@ -1156,11 +1264,16 @@ def run(candidate, action, policy_b64):
                           else ('inactive','disabled') if name == OPERATOR_PREOPEN_TIMER
                           else ('inactive','enabled'))
                 for name,state in zip(names,states)):
-            # Before installation the host import is still A171's old source.
+            # Before installation the host import is still the prior source.
             # Select the next exact continuation from the frozen candidate's
             # staged helper and the current runtime marker. The adoption
             # itself verifies the receipt, Docker IDs, flat book and NO_GO.
             staged = a143_staged_module()
+            if (getattr(staged,'A174_FAILED_CANDIDATE',None) and
+                    staged.current_runtime_marker().get('candidate_sha') ==
+                    staged.A174_FAILED_CANDIDATE):
+                return adopt_a174_running_hold(
+                    candidate,path,names,digest,before,states)
             if (getattr(staged,'A171_FAILED_CANDIDATE',None) and
                     staged.current_runtime_marker().get('candidate_sha') ==
                     staged.A171_FAILED_CANDIDATE):
@@ -1304,8 +1417,10 @@ def run(candidate, action, policy_b64):
             action = 'hold-a143-pending'
         if action == 'recover-a171-pending':
             action = 'hold-a171-pending'
+        if action == 'recover-a174-pending':
+            action = 'hold-a174-pending'
         if action in {'hold-rescue-degraded','hold-adopted-rescue',
-                      'hold-a143-pending','hold-a171-pending'}:
+                      'hold-a143-pending','hold-a171-pending','hold-a174-pending'}:
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_RESCUE_PAUSE_RECEIPT_RED')
@@ -1328,6 +1443,8 @@ def run(candidate, action, policy_b64):
                       action == 'hold-adopted-rescue' else
                       require_a171_fix_forward_hold(candidate) if
                       action == 'hold-a171-pending' else
+                      require_a174_fix_forward_hold(candidate) if
+                      action == 'hold-a174-pending' else
                       require_a143_fix_forward_hold(candidate))
             if ppi_snapshot() != before:
                 raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
@@ -1412,7 +1529,8 @@ def main():
                                            'recover-degraded-closed',
                                            'recover-adopted-rescue',
                                            'recover-a143-pending',
-                                           'recover-a171-pending'], required=True)
+                                           'recover-a171-pending',
+                                           'recover-a174-pending'], required=True)
     policy=parser.add_mutually_exclusive_group(required=True)
     policy.add_argument('--policy-b64')
     policy.add_argument('--policy-gzip-b64')
