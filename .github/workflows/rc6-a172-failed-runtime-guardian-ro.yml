@@ -1,0 +1,157 @@
+name: RC6 A172 failed runtime and IOL guardian READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a172-failed-runtime-guardian-20261028]
+    paths:
+      - .github/workflows/rc6-a172-failed-runtime-guardian-ro.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a172"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a172" "$HOME/.ssh/known_hosts"
+      - name: Attest exact unvalidated runtime, PAPER, timers, OAuth service and disk
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 120s ssh -T -i "$HOME/.ssh/rc6_a172" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PY' | tee evidence/host.jsonl
+          import fcntl, hashlib, json, os, shutil, sqlite3, stat, subprocess, sys, urllib.request
+          from pathlib import Path
+          from datetime import datetime,timezone
+          root=Path('/opt/porota-trading')
+          candidate='4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6'
+          tree='18693659202fc1a5cc0fa98113f0a1f9ad8a416d'
+          image='sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa'
+          names=('porota_production_observer','porota_production_dashboard')
+          def bounded(path,limit=65536):
+              info=path.lstat()
+              assert stat.S_ISREG(info.st_mode) and info.st_nlink==1 and 0<info.st_size<limit
+              raw=path.read_bytes()
+              return json.loads(raw),hashlib.sha256(raw).hexdigest()
+          def command(*args):
+              return subprocess.run(args,capture_output=True,text=True,timeout=12,check=True).stdout
+          def state(unit,mode):
+              return subprocess.run(['systemctl','is-'+mode,unit],capture_output=True,
+                                    text=True,timeout=5).stdout.strip()
+          def show(unit,fields):
+              out=command('systemctl','show',unit,*('-p'+field for field in fields),'--no-pager')
+              return dict(line.split('=',1) for line in out.splitlines() if '=' in line)
+          lock=Path('/run/lock/porota-rc6-deploy-v2.lock')
+          info=lock.lstat()
+          assert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600
+          with lock.open('rb') as stream:
+              fcntl.flock(stream.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+              barrier=Path('/run/lock/porota-rc6-deploy-v2-attempt.json')
+              assert not barrier.exists() and not barrier.is_symlink()
+              opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              droplet={}
+              for key in ('id','region'):
+                  with opener.open('http://169.254.169.254/metadata/v1/'+key,timeout=2) as response:
+                      droplet[key]=response.read(64).decode().strip()
+              assert droplet=={'id':'594077619','region':'nyc1'}
+              receipt,digest=bounded(root/'data/deploy'/('quiescence-'+candidate+'.json'))
+              marker,_=bounded(root/'data/deploy/CURRENT_STATE_V2.json')
+              frozen,frozen_sha=bounded(root/'data/deploy/porota-frozen-candidate.json',16384)
+              intent=receipt.get('candidate_image_intent') or {}
+              runtime=receipt.get('candidate_runtime_after_failure') or {}
+              assert (receipt.get('candidate_sha')==candidate and
+                      receipt.get('status')=='FIX_FORWARD_VALIDATION_REQUIRED' and
+                      receipt.get('installation_started') is True and
+                      receipt.get('inflight')=='ABSENT_OWNED_RUNTIME_STOPPED' and
+                      receipt.get('real_orders_sent')==0 and receipt.get('ppi_watch_accessed') is False and
+                      receipt.get('a170_origin_sha256')=='2052b78c67f4385e662caeb1448d357f804d0605e6f2c710447b4130fa1df0e8' and
+                      intent.get('image_id')==image and intent.get('manifest_sha256')==frozen_sha and
+                      runtime.get('status')=='running' and set(runtime.get('containers',{}))==set(names) and
+                      marker.get('candidate_sha')==candidate and marker.get('image_id')==image and
+                      marker.get('validation_status')=='DEPLOYED_VALIDATION_PENDING' and
+                      frozen.get('candidate_sha')==candidate and frozen.get('candidate_tree_sha')==tree)
+              actual=json.loads(command('docker','inspect',*names))
+              for row in actual:
+                  name=row['Name'].lstrip('/')
+                  assert (name in names and row['Id']==runtime['containers'][name]['id'] and
+                          row['Image']==image and row['State']['Status']=='running')
+              sys.path.insert(0,str(root))
+              from scripts import rc6_deploy_quiescence as q
+              book=q.rescue_flat_book()
+              assert (book.get('source_sha')==candidate and book.get('real_orders_sent')==0 and
+                      (book.get('process_state'),book.get('session_state'))==
+                      ('WAITING_MARKET','MARKET_CLOSED'))
+              timer,_=bounded(root/'data/deploy'/('scheduler-suspend-'+candidate+'.json'))
+              timer_names=timer.get('timers')
+              assert timer.get('status')=='SUSPENDED' and len(timer_names)==16 and len(set(timer_names))==16
+              guardian='porota-iol-oauth-health-rc6.timer'
+              for name in timer_names:
+                  expected=('active','enabled') if name==guardian else ('inactive','disabled') if name=='porota-preopen-rc6.timer' else ('inactive','enabled')
+                  assert (state(name,'active'),state(name,'enabled'))==expected
+              timer_meta=show(guardian,('Unit','ActiveState','UnitFileState','Result','LastTriggerUSec'))
+              service_meta=show('porota-iol-oauth-health-rc6.service',
+                                ('ActiveState','SubState','Result','ExecMainCode','ExecMainStatus','NRestarts','ExecMainStartTimestamp','ExecMainExitTimestamp'))
+              ppi=[line.split()[0] for line in command('systemctl','list-unit-files','--no-legend').splitlines()
+                   if line.split() and 'ppi' in line.split()[0].lower() and 'watch' in line.split()[0].lower()]
+              ppi_state={name:[state(name,'active'),state(name,'enabled')] for name in ppi}
+              usage=shutil.disk_usage('/')
+              vfs=os.statvfs('/')
+              output={'schema':'rc6.a172.failed-runtime-guardian-readonly.v1','status':'PROVEN',
+                      'observed_at_utc':datetime.now(timezone.utc).isoformat(),
+                      'droplet':droplet,'candidate_sha':candidate,'candidate_tree':tree,
+                      'receipt_sha256':digest,'frozen_manifest_sha256':frozen_sha,
+                      'image_id':image,'runtime':'BOTH_EXACT_NEW_RUNNING',
+                      'container_ids':{name:runtime['containers'][name]['id'] for name in names},
+                      'book':[book['process_state'],book['session_state']],
+                      'real_orders_sent':0,'timers_held':16,'guardian_timer':timer_meta,
+                      'guardian_service':service_meta,'ppi_watch_state_only':ppi_state,
+                      'barrier':'ABSENT','disk_free_bytes':usage.free,
+                      'inode_free_percent':round(100*vfs.f_ffree/vfs.f_files,6),
+                      'host_mutations':0,'operational_go':False}
+              print('RC6_A172_FAILED_RUNTIME_RO='+json.dumps(output,sort_keys=True,separators=(',',':')))
+          PY
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/host.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A172_FAILED_RUNTIME_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='PROVEN' and row['host_mutations']==0 and row['operational_go'] is False
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['real_orders_sent']==0 and row['timers_held']==16 and row['barrier']=='ABSENT'
+          print('RC6_A172_FAILED_RUNTIME_PROBE=GREEN|PAPER_NO_GO')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a172-failed-runtime-guardian-${{ github.sha }}
+          path: evidence/host.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a172"
