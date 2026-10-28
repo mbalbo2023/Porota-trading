@@ -760,7 +760,7 @@ def test_scalar_diagnostic_secrets_and_invalid_amounts_do_not_leak():
     assert "not-a-number" not in html and "NO_VERIFICADO" in html
 
 
-def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client):
+def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client, database):
     placements = client.get("/trading/cauciones")
     assert placements.status_code == 200
     page = BeautifulSoup(placements.text, "html.parser")
