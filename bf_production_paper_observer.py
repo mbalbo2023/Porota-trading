@@ -28,7 +28,6 @@ import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
-from rc6_source_consolidation import collect_public_sources
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
@@ -50,6 +49,8 @@ PUBLIC_CAPTURE_PATH = Path(os.getenv(
     "POROTA_PUBLIC_SOURCE_CAPTURE_PATH",
     "/app/data/market/rc6_public_sources_latest.json",
 ))
+PUBLIC_CAPTURE_MAX_BYTES = 16 * 1024 * 1024
+PUBLIC_CAPTURE_MAX_AGE_SECONDS = max(1800, 3 * PUBLIC_STRUCTURED_CAPTURE_SECONDS)
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
@@ -375,7 +376,45 @@ def _sync_state(store, source, status, items, detail, success=False):
           (source, status, attempted, last_success, int(items), str(detail)[:1000]))
 
 
+def _observe_structured_public_capture(store):
+    """Consume the host's single public-source publication without HTTP/write.
+
+    The host collector is the only writer of rc6_public_sources_latest.json.
+    The observer must not fetch and atomically replace the same file: two
+    independent writers used the same .tmp path and raced every 15 minutes.
+    """
+    try:
+        stat = PUBLIC_CAPTURE_PATH.stat()
+        if not 0 < stat.st_size <= PUBLIC_CAPTURE_MAX_BYTES:
+            raise ValueError("PUBLIC_CAPTURE_SIZE_INVALID")
+        age = time.time() - stat.st_mtime
+        if not -60 <= age <= PUBLIC_CAPTURE_MAX_AGE_SECONDS:
+            raise ValueError("PUBLIC_CAPTURE_MISSING_OR_STALE")
+        result = json.loads(PUBLIC_CAPTURE_PATH.read_text(encoding="utf-8"))
+        if not isinstance(result, dict) or not isinstance(result.get("sources"), list):
+            raise ValueError("PUBLIC_CAPTURE_SCHEMA_INVALID")
+        byma = next((item for item in result["sources"]
+                     if isinstance(item, dict) and item.get("source") == "BYMA"), {})
+        count = int(byma.get("record_count") or 0)
+        if count < 0:
+            raise ValueError("PUBLIC_CAPTURE_COUNT_INVALID")
+        ok = byma.get("status") == "SCRAPED_PUBLIC_DATA"
+        state = "VERDE" if ok else "AMARILLO"
+        detail = (f"Captura pública compartida, sólo lectura: {count} instrumentos; "
+                  f"age_s={int(age)}; SHADOW_ONLY; single_writer=host_collector.")
+        _health(store, "BYMA_STRUCTURED_CAPTURE", state, detail,
+                "BYMA Open Data", success=ok)
+        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", state, count, detail, success=ok)
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        # A missing or stale publication never authorizes market readiness.
+        detail = "PUBLIC_CAPTURE_UNVERIFIED:" + type(exc).__name__
+        _health(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", detail, "BYMA Open Data")
+        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", 0, detail)
+
+
 def _public_probe(store, *, structured=False):
+    if structured:
+        return _observe_structured_public_capture(store)
     sources = (
         ("BYMA_OPEN_DATA", "https://open.bymadata.com.ar/"),
         ("BYMA_WEB", "https://www.byma.com.ar/"),
@@ -404,25 +443,7 @@ def _public_probe(store, *, structured=False):
     _health(store, "BYMA_CALENDAR", "VERDE",
             f"Calendario operativo auditado; fase actual {_market_phase()}.",
             "ak_byma_calendar", success=True)
-    if not structured:
-        return
-    try:
-        result = collect_public_sources()
-        PUBLIC_CAPTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        temporary = PUBLIC_CAPTURE_PATH.with_suffix(PUBLIC_CAPTURE_PATH.suffix + ".tmp")
-        temporary.write_text(json.dumps(result, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-        os.chmod(temporary, 0o644)
-        temporary.replace(PUBLIC_CAPTURE_PATH)
-        byma = next((item for item in result.get("sources", []) if item.get("source") == "BYMA"), {})
-        count = int(byma.get("record_count") or 0)
-        ok = byma.get("status") == "SCRAPED_PUBLIC_DATA"
-        _health(store, "BYMA_STRUCTURED_CAPTURE", "VERDE" if ok else "AMARILLO",
-                f"Captura pública estructurada: {count} instrumentos; SHADOW_ONLY.", "BYMA Open Data", success=ok)
-        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "VERDE" if ok else "AMARILLO", count,
-                    f"Captura estructurada persistida; SHADOW_ONLY.", success=ok)
-    except Exception as exc:
-        _health(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", f"{type(exc).__name__}: {str(exc)[:180]}", "BYMA Open Data")
-        _sync_state(store, "BYMA_STRUCTURED_CAPTURE", "ROJO", 0, f"{type(exc).__name__}: {str(exc)[:180]}")
+    return None
 
 
 def _claim_command(store):
