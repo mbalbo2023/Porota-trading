@@ -42,6 +42,10 @@ def migrate(payload: dict[str, Any], *, migrated_at: str | None = None) -> dict[
         raise ValueError("IOL_REFERENCE_REAL_MONEY_AUTHORIZED")
     if payload.get("decision_effect") not in (None, "OBSERVE_ONLY"):
         raise ValueError("IOL_REFERENCE_DECISION_EFFECT_UNSAFE")
+    if payload.get("fallback_order") not in (None, FALLBACK_ORDER):
+        raise ValueError("IOL_REFERENCE_FALLBACK_CONFLICT")
+    if payload.get("continuation_state") not in (None, CONTINUATION_STATE):
+        raise ValueError("IOL_REFERENCE_CONTINUATION_CONFLICT")
     result = dict(payload)
     result["real_money_authorized"] = False
     result["decision_effect"] = "OBSERVE_ONLY"

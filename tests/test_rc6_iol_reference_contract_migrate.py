@@ -46,3 +46,7 @@ def test_migration_refuses_real_money_authority():
         migration.migrate({"real_money_authorized": True})
     with pytest.raises(ValueError, match="DECISION_EFFECT_UNSAFE"):
         migration.migrate({"decision_effect": "ROUTE"})
+    with pytest.raises(ValueError, match="FALLBACK_CONFLICT"):
+        migration.migrate({"fallback_order": ["IOL_LAST_KNOWN_GOOD"]})
+    with pytest.raises(ValueError, match="CONTINUATION_CONFLICT"):
+        migration.migrate({"continuation_state": "ZERO_FILL"})

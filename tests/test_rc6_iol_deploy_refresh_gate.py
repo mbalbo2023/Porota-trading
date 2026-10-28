@@ -65,7 +65,13 @@ def test_optional_source_failure_has_only_safe_amber_fallback():
         gate.fallback(payload, NOW)
 
 
-def test_fallback_action_records_amber_without_faking_freshness(tmp_path, capsys):
+def test_fallback_action_records_amber_without_faking_freshness(tmp_path, capsys, monkeypatch):
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz or timezone.utc)
+
+    monkeypatch.setattr(gate, "datetime", FixedClock)
     cache = tmp_path / "reference.json"
     cache.write_text(json.dumps(live_payload(65 * 3600)))
     assert gate.main(["--action", "fallback", "--path", str(cache)]) == 0
