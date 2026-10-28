@@ -45,7 +45,8 @@ def _age(value: object, now: datetime) -> float:
 def _contract(payload: dict) -> str:
     if (payload.get("continuation_state") != CONTINUATION_STATE
             or payload.get("fallback_order") != FALLBACK_ORDER
-            or payload.get("real_money_authorized") is True):
+            or payload.get("real_money_authorized") is not False
+            or payload.get("decision_effect") != "OBSERVE_ONLY"):
         raise RefreshGateError("IOL_FAILSAFE_CONTRACT_INVALID")
     sections = payload.get("section_states")
     if not isinstance(sections, dict) or not sections:
@@ -53,8 +54,6 @@ def _contract(payload: dict) -> str:
     state = str(payload.get("cache_state") or "").upper()
     if state not in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"}:
         raise RefreshGateError("IOL_CACHE_STATE_INVALID")
-    if state != "SOURCE_UNAVAILABLE" and not payload.get("last_known_good_at"):
-        raise RefreshGateError("IOL_LKG_MISSING")
     return state
 
 
@@ -85,6 +84,25 @@ def plan(payload: dict, now: datetime) -> str:
             or any(not 0 <= age < REFRESH_AT_SECONDS for age in ages)):
         return "REFRESH_REQUIRED"
     return "FRESH"
+
+
+def fallback(payload: dict, now: datetime) -> str:
+    """Accept only a safe, explicitly degraded optional source after a retry.
+
+    This does not certify a price, LKG or provider sample. Consumers must use
+    their own per-field freshness/identity gates; the deploy records AMBER.
+    """
+    state = _contract(payload)
+    if state == "SOURCE_UNAVAILABLE":
+        return "SOURCE_UNAVAILABLE"
+    try:
+        lkg_age = _age(payload.get("last_known_good_at"), now)
+        refreshed_age = _age(payload.get("refreshed_at"), now)
+    except RefreshGateError:
+        return "SOURCE_UNAVAILABLE"
+    if not 0 <= lkg_age <= 7 * 86400 or not 0 <= refreshed_age:
+        return "SOURCE_UNAVAILABLE"
+    return "CACHE_STALE"
 
 
 def verify(payload: dict, started_at: datetime, now: datetime) -> None:
@@ -123,7 +141,7 @@ def _reference(path: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--action", choices=("plan", "verify"), required=True)
+    parser.add_argument("--action", choices=("plan", "verify", "fallback"), required=True)
     parser.add_argument("--path", type=Path, required=True)
     parser.add_argument("--started-at")
     args = parser.parse_args(argv)
@@ -134,6 +152,11 @@ def main(argv: list[str] | None = None) -> int:
             decision = plan(payload, now)
             print("RC6_IOL_DEPLOY_REFRESH=" + decision)
             return 10 if decision == "REFRESH_REQUIRED" else 0
+        if args.action == "fallback":
+            effective = fallback(payload, now)
+            print("RC6_IOL_DEPLOY_REFRESH=AMBER|effective=" + effective
+                  + "|OPTIONAL_SOURCE_UNVERIFIED|REAL_ROUTES=[]")
+            return 0
         if not args.started_at:
             raise RefreshGateError("IOL_START_TIMESTAMP_MISSING")
         verify(payload, _stamp(args.started_at), now)

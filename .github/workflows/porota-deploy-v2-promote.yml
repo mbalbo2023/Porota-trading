@@ -1671,7 +1671,7 @@ jobs:
           # published a new live provider sample. Recheck because the preopen
           # wait can last 20 minutes; do not invent a timestamp or arm a timer.
           ensure_iol_refresh() {
-            local label="$1" decision rc started_at verified
+            local label="$1" decision rc started_at verified alert cause
             set +e
             decision="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
               --action plan --path "$REPO/data/market/iol_family_reference_latest.json" 2>&1)"
@@ -1686,13 +1686,28 @@ jobs:
               return "$rc"
             fi
             grep -Fxq 'RC6_IOL_DEPLOY_REFRESH=REFRESH_REQUIRED' <<< "$decision"
+            iol_alert() {
+              local cause="$1"
+              # A failed optional source is still an explicit, audited alert.
+              # A broken fallback/no-zero-fill/PAPER contract remains blocking.
+              if ! alert="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+                --action fallback --path "$REPO/data/market/iol_family_reference_latest.json")"; then
+                echo "RC6_IOL_SOURCE_CONTRACT_$label=RED|$alert"
+                return 2
+              fi
+              grep -Fq 'RC6_IOL_DEPLOY_REFRESH=AMBER|effective=' <<< "$alert"
+              echo "RC6_IOL_SOURCE_ALERT_$label=$cause|$alert"
+            }
             started_at="$(date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00)"
             # The reconciled systemd unit hardcodes OBSERVE_ONLY and its own
             # 210s timeout; timeout here bounds the caller as well.
             if ! sudo -n timeout 230 systemctl start porota-iol-shadow-collector-rc6.service; then
-              echo "RC6_IOL_REFRESH_$label=RED|COLLECTOR_SERVICE"
+              echo "RC6_IOL_REFRESH_$label=AMBER|COLLECTOR_SERVICE_FAILED"
+              sudo -n systemctl show porota-iol-shadow-collector-rc6.service \
+                --property=ActiveState,Result,ExecMainStatus,ConditionResult --no-pager || true
               sudo -n systemctl stop porota-iol-shadow-collector-rc6.service || true
-              return 2
+              iol_alert COLLECTOR_SERVICE_FAILED
+              return $?
             fi
             set +e
             verified="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
@@ -1701,7 +1716,10 @@ jobs:
             rc=$?
             set -e
             echo "RC6_IOL_REFRESH_VERIFY_$label=$verified|rc=$rc"
-            return "$rc"
+            if [ "$rc" -eq 0 ]; then
+              return 0
+            fi
+            iol_alert COLLECTOR_SAMPLE_UNPROVEN
           }
           ensure_iol_refresh immediate
 

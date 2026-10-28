@@ -73,7 +73,7 @@ def test_operator_pause_rejects_missing_receipt_without_weakening_other_gates(tm
     assert gate.admission_status(now=datetime.fromisoformat("2026-10-29T11:00:00-03:00"),
                                  candidate_sha="a" * 40,
                                  receipt_path=tmp_path / "missing.json") == (
-                                     False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
+                                     False, "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM")
 
 
 def test_day_28_go_receipt_cannot_unlock_day_29_without_fresh_authority(tmp_path):
@@ -88,7 +88,7 @@ def test_day_28_go_receipt_cannot_unlock_day_29_without_fresh_authority(tmp_path
                                      False, "OPERATOR_PAPER_PAUSE_2026_10_28")
     assert gate.admission_status(now=datetime.fromisoformat("2026-10-29T11:00:00-03:00"),
                                  candidate_sha="a" * 40, receipt_path=receipt) == (
-                                     False, "NO_GO_PAPER_SCALPING")
+                                     False, "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM")
 
 
 def test_future_lifecycle_reserve_mark_variation_close_and_cash(tmp_path):

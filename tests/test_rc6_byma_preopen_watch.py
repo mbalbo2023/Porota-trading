@@ -164,11 +164,12 @@ def test_iol_source_unavailable_is_amber_only_with_complete_fail_safe(tmp_path, 
         "section_states": {"caucion:ARS": "SOURCE_UNAVAILABLE_NO_LKG"},
         "fallback_order": preopen.IOL_FALLBACK_ORDER,
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
     }), encoding="utf-8")
     monkeypatch.setattr(preopen, "IOL_FAMILY_REFERENCE", path)
     row = preopen.iol_reference_state(TODAY)
     assert row["state"] == "AMBER"
-    assert row["reason"] == "CONTINUE_WITH_PPI_BYMA_ALTERNATIVES"
+    assert row["reason"] == "IOL_UNAVAILABLE_WITH_PPI_BYMA_ALTERNATIVES"
     assert row["never_zero_fill"] is True
 
 
@@ -193,6 +194,7 @@ def test_friday_iol_live_label_becomes_bounded_stale_lkg_on_monday(tmp_path, mon
         "section_states": {"caucion:ARS": "LIVE_FRESH"},
         "fallback_order": preopen.IOL_FALLBACK_ORDER,
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
     }
     path.write_text(json.dumps(payload))
     monkeypatch.setattr(preopen, "IOL_FAMILY_REFERENCE", path)
@@ -213,9 +215,44 @@ def test_friday_iol_live_label_becomes_bounded_stale_lkg_on_monday(tmp_path, mon
     assert row["never_zero_fill"] is True
     payload["last_known_good_at"] = "2026-10-18T19:58:58+00:00"
     path.write_text(json.dumps(payload))
-    assert preopen.iol_reference_state(date(2026, 10, 26))["state"] == "RED"
+    row = preopen.iol_reference_state(date(2026, 10, 26))
+    assert row["state"] == "AMBER"
+    assert row["effective_cache_state"] == "SOURCE_UNAVAILABLE"
     payload["last_known_good_at"] = payload["refreshed_at"]
     payload["fallback_order"] = ["IOL_LAST_KNOWN_GOOD"]
+    path.write_text(json.dumps(payload))
+    assert preopen.iol_reference_state(date(2026, 10, 26))["state"] == "RED"
+
+
+def test_iol_legacy_live_label_without_lkg_is_alert_not_deploy_veto(tmp_path, monkeypatch):
+    path = tmp_path / "iol_family_reference_latest.json"
+    path.write_text(json.dumps({
+        "refreshed_at": "2026-10-25T22:42:04+00:00",
+        "last_known_good_at": None, "cache_state": "LIVE_FRESH",
+        "cauciones": {"ARS": [{"term_days": 1}]},
+        "section_states": {"caucion:ARS": "LIVE_FRESH"},
+        "fallback_order": preopen.IOL_FALLBACK_ORDER,
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
+    }))
+    monkeypatch.setattr(preopen, "IOL_FAMILY_REFERENCE", path)
+    original_datetime = preopen.datetime
+
+    class IncidentClock:
+        fromisoformat = staticmethod(original_datetime.fromisoformat)
+
+        @staticmethod
+        def now(tz):
+            return original_datetime.fromisoformat("2026-10-26T10:14:30-03:00")
+
+    monkeypatch.setattr(preopen, "datetime", IncidentClock)
+    row = preopen.iol_reference_state(date(2026, 10, 26))
+    assert row["state"] == "AMBER"
+    assert row["effective_cache_state"] == "SOURCE_UNAVAILABLE"
+    assert 14 * 3600 < row["age_seconds"] < 15 * 3600
+    assert row["last_good_age_seconds"] is None
+    payload = json.loads(path.read_text())
+    payload["continuation_state"] = "ZERO_FILL"
     path.write_text(json.dumps(payload))
     assert preopen.iol_reference_state(date(2026, 10, 26))["state"] == "RED"
 

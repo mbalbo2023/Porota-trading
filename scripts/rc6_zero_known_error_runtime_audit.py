@@ -215,7 +215,9 @@ def _iol_snapshot():
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError("IOL_REFERENCE_UNAVAILABLE") from exc
     continuation = payload.get("continuation_state")
-    if continuation != "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL":
+    if (continuation != "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL"
+            or payload.get("real_money_authorized") is not False
+            or payload.get("decision_effect") != "OBSERVE_ONLY"):
         raise RuntimeError("IOL_CONTINUATION_NOT_FAILSAFE")
     cache_state = str(payload.get("cache_state") or "").upper()
     if cache_state not in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"}:
@@ -223,24 +225,32 @@ def _iol_snapshot():
     fallback = payload.get("fallback_order") or []
     if fallback != IOL_FALLBACK_ORDER:
         raise RuntimeError("IOL_FALLBACK_ORDER_INVALID")
-    if cache_state in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE"} and not payload.get("last_known_good_at"):
-        raise RuntimeError("IOL_LKG_TIMESTAMP_MISSING")
-    if cache_state == "LIVE_FRESH":
-        for field in ("last_known_good_at", "refreshed_at"):
-            try:
-                age = _age_seconds(payload[field])
-            except (KeyError, TypeError, ValueError, OverflowError) as exc:
-                raise RuntimeError(f"IOL_LIVE_FRESH_TIMESTAMP_INVALID|field={field}") from exc
-            if not 0 <= age <= IOL_LIVE_FRESH_MAX_AGE_SECONDS:
-                raise RuntimeError(
-                    "IOL_LIVE_FRESH_STALE|"
-                    f"field={field}|age_seconds={age:.3f}|max={IOL_LIVE_FRESH_MAX_AGE_SECONDS}"
-                )
     sections = payload.get("section_states") or {}
     if not isinstance(sections, dict) or not sections:
         raise RuntimeError("IOL_SECTION_STATES_MISSING")
+    ages = {}
+    for field in ("last_known_good_at", "refreshed_at"):
+        try:
+            ages[field] = _age_seconds(payload.get(field))
+        except (TypeError, ValueError, OverflowError):
+            ages[field] = None
+    live = (cache_state == "LIVE_FRESH" and payload.get("source") == "IOL_MCP"
+            and isinstance(payload.get("live_sections"), list)
+            and any(sections.get(key) == "LIVE_FRESH"
+                    for key in payload["live_sections"])
+            and all(age is not None and 0 <= age <= IOL_LIVE_FRESH_MAX_AGE_SECONDS
+                    for age in ages.values()))
+    lkg = ages["last_known_good_at"]
+    refreshed = ages["refreshed_at"]
+    effective = ("LIVE_FRESH" if live else
+                 "CACHE_STALE" if (lkg is not None and 0 <= lkg <= 7 * 86400
+                                   and refreshed is not None and refreshed >= 0) else
+                 "SOURCE_UNAVAILABLE")
     return {
         "cache_state": cache_state,
+        "effective_cache_state": effective,
+        "state": "GREEN" if live else "AMBER",
+        "alerts": [] if live else ["IOL_OPTIONAL_SOURCE_UNVERIFIED"],
         "last_known_good_at": payload.get("last_known_good_at"),
         "refreshed_at": payload.get("refreshed_at"),
         "continuation_state": continuation,
@@ -439,8 +449,10 @@ def _assert_snapshot(snapshot, baseline=None):
     if baseline:
         prior = baseline["database"]
         previous_lkg = baseline["iol"].get("last_known_good_at")
-        if previous_lkg:
-            assert snapshot["iol"].get("last_known_good_at")
+        if previous_lkg and not snapshot["iol"].get("last_known_good_at"):
+            snapshot["iol"].setdefault("alerts", []).append("IOL_LKG_REGRESSED")
+            snapshot["iol"]["state"] = "AMBER"
+            snapshot["iol"]["effective_cache_state"] = "SOURCE_UNAVAILABLE"
         for worker in ("scalping", "caucion_cash_sweep", "exit_supervisor"):
             assert _stamp(db["workers"][worker]["heartbeat_at"]) >= _stamp(
                 prior["workers"][worker]["heartbeat_at"])
@@ -570,6 +582,9 @@ def main():
     }
     print("POROTA_RUNTIME_AUDIT_EVIDENCE=" + json.dumps(
         evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    if snapshot["iol"].get("state") == "AMBER":
+        print("POROTA_IOL_SOURCE_ALERT=AMBER|" + ",".join(snapshot["iol"]["alerts"]) +
+              "|effective=" + snapshot["iol"]["effective_cache_state"])
     print("POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=GREEN|" + args.label)
     print("ZERO_KNOWN_P0=YES")
     print("ZERO_KNOWN_P1=YES")

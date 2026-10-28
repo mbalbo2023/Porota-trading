@@ -118,6 +118,10 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                     'GREEN_CANNOT_MASK_OPERATOR_PAUSE')
     else:
         raise PreopenRejected('STATUS_NOT_ACCEPTABLE')
+    if local_now.date().isoformat() >= '2026-10-29':
+        require(report.get('paper_admission_hold') ==
+                'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                'PAPER_REARM_HOLD_UNPROVEN')
     return {
         'schema': 'POROTA_DEPLOY_PREOPEN_RESULT_V1', 'accepted': True,
         'preopen_status': status, 'phase': phase,
@@ -125,6 +129,7 @@ def validate_report(report, *, phase, return_code, now, is_operational):
         'readiness_verified': status == 'GREEN',
         'operator_paper_paused': status == 'PAUSED_NO_GO',
         'execution_authorized': False,
+        'paper_admission_hold': report.get('paper_admission_hold'),
         'generated_at_ar': report['generated_at_ar'],
     }
 
