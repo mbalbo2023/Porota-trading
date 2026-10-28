@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -39,16 +40,18 @@ class FingerprintTests(unittest.TestCase):
                 db.execute('CREATE TABLE ' + table + ' (status TEXT)')
         p = patch.object(proof, 'DB', self.db)
         p.start(); self.addCleanup(p.stop)
+        self.names = [f'porota-fixture-{n:02d}.timer' for n in range(15)] + [
+            'porota-iol-oauth-health-rc6.timer']
         self.policy = json.dumps({'units': {
-            f'systemd/porota-fixture-{n:02d}.timer':
-                {'role': 'ACTIVE_TIMER', 'active': True} for n in range(16)
+            'systemd/' + name: {'role': 'ACTIVE_TIMER', 'active': True}
+            for name in self.names
         }}).encode()
-        self.held = {f'porota-fixture-{n:02d}.timer': 'inactive'
-                     for n in range(16)}
+        self.held = {name: 'inactive' for name in self.names}
         self.images = {f'{n:064x}': f'sha256:{n:064x}' for n in (1,2,3)}
         self.calls = []
 
-    def command(self, *args, allowed=(0,)):
+    def command(self, *args, allowed=(0,), timeout=5):
+        self.assertLessEqual(timeout, 5)
         self.calls.append(args)
         if args[:3] == ('docker', 'ps', '-aq'):
             return '\n'.join(self.images)
@@ -77,10 +80,12 @@ class FingerprintTests(unittest.TestCase):
             self.held['porota-fixture-05.timer'] = 'active'
             self.assertNotEqual(proof.fingerprint(self.policy, opener=Opener()), baseline)
             self.held['porota-fixture-05.timer'] = 'inactive'
-            self.held['porota-fixture-05.service'] = 'active'
-            with self.assertRaisesRegex(proof.FingerprintRejected, 'TIMER_SERVICE_WRITER_ACTIVE'):
-                proof.fingerprint(self.policy, opener=Opener())
-            self.held.pop('porota-fixture-05.service')
+            self.held['porota-iol-oauth-health-rc6.service'] = 'active'
+            active_guardian = proof.fingerprint(self.policy, opener=Opener())
+            self.assertNotEqual(active_guardian, baseline)
+            self.assertEqual(proof.fingerprint(self.policy, opener=Opener()),
+                             active_guardian)
+            self.held.pop('porota-iol-oauth-health-rc6.service')
             self.images['2'.zfill(64)] = 'sha256:' + 'f' * 64
             self.assertNotEqual(proof.fingerprint(self.policy, opener=Opener()), baseline)
         self.assertFalse(any(args[:2] in {('systemctl','start'),('systemctl','stop'),
@@ -99,6 +104,28 @@ class FingerprintTests(unittest.TestCase):
             with self.assertRaisesRegex(proof.FingerprintRejected, 'PAPER_POSITION_NOT_FLAT'):
                 proof.fingerprint(self.policy, opener=Opener())
         self.assertEqual(len(baseline), 64)
+
+    def test_readonly_snapshot_accepts_active_iol_guardian_and_continues_gate(self):
+        self.held['porota-iol-oauth-health-rc6.service'] = 'active'
+        with patch.object(proof, 'command', side_effect=self.command), \
+             patch.object(proof.urllib.request, 'build_opener', return_value=Opener()):
+            result = proof.main(['--policy-b64', __import__('base64').b64encode(
+                self.policy).decode()])
+        self.assertEqual(result, 0)
+        self.assertEqual(self.held['porota-iol-oauth-health-rc6.service'], 'active')
+        self.assertFalse(any(args[:2] in {('systemctl','start'),('systemctl','stop'),
+                                          ('docker','rm')} for args in self.calls))
+
+    def test_sqlite_scan_has_progress_budget_even_if_no_open_row(self):
+        with sqlite3.connect(self.db) as db:
+            db.executemany("INSERT INTO paper_positions VALUES ('CLOSED')",
+                           [()] * 20000)
+        start = time.monotonic()
+        with patch.object(proof, 'SQL_BUDGET_SECONDS', 0), \
+             patch.object(proof, 'command', side_effect=self.command):
+            with self.assertRaisesRegex(sqlite3.OperationalError, 'interrupted'):
+                proof.fingerprint(self.policy, opener=Opener())
+        self.assertLess(time.monotonic() - start, 2)
 
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@ import json
 import re
 import sqlite3
 import subprocess
+import time
 import urllib.request
 from pathlib import Path
 
@@ -18,14 +19,16 @@ OWNED = {'porota_production_observer', 'porota_production_dashboard',
          'porota_critical_approval_rc6'}
 EXPECTED_DROPLET_ID = '594077619'
 EXPECTED_REGION = 'nyc1'
+HOST_PROBE_BUDGET_SECONDS = 30
+SQL_BUDGET_SECONDS = 2
 
 
 class FingerprintRejected(RuntimeError):
     pass
 
 
-def command(*args, allowed=(0,)):
-    result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+def command(*args, allowed=(0,), timeout=5):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     if result.returncode not in allowed or len(result.stdout) > 1024 * 1024:
         raise FingerprintRejected('HOST_INVENTORY_FAILED')
     return result.stdout.strip()
@@ -55,29 +58,39 @@ def timer_names(raw):
 
 
 def fingerprint(policy_raw, *, opener=None):
+    host_deadline = time.monotonic() + HOST_PROBE_BUDGET_SECONDS
+    def bounded_command(*args, allowed=(0,)):
+        remaining = host_deadline - time.monotonic()
+        if remaining <= 0:
+            raise FingerprintRejected('HOST_PROBE_BUDGET_EXCEEDED')
+        return command(*args, allowed=allowed, timeout=min(5, remaining))
+
     opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
     if (metadata('id', opener) != EXPECTED_DROPLET_ID or
             metadata('region', opener) != EXPECTED_REGION):
         raise FingerprintRejected('DROPLET_IDENTITY_CHANGED')
     with closing(sqlite3.connect(DB.as_uri() + '?mode=ro', uri=True, timeout=.5)) as db:
         db.execute('PRAGMA query_only=ON')
-        db.execute('PRAGMA busy_timeout=500')
+        db.execute('PRAGMA busy_timeout=200')
+        sql_deadline = min(host_deadline, time.monotonic() + SQL_BUDGET_SECONDS)
+        db.set_progress_handler(lambda: int(time.monotonic() >= sql_deadline), 1000)
         row = db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
         if row != ('PRODUCTION_PAPER', 0) or type(row[1]) is not int:
             raise FingerprintRejected('PAPER_SAFETY_RED')
-        positions = tuple(db.execute('SELECT COUNT(*) FROM ' + table + ' WHERE status=?',
-                                     (status,)).fetchone()[0]
+        positions = tuple(int(db.execute('SELECT 1 FROM ' + table +
+                                         ' WHERE status=? LIMIT 1',
+                                         (status,)).fetchone() is not None)
                           for table, status in (('paper_positions', 'OPEN'),
                                                 ('paper_cauciones', 'OPEN'),
                                                 ('paper_future_positions', 'ACTIVE')))
         if positions != (0, 0, 0):
             raise FingerprintRejected('PAPER_POSITION_NOT_FLAT')
-    ids = command('docker', 'ps', '-aq', '--no-trunc').splitlines()
+    ids = bounded_command('docker', 'ps', '-aq', '--no-trunc').splitlines()
     if len(ids) > 128 or any(re.fullmatch(r'[a-f0-9]{12,64}', cid) is None for cid in ids):
         raise FingerprintRejected('CONTAINER_LIST_INVALID')
     containers = []
     for cid in ids:
-        raw = command('docker', 'inspect', '--format',
+        raw = bounded_command('docker', 'inspect', '--format',
                       '{{json .Id}}|{{json .Name}}|{{json .Image}}|{{json .State.Status}}|{{json .RestartCount}}|{{json .State.StartedAt}}',
                       cid)
         fields = raw.split('|')
@@ -94,25 +107,29 @@ def fingerprint(policy_raw, *, opener=None):
         raise FingerprintRejected('OWNED_CONTAINER_MISSING')
     timers = []
     for name in timer_names(policy_raw):
-        active = command('systemctl', 'is-active', name, allowed=(0, 3))
-        enabled = command('systemctl', 'is-enabled', name, allowed=(0, 1, 3))
-        service = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+        active = bounded_command('systemctl', 'is-active', name, allowed=(0, 3))
+        enabled = bounded_command('systemctl', 'is-enabled', name, allowed=(0, 1, 3))
+        service = bounded_command('systemctl', 'show', name, '-p', 'Unit', '--value')
         if (active not in {'active', 'inactive', 'failed'} or
                 enabled not in {'enabled', 'disabled', 'masked'} or
                 re.fullmatch(r'porota-[a-z0-9-]+\.service', service) is None):
             raise FingerprintRejected('TIMER_STATE_UNKNOWN')
-        service_state = command('systemctl', 'is-active', service, allowed=(0, 3))
-        if service_state not in {'inactive', 'failed'}:
-            raise FingerprintRejected('TIMER_SERVICE_WRITER_ACTIVE')
+        service_state = bounded_command('systemctl', 'is-active', service,
+                                        allowed=(0, 3))
+        if service_state not in {'active', 'inactive', 'failed',
+                                 'activating', 'deactivating'}:
+            raise FingerprintRejected('TIMER_SERVICE_STATE_UNKNOWN')
         timers.append((name, active, enabled, service, service_state))
-    units = command('systemctl', 'list-unit-files', '--no-legend').splitlines()
+    units = bounded_command('systemctl', 'list-unit-files', '--no-legend').splitlines()
     ppi = []
     for line in units:
         tokens = line.split()
         if tokens and {'ppi', 'watch'} <= set(re.split(r'[-_.@]', tokens[0].lower())):
             name = tokens[0]
-            ppi.append((name, command('systemctl', 'is-active', name, allowed=(0, 3)),
-                        command('systemctl', 'is-enabled', name, allowed=(0, 1, 3))))
+            ppi.append((name, bounded_command('systemctl', 'is-active', name,
+                                               allowed=(0, 3)),
+                        bounded_command('systemctl', 'is-enabled', name,
+                                        allowed=(0, 1, 3))))
     state = {'droplet_id': EXPECTED_DROPLET_ID, 'region': EXPECTED_REGION,
              'mode': row[0], 'real_orders_sent': row[1],
              'positions': positions, 'containers': sorted(containers),
