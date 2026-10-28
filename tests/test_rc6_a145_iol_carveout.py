@@ -110,8 +110,17 @@ def test_a169_stopped_hold_adopts_prior_receipt_without_systemd_mutation(
             'a145_pending_proof':{'operator_hold':{'admission':'A151_HELD_OPEN'}}}
     prior=scheduler.ROOT/('scheduler-suspend-'+scheduler.A169_STOPPED_CANDIDATE+'.json')
     prior.write_text(json.dumps(parent))
+    a170_candidate='3'*40
+    a170=dict(parent,candidate_sha=a170_candidate,
+              paused_from=scheduler.A169_STOPPED_CANDIDATE,
+              prior_receipt_sha256=hashlib.sha256(prior.read_bytes()).hexdigest(),
+              a169_origin_sha256='d'*64,a169_stopped_origin=True)
+    a170_path=scheduler.ROOT/('scheduler-suspend-'+a170_candidate+'.json')
+    a170_path.write_text(json.dumps(a170))
     origin_sha='d'*64
     staged=SimpleNamespace(ROOT=tmp_path/'porota',
+                           A170_FAILED_CANDIDATE=a170_candidate,
+                           A170_FAILED_RECEIPT_SHA256='e'*64,
                            A169_PRIOR_RECEIPT_SHA256=origin_sha,
                            a169_prior_a143_stopped_proof=lambda *a,**kw:
                              ({'status':'PRIOR_A143_UNVALIDATED_HELD_STOPPED'},
@@ -121,7 +130,8 @@ def test_a169_stopped_hold_adopts_prior_receipt_without_systemd_mutation(
     receipt=scheduler.run(candidate,'suspend',base64.b64encode(raw).decode())
     assert receipt['status']=='SUSPENDED' and receipt['a169_stopped_origin'] is True
     assert receipt['a169_origin_sha256']==origin_sha
-    assert receipt['paused_from']==scheduler.A169_STOPPED_CANDIDATE
+    assert receipt['paused_from']==a170_candidate
+    assert receipt['a170_origin_sha256']=='e'*64
     assert starts==[]
     assert REAL_REQUIRE_A143_HOLD(candidate)=='A143_STOPPED_UNVALIDATED_HELD_BEFORE_DRAIN'
     assert scheduler.run(candidate,'suspend',base64.b64encode(raw).decode())['status']=='SUSPENDED'

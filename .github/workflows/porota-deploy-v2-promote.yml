@@ -347,7 +347,8 @@ jobs:
               prior,prior_sha,book=candidate.a169_prior_a143_stopped_proof(
                   sys.argv[1],originals,
                   operator_a151_proof=operator.exact_a151_operator_preopen_pause,
-                  operator_timer_disabled=operator.operator_preopen_timer_disabled)
+                  operator_timer_disabled=operator.operator_preopen_timer_disabled,
+                  require_installed_a170_source=True)
               if (prior.get('status')!='PRIOR_A143_UNVALIDATED_HELD_STOPPED' or
                       prior['a143_previous_proof'].get('image_id')!=A143_PENDING_IMAGE_ID or
                       book.get('real_orders_sent')!=0 or

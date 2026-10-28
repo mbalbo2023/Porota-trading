@@ -658,8 +658,10 @@ def require_a143_fix_forward_hold(candidate):
                 candidate,
                 operator_a151_proof=exact_a151_operator_preopen_pause,
                 operator_timer_disabled=operator_preopen_timer_disabled)
-            if (pause.get('paused_from') != A169_STOPPED_CANDIDATE or
+            if (pause.get('paused_from') != q.A170_FAILED_CANDIDATE or
                     pause.get('a169_origin_sha256') != digest or
+                    pause.get('a170_origin_sha256') !=
+                    q.A170_FAILED_RECEIPT_SHA256 or
                     parent.get('status') != 'PRIOR_A143_UNVALIDATED_HELD_STOPPED'):
                 raise ValueError('SCHEDULER_A169_STOPPED_ORIGIN_CHANGED')
             return 'A143_STOPPED_UNVALIDATED_HELD_BEFORE_DRAIN'
@@ -871,9 +873,26 @@ def adopt_a169_stopped_hold(candidate, path, names, digest, before, states):
     parent, origin_sha, book = q.a169_prior_a143_stopped_proof(
         candidate,
         operator_a151_proof=exact_a151_operator_preopen_pause,
-        operator_timer_disabled=operator_preopen_timer_disabled)
+        operator_timer_disabled=operator_preopen_timer_disabled,
+        require_installed_a170_source=True)
     if parent.get('status') != 'PRIOR_A143_UNVALIDATED_HELD_STOPPED' or book.get('real_orders_sent') != 0:
         raise ValueError('SCHEDULER_A169_STOPPED_PAPER_CHANGED')
+    intermediate_path=ROOT/('scheduler-suspend-'+q.A170_FAILED_CANDIDATE+'.json')
+    intermediate,intermediate_sha=_operator_pause_json(intermediate_path,65536)
+    if (intermediate.get('candidate_sha') != q.A170_FAILED_CANDIDATE or
+            intermediate.get('status') != 'SUSPENDED' or
+            intermediate.get('policy_sha256') != digest or
+            intermediate.get('timers') != names or
+            set(intermediate.get('attempted',[])) != set(names) or
+            intermediate.get('ppi_before') != before or
+            intermediate.get('preserved_iol_timer') != IOL_OAUTH_GUARD_TIMER or
+            intermediate.get('operator_pause_timer') != OPERATOR_PREOPEN_TIMER or
+            intermediate.get('operator_pause_receipt_sha256') != historical or
+            intermediate.get('paused_from') != A169_STOPPED_CANDIDATE or
+            intermediate.get('prior_receipt_sha256') != prior_sha or
+            intermediate.get('a169_origin_sha256') != origin_sha or
+            intermediate.get('a169_stopped_origin') is not True):
+        raise ValueError('SCHEDULER_A170_INTERMEDIATE_HOLD_CHANGED')
     for name in names:
         service, code = command('systemctl','show',name,'-p','Unit','--value')
         if (code or service != name.removesuffix('.timer')+'.service' or
@@ -883,10 +902,11 @@ def adopt_a169_stopped_hold(candidate, path, names, digest, before, states):
     _iol_guard_status(('active','enabled'))
     if ppi_snapshot()!=before or not operator_preopen_timer_disabled():
         raise ValueError('SCHEDULER_A169_PPI_OR_OPERATOR_CHANGED')
-    receipt = dict(prior,candidate_sha=candidate,
-                   paused_from=A169_STOPPED_CANDIDATE,
-                   prior_receipt_sha256=prior_sha,
+    receipt = dict(intermediate,candidate_sha=candidate,
+                   paused_from=q.A170_FAILED_CANDIDATE,
+                   prior_receipt_sha256=intermediate_sha,
                    a169_origin_sha256=origin_sha,
+                   a170_origin_sha256=q.A170_FAILED_RECEIPT_SHA256,
                    a169_stopped_origin=True,
                    recorded_at=datetime.now(timezone.utc).isoformat())
     persist(path,receipt)

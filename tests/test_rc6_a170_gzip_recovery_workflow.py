@@ -58,6 +58,7 @@ def test_stopped_state_is_distinct_and_all_guarded_routes_keep_intraday_literal(
         '      - name: Capture exact pre-suspend host fingerprint', 1)[0]
     assert "statuses=={'exited'} and state==('STOPPED','BOOT_CALENDAR')" in classify
     assert 'candidate.a169_prior_a143_stopped_proof(' in classify
+    assert 'require_installed_a170_source=True)' in classify
     assert "print('A151_HELD_STOPPED')" in classify
     assert 'A151_HELD_STOPPED' in workflow.split('Require exact intraday owner authorization', 1)[1]
     assert "A151_HELD_STOPPED) FLAG='--adopt-a143-stopped-pending --a151-held-open'" in workflow
