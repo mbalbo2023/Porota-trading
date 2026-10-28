@@ -11,6 +11,7 @@ back this *new* transaction; the historical ledger remains untouched.
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import datetime, timezone
 from decimal import Decimal
 import hashlib
@@ -30,7 +31,16 @@ from scripts.rc6_caucion_fee_ro_provenance import (
 )
 
 SCHEMA = "RC6_PAPER_CAUCION_PUBLIC_FEE_RESTATEMENT_V1"
+ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
+CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
+INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN"})
+QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
+    "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
+    "CLOSED_A143_PENDING_FIX_FORWARD",
+})
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+POSITIVE = re.compile(r"[1-9][0-9]*\Z")
 EXPECTED_HISTORICAL_ROWS = 6
 MAX_POSITION_ROWS = 10000
 
@@ -61,6 +71,112 @@ def init_restated_schema(db):
     db.execute("""CREATE TRIGGER IF NOT EXISTS paper_caucion_fee_restatements_no_delete
         BEFORE DELETE ON paper_caucion_fee_restatements
         BEGIN SELECT RAISE(ABORT,'PAPER_FEE_RESTATEMENT_APPEND_ONLY'); END""")
+    db.execute("""CREATE TABLE IF NOT EXISTS paper_caucion_fee_restatement_origin (
+        id INTEGER PRIMARY KEY CHECK(id=1), schema TEXT NOT NULL,
+        candidate_sha TEXT NOT NULL, candidate_tree TEXT NOT NULL,
+        deploy_sha TEXT NOT NULL, run_id TEXT NOT NULL, run_attempt TEXT NOT NULL,
+        quiescence_mode TEXT NOT NULL,
+        owner_approval_comment_id INTEGER NOT NULL,
+        owner_deferred_comment_id INTEGER NOT NULL,
+        owner_intraday_comment_id INTEGER,
+        combined_receipt_sha256 TEXT NOT NULL, seal_sha256 TEXT NOT NULL)""")
+    db.execute("""CREATE TRIGGER IF NOT EXISTS paper_caucion_fee_restatement_origin_no_update
+        BEFORE UPDATE ON paper_caucion_fee_restatement_origin
+        BEGIN SELECT RAISE(ABORT,'PAPER_FEE_ORIGIN_APPEND_ONLY'); END""")
+    db.execute("""CREATE TRIGGER IF NOT EXISTS paper_caucion_fee_restatement_origin_no_delete
+        BEFORE DELETE ON paper_caucion_fee_restatement_origin
+        BEGIN SELECT RAISE(ABORT,'PAPER_FEE_ORIGIN_APPEND_ONLY'); END""")
+
+
+def _combined(receipts):
+    return _seal([r["seal_sha256"] for r in receipts])
+
+
+def _origin_payload(origin, candidate_sha, receipts):
+    expected = {"candidate_sha", "candidate_tree", "deploy_sha", "run_id",
+                "run_attempt", "quiescence_mode", "owner_approval_comment_id",
+                "owner_deferred_comment_id", "owner_intraday_comment_id"}
+    if type(origin) is not dict or set(origin) != expected or origin["candidate_sha"] != candidate_sha:
+        raise ValueError("PAPER_RESTATEMENT_DEPLOY_ORIGIN_REQUIRED")
+    if any(type(origin[k]) is not str or SHA.fullmatch(origin[k]) is None
+           for k in ("candidate_sha", "candidate_tree", "deploy_sha")) or any(
+               type(origin[k]) is not str or POSITIVE.fullmatch(origin[k]) is None
+               for k in ("run_id", "run_attempt")) or any(
+                   type(origin[k]) is not int or origin[k] <= 0
+                   for k in ("owner_approval_comment_id", "owner_deferred_comment_id")) or (
+                       origin["owner_approval_comment_id"] == origin["owner_deferred_comment_id"] or
+            type(origin["quiescence_mode"]) is not str or
+            origin["quiescence_mode"] not in QUIESCENCE_MODES):
+        raise ValueError("PAPER_RESTATEMENT_DEPLOY_ORIGIN_INVALID")
+    third = origin["owner_intraday_comment_id"]
+    if origin["quiescence_mode"] in INTRADAY_MODES:
+        if (type(third) is not int or third <= 0 or
+                third in {origin["owner_approval_comment_id"],
+                          origin["owner_deferred_comment_id"]}):
+            raise ValueError("PAPER_RESTATEMENT_INTRADAY_OWNER_REQUIRED")
+    elif third is not None:
+        raise ValueError("PAPER_RESTATEMENT_UNEXPECTED_INTRADAY_OWNER")
+    payload = dict(origin, id=1, schema=ORIGIN_SCHEMA,
+                   combined_receipt_sha256=_combined(receipts))
+    payload["seal_sha256"] = _seal(payload)
+    return payload
+
+
+def _verified_origin(db, receipts):
+    table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                       "AND name='paper_caucion_fee_restatement_origin'").fetchone()
+    if table is None:
+        raise ValueError("PAPER_RESTATEMENT_ORIGIN_MISSING")
+    rows = db.execute("SELECT * FROM paper_caucion_fee_restatement_origin LIMIT 2").fetchall()
+    if len(rows) != 1:
+        raise ValueError("PAPER_RESTATEMENT_ORIGIN_COUNT_RED")
+    row = dict(rows[0])
+    keys = {"id", "schema", "combined_receipt_sha256", "seal_sha256",
+            "candidate_sha", "candidate_tree", "deploy_sha", "run_id", "run_attempt",
+            "quiescence_mode", "owner_approval_comment_id", "owner_deferred_comment_id",
+            "owner_intraday_comment_id"}
+    if set(row) != keys:
+        raise ValueError("PAPER_RESTATEMENT_ORIGIN_COLUMNS_RED")
+    payload = _origin_payload({k: row[k] for k in keys if k not in
+                              {"id", "schema", "combined_receipt_sha256", "seal_sha256"}},
+                              row["candidate_sha"], receipts)
+    if row != payload or any(r["candidate_sha"] != row["candidate_sha"] for r in receipts):
+        raise ValueError("PAPER_RESTATEMENT_ORIGIN_TAMPERED")
+    return row
+
+
+def _verify_continuity(origin, candidate_sha, proof, receipt_dir, known_at):
+    if (type(proof) is not dict or set(proof) != {"schema", "new_candidate_sha",
+            "prior_origin_seal_sha256", "prior_receipt_sha256", "prior_run_conclusion",
+            "prior_workflow_path"} or proof.get("schema") != CONTINUITY_SCHEMA or
+            proof.get("new_candidate_sha") != candidate_sha or
+            proof.get("prior_origin_seal_sha256") != origin["seal_sha256"] or
+            proof.get("prior_run_conclusion") != "failure" or
+            proof.get("prior_workflow_path") != ".github/workflows/porota-deploy-v2-promote.yml" or
+            type(proof.get("prior_receipt_sha256")) is not str or
+            SHA256.fullmatch(proof["prior_receipt_sha256"]) is None):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_DEPLOY_PROOF_RED")
+    directory = Path(receipt_dir) if receipt_dir is not None else None
+    path = directory / ("quiescence-" + origin["candidate_sha"] + ".json") if directory else None
+    if (path is None or path.is_symlink() or not path.is_file() or
+            path.stat().st_size > 65536 or path.stat().st_nlink != 1):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != proof["prior_receipt_sha256"]:
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_CHANGED")
+    receipt = json.loads(raw, parse_constant=_invalid_constant)
+    if (type(receipt) is not dict or receipt.get("candidate_sha") != origin["candidate_sha"] or
+            receipt.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
+            receipt.get("installation_started") is not True or
+            type(receipt.get("real_orders_sent")) is not int or
+            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False or
+            receipt.get("market_open_suspended") is not (
+                origin["quiescence_mode"] in INTRADAY_MODES)):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
+    at = datetime.fromisoformat(receipt["recorded_at"])
+    if (at.tzinfo is None or at.utcoffset() is None or
+            at < datetime.fromisoformat(known_at) or at > datetime.now(timezone.utc)):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_CLOCK_RED")
 
 
 def _workspace_identity(db):
@@ -183,12 +299,19 @@ def read_verified_restated_fees(db):
             legacy_count += payload.get("fee_authority") == LEGACY_AUTHORITY
         table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
                            "AND name='paper_caucion_fee_restatements'").fetchone()
+        origin_table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                  "AND name='paper_caucion_fee_restatement_origin'").fetchone()
+        if bool(table) != bool(origin_table):
+            raise ValueError("RESTATEMENT_ORIGIN_TABLE_PARTIAL")
         if not legacy_count and table is None:
             return {}
         if table is None:
             raise ValueError("RESTATEMENT_TABLE_MISSING")
-        records = db.execute("SELECT * FROM paper_caucion_fee_restatements ORDER BY paper_id").fetchall()
+        records = db.execute("SELECT * FROM paper_caucion_fee_restatements "
+                             "ORDER BY paper_id LIMIT 7").fetchall()
         if not legacy_count and not records:
+            if db.execute("SELECT 1 FROM paper_caucion_fee_restatement_origin LIMIT 1").fetchone():
+                raise ValueError("RESTATEMENT_ORPHAN_ORIGIN")
             return {}
         if legacy_count != EXPECTED_HISTORICAL_ROWS or len(records) != EXPECTED_HISTORICAL_ROWS:
             raise ValueError("RESTATEMENT_INCOMPLETE")
@@ -197,12 +320,14 @@ def read_verified_restated_fees(db):
         wanted = expected_restated_receipts(db, receipt_sha, known_at, require_flat=False)
         if not _rows_match(records, wanted):
             raise ValueError("RESTATEMENT_TAMPERED_OR_WRONG_VERSION")
+        _verified_origin(db, wanted)
         return {r["paper_id"]: dict(r) for r in records}
     except (sqlite3.Error, TypeError, ValueError, KeyError, OverflowError) as exc:
         raise ValueError("CAUCION_RESTATEMENT_INVALID: " + str(exc)) from exc
 
 
-def apply_restatement(db_path, candidate_sha, *, now=None):
+def apply_restatement(db_path, candidate_sha, *, now=None, origin=None,
+                      continuity_proof=None, receipt_dir=None):
     """Atomic idempotent insertion. Returns counters/hashes, never IDs or cash."""
     path = Path(db_path)
     if path.is_symlink() or not path.is_file():
@@ -215,37 +340,53 @@ def apply_restatement(db_path, candidate_sha, *, now=None):
         # DDL is transactional too: a failed proof leaves NO partial table or
         # receipts behind, unlike sqlite3.executescript's implicit commit.
         init_restated_schema(db)
-        existing = db.execute("SELECT * FROM paper_caucion_fee_restatements ORDER BY paper_id").fetchall()
+        existing = db.execute("SELECT * FROM paper_caucion_fee_restatements "
+                              "ORDER BY paper_id LIMIT 7").fetchall()
         if existing:
             if len(existing) != EXPECTED_HISTORICAL_ROWS:
                 raise ValueError("PAPER_RESTATEMENT_PARTIAL_RED")
             # Idempotent verification uses original known_at and SHA. Never
             # silently rebook a newer model or change known-at chronology.
             first = existing[0]
-            if first["candidate_sha"] != candidate_sha:
-                raise ValueError("PAPER_RESTATEMENT_EXACT_CANDIDATE_REQUIRED")
             wanted = expected_restated_receipts(
                 db, first["candidate_sha"], first["known_at_utc"])
             if not _rows_match(existing, wanted):
                 raise ValueError("PAPER_RESTATEMENT_EXISTING_RECEIPT_INVALID")
+            saved_origin = _verified_origin(db, wanted)
+            if first["candidate_sha"] != candidate_sha:
+                _verify_continuity(saved_origin, candidate_sha, continuity_proof,
+                                   receipt_dir, wanted[0]["known_at_utc"])
+            elif continuity_proof is not None:
+                raise ValueError("PAPER_RESTATEMENT_UNNEEDED_CONTINUITY_PROOF")
             inserted = 0
         else:
+            if continuity_proof is not None:
+                raise ValueError("PAPER_RESTATEMENT_UNNEEDED_CONTINUITY_PROOF")
             wanted = expected_restated_receipts(db, candidate_sha, now.isoformat())
+            saved_origin = _origin_payload(origin, candidate_sha, wanted)
             columns = tuple(wanted[0])
             statement = ("INSERT INTO paper_caucion_fee_restatements (" + ",".join(columns)
                          + ") VALUES(" + ",".join("?" for _ in columns) + ")")
             for receipt in wanted:
                 db.execute(statement, tuple(receipt[name] for name in columns))
+            origin_columns = tuple(saved_origin)
+            db.execute("INSERT INTO paper_caucion_fee_restatement_origin (" +
+                       ",".join(origin_columns) + ") VALUES(" +
+                       ",".join("?" for _ in origin_columns) + ")",
+                       tuple(saved_origin[name] for name in origin_columns))
             inserted = len(wanted)
         result = {"schema": SCHEMA, "status": "GREEN", "receipts": len(wanted),
                   "inserted": inserted, "old_positions_untouched": True,
+                  "origin_candidate_sha": saved_origin["candidate_sha"],
+                  "continuity_adopted": saved_origin["candidate_sha"] != candidate_sha,
                   "broker_account_fees_verified": False,
                   "modeled_fee_adjustments_nonnegative": True,
-                  "combined_receipt_sha256": _seal([r["seal_sha256"] for r in wanted])}
+                  "combined_receipt_sha256": _combined(wanted)}
     return result
 
 
-def preflight_restatement(db_path, candidate_sha, *, now=None):
+def preflight_restatement(db_path, candidate_sha, *, now=None,
+                          continuity_proof=None, receipt_dir=None):
     """Strict SQLite READ ONLY proof before any receipt-writing transition.
 
     This is an incident-specific six-row gate, not a PPI tariff certificate.
@@ -267,12 +408,21 @@ def preflight_restatement(db_path, candidate_sha, *, now=None):
         existing = read_verified_restated_fees(db) if table else {}
         if existing and set(existing) != {receipt['paper_id'] for receipt in wanted}:
             raise ValueError("PAPER_RESTATEMENT_EXISTING_SET_MISMATCH")
-        if existing and any(row['candidate_sha'] != candidate_sha for row in existing.values()):
-            # A future candidate needs an explicit versioned adoption contract,
-            # never silent reuse of another SHA's financial mutation receipt.
-            raise ValueError("PAPER_RESTATEMENT_EXACT_CANDIDATE_REQUIRED")
+        origin_candidate = candidate_sha
+        if existing:
+            origin_candidate = next(iter(existing.values()))["candidate_sha"]
+            origin = _verified_origin(db, list(existing.values()))
+            if origin_candidate != candidate_sha:
+                _verify_continuity(origin, candidate_sha, continuity_proof,
+                                   receipt_dir, next(iter(existing.values()))["known_at_utc"])
+            elif continuity_proof is not None:
+                raise ValueError("PAPER_RESTATEMENT_UNNEEDED_CONTINUITY_PROOF")
+        elif continuity_proof is not None:
+            raise ValueError("PAPER_RESTATEMENT_UNNEEDED_CONTINUITY_PROOF")
         return {"schema": SCHEMA + "_PREFLIGHT", "status": "GREEN", "read_only": True,
                 "receipts_expected": len(wanted), "previously_applied": bool(existing),
+                "origin_candidate_sha": origin_candidate,
+                "continuity_adopted": origin_candidate != candidate_sha,
                 "paper_book_flat": True, "broker_account_fees_verified": False,
                 "modeled_fee_adjustments_nonnegative": True,
                 "source_pdf_sha256": SOURCE_SHA256}
@@ -282,10 +432,33 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", required=True)
     parser.add_argument("--candidate-sha", required=True)
+    parser.add_argument("--deploy-sha")
+    parser.add_argument("--candidate-tree")
+    parser.add_argument("--run-id")
+    parser.add_argument("--run-attempt")
+    parser.add_argument("--quiescence-mode")
+    parser.add_argument("--owner-approval-comment-id", type=int)
+    parser.add_argument("--owner-deferred-comment-id", type=int)
+    parser.add_argument("--owner-intraday-comment-id", type=int)
+    parser.add_argument("--continuity-proof-b64", default="")
+    parser.add_argument("--receipt-dir")
     command = parser.add_mutually_exclusive_group(required=True)
     command.add_argument("--apply", action="store_true")
     command.add_argument("--plan", action="store_true")
     args = parser.parse_args()
-    result = (apply_restatement(args.db, args.candidate_sha) if args.apply
-              else preflight_restatement(args.db, args.candidate_sha))
+    if len(args.continuity_proof_b64) > 8192:
+        raise ValueError("PAPER_RESTATEMENT_CONTINUITY_PROOF_BOUND")
+    proof = json.loads(base64.b64decode(args.continuity_proof_b64, validate=True)) if (
+        args.continuity_proof_b64) else None
+    origin = {"candidate_sha": args.candidate_sha, "candidate_tree": args.candidate_tree,
+              "deploy_sha": args.deploy_sha, "run_id": args.run_id,
+              "run_attempt": args.run_attempt, "quiescence_mode": args.quiescence_mode,
+              "owner_approval_comment_id": args.owner_approval_comment_id,
+              "owner_deferred_comment_id": args.owner_deferred_comment_id,
+              "owner_intraday_comment_id": args.owner_intraday_comment_id}
+    result = (apply_restatement(args.db, args.candidate_sha, origin=origin,
+                                continuity_proof=proof, receipt_dir=args.receipt_dir)
+              if args.apply else preflight_restatement(
+                  args.db, args.candidate_sha, continuity_proof=proof,
+                  receipt_dir=args.receipt_dir))
     print(json.dumps(result, sort_keys=True))

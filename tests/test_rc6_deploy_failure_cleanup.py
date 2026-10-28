@@ -289,6 +289,7 @@ class FailureCleanupTests(unittest.TestCase):
         pre = workflow.split('      - name: Account pre-suspend failure without recovery or timer writes', 1)[1].split('      - name:', 1)[0]
         full = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         outcomes = {'host_reconcile': 'success', 'classify': 'failure',
+                    'a151_intraday_auth': 'skipped',
                     'pre_suspend_snapshot': 'skipped', 'diskguard': 'skipped',
                     'suspend': 'skipped', 'drain': 'skipped',
                     'transfer': 'skipped', 'promotion': 'skipped',
@@ -298,7 +299,7 @@ class FailureCleanupTests(unittest.TestCase):
 
         def selected(block):
             expression = block.split('if: ${{', 1)[1].split('}}', 1)[0]
-            expression = re.sub(r"steps\.([a-z_]+)\.outcome == '([a-z]+)'",
+            expression = re.sub(r"steps\.([a-z0-9_]+)\.outcome == '([a-z]+)'",
                                 lambda match: str(outcomes[match[1]] == match[2]),
                                 expression)
             expression = expression.replace('always()', 'True').replace('&&', ' and ').replace('||', ' or ')
@@ -336,6 +337,10 @@ print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
         self.assertTrue(selected(pre))
         self.assertFalse(selected(full))
         retire = workflow.split('      - name: Retire only unchanged own pre-suspend attempt barrier', 1)[1].split('      - name:', 1)[0]
+        outcomes.update(a151_intraday_auth='failure', diskguard='skipped')
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        self.assertIn("steps.a151_intraday_auth.outcome == 'failure'", retire)
         self.assertIn("steps.diskguard.outcome == 'failure'", retire)
         self.assertIn("steps.suspend.outcome == 'skipped'", retire)
         self.assertIn("steps.pre_suspend_account.outcome == 'success'", retire)

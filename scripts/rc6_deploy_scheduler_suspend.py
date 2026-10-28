@@ -628,8 +628,12 @@ def a143_staged_module():
     return module
 
 
-def a143_staged_pending_proof():
-    return a143_staged_module().a143_pending_running_proof()
+def a143_staged_pending_proof(*, held_continuation=None):
+    return a143_staged_module().a143_pending_running_proof(
+        allow_a151_held_open=True,
+        operator_a151_proof=exact_a151_operator_preopen_pause,
+        operator_timer_disabled=operator_preopen_timer_disabled,
+        held_continuation=held_continuation)
 
 
 def require_a143_fix_forward_hold(candidate):
@@ -637,7 +641,20 @@ def require_a143_fix_forward_hold(candidate):
     q = a143_staged_module()
     path = q.ROOT/'data/deploy'/('quiescence-'+candidate+'.json')
     if not path.exists():
-        q.a143_pending_running_proof()
+        # The installed #751 helper only knows postclose. Use the staged
+        # candidate source and the exact A151 verifier on an intraday hold.
+        pause_path = ROOT/('scheduler-suspend-'+candidate+'.json')
+        pause, _ = _operator_pause_json(pause_path,65536)
+        if (pause.get('candidate_sha') != candidate or
+                pause.get('status') != 'SUSPENDED' or
+                pause.get('preserved_iol_timer') != IOL_OAUTH_GUARD_TIMER):
+            raise ValueError('SCHEDULER_A151_HOLD_RECEIPT_RED')
+        previous = pause.get('a145_pending_proof')
+        held = previous.get('operator_hold') if type(previous) is dict else None
+        # A cleanup from a 16:59 stop may cross 17:00. Recheck the same A151
+        # receipt and live flat #751 pair until the independent 20:00 close;
+        # this continuation cannot admit a fresh drain or reactivate timers.
+        a143_staged_pending_proof(held_continuation=held)
         return 'A143_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
     receipt,_ = q._a143_exact_json(path,65536)
     if (receipt.get('candidate_sha') != candidate or
@@ -650,7 +667,10 @@ def require_a143_fix_forward_hold(candidate):
     if receipt.get('installation_started') is False:
         if receipt.get('status') in {'DRAINED',
                                      'PRIOR_A143_UNVALIDATED_HELD_STOPPED'}:
-            q.a143_stopped_continuation(receipt)
+            q.a143_stopped_continuation(
+                receipt,
+                operator_a151_proof=exact_a151_operator_preopen_pause,
+                operator_timer_disabled=operator_preopen_timer_disabled)
             return 'A143_PRIOR_UNVALIDATED_STOPPED_HELD'
         if receipt.get('status') == 'DRAINING':
             # Any interrupted stop intent is uncertain; never restart.

@@ -11,7 +11,7 @@ import sqlite3
 
 from bl_candle_engine import fingerprint, stamp
 from bs_instrument_contracts import decimal_value
-from bt_caucion_paper import CaucionOffer, offer_payload, validate_position
+from bt_caucion_paper import CaucionOffer, money, offer_payload, validate_position
 from ca_caucion_allocator import CaucionPolicy, encoded, selection_key, _paper_tariff_authorized
 
 
@@ -27,6 +27,13 @@ def _json(value):
 
 
 def _validated(row, connection):
+    from rc6_caucion_fee_model import old_public_modeled_fee
+    from scripts.rc6_caucion_fee_restatement_apply import read_verified_restated_fees
+    from scripts.rc6_caucion_fee_ro_provenance import LEGACY_AUTHORITY
+    # The reader validates all six immutable receipts and their original rows
+    # in this same SQLite snapshot before exposing even a historical decision.
+    # Without the whole set the page suppresses every amount.
+    restated = read_verified_restated_fees(connection)
     decision = _json(row['decision_json'])
     _require(isinstance(decision, dict), 'INVALID_DECISION')
     _require(decision['mode'] == 'PAPER_CAUCION_PLAN'
@@ -48,13 +55,25 @@ def _validated(row, connection):
     _require(participation <= policy.participation, 'PARTICIPATION_MISMATCH')
     _require(isinstance(manifest['offers'], list) and isinstance(decision['candidates'], list),
              'INVALID_CANDIDATES')
-    offers = {}
+    offers, historical = {}, set()
     for payload in manifest['offers']:
-        offer = CaucionOffer(**payload)
-        _require(offer_payload(offer) == payload, 'NON_CANONICAL_OFFER')
-        key = fingerprint(offer_payload(offer))
+        legacy = isinstance(payload, dict) and payload.get('fee_authority') == LEGACY_AUTHORITY
+        if legacy:
+            _require(row['paper_id'] in restated and decision['status'] == 'PLACED_SIMULATED',
+                     'HISTORICAL_FEE_RECEIPT_REQUIRED')
+            # Construct only for term validation. Never install the retired fee
+            # authority in a current offer, and never price it with today's fee.
+            offer = CaucionOffer(**(payload | {'fee_authority': None}))
+            canonical = offer_payload(offer) | {'fee_authority': LEGACY_AUTHORITY}
+        else:
+            offer = CaucionOffer(**payload)
+            canonical = offer_payload(offer)
+        _require(canonical == payload, 'NON_CANONICAL_OFFER')
+        key = fingerprint(payload)
         _require(key not in offers, 'DUPLICATE_OFFER')
         offers[key] = offer
+        if legacy:
+            historical.add(key)
     candidates = {}
     for candidate in decision['candidates']:
         key = candidate['candidate_id']
@@ -70,10 +89,20 @@ def _validated(row, connection):
             # computes it within policy limits and economics() prices it.
             cost_authorized = (principal == offer.fee_quote_principal
                                if offer.quoted_total_fees is not None else
-                               offer.fee_quote_principal is None and _paper_tariff_authorized(offer))
+                               offer.fee_quote_principal is None and
+                               (key in historical or _paper_tariff_authorized(offer)))
             _require(cost_authorized and offer.currency == policy.currency,
                      'ELIGIBLE_TERMS_MISMATCH')
-            interest, fees, net = offer.economics(principal)
+            if key in historical:
+                _require(principal == money(principal) and principal % offer.principal_step == 0
+                         and offer.minimum_principal <= principal <= offer.available_principal,
+                         'HISTORICAL_PRINCIPAL_INVALID')
+                interest = money(principal * offer.annual_rate_fraction * offer.interest_days
+                                 / offer.day_count_basis)
+                fees = old_public_modeled_fee(principal, offer.interest_days)
+                net = interest - fees
+            else:
+                interest, fees, net = offer.economics(principal)
             debit = principal + (fees if offer.fee_payment == 'UPFRONT' else Decimal(0))
             expected = encoded(dict(gross_interest=interest, fees=fees, net_profit=net,
                 cash_debit=debit, net_return_per_day=net/debit/offer.interest_days))
@@ -109,13 +138,30 @@ def _validated(row, connection):
     for field, value in (('principal', selected['principal']), ('gross_interest', selected['gross_interest']),
                          ('total_fees', selected['fees']), ('annual_rate_fraction', offer.annual_rate_fraction)):
         _require(decimal_value(placement[field], field) == Decimal(value), 'LEDGER_AMOUNT_MISMATCH')
-    _require(offer_payload(CaucionOffer(**_json(placement['terms_json']))) == offer_payload(offer),
-             'LEDGER_OFFER_MISMATCH')
+    terms = _json(placement['terms_json'])
+    original_offer = next(p for p in manifest['offers'] if fingerprint(p) == selected['candidate_id'])
+    _require(terms == original_offer, 'LEDGER_OFFER_MISMATCH')
     _require((placement['status'] == 'OPEN' and placement['settled_at'] is None)
              or (placement['status'] == 'MATURED' and placement['settled_at'] is not None
                  and stamp(placement['settled_at']) >= stamp(placement['maturity_at'])), 'LEDGER_STATE_MISMATCH')
-    validate_position(placement)
-    return decision, {k:placement[k] for k in ('paper_id','status','opened_at','maturity_at','settled_at')}
+    result = {k:placement[k] for k in ('paper_id','status','opened_at','maturity_at','settled_at')}
+    if selected['candidate_id'] in historical:
+        receipt = restated.get(placement['paper_id'])
+        _require(receipt is not None and receipt['original_total_fees'] == placement['total_fees']
+                 and receipt['broker_account_fees_verified'] == 0,
+                 'HISTORICAL_FEE_RECEIPT_MISMATCH')
+        effective = decimal_value(receipt['effective_total_fees'], 'costo público', nonnegative=True)
+        original = decimal_value(placement['total_fees'], 'costo histórico', nonnegative=True)
+        _require(effective >= original, 'HISTORICAL_FEE_COULD_INCREASE_PNL')
+        result.update(fee_evidence_scope='PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED',
+                      original_total_fees=placement['total_fees'],
+                      effective_total_fees=receipt['effective_total_fees'],
+                      effective_net_profit=encoded(decimal_value(placement['gross_interest'], 'interés')-effective),
+                      fee_known_at_utc=receipt['known_at_utc'], fee_model=receipt['model'],
+                      broker_account_fees_verified=False)
+    else:
+        validate_position(placement)
+    return decision, result
 
 
 def allocation_history(path, *, limit=25, offset=0, require_workspace=False):

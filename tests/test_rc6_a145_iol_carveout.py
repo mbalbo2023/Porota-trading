@@ -6,6 +6,7 @@ import hashlib
 import json
 import subprocess
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,8 @@ from scripts import rc6_deploy_scheduler_suspend as scheduler
 from scripts.porota_host_policy_v2 import validate_policy
 from scripts.porota_apply_host_control_plane_v2 import build_plan
 from scripts import porota_apply_host_control_plane_v2 as host
+
+REAL_REQUIRE_A143_HOLD = scheduler.require_a143_fix_forward_hold
 
 
 def policy16():
@@ -111,6 +114,68 @@ def test_a145_exact_old16_hold_migrates_once_to_15_plus_guard(hold16):
     assert scheduler.run(target,'restore',base64.b64encode(raw).decode())['status']=='RESTORED'
     assert starts.count(scheduler.IOL_OAUTH_GUARD_TIMER)==1
     assert states[scheduler.OPERATOR_PREOPEN_TIMER]==['inactive','disabled']
+
+
+def test_a151_held_open_ppi_watch_drift_cannot_start_oauth_guard(
+        hold16,monkeypatch):
+    raw,_,_,starts,_=hold16
+    snapshots=iter([[],[['ppi-watch.service','enabled','active']]])
+    monkeypatch.setattr(scheduler,'ppi_snapshot',lambda:next(snapshots))
+    with pytest.raises(ValueError,match='PPI_WATCH_CHANGED'):
+        scheduler.run('f'*40,'suspend',base64.b64encode(raw).decode())
+    assert starts==[]
+
+
+def test_a151_failed_pre_drain_cleanup_reuses_only_exact_prior_hold(
+        hold16,monkeypatch,tmp_path):
+    _,_,_,_,_=hold16
+    from scripts import rc6_deploy_quiescence as quiescence
+    candidate='f'*40
+    pause=scheduler.ROOT/('scheduler-suspend-'+candidate+'.json')
+    held={'admission':'A151_HELD_OPEN','operator_receipt_sha256':'e'*64,
+          'operator_operation_id':'A151-40686116017-1',
+          'business_day_art':'2026-10-28','paper_execution_authorized':False}
+    pause.write_text(json.dumps({'candidate_sha':candidate,'status':'SUSPENDED',
+        'preserved_iol_timer':scheduler.IOL_OAUTH_GUARD_TIMER,
+        'a145_pending_proof':{'operator_hold':held}}))
+    monkeypatch.setattr(quiescence,'ROOT',tmp_path)
+    monkeypatch.setattr(scheduler,'a143_staged_module',lambda:quiescence)
+    monkeypatch.setattr(scheduler,'require_a143_fix_forward_hold',REAL_REQUIRE_A143_HOLD)
+    seen=[]
+    monkeypatch.setattr(scheduler,'a143_staged_pending_proof',lambda **kw:
+                        seen.append(kw['held_continuation']))
+    assert scheduler.require_a143_fix_forward_hold(candidate)== \
+           'A143_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
+    assert seen==[held]
+    pause.write_text(json.dumps({'candidate_sha':candidate,'status':'RESTORED',
+        'preserved_iol_timer':scheduler.IOL_OAUTH_GUARD_TIMER,
+        'a145_pending_proof':{'operator_hold':held}}))
+    with pytest.raises(ValueError,match='HOLD_RECEIPT_RED'):
+        scheduler.require_a143_fix_forward_hold(candidate)
+
+
+def test_a151_failed_post_drain_cleanup_uses_staged_operator_verifier(
+        tmp_path,monkeypatch):
+    candidate='f'*40
+    folder=tmp_path/'data/deploy';folder.mkdir(parents=True)
+    (folder/('quiescence-'+candidate+'.json')).write_text('{}')
+    receipt={'candidate_sha':candidate,'a143_pending_adopted':True,
+             'real_orders_sent':0,'ppi_watch_accessed':False,
+             'containers':{'porota_production_observer':{},
+                           'porota_production_dashboard':{}},
+             'installation_started':False,'status':'DRAINED'}
+    seen=[]
+    staged=SimpleNamespace(ROOT=tmp_path,OWNED=tuple(receipt['containers']),
+        _a143_exact_json=lambda *_:(receipt,'e'*64),
+        inspect=lambda name:{'State':{'Status':'exited'}},
+        a143_stopped_continuation=lambda row,**kw:seen.append((row,kw)))
+    monkeypatch.setattr(scheduler,'a143_staged_module',lambda:staged)
+    monkeypatch.setattr(scheduler,'require_a143_fix_forward_hold',REAL_REQUIRE_A143_HOLD)
+    assert scheduler.require_a143_fix_forward_hold(candidate)== \
+           'A143_PRIOR_UNVALIDATED_STOPPED_HELD'
+    assert seen[0][0] is receipt
+    assert seen[0][1]['operator_a151_proof'] is scheduler.exact_a151_operator_preopen_pause
+    assert seen[0][1]['operator_timer_disabled'] is scheduler.operator_preopen_timer_disabled
 
 
 @pytest.mark.parametrize('mutation', [
