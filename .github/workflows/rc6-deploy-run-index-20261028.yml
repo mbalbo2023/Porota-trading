@@ -1,0 +1,55 @@
+name: RC6 canonical Deploy V2 exact run index
+
+on:
+  push:
+    branches: [diagnostic/rc6-iol-source-health-ro-20261028]
+    paths: [.github/workflows/rc6-deploy-run-index-20261028.yml]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  index:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_MERGE_SHA: aef17ca4bf8401ec85635541615500346ff33981
+      EXPECTED_CANDIDATE_SHA: f1a565d9a08e153b93d75d2e3586b4ecdd0845ef
+    steps:
+      - name: Locate canonical Deploy V2 push run and record exact ID
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.parse,urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']
+          base=f'https://api.github.com/repos/{repo}'
+          token=os.environ['GH_TOKEN']
+          def api(path,body=None):
+              request=urllib.request.Request(base+path,
+                  data=json.dumps(body).encode() if body is not None else None,
+                  headers={'Authorization':'Bearer '+token,
+                           'Accept':'application/vnd.github+json',
+                           'Content-Type':'application/json'},
+                  method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(request,timeout=20) as response:
+                  return json.load(response)
+          branch=urllib.parse.quote('deploy/rc6-pr69-isolated-20260915',safe='')
+          run=None
+          for _ in range(10):
+              rows=api('/actions/workflows/porota-deploy-v2-promote.yml/runs?branch='+branch+'&per_page=10')
+              run=next((r for r in rows.get('workflow_runs',[])
+                        if r.get('head_sha')==os.environ['EXPECTED_MERGE_SHA']),None)
+              if run:
+                  break
+              time.sleep(12)
+          if run is None:
+              raise SystemExit('RC6_CANONICAL_DEPLOY_RUN_NOT_FOUND')
+          body=(f'RC6 canonical Deploy V2 exact run index for candidate `{os.environ["EXPECTED_CANDIDATE_SHA"]}` '
+                f'and merge `{os.environ["EXPECTED_MERGE_SHA"]}`.\n\n'
+                f'- Run: {run["html_url"]}\n- Initial status: `{run["status"]}` / `{run.get("conclusion")}`.\n'
+                '- This indexer makes no host request; runtime GREEN must come from the Deploy job and separate validation.')
+          api('/issues/732/comments',{'body':body})
+          print(f'RC6_CANONICAL_DEPLOY_RUN_ID={run["id"]}|STATUS={run["status"]}')
+          PY
