@@ -99,8 +99,15 @@ def read_lock():
 
 def bounded_command(*argv):
     try:
+        # Host timing Action #40749360821 observed the full 465-unit listing
+        # at 1.229/1.369/1.615 s. The former 1.5 s cap could return 124 and
+        # falsely classify read-only PPI enumeration as a safety failure.
+        # Only this exact read-only listing gets the longer bounded budget;
+        # every other systemctl query stays at 1.5 s.
+        budget = (6 if argv == ('systemctl', 'list-unit-files', '--no-legend')
+                  else 1.5)
         result = subprocess.run(argv, capture_output=True, text=True,
-                                timeout=1.5, check=False)
+                                timeout=budget, check=False)
         if len(result.stdout) > 65536:
             raise ValueError('SYSTEMCTL_OUTPUT_BOUND_RED')
         return result.stdout.strip(), result.returncode

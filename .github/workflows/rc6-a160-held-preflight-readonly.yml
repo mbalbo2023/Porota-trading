@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: write
 
 concurrency:
   group: rc6-unified-paper-deploy
@@ -110,6 +111,35 @@ jobs:
                  os.environ['RC6_INTERIM_NONPROMOTABLE']=='true' else
                  'FINAL_CANDIDATE_PREFLIGHT')
           print('RC6_A160_HOST_PREFLIGHT=GREEN|NO_GO_PAPER_UNCHANGED|'+scope)
+          PY
+      - name: Publish exact sanitized host receipt to tracking issue
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          from pathlib import Path
+          path=Path('evidence/rc6-a160-preflight.jsonl')
+          receipt='NO_HOST_RECEIPT'
+          if path.is_file():
+              lines=path.read_text().splitlines()
+              if len(lines)==1 and lines[0].startswith('RC6_A160_HELD_PREFLIGHT_RO=') and len(lines[0])<32768:
+                  value=json.loads(lines[0].split('=',1)[1])
+                  if (value.get('schema')=='rc6.a160.held-preflight-ro.v1' and
+                          value.get('candidate_sha')==os.environ['RC6_CANDIDATE_SHA']):
+                      receipt=json.dumps(value,sort_keys=True,separators=(',',':'))
+          body=(f'RC6 A160 exact read-only preflight for candidate `{os.environ["RC6_CANDIDATE_SHA"]}` '
+                f'and Predeploy artifact `{os.environ["RC6_PREDEPLOY_ARTIFACT_ID"]}`.\n\n'
+                f'- Run: {os.environ["GITHUB_SERVER_URL"]}/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GITHUB_RUN_ID"]}\n'
+                f'- Diagnostic SHA: `{os.environ["GITHUB_SHA"]}`\n'
+                '- Host receipt (sanitized):\n\n```json\n'+receipt+'\n```')
+          request=urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/issues/732/comments',
+              data=json.dumps({'body':body}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                       'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=15) as response:
+              assert response.status==201
+          print('RC6_A160_RECEIPT_PUBLISHED=YES')
           PY
       - uses: actions/upload-artifact@v4
         if: always()

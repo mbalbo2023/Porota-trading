@@ -34,6 +34,19 @@ DISK_POLICY=base64.b64encode(b'{"disk":{"min_inode_free_percent":10}}').decode()
 
 
 class HostProbeTests(unittest.TestCase):
+    def test_ppi_readonly_enumeration_has_measured_bounded_budget(self):
+        listing=('systemctl','list-unit-files','--no-legend')
+        success=types.SimpleNamespace(stdout='porota-iol.timer enabled',returncode=0)
+        with patch.object(host.subprocess,'run',return_value=success) as run:
+            self.assertEqual(host.bounded_command(*listing),
+                             ('porota-iol.timer enabled',0))
+        self.assertEqual(run.call_args.kwargs['timeout'],6)
+        with patch.object(host.subprocess,'run',return_value=success) as run:
+            host.bounded_command('systemctl','is-active','porota-iol.timer')
+        self.assertEqual(run.call_args.kwargs['timeout'],1.5)
+        with patch.object(host.subprocess,'run',side_effect=host.subprocess.TimeoutExpired(listing,6)):
+            self.assertEqual(host.bounded_command(*listing),('',124))
+
     def result(self,*args):
         output=io.StringIO()
         with redirect_stdout(output):
