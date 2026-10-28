@@ -29,8 +29,10 @@ jobs:
           set -Eeuo pipefail
           python -m pip install -q --disable-pip-version-check pytest==8.4.2
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
-            tests/test_rc6_a150_caucion_ro_provenance.py
+            tests/test_rc6_a150_caucion_ro_provenance.py \
+            tests/test_rc6_a150_caucion_public_model.py
           test -f scripts/rc6_caucion_fee_ro_provenance.py
+          test -f scripts/rc6_caucion_fee_restatement_apply.py
           echo 'RC6_A150_RO_TEST=GREEN'
       - name: Prepare strict ephemeral SSH
         shell: bash
@@ -68,11 +70,59 @@ jobs:
           PY
           python3 -m json.tool evidence/rc6-a150-fee-provenance.json
           echo 'RC6_A150_HISTORICAL_REPLAY=GREEN_NOT_ACCOUNTING_RECONCILIATION'
+      - name: Candidate six-row restatement DRY-RUN READ_ONLY
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -Eeuo pipefail
+          MODEL_B64="$(base64 -w0 rc6_caucion_fee_model.py)"
+          FORENSIC_B64="$(base64 -w0 scripts/rc6_caucion_fee_ro_provenance.py)"
+          APPLY_B64="$(base64 -w0 scripts/rc6_caucion_fee_restatement_apply.py)"
+          timeout 45 ssh -i "$HOME/.ssh/rc6_a150_key" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 timeout 20 python3 - '$MODEL_B64' '$FORENSIC_B64' '$APPLY_B64' '$GITHUB_SHA'" \
+            > evidence/rc6-a150-restatement-dryrun.json <<'PY'
+          import base64, datetime, json, sqlite3, sys, types
+          def source(encoded, name):
+              code = base64.b64decode(encoded, validate=True)
+              if not 1000 < len(code) < 30000:
+                  raise SystemExit('RC6_A150_SOURCE_BOUND_RED:'+name)
+              module = types.ModuleType(name)
+              exec(compile(code, name+'.py', 'exec'), module.__dict__)
+              sys.modules[name] = module
+              return module
+          model=source(sys.argv[1], 'rc6_caucion_fee_model')
+          scripts=types.ModuleType('scripts')
+          scripts.__path__=[]
+          sys.modules['scripts']=scripts
+          source(sys.argv[2], 'scripts.rc6_caucion_fee_ro_provenance')
+          apply=source(sys.argv[3], 'scripts.rc6_caucion_fee_restatement_apply')
+          path='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          with sqlite3.connect('file:'+path+'?mode=ro', uri=True, timeout=2) as db:
+              db.row_factory=sqlite3.Row
+              db.execute('PRAGMA query_only=ON')
+              receipts=apply.expected_restated_receipts(
+                  db, sys.argv[4],
+                  datetime.datetime.now(datetime.timezone.utc).isoformat())
+          out={'schema':'RC6_A150_RESTATEMENT_DRYRUN_V1','status':'GREEN',
+               'receipts':len(receipts), 'public_model':model.MODEL,
+               'source_sha256':model.SOURCE_SHA256,
+               'broker_account_fees_verified':False,
+               'sqlite_write_attempted':False,
+               'digest':apply._seal([r['seal_sha256'] for r in receipts])}
+          if out['receipts'] != 6:
+              raise SystemExit('RC6_A150_EXACT_SIX_REQUIRED')
+          print(json.dumps(out,sort_keys=True))
+          PY
+          python3 -m json.tool evidence/rc6-a150-restatement-dryrun.json
+          echo 'RC6_A150_PAPER_MODEL_RESTATEMENT_DRYRUN=GREEN_READ_ONLY'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: rc6-a150-caucion-fee-readonly-${{ github.sha }}
-          path: evidence/rc6-a150-fee-provenance.json
+          path: evidence/rc6-a150-*.json
           if-no-files-found: warn
           retention-days: 7
       - name: Remove ephemeral key
