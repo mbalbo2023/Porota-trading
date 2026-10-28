@@ -16,9 +16,14 @@ import time
 from datetime import datetime, timezone
 import urllib.request
 
-ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V1"
+ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
 PROBE_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_ORIGIN_PROBE_V1"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
+INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN"})
+QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
+    "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
+    "CLOSED_A143_PENDING_FIX_FORWARD",
+})
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
@@ -30,7 +35,7 @@ def _seal(payload):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _receipt(path, candidate):
+def _receipt(path, candidate, quiescence_mode):
     if (path.is_symlink() or not path.is_file() or path.stat().st_size > 65536 or
             path.stat().st_nlink != 1):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
@@ -40,7 +45,8 @@ def _receipt(path, candidate):
             receipt.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
             receipt.get("installation_started") is not True or
             type(receipt.get("real_orders_sent")) is not int or
-            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False):
+            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False or
+            receipt.get("market_open_suspended") is not (quiescence_mode in INTRADAY_MODES)):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     recorded = datetime.fromisoformat(receipt["recorded_at"])
     if recorded.tzinfo is None or recorded.utcoffset() is None or recorded > datetime.now(timezone.utc):
@@ -95,7 +101,7 @@ def probe(db_path, candidate_sha, receipt_dir):
     if origin["candidate_sha"] != candidate_sha:
         digest, timestamp = _receipt(Path(receipt_dir) /
                                      ("quiescence-" + origin["candidate_sha"] + ".json"),
-                                     origin["candidate_sha"])
+                                     origin["candidate_sha"], origin["quiescence_mode"])
         known = {r["known_at_utc"] for r in receipts}
         if (len(known) != 1 or datetime.fromisoformat(timestamp) <
                 datetime.fromisoformat(next(iter(known)))):
@@ -117,6 +123,14 @@ def authorize(probe_payload, candidate_sha, repo, get):
     if (type(origin) is not dict or origin.get("schema") != ORIGIN_SCHEMA or
             SHA.fullmatch(str(origin.get("candidate_sha", ""))) is None):
         raise ValueError("PAPER_RESTATEMENT_CONTINUITY_ORIGIN_RED")
+    mode = origin.get("quiescence_mode")
+    third = origin.get("owner_intraday_comment_id")
+    if (mode not in QUIESCENCE_MODES or
+            (mode in INTRADAY_MODES and (type(third) is not int or third <= 0 or
+                 third in {origin.get("owner_approval_comment_id"),
+                           origin.get("owner_deferred_comment_id")})) or
+            (mode not in INTRADAY_MODES and third is not None)):
+        raise ValueError("PAPER_RESTATEMENT_PRIOR_INTRADAY_OWNER_RED")
     if origin["candidate_sha"] == candidate_sha:
         return None  # Same-candidate idempotent replay still checks the DB.
     if set(probe_payload) != {"schema", "status", "origin", "host_receipt_sha256",
@@ -146,8 +160,11 @@ def authorize(probe_payload, candidate_sha, repo, get):
     if (not run_started <= receipt_at <= run_updated or
             run_updated > datetime.now(timezone.utc)):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_RUN_RECEIPT_CLOCK_RED")
-    for field, decision in (("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
-                            ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")):
+    decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
+                 ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")]
+    if mode in INTRADAY_MODES:
+        decisions.append(("owner_intraday_comment_id", "RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY"))
+    for field, decision in decisions:
         row = get(f"repos/{repo}/issues/comments/{origin[field]}")
         literal = (f"{decision} candidate={origin['candidate_sha']} "
                    f"tree={origin['candidate_tree']}")

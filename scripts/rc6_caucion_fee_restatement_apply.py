@@ -31,8 +31,13 @@ from scripts.rc6_caucion_fee_ro_provenance import (
 )
 
 SCHEMA = "RC6_PAPER_CAUCION_PUBLIC_FEE_RESTATEMENT_V1"
-ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V1"
+ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
+INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN"})
+QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
+    "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
+    "CLOSED_A143_PENDING_FIX_FORWARD",
+})
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 POSITIVE = re.compile(r"[1-9][0-9]*\Z")
@@ -70,8 +75,10 @@ def init_restated_schema(db):
         id INTEGER PRIMARY KEY CHECK(id=1), schema TEXT NOT NULL,
         candidate_sha TEXT NOT NULL, candidate_tree TEXT NOT NULL,
         deploy_sha TEXT NOT NULL, run_id TEXT NOT NULL, run_attempt TEXT NOT NULL,
+        quiescence_mode TEXT NOT NULL,
         owner_approval_comment_id INTEGER NOT NULL,
         owner_deferred_comment_id INTEGER NOT NULL,
+        owner_intraday_comment_id INTEGER,
         combined_receipt_sha256 TEXT NOT NULL, seal_sha256 TEXT NOT NULL)""")
     db.execute("""CREATE TRIGGER IF NOT EXISTS paper_caucion_fee_restatement_origin_no_update
         BEFORE UPDATE ON paper_caucion_fee_restatement_origin
@@ -87,7 +94,8 @@ def _combined(receipts):
 
 def _origin_payload(origin, candidate_sha, receipts):
     expected = {"candidate_sha", "candidate_tree", "deploy_sha", "run_id",
-                "run_attempt", "owner_approval_comment_id", "owner_deferred_comment_id"}
+                "run_attempt", "quiescence_mode", "owner_approval_comment_id",
+                "owner_deferred_comment_id", "owner_intraday_comment_id"}
     if type(origin) is not dict or set(origin) != expected or origin["candidate_sha"] != candidate_sha:
         raise ValueError("PAPER_RESTATEMENT_DEPLOY_ORIGIN_REQUIRED")
     if any(type(origin[k]) is not str or SHA.fullmatch(origin[k]) is None
@@ -96,8 +104,18 @@ def _origin_payload(origin, candidate_sha, receipts):
                for k in ("run_id", "run_attempt")) or any(
                    type(origin[k]) is not int or origin[k] <= 0
                    for k in ("owner_approval_comment_id", "owner_deferred_comment_id")) or (
-                       origin["owner_approval_comment_id"] == origin["owner_deferred_comment_id"]):
+                       origin["owner_approval_comment_id"] == origin["owner_deferred_comment_id"] or
+            type(origin["quiescence_mode"]) is not str or
+            origin["quiescence_mode"] not in QUIESCENCE_MODES):
         raise ValueError("PAPER_RESTATEMENT_DEPLOY_ORIGIN_INVALID")
+    third = origin["owner_intraday_comment_id"]
+    if origin["quiescence_mode"] in INTRADAY_MODES:
+        if (type(third) is not int or third <= 0 or
+                third in {origin["owner_approval_comment_id"],
+                          origin["owner_deferred_comment_id"]}):
+            raise ValueError("PAPER_RESTATEMENT_INTRADAY_OWNER_REQUIRED")
+    elif third is not None:
+        raise ValueError("PAPER_RESTATEMENT_UNEXPECTED_INTRADAY_OWNER")
     payload = dict(origin, id=1, schema=ORIGIN_SCHEMA,
                    combined_receipt_sha256=_combined(receipts))
     payload["seal_sha256"] = _seal(payload)
@@ -115,7 +133,8 @@ def _verified_origin(db, receipts):
     row = dict(rows[0])
     keys = {"id", "schema", "combined_receipt_sha256", "seal_sha256",
             "candidate_sha", "candidate_tree", "deploy_sha", "run_id", "run_attempt",
-            "owner_approval_comment_id", "owner_deferred_comment_id"}
+            "quiescence_mode", "owner_approval_comment_id", "owner_deferred_comment_id",
+            "owner_intraday_comment_id"}
     if set(row) != keys:
         raise ValueError("PAPER_RESTATEMENT_ORIGIN_COLUMNS_RED")
     payload = _origin_payload({k: row[k] for k in keys if k not in
@@ -150,7 +169,9 @@ def _verify_continuity(origin, candidate_sha, proof, receipt_dir, known_at):
             receipt.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
             receipt.get("installation_started") is not True or
             type(receipt.get("real_orders_sent")) is not int or
-            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False):
+            receipt["real_orders_sent"] != 0 or receipt.get("ppi_watch_accessed") is not False or
+            receipt.get("market_open_suspended") is not (
+                origin["quiescence_mode"] in INTRADAY_MODES)):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     at = datetime.fromisoformat(receipt["recorded_at"])
     if (at.tzinfo is None or at.utcoffset() is None or
@@ -415,8 +436,10 @@ if __name__ == "__main__":
     parser.add_argument("--candidate-tree")
     parser.add_argument("--run-id")
     parser.add_argument("--run-attempt")
+    parser.add_argument("--quiescence-mode")
     parser.add_argument("--owner-approval-comment-id", type=int)
     parser.add_argument("--owner-deferred-comment-id", type=int)
+    parser.add_argument("--owner-intraday-comment-id", type=int)
     parser.add_argument("--continuity-proof-b64", default="")
     parser.add_argument("--receipt-dir")
     command = parser.add_mutually_exclusive_group(required=True)
@@ -429,9 +452,10 @@ if __name__ == "__main__":
         args.continuity_proof_b64) else None
     origin = {"candidate_sha": args.candidate_sha, "candidate_tree": args.candidate_tree,
               "deploy_sha": args.deploy_sha, "run_id": args.run_id,
-              "run_attempt": args.run_attempt,
+              "run_attempt": args.run_attempt, "quiescence_mode": args.quiescence_mode,
               "owner_approval_comment_id": args.owner_approval_comment_id,
-              "owner_deferred_comment_id": args.owner_deferred_comment_id}
+              "owner_deferred_comment_id": args.owner_deferred_comment_id,
+              "owner_intraday_comment_id": args.owner_intraday_comment_id}
     result = (apply_restatement(args.db, args.candidate_sha, origin=origin,
                                 continuity_proof=proof, receipt_dir=args.receipt_dir)
               if args.apply else preflight_restatement(

@@ -21,7 +21,8 @@ CANDIDATE = "a" * 40
 KNOWN_AT = datetime(2026, 10, 28, 5, 0, tzinfo=timezone.utc)
 ORIGIN = {"candidate_sha": CANDIDATE, "candidate_tree": "c" * 40,
           "deploy_sha": "d" * 40, "run_id": "40700000000", "run_attempt": "1",
-          "owner_approval_comment_id": 1001, "owner_deferred_comment_id": 1002}
+          "quiescence_mode": "CLOSED", "owner_approval_comment_id": 1001,
+          "owner_deferred_comment_id": 1002, "owner_intraday_comment_id": None}
 
 
 @pytest.fixture

@@ -17,14 +17,16 @@ from test_rc6_a151_fee_consumer_projection import six_positions, CANDIDATE, KNOW
 NEXT = "b" * 40
 REPO = "mbalbo2023/Porota-trading"
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
+OPEN_ORIGIN = dict(ORIGIN, quiescence_mode="OPEN", owner_intraday_comment_id=1003)
+HELD_ORIGIN = dict(OPEN_ORIGIN, quiescence_mode="A151_HELD_OPEN")
 
 
-def failed_receipt(tmp_path):
+def failed_receipt(tmp_path, *, market_open=False):
     folder = tmp_path / "deploy"
     folder.mkdir()
     payload = {"candidate_sha": CANDIDATE, "status": "FIX_FORWARD_VALIDATION_REQUIRED",
                "installation_started": True, "real_orders_sent": 0,
-               "ppi_watch_accessed": False,
+               "ppi_watch_accessed": False, "market_open_suspended": market_open,
                "recorded_at": "2026-10-28T07:00:00+00:00"}
     (folder / ("quiescence-" + CANDIDATE + ".json")).write_text(json.dumps(payload))
     return folder
@@ -32,31 +34,40 @@ def failed_receipt(tmp_path):
 
 def github_get(*, conclusion="failure", owner="mbalbo2023", tree="c" * 40,
                attempt=1, literal=True, commit_tree="c" * 40,
-               branch="deploy/rc6-pr69-isolated-20260915", issue=624):
+               branch="deploy/rc6-pr69-isolated-20260915", issue=624,
+               origin=ORIGIN, intraday_literal=True, intraday_created_at="2026-10-28T05:00:00Z"):
     body = lambda decision: (f"{decision} candidate={CANDIDATE} tree={tree}"
                              if literal else "DIFFERENT_OWNER_DECISION")
     rows = {
-        f"repos/{REPO}/actions/runs/{ORIGIN['run_id']}": {
-            "id": int(ORIGIN["run_id"]), "name": "RC6 Deploy V2 promote frozen candidate",
+        f"repos/{REPO}/actions/runs/{origin['run_id']}": {
+            "id": int(origin["run_id"]), "name": "RC6 Deploy V2 promote frozen candidate",
             "path": WORKFLOW, "event": "push", "head_branch": branch,
             "status": "completed",
-            "conclusion": conclusion, "head_sha": ORIGIN["deploy_sha"],
+            "conclusion": conclusion, "head_sha": origin["deploy_sha"],
             "run_attempt": attempt, "run_started_at": "2026-10-28T06:00:00Z",
             "updated_at": "2026-10-28T08:00:00Z"},
-        f"repos/{REPO}/commits/{ORIGIN['deploy_sha']}": {
-            "sha": ORIGIN["deploy_sha"], "parents": [
+        f"repos/{REPO}/commits/{origin['deploy_sha']}": {
+            "sha": origin["deploy_sha"], "parents": [
                 {"sha": "e" * 40}, {"sha": CANDIDATE}],
             "commit": {"tree": {"sha": commit_tree}}},
         f"repos/{REPO}/commits/{CANDIDATE}": {
-            "sha": CANDIDATE, "commit": {"tree": {"sha": ORIGIN["candidate_tree"]}}},
+            "sha": CANDIDATE, "commit": {"tree": {"sha": origin["candidate_tree"]}}},
     }
-    for field, decision in (("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
-                            ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")):
-        rows[f"repos/{REPO}/issues/comments/{ORIGIN[field]}"] = {
-            "id": ORIGIN[field], "user": {"login": owner}, "body": body(decision),
+    decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
+                 ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")]
+    if origin["quiescence_mode"] in ("OPEN", "A151_HELD_OPEN"):
+        decisions.append(("owner_intraday_comment_id", "RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY"))
+    for field, decision in decisions:
+        comment_body = body(decision)
+        if field == "owner_intraday_comment_id" and not intraday_literal:
+            comment_body = "RC6_624_APPROVE_SOME_OTHER_DECISION"
+        rows[f"repos/{REPO}/issues/comments/{origin[field]}"] = {
+            "id": origin[field], "user": {"login": owner}, "body": comment_body,
             "issue_url": f"https://api.github.com/repos/{REPO}/issues/{issue}",
-            "created_at": "2026-10-28T05:00:00Z",
-            "updated_at": "2026-10-28T05:00:00Z"}
+            "created_at": (intraday_created_at if field == "owner_intraday_comment_id"
+                           else "2026-10-28T05:00:00Z"),
+            "updated_at": (intraday_created_at if field == "owner_intraday_comment_id"
+                           else "2026-10-28T05:00:00Z")}
     return rows.__getitem__
 
 
@@ -193,6 +204,56 @@ def test_same_candidate_replay_needs_no_failed_prior_proof(six_positions, tmp_pa
                      REPO, lambda _: (_ for _ in ()).throw(AssertionError("GH not needed"))) is None
     assert apply_restatement(six_positions, CANDIDATE)["inserted"] == 0
     assert preflight_restatement(six_positions, CANDIDATE)["previously_applied"] is True
+
+
+@pytest.mark.parametrize("origin", [OPEN_ORIGIN, HELD_ORIGIN])
+def test_open_origin_needs_exact_third_literal_before_run_and_keeps_cash_once(
+        six_positions, tmp_path, origin):
+    assert apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT,
+                             origin=origin)["inserted"] == 6
+    before = _sealed(six_positions)
+    folder = failed_receipt(tmp_path, market_open=True)
+    p = probe(six_positions, NEXT, folder)
+    proof = authorize(p, NEXT, REPO, github_get(origin=origin))
+    assert preflight_restatement(six_positions, NEXT, continuity_proof=proof,
+                                  receipt_dir=folder)["continuity_adopted"]
+    assert apply_restatement(six_positions, NEXT, continuity_proof=proof,
+                             receipt_dir=folder)["inserted"] == 0
+    assert _sealed(six_positions) == before
+    with pytest.raises(ValueError, match="PRIOR_OWNER_AUTHORIZATION_RED"):
+        authorize(p, NEXT, REPO, github_get(origin=origin, intraday_literal=False))
+    with pytest.raises(ValueError, match="PRIOR_OWNER_AUTHORIZATION_RED"):
+        authorize(p, NEXT, REPO, github_get(origin=origin,
+                  intraday_created_at="2026-10-28T06:30:00Z"))
+
+
+@pytest.mark.parametrize("origin,reason", [
+    (dict(OPEN_ORIGIN, owner_intraday_comment_id=None), "INTRADAY_OWNER_REQUIRED"),
+    (dict(HELD_ORIGIN, owner_intraday_comment_id=1001), "INTRADAY_OWNER_REQUIRED"),
+    (dict(ORIGIN, owner_intraday_comment_id=1003), "UNEXPECTED_INTRADAY_OWNER"),
+])
+def test_inconsistent_intraday_origin_rolls_back_without_six_receipts(
+        six_positions, origin, reason):
+    with pytest.raises(ValueError, match=reason):
+        apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=origin)
+    with sqlite3.connect(six_positions) as db:
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE name='paper_caucion_fee_restatements'").fetchone() is None
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE name='paper_caucion_fee_restatement_origin'").fetchone() is None
+
+
+def test_open_origin_rejects_forged_third_id_or_closed_host_receipt(six_positions, tmp_path):
+    apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=OPEN_ORIGIN)
+    folder = failed_receipt(tmp_path, market_open=True)
+    p = probe(six_positions, NEXT, folder)
+    forged = dict(p, origin=dict(p["origin"], owner_intraday_comment_id=None))
+    with pytest.raises(ValueError, match="PRIOR_INTRADAY_OWNER_RED"):
+        authorize(forged, NEXT, REPO, github_get(origin=OPEN_ORIGIN))
+    path = folder / ("quiescence-" + CANDIDATE + ".json")
+    receipt = json.loads(path.read_text())
+    receipt["market_open_suspended"] = False
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match="HOST_RECEIPT_RED"):
+        probe(six_positions, NEXT, folder)
 
 
 def test_missing_or_tampered_atomic_origin_fails_economic_reader(six_positions, tmp_path):
