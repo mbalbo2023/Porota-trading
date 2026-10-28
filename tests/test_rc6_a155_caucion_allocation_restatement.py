@@ -38,7 +38,8 @@ def six_historical_allocations(tmp_path):
         db.executescript("""
             CREATE TABLE paper_workspace (
                 id INTEGER PRIMARY KEY, namespace TEXT, dataset_id TEXT,
-                origin TEXT, imported_legacy INTEGER);
+                created_at TEXT, origin TEXT, imported_legacy INTEGER,
+                initial_capital_json TEXT);
             CREATE TABLE observer_state (
                 id INTEGER PRIMARY KEY, mode TEXT, real_orders_sent INTEGER);
             CREATE TABLE paper_positions (paper_id TEXT, status TEXT);
@@ -46,9 +47,10 @@ def six_historical_allocations(tmp_path):
                 paper_id TEXT, request_id TEXT, request_hash TEXT,
                 evaluated_at TEXT, decision_json TEXT);
         """)
-        db.execute("INSERT INTO paper_workspace VALUES(1,?,?,?,0)",
+        db.execute("INSERT INTO paper_workspace VALUES(1,?,?,?,?,0,NULL)",
                    ("POROTA_PAPER_V17_FRESH",
-                    "123e4567-e89b-12d3-a456-426614174000", "FRESH_EMPTY"))
+                    "123e4567-e89b-12d3-a456-426614174000",
+                    "2026-08-28T10:00:00+00:00", "FRESH_EMPTY"))
         db.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0)")
         rows = db.execute("SELECT paper_id,request_id,terms_json FROM paper_cauciones").fetchall()
         for paper_id, request_id, raw in rows:
