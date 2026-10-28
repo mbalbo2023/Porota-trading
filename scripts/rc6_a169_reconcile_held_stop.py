@@ -63,7 +63,7 @@ def existing_flock():
         raise
 
 
-def barrier_status(mode):
+def barrier_status(mode, trusted_uid=0):
     if mode == 'post':
         if BARRIER.exists() or BARRIER.is_symlink():
             raise ValueError('A169_BARRIER_NOT_RETIRED')
@@ -71,7 +71,7 @@ def barrier_status(mode):
     if BARRIER.is_symlink() or not BARRIER.is_file():
         raise ValueError('A169_BARRIER_PATH_RED')
     info = BARRIER.stat()
-    if (info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600 or
+    if (info.st_uid != trusted_uid or stat.S_IMODE(info.st_mode) != 0o600 or
             info.st_nlink != 1 or not 0 < info.st_size < 1024):
         raise ValueError('A169_BARRIER_IDENTITY_RED')
     row = json.loads(BARRIER.read_bytes())

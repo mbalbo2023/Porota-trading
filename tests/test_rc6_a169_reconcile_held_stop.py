@@ -1,6 +1,7 @@
 """Exact attempt-only recovery guards; no host resources are accessed."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,13 +23,13 @@ class ReconcileHeldStopGuards(unittest.TestCase):
             with patch.object(a169, 'BARRIER', barrier):
                 barrier.write_text(json.dumps(row))
                 barrier.chmod(0o600)
-                self.assertEqual(a169.barrier_status('probe'), row)
+                self.assertEqual(a169.barrier_status('probe', os.geteuid()), row)
                 for key, value in [('attempt', '3'), ('status', 'INFLIGHT'),
                                    ('phase', 'promotion')]:
                     changed = dict(row, **{key: value})
                     barrier.write_text(json.dumps(changed))
                     with self.assertRaisesRegex(ValueError, 'NOT_EXACT_ATTEMPT'):
-                        a169.barrier_status('probe')
+                        a169.barrier_status('probe', os.geteuid())
                 barrier.unlink()
                 self.assertIsNone(a169.barrier_status('post'))
 
