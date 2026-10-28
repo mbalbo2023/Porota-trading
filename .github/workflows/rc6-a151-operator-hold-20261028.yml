@@ -3,6 +3,10 @@ name: RC6 A151 operator PAPER hold 2026-10-28 (manual review only)
 # Initial diagnostic commit: intentionally no automatic event trigger.
 on:
   workflow_dispatch:
+  push:
+    branches: [audit/rc6-a151-operator-hold-20261028]
+    paths:
+      - .github/workflows/rc6-a151-operator-hold-20261028.yml
 
 permissions:
   contents: read
