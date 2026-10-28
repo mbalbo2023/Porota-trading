@@ -1632,6 +1632,47 @@ jobs:
           test "$SCALPING_STABILIZED" = true
           echo "RC6_SCALPING_STABILIZATION=GREEN"
 
+          # The IOL collector timer remains paused until all deploy gates pass.
+          # An old cache may still say LIVE_FRESH after the policy-only migration.
+          # Run the owned OBSERVE_ONLY one-shot when there is no live sample or
+          # its actual sample is at least 180s old, then prove this invocation
+          # published a new live provider sample. Recheck because the preopen
+          # wait can last 20 minutes; do not invent a timestamp or arm a timer.
+          ensure_iol_refresh() {
+            local label="$1" decision rc started_at verified
+            set +e
+            decision="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+              --action plan --path "$REPO/data/market/iol_family_reference_latest.json" 2>&1)"
+            rc=$?
+            set -e
+            echo "RC6_IOL_REFRESH_PLAN_$label=$decision|rc=$rc"
+            if [ "$rc" -eq 0 ]; then
+              grep -Fxq 'RC6_IOL_DEPLOY_REFRESH=FRESH' <<< "$decision"
+              return 0
+            fi
+            if [ "$rc" -ne 10 ]; then
+              return "$rc"
+            fi
+            grep -Fxq 'RC6_IOL_DEPLOY_REFRESH=REFRESH_REQUIRED' <<< "$decision"
+            started_at="$(date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00)"
+            # The reconciled systemd unit hardcodes OBSERVE_ONLY and its own
+            # 210s timeout; timeout here bounds the caller as well.
+            if ! sudo -n timeout 230 systemctl start porota-iol-shadow-collector-rc6.service; then
+              echo "RC6_IOL_REFRESH_$label=RED|COLLECTOR_SERVICE"
+              sudo -n systemctl stop porota-iol-shadow-collector-rc6.service || true
+              return 2
+            fi
+            set +e
+            verified="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+              --action verify --path "$REPO/data/market/iol_family_reference_latest.json" \
+              --started-at "$started_at" 2>&1)"
+            rc=$?
+            set -e
+            echo "RC6_IOL_REFRESH_VERIFY_$label=$verified|rc=$rc"
+            return "$rc"
+          }
+          ensure_iol_refresh immediate
+
           AUDIT_BASE=/app/data/deploy/zero-known-error-immediate.json
           set +e
           AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
@@ -1754,6 +1795,7 @@ jobs:
           echo "RC6_STABILITY_RESTART_BASELINE=observer=$OBSERVER_RESTART_BASE|dashboard=$DASHBOARD_RESTART_BASE"
           for cycle in 1 2 3; do
             sleep 35
+            ensure_iol_refresh "stability-$cycle"
             set +e
             AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
               python /app/scripts/rc6_zero_known_error_runtime_audit.py \

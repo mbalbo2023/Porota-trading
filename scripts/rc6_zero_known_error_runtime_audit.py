@@ -47,6 +47,9 @@ IOL_FALLBACK_ORDER = [
     "PPI_PRIMARY", "BYMA_PUBLIC_COMPLEMENTARY",
 ]
 WORKER_MAX_HEARTBEAT_AGE_SECONDS = 300
+# The IOL OAuth guardian treats a LIVE_FRESH family cache as collector proof
+# only while its last known good sample is at most four minutes old.
+IOL_LIVE_FRESH_MAX_AGE_SECONDS = 240
 DEFAULT_HTTP_TIMEOUT_SECONDS = 20
 HTML_SURFACE_PATHS = tuple(path for path in CORE_GET_PATHS if not path.startswith("/api/"))
 MAX_HTML_BYTES = {
@@ -222,6 +225,17 @@ def _iol_snapshot():
         raise RuntimeError("IOL_FALLBACK_ORDER_INVALID")
     if cache_state in {"LIVE_FRESH", "CACHE_FRESH", "CACHE_STALE"} and not payload.get("last_known_good_at"):
         raise RuntimeError("IOL_LKG_TIMESTAMP_MISSING")
+    if cache_state == "LIVE_FRESH":
+        for field in ("last_known_good_at", "refreshed_at"):
+            try:
+                age = _age_seconds(payload[field])
+            except (KeyError, TypeError, ValueError, OverflowError) as exc:
+                raise RuntimeError(f"IOL_LIVE_FRESH_TIMESTAMP_INVALID|field={field}") from exc
+            if not 0 <= age <= IOL_LIVE_FRESH_MAX_AGE_SECONDS:
+                raise RuntimeError(
+                    "IOL_LIVE_FRESH_STALE|"
+                    f"field={field}|age_seconds={age:.3f}|max={IOL_LIVE_FRESH_MAX_AGE_SECONDS}"
+                )
     sections = payload.get("section_states") or {}
     if not isinstance(sections, dict) or not sections:
         raise RuntimeError("IOL_SECTION_STATES_MISSING")
@@ -355,8 +369,20 @@ def _assert_snapshot(snapshot, baseline=None):
     observer = db["observer"]
     assert observer.get("mode") == "PRODUCTION_PAPER"
     _require_zero_orders(observer.get("real_orders_sent"), "observer")
-    if snapshot["iol"]["cache_state"] == "SOURCE_UNAVAILABLE":
-        assert str(observer.get("ppi_auth") or "").upper() in {"OK", "AUTHENTICATED"}
+    auth = str(observer.get("ppi_auth") or "UNKNOWN").upper()
+    if auth != "OK":
+        raise RuntimeError(f"OBSERVER_PPI_AUTH_UNHEALTHY|ppi_auth={auth}")
+    process = str(observer.get("process_state") or "UNKNOWN").upper()
+    session = str(observer.get("session_state") or "UNKNOWN").upper()
+    valid_phases = {
+        ("RUNNING", "MARKET_OPEN"),
+        ("WAITING_MARKET", "MARKET_CLOSED"),
+        ("READY_PREOPEN", "PREOPEN"),
+    }
+    if (process, session) not in valid_phases:
+        raise RuntimeError(
+            f"OBSERVER_PHASE_UNHEALTHY|process_state={process}|session_state={session}"
+        )
     assert 0 <= _age_seconds(observer.get("heartbeat_at")) <= 300
     readiness = db["readiness"]
     assert readiness["source"] == "candidate_identity_v2"
