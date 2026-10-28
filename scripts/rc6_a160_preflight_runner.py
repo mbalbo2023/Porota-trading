@@ -112,7 +112,8 @@ def prepare(candidate, tree, run_id, artifact_id, repository, token,
     if digest(archive) != artifact['digest'].removeprefix('sha256:'):
         raise ValueError('PREDEPLOY_ARTIFACT_DIGEST_RED')
     extract_exact(archive,out_dir)
-    frozen=json.loads((out_dir/'porota-frozen-candidate.json').read_bytes())
+    frozen_raw=(out_dir/'porota-frozen-candidate.json').read_bytes()
+    frozen=json.loads(frozen_raw)
     manifest=json.loads((out_dir/'porota-deploy-bundle-v2-manifest.json').read_bytes())
     host_manifest=json.loads((out_dir/'porota-host-manifest-v2.json').read_bytes())
     host_policy=json.loads((out_dir/'porota-host-policy-v2.json').read_bytes())
@@ -122,6 +123,7 @@ def prepare(candidate, tree, run_id, artifact_id, repository, token,
             frozen.get('real_orders_sent_required') != 0 or
             frozen.get('real_order_capability_required') != 'BLOCKED' or
             frozen.get('build_once') is not True or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}',frozen.get('image_id','')) or
             type(frozen.get('image_size_bytes')) is not int or
             frozen['image_size_bytes'] <= 0 or
             not HASH.fullmatch(frozen.get('image_tar_sha256','')) or
@@ -173,6 +175,8 @@ def prepare(candidate, tree, run_id, artifact_id, repository, token,
         stream.write(f'RC6_A160_REQUIRED_BYTES={required}\n')
     print(f'RC6_A160_ARTIFACT_BOUND=GREEN|candidate={candidate}|tree={tree}'
           f'|predeploy_run={run_id}|artifact_id={artifact_id}|artifact_digest={artifact["digest"]}'
+          f'|frozen_manifest_sha256={hashlib.sha256(frozen_raw).hexdigest()}'
+          f'|frozen_preload_image_id={frozen["image_id"]}'
           f'|image_tar_bytes={(out_dir/"porota-predeploy-image.tar.gz").stat().st_size}'
           f'|image_unpacked_bytes={frozen["image_size_bytes"]}'
           f'|bundle_bytes={(out_dir/"porota-deploy-bundle-v2.tgz").stat().st_size}'

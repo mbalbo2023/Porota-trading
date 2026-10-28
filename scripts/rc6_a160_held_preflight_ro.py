@@ -214,7 +214,7 @@ def frozen_identity_diagnostic(q):
         tar = frozen.get('image_tar_sha256')
         return {'readable':True,'sha256':digest,
                 'candidate_sha_matches':frozen.get('candidate_sha') == q.A143_PENDING_SOURCE_SHA,
-                'image_id_matches':frozen.get('image_id') == q.A143_PENDING_IMAGE_ID,
+                'image_id_matches':frozen.get('image_id') == q.A143_PENDING_FROZEN_IMAGE_ID,
                 'candidate_tree_matches':frozen.get('candidate_tree_sha') == q.A143_PENDING_TREE_SHA,
                 'tar_hash_shape_valid':isinstance(tar,str) and bool(HASH.fullmatch(tar))}
     except Exception:

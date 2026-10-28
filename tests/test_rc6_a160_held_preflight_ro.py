@@ -167,7 +167,8 @@ class HostProbeTests(unittest.TestCase):
 
     def test_frozen_mismatch_diagnostic_discloses_only_boolean_identity(self):
         fake=types.SimpleNamespace(ROOT=Path('/opt/porota-trading'),
-            A143_PENDING_SOURCE_SHA='a'*40,A143_PENDING_IMAGE_ID='sha256:'+'b'*64,
+            A143_PENDING_SOURCE_SHA='a'*40,
+            A143_PENDING_FROZEN_IMAGE_ID='sha256:'+'b'*64,
             A143_PENDING_TREE_SHA='c'*40,
             _a143_exact_json=lambda *args:({'candidate_sha':'SECRET_CANDIDATE',
                 'image_id':'SECRET_IMAGE','candidate_tree_sha':'SECRET_TREE',
@@ -217,6 +218,7 @@ class RunnerBindingTests(unittest.TestCase):
                     'paper_mode_required':'PRODUCTION_PAPER',
                     'real_orders_sent_required':0,
                     'real_order_capability_required':'BLOCKED','build_once':True,
+                    'image_id':'sha256:'+'f'*64,
                     'image_tar_sha256':hashlib.sha256(image).hexdigest(),
                     'image_size_bytes':100}
             contents={'porota-frozen-candidate.json':json.dumps(frozen).encode(),
@@ -253,6 +255,8 @@ class RunnerBindingTests(unittest.TestCase):
             self.assertIn(b'STAGED_S_GZIP_B64=',prepared)
             self.assertIn('RC6_A160_REQUIRED_BYTES=',environment.read_text())
             self.assertIn('RC6_A160_ARTIFACT_BOUND=GREEN',output.getvalue())
+            self.assertIn('frozen_manifest_sha256=',output.getvalue())
+            self.assertIn('frozen_preload_image_id=sha256:'+'f'*64,output.getvalue())
 
 
 if __name__=='__main__':

@@ -24,10 +24,11 @@ jobs:
     env:
       # Exact candidate/Predeploy run; artifact ID remains blocked until this
       # run finishes GREEN and its digest is inspected before publication.
-      RC6_CANDIDATE_SHA: 'd8d95a8f9b9221e5ab58ff88120f44bc64e31a24'
-      RC6_CANDIDATE_TREE: 'e4f18b683a83e455549a794ebae4c2266d8c05f4'
-      RC6_PREDEPLOY_RUN_ID: '40722331095'
-      RC6_PREDEPLOY_ARTIFACT_ID: '12833310494'
+      RC6_CANDIDATE_SHA: '35936c9fdce913fb2152e6093b531ac8b3e4895c'
+      RC6_CANDIDATE_TREE: '9adaab66845866ed24f3967ba5231e0a249eb947'
+      RC6_PREDEPLOY_RUN_ID: '40728894723'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12836280490'
+      RC6_INTERIM_NONPROMOTABLE: 'true'
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +44,10 @@ jobs:
           test "$RC6_CANDIDATE_TREE" != 0000000000000000000000000000000000000000
           test "$RC6_PREDEPLOY_RUN_ID" != 0
           test "$RC6_PREDEPLOY_ARTIFACT_ID" != 0
+          [[ "$RC6_INTERIM_NONPROMOTABLE" = true || "$RC6_INTERIM_NONPROMOTABLE" = false ]]
+          if [ "$RC6_INTERIM_NONPROMOTABLE" = true ]; then
+            echo 'RC6_A160_SCOPE=DIAGNOSTIC_NONPROMOTABLE|A165_FIX_PENDING|NO_APPROVAL_NO_DEPLOY'
+          fi
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RC6_CANDIDATE_SHA }}
@@ -88,7 +93,7 @@ jobs:
               < "$RUNNER_TEMP/rc6-a160/host-stdin.py" | tee evidence/rc6-a160-preflight.jsonl
           test "$(wc -c < evidence/rc6-a160-preflight.jsonl)" -lt 32768
           PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
-          import json
+          import json,os
           from pathlib import Path
           lines=Path('evidence/rc6-a160-preflight.jsonl').read_text().splitlines()
           assert len(lines)==1 and lines[0].startswith('RC6_A160_HELD_PREFLIGHT_RO=')
@@ -101,7 +106,10 @@ jobs:
           assert value['timers']['a138_a143_chain_exact'] is True
           assert value['timers']['owned_count']==16
           assert value['disk']['bytes_gate'] and value['disk']['inodes_gate']
-          print('RC6_A160_HOST_PREFLIGHT=GREEN|NO_GO_PAPER_UNCHANGED')
+          scope=('DIAGNOSTIC_NONPROMOTABLE' if
+                 os.environ['RC6_INTERIM_NONPROMOTABLE']=='true' else
+                 'FINAL_CANDIDATE_PREFLIGHT')
+          print('RC6_A160_HOST_PREFLIGHT=GREEN|NO_GO_PAPER_UNCHANGED|'+scope)
           PY
       - uses: actions/upload-artifact@v4
         if: always()
