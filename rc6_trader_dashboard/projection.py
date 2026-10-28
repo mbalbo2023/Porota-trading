@@ -627,6 +627,20 @@ class Projection:
                            entry_authority="PAPER / SIMULATED" if row.get("paper_id") else "HOLD / NO ORDER")
             return page
         page = s.page("paper_cauciones", order="opened_at DESC,paper_id DESC", offset=self.offset)
+        # A page is not sufficient evidence for six legacy fee receipts.  The
+        # reader audits the entire restatement set under Store's single RO
+        # transaction before showing a PnL or net caucion result.
+        if page.state == "AVAILABLE":
+            try:
+                from bt_caucion_paper import paper_caucion_economic_projection
+                if getattr(s, "connection", None) is None:
+                    raise ValueError("CAUCION_READ_SNAPSHOT_UNAVAILABLE")
+                page.rows = paper_caucion_economic_projection(s.connection, page.rows)
+            except (ValueError, KeyError, TypeError, sqlite3.Error):
+                page.rows = []
+                page.state = UNKNOWN
+                page.reason = "CAUCION_COST_PROVENANCE_NOT_VERIFIED"
+                return page
         for row in page.rows:
             principal = decimal_amount(row.get("principal"))
             interest = decimal_amount(row.get("gross_interest"))
@@ -637,7 +651,8 @@ class Projection:
                        terms=json_object(row.pop("terms_json", None)),
                        source=row.get("source") or "paper_cauciones", as_of=row.get("opened_at"),
                        freshness=UNKNOWN, entry_authority="PAPER / SIMULATED",
-                       principal_verified=principal is not None)
+                       principal_verified=principal is not None,
+                       broker_account_fees_verified=row.get("broker_account_fees_verified") is True)
         return page
 
     def risk(self, *, offset=None):

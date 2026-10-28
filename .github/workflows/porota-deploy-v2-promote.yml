@@ -962,6 +962,28 @@ jobs:
           sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_B64="$A125_CANDIDATE_SOURCE_B64" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
             --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
 
+          # An A151 historical-cost restatement is forbidden while the
+          # intentional CLOSED_CAUCION carryover still owns an OPEN contract.
+          # OPEN requires the already-authorized market-open suspension and
+          # still must pass the independent flat-book verification below.
+          case "$RC6_QUIESCENCE_MODE" in
+            CLOSED_CAUCION) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|OPEN_CARRYOVER'; exit 31;;
+            OPEN|CLOSED|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD) ;;
+            *) echo 'RC6_A151_CAUCION_RESTATEMENT=RED|QUIESCENCE_UNKNOWN'; exit 31;;
+          esac
+
+          # A151: exact six historical PAPER cauciones, zero account-fee
+          # authority claims. This staged (manifest-hashed) source opens the
+          # original SQLite file query_only, after admission/quiescence and
+          # BEFORE any financial receipt is written. Unknown/partial rows,
+          # nonflat PAPER, changed source or candidate fail the promotion.
+          CAUCION_FEE_PREFLIGHT="$(sudo -n env PYTHONPATH="$STAGE" python3 -B \
+            "$STAGE/scripts/rc6_caucion_fee_restatement_apply.py" \
+            --db "$REPO/data/paper_v17/observer_v17.db" \
+            --candidate-sha "$CANDIDATE_SHA" --plan)"
+          printf '%s\n' "$CAUCION_FEE_PREFLIGHT" | python3 -c \
+            'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["read_only"] is True and p["receipts_expected"]==6 and p["paper_book_flat"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_PREFLIGHT=GREEN|PAPER_PUBLIC_MODEL_ONLY|6/6")'
+
           sudo -n python3 - "$STAGE" "$REPO" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
           import hashlib,json,os,shutil,sys
           from pathlib import Path
@@ -1067,6 +1089,17 @@ jobs:
           grep -Fq '"status": "GREEN"' <<< "$COLD2_FIX_FORWARD"
           grep -Fq '"old_cut_revoked": true' <<< "$COLD2_FIX_FORWARD"
           echo "RC6_624_COLD2_FIX_FORWARD=GREEN"
+
+          # A151: under the same canonical mutex and stopped observer, append
+          # exactly six known-at model receipts atomically. No historical row,
+          # allocation, fill or real broker route may be updated. An identical
+          # post-failure replay is idempotent (inserted=0), not a second fill.
+          CAUCION_FEE_APPLY="$(sudo -n env PYTHONPATH="$REPO" python3 -B \
+            "$REPO/scripts/rc6_caucion_fee_restatement_apply.py" \
+            --db "$REPO/data/paper_v17/observer_v17.db" \
+            --candidate-sha "$CANDIDATE_SHA" --apply)"
+          printf '%s\n' "$CAUCION_FEE_APPLY" | python3 -c \
+            'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["receipts"]==6 and p["inserted"] in (0,6) and p["old_positions_untouched"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_APPLY=GREEN|APPEND_ONLY|PAPER_MODEL|ACCOUNT_FEES_NO_VERIFICADO")'
 
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"

@@ -539,7 +539,10 @@ def _report_story(title, period, data):
         "cauciones_vencidas": [{"contrato": p["instrument_id"], "moneda_plaza": p["currency"],
                                 "capital": p["principal"], "interes_bruto": p["gross_interest"],
                                 "costos": p["total_fees"], "acreditacion": p["settled_at"],
-                                "interes_neto": str(Decimal(p["gross_interest"]) - Decimal(p["total_fees"]))}
+                                "interes_neto": str(Decimal(p["gross_interest"]) - Decimal(p["total_fees"])),
+                                "autoridad_costos": p.get("fee_evidence_scope", "NO_VERIFICADO"),
+                                "conocido_desde_utc": p.get("fee_known_at_utc"),
+                                "costos_originales": p.get("original_total_fees", p["total_fees"])}
                                for p in data.get("cauciones_matured", [])],
         "decisiones": data["decisions"], "noticias_relevantes": data["news"],
         "nota": "Archivo preparado para discusión de lecciones aprendidas con una IA; no contiene secretos ni datos de cuenta.",

@@ -102,9 +102,18 @@ def expected_restated_receipts(db, candidate_sha, known_at, *, require_flat=True
             rows.append(row)
     if len(rows) != EXPECTED_HISTORICAL_ROWS:
         raise ValueError("PAPER_RESTATEMENT_EXACT_SIX_REQUIRED")
-    if (require_flat and db.execute("SELECT COUNT(*) FROM paper_positions "
-                                    "WHERE status='OPEN'").fetchone()[0] != 0):
-        raise ValueError("PAPER_RESTATEMENT_NOT_FLAT")
+    if require_flat:
+        if db.execute("SELECT COUNT(*) FROM paper_positions "
+                      "WHERE status='OPEN'").fetchone()[0] != 0:
+            raise ValueError("PAPER_RESTATEMENT_SPOT_NOT_FLAT")
+        if db.execute("SELECT COUNT(*) FROM paper_cauciones "
+                      "WHERE status='OPEN'").fetchone()[0] != 0:
+            raise ValueError("PAPER_RESTATEMENT_CAUCION_NOT_FLAT")
+        future_exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                   "AND name='paper_future_positions'").fetchone()
+        if future_exists and db.execute("SELECT COUNT(*) FROM paper_future_positions "
+                                        "WHERE status='ACTIVE'").fetchone()[0] != 0:
+            raise ValueError("PAPER_RESTATEMENT_FUTURES_NOT_FLAT")
     receipts = []
     for row in rows:
         raw = row["terms_json"]
@@ -213,6 +222,8 @@ def apply_restatement(db_path, candidate_sha, *, now=None):
             # Idempotent verification uses original known_at and SHA. Never
             # silently rebook a newer model or change known-at chronology.
             first = existing[0]
+            if first["candidate_sha"] != candidate_sha:
+                raise ValueError("PAPER_RESTATEMENT_EXACT_CANDIDATE_REQUIRED")
             wanted = expected_restated_receipts(
                 db, first["candidate_sha"], first["known_at_utc"])
             if not _rows_match(existing, wanted):
@@ -234,12 +245,47 @@ def apply_restatement(db_path, candidate_sha, *, now=None):
     return result
 
 
+def preflight_restatement(db_path, candidate_sha, *, now=None):
+    """Strict SQLite READ ONLY proof before any receipt-writing transition.
+
+    This is an incident-specific six-row gate, not a PPI tariff certificate.
+    Even an earlier complete application must pass original-row, model and
+    current flat-book verification under the same snapshot.
+    """
+    path = Path(db_path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("PAPER_RESTATEMENT_DATABASE_UNAVAILABLE")
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2) as db:
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA query_only=ON")
+        db.execute("PRAGMA busy_timeout=2000")
+        db.execute("BEGIN")
+        wanted = expected_restated_receipts(db, candidate_sha, now.isoformat())
+        table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                           "AND name='paper_caucion_fee_restatements'").fetchone()
+        existing = read_verified_restated_fees(db) if table else {}
+        if existing and set(existing) != {receipt['paper_id'] for receipt in wanted}:
+            raise ValueError("PAPER_RESTATEMENT_EXISTING_SET_MISMATCH")
+        if existing and any(row['candidate_sha'] != candidate_sha for row in existing.values()):
+            # A future candidate needs an explicit versioned adoption contract,
+            # never silent reuse of another SHA's financial mutation receipt.
+            raise ValueError("PAPER_RESTATEMENT_EXACT_CANDIDATE_REQUIRED")
+        return {"schema": SCHEMA + "_PREFLIGHT", "status": "GREEN", "read_only": True,
+                "receipts_expected": len(wanted), "previously_applied": bool(existing),
+                "paper_book_flat": True, "broker_account_fees_verified": False,
+                "modeled_fee_adjustments_nonnegative": True,
+                "source_pdf_sha256": SOURCE_SHA256}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", required=True)
     parser.add_argument("--candidate-sha", required=True)
-    parser.add_argument("--apply", action="store_true")
+    command = parser.add_mutually_exclusive_group(required=True)
+    command.add_argument("--apply", action="store_true")
+    command.add_argument("--plan", action="store_true")
     args = parser.parse_args()
-    if not args.apply:
-        raise SystemExit("PAPER_RESTATEMENT_REQUIRES_EXPLICIT_APPLY")
-    print(json.dumps(apply_restatement(args.db, args.candidate_sha), sort_keys=True))
+    result = (apply_restatement(args.db, args.candidate_sha) if args.apply
+              else preflight_restatement(args.db, args.candidate_sha))
+    print(json.dumps(result, sort_keys=True))

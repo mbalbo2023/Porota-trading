@@ -29,7 +29,7 @@ import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from ak_byma_calendar import es_dia_habil_operativo
-from bt_caucion_paper import validate_position, pending_proceeds
+from bt_caucion_paper import paper_caucion_economic_projection, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
 from dd_history_metrics_hf6 import (observer_history_metrics, v2_store_metrics, effective_store_metrics,
@@ -273,9 +273,8 @@ def _caucion_snapshot():
             c.execute('BEGIN')
             if not c.execute("SELECT 1 FROM sqlite_master WHERE name='paper_cauciones' AND type='table'").fetchone():
                 return {'state':'MISSING_TABLE','positions':[]}
-            rows = [dict(r) for r in c.execute('SELECT * FROM paper_cauciones ORDER BY julianday(opened_at) DESC')]
-            for p in rows:
-                validate_position(p)
+            rows = paper_caucion_economic_projection(
+                c, c.execute('SELECT * FROM paper_cauciones ORDER BY julianday(opened_at) DESC').fetchall())
             return {'state':'READY','positions':rows}
     except ValueError:
         return {'state':'INVALID_LEDGER','positions':[]}
@@ -730,15 +729,17 @@ def _cauciones_panel():
         f"<td>{_e(p['principal'])}</td><td>{_e(p['annual_rate_fraction'])}</td>"
         f"<td>{p['interest_days']}</td><td>{_local_time(p['maturity_at'])}</td>"
         f"<td>{_e(p['gross_interest'])}</td><td>{_e(p['total_fees'])}</td>"
+        f"<td>{_e(p.get('fee_evidence_scope') or 'NO_VERIFICADO')}</td>"
         f"<td>{_status(p['status'])}</td></tr>" for p in positions
-    ) or "<tr><td colspan='9'>Sin colocaciones simuladas. El alta requiere términos y cotización validados.</td></tr>"
+    ) or "<tr><td colspan='10'>Sin colocaciones simuladas. El alta requiere términos y cotización validados.</td></tr>"
     return ("<div class='paper-card'><h2>Cauciones colocadoras</h2>"
             "<p>Capital inmovilizado hasta el vencimiento. ARS, USD, MEP y CCL mantienen cajas separadas. "
             "Sin stop ni venta intradiaria. La tasa se muestra como fracción anual: 0,30 equivale a 30%.</p>"
-            "<p class='paper-muted'>Vencimientos y acreditaciones son simulados; no confirman movimientos en PPI.</p>"
+            "<p class='paper-muted'>Vencimientos y acreditaciones son simulados; no confirman movimientos en PPI. "
+            "PUBLIC_MODEL_PAPER_ONLY_ACCOUNT_UNVERIFIED no certifica comisiones reales de PPI.</p>"
             "<table class='paper-table'><tr><th>Contrato</th><th>Moneda</th><th>Capital</th>"
             "<th>TNA (fracción)</th><th>Días corridos</th><th>Vencimiento</th>"
-            "<th>Interés bruto</th><th>Costos totales</th><th>Estado</th></tr>" + rows + "</table></div>")
+            "<th>Interés bruto</th><th>Costos totales</th><th>Autoridad del costo</th><th>Estado</th></tr>" + rows + "</table></div>")
 
 
 def _trade_metrics(closed):
