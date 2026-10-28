@@ -76,6 +76,13 @@ class A172DockerOwnershipTest(unittest.TestCase):
         with self.assertRaisesRegex(audit.Unverified, 'CONTAINER_IMAGE_MISSING'):
             self.snapshot()
 
+    def test_repeated_diffid_keeps_image_ownership_but_counts_each_layer(self):
+        self.images[self.old]['layers'] = [self.shared, self.shared]
+        row = {row['image_id']: row for row in self.snapshot()['images']}[self.old]
+        self.assertEqual(row['layer_count'], 2)
+        self.assertEqual(row['distinct_layer_count'], 1)
+        self.assertEqual(row['layers_shared_with_referenced_count'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()
