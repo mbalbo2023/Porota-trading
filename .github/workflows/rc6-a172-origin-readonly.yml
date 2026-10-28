@@ -1,0 +1,126 @@
+name: RC6 A172 exact origin read only
+
+on:
+  push:
+    branches: [diagnostic/rc6-a172-origin-readonly-20261028]
+    paths: ['.github/workflows/rc6-a172-origin-readonly.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  origin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_ro" "$HOME/.ssh/known_hosts"
+      - name: Verify exact Droplet identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 20 ssh -i "$HOME/.ssh/porota_rc6_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 - --expected-id 594077619 --expected-region nyc1' \
+            < scripts/rc6_droplet_identity_guard.py
+      - name: Read exact A171 origin and OAuth guardian under existing host lock
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 40 ssh -i "$HOME/.ssh/porota_rc6_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import fcntl, hashlib, json, os, re, sqlite3, stat, subprocess
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          deploy=root/'data/deploy'
+          lock=Path('/run/lock/porota-rc6-deploy-v2.lock')
+          fd=os.open(lock,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+          s=os.fstat(fd)
+          assert stat.S_ISREG(s.st_mode) and s.st_uid==0 and stat.S_IMODE(s.st_mode)==0o600 and s.st_nlink==1
+          fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+          assert not Path('/run/lock/porota-rc6-deploy-v2-attempt.json').exists()
+          def read(path,maximum):
+              info=path.stat()
+              assert not path.is_symlink() and path.is_file() and info.st_nlink==1 and 0<info.st_size<=maximum
+              return path.read_bytes()
+          source=read(root/'scripts/rc6_deploy_quiescence.py',190000)
+          raw=read(deploy/'quiescence-4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6.json',65536)
+          receipt=json.loads(raw)
+          marker=json.loads(read(deploy/'CURRENT_STATE_V2.json',65536))
+          guardian_path=root/'data/market/iol_oauth_guardian_state.json'
+          guardian=json.loads(read(guardian_path,16384)) if guardian_path.exists() else {}
+          db=root/'data/paper_v17/observer_v17.db'
+          assert not db.is_symlink() and db.is_file() and db.stat().st_nlink==1
+          with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2) as c:
+              c.execute('PRAGMA query_only=ON')
+              mode,orders,process,session=c.execute('SELECT mode,real_orders_sent,process_state,session_state FROM observer_state WHERE id=1').fetchone()
+              assert mode=='PRODUCTION_PAPER' and type(orders) is int and orders==0
+          def ctl(verb,unit):
+              p=subprocess.run(['systemctl',verb,unit],capture_output=True,text=True,timeout=5)
+              assert p.returncode in (0,1,3)
+              return p.stdout.strip()
+          timer='porota-iol-oauth-health-rc6.timer'
+          service='porota-iol-oauth-health-rc6.service'
+          unit=subprocess.run(['systemctl','show',timer,'-p','Unit','--value'],capture_output=True,text=True,timeout=5,check=True).stdout.strip()
+          reason=str(guardian.get('reason') or '')
+          code=reason.split(':',1)[0]
+          allowed={'OFFHOURS_OAUTH_GUARDIAN','OAUTH_STORE_MISSING',
+                   'MARKET_OPEN_LIVE_FRESH_COLLECTOR','COLLECTOR_NOT_FRESH_OAUTH_DIAGNOSTIC',
+                   'IOLMCPError','TimeoutError','HTTPError','OSError','RuntimeError',
+                   'ValueError','JSONDecodeError','URLError','PermissionError'}
+          reason_code=code if code in allowed else 'UNKNOWN'
+          stamp=lambda value: value if isinstance(value,str) and re.fullmatch(r'[0-9TZ:+.\-]{10,40}',value) else None
+          runtime=receipt.get('candidate_runtime_after_failure') or {}
+          book=runtime.get('flat_book') or {}
+          output={
+              'installed_quiescence_sha256':hashlib.sha256(source).hexdigest(),
+              'a171_receipt_sha256':hashlib.sha256(raw).hexdigest(),
+              'receipt_status':receipt.get('status'),
+              'receipt_runtime_health':receipt.get('runtime_health'),
+              'receipt_inflight':receipt.get('inflight'),
+              'receipt_prior_a143_stopped_after_install':receipt.get('prior_a143_stopped_after_install'),
+              'runtime_status':runtime.get('status'),
+              'runtime_book_state':[book.get('process_state'),book.get('session_state')],
+              'marker_candidate':marker.get('candidate_sha'),
+              'marker_deploy_sha':marker.get('deploy_sha'),
+              'marker_validation_status':marker.get('validation_status'),
+              'marker_image_matches_a171':marker.get('image_id')=='sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa',
+              'marker_ppi_untouched':marker.get('ppi_watch_untouched') is True,
+              'paper_zero':mode=='PRODUCTION_PAPER' and orders==0,
+              'paper_state':[process,session],
+              'guardian_timer_active':ctl('is-active',timer),
+              'guardian_timer_enabled':ctl('is-enabled',timer),
+              'guardian_timer_unit_exact':unit==service,
+              'guardian_service_active':ctl('is-active',service),
+              'guardian_state':guardian.get('state') if guardian.get('state') in
+                  {'AUTHENTICATED','ACTIVE_COLLECTOR_HEALTHY','REAUTH_REQUIRED'} else 'UNKNOWN',
+              'guardian_checked_at':stamp(guardian.get('checked_at')),
+              'guardian_last_authenticated_at':stamp(guardian.get('last_authenticated_at')),
+              'guardian_incident_seq':guardian.get('incident_seq') if type(guardian.get('incident_seq')) is int and 0<=guardian['incident_seq']<1000000 else None,
+              'guardian_reason_code':reason_code,
+          }
+          print('RC6_A172_ORIGIN_RO='+json.dumps(output,sort_keys=True))
+          os.close(fd)
+          PY
+      - name: Remove SSH credential
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_ro"
