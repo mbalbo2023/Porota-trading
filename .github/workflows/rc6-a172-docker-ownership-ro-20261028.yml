@@ -1,4 +1,5 @@
 name: RC6 A172 Docker ownership and disk audit READ ONLY
+# One scoped rerun after the image inspect validator received diagnostic reasons.
 
 on:
   push:
