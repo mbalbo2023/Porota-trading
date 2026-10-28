@@ -1,8 +1,10 @@
 name: RC6 A157 old attempt stage provenance READ ONLY
 
-# Review only; root will add exact scoped push trigger after inspection.
 on:
-  workflow_dispatch:
+  push:
+    branches: [audit/rc6-a157-stage-provenance-ro-20261028]
+    paths:
+      - .github/workflows/rc6-a157-stage-provenance-ro-20261028.yml
 
 permissions:
   contents: read
