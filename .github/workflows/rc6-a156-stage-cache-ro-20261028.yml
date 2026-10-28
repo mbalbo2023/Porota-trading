@@ -1,0 +1,230 @@
+name: RC6 A156 exact stage and Docker cache inventory READ ONLY
+
+# Preparation only. /root will add a scoped push trigger after review.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Bound stage inode FD mount cache volume and log metadata
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 90s \
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PYHOST'
+          import http.client
+          import json
+          import os
+          import re
+          import stat
+          import subprocess
+          from itertools import islice
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          STAGE = Path('/tmp/porota-deploy-v2-dd22a1b0761cc4f231813edb6b502d1dd21bb8de-40592426296-2')
+          EXPECTED = {'porota-frozen-candidate.json', 'porota-predeploy-image.tar.gz',
+                      'porota-deploy-bundle-v2.tgz', 'porota-deploy-bundle-v2-manifest.json',
+                      'porota-host-manifest-v2.json', 'porota-host-policy-v2.json'}
+          BARRIER = Path('/run/lock/porota-rc6-deploy-v2-attempt.json')
+
+          def metadata(part):
+              c = http.client.HTTPConnection('169.254.169.254', timeout=2)
+              try:
+                  c.request('GET', '/metadata/v1/' + part)
+                  r = c.getresponse()
+                  if r.status != 200:
+                      raise RuntimeError('DROPLET_METADATA_RED')
+                  return r.read(128).decode('ascii').strip()
+              finally:
+                  c.close()
+
+          def docker(args, timeout=6):
+              p = subprocess.run(['docker', *args], capture_output=True, text=True,
+                                 timeout=timeout, check=False)
+              if p.returncode:
+                  raise RuntimeError('DOCKER_METADATA_RED')
+              return p.stdout.strip()
+
+          class UnixHTTP(http.client.HTTPConnection):
+              def connect(self):
+                  import socket
+                  self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                  self.sock.settimeout(12)
+                  self.sock.connect('/var/run/docker.sock')
+
+          def docker_usage():
+              c = UnixHTTP('localhost', timeout=12)
+              try:
+                  c.request('GET', '/system/df?type=build-cache&type=volume&type=container')
+                  r = c.getresponse()
+                  if r.status != 200:
+                      raise RuntimeError('DOCKER_DF_RED')
+                  raw = r.read(8*1024*1024+1)
+                  if len(raw)>8*1024*1024:
+                      raise RuntimeError('DOCKER_DF_OVERSIZE')
+                  d = json.loads(raw)
+                  cache, volumes, containers = (d.get('BuildCache') or [],
+                                                d.get('Volumes') or [],
+                                                d.get('Containers') or [])
+                  if max(map(len, (cache, volumes, containers)))>2000:
+                      raise RuntimeError('DOCKER_DF_UNBOUNDED')
+                  return {
+                      'build_cache_count': len(cache),
+                      'build_cache_size_bytes': sum(x.get('Size', 0) or 0 for x in cache),
+                      'build_cache_in_use_count': sum(bool(x.get('InUse')) for x in cache),
+                      'build_cache_in_use_bytes': sum((x.get('Size', 0) or 0) for x in cache if x.get('InUse')),
+                      'volume_count': len(volumes),
+                      'volume_reported_bytes': sum(((x.get('UsageData') or {}).get('Size') or 0) for x in volumes),
+                      'volume_in_use_count': sum(((x.get('UsageData') or {}).get('RefCount') or 0)>0 for x in volumes),
+                      'container_count': len(containers),
+                      'container_writable_bytes': sum(x.get('SizeRw', 0) or 0 for x in containers),
+                  }
+              finally:
+                  c.close()
+
+          def overlaps(a, b):
+              return a == b or a in b.parents or b in a.parents
+
+          def fs():
+              v = os.statvfs('/')
+              return {'free_bytes': v.f_bavail*v.f_frsize, 'free_inodes': v.f_favail}
+
+          did, region = metadata('id'), metadata('region')
+          if (did, region) != ('594077619', 'nyc1'):
+              raise RuntimeError('DROPLET_IDENTITY_RED')
+          now = datetime.now(timezone.utc)
+          free0 = fs()
+          stage_stat = os.lstat(STAGE)
+          stage = {'path_class': 'EXACT_A138_ATTEMPT_2',
+                   'inode': stage_stat.st_ino, 'uid': stage_stat.st_uid,
+                   'gid': stage_stat.st_gid, 'mode': oct(stat.S_IMODE(stage_stat.st_mode)),
+                   'device': stage_stat.st_dev, 'is_symlink': stat.S_ISLNK(stage_stat.st_mode),
+                   'is_directory': stat.S_ISDIR(stage_stat.st_mode),
+                   'is_mountpoint': os.path.ismount(STAGE),
+                   'parent_device': os.lstat(STAGE.parent).st_dev,
+                   'links': stage_stat.st_nlink,
+                   'mtime_utc': datetime.fromtimestamp(stage_stat.st_mtime, timezone.utc).isoformat()}
+          if (stage['inode'],stage['uid'],stage['mode'],stage['device']) != (855,1000,'0o700',64769):
+              raise RuntimeError('A138_STAGE_INODE_DRIFT')
+          direct, unknown_count, unknown_bytes = [], 0, 0
+          children = list(STAGE.iterdir())
+          if len(children)>100:
+              raise RuntimeError('A138_STAGE_UNBOUNDED')
+          for child in children:
+              s = os.lstat(child)
+              if child.name in EXPECTED:
+                  direct.append({'name': child.name, 'bytes': s.st_size,
+                                 'allocated_bytes': s.st_blocks*512,
+                                 'uid': s.st_uid, 'links': s.st_nlink,
+                                 'is_regular': stat.S_ISREG(s.st_mode),
+                                 'is_symlink': stat.S_ISLNK(s.st_mode),
+                                 'device_matches_stage': s.st_dev == stage_stat.st_dev})
+              else:
+                  unknown_count += 1
+                  unknown_bytes += s.st_size
+          stage['allowlisted_direct_files'] = sorted(direct, key=lambda x:x['name'])
+          stage['other_direct_entry_count'] = unknown_count
+          stage['other_direct_stat_bytes'] = unknown_bytes
+          stage['direct_entry_count'] = len(children)
+
+          try:
+              p = subprocess.run(['lsof','-nP','+D',str(STAGE)], capture_output=True,
+                                 text=True, timeout=8, check=False)
+              if p.returncode == 0:
+                  fd = {'state':'OK','open_row_count':max(0,len(p.stdout.splitlines())-1)}
+              elif p.returncode == 1 and not p.stdout.strip() and not p.stderr.strip():
+                  fd = {'state':'OK','open_row_count':0}
+              else:
+                  fd = {'state':'UNVERIFIED','exit_code':p.returncode}
+          except (OSError, subprocess.TimeoutExpired):
+              fd = {'state':'UNVERIFIED','reason':'LSOF_UNAVAILABLE_OR_TIMEOUT'}
+          stage['open_fds'] = fd
+
+          ids = docker(['container','ls','-aq','--no-trunc']).splitlines()
+          if len(ids)>100:
+              raise RuntimeError('CONTAINER_INVENTORY_UNBOUNDED')
+          mounted = 0
+          for cid in ids:
+              raw = docker(['inspect','--type=container','--format','{{json .Mounts}}',cid],5)
+              mounts = json.loads(raw)
+              if not isinstance(mounts,list):
+                  raise RuntimeError('MOUNT_METADATA_RED')
+              for m in mounts:
+                  source = m.get('Source')
+                  if isinstance(source,str) and source.startswith('/') and overlaps(STAGE,Path(source)):
+                      mounted += 1
+          stage['container_mount_overlaps'] = mounted
+          stage['all_container_count'] = len(ids)
+
+          if BARRIER.exists() or BARRIER.is_symlink():
+              b = os.lstat(BARRIER)
+              if (not stat.S_ISREG(b.st_mode) or b.st_uid!=0 or
+                  stat.S_IMODE(b.st_mode)!=0o600 or b.st_size>1024):
+                  raise RuntimeError('BARRIER_METADATA_RED')
+              q = json.loads(BARRIER.read_text())
+              barrier = {k:q.get(k) for k in ('candidate','run','attempt','phase','status')}
+          else:
+              barrier = {'state':'ABSENT'}
+
+          logs = {}
+          for label, path in {'var_log':'/var/log','journal':'/var/log/journal',
+                              'docker':'/var/lib/docker','apt_archive':'/var/cache/apt/archives'}.items():
+              entries = list(islice(Path(path).iterdir(),500)) if Path(path).is_dir() else []
+              logs[label] = {'direct_entries_seen':len(entries),
+                             'direct_regular_file_bytes':sum(os.lstat(x).st_size for x in entries
+                                                             if stat.S_ISREG(os.lstat(x).st_mode))}
+          journal = subprocess.run(['journalctl','--disk-usage','--no-pager'],
+                                   capture_output=True,text=True,timeout=5,check=False)
+          try:
+              usage = docker_usage()
+          except (OSError,ValueError,RuntimeError):
+              usage = {'state':'UNVERIFIED'}
+          out = {'schema':'RC6_A156_STAGE_CACHE_RO_V1','at_utc':now.isoformat(),
+                 'at_art':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+                 'droplet_id':did,'region':region,'no_mutations':True,
+                 'before':free0,'after':fs(),'stage':stage,'barrier':barrier,
+                 'docker_usage':usage,'other_storage_metadata':logs,
+                 'journal_disk_usage':journal.stdout.strip()[:100] if journal.returncode==0 else 'UNVERIFIED'}
+          print('RC6_A156_STAGE_CACHE_RO='+json.dumps(out,sort_keys=True))
+          PYHOST
+
+      - name: Erase SSH material on ephemeral runner
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
