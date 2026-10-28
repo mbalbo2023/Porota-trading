@@ -61,6 +61,22 @@ jobs:
           STAGE = re.compile(r'^porota-deploy-v2-([0-9a-f]{40})-([1-9][0-9]*)-([1-9][0-9]*)$')
           IMAGE = re.compile(r'^sha256:[0-9a-f]{64}$')
 
+          def metadata(endpoint):
+              conn = http.client.HTTPConnection('169.254.169.254', timeout=2)
+              try:
+                  conn.request('GET', '/metadata/v1/' + endpoint)
+                  resp = conn.getresponse()
+                  if resp.status != 200:
+                      raise RuntimeError('DROPLET_METADATA_UNAVAILABLE')
+                  return resp.read(128).decode('ascii').strip()
+              finally:
+                  conn.close()
+
+          droplet_id = metadata('id')
+          region = metadata('region')
+          if (droplet_id, region) != ('594077619', 'nyc1'):
+              raise RuntimeError('RC6_DROPLET_IDENTITY_RED')
+
           def cmd(argv, seconds=8):
               p = subprocess.run(argv, stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, text=True,
@@ -194,6 +210,7 @@ jobs:
           out = {'schema': 'RC6_A153_DOCKER_OWNERSHIP_RO_V1',
                  'at_utc': now.isoformat(),
                  'at_art': now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).isoformat(),
+                 'droplet_id': droplet_id, 'region': region,
                  'no_mutations': True, 'free_before_bytes': free0,
                  'free_after_probe_bytes': free1,
                  'container_count': len(containers), 'image_count': len(images),
