@@ -1,0 +1,115 @@
+name: RC6 A160 held host preflight READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a160-held-preflight-ro-20261028]
+    paths:
+      - .github/workflows/rc6-a160-held-preflight-readonly.yml
+      - scripts/rc6_a160_held_preflight_ro.py
+      - scripts/rc6_a160_preflight_runner.py
+      - tests/test_rc6_a160_held_preflight_ro.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  bounded-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Exact candidate/Predeploy run; artifact ID remains blocked until this
+      # run finishes GREEN and its digest is inspected before publication.
+      RC6_CANDIDATE_SHA: 'd8d95a8f9b9221e5ab58ff88120f44bc64e31a24'
+      RC6_CANDIDATE_TREE: 'e4f18b683a83e455549a794ebae4c2266d8c05f4'
+      RC6_PREDEPLOY_RUN_ID: '40722331095'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12833310494'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact diagnostic commit and local safety regression
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_rc6_a160_held_preflight_ro.py -q
+          test "$RC6_CANDIDATE_SHA" != 0000000000000000000000000000000000000000
+          test "$RC6_CANDIDATE_TREE" != 0000000000000000000000000000000000000000
+          test "$RC6_PREDEPLOY_RUN_ID" != 0
+          test "$RC6_PREDEPLOY_ARTIFACT_ID" != 0
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC6_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Bind source and exact frozen Predeploy evidence on runner
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/rc6_a160_preflight_runner.py \
+            "$RC6_CANDIDATE_SHA" "$RC6_CANDIDATE_TREE" \
+            "$RC6_PREDEPLOY_RUN_ID" "$RC6_PREDEPLOY_ARTIFACT_ID" \
+            "$GITHUB_REPOSITORY" candidate .
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a160_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a160_readonly" "$HOME/.ssh/known_hosts"
+      - name: One bounded source-staged preflight on exact Droplet
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 90s \
+            ssh -T -i "$HOME/.ssh/rc6_a160_readonly" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+              -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+              "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - '$RC6_CANDIDATE_SHA' '$RC6_CANDIDATE_TREE' '$RC6_A160_POLICY_B64' '$RC6_A160_DISK_POLICY_B64' '$RC6_A160_REQUIRED_BYTES'" \
+              < "$RUNNER_TEMP/rc6-a160/host-stdin.py" | tee evidence/rc6-a160-preflight.jsonl
+          test "$(wc -c < evidence/rc6-a160-preflight.jsonl)" -lt 32768
+          PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/rc6-a160-preflight.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A160_HELD_PREFLIGHT_RO=')
+          value=json.loads(lines[0].split('=',1)[1])
+          assert value['schema']=='rc6.a160.held-preflight-ro.v1'
+          assert value['status']=='GREEN' and value['host_mutations']==0
+          assert value['droplet']=={'id':'594077619','region':'nyc1'}
+          assert value['admission']['flat_three_books'] is True
+          assert value['admission']['critical_issues_only_healthy'] is True
+          assert value['timers']['a138_a143_chain_exact'] is True
+          assert value['timers']['owned_count']==16
+          assert value['disk']['bytes_gate'] and value['disk']['inodes_gate']
+          print('RC6_A160_HOST_PREFLIGHT=GREEN|NO_GO_PAPER_UNCHANGED')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a160-held-preflight-ro-${{ github.sha }}
+          path: evidence/rc6-a160-preflight.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a160_readonly"
