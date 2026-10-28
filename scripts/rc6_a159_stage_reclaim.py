@@ -125,7 +125,18 @@ def barrier_safe():
         stat.S_IMODE(s.st_mode)!=0o600 or s.st_nlink!=1 or s.st_size>1024):
         fail('BARRIER_IDENTITY_RED')
     q=json.loads(BARRIER.read_text())
-    if q.get('status')!='IDLE': fail('BARRIER_ACTIVE')
+    phases={'reconcile','classify','offline_preclean','preclean','suspend','drain',
+            'transfer','promotion','flat_book','verify_carryover','timers_restore',
+            'timers_restored','backup_retire','finalize','cleanup_contract',
+            'cleanup_recover','cleanup_restore','cleanup_final'}
+    if (not isinstance(q,dict) or
+        not isinstance(q.get('candidate'),str) or
+        not re.fullmatch('[0-9a-f]{40}',q['candidate']) or
+        not isinstance(q.get('run'),str) or not re.fullmatch('[1-9][0-9]*',q['run']) or
+        not isinstance(q.get('attempt'),str) or not re.fullmatch('[1-9][0-9]*',q['attempt']) or
+        q.get('phase') not in phases or q.get('status') not in {'IDLE','INFLIGHT','CONTRACT_ONLY'}):
+        fail('BARRIER_SCHEMA_RED')
+    if q['status']!='IDLE': fail('BARRIER_ACTIVE')
     return 'IDLE'
 
 
