@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -12,6 +13,47 @@ from scripts import rc6_a154_runtime_family_readonly as probe
 
 
 class ProbeTests(unittest.TestCase):
+    def test_shadow_envelope_digest_and_tamper_rejection(self):
+        payload = {'generation_id': 'a' * 64, 'status': 'SHADOW_OBSERVING',
+                   'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'}
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True,
+                           separators=(',', ':')).encode('ascii')).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'CURRENT.json'
+            path.write_text(json.dumps({'payload': payload, 'digest': digest}))
+            self.assertEqual(probe.shadow_payload(path)['generation_id'], 'a' * 64)
+            payload['status'] = 'TAMPERED'
+            path.write_text(json.dumps({'payload': payload, 'digest': digest}))
+            with self.assertRaisesRegex(ValueError, 'SHADOW_DIGEST_MISMATCH'):
+                probe.shadow_payload(path)
+
+    def test_iol_cache_projection_omits_records_and_signals_missing(self):
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'cache.json'
+            now = datetime(2026, 10, 28, 14, tzinfo=timezone.utc)
+            path.write_text(json.dumps({'cache_state': 'CACHE_STALE',
+                'last_known_good_at': '2026-10-27T21:50:00Z',
+                'continuation_state': 'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL',
+                'section_states': {'fci': 'CACHE_STALE'},
+                'records': [{'symbol': 'PRIVATE_SYMBOL', 'account': 'PRIVATE_ACCOUNT'}]}))
+            output = probe.iol_cache_probe(path, now)
+            self.assertEqual(output['cache_state'], 'CACHE_STALE')
+            self.assertNotIn('PRIVATE_SYMBOL', json.dumps(output))
+            path.unlink()
+            missing = probe.iol_cache_probe(path, now)
+            self.assertEqual(missing['cache_state'], 'NO_VERIFICADO')
+            self.assertEqual(missing['read_state'], 'FILENOTFOUNDERROR')
+
+    def test_failed_unit_logs_are_classified_without_exposing_lines(self):
+        raw = 'Account=PRIVATE_ACCOUNT\nHOST_RESERVE_REQUIRED\n'
+        with patch.object(probe, 'command', return_value=raw):
+            result = probe.journal_classes('porota-local-eod-history-rc6.service')
+        self.assertEqual(result['classes'], ['HOST_RESERVE_REQUIRED'])
+        self.assertNotIn('PRIVATE_ACCOUNT', json.dumps(result))
+        with self.assertRaisesRegex(ValueError, 'JOURNAL_UNIT_NOT_ALLOWED'):
+            probe.journal_classes('ppi-watch.service')
+
     def test_wrong_droplet_stops_before_runtime_read(self):
         with patch.object(probe, 'metadata', side_effect=['123456789', 'nyc1']), \
              patch.object(probe, 'safe_json', side_effect=AssertionError('runtime accessed')):

@@ -9,6 +9,8 @@ from __future__ import annotations
 import base64
 from contextlib import closing
 from datetime import datetime, timezone
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -59,8 +61,69 @@ def optional_json(path: Path, maximum: int = 65536) -> dict:
         return {}
 
 
+def shadow_payload(path: Path, maximum: int = 65536) -> dict:
+    """Decode the SHADOW envelope and authenticate its canonical payload."""
+    envelope = safe_json(path, maximum)
+    if set(envelope) != {'payload', 'digest'} or not isinstance(envelope['payload'], dict):
+        raise ValueError('SHADOW_ENVELOPE_INVALID')
+    recorded = envelope['digest']
+    if not isinstance(recorded, str) or not re.fullmatch(r'[0-9a-f]{64}', recorded):
+        raise ValueError('SHADOW_DIGEST_INVALID')
+    encoder = json.JSONEncoder(sort_keys=True, separators=(',', ':'), default=str,
+                               allow_nan=False)
+    digest = hashlib.sha256()
+    for part in encoder.iterencode(envelope['payload']):
+        digest.update(part.encode('ascii'))
+    if not hmac.compare_digest(digest.hexdigest(), recorded):
+        raise ValueError('SHADOW_DIGEST_MISMATCH')
+    return envelope['payload']
+
+
+def optional_shadow(path: Path, maximum: int = 65536) -> tuple[dict, str]:
+    try:
+        return shadow_payload(path, maximum), 'VERIFIED'
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+        return {}, type(exc).__name__.upper()
+
+
+def file_metadata(path: Path) -> dict:
+    try:
+        info = path.lstat()
+        return {'present': True, 'regular': stat.S_ISREG(info.st_mode),
+                'symlink': stat.S_ISLNK(info.st_mode), 'bytes': info.st_size}
+    except OSError:
+        return {'present': False}
+
+
+def iol_cache_probe(path: Path, now: datetime) -> dict:
+    """Project only bounded cache metadata; never emit records or quotes."""
+    try:
+        size = path.lstat().st_size
+        payload = safe_json(path, 4 * 1024**2)
+        sections = payload.get('section_states')
+        return {'read_state': 'VERIFIED', 'bytes': size,
+                'cache_state': enum(payload.get('cache_state')),
+                'last_known_good_age_s': age(payload.get('last_known_good_at'), now),
+                'refresh_age_s': age(payload.get('refreshed_at'), now),
+                'section_count': count(len(sections)) if isinstance(sections, dict) else None,
+                'continuation_safe': payload.get('continuation_state') ==
+                    'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL'}
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+        try:
+            size = path.lstat().st_size
+        except OSError:
+            size = None
+        return {'read_state': type(exc).__name__.upper(), 'bytes': size,
+                'cache_state': 'NO_VERIFICADO'}
+
+
 def enum(value) -> str:
     return value if isinstance(value, str) and CODE.fullmatch(value) else 'NO_VERIFICADO'
+
+
+def family(value) -> str:
+    return (value if isinstance(value, str) and
+            re.fullmatch(r'[A-Z][A-Z0-9_ /-]{1,39}', value) else 'UNCLASSIFIED_TYPE')
 
 
 def count(value) -> int | None:
@@ -79,6 +142,38 @@ def unit_time(value) -> str | None:
     """Preserve systemd's explicit timezone without guessing a conversion."""
     return (value if isinstance(value, str) and len(value) <= 80 and
             re.fullmatch(r'[A-Za-z0-9 :+./_-]+', value) else None)
+
+
+def service_result(value) -> str:
+    value = value.upper().replace('-', '_') if isinstance(value, str) else ''
+    return enum(value)
+
+
+def journal_classes(service: str) -> dict:
+    """Classify two exact failed units without ever publishing their log lines."""
+    if service not in {'porota-preopen-rc6.service',
+                       'porota-local-eod-history-rc6.service'}:
+        raise ValueError('JOURNAL_UNIT_NOT_ALLOWED')
+    raw = command(['journalctl', '-u', service, '-n', '20', '--no-pager',
+                   '--output=cat'], 2.0)
+    if raw is None:
+        return {'read': 'UNAVAILABLE', 'classes': []}
+    indicators = ('HOST_RESERVE_REQUIRED', 'DEFERRED_DISK',
+                  'COLD_ARCHIVE_PHYSICAL_BUDGET', 'CALENDAR_UNVERIFIED',
+                  'POSTCLOSE_WINDOW_REQUIRED', 'LOCAL_EOD_SOURCE_READ_BUDGET',
+                  'PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED',
+                  'PREOPEN_OPERATOR_PAUSE_EVIDENCE_CHANGED',
+                  'PREOPEN_DEPLOY_RECEIPT_UNSAFE',
+                  'SCHEDULER_A151_OPERATOR_DAY_EXPIRED',
+                  'IOL_REFERENCE_UNAVAILABLE', 'BYMA_WATCH_NOT_TODAY',
+                  'PAPER_SAFETY_INVARIANT_FAILED')
+    classes = [code for code in indicators if code in raw]
+    if service == 'porota-preopen-rc6.service' and '"red_checks"' in raw:
+        classes.append('PREOPEN_RED_REPORT')
+    if service == 'porota-local-eod-history-rc6.service' and '"state": "BLOCKED"' in raw:
+        classes.append('LOCAL_EOD_BLOCKED_REPORT')
+    return {'read': 'BOUNDED', 'classes': sorted(classes),
+            'classification': 'MATCHED' if classes else 'NO_VERIFICADO'}
 
 
 def age(value, now: datetime) -> float | None:
@@ -182,11 +277,16 @@ def pulse() -> dict:
                            'pid_present': type(children.get(name, {}).get('pid')) is int}
                     for name in ROLES}
     shadow_root = ARTIFACTS / 'dynamic-shadow'
-    current = optional_json(shadow_root / 'CURRENT.json', 4096)
-    shadow = optional_json(shadow_root / 'status.json', 32768)
-    idle = optional_json(shadow_root / 'idle.json', 4096)
+    current, current_read = optional_shadow(shadow_root / 'CURRENT.json', 4096)
+    shadow, status_read = optional_shadow(shadow_root / 'status.json', 65536)
+    idle, idle_read = optional_shadow(shadow_root / 'idle.json', 4096)
+    for payload in (shadow, idle):
+        if payload and (type(payload.get('real_orders_sent')) is not int or
+                        payload['real_orders_sent'] != 0 or
+                        payload.get('real_routes') != 'NOT_CALLED'):
+            raise ValueError('SHADOW_PAPER_ZERO_REQUIRED')
     guardian = optional_json(GUARDIAN, 8192)
-    cache = optional_json(FAMILY_CACHE, 65536)
+    cache = iol_cache_probe(FAMILY_CACHE, now)
     gate = optional_json(PREOPEN, 4096)
     with closing(connect_ro()) as conn:
         paper = safety(conn, safe_json(MARKER))
@@ -200,11 +300,13 @@ def pulse() -> dict:
                 if count(r['real_orders_sent']) != 0:
                     raise ValueError('SCALPING_REAL_ORDERS_NOT_ZERO')
                 scalp = {'state': enum(r['state']), 'heartbeat_at': stamp(r['heartbeat_at']),
+                         'heartbeat_age_s': age(r['heartbeat_at'], now),
                          'cursor_numeric': count(r['cursor']), 'selected': count(r['selected']),
                          'successful': count(r['successful']), 'failed': count(r['failed']),
-                         'candidates': count(r['candidates']), 'real_orders_sent': 0}
+                         'candidates': count(r['candidates']), 'real_orders_sent': 0,
+                         'counter_scope': 'CUMULATIVE_NOT_TODAY'}
     generation = current.get('generation_id')
-    if not isinstance(generation, str) or len(generation) > 128:
+    if not isinstance(generation, str) or not re.fullmatch(r'[0-9a-f]{64}', generation):
         generation = None
     return {'at_utc': now.isoformat(), 'at_art': now.astimezone(ART).isoformat(),
             'paper': paper, 'paper_heartbeat_age_s': age(paper['heartbeat_at'], now),
@@ -214,14 +316,19 @@ def pulse() -> dict:
             'children': child_status,
             'shadow': {'generation_id_internal': generation, 'status': enum(shadow.get('status')),
                        'phase': enum(shadow.get('phase')), 'as_of': stamp(shadow.get('as_of')),
+                       'current_read': current_read, 'status_read': status_read,
+                       'idle_read': idle_read,
+                       'files': {name: file_metadata(shadow_root / name)
+                                 for name in ('CURRENT.json', 'status.json', 'idle.json')},
                        'idle_heartbeat_age_s': age(idle.get('heartbeat_at'), now),
-                       'idle_source_freshness_renewed': idle.get('source_freshness_renewed') is True},
+                       'idle_source_freshness_renewed': idle.get('source_freshness_renewed')
+                       if idle_read == 'VERIFIED' and type(idle.get('source_freshness_renewed')) is bool
+                       else None},
             'scalping': scalp,
             'iol_guardian': {'state': enum(guardian.get('state')),
                              'checked_age_s': age(guardian.get('checked_at'), now),
                              'authenticated_age_s': age(guardian.get('last_authenticated_at'), now)},
-            'iol_cache': {'state': enum(cache.get('cache_state')),
-                          'source_age_s': age(cache.get('last_known_good_at') or cache.get('refreshed_at'), now)},
+            'iol_cache': cache,
             'preopen': {'status': enum(gate.get('status')),
                         'trade_day_ar': gate.get('trade_day_ar') if re.fullmatch(
                             r'20[0-9]{2}-[0-9]{2}-[0-9]{2}', str(gate.get('trade_day_ar'))) else None}}
@@ -240,6 +347,9 @@ def family_counts() -> dict:
                                            discovery=enum(r['discovery_status']), checked_at=stamp(r['checked_at']))
                                       for r in rows if r['instrument_type'] in FAMILIES]
                 result['coverage_denominator'] = len(rows)
+                result['coverage_extra_types'] = sorted(family(r['instrument_type']) for r in rows
+                                                        if r['instrument_type'] not in FAMILIES)
+                result['coverage_scope'] = 'PPI_LATEST_QUERY_RESULT_NOT_ACCUMULATED_CATALOG'
             else:
                 result['coverage'] = 'TABLE_MISSING'
             if table(conn, 'financial_instrument_catalog') and table(conn, 'candidate_identity_v2'):
@@ -257,6 +367,9 @@ def family_counts() -> dict:
                                           candidates=count(r['candidates']), latest_seen=stamp(r['latest_seen']))
                                      for r in rows if r['family'] in FAMILIES]
                 result['catalog_denominator'] = len(rows)
+                result['catalog_extra_types'] = sorted(family(r['family']) for r in rows
+                                                       if r['family'] not in FAMILIES)
+                result['catalog_scope'] = 'ACCUMULATED_PRIMARY_AND_COMPLEMENTARY_NOT_LIVE_READY'
             else:
                 result['catalog'] = 'TABLE_MISSING'
             if table(conn, 'ppi_intraday_contract_state'):
@@ -313,9 +426,12 @@ def timer_states(policy: dict) -> dict:
                         'last_trigger_host_time': unit_time(record.get('LastTriggerUSec')),
                         'next_elapse_host_time': unit_time(record.get('NextElapseUSecRealtime')),
                         'service_active': enum(child.get('ActiveState', '').upper()),
-                        'service_result': enum(child.get('Result', '').upper()),
+                        'service_result': service_result(child.get('Result')),
                         'service_exit': child.get('ExecMainStatus') if
                         re.fullmatch(r'[0-9]{1,3}', str(child.get('ExecMainStatus'))) else None}
+        if result[name]['service_active'] == 'FAILED' and service in {
+                'porota-preopen-rc6.service', 'porota-local-eod-history-rc6.service'}:
+            result[name]['failure_classes'] = journal_classes(service)
     return result
 
 
@@ -337,7 +453,7 @@ def main(encoded_policy: str) -> None:
     second = pulse()
     first_id = first['shadow'].pop('generation_id_internal')
     second_id = second['shadow'].pop('generation_id_internal')
-    output = {'schema': 'rc6.a154.runtime-family-ro.v1',
+    output = {'schema': 'rc6.a154.runtime-family-ro.v2',
               'droplet': {'id': host_id, 'region': region},
               'release': {'deploy_sha': marker['deploy_sha'], 'candidate_sha': marker['candidate_sha'],
                           'validation': enum(marker.get('validation_status')),
