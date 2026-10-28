@@ -1,0 +1,70 @@
+name: RC6 A154 runtime and family READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a154-runtime-family-ro-20261028]
+    paths:
+      - .github/workflows/rc6-a154-runtime-family-readonly.yml
+      - scripts/rc6_a154_runtime_family_readonly.py
+      - tests/test_rc6_a154_runtime_family_readonly.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  bounded-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check diagnostic source and safety tests
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_rc6_a154_runtime_family_readonly.py -q
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a154_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a154_readonly" "$HOME/.ssh/known_hosts"
+      - name: Observe one bounded RC6 host window
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          mkdir -p evidence
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout --signal=TERM --kill-after=5s 90s \
+            ssh -i "$HOME/.ssh/rc6_a154_readonly" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - '$POLICY_B64'" \
+              < scripts/rc6_a154_runtime_family_readonly.py | tee evidence/rc6-a154-runtime-family.jsonl
+          test "$(wc -c < evidence/rc6-a154-runtime-family.jsonl)" -lt 32768
+          grep -q '^RC6_A154_RUNTIME_FAMILY_RO=' evidence/rc6-a154-runtime-family.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a154-runtime-family-readonly-${{ github.sha }}
+          path: evidence/rc6-a154-runtime-family.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a154_readonly"
