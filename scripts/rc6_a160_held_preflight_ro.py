@@ -206,6 +206,21 @@ def guardian_state(s, now):
             'pending_guardian_restart_under_canonical_migration':True}
 
 
+def frozen_identity_diagnostic(q):
+    """Four booleans and a digest; never disclose installed manifest values."""
+    try:
+        frozen, digest = q._a143_exact_json(
+            q.ROOT/'data/deploy/porota-frozen-candidate.json', 16384)
+        tar = frozen.get('image_tar_sha256')
+        return {'readable':True,'sha256':digest,
+                'candidate_sha_matches':frozen.get('candidate_sha') == q.A143_PENDING_SOURCE_SHA,
+                'image_id_matches':frozen.get('image_id') == q.A143_PENDING_IMAGE_ID,
+                'candidate_tree_matches':frozen.get('candidate_tree_sha') == q.A143_PENDING_TREE_SHA,
+                'tar_hash_shape_valid':isinstance(tar,str) and bool(HASH.fullmatch(tar))}
+    except Exception:
+        return {'readable':False}
+
+
 def main(candidate_sha, tree_sha, policy_b64, disk_policy_b64, required_bytes):
     now = datetime.now(timezone.utc)
     receipt = {'schema':'rc6.a160.held-preflight-ro.v1',
@@ -281,6 +296,8 @@ def main(candidate_sha, tree_sha, policy_b64, disk_policy_b64, required_bytes):
     except Exception as exc:
         receipt['status'] = 'RED'
         receipt['error_code'] = code(exc)
+        if receipt['error_code'] == 'QUIESCENCE_A143_FROZEN_IDENTITY_RED' and 'q' in locals():
+            receipt['frozen_identity_diagnostic'] = frozen_identity_diagnostic(q)
     finally:
         if fd is not None:
             os.close(fd)

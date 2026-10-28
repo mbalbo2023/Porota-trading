@@ -165,6 +165,19 @@ class HostProbeTests(unittest.TestCase):
         self.assertEqual(called[:7],['docker','exec','-e','PYTHONDONTWRITEBYTECODE=1',
                                       'porota_critical_approval_rc6','python','-B'])
 
+    def test_frozen_mismatch_diagnostic_discloses_only_boolean_identity(self):
+        fake=types.SimpleNamespace(ROOT=Path('/opt/porota-trading'),
+            A143_PENDING_SOURCE_SHA='a'*40,A143_PENDING_IMAGE_ID='sha256:'+'b'*64,
+            A143_PENDING_TREE_SHA='c'*40,
+            _a143_exact_json=lambda *args:({'candidate_sha':'SECRET_CANDIDATE',
+                'image_id':'SECRET_IMAGE','candidate_tree_sha':'SECRET_TREE',
+                'image_tar_sha256':'d'*64},'e'*64))
+        result=host.frozen_identity_diagnostic(fake)
+        self.assertEqual(result,{'readable':True,'sha256':'e'*64,
+            'candidate_sha_matches':False,'image_id_matches':False,
+            'candidate_tree_matches':False,'tar_hash_shape_valid':True})
+        self.assertNotIn('SECRET',json.dumps(result))
+
 
 class RunnerBindingTests(unittest.TestCase):
     def test_artifact_redirect_strips_token_and_rejects_untrusted_host(self):
