@@ -1,0 +1,132 @@
+name: RC6 A174 frozen artifact and A171 running host preflight READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a174-frozen-running-preflight-20261028]
+    paths:
+      - .github/workflows/rc6-a174-frozen-running-preflight.yml
+      - scripts/rc6_a160_preflight_runner.py
+      - scripts/rc6_a174_running_preflight_ro.py
+      - tests/test_rc6_a174_running_preflight_ro.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RC6_CANDIDATE_SHA: 'b6e6ce75f29fe117aaa42b0bfcd9386ea93a0aa0'
+      RC6_CANDIDATE_TREE: 'ac82bcb2617748294c9950a009864dbf95e336f4'
+      RC6_PREDEPLOY_RUN_ID: '40781948389'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12858223304'
+      RC6_PREDEPLOY_ARTIFACT_DIGEST: 'sha256:d15a8f66713142da43e380a4cb59395bc4eed3c52ac7e256058991fb5a5c5982'
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC6_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+      - name: Verify frozen artifact, source and exact disk formula
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
+          test "$(sha256sum scripts/rc6_a174_running_preflight_ro.py | cut -d' ' -f1)" = "$RC6_SOURCE_SHA"
+          [[ "$RC6_PREDEPLOY_ARTIFACT_ID" =~ ^[1-9][0-9]+$ ]]
+          [[ "$RC6_PREDEPLOY_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_rc6_a174_running_preflight_ro.py -q
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/rc6_a160_preflight_runner.py \
+            "$RC6_CANDIDATE_SHA" "$RC6_CANDIDATE_TREE" \
+            "$RC6_PREDEPLOY_RUN_ID" "$RC6_PREDEPLOY_ARTIFACT_ID" \
+            "$GITHUB_REPOSITORY" candidate .
+        env:
+          RC6_SOURCE_SHA: 'a96fdcc6cdc6e97a50dde897b7c8e85a1026da038b403634d0006417b65b3ae4'
+      - name: Strict SSH identity
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a174_preflight"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a174_preflight" "$HOME/.ssh/known_hosts"
+      - name: Recheck exact A171 running host and pretransfer capacity without writes
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 100s ssh -T -i "$HOME/.ssh/rc6_a174_preflight" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - '$RC6_CANDIDATE_SHA' '$RC6_CANDIDATE_TREE' '$RC6_A160_POLICY_B64' '$RC6_A160_DISK_POLICY_B64' '$RC6_A160_REQUIRED_BYTES'" \
+            < "$RUNNER_TEMP/rc6-a160/host-stdin.py" | tee evidence/host.jsonl
+          test "$(wc -c < evidence/host.jsonl)" -lt 32768
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          lines=Path('evidence/host.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A174_RUNNING_PREFLIGHT_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          policy=json.loads(base64.b64decode(os.environ['RC6_A160_DISK_POLICY_B64'],validate=True))
+          required=int(os.environ['RC6_A160_REQUIRED_BYTES'])
+          assert row['schema']=='rc6.a174.running-a171-preflight-ro.v1'
+          assert row['status']=='GREEN' and row['host_mutations']==0
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['candidate_sha']==os.environ['RC6_CANDIDATE_SHA']
+          assert row['candidate_tree']==os.environ['RC6_CANDIDATE_TREE']
+          assert row['admission']['prior_receipt_sha256']=='7a5e73359e85ef99796607228876443680f56bfe26ce201f4664474f700eabb5'
+          assert row['admission']['mode']=='CLOSED_A171_PENDING_FIX_FORWARD'
+          assert row['admission']['docker_ids_and_image_match_prior'] is True
+          assert row['admission']['flat_three_books'] is True
+          assert row['timers']['owned_count']==16 and row['timers']['a171_chain_exact'] is True
+          assert row['timers']['all_held_for_migration'] is True
+          assert row['timers']['ppi_snapshot_matches_prior'] is True
+          assert row['iol_guardian']['state']=='AUTHENTICATED'
+          assert row['iol_guardian']['fresh_under_1900s'] is True
+          assert row['scheduler_preview']=={
+              'status':'GREEN','write_intercepted':True,
+              'systemd_mutations':0,'receipt_persisted':False,
+              'a171_origin_exact':True,'owned_timers':16}
+          assert row['real_orders_sent']==0 and row['operational_go'] is False
+          assert row['disk']['required_pretransfer_bytes']==required
+          assert row['disk']['free_bytes']>=required
+          assert row['disk']['inode_free_percent']>=float(policy['disk']['min_inode_free_percent'])
+          assert row['disk']['bytes_gate'] and row['disk']['inodes_gate']
+          receipt={'schema':'rc6.a174.exact-frozen-running-preflight.v1',
+                   'status':'GREEN','candidate_sha':os.environ['RC6_CANDIDATE_SHA'],
+                   'candidate_tree':os.environ['RC6_CANDIDATE_TREE'],
+                   'predeploy_run_id':os.environ['RC6_PREDEPLOY_RUN_ID'],
+                   'artifact_id':os.environ['RC6_PREDEPLOY_ARTIFACT_ID'],
+                   'artifact_digest':os.environ['RC6_PREDEPLOY_ARTIFACT_DIGEST'],
+                   'host':row,'required_pretransfer_bytes':required,
+                   'margin_bytes':row['disk']['free_bytes']-required,
+                   'host_mutations':0,'operational_go':False}
+          Path('evidence/frozen-running.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print('RC6_A174_FROZEN_RUNNING_PREFLIGHT=GREEN|'+json.dumps(receipt,sort_keys=True,separators=(',',':')))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a174-frozen-running-preflight-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a174_preflight"
