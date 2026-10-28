@@ -1,8 +1,10 @@
 name: RC6 A158 stage host receipt hash READ ONLY
 
-# Review stage only; root adds scoped push trigger after verification.
 on:
-  workflow_dispatch:
+  push:
+    branches: [audit/rc6-a158-stage-receipt-hash-ro-20261028]
+    paths:
+      - .github/workflows/rc6-a158-stage-receipt-hash-ro-20261028.yml
 
 permissions:
   contents: read
