@@ -231,12 +231,15 @@ def test_host_unit_reconciliation_preserves_a125_disabled_preopen(monkeypatch, t
         raise AssertionError(args)
 
     monkeypatch.setattr(host_units, '_run', fake_run)
+    # This test is about preserving the historical A125 hold on the next
+    # trading day; it must not depend on the real date of the CI runner.
+    monkeypatch.setattr(suspend, 'datetime', NextDay)
     monkeypatch.setattr(suspend, 'exact_operator_preopen_pause',
-                        lambda: proofs.append('A125') or ('f'*64))
+                        lambda **kwargs: proofs.append(kwargs) or ('f'*64))
     monkeypatch.setattr(suspend, 'operator_preopen_timer_disabled', lambda: True)
     result = host_units.apply(repo_root, policy, tmp_path,
                               keep_active_timers_paused=True)
-    assert proofs == ['A125']
+    assert proofs == [{'historical_hold_only': True}]
     assert mutations == [('systemctl', 'enable', 'porota-runtime-evidence-rc6.timer')]
     assert result['verification'] == [
         {'unit':'porota-preopen-rc6.timer', 'state':'disabled|inactive'},

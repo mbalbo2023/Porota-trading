@@ -224,6 +224,8 @@ def test_deploy_preopen_accepts_exact_suspended_sixteen_timer_policy(tmp_path, m
     raw = Path("ops/policy/host-control-plane-reconciliation-v2.json").read_bytes()
     units = suspend.timer_policy(raw)
     assert len(units) == 16
+    preserved_iol = suspend.preserved_iol_guard(raw)
+    assert preserved_iol == suspend.IOL_OAUTH_GUARD_TIMER
     policy = tmp_path / "ops/policy/host-control-plane-reconciliation-v2.json"
     policy.parent.mkdir(parents=True)
     policy.write_bytes(raw)
@@ -234,14 +236,18 @@ def test_deploy_preopen_accepts_exact_suspended_sixteen_timer_policy(tmp_path, m
         "candidate_sha": candidate, "status": "SUSPENDED",
         "policy_sha256": hashlib.sha256(raw).hexdigest(),
         "timers": units, "attempted": units, "ppi_before": [],
+        "preserved_iol_timer": preserved_iol,
     }))
     monkeypatch.setattr(preopen, "ROOT", tmp_path)
     monkeypatch.setattr(suspend, "ppi_snapshot", lambda: [])
+    guardian_active = True
 
     def systemctl(args, timeout=20):
         if args[1] == "is-enabled":
             return 0, "enabled", ""
         if args[1] == "is-active":
+            if args[2] == preserved_iol and guardian_active:
+                return 0, "active", ""
             return 3, "inactive", ""
         if args[1] == "show":
             return 0, args[2].replace(".timer", ".service"), ""
@@ -249,10 +255,14 @@ def test_deploy_preopen_accepts_exact_suspended_sixteen_timer_policy(tmp_path, m
 
     monkeypatch.setattr(preopen, "cmd", systemctl)
     assert preopen.required_timers(candidate)["state"] == "GREEN"
+    guardian_active = False
+    assert preopen.required_timers(candidate)["state"] == "RED"
+    guardian_active = True
     receipt.write_text(json.dumps({
         "candidate_sha": candidate, "status": "SUSPENDED",
         "policy_sha256": hashlib.sha256(raw).hexdigest(),
         "timers": units[:-1], "attempted": units[:-1], "ppi_before": [],
+        "preserved_iol_timer": preserved_iol,
     }))
     assert preopen.required_timers(candidate)["state"] == "RED"
 

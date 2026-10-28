@@ -769,14 +769,57 @@ def test_cauciones_have_visible_navigation_and_separate_paper_decisions(client):
     assert len(page.select(".terminal-table")) == 1
     assert "CAU-PAPER-1" in placements.text
     assert "Cash sweep cauciones" in placements.text and "WAITING_WINDOW" in placements.text
-    assert "12,50 %" in placements.text and "6,25" in placements.text
-    assert "sensitive-value" not in placements.text and "[REDACTED]" in placements.text
+    # The fixture deliberately has no request fingerprint or verified cost
+    # authority. Show the ledger identity/status but suppress every economic
+    # amount until its all-or-none proof is valid.
+    assert "CAUCION_COST_PROVENANCE_NOT_VERIFIED" in placements.text
+    assert "12,50 %" not in placements.text and "6,25" not in placements.text
+    with Store(database, now=NOW) as store:
+        unverified = Projection(store).cauciones()
+    assert unverified.state == "NO_VERIFICADO"
+    assert unverified.rows[0]["paper_id"] == "CAU-PAPER-1"
+    assert unverified.rows[0]["status"] == "OPEN"
+    assert not any(key in unverified.rows[0] for key in (
+        "principal", "annual_rate_fraction", "gross_interest", "total_fees",
+        "net_interest", "terms_json"))
+    assert "sensitive-value" not in placements.text
     decisions = client.get("/trading/cauciones?caucion_view=decisiones")
     assert decisions.status_code == 200
     assert "NO_ELIGIBLE_OFFER" in decisions.text
     assert "HOLD" in decisions.text and "PLACED_SIMULATED" in decisions.text
     assert len(BeautifulSoup(decisions.text, "html.parser").select(".terminal-table")) == 1
     assert "PPI es identidad primaria" in decisions.text
+
+
+def test_caucion_fingerprint_is_in_approved_ro_projection_and_valid_costs_render(client, database):
+    # A valid modern PAPER position exercises the projection's named-column
+    # allowlist. Without request_fingerprint, validate_position rejects it
+    # despite a correct ledger row and the dashboard falsely hides the cut.
+    terms = json.dumps({
+        "instrument_id": "CAU:ARS:1D", "currency": "ARS",
+        "annual_rate_fraction": "0.125", "start_date": "2026-10-05",
+        "maturity_at": (NOW + timedelta(days=1)).isoformat(),
+        "quoted_at": (NOW - timedelta(minutes=1)).isoformat(),
+        "available_principal": "100000", "minimum_principal": "1000",
+        "principal_step": "1000", "day_count_basis": 365,
+        "fee_payment": "MATURITY", "metadata_source": "PPI_PRIMARY_TEST_CONTRACT",
+    }, sort_keys=True)
+    digest = hashlib.sha256((terms + "|100000").encode()).hexdigest()
+    with sqlite3.connect(database) as db:
+        db.execute("ALTER TABLE paper_cauciones ADD COLUMN request_fingerprint TEXT")
+        db.execute("""UPDATE paper_cauciones SET request_fingerprint=?,source='PRODUCTION_PAPER',
+                   gross_interest='34.25',fee_payment='MATURITY',terms_json=?
+                   WHERE paper_id='CAU-PAPER-1'""", (digest, terms))
+    with Store(database, now=NOW) as store:
+        page = Projection(store).cauciones()
+    assert page.state == "AVAILABLE" and page.rows[0]["paper_id"] == "CAU-PAPER-1"
+    assert page.rows[0]["request_fingerprint"] == digest
+    assert page.rows[0]["net_interest"] == "33.00"
+    assert page.rows[0]["broker_account_fees_verified"] is not True
+    response = client.get("/trading/cauciones")
+    assert response.status_code == 200
+    assert "CAU-PAPER-1" in response.text and "12,50 %" in response.text
+    assert "sensitive-value" not in response.text
 
 
 def test_equity_read_interruption_is_not_reported_as_empty_ledger(database):
