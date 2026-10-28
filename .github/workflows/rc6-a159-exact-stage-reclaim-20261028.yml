@@ -1,8 +1,10 @@
 name: RC6 A159 exact failed attempt stage reclaim
 
-# Review only. No push trigger until owner checks scope and host mutex.
 on:
-  workflow_dispatch:
+  push:
+    branches: [audit/rc6-a159-exact-stage-reclaim-20261028]
+    paths:
+      - .github/workflows/rc6-a159-exact-stage-reclaim-20261028.yml
 
 permissions:
   actions: read
