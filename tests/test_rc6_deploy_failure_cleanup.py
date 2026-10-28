@@ -170,6 +170,38 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertEqual(result['status'], 'RED')
         self.assertTrue(self.staging.exists())
 
+    def test_host_mount_nested_in_staging_blocks_recursive_deletion(self):
+        nested = self.staging / 'foreign-data'
+        nested.mkdir()
+        (nested / 'backup.db').write_bytes(b'preserve')
+        with patch.object(cleanup, 'host_mountpoints',
+                          return_value=[Path('/'), nested]):
+            result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'RED')
+        self.assertIn('STAGING_HOST_MOUNTPOINT', result['errors'])
+        self.assertEqual((nested / 'backup.db').read_bytes(), b'preserve')
+        self.assertTrue((self.unrelated / 'keep').exists())
+
+    def test_mountinfo_escapes_and_invalid_inventory_fail_closed(self):
+        escaped = '/tmp/porota\\040stage/foreign\\134mount'
+        raw = f'24 1 8:1 / {escaped} rw - ext4 /dev/loop0 rw\n'
+        with patch.object(cleanup.Path, 'read_text', return_value=raw):
+            self.assertEqual(cleanup.host_mountpoints(),
+                             [Path('/tmp/porota stage/foreign\\mount')])
+        with patch.object(cleanup.Path, 'read_text', return_value=raw.replace('\\040', '\\bad')):
+            with self.assertRaisesRegex(cleanup.CleanupRejected,
+                                        'HOST_MOUNT_INVENTORY_INVALID'):
+                cleanup.cleanup(SHA)
+        self.assertTrue(self.staging.exists())
+        self.assertIn('porota-predeploy-v2:' + SHA, self.docker.tags)
+        self.assertFalse(any(call[:3] == ['docker', 'image', 'rm']
+                             for call in self.docker.calls))
+        with patch.object(cleanup.Path, 'read_text', side_effect=OSError('proc unavailable')):
+            with self.assertRaisesRegex(cleanup.CleanupRejected,
+                                        'HOST_MOUNT_INVENTORY_FAILED'):
+                cleanup.cleanup(SHA)
+        self.assertTrue(self.staging.exists())
+
     def test_tmpfs_has_no_host_source_and_does_not_disable_cleanup(self):
         self.docker.containers[CID] = (STABLE, [{'Type': 'tmpfs', 'Source': ''}])
         result = cleanup.cleanup(SHA)
