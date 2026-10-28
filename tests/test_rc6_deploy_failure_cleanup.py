@@ -289,7 +289,8 @@ class FailureCleanupTests(unittest.TestCase):
         pre = workflow.split('      - name: Account pre-suspend failure without recovery or timer writes', 1)[1].split('      - name:', 1)[0]
         full = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         outcomes = {'host_reconcile': 'success', 'classify': 'failure',
-                    'diskguard': 'skipped', 'suspend': 'skipped', 'drain': 'skipped',
+                    'pre_suspend_snapshot': 'skipped', 'diskguard': 'skipped',
+                    'suspend': 'skipped', 'drain': 'skipped',
                     'transfer': 'skipped', 'promotion': 'skipped',
                     'flat_book': 'skipped', 'timers_restore': 'skipped',
                     'timers_restored': 'skipped', 'backup_retire': 'skipped',
@@ -330,6 +331,18 @@ print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('RC6_PRE_SUSPEND_DISK_FREE=4184719360', result.stdout)
             self.assertEqual(json.loads(state.read_text()), timers)
+        outcomes.update(classify='success', pre_suspend_snapshot='success',
+                        diskguard='failure')
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        retire = workflow.split('      - name: Retire only unchanged own pre-suspend attempt barrier', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("steps.diskguard.outcome == 'failure'", retire)
+        self.assertIn("steps.suspend.outcome == 'skipped'", retire)
+        self.assertIn("steps.pre_suspend_account.outcome == 'success'", retire)
+        self.assertIn('--phase cleanup_presuspend python3 -', retire)
+        self.assertIn('rc6_pre_suspend_fingerprint.py', retire)
+        self.assertNotIn('systemctl start', retire)
+        self.assertNotIn('--action restore', retire)
 
 
 if __name__ == '__main__':

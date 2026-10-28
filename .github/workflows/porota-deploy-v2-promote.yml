@@ -562,6 +562,23 @@ jobs:
             echo "RC6_PAPER_SESSION=GREEN|mode=$SESSION_MODE|EXACT_PENDING_LEDGER_REQUIRED"
           fi
 
+      - name: Capture exact pre-suspend host fingerprint
+        id: pre_suspend_snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          RECEIPT="$(timeout 60 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - --policy-b64 '$POLICY_B64'" \
+            < scripts/rc6_pre_suspend_fingerprint.py)"
+          [[ "$RECEIPT" =~ ^RC6_PRE_SUSPEND_FINGERPRINT=GREEN\|[0-9a-f]{64}$ ]]
+          FINGERPRINT="${RECEIPT##*|}"
+          echo "RC6_PRE_SUSPEND_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+          echo 'RC6_PRE_SUSPEND_SNAPSHOT=GREEN|PAPER=0|containers=ALL|timers=16'
+
       - name: Dynamic pre-transfer disk guard and conditional safe cleanup
         id: diskguard
         shell: bash
@@ -826,7 +843,8 @@ jobs:
             < scripts/rc6_deploy_quiescence.py
 
       - name: Account pre-suspend failure without recovery or timer writes
-        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
+        id: pre_suspend_account
+        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.pre_suspend_snapshot.outcome == 'failure' || steps.pre_suspend_snapshot.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
         timeout-minutes: 1
         shell: bash
         run: |
@@ -840,6 +858,21 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
             'python3 -c '\''import shutil; print("RC6_PRE_SUSPEND_DISK_FREE=" + str(shutil.disk_usage("/").free))'\'''
+
+      - name: Retire only unchanged own pre-suspend attempt barrier
+        if: ${{ always() && (steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' && steps.pre_suspend_account.outcome == 'success' && env.RC6_PRE_SUSPEND_FINGERPRINT != '' }}
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$RC6_PRE_SUSPEND_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]
+          POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_presuspend python3 - --policy-b64 '$POLICY_B64' --expected-fingerprint '$RC6_PRE_SUSPEND_FINGERPRINT'" \
+            < scripts/rc6_pre_suspend_fingerprint.py
 
       - name: Transfer frozen artifact
         id: transfer
