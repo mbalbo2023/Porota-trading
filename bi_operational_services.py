@@ -147,12 +147,29 @@ def _job(store, key, state, detail, success=False):
           (key, stamp, last_success, state, str(detail)[:1000]))
 
 
-def _reports_due(store):
+def _postclose_daily_due(store, key):
     with store.connect() as c:
-        row = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
-    interval = (REPORT_SQLITE_RETRY_SECONDS if row and row[0] == "ROJO" and
-                row[1] == "POSTCLOSE_SQLITE_FULL" else 6 * 3600)
-    return _job_due(store, "REPORTS", interval)
+        row = c.execute("SELECT state,detail,last_run_at FROM operational_jobs "
+                        "WHERE job_key=?", (key,)).fetchone()
+    if row and row[0] == "ROJO" and row[1] == "POSTCLOSE_SQLITE_FULL":
+        # SQLite capacity is recoverable after cleanup: retain the bounded
+        # retry contract, including after a transient outage during postclose.
+        return _job_due(store, key, REPORT_SQLITE_RETRY_SECONDS)
+    if row and row[2]:
+        try:
+            # A report or summary (including a quarantined invalid PAPER
+            # ledger) needs at most one routine attempt per local trading day.
+            # Forced operator rechecks remain available.
+            attempted = datetime.fromisoformat(row[2])
+            if attempted.astimezone(TZ).date() == datetime.now(TZ).date():
+                return False
+        except (TypeError, ValueError):
+            pass
+    return True
+
+
+def _reports_due(store):
+    return _postclose_daily_due(store, "REPORTS")
 
 
 def collect_sre(store):
@@ -772,6 +789,16 @@ def service_tick(store, phase, force=False):
         if force or _reports_due(store):
             try:
                 ensure_reports(store, include_today=True)
+            except ValueError as exc:
+                if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+                    raise
+                # Old or ambiguous caucion fee evidence cannot be normalized
+                # into a plausible PnL. Mark the entire report unavailable;
+                # do not modify the ledger, deliver a closing summary or
+                # terminate/restart the scanner for an ancillary PDF job.
+                _job(store, "REPORTS", "ROJO", "POSTCLOSE_CAUCION_LEDGER_INVALID",
+                     success=False)
+                return
             except sqlite3.OperationalError as exc:
                 if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
                     raise
@@ -780,12 +807,19 @@ def service_tick(store, phase, force=False):
         elif not force:
             with store.connect() as c:
                 state = c.execute("SELECT state,detail FROM operational_jobs WHERE job_key='REPORTS'").fetchone()
-            if state and state[0] == "ROJO" and state[1] == "POSTCLOSE_SQLITE_FULL":
+            if state and state[0] == "ROJO" and state[1] in {
+                    "POSTCLOSE_SQLITE_FULL", "POSTCLOSE_CAUCION_LEDGER_INVALID"}:
                 return
-        if not force and not _job_due(store, "CLOSING_SUMMARY_RETRY", REPORT_SQLITE_RETRY_SECONDS):
+        if not force and not _postclose_daily_due(store, "CLOSING_SUMMARY_RETRY"):
             return
         try:
             send_closing_summary(store)
+        except ValueError as exc:
+            if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+                raise
+            _job(store, "REPORTS", "ROJO", "POSTCLOSE_CAUCION_LEDGER_INVALID",
+                 success=False)
+            return
         except sqlite3.OperationalError as exc:
             if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
                 raise

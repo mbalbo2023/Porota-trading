@@ -1985,6 +1985,28 @@ def _write_scanner_metrics(store, stage, values):
     return True
 
 
+CAUCION_LEDGER_RECHECK_SECONDS = 3600
+
+
+def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
+    """Keep an invalid PAPER caucion ledger out of the admission loop.
+
+    A broken historical fee authority must not be silently migrated, used for
+    cash/equity, or retried on every 5-second scanner tick. The durable DB
+    remains authoritative; an hourly read-validation can detect a separately
+    reviewed reconciliation without any automatic ledger modification.
+    """
+    if broker is None or (blocked and tick < next_retry):
+        return blocked, next_retry
+    try:
+        broker.settle_cauciones()
+    except ValueError as exc:
+        if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+            raise
+        return True, tick + CAUCION_LEDGER_RECHECK_SECONDS
+    return False, 0.0
+
+
 def run():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -2025,6 +2047,8 @@ def run():
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
     last_caucion_live_refresh = 0.0
+    caucion_ledger_blocked = False
+    next_caucion_ledger_recheck = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
     startup_watchdog_armed = True
@@ -2033,13 +2057,15 @@ def run():
             if startup_watchdog_armed:
                 faulthandler.cancel_dump_traceback_later()
                 startup_watchdog_armed = False
-            # Una caución vence por contrato, aunque el mercado esté cerrado
-            # o falle el login. No depende de cotizaciones ni de IA.
-            if broker is not None:
-                broker.settle_cauciones()
+            # A contract can mature when CLOSED; invalid historical PAPER fee
+            # evidence blocks every new admission and is rechecked hourly.
+            caucion_ledger_blocked, next_caucion_ledger_recheck = (
+                _settle_cauciones_fail_closed(
+                    broker, caucion_ledger_blocked, next_caucion_ledger_recheck,
+                    time.monotonic()))
             # Breadcrumbs de arranque: permiten distinguir qué paso local
             # antecede al login sin tocar órdenes ni datos de mercado.
-            if reader is None:
+            if reader is None and not caucion_ledger_blocked:
                 store.state(session_state="BOOT_COMMAND", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="Arranque: revisando comandos locales.")
@@ -2048,7 +2074,7 @@ def run():
             command = _claim_command(store)
             if command:
                 reader = _run_command(store, reader, command, None, login_interlock)
-            if reader is None:
+            if reader is None and not caucion_ledger_blocked:
                 store.state(session_state="BOOT_CALENDAR", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="Arranque: verificando calendario operativo.")
@@ -2057,6 +2083,14 @@ def run():
             if phase != last_phase:
                 _announce_phase(store, previous_phase, phase)
                 last_phase = phase
+            if caucion_ledger_blocked:
+                store.state(process_state="DEGRADED",
+                            session_state="MARKET_CLOSED" if phase == "CLOSED" else phase,
+                            heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
+                                   "cost evidence requires reconciliation.")
+                time.sleep(max(30, COMMAND_POLL_SECONDS))
+                continue
             # Autenticación, catálogo e históricos son útiles también durante
             # noches, fines de semana y feriados. Sólo current/book y la
             # estrategia quedan condicionados a rueda abierta.
