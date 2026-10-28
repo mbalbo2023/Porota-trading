@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
 from bu_instrument_catalog import rc6_underlying_opening_block
-from rc6_paper_admission_gate import focus_contracts, publish_preopen
+from rc6_paper_admission_gate import focus_contracts, operator_pause_reason, publish_preopen
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
@@ -157,13 +157,15 @@ def iol_reference_state(today):
     """IOL failure is a provenance state, never a synthetic zero value."""
     try:
         payload = json.loads(IOL_FAMILY_REFERENCE.read_text(encoding='utf-8'))
-        refreshed = datetime.fromisoformat(
-            str(payload.get('refreshed_at') or '').replace('Z','+00:00'))
-        if refreshed.tzinfo is None:
-            raise ValueError('naive timestamp')
         cache = str(payload.get('cache_state') or '').upper()
         now = datetime.now(TZ)
-        age = (now-refreshed.astimezone(TZ)).total_seconds()
+        try:
+            refreshed = datetime.fromisoformat(
+                str(payload.get('refreshed_at') or '').replace('Z','+00:00'))
+            age = ((now-refreshed.astimezone(TZ)).total_seconds()
+                   if refreshed.tzinfo else None)
+        except (TypeError, ValueError):
+            age = None
         fallback = payload.get('fallback_order') or []
         continuation = payload.get('continuation_state')
         no_zero = continuation == 'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL'
@@ -172,6 +174,9 @@ def iol_reference_state(today):
             'caucion:ARS') or '').upper()
         usable_ars = bool(caucion_ars) and caucion_state != 'SOURCE_UNAVAILABLE_NO_LKG'
         exact_fallback = fallback == IOL_FALLBACK_ORDER
+        contract_safe = (no_zero and exact_fallback and
+                         payload.get('real_money_authorized') is False and
+                         payload.get('decision_effect') == 'OBSERVE_ONLY')
         last_good = payload.get('last_known_good_at')
         try:
             last_good_time = datetime.fromisoformat(str(last_good).replace('Z','+00:00'))
@@ -180,28 +185,36 @@ def iol_reference_state(today):
             last_good_age = None
         recent_lkg = last_good_age is not None and 0 <= last_good_age <= 7*86400
         sections = payload.get('section_states') or {}
-        if (cache in {'LIVE_FRESH','CACHE_FRESH'} and no_zero and exact_fallback
-                and recent_lkg and usable_ars and 0 <= age <= 86400):
+        if (not contract_safe or not isinstance(sections, dict) or not sections or
+                cache not in {'LIVE_FRESH','CACHE_FRESH','CACHE_STALE','SOURCE_UNAVAILABLE'}):
+            state = 'RED'
+            effective = 'SOURCE_UNAVAILABLE'
+        elif (cache == 'LIVE_FRESH' and payload.get('source') == 'IOL_MCP'
+              and isinstance(payload.get('live_sections'), list)
+              and any(sections.get(key) == 'LIVE_FRESH'
+                      for key in payload['live_sections'])
+              and recent_lkg and usable_ars
+              and last_good_age is not None and last_good_age <= 240
+              and age is not None and 0 <= age <= 240):
             state = 'GREEN'
             reason = 'IOL_LIVE_OR_LKG_READY'
-        elif (cache in {'LIVE_FRESH','CACHE_FRESH','CACHE_STALE'}
-              and no_zero and exact_fallback and recent_lkg and usable_ars
+            effective = 'LIVE_FRESH'
+        elif (recent_lkg and usable_ars and age is not None
               and 0 <= age <= 7*86400):
-            # The collector's label is historical provenance, not a live tick.
-            # After a weekend, accept only a bounded LKG as AMBER.
+            # Old market data may be displayed with its provenance, but it
+            # never becomes a current quote or a global deployment veto.
             state = 'AMBER'
             reason = 'IOL_STALE_LKG_WITH_ALTERNATIVES'
-        elif (cache == 'SOURCE_UNAVAILABLE' and no_zero and exact_fallback
-              and isinstance(sections, dict) and sections):
-            state = 'AMBER'
-            reason = 'CONTINUE_WITH_PPI_BYMA_ALTERNATIVES'
+            effective = 'CACHE_STALE'
         else:
-            state = 'RED'
+            state = 'AMBER'
+            reason = 'IOL_UNAVAILABLE_WITH_PPI_BYMA_ALTERNATIVES'
+            effective = 'SOURCE_UNAVAILABLE'
         return {'state':state,'cache_state':cache,
                 'reason':reason if state != 'RED' else 'IOL_FAILSAFE_CONTRACT_INVALID',
-                'refreshed_at':refreshed.isoformat(),
-                'age_seconds':round(age,1),
-                'effective_cache_state':'CACHE_STALE' if state == 'AMBER' and reason == 'IOL_STALE_LKG_WITH_ALTERNATIVES' else cache,
+                'refreshed_at':payload.get('refreshed_at'),
+                'age_seconds':round(age,1) if age is not None else None,
+                'effective_cache_state':effective,
                 'last_good_age_seconds':round(last_good_age,1) if last_good_age is not None else None,
                 'caucion_ars_state':caucion_state,
                 'caucion_ars_records':len(caucion_ars),
@@ -484,6 +497,7 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
               'phase':phase_override or preopen_phase(now),
               'status':'RED' if reds else 'PAUSED_NO_GO' if paused else 'GREEN',
               'red_checks':reds,'checks':checks,
+              'paper_admission_hold':operator_pause_reason(now) or None,
               'dry_equivalent':phase_override is not None,
               'read_only':not publish_paper_gate,'network_order_test_performed':False,'direct_telegram_send':False}
     if paused:

@@ -116,23 +116,29 @@ def test_operator_pause_persists_across_candidate_release_validation_and_paper_i
             assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
-def test_operator_pause_expires_without_automatically_authorizing_29_october(tmp_path):
+def test_no_go_persists_after_dated_pause_until_explicit_rearm(tmp_path):
     release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
     state(release)
     paused = DAY.replace(day=28)
     following = DAY.replace(day=29)
     gate.publish_preopen(result(), now=paused, state_path=release, receipt_path=receipt)
     assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt)[0] is False
-    assert gate.operator_pause_reason(following) == ""
+    assert gate.operator_pause_reason(following) == "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"
     # Merely changing the day or even the candidate cannot grant PAPER GO.
     state(release, candidate="b" * 40)
     gate.publish_preopen(result(), now=following, state_path=release, receipt_path=receipt)
     assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt)[0] is False
-    # A fresh release-valid T-10 receipt for the exact identity is a separate gate.
+    # Even a fresh release-valid T-10 receipt cannot reactivate PAPER implicitly.
     state(release)
-    assert gate.publish_preopen(result(), now=following, state_path=release,
-                                receipt_path=receipt)["status"] == "GO_PAPER_SCALPING"
-    assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt) == (True, "")
+    issued = gate.publish_preopen(result(), now=following, state_path=release,
+                                  receipt_path=receipt)
+    assert issued["status"] == "NO_GO_PAPER_SCALPING"
+    assert issued["reason"] == "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"
+    receipt.write_text(json.dumps({**issued, "status": "GO_PAPER_SCALPING"}))
+    assert gate.admission_status(now=following, candidate_sha=SHA, receipt_path=receipt) == (
+        False, "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM")
+    assert gate.operator_pause_reason(following + timedelta(days=14)) == \
+        "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"
 
 
 @pytest.mark.parametrize("day", [28, 29])

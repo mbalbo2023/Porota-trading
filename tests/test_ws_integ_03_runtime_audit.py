@@ -269,7 +269,7 @@ def test_candidate_state_guard_accepts_fail_closed_shadow_and_blocks_unsafe_resi
     connection.close()
 
 
-def test_stability_audit_blocks_ready_regression_and_lkg_erasure(monkeypatch):
+def test_stability_audit_blocks_ready_regression_but_alerts_on_iol_lkg_erasure(monkeypatch):
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
     baseline = _snapshot()
@@ -280,8 +280,10 @@ def test_stability_audit_blocks_ready_regression_and_lkg_erasure(monkeypatch):
         audit._assert_snapshot(regressed, baseline)
     erased = copy.deepcopy(baseline)
     erased["iol"]["last_known_good_at"] = None
-    with pytest.raises(AssertionError):
-        audit._assert_snapshot(erased, baseline)
+    audit._assert_snapshot(erased, baseline)
+    assert erased["iol"]["state"] == "AMBER"
+    assert erased["iol"]["effective_cache_state"] == "SOURCE_UNAVAILABLE"
+    assert "IOL_LKG_REGRESSED" in erased["iol"]["alerts"]
 
 
 def test_runtime_audit_is_read_only_and_has_no_order_client():
@@ -297,6 +299,7 @@ def test_iol_snapshot_accepts_explicit_source_unavailable_fail_safe(tmp_path, mo
         "cache_state": "SOURCE_UNAVAILABLE",
         "refreshed_at": "2026-09-30T03:00:00+00:00",
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
         "fallback_order": audit.IOL_FALLBACK_ORDER,
         "section_states": {"caucion:ARS": "SOURCE_UNAVAILABLE_NO_LKG"},
     }), encoding="utf-8")
@@ -306,18 +309,19 @@ def test_iol_snapshot_accepts_explicit_source_unavailable_fail_safe(tmp_path, mo
     assert snapshot["last_known_good_at"] is None
 
 
-def test_iol_snapshot_rejects_fake_cache_fresh_without_lkg(tmp_path, monkeypatch):
+def test_iol_snapshot_quarantines_fake_cache_fresh_without_lkg(tmp_path, monkeypatch):
     path = tmp_path / "iol_family_reference_latest.json"
     path.write_text(json.dumps({
         "cache_state": "CACHE_FRESH",
         "refreshed_at": "2026-09-30T03:00:00+00:00",
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
         "fallback_order": audit.IOL_FALLBACK_ORDER,
         "section_states": {"caucion:ARS": "SOURCE_UNAVAILABLE"},
     }), encoding="utf-8")
     monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
-    with pytest.raises(RuntimeError, match="IOL_LKG_TIMESTAMP_MISSING"):
-        audit._iol_snapshot()
+    assert audit._iol_snapshot()["effective_cache_state"] == "SOURCE_UNAVAILABLE"
+    assert audit._iol_snapshot()["state"] == "AMBER"
 
 
 @pytest.mark.parametrize("age,accepted", ((-1, False), (0, True), (240, True), (241, False)))
@@ -326,6 +330,8 @@ def test_iol_live_fresh_requires_guardian_240_second_lkg_contract(
     path = tmp_path / "iol_family_reference_latest.json"
     path.write_text(json.dumps({
         "source": "IOL_MCP", "cache_state": "LIVE_FRESH",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
+        "live_sections": ["caucion:ARS"],
         "last_known_good_at": "2026-10-28T15:00:00+00:00",
         "refreshed_at": "2026-10-28T15:00:00+00:00",
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
@@ -335,10 +341,11 @@ def test_iol_live_fresh_requires_guardian_240_second_lkg_contract(
     monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
     monkeypatch.setattr(audit, "_age_seconds", lambda _stamp: age)
     if accepted:
-        assert audit._iol_snapshot()["cache_state"] == "LIVE_FRESH"
+        assert audit._iol_snapshot()["effective_cache_state"] == "LIVE_FRESH"
+        assert audit._iol_snapshot()["state"] == "GREEN"
     else:
-        with pytest.raises(RuntimeError, match="IOL_LIVE_FRESH_STALE"):
-            audit._iol_snapshot()
+        assert audit._iol_snapshot()["state"] == "AMBER"
+        assert audit._iol_snapshot()["effective_cache_state"] != "LIVE_FRESH"
 
 
 @pytest.mark.parametrize("stamp", ("unparseable", "2026-10-28T15:00:00"))
@@ -346,19 +353,21 @@ def test_iol_live_fresh_rejects_unparseable_or_naive_lkg(tmp_path, monkeypatch, 
     path = tmp_path / "iol_family_reference_latest.json"
     path.write_text(json.dumps({
         "cache_state": "LIVE_FRESH", "last_known_good_at": stamp,
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
         "fallback_order": audit.IOL_FALLBACK_ORDER,
         "section_states": {"caucion:ARS": "LIVE_FRESH"},
     }), encoding="utf-8")
     monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
-    with pytest.raises(RuntimeError, match="IOL_LIVE_FRESH_TIMESTAMP_INVALID"):
-        audit._iol_snapshot()
+    assert audit._iol_snapshot()["state"] == "AMBER"
+    assert audit._iol_snapshot()["effective_cache_state"] == "SOURCE_UNAVAILABLE"
 
 
 def test_iol_live_fresh_rejects_rewritten_cache_with_old_sample(tmp_path, monkeypatch):
     path = tmp_path / "iol_family_reference_latest.json"
     path.write_text(json.dumps({
         "cache_state": "LIVE_FRESH",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
         "last_known_good_at": "2026-09-30T11:00:00+00:00",
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
@@ -366,20 +375,43 @@ def test_iol_live_fresh_rejects_rewritten_cache_with_old_sample(tmp_path, monkey
         "section_states": {"caucion:ARS": "LIVE_FRESH"},
     }), encoding="utf-8")
     monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
-    with pytest.raises(RuntimeError, match="IOL_LIVE_FRESH_STALE\\|field=last_known_good_at"):
-        audit._iol_snapshot()
+    assert audit._iol_snapshot()["state"] == "AMBER"
+    assert audit._iol_snapshot()["effective_cache_state"] == "SOURCE_UNAVAILABLE"
 
 
 def test_iol_historical_cache_stays_explicitly_historical(tmp_path, monkeypatch):
     path = tmp_path / "iol_family_reference_latest.json"
     path.write_text(json.dumps({
         "cache_state": "CACHE_STALE", "last_known_good_at": "2026-09-30T15:00:00+00:00",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
         "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
         "fallback_order": audit.IOL_FALLBACK_ORDER,
         "section_states": {"caucion:ARS": "CACHE_STALE"},
     }), encoding="utf-8")
     monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
     assert audit._iol_snapshot()["cache_state"] == "CACHE_STALE"
+    assert audit._iol_snapshot()["state"] == "AMBER"
+
+
+@pytest.mark.parametrize("change", (
+    {"fallback_order": ["IOL_LAST_KNOWN_GOOD"]},
+    {"continuation_state": "ZERO_FILL"},
+    {"real_money_authorized": True},
+    {"decision_effect": "ROUTE"},
+))
+def test_iol_optional_availability_does_not_relax_safety_contract(
+        tmp_path, monkeypatch, change):
+    path = tmp_path / "iol_family_reference_latest.json"
+    payload = {
+        "cache_state": "SOURCE_UNAVAILABLE", "section_states": {"global": "SOURCE_UNAVAILABLE_NO_LKG"},
+        "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+        "real_money_authorized": False, "decision_effect": "OBSERVE_ONLY",
+        "fallback_order": audit.IOL_FALLBACK_ORDER,
+    }
+    path.write_text(json.dumps({**payload, **change}))
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    with pytest.raises(RuntimeError, match="IOL_CONTINUATION_NOT_FAILSAFE|IOL_FALLBACK_ORDER_INVALID"):
+        audit._iol_snapshot()
 
 
 def test_http_reports_path_status_and_bounded_body(monkeypatch, capsys):

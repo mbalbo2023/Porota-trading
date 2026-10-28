@@ -18,6 +18,7 @@ def test_legacy_empty_cache_becomes_explicit_source_unavailable_without_zero_fil
     assert result["cache_state"] == "SOURCE_UNAVAILABLE"
     assert result["fallback_order"] == migration.FALLBACK_ORDER
     assert result["continuation_state"] == migration.CONTINUATION_STATE
+    assert result["decision_effect"] == "OBSERVE_ONLY"
     assert result["records"] == [] and result["cauciones"] == {"ARS": [], "USD": []}
     assert "last_known_good_at" not in result
     assert result["contract_migration"]["zero_fill"] is False
@@ -43,3 +44,9 @@ def test_migration_is_idempotent_and_preserves_a_real_lkg():
 def test_migration_refuses_real_money_authority():
     with pytest.raises(ValueError, match="REAL_MONEY"):
         migration.migrate({"real_money_authorized": True})
+    with pytest.raises(ValueError, match="DECISION_EFFECT_UNSAFE"):
+        migration.migrate({"decision_effect": "ROUTE"})
+    with pytest.raises(ValueError, match="FALLBACK_CONFLICT"):
+        migration.migrate({"fallback_order": ["IOL_LAST_KNOWN_GOOD"]})
+    with pytest.raises(ValueError, match="CONTINUATION_CONFLICT"):
+        migration.migrate({"continuation_state": "ZERO_FILL"})

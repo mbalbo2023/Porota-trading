@@ -26,17 +26,20 @@ FOCUS = (
     ("CEPU", "ACCIONES", "A-24HS"), ("AAPL", "CEDEARS", "A-24HS"),
 )
 SHA = re.compile(r"[0-9a-f]{40}\Z")
-# Date-scoped operator decisions: no new PAPER positions on 27-Oct (A125)
-# or 28-Oct (A151) while the candidate is repaired and validated. The veto is
-# independent of a timer's T-10 GO, including one from a newly deployed image.
-# Never carry it automatically to another trading day.
+# Historical date-scoped receipts remain immutable. The later operator mission
+# explicitly keeps NO_GO until a separate, specific reactivation. A successful
+# deploy or a future T-10 receipt cannot silently turn PAPER admissions on.
 OPERATOR_PAUSED_TRADE_DAYS_AR = frozenset({"2026-10-27", "2026-10-28"})
+NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR = "2026-10-29"
 
 
 def operator_pause_reason(now):
     day = now.date().isoformat()
-    return ("OPERATOR_PAPER_PAUSE_" + day.replace("-", "_")
-            if day in OPERATOR_PAUSED_TRADE_DAYS_AR else "")
+    if day in OPERATOR_PAUSED_TRADE_DAYS_AR:
+        return "OPERATOR_PAPER_PAUSE_" + day.replace("-", "_")
+    if day >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR:
+        return "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"
+    return ""
 
 
 def focus_contracts(db_path):

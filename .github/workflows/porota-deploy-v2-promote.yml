@@ -136,6 +136,12 @@ jobs:
           print("POROTA_FROZEN_ARTIFACT_VERIFY=GREEN")
           PY
 
+      - name: Bound source-bearing SSH arguments before host contact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/rc6_deploy_ssh_arg_budget.py
+
       - name: Require later exact owner authorization before host work
         shell: bash
         run: |
@@ -207,17 +213,37 @@ jobs:
         run: |
           set -Eeuo pipefail
           CANDIDATE_AUDIT_B64="$(base64 -w0 cb_caucion_audit.py)"
-          CANDIDATE_A125_B64="$(base64 -w0 scripts/rc6_deploy_scheduler_suspend.py)"
+          # The raw base64 source was ~91 KB; combined with the other staged
+          # proofs it exceeded Linux's per-argument exec limit before SSH ran.
+          CANDIDATE_A125_B64="$(gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
+          CANDIDATE_A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
           # The host still runs the FAILED #751 source. Stream the new A145
           # read-only admission; never trust an uninstalled helper by import.
           CANDIDATE_A143_B64="$(gzip -9 -c scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          CLASSIFY_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#CANDIDATE_AUDIT_B64} +
+            ${#CANDIDATE_A125_B64} + ${#CANDIDATE_A143_B64} + 4096 ))
+          if [ "$CLASSIFY_ARG_BOUND" -gt 110000 ]; then
+            echo "RC6_CLASSIFY_REMOTE_ARGUMENT=RED|bound=$CLASSIFY_ARG_BOUND|max=110000"
+            exit 31
+          fi
           SESSION_MODE="$(timeout 45 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64' '$CANDIDATE_A143_B64'" <<'PY'
-          import base64,gzip,os,sqlite3,sys,types
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_AUDIT_B64' '$CANDIDATE_A125_B64' '$CANDIDATE_A143_B64' '$CANDIDATE_A125_SHA256'" <<'PY'
+          import base64,gzip,hashlib,os,sqlite3,sys,types,zlib
           from pathlib import Path
+          def staged_operator_source():
+              packed=base64.b64decode(sys.argv[3],validate=True)
+              if not 0<len(packed)<30000:
+                  raise SystemExit('RC6_A151_OPERATOR_PACKED_BOUNDS_RED')
+              inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
+              source=inflater.decompress(packed,110000)
+              if (not 0<len(source)<110000 or not inflater.eof or
+                      inflater.unconsumed_tail or inflater.unused_data or
+                      hashlib.sha256(source).hexdigest()!=sys.argv[5]):
+                  raise SystemExit('RC6_A151_OPERATOR_SOURCE_HASH_RED')
+              return source
           sys.path.insert(0,'/opt/porota-trading')
           from scripts.rc6_679_backup_suspension import inventory as backup_inventory
           if backup_inventory():
@@ -279,9 +305,7 @@ jobs:
               candidate=types.ModuleType('rc6_a145_staged_quiescence')
               exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),
                    candidate.__dict__)
-              operator_source=base64.b64decode(sys.argv[3],validate=True)
-              if not 0<len(operator_source)<110000:
-                  raise SystemExit('RC6_A151_OPERATOR_SOURCE_BOUNDS_RED')
+              operator_source=staged_operator_source()
               operator=types.ModuleType('rc6_a151_staged_operator')
               exec(compile(operator_source,'candidate/a151-operator.py','exec'),
                    operator.__dict__)
@@ -320,9 +344,7 @@ jobs:
                   if local.date().isoformat()!='2026-10-27':
                       raise SystemExit('RC6_RESCUE_WINDOW_RED')
                   try:
-                      operator_source=base64.b64decode(sys.argv[3],validate=True)
-                      if not 0<len(operator_source)<110000:
-                          raise ValueError('OPERATOR_SOURCE_SIZE_RED')
+                      operator_source=staged_operator_source()
                       operator=types.ModuleType('rc6_candidate_a125_verifier')
                       exec(compile(operator_source,'candidate/a125-verifier.py','exec'),
                            operator.__dict__)
@@ -897,12 +919,18 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
           fi
-          A125_ENV="RC6_A125_CANDIDATE_SOURCE_B64=$(base64 -w0 scripts/rc6_deploy_scheduler_suspend.py)"
+          A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -c scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
+          A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
+          DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + 4096 ))
+          if [ "$DRAIN_ARG_BOUND" -gt 110000 ]; then
+            echo "RC6_DRAIN_REMOTE_ARGUMENT=RED|bound=$DRAIN_ARG_BOUND|max=110000"
+            exit 31
+          fi
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV RC6_A125_CANDIDATE_SOURCE_SHA256='$A125_SHA256' python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Account pre-suspend failure without recovery or timer writes
@@ -1086,8 +1114,9 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             QUIESCENCE_AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 "$STAGE/cb_caucion_audit.py")"
           fi
-          A125_CANDIDATE_SOURCE_B64="$(base64 -w0 "$STAGE/scripts/rc6_deploy_scheduler_suspend.py")"
-          sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_B64="$A125_CANDIDATE_SOURCE_B64" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+          A125_CANDIDATE_SOURCE_GZIP_B64="$(gzip -9 -c "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | base64 -w0)"
+          A125_CANDIDATE_SOURCE_SHA256="$(sha256sum "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | cut -d' ' -f1)"
+          sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_GZIP_B64="$A125_CANDIDATE_SOURCE_GZIP_B64" RC6_A125_CANDIDATE_SOURCE_SHA256="$A125_CANDIDATE_SOURCE_SHA256" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
             --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
 
           # An A151 historical-cost restatement is forbidden while the
@@ -1642,7 +1671,7 @@ jobs:
           # published a new live provider sample. Recheck because the preopen
           # wait can last 20 minutes; do not invent a timestamp or arm a timer.
           ensure_iol_refresh() {
-            local label="$1" decision rc started_at verified
+            local label="$1" decision rc started_at verified alert cause
             set +e
             decision="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
               --action plan --path "$REPO/data/market/iol_family_reference_latest.json" 2>&1)"
@@ -1657,13 +1686,28 @@ jobs:
               return "$rc"
             fi
             grep -Fxq 'RC6_IOL_DEPLOY_REFRESH=REFRESH_REQUIRED' <<< "$decision"
+            iol_alert() {
+              local cause="$1"
+              # A failed optional source is still an explicit, audited alert.
+              # A broken fallback/no-zero-fill/PAPER contract remains blocking.
+              if ! alert="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
+                --action fallback --path "$REPO/data/market/iol_family_reference_latest.json")"; then
+                echo "RC6_IOL_SOURCE_CONTRACT_$label=RED|$alert"
+                return 2
+              fi
+              grep -Fq 'RC6_IOL_DEPLOY_REFRESH=AMBER|effective=' <<< "$alert"
+              echo "RC6_IOL_SOURCE_ALERT_$label=$cause|$alert"
+            }
             started_at="$(date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00)"
             # The reconciled systemd unit hardcodes OBSERVE_ONLY and its own
             # 210s timeout; timeout here bounds the caller as well.
             if ! sudo -n timeout 230 systemctl start porota-iol-shadow-collector-rc6.service; then
-              echo "RC6_IOL_REFRESH_$label=RED|COLLECTOR_SERVICE"
+              echo "RC6_IOL_REFRESH_$label=AMBER|COLLECTOR_SERVICE_FAILED"
+              sudo -n systemctl show porota-iol-shadow-collector-rc6.service \
+                --property=ActiveState,Result,ExecMainStatus,ConditionResult --no-pager || true
               sudo -n systemctl stop porota-iol-shadow-collector-rc6.service || true
-              return 2
+              iol_alert COLLECTOR_SERVICE_FAILED
+              return $?
             fi
             set +e
             verified="$(sudo -n python3 -B "$REPO/scripts/rc6_iol_deploy_refresh_gate.py" \
@@ -1672,7 +1716,10 @@ jobs:
             rc=$?
             set -e
             echo "RC6_IOL_REFRESH_VERIFY_$label=$verified|rc=$rc"
-            return "$rc"
+            if [ "$rc" -eq 0 ]; then
+              return 0
+            fi
+            iol_alert COLLECTOR_SAMPLE_UNPROVEN
           }
           ensure_iol_refresh immediate
 
