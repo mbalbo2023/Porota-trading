@@ -35,7 +35,7 @@ def failed_receipt(tmp_path, *, market_open=False, held_a143=False):
                      "FinishedAt": "0001-01-01T00:00:00Z", "ExitCode": 0,
                      "OOMKilled": False}
         after = dict(lifecycle, Status="exited", ExitCode=0,
-                     FinishedAt="2026-10-28T13:30:00Z")
+                     FinishedAt="2026-10-28T13:36:00Z")
         from scripts.rc6_caucion_fee_restatement_continuity import (
             A143_SOURCE_SHA, A143_TREE_SHA, A143_IMAGE_ID,
         )
@@ -67,7 +67,7 @@ def failed_receipt(tmp_path, *, market_open=False, held_a143=False):
                            "operator_hold": {
                                "admission": "A151_HELD_OPEN",
                                "business_day_art": "2026-10-28",
-                               "observed_at_utc": "2026-10-28T13:10:00+00:00",
+                               "observed_at_utc": "2026-10-28T13:35:00+00:00",
                                "operator_receipt_sha256": "d" * 64,
                                "operator_operation_id": "A151-40686116017-1",
                                "paper_execution_authorized": False}})
@@ -306,6 +306,7 @@ def test_open_origin_rejects_forged_third_id_or_closed_host_receipt(six_position
     (("a143_previous_proof", "operator_hold"), None, "A151_HELD_PROOF_RED"),
     (("a143_previous_proof", "operator_hold", "admission"), "NOT_HELD", "A151_HELD_PROOF_RED"),
     (("a143_previous_proof", "operator_hold", "paper_execution_authorized"), True, "A151_HELD_PROOF_RED"),
+    (("a143_previous_proof", "operator_hold", "observed_at_utc"), "2026-10-28T13:10:00+00:00", "A151_HELD_CLOCK_RED"),
     (("a143_previous_proof", "source_sha"), "f" * 40, "A151_HELD_PROOF_RED"),
     (("a143_previous_proof", "image_id"), "sha256:" + "f" * 64, "A151_HELD_PROOF_RED"),
     (("a143_previous_proof", "flat_book", "session_state"), "MARKET_OPEN", "A151_HELD_PROOF_RED"),

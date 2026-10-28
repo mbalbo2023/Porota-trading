@@ -96,9 +96,10 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
             observed = datetime.fromisoformat(hold["observed_at_utc"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("PAPER_RESTATEMENT_A151_HELD_CLOCK_RED") from exc
-        if (observed.tzinfo is None or observed.utcoffset() is None or
-                observed.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
-                .date().isoformat() != "2026-10-28"):
+        local_observed = observed.astimezone(ZoneInfo("America/Argentina/Buenos_Aires")) if (
+            observed.tzinfo is not None and observed.utcoffset() is not None) else None
+        if (local_observed is None or local_observed.date().isoformat() != "2026-10-28" or
+                not 10 * 60 + 30 <= local_observed.hour * 60 + local_observed.minute < 17 * 60):
             raise ValueError("PAPER_RESTATEMENT_A151_HELD_CLOCK_RED")
         containers = prior.get("containers")
         stopped = receipt.get("containers")
