@@ -115,6 +115,52 @@ def test_expired_complete_v1_stays_stale_while_closed_deploy_materializes_v2_wit
     assert "QUICK_CHECK=ok" in output
 
 
+def test_missing_complementary_v1_sweep_does_not_veto_local_contract_v2_on_deploy(
+        tmp_path, monkeypatch, capsys):
+    db = tmp_path / "no_v1_history.db"
+    store = Store(db)
+    schema(store)
+    now = datetime.now(timezone.utc)
+    with store.connect() as c:
+        c.execute("""CREATE TABLE observer_state(id INTEGER,mode TEXT,process_state TEXT,
+                  session_state TEXT,ppi_auth TEXT,real_orders_sent INTEGER)""")
+        c.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER','WAITING_MARKET','MARKET_CLOSED','OK',0)")
+        c.execute("""CREATE TABLE contract_evidence_v2_runs(run_id TEXT,job_key TEXT,
+                  state TEXT,records INTEGER,changed INTEGER,conflicts INTEGER,finished_at TEXT)""")
+    monkeypatch.setattr(runner, "DB", str(db))
+    monkeypatch.setattr(runner, "REMOTE_V1_POLICY", "REUSE_RECENT_COMPLETED")
+    monkeypatch.setattr(runner, "ProductionMarketReader", lambda *a: pytest.fail("external PPI call"))
+    monkeypatch.setattr(runner.official_sources, "collect", lambda *a: pytest.fail("external official call"))
+
+    def deterministic_v2(local, *, run_id):
+        with local.connect() as c:
+            c.execute("INSERT INTO contract_evidence_v2_runs VALUES(?,?,?,?,?,?,?)", (
+                run_id, "CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG", "OK", 0, 0, 0,
+                now.isoformat()))
+        return {"records": 0}
+
+    monkeypatch.setattr(runner.evidence_v2_mass, "collect", deterministic_v2)
+    observer = types.ModuleType("bf_production_paper_observer")
+    observer._reconcile_complementary_catalog = lambda local: 0
+    monkeypatch.setitem(sys.modules, "bf_production_paper_observer", observer)
+    assert runner.main() == 0
+    output = capsys.readouterr().out
+    assert "REMOTE_PPI_V1_REFRESH=SKIPPED_ABSENT_COMPLETED" in output
+    assert "REMOTE_PPI_V1_STATUS=UNAVAILABLE" in output
+    assert "LATEST_EVIDENCE_V2_RUN=('CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG', 'OK'" in output
+    assert "QUICK_CHECK=ok" in output and "STATUS=OK" in output
+
+
+def test_malformed_complementary_v1_sweep_remains_red(monkeypatch):
+    monkeypatch.setattr(runner, "REMOTE_V1_POLICY", "REUSE_RECENT_COMPLETED")
+    monkeypatch.setattr(runner, "observer_state", lambda store: (
+        "PRODUCTION_PAPER", "WAITING_MARKET", "MARKET_CLOSED", "OK", 0))
+    monkeypatch.setattr(runner, "recent_completed_v1", lambda store: (
+        _ for _ in ()).throw(ValueError("RECENT_COMPLETED_V1_UNVERIFIED")))
+    with pytest.raises(ValueError, match="RECENT_COMPLETED_V1_UNVERIFIED"):
+        runner.main()
+
+
 def test_closed_deploy_reuses_complete_v1_but_materializes_v2_without_broker(tmp_path, monkeypatch, capsys):
     db=tmp_path/"deploy.db"
     store=Store(db)
