@@ -266,11 +266,12 @@ def exact_a151_operator_preopen_pause(*, historical_hold_only=False):
     return receipt_sha, operation
 
 
-def exact_a176_operator_no_go_continuation():
+def exact_a176_operator_no_go_continuation(*, historical_anchor=False):
     """Read a new daily NO_GO seal; never infer PAPER rearm from old A151."""
     q=a176_quiescence_helper()
     now=datetime.now(timezone.utc)
-    if now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()!=A176_NO_GO_DAY:
+    if (not historical_anchor and
+            now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()!=A176_NO_GO_DAY):
         raise ValueError('SCHEDULER_A176_NO_GO_DAY_EXPIRED')
     receipt,sha=_operator_pause_json(ROOT/A176_NO_GO_RECEIPT,65536)
     try:
@@ -278,7 +279,8 @@ def exact_a176_operator_no_go_continuation():
         valid_time=(issued.tzinfo is not None and issued.utcoffset().total_seconds()==0 and
                     issued.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
                           .date().isoformat()==A176_NO_GO_DAY and
-                    0<=(now-issued).total_seconds()<24*3600)
+                    (now-issued).total_seconds()>=0 and
+                    (historical_anchor or (now-issued).total_seconds()<24*3600))
     except (KeyError,ValueError,TypeError,AttributeError):
         valid_time=False
     operation=receipt.get('operation_id')

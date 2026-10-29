@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE
+from scripts.rc6_operator_paper_rearm import OPERATOR_DIR_HOST
 
 
 ROOT = Path(__file__).resolve().parent
@@ -35,6 +37,25 @@ MODE_FILE = DATA / "operation_mode.json"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 KNOWN = ("porota_production_observer", "porota_production_dashboard",
          "porota_dashboard_preview", "porota_sandbox_engine", "porota_production_engine")
+
+
+def operator_readonly_mount():
+    """Create/attest a root-only host authority outside writable PAPER DATA.
+
+    The authorization file itself is absent until a later exact, authenticated
+    GitHub Actions rearm. Creating an empty readonly mount never grants GO.
+    """
+    if os.geteuid() != 0:
+        raise RuntimeError("PAPER_OPERATOR_ROOT_REQUIRED")
+    root = OPERATOR_DIR_HOST
+    if os.path.islink(root) or os.path.islink(root.parent):
+        raise RuntimeError("PAPER_OPERATOR_DIRECTORY_ALIAS")
+    root.mkdir(mode=0o755, exist_ok=True)
+    observed = os.lstat(root)
+    if (not stat.S_ISDIR(observed.st_mode) or observed.st_uid != 0 or
+            observed.st_mode & 0o022 or observed.st_mode & 0o555 != 0o555):
+        raise RuntimeError("PAPER_OPERATOR_DIRECTORY_UNTRUSTED")
+    return ("--mount", f"type=bind,source={root},target=/app/operator,readonly")
 PAPER_DEFAULTS = {
     "PAPER_INITIAL_CAPITAL_ARS": "1000000", "PAPER_INITIAL_CAPITAL_USD": "1000",
     "PAPER_INITIAL_CAPITAL_USD_MEP": "1000", "PAPER_INITIAL_CAPITAL_USD_CCL": "1000",
@@ -368,7 +389,8 @@ def simulation():
         "--env-file", str(runtime_env),
         "-e", "PAPER_SCALPING_MODE=ACTIVE_PAPER",
         "-e", "PAPER_CAUCION_SWEEP_MODE=ACTIVE_PAPER",
-        "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
+        "-v", f"{DATA}:/app/data", *operator_readonly_mount(),
+        "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", image, "bv_paper_runtime.py", capture=True)
     print("RC6_OBSERVER_CREATED_ID=" + created.stdout.strip())
     state = run("docker", "inspect", "-f", "{{.State.Status}}",
