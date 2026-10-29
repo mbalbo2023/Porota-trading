@@ -363,6 +363,98 @@ def test_iol_live_fresh_rejects_unparseable_or_naive_lkg(tmp_path, monkeypatch, 
     assert audit._iol_snapshot()["effective_cache_state"] == "SOURCE_UNAVAILABLE"
 
 
+def test_deploy_only_missing_iol_cache_is_amber_not_a_fabricated_live_sample(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv("POROTA_IOL_SHADOW_ROOT", str(tmp_path))
+    with pytest.raises(RuntimeError, match="IOL_REFERENCE_UNAVAILABLE"):
+        audit._iol_snapshot()
+    result = audit._iol_snapshot(deploy_only=True)
+    assert result["state"] == "AMBER"
+    assert result["effective_cache_state"] == "SOURCE_UNAVAILABLE"
+    assert result["alerts"] == ["IOL_REFERENCE_UNAVAILABLE"]
+    assert result["last_known_good_at"] is None
+    assert result["section_states"] == {}
+    assert result["continuation_state"] == "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL"
+    (tmp_path / "iol_family_reference_latest.json").write_text(
+        "{BROKEN_JSON", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="IOL_REFERENCE_UNAVAILABLE"):
+        audit._iol_snapshot(deploy_only=True)
+
+
+@pytest.mark.parametrize("auth", ["ERROR", "COOLDOWN", "NOT_ATTEMPTED"])
+def test_deploy_only_known_external_ppi_auth_is_amber_with_paper_guards(
+        monkeypatch, auth):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    result = _snapshot()
+    result["database"]["observer"].update(
+        process_state="DEGRADED", session_state="BOOT_CALENDAR", ppi_auth=auth,
+        ppi_auth_provider_failure=True,
+    )
+    with pytest.raises(RuntimeError, match="OBSERVER_PPI_AUTH_UNHEALTHY"):
+        audit._assert_snapshot(result)
+    audit._assert_snapshot(result, deploy_only=True)
+    assert result["external_source_alerts"] == ["PPI_AUTH_UNAVAILABLE"]
+
+
+@pytest.mark.parametrize("mutation,error", [
+    ({"ppi_auth_provider_failure": False}, "OBSERVER_PPI_AUTH_UNHEALTHY"),
+    ({"process_state": "RUNNING"}, "OBSERVER_PPI_AUTH_UNHEALTHY"),
+    ({"real_orders_sent": 1}, "REAL_ORDER_COUNTER_INVALID"),
+])
+def test_deploy_only_never_excuses_unproven_ppi_failure_or_real_orders(
+        monkeypatch, mutation, error):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    result = _snapshot()
+    result["database"]["observer"].update(
+        process_state="DEGRADED", session_state="BOOT_CALENDAR", ppi_auth="ERROR",
+        ppi_auth_provider_failure=True,
+    )
+    result["database"]["observer"].update(mutation)
+    with pytest.raises((RuntimeError, AssertionError), match=error):
+        audit._assert_snapshot(result, deploy_only=True)
+
+
+def test_deploy_only_ready_regression_amber_but_corrupt_candidate_contract_red(monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    baseline = _snapshot()
+    result = copy.deepcopy(baseline)
+    result["database"]["readiness"].update(
+        ready=0, by_family={name: 0 for name in audit.BASELINE_READY},
+        refresh={"state": "COMPLETE"},
+    )
+    result["dashboard_truth"]["readiness"]["ready"] = 0
+    with pytest.raises(AssertionError):
+        audit._assert_snapshot(result, baseline)
+    audit._assert_snapshot(result, baseline, deploy_only=True)
+    assert result["external_source_alerts"] == ["PAPER_CANDIDATES_UNAVAILABLE"]
+    result["database"]["invalid_candidate_states"] = 1
+    with pytest.raises(AssertionError):
+        audit._assert_snapshot(result, baseline, deploy_only=True)
+
+
+def test_deploy_only_collector_forwards_mode_and_does_not_relabel_runtime_baseline(
+        monkeypatch):
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    values = []
+    monkeypatch.setattr(audit, "collect", lambda label, *, deploy_only: (
+        values.append((label, deploy_only)) or _snapshot()))
+    result = audit.consistent_snapshot("deploy-immediate", deploy_only=True)
+    assert result["database"]["readiness"]["ready"] >= 5558
+    assert values == [("deploy-immediate", True)]
+
+
+def test_workflow_uses_deploy_only_audit_while_strict_default_remains_available():
+    workflow = Path(".github/workflows/porota-deploy-v2-promote.yml").read_text(
+        encoding="utf-8")
+    assert workflow.count("rc6_zero_known_error_runtime_audit.py \\\n") == 2
+    assert "--label immediate --deploy-only --output" in workflow
+    assert '"stability-$cycle" --deploy-only --baseline' in workflow
+
+
 def test_iol_live_fresh_rejects_rewritten_cache_with_old_sample(tmp_path, monkeypatch):
     path = tmp_path / "iol_family_reference_latest.json"
     path.write_text(json.dumps({
