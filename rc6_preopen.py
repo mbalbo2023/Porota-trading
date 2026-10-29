@@ -48,6 +48,24 @@ REQUIRED_TIMERS = (
     'porota-byma-morning-watch-rc6.timer',
 )
 
+# A186: an upstream session/freshness failure must not veto a frozen Deploy V2
+# artifact. This is deliberately narrower than the normal PAPER preopen gate:
+# malformed provider contracts, BYMA authority changes, SQLite, source identity,
+# container health, timers and real-order safety remain independently RED.
+PPI_AUTH_OUTAGE_STATES = frozenset({'ERROR', 'COOLDOWN', 'NOT_ATTEMPTED'})
+DEPLOY_SOURCE_AVAILABILITY_REASONS = {
+    'observer_db': frozenset({'PPI_AUTH_UNAVAILABLE', 'PAPER_CANDIDATES_UNAVAILABLE'}),
+    'byma_morning_watch': frozenset({
+        'BYMA_WATCH_NOT_TODAY', 'BYMA_DRY_VALIDATION_LATEST_NOT_SAFE',
+        'BYMA_WATCH_DEGRADED', 'BYMA_WATCH_UNAVAILABLE',
+    }),
+    'iol_reference_fallback': frozenset({'IOL_REFERENCE_UNAVAILABLE'}),
+}
+SOURCE_CHECK_PROVIDER = {
+    'observer_db': 'PPI', 'byma_morning_watch': 'BYMA',
+    'iol_reference_fallback': 'IOL',
+}
+
 
 def cmd(args, timeout=20):
     try:
@@ -230,13 +248,32 @@ def observer_db():
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
-        ok = (schema_version >= 0 and state.get('mode') == 'PRODUCTION_PAPER' and
-              state.get('real_orders_sent') is not None and
-              int(state['real_orders_sent']) == 0 and auth_ok)
-        ok = ok and runtime['state'] == 'GREEN'
-        return {'state':'GREEN' if ok else 'RED',
+        # Zero candidates is *instrument readiness*, not a broken SQLite
+        # contract. It remains RED in regular PAPER preopen, but a technical
+        # Deploy V2 may classify this exact, independently safe state AMBER.
+        workers = runtime.get('workers') or {}
+        candidate_only_red = (
+            runtime.get('state') == 'RED' and
+            type(runtime.get('scalping_eligible_identities')) is int and
+            runtime['scalping_eligible_identities'] == 0 and
+            type(runtime.get('unclassified_residuals')) is int and
+            runtime['unclassified_residuals'] == 0 and
+            set(workers) == {'scalping', 'caucion_cash_sweep', 'supervisor'} and
+            all(type(row) is dict and row.get('state') == 'GREEN'
+                for row in workers.values()) and
+            runtime.get('real_routes_expected') == [])
+        safety_ok = (schema_version >= 0 and state.get('mode') == 'PRODUCTION_PAPER' and
+                     type(state.get('real_orders_sent')) is int and
+                     state['real_orders_sent'] == 0 and
+                     (runtime['state'] == 'GREEN' or candidate_only_red))
+        result = {'state':'GREEN' if safety_ok and auth_ok and not candidate_only_red else 'RED',
                 'bounded_readonly_probe':'GREEN','schema_version':schema_version,
                 'observer_state':state,'runtime_contracts':runtime}
+        if safety_ok and candidate_only_red:
+            result['reason'] = 'PAPER_CANDIDATES_UNAVAILABLE'
+        elif safety_ok and not auth_ok and auth in PPI_AUTH_OUTAGE_STATES:
+            result['reason'] = 'PPI_AUTH_UNAVAILABLE'
+        return result
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
 
@@ -371,6 +408,31 @@ def iol_reference_state(today):
     except Exception as exc:
         return {'state':'RED','reason':'IOL_REFERENCE_UNAVAILABLE',
                 'detail':f'{type(exc).__name__}:{exc}'}
+
+
+def deploy_optional_source_availability(check_name, result):
+    """Turn a *classified outage* into an alert for Deploy V2, never PAPER GO.
+
+    This must not be called by regular preopen. A provider's absent snapshot or
+    failed authentication is different from a corrupt cache, unsafe decision
+    effect, unreviewed exchange-calendar change or broken system infrastructure.
+    """
+    if not isinstance(result, dict) or result.get('state') != 'RED':
+        return result
+    reason = result.get('reason')
+    if reason not in DEPLOY_SOURCE_AVAILABILITY_REASONS.get(check_name, ()):
+        return result
+    if reason in {'BYMA_WATCH_UNAVAILABLE', 'IOL_REFERENCE_UNAVAILABLE'}:
+        # Missing source snapshot is availability; parse/permissions errors are
+        # data-integrity or local filesystem failures and remain hard RED.
+        if not str(result.get('detail') or '').startswith('FileNotFoundError:'):
+            return result
+    degraded = dict(result)
+    degraded.update(state='AMBER', source_state='RED',
+                    deploy_effect='ALERT_ONLY',
+                    provider=('PAPER_READINESS' if reason == 'PAPER_CANDIDATES_UNAVAILABLE'
+                              else SOURCE_CHECK_PROVIDER[check_name]))
+    return degraded
 
 
 def preopen_phase(now):
@@ -744,6 +806,9 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
     }
     if publish_paper_gate:
         checks['paper_focus_contracts'] = focus_contracts(DB)
+    if deploy_scheduler_candidate is not None:
+        for key in SOURCE_CHECK_PROVIDER:
+            checks[key] = deploy_optional_source_availability(key, checks[key])
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
     paused = checks['required_rc6_timers'].get('operator_paper_paused') is True
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
@@ -753,6 +818,17 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
               'paper_admission_hold':operator_pause_reason(now, context='host') or None,
               'dry_equivalent':phase_override is not None,
               'read_only':not publish_paper_gate,'network_order_test_performed':False,'direct_telegram_send':False}
+    if deploy_scheduler_candidate is not None:
+        alerts = [
+            {'provider':checks[key].get('provider', provider), 'check':key,
+             'reason':checks[key].get('reason') or 'SOURCE_AMBER',
+             'deploy_effect':'ALERT_ONLY',
+             'paper_readiness':'FAIL_CLOSED_PER_INSTRUMENT'}
+            for key,provider in SOURCE_CHECK_PROVIDER.items()
+            if checks[key].get('state') == 'AMBER'
+        ]
+        if alerts:
+            result['external_source_alerts'] = alerts
     rearm_authorized, _, rearm_summary = evaluate_rearm(now=now, context='host')
     if rearm_authorized:
         # This is source-bound operator consent, not an execution permission.
