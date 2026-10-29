@@ -6,8 +6,11 @@ modifies the host, retries the deployment, calls a provider, or rearms timers.
 """
 from __future__ import annotations
 
+import base64
+import gzip
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -16,6 +19,7 @@ CANDIDATE = '7d62d2f4ed353231da8566a360a1179e99bcc7eb'
 DEPLOY = 'd961d19e55d78c68d902a14b41480344365cde1e'
 ROOT = Path('/opt/porota-trading')
 MAX_BYTES = 65536
+QUIESCENCE_SHA256 = '0f016652f884cd27bba0e29e3128da615266d09b8bf7a0a1f9a063d1386f0fc6'
 
 
 def bounded_json(path: Path) -> tuple[dict, str]:
@@ -35,6 +39,28 @@ def capture(name: str, fn) -> dict:
     except Exception as exc:
         return {'name': name, 'ok': False, 'exception': type(exc).__name__,
                 'reason': str(exc)[:200]}
+
+
+def staged_readonly_probe(root: Path, suspend, rc6_preopen) -> dict:
+    """Reproduce the missing Deploy V2 environment, in *this process only*."""
+    path = root/'scripts/rc6_deploy_quiescence.py'
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 260000:
+        raise ValueError('A179_INSTALLED_QUIESCENCE_SOURCE_UNSAFE')
+    source = path.read_bytes()
+    if hashlib.sha256(source).hexdigest() != QUIESCENCE_SHA256:
+        raise ValueError('A179_INSTALLED_QUIESCENCE_SOURCE_SHA_RED')
+    encoded = base64.b64encode(gzip.compress(source, mtime=0)).decode('ascii')
+    if not 0 < len(encoded) < 150000 or os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64'):
+        raise ValueError('A179_STAGED_SOURCE_ENV_UNSAFE')
+    os.environ['RC6_A145_QUIESCENCE_GZIP_B64'] = encoded
+    try:
+        seal = capture('staged_a176_seal', suspend.exact_a176_operator_no_go_continuation)
+        timer = capture('staged_preopen_timers',
+                        lambda: rc6_preopen.required_timers(CANDIDATE))
+    finally:
+        os.environ.pop('RC6_A145_QUIESCENCE_GZIP_B64', None)
+    return {'source_sha256': QUIESCENCE_SHA256, 'seal': seal,
+            'timer_gate': timer, 'host_mutations': 0}
 
 
 def diagnose(root=ROOT) -> dict:
@@ -90,6 +116,7 @@ def diagnose(root=ROOT) -> dict:
         'a176_seal': capture('a176_seal', suspend.exact_a176_operator_no_go_continuation),
         'preopen_timer_gate': capture('preopen_timer_gate',
                                       lambda: rc6_preopen.required_timers(CANDIDATE)),
+        'staged_pure_readonly': staged_readonly_probe(root, suspend, rc6_preopen),
         'paper': {'mode': book[0], 'real_orders_sent': book[1],
                   'operational_go': False},
         'host_mutations': 0,

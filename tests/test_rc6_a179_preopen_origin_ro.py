@@ -1,10 +1,11 @@
 """Pure tests for the A179 read-only diagnostic receipt boundaries."""
-import json
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from scripts.rc6_a179_preopen_origin_ro import bounded_json, capture
+from scripts.rc6_a179_preopen_origin_ro import (
+    QUIESCENCE_SHA256, bounded_json, capture, staged_readonly_probe)
 
 
 class A179RoGuardTests(TestCase):
@@ -45,4 +46,16 @@ class A179RoGuardTests(TestCase):
         out = capture('helper', fail)
         self.assertEqual(out['reason'], 'STAGED_REQUIRED_UNTIL_VALIDATED_RUNTIME')
         self.assertFalse(out['ok'])
+
+    def test_pinned_installed_source_is_exact_candidate_blob(self):
+        source = Path(__file__).resolve().parents[1]/'scripts/rc6_deploy_quiescence.py'
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), QUIESCENCE_SHA256)
+
+    def test_source_mismatch_blocks_before_any_helper_call(self):
+        with TemporaryDirectory() as temp:
+            script = Path(temp)/'scripts'
+            script.mkdir()
+            (script/'rc6_deploy_quiescence.py').write_bytes(b'wrong source')
+            with self.assertRaisesRegex(ValueError, 'SOURCE_SHA_RED'):
+                staged_readonly_probe(Path(temp), object(), object())
 
