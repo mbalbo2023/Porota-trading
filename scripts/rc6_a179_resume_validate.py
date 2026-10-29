@@ -906,7 +906,29 @@ def finalize_exact_runtime(root=ROOT) -> dict:
             'real_orders_sent':0,'ppi_watch_mutations':0}
 
 
-def verify_independent_final_state(root=ROOT, *, allow_exact_owned_mutex=False) -> dict:
+FINAL_FAILED_CLEANUP_RUN = '40921652908'
+
+
+def exact_expected_idle_final_barrier():
+    import stat
+    path=Path('/run/lock/porota-rc6-deploy-v2-attempt.json')
+    require(path.is_file() and not path.is_symlink() and
+            path.stat().st_nlink==1 and path.stat().st_uid==0 and
+            stat.S_IMODE(path.stat().st_mode)==0o600 and
+            0<path.stat().st_size<=1024,
+            'A179_POSTVALIDATED_BARRIER_UNSAFE')
+    prior=json.loads(path.read_bytes())
+    require(prior=={'candidate':CANDIDATE,'run':FINAL_FAILED_CLEANUP_RUN,
+                    'attempt':'1','phase':'cleanup_final','status':'IDLE'},
+            'A179_POSTVALIDATED_BARRIER_NOT_EXACT_IDLE')
+    require(not command_stdout('docker','ps','--format','{{.Names}}',
+                               '--filter','name=porota-deploy-contract-'),
+            'A179_POSTVALIDATED_CONTRACT_PROCESS_ACTIVE')
+    return prior
+
+
+def verify_independent_final_state(root=ROOT, *, allow_exact_owned_mutex=False,
+                                   allow_exact_idle_barrier=False) -> dict:
     """Independent RO closure; critically, NO STAGED preopen fallback."""
     sys.path.insert(0,str(root))
     deploy_dir=root/'data/deploy'
@@ -976,8 +998,12 @@ def verify_independent_final_state(root=ROOT, *, allow_exact_owned_mutex=False) 
                 report.get('paper_admission_hold')==
                 'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
                 'A179_POSTFINAL_NO_GO_TIMER_OR_AUTH_RED:'+part)
+    require(not (allow_exact_owned_mutex and allow_exact_idle_barrier),
+            'A179_FINAL_MUTEX_MODE_UNSAFE')
     if allow_exact_owned_mutex:
         require_exact_mutex()
+    elif allow_exact_idle_barrier:
+        exact_expected_idle_final_barrier()
     else:
         require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
                 'A179_FINAL_ATTEMPT_MUTEX_NOT_RELEASED')
@@ -988,6 +1014,35 @@ def verify_independent_final_state(root=ROOT, *, allow_exact_owned_mutex=False) 
             'preopen_phases':'BOTH_NATIVE_PAUSED_NO_GO_GREEN',
             'legacy_native_receipts':'ESCROW_PRESERVED',
             'real_orders_sent':0,'operator_no_go':'HELD',
+            'host_mutations':0,'ppi_watch_mutations':0}
+
+
+def validated_idle_preflight(root=ROOT) -> dict:
+    """Read-only exact host proof while prior failed runner left an IDLE lock."""
+    observed=verify_independent_final_state(root,allow_exact_idle_barrier=True)
+    require(observed['status']=='VALIDATED_RUNTIME' and
+            observed['operator_no_go']=='HELD' and
+            observed['real_orders_sent']==0,
+            'A179_POSTVALIDATED_READONLY_NOT_GREEN')
+    return {'status':'GREEN_VALIDATED_RUNTIME_EXACT_IDLE_BARRIER',
+            'candidate':CANDIDATE,'run':FINAL_FAILED_CLEANUP_RUN,
+            'barrier':'IDLE_CLEANUP_FINAL','preopen':observed['preopen_phases'],
+            'native_run_id':observed['native_run_id'],'operator_no_go':'HELD',
+            'real_orders_sent':0,'host_mutations':0,'ppi_watch_mutations':0}
+
+
+def release_validated_attempt(root=ROOT) -> dict:
+    """Host mutex performs the only unlink after full native RO success."""
+    require_exact_mutex()
+    observed=verify_independent_final_state(root,allow_exact_owned_mutex=True)
+    require(observed['status']=='VALIDATED_RUNTIME' and
+            observed['real_orders_sent']==0 and
+            observed['preopen_phases']=='BOTH_NATIVE_PAUSED_NO_GO_GREEN',
+            'A179_POSTVALIDATED_RELEASE_NOT_SAFE')
+    return {'status':'GREEN_VALIDATED_RUNTIME_BARRIER_RELEASED',
+            'candidate':CANDIDATE,'run':FINAL_FAILED_CLEANUP_RUN,
+            'native_run_id':observed['native_run_id'],
+            'operator_no_go':'HELD','real_orders_sent':0,
             'host_mutations':0,'ppi_watch_mutations':0}
 
 
@@ -1124,7 +1179,9 @@ def main(argv=None):
                                  'scheduler-verify','backup-retire','finalize',
                                  'postfinal','cleanup-forward-attempt',
                                  'finish-postfailure','pending-restored-preopen',
-                                 'finish-restored','restored-readiness'))
+                                 'finish-restored','restored-readiness',
+                                 'validated-idle-preflight',
+                                 'release-validated-attempt'))
     args=parser.parse_args(argv)
     try:
         modes={'preflight':verify_origin,'preopen':verify_preopen,
@@ -1144,6 +1201,8 @@ def main(argv=None):
                'finish-postfailure':finish_postfailure,
                'pending-restored-preopen':verify_pending_restored_preopen,
                'restored-readiness':restored_readiness,
+               'validated-idle-preflight':validated_idle_preflight,
+               'release-validated-attempt':release_validated_attempt,
                'finish-restored':finish_from_restored}
         result=modes[args.mode]()
         print('RC6_A179_RESUME_'+args.mode.upper()+'='+json.dumps(result,sort_keys=True))

@@ -1,0 +1,142 @@
+name: RC6 A179 exact validated runtime final mutex close
+
+on:
+  push:
+    branches:
+      - repair/rc6-a179-validated-idle-mutex-close-20261029
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  independently-close-exact-validated-barrier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      GH_TOKEN: ${{ github.token }}
+      RC6_A179_NATIVE_RUN: '40916351644'
+      RC6_CANDIDATE: '7d62d2f4ed353231da8566a360a1179e99bcc7eb'
+    steps:
+      - name: Checkout exact fix-forward host verification source
+        uses: actions/checkout@v4
+      - name: Checkout the actual installed immutable RC6 product
+        uses: actions/checkout@v4
+        with:
+          ref: d961d19e55d78c68d902a14b41480344365cde1e
+          path: certified-product
+      - name: Strict source tree and regression tests
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C certified-product rev-parse HEAD)" = d961d19e55d78c68d902a14b41480344365cde1e
+          test "$(git -C certified-product rev-parse HEAD^{tree})" = 31ced11ce047bfa092f5398c13aeb37b74afd629
+          test "$(sha256sum scripts/rc6_deploy_host_mutex.py | cut -d' ' -f1)" = "$(sha256sum certified-product/scripts/rc6_deploy_host_mutex.py | cut -d' ' -f1)"
+          python3 -m unittest tests.test_rc6_a179_resume_validate -v
+          python3 -m py_compile scripts/rc6_a179_resume_validate.py
+          echo 'RC6_A179_EXACT_IDLE_BARRIER_GUARDS=GREEN'
+      - name: Original runner result must be failed AFTER exact validated host receipt
+        run: |
+          set -Eeuo pipefail
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/40921652908" \
+            | jq -e '.status=="completed" and .conclusion=="failure" and .head_sha=="a068fce0eeeb8c76f6d929a3cb8942ef61bef758" and .run_attempt==1' >/dev/null
+          echo 'RC6_A179_PRIOR_ACTION_RED_NOT_GLOSS_GREEN'
+      - name: Trust only configured exact SSH known host
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_a179_idle_close"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_a179_idle_close" "$HOME/.ssh/known_hosts"
+      - name: Exact read-only host marker, PAPER0, native gates and IDLE barrier
+        run: |
+          set -Eeuo pipefail
+          timeout 210 ssh -i "$HOME/.ssh/porota_rc6_a179_idle_close" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 RC6_A179_RUN_ID='$RC6_A179_NATIVE_RUN' python3 - --mode validated-idle-preflight" \
+            < scripts/rc6_a179_resume_validate.py | tee a179-validated-idle-preflight.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[x for x in Path('a179-validated-idle-preflight.jsonl').read_text().splitlines()
+                if x.startswith('RC6_A179_RESUME_VALIDATED-IDLE-PREFLIGHT=')]
+          assert len(rows)==1
+          j=json.loads(rows[0].split('=',1)[1])
+          assert j['status']=='GREEN_VALIDATED_RUNTIME_EXACT_IDLE_BARRIER'
+          assert j['run']=='40921652908' and j['barrier']=='IDLE_CLEANUP_FINAL'
+          assert j['preopen']=='BOTH_NATIVE_PAUSED_NO_GO_GREEN'
+          assert j['native_run_id']=='40916351644' and j['operator_no_go']=='HELD'
+          assert j['real_orders_sent']==j['host_mutations']==j['ppi_watch_mutations']==0
+          print('RC6_A179_VERIFIED_RUNTIME_WITH_IDLE_BARRIER=GREEN_READ_ONLY')
+          PY
+      - name: Retire only the exact completed IDLE barrier using product host mutex
+        run: |
+          set -Eeuo pipefail
+          MUTEX_B64="$(base64 -w0 certified-product/scripts/rc6_deploy_host_mutex.py)"
+          timeout 210 ssh -i "$HOME/.ssh/porota_rc6_a179_idle_close" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$MUTEX_B64\"))' '$DO_USER' root --attempt '$RC6_CANDIDATE' '40921652908' '1' --phase cleanup_final env PYTHONDONTWRITEBYTECODE=1 RC6_A179_RUN_ID='$RC6_A179_NATIVE_RUN' python3 - --mode release-validated-attempt" \
+            < scripts/rc6_a179_resume_validate.py | tee a179-validated-idle-release.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[x for x in Path('a179-validated-idle-release.jsonl').read_text().splitlines()
+                if x.startswith('RC6_A179_RESUME_RELEASE-VALIDATED-ATTEMPT=')]
+          assert len(rows)==1
+          j=json.loads(rows[0].split('=',1)[1])
+          assert j['status']=='GREEN_VALIDATED_RUNTIME_BARRIER_RELEASED'
+          assert j['native_run_id']=='40916351644' and j['operator_no_go']=='HELD'
+          assert j['real_orders_sent']==j['host_mutations']==j['ppi_watch_mutations']==0
+          print('RC6_A179_FINISHED_MUTEX_BARRIER=GREEN_EXACT_IDLE')
+          PY
+      - name: Independent outside-mutex native preopen and runtime certification
+        run: |
+          set -Eeuo pipefail
+          timeout 210 ssh -i "$HOME/.ssh/porota_rc6_a179_idle_close" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 RC6_A179_RUN_ID='$RC6_A179_NATIVE_RUN' python3 - --mode postfinal" \
+            < scripts/rc6_a179_resume_validate.py | tee a179-validated-independent-postfinal.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[x for x in Path('a179-validated-independent-postfinal.jsonl').read_text().splitlines()
+                if x.startswith('RC6_A179_RESUME_POSTFINAL=')]
+          assert len(rows)==1
+          j=json.loads(rows[0].split('=',1)[1])
+          assert j['status']=='VALIDATED_RUNTIME'
+          assert j['native_run_id']=='40916351644'
+          assert j['preopen_phases']=='BOTH_NATIVE_PAUSED_NO_GO_GREEN'
+          assert j['operator_no_go']=='HELD'
+          assert j['real_orders_sent']==j['host_mutations']==j['ppi_watch_mutations']==0
+          print('RC6_A179_FINAL_INDEPENDENT_RUNTIME=VALIDATED_RUNTIME|PAPER0|NO_GO')
+          PY
+      - name: Store full receipts for provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a179-exact-validated-idle-mutex-closure
+          path: |
+            a179-validated-idle-preflight.jsonl
+            a179-validated-idle-release.jsonl
+            a179-validated-independent-postfinal.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Delete runner-only SSH identity
+        if: always()
+        run: rm -f "$HOME/.ssh/porota_rc6_a179_idle_close"
