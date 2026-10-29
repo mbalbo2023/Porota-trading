@@ -1606,8 +1606,19 @@ jobs:
               # the existing 1200s budget; only an operational state with a
               # fresh heartbeat can pass GO and establish a stable baseline.
               startup_pending=bool(paper and last[2]=='OK' and last[3]=='STARTING')
+              # Scanner breadcrumbs reset ppi_auth to NOT_ATTEMPTED on every
+              # cooldown iteration and while entering PPI login. A sampler
+              # beyond 90s may see this transient state before reserve/login
+              # has completed. Wait only for its exact boot labels, PAPER/0
+              # and a fresh heartbeat, without ever treating it as GO.
+              bootstrap_pending=bool(
+                  paper and heartbeat and last[2]=='NOT_ATTEMPTED'
+                  and last[3] in {'STARTING','DEGRADED'}
+                  and last[4] in {'BOOT_COMMAND','BOOT_CALENDAR',
+                                  'BOOT_PPI_SECRET','BOOT_PPI_CLIENT','BOOT_PPI_LOGIN'})
               if time.monotonic() >= startup_deadline and not (
-                      (paper and heartbeat and last[2]=='COOLDOWN') or startup_pending):
+                      (paper and heartbeat and last[2]=='COOLDOWN')
+                      or bootstrap_pending or startup_pending):
                   print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
                   raise SystemExit(1)
               time.sleep(5)
