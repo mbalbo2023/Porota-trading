@@ -69,7 +69,7 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" 'sudo -n timeout 25 python3 -' <<'PY'
-          import json, subprocess
+          import json, subprocess, time
           from pathlib import Path
 
           def status(unit, fields):
@@ -89,7 +89,8 @@ jobs:
                   'ExecMainStatus','ConditionResult'))
           for label, path, fields in (
               ('IOL_OAUTH_GUARDIAN', '/opt/porota-trading/data/market/iol_oauth_guardian_state.json',
-               ('schema','state','reason','observed_at','checked_at','updated_at',
+               ('schema','state','reason','failure_class','http_status',
+                'checked_at','last_authenticated_at','last_reauth_required_at',
                 'probe_attempts','incident_seq')),
               ('IOL_FAMILY_CACHE', '/opt/porota-trading/data/market/iol_family_reference_latest.json',
                ('source','cache_state','refreshed_at','last_known_good_at','live_sections')),
@@ -101,6 +102,23 @@ jobs:
               obj = json.loads(p.read_text(encoding='utf-8'))
               keep = {key:obj.get(key) for key in fields}
               print(label + '=' + json.dumps(keep, sort_keys=True, default=str))
+          oauth = Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          if oauth.is_file() and oauth.stat().st_size <= 65536:
+              metadata = json.loads(oauth.read_text(encoding='utf-8'))
+              tokens = metadata.get('tokens') or {}
+              obtained = metadata.get('token_obtained_at_epoch')
+              expires = tokens.get('expires_in')
+              remaining = (round(float(obtained) + float(expires) - time.time())
+                           if obtained is not None and expires is not None else None)
+              print('IOL_OAUTH_STORE_METADATA=' + json.dumps({
+                  'access_present': bool(tokens.get('access_token')),
+                  'refresh_present': bool(tokens.get('refresh_token')),
+                  'endpoint_present': bool(metadata.get('token_endpoint')),
+                  'seconds_remaining': remaining,
+                  'file_mode': oct(oauth.stat().st_mode & 0o777),
+              }, sort_keys=True))
+          else:
+              print('IOL_OAUTH_STORE_METADATA=MISSING_OR_OVERSIZED')
           print('IOL_GUARDIAN_FORENSICS=COMPLETE_READ_ONLY')
           PY
           echo 'IOL_RUNTIME_STATE=GREEN_READONLY'
