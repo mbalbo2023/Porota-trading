@@ -74,6 +74,18 @@ class A179ResumeGuardTests(TestCase):
                 with self.assertRaisesRegex(ValueError,'DEPLOY_HOST_MUTEX_IDENTITY_RED'):
                     resume.require_exact_mutex()
 
+    def test_native_proof_paths_are_run_scoped_and_never_reuse_legacy_green(self):
+        with mock.patch.dict(os.environ,{'RC6_A179_RUN_ID':''}):
+            with self.assertRaisesRegex(ValueError,'NATIVE_RUN_ID_REQUIRED'):
+                resume.native_receipt_names()
+        with mock.patch.dict(os.environ,{'RC6_A179_RUN_ID':'40916000000'}):
+            first,soak,stability=resume.native_receipt_names()
+        self.assertNotEqual(first,'native-generation-acceptance.json')
+        self.assertNotEqual(soak,'native-ten-generation-soak.json')
+        self.assertTrue(all('40916000000' in p and p.endswith('.json')
+                            for p in [first,soak,*stability]))
+        self.assertEqual(len(set([first,soak,*stability])),5)
+
     def test_native_pair_requires_strict_soak_and_exact_source(self):
         first={'status':'GREEN','acceptance_mode':'FRESH_GENERATIONS',
                'generations':[{'source_sha':resume.CANDIDATE,

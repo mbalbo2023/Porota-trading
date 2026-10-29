@@ -40,6 +40,18 @@ CONTAINERS = {
     'porota_production_observer': 'c14f6dffaab2a053b6aaf1dea6d9f58daa21bb873ac82f604c415865619ca8fa',
     'porota_production_dashboard': 'd96bb07800f08ac712aa200cf3427218e93e9bd488590d62b32418364f798c4f',
 }
+NATIVE_FIRST_PREFIX = 'native-generation-acceptance-a179-'+CANDIDATE[:12]+'-'
+NATIVE_SUSTAINED_PREFIX = 'native-ten-generation-soak-a179-'+CANDIDATE[:12]+'-'
+STABILITY_PREFIX = 'zero-known-error-stability-a179-'+CANDIDATE[:12]+'-'
+
+
+def native_receipt_names():
+    run=os.environ.get('RC6_A179_RUN_ID','')
+    require(re.fullmatch(r'[1-9][0-9]{6,14}',run) is not None,
+            'A179_NATIVE_RUN_ID_REQUIRED')
+    return (NATIVE_FIRST_PREFIX+run+'.json',
+            NATIVE_SUSTAINED_PREFIX+run+'.json',
+            [STABILITY_PREFIX+run+'-'+str(n)+'.json' for n in (1,2,3)])
 
 
 def require(condition, reason):
@@ -366,10 +378,13 @@ def run_native_acceptance(root=ROOT) -> dict:
     verify_preopen(root)
     ppi_before=ppi_watch_snapshot()
     deploy_dir=root/'data/deploy'
-    first_path=deploy_dir/'native-generation-acceptance.json'
-    sustained_path=deploy_dir/'native-ten-generation-soak.json'
+    first_name,sustained_name,stability_names=native_receipt_names()
+    first_path=deploy_dir/first_name
+    sustained_path=deploy_dir/sustained_name
     require(not first_path.exists() and not sustained_path.exists(),
             'A179_NATIVE_ALREADY_PARTIALLY_RUN')
+    require(all(not (deploy_dir/name).exists() for name in stability_names),
+            'A179_STABILITY_ALREADY_PARTIALLY_RUN')
     audit_dir='/app/data/deploy'
     baseline=deploy_dir/'zero-known-error-immediate.json'
     require(safe_generated(baseline).get('read_only') is True,
@@ -381,9 +396,9 @@ def run_native_acceptance(root=ROOT) -> dict:
                          'python','/app/scripts/rc6_zero_known_error_runtime_audit.py',
                          '--label','stability-'+str(n),'--baseline',
                          audit_dir+'/zero-known-error-immediate.json',
-                         '--output',audit_dir+'/zero-known-error-stability-'+str(n)+'.json'),
+                         '--output',audit_dir+'/'+stability_names[n-1]),
                         320,'A179_STABILITY_AUDIT_RED:'+str(n))
-        audit=safe_generated(deploy_dir/('zero-known-error-stability-'+str(n)+'.json'))
+        audit=safe_generated(deploy_dir/stability_names[n-1])
         require(audit.get('read_only') is True and
                 audit.get('real_routes')==[],
                 'A179_STABILITY_AUDIT_SAFETY_RED:'+str(n))
@@ -402,7 +417,7 @@ def run_native_acceptance(root=ROOT) -> dict:
                      'python','/app/scripts/rc6_deploy_generation_gate.py',
                      '--expected-sha',CANDIDATE,'--expected-tree',TREE,
                      '--allow-closed-idle','--output',
-                     '/app/data/deploy/native-generation-acceptance.json'),
+                     '/app/data/deploy/'+first_name),
                     220,'A179_NATIVE_GENERATION_GATE_RED')
     checked_process(('python3',str(root/'scripts/rc6_native_soak.py'),
                      '--expected-sha',CANDIDATE,'--expected-tree',TREE,
@@ -414,6 +429,9 @@ def run_native_acceptance(root=ROOT) -> dict:
     require(ppi_watch_snapshot()==ppi_before,'A179_PPI_WATCH_DRIFT')
     return {'schema':'rc6.a179.native-acceptance.v1','status':'GREEN',
             'candidate':CANDIDATE,'image':IMAGE_ID,'acceptance_mode':mode,
+            'run_id':os.environ['RC6_A179_RUN_ID'],
+            'first_receipt':first_name,'soak_receipt':sustained_name,
+            'stability_receipts':stability_names,
             'stability_audits':3,'passive_exit139_minutes':5,
             'native_generation_gate':'GREEN','native_ten_generation_soak':'GREEN',
             'session_time_veto':False,'operator_no_go':'HELD',

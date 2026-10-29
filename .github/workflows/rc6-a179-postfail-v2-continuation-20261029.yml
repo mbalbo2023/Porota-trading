@@ -134,7 +134,6 @@ jobs:
           PY
       - name: Run passive native runtime evidence under the canonical host mutex
         id: native_acceptance
-        if: ${{ false }} # Explicitly disabled until existing receipts are reconciled.
         timeout-minutes: 40
         shell: bash
         run: |
@@ -146,7 +145,7 @@ jobs:
             -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$MUTEX_B64\"))' '$DO_USER' root --attempt '7d62d2f4ed353231da8566a360a1179e99bcc7eb' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env PYTHONDONTWRITEBYTECODE=1 python3 - --mode native-acceptance" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$MUTEX_B64\"))' '$DO_USER' root --attempt '7d62d2f4ed353231da8566a360a1179e99bcc7eb' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env PYTHONDONTWRITEBYTECODE=1 RC6_A179_RUN_ID='$GITHUB_RUN_ID' python3 - --mode native-acceptance" \
             < scripts/rc6_a179_resume_validate.py | tee a179-native-acceptance.jsonl
           python3 - <<'PY'
           import json
@@ -159,6 +158,8 @@ jobs:
           assert row['acceptance_mode'] in ('FRESH_GENERATIONS','CLOSED_IDLE')
           assert row['real_orders_sent']==0 and row['ppi_watch_mutations']==0
           assert row['operator_no_go']=='HELD' and row['host_control_mutations']==0
+          import os
+          assert row['run_id']==os.environ['GITHUB_RUN_ID']
           print('RC6_A179_NATIVE_ACCEPTANCE=GREEN|NO_GO_HELD|PAPER=0|NO_STRESS')
           PY
       - name: Retire only the completed native attempt barrier on a safe failure
