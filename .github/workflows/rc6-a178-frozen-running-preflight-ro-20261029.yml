@@ -49,7 +49,7 @@ jobs:
           test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
           test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
           test "$(sha256sum scripts/rc6_a178_running_preflight_ro.py | cut -d' ' -f1)" = \
-            'a4471e48d67c74ebba8fd19fa41f7a30277504b18bececcef5ce22257d49e4bb'
+            '72e54cd23e87c40a0432642c6702f6e139d4ab6aea1dc605fdb7d27e1be69cfb'
           python3 -m unittest tests.test_rc6_a178_running_preflight_ro -v
           python3 -m py_compile scripts/rc6_a178_running_preflight_ro.py scripts/rc6_a178_preflight_runner.py
           python3 scripts/rc6_a178_preflight_runner.py \

@@ -136,6 +136,27 @@ def capacity(required, policy_b64):
             'minimum_inodes_percent':minimum}
 
 
+def diagnose_origin_book(q):
+    """Safe, minimal read-only fields when A175 closed-session guard rejects."""
+    try:
+        book=q.rescue_flat_book()  # Also verifies all three PAPER ledgers flat.
+    except (ValueError, OSError) as exc:
+        return {'flat_book':'UNVERIFIED','reason':type(exc).__name__+':'+str(exc)}
+    try:
+        admission=q.admit()
+    except (ValueError, OSError) as exc:
+        admission='RED:'+str(exc)
+    try:
+        capability=q.critical_admission().get('capability')
+    except (ValueError, OSError) as exc:
+        capability='RED:'+str(exc)
+    return {'flat_book':'VERIFIED','process_state':book['process_state'],
+            'session_state':book['session_state'],
+            'source_is_a175':book['source_sha']==q.A175_FAILED_CANDIDATE,
+            'real_orders_sent':book['real_orders_sent'],
+            'admission':admission,'critical_capability':capability}
+
+
 def prove(candidate,tree,policy_b64,required):
     if (candidate != EXPECTED_CANDIDATE or tree != EXPECTED_TREE or
             not GIT_SHA.fullmatch(candidate) or not GIT_SHA.fullmatch(tree) or
@@ -157,11 +178,17 @@ def prove(candidate,tree,policy_b64,required):
                 daily.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
                 daily.get('paper_execution_authorized') is not False):
             raise ValueError('A178_DAILY_SEAL_RED')
-        origin=q.a175_failed_running_proof(
-            candidate, operator_a151_proof=s.exact_a151_operator_preopen_pause,
-            operator_timer_disabled=s.operator_preopen_timer_disabled,
-            operator_current_no_go_proof=s.exact_a176_operator_no_go_continuation,
-            require_installed_a175_source=True)
+        try:
+            origin=q.a175_failed_running_proof(
+                candidate, operator_a151_proof=s.exact_a151_operator_preopen_pause,
+                operator_timer_disabled=s.operator_preopen_timer_disabled,
+                operator_current_no_go_proof=s.exact_a176_operator_no_go_continuation,
+                require_installed_a175_source=True)
+        except ValueError as exc:
+            if str(exc) != 'QUIESCENCE_A175_RUNNING_BOOK_CHANGED':
+                raise
+            raise ValueError(str(exc)+':'+json.dumps(
+                diagnose_origin_book(q),sort_keys=True)) from exc
         if (origin.get('origin_candidate') != q.A175_FAILED_CANDIDATE or
                 origin.get('operator_receipt_sha256') != EXPECTED_SEAL or
                 origin.get('flat_book',{}).get('real_orders_sent') != 0 or

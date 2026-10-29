@@ -84,6 +84,26 @@ class A178ReadOnlyPreflightTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'IMAGE_INVENTORY_RED'):
                 probe.read_docker_images()
 
+    def test_closed_session_failure_emits_only_verified_paper_origin_fields(self):
+        class FakeOrigin:
+            A175_FAILED_CANDIDATE = probe.EXPECTED_CANDIDATE
+
+            def rescue_flat_book(self):
+                return {'process_state':'RUNNING','session_state':'MARKET_OPEN',
+                        'source_sha':self.A175_FAILED_CANDIDATE,'real_orders_sent':0}
+
+            def admit(self):
+                raise ValueError('QUIESCENCE_CLOSED_REQUIRED')
+
+            def critical_admission(self):
+                return {'capability':'issues_only'}
+
+        result=probe.diagnose_origin_book(FakeOrigin())
+        self.assertEqual(result,{'flat_book':'VERIFIED','process_state':'RUNNING',
+            'session_state':'MARKET_OPEN','source_is_a175':True,
+            'real_orders_sent':0,'admission':'RED:QUIESCENCE_CLOSED_REQUIRED',
+            'critical_capability':'issues_only'})
+
     def test_artifact_redirect_never_forwards_github_token(self):
         source=urllib.request.Request(
             'https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/123/zip',
