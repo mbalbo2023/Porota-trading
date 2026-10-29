@@ -30,6 +30,7 @@ def receipt():
         'a175_origin_candidate': continuity.A175_FAILED_CANDIDATE,
         'a175_origin_sha256': continuity.A175_FAILED_RECEIPT_SHA256,
         'a175_previous_proof': {
+            'intraday_a175': False,
             'origin_candidate': continuity.A175_FAILED_CANDIDATE,
             'origin_sha256': continuity.A175_FAILED_RECEIPT_SHA256,
             'image_id': continuity.A175_LOADED_IMAGE_ID,
@@ -49,6 +50,22 @@ def receipt():
 def test_a175_mode_requires_exact_failed_provenance_and_third_owner_literal():
     assert MODE in apply.INTRADAY_MODES and MODE in continuity.INTRADAY_MODES
     assert continuity.validate_prior_receipt(receipt(), CANDIDATE, MODE).tzinfo
+
+
+def test_a175_market_open_continuity_requires_exact_mode_and_flat_provenance():
+    open_mode='OPEN_A175_PENDING_FIX_FORWARD'
+    assert open_mode in apply.INTRADAY_MODES and open_mode in continuity.INTRADAY_MODES
+    data=receipt()
+    data['market_open_suspended']=True
+    data['a175_previous_proof']['intraday_a175']=True
+    data['a175_previous_proof']['flat_book'].update(
+        process_state='RUNNING',session_state='MARKET_OPEN')
+    assert continuity.validate_prior_receipt(data,CANDIDATE,open_mode).tzinfo
+    with pytest.raises(ValueError,match='PAPER_RESTATEMENT_.*RED'):
+        continuity.validate_prior_receipt(data,CANDIDATE,MODE)
+    data['a175_previous_proof']['flat_book']['real_orders_sent']=1
+    with pytest.raises(ValueError,match='PAPER_RESTATEMENT_A175_ORIGIN_RED'):
+        continuity.validate_prior_receipt(data,CANDIDATE,open_mode)
 
 
 @pytest.mark.parametrize('field,value', (

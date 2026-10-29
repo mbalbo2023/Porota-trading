@@ -44,6 +44,7 @@ def a175_held(tmp_path,monkeypatch):
             for name in q.OWNED}
     monkeypatch.setattr(q,'inspect',lambda name:json.loads(json.dumps(states[name])))
     proof={'origin_candidate':q.A175_FAILED_CANDIDATE,
+           'intraday_a175':False,
            'origin_sha256':q.A175_FAILED_RECEIPT_SHA256,
            'image_id':q.A175_LOADED_IMAGE_ID,
            'containers':{name:{'id':v['Id'],'image':v['Image'],
@@ -57,6 +58,8 @@ def a175_held(tmp_path,monkeypatch):
         assert candidate==CANDIDATE
         assert kwargs.get('require_installed_a175_source') is True
         assert callable(kwargs.get('operator_current_no_go_proof'))
+        if kwargs.get('allow_intraday_a175',False) is not proof['intraday_a175']:
+            raise ValueError('QUIESCENCE_A175_SESSION_MISMATCH')
         probes.append('A175_ORIGIN')
         return proof
     monkeypatch.setattr(q,'a175_failed_running_proof',exact_proof)
@@ -219,7 +222,7 @@ def test_a175_conflicting_modes_fail_before_any_docker_stop(a175_held):
     _,_,states,_,calls,_,_,_=a175_held
     with pytest.raises(ValueError,match='A175_PENDING_MODE_INVALID'):
         q.run(CANDIDATE,'drain',allow_a175_running_pending=True,
-              allow_market_open_suspend=True)
+              allow_market_open_suspend=True,allow_open_paper_carryover=True)
     with pytest.raises(ValueError,match='A175_PENDING_MODE_INVALID'):
         q.run(CANDIDATE,'drain',allow_a175_running_pending=True,
               allow_a174_running_pending=True)
@@ -237,9 +240,15 @@ def test_a175_cli_flags_reach_executable_receivers(monkeypatch):
                    '--adopt-a175-running-pending'])==0
     assert observed[-1]==('quiescence',CANDIDATE,'drain',
                           {'allow_a175_running_pending':True})
+    assert q.main(['--candidate-sha',CANDIDATE,'--action','drain',
+                   '--adopt-a175-running-pending','--market-open-suspend'])==0
+    assert observed[-1]==('quiescence',CANDIDATE,'drain',
+                          {'allow_a175_running_pending':True,
+                           'allow_market_open_suspend':True})
     with pytest.raises(SystemExit):
         q.main(['--candidate-sha',CANDIDATE,'--action','drain',
-                '--adopt-a175-running-pending','--market-open-suspend'])
+                '--adopt-a175-running-pending','--market-open-suspend',
+                '--carry-open-paper-spots'])
     def fake_scheduler(candidate,action,policy):
         observed.append(('scheduler',candidate,action,policy))
     monkeypatch.setattr(s,'run',fake_scheduler)
@@ -305,3 +314,48 @@ def test_a175_workflow_wires_nested_staged_sources_in_every_failure_phase():
     recovery=workflow.split("RECOVERY_A125_ENV=''",1)[1].split('RECOVERY_OUTPUT=',1)[0]
     assert 'RECOVERY_A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=' in recovery
     assert 'env $RECOVERY_A125_ENV $RECOVERY_A143_ENV' in workflow
+
+
+def test_a175_live_open_suspend_drains_and_holds_unvalidated_image(a175_held,monkeypatch):
+    """Execute RUNNING/MARKET_OPEN A175 -> clean stop -> failure held, not GO."""
+    folder,policy,states,proof,calls,systemctl,probes,verified=a175_held
+    proof['intraday_a175']=True
+    proof['flat_book'].update(process_state='RUNNING',session_state='MARKET_OPEN')
+    monkeypatch.setattr(q,'admit',lambda **opts: (
+        'RUNNING' if opts.get('allow_market_open_suspend') else
+        (_ for _ in ()).throw(ValueError('QUIESCENCE_CLOSED_REQUIRED'))))
+    encoded=base64.b64encode(policy).decode()
+    pause=s.run(CANDIDATE,'suspend',encoded,allow_a175_intraday=True)
+    assert pause['a175_intraday_suspend'] is True
+    assert pause['a175_previous_proof']['intraday_a175'] is True
+    assert s.require_a175_fix_forward_hold(CANDIDATE)=='A175_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
+    receipt=q.run(CANDIDATE,'drain',allow_a175_running_pending=True,
+                  allow_market_open_suspend=True)
+    assert receipt['status']=='DRAINED'
+    assert receipt['market_open_suspended'] is True
+    assert receipt['a175_previous_proof']['flat_book']['session_state']=='MARKET_OPEN'
+    assert all(states[n]['State']['Status']=='exited' for n in q.OWNED)
+    assert s.require_a175_fix_forward_hold(CANDIDATE)=='A175_PRIOR_UNVALIDATED_STOPPED_HELD'
+    installed=q.run(CANDIDATE,'install',allow_a175_running_pending=True,
+                    allow_market_open_suspend=True)
+    assert installed['status']=='HOST_INSTALLATION_STARTED'
+    failed=q.run(CANDIDATE,'recover')
+    assert failed['status']=='FIX_FORWARD_VALIDATION_REQUIRED'
+    assert failed['prior_a175_stopped_after_install'] is True
+    held=s.run(CANDIDATE,'recover-a175-pending',encoded)
+    assert held['rescue_failure_disposition']=='A175_PRIOR_UNVALIDATED_STOPPED_HELD'
+    assert len([row for row in calls if row[:2]==['docker','stop']])==len(q.OWNED)
+    assert not any(row[:2]==['docker','start'] for row in calls)
+
+
+def test_a175_open_mode_requires_explicit_scheduler_flag(a175_held,monkeypatch):
+    _,policy,states,proof,calls,_,_,_=a175_held
+    proof['intraday_a175']=True
+    proof['flat_book'].update(process_state='RUNNING',session_state='MARKET_OPEN')
+    encoded=base64.b64encode(policy).decode()
+    with pytest.raises(ValueError,match='QUIESCENCE_A175_SESSION_MISMATCH'):
+        s.run(CANDIDATE,'suspend',encoded)
+    assert not calls
+    with pytest.raises(ValueError,match='A175_INTRADAY_ONLY_FOR_SUSPEND'):
+        s.run(CANDIDATE,'restore',encoded,allow_a175_intraday=True)
+    assert all(states[n]['State']['Status']=='running' for n in q.OWNED)

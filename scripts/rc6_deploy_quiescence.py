@@ -84,6 +84,7 @@ A175_RUNNING_IDS = {
 A175_FAILURE_BOOK_STATE = ('WAITING_MARKET','MARKET_CLOSED')
 A176_OPERATOR_NO_GO_RECEIPT_SHA256 = '3218ccf5296306068d051b12588c4fac253a768ea3c81e0fc31c501adb34338c'  # Actions #40875630811, PAPER admission held.
 A175_PENDING_MODE = 'CLOSED_A175_PENDING_FIX_FORWARD'
+A175_INTRADAY_PENDING_MODE = 'OPEN_A175_PENDING_FIX_FORWARD'
 A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
@@ -1218,7 +1219,8 @@ def a175_failed_running_proof(candidate, originals=None, *,
                               operator_a151_proof=None,
                               operator_timer_disabled=None,
                               operator_current_no_go_proof=None,
-                              require_installed_a175_source=False):
+                              require_installed_a175_source=False,
+                              allow_intraday_a175=False):
     """Prove only the pinned, still-running A175 failure for fix-forward.
 
     The failed-run book and the current live book are separately attested.
@@ -1333,12 +1335,17 @@ def a175_failed_running_proof(candidate, originals=None, *,
                 row.get('id')!=value['Id'] or row.get('image')!=value['Image'] or
                 row.get('lifecycle')!=lifecycle(value)):
             raise ValueError('QUIESCENCE_A175_RUNTIME_IDENTITY_CHANGED')
+    # A175 is the same immutable failed image regardless of the clock.
+    # The operator must explicitly select this mode; never reinterpret
+    # RUNNING/MARKET_OPEN as closed or allow its stale DB state unaudited.
+    expected_phase = ({('RUNNING','MARKET_OPEN')} if allow_intraday_a175 else
+                      {('WAITING_MARKET','MARKET_CLOSED'),
+                       ('WAITING_MARKET','CLOSED')})
     book=rescue_flat_book()
     if (book.get('source_sha')!=A175_FAILED_CANDIDATE or
             book.get('real_orders_sent')!=0 or
-            (book.get('process_state'),book.get('session_state')) not in
-                {('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')} or
-            admit()!=book['process_state'] or
+            (book.get('process_state'),book.get('session_state')) not in expected_phase or
+            admit(allow_market_open_suspend=allow_intraday_a175)!=book['process_state'] or
             critical_admission().get('capability')!='issues_only'):
         raise ValueError('QUIESCENCE_A175_RUNNING_BOOK_CHANGED')
     if require_installed_a175_source:
@@ -1353,6 +1360,7 @@ def a175_failed_running_proof(candidate, originals=None, *,
             if type(images) is not list or len(images)!=1 or images[0].get('Id')!=A175_LOADED_IMAGE_ID:
                 raise ValueError('QUIESCENCE_A175_DOCKER_TAG_CHANGED')
     return {'origin_candidate':A175_FAILED_CANDIDATE,'origin_sha256':digest,
+            'intraday_a175':allow_intraday_a175,
             'image_id':A175_LOADED_IMAGE_ID,
             'containers':{name:{'id':observed[name]['Id'],'image':observed[name]['Image'],
                                 'lifecycle':lifecycle(observed[name])} for name in OWNED},
@@ -1365,12 +1373,19 @@ def a175_failed_running_proof(candidate, originals=None, *,
 
 def a175_receipt_origin(receipt):
     """Bind the new candidate's durable stop to the immutable A175 failure."""
+    proof=receipt.get('a175_previous_proof')
+    intraday=(type(proof) is dict and proof.get('intraday_a175') is True)
     if (receipt.get('a175_pending_adopted') is not True or
             receipt.get('a175_origin_candidate')!=A175_FAILED_CANDIDATE or
             receipt.get('a175_origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
-            type(receipt.get('a175_previous_proof')) is not dict or
-            receipt['a175_previous_proof'].get('origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
-            receipt.get('market_open_suspended') is not False or
+            type(proof) is not dict or
+            type(proof.get('intraday_a175')) is not bool or
+            proof.get('origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
+            receipt.get('market_open_suspended') is not intraday or
+            (proof.get('flat_book',{}).get('process_state'),
+             proof.get('flat_book',{}).get('session_state')) not in (
+                {('RUNNING','MARKET_OPEN')} if intraday else
+                {('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')}) or
             receipt.get('inflight')!='ABSENT_OWNED_RUNTIME_STOPPED' or
             set(receipt.get('containers',{}))!=set(OWNED) or
             set(receipt.get('stop_evidence',{}))!=set(OWNED) or
@@ -1378,7 +1393,6 @@ def a175_receipt_origin(receipt):
         raise ValueError('QUIESCENCE_A175_STOPPED_RECEIPT_CHANGED')
     prior,prior_sha=_a143_exact_json(
         ROOT/'data/deploy'/('quiescence-'+A175_FAILED_CANDIDATE+'.json'),65536)
-    proof=receipt['a175_previous_proof']
     if (prior_sha!=A175_FAILED_RECEIPT_SHA256 or
             prior.get('status')!='FIX_FORWARD_VALIDATION_REQUIRED' or
             prior.get('candidate_runtime_after_failure',{}).get('status')!='running' or
@@ -1426,12 +1440,17 @@ def a175_stopped_continuation(receipt):
     """Keep the exact A175 pair stopped after the new candidate drains."""
     a175_receipt_origin(receipt)
     exact_clean_stopped(receipt)
+    intraday=receipt['a175_previous_proof']['intraday_a175']
     book=rescue_flat_book()
+    stopped_phase=({('RUNNING','MARKET_OPEN'),('STOPPED','MARKET_OPEN'),
+                    ('STOPPED','OPEN')} if intraday else
+                   {('STOPPED','MARKET_CLOSED'),('STOPPED','CLOSED'),
+                    ('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')})
     if (book.get('source_sha')!=A175_FAILED_CANDIDATE or
             book.get('real_orders_sent')!=0 or
-            (book.get('process_state'),book.get('session_state')) not in
-                {('STOPPED','MARKET_CLOSED'),('STOPPED','CLOSED'),
-                 ('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')} or
+            (book.get('process_state'),book.get('session_state')) not in stopped_phase or
+            admit(stopped=True,allow_market_open_suspend=intraday,
+                  stopped_receipt=receipt)!=book['process_state'] or
             critical_admission().get('capability')!='issues_only'):
         raise ValueError('QUIESCENCE_A175_STOPPED_BOOK_CHANGED')
     return book
@@ -1784,7 +1803,8 @@ def admit_poststart_flat(pre_mode, candidate=None):
     if pre_mode not in {'OPEN', 'CLOSED', 'CLOSED_CAUCION', RESCUE_MODE,
                         ADOPTED_RESCUE_MODE, A143_PENDING_MODE,
                         A151_HELD_STOPPED_MODE, A171_PENDING_MODE,
-                        A174_PENDING_MODE}:
+                        A174_PENDING_MODE, A175_PENDING_MODE,
+                        A175_INTRADAY_PENDING_MODE}:
         raise ValueError('QUIESCENCE_PRESTART_MODE_UNKNOWN')
     path = ROOT / 'data/paper_v17/observer_v17.db'
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
@@ -1831,6 +1851,30 @@ def admit_poststart_flat(pre_mode, candidate=None):
     if admit(allow_market_open_suspend=actual == 'OPEN',
              allow_pending_caucion=pending) != expected:
         raise ValueError('QUIESCENCE_POSTSTART_BOOK_CHANGED')
+    if pre_mode in {A175_PENDING_MODE,A175_INTRADAY_PENDING_MODE}:
+        if not candidate or not re.fullmatch('[0-9a-f]{40}',candidate):
+            raise ValueError('QUIESCENCE_A175_POSTSTART_CANDIDATE_INVALID')
+        receipt,_=_a143_exact_json(
+            ROOT/'data/deploy'/('quiescence-'+candidate+'.json'),65536)
+        origin=receipt.get('a175_previous_proof')
+        if (receipt.get('candidate_sha')!=candidate or
+                receipt.get('installation_started') is not True or
+                receipt.get('status')!='HOST_INSTALLATION_STARTED' or
+                receipt.get('a175_pending_adopted') is not True or
+                receipt.get('a175_origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
+                type(origin) is not dict or
+                origin.get('origin_candidate')!=A175_FAILED_CANDIDATE or
+                origin.get('origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
+                origin.get('intraday_a175') is not
+                    (pre_mode==A175_INTRADAY_PENDING_MODE) or
+                receipt.get('inflight')!='ABSENT_OWNED_RUNTIME_STOPPED' or
+                set(receipt.get('stop_evidence',{}))!=set(OWNED) or
+                receipt.get('real_orders_sent')!=0 or
+                receipt.get('ppi_watch_accessed') is not False or
+                receipt.get('market_open_suspended') is not
+                    (pre_mode==A175_INTRADAY_PENDING_MODE) or
+                critical_admission().get('capability')!='issues_only'):
+            raise ValueError('QUIESCENCE_A175_POSTSTART_NO_GO_ORIGIN_CHANGED')
     if pre_mode == A151_HELD_STOPPED_MODE:
         if not candidate or not re.fullmatch('[0-9a-f]{40}',candidate):
             raise ValueError('QUIESCENCE_A169_POSTSTART_CANDIDATE_INVALID')
@@ -2576,7 +2620,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
          frozen_manifest=None):
     if allow_a175_running_pending and (
             allow_a174_running_pending or allow_a171_running_pending or
-            allow_admin_issue624 or allow_market_open_suspend or
+            allow_admin_issue624 or
             allow_open_paper_carryover or allow_postclose_pending or
             allow_intraday_caucion or allow_pending_caucion or
             allow_degraded_closed_rescue or allow_adopt_failed_rescue or
@@ -2841,7 +2885,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     operator_a151_proof=operator.exact_a151_operator_preopen_pause,
                     operator_timer_disabled=operator.operator_preopen_timer_disabled,
                     operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation,
-                    require_installed_a175_source=True)
+                    require_installed_a175_source=True,
+                    allow_intraday_a175=allow_market_open_suspend)
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
             if allow_degraded_closed_rescue and not stopped_owned and any(
                     not re.fullmatch('[0-9a-f]{64}',v['Id']) or
@@ -3424,7 +3469,7 @@ def main(argv=None):
             args.rescue_degraded_closed_20261026 or args.adopt_failed_rescue_candidate or
             args.adopt_a143_running_pending or args.adopt_a143_stopped_pending or
             args.adopt_a171_running_pending or args.adopt_a174_running_pending or
-            args.a151_held_open or args.market_open_suspend or
+            args.a151_held_open or
             args.carry_open_paper_spots or args.paused_postclose or
             args.intraday_caucion or args.pending_paper_caucion or
             args.admin_cancel_issue624 or args.action not in {'drain','install'}):

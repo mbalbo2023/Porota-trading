@@ -1082,7 +1082,8 @@ def require_a174_fix_forward_hold(candidate):
     return 'A175_NEW_CANDIDATE_UNVALIDATED_HELD'
 
 
-def adopt_a175_running_hold(candidate,path,names,digest,before,states):
+def adopt_a175_running_hold(candidate,path,names,digest,before,states,*,
+                            intraday=False):
     """Adopt the exact A175 running/PAPER-0 failure without changing timers."""
     q=a143_staged_module()
     if (candidate==q.A175_FAILED_CANDIDATE or len(names)!=16 or
@@ -1113,7 +1114,8 @@ def adopt_a175_running_hold(candidate,path,names,digest,before,states):
         candidate,operator_a151_proof=exact_a151_operator_preopen_pause,
         operator_timer_disabled=operator_preopen_timer_disabled,
         operator_current_no_go_proof=exact_a176_operator_no_go_continuation,
-        require_installed_a175_source=True)
+        require_installed_a175_source=True,
+        allow_intraday_a175=intraday)
     for name in names:
         if name==IOL_OAUTH_GUARD_TIMER:
             _iol_guard_status(('active','enabled'))
@@ -1129,6 +1131,7 @@ def adopt_a175_running_hold(candidate,path,names,digest,before,states):
                  paused_from=q.A175_FAILED_CANDIDATE,
                  prior_receipt_sha256=prior_sha,
                  a175_running_origin=True,
+                 a175_intraday_suspend=intraday,
                  a175_origin_sha256=q.A175_FAILED_RECEIPT_SHA256,
                  a175_previous_proof=proof,
                  recorded_at=datetime.now(timezone.utc).isoformat())
@@ -1148,6 +1151,9 @@ def require_a175_fix_forward_hold(candidate):
     pause,_=_operator_pause_json(ROOT/('scheduler-suspend-'+candidate+'.json'),65536)
     if (pause.get('candidate_sha')!=candidate or pause.get('status')!='SUSPENDED' or
             pause.get('a175_running_origin') is not True or
+            type(pause.get('a175_intraday_suspend')) is not bool or
+            pause.get('a175_previous_proof',{}).get('intraday_a175') is not
+                pause.get('a175_intraday_suspend') or
             pause.get('paused_from')!=q.A175_FAILED_CANDIDATE or
             pause.get('prior_receipt_sha256')!=q.A175_SCHEDULER_RECEIPT_SHA256 or
             pause.get('a175_origin_sha256')!=q.A175_FAILED_RECEIPT_SHA256):
@@ -1158,13 +1164,15 @@ def require_a175_fix_forward_hold(candidate):
             candidate,operator_a151_proof=exact_a151_operator_preopen_pause,
             operator_timer_disabled=operator_preopen_timer_disabled,
             operator_current_no_go_proof=exact_a176_operator_no_go_continuation,
-            require_installed_a175_source=True)
+            require_installed_a175_source=True,
+            allow_intraday_a175=pause['a175_intraday_suspend'])
         if proof!=pause.get('a175_previous_proof'):
             raise ValueError('SCHEDULER_A175_PREDRAIN_PROOF_CHANGED')
         return 'A175_RUNNING_UNVALIDATED_HELD_BEFORE_DRAIN'
     receipt,_=q._a143_exact_json(path,65536)
     if (receipt.get('candidate_sha')!=candidate or
             receipt.get('a175_pending_adopted') is not True or
+            receipt.get('market_open_suspended') is not pause['a175_intraday_suspend'] or
             receipt.get('a175_previous_proof')!=pause.get('a175_previous_proof') or
             receipt.get('a175_origin_sha256')!=q.A175_FAILED_RECEIPT_SHA256):
         raise ValueError('SCHEDULER_A175_DRAIN_PROOF_CHANGED')
@@ -1425,7 +1433,7 @@ def adopt_a138_operator_paused_timers(candidate, path, names, digest, before, st
     return receipt
 
 
-def run(candidate, action, policy_b64):
+def run(candidate, action, policy_b64, *, allow_a175_intraday=False):
     if not re.fullmatch(r'[0-9a-f]{40}', candidate):
         raise ValueError('SCHEDULER_CANDIDATE_INVALID')
     raw = base64.b64decode(policy_b64, validate=True)
@@ -1440,6 +1448,8 @@ def run(candidate, action, policy_b64):
         raise ValueError('SCHEDULER_RECEIPT_ALIAS')
     before = ppi_snapshot()
     receipt = json.loads(path.read_text()) if path.exists() else None
+    if allow_a175_intraday and action != 'suspend':
+        raise ValueError('SCHEDULER_A175_INTRADAY_ONLY_FOR_SUSPEND')
     if action == 'suspend':
         if receipt is not None:
             if (receipt.get('candidate_sha') != candidate or
@@ -1450,6 +1460,9 @@ def run(candidate, action, policy_b64):
                     receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_RECEIPT_EXISTS')
+            if receipt.get('a175_running_origin') is True and (
+                    receipt.get('a175_intraday_suspend') is not allow_a175_intraday):
+                raise ValueError('SCHEDULER_A175_EXISTING_MODE_CHANGED')
             if receipt.get('operator_pause_timer') is not None:
                 if (receipt['operator_pause_timer'] != OPERATOR_PREOPEN_TIMER or
                         receipt.get('operator_pause_receipt_sha256') !=
@@ -1486,7 +1499,10 @@ def run(candidate, action, policy_b64):
                     staged.current_runtime_marker().get('candidate_sha') ==
                     staged.A175_FAILED_CANDIDATE):
                 return adopt_a175_running_hold(
-                    candidate,path,names,digest,before,states)
+                    candidate,path,names,digest,before,states,
+                    intraday=allow_a175_intraday)
+            if allow_a175_intraday:
+                raise ValueError('SCHEDULER_A175_INTRADAY_ORIGIN_MISSING')
             if (getattr(staged,'A174_FAILED_CANDIDATE',None) and
                     staged.current_runtime_marker().get('candidate_sha') ==
                     staged.A174_FAILED_CANDIDATE):
@@ -1746,6 +1762,8 @@ def run(candidate, action, policy_b64):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
+    parser.add_argument('--a175-intraday', action='store_true',
+                        help='exact A175 NO_GO hold with live flat MARKET_OPEN')
     parser.add_argument('--action', choices=['suspend', 'restore', 'verify',
                                            'hold-open-flat', 'recover-open',
                                            'hold-closed-flat', 'recover-closed',
@@ -1759,6 +1777,8 @@ def main():
     policy.add_argument('--policy-b64')
     policy.add_argument('--policy-gzip-b64')
     args = parser.parse_args()
+    if args.a175_intraday and args.action != 'suspend':
+        parser.error('--a175-intraday only for suspend')
     encoded=args.policy_b64
     if args.policy_gzip_b64 is not None:
         try:
@@ -1773,7 +1793,10 @@ def main():
             encoded=base64.b64encode(raw).decode('ascii')
         except (binascii.Error,zlib.error) as exc:
             raise ValueError('SCHEDULER_POLICY_COMPRESSED_INVALID') from exc
-    run(args.candidate_sha,args.action,encoded)
+    if args.a175_intraday:
+        run(args.candidate_sha,args.action,encoded,allow_a175_intraday=True)
+    else:
+        run(args.candidate_sha,args.action,encoded)
 
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
 MODE = 'CLOSED_A175_PENDING_FIX_FORWARD'
+OPEN_MODE = 'OPEN_A175_PENDING_FIX_FORWARD'
 SOURCE = '18ba517a846c6798f0d12f39072465fc02fa03b5'
 IMAGE = 'sha256:9841cba8df3345fa22e39457645ba250431ad1f465ce4204d92f73f7816215b9'
 
@@ -23,14 +24,14 @@ def test_a175_exact_running_classifier_precedes_generic_closed():
     assert "proof.get('origin_sha256')!=candidate.A175_FAILED_RECEIPT_SHA256" in code
     assert "proof.get('image_id')!=candidate.A175_LOADED_IMAGE_ID" in code
     assert 'RC6_A175_FAILED_VALIDATION_RECOVERY=ADMITTED|health=RED|PAPER=0' in code
-    assert f"print('{MODE}')" in code
+    assert f"else '{MODE}')" in code
 
 
 def test_a175_mode_has_exact_routing_and_cleanup_never_rearms():
     assert f'{MODE}) FLAG=\'--adopt-a175-running-pending\'' in WORKFLOW
     assert f'{MODE}) QUIESCENCE_FLAG=\'--adopt-a175-running-pending\'' in WORKFLOW
     assert f"env.RC6_QUIESCENCE_MODE == '{MODE}'" in WORKFLOW
-    assert f'"$RC6_QUIESCENCE_MODE" = {MODE} ]]' in WORKFLOW
+    assert f'"$RC6_QUIESCENCE_MODE" = {MODE} ||' in WORKFLOW
     assert 'RC6_PAPER_SESSION=A175_EXACT_NO_GO_ADMITTED|runtime=RUNNING|health=RED|PAPER=0' in WORKFLOW
     cleanup = WORKFLOW.split('      - name: Failure-safe host cleanup', 1)[1]
     assert f'[ "${{RC6_QUIESCENCE_MODE:-}}" = {MODE} ]' in cleanup
@@ -39,7 +40,24 @@ def test_a175_mode_has_exact_routing_and_cleanup_never_rearms():
     assert 'RC6_A145_QUIESCENCE_GZIP_B64=' in cleanup
     assert cleanup.index('SCHEDULER_ACTION=recover-a175-pending') < cleanup.index('--phase cleanup_restore')
     # A failed suspend must never select the generic scheduler restore.
-    assert f'if [ "${{RC6_QUIESCENCE_MODE:-}}" = {MODE} ]; then' in cleanup
+    assert f'if [ "${{RC6_QUIESCENCE_MODE:-}}" = {MODE} ] ||' in cleanup
+
+
+def test_a175_open_recovery_routes_entire_lifecycle_without_generic_open_fallback():
+    classifier=WORKFLOW.split('      - name: Classify current flat PAPER session before host writes',1)[1].split(
+        '      - name: Capture exact pre-suspend host fingerprint',1)[0]
+    assert "marker_candidate!='18ba517a846c6798f0d12f39072465fc02fa03b5'" in classifier
+    assert "allow_intraday_a175=state==('RUNNING','MARKET_OPEN')" in classifier
+    assert f"print('{OPEN_MODE}'" in classifier
+    assert classifier.index("marker_candidate!='18ba517") < classifier.index(
+        f"print('{OPEN_MODE}'")
+    assert f"{OPEN_MODE}) FLAG='--adopt-a175-running-pending --market-open-suspend'" in WORKFLOW
+    assert f"{OPEN_MODE}) QUIESCENCE_FLAG='--adopt-a175-running-pending --market-open-suspend'" in WORKFLOW
+    assert "A175_SUSPEND_FLAG='--a175-intraday'" in WORKFLOW
+    assert f"env.RC6_QUIESCENCE_MODE == '{OPEN_MODE}'" in WORKFLOW
+    assert f'[ "$RC6_QUIESCENCE_MODE" = {OPEN_MODE} ]' in WORKFLOW
+    assert f'[ "${{RC6_QUIESCENCE_MODE:-}}" = {OPEN_MODE} ]' in WORKFLOW
+    assert "SCHEDULER_ACTION=recover-a175-pending" in WORKFLOW
 
 
 def test_low_disk_a175_can_run_only_bounded_reference_safe_preclean():
@@ -48,7 +66,7 @@ def test_low_disk_a175_can_run_only_bounded_reference_safe_preclean():
     denied = disk.split("echo 'RC6_RESCUE_DISK_PREFLIGHT=RED", 1)[0]
     assert f'[ "$RC6_QUIESCENCE_MODE" = {MODE} ]' not in denied
     assert f'RC6_QUIESCENCE_MODE=\'$RC6_QUIESCENCE_MODE\'' in disk
-    assert f'if [ "$RC6_QUIESCENCE_MODE" = {MODE} ]; then' in disk
+    assert f'if [ "$RC6_QUIESCENCE_MODE" = {MODE} ] ||' in disk
     assert f"state.get('candidate_sha')=='{SOURCE}'" in disk
     assert f"test \"$CURRENT_IMAGE\" = '{IMAGE}'" in disk
     assert "state.get('validation_status')=='DEPLOYED_VALIDATION_PENDING'" in disk

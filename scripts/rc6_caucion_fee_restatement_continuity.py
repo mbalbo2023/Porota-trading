@@ -23,7 +23,8 @@ CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
 INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED",
                             "CLOSED_A171_PENDING_FIX_FORWARD",
                             "CLOSED_A174_PENDING_FIX_FORWARD",
-                            "CLOSED_A175_PENDING_FIX_FORWARD"})
+                            "CLOSED_A175_PENDING_FIX_FORWARD",
+                            "OPEN_A175_PENDING_FIX_FORWARD"})
 QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
     "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
     "CLOSED_A143_PENDING_FIX_FORWARD",
@@ -78,7 +79,7 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
             receipt["real_orders_sent"] != 0 or
             receipt.get("ppi_watch_accessed") is not False):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
-    if quiescence_mode == "OPEN":
+    if quiescence_mode in {"OPEN","OPEN_A175_PENDING_FIX_FORWARD"}:
         if receipt.get("market_open_suspended") is not True:
             raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     elif receipt.get("market_open_suspended") is not False:
@@ -124,22 +125,28 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
                 type(a174.get("operator_receipt_sha256")) is not str or
                 re.fullmatch(r"[0-9a-f]{64}",a174["operator_receipt_sha256"]) is None):
             raise ValueError("PAPER_RESTATEMENT_A174_ORIGIN_RED")
-    if quiescence_mode == "CLOSED_A175_PENDING_FIX_FORWARD":
+    if quiescence_mode in {"CLOSED_A175_PENDING_FIX_FORWARD",
+                           "OPEN_A175_PENDING_FIX_FORWARD"}:
         a175 = receipt.get("a175_previous_proof")
+        intraday = quiescence_mode == "OPEN_A175_PENDING_FIX_FORWARD"
         if (receipt.get("a175_pending_adopted") is not True or
                 receipt.get("a175_origin_candidate") != A175_FAILED_CANDIDATE or
                 receipt.get("a175_origin_sha256") != A175_FAILED_RECEIPT_SHA256 or
+                receipt.get("market_open_suspended") is not intraday or
                 receipt.get("inflight") != "ABSENT_OWNED_RUNTIME_STOPPED" or
                 type(a175) is not dict or
+                a175.get("intraday_a175") is not intraday or
                 a175.get("origin_candidate") != A175_FAILED_CANDIDATE or
                 a175.get("origin_sha256") != A175_FAILED_RECEIPT_SHA256 or
                 a175.get("image_id") != A175_LOADED_IMAGE_ID or
                 a175.get("marker_sha256") != A175_MARKER_SHA256 or
                 a175.get("frozen_sha256") != A175_FROZEN_SHA256 or
                 a175.get("flat_book", {}).get("source_sha") != A175_FAILED_CANDIDATE or
-                a175.get("flat_book", {}).get("process_state") != "WAITING_MARKET" or
-                a175.get("flat_book", {}).get("session_state") not in
-                    {"CLOSED", "MARKET_CLOSED"} or
+                (a175.get("flat_book", {}).get("process_state"),
+                 a175.get("flat_book", {}).get("session_state")) not in
+                    ({("RUNNING", "MARKET_OPEN")} if intraday else
+                     {("WAITING_MARKET", "CLOSED"),
+                      ("WAITING_MARKET", "MARKET_CLOSED")}) or
                 type(a175.get("flat_book", {}).get("real_orders_sent")) is not int or
                 a175["flat_book"]["real_orders_sent"] != 0 or
                 a175.get("failure_flat_book", {}).get("source_sha") != A175_FAILED_CANDIDATE or
