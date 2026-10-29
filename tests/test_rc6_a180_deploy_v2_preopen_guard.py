@@ -94,8 +94,10 @@ class DeployV2A180PreopenGuardTests(unittest.TestCase):
             root = Path(folder)
             fixture_host(root)
             _, workflow = guard_program()
+            # A postfinal normal (unstaged) gate deliberately repeats both
+            # phases; this assertion targets only the earlier pending phase.
             self.assertEqual(
-                workflow.count('          for phase in T_MINUS_45 T_MINUS_10; do'), 1)
+                workflow.count('          for phase in T_MINUS_45 T_MINUS_10; do'), 2)
             phase = workflow.split(
                 '          for phase in T_MINUS_45 T_MINUS_10; do', 1)[1].split(
                     '          done', 1)[0]

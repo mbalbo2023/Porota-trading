@@ -2540,6 +2540,131 @@ jobs:
           print('CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME')
           PY
 
+      - name: Independently verify finalized PAPER runtime and normal unstaged preopen
+        id: postfinal_unstaged
+        if: success()
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The successful finalize phase has retired its exact attempt barrier.
+          # classify acquires the same host flock but never creates a new
+          # attempt, writes a receipt, or changes the runtime.
+          POSTFINAL_OUTPUT="$(timeout --signal=TERM --kill-after=10s 780 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify bash -s -- '$CANDIDATE_SHA' '$DEPLOY_SHA' '$CANDIDATE_TREE'" <<'REMOTE'
+          set -Eeuo pipefail
+          CANDIDATE_SHA="$1"
+          DEPLOY_SHA="$2"
+          CANDIDATE_TREE="$3"
+          REPO=/opt/porota-trading
+          verify_final_state() {
+            python3 - "$REPO" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$CANDIDATE_TREE" <<'PY'
+          import json, re, sqlite3, subprocess, sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          candidate, deploy, tree = sys.argv[2:]
+          folder = root / 'data/deploy'
+          marker = folder / 'CURRENT_STATE_V2.json'
+          frozen = folder / 'porota-frozen-candidate.json'
+          for path in (marker, frozen):
+              if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 65536:
+                  raise ValueError('POSTFINAL_PROVENANCE_UNSAFE')
+          state, bundle = json.loads(marker.read_bytes()), json.loads(frozen.read_bytes())
+          if (state.get('candidate_sha') != candidate or
+                  state.get('deploy_sha') != deploy or
+                  state.get('validation_status') != 'VALIDATED_RUNTIME' or
+                  state.get('mode') != 'PRODUCTION_PAPER' or
+                  type(state.get('real_orders_sent')) is not int or
+                  state['real_orders_sent'] != 0 or
+                  state.get('real_order_routes') != 'NOT_CALLED' or
+                  state.get('ppi_watch_untouched') is not True or
+                  bundle.get('candidate_sha') != candidate or
+                  bundle.get('candidate_tree_sha') != tree):
+              raise ValueError('POSTFINAL_MARKER_OR_FROZEN_RED')
+          image = state.get('image_id')
+          if not isinstance(image, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+              raise ValueError('POSTFINAL_IMAGE_ID_RED')
+          for name in ('porota_production_observer', 'porota_production_dashboard',
+                       'porota_critical_approval_rc6'):
+              item = json.loads(subprocess.check_output(
+                  ['docker', 'inspect', name], timeout=15))[0]
+              if item['Image'] != image or item['State']['Status'] != 'running':
+                  raise ValueError('POSTFINAL_CONTAINER_IDENTITY_RED:' + name)
+              if (name == 'porota_critical_approval_rc6' and
+                      item['State'].get('Health', {}).get('Status') != 'healthy'):
+                  raise ValueError('POSTFINAL_CRITICAL_HEALTH_RED')
+          db = root / 'data/paper_v17/observer_v17.db'
+          with sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=2) as conn:
+              conn.execute('PRAGMA query_only=ON')
+              if conn.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone() != ('PRODUCTION_PAPER', 0):
+                  raise ValueError('POSTFINAL_PAPER_ZERO_RED')
+          print('RC6_POSTFINAL_MARKER=VALIDATED_RUNTIME|PAPER=0|image=' + image)
+          PY
+          }
+          verify_final_state
+          # No --deploy-scheduler-candidate and explicitly no staged helper:
+          # this exercises the real daily codepath AFTER timers were restored
+          # and AFTER the durable marker transitioned to VALIDATED_RUNTIME.
+          for phase in T_MINUS_45 T_MINUS_10; do
+            set +e
+            PREOPEN_OUTPUT="$(env -u RC6_A145_QUIESCENCE_GZIP_B64 timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" 2>&1)"
+            PREOPEN_RC=$?
+            set -e
+            if [ "$PREOPEN_RC" -ne 0 ]; then
+              echo "RC6_POSTFINAL_UNSTAGED_PREOPEN=RED|phase=$phase|rc=$PREOPEN_RC" >&2
+              echo "$PREOPEN_OUTPUT" >&2
+              exit "$PREOPEN_RC"
+            fi
+            ACCEPTED="$(printf '%s\n' "$PREOPEN_OUTPUT" | env -u RC6_A145_QUIESCENCE_GZIP_B64 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO" python3 "$REPO/scripts/rc6_deploy_preopen_gate.py" --phase "$phase" --return-code "$PREOPEN_RC")"
+            echo "RC6_POSTFINAL_PHASE_${phase}=$ACCEPTED"
+          done
+          verify_final_state
+          python3 - "$CANDIDATE_SHA" "$DEPLOY_SHA" "$CANDIDATE_TREE" <<'PY'
+          import json,sys
+          print('RC6_POSTFINAL_UNSTAGED_V1='+json.dumps({
+              'schema':'RC6_POSTFINAL_UNSTAGED_V1',
+              'candidate_sha':sys.argv[1], 'deploy_sha':sys.argv[2],
+              'candidate_tree_sha':sys.argv[3],
+              'validation_status':'VALIDATED_RUNTIME',
+              'mode':'PRODUCTION_PAPER','real_orders_sent':0,
+              'real_order_routes':'NOT_CALLED','ppi_watch_untouched':True,
+              'staged_helper_used':False, 'host_mutations':0,
+              'phases':['T_MINUS_45','T_MINUS_10'],
+          },sort_keys=True,separators=(',',':')))
+          PY
+          REMOTE
+          )"
+          # The mutex and systemd may emit extra diagnostic lines. Select
+          # exact named receipts, never assume the total stdout line count.
+          printf '%s\n' "$POSTFINAL_OUTPUT" | python3 -c '
+          import json,sys
+          raw=sys.stdin.read(262145)
+          assert len(raw)<=262144, "POSTFINAL_OUTPUT_BOUND"
+          lines=raw.splitlines()
+          def unique(prefix):
+              found=[line[len(prefix):] for line in lines if line.startswith(prefix)]
+              assert len(found)==1, "POSTFINAL_RECEIPT_CARDINALITY:"+prefix
+              return json.loads(found[0])
+          for phase in ("T_MINUS_45","T_MINUS_10"):
+              row=unique("RC6_POSTFINAL_PHASE_"+phase+"=")
+              assert row.get("schema")=="POROTA_DEPLOY_PREOPEN_RESULT_V1"
+              assert row.get("accepted") is True and row.get("phase")==phase
+              assert row.get("preopen_status") in ("GREEN","PAUSED_NO_GO","NOT_DUE")
+              assert row.get("execution_authorized") is False
+          result=unique("RC6_POSTFINAL_UNSTAGED_V1=")
+          assert result.get("schema")=="RC6_POSTFINAL_UNSTAGED_V1"
+          assert result.get("candidate_sha")==sys.argv[1]
+          assert result.get("deploy_sha")==sys.argv[2]
+          assert result.get("candidate_tree_sha")==sys.argv[3]
+          assert result.get("validation_status")=="VALIDATED_RUNTIME"
+          assert result.get("mode")=="PRODUCTION_PAPER"
+          assert type(result.get("real_orders_sent")) is int and result["real_orders_sent"]==0
+          assert result.get("real_order_routes")=="NOT_CALLED"
+          assert result.get("ppi_watch_untouched") is True
+          assert result.get("staged_helper_used") is False and result.get("host_mutations")==0
+          assert result.get("phases")==["T_MINUS_45","T_MINUS_10"]
+          print("RC6_POSTFINAL_UNSTAGED=GREEN|PAPER=0|marker=VALIDATED_RUNTIME")
+          ' "$CANDIDATE_SHA" "$DEPLOY_SHA" "$CANDIDATE_TREE"
+
       - name: Failure-safe host cleanup
         if: ${{ always() && (steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
         # The bounded worst case is 45s writer stop + 120s recovery + 150s
@@ -2550,6 +2675,101 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          # A180: an SSH/runner failure can occur AFTER the host atomically
+          # writes VALIDATED_RUNTIME. Never run pending-state recovery against
+          # that finalized image. Acquire the existing deploy flock directly
+          # for a strictly read-only marker/barrier classification. Unlike the
+          # mutex's classify phase, this can observe an exact IDLE barrier
+          # left by a failed finalizer without rewriting or retiring it.
+          if [ '${{ steps.finalize_runtime.outcome }}' = failure ] || \
+             [ '${{ steps.finalize_runtime.outcome }}' = cancelled ]; then
+            set +e
+            FINALIZER_CLASS_OUTPUT="$(timeout 90 ssh \
+              -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes \
+              -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$DO_USER@$DO_HOST" \
+              "sudo -n python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT'" <<'PY'
+          import json, os, re, sqlite3, subprocess, sys
+          from pathlib import Path
+          candidate, deploy, run, attempt = sys.argv[1:]
+          root = Path('/opt/porota-trading')
+          sys.path.insert(0, str(root))
+          from scripts import rc6_deploy_host_mutex as mutex
+          if (mutex.LOCK_PATH.is_symlink() or not mutex.LOCK_PATH.is_file()):
+              raise ValueError('FINALIZER_CLASS_LOCK_UNSAFE')
+          fd = mutex.open_lock(mutex.LOCK_DIR)
+          try:
+              barrier = mutex._read_barrier(mutex.LOCK_DIR)
+              if barrier is not None and (
+                      tuple(barrier[k] for k in ('candidate','run','attempt')) !=
+                      (candidate,run,attempt) or barrier['status'] != 'IDLE'):
+                  raise ValueError('FINALIZER_CLASS_BARRIER_UNCERTAIN')
+              folder = root / 'data/deploy'
+              marker = folder / 'CURRENT_STATE_V2.json'
+              if (marker.is_symlink() or not marker.is_file() or
+                      not 0 < marker.stat().st_size <= 65536):
+                  raise ValueError('FINALIZER_CLASS_MARKER_UNSAFE')
+              state = json.loads(marker.read_bytes())
+              if (state.get('candidate_sha') != candidate or
+                      state.get('deploy_sha') != deploy or
+                      state.get('mode') != 'PRODUCTION_PAPER' or
+                      type(state.get('real_orders_sent')) is not int or
+                      state['real_orders_sent'] != 0 or
+                      state.get('real_order_routes') != 'NOT_CALLED' or
+                      state.get('ppi_watch_untouched') is not True or
+                      not re.fullmatch(r'sha256:[0-9a-f]{64}',
+                                       str(state.get('image_id')))):
+                  raise ValueError('FINALIZER_CLASS_IDENTITY_UNVERIFIED')
+              status = state.get('validation_status')
+              if status == 'VALIDATED_RUNTIME':
+                  for name in ('porota_production_observer','porota_production_dashboard',
+                               'porota_critical_approval_rc6'):
+                      item = json.loads(subprocess.check_output(
+                          ['docker','inspect',name],timeout=10))[0]
+                      if (item['State']['Status'] != 'running' or
+                              item['Image'] != state['image_id']):
+                          raise ValueError('FINALIZER_CLASS_RUNTIME_CHANGED')
+                      if (name == 'porota_critical_approval_rc6' and
+                              item['State'].get('Health',{}).get('Status') != 'healthy'):
+                          raise ValueError('FINALIZER_CLASS_CRITICAL_RED')
+                  with sqlite3.connect(
+                          f'file:{root}/data/paper_v17/observer_v17.db?mode=ro',
+                          uri=True,timeout=2) as conn:
+                      conn.execute('PRAGMA query_only=ON')
+                      if conn.execute(
+                              'SELECT mode,real_orders_sent FROM observer_state WHERE id=1'
+                              ).fetchone() != ('PRODUCTION_PAPER',0):
+                          raise ValueError('FINALIZER_CLASS_PAPER_CHANGED')
+              elif status != 'DEPLOYED_VALIDATION_PENDING':
+                  raise ValueError('FINALIZER_CLASS_STATE_UNKNOWN')
+              print('RC6_FINALIZER_MARKER_CLASS=' + status)
+          finally:
+              os.close(fd)
+          PY
+            )"
+            FINALIZER_CLASS_RC=$?
+            set -e
+            if [ "$FINALIZER_CLASS_RC" -ne 0 ]; then
+              echo "RC6_FINALIZER_AMBIGUOUS=RED|readonly_probe_rc=$FINALIZER_CLASS_RC|NO_HOST_MUTATION" >&2
+              exit "$FINALIZER_CLASS_RC"
+            fi
+            mapfile -t FINALIZER_MARKERS < <(printf '%s\n' "$FINALIZER_CLASS_OUTPUT" | \
+              sed -n '/^RC6_FINALIZER_MARKER_CLASS=/p')
+            if [ "${#FINALIZER_MARKERS[@]}" -ne 1 ]; then
+              echo 'RC6_FINALIZER_MARKER_CLASS_CARDINALITY=RED|NO_HOST_MUTATION' >&2
+              exit 69
+            fi
+            if [ "${FINALIZER_MARKERS[0]}" = 'RC6_FINALIZER_MARKER_CLASS=VALIDATED_RUNTIME' ]; then
+              echo 'RC6_FINALIZER_ALREADY_VALIDATED=HELD|NO_PENDING_RECOVERY|NO_HOST_MUTATION'
+              exit 0
+            fi
+            if [ "${FINALIZER_MARKERS[0]}" != 'RC6_FINALIZER_MARKER_CLASS=DEPLOYED_VALIDATION_PENDING' ]; then
+              echo 'RC6_FINALIZER_MARKER_CLASS_UNKNOWN=RED|NO_HOST_MUTATION' >&2
+              exit 69
+            fi
+            echo 'RC6_FINALIZER_REMAINS_PENDING=VERIFIED|RECOVERY_PERMITTED'
+          fi
           echo 'POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true'
           trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=$CANDIDATE_SHA|rc=$rc"; fi' EXIT
           set +e
