@@ -33,7 +33,7 @@ def test_a174_mode_is_wired_through_all_exact_mutation_gates():
     assert f'{MODE}) QUIESCENCE_FLAG=\'{FLAG}\'' in WORKFLOW
     assert f"env.RC6_QUIESCENCE_MODE == '{MODE}'" in WORKFLOW
     assert '[ "$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]' in WORKFLOW
-    assert '"$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ]]' in WORKFLOW
+    assert '"$RC6_QUIESCENCE_MODE" = CLOSED_A174_PENDING_FIX_FORWARD ||' in WORKFLOW
     cleanup = WORKFLOW.split('      - name: Failure-safe host cleanup', 1)[1]
     assert '[ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A174_PENDING_FIX_FORWARD ]' in cleanup
     assert 'SCHEDULER_ACTION=recover-a174-pending' in cleanup

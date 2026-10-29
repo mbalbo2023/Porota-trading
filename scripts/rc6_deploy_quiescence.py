@@ -68,6 +68,22 @@ A174_RUNNING_IDS = {
     'porota_production_dashboard': 'dbbb264e2afc0306f4c5e3cbae5fa49bdfbde9204ab660902ccf0adecc1458d7',
 }
 A174_PENDING_MODE = 'CLOSED_A174_PENDING_FIX_FORWARD'
+A175_FAILED_CANDIDATE = '18ba517a846c6798f0d12f39072465fc02fa03b5'
+A175_FAILED_RECEIPT_SHA256 = '5ddf0d5e340f7cac96bcbb339eeaeea3ed4aad635a2201fd55fffe375c961022'
+A175_SCHEDULER_RECEIPT_SHA256 = '64a8afc3591c42d4e58f3acb34905043c0ffe323b695ecf3337f99b66d6b0b6e'
+A175_CANDIDATE_TREE_SHA = '66c67bff66dd9f036cd7aa8de5ba312e04e53be6'
+A175_DEPLOY_SHA = '3c5210fef9d4f1d4c95b286b0dbc61b6654fe055'
+A175_INSTALLED_QUIESCENCE_SHA256 = '284c5cd7e32bd9672138031204fe0ff5d24277bc9e84ec2ea6dcfc06e51ec170'
+A175_FROZEN_SHA256 = '1067182c282f17440850e50c7f8d347d84cfbb90090d7e71066483beb19450e0'
+A175_MARKER_SHA256 = '42055f5225def0560453b2c40b5e4695082fa3235fc42a4596210cf0c1b8b161'
+A175_LOADED_IMAGE_ID = 'sha256:9841cba8df3345fa22e39457645ba250431ad1f465ce4204d92f73f7816215b9'
+A175_RUNNING_IDS = {
+    'porota_production_observer': '72ed632d0514ec1835e3dcb7983aa2b13cfbcf2b46c5a62132e5c739f7df86eb',
+    'porota_production_dashboard': '9b01cf17b7c3e46d96474d998840fc0e4c4c4f828dd825bb44744710b99686bb',
+}
+A175_FAILURE_BOOK_STATE = ('WAITING_MARKET','MARKET_CLOSED')
+A176_OPERATOR_NO_GO_RECEIPT_SHA256 = '0'*64  # Day-29 administrative seal required.
+A175_PENDING_MODE = 'CLOSED_A175_PENDING_FIX_FORWARD'
 A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
@@ -1195,6 +1211,229 @@ def a174_stopped_continuation(receipt):
                  ('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')} or
             critical_admission().get('capability')!='issues_only'):
         raise ValueError('QUIESCENCE_A174_STOPPED_BOOK_CHANGED')
+    return book
+
+
+def a175_failed_running_proof(candidate, originals=None, *,
+                              operator_a151_proof=None,
+                              operator_timer_disabled=None,
+                              operator_current_no_go_proof=None,
+                              require_installed_a175_source=False):
+    """Prove only the pinned, still-running A175 failure for fix-forward.
+
+    The failed-run book and the current live book are separately attested.
+    A151 applies only on 28-Oct ART; 29-Oct requires a new exact NO_GO seal.
+    """
+    if (not re.fullmatch('[0-9a-f]{40}',candidate) or candidate in
+            {A143_PENDING_SOURCE_SHA,A169_PRIOR_CANDIDATE,A170_FAILED_CANDIDATE,
+             A171_FAILED_CANDIDATE,A174_FAILED_CANDIDATE,A175_FAILED_CANDIDATE}):
+        raise ValueError('QUIESCENCE_A175_NEW_CANDIDATE_REQUIRED')
+    business_day=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+    if business_day not in {'2026-10-28','2026-10-29'}:
+        raise ValueError('QUIESCENCE_A175_DATED_HOLD_EXPIRED')
+    prior,digest=_a143_exact_json(
+        ROOT/'data/deploy'/('quiescence-'+A175_FAILED_CANDIDATE+'.json'),65536)
+    intent,runtime=prior.get('candidate_image_intent'),prior.get('candidate_runtime_after_failure')
+    previous=prior.get('a174_previous_proof')
+    if (digest!=A175_FAILED_RECEIPT_SHA256 or
+            prior.get('candidate_sha')!=A175_FAILED_CANDIDATE or
+            prior.get('status')!='FIX_FORWARD_VALIDATION_REQUIRED' or
+            prior.get('installation_started') is not True or
+            prior.get('a174_pending_adopted') is not True or
+            prior.get('a174_origin_candidate')!=A174_FAILED_CANDIDATE or
+            prior.get('a174_origin_sha256')!=A174_FAILED_RECEIPT_SHA256 or
+            prior.get('inflight')!='ABSENT_OWNED_RUNTIME_STOPPED' or
+            prior.get('runtime_health')!='NEW_A175_CANDIDATE_NOT_GO' or
+            prior.get('market_open_suspended') is not False or
+            any(prior.get(k) is not False for k in
+                ('open_paper_carryover','paused_postclose','intraday_caucion','pending_caucion')) or
+            prior.get('spot_carryover') is not None or
+            prior.get('caucion_carryover') is not None or
+            type(prior.get('real_orders_sent')) is not int or
+            prior['real_orders_sent']!=0 or
+            prior.get('ppi_watch_accessed') is not False or
+            type(previous) is not dict or
+            previous.get('origin_candidate')!=A174_FAILED_CANDIDATE or
+            previous.get('origin_sha256')!=A174_FAILED_RECEIPT_SHA256 or
+            type(intent) is not dict or type(runtime) is not dict or
+            runtime.get('status')!='running' or
+            set(runtime.get('containers',{}))!=set(OWNED) or
+            type(runtime.get('flat_book')) is not dict or
+            not isinstance(A175_FAILURE_BOOK_STATE,tuple) or
+            runtime['flat_book']!={
+                'source_sha':A175_FAILED_CANDIDATE,'real_orders_sent':0,
+                'process_state':A175_FAILURE_BOOK_STATE[0],
+                'session_state':A175_FAILURE_BOOK_STATE[1]} or
+            type(runtime.get('critical_admission')) is not dict or
+            runtime['critical_admission'].get('capability')!='issues_only'):
+        raise ValueError('QUIESCENCE_A175_EXACT_FAILURE_CHANGED')
+    if operator_timer_disabled is None or (
+            business_day=='2026-10-28' and operator_a151_proof is None) or (
+            business_day=='2026-10-29' and operator_current_no_go_proof is None):
+        if (operator_a151_proof is not None or operator_timer_disabled is not None or
+                operator_current_no_go_proof is not None):
+            raise ValueError('QUIESCENCE_A175_OPERATOR_CALLBACK_SET_REQUIRED')
+        operator=candidate_operator_module(require_staged=True)
+        operator_a151_proof=operator.exact_a151_operator_preopen_pause
+        operator_timer_disabled=operator.operator_preopen_timer_disabled
+        operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation
+    if business_day=='2026-10-28':
+        receipt_sha,operation=operator_a151_proof()
+        hold_valid=(receipt_sha==previous.get('operator_receipt_sha256') and
+                    operation==previous.get('operator_operation_id'))
+    else:
+        current=operator_current_no_go_proof()
+        receipt_sha,operation=current.get('receipt_sha256'),current.get('operation_id')
+        hold_valid=(current.get('status')=='NO_GO_PENDING_EXPLICIT_REARM' and
+            current.get('business_day_art')=='2026-10-29' and
+            current.get('paper_execution_authorized') is False and
+            current.get('a151_origin_sha256')==previous.get('operator_receipt_sha256') and
+            current.get('a175_quiescence_sha256')==A175_FAILED_RECEIPT_SHA256 and
+            current.get('a175_scheduler_sha256')==A175_SCHEDULER_RECEIPT_SHA256 and
+            receipt_sha==A176_OPERATOR_NO_GO_RECEIPT_SHA256)
+    if not hold_valid or not operator_timer_disabled():
+        raise ValueError('QUIESCENCE_A175_NO_GO_HOLD_CHANGED')
+    frozen,frozen_sha=_a143_exact_json(
+        ROOT/'data/deploy/porota-frozen-candidate.json',16384)
+    marker,marker_sha=_a143_exact_json(
+        ROOT/'data/deploy/CURRENT_STATE_V2.json',65536)
+    if current_runtime_marker()!=marker:
+        raise ValueError('QUIESCENCE_A175_MARKER_CHANGED')
+    try:
+        encoded=base64.b64decode(intent['frozen_manifest_b64'],validate=True)
+        intent_at=datetime.fromisoformat(intent['recorded_at'])
+        marker_at=datetime.fromisoformat(marker['recorded_at'])
+    except (KeyError,ValueError,TypeError,binascii.Error) as exc:
+        raise ValueError('QUIESCENCE_A175_IMAGE_INTENT_INVALID') from exc
+    if (frozen_sha!=A175_FROZEN_SHA256 or marker_sha!=A175_MARKER_SHA256 or
+            len(encoded)>16384 or hashlib.sha256(encoded).hexdigest()!=frozen_sha or
+            intent_at.tzinfo is None or marker_at.tzinfo is None or
+            not intent_at<=marker_at<=datetime.now(timezone.utc) or
+            frozen.get('candidate_sha')!=A175_FAILED_CANDIDATE or
+            frozen.get('candidate_tree_sha')!=A175_CANDIDATE_TREE_SHA or
+            not re.fullmatch('[0-9a-f]{64}',frozen.get('image_tar_sha256','')) or
+            intent.get('manifest_sha256')!=frozen_sha or
+            intent.get('candidate_tree_sha')!=A175_CANDIDATE_TREE_SHA or
+            intent.get('image_tar_sha256')!=frozen['image_tar_sha256'] or
+            intent.get('image_id')!=A175_LOADED_IMAGE_ID or
+            marker.get('candidate_sha')!=A175_FAILED_CANDIDATE or
+            marker.get('deploy_sha')!=A175_DEPLOY_SHA or
+            marker.get('image_id')!=A175_LOADED_IMAGE_ID or
+            marker.get('validation_status')!='DEPLOYED_VALIDATION_PENDING' or
+            marker.get('ppi_watch_untouched') is not True):
+        raise ValueError('QUIESCENCE_A175_INSTALLED_PROVENANCE_CHANGED')
+    observed=originals if originals is not None else {name:inspect(name) for name in OWNED}
+    if set(observed)!=set(OWNED):
+        raise ValueError('QUIESCENCE_A175_RUNTIME_SET_CHANGED')
+    for name in OWNED:
+        value,row=observed[name],runtime['containers'][name]
+        if (value['Id']!=A175_RUNNING_IDS[name] or
+                value['Image']!=A175_LOADED_IMAGE_ID or
+                value['State']['Status']!='running' or
+                row.get('id')!=value['Id'] or row.get('image')!=value['Image'] or
+                row.get('lifecycle')!=lifecycle(value)):
+            raise ValueError('QUIESCENCE_A175_RUNTIME_IDENTITY_CHANGED')
+    book=rescue_flat_book()
+    if (book.get('source_sha')!=A175_FAILED_CANDIDATE or
+            book.get('real_orders_sent')!=0 or
+            (book.get('process_state'),book.get('session_state')) not in
+                {('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')} or
+            admit()!=book['process_state'] or
+            critical_admission().get('capability')!='issues_only'):
+        raise ValueError('QUIESCENCE_A175_RUNNING_BOOK_CHANGED')
+    if require_installed_a175_source:
+        installed=ROOT/'scripts/rc6_deploy_quiescence.py'
+        if (installed.is_symlink() or not installed.is_file() or
+                hashlib.sha256(installed.read_bytes()).hexdigest()!=
+                A175_INSTALLED_QUIESCENCE_SHA256):
+            raise ValueError('QUIESCENCE_A175_INSTALLED_SOURCE_CHANGED')
+        for tag in ('porota-trading-bot:17.0.0-rc6',
+                    'porota-trading-bot:17.0.0-rc6-candidate-'+A175_FAILED_CANDIDATE):
+            images=json.loads(command(['docker','image','inspect',tag]))
+            if type(images) is not list or len(images)!=1 or images[0].get('Id')!=A175_LOADED_IMAGE_ID:
+                raise ValueError('QUIESCENCE_A175_DOCKER_TAG_CHANGED')
+    return {'origin_candidate':A175_FAILED_CANDIDATE,'origin_sha256':digest,
+            'image_id':A175_LOADED_IMAGE_ID,
+            'containers':{name:{'id':observed[name]['Id'],'image':observed[name]['Image'],
+                                'lifecycle':lifecycle(observed[name])} for name in OWNED},
+            'flat_book':book,'failure_flat_book':runtime['flat_book'],
+            'operator_receipt_sha256':receipt_sha,'operator_operation_id':operation,
+            'operator_a151_origin_sha256':previous.get('operator_receipt_sha256'),
+            'operator_hold_business_day':business_day,
+            'marker_sha256':marker_sha,'frozen_sha256':frozen_sha}
+
+
+def a175_receipt_origin(receipt):
+    """Bind the new candidate's durable stop to the immutable A175 failure."""
+    if (receipt.get('a175_pending_adopted') is not True or
+            receipt.get('a175_origin_candidate')!=A175_FAILED_CANDIDATE or
+            receipt.get('a175_origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
+            type(receipt.get('a175_previous_proof')) is not dict or
+            receipt['a175_previous_proof'].get('origin_sha256')!=A175_FAILED_RECEIPT_SHA256 or
+            receipt.get('market_open_suspended') is not False or
+            receipt.get('inflight')!='ABSENT_OWNED_RUNTIME_STOPPED' or
+            set(receipt.get('containers',{}))!=set(OWNED) or
+            set(receipt.get('stop_evidence',{}))!=set(OWNED) or
+            set(receipt.get('stop_attempted',[]))!=set(OWNED)):
+        raise ValueError('QUIESCENCE_A175_STOPPED_RECEIPT_CHANGED')
+    prior,prior_sha=_a143_exact_json(
+        ROOT/'data/deploy'/('quiescence-'+A175_FAILED_CANDIDATE+'.json'),65536)
+    proof=receipt['a175_previous_proof']
+    if (prior_sha!=A175_FAILED_RECEIPT_SHA256 or
+            prior.get('status')!='FIX_FORWARD_VALIDATION_REQUIRED' or
+            prior.get('candidate_runtime_after_failure',{}).get('status')!='running' or
+            proof.get('origin_candidate')!=A175_FAILED_CANDIDATE or
+            proof.get('image_id')!=A175_LOADED_IMAGE_ID or
+            proof.get('failure_flat_book')!=prior['candidate_runtime_after_failure'].get('flat_book') or
+            proof.get('marker_sha256')!=A175_MARKER_SHA256 or
+            proof.get('frozen_sha256')!=A175_FROZEN_SHA256 or
+            proof.get('operator_a151_origin_sha256')!=
+                prior.get('a174_previous_proof',{}).get('operator_receipt_sha256') or
+            proof.get('operator_hold_business_day')!=
+                datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat() or
+            proof.get('operator_receipt_sha256')!=
+                (A176_OPERATOR_NO_GO_RECEIPT_SHA256 if
+                 proof.get('operator_hold_business_day')=='2026-10-29' else
+                 prior.get('a174_previous_proof',{}).get('operator_receipt_sha256')) or
+            (proof.get('operator_hold_business_day')=='2026-10-28' and
+             proof.get('operator_operation_id')!=
+                prior.get('a174_previous_proof',{}).get('operator_operation_id'))):
+        raise ValueError('QUIESCENCE_A175_ORIGIN_RECEIPT_CHANGED')
+    if proof.get('operator_hold_business_day')=='2026-10-29':
+        operator=candidate_operator_module()
+        current=operator.exact_a176_operator_no_go_continuation()
+        if (current.get('receipt_sha256')!=proof.get('operator_receipt_sha256') or
+                current.get('operation_id')!=proof.get('operator_operation_id') or
+                current.get('paper_execution_authorized') is not False or
+                not operator.operator_preopen_timer_disabled()):
+            raise ValueError('QUIESCENCE_A175_CURRENT_NO_GO_CHANGED')
+    for name in OWNED:
+        previous,stopped=proof['containers'][name],receipt['containers'][name]
+        if (previous.get('id')!=A175_RUNNING_IDS[name] or
+                previous.get('image')!=A175_LOADED_IMAGE_ID or
+                stopped!={'id':previous['id'],'image':previous['image']} or
+                previous!=prior['candidate_runtime_after_failure']['containers'][name] or
+                receipt['stop_evidence'][name].get('before')!=previous.get('lifecycle') or
+                receipt['stop_evidence'][name].get('classification') not in
+                    {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'} or
+                receipt['stop_evidence'][name].get('after',{}).get('Status')!='exited' or
+                receipt['stop_evidence'][name].get('after',{}).get('ExitCode')!=0):
+            raise ValueError('QUIESCENCE_A175_INHERITED_RUNTIME_CHANGED')
+    return prior
+
+
+def a175_stopped_continuation(receipt):
+    """Keep the exact A175 pair stopped after the new candidate drains."""
+    a175_receipt_origin(receipt)
+    exact_clean_stopped(receipt)
+    book=rescue_flat_book()
+    if (book.get('source_sha')!=A175_FAILED_CANDIDATE or
+            book.get('real_orders_sent')!=0 or
+            (book.get('process_state'),book.get('session_state')) not in
+                {('STOPPED','MARKET_CLOSED'),('STOPPED','CLOSED'),
+                 ('WAITING_MARKET','MARKET_CLOSED'),('WAITING_MARKET','CLOSED')} or
+            critical_admission().get('capability')!='issues_only'):
+        raise ValueError('QUIESCENCE_A175_STOPPED_BOOK_CHANGED')
     return book
 
 

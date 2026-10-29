@@ -38,6 +38,8 @@ A151_OPERATOR_PAUSE_DEPLOY = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A151_OPERATOR_PAUSE_IMAGE = 'sha256:90e54acb1189a03acbed4b9228943ab556bdbe3a01fd515285951fc90eda93e7'
 A151_OPERATOR_RECEIPT = 'operator-preopen-pause-20261028.json'
 A151_PAPER_HOLD = 'paper_scalping_operator_hold_20261028.json'
+A176_NO_GO_DAY = '2026-10-29'
+A176_NO_GO_RECEIPT = 'operator-no-go-continuation-20261029.json'
 FAILED_A138_SUSPENSION_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
 A143_PENDING_CANDIDATE = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A169_STOPPED_CANDIDATE = 'b778c8063e96574ddf859907abb99fae6f4e3484'
@@ -152,7 +154,7 @@ def operator_preopen_hold_evidence():
             else exact_operator_preopen_pause(historical_hold_only=True))
 
 
-def exact_a151_operator_preopen_pause():
+def exact_a151_operator_preopen_pause(*, historical_hold_only=False):
     """Attest the 28-Oct A151 sidecar without erasing A125 historical proof.
 
     The receipt attests the A143/PAPER-0 host at issuance, not a permanently
@@ -162,7 +164,7 @@ def exact_a151_operator_preopen_pause():
     now_utc = datetime.now(timezone.utc)
     day = now_utc.astimezone(
         ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
-    if day != A151_OPERATOR_PAUSE_DAY:
+    if day != A151_OPERATOR_PAUSE_DAY and not historical_hold_only:
         raise ValueError('SCHEDULER_A151_OPERATOR_DAY_EXPIRED')
     if ROOT.is_symlink() or not ROOT.is_dir():
         raise ValueError('SCHEDULER_A151_ROOT_UNSAFE')
@@ -262,6 +264,76 @@ def exact_a151_operator_preopen_pause():
             not operator_preopen_timer_disabled()):
         raise ValueError('SCHEDULER_A151_OPERATOR_PAUSE_EVIDENCE_RED')
     return receipt_sha, operation
+
+
+def exact_a176_operator_no_go_continuation():
+    """Read a new daily NO_GO seal; never infer PAPER rearm from old A151."""
+    q=a143_staged_module()
+    now=datetime.now(timezone.utc)
+    if now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()!=A176_NO_GO_DAY:
+        raise ValueError('SCHEDULER_A176_NO_GO_DAY_EXPIRED')
+    receipt,sha=_operator_pause_json(ROOT/A176_NO_GO_RECEIPT,65536)
+    try:
+        issued=datetime.fromisoformat(receipt['issued_at_utc'])
+        valid_time=(issued.tzinfo is not None and issued.utcoffset().total_seconds()==0 and
+                    issued.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+                          .date().isoformat()==A176_NO_GO_DAY and
+                    0<=(now-issued).total_seconds()<24*3600)
+    except (KeyError,ValueError,TypeError,AttributeError):
+        valid_time=False
+    operation=receipt.get('operation_id')
+    if (sha!=q.A176_OPERATOR_NO_GO_RECEIPT_SHA256 or
+            receipt.get('schema')!='rc6.operator-no-go-continuation.v1' or
+            receipt.get('status')!='NO_GO_PENDING_EXPLICIT_REARM' or
+            receipt.get('business_day_art')!=A176_NO_GO_DAY or
+            not valid_time or
+            not isinstance(operation,str) or
+            re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',operation) is None or
+            receipt.get('a151_origin_sha256')!='da5dfe9469fd6ff64e850b09e9cf94a1653f762aef8904d0d77fb9f241af69e2' or
+            receipt.get('a151_origin_operation_id')!='A151-40686116017-1' or
+            receipt.get('a175_candidate_sha')!=q.A175_FAILED_CANDIDATE or
+            receipt.get('a175_quiescence_sha256')!=q.A175_FAILED_RECEIPT_SHA256 or
+            receipt.get('a175_scheduler_sha256')!=q.A175_SCHEDULER_RECEIPT_SHA256 or
+            receipt.get('a175_marker_sha256')!=q.A175_MARKER_SHA256 or
+            receipt.get('a175_image_id')!=q.A175_LOADED_IMAGE_ID or
+            receipt.get('paper_execution_authorized') is not False or
+            receipt.get('real_order_routes')!='NOT_CALLED' or
+            receipt.get('real_orders_sent')!=0 or
+            receipt.get('ppi_watch_accessed') is not False or
+            receipt.get('systemd_mutations')!=0 or
+            receipt.get('docker_mutations')!=0 or
+            receipt.get('paper_ledger_mutations')!=0 or
+            receipt.get('owned_timer_count')!=16 or
+            receipt.get('preopen_timer_state')!={'active':'inactive','enabled':'disabled'} or
+            receipt.get('guardian_timer_state')!={'active':'active','enabled':'enabled'} or
+            receipt.get('ppi_snapshot')!=ppi_snapshot() or
+            not operator_preopen_timer_disabled()):
+        raise ValueError('SCHEDULER_A176_NO_GO_SEAL_RED')
+    # After a successful Deploy, 15 other timers and the marker legitimately
+    # change. The historical A175 receipts remain immutable; daily NO_GO does
+    # not depend on retaining the old pending marker as the current marker.
+    _,qsha=q._a143_exact_json(
+        q.ROOT/'data/deploy'/('quiescence-'+q.A175_FAILED_CANDIDATE+'.json'),65536)
+    _,ssha=_operator_pause_json(ROOT/('scheduler-suspend-'+q.A175_FAILED_CANDIDATE+'.json'),65536)
+    if qsha!=q.A175_FAILED_RECEIPT_SHA256 or ssha!=q.A175_SCHEDULER_RECEIPT_SHA256:
+        raise ValueError('SCHEDULER_A176_NO_GO_ORIGIN_CHANGED')
+    # SQLite read-only, no Docker start/stop or account/provider calls.
+    path=ROOT.parent/'paper_v17/observer_v17.db'
+    with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as db:
+        db.execute('PRAGMA query_only=ON')
+        book=db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+        if book!=('PRODUCTION_PAPER',0):
+            raise ValueError('SCHEDULER_A176_NO_GO_PAPER_CHANGED')
+        for table,state in (('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                            ('paper_future_positions','ACTIVE')):
+            if db.execute('SELECT 1 FROM '+table+' WHERE status=? LIMIT 1',(state,)).fetchone():
+                raise ValueError('SCHEDULER_A176_NO_GO_BOOK_NOT_FLAT')
+    return {'status':'NO_GO_PENDING_EXPLICIT_REARM',
+            'business_day_art':A176_NO_GO_DAY,'receipt_sha256':sha,
+            'operation_id':operation,
+            'a151_origin_sha256':receipt['a151_origin_sha256'],
+            'a175_quiescence_sha256':qsha,'a175_scheduler_sha256':ssha,
+            'paper_execution_authorized':False}
 
 
 def require_owned_running():
@@ -622,7 +694,7 @@ def a143_staged_module():
     if not 0 < len(compressed) < 110000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_COMPRESSED_RED')
     source = gzip.decompress(compressed)
-    if not 20000 < len(source) < 210000:
+    if not 20000 < len(source) < 260000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_SIZE_RED')
     module = types.ModuleType('rc6_a145_scheduler_staged_quiescence')
     exec(compile(source,'candidate/rc6_deploy_quiescence.py','exec'),module.__dict__)
