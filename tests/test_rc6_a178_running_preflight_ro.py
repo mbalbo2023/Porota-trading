@@ -20,6 +20,55 @@ from scripts import rc6_a178_preflight_runner as binder
 
 
 class A178ReadOnlyPreflightTest(unittest.TestCase):
+    def test_dual_session_origin_uses_actual_book_without_market_close_veto(self):
+        for observed in (('RUNNING','MARKET_OPEN'),
+                         ('WAITING_MARKET','MARKET_CLOSED')):
+            book={'source_sha':'18ba517a846c6798f0d12f39072465fc02fa03b5',
+                  'real_orders_sent':0,'process_state':observed[0],
+                  'session_state':observed[1]}
+            intraday=observed==('RUNNING','MARKET_OPEN')
+            calls=[]
+            class Q:
+                A176_OPERATOR_NO_GO_RECEIPT_SHA256=probe.EXPECTED_SEAL
+                A175_FAILED_CANDIDATE=book['source_sha']
+                A175_FAILED_RECEIPT_SHA256='a'*64
+                def rescue_flat_book(self):return dict(book)
+                def a175_failed_running_proof(self,*args,**kwargs):
+                    calls.append(kwargs.get('allow_intraday_a175'))
+                    return {'origin_candidate':self.A175_FAILED_CANDIDATE,
+                            'origin_sha256':self.A175_FAILED_RECEIPT_SHA256,
+                            'operator_receipt_sha256':probe.EXPECTED_SEAL,
+                            'flat_book':dict(book),'intraday_a175':intraday,
+                            'image_id':probe.ACTIVE_IMAGE}
+            class S:
+                def exact_a176_operator_no_go_continuation(self):
+                    return {'receipt_sha256':probe.EXPECTED_SEAL,
+                            'status':'NO_GO_PENDING_EXPLICIT_REARM',
+                            'paper_execution_authorized':False}
+                def exact_a151_operator_preopen_pause(self):return ('a'*64,'A151-1-1')
+                def operator_preopen_timer_disabled(self):return True
+            q,s=Q(),S()
+            fd=os.open(os.devnull,os.O_RDONLY)
+            with tempfile.TemporaryDirectory() as temp:
+                barrier=Path(temp)/'absent'
+                with patch.dict(os.environ,{'RC6_A145_QUIESCENCE_GZIP_B64':'TEST'}),\
+                     patch.object(probe,'STAGED_Q_GZIP_B64','TEST',create=True),\
+                     patch.object(probe,'STAGED_Q_SHA256','1'*64,create=True),\
+                     patch.object(probe,'STAGED_S_GZIP_B64','TEST',create=True),\
+                     patch.object(probe,'STAGED_S_SHA256','2'*64,create=True),\
+                     patch.object(probe,'stage',side_effect=[q,s]),\
+                     patch.object(probe,'metadata',return_value={'id':'594077619','region':'nyc1'}),\
+                     patch.object(probe,'read_lock',return_value=fd),\
+                     patch.object(probe,'BARRIER',barrier),\
+                     patch.object(probe,'timer_hold',return_value={'count':16}),\
+                     patch.object(probe,'capacity',return_value={'free_bytes':8*1024**3}),\
+                     patch.object(probe,'read_docker_images',
+                                  return_value={probe.ACTIVE_IMAGE,probe.CRITICAL_IMAGE}):
+                    row=probe.prove(probe.EXPECTED_CANDIDATE,probe.EXPECTED_TREE,'',4*1024**3)
+            self.assertEqual(row['status'],'GREEN_READ_ONLY')
+            self.assertEqual(row['a175_session'],observed[1])
+            self.assertEqual(calls,[intraday])
+
     def test_candidate_mismatch_blocks_before_metadata_or_host_lock(self):
         with patch.object(probe,'metadata',side_effect=AssertionError('host must not be contacted')):
             with self.assertRaisesRegex(ValueError,'A178_CANDIDATE_OR_DAY_CHANGED'):
@@ -92,7 +141,8 @@ class A178ReadOnlyPreflightTest(unittest.TestCase):
                 return {'process_state':'RUNNING','session_state':'MARKET_OPEN',
                         'source_sha':self.A175_FAILED_CANDIDATE,'real_orders_sent':0}
 
-            def admit(self):
+            def admit(self,**kwargs):
+                self.intraday=kwargs.get('allow_market_open_suspend')
                 raise ValueError('QUIESCENCE_CLOSED_REQUIRED')
 
             def critical_admission(self):

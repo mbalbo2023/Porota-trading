@@ -28,8 +28,8 @@ ROOT = Path('/opt/porota-trading')
 LOCK = Path('/run/lock/porota-rc6-deploy-v2.lock')
 BARRIER = Path('/run/lock/porota-rc6-deploy-v2-attempt.json')
 DAY = '2026-10-29'
-EXPECTED_CANDIDATE = 'fdf04e6057fb527d4cc0f6c9beba4a93ff8a0fbf'
-EXPECTED_TREE = '8658e2e575f4753ec1359759b8abaa35243ee041'
+EXPECTED_CANDIDATE = '7d62d2f4ed353231da8566a360a1179e99bcc7eb'
+EXPECTED_TREE = '31ced11ce047bfa092f5398c13aeb37b74afd629'
 EXPECTED_SEAL = '3218ccf5296306068d051b12588c4fac253a768ea3c81e0fc31c501adb34338c'
 ACTIVE_IMAGE = 'sha256:9841cba8df3345fa22e39457645ba250431ad1f465ce4204d92f73f7816215b9'
 CRITICAL_IMAGE = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
@@ -137,13 +137,15 @@ def capacity(required, policy_b64):
 
 
 def diagnose_origin_book(q):
-    """Safe, minimal read-only fields when A175 closed-session guard rejects."""
+    """Safe, bounded read-only fields if A175 PAPER/NO_GO admission rejects."""
     try:
         book=q.rescue_flat_book()  # Also verifies all three PAPER ledgers flat.
     except (ValueError, OSError) as exc:
         return {'flat_book':'UNVERIFIED','reason':type(exc).__name__+':'+str(exc)}
     try:
-        admission=q.admit()
+        admission=q.admit(
+            allow_market_open_suspend=
+                (book['process_state'],book['session_state'])==('RUNNING','MARKET_OPEN'))
     except (ValueError, OSError) as exc:
         admission='RED:'+str(exc)
     try:
@@ -178,12 +180,16 @@ def prove(candidate,tree,policy_b64,required):
                 daily.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
                 daily.get('paper_execution_authorized') is not False):
             raise ValueError('A178_DAILY_SEAL_RED')
+        origin_book=q.rescue_flat_book()
+        intraday=(origin_book['process_state'],origin_book['session_state'])==(
+            'RUNNING','MARKET_OPEN')
         try:
             origin=q.a175_failed_running_proof(
                 candidate, operator_a151_proof=s.exact_a151_operator_preopen_pause,
                 operator_timer_disabled=s.operator_preopen_timer_disabled,
                 operator_current_no_go_proof=s.exact_a176_operator_no_go_continuation,
-                require_installed_a175_source=True)
+                require_installed_a175_source=True,
+                allow_intraday_a175=intraday)
         except ValueError as exc:
             if str(exc) != 'QUIESCENCE_A175_RUNNING_BOOK_CHANGED':
                 raise
@@ -192,6 +198,8 @@ def prove(candidate,tree,policy_b64,required):
         if (origin.get('origin_candidate') != q.A175_FAILED_CANDIDATE or
                 origin.get('operator_receipt_sha256') != EXPECTED_SEAL or
                 origin.get('flat_book',{}).get('real_orders_sent') != 0 or
+                origin.get('flat_book') != origin_book or
+                origin.get('intraday_a175') is not intraday or
                 origin.get('image_id') != ACTIVE_IMAGE):
             raise ValueError('A178_A175_ORIGIN_CHANGED')
         disk=capacity(required,policy_b64)
@@ -204,6 +212,7 @@ def prove(candidate,tree,policy_b64,required):
                 'candidate_sha':candidate,'candidate_tree':tree,
                 'droplet':droplet,'operator_receipt_sha256':EXPECTED_SEAL,
                 'a175_origin_sha256':origin['origin_sha256'],
+                'a175_session':origin_book['session_state'],
                 'images_protected':sorted(images),
                 'timers':timers,'disk':disk,'paper':{'mode':'PRODUCTION_PAPER',
                 'real_orders_sent':0,'operational_go':False},
