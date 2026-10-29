@@ -104,10 +104,10 @@ jobs:
           if [ ! -f "$HOME/.ssh/rc6_iol_refresh" ]; then
             echo 'RC6_A186_DISK_HEADROOM=NOT_CHECKED'; exit 0
           fi
-          timeout --signal=TERM --kill-after=5s 35s ssh -T -i "$HOME/.ssh/rc6_iol_refresh" -o BatchMode=yes \\
-            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \\
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \\
-            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \\
+          timeout --signal=TERM --kill-after=5s 35s ssh -T -i "$HOME/.ssh/rc6_iol_refresh" -o BatchMode=yes \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
             'python3 -c '"'"'import json,shutil; print("RC6_A186_DISK_HEADROOM="+json.dumps({p:{"total":shutil.disk_usage(p).total,"used":shutil.disk_usage(p).used,"free":shutil.disk_usage(p).free} for p in ("/","/opt/porota-trading","/var/lib/docker") if __import__("os").path.exists(p)},sort_keys=True))'"'"''
       - name: Clean runner secrets and receipt
         if: always()
