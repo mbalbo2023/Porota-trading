@@ -16,17 +16,24 @@ def program():
                    'canonical-deploy-go.py', 'exec')
 
 
-def run_go(tmp_path, monkeypatch, *, process='STARTING', counter=0, age=0, transition=None):
+def run_go(tmp_path, monkeypatch, *, process='STARTING', auth='OK', session='CLOSED',
+           counter=0, age=0, transition=None, timeline=()):
     path = tmp_path / 'paper.db'
     with sqlite3.connect(path) as connection:
         connection.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER,ppi_auth TEXT,process_state TEXT,session_state TEXT,last_market_data_at TEXT,heartbeat_at TEXT)')
         stamp = (datetime.now(timezone.utc) - timedelta(seconds=age)).isoformat()
         connection.execute('INSERT INTO observer_state VALUES(1,?,?,?,?,?,?,?)',
-            ('PRODUCTION_PAPER', counter, 'OK', process, 'CLOSED', None, stamp))
+            ('PRODUCTION_PAPER', counter, auth, process, session, None, stamp))
     elapsed = [0]
     def pause(seconds):
         elapsed[0] += seconds
-        if transition:
+        event = next((row for row in reversed(timeline) if elapsed[0] >= row[0]), None)
+        if event:
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    'UPDATE observer_state SET ppi_auth=?,process_state=?,session_state=?,heartbeat_at=?',
+                    (*event[1:], datetime.now(timezone.utc).isoformat()))
+        elif transition:
             with sqlite3.connect(path) as connection:
                 connection.execute('UPDATE observer_state SET process_state=?,ppi_auth=?,heartbeat_at=?',
                     (*transition, datetime.now(timezone.utc).isoformat()))
@@ -69,3 +76,80 @@ def test_unknown_order_counter_cannot_pass_go(tmp_path, monkeypatch, capsys):
 def test_completed_startup_still_requires_fresh_heartbeat(tmp_path, monkeypatch, age, expected):
     code, _ = run_go(tmp_path, monkeypatch, process='WAITING_MARKET', age=age)
     assert code == expected
+
+
+def test_cooldown_boot_breadcrumb_and_login_transition_after_90_seconds(
+        tmp_path, monkeypatch, capsys):
+    """Execute the actual GO heredoc against the scanner's persisted states."""
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='COOLDOWN',
+        session='MARKET_CLOSED', timeline=(
+            (85, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_COMMAND'),
+            (90, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_CALENDAR'),
+            (95, 'COOLDOWN', 'DEGRADED', 'MARKET_CLOSED'),
+            (100, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_COMMAND'),
+            (105, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_PPI_SECRET'),
+            (110, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_PPI_CLIENT'),
+            (115, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_PPI_LOGIN'),
+            (120, 'NOT_ATTEMPTED', 'STARTING', 'BOOT_PPI_LOGIN'),
+            (125, 'OK', 'STARTING', 'MARKET_CLOSED'),
+            (145, 'OK', 'WAITING_MARKET', 'MARKET_CLOSED')))
+    output = capsys.readouterr().out
+    assert code == 0 and 145 <= elapsed <= 150
+    assert 'GO_CHECK=GREEN|PRODUCTION_PAPER|0|OK|WAITING_MARKET|' in output
+
+
+def test_boot_label_outside_exact_login_states_fails_closed(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='COOLDOWN',
+        session='MARKET_CLOSED', timeline=(
+            (85, 'NOT_ATTEMPTED', 'DEGRADED', 'MARKET_CLOSED'),
+            (145, 'OK', 'WAITING_MARKET', 'MARKET_CLOSED')))
+    assert code != 0 and elapsed <= 90
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+def test_late_explicit_login_error_stops_before_budget(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='COOLDOWN',
+        session='MARKET_CLOSED', timeline=(
+            (85, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_COMMAND'),
+            (95, 'ERROR', 'DEGRADED', 'MARKET_CLOSED'),
+            (145, 'OK', 'WAITING_MARKET', 'MARKET_CLOSED')))
+    assert code != 0 and 95 <= elapsed < 145
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+def test_bootstrap_pending_expires_bounded_budget(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='COOLDOWN',
+        session='MARKET_CLOSED', timeline=(
+            (85, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_COMMAND'),))
+    assert code != 0 and 1195 <= elapsed <= 1200
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+def test_bootstrap_pending_cannot_hide_nonzero_order_counter(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='NOT_ATTEMPTED',
+        session='BOOT_COMMAND', counter=1)
+    assert code != 0 and elapsed <= 90
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+def test_bootstrap_pending_requires_fresh_heartbeat(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='NOT_ATTEMPTED',
+        session='BOOT_PPI_LOGIN', age=121)
+    assert code != 0 and elapsed <= 90
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+def test_login_error_with_stale_boot_label_is_not_pending(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(
+        tmp_path, monkeypatch, process='DEGRADED', auth='COOLDOWN',
+        session='MARKET_CLOSED', timeline=(
+            (85, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_PPI_LOGIN'),
+            (95, 'ERROR', 'DEGRADED', 'BOOT_PPI_LOGIN')))
+    assert code != 0 and 95 <= elapsed < 1200
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out

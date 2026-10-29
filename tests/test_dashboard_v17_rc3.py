@@ -92,7 +92,7 @@ def test_real_money_mode_is_permanently_disabled():
         mode_manager.production(["--confirm-real-money"])
 
 
-def test_release_version_and_image_are_consistent():
+def test_release_version_and_image_are_consistent(monkeypatch):
     from _version import VERSION, IMAGE
     assert dashboard.VERSION == o_dashboard.VERSION == VERSION
     assert workspace.IMAGE == IMAGE
@@ -107,5 +107,6 @@ def test_release_version_and_image_are_consistent():
     assert not (root / ".github/workflows/deploy.yml").exists()
     assert not (root / ".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml").exists()
     assert "from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE" in mode
-    assert 'IMAGE, "o_dashboard.py"' in mode
-    assert 'IMAGE, "bv_paper_runtime.py"' in mode
+    monkeypatch.delenv("POROTA_DEPLOY_CANDIDATE_IMAGE", raising=False)
+    monkeypatch.delenv("POROTA_DEPLOY_CANDIDATE_IMAGE_ID", raising=False)
+    assert mode_manager.simulation_image() == IMAGE

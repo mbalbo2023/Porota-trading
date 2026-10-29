@@ -21,7 +21,8 @@ ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
 PROBE_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_ORIGIN_PROBE_V1"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
 INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED",
-                            "CLOSED_A171_PENDING_FIX_FORWARD"})
+                            "CLOSED_A171_PENDING_FIX_FORWARD",
+                            "CLOSED_A174_PENDING_FIX_FORWARD"})
 QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
     "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
     "CLOSED_A143_PENDING_FIX_FORWARD",
@@ -34,6 +35,11 @@ A169_STOPPED_RECEIPT_SHA256 = "ac2d6ec4bb3fe2a2ce809d89034cb564c1a3ce790de21838b
 A171_FAILED_CANDIDATE = "4ce63a68c668cadd2a0aa7e8aded44ae4a3c46a6"
 A171_FAILED_RECEIPT_SHA256 = "7a5e73359e85ef99796607228876443680f56bfe26ce201f4664474f700eabb5"
 A171_LOADED_IMAGE_ID = "sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa"
+A174_FAILED_CANDIDATE = "b6e6ce75f29fe117aaa42b0bfcd9386ea93a0aa0"
+A174_FAILED_RECEIPT_SHA256 = "364c9bb9f013da603345c90219e7c889d5b04ecff951afe08f4bfc7ec03c1528"
+A174_LOADED_IMAGE_ID = "sha256:9ca6e7ca98f11bbb82353434f54ffab15b218ec54319c83ae1661aaf897a40e9"
+A174_MARKER_SHA256 = "0191482515683e5184871d63e6030208e0b22ddfc727845b06c4fc9b59d5c6f9"
+A174_FROZEN_SHA256 = "4715ef897a9216242d0604e06e7df8ceb30f47f48552ac0d282013e04de9a687"
 OWNED = {"porota_production_observer", "porota_production_dashboard"}
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -79,6 +85,34 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
                 type(a171.get("operator_receipt_sha256")) is not str or
                 re.fullmatch(r"[0-9a-f]{64}",a171["operator_receipt_sha256"]) is None):
             raise ValueError("PAPER_RESTATEMENT_A171_ORIGIN_RED")
+    if quiescence_mode == "CLOSED_A174_PENDING_FIX_FORWARD":
+        a174 = receipt.get("a174_previous_proof")
+        if (receipt.get("a174_pending_adopted") is not True or
+                receipt.get("a174_origin_candidate") != A174_FAILED_CANDIDATE or
+                receipt.get("a174_origin_sha256") != A174_FAILED_RECEIPT_SHA256 or
+                receipt.get("inflight") != "ABSENT_OWNED_RUNTIME_STOPPED" or
+                type(a174) is not dict or
+                a174.get("origin_candidate") != A174_FAILED_CANDIDATE or
+                a174.get("origin_sha256") != A174_FAILED_RECEIPT_SHA256 or
+                a174.get("image_id") != A174_LOADED_IMAGE_ID or
+                a174.get("marker_sha256") != A174_MARKER_SHA256 or
+                a174.get("frozen_sha256") != A174_FROZEN_SHA256 or
+                a174.get("flat_book", {}).get("real_orders_sent") != 0 or
+                a174.get("flat_book", {}).get("process_state") != "WAITING_MARKET" or
+                a174.get("flat_book", {}).get("session_state") not in
+                    {"CLOSED", "MARKET_CLOSED"} or
+                a174.get("failure_flat_book", {}).get("process_state") != "DEGRADED" or
+                a174.get("failure_flat_book", {}).get("session_state") != "CLOSED" or
+                a174.get("failure_flat_book", {}).get("real_orders_sent") != 0 or
+                type(a174.get("containers")) is not dict or
+                set(a174["containers"]) != OWNED or
+                any(type(row) is not dict or
+                    row.get("image") != A174_LOADED_IMAGE_ID or
+                    re.fullmatch(r"[0-9a-f]{64}",str(row.get("id", ""))) is None
+                    for row in a174["containers"].values()) or
+                type(a174.get("operator_receipt_sha256")) is not str or
+                re.fullmatch(r"[0-9a-f]{64}",a174["operator_receipt_sha256"]) is None):
+            raise ValueError("PAPER_RESTATEMENT_A174_ORIGIN_RED")
     if quiescence_mode == "A151_HELD_STOPPED" and (
             receipt.get("a169_origin_candidate") != A169_STOPPED_CANDIDATE or
             receipt.get("a169_origin_sha256") != A169_STOPPED_RECEIPT_SHA256):

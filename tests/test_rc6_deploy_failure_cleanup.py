@@ -100,6 +100,18 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertTrue((self.unrelated / 'keep').exists())
         self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], STABLE)
 
+    def test_failed_transfer_before_image_load_only_removes_exact_stage(self):
+        for tag in cleanup.owned_tags(SHA):
+            self.docker.tags.pop(tag)
+        self.docker.images.remove(IMG)
+        result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'GREEN')
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(result['removed_image_ids'], [])
+        self.assertFalse(self.staging.exists())
+        self.assertTrue((self.unrelated / 'keep').exists())
+        self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], STABLE)
+
     def test_running_or_stopped_owner_protects_image(self):
         # ps -aq, not ps -q, includes stopped owners as well.
         self.docker.containers['f' * 12] = (IMG, [])
@@ -114,6 +126,23 @@ class FailureCleanupTests(unittest.TestCase):
         result = cleanup.cleanup(SHA)
         self.assertEqual(result['removed_tags'], [])
         self.assertEqual(len(result['retained_tags']), 2)
+
+    def test_running_candidate_keeps_image_but_reclaims_exact_upload(self):
+        self.docker.tags[cleanup.STABLE_IMAGE] = IMG
+        self.docker.containers[CID] = (IMG, [])
+        result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'GREEN')
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(result['removed_image_ids'], [])
+        self.assertEqual(set(result['retained_reasons'].values()),
+                         {'CONTAINER_REFERENCED'})
+        self.assertFalse(self.staging.exists())
+        self.assertTrue((self.unrelated / 'keep').exists())
+        self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], IMG)
+        self.assertIsInstance(result['disk_before'], int)
+        self.assertIsInstance(result['disk_after'], int)
+        self.assertEqual(result['space_recovered'],
+                         result['disk_after'] - result['disk_before'])
 
     def test_external_alias_or_digest_preserves_image_and_reports_why(self):
         self.docker.tags['ppi-watch:current'] = IMG
@@ -320,6 +349,28 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertLess(workflow.index('Failure-safe host cleanup'), workflow.index('Runner cleanup'))
         self.assertLess(workflow.index('Pin exact DigitalOcean Droplet before host mutation'),
                         workflow.index('Reconcile only exact A138 cleanly exited host barrier'))
+
+    def test_stable_pointer_changes_only_after_postload_reserve_green(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        promotion = workflow.split('      - name: Promote exact frozen candidate and verify', 1)[1].split(
+            '      - name: Verify same flat PAPER session after runtime restart', 1)[0]
+        frozen = 'sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"'
+        stable = 'sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"'
+        gate = 'echo "RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN"'
+        mode = 'porota_mode_manager.py" simulation'
+        identity = 'echo "POROTA_RUNNING_SOURCE_IDENTITY=GREEN"'
+        self.assertEqual(promotion.count(stable), 1)
+        self.assertLess(promotion.index('sudo -n docker load'), promotion.index(frozen))
+        self.assertLess(promotion.index(frozen), promotion.index('--action image-intent'))
+        self.assertLess(promotion.index('--action image-intent'), promotion.index(gate))
+        self.assertLess(promotion.index(gate), promotion.index(mode))
+        self.assertIn('POROTA_DEPLOY_CANDIDATE_IMAGE="$CANDIDATE_IMAGE"', promotion)
+        self.assertIn('POROTA_DEPLOY_CANDIDATE_IMAGE_ID="$RUNTIME_IMAGE_ID"', promotion)
+        self.assertLess(promotion.index(mode), promotion.index('test "$OBSERVER_IMAGE_ID" = "$RUNTIME_IMAGE_ID"'))
+        self.assertLess(promotion.index('test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"'),
+                        promotion.index(identity))
+        self.assertLess(promotion.index(identity), promotion.index(stable))
 
     def test_failed_recovery_or_restore_reclaims_payload_without_rearming(self):
         workflow = (Path(__file__).resolve().parents[1] /

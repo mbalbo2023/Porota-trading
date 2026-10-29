@@ -2196,7 +2196,13 @@ def run():
                     _health(store, "PPI_PRODUCTION_AUTH", "VERDE",
                             "Login automático de solo lectura correcto.",
                             "PPI Producción", success=True)
-                    store.state(ppi_auth="OK", session_state=phase,
+                    # A successful login can follow a 900s interlock hold.
+                    # Clear its DEGRADED process state atomically with auth;
+                    # readiness remains STARTING until the PAPER engine and
+                    # closed-session services finish initialization.
+                    store.state(process_state="STARTING", ppi_auth="OK",
+                                session_state=phase, heartbeat_at=now_iso(),
+                                real_orders_sent=0,
                                 detail="Login de solo lectura correcto; inicializando motor PAPER.")
                     # La IA continúa OFF; este paso no envía órdenes ni llama
                     # rutas operativas. Sólo prepara decisiones simuladas.

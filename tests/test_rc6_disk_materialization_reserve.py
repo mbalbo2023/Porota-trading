@@ -43,10 +43,11 @@ def test_postload_checks_actual_reserve_and_inodes_without_new_transfer_budget(f
 
 def test_postload_guard_precedes_host_services_and_long_contract_sweep():
     text = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    loaded = text.index('POROTA_BUILD_ONCE_PROMOTION=GREEN')
+    loaded = text.index('POROTA_BUILD_ONCE_MATERIALIZED=GREEN')
     guard = text.index('RC6_DISK_POSTLOAD_RESERVE_GATE=GREEN', loaded)
     apply = text.index('porota_apply_host_control_plane_v2.py', loaded)
     assert loaded < guard < apply
+    assert guard < text.index('POROTA_BUILD_ONCE_PROMOTION=GREEN', guard)
     block = text[loaded:guard]
     assert '--phase postload' in block
     # The drained stage cannot prove ownership of host-wide Docker cache.

@@ -54,9 +54,13 @@ def test_dashboard_bootstrap_dependencies_and_storage_cleanup_are_deploy_guards(
 def test_dashboard_is_recreated_directly_from_verified_candidate():
     source = _deploy()
     loaded = source.index('gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load')
+    candidate_tag = source.index('sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"')
     tagged = source.index('sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"')
     recreated = source.index('porota_mode_manager.py" simulation')
-    assert loaded < tagged < recreated
+    source_verified = source.index('POROTA_RUNNING_SOURCE_IDENTITY=GREEN')
+    assert loaded < candidate_tag < recreated < source_verified < tagged
+    assert 'POROTA_DEPLOY_CANDIDATE_IMAGE="$CANDIDATE_IMAGE"' in source
+    assert 'POROTA_DEPLOY_CANDIDATE_IMAGE_ID="$RUNTIME_IMAGE_ID"' in source
     assert not re.search(r"(?m)^\s*(?:sudo -n )?docker build(?:\s|$)", source)
     assert 'DASHBOARD_IMAGE_ID="$(sudo -n docker inspect' in source
     assert 'test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in source
