@@ -1294,8 +1294,7 @@ jobs:
           test -n "$LOADED_IMAGE_ID"
           test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
-          sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
-          echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
+          echo "POROTA_BUILD_ONCE_MATERIALIZED=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
           if [[ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ||
                 "$RC6_QUIESCENCE_MODE" = A151_HELD_OPEN ||
                 "$RC6_QUIESCENCE_MODE" = A151_HELD_STOPPED ||
@@ -1393,7 +1392,7 @@ jobs:
           printf '%s\n' "$CAUCION_FEE_APPLY" | python3 -c \
             'import json,sys; p=json.load(sys.stdin); assert p["status"]=="GREEN" and p["receipts"]==6 and p["inserted"] in (0,6) and p["old_positions_untouched"] is True and p["broker_account_fees_verified"] is False; print("RC6_A151_CAUCION_FEE_APPLY=GREEN|APPEND_ONLY|PAPER_MODEL|ACCOUNT_FEES_NO_VERIFICADO")'
 
-          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 POROTA_DEPLOY_CANDIDATE_IMAGE="$CANDIDATE_IMAGE" POROTA_DEPLOY_CANDIDATE_IMAGE_ID="$RUNTIME_IMAGE_ID" python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
           if [ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ]; then
@@ -1413,6 +1412,14 @@ jobs:
               --expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE"
           done
           echo "POROTA_RUNNING_SOURCE_IDENTITY=GREEN"
+          # The manager starts both split services from the candidate tag
+          # after proving its image ID. Change the shared stable pointer only
+          # once both new containers prove this exact image and source. Any
+          # earlier failure can reclaim an unreferenced new image without
+          # moving the prior stable pointer; partial starts retain references.
+          sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"
+          test "$(sudo -n docker image inspect -f '{{.Id}}' "$STABLE_IMAGE")" = "$RUNTIME_IMAGE_ID"
+          echo "POROTA_BUILD_ONCE_PROMOTION=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
 
           POST_CONTAINER_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)"
           POST_CONTAINER_OOM_KILLED="$(sudo -n docker inspect -f '{{.State.OOMKilled}}' porota_production_observer 2>/dev/null || true)"

@@ -17,6 +17,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -140,6 +141,23 @@ def run(*args, check=True, capture=False):
     return subprocess.run(args, cwd=ROOT, check=check, text=True,
                           stdout=subprocess.PIPE if capture else None,
                           stderr=subprocess.STDOUT if capture else None)
+
+
+def simulation_image():
+    """Select the exact frozen Deploy image before touching the old runtime."""
+    candidate = os.getenv("POROTA_DEPLOY_CANDIDATE_IMAGE", "")
+    expected = os.getenv("POROTA_DEPLOY_CANDIDATE_IMAGE_ID", "")
+    if not candidate and not expected:
+        return IMAGE
+    if (re.fullmatch(r"porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40}",
+                     candidate) is None or
+            re.fullmatch(r"sha256:[0-9a-f]{64}", expected) is None):
+        raise RuntimeError("RC6_DEPLOY_CANDIDATE_IMAGE_INVALID")
+    observed = run("docker", "image", "inspect", "-f", "{{.Id}}", candidate,
+                   capture=True).stdout.strip()
+    if observed != expected:
+        raise RuntimeError("RC6_DEPLOY_CANDIDATE_IMAGE_ID_MISMATCH")
+    return candidate
 
 
 def env_file():
@@ -270,7 +288,7 @@ def observer_runtime_env():
     return target
 
 
-def start_dashboard(mode):
+def start_dashboard(mode, image=IMAGE):
     env_path = dashboard_env(mode)
     run("docker", "rm", "-f", "porota_production_dashboard", check=False, capture=True)
     # The dashboard image is immutable, but the deployment host is the canonical
@@ -310,18 +328,19 @@ def start_dashboard(mode):
         "--pull", "never", "--restart", "unless-stopped", "--user", "botuser", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
         "--env-file", str(env_path), "-v", f"{DATA}:/app/data", *source_mounts,
-        "--entrypoint", "python", IMAGE, "o_dashboard.py")
+        "--entrypoint", "python", image, "o_dashboard.py")
     # Todas las fuentes de dashboard se montan read-only desde el stage
     # canónico. No se usa docker cp sobre un contenedor read-only: así no puede
     # sobrevivir una copia interna antigua al recrear el servicio.
 
 
 def simulation():
+    image = simulation_image()
     stop_engines()
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
                 "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, detail="Iniciando")
-    start_dashboard("PRODUCTION_PAPER")
+    start_dashboard("PRODUCTION_PAPER", image=image)
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
@@ -350,7 +369,7 @@ def simulation():
         "-e", "PAPER_SCALPING_MODE=ACTIVE_PAPER",
         "-e", "PAPER_CAUCION_SWEEP_MODE=ACTIVE_PAPER",
         "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
-        "--entrypoint", "python", IMAGE, "bv_paper_runtime.py", capture=True)
+        "--entrypoint", "python", image, "bv_paper_runtime.py", capture=True)
     print("RC6_OBSERVER_CREATED_ID=" + created.stdout.strip())
     state = run("docker", "inspect", "-f", "{{.State.Status}}",
                  "porota_production_observer", capture=True).stdout.strip()
