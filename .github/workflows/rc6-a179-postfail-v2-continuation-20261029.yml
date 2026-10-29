@@ -39,6 +39,7 @@ jobs:
           test "$(git -C certified-product rev-parse HEAD)" = d961d19e55d78c68d902a14b41480344365cde1e
           test "$(git -C certified-product rev-parse HEAD^{tree})" = 31ced11ce047bfa092f5398c13aeb37b74afd629
           test "$(sha256sum certified-product/scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)" = 0f016652f884cd27bba0e29e3128da615266d09b8bf7a0a1f9a063d1386f0fc6
+          test "$(sha256sum certified-product/scripts/rc6_deploy_host_mutex.py | cut -d' ' -f1)" = "$(sha256sum scripts/rc6_deploy_host_mutex.py | cut -d' ' -f1)"
           echo 'A179_PRODUCT_FROZEN_SHA=GREEN'
       - name: Configure strict read-only SSH
         shell: bash
@@ -112,6 +113,47 @@ jobs:
           assert row['ppi_watch_mutations']==row['host_mutations']==0
           print('RC6_A179_CLOSURE_READINESS=GREEN_READ_ONLY|PAPER=0|NO_GO')
           PY
+      - name: Run passive native runtime evidence under the canonical host mutex
+        id: native_acceptance
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          MUTEX_B64="$(base64 -w0 certified-product/scripts/rc6_deploy_host_mutex.py)"
+          timeout --signal=TERM --kill-after=10s 2200 ssh \
+            -i "$HOME/.ssh/porota_rc6_a179_postfail" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$MUTEX_B64\"))' '$DO_USER' root --attempt '7d62d2f4ed353231da8566a360a1179e99bcc7eb' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env PYTHONDONTWRITEBYTECODE=1 python3 - --mode native-acceptance" \
+            < scripts/rc6_a179_resume_validate.py | tee a179-native-acceptance.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('a179-native-acceptance.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_RESUME_NATIVE-ACCEPTANCE=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='GREEN' and row['stability_audits']==3
+          assert row['passive_exit139_minutes']==5 and row['native_ten_generation_soak']=='GREEN'
+          assert row['acceptance_mode'] in ('FRESH_GENERATIONS','CLOSED_IDLE')
+          assert row['real_orders_sent']==0 and row['ppi_watch_mutations']==0
+          assert row['operator_no_go']=='HELD' and row['host_control_mutations']==0
+          print('RC6_A179_NATIVE_ACCEPTANCE=GREEN|NO_GO_HELD|PAPER=0|NO_STRESS')
+          PY
+      - name: Retire only the completed native attempt barrier on a safe failure
+        if: ${{ failure() && steps.native_acceptance.outcome == 'failure' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          MUTEX_B64="$(base64 -w0 certified-product/scripts/rc6_deploy_host_mutex.py)"
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_a179_postfail" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$MUTEX_B64\"))' '$DO_USER' root --attempt '7d62d2f4ed353231da8566a360a1179e99bcc7eb' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_final env PYTHONDONTWRITEBYTECODE=1 python3 - --mode cleanup-native-attempt" \
+            < scripts/rc6_a179_resume_validate.py
       - name: Preserve exact read-only recovery certificates
         if: always()
         uses: actions/upload-artifact@v4
@@ -121,6 +163,7 @@ jobs:
             a179-resume-preflight.jsonl
             a179-resume-preopen.jsonl
             a179-closure-readiness.jsonl
+            a179-native-acceptance.jsonl
           retention-days: 14
           if-no-files-found: warn
       - name: Erase runner SSH key

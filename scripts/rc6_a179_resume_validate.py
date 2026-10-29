@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Exact A178 Deploy V2 postfailure validation, initially READ_ONLY.
+"""Exact A178 Deploy V2 postfailure validation and bounded native closure.
 
 This source is streamed by GitHub Actions to the target. No host mutation
-occurs in the ``preflight`` or ``preopen`` modes. Future write modes require
-an independent reviewed patch and the exclusive RC6 host mutex.
+occurs in the ``preflight``, ``preopen`` or ``closure-readiness`` modes.
+``native-acceptance`` writes only canonical audit and generation receipts
+under the exclusive Deploy V2 host mutex; never restarts or runs stress.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -191,7 +193,19 @@ def systemctl_state(action, unit):
     return done.stdout.strip()
 
 
-def verify_closure_readiness(root=ROOT) -> dict:
+def require_exact_mutex():
+    raw=os.environ.get('RC6_DEPLOY_MUTEX_FD','')
+    require(re.fullmatch(r'[1-9][0-9]*',raw) is not None and int(raw)>=3,
+            'A179_DEPLOY_HOST_MUTEX_REQUIRED')
+    try:
+        target=os.readlink('/proc/self/fd/'+raw)
+    except OSError as exc:
+        raise ValueError('A179_DEPLOY_HOST_MUTEX_UNVERIFIABLE') from exc
+    require(target=='/run/lock/porota-rc6-deploy-v2.lock',
+            'A179_DEPLOY_HOST_MUTEX_IDENTITY_RED')
+
+
+def verify_closure_readiness(root=ROOT, *, mutex_wrapped=False) -> dict:
     """Predict every remaining host-write prerequisite without touching it.
 
     Restore the installed artifact only if the prior attempt is definitely
@@ -199,10 +213,13 @@ def verify_closure_readiness(root=ROOT) -> dict:
     guard is already satisfied. No docker run/systemctl start occurs here.
     """
     verify_origin(root)
-    require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
-            'A179_PREVIOUS_DEPLOY_MUTEX_BARRIER_PRESENT')
-    require(not (Path('/tmp')/'porota-rc6-deploy-v2-attempt.json').exists(),
-            'A179_OLD_DEPLOY_MUTEX_BARRIER_PRESENT')
+    if mutex_wrapped:
+        require_exact_mutex()
+    else:
+        require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
+                'A179_PREVIOUS_DEPLOY_MUTEX_BARRIER_PRESENT')
+        require(not (Path('/tmp')/'porota-rc6-deploy-v2-attempt.json').exists(),
+                'A179_OLD_DEPLOY_MUTEX_BARRIER_PRESENT')
     stable='porota-trading-bot:17.0.0-rc6'
     require(command_stdout('docker','image','inspect','-f','{{.Id}}',stable)==IMAGE_ID,
             'A179_STABLE_IMAGE_TAG_DRIFT')
@@ -230,20 +247,173 @@ def verify_closure_readiness(root=ROOT) -> dict:
     return {'schema':'rc6.a179.closure-readiness.v1','status':'GREEN_READ_ONLY',
             'candidate':CANDIDATE, 'current_marker':'DEPLOYED_VALIDATION_PENDING',
             'critical_old_image':CRITICAL_IMAGE, 'stable_image':IMAGE_ID,
-            'backup_inventory_count':0, 'mutex_barrier':'ABSENT',
+            'backup_inventory_count':0,
+            'mutex_barrier':'EXCLUSIVELY_HELD' if mutex_wrapped else 'ABSENT',
             'readiness':'NO_PREMATURE_RUNTIME_FINALIZATION',
             'real_orders_sent':0,'host_mutations':0,'ppi_watch_mutations':0}
+
+
+def ppi_watch_snapshot():
+    inventory=command_stdout('systemctl','list-unit-files','--no-legend')
+    names=sorted(line.split()[0] for line in inventory.splitlines()
+                 if line.split() and 'ppi' in line.split()[0].lower()
+                 and 'watch' in line.split()[0].lower())
+    return [(name,systemctl_state('is-enabled',name),
+             systemctl_state('is-active',name)) for name in names]
+
+
+def checked_process(args, seconds, reason):
+    completed=subprocess.run(args, capture_output=True, text=True, timeout=seconds,
+                             check=False)
+    require(completed.returncode==0, reason+':RC='+str(completed.returncode))
+    return completed
+
+
+def safe_generated(path: Path, max_size=2*1024*1024) -> dict:
+    require(path.is_file() and not path.is_symlink() and
+            path.stat().st_nlink == 1 and 0 < path.stat().st_size <= max_size,
+            'A179_NATIVE_RECEIPT_UNSAFE:'+path.name)
+    value=json.loads(path.read_bytes())
+    require(type(value) is dict and value.get('status')=='GREEN',
+            'A179_NATIVE_RECEIPT_RED:'+path.name)
+    return value
+
+
+def validate_native_pair(first, sustained):
+    mode=first.get('acceptance_mode')
+    require(first.get('status')==sustained.get('status')=='GREEN' and
+            mode==sustained.get('acceptance_mode') and
+            mode in ('FRESH_GENERATIONS','CLOSED_IDLE') and
+            sustained.get('strict') is True and
+            sustained.get('all_services_sampled_running') is True,
+            'A179_NATIVE_PAIR_STATUS_RED')
+    if mode=='CLOSED_IDLE':
+        require(first.get('generations')==sustained.get('generations')==[] and
+                first.get('source_freshness_renewed') is False and
+                sustained.get('source_freshness_renewed') is False and
+                len(first.get('idle_observations',[]))>=2 and
+                len(sustained.get('idle_observations',[]))>=10 and
+                first.get('idle_heartbeat_count',0)>=2 and
+                sustained.get('idle_heartbeat_count',0)>=2,
+                'A179_CLOSED_IDLE_CERTIFICATE_RED')
+        rows=(first['idle_observations'][-1],sustained['idle_observations'][-1])
+    else:
+        require(len(first.get('generations',[]))>=2 and
+                len(sustained.get('generations',[]))>=10,
+                'A179_FRESH_NATIVE_GENERATIONS_RED')
+        rows=(first['generations'][-1],sustained['generations'][-1])
+    require(all(row.get('source_sha')==CANDIDATE and
+                row.get('candidate_tree_sha')==TREE and
+                type(row.get('real_orders_sent')) is int and
+                row['real_orders_sent']==0 and
+                row.get('real_routes')=='NOT_CALLED' for row in rows),
+            'A179_NATIVE_SAFETY_OR_SOURCE_RED')
+    return mode
+
+
+def verify_unchanged_runtime():
+    for name, expected in CONTAINERS.items():
+        row=docker_inspect(name)
+        require(row.get('Id')==expected and row.get('Image')==IMAGE_ID and
+                row.get('State',{}).get('Status')=='running' and
+                row.get('RestartCount')==0 and
+                row.get('State',{}).get('OOMKilled') is False,
+                'A179_NATIVE_RESTART_OR_IMAGE_DRIFT:'+name)
+    read_book()
+
+
+def run_native_acceptance(root=ROOT) -> dict:
+    """Finish the canonical passive audit sequence; NO_GO stays sealed.
+
+    Only existing production audit/SHADOW generation collectors are invoked.
+    No time-of-day veto, no market requests, no orders, no stress, no restart.
+    """
+    verify_closure_readiness(root,mutex_wrapped=True)
+    verify_preopen(root)
+    ppi_before=ppi_watch_snapshot()
+    deploy_dir=root/'data/deploy'
+    first_path=deploy_dir/'native-generation-acceptance.json'
+    sustained_path=deploy_dir/'native-ten-generation-soak.json'
+    require(not first_path.exists() and not sustained_path.exists(),
+            'A179_NATIVE_ALREADY_PARTIALLY_RUN')
+    audit_dir='/app/data/deploy'
+    baseline=deploy_dir/'zero-known-error-immediate.json'
+    require(safe_generated(baseline).get('read_only') is True,
+            'A179_IMMEDIATE_AUDIT_NOT_READ_ONLY')
+    for n in (1,2,3):
+        time.sleep(35)
+        verify_unchanged_runtime()
+        checked_process(('docker','exec','porota_production_dashboard','timeout','300',
+                         'python','/app/scripts/rc6_zero_known_error_runtime_audit.py',
+                         '--label','stability-'+str(n),'--baseline',
+                         audit_dir+'/zero-known-error-immediate.json',
+                         '--output',audit_dir+'/zero-known-error-stability-'+str(n)+'.json'),
+                        320,'A179_STABILITY_AUDIT_RED:'+str(n))
+        audit=safe_generated(deploy_dir/('zero-known-error-stability-'+str(n)+'.json'))
+        require(audit.get('read_only') is True and
+                audit.get('real_routes')==[],
+                'A179_STABILITY_AUDIT_SAFETY_RED:'+str(n))
+    # Once-per-minute bounded passive observation detects delayed exit-139.
+    soak_start=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    for _ in range(5):
+        time.sleep(60)
+        verify_unchanged_runtime()
+    signature=re.compile(r'Traceback|REAL_ORDER_CAPABILITY=(?:ENABLED|REAL)|real_orders_sent=[1-9][0-9]*')
+    for name in CONTAINERS:
+        logs=checked_process(('docker','logs','--since',soak_start,name),
+                             30,'A179_RECENT_LOG_CHECK_FAILED')
+        require(signature.search(logs.stdout+'\n'+logs.stderr) is None,
+                'A179_RECENT_CRITICAL_LOG_SIGNATURE:'+name)
+    checked_process(('docker','exec','porota_production_dashboard','timeout','195',
+                     'python','/app/scripts/rc6_deploy_generation_gate.py',
+                     '--expected-sha',CANDIDATE,'--expected-tree',TREE,
+                     '--allow-closed-idle','--output',
+                     '/app/data/deploy/native-generation-acceptance.json'),
+                    220,'A179_NATIVE_GENERATION_GATE_RED')
+    checked_process(('python3',str(root/'scripts/rc6_native_soak.py'),
+                     '--expected-sha',CANDIDATE,'--expected-tree',TREE,
+                     '--allow-closed-idle','--output',str(sustained_path)),
+                    1230,'A179_NATIVE_TEN_GENERATION_SOAK_RED')
+    mode=validate_native_pair(safe_generated(first_path),
+                              safe_generated(sustained_path))
+    verify_origin(root)
+    require(ppi_watch_snapshot()==ppi_before,'A179_PPI_WATCH_DRIFT')
+    return {'schema':'rc6.a179.native-acceptance.v1','status':'GREEN',
+            'candidate':CANDIDATE,'image':IMAGE_ID,'acceptance_mode':mode,
+            'stability_audits':3,'passive_exit139_minutes':5,
+            'native_generation_gate':'GREEN','native_ten_generation_soak':'GREEN',
+            'session_time_veto':False,'operator_no_go':'HELD',
+            'real_orders_sent':0,'ppi_watch_mutations':0,
+            'host_control_mutations':0}
+
+
+def cleanup_failed_native_attempt(root=ROOT) -> dict:
+    """Only retire a completed attempt barrier after re-proving NO_GO.
+
+    The mutex wrapper owns the actual barrier unlink. An uncertain lost-child
+    state is refused by that wrapper and remains blocked, not force-cleared.
+    """
+    require_exact_mutex()
+    verify_origin(root)
+    verify_preopen(root)
+    return {'status':'RECOVERY_ATTEMPT_CLEANLY_ENDED','candidate':CANDIDATE,
+            'marker':'DEPLOYED_VALIDATION_PENDING','real_orders_sent':0,
+            'operator_no_go':'HELD','host_control_mutations':0,
+            'ppi_watch_mutations':0}
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode',required=True,
-                        choices=('preflight','preopen','closure-readiness'))
+                        choices=('preflight','preopen','closure-readiness',
+                                 'native-acceptance','cleanup-native-attempt'))
     args=parser.parse_args(argv)
     try:
         result=(verify_origin() if args.mode=='preflight' else
                 verify_preopen() if args.mode=='preopen' else
-                verify_closure_readiness())
+                verify_closure_readiness() if args.mode=='closure-readiness' else
+                run_native_acceptance() if args.mode=='native-acceptance' else
+                cleanup_failed_native_attempt())
         print('RC6_A179_RESUME_'+args.mode.upper()+'='+json.dumps(result,sort_keys=True))
         return 0
     except Exception as exc:

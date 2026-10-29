@@ -65,3 +65,39 @@ class A179ResumeGuardTests(TestCase):
             with self.assertRaisesRegex(ValueError,'A179_PAPER_BOOK_UNSAFE'):
                 resume.read_book(Path('/tmp/nonexistent'))
 
+    def test_native_mutation_never_runs_without_exact_mutex(self):
+        with mock.patch.dict(os.environ,{'RC6_DEPLOY_MUTEX_FD':''}):
+            with self.assertRaisesRegex(ValueError,'DEPLOY_HOST_MUTEX_REQUIRED'):
+                resume.require_exact_mutex()
+        with mock.patch.dict(os.environ,{'RC6_DEPLOY_MUTEX_FD':'5'}):
+            with mock.patch.object(resume.os,'readlink',return_value='/tmp/fake-lock'):
+                with self.assertRaisesRegex(ValueError,'DEPLOY_HOST_MUTEX_IDENTITY_RED'):
+                    resume.require_exact_mutex()
+
+    def test_native_pair_requires_strict_soak_and_exact_source(self):
+        first={'status':'GREEN','acceptance_mode':'FRESH_GENERATIONS',
+               'generations':[{'source_sha':resume.CANDIDATE,
+                               'candidate_tree_sha':resume.TREE,
+                               'real_orders_sent':0,'real_routes':'NOT_CALLED'}]*2}
+        soak={'status':'GREEN','acceptance_mode':'FRESH_GENERATIONS',
+              'strict':True,'all_services_sampled_running':True,
+              'generations':first['generations']*5}
+        self.assertEqual(resume.validate_native_pair(first,soak),'FRESH_GENERATIONS')
+        with self.assertRaisesRegex(ValueError,'NATIVE_PAIR_STATUS_RED'):
+            resume.validate_native_pair(first,dict(soak,strict=False))
+        wrong=dict(first['generations'][-1],source_sha='0'*40)
+        with self.assertRaisesRegex(ValueError,'NATIVE_SAFETY_OR_SOURCE_RED'):
+            resume.validate_native_pair(first,dict(soak,generations=[wrong]*10))
+
+    def test_closed_idle_never_masquerades_as_fresh(self):
+        idle={'source_sha':resume.CANDIDATE,'candidate_tree_sha':resume.TREE,
+              'real_orders_sent':0,'real_routes':'NOT_CALLED'}
+        first={'status':'GREEN','acceptance_mode':'CLOSED_IDLE',
+               'generations':[],'idle_observations':[idle]*2,
+               'idle_heartbeat_count':2,'source_freshness_renewed':False}
+        soak=dict(first,strict=True,all_services_sampled_running=True,
+                  idle_observations=[idle]*10)
+        self.assertEqual(resume.validate_native_pair(first,soak),'CLOSED_IDLE')
+        with self.assertRaisesRegex(ValueError,'CLOSED_IDLE_CERTIFICATE_RED'):
+            resume.validate_native_pair(first,dict(soak,source_freshness_renewed=True))
+
