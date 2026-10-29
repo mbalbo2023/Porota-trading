@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import ak_byma_calendar as byma
 from bu_instrument_catalog import rc6_underlying_opening_block
 from rc6_paper_admission_gate import focus_contracts, operator_pause_reason, publish_preopen
+from scripts.rc6_operator_paper_rearm import evaluate_rearm
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
@@ -415,14 +416,17 @@ def required_timers(deploy_scheduler_candidate=None):
     operator_pause_sha = None
     operator_no_go_continuation = None
     preserved_iol_timer = None
-    if deploy_scheduler_candidate is None and datetime.now(TZ).date().isoformat() == '2026-10-29':
+    today_ar = datetime.now(TZ).date().isoformat()
+    rearmed = evaluate_rearm(now=datetime.now(TZ), context='host')[0]
+    if deploy_scheduler_candidate is None and today_ar >= '2026-10-29' and not rearmed:
         # The operator keeps the daily preopen timer disabled. Other daily
         # timers may have been restored after Deploy; A176 verifies the
         # historical hold and current PAPER/0 without reusing the held-16
         # snapshot as a live timer-status claim.
         try:
             from scripts import rc6_deploy_scheduler_suspend as suspend
-            proof = suspend.exact_a176_operator_no_go_continuation()
+            proof = suspend.exact_a176_operator_no_go_continuation(
+                **({'historical_anchor': True} if today_ar > '2026-10-29' else {}))
             if (type(proof) is not dict or
                     proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
                     proof.get('business_day_art') != '2026-10-29' or
@@ -436,8 +440,12 @@ def required_timers(deploy_scheduler_candidate=None):
             operator_no_go_continuation = proof
             operator_pause_timer = suspend.OPERATOR_PREOPEN_TIMER
             operator_pause_sha = proof['receipt_sha256']
-            operator_pause_operation = proof['operation_id']
-            day = proof['business_day_art']
+            # A176 is historical 29-Oct authority, not a fresh 30-Oct receipt.
+            # Its unchanged digest plus the *current* disabled timer proves
+            # continued NO_GO without fabricating a new operator operation.
+            operator_pause_operation = (proof['operation_id'] if today_ar == '2026-10-29'
+                                        else 'A180-NO-GO-' + proof['receipt_sha256'][:16])
+            day = today_ar
         except (OSError, ValueError, TypeError, KeyError, AttributeError,
                 json.JSONDecodeError) as exc:
             return {'state':'RED','units':values,'reason':type(exc).__name__}
@@ -486,16 +494,17 @@ def required_timers(deploy_scheduler_candidate=None):
                 elif day == suspend.A151_OPERATOR_PAUSE_DAY:
                     operator_pause_sha, operator_pause_operation = (
                         suspend.exact_a151_operator_preopen_pause())
-                elif day == '2026-10-29':
+                elif day >= '2026-10-29' and not rearmed:
                     # A151's dated authorization cannot be carried forward by
                     # inference. A176 is an independently checked host receipt,
                     # issued under the canonical mutex with PAPER admission held.
                     operator_no_go_continuation = (
-                        suspend.exact_a176_operator_no_go_continuation())
+                        suspend.exact_a176_operator_no_go_continuation(
+                            **({'historical_anchor': True} if day > '2026-10-29' else {})))
                     proof = operator_no_go_continuation
                     if (type(proof) is not dict or
                             proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
-                            proof.get('business_day_art') != day or
+                            proof.get('business_day_art') != '2026-10-29' or
                             proof.get('paper_execution_authorized') is not False or
                             not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
                                              str(proof.get('operation_id'))) or
@@ -504,7 +513,8 @@ def required_timers(deploy_scheduler_candidate=None):
                                             'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
                         raise ValueError('PREOPEN_A176_NO_GO_PROOF_RED')
                     operator_pause_sha = proof['receipt_sha256']
-                    operator_pause_operation = proof['operation_id']
+                    operator_pause_operation = (proof['operation_id'] if day == '2026-10-29'
+                                                else 'A180-NO-GO-' + proof['receipt_sha256'][:16])
                 else:
                     raise ValueError('PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED')
         except (OSError, ValueError, TypeError, KeyError, AttributeError,
@@ -702,9 +712,14 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
               'phase':phase_override or preopen_phase(now),
               'status':'RED' if reds else 'PAUSED_NO_GO' if paused else 'GREEN',
               'red_checks':reds,'checks':checks,
-              'paper_admission_hold':operator_pause_reason(now) or None,
+              'paper_admission_hold':operator_pause_reason(now, context='host') or None,
               'dry_equivalent':phase_override is not None,
               'read_only':not publish_paper_gate,'network_order_test_performed':False,'direct_telegram_send':False}
+    rearm_authorized, _, rearm_summary = evaluate_rearm(now=now, context='host')
+    if rearm_authorized:
+        # This is source-bound operator consent, not an execution permission.
+        # The actual PAPER admission remains behind a fresh v2 T-10 receipt.
+        result['operator_rearm_authority'] = rearm_summary
     if paused:
         result['operator_paper_paused'] = True
         result['operator_pause_day_ar'] = checks['required_rc6_timers']['operator_pause_day_ar']
@@ -714,7 +729,7 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
             result['operator_no_go_continuation'] = (
                 checks['required_rc6_timers']['operator_no_go_continuation'])
     if publish_paper_gate:
-        if paused and today.isoformat() == '2026-10-29':
+        if paused and today.isoformat() >= '2026-10-29':
             # The historical A125 LIVE gate is immutable. The durable A176
             # sidecar is the NO_GO authority; no GO receipt is written here.
             result['paper_admission_receipt'] = {
