@@ -97,11 +97,22 @@ def docker_inspect(name):
     return data[0]
 
 
-def verify_origin(root=ROOT) -> dict:
+def verify_origin(root=ROOT, *, critical_image=CRITICAL_IMAGE,
+                  scheduler_status='SUSPENDED') -> dict:
     deploy_dir = root/'data/deploy'
     marker = exact_json(deploy_dir/'CURRENT_STATE_V2.json', MARKER_SHA256)
     q = exact_json(deploy_dir/('quiescence-'+CANDIDATE+'.json'), QUIESCENCE_SHA256)
-    suspend = exact_json(deploy_dir/('scheduler-suspend-'+CANDIDATE+'.json'), SCHEDULER_SHA256)
+    scheduler_path=deploy_dir/('scheduler-suspend-'+CANDIDATE+'.json')
+    if scheduler_status=='SUSPENDED':
+        suspend=exact_json(scheduler_path,SCHEDULER_SHA256)
+    elif scheduler_status=='RESTORED':
+        require(scheduler_path.is_file() and not scheduler_path.is_symlink() and
+                scheduler_path.stat().st_nlink==1 and
+                0<scheduler_path.stat().st_size<=65536,
+                'A179_RESTORED_SCHEDULER_RECEIPT_UNSAFE')
+        suspend=json.loads(scheduler_path.read_bytes())
+    else:
+        raise ValueError('A179_SCHEDULER_STATUS_NOT_ALLOWED')
     frozen = exact_json(deploy_dir/'porota-frozen-candidate.json', FROZEN_SHA256, 16384)
     require(marker.get('candidate_sha') == CANDIDATE and
             marker.get('deploy_sha') == DEPLOY and marker.get('image_id') == IMAGE_ID and
@@ -118,10 +129,13 @@ def verify_origin(root=ROOT) -> dict:
             q.get('real_orders_sent') == 0 and
             q.get('ppi_watch_accessed') is False, 'A179_QUIESCENCE_ORIGIN_RED')
     require(suspend.get('candidate_sha') == CANDIDATE and
-            suspend.get('status') == 'SUSPENDED' and
+            suspend.get('status') == scheduler_status and
             len(suspend.get('timers',[])) == 16 and
             set(suspend.get('attempted',[])) == set(suspend['timers']),
             'A179_SCHEDULER_ORIGIN_RED')
+    require(suspend.get('operator_pause_timer')=='porota-preopen-rc6.timer' and
+            suspend.get('preserved_iol_timer')=='porota-iol-oauth-health-rc6.timer',
+            'A179_SCHEDULER_NO_GO_CONTROL_MISSING')
     require(frozen.get('candidate_sha') == CANDIDATE and
             frozen.get('candidate_tree_sha') == TREE and
             frozen.get('build_once') is True and
@@ -133,7 +147,7 @@ def verify_origin(root=ROOT) -> dict:
                 container.get('State',{}).get('Status') == 'running' and
                 container.get('RestartCount') == 0, 'A179_RUNTIME_IMAGE_CHANGED:'+name)
     critical = docker_inspect('porota_critical_approval_rc6')
-    require(critical.get('Image') == CRITICAL_IMAGE and
+    require(critical.get('Image') == critical_image and
             critical.get('State',{}).get('Status') == 'running' and
             critical.get('State',{}).get('Health',{}).get('Status') == 'healthy',
             'A179_CRITICAL_SERVICE_RED')
@@ -143,7 +157,8 @@ def verify_origin(root=ROOT) -> dict:
             'A179_PRIOR_PAPER_OR_CRITICAL_CHANGED')
     return {'candidate': CANDIDATE, 'deploy': DEPLOY, 'image': IMAGE_ID,
             'session': list(phase), 'marker':'PENDING', 'frozen_sha256':FROZEN_SHA256,
-            'quiescence_sha256':QUIESCENCE_SHA256, 'scheduler_sha256':SCHEDULER_SHA256,
+            'quiescence_sha256':QUIESCENCE_SHA256,
+            'scheduler_sha256':hashlib.sha256(scheduler_path.read_bytes()).hexdigest(),
             'paper':'PRODUCTION_PAPER', 'real_orders_sent':0,
             'ppi_watch_mutations':0, 'host_mutations':0}
 
@@ -162,16 +177,19 @@ def staged_env(root=ROOT):
                 PYTHONDONTWRITEBYTECODE='1')
 
 
-def verify_preopen(root=ROOT) -> dict:
-    verify_origin(root)
+def verify_preopen(root=ROOT, *, critical_image=CRITICAL_IMAGE,
+                   scheduler_status='SUSPENDED') -> dict:
+    verify_origin(root,critical_image=critical_image,
+                  scheduler_status=scheduler_status)
     sys.path.insert(0, str(root))
     from scripts.rc6_deploy_preopen_gate import strict_json, validate_report
     import ak_byma_calendar
     env = staged_env(root)
     results = {}
     for phase in ('T_MINUS_45','T_MINUS_10'):
-        cmd=[sys.executable, str(root/'rc6_preopen.py'), '--phase',phase,
-             '--deploy-scheduler-candidate',CANDIDATE]
+        cmd=[sys.executable, str(root/'rc6_preopen.py'), '--phase',phase]
+        if scheduler_status=='SUSPENDED':
+            cmd.extend(('--deploy-scheduler-candidate',CANDIDATE))
         completed=subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=180)
         require(completed.returncode == 0, 'A179_PREOPEN_PROCESS_RED:'+phase)
         report = strict_json(completed.stdout)
@@ -454,20 +472,563 @@ def cleanup_failed_native_attempt(root=ROOT) -> dict:
             'ppi_watch_mutations':0}
 
 
+def validate_native_proof(root=ROOT) -> dict:
+    first_name,soak_name,stability_names=native_receipt_names()
+    deploy_dir=root/'data/deploy'
+    first=safe_generated(deploy_dir/first_name)
+    soak=safe_generated(deploy_dir/soak_name)
+    mode=validate_native_pair(first,soak)
+    for name in stability_names:
+        snapshot=safe_generated(deploy_dir/name)
+        require(snapshot.get('read_only') is True and
+                snapshot.get('real_routes')==[],
+                'A179_STABILITY_RECEIPT_NOT_READ_ONLY:'+name)
+    return {'mode':mode,'run_id':os.environ['RC6_A179_RUN_ID'],
+            'first':first_name,'first_sha256':hashlib.sha256(
+                (deploy_dir/first_name).read_bytes()).hexdigest(),
+            'soak':soak_name,'soak_sha256':hashlib.sha256(
+                (deploy_dir/soak_name).read_bytes()).hexdigest(),
+            'stability_receipts':stability_names}
+
+
+def release_native_attempt(root=ROOT) -> dict:
+    """Complete the old successful validation's exact mutex attempt only."""
+    require_exact_mutex()
+    verify_origin(root)
+    verify_preopen(root)
+    proof=validate_native_proof(root)
+    return {'status':'GREEN_NATIVE_ATTEMPT_RELEASED',
+            'candidate':CANDIDATE, 'native_run_id':proof['run_id'],
+            'native_mode':proof['mode'], 'marker':'DEPLOYED_VALIDATION_PENDING',
+            'operator_no_go':'HELD','real_orders_sent':0,
+            'ppi_watch_mutations':0}
+
+
+def closure_preflight(root=ROOT) -> dict:
+    """No host writes; prove exact prior *IDLE* barrier, never INFLIGHT."""
+    import stat
+    verify_origin(root)
+    verify_preopen(root)
+    proof=validate_native_proof(root)
+    barrier=Path('/run/lock/porota-rc6-deploy-v2-attempt.json')
+    require(barrier.is_file() and not barrier.is_symlink() and
+            barrier.stat().st_uid==0 and barrier.stat().st_nlink==1 and
+            stat.S_IMODE(barrier.stat().st_mode)==0o600 and
+            0<barrier.stat().st_size<=1024,
+            'A179_PRIOR_NATIVE_BARRIER_UNSAFE')
+    state=json.loads(barrier.read_bytes())
+    require(state=={'candidate':CANDIDATE,'run':proof['run_id'],
+                    'attempt':'1','phase':'promotion','status':'IDLE'},
+            'A179_PRIOR_NATIVE_BARRIER_NOT_CLEAN_IDLE')
+    stale=command_stdout('docker','ps','--format','{{.Names}}',
+                         '--filter','name=porota-deploy-contract-')
+    require(not stale,'A179_ORPHAN_CONTRACT_WRITER_STILL_RUNNING')
+    return {'schema':'rc6.a179.native-to-finalize-preflight.v1',
+            'status':'GREEN_READ_ONLY','candidate':CANDIDATE,
+            'native_run_id':proof['run_id'],'native_mode':proof['mode'],
+            'prior_barrier':'IDLE_EXACT_ATTEMPT_1','operator_no_go':'HELD',
+            'real_orders_sent':0,'host_mutations':0,'ppi_watch_mutations':0}
+
+
+def reconcile_critical_image(root=ROOT) -> dict:
+    """Mirror the canonical critical-broker reimage, never changing its code."""
+    require_exact_mutex()
+    verify_origin(root)
+    verify_preopen(root)
+    proof=validate_native_proof(root)
+    before=ppi_watch_snapshot()
+    stable='porota-trading-bot:17.0.0-rc6'
+    require(command_stdout('docker','image','inspect','-f','{{.Id}}',stable)==IMAGE_ID,
+            'A179_CRITICAL_IMAGE_TAG_CHANGED')
+    unit=command_stdout('systemctl','cat','porota-critical-approval-rc6.service')
+    require(stable in unit and '/opt/porota-control-plane-rc6/current:/code:ro' in unit,
+            'A179_CRITICAL_IMAGE_UNIT_CHANGED')
+    for service in ('porota-critical-github-proxy-rc6.service',
+                    'porota-critical-approval-rc6.service'):
+        require(systemctl_state('is-active',service)=='active',
+                'A179_CRITICAL_PRE_RESTART_SERVICE_RED:'+service)
+    # The installed image is already immutable. This disposable compatibility
+    # check is the same sandboxed command used by Deploy V2, not a build.
+    checked_process(('docker','run','--rm','--pull','never','--read-only',
+                     '--user','botuser','--cap-drop','ALL',
+                     '--security-opt','no-new-privileges:true','--pids-limit','32',
+                     '--memory','128m','--tmpfs','/tmp:rw,noexec,nosuid,size=16m',
+                     '-e','PYTHONDONTWRITEBYTECODE=1','-e','PYTHONPATH=/code',
+                     '-v','/opt/porota-control-plane-rc6/current:/code:ro',
+                     '--entrypoint','python',stable,'-c',
+                     'import fm_critical_approval_unix_runtime_rc6'),
+                    120,'A179_CRITICAL_CANDIDATE_COMPATIBILITY_RED')
+    checked_process(('systemctl','restart','porota-critical-approval-rc6.service'),
+                    120,'A179_CRITICAL_APPROVAL_RESTART_RED')
+    for _ in range(40):
+        time.sleep(2)
+        try:
+            value=docker_inspect('porota_critical_approval_rc6')
+        except (OSError,subprocess.CalledProcessError,ValueError):
+            continue
+        if (systemctl_state('is-active','porota-critical-approval-rc6.service')=='active'
+                and value.get('Image')==IMAGE_ID
+                and value.get('State',{}).get('Status')=='running'
+                and value.get('State',{}).get('Health',{}).get('Status')=='healthy'
+                and value.get('RestartCount')==0):
+            break
+    else:
+        raise ValueError('A179_CRITICAL_CANDIDATE_DID_NOT_BECOME_HEALTHY')
+    checked_process(('docker','exec','porota_critical_approval_rc6','python',
+                     '-c','from fm_critical_approval_unix_runtime_rc6 import '
+                          'UnixGithubIssuesClient; '
+                          'h=UnixGithubIssuesClient().health(); '
+                          'assert h.get("status")=="ok" and '
+                          'h.get("capability")=="issues_only"'),
+                    40,'A179_CRITICAL_GATEWAY_CAPABILITY_RED')
+    verify_origin(root,critical_image=IMAGE_ID)
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_CRITICAL')
+    return {'status':'GREEN_CRITICAL_IMAGE_RECONCILED',
+            'candidate':CANDIDATE,'image':IMAGE_ID,
+            'native_run_id':proof['run_id'],
+            'critical_capability':'issues_only','real_orders_sent':0,
+            'operator_no_go':'HELD','ppi_watch_mutations':0}
+
+
+POLICY_SHA256 = '2a06248cda503080e8b78ceb52211a210a6784d2423c3461da5e2a6053173688'
+
+
+def candidate_policy(root=ROOT):
+    path=root/'ops/policy/host-control-plane-reconciliation-v2.json'
+    require(path.is_file() and not path.is_symlink() and
+            hashlib.sha256(path.read_bytes()).hexdigest()==POLICY_SHA256,
+            'A179_DEPLOY_SCHEDULER_POLICY_CHANGED')
+    return base64.b64encode(path.read_bytes()).decode('ascii')
+
+
+def restore_exact_schedulers(root=ROOT) -> dict:
+    require_exact_mutex()
+    verify_origin(root,critical_image=IMAGE_ID)
+    verify_preopen(root,critical_image=IMAGE_ID)
+    proof=validate_native_proof(root)
+    before=ppi_watch_snapshot()
+    sys.path.insert(0,str(root))
+    from scripts import rc6_deploy_scheduler_suspend as scheduler
+    result=scheduler.run(CANDIDATE,'restore',candidate_policy(root))
+    require(result.get('status')=='RESTORED' and
+            result.get('candidate_sha')==CANDIDATE,
+            'A179_SCHEDULER_RESTORE_RECEIPT_RED')
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    # Once restored, use the DAILY active-timer path, not --deploy-scheduler-
+    # candidate; the latter deliberately requires all fifteen timers paused.
+    verify_preopen(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_SCHEDULERS')
+    return {'status':'GREEN_SCHEDULERS_RESTORED','candidate':CANDIDATE,
+            'restored_timer_count':16,'native_run_id':proof['run_id'],
+            'preopen_timer':'INACTIVE_DISABLED_NO_GO',
+            'real_orders_sent':0,'ppi_watch_mutations':0}
+
+
+def verify_exact_restored_schedulers(root=ROOT) -> dict:
+    require_exact_mutex()
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    proof=validate_native_proof(root)
+    before=ppi_watch_snapshot()
+    sys.path.insert(0,str(root))
+    from scripts import rc6_deploy_scheduler_suspend as scheduler
+    result=scheduler.run(CANDIDATE,'verify',candidate_policy(root))
+    require(result.get('status')=='RESTORED','A179_SCHEDULER_VERIFY_RED')
+    verify_preopen(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_VERIFY')
+    return {'status':'GREEN_RESTORED_SCHEDULERS_INDEPENDENTLY_VERIFIED',
+            'candidate':CANDIDATE,'native_run_id':proof['run_id'],
+            'operator_no_go':'HELD','real_orders_sent':0,'ppi_watch_mutations':0}
+
+
+def retire_empty_backups(root=ROOT) -> dict:
+    """The operator-authorized zero-file receipt, not a general cleanup."""
+    require_exact_mutex()
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    proof=validate_native_proof(root)
+    before=ppi_watch_snapshot()
+    sys.path.insert(0,str(root))
+    from scripts import rc6_679_backup_suspension as backup
+    require(backup.inventory()==[],'A179_BACKUP_INVENTORY_CHANGED')
+    plan=root/'data/deploy'/('backup-retire-plan-'+CANDIDATE+'.json')
+    receipt_path=root/'data/deploy'/('backup-retire-'+CANDIDATE+'.json')
+    require(not plan.exists() and not plan.is_symlink() and
+            not receipt_path.exists() and not receipt_path.is_symlink(),
+            'A179_BACKUP_ALREADY_PLANNED_OR_RETIRED')
+    checked_process(('python3',str(root/'scripts/rc6_679_backup_suspension.py'),
+                     '--candidate-sha',CANDIDATE,'--plan-out',str(plan)),
+                    90,'A179_BACKUP_EMPTY_PLAN_RED')
+    checked_process(('python3',str(root/'scripts/rc6_679_backup_suspension.py'),
+                     '--candidate-sha',CANDIDATE,'--apply-plan',str(plan),
+                     '--require-empty'),90,'A179_BACKUP_EMPTY_APPLY_RED')
+    receipt=safe_generated_allow_status(receipt_path,'DONE',size_limit=16384)
+    require(receipt.get('schema')=='RC6_679_BACKUP_RETIRE_V1' and
+            receipt.get('candidate_sha')==CANDIDATE and
+            receipt.get('image_id')==IMAGE_ID and
+            type(receipt.get('count')) is int and receipt['count']==0,
+            'A179_BACKUP_EMPTY_RECEIPT_RED')
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_BACKUP')
+    return {'status':'GREEN_EXACT_EMPTY_BACKUP_RECEIPT',
+            'candidate':CANDIDATE,'count':0,'native_run_id':proof['run_id'],
+            'operator_no_go':'HELD','real_orders_sent':0,
+            'ppi_watch_mutations':0}
+
+
+def safe_generated_allow_status(path, status, size_limit=2*1024*1024):
+    require(path.is_file() and not path.is_symlink() and path.stat().st_nlink==1
+            and 0<path.stat().st_size<=size_limit,
+            'A179_RECEIPT_MISSING_OR_UNSAFE:'+path.name)
+    value=json.loads(path.read_bytes())
+    require(type(value) is dict and value.get('status')==status,
+            'A179_RECEIPT_STATUS_RED:'+path.name)
+    return value
+
+
+LEGACY_NATIVE_DIGESTS = {
+    'native-generation-acceptance.json':
+        'e8a91fc827a839c55d7e2f546603107f0dcbe2ee48210aec84b4e181f6f5b320',
+    'native-ten-generation-soak.json':
+        '1b32904a9d0bf7f3fd3003dd3758ea8f3bcf2b2b198f1ba5dc2b16364d7131d0',
+}
+
+
+def escrow_and_publish_current_native(root, proof):
+    """Preserve exact old GREEN bytes, then materialize the new SHA proof.
+
+    Each replacement is atomic and idempotent against the exact before/after
+    digests. A crash keeps the old evidence in its digest-named archive and
+    leaves CURRENT_STATE_V2 PENDING until the final separate commit.
+    """
+    import stat
+    import tempfile
+    deploy_dir=root/'data/deploy'
+    changes=[]
+    for original, new in (('native-generation-acceptance.json',proof['first']),
+                          ('native-ten-generation-soak.json',proof['soak'])):
+        old_digest=LEGACY_NATIVE_DIGESTS[original]
+        old_path=deploy_dir/original
+        archive=deploy_dir/(original.removesuffix('.json')+
+                            '.pre-a179-'+old_digest[:16]+'.json')
+        source=deploy_dir/new
+        require(old_path.is_file() and not old_path.is_symlink() and
+                old_path.stat().st_nlink==1 and 0<old_path.stat().st_size<2*1024*1024,
+                'A179_NATIVE_OLD_CANONICAL_UNSAFE:'+original)
+        expected_new=proof['first_sha256'] if original.startswith(
+            'native-generation') else proof['soak_sha256']
+        source_raw=source.read_bytes()
+        require(hashlib.sha256(source_raw).hexdigest()==expected_new,
+                'A179_NATIVE_NEW_SCOPED_PROOF_CHANGED:'+new)
+        old_raw=old_path.read_bytes()
+        current_sha=hashlib.sha256(old_raw).hexdigest()
+        require(current_sha in (old_digest,expected_new),
+                'A179_NATIVE_CANONICAL_DRIFT:'+original)
+        if archive.exists() or archive.is_symlink():
+            exact_json(archive,old_digest,2*1024*1024)
+        elif current_sha==old_digest:
+            fd=os.open(archive,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o640)
+            with os.fdopen(fd,'wb') as handle:
+                handle.write(old_raw)
+                handle.flush()
+                os.fsync(handle.fileno())
+            require(hashlib.sha256(archive.read_bytes()).hexdigest()==old_digest,
+                    'A179_NATIVE_ESCROW_DIGEST_RED:'+original)
+        else:
+            raise ValueError('A179_NATIVE_ESCROW_ABSENT_FOR_CURRENT_PROOF:'+original)
+        if current_sha==old_digest:
+            original_stat=old_path.stat()
+            fd,temporary=tempfile.mkstemp(prefix='.a179-native-',suffix='.tmp',
+                                          dir=deploy_dir)
+            try:
+                os.fchown(fd,original_stat.st_uid,original_stat.st_gid)
+                os.fchmod(fd,stat.S_IMODE(original_stat.st_mode))
+                with os.fdopen(fd,'wb') as out:
+                    out.write(source_raw)
+                    out.flush()
+                    os.fsync(out.fileno())
+                os.replace(temporary,old_path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        require(hashlib.sha256(old_path.read_bytes()).hexdigest()==expected_new,
+                'A179_NATIVE_CANONICAL_NEW_PROOF_MISMATCH:'+original)
+        changes.append({'path':original,'old_sha256':old_digest,
+                        'new_sha256':expected_new,'old_archive':archive.name,
+                        'exact_new_source':new})
+    manifest={'schema':'rc6.a179.native-proof-promotion.v1',
+              'candidate':CANDIDATE,'candidate_tree':TREE,
+              'native_run_id':proof['run_id'],
+              'mode':proof['mode'],'receipts':changes,
+              'real_orders_sent':0,'ppi_watch_mutations':0}
+    target=deploy_dir/('native-proof-migration-a179-'+CANDIDATE+'.json')
+    raw=(json.dumps(manifest,sort_keys=True)+'\n').encode()
+    if target.exists() or target.is_symlink():
+        require(target.is_file() and not target.is_symlink() and
+                target.read_bytes()==raw,'A179_NATIVE_PROMOTION_MANIFEST_CHANGED')
+    else:
+        fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o640)
+        with os.fdopen(fd,'wb') as out:
+            out.write(raw);out.flush();os.fsync(out.fileno())
+    directory=os.open(deploy_dir,os.O_RDONLY|os.O_DIRECTORY)
+    try: os.fsync(directory)
+    finally: os.close(directory)
+    return hashlib.sha256(raw).hexdigest()
+
+
+def finalize_exact_runtime(root=ROOT) -> dict:
+    """V2 PENDING->VALIDATED after all independently recorded host gates."""
+    import grp
+    import tempfile
+    require_exact_mutex()
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    verify_preopen(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    proof=validate_native_proof(root)
+    deploy_dir=root/'data/deploy'
+    latest=safe_generated(deploy_dir/proof['stability_receipts'][-1])
+    endpoints=latest.get('http_status')
+    require(type(endpoints) is dict and len(endpoints)>=1 and
+            all(type(code) is int and code==200 for code in endpoints.values()),
+            'A179_FINAL_DASHBOARD_HTTP_NOT_ALL_200')
+    backup=safe_generated_allow_status(
+        deploy_dir/('backup-retire-'+CANDIDATE+'.json'),'DONE',16384)
+    require(backup.get('candidate_sha')==CANDIDATE and
+            backup.get('image_id')==IMAGE_ID and
+            type(backup.get('count')) is int and backup['count']==0,
+            'A179_BACKUP_FINAL_RECEIPT_RED')
+    from rc6_paper_admission_gate import admission_status, operator_pause_reason
+    require(operator_pause_reason(datetime.now(TZ))==
+            'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+            admission_status()[0] is False,
+            'A179_PAPER_ADMISSION_REARMED_UNEXPECTEDLY')
+    ppi_before=ppi_watch_snapshot()
+    original=deploy_dir/'CURRENT_STATE_V2.json'
+    state=exact_json(original,MARKER_SHA256)
+    require(state.get('validation_status')=='DEPLOYED_VALIDATION_PENDING',
+            'A179_FINAL_MARKER_NO_LONGER_PENDING')
+    escrow_sha=escrow_and_publish_current_native(root,proof)
+    state['dashboard_health_http']=200
+    state['native_acceptance_mode']=proof['mode']
+    state['native_acceptance_run_id']=proof['run_id']
+    state['native_proof_promotion_sha256']=escrow_sha
+    state['source_freshness_renewed']=(False if proof['mode']=='CLOSED_IDLE' else None)
+    state['validation_status']='VALIDATED_RUNTIME'
+    state['recorded_at']=datetime.now(timezone.utc).isoformat()
+    fd,temporary=tempfile.mkstemp(prefix='.CURRENT_STATE_V2.',suffix='.tmp',
+                                  dir=deploy_dir)
+    try:
+        os.fchown(fd,0,grp.getgrnam('porotaadmin').gr_gid)
+        os.fchmod(fd,0o640)
+        with os.fdopen(fd,'w',encoding='utf-8') as out:
+            json.dump(state,out,indent=2,sort_keys=True)
+            out.write('\n');out.flush();os.fsync(out.fileno())
+        require(ppi_watch_snapshot()==ppi_before,
+                'A179_PPI_WATCH_CHANGED_BEFORE_MARKER_WRITE')
+        read_book(root)
+        os.replace(temporary,original)
+    finally:
+        if os.path.exists(temporary):os.unlink(temporary)
+    require(json.loads(original.read_bytes()).get('validation_status')==
+            'VALIDATED_RUNTIME','A179_FINAL_MARKER_DID_NOT_PERSIST')
+    return {'status':'VALIDATED_RUNTIME','candidate':CANDIDATE,
+            'deploy':DEPLOY,'image':IMAGE_ID,'native_mode':proof['mode'],
+            'native_run_id':proof['run_id'],'old_receipts_archived':2,
+            'backup_retired_count':0,'operator_no_go':'HELD',
+            'real_orders_sent':0,'ppi_watch_mutations':0}
+
+
+def verify_independent_final_state(root=ROOT) -> dict:
+    """Independent RO closure; critically, NO STAGED preopen fallback."""
+    sys.path.insert(0,str(root))
+    deploy_dir=root/'data/deploy'
+    marker_path=deploy_dir/'CURRENT_STATE_V2.json'
+    require(marker_path.is_file() and not marker_path.is_symlink() and
+            marker_path.stat().st_nlink==1 and marker_path.stat().st_size<65536,
+            'A179_VALIDATED_MARKER_UNSAFE')
+    marker=json.loads(marker_path.read_bytes())
+    require(marker.get('validation_status')=='VALIDATED_RUNTIME' and
+            marker.get('candidate_sha')==CANDIDATE and
+            marker.get('deploy_sha')==DEPLOY and marker.get('image_id')==IMAGE_ID and
+            marker.get('mode')=='PRODUCTION_PAPER' and
+            type(marker.get('real_orders_sent')) is int and marker['real_orders_sent']==0 and
+            marker.get('real_order_routes')=='NOT_CALLED' and
+            marker.get('ppi_watch_untouched') is True,
+            'A179_FINAL_MARKER_IDENTITY_OR_SAFETY_RED')
+    proof=validate_native_proof(root)
+    require(marker.get('native_acceptance_mode')==proof['mode'] and
+            marker.get('native_acceptance_run_id')==proof['run_id'],
+            'A179_FINAL_NATIVE_PROVENANCE_RED')
+    for name in CONTAINERS:
+        value=docker_inspect(name)
+        require(value.get('Image')==IMAGE_ID and
+                value.get('State',{}).get('Status')=='running' and
+                value.get('RestartCount')==0,
+                'A179_FINAL_OBSERVER_OR_DASHBOARD_DRIFT:'+name)
+    crit=docker_inspect('porota_critical_approval_rc6')
+    require(crit.get('Image')==IMAGE_ID and
+            crit.get('State',{}).get('Status')=='running' and
+            crit.get('State',{}).get('Health',{}).get('Status')=='healthy',
+            'A179_FINAL_CRITICAL_DRIFT')
+    require(safe_generated_allow_status(
+        deploy_dir/('backup-retire-'+CANDIDATE+'.json'),'DONE',16384).get('count')==0,
+        'A179_FINAL_BACKUP_RECEIPT_RED')
+    require(safe_generated_allow_status(
+        deploy_dir/('scheduler-suspend-'+CANDIDATE+'.json'),'RESTORED',65536)
+            .get('candidate_sha')==CANDIDATE,'A179_FINAL_SCHEDULER_RECEIPT_RED')
+    for name,sha in (('native-generation-acceptance.json',proof['first_sha256']),
+                     ('native-ten-generation-soak.json',proof['soak_sha256'])):
+        require(hashlib.sha256((deploy_dir/name).read_bytes()).hexdigest()==sha,
+                'A179_FINAL_CANONICAL_PROOF_SOURCE_CHANGED:'+name)
+    from rc6_paper_admission_gate import admission_status,operator_pause_reason
+    require(operator_pause_reason(datetime.now(TZ))==
+            'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+            admission_status()[0] is False,
+            'A179_FINAL_PAPER_ADMISSION_WAS_REARMED')
+    phase=read_book(root)
+    require(not os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64'),
+            'A179_POSTFINAL_MUST_USE_INSTALLED_NOT_STAGED_HELPER')
+    sys.path.insert(0,str(root))
+    from scripts.rc6_deploy_preopen_gate import strict_json,validate_report
+    import ak_byma_calendar
+    for part in ('T_MINUS_45','T_MINUS_10'):
+        finished=subprocess.run((sys.executable,str(root/'rc6_preopen.py'),
+                                 '--phase',part),capture_output=True,text=True,
+                                env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1'),
+                                timeout=180,check=False)
+        require(finished.returncode==0,'A179_POSTFINAL_NATIVE_PREOPEN_RED:'+part)
+        report=strict_json(finished.stdout)
+        decision=validate_report(report,phase=part,return_code=0,
+                                 now=datetime.now(TZ),
+                                 is_operational=ak_byma_calendar.es_dia_habil_operativo)
+        require(decision.get('accepted') is True and
+                decision.get('preopen_status')=='PAUSED_NO_GO' and
+                decision.get('execution_authorized') is False and
+                report.get('checks',{}).get('required_rc6_timers',{}).get('state')=='GREEN' and
+                report.get('paper_admission_hold')==
+                'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                'A179_POSTFINAL_NO_GO_TIMER_OR_AUTH_RED:'+part)
+    require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
+            'A179_FINAL_ATTEMPT_MUTEX_NOT_RELEASED')
+    return {'schema':'rc6.a179.final-independent-readonly.v1',
+            'status':'VALIDATED_RUNTIME','candidate':CANDIDATE,
+            'deploy':DEPLOY,'image':IMAGE_ID,'native_mode':proof['mode'],
+            'native_run_id':proof['run_id'],'session':list(phase),
+            'preopen_phases':'BOTH_NATIVE_PAUSED_NO_GO_GREEN',
+            'legacy_native_receipts':'ESCROW_PRESERVED',
+            'real_orders_sent':0,'operator_no_go':'HELD',
+            'host_mutations':0,'ppi_watch_mutations':0}
+
+
+def cleanup_forward_attempt(root=ROOT) -> dict:
+    """Prove a safely stopped write attempt; never change runtime or timers.
+
+    The canonical mutex wrapper itself refuses to retire INFLIGHT attempts.
+    A failed health check here leaves the lock barrier for manual RCA.
+    """
+    require_exact_mutex()
+    exact_json(root/'data/deploy/CURRENT_STATE_V2.json', MARKER_SHA256)
+    proof=validate_native_proof(root)
+    for name in CONTAINERS:
+        value=docker_inspect(name)
+        require(value.get('Image')==IMAGE_ID and
+                value.get('State',{}).get('Status')=='running' and
+                value.get('RestartCount')==0,
+                'A179_FAILED_CLEANUP_RUNTIME_UNKNOWN:'+name)
+    critical=docker_inspect('porota_critical_approval_rc6')
+    require(critical.get('Image') in (CRITICAL_IMAGE,IMAGE_ID) and
+            critical.get('State',{}).get('Status')=='running' and
+            critical.get('State',{}).get('Health',{}).get('Status')=='healthy',
+            'A179_FAILED_CLEANUP_CRITICAL_UNKNOWN')
+    sched=root/'data/deploy'/('scheduler-suspend-'+CANDIDATE+'.json')
+    require(sched.is_file() and not sched.is_symlink() and
+            sched.stat().st_nlink==1 and sched.stat().st_size<=65536,
+            'A179_FAILED_CLEANUP_SCHEDULER_UNSAFE')
+    snapshot=json.loads(sched.read_bytes())
+    require(snapshot.get('candidate_sha')==CANDIDATE and
+            snapshot.get('status') in ('SUSPENDED','RESTORED') and
+            snapshot.get('operator_pause_timer')=='porota-preopen-rc6.timer',
+            'A179_FAILED_CLEANUP_SCHEDULER_UNKNOWN')
+    require(systemctl_state('is-enabled','porota-preopen-rc6.timer')=='disabled'
+            and systemctl_state('is-active','porota-preopen-rc6.timer')=='inactive',
+            'A179_FAILED_CLEANUP_NO_GO_TIMER_REARMED')
+    sys.path.insert(0,str(root))
+    from rc6_paper_admission_gate import admission_status,operator_pause_reason
+    require(operator_pause_reason(datetime.now(TZ))==
+            'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+            admission_status()[0] is False,
+            'A179_FAILED_CLEANUP_PAPER_NO_GO_MISSING')
+    read_book(root)
+    return {'status':'SAFE_FAILED_ATTEMPT_RELEASE_ONLY',
+            'candidate':CANDIDATE,'native_run_id':proof['run_id'],
+            'marker':'DEPLOYED_VALIDATION_PENDING',
+            'scheduler':snapshot['status'],'critical_image':critical['Image'],
+            'real_orders_sent':0,'operator_no_go':'HELD',
+            'host_mutations':0,'ppi_watch_mutations':0}
+
+
+def finish_postfailure(root=ROOT) -> dict:
+    """One exclusive V2 continuation: broker, timers, backup, then marker.
+
+    The normal Deploy V2 has already done build-once, frozen transfer and
+    installed two exact images. This operation NEVER repeats that work.
+    Its stdout records each successful boundary before the next write.
+    """
+    require_exact_mutex()
+    before=ppi_watch_snapshot()
+    critical=reconcile_critical_image(root)
+    print('RC6_A179_PHASE_CRITICAL=GREEN|image='+IMAGE_ID,flush=True)
+    restored=restore_exact_schedulers(root)
+    print('RC6_A179_PHASE_SCHEDULERS=GREEN|count='+str(
+        restored['restored_timer_count'])+'|preopen=DISABLED',flush=True)
+    independently=verify_exact_restored_schedulers(root)
+    require(independently['status'].startswith('GREEN'),
+            'A179_SCHEDULER_VERIFY_RED')
+    print('RC6_A179_PHASE_SCHEDULER_VERIFY=GREEN|NO_GO',flush=True)
+    backup=retire_empty_backups(root)
+    require(backup['count']==0,'A179_UNEXPECTED_BACKUP_DELETION')
+    print('RC6_A179_PHASE_EMPTY_BACKUP=GREEN|files_deleted=0',flush=True)
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_CLOSURE')
+    final=finalize_exact_runtime(root)
+    print('RC6_A179_PHASE_FINAL_MARKER=VALIDATED_RUNTIME|NO_GO_HELD',flush=True)
+    require(final['status']=='VALIDATED_RUNTIME' and
+            final['real_orders_sent']==0 and critical['real_orders_sent']==0,
+            'A179_FINAL_WRITE_DID_NOT_COMPLETE')
+    return {'status':'VALIDATED_RUNTIME','candidate':CANDIDATE,
+            'deploy':DEPLOY,'image':IMAGE_ID,
+            'native_run_id':final['native_run_id'],
+            'native_mode':final['native_mode'],
+            'reused_frozen_artifact':True,'host_rebuilds':0,
+            'backup_deleted_files':0,'operator_no_go':'HELD',
+            'real_orders_sent':0,'ppi_watch_mutations':0}
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode',required=True,
                         choices=('preflight','preopen','closure-readiness',
                                  'native-acceptance','cleanup-native-attempt',
-                                 'receipt-census'))
+                                 'receipt-census','release-native-attempt',
+                                 'closure-preflight',
+                                 'critical-reconcile','scheduler-restore',
+                                 'scheduler-verify','backup-retire','finalize',
+                                 'postfinal','cleanup-forward-attempt',
+                                 'finish-postfailure'))
     args=parser.parse_args(argv)
     try:
-        result=(verify_origin() if args.mode=='preflight' else
-                verify_preopen() if args.mode=='preopen' else
-                verify_closure_readiness() if args.mode=='closure-readiness' else
-                receipt_census() if args.mode=='receipt-census' else
-                run_native_acceptance() if args.mode=='native-acceptance' else
-                cleanup_failed_native_attempt())
+        modes={'preflight':verify_origin,'preopen':verify_preopen,
+               'closure-readiness':verify_closure_readiness,
+               'receipt-census':receipt_census,
+               'native-acceptance':run_native_acceptance,
+               'cleanup-native-attempt':cleanup_failed_native_attempt,
+               'release-native-attempt':release_native_attempt,
+               'closure-preflight':closure_preflight,
+               'critical-reconcile':reconcile_critical_image,
+               'scheduler-restore':restore_exact_schedulers,
+               'scheduler-verify':verify_exact_restored_schedulers,
+               'backup-retire':retire_empty_backups,
+               'finalize':finalize_exact_runtime,
+               'postfinal':verify_independent_final_state,
+               'cleanup-forward-attempt':cleanup_forward_attempt,
+               'finish-postfailure':finish_postfailure}
+        result=modes[args.mode]()
         print('RC6_A179_RESUME_'+args.mode.upper()+'='+json.dumps(result,sort_keys=True))
         return 0
     except Exception as exc:

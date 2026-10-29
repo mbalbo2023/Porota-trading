@@ -113,3 +113,51 @@ class A179ResumeGuardTests(TestCase):
         with self.assertRaisesRegex(ValueError,'CLOSED_IDLE_CERTIFICATE_RED'):
             resume.validate_native_pair(first,dict(soak,source_freshness_renewed=True))
 
+    def test_legacy_green_receipts_are_escrowed_without_data_loss(self):
+        with TemporaryDirectory() as temp:
+            directory=Path(temp)/'data/deploy'
+            directory.mkdir(parents=True)
+            proof={'run_id':'40916351644','mode':'FRESH_GENERATIONS'}
+            prior={}
+            replacements={}
+            for canonical,fresh_key,digest_key in (
+                ('native-generation-acceptance.json','first','first_sha256'),
+                ('native-ten-generation-soak.json','soak','soak_sha256')):
+                prior_bytes=b'{"status":"GREEN","source_sha":"OLDER"}\n'
+                fresh_bytes=b'{"status":"GREEN","source_sha":"NEW"}\n'
+                (directory/canonical).write_bytes(prior_bytes)
+                fresh='a179-'+canonical
+                (directory/fresh).write_bytes(fresh_bytes)
+                prior[canonical]=hashlib.sha256(prior_bytes).hexdigest()
+                replacements[canonical]=hashlib.sha256(fresh_bytes).hexdigest()
+                proof[fresh_key]=fresh
+                proof[digest_key]=replacements[canonical]
+            with mock.patch.object(resume,'LEGACY_NATIVE_DIGESTS',prior):
+                digest=resume.escrow_and_publish_current_native(Path(temp),proof)
+                self.assertEqual(digest,
+                    resume.escrow_and_publish_current_native(Path(temp),proof))
+            self.assertEqual(len(digest),64)
+            for canonical,previous_sha in prior.items():
+                self.assertEqual(hashlib.sha256((directory/canonical).read_bytes()).hexdigest(),
+                                 replacements[canonical])
+                archive=(directory/(canonical.removesuffix('.json')+
+                                    '.pre-a179-'+previous_sha[:16]+'.json'))
+                self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(),
+                                 previous_sha)
+
+    def test_legacy_receipt_drift_fails_without_touching_old_bytes(self):
+        with TemporaryDirectory() as temp:
+            directory=Path(temp)/'data/deploy'
+            directory.mkdir(parents=True)
+            original=directory/'native-generation-acceptance.json'
+            original.write_bytes(b'{"status":"OTHER"}\n')
+            fresh=directory/'some-new-source.json'
+            fresh.write_bytes(b'{"status":"GREEN"}\n')
+            proof={'first':fresh.name,
+                   'first_sha256':hashlib.sha256(fresh.read_bytes()).hexdigest(),
+                   'soak':'not-used','soak_sha256':'0'*64,
+                   'run_id':'40916351644','mode':'FRESH_GENERATIONS'}
+            with self.assertRaisesRegex(ValueError,'NATIVE_CANONICAL_DRIFT'):
+                resume.escrow_and_publish_current_native(Path(temp),proof)
+            self.assertEqual(original.read_bytes(),b'{"status":"OTHER"}\n')
+
