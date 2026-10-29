@@ -316,14 +316,9 @@ def command_line(argv=None):
     try:
         if mutex._read_barrier(mutex.LOCK_DIR) is not None:
             raise ValueError("OPERATOR_REARM_DEPLOY_BARRIER_NOT_IDLE")
-        receipt = install_rearm(
-            candidate_sha=args.candidate_sha,
-            candidate_tree_sha=args.candidate_tree_sha,
-            deploy_run_id=args.deploy_run_id,
-            deploy_run_attempt=args.deploy_run_attempt,
-            runtime_validation_run_id=args.runtime_validation_run_id,
-            operator_comment_id=args.operator_comment_id,
-            rearm_run_id=args.rearm_run_id)
+        # Enable/verify the timer BEFORE installing the operator authority.
+        # A failed systemd transition must never leave a new positive receipt.
+        # An enabled timer without authority remains safely NO_GO.
         # Reactivation is of a TIMER only. A PAPER order still requires the
         # independently fresh same-day v2 T-10 receipt and exact contract.
         unit = "porota-preopen-rc6.timer"
@@ -338,6 +333,16 @@ def command_line(argv=None):
                                    check=False)
             if check.returncode or check.stdout.strip() != expected:
                 raise RuntimeError("OPERATOR_REARM_TIMER_POSTVERIFY_RED")
+        # Publish the positive authority last, only after systemd reaches the
+        # required state while the same host mutex remains exclusively held.
+        receipt = install_rearm(
+            candidate_sha=args.candidate_sha,
+            candidate_tree_sha=args.candidate_tree_sha,
+            deploy_run_id=args.deploy_run_id,
+            deploy_run_attempt=args.deploy_run_attempt,
+            runtime_validation_run_id=args.runtime_validation_run_id,
+            operator_comment_id=args.operator_comment_id,
+            rearm_run_id=args.rearm_run_id)
         print(json.dumps({"status": "OPERATOR_REARM_AUTHORIZED",
                           "candidate_sha": receipt["candidate_sha"],
                           "operator_comment_id": receipt["operator_comment_id"],

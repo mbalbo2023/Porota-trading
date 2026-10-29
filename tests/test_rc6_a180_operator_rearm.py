@@ -2,6 +2,7 @@
 import json
 import os
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -170,3 +171,42 @@ def test_observer_mount_is_root_owned_outside_data_and_read_only(tmp_path, monke
     host.chmod(0o777)
     with pytest.raises(RuntimeError, match="DIRECTORY_UNTRUSTED"):
         mode.operator_readonly_mount()
+
+
+def test_rearm_positive_receipt_is_committed_only_after_timer_verified(monkeypatch):
+    from scripts import rc6_deploy_host_mutex as mutex
+
+    events = []
+    monkeypatch.setattr(mutex, "open_lock", lambda: os.open(os.devnull, os.O_RDONLY))
+    monkeypatch.setattr(mutex, "_read_barrier", lambda _: None)
+
+    def fake_run(args, **_):
+        events.append(tuple(args))
+        answer = {"enable": "", "is-enabled": "enabled\n",
+                  "is-active": "active\n"}[args[1]]
+        return SimpleNamespace(returncode=0, stdout=answer)
+
+    monkeypatch.setattr(operator.subprocess, "run", fake_run)
+    monkeypatch.setattr(operator, "install_rearm", lambda **_: events.append("RECEIPT") or {
+        "candidate_sha": CANDIDATE, "operator_comment_id": 6500000001,
+        "rearm_run_id": 40900000999,
+    })
+    argv = ["--candidate-sha", CANDIDATE, "--candidate-tree-sha", TREE,
+            "--deploy-run-id", "40900000123", "--deploy-run-attempt", "1",
+            "--runtime-validation-run-id", "40900000123",
+            "--operator-comment-id", "6500000001",
+            "--rearm-run-id", "40900000999"]
+    assert operator.command_line(argv) == 0
+    assert events == [
+        ("systemctl", "enable", "--now", "porota-preopen-rc6.timer"),
+        ("systemctl", "is-enabled", "porota-preopen-rc6.timer"),
+        ("systemctl", "is-active", "porota-preopen-rc6.timer"),
+        "RECEIPT",
+    ]
+
+    events.clear()
+    monkeypatch.setattr(operator.subprocess, "run", lambda args, **_: (
+        events.append(tuple(args)) or SimpleNamespace(returncode=1, stdout="")))
+    with pytest.raises(RuntimeError, match="PREOPEN_TIMER_ENABLE_RED"):
+        operator.command_line(argv)
+    assert events == [("systemctl", "enable", "--now", "porota-preopen-rc6.timer")]
