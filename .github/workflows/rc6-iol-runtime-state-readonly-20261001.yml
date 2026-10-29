@@ -169,6 +169,22 @@ jobs:
           print('A186_DOCKER_EXACT='+json.dumps({'containers':containers,'images':inventory,'marker':{k:state.get(k) for k in allowed}},sort_keys=True))
           print('A186_IMAGE_REF_PROOF=READ_ONLY_COMPLETE')
           PY
+      - name: Canonical host mutex barrier and lock read-only classification
+        run: |
+          set -Eeuo pipefail
+          timeout 30 ssh -T -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json,stat
+          from pathlib import Path
+          for p in (Path('/run/lock/porota-rc6-deploy-v2.lock'),Path('/run/lock/porota-rc6-deploy-v2-attempt.json'),Path('/tmp/porota-rc6-deploy-v2.lock')):
+              if not p.exists():
+                  print('A186_MUTEX_FILE='+json.dumps({'name':p.name,'exists':False})); continue
+              s=p.lstat()
+              out={'name':p.name,'exists':True,'regular':stat.S_ISREG(s.st_mode),'uid':s.st_uid,'mode':oct(stat.S_IMODE(s.st_mode)),'size':s.st_size}
+              if p.name.endswith('attempt.json') and stat.S_ISREG(s.st_mode) and s.st_size<=65536:
+                  j=json.loads(p.read_text())
+                  out['phase']=j.get('phase'); out['status']=j.get('status'); out['candidate_sha']=j.get('candidate_sha')
+              print('A186_MUTEX_FILE='+json.dumps(out,sort_keys=True))
+          PY
       - name: Cleanup
         if: always()
         run: rm -f "$HOME/.ssh/key"
