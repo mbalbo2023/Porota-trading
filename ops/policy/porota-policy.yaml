@@ -55,6 +55,19 @@ deployment:
   droplet_disk_pretransfer_formula: image_tar_bytes + 2 * image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes
   droplet_disk_guard_must_run_before_transfer: true
   failed_host_transition_replay_required: true
+  external_market_source_connectivity_veto_allowed: false
+  external_market_source_freshness_veto_allowed: false
+  external_market_source_unavailability_effect: AMBER_ALERT_ONLY
+  external_market_sources:
+    - PPI
+    - IOL
+    - BYMA
+    - A3
+    - ROFEX
+    - OTHER_COMPLEMENTARY_PROVIDERS
+  external_source_contract_corruption_remains_red: true
+  paper_instrument_readiness_on_source_failure: FAIL_CLOSED
+  host_access_artifact_integrity_and_paper_safety_still_blocking: true
 
 predeploy_gates:
   required:
@@ -90,6 +103,14 @@ failure_learning:
 cleanup:
   required_after_success: true
   required_after_failure_when_safe: true
+  failed_attempt_owned_artifacts_cleanup_required: true
+  failed_deploy_reference_safe_orphan_gc_required_when_runtime_safe: true
+  orphan_cleanup_must_use_same_host_deploy_mutex: true
+  orphan_cleanup_must_not_create_new_deploy_attempt_barrier: true
+  failed_attempt_cleanup_receipt_required: true
+  residual_orphans_must_be_audited_and_cleaned_before_next_deploy: true
+  reference_rechecks_before_each_image_delete: true
+  docker_prune_or_force_delete_allowed: false
   maximize_safe_space_recovery: true
   report_before_after: true
   periodic_housekeeping_required: true
