@@ -1,0 +1,62 @@
+name: RC6 A179 restored preopen exact read only diagnosis
+
+on:
+  push:
+    branches:
+      - diagnostic/rc6-a179-restored-preopen-ro-20261029
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-restored-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile exact read-only script
+        run: python3 -m py_compile scripts/rc6_a179_restored_preopen_ro.py
+      - name: Authenticate host by pinned known hosts
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_a179_postrestore_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_a179_postrestore_ro" "$HOME/.ssh/known_hosts"
+      - name: Capture both native preopen failures without any host writes
+        run: |
+          set -Eeuo pipefail
+          timeout 300 ssh -i "$HOME/.ssh/porota_rc6_a179_postrestore_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -" \
+            < scripts/rc6_a179_restored_preopen_ro.py | tee a179-postrestore-diagnosis.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=Path('a179-postrestore-diagnosis.jsonl').read_text().splitlines()
+          assert len(rows)==1 and rows[0].startswith('RC6_A179_POSTRESTORE_READONLY=')
+          j=json.loads(rows[0].split('=',1)[1])
+          assert j['host_mutations']==j['ppi_watch_mutations']==j['real_orders_sent']==0
+          assert j['status']=='DIAGNOSIS_ONLY_NOT_RUNTIME_GREEN'
+          assert len(j['phases'])==2
+          print('RC6_A179_POSTRESTORE_CAUSE_CAPTURED_READONLY')
+          PY
+      - name: Archive nonmutating diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a179-postrestore-preopen-exact-ro
+          path: a179-postrestore-diagnosis.jsonl
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove ephemeral runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/porota_rc6_a179_postrestore_ro"
