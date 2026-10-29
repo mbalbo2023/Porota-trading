@@ -3,8 +3,6 @@ name: RC6 A178 frozen A175-running PAPER0 preflight READ ONLY
 on:
   push:
     branches: [audit/rc6-a178-preflight-20261029]
-    paths:
-      - .github/workflows/rc6-a178-frozen-running-preflight-ro-20261029.yml
 
 permissions:
   contents: read
