@@ -23,6 +23,9 @@ Before changing Porota, every agent/chat MUST:
 - Test the exact artifact that will be deployed.
 - No hand-maintained partial runtime file list is an acceptable source of artifact completeness.
 - Every deploy attempt, success or failure, must perform safe Docker/cache/temp cleanup and report reclaimed space.
+- External **market-data/provider** outages or stale quotes (PPI, IOL, BYMA, A3, ROFEX, etc.) are AMBER alerts, not Deploy V2 vetoes. The per-instrument PAPER/SHADOW admission stays fail-closed. Corrupted contracts, identity, SQLite, real-order safety, artifact provenance and the GitHub/Droplet control plane are still hard RED.
+- After any failed Deploy V2, invoke the bounded candidate-owned cleanup and, when recovered runtime safety permits, reference-safe orphan-image cleanup. Publish before/after disk and Docker receipts; a deferred cleanup must be explicitly carried as unfinished, never called GREEN.
+- Before the *next* Deploy V2, verify/reclaim residual unreferenced candidate-only images under the same global Actions mutex and root-owned host lock, never by broad prune, force, or deletion of container-referenced images. A passed disk threshold is not evidence that cleanup was done.
 - Never delete or prune active containers, volumes, databases, bind-mounted data, PPI Watch assets, or referenced runtime images.
 - Every new deployment failure class must produce a permanent regression guard or an explicit documented reason why no automated guard is possible.
 - A GitHub Action marked FAILED must not leave an ambiguous partially promoted runtime. Promotion must have an explicit state and evidence.
