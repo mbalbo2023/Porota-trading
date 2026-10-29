@@ -1,0 +1,72 @@
+name: RC6 A178 deploy receipt directory permission READ ONLY
+
+on:
+  push:
+    branches: [fix/rc6-a178-formal-takeover-20261029]
+    paths:
+      - .github/workflows/rc6-a178-deploy-path-permissions-ro-20261029.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Read only owner and POSIX bits of exact A175 evidence directories
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          timeout --signal=TERM --kill-after=5s 60s ssh \
+            -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+            'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' <<'PY'
+          import hashlib, json, os, stat
+          from pathlib import Path
+          root=Path('/opt/porota-trading')
+          names=('data','data/deploy','data/deploy/CURRENT_STATE_V2.json',
+                 'data/deploy/operator-preopen-pause-20261028.json')
+          result={}
+          for name in names:
+              path=root/name
+              st=os.lstat(path)
+              result[name]={'uid':st.st_uid,'gid':st.st_gid,
+                            'mode':oct(stat.S_IMODE(st.st_mode)),
+                            'directory':stat.S_ISDIR(st.st_mode),
+                            'file':stat.S_ISREG(st.st_mode),
+                            'symlink':stat.S_ISLNK(st.st_mode)}
+          print('RC6_A178_RECEIPT_PATHS_RO='+json.dumps({
+              'schema':'rc6.a178.receipt-paths.read-only.v1',
+              'status':'OBSERVED','paths':result,
+              'host_mutations':0,'ppi_watch_accessed':False},sort_keys=True))
+          PY
+
+      - name: Erase runner SSH material
+        if: always()
+        run: |
+          rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
