@@ -615,17 +615,22 @@ class WorkflowIntegrationTests(unittest.TestCase):
                     'timers_restore', 'timers_restored', 'backup_retire',
                     'finalize_runtime'):
             self.assertIn('RC6_MUTEX_B64', by_id[key], key)
+        # A180 added a second *read-only* classify after finalization. It is
+        # deliberately protected by the same host flock and exact attempt;
+        # no new production writer was introduced.
+        self.assertIn('RC6_MUTEX_B64', by_id['postfinal_unstaged'])
+        self.assertIn('--phase classify bash -s', by_id['postfinal_unstaged'])
         self.assertEqual(by_id['flat_book'].count('RC6_MUTEX_B64'), 2)
         failure = next(step['run'] for step in steps
                        if step['name'] == 'Failure-safe host cleanup')
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 5)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 20)
+        self.assertEqual(len(boundaries), 21)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
-        self.assertEqual(sum('--phase classify ' in line for line in boundaries), 1)
+        self.assertEqual(sum('--phase classify ' in line for line in boundaries), 2)
         reconcile = next(step['run'] for step in steps
                          if step['name'] == 'Reconcile only exact A138 cleanly exited host barrier')
         self.assertIn('--phase reconcile --exact-a138-idle', reconcile)
