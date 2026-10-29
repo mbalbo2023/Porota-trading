@@ -27,8 +27,9 @@ quiescence = load('rc6_deploy_quiescence')
 def test_exact_sources_fit_with_headroom_and_old_raw_wire_fails():
     sizes = budget.source_sizes()
     observed = budget.require_budget(sizes)
-    assert observed['classify'] <= budget.MAX_REMOTE_ARG_BYTES
-    assert max(observed.values()) == observed['classify']
+    # The maximum moved to suspend/recover as the transition proof grew.
+    # Bound EVERY route, not whichever route was longest in A166.
+    assert all(0 < value <= budget.MAX_REMOTE_ARG_BYTES for value in observed.values())
     raw = budget.encoded_size('scripts/rc6_deploy_scheduler_suspend.py')
     assert raw > 90000 and sizes['a125_gzip'] < 24000
     assert sizes['audit_gzip'] < sizes['audit']
@@ -106,4 +107,8 @@ def test_workflow_bounds_both_preinstall_and_drain_routes():
     assert workflow.count('gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py') >= 2
     assert "RC6_A125_CANDIDATE_SOURCE_GZIP_B64=\"$A125_CANDIDATE_SOURCE_GZIP_B64\"" in workflow
     assert "RC6_A125_CANDIDATE_SOURCE_SHA256=\"$A125_CANDIDATE_SOURCE_SHA256\"" in workflow
-    assert "sys.argv[5]" in workflow and 'staged_operator_source()' in workflow
+    # Classifier now sends compressed proof sources over stdin; only fixed
+    # size SHA-256 digests and bounded mutex arguments use SSH argv.
+    assert "timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_A125_SHA256'" in workflow
+    assert 'staged_operator_source()' in workflow
+    assert 'CLASSIFY_STDIN_SOURCE_BOUND' in workflow
