@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
     env:
-      RC6_CANDIDATE_SHA: 'd2bff7c6b16df130adb9f81f86fecea67a22cdaa'
-      RC6_CANDIDATE_TREE: '17046358fe78b64d4ec1d8cee3c2f79f1c6df605'
-      RC6_PREDEPLOY_RUN_ID: '40882743065'
-      RC6_PREDEPLOY_ARTIFACT_ID: '12902527167'
-      RC6_PREDEPLOY_ARTIFACT_DIGEST: 'sha256:1b3bd6ba0d4bca81e806a1a23434c2e519be6c6effa92e00cc7f506cff1bbb80'
+      RC6_CANDIDATE_SHA: 'fdf04e6057fb527d4cc0f6c9beba4a93ff8a0fbf'
+      RC6_CANDIDATE_TREE: '8658e2e575f4753ec1359759b8abaa35243ee041'
+      RC6_PREDEPLOY_RUN_ID: '40896875934'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12909750686'
+      RC6_PREDEPLOY_ARTIFACT_DIGEST: 'sha256:bd270818427cb41bd08709658d95a49689903b0ca7639ce096e8d9d389630b91'
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -49,7 +49,7 @@ jobs:
           test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
           test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
           test "$(sha256sum scripts/rc6_a178_running_preflight_ro.py | cut -d' ' -f1)" = \
-            '72e54cd23e87c40a0432642c6702f6e139d4ab6aea1dc605fdb7d27e1be69cfb'
+            'c60975c38d3f46133a980b6c469adb889c9174aac2fdc9daab62c330acc3a071'
           python3 -m unittest tests.test_rc6_a178_running_preflight_ro -v
           python3 -m py_compile scripts/rc6_a178_running_preflight_ro.py scripts/rc6_a178_preflight_runner.py
           python3 scripts/rc6_a178_preflight_runner.py \
