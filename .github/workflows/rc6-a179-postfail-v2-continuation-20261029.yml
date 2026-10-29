@@ -1,0 +1,110 @@
+name: RC6 A179 frozen A178 postfailure V2 continuation
+
+on:
+  push:
+    branches:
+      - repair/rc6-a179-resume-frozen-20261029
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-postfailure-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout isolated candidate-scoped continuation
+        uses: actions/checkout@v4
+      - name: Checkout exact already-deployed product tree
+        uses: actions/checkout@v4
+        with:
+          ref: d961d19e55d78c68d902a14b41480344365cde1e
+          path: certified-product
+      - name: Run bounded negative safety tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_rc6_a179_resume_validate -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/rc6_a179_resume_validate.py
+          test "$(git -C certified-product rev-parse HEAD)" = d961d19e55d78c68d902a14b41480344365cde1e
+          test "$(git -C certified-product rev-parse HEAD^{tree})" = 31ced11ce047bfa092f5398c13aeb37b74afd629
+          test "$(sha256sum certified-product/scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)" = 0f016652f884cd27bba0e29e3128da615266d09b8bf7a0a1f9a063d1386f0fc6
+          echo 'A179_PRODUCT_FROZEN_SHA=GREEN'
+      - name: Configure strict read-only SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_a179_postfail"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_a179_postfail" "$HOME/.ssh/known_hosts"
+      - name: Read only exact A178 pending marker runtime and preserved safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_a179_postfail" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - --mode preflight' \
+            < scripts/rc6_a179_resume_validate.py | tee a179-resume-preflight.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('a179-resume-preflight.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_RESUME_PREFLIGHT=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['candidate']=='7d62d2f4ed353231da8566a360a1179e99bcc7eb'
+          assert row['deploy']=='d961d19e55d78c68d902a14b41480344365cde1e'
+          assert row['marker']=='PENDING' and row['paper']=='PRODUCTION_PAPER'
+          assert row['real_orders_sent']==0 and row['host_mutations']==0 and row['ppi_watch_mutations']==0
+          print('RC6_A179_POSTFAIL_ORIGIN=GREEN_READ_ONLY|PAPER=0|NO_GO')
+          PY
+      - name: Verify both real preopen phases with exact staged helper without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 240 ssh -i "$HOME/.ssh/porota_rc6_a179_postfail" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - --mode preopen' \
+            < scripts/rc6_a179_resume_validate.py | tee a179-resume-preopen.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('a179-resume-preopen.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_RESUME_PREOPEN=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='GREEN_READ_ONLY' and row['host_mutations']==0
+          assert row['real_orders_sent']==0 and row['ppi_watch_mutations']==0
+          assert set(row['results'])=={'T_MINUS_45','T_MINUS_10'}
+          assert all(v['status']=='PAUSED_NO_GO' and v['timers']=='GREEN' and
+                     v['paper_orders_authorized'] is False for v in row['results'].values())
+          print('RC6_A179_BOTH_PREOPEN_PHASES=GREEN_READ_ONLY|NO_GO_HELD')
+          PY
+      - name: Preserve exact read-only recovery certificates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a179-frozen-postfail-readonly
+          path: |
+            a179-resume-preflight.jsonl
+            a179-resume-preopen.jsonl
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Erase runner SSH key
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/porota_rc6_a179_postfail"
