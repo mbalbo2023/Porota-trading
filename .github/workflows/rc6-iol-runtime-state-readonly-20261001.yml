@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/ws-consolidated-iol-20261001
+      - audit/rc6-a186-iol-guardian-ro-20261029
     paths:
       - '.github/workflows/rc6-iol-runtime-state-readonly-20261001.yml'
   workflow_dispatch:
@@ -65,6 +66,43 @@ jobs:
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" "systemctl show porota-iol-shadow-collector-rc6.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager || true; systemctl show porota-iol-shadow-collector-rc6.timer -p ActiveState -p UnitFileState -p LastTriggerUSec --no-pager || true"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 25 python3 -' <<'PY'
+          import json, subprocess
+          from pathlib import Path
+
+          def status(unit, fields):
+              result = subprocess.run(
+                  ['systemctl', 'show', unit, '--no-pager',
+                   *['-p' + field for field in fields]],
+                  capture_output=True, text=True, timeout=8, check=False)
+              values = dict(line.split('=', 1) for line in result.stdout.splitlines()
+                            if '=' in line)
+              print('IOL_UNIT=' + json.dumps({'unit':unit, 'rc':result.returncode,
+                  'values':values}, sort_keys=True))
+
+          status('porota-iol-oauth-health-rc6.timer',
+                 ('LoadState','ActiveState','UnitFileState','Unit','LastTriggerUSec'))
+          status('porota-iol-oauth-health-rc6.service',
+                 ('LoadState','ActiveState','SubState','Result','ExecMainCode',
+                  'ExecMainStatus','ConditionResult'))
+          for label, path, fields in (
+              ('IOL_OAUTH_GUARDIAN', '/opt/porota-trading/data/market/iol_oauth_guardian_state.json',
+               ('schema','state','reason','observed_at','checked_at','updated_at',
+                'probe_attempts','incident_seq')),
+              ('IOL_FAMILY_CACHE', '/opt/porota-trading/data/market/iol_family_reference_latest.json',
+               ('source','cache_state','refreshed_at','last_known_good_at','live_sections')),
+          ):
+              p = Path(path)
+              if not p.is_file() or p.stat().st_size > 1048576:
+                  print(label + '=MISSING_OR_OVERSIZED')
+                  continue
+              obj = json.loads(p.read_text(encoding='utf-8'))
+              keep = {key:obj.get(key) for key in fields}
+              print(label + '=' + json.dumps(keep, sort_keys=True, default=str))
+          print('IOL_GUARDIAN_FORENSICS=COMPLETE_READ_ONLY')
+          PY
           echo 'IOL_RUNTIME_STATE=GREEN_READONLY'
       - name: Cleanup
         if: always()
