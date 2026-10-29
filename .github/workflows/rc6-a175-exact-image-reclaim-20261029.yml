@@ -1,8 +1,8 @@
-name: RC6 A175 reclaim exactly two old unreferenced candidate images
+name: RC6 A178 reclaim exactly two old unreferenced A171 A174 images
 
 on:
   push:
-    branches: [audit/rc6-a175-exact-image-reclaim-20261029]
+    branches: [fix/rc6-a178-formal-takeover-20261029]
     paths:
       - .github/workflows/rc6-a175-exact-image-reclaim-20261029.yml
 
@@ -82,7 +82,46 @@ jobs:
               -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
               -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
               'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
-              < scripts/rc6_a175_exact_image_reclaim.py
+              < scripts/rc6_a175_exact_image_reclaim.py \
+              | tee "$RUNNER_TEMP/a178-image-reclaim-result.log"
+
+      - name: Assert exact two removals, measured capacity and PAPER safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path(os.environ['RUNNER_TEMP'])/'a178-image-reclaim-result.log'
+          rows=[line for line in path.read_text().splitlines() if line.startswith('{')]
+          if len(rows)!=1: raise SystemExit('RECLAIM_JSON_MISSING')
+          row=json.loads(rows[0])
+          expected={'sha256:9ca6e7ca98f11bbb82353434f54ffab15b218ec54319c83ae1661aaf897a40e9',
+                    'sha256:e61052af13c01d9ce76e92f38b50c794dac8a146427e132d43a8a80554a879aa'}
+          if (row.get('schema')!='RC6_A175_EXACT_IMAGE_RECLAIM_V1' or
+                  row.get('status')!='GREEN' or
+                  set(row.get('removed_image_ids',[]))!=expected or
+                  len(row.get('steps',[]))!=2 or
+                  any(step.get('protected_containers_unchanged') is not True
+                      for step in row.get('steps',[])) or
+                  row.get('real_orders_sent')!=0 or
+                  row.get('ppi_watch')!='NOT_ACCESSED' or
+                  any(type(row.get(key)) is not int for key in
+                      ('disk_before','disk_after','observed_delta_bytes')) or
+                  row['disk_after']-row['disk_before']!=row['observed_delta_bytes']):
+              raise SystemExit('RECLAIM_EVIDENCE_RED')
+          print('RC6_A178_EXACT_IMAGE_RECLAIM=GREEN|observed_delta_bytes='+
+                str(row['observed_delta_bytes'])+'|real_orders_sent=0|PPI_Watch=NOT_ACCESSED')
+          PY
+
+      - name: Preserve exact host image reclamation measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a178-exact-image-reclaim-${{ github.run_id }}
+          path: ${{ runner.temp }}/a178-image-reclaim-result.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Erase runner provenance and SSH material
         if: always()
