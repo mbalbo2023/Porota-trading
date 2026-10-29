@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from scripts import rc6_a176_operator_no_go_seal as seal
 from scripts import rc6_deploy_scheduler_suspend as suspend
+from scripts import rc6_deploy_quiescence as quiescence
 
 
 NOW = datetime(2026, 10, 29, 12, 15, tzinfo=timezone.utc)
@@ -195,6 +196,10 @@ class A176OperatorSealTest(unittest.TestCase):
 
 
 class DailyInstalledA176ProofTest(unittest.TestCase):
+    def test_exact_durable_a176_seal_digest_is_pinned_in_candidate(self):
+        self.assertEqual(quiescence.A176_OPERATOR_NO_GO_RECEIPT_SHA256,
+                         '3218ccf5296306068d051b12588c4fac253a768ea3c81e0fc31c501adb34338c')
+
     def test_no_environment_never_falls_back_before_validated_runtime(self):
         marker = {'validation_status':'DEPLOYED_VALIDATION_PENDING',
                   'mode':'PRODUCTION_PAPER', 'real_orders_sent':0,
