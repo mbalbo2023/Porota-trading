@@ -5,9 +5,13 @@ import subprocess
 import tempfile
 
 
-PAGE_SIZE = 10
+# A180: the old 10 x 50 scan reached 500 comments on issue #624, making
+# otherwise valid new exact-SHA approvals unreachable. GitHub supports 100
+# comments/page; keep bounded traversal (5,000 total), with per-page byte cap.
+PAGE_SIZE = 100
 MAX_PAGES = 50
-MAX_PAGE_BYTES = 512 * 1024
+# A real 100-comment #624 page already exceeds 512 KiB.
+MAX_PAGE_BYTES = 4 * 1024 * 1024
 
 
 def github_issue_page(url):
@@ -35,7 +39,8 @@ def require_exact_owner_authorization(repo, candidate, tree, *,
         if len(raw) > MAX_PAGE_BYTES:
             raise ValueError('AUTHORIZATION_PAGE_BOUND')
         rows = json.loads(raw)
-        if type(rows) is not list:
+        if (type(rows) is not list or len(rows) > PAGE_SIZE or
+                any(type(row) is not dict for row in rows)):
             raise ValueError('AUTHORIZATION_RESPONSE_INVALID')
         matches.extend(row for row in rows if
                        (row.get('user') or {}).get('login') == 'mbalbo2023' and

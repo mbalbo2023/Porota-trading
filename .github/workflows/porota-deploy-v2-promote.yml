@@ -2053,9 +2053,63 @@ jobs:
           # Execute the same fail-closed preopen contract under both scheduled
           # phase labels. No order route, DB write, restart or Telegram send is
           # performed by rc6_preopen.py.
+          # A180: the just-promoted marker is still PENDING, so the scheduler's
+          # A176 origin proof must not trust the old host's quiescence module.
+          # The extracted staging directory was safely reclaimed above. Only
+          # re-stage the new *installed* helper after checking its exact SHA
+          # and byte count against the already-verified immutable bundle manifest.
+          # Keep this proof in both phase environments until finalization.
+          A176_PREOPEN_SOURCE_B64="$(sudo -n python3 - "$REPO" "$CANDIDATE_SHA" <<'PY'
+          import base64, gzip, hashlib, json, sys
+          from pathlib import Path
+
+          root, candidate = Path(sys.argv[1]), sys.argv[2]
+          marker = root / 'data/deploy/CURRENT_STATE_V2.json'
+          manifest = root / 'data/deploy/porota-deploy-bundle-v2-manifest.json'
+          helper = root / 'scripts/rc6_deploy_quiescence.py'
+          for name, path, limit in [('marker', marker, 65536),
+                                    ('manifest', manifest, 8388608),
+                                    ('helper', helper, 1048576)]:
+              if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+                  raise ValueError('RC6_PREOPEN_A176_UNSAFE_' + name.upper())
+          state = json.loads(marker.read_bytes())
+          if (state.get('candidate_sha') != candidate or
+                  state.get('validation_status') != 'DEPLOYED_VALIDATION_PENDING' or
+                  state.get('mode') != 'PRODUCTION_PAPER' or
+                  type(state.get('real_orders_sent')) is not int or
+                  state['real_orders_sent'] != 0 or
+                  state.get('real_order_routes') != 'NOT_CALLED'):
+              raise ValueError('RC6_PREOPEN_A176_PENDING_MARKER_RED')
+          data = json.loads(manifest.read_bytes())
+          files = data.get('files')
+          if (data.get('schema_version') != 1 or data.get('status') != 'GREEN' or
+                  not isinstance(files, list) or
+                  data.get('file_count') != len(files) or
+                  not data.get('bundle_sha256')):
+              raise ValueError('RC6_PREOPEN_A176_MANIFEST_RED')
+          rows = [row for row in files if isinstance(row, dict) and
+                  row.get('path') == 'scripts/rc6_deploy_quiescence.py']
+          if len(rows) != 1:
+              raise ValueError('RC6_PREOPEN_A176_MANIFEST_ENTRY_RED')
+          source = helper.read_bytes()
+          row = rows[0]
+          if (not source or type(row.get('bytes')) is not int or
+                  row['bytes'] != len(source) or
+                  row.get('sha256') != hashlib.sha256(source).hexdigest()):
+              raise ValueError('RC6_PREOPEN_A176_FROZEN_SOURCE_MISMATCH')
+          encoded = base64.b64encode(gzip.compress(source, compresslevel=9, mtime=0)).decode('ascii')
+          # Linux limits an individual argv/env string to 128 KiB. Fail closed
+          # before execve instead of producing another opaque host failure.
+          if len(encoded) > 120000:
+              raise ValueError('RC6_PREOPEN_A176_ENV_ARGUMENT_BOUND')
+          print(encoded)
+          PY
+          )"
+          test -n "$A176_PREOPEN_SOURCE_B64"
+          echo "RC6_PREOPEN_A176_FROZEN_SOURCE=GREEN|encoded_bytes=${#A176_PREOPEN_SOURCE_B64}"
           for phase in T_MINUS_45 T_MINUS_10; do
             set +e
-            PREOPEN_OUTPUT="$(sudo -n timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" --deploy-scheduler-candidate "$CANDIDATE_SHA" 2>&1)"
+            PREOPEN_OUTPUT="$(sudo -n env RC6_A145_QUIESCENCE_GZIP_B64="$A176_PREOPEN_SOURCE_B64" timeout 300 python3 "$REPO/rc6_preopen.py" --phase "$phase" --deploy-scheduler-candidate "$CANDIDATE_SHA" 2>&1)"
             PREOPEN_RC=$?
             set -e
             echo "$PREOPEN_OUTPUT"

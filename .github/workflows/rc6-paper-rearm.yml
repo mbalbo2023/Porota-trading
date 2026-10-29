@@ -1,0 +1,185 @@
+name: RC6 A180 exact PAPER-only operator rearm
+
+on:
+  # This workflow is executed only by creating a new branch from the exact
+  # already-deployed production merge commit. No new source commit, rebuild,
+  # artifact or product HEAD movement is allowed for the operator transition.
+  push:
+    branches:
+      - 'rc6-operator-paper-rearm-v1-*'
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  rearm:
+    if: github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout exact already-deployed commit (no new code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Require current product, successful canonical runtime and unedited #624 owner approval
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,os,re,urllib.request
+          branch=os.environ['GITHUB_REF_NAME']
+          match=re.fullmatch(r'rc6-operator-paper-rearm-v1-([1-9][0-9]{9,})',branch)
+          if not match: raise SystemExit('OPERATOR_REARM_BRANCH_INVALID')
+          comment_id=int(match.group(1))
+          repo=os.environ['GITHUB_REPOSITORY']
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                   'Accept':'application/vnd.github+json',
+                   'X-GitHub-Api-Version':'2022-11-28'}
+          def get(path):
+              req=urllib.request.Request('https://api.github.com/repos/'+repo+path,
+                                         headers=headers)
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  return json.load(response)
+          product=get('/git/ref/heads/deploy/rc6-pr69-isolated-20260915')
+          deploy=product['object']['sha']
+          if deploy!=os.environ['GITHUB_SHA']:
+              raise SystemExit('OPERATOR_REARM_SOURCE_NOT_EXACT_PRODUCT')
+          commit=get('/commits/'+deploy)
+          parents=[item['sha'] for item in commit['parents']]
+          if len(parents)!=2: raise SystemExit('OPERATOR_REARM_NOT_FROZEN_MERGE')
+          candidate=parents[1]
+          tree=get('/git/commits/'+candidate)['tree']['sha']
+          if tree!=commit['commit']['tree']['sha']:
+              raise SystemExit('OPERATOR_REARM_MERGE_TREE_NOT_FROZEN_CANDIDATE')
+          comment=get('/issues/comments/'+str(comment_id))
+          if (comment.get('issue_url')!='https://api.github.com/repos/'+repo+'/issues/624'
+                  or (comment.get('user') or {}).get('login')!='mbalbo2023'
+                  or comment.get('author_association')!='OWNER'
+                  or comment.get('created_at')!=comment.get('updated_at')):
+              raise SystemExit('OPERATOR_REARM_OWNER_COMMENT_INVALID')
+          exact=re.fullmatch(
+              r'RC6_624_APPROVE_PAPER_REARM candidate=([0-9a-f]{40}) '
+              r'tree=([0-9a-f]{40}) deploy=([0-9a-f]{40}) '
+              r'runtime_run=([1-9][0-9]{0,15})',
+              (comment.get('body') or '').strip())
+          if not exact or exact.group(1)!=candidate or exact.group(2)!=tree or exact.group(3)!=deploy:
+              raise SystemExit('OPERATOR_REARM_OWNER_SCOPE_MISMATCH')
+          runtime_run=int(exact.group(4))
+          run=get('/actions/runs/'+str(runtime_run))
+          if (run.get('status')!='completed' or run.get('conclusion')!='success'
+                  or run.get('head_sha')!=deploy
+                  or run.get('path')!='.github/workflows/porota-deploy-v2-promote.yml'
+                  or (run.get('actor') or {}).get('login')!='mbalbo2023'
+                  or not run.get('updated_at')
+                  or comment.get('created_at','')<=run.get('updated_at','')):
+              raise SystemExit('OPERATOR_REARM_CANONICAL_RUNTIME_NOT_PROVEN')
+          for name,value in [('CANDIDATE_SHA',candidate),('CANDIDATE_TREE',tree),
+                             ('DEPLOY_SHA',deploy),('DEPLOY_RUN_ID',str(runtime_run)),
+                             ('DEPLOY_RUN_ATTEMPT',str(run['run_attempt'])),
+                             ('OPERATOR_COMMENT_ID',str(comment_id))]:
+              with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as file:
+                  file.write(name+'='+value+'\n')
+          print('RC6_REARM_OWNER_SOURCE_AND_RUNTIME=GREEN|comment='+str(comment_id))
+          PY
+
+      - name: Prepare strict SSH without leaking secret values
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Pin exact DigitalOcean host (read-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 20 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 - --expected-id 594077619 --expected-region nyc1' \
+            < scripts/rc6_droplet_identity_guard.py
+
+      - name: Attest exact installed rearm source, release marker and frozen image before any write
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          LOCAL_REARM_SHA="$(sha256sum scripts/rc6_operator_paper_rearm.py | cut -d ' ' -f1)"
+          timeout 30 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n python3 - '$CANDIDATE_SHA' '$CANDIDATE_TREE' '$LOCAL_REARM_SHA'" <<'PY'
+          import hashlib,json,os,re,stat,subprocess,sys
+          from pathlib import Path
+          candidate,tree,source_sha=sys.argv[1:]
+          root=Path('/opt/porota-trading')
+          source=root/'scripts/rc6_operator_paper_rearm.py'
+          if source.is_symlink() or not source.is_file() or source.stat().st_size>100000:
+              raise SystemExit('REARM_INSTALLED_SOURCE_UNSAFE')
+          observed=hashlib.sha256(source.read_bytes()).hexdigest()
+          manifest=json.loads((root/'data/deploy/porota-deploy-bundle-v2-manifest.json').read_text())
+          matching=[row for row in manifest.get('files',[])
+                    if row.get('path')=='scripts/rc6_operator_paper_rearm.py']
+          if len(matching)!=1 or matching[0].get('sha256')!=observed or observed!=source_sha:
+              raise SystemExit('REARM_SCRIPT_BUNDLE_ATTESTATION_RED')
+          frozen=json.loads((root/'data/deploy/porota-frozen-candidate.json').read_text())
+          marker=json.loads((root/'data/deploy/CURRENT_STATE_V2.json').read_text())
+          if (frozen.get('candidate_sha')!=candidate or frozen.get('candidate_tree_sha')!=tree
+                  or marker.get('candidate_sha')!=candidate or marker.get('validation_status')!='VALIDATED_RUNTIME'
+                  or marker.get('mode')!='PRODUCTION_PAPER' or type(marker.get('real_orders_sent')) is not int
+                  or marker['real_orders_sent']!=0 or marker.get('real_order_routes')!='NOT_CALLED'
+                  or marker.get('ppi_watch_untouched') is not True):
+              raise SystemExit('REARM_PAPER0_VALIDATED_RUNTIME_RED')
+          image=marker.get('image_id')
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}',str(image)):
+              raise SystemExit('REARM_IMAGE_ID_INVALID')
+          for name in ('porota_production_observer','porota_production_dashboard'):
+              proc=subprocess.run(['docker','inspect','-f','{{.State.Running}}|{{.Image}}',name],
+                                  capture_output=True,text=True,timeout=15,check=False)
+              if proc.returncode or proc.stdout.strip()!='true|'+image:
+                  raise SystemExit('REARM_CRITICAL_RUNTIME_IMAGE_RED:'+name)
+          print('REARM_HOST_PROVENANCE=GREEN|source_sha='+observed)
+          PY
+
+      - name: Atomically authorize PAPER only under existing global host mutex and enable preopen timer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "cd /opt/porota-trading && sudo -n env PYTHONPATH=/opt/porota-trading python3 -m scripts.rc6_operator_paper_rearm \
+              --candidate-sha '$CANDIDATE_SHA' --candidate-tree-sha '$CANDIDATE_TREE' \
+              --deploy-run-id '$DEPLOY_RUN_ID' --deploy-run-attempt '$DEPLOY_RUN_ATTEMPT' \
+              --runtime-validation-run-id '$DEPLOY_RUN_ID' \
+              --operator-comment-id '$OPERATOR_COMMENT_ID' --rearm-run-id '$GITHUB_RUN_ID'"
+
+      - name: Independently verify authorized PAPER only, zero real orders, no premature T-10
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 30 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "cd /opt/porota-trading && sudo -n env PYTHONPATH=/opt/porota-trading python3 -c \
+              'from datetime import datetime;from zoneinfo import ZoneInfo;from scripts.rc6_operator_paper_rearm import evaluate_rearm;ok,reason,proof=evaluate_rearm(now=datetime.now(ZoneInfo(\"America/Argentina/Buenos_Aires\")),context=\"host\");assert ok,(reason,proof);print(\"RC6_PAPER_REARM_AUTHORIZED=GREEN|PAPER_T10_GATE_INDEPENDENT|REAL_ORDERS=0\")'"

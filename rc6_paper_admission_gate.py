@@ -10,15 +10,23 @@ import json
 import os
 import re
 import sqlite3
+import stat
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from scripts.rc6_operator_paper_rearm import (
+    OPERATOR_DIR_HOST, OPERATOR_DIR_RUNTIME, evaluate_rearm,
+)
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 HOST_ROOT = Path("/opt/porota-trading")
 HOST_RECEIPT = HOST_ROOT / "data/deploy/paper_scalping_preopen_gate_v1.json"
 RUNTIME_RECEIPT = Path("/app/data/deploy/paper_scalping_preopen_gate_v1.json")
+# The v2 preopen authority is also in a root-owned readonly mount. A botuser
+# container may write DATA, so placing a new GO file in DATA would be forgeable.
+HOST_V2_RECEIPT = OPERATOR_DIR_HOST / "paper-preopen-v2.json"
+RUNTIME_V2_RECEIPT = OPERATOR_DIR_RUNTIME / "paper-preopen-v2.json"
 FOCUS = (
     ("GGAL", "ACCIONES", "A-24HS"), ("YPFD", "ACCIONES", "A-24HS"),
     ("PAMP", "ACCIONES", "A-24HS"), ("BMA", "ACCIONES", "A-24HS"),
@@ -33,12 +41,13 @@ OPERATOR_PAUSED_TRADE_DAYS_AR = frozenset({"2026-10-27", "2026-10-28"})
 NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR = "2026-10-29"
 
 
-def operator_pause_reason(now):
+def operator_pause_reason(now, *, context="runtime"):
     day = now.date().isoformat()
     if day in OPERATOR_PAUSED_TRADE_DAYS_AR:
         return "OPERATOR_PAPER_PAUSE_" + day.replace("-", "_")
     if day >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR:
-        return "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"
+        authorized, reason, _ = evaluate_rearm(now=now, context=context)
+        return "" if authorized else reason
     return ""
 
 
@@ -70,7 +79,9 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
     """Atomically publish a closed receipt, opening it only for a full T-10 GO."""
     now = (now or datetime.now(TZ)).astimezone(TZ)
     state_path = Path(state_path or HOST_ROOT / "data/deploy/CURRENT_STATE_V2.json")
-    receipt_path = Path(receipt_path or HOST_RECEIPT)
+    receipt_path = Path(receipt_path or (HOST_V2_RECEIPT if
+                        now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
+                        else HOST_RECEIPT))
     candidate = ""
     try:
         if state_path.is_symlink() or state_path.stat().st_size > 65536:
@@ -83,12 +94,14 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                          and state.get("real_orders_sent") == 0)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         valid_release = False
-    pause_reason = operator_pause_reason(now)
+    pause_reason = operator_pause_reason(now, context="host")
     allowed = (not pause_reason and result.get("status") == "GREEN" and result.get("phase") == "T_MINUS_10"
                and 10 * 60 + 20 <= now.hour * 60 + now.minute < 10 * 60 + 30
                and result.get("checks", {}).get("paper_focus_contracts", {}).get("state") == "GREEN"
                and valid_release)
-    receipt = {"schema": "RC6_PAPER_PREOPEN_GATE_V1", "status":
+    receipt = {"schema": ("RC6_PAPER_PREOPEN_GATE_V2" if
+               now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
+               else "RC6_PAPER_PREOPEN_GATE_V1"), "status":
                "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
                "candidate_sha": candidate if valid_release else "", "trade_day_ar": now.date().isoformat(),
                "issued_at_ar": now.isoformat(timespec="seconds"), "phase": result.get("phase"),
@@ -103,6 +116,11 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
         raise ValueError("HISTORICAL_A125_LIVE_GATE_IMMUTABLE")
     if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir() or receipt_path.is_symlink():
         raise ValueError("UNSAFE_GATE_PATH")
+    if receipt_path == HOST_V2_RECEIPT:
+        observed = os.lstat(receipt_path.parent)
+        if (os.geteuid() != 0 or observed.st_uid != 0 or
+                observed.st_mode & 0o022):
+            raise ValueError("PAPER_V2_ROOT_GATE_PATH_REQUIRED")
     fd, temporary = tempfile.mkstemp(prefix=".paper-gate-", dir=receipt_path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -129,18 +147,40 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     if pause_reason:
         return False, pause_reason
     candidate_sha = candidate_sha if candidate_sha is not None else os.getenv("POROTA_BUILD_SHA", "")
-    path = Path(receipt_path or RUNTIME_RECEIPT)
+    path = Path(receipt_path or (RUNTIME_V2_RECEIPT if
+                now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
+                else RUNTIME_RECEIPT))
     if not isinstance(candidate_sha, str) or not SHA.fullmatch(candidate_sha):
         return False, "PAPER_PREOPEN_BUILD_IDENTITY_MISSING"
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
-            return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
-        receipt = json.loads(path.read_text(encoding="utf-8"))
+        if path == RUNTIME_V2_RECEIPT:
+            parent = os.lstat(path.parent)
+            if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or
+                    parent.st_mode & 0o022):
+                return False, "PAPER_V2_PREOPEN_ROOT_DIRECTORY_UNTRUSTED"
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            entry = os.fstat(fd)
+            if (not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1 or
+                    not 0 < entry.st_size <= 4096 or
+                    (path == RUNTIME_V2_RECEIPT and
+                     (entry.st_uid != 0 or entry.st_mode & 0o022))):
+                return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                encoded = stream.read(4097)
+            if len(encoded) != entry.st_size:
+                return False, "PAPER_PREOPEN_RECEIPT_CHANGED"
+        finally:
+            os.close(fd)
+        receipt = json.loads(encoded)
         issued = datetime.fromisoformat(receipt["issued_at_ar"])
         if issued.tzinfo is None or issued.utcoffset() != now.utcoffset():
             raise ValueError("PREOPEN_CLOCK_INVALID")
         issued = issued.astimezone(TZ)
-        good = (receipt.get("schema") == "RC6_PAPER_PREOPEN_GATE_V1"
+        expected_schema = ("RC6_PAPER_PREOPEN_GATE_V2" if
+                           now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
+                           else "RC6_PAPER_PREOPEN_GATE_V1")
+        good = (receipt.get("schema") == expected_schema
                 and receipt.get("status") == "GO_PAPER_SCALPING"
                 and receipt.get("phase") == "T_MINUS_10"
                 and receipt.get("candidate_sha") == candidate_sha
@@ -149,6 +189,8 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
                 and 10 * 60 + 20 <= issued.hour * 60 + issued.minute < 10 * 60 + 30
                 and 0 <= (now - issued).total_seconds() <= 7 * 3600)
         return (True, "") if good else (False, "NO_GO_PAPER_SCALPING")
+    except FileNotFoundError:
+        return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return False, "PAPER_PREOPEN_RECEIPT_INVALID"
 

@@ -1090,6 +1090,164 @@ class PaperBroker:
             return result | {'reason_code':'SIGNAL_EVENT_SOURCE_STALE'}
         return result | {'temporal_ready':True,'reason_code':'SIGNAL_TEMPORAL_READY'}
 
+    def _option_underlying_evidence(self, q, at):
+        """Read one exact PPI-backed underlying from the existing PAPER book.
+
+        An option ticker/underlying name cannot choose a currency, market or
+        settlement on its own. Only a *unique*, READY exact identity whose
+        most recent native quote remains fresh may feed an option signal.
+        This method does not call PPI/IOL, rewrite the catalog or grant entry.
+        """
+        if q.contract is None or not q.contract.underlying:
+            return None
+        from rc6_option_paper_strategy import UnderlyingEvidence, UnderlyingTrade
+        try:
+            with self.store.connect() as c:
+                matches = c.execute("""SELECT f.ticker, f.instrument_type, f.market,
+                        f.currency, f.settlement
+                    FROM financial_instrument_catalog f
+                    JOIN candidate_identity_v2 ci USING
+                        (ticker, instrument_type, market, currency, settlement)
+                    WHERE f.ticker=? AND f.instrument_type IN ('ACCIONES','CEDEARS')
+                      AND f.market='BYMA' AND f.currency='ARS'
+                      AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
+                      AND ci.status='AVAILABLE' AND ci.can_simulate=1
+                    LIMIT 8""", (q.contract.underlying,)).fetchall()
+            fresh = []
+            for row in matches:
+                entry = dict(zip(("symbol", "asset_class", "market", "currency",
+                                  "settlement"), row))
+                underlying = self.store.latest_quote(entry)
+                if (underlying is None or not str(underlying.metadata_source or "").startswith("PPI_CATALOG:")
+                        or underlying.opening_block_reason
+                        or underlying.time_error(at, require_trade=True,
+                            max_age_seconds=self.quote_max_age_seconds,
+                            max_trade_age_seconds=self.quote_max_age_seconds)):
+                    continue
+                fresh.append(underlying)
+            if len(fresh) != 1:
+                return None
+            underlying = fresh[0]
+            source_prices = self.store.signal_prices(
+                underlying, at, limit=20, window_minutes=20)
+            records = getattr(source_prices, "observations", ())
+            if len(records) != len(source_prices):
+                return None
+            # signal_prices() guarantees causal timestamps but its public
+            # `source` value is PRODUCTION_PAPER, not PPI provider provenance.
+            # The catalog marker on the *latest* quote cannot launder one
+            # older or replaced trade with an unverified metadata source.
+            ids = tuple(record.get("source_row_id") for record in records)
+            if (not ids or len(ids) > 20 or len(set(ids)) != len(ids) or
+                    any(type(value) is not int or value < 1 for value in ids)):
+                return None
+            slots = ",".join("?" for _ in ids)
+            with self.store.connect() as c:
+                from rc6_signal_contracts import register_exact_time
+                register_exact_time(c)
+                proofs = c.execute(f"""SELECT id,source,symbol,asset_class,
+                    market,currency,settlement,last,trade_at,observed_at,
+                    last_kind,metadata_source,opening_block_reason
+                    FROM market_snapshots WHERE id IN ({slots})""", ids).fetchall()
+                # Unlike signal_prices(), include INVALID/UNAVAILABLE newer
+                # revisions when deciding which source row owns a trade time.
+                # Otherwise an older valid row could be resurrected after a
+                # later provider tombstone for the same exact instant.
+                revisions = c.execute("""SELECT id,trade_at FROM market_snapshots
+                    WHERE symbol=? AND asset_class=? AND market=? AND currency=?
+                      AND settlement=? AND trade_at IS NOT NULL
+                      AND rc6_instant_us(trade_at)>=rc6_instant_us(?)
+                      AND rc6_instant_us(trade_at)<=rc6_instant_us(?)
+                      AND rc6_instant_us(observed_at)<=rc6_instant_us(?)
+                    ORDER BY rc6_instant_us(trade_at) DESC,id DESC LIMIT 512""",
+                    (underlying.symbol, underlying.asset_class,
+                     underlying.market, underlying.currency,
+                     underlying.settlement,
+                     (aware_datetime(at) - timedelta(minutes=20)).isoformat(),
+                     aware_datetime(at).isoformat(), aware_datetime(at).isoformat())).fetchall()
+            proofs_by_id = {row[0]: row for row in proofs}
+            if len(proofs_by_id) != len(ids) or len(revisions) == 512:
+                return None
+            newest_for_instant = {}
+            for row_id, trade_at in revisions:
+                newest_for_instant.setdefault(utc_microseconds(trade_at), row_id)
+            identity = (underlying.symbol, underlying.asset_class,
+                        underlying.market, underlying.currency, underlying.settlement)
+            for event in records:
+                row = proofs_by_id[event["source_row_id"]]
+                origin = row[11]
+                if (row[1] != SOURCE or tuple(row[2:7]) != identity or
+                        newest_for_instant.get(utc_microseconds(event["source_at"])) != row[0] or
+                        row[10] != "TRADE" or row[12] or
+                        not isinstance(origin, str) or
+                        not origin.startswith("PPI_CATALOG:") or
+                        not origin[len("PPI_CATALOG:"):].strip() or
+                        row[8] != event["source_at"] or
+                        row[9] != event["received_at"] or
+                        D(row[7]) != D(event["price"])):
+                    return None
+            trades = tuple(UnderlyingTrade(
+                price=record["price"], traded_at=record["source_at"],
+                received_at=record["received_at"])
+                for record in records)
+            return UnderlyingEvidence(
+                symbol=underlying.symbol, family=underlying.asset_class,
+                market=underlying.market, currency=underlying.currency,
+                settlement=underlying.settlement, bid=underlying.bid,
+                ask=underlying.ask, bid_size=underlying.bid_size,
+                ask_size=underlying.ask_size, book_at=underlying.book_at,
+                received_at=underlying.observed_at,
+                metadata_source=underlying.metadata_source, trades=trades)
+        except (sqlite3.Error, OSError, ValueError, TypeError, KeyError):
+            return None
+
+    def _decide_option(self, q, at):
+        """Independent long-option candidate, followed by native PAPER gates."""
+        try:
+            from rc6_option_paper_strategy import evaluate_option_entry
+            currency, _ = q.monetary_identity()
+            capital, _ = self._risk_capital(currency)
+            result = evaluate_option_entry(
+                q, decision_at=at,
+                underlying_evidence=self._option_underlying_evidence(q, at),
+                available_cash=self._cash(as_of=at, currency=currency),
+                risk_budget=capital * self.risk_pct,
+                max_position_notional=capital * self.max_position_pct,
+            )
+            features = dict(result.features)
+            features.update(family="OPCIONES", signal_ready=result.action == "BUY",
+                            paper_candidate_only=True)
+            return result.action, result.score, result.reason, features
+        except (ImportError, sqlite3.Error, OSError, ValueError, TypeError,
+                ArithmeticError, AttributeError) as exc:
+            return ("HOLD", ZERO, "OPTION_PAPER_INPUTS_UNAVAILABLE",
+                    {"samples": 0, "family": "OPCIONES", "signal_ready": False,
+                     "reason_code": "OPTION_PAPER_INPUTS_UNAVAILABLE",
+                     "error_type": type(exc).__name__})
+
+    def _decide_fixed_income(self, q, at):
+        """Fixed income must never inherit the equity momentum strategy."""
+        try:
+            from rc6_fixed_income_paper_strategy import decide_fixed_income
+            action, score, reason, features = decide_fixed_income(q, self, at)
+            if (action not in {"HOLD", "BUY"} or not isinstance(score, Decimal)
+                    or not isinstance(features, dict)):
+                raise ValueError("FI_STRATEGY_RESULT_INVALID")
+            if action == "HOLD":
+                # Preserve the historical no-equity-fallback contract while
+                # surfacing the exact new source/OOS/exit-plan blocker.
+                features.setdefault("reason_codes", [
+                    "SPECIALIZED_LIFECYCLE", "STRATEGY_NOT_VALIDATED"])
+                reason = "STRATEGY_NOT_VALIDATED: " + str(reason)
+            return action, score, reason, dict(features)
+        except (ImportError, sqlite3.Error, OSError, ValueError, TypeError,
+                ArithmeticError, AttributeError) as exc:
+            return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: FI_PAPER_INPUTS_UNAVAILABLE",
+                    {"samples": 0, "family": q.asset_class, "signal_ready": False,
+                     "reason_code": "FI_PAPER_INPUTS_UNAVAILABLE",
+                     "reason_codes": ["SPECIALIZED_LIFECYCLE", "STRATEGY_NOT_VALIDATED"],
+                     "error_type": type(exc).__name__})
+
     @trace_spot_signal
     def decide(self, q: Quote):
         try:
@@ -1125,6 +1283,10 @@ class PaperBroker:
         error = self.admission_error(q, at)
         if error:
             return "HOLD", ZERO, error, {"samples": 0}
+        if family == "OPCIONES":
+            return self._decide_option(q, at)
+        if family in {"BONOS", "LETRAS", "OBLIGACIONES"}:
+            return self._decide_fixed_income(q, at)
         # Contract readiness is not a validated directional strategy. Existing
         # specialized lifecycle and native contract/admission gaps take priority;
         # fixed income/options must never inherit equity momentum BUY authority.
@@ -1300,6 +1462,61 @@ class PaperBroker:
             return "PAPER_DECISION_KEY_ALREADY_COMMITTED"
         return ""
 
+    def _specialized_decision_error(self, connection, q, score, features):
+        """Bind a live OPTION/FI admission to its recorded native BUY decision.
+
+        Synthetic offline PAPER books retain explicit direct `_open` fixtures;
+        the canonical runtime book must not accept a privileged caller that
+        bypasses the exact specialized family signal. This runs inside the
+        same BEGIN IMMEDIATE transaction as the eventual PAPER ledger insert.
+        """
+        try:
+            family = family_name(q.asset_class)
+            if family not in {"OPCIONES", "BONOS", "LETRAS", "OBLIGACIONES"}:
+                return ""
+            from cg_paper_workspace import database_path
+            if Path(self.store.path).resolve() != database_path():
+                return ""
+            strategy = features.get("strategy")
+            if not isinstance(strategy, str) or not strategy or len(strategy) > 100:
+                return "PAPER_SPECIALIZED_STRATEGY_EVIDENCE_MISSING"
+            if family == "OPCIONES":
+                if strategy != "OPTION_LONG_UNDERLYING_TREND_PAPER_V1":
+                    return "OPTION_NATIVE_STRATEGY_NOT_BOUND"
+            elif (not strategy.startswith("FI_") or
+                  not strategy.endswith("_PAPER_V1")):
+                return "FI_NATIVE_STRATEGY_NOT_BOUND"
+            if (features.get("entry_authority") is not False or
+                    features.get("real_routes_used") != []):
+                return "PAPER_SPECIALIZED_ROUTE_OR_AUTHORITY_MISMATCH"
+            key = features.get("native_decision_key")
+            expected = (f"{strategy}:{q.symbol}:{q.asset_class}:{q.settlement}:"
+                        f"{q.currency}:{q.market}:{q.observed_at[:16]}:BUY")
+            if not isinstance(key, str) or key != expected:
+                return "PAPER_SPECIALIZED_DECISION_KEY_MISMATCH"
+            row = connection.execute("""SELECT source,decided_at,symbol,action,score,
+                    features_json FROM paper_decisions WHERE decision_key=?""",
+                    (key,)).fetchone()
+            if (row is None or row[0] != SOURCE or row[1] != q.observed_at or
+                    row[2] != q.symbol or row[3] != "BUY" or D(row[4]) != score):
+                return "PAPER_SPECIALIZED_BUY_DECISION_MISSING"
+            frozen = json.loads(row[5])
+            if (type(frozen) is not dict or frozen.get("strategy") != strategy or
+                    frozen.get("native_decision_key") != key or
+                    frozen.get("entry_authority") is not False or
+                    frozen.get("real_routes_used") != []):
+                return "PAPER_SPECIALIZED_FROZEN_DECISION_MISMATCH"
+            if family == "OPCIONES":
+                fields = ("quantity", "underlying_identity", "trade_window",
+                          "cost_policy_sha256", "maximum_simulated_loss")
+                if any(frozen.get(name) is None or
+                       frozen.get(name) != features.get(name) for name in fields):
+                    return "OPTION_NATIVE_SIGNAL_CHANGED_BEFORE_ADMISSION"
+            return ""
+        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError,
+                json.JSONDecodeError):
+            return "PAPER_SPECIALIZED_DECISION_VERIFICATION_FAILED"
+
     def _economic_diagnostics(self, q):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
         entry = q.ask * (1 + self.slippage)
@@ -1363,9 +1580,25 @@ class PaperBroker:
             self.record_observation_rejection(q, opening_block_reason or "OPENING_NOT_AUTHORIZED")
             return
         action, score, reason, features = self.decide(q)
+        signal_strategy = STRATEGY_VERSION
+        if family in {"BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"}:
+            candidate = str(features.get("strategy") or "")
+            if (0 < len(candidate) <= 100 and
+                    all(letter.isupper() or letter.isdigit() or letter == "_"
+                        for letter in candidate)):
+                signal_strategy = candidate
+            else:
+                signal_strategy = "FI_EVIDENCE_GATED_PAPER_V1" if family != "OPCIONES" else "OPTION_EVIDENCE_GATED_PAPER_V1"
+            # The legacy @trace_spot_signal decorator annotates every
+            # non-future decision SPOT_MOMENTUM_BASELINE. Correct the exact
+            # provenance before persisting any specialized family decision.
+            lineage = features.get("performance_lineage")
+            if isinstance(lineage, dict):
+                lineage["strategy_id"] = signal_strategy
+                lineage["scope"] = "FAMILY_SPECIALIZED_PAPER_STRATEGY"
         mark_lineage(features, "decision", self)
         bucket = q.observed_at[:16]
-        key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{bucket}:{action}"
+        key = f"{signal_strategy}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{bucket}:{action}"
         features["native_decision_key"] = key
         if not self.store.record_decision(key, q, action, score, reason, features):
             return
@@ -2140,6 +2373,18 @@ class PaperBroker:
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        if family == "OPCIONES" and features.get("strategy") == "OPTION_LONG_UNDERLYING_TREND_PAPER_V1":
+            # A strict strategy that evaluated one premium-at-risk contract
+            # cannot silently become a multi-contract purchase in the common
+            # account-level sizer. Risk/ledger checks below still run.
+            try:
+                strategy_quantity = decimal_value(
+                    features["quantity"], "OPTION_STRATEGY_QUANTITY", positive=True)
+                if strategy_quantity != 1 or step != 1:
+                    return False, "OPTION_STRATEGY_QUANTITY_INVALID", None
+                qty = min(qty, strategy_quantity)
+            except (KeyError, ValueError, TypeError):
+                return False, "OPTION_STRATEGY_QUANTITY_INVALID", None
         if q.contract is not None and qty > 0:
             try:
                 q.contract.quantity(qty)
@@ -2211,6 +2456,9 @@ class PaperBroker:
             key_error=self._decision_key_error(c,features)
             if key_error:
                 return False,key_error,None
+            specialized_error = self._specialized_decision_error(c, q, score, features)
+            if specialized_error:
+                return False, specialized_error, None
             at = self.execution_time(q)
             error = self.admission_error(q, at, connection=c)
             if error:

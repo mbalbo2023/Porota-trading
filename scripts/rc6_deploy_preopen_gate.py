@@ -91,8 +91,7 @@ def validate_report(report, *, phase, return_code, now, is_operational):
             # Each trade day needs its own exact NO_GO authority. The A125/A151
             # dated receipts cannot become an implicit 29-Oct rearm.
             day = local_now.date().isoformat()
-            require(day in {'2026-10-27', '2026-10-28', '2026-10-29'},
-                    'OPERATOR_PAUSE_DAY_EXPIRED')
+            require(day >= '2026-10-27', 'OPERATOR_PAUSE_DAY_INVALID')
             require(report.get('operator_paper_paused') is True and
                     timer.get('operator_paper_paused') is True,
                     'OPERATOR_PAUSE_NOT_ATTESTED')
@@ -104,22 +103,25 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                      (day == '2026-10-28' and re.fullmatch(
                          r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
                      (day == '2026-10-29' and re.fullmatch(
-                         r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation))) and
+                         r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
+                     (day > '2026-10-29' and re.fullmatch(
+                         r'A180-NO-GO-[0-9a-f]{16}', operation))) and
                     timer.get('operator_pause_operation_id') == operation,
                     'OPERATOR_PAUSE_IDENTITY_RED')
             digest = report.get('operator_pause_receipt_sha256')
             require(isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest) and
                     timer.get('operator_pause_receipt_sha256') == digest,
                     'OPERATOR_PAUSE_RECEIPT_RED')
-            if day == '2026-10-29':
+            if day >= '2026-10-29':
                 proof = report.get('operator_no_go_continuation')
                 require(type(proof) is dict and
                         timer.get('operator_no_go_continuation') == proof and
                         proof.get('status') == 'NO_GO_PENDING_EXPLICIT_REARM' and
-                        proof.get('business_day_art') == day and
+                        proof.get('business_day_art') == '2026-10-29' and
                         proof.get('paper_execution_authorized') is False and
                         proof.get('receipt_sha256') == digest and
-                        proof.get('operation_id') == operation and
+                        (proof.get('operation_id') == operation if day == '2026-10-29'
+                         else operation == 'A180-NO-GO-' + digest[:16]) and
                         all(isinstance(proof.get(key), str) and
                             re.fullmatch(r'[0-9a-f]{64}', proof[key])
                             for key in ('a151_origin_sha256', 'a175_quiescence_sha256',
@@ -133,18 +135,32 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                         'OPERATOR_FUTURE_RECEIPT_ON_HISTORICAL_DAY')
         else:
             require(local_now.date().isoformat() not in
-                    {'2026-10-27', '2026-10-28', '2026-10-29'},
+                    {'2026-10-27', '2026-10-28'},
                     'GREEN_CANNOT_OVERRIDE_OPERATOR_HOLD')
             require(report.get('operator_paper_paused') is not True and
                     timer.get('operator_paper_paused') is not True and
                     'operator_no_go_continuation' not in report and
                     'operator_no_go_continuation' not in timer,
                     'GREEN_CANNOT_MASK_OPERATOR_PAUSE')
+            if local_now.date().isoformat() >= '2026-10-29':
+                authority = report.get('operator_rearm_authority')
+                require(type(authority) is dict and
+                        all(re.fullmatch(r'[0-9a-f]{40}', str(authority.get(key)))
+                            for key in ('candidate_sha', 'candidate_tree_sha')) and
+                        re.fullmatch(r'sha256:[0-9a-f]{64}',
+                                     str(authority.get('image_id'))) and
+                        type(authority.get('operator_comment_id')) is int and
+                        authority['operator_comment_id'] > 0 and
+                        type(authority.get('rearm_run_id')) is int and
+                        authority['rearm_run_id'] > 0 and
+                        report.get('paper_admission_hold') is None,
+                        'GREEN_PAPER_REARM_AUTHORITY_UNPROVEN')
     else:
         raise PreopenRejected('STATUS_NOT_ACCEPTABLE')
-    if local_now.date().isoformat() >= '2026-10-29':
+    if local_now.date().isoformat() >= '2026-10-29' and status == 'PAUSED_NO_GO':
         require(report.get('paper_admission_hold') ==
-                'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+                'operator_rearm_authority' not in report,
                 'PAPER_REARM_HOLD_UNPROVEN')
     return {
         'schema': 'POROTA_DEPLOY_PREOPEN_RESULT_V1', 'accepted': True,
