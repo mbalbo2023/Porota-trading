@@ -268,7 +268,7 @@ def exact_a151_operator_preopen_pause(*, historical_hold_only=False):
 
 def exact_a176_operator_no_go_continuation():
     """Read a new daily NO_GO seal; never infer PAPER rearm from old A151."""
-    q=a143_staged_module()
+    q=a176_quiescence_helper()
     now=datetime.now(timezone.utc)
     if now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()!=A176_NO_GO_DAY:
         raise ValueError('SCHEDULER_A176_NO_GO_DAY_EXPIRED')
@@ -334,6 +334,38 @@ def exact_a176_operator_no_go_continuation():
             'a151_origin_sha256':receipt['a151_origin_sha256'],
             'a175_quiescence_sha256':qsha,'a175_scheduler_sha256':ssha,
             'paper_execution_authorized':False}
+
+
+def a176_quiescence_helper():
+    """Use the staged candidate before install, or the installed module AFTER validation.
+
+    Native preopen/systemd does not inherit Deploy V2's short-lived gzip env.
+    The installed fallback must never allow a failed/pending A175 runtime to
+    masquerade as a completed deployment or admit PAPER on a fresh day.
+    """
+    if os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64'):
+        return a143_staged_module()
+    marker, _ = _operator_pause_json(ROOT/'CURRENT_STATE_V2.json', 65536)
+    if (type(marker) is not dict or
+            marker.get('validation_status') != 'VALIDATED_RUNTIME' or
+            marker.get('mode') != 'PRODUCTION_PAPER' or
+            type(marker.get('real_orders_sent')) is not int or
+            marker['real_orders_sent'] != 0 or
+            marker.get('real_order_routes') != 'NOT_CALLED' or
+            marker.get('candidate_sha') in {A143_PENDING_CANDIDATE,
+                                             '18ba517a846c6798f0d12f39072465fc02fa03b5'}):
+        raise ValueError('SCHEDULER_A176_STAGED_REQUIRED_UNTIL_VALIDATED_RUNTIME')
+    from scripts import rc6_deploy_quiescence as installed
+    if (getattr(installed, 'A175_FAILED_CANDIDATE', None) !=
+            '18ba517a846c6798f0d12f39072465fc02fa03b5' or
+            getattr(installed, 'A176_OPERATOR_NO_GO_RECEIPT_SHA256', '0'*64) == '0'*64 or
+            not re.fullmatch(r'[0-9a-f]{64}', str(getattr(
+                installed, 'A176_OPERATOR_NO_GO_RECEIPT_SHA256', ''))) or
+            Path(installed.__file__).is_symlink() or
+            Path(installed.__file__).resolve() !=
+            (ROOT.parents[1]/'scripts/rc6_deploy_quiescence.py').resolve()):
+        raise ValueError('SCHEDULER_A176_INSTALLED_HELPER_IDENTITY_RED')
+    return installed
 
 
 def require_owned_running():
