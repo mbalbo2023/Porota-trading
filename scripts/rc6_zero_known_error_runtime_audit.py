@@ -326,9 +326,14 @@ def _database_snapshot():
     connection.execute("PRAGMA query_only=ON")
     connection.execute("SELECT 1").fetchone()
     connection.execute("BEGIN")
+    # Older read-only audit fixtures lack the advisory free-form detail field.
+    # Its absence must NOT fabricate a recognized external error; the missing
+    # provenance remains false and thus cannot weaken PPI authentication.
+    has_detail = any(row[1] == "detail" for row in connection.execute(
+        "PRAGMA table_info(observer_state)"))
     observer = dict(connection.execute(
-        "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,detail "
-        "FROM observer_state WHERE id=1"
+        "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at" +
+        (",detail" if has_detail else "") + " FROM observer_state WHERE id=1"
     ).fetchone() or {})
     # The free-form provider error detail can contain private request context.
     # Persist only its allowlisted provenance classifier in audit artifacts.
