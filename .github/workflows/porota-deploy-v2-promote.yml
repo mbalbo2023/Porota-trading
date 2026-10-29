@@ -1651,6 +1651,10 @@ jobs:
             grep -Fq "REMOTE_PPI_V1_STATUS=STALE" <<< "$CONTRACT_OUTPUT"
             grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
             echo "RC6_REMOTE_PPI_V1=STALE_COMPLETED_NOT_REUSED"
+          elif grep -Fq "REMOTE_PPI_V1_REFRESH=SKIPPED_ABSENT_COMPLETED" <<< "$CONTRACT_OUTPUT"; then
+            grep -Fq "REMOTE_PPI_V1_STATUS=UNAVAILABLE" <<< "$CONTRACT_OUTPUT"
+            grep -Fq "QUICK_CHECK=ok" <<< "$CONTRACT_OUTPUT"
+            echo "RC6_REMOTE_PPI_V1=AMBER|COMPLEMENTARY_SWEEP_UNAVAILABLE"
           else
             grep -Fq "REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED" <<< "$CONTRACT_OUTPUT"
             grep -Fq '"total":' <<< "$CONTRACT_OUTPUT"
@@ -1693,7 +1697,7 @@ jobs:
                   c=sqlite3.connect(f'file:{path}?mode=ro',uri=True,timeout=3)
                   c.execute('PRAGMA query_only=ON')
                   last=c.execute(
-                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at '
+                      'SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at,detail '
                       'FROM observer_state WHERE id=1'
                   ).fetchone()
                   c.close()
@@ -1706,7 +1710,28 @@ jobs:
               market_fresh=(not market_required) or fresh(last[5],300)
               ready=bool(last and last[3] in {'RUNNING','WAITING_MARKET','READY_PREOPEN'})
               if paper and last[2]=='OK' and heartbeat and market_fresh and ready:
-                  print('GO_CHECK=GREEN|'+'|'.join(map(str,last))+f'|MARKET_DATA_REQUIRED={market_required}')
+                  print('GO_CHECK=GREEN|'+'|'.join(map(str,last[:7]))+f'|MARKET_DATA_REQUIRED={market_required}')
+                  break
+              # The source login and intraday market data are availability
+              # gates for PAPER instruments, not for the technical deployment
+              # of a healthy immutable, PAPER/0 runtime. Fail-closed on unknown
+              # DEGRADED causes: only exact scanner login/cooldown breadcrumbs
+              # can attest an externally unavailable PPI session.
+              detail=str(last[7] or '') if last else ''
+              known_ppi_outage=bool(
+                  paper and last[3]=='DEGRADED' and
+                  last[2] in {'ERROR','COOLDOWN'} and
+                  detail.startswith(('Login fallo:',
+                                     'PPI en espera de reintento;',
+                                     'Login local bloqueado por interlock')))
+              stale_market_data=bool(
+                  paper and last[2]=='OK' and ready and not market_fresh)
+              if heartbeat and (known_ppi_outage or stale_market_data):
+                  reason=('PPI_LOGIN_UNAVAILABLE' if known_ppi_outage
+                          else 'PPI_MARKET_DATA_STALE')
+                  print('GO_CHECK=GREEN|'+'|'.join(map(str,last[:7]))+
+                        '|EXTERNAL_SOURCE_ALERT=AMBER|REASON='+reason+
+                        '|PAPER_READINESS=FAIL_CLOSED_PER_INSTRUMENT')
                   break
               # STARTING can include a full catalog/policy refresh. Wait within
               # the existing 1200s budget; only an operational state with a
@@ -1725,11 +1750,11 @@ jobs:
               if time.monotonic() >= startup_deadline and not (
                       (paper and heartbeat and last[2]=='COOLDOWN')
                       or bootstrap_pending or startup_pending):
-                  print(f'GO_CHECK_FAILED_AFTER_STARTUP={last}')
+                  print(f'GO_CHECK_FAILED_AFTER_STARTUP={last[:7] if last else None}')
                   raise SystemExit(1)
               time.sleep(5)
           else:
-              print(f'GO_CHECK_FAILED_AFTER_COOLDOWN={last}')
+              print(f'GO_CHECK_FAILED_AFTER_COOLDOWN={last[:7] if last else None}')
               raise SystemExit(1)
           PY
           )"
@@ -1960,7 +1985,7 @@ jobs:
           set +e
           AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
             python /app/scripts/rc6_zero_known_error_runtime_audit.py \
-              --label immediate --output "$AUDIT_BASE" 2>&1)"
+              --label immediate --deploy-only --output "$AUDIT_BASE" 2>&1)"
           AUDIT_RC=$?
           set -e
           echo "$AUDIT_OUTPUT"
@@ -1984,25 +2009,18 @@ jobs:
           echo "RC6_DISK_POST_CLEANUP_MIN_FREE=$POST_CLEANUP_MIN_FREE"
           test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"
 
-          # Refresh the official BYMA morning evidence with the just-installed
-          # candidate. The structured public capture remains complementary:
-          # official-page failures are fail-closed, while OPEN_DATA source-path
-          # failures remain visible without impersonating calendar authority.
-          set +e
-          BYMA_MORNING_OUTPUT="$(sudo -n timeout 180 python3 "$REPO/scripts/rc6_byma_morning_pipeline.py" --root "$REPO/data/market" 2>&1)"
-          BYMA_MORNING_RC=$?
-          set -e
-          echo "$BYMA_MORNING_OUTPUT"
-          if [ "$BYMA_MORNING_RC" -ne 0 ]; then
-            echo "RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC"
-            exit "$BYMA_MORNING_RC"
-          fi
-          echo "RC6_BYMA_MORNING_REFRESH=GREEN"
+          # External source sampling is owned by its own scheduled producer.
+          # Deploy V2 validates the candidate and the local PAPER/0 safety
+          # contract; it must not call an upstream BYMA endpoint here.
+          # Existing source cache/authority evidence is inspected by the dry
+          # preopen gate below. Unavailability and staleness are AMBER, while
+          # malformed provenance and calendar authority violations stay RED.
+          echo 'RC6_BYMA_MORNING_REFRESH=AMBER|PROVIDER_REFRESH_DEFERRED_TO_INDEPENDENT_TIMER|DEPLOY_EXTERNAL_ALARM_ONLY'
 
-          # The closed-session reconciler may still be publishing its bounded
-          # candidate batches after the contract runner restarts the observer.
-          # Wait for at least one exact equity/CEDEAR PAPER identity under the
-          # same safety invariants; the preopen contract remains unchanged.
+          # A candidate's PAPER readiness is independent from Deploy V2's
+          # immutable runtime safety. Inspect the table/schema and record an
+          # AMBER alarm if source authentication or eligible candidates are
+          # unavailable; never wait 20 minutes for an external data provider.
           RC6_PREOPEN_READY=0
           for attempt in {1..40}; do
             set +e
@@ -2015,13 +2033,22 @@ jobs:
               deadline=time.monotonic()+2
               c.set_progress_handler(lambda: int(time.monotonic()>deadline),1000)
               state=c.execute('SELECT mode,real_orders_sent,ppi_auth FROM observer_state WHERE id=1').fetchone()
-              if not state or state[0]!='PRODUCTION_PAPER' or state[1]!=0 or str(state[2]).upper() not in ('OK','AUTHENTICATED'):
-                  print('RED|PAPER_SAFETY_OR_AUTH')
+              if not state or state[0]!='PRODUCTION_PAPER' or type(state[1]) is not int or state[1]!=0:
+                  print('RED|PAPER_SAFETY')
+                  sys.exit(2)
+              auth=str(state[2]).upper()
+              if auth not in ('OK','AUTHENTICATED','ERROR','COOLDOWN','NOT_ATTEMPTED'):
+                  print('RED|PPI_AUTH_SCHEMA_UNKNOWN')
                   sys.exit(2)
               row=c.execute("""SELECT 1 FROM candidate_identity_v2
                   WHERE status='AVAILABLE' AND can_simulate=1
                     AND instrument_type IN ('ACCIONES','CEDEARS','ETFS') LIMIT 1""").fetchone()
-              print('GREEN' if row else 'WAIT')
+              if auth not in ('OK','AUTHENTICATED'):
+                  print('AMBER|PPI_AUTH_UNAVAILABLE')
+              elif not row:
+                  print('AMBER|PAPER_CANDIDATES_UNAVAILABLE')
+              else:
+                  print('GREEN')
           except sqlite3.Error:
               print('RED|SQLITE_READ')
               sys.exit(2)
@@ -2041,6 +2068,11 @@ jobs:
               RC6_PREOPEN_READY=1
               break
             fi
+            if [[ "$CANDIDATE_READY" == AMBER\|* ]]; then
+              RC6_PREOPEN_READY=2
+              echo "RC6_PREOPEN_CANDIDATE_ALERT=$CANDIDATE_READY|DEPLOY_NOT_BLOCKED|PAPER_INSTRUMENTS_FAIL_CLOSED"
+              break
+            fi
             test "$CANDIDATE_READY" = WAIT
             sleep 30
           done
@@ -2048,7 +2080,11 @@ jobs:
             echo "RC6_PREOPEN_CANDIDATE_WAIT=RED|TIMEOUT_20M"
             exit 42
           fi
-          echo "RC6_PREOPEN_CANDIDATE_WAIT=GREEN"
+          if [ "$RC6_PREOPEN_READY" -eq 1 ]; then
+            echo 'RC6_PREOPEN_CANDIDATE_WAIT=GREEN'
+          else
+            echo 'RC6_PREOPEN_CANDIDATE_WAIT=AMBER|SOURCE_UNAVAILABLE|PAPER_READINESS_FAIL_CLOSED'
+          fi
 
           # Execute the same fail-closed preopen contract under both scheduled
           # phase labels. No order route, DB write, restart or Telegram send is
@@ -2136,7 +2172,7 @@ jobs:
             set +e
             AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300 \
               python /app/scripts/rc6_zero_known_error_runtime_audit.py \
-                --label "stability-$cycle" --baseline "$AUDIT_BASE" \
+                --label "stability-$cycle" --deploy-only --baseline "$AUDIT_BASE" \
                 --output "/app/data/deploy/zero-known-error-stability-$cycle.json" 2>&1)"
             AUDIT_RC=$?
             set -e
@@ -2666,6 +2702,7 @@ jobs:
           ' "$CANDIDATE_SHA" "$DEPLOY_SHA" "$CANDIDATE_TREE"
 
       - name: Failure-safe host cleanup
+        id: failure_cleanup
         if: ${{ always() && (steps.suspend.outcome == 'failure' || steps.suspend.outcome == 'cancelled' || steps.drain.outcome == 'failure' || steps.drain.outcome == 'cancelled' || steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled' || steps.flat_book.outcome == 'failure' || steps.flat_book.outcome == 'cancelled' || steps.timers_restore.outcome == 'failure' || steps.timers_restore.outcome == 'cancelled' || steps.timers_restored.outcome == 'failure' || steps.timers_restored.outcome == 'cancelled' || steps.backup_retire.outcome == 'failure' || steps.backup_retire.outcome == 'cancelled' || steps.finalize_runtime.outcome == 'failure' || steps.finalize_runtime.outcome == 'cancelled') }}
         # The bounded worst case is 45s writer stop + 120s recovery + 150s
         # scheduler reconciliation + 180s payload/final cleanup. Four minutes
@@ -2925,6 +2962,43 @@ jobs:
           test "$RECOVERY_RC" -eq 0
           test "$SCHEDULER_RESTORE_RC" -eq 0
           test "$CONTRACT_ORPHAN_RC" -eq 0
+
+      - name: Reclaim only proven orphan RC6 images after a failed Deploy
+        id: failure_orphan_cleanup
+        if: ${{ always() && steps.failure_cleanup.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The failure recovery has completed and removed its attempt barrier.
+          # A new Deploy must never inherit unreferenced Docker candidate bytes.
+          # Reuse the tested pretransfer helper, NOT docker prune. It verifies
+          # PAPER/0, all three running containers, every image owner and tag,
+          # including stopped-container refs, immediately before each removal.
+          # Lock the same root-owned host inode used by the promoter without
+          # creating another attempt record or restarting a service.
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          RECEIPT="$(timeout --signal=TERM --kill-after=10s 180s ssh -T \
+            -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n flock -n -E 73 /run/lock/porota-rc6-deploy-v2.lock sh -c '\''test ! -e /run/lock/porota-rc6-deploy-v2-attempt.json && exec env PYTHONDONTWRITEBYTECODE=1 python3 -B -'\''' \
+            < scripts/rc6_pretransfer_image_cleanup.py)"
+          echo "RC6_FAILED_DEPLOY_ORPHAN_CLEANUP=$RECEIPT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          proof=json.loads(sys.argv[1])
+          assert proof.get('schema')=='RC6_PRETRANSFER_IMAGE_CLEANUP_V1'
+          assert proof.get('status')=='GREEN'
+          assert proof.get('runtime_unchanged') is True
+          assert type(proof.get('disk_after')) is int and proof['disk_after']>0
+          assert type(proof.get('disk_before')) is int and proof['disk_before']>0
+          assert isinstance(proof.get('removed_tags'),list)
+          print('RC6_FAILED_DEPLOY_POSTCLEAN=GREEN|removed_tags='+
+                str(len(proof['removed_tags']))+'|free_bytes='+str(proof['disk_after']))
+          PY
 
       - name: Postdeploy full-session stress in the exact installed image
         id: stress
