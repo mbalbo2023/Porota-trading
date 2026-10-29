@@ -49,7 +49,7 @@ def test_failure_cleanup_stages_a151_operator_and_keeps_payload_cleanup():
     assert 'RECOVERY_A125_ENV=' in block
     assert 'RC6_A125_CANDIDATE_SOURCE_GZIP_B64=' in block
     assert 'RC6_A125_CANDIDATE_SOURCE_SHA256=' in block
-    assert '--phase cleanup_recover env $RECOVERY_A125_ENV python3 -' in block
+    assert '--phase cleanup_recover env $RECOVERY_A125_ENV $RECOVERY_A143_ENV python3 -' in block
     assert 'A151_HELD_STOPPED' in block
     assert block.count('cleanup_payload') >= 3
     assert '--phase cleanup_final timeout 150 python3 -' in block

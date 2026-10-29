@@ -36,13 +36,25 @@ def test_safe_iol_unavailable_allows_dry_deploy_preopen_but_never_paper_go(
     monkeypatch.setattr(preopen.shutil, "disk_usage", lambda _path:
                         SimpleNamespace(free=preopen.TARGET_FREE_BYTES + 1))
     green = lambda *args, **kwargs: {"state": "GREEN"}
-    for name in ("release_identity", "observer_db", "required_timers",
+    for name in ("release_identity", "observer_db",
                  "byma_morning_watch", "blocked_history_timers", "foreign_market_policy"):
         monkeypatch.setattr(preopen, name, green)
     monkeypatch.setattr(preopen, "container", green)
+    no_go = {"status": "NO_GO_PENDING_EXPLICIT_REARM", "business_day_art": "2026-10-29",
+             "receipt_sha256": "b" * 64, "operation_id": "A176-40796450488-1",
+             "a151_origin_sha256": "c" * 64,
+             "a175_quiescence_sha256": "d" * 64,
+             "a175_scheduler_sha256": "e" * 64,
+             "paper_execution_authorized": False}
+    monkeypatch.setattr(preopen, "required_timers", lambda _candidate: {
+        "state": "GREEN", "operator_paper_paused": True,
+        "operator_pause_day_ar": "2026-10-29",
+        "operator_pause_operation_id": no_go["operation_id"],
+        "operator_pause_receipt_sha256": no_go["receipt_sha256"],
+        "operator_no_go_continuation": no_go})
     assert preopen.main("T_MINUS_10", "a" * 40) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["status"] == "GREEN" and result["red_checks"] == []
+    assert result["status"] == "PAUSED_NO_GO" and result["red_checks"] == []
     assert result["checks"]["iol_reference_fallback"]["state"] == "AMBER"
     assert result["checks"]["iol_reference_fallback"]["effective_cache_state"] == \
         "SOURCE_UNAVAILABLE"
@@ -56,7 +68,7 @@ def test_safe_iol_unavailable_allows_dry_deploy_preopen_but_never_paper_go(
         deploy_gate.validate_report(result, phase="T_MINUS_10", return_code=0,
                                     now=NOW, is_operational=lambda _day: True)
     except deploy_gate.PreopenRejected as exc:
-        assert str(exc) == "PAPER_REARM_HOLD_UNPROVEN"
+        assert str(exc) == "OPERATOR_A176_NO_GO_CONTINUATION_RED"
     else:
         raise AssertionError("A future preopen cannot conceal the persistent NO_GO")
     assert admission.admission_status(now=NOW, candidate_sha="a" * 40)[0] is False

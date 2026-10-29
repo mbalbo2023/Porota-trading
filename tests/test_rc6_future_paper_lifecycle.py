@@ -45,11 +45,15 @@ def test_runtime_future_executor_cannot_bypass_preopen_on_direct_call(tmp_path, 
                    quantity="1", entry_cost="100", occurred_at="2026-10-03T12:00:00-03:00")
     with pytest.raises(ValueError, match="PAPER_ADMISSION_GUARD_MISSING"):
         executor.open_future(dlr(), **request)
-    # Exercise the missing-receipt contract independently from the operator's
-    # temporary 27-Oct veto. Otherwise this assertion changes with CI day.
+    # The 29-Oct operator veto is permanent until an explicit rearm. Test its
+    # precedence and independently test the older missing-receipt guard on an
+    # unpaused historical day; neither must authorize a PAPER opening.
     monkeypatch.setattr(gate, "OPERATOR_PAUSED_TRADE_DAYS_AR", frozenset())
-    with pytest.raises(ValueError, match="PAPER_PREOPEN_RECEIPT_UNSAFE"):
+    with pytest.raises(ValueError, match="OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"):
         executor.open_future(dlr(), admission_guard=lambda _c: "", **request)
+    assert gate.admission_status(now=datetime.fromisoformat("2026-10-26T11:00:00-03:00"),
+                                 candidate_sha="a" * 40, receipt_path=tmp_path / "missing.json") == (
+                                     False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
     with executor.store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM paper_future_positions").fetchone()[0] == 0
 

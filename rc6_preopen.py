@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
+import stat
 from datetime import date, datetime
 import json
 import shutil
@@ -55,14 +57,159 @@ def cmd(args, timeout=20):
         return 999, '', f'{type(exc).__name__}:{exc}'
 
 
-def container(name, require_readonly=False):
+def _deploy_json(filename, limit):
+    """Read one exact host receipt without following links or trusting its size."""
+    path = ROOT / 'data/deploy' / filename
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        observed = os.fstat(fd)
+        if (not stat.S_ISREG(observed.st_mode) or observed.st_nlink != 1 or
+                not 0 < observed.st_size <= limit):
+            raise ValueError('DEPLOY_PROVENANCE_FILE_UNSAFE')
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            raw = stream.read(limit + 1)
+        if len(raw) != observed.st_size:
+            raise ValueError('DEPLOY_PROVENANCE_FILE_CHANGED')
+        def distinct_pairs(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError('DEPLOY_PROVENANCE_DUPLICATE_KEY')
+                value[key] = item
+            return value
+        def invalid_constant(_):
+            raise ValueError('DEPLOY_PROVENANCE_NONFINITE')
+        value = json.loads(raw, object_pairs_hook=distinct_pairs,
+                           parse_constant=invalid_constant)
+        if type(value) is not dict:
+            raise ValueError('DEPLOY_PROVENANCE_NOT_OBJECT')
+        return value
+    finally:
+        os.close(fd)
+
+
+def _image_id(tag):
+    rc, image_id, _ = cmd(['docker', 'image', 'inspect', '-f', '{{.Id}}', tag])
+    if rc or not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id):
+        raise ValueError('PREOPEN_IMAGE_TAG_UNVERIFIED')
+    return image_id
+
+
+def _source_digest(rel):
+    path = ROOT / rel
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        observed = os.fstat(fd)
+        if (not stat.S_ISREG(observed.st_mode) or observed.st_nlink != 1 or
+                not 0 < observed.st_size <= 1024 * 1024):
+            raise ValueError('PREOPEN_BUNDLE_SOURCE_UNSAFE')
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            raw = stream.read(1024 * 1024 + 1)
+        if len(raw) != observed.st_size:
+            raise ValueError('PREOPEN_BUNDLE_SOURCE_CHANGED')
+        return hashlib.sha256(raw).hexdigest()
+    finally:
+        os.close(fd)
+
+
+def _validated_runtime_marker(candidate, image_id):
+    marker = _deploy_json('CURRENT_STATE_V2.json', 65536)
+    recorded = marker.get('candidate_sha')
+    if (not isinstance(recorded, str) or
+            not re.fullmatch(r'[0-9a-f]{40}', recorded) or
+            (candidate is not None and recorded != candidate) or
+            marker.get('validation_status') != 'VALIDATED_RUNTIME' or
+            marker.get('image_id') != image_id or
+            marker.get('mode') != 'PRODUCTION_PAPER' or
+            type(marker.get('real_orders_sent')) is not int or
+            marker['real_orders_sent'] != 0 or
+            marker.get('real_order_routes') != 'NOT_CALLED' or
+            marker.get('ppi_watch_untouched') is not True):
+        raise ValueError('PREOPEN_VALIDATED_RUNTIME_IDENTITY_RED')
+    return recorded
+
+
+def _candidate_image_provenance(candidate, image_id, deploy_scheduler_candidate):
+    if (not re.fullmatch(r'[0-9a-f]{40}', candidate) or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id)):
+        raise ValueError('PREOPEN_CANDIDATE_IDENTITY_INVALID')
+    frozen = _deploy_json('porota-frozen-candidate.json', 16384)
+    manifest = _deploy_json('porota-deploy-bundle-v2-manifest.json', 2 * 1024 * 1024)
+    tree = frozen.get('candidate_tree_sha')
+    if (frozen.get('candidate_sha') != candidate or
+            not isinstance(tree, str) or not re.fullmatch(r'[0-9a-f]{40}', tree) or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}', str(frozen.get('image_id'))) or
+            not re.fullmatch(r'[0-9a-f]{64}', str(frozen.get('image_tar_sha256'))) or
+            frozen.get('paper_mode_required') != 'PRODUCTION_PAPER' or
+            type(frozen.get('real_orders_sent_required')) is not int or
+            frozen['real_orders_sent_required'] != 0 or
+            frozen.get('real_order_capability_required') != 'BLOCKED' or
+            frozen.get('build_once') is not True):
+        raise ValueError('PREOPEN_FROZEN_IDENTITY_RED')
+    # A Docker load may normalize its image configuration. The frozen tar's
+    # original image ID is then diagnostic; the running immutable .Image must
+    # match BOTH materialized candidate and stable alias IDs exactly.
+    candidate_tag = EXPECTED_IMAGE + '-candidate-' + candidate
+    if (_image_id(candidate_tag) != image_id or
+            _image_id(EXPECTED_IMAGE) != image_id):
+        raise ValueError('PREOPEN_IMAGE_ALIAS_RED')
+    rc, encoded_env, _ = cmd(['docker', 'image', 'inspect', '-f',
+                              '{{json .Config.Env}}', candidate_tag])
+    if rc or len(encoded_env) > 32768:
+        raise ValueError('PREOPEN_IMAGE_SOURCE_UNVERIFIED')
+    env = json.loads(encoded_env)
+    if type(env) is not list or not all(type(item) is str for item in env):
+        raise ValueError('PREOPEN_IMAGE_SOURCE_UNVERIFIED')
+    for key, expected in (('POROTA_BUILD_SHA', candidate),
+                          ('POROTA_CANDIDATE_TREE_SHA', tree)):
+        if [item for item in env if item.startswith(key + '=')] != [key + '=' + expected]:
+            raise ValueError('PREOPEN_IMAGE_SOURCE_RED')
+    files = manifest.get('files')
+    if (manifest.get('schema_version') != 1 or manifest.get('status') != 'GREEN' or
+            type(files) is not list or type(manifest.get('file_count')) is not int or
+            manifest['file_count'] != len(files) or
+            not re.fullmatch(r'[0-9a-f]{64}', str(manifest.get('bundle_sha256')))):
+        raise ValueError('PREOPEN_BUNDLE_MANIFEST_RED')
+    for rel in ('rc6_preopen.py', '_version.py'):
+        matching = [row for row in files if type(row) is dict and row.get('path') == rel]
+        if (len(matching) != 1 or
+                not re.fullmatch(r'[0-9a-f]{64}', str(matching[0].get('sha256'))) or
+                _source_digest(rel) != matching[0]['sha256']):
+            raise ValueError('PREOPEN_BUNDLE_SOURCE_RED')
+    if deploy_scheduler_candidate is None:
+        _validated_runtime_marker(candidate, image_id)
+    elif deploy_scheduler_candidate != candidate:
+        raise ValueError('PREOPEN_DEPLOY_CANDIDATE_MISMATCH')
+
+
+def container(name, require_readonly=False, deploy_scheduler_candidate=None):
     rc, out, err = cmd(['docker','inspect','-f',
-        '{{.State.Running}}|{{.Config.Image}}|{{.RestartCount}}|{{.HostConfig.ReadonlyRootfs}}', name])
+        '{{.State.Running}}|{{.Config.Image}}|{{.Image}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.HostConfig.ReadonlyRootfs}}', name])
     parts = out.split('|') if rc == 0 else []
-    ok = len(parts) == 4 and parts[0] == 'true' and parts[1] == EXPECTED_IMAGE and parts[2] == '0'
+    ok = (len(parts) == 6 and parts[0] == 'true' and parts[3] == '0' and
+          parts[4] == 'false' and re.fullmatch(r'sha256:[0-9a-f]{64}', parts[2]))
     if require_readonly:
-        ok = ok and parts[3] == 'true'
-    return {'state':'GREEN' if ok else 'RED','raw':out,'error':err}
+        ok = ok and parts[5] == 'true'
+    reason = None
+    if ok:
+        try:
+            if parts[1] == EXPECTED_IMAGE:
+                # Preserve containers originally started under the stable tag.
+                if _image_id(EXPECTED_IMAGE) != parts[2]:
+                    raise ValueError('PREOPEN_STABLE_IMAGE_ID_RED')
+                if deploy_scheduler_candidate is not None:
+                    raise ValueError('PREOPEN_DEPLOY_IMAGE_NOT_CANDIDATE')
+                _validated_runtime_marker(None, parts[2])
+            elif parts[1].startswith(EXPECTED_IMAGE + '-candidate-'):
+                candidate = parts[1][len(EXPECTED_IMAGE + '-candidate-'):]
+                _candidate_image_provenance(candidate, parts[2], deploy_scheduler_candidate)
+            else:
+                raise ValueError('PREOPEN_IMAGE_TAG_RED')
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            ok = False
+            reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+    return {'state':'GREEN' if ok else 'RED','raw':out,'error':err,
+            'reason':reason}
 
 
 def observer_db():
@@ -266,7 +413,34 @@ def required_timers(deploy_scheduler_candidate=None):
     units = REQUIRED_TIMERS
     operator_pause_timer = None
     operator_pause_sha = None
+    operator_no_go_continuation = None
     preserved_iol_timer = None
+    if deploy_scheduler_candidate is None and datetime.now(TZ).date().isoformat() == '2026-10-29':
+        # The operator keeps the daily preopen timer disabled. Other daily
+        # timers may have been restored after Deploy; A176 verifies the
+        # historical hold and current PAPER/0 without reusing the held-16
+        # snapshot as a live timer-status claim.
+        try:
+            from scripts import rc6_deploy_scheduler_suspend as suspend
+            proof = suspend.exact_a176_operator_no_go_continuation()
+            if (type(proof) is not dict or
+                    proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
+                    proof.get('business_day_art') != '2026-10-29' or
+                    proof.get('paper_execution_authorized') is not False or
+                    not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
+                                     str(proof.get('operation_id'))) or
+                    any(not re.fullmatch(r'[0-9a-f]{64}', str(proof.get(key)))
+                        for key in ('receipt_sha256', 'a151_origin_sha256',
+                                    'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
+                raise ValueError('PREOPEN_DAILY_A176_NO_GO_PROOF_RED')
+            operator_no_go_continuation = proof
+            operator_pause_timer = suspend.OPERATOR_PREOPEN_TIMER
+            operator_pause_sha = proof['receipt_sha256']
+            operator_pause_operation = proof['operation_id']
+            day = proof['business_day_art']
+        except (OSError, ValueError, TypeError, KeyError, AttributeError,
+                json.JSONDecodeError) as exc:
+            return {'state':'RED','units':values,'reason':type(exc).__name__}
     if deploy_scheduler_candidate is not None:
         # A canonical intraday deployment intentionally pauses its exact
         # versioned timer set until runtime acceptance. Daily preopen calls
@@ -312,15 +486,43 @@ def required_timers(deploy_scheduler_candidate=None):
                 elif day == suspend.A151_OPERATOR_PAUSE_DAY:
                     operator_pause_sha, operator_pause_operation = (
                         suspend.exact_a151_operator_preopen_pause())
+                elif day == '2026-10-29':
+                    # A151's dated authorization cannot be carried forward by
+                    # inference. A176 is an independently checked host receipt,
+                    # issued under the canonical mutex with PAPER admission held.
+                    operator_no_go_continuation = (
+                        suspend.exact_a176_operator_no_go_continuation())
+                    proof = operator_no_go_continuation
+                    if (type(proof) is not dict or
+                            proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
+                            proof.get('business_day_art') != day or
+                            proof.get('paper_execution_authorized') is not False or
+                            not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
+                                             str(proof.get('operation_id'))) or
+                            any(not re.fullmatch(r'[0-9a-f]{64}', str(proof.get(key)))
+                                for key in ('receipt_sha256', 'a151_origin_sha256',
+                                            'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
+                        raise ValueError('PREOPEN_A176_NO_GO_PROOF_RED')
+                    operator_pause_sha = proof['receipt_sha256']
+                    operator_pause_operation = proof['operation_id']
                 else:
                     raise ValueError('PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED')
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, TypeError, KeyError, AttributeError,
+                json.JSONDecodeError) as exc:
             return {'state':'RED','units':values,'reason':type(exc).__name__}
     for unit in units:
         rc1, enabled, _ = cmd(['systemctl','is-enabled',unit])
         rc2, active, _ = cmd(['systemctl','is-active',unit])
         if deploy_scheduler_candidate is None:
-            good = rc1 == 0 and enabled == 'enabled' and rc2 == 0 and active == 'active'
+            if unit == operator_pause_timer:
+                service_rc, service, _ = cmd(['systemctl','show',unit,'-p','Unit','--value'])
+                service_state = (cmd(['systemctl','is-active',service])[1]
+                                 if service_rc == 0 and service ==
+                                 'porota-preopen-rc6.service' else 'unknown')
+                good = (rc1 == 1 and enabled == 'disabled' and rc2 == 3 and
+                        active == 'inactive' and service_state in {'inactive','failed'})
+            else:
+                good = rc1 == 0 and enabled == 'enabled' and rc2 == 0 and active == 'active'
         else:
             service_rc, service, _ = cmd(['systemctl','show',unit,'-p','Unit','--value'])
             service_state = cmd(['systemctl','is-active',service])[1] if service_rc == 0 and service.endswith('.service') else 'unknown'
@@ -346,6 +548,8 @@ def required_timers(deploy_scheduler_candidate=None):
                       operator_pause_day_ar=day,
                       operator_pause_operation_id=operator_pause_operation,
                       operator_pause_receipt_sha256=operator_pause_sha)
+        if operator_no_go_continuation is not None:
+            output['operator_no_go_continuation'] = operator_no_go_continuation
     return output
 
 
@@ -474,8 +678,10 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
                   'AMBER' if free < TARGET_FREE_BYTES else 'GREEN')
     checks = {
         'release_identity': release_identity(),
-        'observer_container': container('porota_production_observer', True),
-        'dashboard_container': container('porota_production_dashboard', False),
+        'observer_container': container('porota_production_observer', True,
+                                        deploy_scheduler_candidate),
+        'dashboard_container': container('porota_production_dashboard', False,
+                                         deploy_scheduler_candidate),
         'observer_db': observer_db(),
         'disk': {'state':disk_state,'free':free,
                  'blocking_minimum':BLOCKING_MIN_FREE_BYTES,
@@ -491,8 +697,7 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
     if publish_paper_gate:
         checks['paper_focus_contracts'] = focus_contracts(DB)
     reds = [k for k,v in checks.items() if v.get('state') == 'RED']
-    paused = bool(deploy_scheduler_candidate is not None and
-                  checks['required_rc6_timers'].get('operator_paper_paused') is True)
+    paused = checks['required_rc6_timers'].get('operator_paper_paused') is True
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
               'phase':phase_override or preopen_phase(now),
               'status':'RED' if reds else 'PAUSED_NO_GO' if paused else 'GREEN',
@@ -505,14 +710,26 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
         result['operator_pause_day_ar'] = checks['required_rc6_timers']['operator_pause_day_ar']
         result['operator_pause_operation_id'] = checks['required_rc6_timers']['operator_pause_operation_id']
         result['operator_pause_receipt_sha256'] = checks['required_rc6_timers']['operator_pause_receipt_sha256']
+        if 'operator_no_go_continuation' in checks['required_rc6_timers']:
+            result['operator_no_go_continuation'] = (
+                checks['required_rc6_timers']['operator_no_go_continuation'])
     if publish_paper_gate:
-        try:
-            result['paper_admission_receipt'] = publish_preopen(result, now=now)
-        except (OSError, ValueError) as exc:
-            result['status'] = 'RED'
-            result['red_checks'].append('paper_admission_receipt')
-            result['paper_admission_receipt'] = {'status':'NO_GO_PAPER_SCALPING',
-                                                  'reason':type(exc).__name__}
+        if paused and today.isoformat() == '2026-10-29':
+            # The historical A125 LIVE gate is immutable. The durable A176
+            # sidecar is the NO_GO authority; no GO receipt is written here.
+            result['paper_admission_receipt'] = {
+                'status':'NO_GO_PAPER_SCALPING',
+                'reason':'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                'continuation_receipt_sha256':result['operator_pause_receipt_sha256'],
+                'new_receipt_written':False}
+        else:
+            try:
+                result['paper_admission_receipt'] = publish_preopen(result, now=now)
+            except (OSError, ValueError) as exc:
+                result['status'] = 'RED'
+                result['red_checks'].append('paper_admission_receipt')
+                result['paper_admission_receipt'] = {'status':'NO_GO_PAPER_SCALPING',
+                                                      'reason':type(exc).__name__}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0 if result['status'] in {'GREEN','PAUSED_NO_GO'} else 2
 

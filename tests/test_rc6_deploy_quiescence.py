@@ -102,7 +102,8 @@ def test_deploy_poststart_uses_fresh_phase_gate_after_long_soak():
     assert "expected='RUNNING' if mode=='OPEN'" not in block
 
 
-@pytest.mark.parametrize('case', ['stale_open', 'changed_receipt', 'mixed_containers'])
+@pytest.mark.parametrize('case', ['stale_open', 'changed_receipt', 'mixed_containers',
+                                  'unsafe_marker'])
 def test_pretransfer_stopped_open_admission_uses_exact_receipt_before_live_heartbeat(
         monkeypatch, capsys, case):
     workflow = (Path(__file__).resolve().parents[1] /
@@ -111,6 +112,23 @@ def test_pretransfer_stopped_open_admission_uses_exact_receipt_before_live_heart
     block = block.split('- name: Dynamic pre-transfer disk guard', 1)[0]
     code = block.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0]
     code = '\n'.join(line.removeprefix('          ') for line in code.splitlines())
+
+    # Classification now requires a durable current marker before *any*
+    # recovery path, including old stopped OPEN. Supply an exact read-only
+    # marker fixture; the unsafe variant proves the new guard runs first.
+    marker = Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+    is_symlink, is_file = Path.is_symlink, Path.is_file
+    stat_path, read_bytes = Path.stat, Path.read_bytes
+    monkeypatch.setattr(Path, 'is_symlink', lambda p:
+                        case == 'unsafe_marker' if p == marker else is_symlink(p))
+    monkeypatch.setattr(Path, 'is_file', lambda p:
+                        True if p == marker else is_file(p))
+    monkeypatch.setattr(Path, 'stat', lambda p, *args, **kwargs:
+                        type('MarkerStat', (), {'st_size':84,'st_nlink':1})()
+                        if p == marker else stat_path(p,*args,**kwargs))
+    monkeypatch.setattr(Path, 'read_bytes', lambda p:
+                        b'{"candidate_sha":"18ba517a846c6798f0d12f39072465fc02fa03b5"}'
+                        if p == marker else read_bytes(p))
 
     class ReadOnlyConnection:
         def __enter__(self): return self
@@ -156,9 +174,10 @@ def test_pretransfer_stopped_open_admission_uses_exact_receipt_before_live_heart
     else:
         with pytest.raises(SystemExit, match=(
                 'RC6_STOPPED_OPEN_FLAT_RECEIPT_RED' if case == 'changed_receipt'
+                else 'RC6_CURRENT_MARKER_UNSAFE' if case == 'unsafe_marker'
                 else 'RC6_FLAT_PAPER_SESSION_UNVERIFIED')):
             exec(compile(code, 'deploy-v2-host-classification', 'exec'), {})
-        if case == 'mixed_containers': assert calls == []
+        if case in {'mixed_containers','unsafe_marker'}: assert calls == []
 
 
 def test_intraday_operator_suspend_requires_live_paper_and_stopped_ack(installation):

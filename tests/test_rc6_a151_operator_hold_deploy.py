@@ -213,7 +213,7 @@ def test_a151_intraday_literal_is_exact_and_required_before_suspend():
     workflow=(Path(__file__).parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
     assert workflow.index('Require exact intraday owner authorization for OPEN suspension') < \
            workflow.index('Suspend versioned RC6 schedulers for guarded promotion')
-    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A174_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}" in workflow
+    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A174_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}" in workflow
     assert "decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY'" in workflow
     assert 'RC6_A151_OWNER_INTRADAY_ID=$COMMENT' in workflow
     assert '--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID"' in workflow
@@ -464,6 +464,6 @@ def test_a151_preopen_day29_not_implicitly_authorized():
     report['generated_at_ar']=now.isoformat()
     report['operator_pause_day_ar']='2026-10-29'
     report['checks']['required_rc6_timers']['operator_pause_day_ar']='2026-10-29'
-    with pytest.raises(deploy_gate.PreopenRejected,match='DAY_EXPIRED'):
+    with pytest.raises(deploy_gate.PreopenRejected,match='OPERATOR_PAUSE_IDENTITY_RED'):
         deploy_gate.validate_report(report,phase='T_MINUS_10',return_code=0,
             now=now,is_operational=lambda _:True)

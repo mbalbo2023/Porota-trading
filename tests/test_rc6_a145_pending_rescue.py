@@ -423,6 +423,11 @@ def test_a167_classifier_stages_candidate_with_old_host_missing_a143_constant(
         '- name: Classify current flat PAPER session before host writes', 1)[1]
     code = block.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0]
     code = '\n'.join(line.removeprefix('          ') for line in code.splitlines())
+    # Classifier reads the actual host marker; the historical A143 replay
+    # supplies the same file under its isolated fixture ROOT.
+    marker_literal = "Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')"
+    assert code.count(marker_literal) == 1
+    code = code.replace(marker_literal, "ROOT/'data/deploy/CURRENT_STATE_V2.json'")
     old = ModuleType('scripts.rc6_deploy_quiescence')
     old.ROOT, old.OWNED = root, q.OWNED
     old.inspect = lambda name: states[name]
@@ -462,19 +467,23 @@ def test_a167_classifier_stages_candidate_with_old_host_missing_a143_constant(
     candidate_digest = hashlib.sha256(candidate_bytes).hexdigest()
     if mutation == 'source_hash':
         candidate_digest = '0'*64
+    # The 28-Oct E2BIG fix moved source bytes from SSH argv to stdin;
+    # recreate those exact staged globals instead of the obsolete argv wire.
+    staged = {
+        'CANDIDATE_AUDIT_GZIP_B64': '',
+        'CANDIDATE_A125_B64': base64.b64encode(gzip.compress(operator_bytes)).decode(),
+        'CANDIDATE_A143_B64': base64.b64encode(gzip.compress(candidate_bytes)).decode(),
+    }
     monkeypatch.setattr(sys, 'argv', [
-        '-', SHA, '',
-        base64.b64encode(gzip.compress(operator_bytes)).decode(),
-        base64.b64encode(gzip.compress(candidate_bytes)).decode(),
-        hashlib.sha256(operator_bytes).hexdigest(), candidate_digest])
+        '-', SHA, hashlib.sha256(operator_bytes).hexdigest(), candidate_digest, ''])
     if mutation == 'valid':
-        exec(compile(code, 'a167-classifier', 'exec'), {})
+        exec(compile(code, 'a167-classifier', 'exec'), staged)
         assert capsys.readouterr().out == 'CLOSED_A143_PENDING_FIX_FORWARD\n'
     else:
         expected = ('RC6_A143_STAGED_SOURCE_HASH_RED' if mutation == 'source_hash'
                     else 'RC6_A143_PINNED_IMAGE_CHANGED')
         with pytest.raises(SystemExit, match=expected):
-            exec(compile(code, 'a167-classifier', 'exec'), {})
+            exec(compile(code, 'a167-classifier', 'exec'), staged)
 
 
 class A151OpenClock(datetime):

@@ -544,6 +544,9 @@ def test_a139_classifier_adopts_exact_prior_stopped_a92_readonly(
     block=workflow.split('- name: Classify current flat PAPER session before host writes',1)[1]
     code=block.split("<<'PY'\n",1)[1].split('\n          PY',1)[0]
     code='\n'.join(line.removeprefix('          ') for line in code.splitlines())
+    marker_literal="Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')"
+    assert code.count(marker_literal)==1
+    code=code.replace(marker_literal,"ROOT/'data/deploy/CURRENT_STATE_V2.json'")
     capsys.readouterr()
     before=len(calls)
     exec(compile(code,'a139-preflight-classifier','exec'),{})
@@ -708,6 +711,9 @@ def test_a138_pretransfer_classifier_window_fails_closed(
         code = block.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0]
         code = '\n'.join(line.removeprefix('          ')
                          for line in code.splitlines())
+        marker_literal="Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')"
+        assert code.count(marker_literal)==1
+        code=code.replace(marker_literal,"ROOT/'data/deploy/CURRENT_STATE_V2.json'")
         module = ModuleType('scripts.rc6_deploy_quiescence')
         module.ROOT, module.OWNED = q.ROOT, q.OWNED
         module.inspect = lambda name: states[name]
@@ -734,9 +740,14 @@ def test_a138_pretransfer_classifier_window_fails_closed(
         monkeypatch.setitem(sys.modules, backup.__name__, backup)
         monkeypatch.setitem(sys.modules, 'datetime', clock)
         operator_bytes = operator_source.encode()
-        monkeypatch.setattr(sys, 'argv', ['-', SHA, '',
-            base64.b64encode(gzip.compress(operator_bytes, mtime=0)).decode(),
-            '', hashlib.sha256(operator_bytes).hexdigest()])
+        # The classifier sources are now streamed via stdin rather than
+        # concatenated into SSH argv. Preserve the historical pause contract.
+        staged = {'CANDIDATE_AUDIT_GZIP_B64':'',
+                  'CANDIDATE_A125_B64':base64.b64encode(
+                      gzip.compress(operator_bytes, mtime=0)).decode(),
+                  'CANDIDATE_A143_B64':''}
+        monkeypatch.setattr(sys, 'argv', ['-', SHA,
+            hashlib.sha256(operator_bytes).hexdigest(), '', ''])
         real_connect = sqlite3.connect
         def connect(target, *args, **kwargs):
             if str(target).startswith(
@@ -745,12 +756,12 @@ def test_a138_pretransfer_classifier_window_fails_closed(
             return real_connect(target, *args, **kwargs)
         monkeypatch.setattr(sqlite3, 'connect', connect)
         if admitted:
-            exec(compile(code, 'a138-classifier', 'exec'), {})
+            exec(compile(code, 'a138-classifier', 'exec'), staged)
             assert capsys.readouterr().out == q.RESCUE_MODE + '\n'
             assert critical == ['issues_only']
         else:
             with pytest.raises(SystemExit, match=error):
-                exec(compile(code, 'a138-classifier', 'exec'), {})
+                exec(compile(code, 'a138-classifier', 'exec'), staged)
             assert critical == []
         assert not any(call[1] in {'stop', 'start'} for call in calls)
     finally:
@@ -768,6 +779,9 @@ def test_pretransfer_classifier_replays_observed_host_without_writes(
     block = workflow.split('- name: Classify current flat PAPER session before host writes',1)[1]
     code = block.split("<<'PY'\n",1)[1].split('\n          PY',1)[0]
     code = '\n'.join(line.removeprefix('          ') for line in code.splitlines())
+    marker_literal="Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')"
+    assert code.count(marker_literal)==1
+    code=code.replace(marker_literal,"ROOT/'data/deploy/CURRENT_STATE_V2.json'")
     module = ModuleType('scripts.rc6_deploy_quiescence')
     module.ROOT, module.OWNED = q.ROOT, q.OWNED
     module.inspect = lambda name: states[name]
@@ -812,6 +826,9 @@ def test_pretransfer_classifier_requires_recent_a92_sqlite_full_trace(
     block=workflow.split('- name: Classify current flat PAPER session before host writes',1)[1]
     code=block.split("<<'PY'\n",1)[1].split('\n          PY',1)[0]
     code='\n'.join(line.removeprefix('          ') for line in code.splitlines())
+    marker_literal="Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')"
+    assert code.count(marker_literal)==1
+    code=code.replace(marker_literal,"ROOT/'data/deploy/CURRENT_STATE_V2.json'")
     module=ModuleType('scripts.rc6_deploy_quiescence')
     module.ROOT,module.OWNED=q.ROOT,q.OWNED
     module.inspect=lambda name:states[name]
@@ -1004,6 +1021,9 @@ def test_next_deploy_classifier_uses_exact_prior_stop_readonly(incident,monkeypa
         block=workflow.split('- name: Classify current flat PAPER session before host writes',1)[1]
         code=block.split("<<'PY'\n",1)[1].split('\n          PY',1)[0]
         code='\n'.join(line.removeprefix('          ') for line in code.splitlines())
+        marker_literal="Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')"
+        assert code.count(marker_literal)==1
+        code=code.replace(marker_literal,"ROOT/'data/deploy/CURRENT_STATE_V2.json'")
         backup=ModuleType('scripts.rc6_679_backup_suspension')
         backup.inventory=lambda:[]
         monkeypatch.setitem(sys.modules,backup.__name__,backup)

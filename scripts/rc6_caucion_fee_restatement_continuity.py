@@ -22,7 +22,9 @@ PROBE_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_ORIGIN_PROBE_V1"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
 INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED",
                             "CLOSED_A171_PENDING_FIX_FORWARD",
-                            "CLOSED_A174_PENDING_FIX_FORWARD"})
+                            "CLOSED_A174_PENDING_FIX_FORWARD",
+                            "CLOSED_A175_PENDING_FIX_FORWARD",
+                            "OPEN_A175_PENDING_FIX_FORWARD"})
 QUIESCENCE_MODES = INTRADAY_MODES | frozenset({
     "CLOSED", "DEGRADED_CLOSED_20261026", "CLOSED_STOPPED_FAILED_RESCUE",
     "CLOSED_A143_PENDING_FIX_FORWARD",
@@ -40,6 +42,16 @@ A174_FAILED_RECEIPT_SHA256 = "364c9bb9f013da603345c90219e7c889d5b04ecff951afe08f
 A174_LOADED_IMAGE_ID = "sha256:9ca6e7ca98f11bbb82353434f54ffab15b218ec54319c83ae1661aaf897a40e9"
 A174_MARKER_SHA256 = "0191482515683e5184871d63e6030208e0b22ddfc727845b06c4fc9b59d5c6f9"
 A174_FROZEN_SHA256 = "4715ef897a9216242d0604e06e7df8ceb30f47f48552ac0d282013e04de9a687"
+A175_FAILED_CANDIDATE = "18ba517a846c6798f0d12f39072465fc02fa03b5"
+A175_FAILED_RECEIPT_SHA256 = "5ddf0d5e340f7cac96bcbb339eeaeea3ed4aad635a2201fd55fffe375c961022"
+A175_LOADED_IMAGE_ID = "sha256:9841cba8df3345fa22e39457645ba250431ad1f465ce4204d92f73f7816215b9"
+A175_MARKER_SHA256 = "42055f5225def0560453b2c40b5e4695082fa3235fc42a4596210cf0c1b8b161"
+A175_FROZEN_SHA256 = "1067182c282f17440850e50c7f8d347d84cfbb90090d7e71066483beb19450e0"
+A175_A151_ORIGIN_SHA256 = "da5dfe9469fd6ff64e850b09e9cf94a1653f762aef8904d0d77fb9f241af69e2"
+A175_RUNNING_IDS = {
+    "porota_production_observer": "72ed632d0514ec1835e3dcb7983aa2b13cfbcf2b46c5a62132e5c739f7df86eb",
+    "porota_production_dashboard": "9b01cf17b7c3e46d96474d998840fc0e4c4c4f828dd825bb44744710b99686bb",
+}
 OWNED = {"porota_production_observer", "porota_production_dashboard"}
 WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -67,7 +79,7 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
             receipt["real_orders_sent"] != 0 or
             receipt.get("ppi_watch_accessed") is not False):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
-    if quiescence_mode == "OPEN":
+    if quiescence_mode in {"OPEN","OPEN_A175_PENDING_FIX_FORWARD"}:
         if receipt.get("market_open_suspended") is not True:
             raise ValueError("PAPER_RESTATEMENT_PRIOR_FAILED_HOST_RECEIPT_RED")
     elif receipt.get("market_open_suspended") is not False:
@@ -113,6 +125,48 @@ def validate_prior_receipt(receipt, candidate, quiescence_mode):
                 type(a174.get("operator_receipt_sha256")) is not str or
                 re.fullmatch(r"[0-9a-f]{64}",a174["operator_receipt_sha256"]) is None):
             raise ValueError("PAPER_RESTATEMENT_A174_ORIGIN_RED")
+    if quiescence_mode in {"CLOSED_A175_PENDING_FIX_FORWARD",
+                           "OPEN_A175_PENDING_FIX_FORWARD"}:
+        a175 = receipt.get("a175_previous_proof")
+        intraday = quiescence_mode == "OPEN_A175_PENDING_FIX_FORWARD"
+        if (receipt.get("a175_pending_adopted") is not True or
+                receipt.get("a175_origin_candidate") != A175_FAILED_CANDIDATE or
+                receipt.get("a175_origin_sha256") != A175_FAILED_RECEIPT_SHA256 or
+                receipt.get("market_open_suspended") is not intraday or
+                receipt.get("inflight") != "ABSENT_OWNED_RUNTIME_STOPPED" or
+                type(a175) is not dict or
+                a175.get("intraday_a175") is not intraday or
+                a175.get("origin_candidate") != A175_FAILED_CANDIDATE or
+                a175.get("origin_sha256") != A175_FAILED_RECEIPT_SHA256 or
+                a175.get("image_id") != A175_LOADED_IMAGE_ID or
+                a175.get("marker_sha256") != A175_MARKER_SHA256 or
+                a175.get("frozen_sha256") != A175_FROZEN_SHA256 or
+                a175.get("flat_book", {}).get("source_sha") != A175_FAILED_CANDIDATE or
+                (a175.get("flat_book", {}).get("process_state"),
+                 a175.get("flat_book", {}).get("session_state")) not in
+                    ({("RUNNING", "MARKET_OPEN")} if intraday else
+                     {("WAITING_MARKET", "CLOSED"),
+                      ("WAITING_MARKET", "MARKET_CLOSED")}) or
+                type(a175.get("flat_book", {}).get("real_orders_sent")) is not int or
+                a175["flat_book"]["real_orders_sent"] != 0 or
+                a175.get("failure_flat_book", {}).get("source_sha") != A175_FAILED_CANDIDATE or
+                a175.get("failure_flat_book", {}).get("process_state") != "WAITING_MARKET" or
+                a175.get("failure_flat_book", {}).get("session_state") != "MARKET_CLOSED" or
+                type(a175.get("failure_flat_book", {}).get("real_orders_sent")) is not int or
+                a175["failure_flat_book"]["real_orders_sent"] != 0 or
+                a175.get("operator_hold_business_day") not in {"2026-10-28", "2026-10-29"} or
+                a175.get("operator_a151_origin_sha256") != A175_A151_ORIGIN_SHA256 or
+                type(a175.get("operator_receipt_sha256")) is not str or
+                re.fullmatch(r"[0-9a-f]{64}", a175["operator_receipt_sha256"]) is None or
+                (a175["operator_hold_business_day"] == "2026-10-28" and
+                 a175["operator_receipt_sha256"] != A175_A151_ORIGIN_SHA256) or
+                type(a175.get("containers")) is not dict or
+                set(a175["containers"]) != OWNED or
+                any(type(row) is not dict or
+                    row.get("image") != A175_LOADED_IMAGE_ID or
+                    row.get("id") != A175_RUNNING_IDS[name]
+                    for name, row in a175["containers"].items())):
+            raise ValueError("PAPER_RESTATEMENT_A175_ORIGIN_RED")
     if quiescence_mode == "A151_HELD_STOPPED" and (
             receipt.get("a169_origin_candidate") != A169_STOPPED_CANDIDATE or
             receipt.get("a169_origin_sha256") != A169_STOPPED_RECEIPT_SHA256):
