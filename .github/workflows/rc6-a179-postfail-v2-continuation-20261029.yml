@@ -92,6 +92,26 @@ jobs:
                      v['paper_orders_authorized'] is False for v in row['results'].values())
           print('RC6_A179_BOTH_PREOPEN_PHASES=GREEN_READ_ONLY|NO_GO_HELD')
           PY
+      - name: Check every remaining closing prerequisite strictly read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_a179_postfail" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - --mode closure-readiness' \
+            < scripts/rc6_a179_resume_validate.py | tee a179-closure-readiness.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('a179-closure-readiness.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_RESUME_CLOSURE-READINESS=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='GREEN_READ_ONLY' and row['backup_inventory_count']==0
+          assert row['mutex_barrier']=='ABSENT' and row['real_orders_sent']==0
+          assert row['ppi_watch_mutations']==row['host_mutations']==0
+          print('RC6_A179_CLOSURE_READINESS=GREEN_READ_ONLY|PAPER=0|NO_GO')
+          PY
       - name: Preserve exact read-only recovery certificates
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,6 +120,7 @@ jobs:
           path: |
             a179-resume-preflight.jsonl
             a179-resume-preopen.jsonl
+            a179-closure-readiness.jsonl
           retention-days: 14
           if-no-files-found: warn
       - name: Erase runner SSH key

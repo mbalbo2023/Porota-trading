@@ -180,12 +180,70 @@ def verify_preopen(root=ROOT) -> dict:
             'ppi_watch_mutations':0}
 
 
+def command_stdout(*argv):
+    return subprocess.check_output(argv, text=True, timeout=15).strip()
+
+
+def systemctl_state(action, unit):
+    done=subprocess.run(('systemctl',action,unit), capture_output=True,
+                        text=True,timeout=15,check=False)
+    require(done.returncode in (0,1,3), 'A179_SYSTEMCTL_QUERY_FAILED:'+unit)
+    return done.stdout.strip()
+
+
+def verify_closure_readiness(root=ROOT) -> dict:
+    """Predict every remaining host-write prerequisite without touching it.
+
+    Restore the installed artifact only if the prior attempt is definitely
+    finished, the stable tag and approval unit agree, and the empty-backup
+    guard is already satisfied. No docker run/systemctl start occurs here.
+    """
+    verify_origin(root)
+    require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
+            'A179_PREVIOUS_DEPLOY_MUTEX_BARRIER_PRESENT')
+    require(not (Path('/tmp')/'porota-rc6-deploy-v2-attempt.json').exists(),
+            'A179_OLD_DEPLOY_MUTEX_BARRIER_PRESENT')
+    stable='porota-trading-bot:17.0.0-rc6'
+    require(command_stdout('docker','image','inspect','-f','{{.Id}}',stable)==IMAGE_ID,
+            'A179_STABLE_IMAGE_TAG_DRIFT')
+    for service in ('porota-critical-github-proxy-rc6.service',
+                    'porota-critical-approval-rc6.service'):
+        require(systemctl_state('is-active',service)=='active',
+                'A179_CRITICAL_SERVICE_INACTIVE:'+service)
+    unit=command_stdout('systemctl','cat','porota-critical-approval-rc6.service')
+    require(stable in unit and '/opt/porota-control-plane-rc6/current:/code:ro' in unit,
+            'A179_CRITICAL_UNIT_UNEXPECTED')
+    require(systemctl_state('is-enabled',
+                            'porota-host-general-backup-rc6.timer')=='masked' and
+            systemctl_state('is-active',
+                            'porota-host-general-backup-rc6.timer')=='inactive',
+            'A179_BACKUP_TIMER_UNEXPECTED')
+    policy=json.loads((root/'ops/policy/rc6-disk-housekeeping-v1.json').read_bytes())
+    require(policy.get('backups',{}).get('suspended') is True,
+            'A179_BACKUP_POLICY_NOT_SUSPENDED')
+    sys.path.insert(0,str(root))
+    from scripts import rc6_679_backup_suspension as backup
+    inventory=backup.inventory()
+    require(inventory==[], 'A179_BACKUP_EMPTY_RETIRE_NOT_YET_SAFE')
+    require(not (root/'data/deploy'/('backup-retire-'+CANDIDATE+'.json')).exists(),
+            'A179_BACKUP_ALREADY_RETIRED')
+    return {'schema':'rc6.a179.closure-readiness.v1','status':'GREEN_READ_ONLY',
+            'candidate':CANDIDATE, 'current_marker':'DEPLOYED_VALIDATION_PENDING',
+            'critical_old_image':CRITICAL_IMAGE, 'stable_image':IMAGE_ID,
+            'backup_inventory_count':0, 'mutex_barrier':'ABSENT',
+            'readiness':'NO_PREMATURE_RUNTIME_FINALIZATION',
+            'real_orders_sent':0,'host_mutations':0,'ppi_watch_mutations':0}
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode',required=True,choices=('preflight','preopen'))
+    parser.add_argument('--mode',required=True,
+                        choices=('preflight','preopen','closure-readiness'))
     args=parser.parse_args(argv)
     try:
-        result=verify_origin() if args.mode=='preflight' else verify_preopen()
+        result=(verify_origin() if args.mode=='preflight' else
+                verify_preopen() if args.mode=='preopen' else
+                verify_closure_readiness())
         print('RC6_A179_RESUME_'+args.mode.upper()+'='+json.dumps(result,sort_keys=True))
         return 0
     except Exception as exc:
