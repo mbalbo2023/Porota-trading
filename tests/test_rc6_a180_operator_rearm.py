@@ -128,7 +128,14 @@ def test_replay_tamper_expiration_and_root_owned_file_guard(tmp_path):
 
 def test_no_sidecar_unsafe_parent_and_symlink_blocked(tmp_path):
     if os.geteuid() != 0:
-        pytest.skip("root-owned mount proof tested by root-executed case")
+        # CI runs as a non-root user. Verify that the privileged reader
+        # rejects an untrusted user-owned directory; never skip a governed
+        # regression merely because the runner is less privileged.
+        directory = tmp_path / "operator"
+        directory.mkdir()
+        with pytest.raises(ValueError, match="DIRECTORY_UNTRUSTED"):
+            operator._root_owned_receipt(directory)
+        return
     directory = tmp_path / "operator"
     directory.mkdir()
     marker, frozen = release(tmp_path)
@@ -144,7 +151,20 @@ def test_no_sidecar_unsafe_parent_and_symlink_blocked(tmp_path):
 
 def test_host_install_is_exact_idempotent_and_pins_issuance(tmp_path):
     if os.geteuid() != 0:
-        pytest.skip("root-only install mutation")
+        # The non-root runner must prove install is forbidden; root tests
+        # additionally exercise idempotence without rewriting expiry.
+        directory = tmp_path / "operator"
+        directory.mkdir()
+        marker, frozen = release(tmp_path)
+        with pytest.raises(ValueError, match="ROOT_REQUIRED"):
+            operator.install_rearm(
+                candidate_sha=CANDIDATE, candidate_tree_sha=TREE,
+                deploy_run_id=40900000123, deploy_run_attempt=1,
+                runtime_validation_run_id=40900000123,
+                operator_comment_id=6500000001, rearm_run_id=40900000999,
+                now=NOW, directory=directory, marker_path=marker,
+                frozen_path=frozen)
+        return
     directory, marker, frozen, original = prepared(tmp_path)
     second = operator.install_rearm(
         candidate_sha=CANDIDATE, candidate_tree_sha=TREE,
