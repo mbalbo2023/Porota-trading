@@ -34,8 +34,8 @@ HASH = re.compile(r'[0-9a-f]{64}\Z')
 CODE = re.compile(r'[A-Z][A-Z0-9_]{2,99}\Z')
 # Product identity is fixed; the workflow remains disabled until its one
 # successful Predeploy artifact and digest are verified.
-EXPECTED_CANDIDATE = 'e4906a661e7a5f1e596db7967fc75273e0b01749'
-EXPECTED_TREE = 'f5e03fb80adf71f4ac40b0bdc2bbc31814c17923'
+EXPECTED_CANDIDATE = '18ba517a846c6798f0d12f39072465fc02fa03b5'
+EXPECTED_TREE = '66c67bff66dd9f036cd7aa8de5ba312e04e53be6'
 EXPECTED_PRIOR = 'b6e6ce75f29fe117aaa42b0bfcd9386ea93a0aa0'
 EXPECTED_PRIOR_TREE = 'ac82bcb2617748294c9950a009864dbf95e336f4'
 EXPECTED_PRIOR_DEPLOY = 'ff2775933b1565bb3a43fa130f9aa6359ecbdf48'
