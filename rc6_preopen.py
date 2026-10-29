@@ -411,6 +411,7 @@ def blocked_history_timers():
 def required_timers(deploy_scheduler_candidate=None):
     values = {}
     ok = True
+    optional_source_alerts = []
     units = REQUIRED_TIMERS
     operator_pause_timer = None
     operator_pause_sha = None
@@ -523,6 +524,7 @@ def required_timers(deploy_scheduler_candidate=None):
     for unit in units:
         rc1, enabled, _ = cmd(['systemctl','is-enabled',unit])
         rc2, active, _ = cmd(['systemctl','is-active',unit])
+        optional_degraded = False
         if deploy_scheduler_candidate is None:
             if unit == operator_pause_timer:
                 service_rc, service, _ = cmd(['systemctl','show',unit,'-p','Unit','--value'])
@@ -543,16 +545,52 @@ def required_timers(deploy_scheduler_candidate=None):
             elif unit == preserved_iol_timer:
                 # Periodic OAuth health work may legitimately be running. The
                 # service identity must remain exact, never a generic active
-                # timer exemption or trading/preopen permission.
-                good = (rc1 == 0 and enabled == 'enabled' and rc2 == 0 and active == 'active'
-                        and service == suspend.IOL_OAUTH_GUARD_SERVICE and
-                        service_state in {'inactive','active','activating','deactivating','reloading'})
+                # timer exemption or trading/preopen permission. Its classified
+                # exit 2 means IOL is degraded, not that the timer topology is
+                # broken. A wrong unit, an unclassified exit, or an unreadable
+                # systemd result remains RED. IOL provenance is separately
+                # checked by iol_reference_state() and PAPER instrument gates.
+                topology_good = (rc1 == 0 and enabled == 'enabled' and
+                                 rc2 == 0 and active == 'active' and
+                                 service_rc == 0 and
+                                 service == suspend.IOL_OAUTH_GUARD_SERVICE)
+                if topology_good and service_state == 'failed':
+                    meta_rc, raw_meta, _ = cmd([
+                        'systemctl', 'show', service, '-p', 'Result',
+                        '-p', 'ExecMainCode', '-p', 'ExecMainStatus'])
+                    meta = {}
+                    for line in raw_meta.splitlines():
+                        if '=' not in line:
+                            meta = {}
+                            break
+                        key, value = line.split('=', 1)
+                        if key in meta:
+                            meta = {}
+                            break
+                        meta[key] = value
+                    optional_degraded = (meta_rc == 0 and meta == {
+                        'Result': 'exit-code', 'ExecMainCode': '1',
+                        'ExecMainStatus': '2'})
+                good = topology_good and (
+                    service_state in {'inactive','active','activating',
+                                      'deactivating','reloading'} or
+                    optional_degraded)
             else:
                 good = (rc1 == 0 and enabled == 'enabled' and rc2 == 3 and active == 'inactive'
                         and service_state not in {'unknown','active','activating','reloading','deactivating'})
-        values[unit] = {'state':'GREEN' if good else 'RED','enabled':enabled,'active':active}
+        values[unit] = {'state':'AMBER' if optional_degraded and good else
+                        'GREEN' if good else 'RED',
+                        'enabled':enabled,'active':active}
+        if unit == preserved_iol_timer and deploy_scheduler_candidate is not None:
+            values[unit]['service_unit'] = service
+            values[unit]['service_state'] = service_state
+            if optional_degraded and good:
+                values[unit]['reason'] = 'IOL_OAUTH_GUARDIAN_CLASSIFIED_EXIT2'
+                optional_source_alerts.append(unit)
         ok = ok and good
     output = {'state':'GREEN' if ok else 'RED','units':values}
+    if optional_source_alerts:
+        output['optional_source_alerts'] = optional_source_alerts
     if operator_pause_timer is not None:
         output.update(operator_paper_paused=True,
                       operator_pause_day_ar=day,
