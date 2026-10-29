@@ -52,6 +52,11 @@ class Rejected(RuntimeError):
     pass
 
 
+def root_owned(st):
+    """Host ownership guard; tests replace this probe, never the host policy."""
+    return st.st_uid == 0
+
+
 def reject_if(condition, code):
     if condition:
         raise Rejected(code)
@@ -69,7 +74,7 @@ def read_guarded(path, digest=None, max_bytes=65536):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         st = os.fstat(fd)
-        reject_if(not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or
+        reject_if(not stat.S_ISREG(st.st_mode) or not root_owned(st) or
                   st.st_nlink != 1 or st.st_size < 2 or st.st_size > max_bytes or
                   stat.S_IMODE(st.st_mode) & 0o022, 'RECEIPT_FILE_UNSAFE')
         raw = os.read(fd, max_bytes + 1)
@@ -228,12 +233,12 @@ def seal(run_id, attempt, now=None):
     now = now or datetime.now(timezone.utc)
     reject_if(not valid_day(now), 'A176_DAY_EXPIRED')
     reject_if(DIR.is_symlink() or not DIR.is_dir() or
-              DIR.stat().st_uid != 0 or DIR.stat().st_mode & 0o022,
+              not root_owned(DIR.stat()) or DIR.stat().st_mode & 0o022,
               'RECEIPT_DIRECTORY_UNSAFE')
     lock_fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         st = os.fstat(lock_fd)
-        reject_if(not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or
+        reject_if(not stat.S_ISREG(st.st_mode) or not root_owned(st) or
                   stat.S_IMODE(st.st_mode) != 0o600 or st.st_nlink != 1,
                   'HOST_MUTEX_UNSAFE')
         try:

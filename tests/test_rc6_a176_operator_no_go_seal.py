@@ -33,6 +33,10 @@ class A176OperatorSealTest(unittest.TestCase):
             patch.object(seal, 'RECEIPT', self.directory / seal.RECEIPT.name),
             patch.object(seal, 'LOCK', self.lock),
             patch.object(seal, 'BARRIER', self.root/'attempt.json'),
+            # GitHub-hosted runners are non-root. Mock *only* the filesystem
+            # identity probe while retaining the production uid==0 invariant.
+            patch.object(seal.os, 'geteuid', return_value=0),
+            patch.object(seal, 'root_owned', return_value=True),
             patch.object(seal, 'inspect_host'),
             patch.object(seal, 'observed_proof', return_value={
                 'ppi_snapshot':[],
@@ -99,6 +103,10 @@ class A176OperatorSealTest(unittest.TestCase):
         path.chmod(0o666)
         with self.assertRaisesRegex(seal.Rejected, 'RECEIPT_FILE_UNSAFE'):
             seal.read_exact(path, hashlib.sha256(raw).hexdigest())
+        path.chmod(0o600)
+        with patch.object(seal, 'root_owned', return_value=False):
+            with self.assertRaisesRegex(seal.Rejected, 'RECEIPT_FILE_UNSAFE'):
+                seal.read_exact(path, hashlib.sha256(raw).hexdigest())
 
     def test_sqlite_reads_paper_zero_and_all_three_books_flat(self):
         base = self.root / 'data/paper_v17'

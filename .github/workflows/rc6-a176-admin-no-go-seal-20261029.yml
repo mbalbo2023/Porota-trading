@@ -5,6 +5,8 @@ on:
     branches: [fix/rc6-a178-formal-takeover-20261029]
     paths:
       - .github/workflows/rc6-a176-admin-no-go-seal-20261029.yml
+      - scripts/rc6_a176_operator_no_go_seal.py
+      - tests/test_rc6_a176_operator_no_go_seal.py
 
 permissions:
   contents: read
