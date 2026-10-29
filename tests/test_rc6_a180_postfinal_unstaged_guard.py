@@ -27,7 +27,12 @@ IMAGE = 'sha256:' + 'd' * 64
 
 def workflow_steps():
     steps = yaml.safe_load(WORKFLOW.read_text(encoding='utf-8'))['jobs']['promote']['steps']
-    return steps, {step.get('id', step['name']): step for step in steps}
+    # A cleanup step now has both a stable human name and an Actions ID so the
+    # post-failure orphan cleanup can depend on its verified success. Preserve
+    # existing source assertions by resolving both independent identifiers.
+    by_name = {step['name']: step for step in steps}
+    by_name.update({step['id']: step for step in steps if step.get('id')})
+    return steps, by_name
 
 
 def embedded_python(start, end, source):
