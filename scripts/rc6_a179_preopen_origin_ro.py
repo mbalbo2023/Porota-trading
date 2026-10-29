@@ -90,6 +90,11 @@ def diagnose(root=ROOT) -> dict:
         root/'data/deploy'/('scheduler-suspend-'+CANDIDATE+'.json'))
     quiescence, quiescence_sha = bounded_json(
         root/'data/deploy'/('quiescence-'+CANDIDATE+'.json'))
+    frozen, frozen_sha = bounded_json(root/'data/deploy/porota-frozen-candidate.json')
+    if (frozen.get('candidate_sha') != CANDIDATE or
+            frozen.get('candidate_tree_sha') !=
+            '31ced11ce047bfa092f5398c13aeb37b74afd629'):
+        raise ValueError('A179_FROZEN_ORIGIN_WRONG_CANDIDATE')
     runtime = quiescence.get('candidate_runtime_after_failure')
     if type(runtime) is not dict:
         runtime = {}
@@ -101,6 +106,9 @@ def diagnose(root=ROOT) -> dict:
         containers = {}
     origin = {
         'quiescence_sha256': quiescence_sha,
+        'frozen_sha256': frozen_sha,
+        'frozen_image_tar_sha256': frozen.get('image_tar_sha256'),
+        'frozen_candidate_tree': frozen.get('candidate_tree_sha'),
         'quiescence_status': quiescence.get('status'),
         'installation_started': quiescence.get('installation_started'),
         'inflight': quiescence.get('inflight'),
