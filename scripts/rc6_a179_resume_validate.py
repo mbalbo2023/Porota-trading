@@ -279,6 +279,40 @@ def safe_generated(path: Path, max_size=2*1024*1024) -> dict:
     return value
 
 
+def receipt_census(root=ROOT) -> dict:
+    verify_origin(root)
+    deploy_dir=root/'data/deploy'
+    names=['native-generation-acceptance.json',
+           'native-ten-generation-soak.json'] + [
+           'zero-known-error-stability-'+str(n)+'.json' for n in (1,2,3)]
+    records={}
+    for name in names:
+        path=deploy_dir/name
+        if not path.exists() and not path.is_symlink():
+            records[name]={'present':False}
+            continue
+        require(path.is_file() and not path.is_symlink() and
+                path.stat().st_nlink==1 and 0<path.stat().st_size<=2*1024*1024,
+                'A179_EXISTING_NATIVE_RECEIPT_UNSAFE:'+name)
+        data=json.loads(path.read_bytes())
+        require(type(data) is dict,'A179_EXISTING_NATIVE_RECEIPT_INVALID:'+name)
+        rows=data.get('generations') or data.get('idle_observations') or []
+        require(type(rows) is list,'A179_EXISTING_NATIVE_RECEIPT_ROWS_INVALID:'+name)
+        last=rows[-1] if rows else {}
+        require(type(last) is dict,'A179_EXISTING_NATIVE_RECEIPT_ROW_INVALID:'+name)
+        records[name]={'present':True,
+                       'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+                       'size':path.stat().st_size,
+                       'status':data.get('status'),
+                       'acceptance_mode':data.get('acceptance_mode'),
+                       'source_sha':last.get('source_sha'),
+                       'candidate_tree_sha':last.get('candidate_tree_sha')}
+    return {'schema':'rc6.a179.native-receipt-census.v1',
+            'status':'GREEN_READ_ONLY','candidate':CANDIDATE,
+            'receipts':records,'host_mutations':0,'ppi_watch_mutations':0,
+            'real_orders_sent':0}
+
+
 def validate_native_pair(first, sustained):
     mode=first.get('acceptance_mode')
     require(first.get('status')==sustained.get('status')=='GREEN' and
@@ -406,12 +440,14 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode',required=True,
                         choices=('preflight','preopen','closure-readiness',
-                                 'native-acceptance','cleanup-native-attempt'))
+                                 'native-acceptance','cleanup-native-attempt',
+                                 'receipt-census'))
     args=parser.parse_args(argv)
     try:
         result=(verify_origin() if args.mode=='preflight' else
                 verify_preopen() if args.mode=='preopen' else
                 verify_closure_readiness() if args.mode=='closure-readiness' else
+                receipt_census() if args.mode=='receipt-census' else
                 run_native_acceptance() if args.mode=='native-acceptance' else
                 cleanup_failed_native_attempt())
         print('RC6_A179_RESUME_'+args.mode.upper()+'='+json.dumps(result,sort_keys=True))

@@ -113,8 +113,28 @@ jobs:
           assert row['ppi_watch_mutations']==row['host_mutations']==0
           print('RC6_A179_CLOSURE_READINESS=GREEN_READ_ONLY|PAPER=0|NO_GO')
           PY
+      - name: Enumerate exact legacy native acceptance receipts strictly read only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_a179_postfail" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 - --mode receipt-census' \
+            < scripts/rc6_a179_resume_validate.py | tee a179-native-receipt-census.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('a179-native-receipt-census.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_RESUME_RECEIPT-CENSUS=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='GREEN_READ_ONLY' and row['host_mutations']==0
+          assert row['real_orders_sent']==0 and row['ppi_watch_mutations']==0
+          print('RC6_A179_OLD_NATIVE_RECEIPTS=CENSUSED_READ_ONLY')
+          PY
       - name: Run passive native runtime evidence under the canonical host mutex
         id: native_acceptance
+        if: ${{ false }} # Explicitly disabled until existing receipts are reconciled.
         timeout-minutes: 40
         shell: bash
         run: |
@@ -163,6 +183,7 @@ jobs:
             a179-resume-preflight.jsonl
             a179-resume-preopen.jsonl
             a179-closure-readiness.jsonl
+            a179-native-receipt-census.jsonl
             a179-native-acceptance.jsonl
           retention-days: 14
           if-no-files-found: warn
