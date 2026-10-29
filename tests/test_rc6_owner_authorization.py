@@ -2,17 +2,17 @@ import json
 import unittest
 
 from scripts.rc6_owner_authorization import (
-    MAX_PAGE_BYTES, PAGE_SIZE, require_exact_owner_authorization,
+    MAX_PAGE_BYTES, MAX_PAGES, PAGE_SIZE, require_exact_owner_authorization,
 )
 
 
 class OwnerAuthorizationTests(unittest.TestCase):
-    def test_authorization_after_ninety_large_comments_is_found(self):
+    def test_authorization_after_more_than_five_hundred_comments_is_found(self):
         candidate, tree = 'a' * 40, 'b' * 40
         expected = f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
-        comments = [dict(id=n, body='x' * 7000, user={'login': 'mbalbo2023'},
+        comments = [dict(id=n, body='x' * 10000, user={'login': 'mbalbo2023'},
                          created_at='2026-10-19T00:00:00Z',
-                         updated_at='2026-10-19T00:00:00Z') for n in range(96)]
+                         updated_at='2026-10-19T00:00:00Z') for n in range(506)]
         comments.append(dict(id=6281817812, body=expected,
                              user={'login': 'mbalbo2023'},
                              created_at='2026-10-20T02:20:09Z',
@@ -27,8 +27,8 @@ class OwnerAuthorizationTests(unittest.TestCase):
 
         self.assertEqual(require_exact_owner_authorization(
             'owner/repo', candidate, tree, get_page=page), 6281817812)
-        self.assertEqual(len(requests), 10)
-        self.assertTrue(all('per_page=10' in url for url in requests))
+        self.assertEqual(len(requests), 6)
+        self.assertTrue(all('per_page=100' in url for url in requests))
 
     def test_authorization_rejects_duplicate_or_edited_approval(self):
         candidate, tree = 'a' * 40, 'b' * 40
@@ -49,6 +49,32 @@ class OwnerAuthorizationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'AUTHORIZATION_PAGE_BOUND'):
             require_exact_owner_authorization('owner/repo', 'a' * 40, 'b' * 40,
                                               get_page=lambda _: b'x' * (MAX_PAGE_BYTES + 1))
+
+    def test_authorization_remains_bounded_after_five_thousand_comments(self):
+        candidate, tree = 'a' * 40, 'b' * 40
+        row = {'id': 1, 'body': 'not an approval',
+               'user': {'login': 'mbalbo2023'},
+               'created_at': 't1', 'updated_at': 't1'}
+        seen = []
+        def full_page(url):
+            seen.append(url)
+            return json.dumps([row] * PAGE_SIZE).encode()
+        with self.assertRaisesRegex(ValueError, 'AUTHORIZATION_PAGINATION_BOUND'):
+            require_exact_owner_authorization(
+                'owner/repo', candidate, tree, get_page=full_page)
+        self.assertEqual(len(seen), MAX_PAGES)
+
+    def test_authorization_rejects_oversized_or_malformed_page(self):
+        candidate, tree = 'a' * 40, 'b' * 40
+        row = {'id': 1, 'body': 'not an approval',
+               'user': {'login': 'mbalbo2023'},
+               'created_at': 't1', 'updated_at': 't1'}
+        for malformed in ([row] * (PAGE_SIZE + 1), [None], {'message': 'bad'}):
+            with self.subTest(malformed_type=type(malformed).__name__), self.assertRaisesRegex(
+                    ValueError, 'AUTHORIZATION_RESPONSE_INVALID'):
+                require_exact_owner_authorization(
+                    'owner/repo', candidate, tree,
+                    get_page=lambda _: json.dumps(malformed).encode())
 
     def test_intraday_suspend_requires_distinct_exact_owner_decision(self):
         candidate, tree = 'e' * 40, 'f' * 40
