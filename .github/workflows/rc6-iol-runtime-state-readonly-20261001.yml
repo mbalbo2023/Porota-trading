@@ -143,6 +143,32 @@ jobs:
                   print('A186_'+label+'='+type(exc).__name__)
           print('A186_DISK_DIAGNOSTIC=READ_ONLY_COMPLETE')
           PY
+      - name: Exact container-to-image and durable marker read-only attestation
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 65s ssh -T -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          def docker(*args):
+              x=subprocess.run(['docker',*args],capture_output=True,text=True,timeout=20,check=False)
+              if x.returncode or len(x.stdout)>1000000: raise RuntimeError('DOCKER_READ_FAILED:'+args[0])
+              return x.stdout.strip()
+          cids=docker('ps','-aq','--no-trunc').splitlines()
+          images=sorted(set(docker('image','ls','-aq','--no-trunc').splitlines()))
+          containers=[]
+          for cid in cids:
+              row=json.loads(docker('inspect',cid))[0]
+              containers.append({'id':row['Id'],'image':row['Image'],'name':row['Name'],'running':row['State']['Running'],'status':row['State']['Status']})
+          inventory=[]
+          for iid in images:
+              row=json.loads(docker('image','inspect',iid))[0]
+              inventory.append({'id':row['Id'],'tags':row.get('RepoTags') or [],'digests':row.get('RepoDigests') or [],'layer_count':len((row.get('RootFS') or {}).get('Layers') or []),'referenced_by':[c['id'] for c in containers if c['image']==row['Id']]})
+          marker=Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          allowed=('candidate_sha','deploy_sha','image_id','validation_status','mode','real_orders_sent','real_order_routes','ppi_watch_untouched')
+          state=json.loads(marker.read_text()) if marker.exists() and marker.stat().st_size<65536 else {}
+          print('A186_DOCKER_EXACT='+json.dumps({'containers':containers,'images':inventory,'marker':{k:state.get(k) for k in allowed}},sort_keys=True))
+          print('A186_IMAGE_REF_PROOF=READ_ONLY_COMPLETE')
+          PY
       - name: Cleanup
         if: always()
         run: rm -f "$HOME/.ssh/key"
