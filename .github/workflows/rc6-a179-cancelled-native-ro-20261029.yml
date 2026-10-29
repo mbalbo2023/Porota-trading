@@ -1,0 +1,66 @@
+name: RC6 A179 cancelled native attempt exact read-only diagnosis
+
+on:
+  push:
+    branches:
+      - diagnostic/rc6-a179-cancelled-native-ro-20261029
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  cancelled-native-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test exact immutable cancellation auditor
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a179_cancelled_native_ro.py
+          python3 -m unittest tests.test_rc6_a179_cancelled_native_ro -v
+      - name: Configure SSH strict
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_a179_cancel_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_a179_cancel_ro" "$HOME/.ssh/known_hosts"
+      - name: Inspect cancellation, live host lock, exact PAPER and orphan processes only
+        run: |
+          set -Eeuo pipefail
+          timeout 120 ssh -i "$HOME/.ssh/porota_a179_cancel_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+            < scripts/rc6_a179_cancelled_native_ro.py | tee a179-cancelled-ro.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('a179-cancelled-ro.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_CANCEL_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['status']=='READ_ONLY' and row['host_mutations']==0
+          assert row['real_orders_sent']==0 and row['ppi_watch_mutations']==0
+          assert row['run']=='40916351644'
+          print('RC6_A179_CANCELLED_NATIVE_FORENSICS=GREEN_READ_ONLY')
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a179-cancelled-native-exact-readonly
+          path: a179-cancelled-ro.jsonl
+          retention-days: 14
+          if-no-files-found: warn
+      - if: always()
+        run: rm -f "$HOME/.ssh/porota_a179_cancel_ro"
