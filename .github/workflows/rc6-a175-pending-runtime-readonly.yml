@@ -1,0 +1,112 @@
+name: RC6 A175 failed Deploy runtime READ ONLY
+
+# Publish this exact diagnostic branch only after the disk Action releases the
+# shared mutex. A successful diagnostic is never a product/runtime GREEN.
+on:
+  push:
+    branches: [diagnostic/rc6-a175-pending-runtime-ro-20261029]
+    paths:
+      - .github/workflows/rc6-a175-pending-runtime-readonly.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  pending-runtime-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RC6_FAILED_DEPLOY_RUN_ID: '40796450488'
+      RC6_DEPLOY_MERGE_SHA: '3c5210fef9d4f1d4c95b286b0dbc61b6654fe055'
+      RC6_CANDIDATE_SHA: '18ba517a846c6798f0d12f39072465fc02fa03b5'
+      RC6_CANDIDATE_TREE: '66c67bff66dd9f036cd7aa8de5ba312e04e53be6'
+      RC6_SOURCE_SHA256: '0a64875ee8f3d3663619bc7b460bc358cab0858869e9c195ece1bfe1cde6df98'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Exact source, local negative tests and failed canonical run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(sha256sum scripts/rc6_a175_pending_runtime_ro.py | cut -d' ' -f1)" = "$RC6_SOURCE_SHA256"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+            -s tests -p test_rc6_a175_pending_runtime_ro.py -q
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$RC6_FAILED_DEPLOY_RUN_ID" \
+            > "$RUNNER_TEMP/rc6-a175-failed-run.json"
+          python3 - <<'PY'
+          import json,os
+          p=json.load(open(os.environ['RUNNER_TEMP']+'/rc6-a175-failed-run.json',encoding='utf-8'))
+          if (p.get('id')!=int(os.environ['RC6_FAILED_DEPLOY_RUN_ID']) or
+                  p.get('status')!='completed' or p.get('conclusion')!='failure' or
+                  p.get('head_sha')!=os.environ['RC6_DEPLOY_MERGE_SHA'] or
+                  p.get('path')!='.github/workflows/porota-deploy-v2-promote.yml'):
+              raise SystemExit('RC6_A175_FAILED_RUN_IDENTITY_RED|NO_HOST_ACCESS')
+          print('RC6_A175_FAILED_DEPLOY=EXACT|DIAGNOSTIC_ONLY')
+          PY
+      - name: Strict SSH identity
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a175_pending_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a175_pending_ro" "$HOME/.ssh/known_hosts"
+      - name: One bounded PENDING runtime pulse, no host write
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 75s \
+            ssh -T -i "$HOME/.ssh/rc6_a175_pending_ro" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+              "$DO_USER@$DO_HOST" \
+              'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+              < scripts/rc6_a175_pending_runtime_ro.py | tee evidence/host.jsonl
+          test "$(wc -c < evidence/host.jsonl)" -lt 16384
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/host.jsonl').read_text(encoding='utf-8').splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A175_PENDING_RUNTIME_RO=')
+          p=json.loads(lines[0].split('=',1)[1])
+          assert p['schema']=='rc6.a175.pending-runtime-ro.v1'
+          assert p['status']=='DIAGNOSTIC_PENDING_NO_GO'
+          assert p['droplet']=={'id':'594077619','region':'nyc1'}
+          assert p['marker']['validation']=='DEPLOYED_VALIDATION_PENDING'
+          assert p['frozen_manifest']['sha256']=='1067182c282f17440850e50c7f8d347d84cfbb90090d7e71066483beb19450e0'
+          assert p['candidate_sha']=='18ba517a846c6798f0d12f39072465fc02fa03b5'
+          assert p['deploy_sha']=='3c5210fef9d4f1d4c95b286b0dbc61b6654fe055'
+          assert p['db']['real_orders_sent']==0 and p['db']['three_books_flat'] is True
+          assert p['dashboard']['real_orders_sent']==0
+          assert p['host_mutations']==0 and p['provider_calls']==0
+          assert p['real_routes']=='NOT_CALLED' and p['operational_go'] is False
+          print('RC6_A175_PENDING_DIAGNOSTIC=CAPTURED|RUNTIME_GREEN=false|PAPER_NO_GO')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a175-pending-runtime-${{ github.sha }}
+          path: evidence/host.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a175_pending_ro"
