@@ -4,6 +4,9 @@ from datetime import timedelta
 import json
 import multiprocessing
 from pathlib import Path
+import queue
+import sqlite3
+import threading
 
 import pytest
 import requests
@@ -432,6 +435,7 @@ def _process_admission(path, config, at, ready, initialized, output):
     count = 0
     bounded_contention = 0
     finish_contention = 0
+    start_contention = 0
     for _ in range(4):
         try:
             result = budget.acquire("book", consumer="SCANNER")
@@ -443,7 +447,17 @@ def _process_admission(path, config, at, ready, initialized, output):
             bounded_contention += 1
             continue
         if result["allowed"]:
-            budget.start(result["lease"])
+            try:
+                budget.start(result["lease"])
+            except BudgetBackpressure as error:
+                if str(error) != "PPI_BUDGET_STATE_UNAVAILABLE":
+                    raise
+                # A concurrent SQLite writer may exhaust the bounded 50 ms
+                # lock wait AFTER acquisition but BEFORE wire admission.
+                # This is an allowed fail-closed outcome: record the reserved
+                # but unstarted lease, and never count or send the PPI call.
+                start_contention += 1
+                continue
             count += 1
             try:
                 budget.finish(result["lease"])
@@ -453,7 +467,34 @@ def _process_admission(path, config, at, ready, initialized, output):
                 # A started call already owns durable wire debt. A bounded
                 # finish refusal must retain its lease and block further wire.
                 finish_contention += 1
-    output.put((count, bounded_contention, finish_contention))
+    output.put((count, bounded_contention, finish_contention, start_contention))
+
+
+def test_start_sqlite_backpressure_never_claims_a_wire_call(monkeypatch):
+    """Deterministic regression for the 29-Oct full-suite lock interleaving."""
+    class ContendedBudget:
+        acquired = False
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def acquire(self, *_args, **_kwargs):
+            if not self.acquired:
+                self.acquired = True
+                return {"allowed": True, "lease": "reserved-not-started"}
+            return {"allowed": False, "reason": "PPI_SERIAL_BACKPRESSURE"}
+
+        def start(self, _lease):
+            raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE")
+
+        def finish(self, _lease):
+            pytest.fail("LOCK_REJECTED_START_MUST_NOT_FINISH_OR_SEND_WIRE")
+
+    monkeypatch.setitem(_process_admission.__globals__, "GlobalPPIBudget", ContendedBudget)
+    ready, initialized, output = threading.Event(), queue.SimpleQueue(), queue.SimpleQueue()
+    ready.set()
+    _process_admission("unused", {}, Clock().now().isoformat(), ready, initialized, output)
+    assert output.get_nowait() == (0, 0, 0, 1)
 
 
 def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
@@ -478,15 +519,28 @@ def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
         count = sum(row[0] for row in outcomes)
         bounded_contention = sum(row[1] for row in outcomes)
         finish_contention = sum(row[2] for row in outcomes)
-        assert 0 < count <= 3
+        start_contention = sum(row[3] for row in outcomes)
+        assert 0 <= count <= 3
+        assert start_contention <= 1
         metrics = budget.metrics()["global"]
-        assert metrics["allowed"] == metrics["used"] == count
+        assert 0 < metrics["allowed"] <= 3
+        assert metrics["allowed"] == count + start_contention
+        assert metrics["used"] == count
         assert metrics["requested"] == metrics["allowed"] + metrics["dropped"] == 8 - bounded_contention
         assert finish_contention <= 1
+        if start_contention:
+            assert not finish_contention
+            # The pending lease is still conserved but has NOT been used for
+            # a wire call. The other process must not spend that same budget.
+            with sqlite3.connect(path) as connection:
+                active = json.loads(connection.execute(
+                    "SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0])
+                used = connection.execute(
+                    "SELECT used FROM budget_requests WHERE lease=?", (active["lease"],)).fetchone()[0]
+            assert used == 0
         if finish_contention:
             # No other process may replace an unfinished used lease. Read the
             # durable sidecar directly; metrics alone omit its inflight owner.
-            import sqlite3
             with sqlite3.connect(path) as connection:
                 active = json.loads(connection.execute(
                     "SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0])
