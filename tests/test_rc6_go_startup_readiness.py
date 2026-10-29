@@ -17,13 +17,16 @@ def program():
 
 
 def run_go(tmp_path, monkeypatch, *, process='STARTING', auth='OK', session='CLOSED',
-           counter=0, age=0, transition=None, timeline=()):
+           counter=0, age=0, detail='UNCLASSIFIED_RUNTIME_FAILURE',
+           market_age=None, transition=None, timeline=()):
     path = tmp_path / 'paper.db'
     with sqlite3.connect(path) as connection:
-        connection.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER,ppi_auth TEXT,process_state TEXT,session_state TEXT,last_market_data_at TEXT,heartbeat_at TEXT)')
+        connection.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER,ppi_auth TEXT,process_state TEXT,session_state TEXT,last_market_data_at TEXT,heartbeat_at TEXT,detail TEXT)')
         stamp = (datetime.now(timezone.utc) - timedelta(seconds=age)).isoformat()
-        connection.execute('INSERT INTO observer_state VALUES(1,?,?,?,?,?,?,?)',
-            ('PRODUCTION_PAPER', counter, auth, process, session, None, stamp))
+        market = ((datetime.now(timezone.utc) - timedelta(seconds=market_age)).isoformat()
+                  if market_age is not None else None)
+        connection.execute('INSERT INTO observer_state VALUES(1,?,?,?,?,?,?,?,?)',
+            ('PRODUCTION_PAPER', counter, auth, process, session, market, stamp, detail))
     elapsed = [0]
     def pause(seconds):
         elapsed[0] += seconds
@@ -152,4 +155,42 @@ def test_login_error_with_stale_boot_label_is_not_pending(tmp_path, monkeypatch,
             (85, 'NOT_ATTEMPTED', 'DEGRADED', 'BOOT_PPI_LOGIN'),
             (95, 'ERROR', 'DEGRADED', 'BOOT_PPI_LOGIN')))
     assert code != 0 and 95 <= elapsed < 1200
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('auth,detail', (
+    ('ERROR', 'Login fallo: HTTPError'),
+    ('COOLDOWN', 'PPI en espera de reintento; no se abre una tormenta de logins.'),
+    ('ERROR', 'Login local bloqueado por interlock persistente.'),
+))
+def test_external_ppi_login_outage_allows_technical_deploy_only(
+        tmp_path, monkeypatch, capsys, auth, detail):
+    code, elapsed = run_go(tmp_path, monkeypatch, process='DEGRADED',
+                           auth=auth, session='BOOT_PPI_LOGIN', detail=detail)
+    output = capsys.readouterr().out
+    assert code == 0 and elapsed == 0
+    assert 'GO_CHECK=GREEN|' in output
+    assert 'EXTERNAL_SOURCE_ALERT=AMBER|REASON=PPI_LOGIN_UNAVAILABLE' in output
+    assert 'PAPER_READINESS=FAIL_CLOSED_PER_INSTRUMENT' in output
+
+
+def test_source_stale_market_data_allows_technical_deploy_with_alarm(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(tmp_path, monkeypatch, process='RUNNING', auth='OK',
+                           session='MARKET_OPEN', market_age=600)
+    output = capsys.readouterr().out
+    assert code == 0 and elapsed == 0
+    assert 'EXTERNAL_SOURCE_ALERT=AMBER|REASON=PPI_MARKET_DATA_STALE' in output
+
+
+def test_unclassified_degraded_error_remains_deploy_red(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(tmp_path, monkeypatch, process='DEGRADED', auth='ERROR',
+                           detail='CAUCION_LEDGER_INVALID')
+    assert code != 0 and elapsed <= 90
+    assert 'GO_CHECK=GREEN' not in capsys.readouterr().out
+
+
+def test_ppi_outage_cannot_hide_real_order_counter(tmp_path, monkeypatch, capsys):
+    code, elapsed = run_go(tmp_path, monkeypatch, process='DEGRADED', auth='ERROR',
+                           detail='Login fallo: HTTPError', counter=1)
+    assert code != 0 and elapsed <= 90
     assert 'GO_CHECK=GREEN' not in capsys.readouterr().out

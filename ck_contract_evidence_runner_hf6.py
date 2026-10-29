@@ -126,14 +126,19 @@ def main():
         try:
             previous = recent_completed_v1(store)
         except ValueError as exc:
-            if str(exc) != "RECENT_COMPLETED_V1_EXPIRED":
+            if str(exc) == "RECENT_COMPLETED_V1_EXPIRED":
+                # Expired provider evidence is not an executable PAPER source.
+                print("REMOTE_PPI_V1_REFRESH=SKIPPED_EXPIRED_COMPLETED")
+                print("REMOTE_PPI_V1_STATUS=STALE")
+            elif str(exc) == "RECENT_COMPLETED_V1_ABSENT":
+                # This optional upstream sweep is not a deploy prerequisite.
+                # Continue deterministic local v2 materialization; preserve
+                # per-instrument fail-closed freshness and catalog provenance.
+                print("REMOTE_PPI_V1_REFRESH=SKIPPED_ABSENT_COMPLETED")
+                print("REMOTE_PPI_V1_STATUS=UNAVAILABLE")
+            else:
+                # Malformed/inconsistent historical evidence remains RED.
                 raise
-            # V1 is complementary provider provenance.  Never call an old
-            # sweep recent or replay the expensive remote sweep on deploy.
-            # The v2 materialization below retains original observed_at;
-            # PAPER admission must continue to reject stale/unknown evidence.
-            print("REMOTE_PPI_V1_REFRESH=SKIPPED_EXPIRED_COMPLETED")
-            print("REMOTE_PPI_V1_STATUS=STALE")
         else:
             print("REMOTE_PPI_V1_REFRESH=REUSED_RECENT_COMPLETED")
             print("REMOTE_PPI_V1_PROVENANCE=" + json.dumps(previous, sort_keys=True))

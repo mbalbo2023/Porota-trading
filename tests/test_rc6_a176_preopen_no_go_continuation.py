@@ -53,22 +53,44 @@ def held_host(tmp_path, monkeypatch):
     current_proof = dict(PROOF)
     monkeypatch.setattr(suspend, 'exact_a176_operator_no_go_continuation',
                         lambda: current_proof, raising=False)
-    daily = {'enabled': False}
+    daily = {'enabled': False, 'iol_service_state': 'inactive',
+             'iol_exec_status': '2', 'iol_exec_code': '1',
+             'iol_result': 'exit-code', 'iol_timer_state': 'active',
+             'iol_timer_enabled': 'enabled',
+             'iol_target': suspend.IOL_OAUTH_GUARD_SERVICE}
 
     def cmd(args, timeout=20):
         unit = args[2]
         if args[1] == 'is-enabled':
+            if unit == suspend.IOL_OAUTH_GUARD_TIMER:
+                value = daily['iol_timer_enabled']
+                return (0 if value == 'enabled' else 1), value, ''
             return ((1, 'disabled', '') if unit == suspend.OPERATOR_PREOPEN_TIMER
                     else (0, 'enabled', ''))
         if args[1] == 'is-active':
+            if unit == suspend.IOL_OAUTH_GUARD_SERVICE:
+                state = daily['iol_service_state']
+                return (0 if state == 'active' else 3), state, ''
             if unit.endswith('.service'):
                 return 3, 'inactive', ''
             if unit == suspend.OPERATOR_PREOPEN_TIMER:
                 return 3, 'inactive', ''
-            if unit == suspend.IOL_OAUTH_GUARD_TIMER or daily['enabled']:
+            if unit == suspend.IOL_OAUTH_GUARD_TIMER:
+                state = daily['iol_timer_state']
+                return (0 if state == 'active' else 3), state, ''
+            if daily['enabled']:
                 return 0, 'active', ''
             return 3, 'inactive', ''
         if args[1] == 'show':
+            if unit == suspend.IOL_OAUTH_GUARD_SERVICE:
+                if daily.get('iol_meta_unavailable'):
+                    return 1, '', 'unavailable'
+                return (0, '\n'.join((
+                    'Result=' + daily['iol_result'],
+                    'ExecMainCode=' + daily['iol_exec_code'],
+                    'ExecMainStatus=' + daily['iol_exec_status'])), '')
+            if unit == suspend.IOL_OAUTH_GUARD_TIMER:
+                return 0, daily['iol_target'], ''
             return 0, unit.removesuffix('.timer') + '.service', ''
         raise AssertionError(args)
 
@@ -116,6 +138,54 @@ def test_exact_a176_held_deploy_then_restored_daily_remain_no_go(held_host):
     assert proof['preopen_status'] == 'PAUSED_NO_GO'
     assert proof['readiness_verified'] is False
     assert proof['execution_authorized'] is False
+
+
+def test_a186_classified_oauth_exit2_is_optional_amber_not_a_deploy_veto(held_host):
+    _, daily = held_host
+    daily['iol_service_state'] = 'failed'
+    held = preopen.required_timers(SHA)
+    unit = held['units'][suspend.IOL_OAUTH_GUARD_TIMER]
+    assert held['state'] == 'GREEN'
+    assert unit['state'] == 'AMBER'
+    assert unit['service_unit'] == suspend.IOL_OAUTH_GUARD_SERVICE
+    assert unit['service_state'] == 'failed'
+    assert unit['reason'] == 'IOL_OAUTH_GUARDIAN_CLASSIFIED_EXIT2'
+    assert held['optional_source_alerts'] == [suspend.IOL_OAUTH_GUARD_TIMER]
+    row = report()
+    row['checks']['required_rc6_timers'] = held
+    result = accepted(row)
+    assert result['preopen_status'] == 'PAUSED_NO_GO'
+    assert result['execution_authorized'] is False
+    assert result['readiness_verified'] is False
+
+
+@pytest.mark.parametrize('mutation', (
+    'wrong_exit', 'wrong_code', 'wrong_result', 'unknown_service',
+    'wrong_unit', 'timer_inactive', 'timer_disabled', 'missing_metadata',
+))
+def test_a186_unknown_guardian_or_broken_timer_remains_red(held_host, mutation):
+    _, daily = held_host
+    daily['iol_service_state'] = 'failed'
+    if mutation == 'wrong_exit':
+        daily['iol_exec_status'] = '1'
+    elif mutation == 'wrong_code':
+        daily['iol_exec_code'] = '2'
+    elif mutation == 'wrong_result':
+        daily['iol_result'] = 'timeout'
+    elif mutation == 'unknown_service':
+        daily['iol_service_state'] = 'unknown'
+    elif mutation == 'wrong_unit':
+        daily['iol_target'] = 'porota-untrusted.service'
+    elif mutation == 'timer_inactive':
+        daily['iol_timer_state'] = 'inactive'
+    elif mutation == 'timer_disabled':
+        daily['iol_timer_enabled'] = 'disabled'
+    elif mutation == 'missing_metadata':
+        daily['iol_meta_unavailable'] = True
+    held = preopen.required_timers(SHA)
+    assert held['state'] == 'RED'
+    assert held['units'][suspend.IOL_OAUTH_GUARD_TIMER]['state'] == 'RED'
+    assert 'optional_source_alerts' not in held
 
 
 @pytest.mark.parametrize('key,value', [

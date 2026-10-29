@@ -206,12 +206,28 @@ def _assert_surface_metrics(metrics):
         raise RuntimeError("DASHBOARD_SURFACE_BUDGET_VIOLATION|" + "|".join(violations))
 
 
-def _iol_snapshot():
+def _iol_snapshot(*, deploy_only=False):
     path = Path(os.environ.get(
         "POROTA_IOL_SHADOW_ROOT", "/app/data/market"
     )) / "iol_family_reference_latest.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        if not deploy_only:
+            raise RuntimeError("IOL_REFERENCE_UNAVAILABLE") from exc
+        # No IOL cache is an optional-provider availability alarm at deploy.
+        # Never synthesize market prices or claim a LIVE_FRESH sample.
+        return {
+            "cache_state": "SOURCE_UNAVAILABLE",
+            "effective_cache_state": "SOURCE_UNAVAILABLE",
+            "state": "AMBER",
+            "alerts": ["IOL_REFERENCE_UNAVAILABLE"],
+            "last_known_good_at": None,
+            "refreshed_at": None,
+            "continuation_state": "CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL",
+            "fallback_order": IOL_FALLBACK_ORDER,
+            "section_states": {},
+        }
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError("IOL_REFERENCE_UNAVAILABLE") from exc
     continuation = payload.get("continuation_state")
@@ -310,10 +326,21 @@ def _database_snapshot():
     connection.execute("PRAGMA query_only=ON")
     connection.execute("SELECT 1").fetchone()
     connection.execute("BEGIN")
+    # Older read-only audit fixtures lack the advisory free-form detail field.
+    # Its absence must NOT fabricate a recognized external error; the missing
+    # provenance remains false and thus cannot weaken PPI authentication.
+    has_detail = any(row[1] == "detail" for row in connection.execute(
+        "PRAGMA table_info(observer_state)"))
     observer = dict(connection.execute(
-        "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at "
-        "FROM observer_state WHERE id=1"
+        "SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at" +
+        (",detail" if has_detail else "") + " FROM observer_state WHERE id=1"
     ).fetchone() or {})
+    # The free-form provider error detail can contain private request context.
+    # Persist only its allowlisted provenance classifier in audit artifacts.
+    observer["ppi_auth_provider_failure"] = str(observer.pop("detail", "") or "").startswith((
+        "Login fallo:", "PPI en espera de reintento;",
+        "Login local bloqueado por interlock",
+    ))
     rows = [dict(row) for row in connection.execute("""
         SELECT upper(instrument_type) family,
                SUM(CASE WHEN can_simulate=1 AND upper(status)='AVAILABLE' THEN 1 ELSE 0 END) ready,
@@ -374,25 +401,32 @@ def _database_snapshot():
     }
 
 
-def _assert_snapshot(snapshot, baseline=None):
+def _assert_snapshot(snapshot, baseline=None, *, deploy_only=False):
     db = snapshot["database"]
     observer = db["observer"]
     assert observer.get("mode") == "PRODUCTION_PAPER"
     _require_zero_orders(observer.get("real_orders_sent"), "observer")
     auth = str(observer.get("ppi_auth") or "UNKNOWN").upper()
-    if auth != "OK":
-        raise RuntimeError(f"OBSERVER_PPI_AUTH_UNHEALTHY|ppi_auth={auth}")
     process = str(observer.get("process_state") or "UNKNOWN").upper()
     session = str(observer.get("session_state") or "UNKNOWN").upper()
+    external_ppi_alert = (
+        deploy_only and auth in {"ERROR", "COOLDOWN", "NOT_ATTEMPTED"}
+        and process == "DEGRADED"
+        and observer.get("ppi_auth_provider_failure") is True
+    )
+    if auth != "OK" and not external_ppi_alert:
+        raise RuntimeError(f"OBSERVER_PPI_AUTH_UNHEALTHY|ppi_auth={auth}")
     valid_phases = {
         ("RUNNING", "MARKET_OPEN"),
         ("WAITING_MARKET", "MARKET_CLOSED"),
         ("READY_PREOPEN", "PREOPEN"),
     }
-    if (process, session) not in valid_phases:
+    if (process, session) not in valid_phases and not external_ppi_alert:
         raise RuntimeError(
             f"OBSERVER_PHASE_UNHEALTHY|process_state={process}|session_state={session}"
         )
+    if external_ppi_alert:
+        snapshot.setdefault("external_source_alerts", []).append("PPI_AUTH_UNAVAILABLE")
     assert 0 <= _age_seconds(observer.get("heartbeat_at")) <= 300
     readiness = db["readiness"]
     assert readiness["source"] == "candidate_identity_v2"
@@ -461,12 +495,18 @@ def _assert_snapshot(snapshot, baseline=None):
     below_baseline = (baseline is not None and
                       readiness["ready"] < baseline["database"]["readiness"]["ready"])
     if (readiness["ready"] < 5558 or low_families or below_baseline):
+        if deploy_only:
+            # This is PAPER instrument availability, not infrastructure safety.
+            # Candidate-level can_simulate and residual guards above still apply.
+            snapshot.setdefault("external_source_alerts", []).append(
+                "PAPER_CANDIDATES_UNAVAILABLE")
+            return
         assert readiness["ready"] >= 5558
         assert not low_families, (low_families, readiness)
         assert not below_baseline, (readiness, baseline["database"]["readiness"])
 
 
-def collect(label):
+def collect(label, *, deploy_only=False):
     statuses = {}
     bodies = {}
     for path in CORE_GET_PATHS:
@@ -494,7 +534,7 @@ def collect(label):
         "network_order_test_performed": False,
         "real_routes": [],
         "database": _database_snapshot(),
-        "iol": _iol_snapshot(),
+        "iol": _iol_snapshot(deploy_only=deploy_only),
         "dashboard_truth": truth,
         "http_status": statuses,
         "surface_metrics": surface_metrics,
@@ -505,7 +545,8 @@ def collect(label):
     }
 
 
-def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5):
+def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5,
+                        *, deploy_only=False):
     """Require exact dashboard/database equality after a bounded refresh.
 
     The dashboard and the SQLite probe use separate read-only connections. A
@@ -515,7 +556,7 @@ def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5):
     A persistent mismatch still fails closed.
     """
     for attempt in range(1, attempts + 1):
-        snapshot = collect(label)
+        snapshot = collect(label, deploy_only=True) if deploy_only else collect(label)
         print("POROTA_RUNTIME_AUDIT_WORKERS=" + json.dumps(
             snapshot["database"]["workers"],
             ensure_ascii=False, sort_keys=True, separators=(",", ":"),
@@ -529,7 +570,7 @@ def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5):
             "candidate_refresh": snapshot["database"]["readiness"].get("refresh"),
         }, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
         try:
-            _assert_snapshot(snapshot, baseline)
+            _assert_snapshot(snapshot, baseline, deploy_only=deploy_only)
         except RuntimeError as exc:
             if (not str(exc).startswith(("DASHBOARD_READINESS_MISMATCH|",
                                         "CANDIDATE_REFRESH_IN_PROGRESS|"))
@@ -553,9 +594,16 @@ def main():
     parser.add_argument("--label", required=True)
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--deploy-only", action="store_true",
+                        help="Downgrade optional external-source outages to AMBER; keep PAPER safety RED")
     args = parser.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8")) if args.baseline else None
-    snapshot = consistent_snapshot(args.label, baseline)
+    snapshot = consistent_snapshot(args.label, baseline, deploy_only=args.deploy_only)
+    source_alerts = sorted(set(snapshot.get("external_source_alerts", [])))
+    if args.deploy_only and snapshot["iol"].get("state") == "AMBER":
+        source_alerts.extend(snapshot["iol"].get("alerts", []))
+        source_alerts = sorted(set(source_alerts))
+    snapshot["external_source_alerts"] = source_alerts
     snapshot["status"] = "GREEN"
     args.output.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
@@ -570,6 +618,7 @@ def main():
         "invalid_candidate_states": snapshot["database"]["invalid_candidate_states"],
         "generic_pending_residuals": snapshot["database"]["generic_pending_residuals"],
         "iol": snapshot["iol"],
+        "external_source_alerts": source_alerts,
         "workers": snapshot["database"]["workers"],
         "route_count": snapshot["route_inventory"]["route_count"],
         "registered_paths": snapshot["route_inventory"]["registered_paths"],
@@ -585,9 +634,11 @@ def main():
     if snapshot["iol"].get("state") == "AMBER":
         print("POROTA_IOL_SOURCE_ALERT=AMBER|" + ",".join(snapshot["iol"]["alerts"]) +
               "|effective=" + snapshot["iol"]["effective_cache_state"])
+    if source_alerts:
+        print("POROTA_EXTERNAL_SOURCE_ALERT=AMBER|" + ",".join(source_alerts))
     print("POROTA_ZERO_KNOWN_ERROR_RUNTIME_AUDIT=GREEN|" + args.label)
     print("ZERO_KNOWN_P0=YES")
-    print("ZERO_KNOWN_P1=YES")
+    print("ZERO_KNOWN_P1=" + ("AMBER_EXTERNAL_SOURCE" if source_alerts else "YES"))
     print("DASHBOARD_TRUTH=CONSISTENT")
     return 0
 

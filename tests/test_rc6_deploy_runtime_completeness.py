@@ -350,13 +350,11 @@ def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
     assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"' in block
 
 
-def test_deploy_refreshes_byma_authority_before_dry_preopen():
+def test_deploy_records_byma_source_alert_without_network_before_dry_preopen():
     source = _deploy()
-    refresh = source.index('RC6_BYMA_MORNING_REFRESH=GREEN')
+    refresh = source.index('RC6_BYMA_MORNING_REFRESH=AMBER')
     preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
     assert refresh < preopen
-    block = source[source.index('BYMA_MORNING_OUTPUT='):preopen]
-    assert 'rc6_byma_morning_pipeline.py' in block
-    assert 'BYMA_MORNING_RC=$?' in block
-    assert 'RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC' in block
-    assert 'exit "$BYMA_MORNING_RC"' in block
+    block = source[source.index('RC6_PREOPEN_SAFE_RECLAIM=GREEN'):preopen]
+    assert 'PROVIDER_REFRESH_DEFERRED_TO_INDEPENDENT_TIMER' in block
+    assert 'python3 "$REPO/scripts/rc6_byma_morning_pipeline.py"' not in block
