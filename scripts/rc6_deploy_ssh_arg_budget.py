@@ -33,6 +33,9 @@ def budgets(sizes: dict[str, int]) -> dict[str, int]:
         # literals; only their digests and the mutex live in the remote argv.
         'classify': m + o + 64,
         'drain_caucion': m + sizes['audit'] + sizes['a125_gzip'] + o,
+        # A175 daily NO_GO is validated by staged scheduler -> staged
+        # quiescence, both carried in the *same* drain command before install.
+        'drain_a175': m + sizes['a125_gzip'] + sizes['a143_gzip'] + o,
         'suspend_or_recover': m + sizes['a143_gzip'] + sizes['host_policy_gzip'] + o,
         'preclean': m + sizes['disk_policy'] + sizes['image_cleanup'] +
                     sizes['housekeeping'] + o,

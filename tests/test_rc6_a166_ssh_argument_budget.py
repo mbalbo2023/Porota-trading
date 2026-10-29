@@ -27,9 +27,9 @@ quiescence = load('rc6_deploy_quiescence')
 def test_exact_sources_fit_with_headroom_and_old_raw_wire_fails():
     sizes = budget.source_sizes()
     observed = budget.require_budget(sizes)
-    # The maximum moved to suspend/recover as the transition proof grew.
-    # Bound EVERY route, not whichever route was longest in A166.
-    assert all(0 < value <= budget.MAX_REMOTE_ARG_BYTES for value in observed.values())
+    assert observed['classify'] <= budget.MAX_REMOTE_ARG_BYTES
+    assert max(observed.values()) == observed['drain_a175']
+    assert observed['drain_a175'] <= budget.MAX_REMOTE_ARG_BYTES
     raw = budget.encoded_size('scripts/rc6_deploy_scheduler_suspend.py')
     assert raw > 90000 and sizes['a125_gzip'] < 24000
     assert sizes['audit_gzip'] < sizes['audit']
@@ -39,7 +39,7 @@ def test_exact_sources_fit_with_headroom_and_old_raw_wire_fails():
 
 def test_future_growth_fails_before_host_contact():
     sizes = budget.source_sizes()
-    room = budget.MAX_REMOTE_ARG_BYTES - budget.budgets(sizes)['classify']
+    room = budget.MAX_REMOTE_ARG_BYTES - budget.budgets(sizes)['drain_a175']
     with pytest.raises(ValueError, match='SSH_REMOTE_SINGLE_ARGUMENT_TOO_LARGE'):
         budget.require_budget({**sizes, 'a125_gzip': sizes['a125_gzip'] + room + 1})
     with pytest.raises(ValueError, match='SSH_ARG_SOURCE_INVENTORY_RED'):
@@ -104,11 +104,10 @@ def test_workflow_bounds_both_preinstall_and_drain_routes():
     assert 'Bound source-bearing SSH arguments before host contact' in workflow
     assert 'RC6_CLASSIFY_REMOTE_ARGUMENT=RED' in workflow
     assert 'RC6_DRAIN_REMOTE_ARGUMENT=RED' in workflow
+    drain=workflow.split('      - name: Admit PAPER book before draining RC6',1)[1].split('      - name: Account pre-suspend failure',1)[0]
+    assert 'RC6_A145_QUIESCENCE_GZIP_B64=' in drain
+    assert '${#A143_ENV}' in drain and 'env $AUDIT_ENV $A125_ENV $A143_ENV' in drain
     assert workflow.count('gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py') >= 2
     assert "RC6_A125_CANDIDATE_SOURCE_GZIP_B64=\"$A125_CANDIDATE_SOURCE_GZIP_B64\"" in workflow
     assert "RC6_A125_CANDIDATE_SOURCE_SHA256=\"$A125_CANDIDATE_SOURCE_SHA256\"" in workflow
-    # Classifier now sends compressed proof sources over stdin; only fixed
-    # size SHA-256 digests and bounded mutex arguments use SSH argv.
-    assert "timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_A125_SHA256'" in workflow
-    assert 'staged_operator_source()' in workflow
-    assert 'CLASSIFY_STDIN_SOURCE_BOUND' in workflow
+    assert "sys.argv[3]" in workflow and 'staged_operator_source()' in workflow

@@ -32,6 +32,21 @@ La prueba antigua `tests/test_rc6_a176_a175_workflow.py` verificaba que el YAML 
 5. Implementar `recover-a175-pending` en el scheduler con contraste exacto entre recibos, Docker y PAPER/0. Todas las verificaciones de host que se han ejecutado hasta aquí fueron READ_ONLY.
 6. Pruebas ejecutables (`tests/test_rc6_a178_a175_wiring.py`) que llaman realmente a `scheduler.run`, `quiescence.run`, los parsers, image-intent, recovery y negativas de alteración de recibos, modo incompatible y órdenes reales. No basta `assert 'flag' in yaml`.
 
+## Segunda omisión detectada antes del host: entorno de módulos cruzados
+
+Al reproducir la transición de A175, `rc6_deploy_quiescence.py` consume el
+`RC6_A125_CANDIDATE_SOURCE_GZIP_B64` del scheduler, pero ese scheduler exige a
+su vez el módulo de quiescencia candidato mediante
+`RC6_A145_QUIESCENCE_GZIP_B64` mientras `CURRENT_STATE_V2` conserve
+`DEPLOYED_VALIDATION_PENDING`. El workflow anterior pasaba este segundo módulo
+únicamente en *suspend* y *cleanup_restore*; lo omitía en **classify, drain,
+install, image-intent y cleanup_recover**. Es una nueva falla determinística de contrato,
+no un problema de frescura de IOL, del Droplet ni una excusa para promover a
+GREEN. Se corrigió la propagación en las cuatro rutas, con presupuesto SSH
+explícito A175 de **103.644 bytes de 110.000** (medido antes del nuevo SHA)
+y test real de *scheduler staged → quiescence staged*, que exige rechazar el
+module host A175 aún no validado. Debe pasar un Predeploy nuevo del SHA final.
+
 ## Gate de operación y pendiente real
 
 La ruta A175 permanece **deliberadamente cerrada a una sesión `RUNNING/MARKET_OPEN`**; no se relaja para hacer pasar el preflight. Antes de un Deploy canónico debe probarse una ventana de origen *real* que satisfaga el contrato, o desarrollar de manera separada una transición intradiaria explícitamente autorizada y totalmente testeada, **sin reutilizar el artifact anterior**. Tras cualquier cambio del candidato: nuevo SHA/tree, nuevo Predeploy V2 integral y artifact/digest; preflight read-only GREEN exacto, autorizaciones literales nuevas #624, merge de dos padres, Deploy V2 y evidencia DB/logs/runtime para `VALIDATED_RUNTIME`. `NO_GO` hasta rearm expresamente ordenado.

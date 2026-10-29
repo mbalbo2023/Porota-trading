@@ -577,6 +577,9 @@ jobs:
               # The staged A176 source must prove its exact installed source,
               # failed receipt, new image/IDs, immutable marker, held timers,
               # flat book and the date-current NO_GO administrative receipt.
+              # The nested scheduler verifier must load the same hashed
+              # staged quiescence source; the installed A175 is still pending.
+              os.environ['RC6_A145_QUIESCENCE_GZIP_B64']=CANDIDATE_A143_B64
               candidate=staged_a143_candidate()
               operator=types.ModuleType('rc6_a176_staged_operator')
               exec(compile(staged_operator_source(),'candidate/a176-operator.py','exec'),
@@ -1100,7 +1103,14 @@ jobs:
           fi
           A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py | base64 -w0)"
           A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
-          DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + 4096 ))
+          # The staged scheduler's exact A176 daily NO_GO proof rejects a
+          # pending A175 host module. Give it the candidate quiescence source
+          # before drain; scheduler suspension alone is not sufficient.
+          A143_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A175_PENDING_FIX_FORWARD ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          fi
+          DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + ${#A143_ENV} + 4096 ))
           if [ "$DRAIN_ARG_BOUND" -gt 110000 ]; then
             echo "RC6_DRAIN_REMOTE_ARGUMENT=RED|bound=$DRAIN_ARG_BOUND|max=110000"
             exit 31
@@ -1109,7 +1119,7 @@ jobs:
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV RC6_A125_CANDIDATE_SOURCE_SHA256='$A125_SHA256' python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase drain env $AUDIT_ENV $A125_ENV $A143_ENV RC6_A125_CANDIDATE_SOURCE_SHA256='$A125_SHA256' python3 - --candidate-sha '$CANDIDATE_SHA' --action drain $FLAG" \
             < scripts/rc6_deploy_quiescence.py
 
       - name: Account pre-suspend failure without recovery or timer writes
@@ -1297,7 +1307,11 @@ jobs:
           # even from stdin; -n omits file metadata so pipefail remains GREEN.
           A125_CANDIDATE_SOURCE_GZIP_B64="$(gzip -9 -n -c < "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | base64 -w0)"
           A125_CANDIDATE_SOURCE_SHA256="$(sha256sum "$STAGE/scripts/rc6_deploy_scheduler_suspend.py" | cut -d' ' -f1)"
-          sudo -n env $QUIESCENCE_AUDIT_ENV RC6_A125_CANDIDATE_SOURCE_GZIP_B64="$A125_CANDIDATE_SOURCE_GZIP_B64" RC6_A125_CANDIDATE_SOURCE_SHA256="$A125_CANDIDATE_SOURCE_SHA256" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+          A143_ENV=''
+          if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A175_PENDING_FIX_FORWARD ]; then
+            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < "$STAGE/scripts/rc6_deploy_quiescence.py" | base64 -w0)"
+          fi
+          sudo -n env $QUIESCENCE_AUDIT_ENV $A143_ENV RC6_A125_CANDIDATE_SOURCE_GZIP_B64="$A125_CANDIDATE_SOURCE_GZIP_B64" RC6_A125_CANDIDATE_SOURCE_SHA256="$A125_CANDIDATE_SOURCE_SHA256" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
             --candidate-sha "$CANDIDATE_SHA" --action install $QUIESCENCE_FLAG
 
           # An A151 historical-cost restatement is forbidden while the
@@ -1373,7 +1387,11 @@ jobs:
             # Persist frozen manifest digest and materialized Docker identity
             # before mode_manager can replace either container. A failure
             # before this receipt cannot claim a new candidate runtime.
-            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+            IMAGE_INTENT_A143_ENV=''
+            if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A175_PENDING_FIX_FORWARD ]; then
+              IMAGE_INTENT_A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < "$STAGE/scripts/rc6_deploy_quiescence.py" | base64 -w0)"
+            fi
+            sudo -n env $IMAGE_INTENT_A143_ENV python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
               --candidate-sha "$CANDIDATE_SHA" --action image-intent \
               --candidate-image-id "$RUNTIME_IMAGE_ID" \
               --frozen-manifest "$REMOTE_DIR/porota-frozen-candidate.json"
@@ -2495,6 +2513,7 @@ jobs:
               < scripts/rc6_deploy_failure_cleanup.py
           }
           RECOVERY_A125_ENV=''
+          RECOVERY_A143_ENV=''
           if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \
              [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_OPEN ] || \
              [ "${RC6_QUIESCENCE_MODE:-}" = A151_HELD_STOPPED ] || \
@@ -2506,11 +2525,14 @@ jobs:
             # the old #751 host module cannot prove it.
             RECOVERY_A125_ENV="RC6_A125_CANDIDATE_SOURCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py | base64 -w0) RC6_A125_CANDIDATE_SOURCE_SHA256=$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
           fi
+          if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A175_PENDING_FIX_FORWARD ]; then
+            RECOVERY_A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
+          fi
           RECOVERY_OUTPUT="$(timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_recover env $RECOVERY_A125_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_recover env $RECOVERY_A125_ENV $RECOVERY_A143_ENV python3 - --candidate-sha '$CANDIDATE_SHA' --action recover --allow-validation-pending" \
             < scripts/rc6_deploy_quiescence.py)"
           RECOVERY_RC=$?
           echo "$RECOVERY_OUTPUT"

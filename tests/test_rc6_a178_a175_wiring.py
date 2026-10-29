@@ -4,6 +4,7 @@ The old A175 image is deliberately validation-pending. Every failure path
 must keep that image stopped, PAPER/0, and never call Docker start or PPI Watch.
 """
 import base64
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -248,3 +249,59 @@ def test_a175_cli_flags_reach_executable_receivers(monkeypatch):
     s.main()
     assert observed[-1]==('scheduler',CANDIDATE,'recover-a175-pending',
                           base64.b64encode(b'{}').decode())
+
+
+def test_a175_nested_staged_operator_requires_both_exact_candidate_sources(
+        monkeypatch,tmp_path):
+    """Use real source loaders, not monkeypatched operator/proof callbacks.
+
+    A175 remains DEPLOYED_VALIDATION_PENDING during drain, install, image
+    intent and failure recovery. The scheduler's day-29 NO_GO validator
+    cannot import the old host quiescence as if it were VALIDATED_RUNTIME.
+    """
+    root=Path(__file__).resolve().parents[1]
+    scheduler=(root/'scripts/rc6_deploy_scheduler_suspend.py').read_bytes()
+    quiescence=(root/'scripts/rc6_deploy_quiescence.py').read_bytes()
+    staged_s=base64.b64encode(gzip.compress(scheduler,mtime=0,compresslevel=9)).decode()
+    staged_q=base64.b64encode(gzip.compress(quiescence,mtime=0,compresslevel=9)).decode()
+    monkeypatch.setenv('RC6_A125_CANDIDATE_SOURCE_GZIP_B64',staged_s)
+    monkeypatch.setenv('RC6_A125_CANDIDATE_SOURCE_SHA256',hashlib.sha256(scheduler).hexdigest())
+    monkeypatch.delenv('RC6_A145_QUIESCENCE_GZIP_B64',raising=False)
+    operator=q.candidate_operator_module(require_staged=True)
+    marker_root=tmp_path/'deploy'
+    marker_root.mkdir()
+    (marker_root/'CURRENT_STATE_V2.json').write_text(json.dumps({
+        'validation_status':'DEPLOYED_VALIDATION_PENDING',
+        'candidate_sha':q.A175_FAILED_CANDIDATE,'mode':'PRODUCTION_PAPER',
+        'real_orders_sent':0,'real_order_routes':'NOT_CALLED'}))
+    monkeypatch.setattr(operator,'ROOT',marker_root)
+    with pytest.raises(ValueError,match='SCHEDULER_A176_STAGED_REQUIRED_UNTIL_VALIDATED_RUNTIME'):
+        operator.a176_quiescence_helper()
+    monkeypatch.setenv('RC6_A145_QUIESCENCE_GZIP_B64',staged_q)
+    source=operator.a176_quiescence_helper()
+    assert source.A175_FAILED_CANDIDATE==q.A175_FAILED_CANDIDATE
+    assert source.A176_OPERATOR_NO_GO_RECEIPT_SHA256==q.A176_OPERATOR_NO_GO_RECEIPT_SHA256
+
+
+def test_a175_workflow_wires_nested_staged_sources_in_every_failure_phase():
+    workflow=(Path(__file__).resolve().parents[1]/
+              '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    classifier=workflow.split('      - name: Classify current flat PAPER session before host writes',1)[1].split(
+        '      - name: Capture exact pre-suspend host fingerprint',1)[0]
+    assert "os.environ['RC6_A145_QUIESCENCE_GZIP_B64']=CANDIDATE_A143_B64" in classifier
+    drain=workflow.split('      - name: Admit PAPER book before draining RC6',1)[1].split(
+        '      - name: Account pre-suspend failure',1)[0]
+    assert 'A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=' in drain
+    assert 'env $AUDIT_ENV $A125_ENV $A143_ENV' in drain
+    assert '${#A143_ENV}' in drain and 'RC6_DRAIN_REMOTE_ARGUMENT=RED' in drain
+    install=workflow.split('# The reproducible bundle records mtime=0.',1)[1].split(
+        '# An A151 historical-cost restatement',1)[0]
+    assert 'A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=' in install
+    assert 'sudo -n env $QUIESCENCE_AUDIT_ENV $A143_ENV' in install
+    intent=workflow.split('# Persist frozen manifest digest and materialized Docker identity',1)[1].split(
+        '# Docker may retain both compressed/content-store',1)[0]
+    assert 'IMAGE_INTENT_A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=' in intent
+    assert 'env $IMAGE_INTENT_A143_ENV python3' in intent
+    recovery=workflow.split("RECOVERY_A125_ENV=''",1)[1].split('RECOVERY_OUTPUT=',1)[0]
+    assert 'RECOVERY_A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=' in recovery
+    assert 'env $RECOVERY_A125_ENV $RECOVERY_A143_ENV' in workflow
