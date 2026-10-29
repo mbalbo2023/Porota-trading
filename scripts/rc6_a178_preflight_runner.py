@@ -173,9 +173,17 @@ def prepare(candidate, tree, run_id, artifact_id, repository, token,
         prefix.append(f'STAGED_{letter}_GZIP_B64={encoded!r}')
         prefix.append(f'STAGED_{letter}_SHA256={hashlib.sha256(source).hexdigest()!r}')
     host_script=diagnostic_root/'scripts/rc6_a178_running_preflight_ro.py'
+    host_source=host_script.read_bytes()
+    future=b'from __future__ import annotations\n'
+    if host_source.count(future)!=1:
+        raise ValueError('A178_HOST_STDIN_FUTURE_ANCHOR_RED')
+    # A remote Python - stdin script must preserve the module docstring and
+    # __future__ directive BEFORE our dynamically staged variable assignments.
+    # The first A178 read-only proof found this exact syntax regression.
+    assembled=host_source.replace(future, future+('\n'.join(prefix)+'\n').encode(),1)
+    compile(assembled,'a178/frozen-host-stdin.py','exec')
     with (out_dir/'host-stdin.py').open('wb') as output:
-        output.write(('\n'.join(prefix)+'\n').encode())
-        output.write(host_script.read_bytes())
+        output.write(assembled)
     # The runner needs these values as arguments, but uploads only aggregate
     # JSON receipts. No artifact data or source is sent to GitHub logs.
     env=Path(os.environ['GITHUB_ENV'])

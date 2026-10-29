@@ -166,6 +166,11 @@ class A178ReadOnlyPreflightTest(unittest.TestCase):
                 binder.prepare(candidate,tree,'123','456','mbalbo2023/Porota-trading',
                                'not-a-real-token',root,root,temp/'rc6-a160')
             host=(temp/'rc6-a160/host-stdin.py').read_bytes()
+            # Regression: a prefixed assignment BEFORE a __future__ statement
+            # passed the artifact tests but fails on the real Python host.
+            compile(host,'a178/frozen-host-stdin.py','exec')
+            self.assertLess(host.index(b'from __future__ import annotations'),
+                            host.index(b'STAGED_Q_GZIP_B64='))
             self.assertIn(b'STAGED_Q_GZIP_B64=',host)
             self.assertIn(b'STAGED_S_GZIP_B64=',host)
             self.assertIn(b'EXPECTED_CANDIDATE',host)
