@@ -88,6 +88,35 @@ def diagnose(root=ROOT) -> dict:
     guard = suspend.preserved_iol_guard(policy)
     receipt, receipt_sha = bounded_json(
         root/'data/deploy'/('scheduler-suspend-'+CANDIDATE+'.json'))
+    quiescence, quiescence_sha = bounded_json(
+        root/'data/deploy'/('quiescence-'+CANDIDATE+'.json'))
+    runtime = quiescence.get('candidate_runtime_after_failure')
+    if type(runtime) is not dict:
+        runtime = {}
+    intent = quiescence.get('candidate_image_intent')
+    if type(intent) is not dict:
+        intent = {}
+    containers = runtime.get('containers')
+    if type(containers) is not dict:
+        containers = {}
+    origin = {
+        'quiescence_sha256': quiescence_sha,
+        'quiescence_status': quiescence.get('status'),
+        'installation_started': quiescence.get('installation_started'),
+        'inflight': quiescence.get('inflight'),
+        'runtime_health': quiescence.get('runtime_health'),
+        'market_open_suspended': quiescence.get('market_open_suspended'),
+        'a175_pending_adopted': quiescence.get('a175_pending_adopted'),
+        'a175_origin_sha256': quiescence.get('a175_origin_sha256'),
+        'image_id': intent.get('image_id'),
+        'runtime_status': runtime.get('status'),
+        'runtime_flat_book': runtime.get('flat_book'),
+        'runtime_containers': {name:{'id':value.get('id'), 'image':value.get('image')}
+                               for name,value in containers.items() if type(value) is dict},
+        'critical_admission': runtime.get('critical_admission'),
+        'real_orders_sent': quiescence.get('real_orders_sent'),
+        'ppi_watch_accessed': quiescence.get('ppi_watch_accessed'),
+    }
     static = {
         'candidate': receipt.get('candidate_sha') == CANDIDATE,
         'status_suspended': receipt.get('status') == 'SUSPENDED',
@@ -110,6 +139,7 @@ def diagnose(root=ROOT) -> dict:
         'marker_sha256': marker_sha,
         'scheduler_sha256': receipt_sha,
         'scheduler_status': str(receipt.get('status'))[:60],
+        'origin': origin,
         'timer_count': len(names),
         'static_predicates': static,
         'a176_helper': capture('a176_helper', suspend.a176_quiescence_helper),
