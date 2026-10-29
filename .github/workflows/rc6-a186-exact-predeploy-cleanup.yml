@@ -1,0 +1,95 @@
+name: RC6 A186 exact predeploy selective orphan cleanup
+
+on:
+  push:
+    branches:
+      - maintenance/rc6-a186-exact-predeploy-cleanup-20261029
+    paths:
+      - .github/workflows/rc6-a186-exact-predeploy-cleanup.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify exact tested cleanup source and policy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --quiet 'pytest==9.1.1' 'PyYAML==6.0.3'
+          python3 -m py_compile scripts/rc6_pretransfer_image_cleanup.py scripts/rc6_a186_host_cleanup_snapshot.py
+          python3 -m pytest -q tests/test_rc6_pretransfer_image_cleanup.py tests/test_rc6_deploy_failure_cleanup.py
+          ! grep -Eq 'docker (system|image|volume|container) prune|image.*rm.*-f' scripts/rc6_pretransfer_image_cleanup.py
+          echo RC6_A186_CLEANUP_GUARD_TESTS=GREEN
+      - name: Prepare strict pinned SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_cleanup" "$HOME/.ssh/known_hosts"
+      - name: Prove exact host, original PAPER zero, absence of deploy barrier, and protected images
+        id: before
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BEFORE="$(timeout 55 ssh -T -i "$HOME/.ssh/porota_rc6_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -B -' < scripts/rc6_a186_host_cleanup_snapshot.py)"
+          [[ "$BEFORE" == RC6_A186_CLEANUP_SNAPSHOT=* ]]
+          echo "$BEFORE"
+          echo "SNAPSHOT_BEFORE=${BEFORE#RC6_A186_CLEANUP_SNAPSHOT=}" >> "$GITHUB_ENV"
+      - name: Run exactly bounded reference-safe orphan cleanup under canonical host flock
+        id: reclaim
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          RECEIPT="$(timeout --signal=TERM --kill-after=10s 180s ssh -T -i "$HOME/.ssh/porota_rc6_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" 'sudo -n flock -n -E 73 /run/lock/porota-rc6-deploy-v2.lock env PYTHONDONTWRITEBYTECODE=1 python3 -B -' < scripts/rc6_pretransfer_image_cleanup.py)"
+          echo "RC6_A186_CLEANUP_RECEIPT=$RECEIPT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.loads(sys.argv[1])
+          assert r.get('schema')=='RC6_PRETRANSFER_IMAGE_CLEANUP_V1'
+          assert r.get('status')=='GREEN' and r.get('runtime_unchanged') is True
+          valid={
+              'porota-trading-bot:17.0.0-rc6-candidate-3fd020f408275a490e911e06f60a1ddc89153fe5',
+              'porota-predeploy-v2:18ba517a846c6798f0d12f39072465fc02fa03b5',
+              'porota-trading-bot:17.0.0-rc6-candidate-18ba517a846c6798f0d12f39072465fc02fa03b5',
+          }
+          removed=r.get('removed_tags') or []
+          assert removed and set(removed).issubset(valid)
+          assert r.get('disk_after',0)>=5200000000 and r.get('disk_after',0)>=r.get('disk_before',0)
+          print('RC6_A186_SELECTIVE_GC=GREEN|removed_tags='+str(len(removed))+'|disk_after='+str(r['disk_after']))
+          PY
+      - name: Independently attest immutable runtime, PAPER zero, and untouched PPI Watch after GC
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          AFTER="$(timeout 55 ssh -T -i "$HOME/.ssh/porota_rc6_cleanup" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -B -' < scripts/rc6_a186_host_cleanup_snapshot.py)"
+          [[ "$AFTER" == RC6_A186_CLEANUP_SNAPSHOT=* ]]
+          echo "$AFTER"
+          test "${AFTER#RC6_A186_CLEANUP_SNAPSHOT=}" = "$SNAPSHOT_BEFORE"
+          echo 'RC6_A186_CLEANUP_POSTHOST=GREEN|PAPER=0|PPI_WATCH_UNCHANGED|RUNTIME_UNCHANGED'
+      - name: Remove ephemeral runner SSH credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/porota_rc6_cleanup" "$HOME/.ssh/known_hosts"
