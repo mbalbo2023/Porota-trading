@@ -581,12 +581,12 @@ def required_timers(deploy_scheduler_candidate=None):
         values[unit] = {'state':'AMBER' if optional_degraded and good else
                         'GREEN' if good else 'RED',
                         'enabled':enabled,'active':active}
-        if unit == preserved_iol_timer and deploy_scheduler_candidate is not None:
+        if (unit == preserved_iol_timer and deploy_scheduler_candidate is not None
+                and optional_degraded and good):
             values[unit]['service_unit'] = service
             values[unit]['service_state'] = service_state
-            if optional_degraded and good:
-                values[unit]['reason'] = 'IOL_OAUTH_GUARDIAN_CLASSIFIED_EXIT2'
-                optional_source_alerts.append(unit)
+            values[unit]['reason'] = 'IOL_OAUTH_GUARDIAN_CLASSIFIED_EXIT2'
+            optional_source_alerts.append(unit)
         ok = ok and good
     output = {'state':'GREEN' if ok else 'RED','units':values}
     if optional_source_alerts:
