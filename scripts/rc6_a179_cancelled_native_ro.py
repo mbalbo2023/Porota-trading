@@ -17,6 +17,7 @@ ROOT=Path('/opt/porota-trading')
 RUN='40916351644'
 CANDIDATE='7d62d2f4ed353231da8566a360a1179e99bcc7eb'
 DEPLOY='d961d19e55d78c68d902a14b41480344365cde1e'
+TREE='31ced11ce047bfa092f5398c13aeb37b74afd629'
 IMAGE='sha256:094b0f7485d835c43be4c8f519051beb21d0f4fbdfe817dd2eeb30ab341a06ba'
 CRITICAL='sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 MARKER_SHA='a9494750704f16669e76399577190e7110b2c8a3e57b903c08d9710074410a42'
@@ -113,6 +114,63 @@ def receipt_census():
     return found
 
 
+def native_cancel_recovery_certificate():
+    """Independently recheck the native receipts, never Actions success."""
+    prefix=CANDIDATE[:12]+'-'+RUN
+    base=ROOT/'data/deploy'
+    first=base/('native-generation-acceptance-a179-'+prefix+'.json')
+    sustained=base/('native-ten-generation-soak-a179-'+prefix+'.json')
+    def strict(path):
+        require(path.is_file() and not path.is_symlink() and
+                path.stat().st_nlink==1 and 0<path.stat().st_size<=2*1024*1024,
+                'CANCEL_NATIVE_CERTIFICATE_UNSAFE:'+path.name)
+        return json.loads(path.read_bytes())
+    a,b=strict(first),strict(sustained)
+    require(a.get('status')==b.get('status')=='GREEN' and
+            a.get('acceptance_mode')==b.get('acceptance_mode')=='FRESH_GENERATIONS' and
+            b.get('strict') is True and b.get('all_services_sampled_running') is True,
+            'CANCEL_NATIVE_CERTIFICATE_STATUS_RED')
+    rows_a,rows_b=a.get('generations'),b.get('generations')
+    require(type(rows_a) is list and len(rows_a)>=2 and
+            type(rows_b) is list and len(rows_b)>=10,
+            'CANCEL_NATIVE_GENERATION_COUNT_RED')
+    for rows in (rows_a,rows_b):
+        require(all(type(row) is dict and row.get('source_sha')==CANDIDATE and
+                    row.get('candidate_tree_sha')==TREE and
+                    type(row.get('real_orders_sent')) is int and
+                    row['real_orders_sent']==0 and
+                    row.get('real_routes')=='NOT_CALLED' for row in rows),
+                'CANCEL_NATIVE_GENERATION_SOURCE_OR_SAFETY_RED')
+        require(len({row.get('generation_id') for row in rows})==len(rows) and
+                all(type(row.get('sequence')) is int for row in rows) and
+                all(b['sequence']>a['sequence'] for a,b in zip(rows,rows[1:])),
+                'CANCEL_NATIVE_GENERATION_NOT_MONOTONIC')
+    resources=b.get('resources')
+    require(type(resources) is list and len(resources)>=10 and
+            all(type(row) is dict and row.get('services_unchanged') is True and
+                row.get('available_memory_bytes',0)>=128*1024**2 and
+                row.get('free_disk_bytes',0)>=2*1024**3
+                for row in resources),
+            'CANCEL_NATIVE_RESOURCES_RED')
+    stability=[]
+    for n in (1,2,3):
+        path=base/('zero-known-error-stability-a179-'+prefix+'-'+str(n)+'.json')
+        row=strict(path)
+        require(row.get('status')=='GREEN' and row.get('read_only') is True and
+                row.get('real_routes')==[],
+                'CANCEL_NATIVE_STABILITY_RECEIPT_RED:'+str(n))
+        stability.append(hashlib.sha256(path.read_bytes()).hexdigest())
+    return {'status':'GREEN_INDEPENDENT_NATIVE_RECEIPTS_ONLY',
+            'source_sha':CANDIDATE,'source_tree':TREE,
+            'native_acceptance_mode':'FRESH_GENERATIONS',
+            'first_count':len(rows_a),'sustained_count':len(rows_b),
+            'resource_samples':len(resources),'audits':3,
+            'first_sha256':hashlib.sha256(first.read_bytes()).hexdigest(),
+            'soak_sha256':hashlib.sha256(sustained.read_bytes()).hexdigest(),
+            'audit_sha256':stability,
+            'real_orders_sent':0,'ppi_watch_mutations':0}
+
+
 def main():
     root=ROOT/'data/deploy'
     marker=hashed_json(root/'CURRENT_STATE_V2.json',MARKER_SHA)
@@ -160,6 +218,7 @@ def main():
             'contract_writers':command('docker','ps','--format','{{.Names}}',
                                       '--filter','name=porota-deploy-contract-').splitlines(),
             'partial_receipts':receipt_census(),
+            'native_recovery':native_cancel_recovery_certificate(),
             'paper':'PRODUCTION_PAPER','real_orders_sent':0,
             'marker':'DEPLOYED_VALIDATION_PENDING',
             'host_mutations':0,'ppi_watch_mutations':0}

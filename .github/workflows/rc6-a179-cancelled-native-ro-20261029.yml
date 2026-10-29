@@ -53,7 +53,15 @@ jobs:
           assert row['status']=='READ_ONLY' and row['host_mutations']==0
           assert row['real_orders_sent']==0 and row['ppi_watch_mutations']==0
           assert row['run']=='40916351644'
-          print('RC6_A179_CANCELLED_NATIVE_FORENSICS=GREEN_READ_ONLY')
+          native=row['native_recovery']
+          assert native['status']=='GREEN_INDEPENDENT_NATIVE_RECEIPTS_ONLY'
+          assert native['source_sha']=='7d62d2f4ed353231da8566a360a1179e99bcc7eb'
+          assert native['source_tree']=='31ced11ce047bfa092f5398c13aeb37b74afd629'
+          assert native['first_count']>=2 and native['sustained_count']>=10
+          assert native['resource_samples']>=10 and native['audits']==3
+          assert row['barrier']['status']=='IDLE' and row['barrier']['uncontested_flock'] is True
+          assert row['processes']['candidate_processes_absent'] and row['contract_writers']==[]
+          print('RC6_A179_CANCELLED_NATIVE_FORENSICS=GREEN_READ_ONLY|NATIVE_PROOF_GREEN|ACTION_CANCELLED')
           PY
       - if: always()
         uses: actions/upload-artifact@v4
