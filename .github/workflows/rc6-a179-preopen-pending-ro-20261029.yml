@@ -1,0 +1,76 @@
+name: RC6 A179 exact failed preopen read-only diagnosis
+
+on:
+  push:
+    branches:
+      - diagnostic/rc6-a179-preopen-pending-ro-20261029
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  diagnose-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout isolated diagnostic branch
+        uses: actions/checkout@v4
+      - name: Validate diagnostic guards locally
+        run: |
+          set -Eeuo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_rc6_a179_preopen_origin_ro -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/rc6_a179_preopen_origin_ro.py
+      - name: Prepare strict SSH read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_a179_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_a179_ro" "$HOME/.ssh/known_hosts"
+      - name: Read only exact A178 pending marker and preopen error classification
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 100 ssh -i "$HOME/.ssh/porota_rc6_a179_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+            < scripts/rc6_a179_preopen_origin_ro.py | tee rc6-a179-preopen-ro.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('rc6-a179-preopen-ro.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A179_PREOPEN_RO=')
+          report=json.loads(lines[0].split('=',1)[1])
+          assert report['candidate']=='7d62d2f4ed353231da8566a360a1179e99bcc7eb'
+          assert report['deploy']=='d961d19e55d78c68d902a14b41480344365cde1e'
+          assert report['status']=='DIAGNOSED_READ_ONLY' and report['host_mutations']==0
+          assert report['paper']['mode']=='PRODUCTION_PAPER' and report['paper']['real_orders_sent']==0
+          print('RC6_A179_SAFE_DIAGNOSIS=GREEN_READ_ONLY|PAPER=0|NO_GO')
+          PY
+      - name: Preserve bounded diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a179-preopen-pending-diagnostic
+          path: rc6-a179-preopen-ro.jsonl
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Erase runner SSH key
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/porota_rc6_a179_ro"
