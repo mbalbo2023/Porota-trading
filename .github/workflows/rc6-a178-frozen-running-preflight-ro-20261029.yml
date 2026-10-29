@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
     env:
-      RC6_CANDIDATE_SHA: 'fdf04e6057fb527d4cc0f6c9beba4a93ff8a0fbf'
-      RC6_CANDIDATE_TREE: '8658e2e575f4753ec1359759b8abaa35243ee041'
-      RC6_PREDEPLOY_RUN_ID: '40896875934'
-      RC6_PREDEPLOY_ARTIFACT_ID: '12909750686'
-      RC6_PREDEPLOY_ARTIFACT_DIGEST: 'sha256:bd270818427cb41bd08709658d95a49689903b0ca7639ce096e8d9d389630b91'
+      RC6_CANDIDATE_SHA: '7d62d2f4ed353231da8566a360a1179e99bcc7eb'
+      RC6_CANDIDATE_TREE: '31ced11ce047bfa092f5398c13aeb37b74afd629'
+      RC6_PREDEPLOY_RUN_ID: '40905248756'
+      RC6_PREDEPLOY_ARTIFACT_ID: '12913385300'
+      RC6_PREDEPLOY_ARTIFACT_DIGEST: 'sha256:f5fa7bb54d15b24a8716e82804b68e58dea4e4caf7bc483c9af211845c8e93fe'
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -49,7 +49,7 @@ jobs:
           test "$(git -C candidate rev-parse HEAD)" = "$RC6_CANDIDATE_SHA"
           test "$(git -C candidate rev-parse HEAD^{tree})" = "$RC6_CANDIDATE_TREE"
           test "$(sha256sum scripts/rc6_a178_running_preflight_ro.py | cut -d' ' -f1)" = \
-            'c60975c38d3f46133a980b6c469adb889c9174aac2fdc9daab62c330acc3a071'
+            '68a82a9566c53592fda3209d0538d2c32d7a745a9c5c773c1d0e1c14a67f12a1'
           python3 -m unittest tests.test_rc6_a178_running_preflight_ro -v
           python3 -m py_compile scripts/rc6_a178_running_preflight_ro.py scripts/rc6_a178_preflight_runner.py
           python3 scripts/rc6_a178_preflight_runner.py \
@@ -97,6 +97,7 @@ jobs:
           assert row['droplet']=={'id':'594077619','region':'nyc1'}
           assert row['operator_receipt_sha256']=='3218ccf5296306068d051b12588c4fac253a768ea3c81e0fc31c501adb34338c'
           assert row['paper']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0,'operational_go':False}
+          assert row['a175_session'] in {'MARKET_OPEN','MARKET_CLOSED','CLOSED'}
           assert row['images_protected']==sorted([
             'sha256:9841cba8df3345fa22e39457645ba250431ad1f465ce4204d92f73f7816215b9',
             'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'])
