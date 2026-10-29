@@ -45,6 +45,7 @@ jobs:
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
+          RC6_SOURCE_SHA: '65c3b530073c94b56f5b63afe93938ac605e9265c33bdaf2cec24215b92af3d0'
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER"
@@ -59,9 +60,6 @@ jobs:
               'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
               < scripts/rc6_a175_docker_ownership_ro.py | tee evidence/ownership.json
           test "$(wc -c < evidence/ownership.json)" -lt 32768
-        env:
-          RC6_SOURCE_SHA: '65c3b530073c94b56f5b63afe93938ac605e9265c33bdaf2cec24215b92af3d0'
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
