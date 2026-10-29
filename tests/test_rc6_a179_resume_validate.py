@@ -1,5 +1,6 @@
 """Fail-closed regression tests for A179 exact postfailure continuation."""
 import hashlib
+import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +10,42 @@ from scripts import rc6_a179_resume_validate as resume
 
 
 class A179ResumeGuardTests(TestCase):
+    def pending_report(self, *, extras=(), bad_operator=False):
+        fields={'release_identity','observer_container','dashboard_container',
+                'observer_db','disk','required_rc6_timers','byma_morning_watch',
+                'iol_reference_fallback','history_quarantine',
+                'foreign_market_policy'}
+        red={'observer_container','dashboard_container',*extras}
+        checks={name:{'state':'RED' if name in red else 'GREEN'} for name in fields}
+        for name in ('observer_container','dashboard_container'):
+            checks[name]['reason']='PREOPEN_VALIDATED_RUNTIME_IDENTITY_RED'
+        return {'status':'RED','red_checks':sorted(red),'checks':checks,
+                'operator_paper_paused':not bad_operator,
+                'paper_admission_hold':'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                'operator_pause_receipt_sha256':resume.OPERATOR_SEAL_SHA256}
+
+    def test_pending_restored_allows_only_two_exact_marker_identity_reds(self):
+        valid=self.pending_report()
+        result=mock.Mock(returncode=2,stdout=json.dumps(valid),stderr='')
+        with (mock.patch.object(resume,'verify_origin'),
+              mock.patch.object(resume,'staged_env',return_value={'PYTHONDONTWRITEBYTECODE':'1'}),
+              mock.patch.object(resume.subprocess,'run',return_value=result)):
+            observed=resume.verify_pending_restored_preopen(Path('/tmp/fake-root'))
+        self.assertEqual(observed['status'],'EXACT_EXPECTED_PENDING_MARKER_RED_ONLY')
+        self.assertEqual(set(observed['phases']),{'T_MINUS_45','T_MINUS_10'})
+
+    def test_pending_restored_rejects_any_other_preopen_red_or_hold_missing(self):
+        for payload in (self.pending_report(extras=('observer_db',)),
+                        self.pending_report(bad_operator=True),
+                        dict(self.pending_report(),red_checks=['observer_container'])):
+            result=mock.Mock(returncode=2,stdout=json.dumps(payload),stderr='')
+            with (mock.patch.object(resume,'verify_origin'),
+                  mock.patch.object(resume,'staged_env',return_value={}),
+                  mock.patch.object(resume.subprocess,'run',return_value=result)):
+                with self.assertRaisesRegex(ValueError,
+                                            'PENDING_PREOPEN_HAS_ADDITIONAL_FAILURE'):
+                    resume.verify_pending_restored_preopen(Path('/tmp/fake-root'))
+
     def test_exact_sha_and_json_bound(self):
         with TemporaryDirectory() as temp:
             path=Path(temp)/'receipt.json'

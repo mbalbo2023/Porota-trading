@@ -212,6 +212,56 @@ def verify_preopen(root=ROOT, *, critical_image=CRITICAL_IMAGE,
             'ppi_watch_mutations':0}
 
 
+def verify_pending_restored_preopen(root=ROOT) -> dict:
+    """The *only* allowed pre-marker RED is its own pending identity guard.
+
+    Post-restore `rc6_preopen` necessarily refuses a non-VALIDATED marker for
+    observer and dashboard. Require those two exact reds and no others;
+    both phases are then independently rerun without a staged helper after
+    VALIDATED_RUNTIME is durably written. No bypass of ordinary preopen.
+    """
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    env=staged_env(root)
+    expected={'observer_container','dashboard_container'}
+    output={}
+    for phase in ('T_MINUS_45','T_MINUS_10'):
+        completed=subprocess.run([sys.executable,str(root/'rc6_preopen.py'),
+                                  '--phase',phase],capture_output=True,text=True,
+                                 env=env,timeout=180,check=False)
+        require(completed.returncode==2,
+                'A179_PENDING_PREOPEN_EXPECTED_EXACT_MARKER_RED:'+phase)
+        report=json.loads(completed.stdout)
+        checks=report.get('checks')
+        require(report.get('status')=='RED' and
+                type(report.get('red_checks')) is list and
+                set(report['red_checks'])==expected and
+                len(report['red_checks'])==2 and
+                type(checks) is dict and
+                set(checks)=={'release_identity','observer_container',
+                              'dashboard_container','observer_db','disk',
+                              'required_rc6_timers','byma_morning_watch',
+                              'iol_reference_fallback','history_quarantine',
+                              'foreign_market_policy'} and
+                all(type(v) is dict and
+                    (v.get('state')=='RED' and
+                     v.get('reason')=='PREOPEN_VALIDATED_RUNTIME_IDENTITY_RED'
+                     if key in expected
+                     else v.get('state') in ('GREEN','AMBER'))
+                    for key,v in checks.items()) and
+                checks['required_rc6_timers'].get('state')=='GREEN' and
+                report.get('operator_paper_paused') is True and
+                report.get('paper_admission_hold')==
+                'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+                report.get('operator_pause_receipt_sha256')==OPERATOR_SEAL_SHA256,
+                'A179_PENDING_PREOPEN_HAS_ADDITIONAL_FAILURE:'+phase)
+        output[phase]={'expected_pending_identity_red_only':sorted(expected),
+                       'other_checks':'GREEN_OR_AMBER','timers':'GREEN',
+                       'paper_admission':'NO_GO'}
+    return {'status':'EXACT_EXPECTED_PENDING_MARKER_RED_ONLY',
+            'candidate':CANDIDATE,'phases':output,'real_orders_sent':0,
+            'host_mutations':0,'ppi_watch_mutations':0}
+
+
 def command_stdout(*argv):
     return subprocess.check_output(argv, text=True, timeout=15).strip()
 
@@ -530,6 +580,27 @@ def closure_preflight(root=ROOT) -> dict:
             'real_orders_sent':0,'host_mutations':0,'ppi_watch_mutations':0}
 
 
+def restored_readiness(root=ROOT) -> dict:
+    """New-attempt RO gate after A179 marked the prior attempt failed safe."""
+    require(not Path('/run/lock/porota-rc6-deploy-v2-attempt.json').exists() and
+            not Path('/tmp/porota-rc6-deploy-v2-attempt.json').exists(),
+            'A179_POSTRESTORE_ATTEMPT_BARRIER_PRESENT')
+    require(not command_stdout('docker','ps','--format','{{.Names}}',
+                               '--filter','name=porota-deploy-contract-'),
+            'A179_POSTRESTORE_ORPHAN_CONTRACT_RUNNING')
+    transition=verify_pending_restored_preopen(root)
+    proof=validate_native_proof(root)
+    require(command_stdout('docker','image','inspect','-f','{{.Id}}',
+                           'porota-trading-bot:17.0.0-rc6')==IMAGE_ID,
+            'A179_POSTRESTORE_IMAGE_ALIAS_DRIFT')
+    return {'status':'GREEN_READ_ONLY_PENDING_TRANSITION',
+            'candidate':CANDIDATE,'native_run_id':proof['run_id'],
+            'native_mode':proof['mode'],'transition':transition['status'],
+            'critical_image':'NEW_EXACT','schedulers':'RESTORED',
+            'operator_no_go':'HELD','real_orders_sent':0,
+            'host_mutations':0,'ppi_watch_mutations':0}
+
+
 def reconcile_critical_image(root=ROOT) -> dict:
     """Mirror the canonical critical-broker reimage, never changing its code."""
     require_exact_mutex()
@@ -616,7 +687,7 @@ def restore_exact_schedulers(root=ROOT) -> dict:
     verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
     # Once restored, use the DAILY active-timer path, not --deploy-scheduler-
     # candidate; the latter deliberately requires all fifteen timers paused.
-    verify_preopen(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    verify_pending_restored_preopen(root)
     require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_SCHEDULERS')
     return {'status':'GREEN_SCHEDULERS_RESTORED','candidate':CANDIDATE,
             'restored_timer_count':16,'native_run_id':proof['run_id'],
@@ -633,7 +704,7 @@ def verify_exact_restored_schedulers(root=ROOT) -> dict:
     from scripts import rc6_deploy_scheduler_suspend as scheduler
     result=scheduler.run(CANDIDATE,'verify',candidate_policy(root))
     require(result.get('status')=='RESTORED','A179_SCHEDULER_VERIFY_RED')
-    verify_preopen(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    verify_pending_restored_preopen(root)
     require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_DURING_VERIFY')
     return {'status':'GREEN_RESTORED_SCHEDULERS_INDEPENDENTLY_VERIFIED',
             'candidate':CANDIDATE,'native_run_id':proof['run_id'],
@@ -780,7 +851,7 @@ def finalize_exact_runtime(root=ROOT) -> dict:
     import tempfile
     require_exact_mutex()
     verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
-    verify_preopen(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    verify_pending_restored_preopen(root)
     proof=validate_native_proof(root)
     deploy_dir=root/'data/deploy'
     latest=safe_generated(deploy_dir/proof['stability_receipts'][-1])
@@ -835,7 +906,7 @@ def finalize_exact_runtime(root=ROOT) -> dict:
             'real_orders_sent':0,'ppi_watch_mutations':0}
 
 
-def verify_independent_final_state(root=ROOT) -> dict:
+def verify_independent_final_state(root=ROOT, *, allow_exact_owned_mutex=False) -> dict:
     """Independent RO closure; critically, NO STAGED preopen fallback."""
     sys.path.insert(0,str(root))
     deploy_dir=root/'data/deploy'
@@ -905,8 +976,11 @@ def verify_independent_final_state(root=ROOT) -> dict:
                 report.get('paper_admission_hold')==
                 'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
                 'A179_POSTFINAL_NO_GO_TIMER_OR_AUTH_RED:'+part)
-    require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
-            'A179_FINAL_ATTEMPT_MUTEX_NOT_RELEASED')
+    if allow_exact_owned_mutex:
+        require_exact_mutex()
+    else:
+        require(not (Path('/run/lock')/'porota-rc6-deploy-v2-attempt.json').exists(),
+                'A179_FINAL_ATTEMPT_MUTEX_NOT_RELEASED')
     return {'schema':'rc6.a179.final-independent-readonly.v1',
             'status':'VALIDATED_RUNTIME','candidate':CANDIDATE,
             'deploy':DEPLOY,'image':IMAGE_ID,'native_mode':proof['mode'],
@@ -1000,6 +1074,45 @@ def finish_postfailure(root=ROOT) -> dict:
             'real_orders_sent':0,'ppi_watch_mutations':0}
 
 
+def finish_from_restored(root=ROOT) -> dict:
+    """Continue exactly the safely RESTORED but still PENDING installed image.
+
+    This transition is needed after A179's independently certified postrestore
+    preopen rejection. It does not restart healthy services, reconstruct an
+    artifact, modify the DB, or rearm the operator PAPER gate.
+    """
+    require_exact_mutex()
+    verify_origin(root,critical_image=IMAGE_ID,scheduler_status='RESTORED')
+    proof=validate_native_proof(root)
+    before=ppi_watch_snapshot()
+    checked=verify_pending_restored_preopen(root)
+    require(checked['status']=='EXACT_EXPECTED_PENDING_MARKER_RED_ONLY',
+            'A179_POSTRESTORE_PENDING_GUARD_RED')
+    print('RC6_A179_PHASE_TRANSITION=EXACT_EXPECTED_MARKER_RED_ONLY',flush=True)
+    restored=verify_exact_restored_schedulers(root)
+    print('RC6_A179_PHASE_SCHEDULERS=GREEN_RESTORED_VERIFIED|NO_GO',flush=True)
+    backup=retire_empty_backups(root)
+    require(backup['count']==0,'A179_UNEXPECTED_BACKUP_DELETION')
+    print('RC6_A179_PHASE_EMPTY_BACKUP=GREEN|files_deleted=0',flush=True)
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_BEFORE_FINAL')
+    final=finalize_exact_runtime(root)
+    print('RC6_A179_PHASE_FINAL_MARKER=VALIDATED_RUNTIME|NO_GO_HELD',flush=True)
+    post=verify_independent_final_state(root,allow_exact_owned_mutex=True)
+    require(post['status']=='VALIDATED_RUNTIME' and
+            post['real_orders_sent']==0 and
+            post['preopen_phases']=='BOTH_NATIVE_PAUSED_NO_GO_GREEN',
+            'A179_NO_GO_NATIVE_POSTMARKER_RED')
+    print('RC6_A179_PHASE_NATIVE_POSTMARKER=GREEN|BOTH_PREOPEN_PAUSED_NO_GO',flush=True)
+    require(ppi_watch_snapshot()==before,'A179_PPI_WATCH_CHANGED_AFTER_FINAL')
+    return {'status':'VALIDATED_RUNTIME','candidate':CANDIDATE,
+            'deploy':DEPLOY,'image':IMAGE_ID,
+            'native_run_id':proof['run_id'],'native_mode':proof['mode'],
+            'postmarker_native_preopen':'BOTH_PAUSED_NO_GO_GREEN',
+            'reused_frozen_artifact':True,'host_rebuilds':0,
+            'critical_restarts':0,'backup_deleted_files':0,
+            'operator_no_go':'HELD','real_orders_sent':0,'ppi_watch_mutations':0}
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode',required=True,
@@ -1010,7 +1123,8 @@ def main(argv=None):
                                  'critical-reconcile','scheduler-restore',
                                  'scheduler-verify','backup-retire','finalize',
                                  'postfinal','cleanup-forward-attempt',
-                                 'finish-postfailure'))
+                                 'finish-postfailure','pending-restored-preopen',
+                                 'finish-restored','restored-readiness'))
     args=parser.parse_args(argv)
     try:
         modes={'preflight':verify_origin,'preopen':verify_preopen,
@@ -1027,7 +1141,10 @@ def main(argv=None):
                'finalize':finalize_exact_runtime,
                'postfinal':verify_independent_final_state,
                'cleanup-forward-attempt':cleanup_forward_attempt,
-               'finish-postfailure':finish_postfailure}
+               'finish-postfailure':finish_postfailure,
+               'pending-restored-preopen':verify_pending_restored_preopen,
+               'restored-readiness':restored_readiness,
+               'finish-restored':finish_from_restored}
         result=modes[args.mode]()
         print('RC6_A179_RESUME_'+args.mode.upper()+'='+json.dumps(result,sort_keys=True))
         return 0
