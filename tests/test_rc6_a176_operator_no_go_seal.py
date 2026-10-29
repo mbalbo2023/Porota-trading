@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 import stat
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +38,7 @@ class A176OperatorSealTest(unittest.TestCase):
             # identity probe while retaining the production uid==0 invariant.
             patch.object(seal.os, 'geteuid', return_value=0),
             patch.object(seal, 'root_owned', return_value=True),
+            patch.object(seal, 'trusted_deploy_directory', return_value=True),
             patch.object(seal, 'inspect_host'),
             patch.object(seal, 'observed_proof', return_value={
                 'ppi_snapshot':[],
@@ -89,6 +91,20 @@ class A176OperatorSealTest(unittest.TestCase):
         with self.assertRaisesRegex(seal.Rejected, 'HOST_MUTEX_UNSAFE'):
             seal.seal('40799999999', '1', NOW)
         self.assertFalse(seal.RECEIPT.exists())
+
+    def test_only_pinned_service_directory_permissions_are_allowed(self):
+        def check(uid, gid, mode, directory=True):
+            fake = SimpleNamespace(st_mode=(stat.S_IFDIR if directory else stat.S_IFREG)|mode,
+                                   st_uid=uid,st_gid=gid)
+            return seal.service_dir_identity(fake)
+        self.assertTrue(check(1000,1000,0o750))
+        for args in ((0,1000,0o750),(1000,0,0o750),
+                     (1000,1000,0o770),(1000,1000,0o751),
+                     (1000,1000,0o750,False)):
+            self.assertFalse(check(*args))
+        with patch.object(seal, 'trusted_deploy_directory', return_value=False):
+            with self.assertRaisesRegex(seal.Rejected, 'RECEIPT_DIRECTORY_UNSAFE'):
+                seal.seal('40799999999', '1', NOW)
 
     def test_root_ownership_duplicate_key_and_symlink_fail_closed(self):
         path = self.directory / 'dup.json'

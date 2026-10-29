@@ -57,6 +57,23 @@ def root_owned(st):
     return st.st_uid == 0
 
 
+def service_dir_identity(st):
+    return (stat.S_ISDIR(st.st_mode) and st.st_uid == 1000 and
+            st.st_gid == 1000 and stat.S_IMODE(st.st_mode) == 0o750)
+
+
+def trusted_deploy_directory():
+    """Exact A178 read-only #40875328428: both directories are service-owned 0750.
+
+    Individual durable receipts remain ROOT-owned and non-group-writable.
+    A group/world-writable directory or any ownership drift fails closed.
+    """
+    for path in (DIR.parent, DIR):
+        if not service_dir_identity(os.lstat(path)):
+            return False
+    return True
+
+
 def reject_if(condition, code):
     if condition:
         raise Rejected(code)
@@ -232,9 +249,7 @@ def seal(run_id, attempt, now=None):
     inspect_host()
     now = now or datetime.now(timezone.utc)
     reject_if(not valid_day(now), 'A176_DAY_EXPIRED')
-    reject_if(DIR.is_symlink() or not DIR.is_dir() or
-              not root_owned(DIR.stat()) or DIR.stat().st_mode & 0o022,
-              'RECEIPT_DIRECTORY_UNSAFE')
+    reject_if(not trusted_deploy_directory(), 'RECEIPT_DIRECTORY_UNSAFE')
     lock_fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         st = os.fstat(lock_fd)
