@@ -73,6 +73,8 @@ class CandidateImageSelectionTests(unittest.TestCase):
                  patch.object(manager, 'write_mode'), \
                  patch.object(manager, 'start_dashboard') as dashboard, \
                  patch.object(manager, 'observer_runtime_env', return_value=root / 'env'), \
+                 patch.object(manager, 'operator_readonly_mount', return_value=(
+                     '--mount', 'type=bind,source=/root-owned-fixture,target=/app/operator,readonly')) as authority_mount, \
                  patch.object(manager, 'notify', return_value='NO_CONFIGURADO'), \
                  patch.object(manager, 'run', side_effect=fake_run):
                 manager.simulation()
@@ -81,6 +83,9 @@ class CandidateImageSelectionTests(unittest.TestCase):
             self.assertEqual(calls[0][:3], ('docker', 'image', 'inspect'))
             observer = next(args for args in calls if args[:3] == ('docker', 'run', '-d'))
             self.assertEqual(observer[-3:], ('python', TAG, 'bv_paper_runtime.py'))
+            authority_mount.assert_called_once_with()
+            self.assertIn('type=bind,source=/root-owned-fixture,target=/app/operator,readonly',
+                          observer)
 
     def test_dashboard_run_uses_selected_image_without_changing_other_modes(self):
         calls = []
