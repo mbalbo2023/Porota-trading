@@ -2571,10 +2571,21 @@ def run(candidate, action, *, allow_admin_issue624=False,
          allow_a151_held_open=False,
          allow_a171_running_pending=False,
          allow_a174_running_pending=False,
+         allow_a175_running_pending=False,
          candidate_image_id=None,
          frozen_manifest=None):
+    if allow_a175_running_pending and (
+            allow_a174_running_pending or allow_a171_running_pending or
+            allow_admin_issue624 or allow_market_open_suspend or
+            allow_open_paper_carryover or allow_postclose_pending or
+            allow_intraday_caucion or allow_pending_caucion or
+            allow_degraded_closed_rescue or allow_adopt_failed_rescue or
+            allow_a143_pending_running or allow_a143_pending_stopped or
+            allow_a151_held_open or action not in {'drain','install'} or
+            candidate == A175_FAILED_CANDIDATE):
+        raise ValueError('QUIESCENCE_A175_PENDING_MODE_INVALID')
     if allow_a174_running_pending and (
-            allow_a171_running_pending or allow_admin_issue624 or
+            allow_a175_running_pending or allow_a171_running_pending or allow_admin_issue624 or
             allow_market_open_suspend or allow_open_paper_carryover or
             allow_postclose_pending or allow_intraday_caucion or
             allow_pending_caucion or allow_degraded_closed_rescue or
@@ -2777,10 +2788,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     raise ValueError('QUIESCENCE_A171_EXISTING_MODE_CHANGED')
                 if allow_a174_running_pending != (receipt.get('a174_pending_adopted') is True):
                     raise ValueError('QUIESCENCE_A174_EXISTING_MODE_CHANGED')
+                if allow_a175_running_pending != (receipt.get('a175_pending_adopted') is True):
+                    raise ValueError('QUIESCENCE_A175_EXISTING_MODE_CHANGED')
                 if allow_a171_running_pending:
                     a171_stopped_continuation(receipt)
                 if allow_a174_running_pending:
                     a174_stopped_continuation(receipt)
+                if allow_a175_running_pending:
+                    a175_stopped_continuation(receipt)
                 exact_clean_stopped(receipt)
                 admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
@@ -2804,6 +2819,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
             originals = {name: inspect(name) for name in OWNED}
             a171_proof = None
             a174_proof = None
+            a175_proof = None
             if allow_a171_running_pending:
                 operator=candidate_operator_module(require_staged=True)
                 a171_proof=a171_failed_running_proof(
@@ -2818,6 +2834,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     operator_a151_proof=operator.exact_a151_operator_preopen_pause,
                     operator_timer_disabled=operator.operator_preopen_timer_disabled,
                     require_installed_a174_source=True)
+            if allow_a175_running_pending:
+                operator=candidate_operator_module(require_staged=True)
+                a175_proof=a175_failed_running_proof(
+                    candidate,originals,
+                    operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                    operator_timer_disabled=operator.operator_preopen_timer_disabled,
+                    operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation,
+                    require_installed_a175_source=True)
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())
             if allow_degraded_closed_rescue and not stopped_owned and any(
                     not re.fullmatch('[0-9a-f]{64}',v['Id']) or
@@ -2911,6 +2935,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
                                    a174_origin_candidate=A174_FAILED_CANDIDATE,
                                    a174_origin_sha256=A174_FAILED_RECEIPT_SHA256,
                                    a174_previous_proof=a174_proof)
+                if a175_proof is not None:
+                    receipt.update(a175_pending_adopted=True,
+                                   a175_origin_candidate=A175_FAILED_CANDIDATE,
+                                   a175_origin_sha256=A175_FAILED_RECEIPT_SHA256,
+                                   a175_previous_proof=a175_proof)
                 persist(path, receipt)
                 for name in OWNED:
                     # Durable intent precedes stop: timeout may follow daemon effect.
@@ -2950,6 +2979,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     a171_stopped_continuation(receipt)
                 if allow_a174_running_pending:
                     a174_stopped_continuation(receipt)
+                if allow_a175_running_pending:
+                    a175_stopped_continuation(receipt)
                 if allow_postclose_pending and receipt['spot_carryover']['open_count'] != 2:
                     raise ValueError('QUIESCENCE_POSTCLOSE_SPOT_COUNT_CHANGED')
         elif action == 'admin-begin':
@@ -2995,10 +3026,14 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 raise ValueError('QUIESCENCE_A171_INSTALL_MODE_CHANGED')
             if allow_a174_running_pending != (receipt.get('a174_pending_adopted') is True):
                 raise ValueError('QUIESCENCE_A174_INSTALL_MODE_CHANGED')
+            if allow_a175_running_pending != (receipt.get('a175_pending_adopted') is True):
+                raise ValueError('QUIESCENCE_A175_INSTALL_MODE_CHANGED')
             if allow_a171_running_pending:
                 a171_stopped_continuation(receipt)
             if allow_a174_running_pending:
                 a174_stopped_continuation(receipt)
+            if allow_a175_running_pending:
+                a175_stopped_continuation(receipt)
             for name, expected in receipt['containers'].items():
                 value = inspect(name)
                 if value['Id'] != expected['id'] or value['State']['Status'] != 'exited':
@@ -3062,7 +3097,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     not (receipt.get('degraded_closed_rescue') is True or
                          receipt.get('a143_pending_adopted') is True or
                          receipt.get('a171_pending_adopted') is True or
-                         receipt.get('a174_pending_adopted') is True) or
+                         receipt.get('a174_pending_adopted') is True or
+                         receipt.get('a175_pending_adopted') is True) or
                     receipt.get('candidate_image_intent') is not None):
                 raise ValueError('QUIESCENCE_RESCUE_IMAGE_INTENT_STATE_RED')
             if receipt.get('degraded_closed_rescue') is True:
@@ -3078,6 +3114,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     operator_timer_disabled=operator.operator_preopen_timer_disabled)
             elif receipt.get('a171_pending_adopted') is True:
                 a171_stopped_continuation(receipt)
+            elif receipt.get('a175_pending_adopted') is True:
+                a175_stopped_continuation(receipt)
             else:
                 a174_stopped_continuation(receipt)
             receipt['candidate_image_intent'] = candidate_image_intent(
@@ -3125,6 +3163,30 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
                         receipt['status'] = 'RECOVERY_UNVERIFIED'
                         receipt['rescue_failure_reason'] = type(exc).__name__ + ':' + str(exc)
+                elif receipt.get('a175_pending_adopted') is True:
+                    # The A175 origin is a failed, validation-pending runtime.
+                    # It must NEVER be restarted as if it were a healthy base.
+                    try:
+                        observed={name:inspect(name) for name in OWNED}
+                        old_stopped=all(
+                            observed[name]['Id']==A175_RUNNING_IDS[name] and
+                            observed[name]['Image']==A175_LOADED_IMAGE_ID and
+                            observed[name]['State']['Status']=='exited'
+                            for name in OWNED)
+                        if old_stopped:
+                            a175_stopped_continuation(receipt)
+                            receipt['prior_a175_stopped_after_install']=True
+                            receipt['runtime_health']='PRIOR_A175_PENDING_NOT_GO'
+                        else:
+                            runtime=candidate_runtime_after_failed_install(receipt)
+                            if (runtime['flat_book']['source_sha']!=candidate or
+                                    runtime['flat_book']['real_orders_sent']!=0 or
+                                    runtime['critical_admission'].get('capability')!='issues_only'):
+                                raise ValueError('QUIESCENCE_A175_NEW_RUNTIME_UNVERIFIED')
+                            receipt['candidate_runtime_after_failure']=runtime
+                            receipt['runtime_health']='NEW_A178_CANDIDATE_NOT_GO'
+                    except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
+                        receipt['status']='RECOVERY_UNVERIFIED'
                 elif receipt.get('a174_pending_adopted') is True:
                     try:
                         observed={name:inspect(name) for name in OWNED}
@@ -3197,6 +3259,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
                             receipt['runtime_health'] = 'NEW_A143_CANDIDATE_NOT_GO'
                     except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
                         receipt['status'] = 'RECOVERY_UNVERIFIED'
+            elif receipt.get('a175_pending_adopted') is True:
+                try:
+                    a175_stopped_continuation(receipt)
+                    receipt['status']='PRIOR_A175_UNVALIDATED_HELD_STOPPED'
+                    receipt['runtime_health']='PRIOR_A175_PENDING_NOT_GO'
+                except (OSError,ValueError,KeyError,TypeError,sqlite3.Error):
+                    receipt['status']='RECOVERY_UNVERIFIED'
             elif receipt.get('a174_pending_adopted') is True:
                 try:
                     a174_stopped_continuation(receipt)
@@ -3284,6 +3353,7 @@ def main(argv=None):
     parser.add_argument('--adopt-a143-stopped-pending', action='store_true')
     parser.add_argument('--adopt-a171-running-pending', action='store_true')
     parser.add_argument('--adopt-a174-running-pending', action='store_true')
+    parser.add_argument('--adopt-a175-running-pending', action='store_true')
     parser.add_argument('--a151-held-open', action='store_true')
     parser.add_argument('--candidate-image-id')
     parser.add_argument('--frozen-manifest')
@@ -3350,6 +3420,15 @@ def main(argv=None):
             args.pending_paper_caucion or args.admin_cancel_issue624 or
             args.action not in {'drain','install'}):
         parser.error('--adopt-a174-running-pending requires isolated recovery drain/install')
+    if args.adopt_a175_running_pending and (
+            args.rescue_degraded_closed_20261026 or args.adopt_failed_rescue_candidate or
+            args.adopt_a143_running_pending or args.adopt_a143_stopped_pending or
+            args.adopt_a171_running_pending or args.adopt_a174_running_pending or
+            args.a151_held_open or args.market_open_suspend or
+            args.carry_open_paper_spots or args.paused_postclose or
+            args.intraday_caucion or args.pending_paper_caucion or
+            args.admin_cancel_issue624 or args.action not in {'drain','install'}):
+        parser.error('--adopt-a175-running-pending requires isolated recovery drain/install')
     if ((args.candidate_image_id or args.frozen_manifest) and args.action != 'image-intent') or (
             args.action == 'image-intent' and
             (not args.candidate_image_id or not args.frozen_manifest)):
@@ -3381,6 +3460,8 @@ def main(argv=None):
         options['allow_a171_running_pending'] = True
     if args.adopt_a174_running_pending:
         options['allow_a174_running_pending'] = True
+    if args.adopt_a175_running_pending:
+        options['allow_a175_running_pending'] = True
     if args.action == 'image-intent':
         options.update(candidate_image_id=args.candidate_image_id,
                        frozen_manifest=args.frozen_manifest)
