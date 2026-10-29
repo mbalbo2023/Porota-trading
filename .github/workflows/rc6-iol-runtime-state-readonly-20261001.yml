@@ -122,6 +122,27 @@ jobs:
           print('IOL_GUARDIAN_FORENSICS=COMPLETE_READ_ONLY')
           PY
           echo 'IOL_RUNTIME_STATE=GREEN_READONLY'
+      - name: Read-only capacity and safe Docker inventory
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=5s 80s ssh -T -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json,os,shutil,subprocess
+          roots=('/','/opt/porota-trading/data','/var/log','/tmp','/var/lib/docker')
+          space={p:{'free':shutil.disk_usage(p).free,'total':shutil.disk_usage(p).total} for p in roots if os.path.exists(p)}
+          print('A186_DISK_MOUNTS='+json.dumps(space,sort_keys=True))
+          for label,argv,limit in (
+              ('DOCKER_SYSTEM_DF',['docker','system','df','--format','{{json .}}'],20),
+              ('DOCKER_IMAGE_LIST',['docker','image','ls','--format','{{json .}}'],20),
+              ('ROOT_USAGE',['du','-sB1','/opt/porota-trading/data','/var/log','/tmp','/var/lib/docker'],40),
+          ):
+              try:
+                  x=subprocess.run(argv,capture_output=True,text=True,timeout=limit,check=False)
+                  lines=x.stdout.splitlines()
+                  print('A186_'+label+'='+json.dumps({'rc':x.returncode,'lines':lines[:55],'truncated':len(lines)>55},sort_keys=True))
+              except Exception as exc:
+                  print('A186_'+label+'='+type(exc).__name__)
+          print('A186_DISK_DIAGNOSTIC=READ_ONLY_COMPLETE')
+          PY
       - name: Cleanup
         if: always()
         run: rm -f "$HOME/.ssh/key"
