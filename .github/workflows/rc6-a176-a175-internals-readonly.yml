@@ -1,0 +1,84 @@
+name: RC6 A176 A175 failure internals READ ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-a176-a175-internals-ro-20261029]
+    paths:
+      - .github/workflows/rc6-a176-a175-internals-readonly.yml
+      - scripts/rc6_a176_a175_internals_ro.py
+      - tests/test_rc6_a176_a175_internals_ro.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  exact-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      RC6_SOURCE_SHA: 'ebae840600bf97e9308f5f904e94bdfe8ce2c572497cfdf19cc3f1bdc4edab56'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check pinned source and adversarial read-only tests
+        run: |
+          set -Eeuo pipefail
+          test "$(sha256sum scripts/rc6_a176_a175_internals_ro.py | cut -d' ' -f1)" = "$RC6_SOURCE_SHA"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_rc6_a176_a175_internals_ro.py -q
+      - name: Prepare strict SSH
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a176_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a176_ro" "$HOME/.ssh/known_hosts"
+      - name: Exact A175 receipt and current lifecycle without writes
+        run: |
+          set -Eeuo pipefail
+          install -d evidence
+          timeout --signal=TERM --kill-after=5s 90s ssh -T -i "$HOME/.ssh/rc6_a176_ro" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=3 "$DO_USER@$DO_HOST" \
+            'sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -' \
+            < scripts/rc6_a176_a175_internals_ro.py | tee evidence/a175-internals.jsonl
+          test "$(wc -c < evidence/a175-internals.jsonl)" -lt 24000
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lines=Path('evidence/a175-internals.jsonl').read_text().splitlines()
+          assert len(lines)==1 and lines[0].startswith('RC6_A176_A175_INTERNALS_RO=')
+          row=json.loads(lines[0].split('=',1)[1])
+          assert row['schema']=='rc6.a176.a175-internals-readonly.v1'
+          assert row['status']=='PROVEN' and row['host_mutations']==0
+          assert row['droplet']=={'id':'594077619','region':'nyc1'}
+          assert row['quiescence_sha256']=='5ddf0d5e340f7cac96bcbb339eeaeea3ed4aad635a2201fd55fffe375c961022'
+          assert row['scheduler_sha256']=='64a8afc3591c42d4e58f3acb34905043c0ffe323b695ecf3337f99b66d6b0b6e'
+          assert row['marker_sha256']=='42055f5225def0560453b2c40b5e4695082fa3235fc42a4596210cf0c1b8b161'
+          assert row['quiescence']['failure_flat_book']['real_orders_sent']==0
+          assert row['quiescence']['runtime_status']=='running'
+          assert row['marker']['validation_status']=='DEPLOYED_VALIDATION_PENDING'
+          assert row['operational_go'] is False
+          print('RC6_A176_A175_INTERNALS=PROVEN|PAPER_0|NO_GO|NO_HOST_MUTATION')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a176-a175-internals-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_a176_ro"
