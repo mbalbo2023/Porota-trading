@@ -15,7 +15,8 @@ import subprocess
 import time
 from zoneinfo import ZoneInfo
 
-from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY, cancel_open_paper_position
+from cd_spot_ledger import (ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_AUTHORITY_A205,
+                            cancel_open_paper_position, partition)
 
 DATABASE = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
 RECEIPT_ROOT = Path('/opt/porota-trading/data/deploy')
@@ -160,16 +161,136 @@ def execute(db, receipt, candidate, *, apply=False):
             raise
 
 
+def execute_a205_batch(db, receipt, candidate, *, apply=False, at=None):
+    """A205: close *only* an exact, all-intact EOD spot batch atomically.
+
+    A financed/unmatured caucion, a future margin position, any partial sale,
+    a missing EOD intent or a changed exposure snapshot is NOT canceled here.
+    The existing SUPV procedure and its 2026-10-19 authority are unchanged.
+    """
+    from scripts.rc6_paper_deploy_preflight import open_exposure_rows, _fingerprint
+    if not re.fullmatch(r'[0-9a-f]{40}', candidate):
+        raise ValueError('A205_CANDIDATE_INVALID')
+    proof = verify_receipt(receipt, candidate)
+    if (proof.get('admin_policy') != 'A205_EOD_SPOT_BATCH_V1'
+            or proof.get('a205_owner_approval') is None
+            or not re.fullmatch(r'[1-9][0-9]*', str(proof['a205_owner_approval']))
+            or proof.get('a205_approval_candidate') != candidate
+            or not isinstance(proof.get('admin_cancel_paper_ids'), list)
+            or not 1 <= len(proof['admin_cancel_paper_ids']) <= 32
+            or len(set(proof['admin_cancel_paper_ids'])) != len(proof['admin_cancel_paper_ids'])
+            or not all(isinstance(value, str) and 0 < len(value) <= 128
+                       for value in proof['admin_cancel_paper_ids'])
+            or not re.fullmatch(r'[0-9a-f]{64}', proof.get('a205_exposures_sha256', ''))):
+        raise ValueError('A205_AUTHORITY_OR_PLAN_INVALID')
+    db = Path(db)
+    if db.is_symlink() or not db.is_file():
+        raise ValueError('A205_DB_PATH_UNSAFE')
+    stopped_host_verified = apply and db.resolve() == DATABASE
+    if stopped_host_verified:
+        verify_host_stopped(proof)
+    when = datetime.fromisoformat(at) if at is not None else datetime.now(timezone.utc)
+    if when.tzinfo is None or when.utcoffset() is None:
+        raise ValueError('A205_CLOCK_UNVERIFIED')
+    with closing(sqlite3.connect(db.as_uri() + ('?mode=rw' if apply else '?mode=ro'),
+                                 uri=True, timeout=.2, isolation_level=None)) as c:
+        c.row_factory = sqlite3.Row
+        c.execute('PRAGMA busy_timeout=200')
+        c.execute('PRAGMA foreign_keys=ON')
+        if not apply:
+            c.execute('PRAGMA query_only=ON')
+        c.set_progress_handler(lambda: int(time.monotonic() - begin > 3), 1000)
+        begin = time.monotonic()
+        c.execute('BEGIN IMMEDIATE' if apply else 'BEGIN')
+        try:
+            state = c.execute('''SELECT mode,real_orders_sent,process_state,session_state
+                                 FROM observer_state WHERE id=1''').fetchone()
+            if (not state or state['mode'] != 'PRODUCTION_PAPER'
+                    or type(state['real_orders_sent']) is not int
+                    or state['real_orders_sent'] != 0):
+                raise ValueError('A205_PAPER_ZERO_REQUIRED')
+            # An observer that wrote RUNNING before Docker was stopped can
+            # retain that row. The independent exact Docker stop proof above
+            # is mandatory on the actual host for the exceptional case.
+            if proof.get('market_open_suspended') is True:
+                allowed = (state['process_state'] in {'STOPPED', 'RUNNING'} and
+                           state['session_state'] in {'MARKET_OPEN', 'OPEN'})
+            else:
+                allowed = (state['process_state'] in
+                           ({'STOPPED', 'WAITING_MARKET'} if stopped_host_verified else {'STOPPED'})
+                           and state['session_state'] in {'CLOSED', 'MARKET_CLOSED'})
+            if not allowed:
+                raise ValueError('A205_RUNTIME_NOT_QUIESCENT')
+            counts, rows = open_exposure_rows(c)
+            if counts['caucion'] or counts['future']:
+                raise ValueError('A205_OTHER_FAMILY_NOT_ADMIN_VOIDABLE')
+            targets = proof['admin_cancel_paper_ids']
+            current = [row['paper_id'] for row in rows['spot']]
+            if sorted(current) != sorted(targets):
+                # Exactly one earlier successful transaction can be retried;
+                # a partially canceled book or a different batch is RED.
+                if current:
+                    raise ValueError('A205_BATCH_CHANGED_OR_PARTIAL')
+                for paper_id in targets:
+                    p = c.execute('SELECT * FROM paper_positions WHERE paper_id=?',
+                                  (paper_id,)).fetchone()
+                    if (not p or p['status'] != 'CANCELLED_ADMIN' or
+                            p['close_reason'] != 'ADMIN_CANCEL_NO_MARKET_EXECUTION'):
+                        raise ValueError('A205_RETRY_NOT_FULLY_CLOSED')
+                    receipt_row = c.execute('''SELECT authority FROM paper_admin_cancellations
+                                               WHERE paper_id=?''', (paper_id,)).fetchone()
+                    if not receipt_row or receipt_row['authority'] != ADMIN_CANCEL_AUTHORITY_A205:
+                        raise ValueError('A205_RETRY_AUTHORITY_CHANGED')
+                    if partition(c, p) != (None, []):
+                        raise ValueError('A205_RETRY_LEDGER_INVALID')
+                c.rollback()
+                return {'status': 'ALREADY_CLOSED', 'position_count': len(targets),
+                        'real_orders_sent': 0, 'sell_simulated_created': False}
+            if _fingerprint(rows, {}) != proof['a205_exposures_sha256']:
+                raise ValueError('A205_EXPOSURE_SNAPSHOT_CHANGED')
+            # Eligibility checks run inside the exact same write transaction.
+            from cd_spot_ledger import plan_open_paper_admin_cancel
+            for paper_id in targets:
+                plan_open_paper_admin_cancel(c, paper_id, when.isoformat())
+            if not apply:
+                c.rollback()
+                return {'status': 'PLAN_ONLY', 'position_count': len(targets),
+                        'real_orders_sent': 0, 'sell_simulated_created': False}
+            for paper_id in targets:
+                cancel_open_paper_position(c, paper_id, when.isoformat(),
+                                           ADMIN_CANCEL_AUTHORITY_A205)
+            after, _ = open_exposure_rows(c)
+            if any(after.values()):
+                raise ValueError('A205_BOOK_NOT_FLAT_AFTER_CANCEL')
+            for paper_id in targets:
+                p = c.execute('SELECT * FROM paper_positions WHERE paper_id=?',
+                              (paper_id,)).fetchone()
+                if partition(c, p) != (None, []):
+                    raise ValueError('A205_SPOT_VOID_NOT_RECONCILED')
+                if c.execute('''SELECT 1 FROM paper_fills WHERE paper_id=?
+                                AND side='SELL_SIMULATED' LIMIT 1''', (paper_id,)).fetchone():
+                    raise ValueError('A205_FAKE_SELL_FORBIDDEN')
+            c.commit()
+            return {'status': 'CANCELLED_ADMIN', 'position_count': len(targets),
+                    'real_orders_sent': 0, 'sell_simulated_created': False}
+        except BaseException:
+            c.rollback()
+            raise
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--receipt', required=True)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--a205-batch', action='store_true',
+                        help='use separately authorized versioned EOD spot batch receipt')
     args = parser.parse_args(argv)
     expected = RECEIPT_ROOT / ('quiescence-' + args.candidate_sha + '.json')
     if Path(args.receipt) != expected:
         parser.error('ADMIN_EXACT_RECEIPT_PATH_REQUIRED')
-    result = execute(DATABASE, expected, args.candidate_sha, apply=args.apply)
+    handler = execute_a205_batch if args.a205_batch else execute
+    result = handler(DATABASE, expected, args.candidate_sha, apply=args.apply)
     print(json.dumps(result, sort_keys=True))
     return 0
 

@@ -150,3 +150,22 @@ class OwnerAuthorizationTests(unittest.TestCase):
             require_exact_owner_authorization('owner/repo', candidate, tree,
                 decision='RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION',
                 get_page=page([dict(row, user={'login':'other'})]))
+
+    def test_new_a205_admin_close_cannot_reuse_deploy_approval(self):
+        candidate, tree = 'c' * 40, 'd' * 40
+        approved = f'RC6_624_APPROVE_PAPER_ADMIN_PREPARE candidate={candidate} tree={tree}'
+        deploy = f'RC6_624_APPROVE_DEPLOY_AND_COLD2 candidate={candidate} tree={tree}'
+        row = dict(id=17, body=approved, user={'login':'mbalbo2023'},
+                   created_at='t1', updated_at='t1')
+        def page(rows):
+            return lambda _: json.dumps(rows).encode()
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo',candidate,tree,
+                decision='RC6_624_APPROVE_PAPER_ADMIN_PREPARE',
+                get_page=page([dict(row,body=deploy)]))
+        with self.assertRaisesRegex(ValueError, 'EXACT_POSTERIOR_OWNER_AUTHORIZATION_REQUIRED'):
+            require_exact_owner_authorization('owner/repo',candidate,tree,
+                decision='RC6_624_APPROVE_PAPER_ADMIN_PREPARE',
+                get_page=page([dict(row,updated_at='t2')]))
+        self.assertEqual(require_exact_owner_authorization('owner/repo',candidate,tree,
+            decision='RC6_624_APPROVE_PAPER_ADMIN_PREPARE',get_page=page([row])),17)

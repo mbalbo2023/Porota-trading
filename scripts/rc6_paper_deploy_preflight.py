@@ -26,6 +26,7 @@ EXPOSURES = (
     ('future', 'paper_future_positions', 'ACTIVE'),
 )
 MAX_OPEN_PER_FAMILY = 32
+MAX_SUPPORT_ROWS = 256
 DB = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
 
 
@@ -80,6 +81,62 @@ def _load_signed_candidate_ledger():
     sys.modules['cd_spot_ledger'] = module
 
 
+def open_exposure_rows(c):
+    """Snapshot three families on one caller-owned SQLite transaction."""
+    counts, data = {}, {}
+    for name, table, active_state in EXPOSURES:
+        columns = {row['name'] for row in c.execute('PRAGMA table_info("' + table + '")')}
+        if 'status' not in columns:
+            raise UnsafeBook('BOOK_SCHEMA_MISSING_' + name.upper())
+        count = c.execute('SELECT COUNT(*) FROM ' + table + ' WHERE status=?',
+                          (active_state,)).fetchone()[0]
+        if type(count) is not int or count < 0 or count > MAX_OPEN_PER_FAMILY:
+            raise UnsafeBook('BOOK_EXPOSURE_BOUND_' + name.upper())
+        rows = [dict(row) for row in c.execute('SELECT * FROM ' + table +
+                ' WHERE status=? ORDER BY rowid LIMIT ?',
+                (active_state, MAX_OPEN_PER_FAMILY))]
+        if len(rows) != count:
+            raise UnsafeBook('BOOK_COUNT_DRIFT_' + name.upper())
+        required = ({'paper_id'} if name in {'spot', 'caucion'} else
+                    {'lifecycle_id', 'margin_reserved', 'last_mark_price'} )
+        if rows and not required <= set(rows[0]):
+            raise UnsafeBook('BOOK_ACTIVE_SCHEMA_MISSING_' + name.upper())
+        counts[name], data[name] = count, rows
+    # A PAPER position may be partially sold without its own OPEN row
+    # changing. Include related fills, intents, receivables, allocations and
+    # settlement marks in the digest so an intervening ledger event cannot
+    # pass the exact before/after idempotency check unnoticed.
+    support = {}
+    relations = (
+        ('paper_fills', 'paper_id', [r['paper_id'] for r in data['spot']]),
+        ('paper_spot_sales', 'paper_id', [r['paper_id'] for r in data['spot']]),
+        ('paper_exit_intents', 'paper_id', [r['paper_id'] for r in data['spot']]),
+        ('paper_sale_receivables', 'paper_id', [r['paper_id'] for r in data['spot']]),
+        ('paper_admin_cancellations', 'paper_id', [r['paper_id'] for r in data['spot']]),
+        ('paper_learning_samples', 'paper_id', [r['paper_id'] for r in data['spot']]),
+        ('paper_events', 'paper_id', [r['paper_id'] for r in data['spot'] + data['caucion']]),
+        ('paper_caucion_allocations', 'paper_id', [r['paper_id'] for r in data['caucion']]),
+        ('paper_future_marks', 'lifecycle_id', [r['lifecycle_id'] for r in data['future']]),
+        ('paper_family_lifecycle', 'lifecycle_id', [r['lifecycle_id'] for r in data['future']]),
+        ('paper_family_lifecycle_events', 'lifecycle_id', [r['lifecycle_id'] for r in data['future']]),
+    )
+    for table, column, ids in relations:
+        if not ids:
+            continue
+        columns = {row['name'] for row in c.execute('PRAGMA table_info("' + table + '")')}
+        if column not in columns:
+            raise UnsafeBook('BOOK_SUPPORT_SCHEMA_MISSING_' + table.upper())
+        placeholders = ','.join('?' for _ in ids)
+        rows = [dict(row) for row in c.execute(
+            'SELECT * FROM ' + table + ' WHERE ' + column + ' IN (' + placeholders +
+            ') ORDER BY rowid LIMIT ?', [*ids, MAX_SUPPORT_ROWS + 1])]
+        if len(rows) > MAX_SUPPORT_ROWS:
+            raise UnsafeBook('BOOK_SUPPORT_BOUND_' + table.upper())
+        support[table] = rows
+    data['support'] = support
+    return counts, data
+
+
 def inspect_book(path=DB, *, as_of=None, barrier=None):
     """Return non-sensitive counts, classifications and snapshot integrity."""
     from cd_spot_ledger import plan_open_paper_admin_cancel
@@ -102,27 +159,11 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
                 or state_row['real_orders_sent'] != 0):
             raise UnsafeBook('BOOK_PAPER_ZERO_UNVERIFIED')
         state = dict(state_row)
-        counts = {}
+        counts, data = open_exposure_rows(c)
         plans = {}
-        data = {}
         reasons = []
-        for name, table, active_state in EXPOSURES:
-            columns = {row['name'] for row in c.execute('PRAGMA table_info("' + table + '")')}
-            if not {'status'} <= columns:
-                raise UnsafeBook('BOOK_SCHEMA_MISSING_' + name.upper())
-            count = c.execute('SELECT COUNT(*) FROM ' + table + ' WHERE status=?',
-                              (active_state,)).fetchone()[0]
-            if type(count) is not int or count < 0 or count > MAX_OPEN_PER_FAMILY:
-                raise UnsafeBook('BOOK_EXPOSURE_BOUND_' + name.upper())
-            counts[name] = count
-            # A stable ORDER BY keeps the SHA repeatable. Only the SHA, never
-            # these confidential rows, is emitted by the CLI.
-            rows = [dict(row) for row in c.execute('SELECT * FROM ' + table +
-                    ' WHERE status=? ORDER BY rowid LIMIT ?',
-                    (active_state, MAX_OPEN_PER_FAMILY))]
-            if len(rows) != count:
-                raise UnsafeBook('BOOK_COUNT_DRIFT_' + name.upper())
-            data[name] = rows
+        for name, _, _ in EXPOSURES:
+            count, rows = counts[name], data[name]
             if name == 'spot':
                 planned = 0
                 for row in rows:
@@ -178,6 +219,7 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
         'observer_session': state['session_state'],
         'exposures': counts, 'plans': plans,
         'snapshot_sha256': _fingerprint(data, state),
+        'exposures_sha256': _fingerprint(data, {}),
         'barrier_status': barrier_status,
         'status': status, 'reasons': sorted(set(reasons)),
     }

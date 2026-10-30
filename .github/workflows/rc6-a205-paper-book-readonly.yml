@@ -55,7 +55,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            'python3 - --expected-id 594077619 --expected-region nyc1' \
+            'python3 -B - --expected-id 594077619 --expected-region nyc1' \
             < scripts/rc6_droplet_identity_guard.py
 
       - name: Classify live PAPER spot caucion future and deploy barrier without writes
@@ -74,7 +74,7 @@ jobs:
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n env PYTHONPATH=/opt/porota-trading RC6_A205_SPOT_LEDGER_GZIP_B64='$LEDGER_B64' RC6_A205_SPOT_LEDGER_SHA256='$LEDGER_SHA' python3 - --host-barrier" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading RC6_A205_SPOT_LEDGER_GZIP_B64='$LEDGER_B64' RC6_A205_SPOT_LEDGER_SHA256='$LEDGER_SHA' python3 -B - --host-barrier" \
             < scripts/rc6_paper_deploy_preflight.py)"
           RETURN_CODE=$?
           set -e

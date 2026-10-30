@@ -661,6 +661,21 @@ jobs:
               except ValueError as exc:
                   if str(exc) != 'QUIESCENCE_OPEN_POSITION':
                       raise
+                  # A203 previously emitted only a generic exception after
+                  # merge. Record the three redacted family counts before
+                  # any attempt to classify a historical special case. This
+                  # does NOT authorize a blind position close or bypass the
+                  # independent premerge A205 live-book preparation.
+                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as exposure_db:
+                      exposure_db.execute('PRAGMA query_only=ON')
+                      exposure_db.execute('PRAGMA busy_timeout=200')
+                      exposure_counts=[exposure_db.execute(
+                          'SELECT COUNT(*) FROM '+table+' WHERE status=?', (status,)
+                      ).fetchone()[0] for table,status in (
+                          ('paper_positions','OPEN'),('paper_cauciones','OPEN'),
+                          ('paper_future_positions','ACTIVE'))]
+                  print('RC6_A205_BOOK_OPEN_COUNTS=SPOT:%d|CAUCION:%d|FUTURE:%d' %
+                        tuple(exposure_counts),file=sys.stderr)
                   # The only exception is one intact PAPER caucion in this
                   # incident. The staged candidate verifies allocation and
                   # full-row hash repeatedly before any installation.
