@@ -13,6 +13,10 @@ from cf_sale_settlement import validated_sale_settlement
 ZERO = Decimal(0)
 ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
 ADMIN_CANCEL_AUTHORITY = 'ISSUE624_OPERATOR_REQUEST_20261019'
+# The A205 authority is deliberately distinct from the one-off SUPV incident.
+# A live operator approval must still be checked by the privileged workflow.
+ADMIN_CANCEL_AUTHORITY_A205 = 'ISSUE773_PAPER_ADMIN_CLOSE_OPERATOR_20261030'
+ADMIN_CANCEL_AUTHORITIES = frozenset({ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_AUTHORITY_A205})
 
 
 def init_schema(store):
@@ -107,7 +111,7 @@ def _admin_cancel_partition(c, p, at):
     receipt = c.execute('SELECT * FROM paper_admin_cancellations WHERE paper_id=?',
                         (p['paper_id'],)).fetchone()
     if (not receipt or receipt['reason'] != ADMIN_CANCEL_REASON
-            or receipt['authority'] != ADMIN_CANCEL_AUTHORITY):
+            or receipt['authority'] not in ADMIN_CANCEL_AUTHORITIES):
         raise ValueError('Anulación PAPER sin autoridad/recibo')
     start, end = aware_datetime(p['opened_at']), aware_datetime(p['closed_at'])
     if (end < start or aware_datetime(receipt['cancelled_at']) != end
@@ -152,14 +156,13 @@ def _admin_cancel_partition(c, p, at):
     return dict(p, status='OPEN', closed_at=None, close_reason=None), []
 
 
-def cancel_open_paper_position(c, paper_id, at, authority):
-    """Void one unfilled PAPER entry atomically; never synthesize a sell fill.
+def plan_open_paper_admin_cancel(c, paper_id, at):
+    """Read-only eligibility proof for a complete, never sold PAPER spot lot.
 
-    The caller owns BEGIN IMMEDIATE and must independently prove that the old
-    runtime is stopped before using this against a running environment.
+    A successful plan is NOT authorization to mutate the host.  The caller
+    must separately prove an exclusively stopped observer, operator approval,
+    and a matching preflight snapshot before invoking the writer.
     """
-    if not c.in_transaction or authority != ADMIN_CANCEL_AUTHORITY:
-        raise ValueError('Anulación PAPER requiere transacción y autoridad exacta')
     at = aware_datetime(at)
     row = c.execute('SELECT * FROM paper_positions WHERE paper_id=?', (paper_id,)).fetchone()
     if not row or row['status'] != 'OPEN':
@@ -192,6 +195,22 @@ def cancel_open_paper_position(c, paper_id, at, authority):
                        (paper_id,)).fetchone()
     if sample and sample[0] is not None:
         raise ValueError('Anulación PAPER no borra muestra etiquetada')
+    if c.execute('SELECT 1 FROM paper_admin_cancellations WHERE paper_id=?',
+                 (paper_id,)).fetchone():
+        raise ValueError('Anulación PAPER ya registrada')
+    return p
+
+
+def cancel_open_paper_position(c, paper_id, at, authority):
+    """Void one reconciled PAPER entry atomically, never synthesize a sale.
+
+    The caller owns BEGIN IMMEDIATE and must independently prove that the old
+    runtime is stopped before using this against a running environment.
+    """
+    if not c.in_transaction or authority not in ADMIN_CANCEL_AUTHORITIES:
+        raise ValueError('Anulación PAPER requiere transacción y autoridad exacta')
+    at = aware_datetime(at)
+    p = plan_open_paper_admin_cancel(c, paper_id, at)
     when = at.isoformat()
     c.execute('''INSERT INTO paper_admin_cancellations
       (paper_id,cancelled_at,authority,original_quantity,original_entry_price,
