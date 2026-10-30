@@ -47,7 +47,7 @@ def ready_store(tmp_path, monkeypatch):
                     "offers": []}
 
     monkeypatch.setattr(live, "collection_window", lambda at: True)
-    result = live.refresh(ReadOnlyFixture(), store, now=NOW)
+    result = live.refresh(ReadOnlyFixture(), store, now=NOW, clock_fn=lambda: NOW)
     assert result["ready"] == 1 and result["real_routes"] == []
     offers, errors = sweep.offers_from_store(store, now=NOW)
     assert len(offers) == 1 and not errors
