@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      CANDIDATE_SHA: 1eb07dfcbc6e94415fa23d904d10e59713b60353
+      CANDIDATE_SHA: 7fab37419058de27788fae0cbd358d902b1943a7
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       PYTHONPATH: '.:tests'
     steps:
@@ -42,7 +42,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python - <<'PY'
-          import json, pathlib, subprocess, sys, xml.etree.ElementTree as ET
+          import json, pathlib, re, subprocess, sys, xml.etree.ElementTree as ET
           import yaml
           p=yaml.safe_load(pathlib.Path('ops/policy/test-policy.yaml').read_text())
           assert p['test_governance']['automatic_discovery_required'] is True
@@ -60,6 +60,8 @@ jobs:
           if collected.returncode:
               print(pathlib.Path('evidence/collection.txt').read_text())
               raise SystemExit(collected.returncode)
+          discovered=sum(int(n) for n in re.findall(r': (\d+)$',
+              pathlib.Path('evidence/collection.txt').read_text(),re.MULTILINE))
           result=subprocess.run([sys.executable,'-m','pytest','-q',*args,'-o','xfail_strict=true','--junitxml=evidence/tests.xml'])
           root=ET.parse('evidence/tests.xml').getroot()
           cases=root.findall('.//testcase')
@@ -67,13 +69,13 @@ jobs:
           errors=len(root.findall('.//error'))
           skipped=len(root.findall('.//skipped'))
           receipt={'candidate_sha':__import__('os').environ['CANDIDATE_SHA'],
-              'scope':'repository-root automatic discovery', 'executed':len(cases),
+              'scope':'repository-root automatic discovery', 'discovered':discovered,'executed':len(cases),
               'failures':failures,'errors':errors,'skipped_or_xfail':skipped,
               'pytest_exit_code':result.returncode,'deploy':False,'host_access':False,
               'exclusions':scope.get('exclusions',[])}
           pathlib.Path('evidence/tests.json').write_text(json.dumps(receipt,indent=2)+'\n')
           print('A198_GOVERNED_TESTS='+json.dumps(receipt,sort_keys=True))
-          assert cases and failures==errors==skipped==0 and result.returncode==0
+          assert discovered==len(cases)>0 and failures==errors==skipped==0 and result.returncode==0
           PY
       - uses: actions/upload-artifact@v4
         if: always()
