@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      CANDIDATE_SHA: 7fab37419058de27788fae0cbd358d902b1943a7
+      CANDIDATE_SHA: af9998cc21eb21bfc24c7b5859b7cc617d7513f9
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       PYTHONPATH: '.:tests'
     steps:
