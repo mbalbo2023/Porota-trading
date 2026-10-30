@@ -46,6 +46,27 @@ jobs:
           timeout 20 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
             "sudo -n docker inspect -f '{{.Name}}|{{.Image}}|{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}' porota_production_observer porota_production_dashboard" | tee evidence/container-state.txt
           printf '%s\n' 'DB_WRITES=0|PROVIDER_CALLS=0|ORDER_CALLS=0|DEPLOY=NO|PPI_WATCH_ACTIONS=0'
+      - name: Read allowlisted scalping runtime configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 25 ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 15 docker exec -i -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -' <<'PY' | tee evidence/scalping-config-readonly.txt
+          import json,os,re
+          output={}
+          keys=('PAPER_SCALPING_MODE','PAPER_INTRADAY_SCAN_SECONDS','PAPER_INTRADAY_BATCH_LIMIT',
+            'PAPER_SCALPING_MIN_NET_MARGIN','PAPER_SCALPING_MAX_SPREAD','PAPER_SCALPING_SCORE_THRESHOLD',
+            'PAPER_SCALPING_RISK_PER_TRADE','PAPER_SCALPING_STOP_LOSS_PCT','PAPER_SCALPING_TARGET_GAIN_PCT',
+            'PAPER_SCALPING_MAX_HOLD_MINUTES','PAPER_SCALPING_MAX_OPEN_POSITIONS',
+            'POROTA_BUILD_SHA','POROTA_CANDIDATE_TREE_SHA')
+          for key in keys:
+              value=os.environ.get(key)
+              if value is None: output[key]=None
+              elif key=='PAPER_SCALPING_MODE': output[key]=value if value in {'OFF','ACTIVE_OBSERVE','ACTIVE_PAPER'} else 'UNRECOGNIZED'
+              elif key.startswith('POROTA_'): output[key]=value if re.fullmatch('[0-9a-f]{40}',value) else 'UNRECOGNIZED'
+              else: output[key]=value if re.fullmatch('[0-9]{1,8}(\.[0-9]{1,10})?',value) else 'UNRECOGNIZED'
+          print('SCALPING_RUNTIME_CONFIGURATION='+json.dumps(output,sort_keys=True,separators=(',',':')))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

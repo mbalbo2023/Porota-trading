@@ -12,7 +12,33 @@ from zoneinfo import ZoneInfo
 
 # Full raw family inventory, including provider-specific US aliases.
 FAMILY_SQL = "CASE upper(instrument_type) WHEN 'ON' THEN 'OBLIGACIONES' WHEN 'ETF' THEN 'ETFS' ELSE upper(instrument_type) END"
+PROVENANCE_ONLY_FIELDS = frozenset({
+    'provider_timestamp','capture_timestamp','freshness_basis','derivation_rule',
+    'confidence','evidence_class','source_job','source_route','evidence_scope',
+    'readiness_guard','semantic_guard','metadata_source','quantity_terms_source',
+    'provider_currency','fund_description','iol_operable_observed'})
+LEGACY_FEE_AUTHORITY = 'PPI_TARIFF_EFFECTIVE_2026-07-01+BYMA_RIGHTS_VERIFIED_2026-08-21'
+CURRENT_FEE_AUTHORITY = 'PAPER_PPI_PUBLIC_TARIFF_2026-07-01+BYMA_RIGHTS_UNVERIFIED'
+FEE_CHANGE_IDS = frozenset(range(36957,36962))
 AUDIT_STAGE = 'START'
+
+def material_without_fee(value):
+    if isinstance(value,dict):
+        return {str(k):material_without_fee(v) for k,v in value.items()
+                if str(k) not in PROVENANCE_ONLY_FIELDS and str(k) != 'fee_authority'}
+    if isinstance(value,list):return [material_without_fee(v) for v in value]
+    return value
+
+def fee_authorities(value):
+    result=[]
+    if isinstance(value,dict):
+        for k,v in value.items():
+            if k=='fee_authority':result.append(v)
+            elif isinstance(v,(dict,list)):result.extend(fee_authorities(v))
+    elif isinstance(value,list):
+        for v in value:result.extend(fee_authorities(v))
+    return result
+
 CODES = re.compile(r'^[A-Z0-9_:;,. /-]{1,160}$')
 
 def code(value):
@@ -150,6 +176,14 @@ def audit(path):
             for row in changes:
                 prev=parsed(row.pop('previous_json'));curr=parsed(row.pop('current_json'))
                 row['both_payloads_valid']=prev is not None and curr is not None
+                if row['change_id'] in FEE_CHANGE_IDS:
+                    valid=prev is not None and curr is not None
+                    row['known_fee_authority_transition']={
+                        'previous_authority_is_legacy':valid and fee_authorities(prev)==[LEGACY_FEE_AUTHORITY],
+                        'current_authority_is_unverified_rights':valid and fee_authorities(curr)==[CURRENT_FEE_AUTHORITY],
+                        'both_economics_except_fee_authority_equal':valid and material_without_fee(prev)==material_without_fee(curr),
+                        'previous_full_payload_hash_matches':valid and hashlib.sha256(json.dumps(prev,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()==row['previous_hash'],
+                        'current_full_payload_hash_matches':valid and hashlib.sha256(json.dumps(curr,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()==row['current_hash']}
                 prev=flattened(prev or {});curr=flattened(curr or {})
                 row['changed_field_names']=[k for k in sorted(set(prev)|set(curr)) if prev.get(k)!=curr.get(k)][:100]
             out['caucion_pending_change_fields']=changes
@@ -181,7 +215,7 @@ def audit(path):
             out['workers'][table] = 'MISSING_TABLE'
             continue
         cols={r[1] for r in c.execute(f'PRAGMA table_info({table})')}
-        selected=[k for k in ('heartbeat_at','state','status','code','last_attempt_at','last_cycle_at','checked_at','real_orders_sent') if k in cols]
+        selected=[k for k in ('heartbeat_at','state','status','code','last_attempt_at','last_cycle_at','checked_at','real_orders_sent','selected','successful','failed','points_inserted','confirmed_identities','candidates') if k in cols]
         if selected:
             value=rows('SELECT '+','.join(selected)+' FROM '+table+(' WHERE id=1' if 'id' in cols else '')+' LIMIT 1')
             for row in value:
@@ -200,6 +234,30 @@ def audit(path):
         for row in out['latest_500_decisions']:
             row['source']=code(row['source']);row['action']=code(row['action'])
             row['strategy_version_sha256']=hashlib.sha256(str(row.pop('strategy_version')).encode()).hexdigest()
+    if 'scalping_candidates' in tables:
+        latest=c.execute('SELECT evaluated_at FROM scalping_candidates ORDER BY evaluated_at DESC LIMIT 1').fetchone()
+        out['scalping_session_evidence']={'latest_evaluated_at':latest[0] if latest else None,
+            'current_day_art':now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat(),
+            'per_session_row_limit':10000,'sessions':[]}
+        dates={now.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date()}
+        if latest:
+            try:dates.add(dt.datetime.fromisoformat(latest[0].replace('Z','+00:00')).astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date())
+            except (ValueError,AttributeError):pass
+        for day in sorted(dates):
+            start=dt.datetime.combine(day,dt.time(),ZoneInfo('America/Argentina/Buenos_Aires'))
+            stop=start+dt.timedelta(days=1)
+            selected=rows('''SELECT asset_class,action,reason,evaluated_at FROM scalping_candidates
+                WHERE julianday(evaluated_at)>=julianday(?) AND julianday(evaluated_at)<julianday(?)
+                ORDER BY julianday(evaluated_at) DESC LIMIT 10001''',(start.isoformat(),stop.isoformat()))
+            truncated=len(selected)>10000;selected=selected[:10000]
+            counts=collections.Counter((code(r['asset_class']),code(r['action']),code(r['reason'])) for r in selected)
+            out['scalping_session_evidence']['sessions'].append({'day_art':day.isoformat(),'sample_size':len(selected),'truncated':truncated,
+              'latest_evaluated_at':selected[0]['evaluated_at'] if selected else None,
+              'counts':[{'family':k[0],'action':k[1],'reason':k[2],'n':v} for k,v in counts.most_common(80)]})
+    if 'ppi_intraday_contract_state' in tables:
+        out['intraday_current_contract_states']=rows('SELECT asset_class,state,COUNT(*) identities,MAX(checked_at) latest_checked_at,MAX(last_source_at) latest_source_at FROM ppi_intraday_contract_state GROUP BY asset_class,state')
+        for row in out['intraday_current_contract_states']:
+            row['asset_class']=code(row['asset_class']);row['state']=code(row['state'])
     c.close()
     return out
 
@@ -217,6 +275,17 @@ if __name__ == '__main__':
         if p.is_file() and p.stat().st_size<2000000:
             m=json.loads(p.read_text())
             result['bundle_manifest']={k:m[k] for k in ('candidate_sha','candidate_tree','source_sha','tree_sha','bundle_sha256') if k in m}
+        AUDIT_STAGE = 'PAPER_OPERATOR_RECEIPT_METADATA'
+        result['paper_operator_receipts'] = {}
+        for name,path in (
+            ('rearm','/opt/porota-operator/paper-rearm-v1.json'),
+            ('preopen_v2','/opt/porota-operator/paper-preopen-v2.json')):
+            p=pathlib.Path(path)
+            if p.is_file() and not p.is_symlink() and p.stat().st_size<=16384:
+                value=json.loads(p.read_text());st=p.stat()
+                keep=('schema','status','phase','trade_day_ar','issued_at_ar','expires_at_ar','candidate_sha','paper_mode','real_orders_sent')
+                result['paper_operator_receipts'][name]={'metadata':{k:value[k] for k in keep if k in value},'uid':st.st_uid,'mode':oct(st.st_mode&0o777),'admission_guard_evaluated':False}
+            else:result['paper_operator_receipts'][name]={'state':'ABSENT_OR_UNSAFE','admission_guard_evaluated':False}
         print('RC6_FAMILY_SOURCE_READONLY='+json.dumps(result,sort_keys=True,separators=(',',':')))
     except Exception as exc:
         print('RC6_FAMILY_SOURCE_READONLY_ERROR='+type(exc).__name__+'|stage='+AUDIT_STAGE)
