@@ -1,4 +1,4 @@
-name: RC6 A198 exact candidate governed tests
+name: RC6 A200 exact candidate governed tests
 on:
   push:
     branches:
@@ -8,14 +8,14 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: rc6-a198-governed-tests
+  group: rc6-a200-governed-tests
   cancel-in-progress: false
 jobs:
   candidate-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      CANDIDATE_SHA: af9998cc21eb21bfc24c7b5859b7cc617d7513f9
+      CANDIDATE_SHA: 13f14944c95cb1d6055d93bddd3eba8e1e80108e
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       PYTHONPATH: '.:tests'
     steps:
@@ -74,13 +74,13 @@ jobs:
               'pytest_exit_code':result.returncode,'deploy':False,'host_access':False,
               'exclusions':scope.get('exclusions',[])}
           pathlib.Path('evidence/tests.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          print('A198_GOVERNED_TESTS='+json.dumps(receipt,sort_keys=True))
+          print('A200_GOVERNED_TESTS='+json.dumps(receipt,sort_keys=True))
           assert discovered==len(cases)>0 and failures==errors==skipped==0 and result.returncode==0
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-a198-exact-candidate-tests
+          name: rc6-a200-exact-candidate-tests
           path: evidence/
           if-no-files-found: error
           retention-days: 14
