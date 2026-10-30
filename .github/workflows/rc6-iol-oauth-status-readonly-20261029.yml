@@ -1,0 +1,83 @@
+name: RC6 IOL OAuth callback receipt READ_ONLY (NO DEPLOY)
+
+on:
+  push:
+    branches:
+      - ops/rc6-iol-oauth-consent-loopback-20261029
+    paths:
+      - .github/workflows/rc6-iol-oauth-status-readonly-20261029.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Strict SSH and root-only status (no token reads printed)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_iol_receipt"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_iol_receipt" "$HOME/.ssh/known_hosts"
+          timeout --signal=TERM --kill-after=10s 90s ssh \
+            -i "$HOME/.ssh/rc6_iol_receipt" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, socket, sqlite3, time
+          from pathlib import Path
+
+          db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          con=sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=3)
+          con.execute('PRAGMA query_only=ON')
+          row=con.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          con.close()
+          assert row and row[0]=='PRODUCTION_PAPER' and int(row[1] or 0)==0
+          print('IOL_STATUS_PAPER=PRODUCTION_PAPER|REAL_ORDERS_SENT=0')
+
+          base=Path('/root/.config/porota')
+          status=base/'iol_mcp_oauth_rearm_status.json'
+          pending=base/'iol_mcp_oauth_pending_rearm.json'
+          store=base/'iol_mcp_oauth_bootstrap.json'
+          def phase():
+              if not status.exists():
+                  return 'ABSENT'
+              try:
+                  value=json.loads(status.read_text())
+                  candidate=str(value.get('phase','UNKNOWN'))
+                  return candidate if candidate in ('ready','verified','expired','http_error','error','listen_error') else 'UNKNOWN'
+              except (OSError,ValueError):
+                  return 'UNREADABLE'
+          print('IOL_CALLBACK_PHASE='+phase())
+          if pending.exists():
+              try:
+                  val=json.loads(pending.read_text())
+                  remaining=max(0,int(float(val['expires_at_epoch'])-time.time()))
+              except (OSError,ValueError,KeyError,TypeError):
+                  remaining=0
+              print('IOL_PENDING_SECONDS_REMAINING='+str(remaining))
+          else:
+              print('IOL_PENDING_SECONDS_REMAINING=0')
+          with socket.socket() as check:
+              check.settimeout(2)
+              listener=check.connect_ex(('127.0.0.1',8765))==0
+          print('IOL_CALLBACK_LOOPBACK_LISTENING='+('YES' if listener else 'NO'))
+          print('IOL_PREVIOUS_TOKEN_STORE_PRESENT='+('YES' if store.exists() else 'NO'))
+          print('IOL_STATUS_READ_ONLY=COMPLETE|DOCKER_DEPLOY=NO|IOL_TOOLS_CALLED=0')
+          PY
+      - name: Cleanup runner SSH material
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/rc6_iol_receipt" "$HOME/.ssh/known_hosts"
