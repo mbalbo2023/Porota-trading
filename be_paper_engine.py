@@ -452,6 +452,11 @@ class PaperStore:
             c.execute("INSERT INTO http_audit VALUES(NULL,?,?,?,?)",
                       (now_iso(), method, path, result))
 
+    def fixed_income_strategy_inputs(self, quote, at):
+        """Read only exact release-reviewed FI evidence; never fetch or ingest."""
+        from rc6_fixed_income_runtime import fixed_income_strategy_inputs
+        return fixed_income_strategy_inputs(self, quote, at)
+
     def state(self, **updates):
         allowed = {"process_state", "session_state", "ppi_auth", "heartbeat_at",
                    "last_market_data_at", "real_orders_sent", "http_allowed",
@@ -1227,12 +1232,27 @@ class PaperBroker:
 
     def _decide_fixed_income(self, q, at):
         """Fixed income must never inherit the equity momentum strategy."""
+        from rc6_fixed_income_runtime import FixedIncomeEvidenceError
         try:
             from rc6_fixed_income_paper_strategy import decide_fixed_income
-            action, score, reason, features = decide_fixed_income(q, self, at)
+            # Load once: a rotating receipt cannot give the admission adapter
+            # different bytes from those reported in this decision evidence.
+            # Preserve the adapter's separate native-event-exit capability gate.
+            from types import SimpleNamespace
+            context, inputs = self, None
+            producer = getattr(self.store, "fixed_income_strategy_inputs", None)
+            if callable(producer):
+                inputs = producer(q, at)
+                context = SimpleNamespace(
+                    store=SimpleNamespace(fixed_income_strategy_inputs=lambda *_: inputs),
+                    fixed_income_native_exit_authorized=getattr(
+                        self, "fixed_income_native_exit_authorized", None))
+            action, score, reason, features = decide_fixed_income(q, context, at)
             if (action not in {"HOLD", "BUY"} or not isinstance(score, Decimal)
                     or not isinstance(features, dict)):
                 raise ValueError("FI_STRATEGY_RESULT_INVALID")
+            if isinstance(inputs, dict) and "runtime_evidence" in inputs:
+                features["fixed_income_runtime_evidence"] = inputs["runtime_evidence"]
             if action == "HOLD":
                 # Preserve the historical no-equity-fallback contract while
                 # surfacing the exact new source/OOS/exit-plan blocker.
@@ -1240,6 +1260,13 @@ class PaperBroker:
                     "SPECIALIZED_LIFECYCLE", "STRATEGY_NOT_VALIDATED"])
                 reason = "STRATEGY_NOT_VALIDATED: " + str(reason)
             return action, score, reason, dict(features)
+        except FixedIncomeEvidenceError as exc:
+            code = str(exc)
+            return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: " + code,
+                    {"samples": 0, "family": q.asset_class, "signal_ready": False,
+                     "reason_code": code, "entry_authority": False,
+                     "paper_only": True, "real_routes_used": [],
+                     "reason_codes": ["SPECIALIZED_LIFECYCLE", "STRATEGY_NOT_VALIDATED"]})
         except (ImportError, sqlite3.Error, OSError, ValueError, TypeError,
                 ArithmeticError, AttributeError) as exc:
             return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: FI_PAPER_INPUTS_UNAVAILABLE",

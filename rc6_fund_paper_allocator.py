@@ -136,8 +136,11 @@ def assess_fund_cash_parking(evidence: FundAllocationEvidence | None,
         block("FCI_EXACT_CLASS_UNKNOWN")
     else:
         terms = ce.terms
-        if (terms.family, terms.currency, terms.market, ce.class_key) != (
-                "FCI", "ARS", "FCI", terms.symbol):
+        # PPI catalogs local fund classes under BYMA; the specialized ledger
+        # also accepts the FCI venue. Preserve the exact supplied venue rather
+        # than rewriting it or treating it as a source authentication claim.
+        if ((terms.family, terms.currency, ce.class_key) != ("FCI", "ARS", terms.symbol)
+                or terms.market not in {"FCI", "BYMA"}):
             block("FCI_EXACT_CLASS_MISMATCH")
         if not _source(ce.regulation_reference, ce.regulation_sha256,
                        ce.known_at, at, synthetic=synthetic):

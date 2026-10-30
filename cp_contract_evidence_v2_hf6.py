@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import sqlite3
 from datetime import datetime, timezone
 
 SCHEMA = "porota-contract-evidence-v2-currency-key-v3"
@@ -112,6 +114,233 @@ def material_evidence_hash(value):
     return evidence_hash(material_evidence(value))
 
 
+CAUCION_FEE_REVIEW_POLICY = "RC6_A198_EXACT_PAPER_FEE_AUTHORITY_DOWNGRADE_V1"
+_FEE_AUTHORITY_OLD = "PPI_TARIFF_EFFECTIVE_2026-07-01+BYMA_RIGHTS_VERIFIED_2026-08-21"
+_FEE_AUTHORITY_NEW = "PAPER_PPI_PUBLIC_TARIFF_2026-07-01+BYMA_RIGHTS_UNVERIFIED"
+_FEE_POLICY_SOURCE = "PPI_CAUCION_TICKER+POROTA_PAPER_LIVE_BOOK_POLICY:v1"
+_FEE_POLICY_SOURCE_COMMIT = "9f5a4de307a5493f1cb2c414cfbc2b1a8468efaa"
+_FEE_REVIEW_TICKERS = frozenset({"PESOS1", "PESOS2", "PESOS7", "PESOS30", "PESOS120"})
+_CHANGE_COLUMNS = ("change_id", "family", "ticker", "market", "currency",
+                   "settlement", "source_class", "previous_hash", "current_hash",
+                   "detected_at")
+# Exact production incident reviewed in #732 from read-only Actions
+# 40992555376 / 40993210661. These are hashes of public policy snapshots, not
+# account data. Do not extend this manifest automatically to another change.
+_A198_REVIEWED_CHANGES = (
+    (36957, "PESOS1", "4f7d6440446e8cc92485541441dbb5a88313363fa8a53689f21f2d27ed15d6a6",
+     "64b8d68ed1448bc7a5549f70fe21c9ced4bca3cf5f219f53bb39e0bce5a60a89"),
+    (36958, "PESOS120", "feae0a5b4f2354e070f320c05592b85d4d91bd42286e3213da371a0b457e00a0",
+     "453924844737a6861fceb9d56f6c38d7c64a7f49c20cb463633adf9a977d9f76"),
+    (36959, "PESOS2", "c1a78a604b014523e86e3909435b53e0de8b5a741a93b9ccf00284db089b8e28",
+     "8259e8939568c38f6408372dcefe1f5fcd023ef07a5782186a0408231a85c533"),
+    (36960, "PESOS30", "008aeb24836281252c83f9323553c096a24bdfd99533e48fc0455887a4115295",
+     "ebc54e753ba00fdf17d30ae5da02b6db3ad52774db94eda1785899650eccbdee"),
+    (36961, "PESOS7", "b37910f21f7e1ff73cc754ce40aab51d1fb9b991fd3a90075a97f58130968166",
+     "184c6225d8d6812b91eb48bd171d6919f495b5a16521132e50212579e3057a4f"),
+)
+
+
+def _fee_authority_review_matches(receipt, change, previous, current,
+                                  previous_source_ref, current_source_ref):
+    """Validate one explicit review, never classify fee changes as provenance.
+
+    A116 commit 9f5a4de corrected an overstated authority label while retaining
+    the ARS public PAPER simulation policy. Only that exact transition can be
+    acknowledged here. Future tariff/contract changes still require review.
+    The receipt is an audit record of the caller's review, not a signature or
+    broker fee verification, and never supplies dynamic execution evidence.
+    """
+    try:
+        from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+        if CAUCION_PAPER_FEE_AUTHORITY != _FEE_AUTHORITY_NEW:
+            return False
+        if (not isinstance(receipt, dict) or set(receipt) != {
+                "policy", "decision", "scope", "change", "reviewer", "reviewed_at",
+                "policy_source_commit", "source_run_id", "rationale_ref"}):
+            return False
+        if (receipt["policy"] != CAUCION_FEE_REVIEW_POLICY
+                or receipt["decision"] != "ACCEPT_EXACT_PAPER_AUTHORITY_CORRECTION"
+                or receipt["scope"] != "PRODUCTION_PAPER_SIMULATION_ONLY"
+                or receipt["change"] != change):
+            return False
+        if (not isinstance(receipt["reviewer"], str)
+                or re.fullmatch(r"[A-Za-z0-9_./:-]{1,80}", receipt["reviewer"]) is None
+                or not isinstance(receipt["policy_source_commit"], str)
+                or receipt["policy_source_commit"] != _FEE_POLICY_SOURCE_COMMIT
+                or type(receipt["source_run_id"]) is not int or receipt["source_run_id"] <= 0
+                or not isinstance(receipt["rationale_ref"], str)
+                or re.fullmatch(r"https://github\.com/mbalbo2023/Porota-trading/issues/[0-9]+#issuecomment-[0-9]+",
+                                receipt["rationale_ref"]) is None):
+            return False
+        reviewed = datetime.fromisoformat(receipt["reviewed_at"].replace("Z", "+00:00"))
+        detected = datetime.fromisoformat(change["detected_at"].replace("Z", "+00:00"))
+        if (reviewed.tzinfo is None or detected.tzinfo is None
+                or not detected <= reviewed <= datetime.now(timezone.utc)):
+            return False
+        if (set(change) != set(_CHANGE_COLUMNS)
+                or type(change["change_id"]) is not int or change["change_id"] <= 0
+                or change["family"] != "CAUCIONES" or change["market"] != "BYMA"
+                or change["currency"] != "ARS" or change["settlement"] != "INMEDIATA"
+                or change["ticker"] not in _FEE_REVIEW_TICKERS
+                or change["source_class"] != "DERIVED_OFFICIAL_RULE"
+                or previous_source_ref != _FEE_POLICY_SOURCE
+                or current_source_ref != _FEE_POLICY_SOURCE
+                or evidence_hash(previous) != change["previous_hash"]
+                or evidence_hash(current) != change["current_hash"]):
+            return False
+        # Full hashes bind the actual snapshots. The exact allowed policy below
+        # prevents a reviewer from accepting a new fee rate, term or new field.
+        expected = {
+            "side": "COLOCADORA", "term_days": change["ticker"][5:],
+            "minimum_principal": "100000", "paper_principal_step": "1",
+            "day_count_basis": "365", "fee_payment": "UPFRONT",
+            "paper_fill_policy": "LIVE_PPI_BID_PARTICIPATION_CAP",
+            "policy_scope": "PRODUCTION_PAPER_SIMULATION_ONLY",
+            "dynamic_execution_gate": "FRESH_PPI_PLACING_BID_REQUIRED",
+        }
+        return (material_evidence(previous) == {**expected, "fee_authority": _FEE_AUTHORITY_OLD}
+                and material_evidence(current) == {**expected, "fee_authority": _FEE_AUTHORITY_NEW})
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return False
+
+
+def _fee_review_receipts(connection, tables):
+    if "contract_evidence_v2_reviews" not in tables:
+        return {}
+    try:
+        rows = connection.execute("SELECT change_id,receipt_json,receipt_hash "
+                                  "FROM contract_evidence_v2_reviews LIMIT 6").fetchall()
+        if len(rows) > 5:
+            return {}  # this version only supports the five audited identities
+        receipts = {}
+        for change_id, raw, digest in rows:
+            try:
+                receipt = json.loads(raw)
+                if evidence_hash(receipt) == digest:
+                    receipts[change_id] = receipt
+            except (TypeError, ValueError):
+                continue
+        return receipts
+    except sqlite3.Error:
+        return {}  # malformed/incomplete review storage never clears a HOLD
+
+
+def review_caucion_fee_authority_changes(store, *, changes, reviewed_at, reviewer,
+                                        policy_source_commit, source_run_id, rationale_ref):
+    """Explicit bounded, atomic, idempotent review of supplied evidence.
+
+    Caller must supply exact change IDs, five-part identities, old/new hashes,
+    source and detected time from a read-only receipt. The SQLite workspace
+    must be PRODUCTION_PAPER/0. Original changes/snapshots/current/catalog and
+    all financial ledgers remain untouched; only review receipts are appended.
+    Dynamic PPI freshness, calendar, fees and all admission gates still apply.
+    """
+    requested = list(changes)
+    if (not 1 <= len(requested) <= 5 or any(not isinstance(v, dict) for v in requested)
+            or any(type(v.get("change_id")) is not int for v in requested)
+            or len({v.get("change_id") for v in requested}) != len(requested)):
+        raise ValueError("CONTRACT_FEE_REVIEW_SCOPE_INVALID")
+    with store.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        safety = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        if safety is None or tuple(safety) != ("PRODUCTION_PAPER", 0):
+            raise ValueError("CONTRACT_FEE_REVIEW_PAPER_SAFETY_REQUIRED")
+        receipts = []
+        for expected in requested:
+            row = connection.execute("""SELECT ch.*,p.evidence_json AS previous_json,
+              n.evidence_json AS current_json,p.source_ref AS previous_source_ref,
+              n.source_ref AS current_source_ref,cur.evidence_hash AS latest_hash
+              FROM contract_evidence_v2_changes ch
+              JOIN contract_evidence_v2_snapshots p
+                ON p.family=ch.family AND p.ticker=ch.ticker AND p.market=ch.market
+               AND p.currency=ch.currency AND p.settlement=ch.settlement
+               AND p.source_class=ch.source_class AND p.evidence_hash=ch.previous_hash
+              JOIN contract_evidence_v2_snapshots n
+                ON n.family=ch.family AND n.ticker=ch.ticker AND n.market=ch.market
+               AND n.currency=ch.currency AND n.settlement=ch.settlement
+               AND n.source_class=ch.source_class AND n.evidence_hash=ch.current_hash
+              JOIN contract_evidence_v2_current cur
+                ON cur.family=ch.family AND cur.ticker=ch.ticker AND cur.market=ch.market
+               AND cur.currency=ch.currency AND cur.settlement=ch.settlement
+               AND cur.source_class=ch.source_class
+               AND cur.snapshot_id=n.snapshot_id
+              WHERE ch.change_id=?""", (expected.get("change_id"),)).fetchone()
+            if row is None:
+                raise ValueError("CONTRACT_FEE_REVIEW_EVIDENCE_MISSING")
+            actual = {key: row[key] for key in _CHANGE_COLUMNS}
+            receipt = {"policy": CAUCION_FEE_REVIEW_POLICY,
+                       "decision": "ACCEPT_EXACT_PAPER_AUTHORITY_CORRECTION",
+                       "scope": "PRODUCTION_PAPER_SIMULATION_ONLY", "change": actual,
+                       "reviewer": reviewer, "reviewed_at": reviewed_at,
+                       "policy_source_commit": policy_source_commit, "source_run_id": source_run_id,
+                       "rationale_ref": rationale_ref}
+            if (actual != expected or row["status"] != "CHANGED_REVIEW_REQUIRED"
+                    or row["latest_hash"] != actual["current_hash"]
+                    or not _fee_authority_review_matches(
+                        receipt, actual, json.loads(row["previous_json"]),
+                        json.loads(row["current_json"]), row["previous_source_ref"],
+                        row["current_source_ref"])):
+                raise ValueError("CONTRACT_FEE_REVIEW_EXACT_TRANSITION_REQUIRED")
+            receipts.append(receipt)
+        connection.execute("""CREATE TABLE IF NOT EXISTS contract_evidence_v2_reviews(
+          change_id INTEGER PRIMARY KEY, receipt_json TEXT NOT NULL, receipt_hash TEXT NOT NULL)""")
+        prior_ids = {r[0] for r in connection.execute("SELECT change_id FROM contract_evidence_v2_reviews")}
+        if len(prior_ids | {r["change"]["change_id"] for r in receipts}) > 5:
+            raise ValueError("CONTRACT_FEE_REVIEW_SCOPE_EXCEEDED")
+        added = 0
+        for receipt in receipts:
+            change_id = receipt["change"]["change_id"]
+            payload, digest = canonical_json(receipt), evidence_hash(receipt)
+            existing = connection.execute("SELECT receipt_json,receipt_hash FROM contract_evidence_v2_reviews "
+                                          "WHERE change_id=?", (change_id,)).fetchone()
+            if existing is not None:
+                if tuple(existing) != (payload, digest):
+                    raise ValueError("CONTRACT_FEE_REVIEW_RECEIPT_CONFLICT")
+                continue
+            connection.execute("INSERT INTO contract_evidence_v2_reviews VALUES(?,?,?)",
+                               (change_id, payload, digest))
+            added += 1
+    return {"policy": CAUCION_FEE_REVIEW_POLICY, "reviewed": len(receipts), "appended": added,
+            "decision_effect": "EXACT_CHANGE_REVIEW_ONLY", "real_routes": []}
+
+
+def apply_reviewed_caucion_fee_authority_correction(store):
+    """Apply only the five reviewed A116 incident transitions on normal collect.
+
+    This is a versioned audit migration, not automatic tariff approval. Missing
+    or different incident evidence leaves every existing HOLD intact and does
+    not prevent collection for unrelated identities. Repeated calls append
+    nothing; subsequent material changes remain pending in their own right.
+    """
+    result = {"policy": CAUCION_FEE_REVIEW_POLICY, "status": "NOT_APPLICABLE",
+              "reviewed": 0, "appended": 0, "real_routes": []}
+    changes = [dict(zip(_CHANGE_COLUMNS, (
+        change_id, "CAUCIONES", ticker, "BYMA", "ARS", "INMEDIATA",
+        "DERIVED_OFFICIAL_RULE", previous_hash, current_hash,
+        "2026-10-27T03:00:34.204768+00:00",
+    ))) for change_id, ticker, previous_hash, current_hash in _A198_REVIEWED_CHANGES]
+    try:
+        with store.connect() as connection:
+            found = connection.execute("""SELECT COUNT(*) FROM contract_evidence_v2_changes
+              WHERE change_id IN (36957,36958,36959,36960,36961)""").fetchone()[0]
+        if not found:
+            return result
+        if found != len(changes):
+            return {**result, "status": "BLOCKED", "reason": "REVIEWED_INCIDENT_INCOMPLETE"}
+        review = review_caucion_fee_authority_changes(
+            store, changes=changes, reviewed_at="2026-10-30T02:44:24+00:00",
+            reviewer="CODEX:RC6-A198",
+            policy_source_commit=_FEE_POLICY_SOURCE_COMMIT,
+            source_run_id=40993210661,
+            rationale_ref="https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6513673394")
+        return {**review, "status": "APPLIED" if review["appended"] else "ALREADY_APPLIED"}
+    except (sqlite3.Error, ValueError, TypeError) as exc:
+        # No partial writes: the explicit API validates the entire manifest in
+        # one transaction before appending. Never publish raw DB error details.
+        reason = str(exc) if str(exc).startswith("CONTRACT_FEE_REVIEW_") else type(exc).__name__
+        return {**result, "status": "BLOCKED", "reason": reason}
+
+
 def pending_material_changes(connection):
     """Return identities with at least one unresolved *material* change.
 
@@ -125,9 +354,11 @@ def pending_material_changes(connection):
     )}
     if not {"contract_evidence_v2_changes", "contract_evidence_v2_snapshots"} <= tables:
         return set()
+    reviews = _fee_review_receipts(connection, tables)
     rows = connection.execute("""
       SELECT ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
-             prev.evidence_json,curr.evidence_json
+             prev.evidence_json,curr.evidence_json,ch.change_id,ch.source_class,
+             ch.previous_hash,ch.current_hash,ch.detected_at,prev.source_ref,curr.source_ref
       FROM contract_evidence_v2_changes ch
       LEFT JOIN contract_evidence_v2_snapshots prev
         ON prev.family=ch.family AND prev.ticker=ch.ticker
@@ -147,13 +378,17 @@ def pending_material_changes(connection):
         if row[5] is None or row[6] is None:
             pending.add(identity)
             continue
+        previous = current = None
         try:
             previous = json.loads(row[5])
             current = json.loads(row[6])
             changed = material_evidence_hash(previous) != material_evidence_hash(current)
         except (TypeError, ValueError, json.JSONDecodeError):
             changed = True
-        if changed:
+        change = dict(zip(_CHANGE_COLUMNS, (row[7], *identity, row[8], row[9], row[10], row[11])))
+        reviewed = (changed and row[7] in reviews and _fee_authority_review_matches(
+            reviews[row[7]], change, previous, current, row[12], row[13]))
+        if changed and not reviewed:
             pending.add(identity)
     return pending
 
