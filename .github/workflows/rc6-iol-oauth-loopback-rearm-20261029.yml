@@ -61,7 +61,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n install -o root -g root -m 0700 /tmp/rc6-iol-rearm-${GITHUB_RUN_ID}.py /usr/local/sbin/rc6-iol-rearm-${GITHUB_RUN_ID}.py && sudo -n python3 /usr/local/sbin/rc6-iol-rearm-${GITHUB_RUN_ID}.py prepare"
+            "sudo -n rm -f /usr/local/sbin/rc6-iol-rearm-40982769804.py && sudo -n install -o root -g root -m 0700 /tmp/rc6-iol-rearm-${GITHUB_RUN_ID}.py /usr/local/sbin/rc6-iol-rearm-${GITHUB_RUN_ID}.py && { sudo -n python3 /usr/local/sbin/rc6-iol-rearm-${GITHUB_RUN_ID}.py prepare || { sudo -n rm -f /usr/local/sbin/rc6-iol-rearm-${GITHUB_RUN_ID}.py; exit 1; }; }"
 
       - name: Cleanup one-time transfer and runner SSH material
         if: always()

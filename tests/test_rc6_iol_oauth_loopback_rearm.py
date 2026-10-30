@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+import urllib.error
 import urllib.parse
 from pathlib import Path
 
@@ -108,6 +109,61 @@ def test_prepare_stages_without_overwriting_old_token_store(isolated, monkeypatc
     assert "LOCAL_URL=http://127.0.0.1:8765/start" in capsys.readouterr().out
 
 
+def test_registration_403_reuses_exact_known_readonly_client(isolated, monkeypatch, capsys):
+    registration = {
+        "client_id": "existing-client", "token_endpoint_auth_method": "none",
+        "redirect_uris": [MODULE.REDIRECT],
+    }
+    MODULE.atomic_json(MODULE.STORE, {
+        "issuer": MODULE.ISSUER, "redirect_uri": MODULE.REDIRECT,
+        "client_registration": registration, "tokens": {"access_token": "old"},
+    })
+    old_bytes = MODULE.STORE.read_bytes()
+
+    def forbidden_register(*_args):
+        raise urllib.error.HTTPError(MODULE.ISSUER + "/register", 403, "forbidden", {}, None)
+
+    monkeypatch.setattr(MODULE, "http_json", forbidden_register)
+    monkeypatch.setattr(MODULE, "PORT", 0)
+
+    class Socket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def bind(self, *_args):
+            pass
+
+    class Child:
+        pid = 753
+
+        def poll(self):
+            return None
+
+    def fake_popen(*_args, **_kwargs):
+        MODULE.atomic_json(MODULE.STATUS, {"phase": "ready", "pid": 753})
+        return Child()
+
+    monkeypatch.setattr(MODULE.socket, "socket", Socket)
+    monkeypatch.setattr(MODULE.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(MODULE.time, "sleep", lambda *_: None)
+    assert MODULE.prepare() == 0
+    assert MODULE.STORE.read_bytes() == old_bytes
+    assert MODULE.read_json(MODULE.PENDING)["client_registration"] == registration
+    assert "CLIENT_SOURCE=EXISTING_VERIFIED_CLIENT" in capsys.readouterr().out
+
+
+def test_prior_client_reuse_refuses_mismatched_redirect(isolated):
+    MODULE.atomic_json(MODULE.STORE, {
+        "issuer": MODULE.ISSUER, "redirect_uri": "http://localhost:8765/callback",
+        "client_registration": {"client_id": "existing", "token_endpoint_auth_method": "none"},
+    })
+    with pytest.raises(RuntimeError, match="not reusable"):
+        MODULE.existing_registration()
+
+
 def test_readonly_mcp_tools_are_required_and_trading_tools_forbidden(monkeypatch):
     calls = []
 
@@ -143,7 +199,10 @@ def test_failed_mcp_does_not_replace_existing_store(isolated, monkeypatch):
 
 
 def test_successful_readonly_mcp_commits_new_tokens_atomically(isolated, monkeypatch):
-    MODULE.atomic_json(MODULE.STORE, {"previous_note": "retained", "tokens": {"access_token": "old"}})
+    MODULE.atomic_json(MODULE.STORE, {
+        "previous_note": "retained", "token_expires_at_epoch": 2,
+        "tokens": {"access_token": "old"},
+    })
     monkeypatch.setattr(MODULE, "mcp_smoke", lambda *_: 15)
     assert MODULE.persist_success(
         _pending(), {"access_token": "new", "refresh_token": "new-refresh", "expires_in": 900}
@@ -153,6 +212,7 @@ def test_successful_readonly_mcp_commits_new_tokens_atomically(isolated, monkeyp
     assert stored["tokens"]["refresh_token"] == "new-refresh"
     assert stored["previous_note"] == "retained"
     assert stored["token_endpoint"] == MODULE.ISSUER + "/token"
+    assert stored["token_expires_at_epoch"] > 2
     assert "oauth_state" not in stored and "pkce_verifier" not in stored
     assert (MODULE.STORE.stat().st_mode & 0o777) == 0o600
 

@@ -292,6 +292,30 @@ def serve() -> int:
         Path(__file__).unlink(missing_ok=True)
 
 
+def existing_registration() -> dict:
+    """Reuse the prior consent client only when its identity and redirect match.
+
+    Provider-side client registration can be denied while an existing client ID
+    remains authorized for another browser consent. No refresh token is reused
+    for the new authorization-code exchange, and the old store stays untouched.
+    """
+    data = read_json(STORE)
+    registration = data.get("client_registration")
+    if (
+        data.get("issuer") != ISSUER
+        or data.get("redirect_uri") != REDIRECT
+        or not isinstance(registration, dict)
+        or not isinstance(registration.get("client_id"), str)
+        or not registration["client_id"]
+        or registration.get("token_endpoint_auth_method") != "none"
+    ):
+        raise RuntimeError("prior client registration not reusable")
+    redirects = registration.get("redirect_uris")
+    if isinstance(redirects, list) and REDIRECT not in redirects:
+        raise RuntimeError("prior client redirect differs")
+    return registration
+
+
 def prepare() -> int:
     paper_safe()
     with socket.socket() as check:
@@ -309,9 +333,19 @@ def prepare() -> int:
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
     }
-    status, _, registration = http_json(ISSUER + "/register", reg_req)
-    if status not in (200, 201) or not registration.get("client_id"):
-        raise RuntimeError("IOL client registration failed")
+    registration_source = "NEW_CLIENT"
+    try:
+        status, _, registration = http_json(ISSUER + "/register", reg_req)
+        if status not in (200, 201) or not registration.get("client_id"):
+            raise RuntimeError("IOL client registration failed")
+    except urllib.error.HTTPError as error:
+        # /register 403 alone is not evidence that an existing client cannot
+        # obtain a new authorization-code grant through the user's browser.
+        # Reuse is allowed ONLY for the same known OAuth issuer/redirect.
+        if error.code != 403:
+            raise
+        registration = existing_registration()
+        registration_source = "EXISTING_VERIFIED_CLIENT"
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b"=").decode()
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     state = {
@@ -337,6 +371,7 @@ def prepare() -> int:
                 print("TTL_MINUTES=30")
                 print("TOKEN_STORE_UNCHANGED=YES")
                 print("REAL_ORDERS_SENT=0")
+                print("CLIENT_SOURCE=" + registration_source)
                 return 0
             if receipt.get("phase") == "listen_error":
                 break
