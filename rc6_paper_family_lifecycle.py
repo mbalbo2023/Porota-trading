@@ -105,10 +105,10 @@ TRANSITIONS = {
     "FUTUROS": {
         None: {"OPEN"},
         "OPEN": {"MARGIN_RESERVED"},
-        "MARGIN_RESERVED": {"DAILY_VARIATION", "CLOSE", "EXPIRY"},
-        "DAILY_VARIATION": {"MARGIN_OK", "MARGIN_DEFICIT", "CLOSE", "EXPIRY"},
-        "MARGIN_OK": {"DAILY_VARIATION", "CLOSE", "EXPIRY"},
-        "MARGIN_DEFICIT": {"DAILY_VARIATION", "CLOSE", "EXPIRY"},
+        "MARGIN_RESERVED": {"DAILY_VARIATION", "CLOSE", "EXPIRY", "ADMIN_CANCEL"},
+        "DAILY_VARIATION": {"MARGIN_OK", "MARGIN_DEFICIT", "CLOSE", "EXPIRY", "ADMIN_CANCEL"},
+        "MARGIN_OK": {"DAILY_VARIATION", "CLOSE", "EXPIRY", "ADMIN_CANCEL"},
+        "MARGIN_DEFICIT": {"DAILY_VARIATION", "CLOSE", "EXPIRY", "ADMIN_CANCEL"},
     },
 }
 
@@ -986,6 +986,86 @@ def future_cash_effect(store, currency, at, *, connection=None, exclusive=False)
     return sum((decimal_value(row[0], "flujo futuro") for row in rows), Decimal("0"))
 
 
+FUTURE_ADMIN_CANCEL_AUTHORITY_A207 = 'ISSUE773_A207_PAPER_ACCOUNTING_REVERSAL_20261030'
+FUTURE_ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+
+
+def cancel_open_future_admin(connection, lifecycle_id, at, authority):
+    """Void one *unsettled* PAPER future under the caller's exclusive TX.
+
+    All previously booked PAPER cash events are exactly compensated by one
+    append-only event. No synthetic exit price, exchange settlement or PnL is
+    invented. The caller must have independently stopped the owned runtime,
+    pinned the full book fingerprint and validated an owner authority receipt.
+    """
+    if authority != FUTURE_ADMIN_CANCEL_AUTHORITY_A207 or not connection.in_transaction:
+        raise ValueError('FUTURES_ADMIN_AUTHORITY_OR_TRANSACTION_REQUIRED')
+    at = aware_datetime(at)
+    row = connection.execute('SELECT * FROM paper_future_positions WHERE lifecycle_id=?',
+                             (str(lifecycle_id),)).fetchone()
+    if row is None or row['status'] != 'ACTIVE':
+        raise ValueError('FUTURES_ADMIN_ACTIVE_POSITION_REQUIRED')
+    contract = future_position_contract(row)
+    events = connection.execute('''SELECT * FROM paper_family_lifecycle_events
+        WHERE lifecycle_id=? ORDER BY rowid''', (str(lifecycle_id),)).fetchall()
+    parent = connection.execute('''SELECT * FROM paper_family_lifecycle
+        WHERE lifecycle_id=?''', (str(lifecycle_id),)).fetchone()
+    if not events or not parent or parent['family'] != 'FUTUROS' or (
+            parent['instrument'], parent['currency']) != (row['symbol'], row['currency']):
+        raise ValueError('FUTURES_ADMIN_LIFECYCLE_IDENTITY_INVALID')
+    if (parent['state'] not in TRANSITIONS['FUTUROS'] or
+            'ADMIN_CANCEL' not in TRANSITIONS['FUTUROS'][parent['state']] or
+            utc_microseconds(at) < max(utc_microseconds(row['opened_at']),
+                                       utc_microseconds(parent['updated_at']),
+                                       utc_microseconds(row['last_mark_at']))):
+        raise ValueError('FUTURES_ADMIN_INVALID_STATE_OR_CLOCK')
+    if connection.execute('''SELECT 1 FROM paper_future_marks
+            WHERE lifecycle_id=? AND is_settlement=1 LIMIT 1''',
+            (str(lifecycle_id),)).fetchone():
+        raise ValueError('FUTURES_ADMIN_OFFICIAL_OR_SETTLEMENT_MARK_PRESENT')
+    if any(event['to_state'] in {'CLOSE', 'EXPIRY', 'ADMIN_CANCEL', 'DAILY_VARIATION'}
+           for event in events):
+        # A daily variation is a financial settlement, not an unfilled OPEN;
+        # canceling it without price/clearing reconciliation could void income.
+        raise ValueError('FUTURES_ADMIN_SETTLED_OR_TERMINAL_EVENT_PRESENT')
+    if (len([e for e in events if e['to_state'] == 'OPEN']) != 1
+            or len([e for e in events if e['to_state'] == 'MARGIN_RESERVED']) != 1):
+        raise ValueError('FUTURES_ADMIN_OPEN_RESERVE_EVENTS_INVALID')
+    total = sum((decimal_value(e['amount'], 'cash futuro') for e in events), Decimal('0'))
+    booked = decimal_value(parent['ledger_total'], 'ledger futuro')
+    reserve = decimal_value(row['margin_reserved'], 'garantía', positive=True)
+    fee = decimal_value(row['entry_cost'], 'costo futuro', nonnegative=True)
+    if (total != booked or booked != -(reserve + fee)
+            or decimal_value(row['variation_realized'], 'variación futuro') != 0):
+        raise ValueError('FUTURES_ADMIN_MARGIN_RECONCILIATION_REQUIRED')
+    event_id = 'A207-FUTURE-' + hashlib.sha256(
+        (str(lifecycle_id) + '|' + authority).encode()).hexdigest()
+    metadata = json.loads(row['metadata_json'])
+    if metadata.get('real_routes_used') != []:
+        raise ValueError('FUTURES_ADMIN_REAL_ROUTE_PROOF_INVALID')
+    detail = {'authority': authority, 'reason': FUTURE_ADMIN_CANCEL_REASON,
+              'cash_reversal': str(-booked), 'margin_released': str(reserve),
+              'entry_fee_reversed': str(fee), 'real_routes_used': [],
+              'no_exit_price_or_pnl': True}
+    apply_paper_event(None, lifecycle_id=lifecycle_id, event_id=event_id,
+                      family='FUTUROS', instrument=contract.symbol, currency=contract.currency,
+                      to_state='ADMIN_CANCEL', amount=str(-booked),
+                      occurred_at=at.isoformat(), detail=detail, connection=connection)
+    connection.execute('''UPDATE paper_future_positions SET
+        status='CLOSED',closed_at=?,close_reason=?,exit_cost='0',
+        variation_realized='0',unrealized_pnl='0',metadata_json=?
+        WHERE lifecycle_id=? AND status='ACTIVE' ''',
+        (at.isoformat(), FUTURE_ADMIN_CANCEL_REASON,
+         _canonical_json({**metadata, 'terminal_state': 'ADMIN_CANCEL',
+                          'realized_pnl': '0', 'admin_cancel_event_id': event_id,
+                          'admin_cancel_authority': authority}), str(lifecycle_id)))
+    if connection.execute('SELECT ledger_total FROM paper_family_lifecycle WHERE lifecycle_id=?',
+                          (str(lifecycle_id),)).fetchone()[0] != '0':
+        raise ValueError('FUTURES_ADMIN_CASH_NOT_NEUTRAL')
+    return {'status': 'CLOSED', 'cancel_event_id': event_id,
+            'cash_reversal': str(-booked), 'real_routes_used': []}
+
+
 def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
     """FCI cash committed on request and released only on recorded redemption.
 
@@ -1124,7 +1204,7 @@ def _future_position_at(row, point, *, connection, exclusive=False):
         elif event["to_state"] == "DAILY_VARIATION":
             variation += decimal_value(event["amount"], "variación futura")
             base_price = detail["settlement_price"]
-        elif event["to_state"] in {"CLOSE", "EXPIRY"}:
+        elif event["to_state"] in {"CLOSE", "EXPIRY", "ADMIN_CANCEL"}:
             terminal = (event, detail)
     if not opening:
         raise ValueError("FUTURES_OPEN_EVENT_REQUIRED")
@@ -1175,6 +1255,23 @@ def _future_position_at(row, point, *, connection, exclusive=False):
               "reserve_kind": "CONSERVATIVE_PAPER_RESERVE_NOT_BROKER_MARGIN"}
     if terminal:
         terminal_event, detail = terminal
+        if terminal_event['to_state'] == 'ADMIN_CANCEL':
+            if (detail.get('authority') != FUTURE_ADMIN_CANCEL_AUTHORITY_A207
+                    or detail.get('reason') != FUTURE_ADMIN_CANCEL_REASON
+                    or detail.get('no_exit_price_or_pnl') is not True
+                    or detail.get('real_routes_used') != []
+                    or cash_effect != 0):
+                raise ValueError('FUTURES_ADMIN_EVENT_NOT_RECONCILED')
+            metadata.update(realized_pnl='0', terminal_state='ADMIN_CANCEL')
+            result.update(status='CLOSED', closed_at=terminal_event['occurred_at'],
+                          close_reason=FUTURE_ADMIN_CANCEL_REASON,
+                          exit_cost='0', variation_realized='0',
+                          gross_realized_pnl='0', close_variation_cash='0',
+                          realized_pnl='0', unrealized_pnl='0', collateral='0',
+                          exposure='0', admin_reversal_cash=detail['cash_reversal'])
+            result['cash_effect'] = str(cash_effect)
+            result['metadata_json'] = _canonical_json(metadata)
+            return result
         final_variation = decimal_value(detail["final_variation"], "variación cierre")
         exit_cost = decimal_value(detail["exit_cost"], "costo salida", nonnegative=True)
         gross = variation + final_variation

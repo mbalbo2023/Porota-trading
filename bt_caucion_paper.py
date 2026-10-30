@@ -22,6 +22,7 @@ from cf_sale_settlement import modeled_sale_settlement, validated_sale_settlemen
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+ADMIN_CANCEL_AUTHORITY_A207 = "ISSUE773_A207_PAPER_ACCOUNTING_REVERSAL_20261030"
 
 
 def offer_payload(offer):
@@ -66,6 +67,18 @@ def init_schema(store):
           request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL,
           evaluated_at TEXT NOT NULL, decision_json TEXT NOT NULL,
           paper_id TEXT UNIQUE REFERENCES paper_cauciones(paper_id));
+        CREATE TABLE IF NOT EXISTS paper_caucion_admin_cancellations(
+          paper_id TEXT PRIMARY KEY REFERENCES paper_cauciones(paper_id),
+          cancelled_at TEXT NOT NULL, authority TEXT NOT NULL,
+          principal TEXT NOT NULL, total_fees TEXT NOT NULL,
+          request_fingerprint TEXT NOT NULL, terms_sha256 TEXT NOT NULL,
+          reason TEXT NOT NULL);
+        CREATE TRIGGER IF NOT EXISTS paper_caucion_admin_cancel_no_update
+          BEFORE UPDATE ON paper_caucion_admin_cancellations
+          BEGIN SELECT RAISE(ABORT,'PAPER_CAUCION_ADMIN_RECEIPT_IMMUTABLE'); END;
+        CREATE TRIGGER IF NOT EXISTS paper_caucion_admin_cancel_no_delete
+          BEFORE DELETE ON paper_caucion_admin_cancellations
+          BEGIN SELECT RAISE(ABORT,'PAPER_CAUCION_ADMIN_RECEIPT_IMMUTABLE'); END;
         CREATE TABLE IF NOT EXISTS paper_equity_by_currency(
           id INTEGER PRIMARY KEY AUTOINCREMENT, measured_at TEXT NOT NULL,
           currency TEXT NOT NULL, cash TEXT NOT NULL, exposure TEXT NOT NULL,
@@ -236,7 +249,92 @@ def automatic_liquidity_cap(offer, participation):
     return offer.available_principal * participation
 
 
-def validate_position(p):
+def validate_caucion_admin_receipt(p, receipt):
+    """Require a sealed, immutable journal before accepting a canceled row."""
+    if receipt is None or p['status'] != 'CANCELLED_ADMIN':
+        raise ValueError('CAUCION_ADMIN_RECEIPT_REQUIRED')
+    cancelled = aware_datetime(receipt['cancelled_at'], 'cancelación caución')
+    opened = aware_datetime(p['opened_at'], 'apertura caución')
+    if (receipt['paper_id'] != p['paper_id']
+            or receipt['authority'] != ADMIN_CANCEL_AUTHORITY_A207
+            or receipt['reason'] != 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+            or receipt['principal'] != p['principal']
+            or receipt['total_fees'] != p['total_fees']
+            or receipt['request_fingerprint'] != p['request_fingerprint']
+            or receipt['terms_sha256'] != hashlib.sha256(p['terms_json'].encode()).hexdigest()
+            or cancelled < opened or p['settled_at'] is not None):
+        raise ValueError('CAUCION_ADMIN_RECEIPT_MISMATCH')
+    return cancelled
+
+
+def cancel_open_caucion_admin(connection, paper_id, at, authority):
+    """Neutralize one unliquidated PAPER placement without fabricating yield.
+
+    This is a caller-owned BEGIN IMMEDIATE operation; the deploy coordinator
+    verifies an exact frozen snapshot, exclusive host lock and stopped Docker
+    before invoking it. Allocation/contract terms remain immutable.
+    """
+    if authority != ADMIN_CANCEL_AUTHORITY_A207 or not connection.in_transaction:
+        raise ValueError('CAUCION_ADMIN_AUTHORITY_OR_TRANSACTION_REQUIRED')
+    at = aware_datetime(at)
+    row = connection.execute('SELECT * FROM paper_cauciones WHERE paper_id=?',
+                             (str(paper_id),)).fetchone()
+    if row is None or row['status'] != 'OPEN' or row['settled_at'] is not None:
+        raise ValueError('CAUCION_ADMIN_UNSETTLED_OPEN_REQUIRED')
+    validate_position(row)
+    if at < aware_datetime(row['opened_at']):
+        raise ValueError('CAUCION_ADMIN_CLOCK_BEFORE_PLACEMENT')
+    if connection.execute('''SELECT 1 FROM paper_events WHERE paper_id=?
+        AND event_type IN ('PAPER_CAUCION_MATURED','PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION')
+        LIMIT 1''', (str(paper_id),)).fetchone():
+        raise ValueError('CAUCION_ADMIN_SETTLEMENT_EVENT_PRESENT')
+    allocation = connection.execute('''SELECT decision_json FROM paper_caucion_allocations
+        WHERE paper_id=?''', (str(paper_id),)).fetchone()
+    if allocation is not None:
+        try:
+            decision = json.loads(allocation['decision_json'])
+        except (TypeError, ValueError) as exc:
+            raise ValueError('CAUCION_ADMIN_ALLOCATION_INVALID') from exc
+        if decision.get('status') != 'PLACED_SIMULATED':
+            raise ValueError('CAUCION_ADMIN_ALLOCATION_NOT_PLACED')
+    connection.execute('''CREATE TABLE IF NOT EXISTS paper_caucion_admin_cancellations(
+      paper_id TEXT PRIMARY KEY REFERENCES paper_cauciones(paper_id),
+      cancelled_at TEXT NOT NULL, authority TEXT NOT NULL,
+      principal TEXT NOT NULL, total_fees TEXT NOT NULL,
+      request_fingerprint TEXT NOT NULL, terms_sha256 TEXT NOT NULL,
+      reason TEXT NOT NULL)''')
+    connection.execute('''CREATE TRIGGER IF NOT EXISTS paper_caucion_admin_cancel_no_update
+      BEFORE UPDATE ON paper_caucion_admin_cancellations
+      BEGIN SELECT RAISE(ABORT,'PAPER_CAUCION_ADMIN_RECEIPT_IMMUTABLE'); END''')
+    connection.execute('''CREATE TRIGGER IF NOT EXISTS paper_caucion_admin_cancel_no_delete
+      BEFORE DELETE ON paper_caucion_admin_cancellations
+      BEGIN SELECT RAISE(ABORT,'PAPER_CAUCION_ADMIN_RECEIPT_IMMUTABLE'); END''')
+    reason = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+    connection.execute('''INSERT INTO paper_caucion_admin_cancellations
+        VALUES (?,?,?,?,?,?,?,?)''',
+        (paper_id, at.isoformat(), authority, row['principal'], row['total_fees'],
+         row['request_fingerprint'], hashlib.sha256(row['terms_json'].encode()).hexdigest(),
+         reason))
+    affected = connection.execute('''UPDATE paper_cauciones SET status='CANCELLED_ADMIN'
+        WHERE paper_id=? AND status='OPEN' AND settled_at IS NULL''', (paper_id,)).rowcount
+    if affected != 1:
+        raise ValueError('CAUCION_ADMIN_CONCURRENT_CHANGE')
+    connection.execute('''INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)''',
+                       (at.isoformat(), 'PRODUCTION_PAPER',
+                        'PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION', str(paper_id),
+                        'Reversión administrativa PAPER: colocación sin liquidación verificable'))
+    closed = connection.execute('SELECT * FROM paper_cauciones WHERE paper_id=?',
+                                (paper_id,)).fetchone()
+    receipt = connection.execute('''SELECT * FROM paper_caucion_admin_cancellations
+        WHERE paper_id=?''', (paper_id,)).fetchone()
+    validate_position(closed, cancel_receipt=receipt)
+    return {'status': 'CANCELLED_ADMIN', 'paper_id': str(paper_id),
+            'principal_released': row['principal'], 'upfront_fee_reversed':
+            row['total_fees'] if row['fee_payment'] == 'UPFRONT' else '0',
+            'real_routes_used': []}
+
+
+def validate_position(p, *, cancel_receipt=None):
     """Concordancia interna antes de reconocer caja, profundidad o un crédito.
 
     No consulta PPI ni revaloriza comisiones antiguas con el tarifario actual.
@@ -270,11 +368,14 @@ def validate_position(p):
             raise ValueError('Huella de términos/capital inconsistente')
         opened, maturity = map(aware_datetime,(p['opened_at'],p['maturity_at']))
         settled = aware_datetime(p['settled_at']) if p['settled_at'] is not None else None
+        cancelled = (validate_caucion_admin_receipt(p, cancel_receipt)
+                     if p['status'] == 'CANCELLED_ADMIN' else None)
         if (opened.astimezone(TZ).date().isoformat()!=offer.start_date
                 or aware_datetime(offer.quoted_at)>opened or maturity!=aware_datetime(offer.maturity_at)
-                or maturity<=opened or p['status'] not in {'OPEN','MATURED'}
+                or maturity<=opened or p['status'] not in {'OPEN','MATURED','CANCELLED_ADMIN'}
                 or (p['status']=='MATURED')!=(settled is not None)
-                or (settled is not None and settled<maturity)):
+                or (settled is not None and settled<maturity)
+                or (cancelled is not None and cancelled < opened)):
             raise ValueError('Cronología de caución inválida')
         return offer
     except (ValueError,TypeError,KeyError,AttributeError,ArithmeticError) as exc:
@@ -299,9 +400,19 @@ def paper_caucion_economic_projection(connection, positions, *, as_of=None):
         output = []
         for original in positions:
             p = dict(original)
+            cancel_receipt = None
+            if p['status'] == 'CANCELLED_ADMIN':
+                has_table = connection.execute('''SELECT 1 FROM sqlite_master
+                    WHERE type='table' AND name='paper_caucion_admin_cancellations' ''').fetchone()
+                if not has_table:
+                    raise ValueError('CAUCION_ADMIN_RECEIPT_TABLE_REQUIRED')
+                cancel_receipt = connection.execute('''SELECT * FROM paper_caucion_admin_cancellations
+                    WHERE paper_id=?''', (p['paper_id'],)).fetchone()
+                p['admin_cancelled_at'] = validate_caucion_admin_receipt(p, cancel_receipt).isoformat()
+                p['admin_cancel_receipt_verified'] = True
             receipt = restated.get(p['paper_id'])
             if receipt is None:
-                validate_position(p)
+                validate_position(p, cancel_receipt=cancel_receipt)
                 p['fee_evidence_scope'] = 'BOOKED_PAPER_CONTRACT'
             else:
                 if p['status'] != 'MATURED' or p['currency'] != 'ARS':
@@ -373,30 +484,45 @@ class CaucionBook:
                 except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError) as exc:
                     raise ValueError('CAUCION_LEDGER_INVALID: HISTORICAL_TERMS_INVALID') from exc
             else:
-                previous = validate_position(p)
+                if p['status'] == 'CANCELLED_ADMIN':
+                    if p.get('admin_cancel_receipt_verified') is not True:
+                        raise ValueError('CAUCION_ADMIN_RECEIPT_REQUIRED')
+                    previous = CaucionOffer(**json.loads(p['terms_json']))
+                else:
+                    previous = validate_position(p)
             if aware_datetime(previous.quoted_at) > aware_datetime(offer.quoted_at):
                 raise ValueError('CAUCION_OLDER_BOOK')
             if book_key(previous) == book_key(offer):
                 if book_payload(previous) != book_payload(offer):
                     raise ValueError('CAUCION_CONFLICTING_BOOK')
-                used += decimal_value(p['principal'],'capital consumido',positive=True)
+                if self.state_at(p, aware_datetime(offer.quoted_at)) == 'OPEN':
+                    used += decimal_value(p['principal'],'capital consumido',positive=True)
         return used
 
     @staticmethod
     def state_at(p, at):
+        at = aware_datetime(at)
         opened, maturity = map(aware_datetime, (p['opened_at'], p['maturity_at']))
         settled = aware_datetime(p['settled_at']) if p['settled_at'] else None
-        if (p['status'] not in {'OPEN','MATURED'} or (p['status']=='MATURED') != bool(settled)
+        cancelled = None
+        if p['status'] == 'CANCELLED_ADMIN':
+            if p.get('admin_cancel_receipt_verified') is not True:
+                raise ValueError('CAUCION_ADMIN_RECEIPT_REQUIRED')
+            cancelled = aware_datetime(p['admin_cancelled_at'])
+        if (p['status'] not in {'OPEN','MATURED','CANCELLED_ADMIN'}
+                or (p['status']=='MATURED') != bool(settled)
                 or maturity <= opened or (settled and settled < maturity)):
             raise ValueError('Cronología de caución inválida')
-        return 'FUTURE' if opened > at else 'MATURED' if settled and settled <= at else 'OPEN'
+        return ('FUTURE' if opened > at else
+                'CANCELLED_ADMIN' if cancelled is not None and cancelled <= at else
+                'MATURED' if settled and settled <= at else 'OPEN')
 
     def cash_effect(self, currency, as_of, *, connection=None):
         at = aware_datetime(as_of)
         result = ZERO
         for p in self.positions(currency=currency, connection=connection, as_of=as_of):
             state = self.state_at(p, at)
-            if state == 'FUTURE':
+            if state in {'FUTURE','CANCELLED_ADMIN'}:
                 continue
             principal, fees = Decimal(p["principal"]), Decimal(p["total_fees"])
             if state == "MATURED":
@@ -410,7 +536,7 @@ class CaucionBook:
         principal = accrued = unrealized = realized = ZERO
         for p in self.positions(currency=currency, connection=connection, as_of=as_of):
             state = self.state_at(p, at)
-            if state == 'FUTURE':
+            if state in {'FUTURE','CANCELLED_ADMIN'}:
                 continue
             fees, interest = Decimal(p["total_fees"]), Decimal(p["gross_interest"])
             if state == "MATURED":
@@ -457,7 +583,12 @@ class CaucionBook:
         c = connection
         previous = c.execute("SELECT * FROM paper_cauciones WHERE request_id=?", (request_id,)).fetchone()
         if previous:
-            validate_position(previous)
+            if previous['status'] == 'CANCELLED_ADMIN':
+                proof = c.execute('''SELECT * FROM paper_caucion_admin_cancellations
+                    WHERE paper_id=?''', (previous['paper_id'],)).fetchone()
+                validate_position(previous, cancel_receipt=proof)
+            else:
+                validate_position(previous)
             if previous["request_fingerprint"] != request_fingerprint:
                 raise ValueError("Clave de colocación reutilizada con términos diferentes")
             return dict(previous)

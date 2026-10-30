@@ -41,6 +41,14 @@ def caucion_pnl(p, at, *, exclusive=False):
     opened = aware_datetime(p['opened_at'])
     if opened > at or (exclusive and opened == at):
         return ZERO
+    if p['status'] == 'CANCELLED_ADMIN':
+        if p.get('admin_cancel_receipt_verified') is not True:
+            raise ValueError('CAUCION_ADMIN_RECEIPT_REQUIRED')
+        cancelled = aware_datetime(p['admin_cancelled_at'])
+        if cancelled < opened:
+            raise ValueError('CAUCION_ADMIN_CLOCK_INVALID')
+        if cancelled < at or (not exclusive and cancelled == at):
+            return ZERO
     fees = decimal_value(p['total_fees'], 'costos', nonnegative=True)
     if p['settled_at'] and aware_datetime(p['settled_at']) <= at:
         return decimal_value(p['gross_interest'], 'interés', nonnegative=True) - fees
