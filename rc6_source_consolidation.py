@@ -222,8 +222,11 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
             provenance[field] = resolved
             validated[field] = {"value": resolved["value"] if exact and not resolved["review_required"] else None,
                                 "source": resolved.get("source") if exact and not resolved["review_required"] else None}
-        review = (bool(source_reviews) or any(duplicates.values()) or any(value["review_required"] for value in provenance.values())
-                  or any(value["state"] == "DIVERGENCE" for value in compared.values()))
+        # Raw comparisons remain diagnostic even when a quote is stale or
+        # unavailable. Only the resolver's eligible economic evidence can
+        # create a current discrepancy; identity and duplicate guards remain.
+        review = (bool(source_reviews) or any(duplicates.values())
+                  or any(value["review_required"] for value in provenance.values()))
         rows.append({
             "identity": {"family": key[0], "symbol": key[1], "market": key[2], "term": key[4]},
             "canonical_identity": [key[1], key[0], key[2], key[3], key[4]] if exact else None,

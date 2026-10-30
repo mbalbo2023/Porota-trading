@@ -1,4 +1,74 @@
 import rc6_source_consolidation as m
+import pytest
+
+
+def _quote(**changes):
+    row = {"family": "ACCIONES", "ticker": "GGAL", "market": "BYMA",
+           "currency": "ARS", "settlement": "A-24HS", "last": 100,
+           "source_at": "2026-10-29T15:00:00+00:00",
+           "received_at": "2026-10-29T15:00:01+00:00"}
+    row.update(changes)
+    return row
+
+
+AS_OF = "2026-10-29T15:00:02+00:00"
+
+
+@pytest.mark.parametrize("invalid", [
+    {"source_at": "2026-10-28T15:00:00+00:00",
+     "received_at": "2026-10-28T15:00:01+00:00"},
+    {"source_at": None},
+    {"state": "UNAVAILABLE"},
+])
+def test_ineligible_iol_price_is_diagnostic_and_does_not_veto_fresh_ppi(invalid):
+    row = m.consolidate([_quote()], [_quote(last=70, **invalid)], as_of=AS_OF)["rows"][0]
+    assert row["comparison"]["last"]["state"] == "DIVERGENCE"
+    assert row["selection_eligible"] is True
+    assert row["review_status"] == "NO_CURRENT_CONFLICT"
+    assert row["validated_effective_fields"]["last"] == {"value": 100.0, "source": "PPI"}
+    assert any(candidate["source"] == "IOL" and candidate["rejection_reason"]
+               for candidate in row["field_provenance"]["last"]["candidates"])
+    assert row["entry_authority"] is False
+
+
+def test_fresh_iol_discrepancy_still_requires_review():
+    row = m.consolidate([_quote()], [_quote(last=70)], as_of=AS_OF)["rows"][0]
+    assert row["selection_eligible"] is False
+    assert row["review_status"] == "CONFLICT_REVIEW_REQUIRED"
+    assert row["field_provenance"]["last"]["review_required"] is True
+    assert row["validated_effective_fields"]["last"]["value"] is None
+
+
+@pytest.mark.parametrize("iol_time,expected_source", [
+    ("2026-10-29T15:00:00+00:00", "IOL"),
+    ("2026-10-28T15:00:00+00:00", None),
+    (None, None),
+])
+def test_iol_completes_only_missing_ppi_fields_with_eligible_native_time(iol_time, expected_source):
+    row = m.consolidate([_quote()], [_quote(last=101, volume=200, source_at=iol_time)],
+                        as_of=AS_OF)["rows"][0]
+    assert row["validated_effective_fields"]["last"] == {"value": 100.0, "source": "PPI"}
+    assert row["validated_effective_fields"]["volume"] == {
+        "value": 200.0 if expected_source else None, "source": expected_source}
+    assert row["selection_eligible"] is True
+
+
+def test_stale_iol_conflicting_identity_remains_unbound_and_audited():
+    result = m.consolidate([_quote()], [_quote(symbol="YPFD", last=70,
+        source_at="2026-10-28T15:00:00+00:00")], as_of=AS_OF)
+    assert result["identity_reviews"][0]["reason"] == "EXACT_IDENTITY_REQUIRED_OR_CONFLICTING"
+    reference = next(row for row in result["rows"] if row["canonical_identity"] is None)
+    assert reference["selection_eligible"] is False
+    assert reference["entry_authority"] is False
+
+
+def test_stale_iol_different_currency_cannot_fill_ppi_identity():
+    result = m.consolidate([_quote(last=None)], [_quote(currency="USD", last=70,
+        source_at="2026-10-28T15:00:00+00:00")], as_of=AS_OF)
+    assert len(result["rows"]) == 2
+    assert all(row["selection_eligible"] is False for row in result["rows"])
+    ppi = next(row for row in result["rows"] if row["currency"] == "ARS")
+    assert ppi["validated_effective_fields"]["last"]["value"] is None
 
 def test_consolidate_keeps_ppi_primary_and_compares_iol():
     result = m.consolidate(

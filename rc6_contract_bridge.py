@@ -129,7 +129,9 @@ def normalize_group(records, *, now=None):
                 errors.append(str(exc)); continue
             if dst in fields and fields[dst] != value:
                 errors.append("CONFLICT:" + dst)
-            else:
+            elif dst not in fields:
+                # Records are ordered by authority. Corroborating evidence
+                # must not relabel a value already supplied by a primary source.
                 fields[dst] = value
                 provenance[dst] = {"source_class": source, "source_ref": r["source_ref"],
                     "evidence_hash": r["evidence_hash"], "observed_at": r["observed_at"],
