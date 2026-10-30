@@ -83,7 +83,28 @@ def position_stop_risk(broker, position) -> Decimal:
 def open_stop_risk(broker, currency, at, *, connection) -> Decimal:
     currency = cash_currency(currency)
     opened, _ = spot_ledger.positions_at(connection, aware_datetime(at))
-    return sum((position_stop_risk(broker, p) for p in opened if p.get("currency") == currency), ZERO)
+    total = ZERO
+    for p in opened:
+        if p.get("currency") != currency:
+            continue
+        family = family_name(p["asset_class"])
+        if family in {"BONOS", "LETRAS", "OBLIGACIONES"}:
+            from rc6_fixed_income_portfolio_bridge import position_at
+            view = position_at(connection, p["paper_id"], at)
+            if view is not None:
+                # A long FI security can lose the entire residual investment.
+                # An equity stop is not proof of an executable bond exit.
+                # Never also reserve redeemed principal: the event receipt
+                # already credits it in its own payout currency.
+                original = decimal_value(p["quantity"], "FI original nominal", positive=True)
+                entry = decimal_value(p["entry_price"], "FI entry price", positive=True)
+                fee = decimal_value(p["entry_cost"], "FI entry cost", nonnegative=True)
+                factor = broker._position_multiplier(p)
+                total += (entry * view.residual_nominal * factor
+                          + fee * view.residual_nominal / original)
+                continue
+        total += position_stop_risk(broker, p)
+    return total
 
 
 def candidate_stop_risk(broker, *, entry_price, stop_price, quantity,

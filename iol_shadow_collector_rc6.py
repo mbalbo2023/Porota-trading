@@ -45,6 +45,7 @@ MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 MARKET_OPEN = clock_time(10, 30)
 MARKET_CLOSE = clock_time(17, 0)
 COM19024_EFFECTIVE = date(2026, 11, 2)
+COM19024_REVIEWED_THROUGH = date(2026, 12, 31)
 # BYMA official COM18782 is in force through 01-Nov-2026; COM19024 applies
 # from 02-Nov. This is a *family* contract, not one universal market close.
 # Unverified futures underlyings/FCI/ETF sessions are not assigned a guessed
@@ -60,8 +61,9 @@ def is_operational_market_window(now: datetime | None = None, *,
 
     The legacy caller without identity retains the 10:30–17:00 composite
     subset, never treating a mixed family basket as eligible until 18:00.
-    Only an identified regular ACCIONES/CEDEARS/OPCIONES observation can use
-    the COM19024 late session. This never authorizes orders or PAPER opening.
+    This family-only compatibility API identifies possible trading windows,
+    not an exact settlement. Actual late collection MUST also pass
+    is_verified_late_contract_window(). Neither API authorizes PAPER opening.
     """
     if now is not None and now.tzinfo is None:
         return False
@@ -84,6 +86,44 @@ def is_operational_market_window(now: datetime | None = None, *,
     if normalized in COM19024_1700_FAMILIES:
         return MARKET_OPEN <= local.time() < MARKET_CLOSE
     return False  # Futures/subtypes and unknown contracts need their own proof.
+
+
+def is_late_observation_window(now: datetime | None = None) -> bool:
+    """COM19024 date/time window for *considering* exact late identities.
+
+    The official BYMA schedule is segmented: variable-income T+1 and regular
+    options/plazos close at 18:00, but cash-immediate, fixed income and
+    cauciones close at 17:00. Some futures close at 18:00 and some at 15:00;
+    this observer does not carry their requisite subtype contract.
+    """
+    if now is not None and (now.tzinfo is None or now.utcoffset() is None):
+        return False
+    local = (now or datetime.now(MARKET_TZ)).astimezone(MARKET_TZ)
+    if (not COM19024_EFFECTIVE <= local.date() <= COM19024_REVIEWED_THROUGH
+            or local.year not in byma.ANIOS_AUDITADOS):
+        return False
+    try:
+        if not byma.es_dia_habil_operativo(local.date()):
+            return False
+    except (ValueError, TypeError, KeyError, OSError):
+        return False
+    return MARKET_CLOSE <= local.time() < clock_time(18, 0)
+
+
+def is_verified_late_contract_window(now: datetime | None = None, *,
+                                     family: str, market: str,
+                                     settlement: str, settlement_source: str) -> bool:
+    """Fail closed on every late quote lacking exact PPI T+1 BYMA identity.
+
+    IOL's quote adapter requests term=t1 only. Option contracts on other terms,
+    variable-income cash-immediate routes and all unidentified futures need
+    their own verified adapter/segment before any after-17 collection.
+    """
+    return (is_late_observation_window(now)
+            and str(family).strip().upper() in COM19024_1800_FAMILIES
+            and str(market).strip().upper() == "BYMA"
+            and str(settlement).strip().upper() == "A-24HS"
+            and str(settlement_source).strip().upper() == "PPI_FIELD")
 
 
 class ReadOnlyMCP(Protocol):

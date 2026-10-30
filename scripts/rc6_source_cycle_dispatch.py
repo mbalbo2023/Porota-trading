@@ -34,9 +34,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 OPEN = clock_time(10, 30)
 CLOSE = clock_time(17, 0)  # Current collector baseline; 02-Nov family extension is separate.
+LATE_CLOSE = clock_time(18, 0)
 MORNING_OPEN = clock_time(8, 30)
 MORNING_END = clock_time(9, 0)
 COM19024_EFFECTIVE = date(2026, 11, 2)
+COM19024_REVIEWED_THROUGH = date(2026, 12, 31)
 # This is a live SHADOW input, not an optional background scraper. A longer
 # TTL would silently change source-observation cadence and SHADOW checkpoints.
 PUBLIC_TTL_SECONDS = 60
@@ -94,6 +96,13 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
     if phase == "open":
         allowed = OPEN <= local.time() < CLOSE
         return allowed, "COLLECTOR_BASELINE_WINDOW" if allowed else "OUTSIDE_COLLECTOR_WINDOW"
+    if phase == "late_source":
+        # This admits a bounded *attempt*, not a market-wide quote collection.
+        # The IOL child selects only PPI_FIELD/BYMA/A-24HS exact identities;
+        # futures, cash-immediate and cauciones cannot inherit an 18:00 close.
+        allowed = (COM19024_EFFECTIVE <= local.date() <= COM19024_REVIEWED_THROUGH
+                   and CLOSE <= local.time() < LATE_CLOSE)
+        return allowed, "COM19024_EXACT_LATE_SOURCE" if allowed else "LATE_SOURCE_NOT_DUE"
     raise SourceCycleBlocked("UNKNOWN_PHASE")
 
 
@@ -199,6 +208,25 @@ def _chmod_owned(path: Path) -> None:
     path.chmod(0o644)
 
 
+def _published_file_identity(path: Path) -> tuple[int, ...] | None:
+    """Identify an output without following aliases or inspecting provider data.
+
+    A zero exit code (or a collector's success marker) cannot prove that the
+    current cycle published anything: an old file may still be present. The
+    actual producers atomically replace their snapshots, so inode/metadata
+    identity is sufficient even when two successive snapshots have identical
+    content. This is publication evidence, not quote-freshness certification.
+    """
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_UNSAFE")
+    return (metadata.st_dev, metadata.st_ino, metadata.st_size,
+            metadata.st_mtime_ns, metadata.st_ctime_ns)
+
+
 def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
     """One canonical output/DB identity for all three already-existing jobs.
 
@@ -224,8 +252,9 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
               market_root: Path = DEFAULT_MARKET_ROOT, lock: Path = DEFAULT_LOCK,
               runner=subprocess.run) -> dict:
     now = now or datetime.now(timezone.utc)
-    admitted, reason = phase_status(now, "open")
-    if not admitted:
+    regular, reason = phase_status(now, "open")
+    late, _ = phase_status(now, "late_source")
+    if not regular and not late:
         return {"status": "NOT_DUE", "reason": reason, "stages": {}}
     if os.getenv("POROTA_IOL_SHADOW_MODE", "OBSERVE_ONLY").strip() != "OBSERVE_ONLY":
         raise SourceCycleBlocked("OBSERVE_ONLY_REQUIRED")
@@ -244,10 +273,16 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         due = {"iol": True, "public": public_due, "evidence": evidence_due}
         results = {}
         changed = False
-        for name, relative, timeout, output in STAGES:
+        # After 17:00 only the exact T+1/regular-options BYMA IOL subset may
+        # be observed. Public-source sweeping and global projections keep the
+        # established baseline and are not silently extended by this timer.
+        stages = STAGES[:1] if late else STAGES
+        for name, relative, timeout, output in stages:
             if not due[name]:
                 results[name] = "NOT_DUE_TTL"
                 continue
+            output_path = market_root / output
+            before_publication = _published_file_identity(output_path)
             try:
                 result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
                                 env=child_env, capture_output=True, text=True,
@@ -263,10 +298,22 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
             if name == "iol" and not any(
                     line.startswith("IOL_SHADOW_COLLECTION=COMPLETE ")
                     for line in (result.stdout or "").splitlines()):
+                if late and any(
+                        line.startswith("IOL_SHADOW_COLLECTION=NOT_DUE_LATE_NO_VERIFIED_T1 ")
+                        for line in (result.stdout or "").splitlines()):
+                    results[name] = "NOT_DUE_LATE_EXACT_CONTRACT"
+                    continue
                 results[name] = "COLLECTOR_NOT_COMPLETED"
                 continue
             try:
-                _chmod_owned(market_root / output)
+                after_publication = _published_file_identity(output_path)
+                if after_publication is None or after_publication == before_publication:
+                    # Never advance public/evidence TTLs on a retained output.
+                    # This also protects IOL when an old output coexists with
+                    # a misleading success marker from a future code change.
+                    results[name] = "OUTPUT_NOT_REPUBLISHED"
+                    continue
+                _chmod_owned(output_path)
             except (OSError, ValueError):
                 results[name] = "OUTPUT_UNVERIFIED"
                 continue
@@ -277,14 +324,17 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
                 changed = True
         if changed:
             _state_write(state_path, state)
-    return {"status": "COMPLETE" if all(value in {"OK", "NOT_DUE_TTL"}
-                                     for value in results.values()) else "DEGRADED",
-            "reason": "PAPER_OBSERVE_ONLY", "stages": results, "real_orders_sent": 0}
+    status = ("NOT_DUE" if late and set(results.values()) == {"NOT_DUE_LATE_EXACT_CONTRACT"}
+              else "COMPLETE" if all(value in {"OK", "NOT_DUE_TTL"}
+                                     for value in results.values()) else "DEGRADED")
+    return {"status": status,
+            "reason": "COM19024_EXACT_LATE_T1_OBSERVE_ONLY" if late else "PAPER_OBSERVE_ONLY",
+            "stages": results, "real_orders_sent": 0}
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check-phase", choices=("morning", "open", "business_day", "db_postclose", "postclose_snapshot"))
+    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "business_day", "db_postclose", "postclose_snapshot"))
     args = parser.parse_args(argv)
     now = datetime.now(timezone.utc)
     if args.check_phase:

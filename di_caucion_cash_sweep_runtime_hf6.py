@@ -234,14 +234,22 @@ def paper_schedule(at, *, start_minutes=30, cutoff_minutes=5):
 
 
 def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline):
-    """Conservatively reserve negative family lifecycle balances.
+    """Reserve only lifecycle obligations not already debited from PAPER cash.
 
     Spot positions, unsettled sale proceeds and open cauciones are already
-    reflected by ``PaperBroker._cash``.  This snapshot covers the independent
-    FCI/futures lifecycle ledger; an unknown schema fails closed.
+    reflected by ``PaperBroker._cash``. That cash projection also accounts for
+    FCI subscription/redemption and *all* futures lifecycle cash events. Merely
+    reserving a negative lifecycle aggregate again double-counts the same
+    commitment. Preserve conservative reserves for legacy/unmatched rows;
+    inconsistent event ledgers remain fail-closed.
     """
+    from rc6_paper_family_lifecycle import TRANSITIONS
+
+    cash_fci_states = frozenset({"SUBSCRIBE_REQUESTED", "SUBSCRIBE", "REDEEMED"})
     obligations = []
+    point = aware_datetime(observed_at)
     with store.connect() as connection:
+        connection.execute("BEGIN")  # One WAL snapshot for totals and events.
         table = connection.execute("""SELECT 1 FROM sqlite_master
           WHERE type='table' AND name='paper_family_lifecycle'""").fetchone()
         columns = {row[1] for row in connection.execute(
@@ -252,26 +260,115 @@ def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline):
             return ObligationSnapshot(
                 aware_datetime(observed_at).isoformat(),
                 "PAPER_FAMILY_LIFECYCLE_LEDGER:v1", False, ())
-        rows = connection.execute("SELECT * FROM paper_family_lifecycle").fetchall()
-    for row in rows:
-        total = decimal_value(row["ledger_total"], "saldo lifecycle")
-        if total >= ZERO:
-            continue
-        try:
-            metadata = json.loads(row["metadata_json"] or "{}")
-        except (TypeError, ValueError):
+        events_available = connection.execute("""SELECT 1 FROM sqlite_master
+          WHERE type='table' AND name='paper_family_lifecycle_events'""").fetchone()
+        event_columns = ({row[1] for row in connection.execute(
+            "PRAGMA table_info(paper_family_lifecycle_events)")}
+            if events_available else set())
+        if not events_available or not {"event_id", "lifecycle_id", "family",
+                                        "from_state", "to_state", "amount",
+                                        "occurred_at", "detail_json"} <= event_columns:
             return ObligationSnapshot(
-                aware_datetime(observed_at).isoformat(),
-                "PAPER_FAMILY_LIFECYCLE_LEDGER:v1", False, tuple(obligations))
-        due = (metadata.get("due_at") or metadata.get("settlement_at")
-               or metadata.get("liquidity_deadline")
-               or aware_datetime(liquidity_deadline).isoformat())
-        obligations.append(CashObligation(
-            row["currency"], -total, due,
-            f"{row['family']}:{row['state']}",
-            "paper_family_lifecycle:" + str(row["lifecycle_id"])))
+                point.isoformat(), "PAPER_FAMILY_LIFECYCLE_LEDGER:v1", False, ())
+        rows = connection.execute("SELECT * FROM paper_family_lifecycle").fetchall()
+        for row in rows:
+            try:
+                total = decimal_value(row["ledger_total"], "saldo lifecycle")
+                cash_family = row["family"] in {"FCI", "FUTUROS"}
+                if total >= ZERO and not cash_family:
+                    continue
+                # Before skipping an already-posted debit, validate identity
+                # fields that CashObligation used to validate implicitly.
+                # Otherwise an invalid currency could evade both _cash and
+                # the reserve projection when its amount nets to zero.
+                cash_currency(row["currency"])
+                if (not str(row["lifecycle_id"] or "").strip()
+                        or not str(row["instrument"] or "").strip()
+                        or not str(row["state"] or "").strip()
+                        or aware_datetime(row["updated_at"]) > point):
+                    raise ValueError("LIFECYCLE_IDENTITY_INVALID")
+                # All recorded FUTUROS flows and these FCI transitions already
+                # enter PaperBroker._cash via dedicated event-time projections.
+                # Reconcile the aggregate with *all* events before netting;
+                # an aggregate-only legacy row keeps its old full reserve.
+                already_debited = ZERO
+                if cash_family:
+                    # An event from a different family with the same lifecycle
+                    # ID is corrupt evidence, even when valid events also exist.
+                    if connection.execute("""SELECT 1
+                          FROM paper_family_lifecycle_events
+                          WHERE lifecycle_id=? AND family<>? LIMIT 1""",
+                          (row["lifecycle_id"], row["family"])).fetchone():
+                        raise ValueError("LIFECYCLE_EVENT_FAMILY_MISMATCH")
+                    events = connection.execute("""SELECT event_id,family,from_state,
+                      to_state,amount,occurred_at,detail_json
+                      FROM paper_family_lifecycle_events
+                      WHERE family=? AND lifecycle_id=? ORDER BY rowid""",
+                      (row["family"], row["lifecycle_id"])).fetchall()
+                    if events:
+                        total_events, posted_cash = ZERO, ZERO
+                        previous_state = None
+                        previous_instant = None
+                        for event in events:
+                            instant = aware_datetime(event["occurred_at"])
+                            if (not isinstance(event["event_id"], str)
+                                    or not event["event_id"].strip()
+                                    or event["family"] != row["family"]
+                                    or event["from_state"] != previous_state
+                                    or event["to_state"] not in TRANSITIONS[row["family"]].get(
+                                        previous_state, set())
+                                    or instant > point
+                                    or (previous_instant is not None
+                                        and instant < previous_instant)):
+                                raise ValueError("LIFECYCLE_EVENT_PROVENANCE_INVALID")
+                            detail = json.loads(event["detail_json"])
+                            if not isinstance(detail, dict):
+                                raise ValueError("LIFECYCLE_EVENT_DETAIL_INVALID")
+                            previous_state = event["to_state"]
+                            previous_instant = instant
+                            amount = decimal_value(event["amount"], "evento lifecycle")
+                            total_events += amount
+                            if (row["family"] == "FUTUROS"
+                                    or event["to_state"] in cash_fci_states):
+                                if row["family"] == "FCI" and (
+                                    (event["to_state"] in {"SUBSCRIBE_REQUESTED", "SUBSCRIBE"}
+                                     and amount > ZERO)
+                                    or (event["to_state"] == "REDEEMED" and amount < ZERO)):
+                                    raise ValueError("FCI_CASH_EVENT_DIRECTION_INVALID")
+                                posted_cash += amount
+                        if (total_events != total or previous_state != row["state"]
+                                or aware_datetime(events[-1]["occurred_at"]) !=
+                                   aware_datetime(row["updated_at"])
+                                or events[-1]["detail_json"] != row["metadata_json"]):
+                            raise ValueError("LIFECYCLE_AGGREGATE_EVENT_MISMATCH")
+                        already_debited = min(max(ZERO, -total),
+                                              max(ZERO, -posted_cash))
+                    elif total > ZERO:
+                        # An unbacked positive legacy aggregate could otherwise
+                        # be mistaken for available buying power by a consumer.
+                        raise ValueError("LIFECYCLE_CREDIT_WITHOUT_EVENT_PROOF")
+                amount_to_reserve = max(ZERO, -total) - already_debited
+                metadata = json.loads(row["metadata_json"] or "{}")
+                if not isinstance(metadata, dict):
+                    raise ValueError("LIFECYCLE_METADATA_INVALID")
+                due = (metadata.get("due_at") or metadata.get("settlement_at")
+                       or metadata.get("liquidity_deadline")
+                       or aware_datetime(liquidity_deadline).isoformat())
+                # Netting cannot bypass the previous metadata/date integrity
+                # check even if an already-debited flow leaves zero reserve.
+                aware_datetime(due, "vencimiento obligación lifecycle")
+                if amount_to_reserve <= ZERO:
+                    continue
+                obligations.append(CashObligation(
+                    row["currency"], amount_to_reserve, due,
+                    f"{row['family']}:{row['state']}",
+                    "paper_family_lifecycle:" + str(row["lifecycle_id"])))
+            except (TypeError, ValueError, KeyError):
+                return ObligationSnapshot(
+                    point.isoformat(), "PAPER_FAMILY_LIFECYCLE_LEDGER:v1", False,
+                    tuple(obligations))
     return ObligationSnapshot(
-        aware_datetime(observed_at).isoformat(),
+        point.isoformat(),
         "PAPER_FAMILY_LIFECYCLE_LEDGER:v1", True, tuple(obligations))
 
 

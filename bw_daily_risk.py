@@ -179,6 +179,33 @@ class DailyRisk:
                     factor = self.broker._position_multiplier(p)
                     qty = decimal_value(p['quantity'],'cantidad',positive=True)
                     exit_price = (q.bid*(1-self.broker.slippage)).quantize(Decimal('0.0001'))
+                    fi_view = self.broker._fi_position_at(c, p, at)
+                    if fi_view is not None:
+                        from rc6_fixed_income_portfolio_bridge import valuation_at
+                        fi_now = valuation_at(c, p['paper_id'], at, exit_price)
+                        # A payout in another denomination has no approved FX
+                        # PnL basis: never convert it implicitly to buying power.
+                        if fi_now.realized_pnl is None:
+                            stale = True
+                            continue
+                        fi_before = (valuation_at(c, p['paper_id'], start,
+                                                  p['entry_price'])
+                                     if opened < start else None)
+                        if fi_before is not None and fi_before.realized_pnl is None:
+                            stale = True
+                            continue
+                        prior_realized = (fi_before.realized_pnl if fi_before else ZERO)
+                        before += prior_realized
+                        realized += fi_now.realized_pnl
+                        today_realized += fi_now.realized_pnl - prior_realized
+                        # The cost of exiting the residual nominal is a PAPER
+                        # reserve only, not a claim of native FI sale authority.
+                        residual_exit_fee = (self.broker._cost(
+                            exit_price*factor, fi_view.residual_nominal,
+                            p['asset_class'], currency=currency)
+                            if fi_view.residual_nominal > 0 else ZERO)
+                        unrealized += fi_now.unrealized_pnl - residual_exit_fee
+                        continue
                     unrealized += ((exit_price-Decimal(p['entry_price']))*qty*factor -
                         Decimal(p['entry_cost']) - self.broker._cost(
                             exit_price*factor, qty, p['asset_class'], currency=p['currency']))

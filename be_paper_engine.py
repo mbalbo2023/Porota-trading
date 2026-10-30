@@ -438,6 +438,10 @@ class PaperStore:
         init_financial_schema(self)
         from rc6_paper_family_lifecycle import init_schema as init_family_lifecycle_schema
         init_family_lifecycle_schema(self)
+        # The parent owns this migration. Runtime children only read the FI
+        # economic ledger; no hot-path DDL or issuer-data ingestion is allowed.
+        from rc6_fixed_income_event_ledger import init_schema as init_fi_event_schema
+        init_fi_event_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -900,6 +904,14 @@ class PaperBroker:
         """Estado económico en la fecha consultada, sin paginar el ledger."""
         return spot_ledger.positions_at(connection,at)
 
+    @staticmethod
+    def _fi_position_at(connection, position, at):
+        """Reconciled FI events when a PAPER lot exists; never invent them."""
+        if family_name(position['asset_class']) not in {'BONOS', 'LETRAS', 'OBLIGACIONES'}:
+            return None
+        from rc6_fixed_income_portfolio_bridge import position_at
+        return position_at(connection, position['paper_id'], at)
+
     def _cash(self, as_of=None, currency="ARS", *, connection=None, for_execution=False):
         """Caja disponible por moneda; no incluye ventas aún sin liquidar."""
         at = aware_datetime(as_of or (self.clock_fn() if self.clock_fn else now_iso()))
@@ -928,6 +940,12 @@ class PaperBroker:
                 WHERE p.currency=? AND rc6_instant_us(f.filled_at)>rc6_instant_us(?) LIMIT 1""",
                 (currency,at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
+            # No spendable PAPER cash may be reconstructed by rewinding across
+            # an economic coupon or amortization booking in this currency.
+            if connection.execute("""SELECT 1 FROM paper_fi_cash_entries
+                WHERE currency=? AND rc6_instant_us(booked_at)>rc6_instant_us(?)
+                LIMIT 1""", (currency, at.isoformat())).fetchone():
+                raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
         realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed if p['currency']==currency), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
@@ -937,9 +955,14 @@ class PaperBroker:
         from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
         funds = fund_cash_effect(self.store, currency, at, connection=connection)
+        from rc6_fixed_income_portfolio_bridge import cash_effect_checked
+        # Preserve the original full spot BUY commitment above. FI principal
+        # repayments and coupons are credited exactly once in payout currency,
+        # after immutable receipt/lot reconciliation, never via implicit FX.
+        fixed_income = cash_effect_checked(connection, currency, at)
         return (self.initial_balances[currency] + realized - committed
                 + self.cauciones.cash_effect(currency,at,connection=connection)
-                + futures + funds
+                + futures + funds + fixed_income
                 - pending_proceeds(self.store, at, currency, connection=connection))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
@@ -2541,8 +2564,13 @@ class PaperBroker:
             if not concurrent_locked.admitted:
                 return False, concurrent_locked.reason, None
             features["concurrent_risk_locked"] = snapshot_dict(concurrent_locked)
-            exposure_now = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
-                                for p in opened if p["currency"] == currency), ZERO)
+            exposure_now = ZERO
+            for p in opened:
+                if p['currency'] != currency:
+                    continue
+                fi_view = self._fi_position_at(c, p, at)
+                nominal = fi_view.residual_nominal if fi_view is not None else D(p['quantity'])
+                exposure_now += D(p['entry_price']) * nominal * self._position_multiplier(p)
             exposure_now += self._future_exposure(currency, connection=c, as_of=at)
             if (any(p["symbol"] == q.symbol for p in opened)
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
@@ -2645,6 +2673,16 @@ class PaperBroker:
             if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
                 return False
             current, prior = spot_ledger.partition(c,root)
+            # A redeemed FI lot cannot be sold through the generic equity
+            # close path: that would credit principal a second time and label
+            # an issuer redemption as an exchange fill. Native FI sale and
+            # maturity-close ledgers need their own separately certified owner.
+            fi_view = self._fi_position_at(c, root, at)
+            if fi_view is not None:
+                from rc6_fixed_income_portfolio_bridge import native_exit_authorized
+                allowed, _ = native_exit_authorized(c, root['paper_id'], at)
+                if not allowed:
+                    return False
             # Snapshot viejo: no consumir otra porción con un reintento ciego.
             if not current or any(current[k]!=p[k] for k in ('quantity','entry_cost','entry_price')):
                 return False
@@ -2761,6 +2799,7 @@ class PaperBroker:
         last_marks = {r["paper_id"]: r for r in c.execute("SELECT * FROM paper_position_marks")}
         for currency in sorted(CASH_CURRENCIES):
             exposure = unrealized = ZERO
+            fi_realized = ZERO
             stale = 0
             for p in (p for p in opened if p["currency"] == currency):
                 q = (quotes.get((p["symbol"], p["asset_class"], p["settlement"], currency, p["market"]))
@@ -2783,10 +2822,24 @@ class PaperBroker:
                         previous = None
                     mark = D(previous["mark_price"]) if previous else D(p["entry_price"])
                     stale += 1
-                qty = D(p["quantity"]) * self._position_multiplier(p)
-                exposure += mark * qty
-                unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
-            realized = sum((D(p.get("net_pnl")) for p in closed if p["currency"] == currency), ZERO)
+                fi_view = self._fi_position_at(c, p, measured_at)
+                if fi_view is not None:
+                    from rc6_fixed_income_portfolio_bridge import valuation_at
+                    valuation = valuation_at(c, p['paper_id'], measured_at, mark)
+                    exposure += valuation.exposure
+                    unrealized += valuation.unrealized_pnl
+                    if valuation.realized_pnl is None:
+                        # A coupon or principal payment in another currency
+                        # requires an approved FX basis for aggregate PnL.
+                        stale += 1
+                    else:
+                        fi_realized += valuation.realized_pnl
+                else:
+                    qty = D(p["quantity"]) * self._position_multiplier(p)
+                    exposure += mark * qty
+                    unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
+            realized = (fi_realized + sum((D(p.get("net_pnl")) for p in closed
+                                          if p["currency"] == currency), ZERO))
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)
             unrealized += caucion["unrealized"]
             realized += caucion["realized"]
