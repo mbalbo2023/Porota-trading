@@ -29,6 +29,26 @@ def _store(tmp_path, *, ticker="PESOS7", at=NOW):
         catalog.persist(c,record)
     return store
 
+
+def test_live_collector_uses_same_bounded_terms_as_ppi_discovery(tmp_path, monkeypatch):
+    # The primary PPI catalogue can contain an exact non-default tenor after
+    # its official, read-only discovery configuration is expanded. The live
+    # collector must not silently drop that already-verified identity.
+    store = _store(tmp_path, ticker="PESOS3")
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "1,2,3")
+    rows = live._catalog(store)
+    assert [(row["ticker"], row["term_days"]) for row in rows] == [("PESOS3", 3)]
+
+    # A narrower configuration remains a hard limit; changing the catalogue
+    # reader never grants a trading/settlement permission by itself.
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "1,2")
+    assert live._catalog(store) == []
+
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "3,366")
+    with pytest.raises(ValueError, match="PPI_CAUCION_DISCOVERY_DAYS_OUT_OF_RANGE"):
+        live._catalog(store)
+
+
 def test_mass_policy_marks_exact_ars_caucion_static_ready(tmp_path):
     store=_store(tmp_path)
     result=mass.collect(store,run_id="caucion-static")

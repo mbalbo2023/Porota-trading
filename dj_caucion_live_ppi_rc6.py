@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from bd_ppi_readonly_guard import retry_read
+from bd_ppi_readonly_guard import caucion_discovery_days, retry_read
 from bs_instrument_contracts import aware_datetime
 from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
 
@@ -47,6 +47,10 @@ def collection_window(at):
     return warmup <= local <= schedule["order_cutoff_at"]
 
 def _catalog(store):
+    # Use the exact bounded PPI read-only discovery policy. A separately
+    # hard-coded tenor subset silently excluded otherwise verified PPI
+    # identities (for example PESOS3) from the live PAPER book collector.
+    configured_terms = frozenset(caucion_discovery_days())
     with store.connect() as c:
         rows=c.execute("""SELECT ticker,market,currency,settlement,status
           FROM financial_instrument_catalog
@@ -58,7 +62,7 @@ def _catalog(store):
         item=dict(row)
         try: ident=parse_ticker(item["ticker"])
         except ValueError: continue
-        if ident.currency_prefix!="PESOS" or ident.term_days not in {1,2,7,30,120}: continue
+        if ident.currency_prefix!="PESOS" or ident.term_days not in configured_terms: continue
         item["term_days"]=ident.term_days
         out.append(item)
     return out

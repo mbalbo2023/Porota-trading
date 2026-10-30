@@ -1,7 +1,113 @@
 import json
 import sqlite3
 from decimal import Decimal
+from datetime import datetime, timezone
+
+import pytest
+from iol_mcp_readonly_adapter_rc6 import IOLMCPError
 import rc6_iol_family_reference as m
+
+
+@pytest.mark.parametrize("status", [400, 401, 403])
+def test_iol_oauth_denial_never_retries_and_opens_cycle_circuit(status):
+    class Denied:
+        calls=0
+        def call(self,name,args):
+            self.calls+=1
+            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED",status_code=status)
+
+    provider=Denied()
+    cycle=m._CycleReadClient(provider)
+    with pytest.raises(IOLMCPError):
+        m._brief_call(cycle,"get_caucion_rates",{"currency":"ARS"})
+    with pytest.raises(m.IOLReferenceCircuitOpen):
+        m._brief_call(cycle,"get_caucion_rates",{"currency":"USD"})
+    assert provider.calls==1
+
+
+@pytest.mark.parametrize(("status","kind"), [(429,None),(503,None),(None,"TRANSPORT")])
+def test_iol_transient_retries_once_with_bounded_delay(monkeypatch,status,kind):
+    calls=[]
+    delays=[]
+    monkeypatch.setattr(m.time,"sleep",delays.append)
+
+    class Provider:
+        def call(self,name,args):
+            calls.append(name)
+            if len(calls)==1:
+                raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED",status_code=status,
+                                  retry_after=.5 if status==429 else None,
+                                  failure_class=kind)
+            return {"result":[{"rate":24.0}]}
+
+    client=m._CycleReadClient(Provider())
+    assert m._brief_call(client,"get_caucion_rates",{"currency":"ARS"}) == {
+        "result":[{"rate":24.0}]}
+    assert len(calls)==2 and delays==[.5]
+
+
+@pytest.mark.parametrize(("status","kind"), [(429,None),(503,None),(None,"TRANSPORT")])
+def test_iol_repeated_transient_opens_circuit_without_more_provider_calls(
+        monkeypatch,status,kind):
+    calls=[]
+    monkeypatch.setattr(m.time,"sleep",lambda seconds: None)
+
+    class Provider:
+        def call(self,name,args):
+            calls.append(name)
+            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED",status_code=status,
+                              failure_class=kind)
+
+    cycle=m._CycleReadClient(Provider())
+    with pytest.raises(IOLMCPError):
+        m._brief_call(cycle,"get_fci_funds",{})
+    with pytest.raises(m.IOLReferenceCircuitOpen):
+        m._brief_call(cycle,"get_caucion_rates",{"currency":"ARS"})
+    assert len(calls)==2
+
+
+def test_iol_long_retry_after_does_not_sleep_or_repeat(monkeypatch):
+    monkeypatch.setattr(m.time,"sleep",lambda seconds: pytest.fail("must not sleep"))
+
+    class Provider:
+        calls=0
+        def call(self,name,args):
+            self.calls+=1
+            raise IOLMCPError("IOL_MCP_HTTP_429",status_code=429,retry_after=60)
+
+    provider=Provider()
+    cycle=m._CycleReadClient(provider)
+    with pytest.raises(IOLMCPError):
+        m._brief_call(cycle,"get_fci_funds",{})
+    with pytest.raises(m.IOLReferenceCircuitOpen):
+        m._brief_call(cycle,"get_caucion_rates",{"currency":"ARS"})
+    assert provider.calls==1
+
+
+def test_iol_auth_failure_preserves_stale_lkg_without_fresh_or_real_routes(tmp_path):
+    prior_stamp="2026-10-26T15:30:00+00:00"
+    (tmp_path/"iol_family_reference_latest.json").write_text(json.dumps({
+        "cache_state":"LIVE_FRESH", "last_known_good_at":prior_stamp,
+        "records":[{"ticker":"AL30","instrument_type":"BONOS", "market":"BYMA"}],
+    }),encoding="utf-8")
+
+    class Provider:
+        calls=0
+        def call(self,name,args):
+            self.calls+=1
+            raise IOLMCPError("IOL_MCP_OAUTH_REFRESH_FAILED",status_code=403)
+
+    provider=Provider()
+    current=datetime(2026,10,29,21,20,tzinfo=timezone.utc)
+    result=m.collect(provider,root=tmp_path,db_path=str(tmp_path/"missing.db"),now=current)
+    assert provider.calls==1
+    assert result["cache_state"]=="CACHE_STALE"
+    assert result["last_known_good_at"]==prior_stamp
+    assert result["live_sections"]==[]
+    assert result["records"][0]["ticker"]=="AL30"
+    assert result["decision_effect"]=="OBSERVE_ONLY"
+    assert result["real_money_authorized"] is False
+    assert len(result["errors"])==3  # FCI + two caucion sections, no new HTTP calls
 
 
 def test_fixed_contract_requires_explicit_unit_lot_and_one_nominal_proof():

@@ -74,6 +74,12 @@ jobs:
               print("OAUTH_STORE=MISSING")
 
           class NoRefresh(OAuthStoreReadOnlyMCP):
+              def _refresh_if_due(self):
+                  # The base class proactively rotates OAuth before any RPC;
+                  # overriding only the 401 path is NOT read-only.
+                  if self._refresh_due(self._load_store()):
+                      raise IOLMCPError("IOL_MCP_REFRESH_REQUIRED_READONLY_PROBE")
+
               def _refresh_after_401(self, headers):
                   raise IOLMCPError("IOL_MCP_REFRESH_REQUIRED_READONLY_PROBE", status_code=401)
 
@@ -91,6 +97,10 @@ jobs:
                       "message":str(exc)[:180],
                       "status_code":getattr(exc,"status_code",None),
                   },sort_keys=True))
+                  if (isinstance(exc,IOLMCPError) and
+                          str(exc)=="IOL_MCP_REFRESH_REQUIRED_READONLY_PROBE"):
+                      print("IOL_SOURCEPATH_RCA=REFRESH_REQUIRED_NO_MUTATION")
+                      raise SystemExit(2)
           for name,args in (
               ("get_caucion_rates",{"currency":"ARS","caucion_type":"colocadora"}),
               ("get_caucion_rates",{"currency":"USD","caucion_type":"colocadora"}),
