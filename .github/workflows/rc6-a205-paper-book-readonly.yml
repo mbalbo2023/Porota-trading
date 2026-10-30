@@ -85,7 +85,8 @@ jobs:
           import json,os
           rc=int(os.environ['RETURN_CODE'])
           value=json.loads(os.environ['RESULT'])
-          expected={'FLAT_GREEN':0,'ADMIN_CLOSE_REQUIRED':0,'BLOCKED_RECONCILIATION':2}
+          expected={'FLAT_GREEN':0,'ADMIN_CLOSE_REQUIRED':0,
+                    'BLOCKED_RECONCILIATION':2,'BLOCKED_BARRIER':2}
           state=value.get('status')
           if (value.get('contract')!='RC6_A205_PAPER_DEPLOY_PREFLIGHT_V1' or
                   value.get('read_only') is not True or

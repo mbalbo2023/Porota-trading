@@ -209,8 +209,15 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
     total = sum(counts.values())
     unsupported = (plans['spot']['unsupported'] or counts['future'] or
                    counts['caucion'])
-    status = ('BLOCKED_RECONCILIATION' if unsupported else
-              'ADMIN_CLOSE_REQUIRED' if total else 'FLAT_GREEN')
+    # An unresolved host-attempt barrier is never compatible with promotion
+    # readiness, even if every PAPER ledger is currently flat.  This read-only
+    # diagnostic must not retire someone else's IDLE/INFLIGHT state.
+    if barrier_status in {'IDLE', 'INFLIGHT', 'CONTRACT_ONLY'}:
+        reasons.append('HOST_DEPLOY_BARRIER_UNRESOLVED')
+        status = 'BLOCKED_BARRIER'
+    else:
+        status = ('BLOCKED_RECONCILIATION' if unsupported else
+                  'ADMIN_CLOSE_REQUIRED' if total else 'FLAT_GREEN')
     return {
         'contract': 'RC6_A205_PAPER_DEPLOY_PREFLIGHT_V1',
         'read_only': True, 'host_mutations': 0,

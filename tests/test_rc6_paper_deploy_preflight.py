@@ -105,10 +105,13 @@ def test_missing_family_table_and_real_orders_are_red(partial_spot):
         inspect_book(broker.store.path, as_of=now)
 
 
-def test_uncertain_barrier_is_visible_not_silent(partial_spot):
+@pytest.mark.parametrize('status', ['IDLE', 'INFLIGHT', 'CONTRACT_ONLY'])
+def test_uncertain_barrier_is_red_even_on_flat_paper_book(partial_spot, status):
     broker, _, _, now = fixture_book(partial_spot)
-    info = inspect_book(broker.store.path, as_of=now, barrier={'status': 'INFLIGHT'})
-    assert info['barrier_status'] == 'INFLIGHT'
+    info = inspect_book(broker.store.path, as_of=now, barrier={'status': status})
+    assert info['barrier_status'] == status
+    assert info['status'] == 'BLOCKED_BARRIER'
+    assert 'HOST_DEPLOY_BARRIER_UNRESOLVED' in info['reasons']
     with pytest.raises(UnsafeBook, match='BOOK_BARRIER_UNKNOWN'):
         inspect_book(broker.store.path, as_of=now, barrier={'status': 'DESTROYED'})
 
