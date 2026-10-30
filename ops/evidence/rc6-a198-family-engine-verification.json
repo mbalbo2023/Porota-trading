@@ -1,0 +1,121 @@
+{
+  "schema": "porota.a198.audit.v1",
+  "candidate_sha": "af9998cc21eb21bfc24c7b5859b7cc617d7513f9",
+  "candidate_tree": "520dc0d8dc1374b1a58dbe54a3b69485bfdad189",
+  "pull_request": 772,
+  "full_tree_blob_verification": {
+    "checked": 1372,
+    "missing": 0,
+    "different": 0
+  },
+  "local_integrated_tests": {
+    "passed": 459,
+    "subtests_passed": 10,
+    "failures": 0
+  },
+  "runtime_diagnostics": [
+    {
+      "run_id": 40990729916,
+      "result": "success",
+      "artifact_id": 12949231703,
+      "artifact_digest": "sha256:6b0d793dac9ae44ec54373c5945b1242c3fded224f95654b9e6480826efc0f00"
+    },
+    {
+      "run_id": 40992555376,
+      "result": "success",
+      "artifact_id": 12949802180,
+      "artifact_digest": "sha256:4d6e2bc87eed47c0c0cc12583507a90d31dfc2e6cf07cc95a3048d09a1a3b18b"
+    },
+    {
+      "run_id": 40993210661,
+      "result": "success",
+      "artifact_id": 12949708861,
+      "artifact_digest": "sha256:3c2bbef90fab17dfe0c6b4dceeae683fd81de7374541f0895840f2fe1d0fe25c"
+    }
+  ],
+  "runtime_observed_at_art": "2026-10-29T23:42:15.165280-03:00",
+  "mode": "PRODUCTION_PAPER",
+  "real_orders_sent": 0,
+  "diagnostic_provider_calls": 0,
+  "diagnostic_db_writes": 0,
+  "deployed": false,
+  "ppi_watch_changed": false,
+  "all_families_operational": false,
+  "remaining": [
+    "FI event ledger integration into cash, residual nominal, exposure, sizing, exit supervision and performance",
+    "FI official terms, independent OOS and strategy horizon redesign",
+    "FCI authenticated per-class input and subscription/redemption scheduler",
+    "Scalping verified intraday volume semantics and actual rejected-payload pairs",
+    "Futures margin/contract completeness; exterior specific execution",
+    "Single final exact-artifact predeploy and governed release; live session validation"
+  ],
+  "audit_issue": 732,
+  "continuity_issue": 485,
+  "ci_recovery": [
+    {
+      "prior_run_id": 40994423462,
+      "prior_result": "failure",
+      "executed": 5841,
+      "failures": 11,
+      "errors": 0,
+      "skipped": 0,
+      "artifact_id": 12950108931,
+      "artifact_digest": "sha256:b6705bfba31d9763681284c84fc2e2ce38b1f87628a220e49409e33bff554299",
+      "fix_scope": "three test fixtures only; product unchanged; no exclusion added",
+      "affected_tests_passed": 193
+    },
+    {
+      "prior_run_id": 40995538418,
+      "prior_result": "failure",
+      "discovered": 5842,
+      "executed": 5842,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 0,
+      "artifact_id": 12951765178,
+      "artifact_digest": "sha256:2d8392f57730669f3d3e8ccf336f205dc41bd331abd34a55157ff672d911861f",
+      "fix_scope": "historical incident fixture clock only; production expiry unchanged; next-day negative regression added",
+      "related_tests_passed": 92
+    }
+  ],
+  "source_policy": "PPI first for sufficient valid exact-identity data; eligible external complements; issuer/clearing/fund authority preserved",
+  "code_scope": [
+    "PPI provenance and ineligible-secondary-veto fixes",
+    "causal per-response caucion receipt clock and existing PESOS3 support",
+    "append-only exact five-change caucion authority correction",
+    "FCI BYMA venue compatibility",
+    "finite exact numeric scalping revision equivalence",
+    "reviewed static FI evidence bound to native PPI quotes",
+    "durable FI economic-event ledger primitive, not yet native exit integration"
+  ],
+  "fixture_repairs_product_changes": false,
+  "final_predeploy_artifact_gate_run": false,
+  "verification_status": "CODE_TESTS_PASS_NOT_DEPLOYED",
+  "final_ci": {
+    "candidate_sha": "af9998cc21eb21bfc24c7b5859b7cc617d7513f9",
+    "deploy": false,
+    "discovered": 5843,
+    "errors": 0,
+    "exclusions": [
+      {
+        "classification": "SUPERSEDED_DUPLICATE_MODULE",
+        "owner": "WS-INFRA-05",
+        "path": "test_a3_primary_readonly_hf6.py",
+        "reason": "The repository-root module has the same import name as the current tests/test_a3_primary_readonly_hf6.py contract and prevents pytest collection with an import-file-mismatch error.",
+        "successor": "tests/test_a3_primary_readonly_hf6.py"
+      }
+    ],
+    "executed": 5843,
+    "failures": 0,
+    "host_access": false,
+    "pytest_exit_code": 0,
+    "scope": "repository-root automatic discovery",
+    "skipped_or_xfail": 0,
+    "run_id": 40996460648,
+    "result": "success",
+    "workflow_commit": "c91d75603cb4ebd7e7845e10833013463265a393",
+    "artifact_id": 12951063866,
+    "artifact_digest": "sha256:ff5fa00d5f6d8393067eef22823aac9c25e9308f65b31044033615bdf6512742"
+  },
+  "report_url": "https://github.com/mbalbo2023/Porota-trading/blob/af9998cc21eb21bfc24c7b5859b7cc617d7513f9/docs/a198-family-source-engine-audit.md"
+}
