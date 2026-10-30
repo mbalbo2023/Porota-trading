@@ -10,7 +10,8 @@ import sys
 import time
 from zoneinfo import ZoneInfo
 
-FAMILIES = ('CAUCIONES', 'FUTUROS', 'INDICES', 'ÍNDICES', 'ON', 'OBLIGACIONES')
+# Full raw family inventory, including provider-specific US aliases.
+FAMILY_SQL = "CASE upper(instrument_type) WHEN 'ON' THEN 'OBLIGACIONES' WHEN 'ETF' THEN 'ETFS' ELSE upper(instrument_type) END"
 AUDIT_STAGE = 'START'
 CODES = re.compile(r'^[A-Z0-9_:;,. /-]{1,160}$')
 
@@ -38,15 +39,25 @@ def audit(path):
     if not obs or obs[0]['mode'] != 'PRODUCTION_PAPER' or type(obs[0]['real_orders_sent']) is not int or obs[0]['real_orders_sent'] != 0:
         raise RuntimeError('PAPER_SAFETY_NOT_VERIFIED')
     out['observer'] = {k:(v if k.endswith('_at') else code(v)) for k,v in obs[0].items()}
-    params = ','.join('?' * len(FAMILIES))
     for table, sql in (
-        ('financial_instrument_catalog', f'SELECT upper(instrument_type) family,status,COUNT(*) n,MAX(last_seen_at) newest FROM financial_instrument_catalog WHERE upper(instrument_type) IN ({params}) GROUP BY upper(instrument_type),status'),
-        ('candidate_identity_v2', f'SELECT upper(instrument_type) family,status,can_simulate,COUNT(*) n,MAX(checked_at) newest FROM candidate_identity_v2 WHERE upper(instrument_type) IN ({params}) GROUP BY upper(instrument_type),status,can_simulate'),
-        ('contract_evidence_v2_current', f'SELECT upper(family) family,source_class,COUNT(*) n,MIN(observed_at) oldest,MAX(observed_at) newest FROM contract_evidence_v2_current WHERE upper(family) IN ({params}) GROUP BY upper(family),source_class'),
-        ('paper_family_lifecycle', f'SELECT upper(family) family,state,COUNT(*) n,MAX(updated_at) newest FROM paper_family_lifecycle WHERE upper(family) IN ({params}) GROUP BY upper(family),state'),
-        ('paper_positions', f'SELECT upper(asset_class) family,status,COUNT(*) n,MAX(opened_at) newest FROM paper_positions WHERE upper(asset_class) IN ({params}) GROUP BY upper(asset_class),status'),
+        ('financial_instrument_catalog', f'SELECT upper(instrument_type) family,status,COUNT(*) n,MAX(last_seen_at) newest FROM financial_instrument_catalog GROUP BY upper(instrument_type),status'),
+        ('candidate_identity_v2', f'SELECT upper(instrument_type) family,status,can_simulate,COUNT(*) n,MAX(checked_at) newest FROM candidate_identity_v2 GROUP BY upper(instrument_type),status,can_simulate'),
+        ('contract_evidence_v2_current', f'SELECT upper(family) family,source_class,COUNT(*) n,MIN(observed_at) oldest,MAX(observed_at) newest FROM contract_evidence_v2_current GROUP BY upper(family),source_class'),
+        ('paper_family_lifecycle', f'SELECT upper(family) family,state,COUNT(*) n,MAX(updated_at) newest FROM paper_family_lifecycle GROUP BY upper(family),state'),
+        ('paper_positions', f'SELECT upper(asset_class) family,status,COUNT(*) n,MAX(opened_at) newest FROM paper_positions GROUP BY upper(asset_class),status'),
     ):
-        out[table] = rows(sql, FAMILIES) if table in tables else 'MISSING_TABLE'
+        out[table] = rows(sql) if table in tables else 'MISSING_TABLE'
+    if 'candidate_identity_v2' in tables:
+        out['normalized_exact_identity_counts'] = rows(f'''SELECT family,COUNT(*) identities,
+            SUM(any_simulate) identities_with_any_simulate,
+            SUM(all_simulate) identities_with_all_simulate,
+            SUM(CASE WHEN alias_count>1 THEN 1 ELSE 0 END) alias_collisions,
+            SUM(CASE WHEN any_simulate!=all_simulate THEN 1 ELSE 0 END) alias_readiness_conflicts
+            FROM (SELECT {FAMILY_SQL} family,ticker,market,currency,settlement,
+              MAX(can_simulate) any_simulate,MIN(can_simulate) all_simulate,
+              COUNT(DISTINCT upper(instrument_type)) alias_count
+              FROM candidate_identity_v2 GROUP BY {FAMILY_SQL},ticker,market,currency,settlement)
+            GROUP BY family''')
     if 'financial_instrument_catalog' in tables:
         AUDIT_STAGE = 'CAUCION_AND_ON_CONTRACT_FLAGS'
         out['caucion_contract_flags'] = []
@@ -75,11 +86,73 @@ def audit(path):
         AUDIT_STAGE = 'CANDIDATE_HOLD_CODES'
         # Canonical reason codes only. Never export full detail/metadata.
         counts = collections.Counter()
-        for r in c.execute(f'SELECT upper(instrument_type),detail FROM candidate_identity_v2 WHERE upper(instrument_type) IN ({params}) AND status != ?', (*FAMILIES, 'READY')):
+        for r in c.execute('SELECT upper(instrument_type),detail FROM candidate_identity_v2 WHERE can_simulate != 1'):
             for reason in str(r[1] or '').split(';'):
                 reason = reason.strip()
                 counts[(r[0], code(reason))] += 1
         out['candidate_hold_codes'] = [{'family':k[0],'code':k[1],'n':v} for k,v in counts.most_common(40)]
+    if {'contract_evidence_v2_current','contract_evidence_v2_snapshots'} <= tables:
+        AUDIT_STAGE = 'CAUCION_STATIC_SOURCE_KEY_DIFFERENCES'
+        current = rows('''SELECT cur.ticker,cur.market,cur.currency,cur.settlement,cur.source_class,
+            cur.snapshot_id,cur.evidence_hash,cur.observed_at,s.evidence_json
+            FROM contract_evidence_v2_current cur JOIN contract_evidence_v2_snapshots s
+              ON s.snapshot_id=cur.snapshot_id
+            WHERE cur.family='CAUCIONES' ORDER BY cur.ticker,cur.source_class LIMIT 40''')
+        groups = collections.defaultdict(list)
+        out['caucion_current_evidence_fields'] = []
+        def parsed(value):
+            try: result=json.loads(value or '{}')
+            except (ValueError,TypeError): return None
+            return result if isinstance(result,dict) else None
+        def safe_key(value):
+            return value if re.fullmatch(r'[A-Za-z][A-Za-z0-9_.]{0,120}',str(value)) else 'REDACTED_KEY'
+        def flattened(value,prefix=''):
+            result={}
+            for key,item in value.items():
+                key=(prefix+'.' if prefix else '')+safe_key(key)
+                if isinstance(item,dict): result.update(flattened(item,key))
+                else: result[key]=item
+            return result
+        for row in current:
+            payload=parsed(row.pop('evidence_json'))
+            fields=flattened(payload) if payload is not None else {}
+            row['field_names']=sorted(fields)[:100]
+            row['payload_valid']=payload is not None
+            out['caucion_current_evidence_fields'].append(row)
+            identity=tuple(row[k] for k in ('ticker','market','currency','settlement'))
+            groups[identity].append((row['source_class'],fields))
+        out['caucion_cross_source_different_fields']=[]
+        for identity,source_fields in groups.items():
+            keys=set().union(*(fields.keys() for _,fields in source_fields))
+            differing=[]
+            for key in sorted(keys):
+                vals=[json.dumps(fields[key],sort_keys=True) for _,fields in source_fields if key in fields and fields[key] is not None]
+                if len(set(vals))>1: differing.append(key)
+            out['caucion_cross_source_different_fields'].append({
+                'identity':identity,'sources':[src for src,_ in source_fields],
+                'different_field_names':differing[:100],
+                'derived_official_rule_present':any(src=='DERIVED_OFFICIAL_RULE' for src,_ in source_fields)})
+        if 'contract_evidence_v2_changes' in tables:
+            changes=rows('''SELECT ch.change_id,ch.ticker,ch.market,ch.currency,ch.settlement,
+                ch.source_class,ch.previous_hash,ch.current_hash,ch.detected_at,ch.status,
+                prev.evidence_json previous_json,curr.evidence_json current_json
+                FROM contract_evidence_v2_changes ch
+                LEFT JOIN contract_evidence_v2_snapshots prev
+                  ON prev.family=ch.family AND prev.ticker=ch.ticker AND prev.market=ch.market
+                  AND prev.currency=ch.currency AND prev.settlement=ch.settlement
+                  AND prev.source_class=ch.source_class AND prev.evidence_hash=ch.previous_hash
+                LEFT JOIN contract_evidence_v2_snapshots curr
+                  ON curr.family=ch.family AND curr.ticker=ch.ticker AND curr.market=ch.market
+                  AND curr.currency=ch.currency AND curr.settlement=ch.settlement
+                  AND curr.source_class=ch.source_class AND curr.evidence_hash=ch.current_hash
+                WHERE ch.family='CAUCIONES' AND ch.status='CHANGED_REVIEW_REQUIRED'
+                ORDER BY ch.change_id DESC LIMIT 40''')
+            for row in changes:
+                prev=parsed(row.pop('previous_json'));curr=parsed(row.pop('current_json'))
+                row['both_payloads_valid']=prev is not None and curr is not None
+                prev=flattened(prev or {});curr=flattened(curr or {})
+                row['changed_field_names']=[k for k in sorted(set(prev)|set(curr)) if prev.get(k)!=curr.get(k)][:100]
+            out['caucion_pending_change_fields']=changes
     if 'paper_caucion_live_book' in tables:
         out['caucion_live_book'] = rows('SELECT ticker,market,currency,settlement,term_days,quoted_at,state,source,observed_at FROM paper_caucion_live_book ORDER BY ticker,market,currency,settlement LIMIT 30')
         for row in out['caucion_live_book']:
@@ -101,7 +174,32 @@ def audit(path):
                 for key in ('state','status','code'):
                     if key in row: row[key] = code(row[key])
     if 'paper_fills' in tables and 'paper_positions' in tables:
-        out['paper_fills_by_family'] = rows(f'SELECT upper(p.asset_class) family,f.side,COUNT(*) n,MAX(f.filled_at) newest FROM paper_positions p JOIN paper_fills f ON f.paper_id=p.paper_id WHERE upper(p.asset_class) IN ({params}) GROUP BY upper(p.asset_class),f.side',FAMILIES)
+        out['paper_fills_by_family'] = rows(f'SELECT upper(p.asset_class) family,f.side,COUNT(*) n,MAX(f.filled_at) newest FROM paper_positions p JOIN paper_fills f ON f.paper_id=p.paper_id GROUP BY upper(p.asset_class),f.side')
+    out['workers'] = {}
+    for table in ('intraday_scalping_worker_state','paper_supervisor_state','paper_exit_reader_state','candle_worker_state'):
+        if table not in tables:
+            out['workers'][table] = 'MISSING_TABLE'
+            continue
+        cols={r[1] for r in c.execute(f'PRAGMA table_info({table})')}
+        selected=[k for k in ('heartbeat_at','state','status','code','last_attempt_at','last_cycle_at','checked_at','real_orders_sent') if k in cols]
+        if selected:
+            value=rows('SELECT '+','.join(selected)+' FROM '+table+(' WHERE id=1' if 'id' in cols else '')+' LIMIT 1')
+            for row in value:
+                for k,v in list(row.items()):
+                    if not k.endswith('_at'):row[k]=code(v)
+            out['workers'][table]=value
+        else: out['workers'][table]='NO_ALLOWLISTED_COLUMNS'
+    if 'trade_gate_evaluations' in tables:
+        recent=rows('SELECT evaluated_at,final_result,reason FROM trade_gate_evaluations ORDER BY id DESC LIMIT 200')
+        counts=collections.Counter((code(r['final_result']),code(r['reason'])) for r in recent)
+        out['latest_200_gate_evaluations']={'sample_size':len(recent),
+            'latest_at':recent[0]['evaluated_at'] if recent else None,
+            'counts':[{'final_result':k[0],'reason':k[1],'n':v} for k,v in counts.most_common(40)]}
+    if 'paper_decisions' in tables:
+        out['latest_500_decisions']=rows('SELECT source,strategy_version,action,COUNT(*) n,MAX(decided_at) newest FROM (SELECT source,strategy_version,action,decided_at FROM paper_decisions ORDER BY id DESC LIMIT 500) GROUP BY source,strategy_version,action')
+        for row in out['latest_500_decisions']:
+            row['source']=code(row['source']);row['action']=code(row['action'])
+            row['strategy_version_sha256']=hashlib.sha256(str(row.pop('strategy_version')).encode()).hexdigest()
     c.close()
     return out
 
