@@ -1,50 +1,84 @@
-name: RC6 WS TESTS 12 Current Contract Reconciliation
-
+name: RC6 A198 exact candidate governed tests
 on:
   push:
     branches:
-      - work/ws-tests-12-reconcile-current-contract-20261001
-  workflow_dispatch:
-
+      - audit/rc6-a198-ppi-caucion-source-20261029
+    paths:
+      - '.github/workflows/rc6-ws-tests-12-current-contract.yml'
 permissions:
   contents: read
-
+concurrency:
+  group: rc6-a198-governed-tests
+  cancel-in-progress: false
 jobs:
-  focal:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: PAPER guards
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
-          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
-          git diff --check
-      - name: Install dependencies
-        run: |
-          python -m pip install -q -r requirements.txt
-          python -m pip install -q pytest
-      - name: Reconciled legacy assertions
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          PYTHONPATH=. pytest -q             tests/test_candle_archive_v17.py::test_panel_no_presenta_muestras_como_cobertura_validada             tests/test_rc6_operational_scope.py             tests/test_rc6_table_headers_visible_sticky.py
-          echo WS_TESTS_12_FOCAL=GREEN
-
-  full-suite:
+  candidate-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      CANDIDATE_SHA: 1eb07dfcbc6e94415fa23d904d10e59713b60353
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONPATH: '.:tests'
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact source and PAPER policy
         run: |
-          python -m pip install -q -r requirements.txt
-          python -m pip install -q pytest
-      - name: Full suite
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git diff --check 541882bc0ceb0f3405ab71238a1b66a33ae10316 HEAD
+          grep -Fq 'required_mode: PRODUCTION_PAPER' ops/policy/porota-policy.yaml
+          grep -Fq 'real_trading_allowed: false' ops/policy/porota-policy.yaml
+          mkdir -p evidence
+          git rev-parse HEAD HEAD^{tree} > evidence/source.txt
+      - name: Install exact dependencies including PPI SDK
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Automatic governed test discovery and execution
         shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=. pytest -q
-          echo WS_TESTS_12_FULL_SUITE=GREEN
+          python - <<'PY'
+          import json, pathlib, subprocess, sys, xml.etree.ElementTree as ET
+          import yaml
+          p=yaml.safe_load(pathlib.Path('ops/policy/test-policy.yaml').read_text())
+          assert p['test_governance']['automatic_discovery_required'] is True
+          assert p['test_governance']['manual_test_file_allowlist_as_primary_ci'] is False
+          scope=p['productive_scope']
+          assert scope['roots']==['.']
+          args=list(scope['roots'])
+          for entry in scope.get('exclusions',[]):
+              assert all(entry.get(k) for k in ('classification','reason','owner','successor'))
+              assert pathlib.Path(entry['path']).is_file()
+              assert pathlib.Path(entry['successor']).is_file()
+              args.append('--ignore='+entry['path'])
+          with open('evidence/collection.txt','w') as stream:
+              collected=subprocess.run([sys.executable,'-m','pytest','--collect-only','-q',*args],stdout=stream,stderr=subprocess.STDOUT)
+          if collected.returncode:
+              print(pathlib.Path('evidence/collection.txt').read_text())
+              raise SystemExit(collected.returncode)
+          result=subprocess.run([sys.executable,'-m','pytest','-q',*args,'-o','xfail_strict=true','--junitxml=evidence/tests.xml'])
+          root=ET.parse('evidence/tests.xml').getroot()
+          cases=root.findall('.//testcase')
+          failures=len(root.findall('.//failure'))
+          errors=len(root.findall('.//error'))
+          skipped=len(root.findall('.//skipped'))
+          receipt={'candidate_sha':__import__('os').environ['CANDIDATE_SHA'],
+              'scope':'repository-root automatic discovery', 'executed':len(cases),
+              'failures':failures,'errors':errors,'skipped_or_xfail':skipped,
+              'pytest_exit_code':result.returncode,'deploy':False,'host_access':False,
+              'exclusions':scope.get('exclusions',[])}
+          pathlib.Path('evidence/tests.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print('A198_GOVERNED_TESTS='+json.dumps(receipt,sort_keys=True))
+          assert cases and failures==errors==skipped==0 and result.returncode==0
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a198-exact-candidate-tests
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
