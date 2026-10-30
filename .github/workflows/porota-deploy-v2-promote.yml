@@ -2076,15 +2076,16 @@ jobs:
             test "$CANDIDATE_READY" = WAIT
             sleep 30
           done
-          if [ "$RC6_PREOPEN_READY" -ne 1 ]; then
-            echo "RC6_PREOPEN_CANDIDATE_WAIT=RED|TIMEOUT_20M"
-            exit 42
-          fi
-          if [ "$RC6_PREOPEN_READY" -eq 1 ]; then
-            echo 'RC6_PREOPEN_CANDIDATE_WAIT=GREEN'
-          else
-            echo 'RC6_PREOPEN_CANDIDATE_WAIT=AMBER|SOURCE_UNAVAILABLE|PAPER_READINESS_FAIL_CLOSED'
-          fi
+          # Keep optional data/candidate unavailability AMBER in Deploy V2;
+          # genuine local integrity and PAPER-safety failures already exit RED
+          # from the read-only probe above. Never transform AMBER(2) into a
+          # misleading timeout(0) after the probe has already classified it.
+          case "$RC6_PREOPEN_READY" in
+            1) echo 'RC6_PREOPEN_CANDIDATE_WAIT=GREEN' ;;
+            2) echo 'RC6_PREOPEN_CANDIDATE_WAIT=AMBER|SOURCE_UNAVAILABLE|PAPER_READINESS_FAIL_CLOSED' ;;
+            0) echo 'RC6_PREOPEN_CANDIDATE_WAIT=RED|TIMEOUT_20M'; exit 42 ;;
+            *) echo 'RC6_PREOPEN_CANDIDATE_WAIT=RED|UNCLASSIFIED_STATE'; exit 43 ;;
+          esac
 
           # Execute the same fail-closed preopen contract under both scheduled
           # phase labels. No order route, DB write, restart or Telegram send is

@@ -240,6 +240,7 @@ def collect(store, *, run_id):
         rows = _catalog_rows(store)
         records, skipped, identities = planned_records(rows)
         results = evidence_v2.record_snapshots(store, records)
+        fee_review = evidence_v2.apply_reviewed_caucion_fee_authority_correction(store)
         changed = sum(bool(item.get("changed")) for item in results)
         first_seen = sum(bool(item.get("first_seen")) for item in results)
         by_family = Counter(item["family"] for item in results)
@@ -250,6 +251,7 @@ def collect(store, *, run_id):
             "evidence_rows": dict(by_family),
             "first_seen": first_seen,
             "skipped": skipped,
+            "caucion_fee_authority_review": fee_review,
             "paper_only": True,
             "real_routes_used": [],
         }, ensure_ascii=False, sort_keys=True)

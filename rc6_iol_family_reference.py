@@ -4,7 +4,7 @@ Read-only only.  Complements PPI metadata without execution/account tools.
 Persists evidence with provenance; missing terms remain missing.
 """
 from __future__ import annotations
-import json, os, sqlite3, math, re
+import json, os, sqlite3, math, re, time
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
@@ -19,14 +19,87 @@ DEFAULT_ROOT=Path(os.getenv("POROTA_IOL_SHADOW_ROOT","/opt/porota-trading/data/m
 DEFAULT_DB=os.getenv("POROTA_IOL_OPERATIONAL_DB","/opt/porota-trading/data/paper_v17/observer_v17.db")
 MAX_OPTION_UNDERLYINGS=4
 MAX_OPTION_SERIES_INFO=1
+_RETRYABLE_HTTP=frozenset({408,425,429})
+_AUTH_HTTP=frozenset({401,403})
+_AUTH_BOOTSTRAP_ERRORS=frozenset({
+    "IOL_MCP_OAUTH_STORE_UNAVAILABLE", "IOL_MCP_OAUTH_NOT_READY",
+    "IOL_MCP_OAUTH_REFRESH_UNAVAILABLE", "IOL_MCP_OAUTH_STORE_WRITE_FAILED",
+})
+
+
+class IOLReferenceCircuitOpen(RuntimeError):
+    """One source-cycle has exhausted provider authorization or retry budget."""
+
+
+def _http_status(exc: Exception) -> int | None:
+    value=getattr(exc,"status_code",None)
+    return value if type(value) is int and 100<=value<=599 else None
+
+
+def _auth_failure(exc: Exception) -> bool:
+    status=_http_status(exc)
+    code=str(exc).split(":",1)[0]
+    return (status in _AUTH_HTTP or code in _AUTH_BOOTSTRAP_ERRORS or
+            code=="IOL_MCP_OAUTH_REFRESH_FAILED" and status==400)
+
+
+def _transient(exc: Exception) -> bool:
+    status=_http_status(exc)
+    return (status in _RETRYABLE_HTTP or status is not None and 500<=status<=599 or
+            str(exc)=="IOL_MCP_TRANSPORT_UNAVAILABLE" or
+            getattr(exc,"failure_class",None)=="TRANSPORT" or isinstance(exc,TimeoutError))
+
+
+def _retry_delay(exc: Exception) -> float | None:
+    """Do not sleep through a provider-directed long Retry-After in a 1m job."""
+    after=getattr(exc,"retry_after",None)
+    if after is not None:
+        if type(after) not in (int,float) or not math.isfinite(after) or after>2:
+            return None
+        return max(.5,float(after))
+    return 1.0 if _http_status(exc)==429 else .5
+
+
+class _CycleReadClient:
+    """Share an auth/rate-limit circuit across all fields of this one cache cycle."""
+
+    def __init__(self,client):
+        self._client=client
+        self._blocked=False
+
+    def trip(self):
+        self._blocked=True
+
+    def call(self,name,arguments):
+        if self._blocked:
+            raise IOLReferenceCircuitOpen("IOL_REFERENCE_SOURCE_CIRCUIT_OPEN")
+        try:
+            return self._client.call(name,arguments)
+        except Exception as exc:
+            if _auth_failure(exc):
+                self.trip()
+            raise
 
 
 def _brief_call(client, name, arguments):
-    """One bounded retry for transient read failures; never an execution call."""
+    """At most one short retry for transient reads, never for OAuth 400/401/403."""
     try:
         return client.call(name, arguments)
-    except Exception:
-        return client.call(name, arguments)
+    except Exception as exc:
+        if not _transient(exc):
+            raise
+        delay=_retry_delay(exc)
+        if delay is None:
+            if isinstance(client,_CycleReadClient):
+                client.trip()
+            raise
+        time.sleep(delay)
+        try:
+            return client.call(name,arguments)
+        except Exception as repeated:
+            if _transient(repeated) and isinstance(client,_CycleReadClient):
+                client.trip()
+            raise
 
 
 def _response_rows(payload):
@@ -421,6 +494,9 @@ def _sanitize_prior_option(row:dict):
 
 
 def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None):
+    # An OAuth 403, long Retry-After or exhausted transient budget cannot
+    # fan out into dozens of equivalent refresh attempts across family tools.
+    client=_CycleReadClient(client)
     root=Path(root) if root is not None else DEFAULT_ROOT
     db=db_path or DEFAULT_DB
     at=(now or datetime.now(timezone.utc)).isoformat()

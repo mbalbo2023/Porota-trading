@@ -14,9 +14,12 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from iol_mcp_readonly_adapter_rc6 import OAuthStoreReadOnlyMCP
+from iol_mcp_readonly_adapter_rc6 import (ALLOWED_TOOLS as IOL_READ_ONLY_TOOLS,
+                                          IOLMCPError, OAuthStoreReadOnlyMCP)
 from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call,
-                                      is_operational_market_window, run_batch)
+                                      is_late_observation_window,
+                                      is_operational_market_window,
+                                      is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
 from rc6_source_consolidation import consolidate
 
@@ -25,6 +28,44 @@ DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/dat
 DEFAULT_DB = os.getenv("POROTA_IOL_OPERATIONAL_DB", "/opt/porota-trading/data/paper_v17/observer_v17.db")
 BATCH_SIZE = 12
 PRIMARY_MAX_AGE_SECONDS = 300
+LATE_CATALOG_MAX_ROWS = 20000
+
+
+class LateNoOAuthRefreshMCP(OAuthStoreReadOnlyMCP):
+    """Late-session reference reads cannot rotate or reauthorize IOL OAuth.
+
+    A stale/403 session is an optional-provider AMBER, never permission to
+    mutate tokens, start authorization or bypass a browser security decision.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._late_auth_terminal = False
+
+    def _refresh_if_due(self) -> None:
+        if self._refresh_due(self._load_store()):
+            raise IOLMCPError("IOL_LATE_REFRESH_REQUIRED_NO_MUTATION")
+
+    def _refresh_after_401(self, headers) -> None:
+        raise IOLMCPError("IOL_LATE_REFRESH_REQUIRED_NO_MUTATION", status_code=401)
+
+    def _write_store(self, data) -> None:
+        raise IOLMCPError("IOL_LATE_OAUTH_WRITE_FORBIDDEN")
+
+    def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if tool_name not in IOL_READ_ONLY_TOOLS:
+            raise PermissionError("IOL_SHADOW_TOOL_DENIED:" + tool_name)
+        if self._late_auth_terminal:
+            raise IOLMCPError("IOL_LATE_AUTH_TERMINAL_NO_RETRY")
+        try:
+            return super().call(tool_name, arguments)
+        except IOLMCPError as exc:
+            if (exc.status_code in {401, 403}
+                    or str(exc).startswith("IOL_LATE_REFRESH_REQUIRED_NO_MUTATION")):
+                # One provider rejection per process is enough evidence; a
+                # 12-symbol rotating batch must not bombard a WAF/OAuth wall.
+                self._late_auth_terminal = True
+            raise
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -121,6 +162,54 @@ def _operational_universe_with_source() -> tuple[list[str], str]:
 def _operational_universe() -> list[str]:
     """Compatibility API: callers needing provenance use the explicit helper."""
     return _operational_universe_with_source()[0]
+
+
+def _late_verified_universe_with_source(now: datetime, scope: str) -> tuple[list[str], str]:
+    """After 17:00, admit only exact BYMA/T+1 identities verified by PPI.
+
+    COM19024 does not extend immediate settlement, fixed income, cauciones or
+    every future to 18:00. This IOL adapter requests term=t1, so broader
+    family-only catalog queries are unsafe. No emergency ticker fallback,
+    IOL reauthentication, writes to the DB or PAPER admission occur here.
+    """
+    if not is_late_observation_window(now):
+        return [], "NOT_LATE_WINDOW"
+    try:
+        conn = sqlite3.connect(f"file:{DEFAULT_DB}?mode=ro", uri=True, timeout=2)
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            rows = conn.execute(
+                "SELECT ticker,instrument_type,market,currency,settlement,settlement_source "
+                "FROM financial_instrument_catalog WHERE status='AVAILABLE' "
+                "AND upper(instrument_type) IN ('ACCIONES','CEDEARS','OPCIONES') "
+                "AND trim(ticker)<>'' ORDER BY ticker LIMIT ?",
+                (LATE_CATALOG_MAX_ROWS + 1,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError):
+        return [], "LATE_EXACT_CATALOG_UNAVAILABLE"
+    if len(rows) > LATE_CATALOG_MAX_ROWS:
+        return [], "LATE_CATALOG_CAPACITY_UNVERIFIED"
+    identities: dict[str, set[tuple[str, ...]]] = {}
+    for ticker, family, market, currency, settlement, provenance in rows:
+        if str(currency).strip().upper() not in {"ARS", "USD"}:
+            continue  # IOL term=t1 carries no currency selector; do not guess.
+        if not is_verified_late_contract_window(
+                now, family=family, market=market, settlement=settlement,
+                settlement_source=provenance):
+            continue
+        symbol = str(ticker).strip().upper()
+        identity = (str(family).upper(), str(market).upper(),
+                    str(currency).upper(), str(settlement).upper())
+        identities.setdefault(symbol, set()).add(identity)
+    eligible = {symbol for symbol, values in identities.items() if len(values) == 1}
+    key = "POROTA_IOL_EVIDENCE_UNIVERSE" if scope == "AUDIT_ALL" else "POROTA_IOL_SHADOW_UNIVERSE"
+    configured = {symbol.strip().upper() for symbol in os.getenv(key, "").split(",")
+                  if symbol.strip()}
+    if configured:
+        eligible &= configured
+    return sorted(eligible), "PPI_EXACT_BYMA_T1_LATE_SESSION"
 
 
 def _fingerprint(universe: list[str]) -> str:
@@ -415,25 +504,32 @@ def _publish_progress(universe: list[str] | int, batch: list[str], source: str, 
     _atomic_json(path, payload)
     return payload
 
-def main() -> int:
+def main(now: datetime | None = None) -> int:
     if os.getenv("POROTA_IOL_SHADOW_MODE", "OBSERVE_ONLY").strip() != "OBSERVE_ONLY":
         print("IOL_SHADOW_COLLECTION=BLOCKED_BY_POLICY")
         return 0
-    if not is_operational_market_window():
+    current = now or datetime.now(timezone.utc)
+    late = is_late_observation_window(current)
+    if not is_operational_market_window(current) and not late:
         print("IOL_SHADOW_COLLECTION=NOT_DUE_OUTSIDE_MARKET")
         return 0
     scope = os.getenv("POROTA_IOL_SHADOW_SCOPE", "OPERATIONAL").strip().upper()
-    if scope == "AUDIT_ALL":
+    if late:
+        universe, universe_source = _late_verified_universe_with_source(current, scope)
+    elif scope == "AUDIT_ALL":
         universe, universe_source = _evidence_universe_with_source()
     else:
         universe, universe_source = _operational_universe_with_source()
     if not universe:
-        print("IOL_SHADOW_COLLECTION=BLOCKED_EMPTY_OPERATIONAL_UNIVERSE")
+        if late:
+            print("IOL_SHADOW_COLLECTION=NOT_DUE_LATE_NO_VERIFIED_T1 SOURCE=" + universe_source)
+        else:
+            print("IOL_SHADOW_COLLECTION=BLOCKED_EMPTY_OPERATIONAL_UNIVERSE")
         return 0
     fingerprint = _fingerprint(universe)
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()
-    client = OAuthStoreReadOnlyMCP()
+    client = LateNoOAuthRefreshMCP() if late else OAuthStoreReadOnlyMCP()
     # Reserve a deterministic part of IOL's 40-call/minute budget for family
     # contracts.  Twelve quote symbols cost at most 24 calls when every
     # metadata TTL expires; family enrichment is bounded to at most 15 calls.
@@ -446,11 +542,12 @@ def main() -> int:
         def call(self, tool_name, arguments):
             return _safe_call(client, tool_name, arguments, governor, policy)
 
-    family_reference_state = "UPDATED"
-    try:
-        family_reference.collect(GovernedClient(), root=DEFAULT_ROOT, db_path=DEFAULT_DB)
-    except Exception as exc:
-        family_reference_state = "ERROR:" + type(exc).__name__
+    family_reference_state = "NOT_DUE_LATE_T1_SCOPE" if late else "UPDATED"
+    if not late:
+        try:
+            family_reference.collect(GovernedClient(), root=DEFAULT_ROOT, db_path=DEFAULT_DB)
+        except Exception as exc:
+            family_reference_state = "ERROR:" + type(exc).__name__
 
     run_batch(batch, client, root=DEFAULT_ROOT, primary_last_by_symbol=primary,
               policy=policy, governor=governor)
@@ -493,7 +590,7 @@ def main() -> int:
     consolidated = consolidate(ppi_rows, iol_rows, official_rows)
     _atomic_json(DEFAULT_ROOT / "rc6_consolidated_ppi_iol_latest.json", consolidated)
     progress = payload.get("progress", {})
-    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source} FAMILY_REFERENCE={family_reference_state} CALLS={governor.calls_total}")
+    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source} FAMILY_REFERENCE={family_reference_state} LATE_T1_ONLY={str(late).lower()} CALLS={governor.calls_total}")
     return 0
 
 

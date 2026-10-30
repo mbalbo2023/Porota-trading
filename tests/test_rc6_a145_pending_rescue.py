@@ -819,9 +819,19 @@ def test_a151_1700_crossing_allows_only_existing_held_cleanup_not_new_drain(
             held_continuation=dict(hold,operator_receipt_sha256='f'*64))
 
 
+@pytest.mark.parametrize('recorded_at,valid_marker', [
+    ('2026-10-29T13:00:00+00:00', True),
+    ('2026-10-29T23:30:01+00:00', False),
+])
 def test_a151_mode_does_not_block_independent_29_postclose_or_admit_29_open(
-        incident,monkeypatch):
-    root,_,db,_=incident
+        incident,monkeypatch,recorded_at,valid_marker):
+    root,folder,db,_=incident
+    # This scenario freezes the decision on 29-Oct. Its marker must use the
+    # same historical timeline rather than the wall clock of the CI runner.
+    marker_path=folder/'CURRENT_STATE_V2.json'
+    marker=json.loads(marker_path.read_text())
+    marker['recorded_at']=recorded_at
+    marker_path.write_text(json.dumps(marker))
     (root/'ak_byma_calendar.py').write_bytes(
         (Path(__file__).parents[1]/'ak_byma_calendar.py').read_bytes())
     monkeypatch.setattr(q,'adopted_rescue_closed_proof',REAL_ADOPTED_CLOSE_PROOF)
@@ -833,6 +843,10 @@ def test_a151_mode_does_not_block_independent_29_postclose_or_admit_29_open(
     monkeypatch.setattr(q,'datetime',Day29Closed)
     with sqlite3.connect(db) as c:
         c.execute("UPDATE observer_state SET heartbeat_at='2026-10-29T23:29:55+00:00'")
+    if not valid_marker:
+        with pytest.raises(ValueError,match='QUIESCENCE_A143_PENDING_MARKER_RED'):
+            q.a143_pending_running_proof(allow_a151_held_open=True)
+        return
     proof=q.a143_pending_running_proof(allow_a151_held_open=True)
     assert proof['close']['business_day_art']=='2026-10-29'
     assert proof['operator_hold'] is None

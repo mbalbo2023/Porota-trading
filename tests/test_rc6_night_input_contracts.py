@@ -101,9 +101,13 @@ def test_readonly_sqlite_snapshot_preserves_invalid_persisted_worker_counter(
                    "real_orders_sent INTEGER,heartbeat_at TEXT)")
         db.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER','RUNNING',"
                    "'MARKET_CLOSED','OK',0,?)", (now,))
-        db.execute("CREATE TABLE candidate_identity_v2(instrument_type TEXT,status TEXT,"
-                   "can_simulate INTEGER,detail TEXT)")
-        db.execute("INSERT INTO candidate_identity_v2 VALUES('ACCIONES','AVAILABLE',1,'READY')")
+        db.execute("CREATE TABLE candidate_identity_v2("
+                   "ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,"
+                   "currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,"
+                   "status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,"
+                   "PRIMARY KEY(ticker,instrument_type,market,currency,settlement))")
+        db.execute("INSERT INTO candidate_identity_v2 VALUES("
+                   "'TEST','ACCIONES','BYMA','ARS','A-24HS',1,'AVAILABLE','READY',?)", (now,))
         for table in ("intraday_scalping_worker_state", "paper_caucion_cash_sweep_state"):
             db.execute(f"CREATE TABLE {table}(id INTEGER PRIMARY KEY,state TEXT,"
                        "heartbeat_at TEXT,real_orders_sent INTEGER,routes_json TEXT)")
@@ -117,6 +121,8 @@ def test_readonly_sqlite_snapshot_preserves_invalid_persisted_worker_counter(
         db.execute("INSERT INTO paper_supervisor_state VALUES(1,'RUNNING',?,'PAPER')", (now,))
     monkeypatch.setattr(audit, "database_path", lambda: path)
     result = audit._database_snapshot()
+    assert result["readiness"]["by_family_on_alias_deduplicated"] == {"ACCIONES": 1}
+    assert result["readiness"]["on_alias_guard"]["colliding_identity_keys"] == 0
     assert result["workers"]["scalping"]["real_orders_sent"] == counter
     with pytest.raises(RuntimeError, match="REAL_ORDER_COUNTER_INVALID"):
         audit._require_zero_orders(result["workers"]["scalping"]["real_orders_sent"], "scalping")

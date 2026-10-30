@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from bd_ppi_readonly_guard import retry_read
+from bd_ppi_readonly_guard import caucion_discovery_days, retry_read
 from bs_instrument_contracts import aware_datetime
 from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
 
@@ -47,6 +47,10 @@ def collection_window(at):
     return warmup <= local <= schedule["order_cutoff_at"]
 
 def _catalog(store):
+    # Use the exact bounded PPI read-only discovery policy. A separately
+    # hard-coded tenor subset silently excluded otherwise verified PPI
+    # identities (for example PESOS3) from the live PAPER book collector.
+    configured_terms = frozenset(caucion_discovery_days())
     with store.connect() as c:
         rows=c.execute("""SELECT ticker,market,currency,settlement,status
           FROM financial_instrument_catalog
@@ -58,21 +62,28 @@ def _catalog(store):
         item=dict(row)
         try: ident=parse_ticker(item["ticker"])
         except ValueError: continue
-        if ident.currency_prefix!="PESOS" or ident.term_days not in {1,2,7,30,120}: continue
+        if ident.currency_prefix!="PESOS" or ident.term_days not in configured_terms: continue
         item["term_days"]=ident.term_days
         out.append(item)
     return out
 
-def _book_row(reader,item,observed_at,now):
+def _book_row(reader,item,observed_at,now,clock_fn):
     state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
     try:
         book=retry_read(lambda: reader.book(item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
+        # Each sequential request can return a quote created after the batch
+        # started. Timestamp actual receipt; the batch clock cannot decide
+        # whether a provider quote is in the future or has already expired.
+        received_at=aware_datetime(clock_fn(),"recepción book caución")
+        observed_at=received_at.isoformat()
+        if received_at < aware_datetime(now):
+            raise ValueError("CAUCION_RECEIPT_CLOCK_BEFORE_BATCH")
         quoted_at=book.get("date") if isinstance(book,dict) else None
         levels=list(placed_side_book_levels(book if isinstance(book,dict) else {}))
         if levels:
             quote=quote_from_book_level(item["ticker"],levels[0])
             at=aware_datetime(quoted_at,"book caución")
-            age=(aware_datetime(now).astimezone(at.tzinfo)-at).total_seconds()
+            age=(received_at.astimezone(at.tzinfo)-at).total_seconds()
             if age < 0: state="FUTURE_BOOK"
             elif age > 120: state="STALE_BOOK"
             elif quote.tna_percent <= 0 or quote.quantity <= 0: state="EMPTY_PLACED_BID"
@@ -86,7 +97,7 @@ def _book_row(reader,item,observed_at,now):
             "available_principal":principal,"state":state,
             "source":SOURCE,"observed_at":observed_at}
 
-def refresh(reader,store,*,now):
+def refresh(reader,store,*,now,clock_fn=None):
     if reader is None or not hasattr(reader,"book"):
         raise ValueError("CAUCION_LIVE_READER_REQUIRED")
     if not collection_window(now):
@@ -94,7 +105,8 @@ def refresh(reader,store,*,now):
                 "real_routes":[]}
     init_schema(store)
     observed_at=aware_datetime(now).isoformat()
-    rows=[_book_row(reader,item,observed_at,now) for item in _catalog(store)]
+    receipt_clock=clock_fn if clock_fn is not None else lambda: datetime.now(TZ)
+    rows=[_book_row(reader,item,observed_at,now,receipt_clock) for item in _catalog(store)]
     with store.connect() as c:
         c.execute("BEGIN IMMEDIATE")
         for row in rows:

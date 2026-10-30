@@ -319,6 +319,67 @@ def _candidate_state_violations(connection):
     return unsafe, residual
 
 
+def _on_alias_readiness_projection(connection, grouped_rows):
+    """Explain legacy ON vs canonical OBLIGACIONES without promoting anything.
+
+    The authoritative `by_family` receipt is intentionally unchanged.  For a
+    separate *diagnostic* canonical count, collapse only the proven ON alias
+    and group by all five monetary identity fields.  If the same canonical
+    identity appears more than once, count none of its READY rows: a duplicate
+    can never become extra evidence of PAPER admission.
+
+    This is a bounded read under the caller's existing SQLite snapshot.  No
+    schema migration, identity selection, cache write or admission change.
+    """
+    raw_ready = {str(row["family"]): int(row["ready"] or 0)
+                 for row in grouped_rows}
+    raw_total = {str(row["family"]): int(row["total"] or 0)
+                 for row in grouped_rows}
+    collisions = connection.execute("""
+        WITH canonical_keys AS (
+          SELECT upper(ticker) AS ticker,upper(market) AS market,
+                 upper(currency) AS currency,upper(settlement) AS settlement,
+                 COUNT(*) AS raw_rows,
+                 SUM(CASE WHEN can_simulate=1 AND upper(status)='AVAILABLE'
+                          THEN 1 ELSE 0 END) AS ready_rows
+          FROM candidate_identity_v2
+          WHERE upper(instrument_type) IN ('ON','OBLIGACIONES')
+          GROUP BY upper(ticker),upper(market),upper(currency),upper(settlement)
+        )
+        SELECT COALESCE(SUM(CASE WHEN raw_rows>1 THEN 1 ELSE 0 END),0),
+               COALESCE(SUM(CASE WHEN raw_rows>1 THEN ready_rows ELSE 0 END),0),
+               COALESCE(SUM(CASE WHEN raw_rows>1 THEN raw_rows-1 ELSE 0 END),0)
+        FROM canonical_keys
+    """).fetchone()
+    collision_keys, held_ready, redundant_rows = (int(value or 0)
+                                                  for value in collisions)
+    on_ready = raw_ready.get("ON", 0) + raw_ready.get("OBLIGACIONES", 0)
+    on_total = raw_total.get("ON", 0) + raw_total.get("OBLIGACIONES", 0)
+    if not (0 <= held_ready <= on_ready and 0 <= redundant_rows <= on_total):
+        raise RuntimeError("ON_ALIAS_PROJECTION_INCONSISTENT")
+    canonical = dict(raw_ready)
+    if "ON" in canonical or "OBLIGACIONES" in canonical:
+        canonical["OBLIGACIONES"] = on_ready - held_ready
+        canonical.pop("ON", None)
+    return canonical, {
+        "schema": "on-obligaciones-alias-receipt-v1",
+        "source": "candidate_identity_v2",
+        "identity_key": "ticker+canonical_family+market+currency+settlement",
+        "raw_on_rows": raw_total.get("ON", 0),
+        "raw_on_ready": raw_ready.get("ON", 0),
+        "raw_obligaciones_rows": raw_total.get("OBLIGACIONES", 0),
+        "raw_obligaciones_ready": raw_ready.get("OBLIGACIONES", 0),
+        "canonical_distinct_rows": on_total - redundant_rows,
+        "canonical_ready_fail_closed": on_ready - held_ready,
+        "colliding_identity_keys": collision_keys,
+        "colliding_ready_rows_held": held_ready,
+        "redundant_alias_rows": redundant_rows,
+        "state": "ALIAS_COLLISION_HELD" if collision_keys else "NO_COLLISION_DETECTED",
+        "report_only": True,
+        "admission_or_database_modified": False,
+    }
+
+
 def _database_snapshot():
     path = database_path()
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
@@ -351,6 +412,8 @@ def _database_snapshot():
     """)]
     by_family = {row["family"]: int(row["ready"] or 0) for row in rows}
     ready = sum(by_family.values())
+    canonical_by_family, on_alias_guard = _on_alias_readiness_projection(
+        connection, rows)
     refresh = None
     if connection.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
                            AND name='candidate_refresh_state'""").fetchone():
@@ -392,7 +455,9 @@ def _database_snapshot():
     return {
         "observer": observer,
         "readiness": {"source": "candidate_identity_v2", "ready": ready,
-                      "by_family": by_family, "rows": rows, "refresh": refresh},
+                      "by_family": by_family, "rows": rows, "refresh": refresh,
+                      "by_family_on_alias_deduplicated": canonical_by_family,
+                      "on_alias_guard": on_alias_guard},
         "invalid_candidate_states": invalid,
         "residual_candidate_state_violations": residual_violations,
         "generic_pending_residuals": generic_pending,
@@ -564,6 +629,8 @@ def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5,
         print("POROTA_RUNTIME_AUDIT_READINESS=" + json.dumps({
             "database_ready": snapshot["database"]["readiness"]["ready"],
             "database_by_family": snapshot["database"]["readiness"]["by_family"],
+            "database_by_family_on_alias_deduplicated": snapshot["database"]["readiness"]["by_family_on_alias_deduplicated"],
+            "database_on_alias_guard": snapshot["database"]["readiness"]["on_alias_guard"],
             "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
             "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
             "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),

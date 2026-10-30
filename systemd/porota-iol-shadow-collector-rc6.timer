@@ -4,6 +4,11 @@ Description=Porota RC6 IOL/public 1m with bounded universe evidence TTL
 [Timer]
 OnCalendar=Mon..Fri *-*-* 10:30..59:00 America/Argentina/Buenos_Aires
 OnCalendar=Mon..Fri *-*-* 11..16:*:00 America/Argentina/Buenos_Aires
+# From COM19024 effective 02-Nov-2026, the dispatcher may read only exact
+# PPI_FIELD/BYMA/T+1 equity/CEDEAR/regular-option references after 17:00.
+# Before that date, on holidays or without verified identity it exits NOT_DUE;
+# this does not widen PAPER admission or start OAuth reauthorization.
+OnCalendar=Mon..Fri *-*-* 17:*:00 America/Argentina/Buenos_Aires
 AccuracySec=5s
 Persistent=false
 Unit=porota-iol-shadow-collector-rc6.service

@@ -53,6 +53,12 @@ INTRADAY_NEGATIVE_MAX_TTL_SECONDS = 3600
 INTRADAY_REPROBE_MIN_SPACING_SECONDS = 60
 INTRADAY_CAPABILITY_CACHE_MAX_ENTRIES = 2048
 INTRADAY_CAPABILITY_SCHEMA = "rc6.intraday-capability.v1"
+# A closed-point revision must remain a HOLD even when its forensic budget is
+# exhausted. These tiny, immutable samples help diagnose provider revisions
+# without persisting entire payloads or expanding #478's data-retention scope.
+INTRADAY_REVISION_FORENSICS_SCHEMA = "rc6.intraday-closed-revision-forensics.v1"
+INTRADAY_REVISION_FORENSICS_MAX_DAILY = 64
+INTRADAY_REVISION_FORENSICS_MAX_IDENTITY_DAILY = 4
 INTRADAY_CAPABILITY_WARMUP_STATE = "INTRADAY_CAPABILITY_WARMUP_PENDING"
 INTRADAY_CAPABILITY_REJECTED_STATE = "INTRADAY_CAPABILITY_WARMUP_REJECTED_CLOSED_POINTS"
 INTRADAY_CAPABILITY_CLOSED_STATES = frozenset({"PPI_INSTRUMENT_NOT_FOUND",
@@ -364,6 +370,68 @@ def _decimal(value, *, positive=False, nonnegative=False):
     return result
 
 
+def _canonical_number_for_digest(value):
+    """Exact numeric equality, bounded by coefficient length, not magnitude.
+
+    ``Decimal.normalize()`` can round under the current arithmetic context;
+    and fixed-point formatting can expand an enormous exponent. Represent the
+    exact coefficient and exponent after removing insignificant trailing zeros.
+    This is a one-way forensic commitment, never a trading-data conversion.
+    """
+    number = _decimal(value)
+    sign, digits, exponent = number.as_tuple()
+    end = len(digits)
+    while end > 1 and digits[end - 1] == 0:
+        end -= 1
+        exponent += 1
+    if end == 1 and digits[0] == 0:
+        sign, exponent = 0, 0
+    return f"{sign}:{''.join(str(digit) for digit in digits[:end])}:{exponent}"
+
+
+def _revision_digest(price, volume):
+    numeric_pair = [_canonical_number_for_digest(price),
+                    _canonical_number_for_digest(volume)]
+    return hashlib.sha256(json.dumps(numeric_pair, separators=(",", ":")).encode()).hexdigest()
+
+
+def _sample_closed_revision(connection, identity, event_at, received_at,
+                            baseline, incoming, *, age_seconds):
+    """Record one bounded, hash-only causal pair; never relax a rejection.
+
+    Daily/identity caps are fixed in code and enforced inside the caller's
+    IMMEDIATE transaction. Duplicate retries use the same key and consume no
+    additional budget. Source values and vendor payloads are never persisted.
+    """
+    day = aware_datetime(received_at).astimezone(TZ).date().isoformat()
+    incoming_hash = _revision_digest(*incoming)
+    prefix = (day, *identity, event_at, incoming_hash)
+    if connection.execute("""SELECT 1 FROM ppi_intraday_revision_forensics
+      WHERE session_day=? AND symbol=? AND asset_class=? AND market=?
+        AND currency=? AND settlement=? AND event_at=? AND incoming_sha256=?""",
+                          prefix).fetchone():
+        return "DUPLICATE"
+    if connection.execute("""SELECT COUNT(*) FROM ppi_intraday_revision_forensics
+      WHERE session_day=?""", (day,)).fetchone()[0] >= INTRADAY_REVISION_FORENSICS_MAX_DAILY:
+        return "BUDGET_CAPPED"
+    if connection.execute("""SELECT COUNT(*) FROM ppi_intraday_revision_forensics
+      WHERE session_day=? AND symbol=? AND asset_class=? AND market=?
+        AND currency=? AND settlement=?""", (day, *identity)).fetchone()[0] >= INTRADAY_REVISION_FORENSICS_MAX_IDENTITY_DAILY:
+        return "BUDGET_CAPPED"
+    price_changed = int(_decimal(baseline[0]) != _decimal(incoming[0]))
+    volume_changed = int(_decimal(baseline[1]) != _decimal(incoming[1]))
+    if not (price_changed or volume_changed):
+        raise ValueError("INTRADAY_REVISION_FORENSICS_INCONSISTENT")
+    connection.execute("""INSERT INTO ppi_intraday_revision_forensics
+      (session_day,symbol,asset_class,market,currency,settlement,event_at,
+       incoming_sha256,baseline_sha256,received_at,age_seconds,
+       price_changed,volume_changed,policy_schema)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+      (*prefix, _revision_digest(*baseline), received_at, str(age_seconds),
+       price_changed, volume_changed, INTRADAY_REVISION_FORENSICS_SCHEMA))
+    return "SAMPLED"
+
+
 def _field(row, name):
     if not isinstance(row, dict):
         return None
@@ -431,6 +499,17 @@ def init_schema(store):
           changed_closed_points INTEGER NOT NULL, new_points INTEGER NOT NULL,
           last_source_at TEXT, checked_at TEXT NOT NULL, detail TEXT NOT NULL,
           PRIMARY KEY(symbol,asset_class,market,currency,settlement));
+        CREATE TABLE IF NOT EXISTS ppi_intraday_revision_forensics(
+          session_day TEXT NOT NULL, symbol TEXT NOT NULL,
+          asset_class TEXT NOT NULL, market TEXT NOT NULL,
+          currency TEXT NOT NULL, settlement TEXT NOT NULL,
+          event_at TEXT NOT NULL, incoming_sha256 TEXT NOT NULL,
+          baseline_sha256 TEXT NOT NULL, received_at TEXT NOT NULL,
+          age_seconds TEXT NOT NULL, price_changed INTEGER NOT NULL
+            CHECK(price_changed IN (0,1)), volume_changed INTEGER NOT NULL
+            CHECK(volume_changed IN (0,1)), policy_schema TEXT NOT NULL,
+          PRIMARY KEY(session_day,symbol,asset_class,market,currency,
+                      settlement,event_at,incoming_sha256));
         CREATE TABLE IF NOT EXISTS scalping_candidates(
           id INTEGER PRIMARY KEY AUTOINCREMENT, evaluated_at TEXT NOT NULL,
           symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
@@ -631,7 +710,7 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
         if epoch > aware_datetime(received_at):
             raise ValueError("INTRADAY_CAPABILITY_CLOCK_ROLLBACK")
         points = [point for point in points if aware_datetime(point[0]) > epoch]
-    stable = changed = inserted = refreshed = 0
+    stable = changed = inserted = refreshed = sampled = capped = 0
     down_steps = sum(1 for left, right in zip(points, points[1:]) if right[2] < left[2])
     from rc6_signal_contracts import volume_contract, quantity_activity
     volume_evidence, volume_reason = None, ""
@@ -671,6 +750,11 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
                 else:
                     # A genuine revision to a closed minute remains fail-closed.
                     changed += 1
+                    forensic = _sample_closed_revision(connection, identity,
+                        event_at, received_at, existing, values,
+                        age_seconds=decision["age_seconds"])
+                    sampled += int(forensic == "SAMPLED")
+                    capped += int(forensic == "BUDGET_CAPPED")
                 continue
             connection.execute("""INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
               (*identity, event_at, *values, received_at, received_at, "PPI_MARKETDATA_INTRADAY"))
@@ -711,7 +795,8 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
         last_source = points[-1][0] if points else None
         detail = (f"observaciones={observations}; solapamiento_estable={stable}; "
                   f"cerrados_modificados={changed}; nuevos={inserted}; "
-                  f"mutables_refrescados={refreshed}; descensos_volumen={down_steps}")
+                   f"mutables_refrescados={refreshed}; descensos_volumen={down_steps}; "
+                   f"forense_muestras={sampled}; forense_cupo_agotado={capped}")
         if capability or volume_evidence:
             detail = json.dumps({"schema": INTRADAY_CAPABILITY_SCHEMA if capability else "rc6.intraday-source-contract.v1",
                 **({"capability": capability} if capability else {}),
@@ -723,7 +808,8 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
           (*identity, state, observations, max(prior_stable, stable), prior_changed + changed,
            inserted, last_source, received_at, detail))
     return {"state": state, "inserted": inserted, "stable": stable,
-            "changed": changed, "refreshed": refreshed, "down_steps": down_steps}
+            "changed": changed, "refreshed": refreshed, "down_steps": down_steps,
+            "revision_forensics_sampled": sampled, "revision_forensics_capped": capped}
 
 
 SCALPING_PAPER_CAPABILITIES = frozenset({

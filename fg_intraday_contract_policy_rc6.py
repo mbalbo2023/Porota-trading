@@ -11,6 +11,7 @@ A revision to an actually closed point remains a hard rejection.
 """
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 TZ=ZoneInfo('America/Argentina/Buenos_Aires')
@@ -36,6 +37,17 @@ def previous_for_session(previous:dict|None, *, received_at)->dict|None:
     if not same_trading_day(previous.get('checked_at'),received_at): return None
     return previous
 
+def _numeric_evidence(value):
+    if isinstance(value, bool):
+        raise IntradayContractPolicyError('NUMERIC_EVIDENCE_INVALID')
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise IntradayContractPolicyError('NUMERIC_EVIDENCE_INVALID') from exc
+    if not number.is_finite():
+        raise IntradayContractPolicyError('NUMERIC_EVIDENCE_INVALID')
+    return number
+
 def classify_revision(*, event_at, received_at, old_price, old_volume, new_price, new_volume, mutable_seconds=DEFAULT_MUTABLE_SECONDS)->dict:
     """Classify same-event revision without inventing provider semantics.
 
@@ -45,7 +57,11 @@ def classify_revision(*, event_at, received_at, old_price, old_volume, new_price
     """
     received=aware(received_at).astimezone(timezone.utc); event=aware(event_at).astimezone(timezone.utc)
     if event>received+timedelta(seconds=5): raise IntradayContractPolicyError('EVENT_IN_FUTURE')
-    same=(str(old_price)==str(new_price) and str(old_volume)==str(new_volume))
+    # JSON may serialize the same provider number as 100, 100.0 or 1E+2.
+    # Compare exact finite decimals, without rounding genuine revisions away.
+    old_p, new_p, old_v, new_v = map(_numeric_evidence,
+        (old_price, new_price, old_volume, new_volume))
+    same=(old_p == new_p and old_v == new_v)
     age=(received-event).total_seconds()
     if same: return {'action':'SAME','age_seconds':age,'refresh':False,'closed_revision':False}
     if age < 0: raise IntradayContractPolicyError('EVENT_IN_FUTURE')

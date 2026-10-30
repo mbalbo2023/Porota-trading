@@ -17,9 +17,20 @@ from scripts import rc6_deploy_quiescence as q
 CANDIDATE='d'*40
 
 
+class IncidentClock(datetime):
+    @classmethod
+    def now(cls,tz=None):
+        value=datetime(2026,10,29,15,0,tzinfo=timezone.utc)
+        return value.replace(tzinfo=None) if tz is None else value.astimezone(tz)
+
+
 @pytest.fixture
 def pinned_running_origin(monkeypatch,tmp_path):
-    now=datetime.now(timezone.utc).isoformat()
+    # Replay the date-scoped incident independently of the CI execution date.
+    # Production expiry logic is exercised unchanged, including below at ART
+    # midnight, rather than extending the historical operator authorization.
+    monkeypatch.setattr(q,'datetime',IncidentClock)
+    now=IncidentClock.now(timezone.utc).isoformat()
     lifecycle={'Status':'running','ExitCode':0,'OOMKilled':False,
                'StartedAt':'2026-10-29T09:00:00Z','FinishedAt':'2026-10-29T08:50:00Z'}
     originals={name:{'Id':q.A175_RUNNING_IDS[name],
@@ -142,4 +153,15 @@ def test_real_a175_open_origin_rejects_missing_daily_no_go(pinned_running_origin
     _,_,current,_,_=pinned_running_origin
     current['paper_execution_authorized']=True
     with pytest.raises(ValueError,match='QUIESCENCE_A175_NO_GO_HOLD_CHANGED'):
+        _prove(pinned_running_origin)
+
+
+def test_real_a175_dated_hold_expires_at_next_art_day(pinned_running_origin,monkeypatch):
+    class NextDayClock(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            value=datetime(2026,10,30,3,0,tzinfo=timezone.utc)
+            return value.replace(tzinfo=None) if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(q,'datetime',NextDayClock)
+    with pytest.raises(ValueError,match='QUIESCENCE_A175_DATED_HOLD_EXPIRED'):
         _prove(pinned_running_origin)

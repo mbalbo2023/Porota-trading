@@ -2,6 +2,7 @@
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
@@ -75,6 +76,30 @@ def test_zero_ready_is_technical_alarm_not_a_20_minute_wait():
     assert 'RC6_PREOPEN_READY=2' in block
     assert 'RC6_PREOPEN_CANDIDATE_WAIT=AMBER' in block
     assert 'PAPER_INSTRUMENTS_FAIL_CLOSED' in block
+
+
+@pytest.mark.parametrize('state,returncode,expected', [
+    (1, 0, 'RC6_PREOPEN_CANDIDATE_WAIT=GREEN'),
+    (2, 0, 'RC6_PREOPEN_CANDIDATE_WAIT=AMBER|SOURCE_UNAVAILABLE|PAPER_READINESS_FAIL_CLOSED'),
+    (0, 42, 'RC6_PREOPEN_CANDIDATE_WAIT=RED|TIMEOUT_20M'),
+    (3, 43, 'RC6_PREOPEN_CANDIDATE_WAIT=RED|UNCLASSIFIED_STATE'),
+])
+def test_actual_deploy_shell_finalizer_keeps_amber_nonblocking(state, returncode, expected):
+    """Execute the real workflow branch: merely printing AMBER is not a guard.
+
+    A186's first regression checked only the probe and the marker text. The
+    later `-ne 1` finalizer still converted AMBER(2) to exit 42. This test
+    executes the exact shell fragment to guard that self-induced incident.
+    """
+    match = re.search(r'case "\$RC6_PREOPEN_READY" in\n.*?\n\s*esac',
+                      promotion_run(), flags=re.DOTALL)
+    assert match, 'Preopen classification finalizer not found in real workflow'
+    command = f'set -Eeuo pipefail\nRC6_PREOPEN_READY={state}\n{match.group(0)}\n'
+    result = subprocess.run(['bash', '-c', command], capture_output=True, text=True,
+                            check=False)
+    assert result.returncode == returncode, result.stderr + result.stdout
+    assert expected in result.stdout
+    assert ('RC6_PREOPEN_CANDIDATE_WAIT=GREEN' in result.stdout) == (state == 1)
 
 
 def test_byma_refresh_is_owned_by_external_producer_not_deploy():
