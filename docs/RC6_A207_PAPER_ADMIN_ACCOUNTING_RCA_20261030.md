@@ -128,3 +128,10 @@ workstream: Python dependency cache, sharded pytest with result quorum,
 per-phase timing/RCA receipts, and universal safe cleanup before suspension.
 Those are separate infra improvements; they must be regression-tested and
 integrated in one candidate, not deployed one-by-one.
+
+## A209 — CI source-schema fixture drift (31-Oct-2026 UTC)
+
+- **ERROR/EVIDENCE:** new-SHA Predeploy V2 [#41151470191](https://github.com/mbalbo2023/Porota-trading/actions/runs/41151470191) failed at `Fast host-transition incident replay`, before the governed suite/build/artifact gate. Its final test summary was RED as a downstream effect. There was **no** host promotion, Docker/runtime mutation or validated artifact from that run.
+- **RCA:** the archived `test_observed_stopped_host_waiting_market_after_admin_cancel` fixture in `tests/test_rc6_cold2_apply_guard.py` constructed spot/caución/future tables but omitted `paper_family_lifecycle`. The new safety guard deliberately refuses missing FCI family schema (`QUIESCENCE_FUND_LEDGER_SCHEMA_UNVERIFIED`) rather than treating it as zero obligations; its old synthetic fixture was no longer a valid flat PAPER book.
+- **FIX:** add the minimal `paper_family_lifecycle(family,state)` table, with no active FCI row, **only inside that synthetic database setup**. Do not weaken the production fail-closed schema guard. The existing OPEN-position negative case remains intentionally blocked.
+- **GUARD/TEST:** execute the exact nine-suite `Fast host-transition incident replay` list locally before the next remote Predeploy attempt (all tests GREEN), in addition to the broader A207/FCI suite. Final new-SHA GitHub Actions remains required; previous failure cannot certify the revised tree.
