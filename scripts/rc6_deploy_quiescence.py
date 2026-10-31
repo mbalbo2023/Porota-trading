@@ -1756,7 +1756,8 @@ def admit(*, stopped=False, allow_admin_issue624=False, allow_a207_admin=False,
             # the standard PAPER/0, heartbeat and all ledger guards still run.
             if (process != 'DEGRADED' or
                     ppi_auth not in {'ERROR', 'COOLDOWN'} or
-                    session not in {'BOOT_CALENDAR', 'BOOT_PPI_SECRET',
+                    session not in {'CHECKING', 'BOOT_COMMAND', 'BOOT_CALENDAR',
+                                    'BOOT_PPI_SECRET',
                                     'BOOT_PPI_CLIENT', 'BOOT_PPI_LOGIN',
                                     'CLOSED', 'MARKET_CLOSED', 'PREOPEN',
                                     'OPEN', 'MARKET_OPEN'} or
