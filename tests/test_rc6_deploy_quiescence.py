@@ -124,6 +124,109 @@ def test_poststart_refuses_unproven_or_nonflat_phase(installation, change):
         q.admit_poststart_flat('CLOSED')
 
 
+@pytest.mark.parametrize('auth,session,detail', [
+    ('COOLDOWN', 'BOOT_CALENDAR', 'PPI en espera de reintento; no se abre una tormenta de logins.'),
+    ('ERROR', 'BOOT_PPI_LOGIN', 'Login fallo: JSONDecodeError'),
+    ('COOLDOWN', 'MARKET_CLOSED', 'Login local bloqueado por interlock persistente.'),
+])
+def test_poststart_ppi_auth_outage_amber_but_never_operational_ready(
+        installation, auth, session, detail):
+    _, db, _, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute('ALTER TABLE observer_state ADD COLUMN ppi_auth TEXT')
+        c.execute('ALTER TABLE observer_state ADD COLUMN detail TEXT')
+        c.execute('UPDATE observer_state SET process_state=?,session_state=?,ppi_auth=?,detail=?',
+                  ('DEGRADED', session, auth, detail))
+    # An exact scanner source outage can pass the *technical deploy* flat-book
+    # guard; it is not a closed-market or instrument readiness receipt.
+    assert q.admit_poststart_flat('CLOSED') == 'PPI_SOURCE_AMBER'
+    assert q.admit_poststart_flat('OPEN') == 'PPI_SOURCE_AMBER'
+    with pytest.raises(ValueError, match='QUIESCENCE_CLOSED_REQUIRED'):
+        q.admit()
+    assert not any(call[1] in ('stop', 'start') for call in calls)
+
+
+@pytest.mark.parametrize('change', [
+    'internal_caucion_fault', 'wrong_auth', 'unknown_detail',
+    'real_order', 'open_spot', 'active_future', 'active_caucion',
+    'unredeemed_fund', 'missing_fund_schema', 'old_heartbeat',
+])
+def test_poststart_external_amber_refuses_unsafe_or_unproven_state(installation, change):
+    _, db, _, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute('ALTER TABLE observer_state ADD COLUMN ppi_auth TEXT')
+        c.execute('ALTER TABLE observer_state ADD COLUMN detail TEXT')
+        c.execute("UPDATE observer_state SET process_state='DEGRADED',"
+                  "session_state='BOOT_CALENDAR',ppi_auth='COOLDOWN',"
+                  "detail='PPI en espera de reintento; no se abre una tormenta de logins.'")
+        if change == 'internal_caucion_fault':
+            c.execute("UPDATE observer_state SET detail='CAUCION_LEDGER_INVALID: admission blocked'")
+        elif change == 'wrong_auth':
+            c.execute("UPDATE observer_state SET ppi_auth='OK'")
+        elif change == 'unknown_detail':
+            c.execute("UPDATE observer_state SET detail='unexpected internal scanner crash'")
+        elif change == 'real_order':
+            c.execute('UPDATE observer_state SET real_orders_sent=1')
+        elif change == 'open_spot':
+            c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+        elif change == 'active_future':
+            c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+        elif change == 'active_caucion':
+            c.execute("INSERT INTO paper_cauciones VALUES('OPEN')")
+        elif change == 'unredeemed_fund':
+            c.execute("INSERT INTO paper_family_lifecycle VALUES('FCI','NAV_APPLIED')")
+        elif change == 'missing_fund_schema':
+            c.execute('DROP TABLE paper_family_lifecycle')
+        else:
+            c.execute("UPDATE observer_state SET heartbeat_at='2020-01-01T00:00:00+00:00'")
+    with pytest.raises((ValueError, sqlite3.Error)):
+        q.admit_poststart_flat('CLOSED')
+    assert not any(call[1] in ('stop', 'start') for call in calls)
+
+
+def test_poststart_ppi_outage_not_a_rescue_or_pending_exception(installation):
+    _, db, _, _, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute('ALTER TABLE observer_state ADD COLUMN ppi_auth TEXT')
+        c.execute('ALTER TABLE observer_state ADD COLUMN detail TEXT')
+        c.execute("UPDATE observer_state SET process_state='DEGRADED',"
+                  "session_state='BOOT_CALENDAR',ppi_auth='COOLDOWN',"
+                  "detail='PPI en espera de reintento; no se abre una tormenta de logins.'")
+    with pytest.raises(ValueError, match='QUIESCENCE_POSTSTART_SESSION_UNVERIFIED'):
+        q.admit_poststart_flat('CLOSED_CAUCION')
+    with pytest.raises(ValueError, match='QUIESCENCE_POSTSTART_SESSION_UNVERIFIED'):
+        q.admit_poststart_flat(q.RESCUE_MODE)
+    with pytest.raises(ValueError, match='QUIESCENCE_POSTSTART_PPI_EXCEPTION_COMBINATION_RED'):
+        q.admit(stopped=True, allow_poststart_ppi_auth_degraded=True)
+
+
+def test_poststart_transient_starting_rechecks_committed_phase(installation, monkeypatch):
+    _, db, _, _, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='STARTING',session_state='BOOT_CALENDAR'")
+    tries = []
+    def transition_on_wait(seconds):
+        tries.append(seconds)
+        with sqlite3.connect(db) as c:
+            c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',"
+                      "session_state='MARKET_CLOSED'")
+    monkeypatch.setattr(q.time, 'sleep', transition_on_wait)
+    assert q.admit_poststart_flat('CLOSED') == 'CLOSED'
+    assert tries == [3]
+
+
+def test_poststart_stuck_starting_fails_bounded_with_sanitized_diagnostic(
+        installation, monkeypatch):
+    _, db, _, _, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE observer_state SET process_state='STARTING',session_state='BOOT_CALENDAR'")
+    clock = [100.0]
+    monkeypatch.setattr(q.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(q.time, 'sleep', lambda s: clock.__setitem__(0, clock[0]+s+45))
+    with pytest.raises(ValueError, match='QUIESCENCE_POSTSTART_SESSION_UNVERIFIED:STARTING:BOOT_CALENDAR'):
+        q.admit_poststart_flat('CLOSED')
+
+
 def test_deploy_poststart_uses_fresh_phase_gate_after_long_soak():
     source = (Path(__file__).resolve().parents[1] /
               '.github/workflows/porota-deploy-v2-promote.yml').read_text()
