@@ -15,7 +15,6 @@ import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from decimal import Decimal
-from pathlib import Path
 from typing import Mapping, Sequence
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
@@ -253,11 +252,15 @@ def reconcile_fund_events(
 
 
 def reconcile_fund_store(path, lifecycle_id, receipts, evidence, *, as_of):
-    """Read only one persisted PAPER lifecycle, with no broker or write path."""
-    resolved = Path(path).resolve(strict=True)
+    """Read only one identified PAPER lifecycle; never follow database aliases."""
+    from cg_paper_workspace import checked_path, identity_from_connection
+    resolved = checked_path(path)
+    if not resolved.is_file():
+        raise ValueError("FCI_DURABLE_DATABASE_UNVERIFIED")
     with sqlite3.connect(resolved.as_uri() + "?mode=ro", uri=True, timeout=2) as db:
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA query_only=ON")
+        identity_from_connection(db)
         root = db.execute("SELECT * FROM paper_family_lifecycle WHERE lifecycle_id=?",
                           (lifecycle_id,)).fetchone()
         if not root or (root["family"], root["instrument"], root["currency"]) != (

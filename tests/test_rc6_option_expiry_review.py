@@ -1,7 +1,10 @@
 """A222: expiry evidence is never automatic exercise or cash authority."""
 
 from copy import deepcopy
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import hashlib
 
 import pytest
 
@@ -52,6 +55,16 @@ def official_reference(contract, *, price="7050"):
         },
         "adjustment_status": "UNCHANGED_REVIEWED",
         "delivery_rule": "PHYSICAL",
+        "corporate_action_review": {
+            "source": "BYMA_CORPORATE_ACTIONS_OFFICIAL",
+            "document_sha256": "b" * 64,
+            "contract_sha256": contract_snapshot_sha256(contract),
+            "underlying": contract.underlying,
+            "known_at": "2026-11-20T15:48:00-03:00",
+            "coverage_through": EXPIRY,
+            "unresolved_adjustments": [],
+            "deliverable_unchanged": True,
+        },
         "official_underlying_price": price,
         "official_underlying_price_at": EXPIRY,
         "effective_at": "2026-11-20T15:45:00-03:00",
@@ -229,3 +242,78 @@ def test_unproven_long_position_cannot_reuse_expiry_reference(side):
     assert result.status == "BLOQUEADO"
     assert result.reason_code == "OPTION_LONG_POSITION_SIDE_UNVERIFIED"
     assert not result.paper_exercise_authorized
+
+
+def test_aware_datetime_contract_snapshot_is_instant_canonical_and_microsecond_exact():
+    contract = option_contract()
+    as_datetime = replace(contract, expires_at=datetime.fromisoformat(EXPIRY))
+    as_utc = replace(contract, expires_at="2026-11-20T18:30:00+00:00")
+    assert contract_snapshot_sha256(contract) == contract_snapshot_sha256(as_datetime)
+    assert contract_snapshot_sha256(contract) == contract_snapshot_sha256(as_utc)
+    shifted = replace(contract, expires_at=(datetime.fromisoformat(EXPIRY)
+                                            + timedelta(microseconds=1)))
+    assert contract_snapshot_sha256(contract) != contract_snapshot_sha256(shifted)
+    reference = official_reference(as_datetime)
+    reviewed = review_long_option_expiry_reference(
+        as_datetime, reference, as_of=AS_OF, position_side="LONG")
+    assert reviewed.status == "NO_VERIFICADO" and reviewed.contract_matched
+    assert not reviewed.paper_exercise_authorized and not reviewed.paper_cash_post_authorized
+
+
+def test_optional_official_and_corporate_action_bytes_bind_replay_without_authenticating():
+    contract = option_contract()
+    ref = official_reference(contract)
+    official = b"SYNTHETIC replay of an expiry quote, NOT BYMA authentication"
+    action = b"SYNTHETIC replay of corporate-action clearance, NOT BYMA authentication"
+    ref["document_sha256"] = hashlib.sha256(official).hexdigest()
+    ref["corporate_action_review"]["document_sha256"] = hashlib.sha256(action).hexdigest()
+    kwargs = dict(as_of=AS_OF, position_side="LONG", official_document_bytes=official,
+                  corporate_action_document_bytes=action)
+    accepted = review_long_option_expiry_reference(contract, ref, **kwargs)
+    assert accepted.status == "NO_VERIFICADO" and accepted.contract_matched
+    assert accepted.paper_exercise_authorized is False
+    assert accepted.paper_cash_post_authorized is False
+    assert review_long_option_expiry_reference(
+        contract, ref, **{**kwargs, "official_document_bytes": official + b" altered"}
+    ).reason_code == "OPTION_OFFICIAL_DOCUMENT_CONTENT_MISMATCH"
+    assert review_long_option_expiry_reference(
+        contract, ref, **{**kwargs, "corporate_action_document_bytes": action + b" altered"}
+    ).reason_code == "OPTION_CORPORATE_ACTION_DOCUMENT_CONTENT_MISMATCH"
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    (lambda r: r.pop("corporate_action_review"), "OPTION_CORPORATE_ACTION_EVIDENCE_MISSING"),
+    (lambda r: r["corporate_action_review"].update(
+        source="UNVERIFIED_PROVIDER"), "OPTION_CORPORATE_ACTION_PROVENANCE_UNVERIFIED"),
+    (lambda r: r["corporate_action_review"].update(
+        known_at="2026-11-20T16:11:00-03:00"), "OPTION_CORPORATE_ACTION_PIT_OR_COVERAGE_INVALID"),
+    (lambda r: r["corporate_action_review"].update(
+        coverage_through="2026-11-20T15:29:59.999999-03:00"),
+     "OPTION_CORPORATE_ACTION_PIT_OR_COVERAGE_INVALID"),
+    (lambda r: r["corporate_action_review"].update(
+        unresolved_adjustments=["UNDERLYING_SPLIT"]), "OPTION_CORPORATE_ACTION_REVIEW_REQUIRED"),
+    (lambda r: r["corporate_action_review"].update(
+        deliverable_unchanged=False), "OPTION_CORPORATE_ACTION_REVIEW_REQUIRED"),
+    (lambda r: r.update(official_underlying_price_at="2026-11-20T15:29:59.999999-03:00"),
+     "OPTION_EXPIRY_UNDERLYING_REFERENCE_CLOCK_INVALID"),
+])
+def test_corporate_action_historical_pit_and_exact_expiry_instant_fail_closed(mutation, reason):
+    contract = option_contract()
+    ref = official_reference(contract)
+    mutation(ref)
+    reviewed = review_long_option_expiry_reference(
+        contract, ref, as_of=AS_OF, position_side="LONG")
+    assert reviewed.status == "BLOQUEADO" and reviewed.reason_code == reason
+    assert not reviewed.paper_cash_post_authorized
+
+
+def test_expiry_historical_replay_never_reads_future_received_or_action_notice():
+    contract = option_contract()
+    ref = official_reference(contract)
+    as_of = "2026-11-20T15:47:00-03:00"  # market reference received, action not yet known
+    reviewed = review_long_option_expiry_reference(
+        contract, ref, as_of=as_of, position_side="LONG")
+    assert reviewed.reason_code == "OPTION_CORPORATE_ACTION_PIT_OR_COVERAGE_INVALID"
+    ref["corporate_action_review"]["known_at"] = as_of
+    assert review_long_option_expiry_reference(
+        contract, ref, as_of=as_of, position_side="LONG").status == "NO_VERIFICADO"

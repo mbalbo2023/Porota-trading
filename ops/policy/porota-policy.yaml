@@ -37,6 +37,12 @@ development:
 
 deployment:
   strategy: FIX_FORWARD_ONLY
+  # A229: an exchange calendar cannot veto technical validation or a safe
+  # promotion.  CLOSED/weekend/holiday is a valid deployment session; market
+  # hours still gate simulated instrument admission and real OPEN evidence.
+  technical_predeploy_and_deploy_24x7_required: true
+  offhours_weekends_holidays_are_deploy_veto: false
+  market_calendar_only_gates_paper_entry_and_live_market_proof: true
   single_consolidated_deploy_required: true
   single_frozen_candidate_required: true
   single_final_predeploy_v2_gate_required: true

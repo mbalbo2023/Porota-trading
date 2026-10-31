@@ -13,6 +13,9 @@ import re
 BASE = "deploy/rc6-pr69-isolated-20260915"
 REPO = "mbalbo2023/Porota-trading"
 ACTIONS = frozenset({"opened", "synchronize", "reopened", "ready_for_review"})
+# A229: one candidate-scoped *diagnostic* pilot, never a deployment trigger.
+PILOT_PR_NUMBER = 776
+PILOT_HEAD_REF = "candidate/rc6-a224-consolidated-after-775-20261031"
 
 
 class PRProvenanceRed(ValueError):
@@ -62,3 +65,37 @@ def verify(event: object, *, expected_sha: str, repo: str = REPO,
             "owner_go_verified": False, "tree_verified": False,
             "artifact_verified": False, "runtime_verified": False,
             "automatic_go": False}
+
+
+def select_parallel_pilot(event: object, *, expected_sha: str,
+                          operator_opt_in: str = "") -> dict:
+    """Permit only PR #776 exact branch or a deliberate repository variable.
+
+    The already-authoritative sequential suite stays mandatory. This receipt
+    never verifies a tree, authorizes an owner GO, or promotes a runtime.
+    """
+    base = verify(event, expected_sha=expected_sha)
+    if type(operator_opt_in) is not str or operator_opt_in not in ("", "0", "1"):
+        _red()
+    try:
+        request = event["pull_request"]
+        head_ref = request["head"]["ref"]
+        head_repo = request["head"]["repo"]["full_name"]
+        base_repo = request["base"]["repo"]["full_name"]
+    except (KeyError, TypeError, AttributeError):
+        _red()
+    if (not isinstance(head_ref, str) or
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}", head_ref) is None or
+            base_repo != REPO or head_repo != REPO):
+        _red()
+    selected = (base["pr_number"] == PILOT_PR_NUMBER and
+                head_ref == PILOT_HEAD_REF)
+    if not selected and operator_opt_in != "1":
+        _red()
+    return {"schema_version": 1, "status": "PARALLEL_DIAGNOSTIC_ONLY",
+            "selection": "EXACT_PR776_BRANCH" if selected else "REPOSITORY_OPT_IN",
+            "candidate_sha": base["candidate_sha"],
+            "base_sha": base["base_sha"],
+            "pr_number": base["pr_number"],
+            "owner_go_verified": False, "automatic_go": False,
+            "runtime_authority": False, "tree_verified": False}

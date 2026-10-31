@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Iterable, Mapping
 from rc6_multisource_discovery import canonical_market, canonical_settlement
+from rc6_shadow_runtime.source_authority import source_rank
 
 # All of these states are simulation-ready. They never authorize real money.
 READY_STATES = frozenset({
@@ -45,11 +46,33 @@ FAMILY_ALIASES = {
     "FONDOS_COMUNES": "FCI",
 }
 
-# Familias que deben aparecer siempre en la auditoría, aunque su captura sea cero.
-READINESS_FAMILIES = frozenset({
-    "ACCIONES", "CEDEARS", "BONOS", "OBLIGACIONES", "CAUCIONES", "LETRAS",
-    "ETFS", "FCI", "FUTUROS", "OPCIONES", "LEBAC", "NOBAC", "LICITACIONES",
+# Count execution families, exploratory namespaces and legacy source contexts
+# separately.  Keeping the latter visible preserves historical discoveries;
+# it must not silently give them a new autonomous PAPER engine.
+CANONICAL_PAPER_FAMILIES = frozenset({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 })
+EXPLORATORY_FAMILIES = frozenset({"INDICES", "ACCIONES_USA", "FCI_EXTERIOR"})
+SOURCE_CONTEXT_PARENTS = {
+    "LEBAC": "LETRAS", "NOBAC": "LETRAS", "FCI_LOCAL": "FCI",
+    "LICITACIONES": None, "CANJES": None,
+}
+READINESS_FAMILIES = frozenset(CANONICAL_PAPER_FAMILIES | EXPLORATORY_FAMILIES |
+                               SOURCE_CONTEXT_PARENTS.keys())
+
+
+def family_role(family):
+    family = normalize_family(family)
+    if family in CANONICAL_PAPER_FAMILIES:
+        return "CANONICAL_PAPER_FAMILY", family
+    if family == "INDICES":
+        return "BENCHMARK_SHADOW_ONLY", None
+    if family in EXPLORATORY_FAMILIES:
+        return "CROSS_BORDER_DISCOVERY_SHADOW", None
+    if family in SOURCE_CONTEXT_PARENTS:
+        return "SOURCE_SUBTYPE_OR_CONTEXT", SOURCE_CONTEXT_PARENTS[family]
+    return "UNCLASSIFIED_FAIL_CLOSED", None
 
 def normalize_family(value: Any) -> str:
     text = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
@@ -67,6 +90,49 @@ def _comparison(row: Mapping[str, Any]) -> dict[str, Any]:
     value = row.get("primary_comparison")
     return dict(value) if isinstance(value, Mapping) else {}
 
+
+def _freshness_state(value: Any) -> str:
+    """Accept the producer's string and an explicitly published state object."""
+    if isinstance(value, Mapping):
+        value = value.get("state")
+    return _text(value).upper()
+
+
+def _primary_readiness_gaps(comparison: Mapping[str, Any]) -> list[str]:
+    """Require positive, field-level PPI evidence before displaying READY.
+
+    The real reconciliation producer publishes ``selection_eligible`` and
+    ``field_provenance`` rather than ``comparison_complete``. Either explicit
+    positive completeness signal is accepted, but never a mere READY label.
+    IOL/BYMA freshness is complementary: its outage cannot invalidate a
+    verified PPI-only critical book.
+    """
+    gaps: list[str] = []
+    freshness = comparison.get("freshness")
+    if not isinstance(freshness, Mapping) or _freshness_state(freshness.get("PPI")) != "FRESH":
+        gaps.append("PPI_PRIMARY_FRESHNESS_NOT_VERIFIED")
+    if _text(comparison.get("primary_source")).upper() != "PPI" or (
+            _text(comparison.get("identity_binding")).upper() != "EXPLICIT_PRIMARY_IDENTITY"):
+        gaps.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
+    if (comparison.get("comparison_complete") is False or
+            comparison.get("background_comparison_complete") is False or
+            comparison.get("selection_eligible") is False or
+            (comparison.get("comparison_complete") is not True and
+             comparison.get("selection_eligible") is not True)):
+        gaps.append("PRIMARY_COMPARISON_COMPLETENESS_NOT_VERIFIED")
+    if (comparison.get("review_status") not in (None, "NO_CURRENT_CONFLICT") or
+            comparison.get("identity_conflicts") or comparison.get("invalid_numeric_fields") or
+            comparison.get("divergences", 0)):
+        gaps.append("PRIMARY_COMPARISON_CONFLICT_REVIEW_REQUIRED")
+    provenance = comparison.get("field_provenance")
+    for field in ("last", "bid", "ask"):
+        item = provenance.get(field) if isinstance(provenance, Mapping) else None
+        if (not isinstance(item, Mapping) or
+                source_rank(item.get("source")) != 0 or
+                _freshness_state(item.get("freshness")) != "FRESH"):
+            gaps.append(f"PPI_CRITICAL_FIELD_NOT_VERIFIED:{field}")
+    return gaps
+
 def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
     comparison = _comparison(row)
     reasons: list[str] = []
@@ -78,6 +144,8 @@ def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
         reasons.append("PPI_IOL_CRITICAL_CONFLICT")
     if contract in {"INSUFFICIENT_EVIDENCE", "UNKNOWN"}:
         reasons.append("CRITICAL_FIELDS_OR_TIMESTAMP_MISSING")
+        if _text(comparison.get("contract_state")).upper() in READY_STATES:
+            reasons.extend(_primary_readiness_gaps(comparison))
     missing = comparison.get("missing")
     if isinstance(missing, (int, float)):
         if missing:
@@ -105,20 +173,8 @@ def _reason(row: Mapping[str, Any], contract: str) -> list[str]:
 def _effective_contract(comparison: Mapping[str, Any]) -> str:
     """Never expose READY when freshness or comparison evidence is incomplete."""
     state = _text(comparison.get("contract_state"), "INSUFFICIENT_EVIDENCE").upper()
-    freshness = comparison.get("freshness") or {}
-    if state in READY_STATES:
-        if not comparison:
-            return "INSUFFICIENT_EVIDENCE"
-        if any(
-            (str(item.get("state", "").upper()) if isinstance(item, Mapping) else str(item).upper())
-            in {"STALE", "UNKNOWN"}
-            for item in freshness.values()
-        ):
-            return "INSUFFICIENT_EVIDENCE"
-        if comparison.get("background_comparison_complete") is False:
-            return "INSUFFICIENT_EVIDENCE"
-        if comparison.get("comparison_complete") is False:
-            return "INSUFFICIENT_EVIDENCE"
+    if state in READY_STATES and _primary_readiness_gaps(comparison):
+        return "INSUFFICIENT_EVIDENCE"
     return state
 
 def _key(family: str, symbol: Any, market: Any = "", currency: Any = "",
@@ -152,6 +208,14 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         if key:
             by_identity[key].append(row)
 
+    catalog_identity_counts: dict[tuple[str, str, str, str, str], int] = defaultdict(int)
+    for item in catalog_rows:
+        symbol = _text(item.get("symbol")).upper()
+        if symbol:
+            key = _key(item.get("family") or item.get("instrument_type"), symbol,
+                       item.get("market"), item.get("currency"), item.get("settlement"))
+            catalog_identity_counts[key] += 1
+
     instruments: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str, str]] = set()
     for item in catalog_rows:
@@ -175,14 +239,24 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
             source_row = row
             comparison = _comparison(row)
             contract = _effective_contract(comparison)
-        contract_ready = contract in PAPER_SIMULATABLE_STATES
-        reasons = _reason(source_row, contract)
+        duplicate_catalog = catalog_identity_counts[key] > 1
+        if duplicate_catalog:
+            contract = "BLOCKED_CONFLICT"
+        contract_ready = (contract in PAPER_SIMULATABLE_STATES and
+                          family in CANONICAL_PAPER_FAMILIES)
+        reasons = (["DUPLICATE_CATALOG_EXACT_IDENTITY_REVIEW_REQUIRED"]
+                   if duplicate_catalog else _reason(source_row, contract))
         if len(matches) > 1:
             reasons.append("DUPLICATE_EXACT_IDENTITY_REVIEW_REQUIRED")
         if contract_ready:
             reasons.append("ENTRY_SIGNAL_ECONOMICS_AND_ADMISSION_NOT_EVALUATED")
+        else:
+            if family not in CANONICAL_PAPER_FAMILIES:
+                reasons.append("NO_INDEPENDENT_PAPER_ENGINE_FOR_NAMESPACE")
+        role, parent = family_role(family)
         instruments.append({
             "family": family,
+            "family_role": role, "parent_paper_family": parent,
             "symbol": symbol,
             "market": _text(item.get("market") or (source_row.get("market") if source_row else "")),
             "currency": _text(item.get("currency")),
@@ -205,10 +279,12 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         if not symbol or (_observed_key(row) in catalog_keys):
             continue
         family = _row_family(row)
+        role, parent = family_role(family)
         comparison = _comparison(row)
         contract = _effective_contract(comparison)
         instruments.append({
-            "family": family, "symbol": symbol, "market": _text(row.get("market")),
+            "family": family, "family_role": role, "parent_paper_family": parent,
+            "symbol": symbol, "market": _text(row.get("market")),
             "currency": _text(row.get("currency")),
             "settlement": _text(row.get("term") or row.get("settlement")),
             "contract_state": contract, "paper_contract_ready": False,
@@ -226,6 +302,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         grouped[item["family"]].append(item)
     families: list[dict[str, Any]] = []
     for family in sorted(grouped):
+        role, parent = family_role(family)
         rows = grouped[family]
         ready = sum(item["paper_contract_ready"] for item in rows)
         blocked = sum(item["contract_state"].startswith(BLOCKED_PREFIX) for item in rows)
@@ -244,7 +321,8 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
                 if reason not in gaps:
                     gaps.append(reason)
         families.append({
-            "family": family, "state": state, "instrument_count": len(rows),
+            "family": family, "family_role": role, "parent_paper_family": parent,
+            "state": state, "instrument_count": len(rows),
             "paper_contract_ready": ready, "paper_auto_enabled": 0,
             "entry_authority": False, "blocked": blocked, "pending": pending,
             "real_money_authorized": False, "gaps": gaps[:8],
@@ -255,6 +333,8 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         })
     return {
         "schema_version": 2,
+        "canonical_paper_families": sorted(CANONICAL_PAPER_FAMILIES),
+        "exploratory_shadow_families": sorted(EXPLORATORY_FAMILIES),
         "source_order": "PPI_PRIMARY_IOL_COMPLEMENTARY_BYMA_PUBLIC_COMPLEMENTARY",
         "paper_auto_promotion": False,
         "paper_simulatable_states": sorted(PAPER_SIMULATABLE_STATES),

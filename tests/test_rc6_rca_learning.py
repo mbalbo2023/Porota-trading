@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts import rc6_rca_learning as rca
 
@@ -149,6 +150,46 @@ class TestRCALearning(unittest.TestCase):
         with self.assertRaises(rca.UnsafeRCAInput):
             rca.analyze(report(event()), {"schema_version": 1,
                                           "signatures": [record, dict(record)]})
+
+    def test_malformed_registry_states_unknown_paths_and_symlinks_fail_closed(self):
+        fp = rca.analyze(report(event()))["groups"][0]["fingerprint"]
+        entry = {"fingerprint": fp, "rca_id": "RC6-A219-POSTSTART",
+                 "fix_commit_sha": "a" * 40, "guard_path": "scripts/guard.py",
+                 "test_path": "tests/test_guard.py", "evidence_state": "EN_GITHUB"}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            (root / "tests").mkdir()
+            (root / "scripts/guard.py").write_text("safe", encoding="utf-8")
+            (root / "tests/test_guard.py").write_text("safe", encoding="utf-8")
+            with patch.object(rca, "REGISTRY_ROOT", root):
+                data = {"schema_version": 1, "signatures": [entry]}
+                self.assertEqual(rca.analyze(report(event()), data)["groups"][0]
+                                 ["classification"], "REGISTRY_MATCH_REVIEW_REQUIRED")
+                for malformed in ([], {}, 0, None, True, "UNKNOWN"):
+                    with self.subTest(malformed=malformed):
+                        bad = {**entry, "evidence_state": malformed}
+                        with self.assertRaises(rca.UnsafeRCAInput):
+                            rca.analyze(report(event()), {"schema_version": 1,
+                                                          "signatures": [bad]})
+                with self.assertRaises(rca.UnsafeRCAInput):
+                    rca.analyze(report(event()), {"schema_version": 1,
+                                                 "signatures": [{**entry, "test_path":
+                                                                 "tests/nonexistent.py"}]})
+                (root / "tests/link.py").symlink_to(root / "tests/test_guard.py")
+                with self.assertRaises(rca.UnsafeRCAInput):
+                    rca.analyze(report(event()), {"schema_version": 1,
+                                                 "signatures": [{**entry, "test_path":
+                                                                 "tests/link.py"}]})
+                (root / "linked").symlink_to(root / "tests", target_is_directory=True)
+                with self.assertRaises(rca.UnsafeRCAInput):
+                    rca.analyze(report(event()), {"schema_version": 1,
+                                                 "signatures": [{**entry, "test_path":
+                                                                 "linked/test_guard.py"}]})
+
+    def test_unencodable_nodeid_is_rejected_without_trace_or_leak(self):
+        with self.assertRaisesRegex(rca.UnsafeRCAInput, "RC6_RCA_INPUT_REJECTED"):
+            rca.analyze(report(event(test_nodeid="bad\ud800nodeid")))
 
     def test_cli_writes_only_sanitized_output_and_stays_read_only(self):
         with tempfile.TemporaryDirectory() as directory:

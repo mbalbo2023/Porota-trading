@@ -42,6 +42,7 @@ REQUIRED_EVENT_FIELDS = frozenset({"component", "failure_phase", "run_id",
                                    "source_sha", "timestamp_utc"})
 REGISTRY_FIELDS = frozenset({"fingerprint", "rca_id", "fix_commit_sha",
                              "guard_path", "test_path", "evidence_state"})
+REGISTRY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class UnsafeRCAInput(ValueError):
@@ -116,10 +117,16 @@ def _event(event: object) -> tuple[dict, dict]:
     payload = json.dumps({"v": SCHEMA_VERSION, **dimensions},
                          sort_keys=True, separators=(",", ":")).encode("ascii")
     fingerprint = "sha256:" + hashlib.sha256(payload).hexdigest()
+    if nodeid is not None:
+        try:
+            nodeid_hash = hashlib.sha256(nodeid.encode("utf-8")).hexdigest()
+        except UnicodeEncodeError:
+            _reject()
+    else:
+        nodeid_hash = None
     observation = {"run_id": run_id, "source_sha": sha,
                    "timestamp_utc": when_utc, "timestamp_art": when_art,
-                   "test_nodeid_sha256": hashlib.sha256(nodeid.encode("utf-8")).hexdigest()
-                   if nodeid is not None else None,
+                   "test_nodeid_sha256": nodeid_hash,
                    "evidence_sha256": digest}
     return {"fingerprint": fingerprint, **dimensions}, observation
 
@@ -127,6 +134,16 @@ def _event(event: object) -> tuple[dict, dict]:
 def _repo_path(value: object) -> str:
     path = _checked(value, r"[A-Za-z0-9_./-]{3,160}", limit=160)
     if path.startswith("/") or any(part in {".", "..", ""} for part in path.split("/")):
+        _reject()
+    # A registry is reviewed provenance, never an instruction to follow
+    # symlinks into credentials or out-of-repository paths. Every component
+    # must exist as a regular non-symlink path in this candidate's tree.
+    parent = REGISTRY_ROOT
+    for part in path.split("/"):
+        parent = parent / part
+        if parent.is_symlink():
+            _reject()
+    if not parent.is_file():
         _reject()
     return path
 
@@ -151,7 +168,7 @@ def _registry(data: object) -> dict[str, dict]:
                  "guard_path": _repo_path(raw["guard_path"]),
                  "test_path": _repo_path(raw["test_path"]),
                  "evidence_state": raw["evidence_state"]}
-        if value["evidence_state"] not in STATES:
+        if not isinstance(value["evidence_state"], str) or value["evidence_state"] not in STATES:
             _reject()
         indexed[signature] = value
     return indexed

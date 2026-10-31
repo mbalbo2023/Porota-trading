@@ -156,12 +156,80 @@ def test_real_a175_open_origin_rejects_missing_daily_no_go(pinned_running_origin
         _prove(pinned_running_origin)
 
 
-def test_real_a175_dated_hold_expires_at_next_art_day(pinned_running_origin,monkeypatch):
+def test_real_a175_next_art_day_rechecks_historical_anchor_and_live_timer(
+        pinned_running_origin,monkeypatch):
     class NextDayClock(datetime):
         @classmethod
         def now(cls,tz=None):
             value=datetime(2026,10,30,3,0,tzinfo=timezone.utc)
             return value.replace(tzinfo=None) if tz is None else value.astimezone(tz)
     monkeypatch.setattr(q,'datetime',NextDayClock)
-    with pytest.raises(ValueError,match='QUIESCENCE_A175_DATED_HOLD_EXPIRED'):
-        _prove(pinned_running_origin)
+    proof=_prove(pinned_running_origin)
+    assert proof['technical_24x7'] is True
+    assert proof['technical_hold']==q.A175_TECHNICAL_HOLD
+    assert proof['operator_hold_business_day']=='2026-10-29'
+    assert proof['paper_execution_authorized'] is False
+    _,_,current,_,_=pinned_running_origin
+    with pytest.raises(ValueError,match='QUIESCENCE_A175_NO_GO_HOLD_CHANGED'):
+        q.a175_failed_running_proof(CANDIDATE,allow_intraday_a175=True,
+            operator_a151_proof=lambda:('a'*64,'A151-40686116017-1'),
+            operator_timer_disabled=lambda:False,
+            operator_current_no_go_proof=lambda:current)
+
+
+@pytest.mark.parametrize('when',[
+    datetime(2026,11,1,15,0,tzinfo=timezone.utc),  # Sunday
+    datetime(2026,11,6,15,0,tzinfo=timezone.utc),  # audited BYMA holiday
+])
+def test_real_a175_closed_technical_recovery_sunday_holiday_and_receipt_origin(
+        pinned_running_origin,monkeypatch,when):
+    prior,book,current,_,originals=pinned_running_origin
+    class TechnicalClock(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            return when.replace(tzinfo=None) if tz is None else when.astimezone(tz)
+    monkeypatch.setattr(q,'datetime',TechnicalClock)
+    book.update(process_state='WAITING_MARKET',session_state='MARKET_CLOSED')
+    monkeypatch.setattr(q,'admit',lambda **kwargs:'WAITING_MARKET'
+                        if not kwargs.get('allow_market_open_suspend') else
+                        (_ for _ in ()).throw(ValueError('NO_WEEKEND_OPEN')))
+    hold={'timer_disabled':True}
+    def prove():
+        return q.a175_failed_running_proof(
+            CANDIDATE,allow_intraday_a175=False,
+            operator_timer_disabled=lambda:hold['timer_disabled'],
+            operator_current_no_go_proof=lambda:current)
+    proof=prove()
+    assert proof['technical_24x7'] is True
+    assert proof['intraday_a175'] is False
+    assert proof['operator_hold_business_day']=='2026-10-29'
+    assert proof['flat_book']['process_state']=='WAITING_MARKET'
+    stopped={name:{'id':v['Id'],'image':v['Image']} for name,v in originals.items()}
+    receipt={'candidate_sha':CANDIDATE,'status':'DRAINED',
+             'a175_pending_adopted':True,
+             'a175_origin_candidate':q.A175_FAILED_CANDIDATE,
+             'a175_origin_sha256':q.A175_FAILED_RECEIPT_SHA256,
+             'a175_previous_proof':proof,'market_open_suspended':False,
+             'inflight':'ABSENT_OWNED_RUNTIME_STOPPED',
+             'containers':stopped,'stop_attempted':list(q.OWNED),
+             'stop_evidence':{name:{'before':q.lifecycle(v),
+                                    'classification':'CLEAN_EXIT',
+                                    'after':{'Status':'exited','ExitCode':0}}
+                              for name,v in originals.items()},
+             'recorded_at':when.isoformat()}
+    operator=type('Operator',(),{
+        'exact_a176_operator_no_go_continuation':staticmethod(
+            lambda *,historical_anchor=False: current if historical_anchor else
+                (_ for _ in ()).throw(ValueError('HISTORICAL_REQUIRED'))),
+        'operator_preopen_timer_disabled':staticmethod(lambda:hold['timer_disabled'])})
+    monkeypatch.setattr(q,'candidate_operator_module',lambda **_:operator)
+    assert q.a175_receipt_origin(receipt)==prior
+    current['receipt_sha256']='f'*64
+    with pytest.raises(ValueError,match='A175_CURRENT_NO_GO_CHANGED'):
+        q.a175_receipt_origin(receipt)
+    current['receipt_sha256']=q.A176_OPERATOR_NO_GO_RECEIPT_SHA256
+    hold['timer_disabled']=False
+    with pytest.raises(ValueError,match='A175_CURRENT_NO_GO_CHANGED'):
+        q.a175_receipt_origin(receipt)
+    with pytest.raises(ValueError,match='A175_NO_GO_HOLD_CHANGED'):
+        prove()

@@ -10,7 +10,7 @@ integration. In particular, an in-the-money option is *not* an exercise receipt.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -26,6 +26,7 @@ REAL_ROUTES_USED = ()
 EXPIRY_REFERENCE_SCHEMA = "rc6.option.expiry.reference.v1"
 _ART_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+MAX_REFERENCE_BYTES = 262_144
 _FORBIDDEN_AUTHORITY_FIELDS = frozenset({
     "paper_exercise_authorized", "paper_cash_post_authorized",
     "real_order_id", "broker_order_id", "fill_id", "cash_posted",
@@ -47,7 +48,13 @@ class OptionExpiryReview:
 
 
 def contract_snapshot_sha256(contract: InstrumentContract) -> str:
-    """Bind an evidence record to the exact immutable contract snapshot."""
+    """Bind the contract, including *instants*, to a reproducible snapshot.
+
+    ``InstrumentContract`` permits aware ``datetime`` values as well as ISO
+    strings.  Both spellings of the same instant must hash identically, while
+    a one-microsecond change must not.  Naive clocks are never localized by
+    the process timezone.
+    """
 
     if not isinstance(contract, InstrumentContract):
         raise TypeError("OPTION_CONTRACT_REQUIRED")
@@ -56,8 +63,15 @@ def contract_snapshot_sha256(contract: InstrumentContract) -> str:
             return str(value)
         raise TypeError("OPTION_CONTRACT_SNAPSHOT_VALUE_UNSUPPORTED")
 
+    snapshot = asdict(contract)
+    for clock in ("expires_at", "price_tick_known_at", "price_tick_effective_at"):
+        if snapshot.get(clock) is not None:
+            stamp = _stamp(snapshot[clock])
+            if stamp is None:
+                raise ValueError("OPTION_CONTRACT_SNAPSHOT_CLOCK_INVALID:" + clock)
+            snapshot[clock] = stamp.astimezone(timezone.utc).isoformat(timespec="microseconds")
     encoded = json.dumps(
-        asdict(contract),
+        snapshot,
         sort_keys=True,
         separators=(",", ":"),
         default=encode_decimal,
@@ -88,12 +102,20 @@ def _stamp(value: object) -> datetime | None:
         return None
 
 
+def _source_matches(source_bytes: bytes | None, expected_sha256: str) -> bool:
+    return (isinstance(source_bytes, bytes)
+            and 0 < len(source_bytes) <= MAX_REFERENCE_BYTES
+            and hashlib.sha256(source_bytes).hexdigest() == expected_sha256)
+
+
 def review_long_option_expiry_reference(
     contract: InstrumentContract,
     reference: Mapping[str, object] | None,
     *,
     as_of: datetime | str,
     position_side: str | None = None,
+    official_document_bytes: bytes | None = None,
+    corporate_action_document_bytes: bytes | None = None,
 ) -> OptionExpiryReview:
     """Check PIT/identity/adjustment evidence before *considering* expiry work.
 
@@ -130,6 +152,9 @@ def review_long_option_expiry_reference(
     digest = reference.get("document_sha256")
     if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
         return _blocked("OPTION_OFFICIAL_DOCUMENT_DIGEST_MISSING")
+    if (official_document_bytes is not None
+            and not _source_matches(official_document_bytes, digest)):
+        return _blocked("OPTION_OFFICIAL_DOCUMENT_CONTENT_MISMATCH")
     if reference.get("contract_sha256") != contract_snapshot_sha256(contract):
         return _blocked("OPTION_EXPIRY_CONTRACT_SNAPSHOT_MISMATCH")
 
@@ -161,6 +186,32 @@ def review_long_option_expiry_reference(
     if reference.get("delivery_rule") not in {"PHYSICAL", "CASH"}:
         return _blocked("OPTION_EXERCISE_DELIVERY_RULE_UNVERIFIED")
 
+    # A bare UNCHANGED string is not evidence that the issuer/clearing
+    # corporate-action calendar has been inspected through the expiry instant.
+    # The source remains unauthenticated until an independent reviewer signs
+    # its digest; this structural check never gives exercise authority.
+    action = reference.get("corporate_action_review")
+    if not isinstance(action, Mapping):
+        return _blocked("OPTION_CORPORATE_ACTION_EVIDENCE_MISSING")
+    action_sha = action.get("document_sha256")
+    if (action.get("source") != "BYMA_CORPORATE_ACTIONS_OFFICIAL"
+            or not isinstance(action_sha, str) or not _SHA256_RE.fullmatch(action_sha)
+            or action.get("contract_sha256") != reference.get("contract_sha256")
+            or action.get("underlying") != contract.underlying):
+        return _blocked("OPTION_CORPORATE_ACTION_PROVENANCE_UNVERIFIED")
+    if (corporate_action_document_bytes is not None
+            and not _source_matches(corporate_action_document_bytes, action_sha)):
+        return _blocked("OPTION_CORPORATE_ACTION_DOCUMENT_CONTENT_MISMATCH")
+    action_known, coverage = (_stamp(action.get(name)) for name in
+                              ("known_at", "coverage_through"))
+    if (action_known is None or coverage is None
+            or not utc_microseconds(expiry) <= utc_microseconds(action_known) <= utc_microseconds(now)
+            or utc_microseconds(coverage) < utc_microseconds(expiry)):
+        return _blocked("OPTION_CORPORATE_ACTION_PIT_OR_COVERAGE_INVALID")
+    if (action.get("unresolved_adjustments") != []
+            or action.get("deliverable_unchanged") is not True):
+        return _blocked("OPTION_CORPORATE_ACTION_REVIEW_REQUIRED")
+
     effective = _stamp(reference.get("effective_at"))
     published = _stamp(reference.get("published_at"))
     received = _stamp(reference.get("received_at"))
@@ -171,7 +222,8 @@ def review_long_option_expiry_reference(
             <= utc_microseconds(published) <= utc_microseconds(received)
             <= utc_microseconds(now)):
         return _blocked("OPTION_EXPIRY_PIT_SEQUENCE_INVALID")
-    if (utc_microseconds(mark_at) > utc_microseconds(effective)
+    if (utc_microseconds(mark_at) != utc_microseconds(expiry)
+            or utc_microseconds(mark_at) > utc_microseconds(effective)
             or mark_at.astimezone(_ART_TZ).date() != expiry.astimezone(_ART_TZ).date()):
         return _blocked("OPTION_EXPIRY_UNDERLYING_REFERENCE_CLOCK_INVALID")
 

@@ -269,11 +269,18 @@ def test_caucion_final_insert_rechecks_global_receipt_in_runtime_image(tmp_path,
         return broker.allocate_caucion([offer], caucion_policy(), "receipt-test",
                                        as_of=offer.quoted_at)
 
-    # A valid receipt lets both existing PAPER paths operate in an isolated book.
+    # GO alone does not authenticate a live PPI caucion quote or its exact
+    # financial terms. The effective runtime must HOLD, while independent
+    # historical replay fixtures remain executable 24x7.
     monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "go.db"))
     green = PaperBroker(PaperStore(str(tmp_path / "go.db")), initial_cash="10000",
                         daily_loss_pct="1")
+    with pytest.raises(ValueError, match="CAUCION_RUNTIME_PPI_LIVE_CONTRACT_REQUIRED"):
+        attempt(green)
+    with green.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "separate-effective-runtime.db"))
     accepted = attempt(green)
     assert accepted.get("paper_id")
 
@@ -288,6 +295,27 @@ def test_caucion_final_insert_rechecks_global_receipt_in_runtime_image(tmp_path,
         assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM paper_caucion_allocations").fetchone()[0] == 0
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('invalid_state', ['NON_PAPER', 'REAL_ORDER_COUNTER'])
+def test_a228_caucion_receipt_go_cannot_override_live_paper_zero(tmp_path, monkeypatch, invalid_state):
+    from test_production_paper_v1634 import caucion_offer
+
+    monkeypatch.setenv('PAPER_V17_DB_PATH', str(tmp_path / 'effective.sqlite'))
+    monkeypatch.setattr(gate, 'admission_status', lambda: (True, ''))
+    broker = PaperBroker(PaperStore(str(tmp_path / 'effective.sqlite')),
+                         initial_cash='10000', daily_loss_pct='1')
+    with broker.store.connect() as db:
+        if invalid_state == 'NON_PAPER':
+            db.execute("UPDATE observer_state SET mode='REAL' WHERE id=1")
+        else:
+            db.execute("UPDATE observer_state SET real_orders_sent=1 WHERE id=1")
+    offer = caucion_offer()
+    with pytest.raises(ValueError, match='PAPER_RUNTIME_STATE_NOT_SAFE'):
+        broker.place_caucion(offer, '1000', 'A228-CLOSED-COUNTER', offer.quoted_at)
+    with broker.store.connect() as db:
+        assert db.execute('SELECT count(*) FROM paper_cauciones').fetchone()[0] == 0
+        assert db.execute('SELECT count(*) FROM paper_events WHERE event_type=\'PAPER_CAUCION_PLACED\'').fetchone()[0] == 0
 
 
 def test_runtime_spot_book_requires_guard_and_matching_fixture_receipt(tmp_path, monkeypatch):
@@ -345,6 +373,28 @@ def test_runtime_spot_receipt_revoked_before_locked_insert_rolls_back(tmp_path, 
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('state_sql', [
+    "UPDATE observer_state SET mode='REAL' WHERE id=1",
+    "UPDATE observer_state SET real_orders_sent=1 WHERE id=1",
+])
+def test_a228_spot_receipt_go_cannot_override_locked_runtime_state(
+        tmp_path, monkeypatch, state_sql):
+    from test_production_paper_v1634 import quote
+
+    path = tmp_path / 'runtime-paper-zero.db'
+    monkeypatch.setenv('PAPER_V17_DB_PATH', str(path))
+    monkeypatch.setattr(gate, 'admission_status', lambda: (True, ''))
+    broker = PaperBroker(PaperStore(str(path)), initial_cash='10000',
+                         admission_guard=lambda *_: (True, ''))
+    with broker.store.connect() as db:
+        db.execute(state_sql)
+    assert broker._open(quote(ask_size='100'), D('0.8'), {})[:2] == (
+        False, 'PAPER_RUNTIME_STATE_NOT_SAFE')
+    with broker.store.connect() as db:
+        assert db.execute('SELECT COUNT(*) FROM paper_positions').fetchone()[0] == 0
+        assert db.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
 
 
 def test_runtime_spot_contract_revoked_before_locked_insert_rolls_back(tmp_path, monkeypatch):

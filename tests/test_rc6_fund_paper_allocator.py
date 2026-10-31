@@ -1,4 +1,6 @@
 """FCI cash-parking: deterministic synthetic PAPER, never broker authority."""
+import os
+import sqlite3
 from dataclasses import replace
 from decimal import Decimal
 
@@ -144,6 +146,69 @@ def test_synthetic_same_event_retry_debits_cash_once_and_never_creates_real_orde
         assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
+def test_locked_fci_cash_buffer_survives_stale_budget_and_distinct_event_retry(tmp_path):
+    e, b = fixture()
+    store = PaperStore(str(tmp_path / "fund-buffer.db"))
+    broker = PaperBroker(store, initial_cash="2000")
+    kwargs = dict(evidence=e, budget=b, occurred_at=STAMP,
+                  cash_guard=lambda conn: broker._cash(
+                      STAMP, "ARS", connection=conn, for_execution=True),
+                  admission_guard=lambda conn: "")
+    simulate_fund_subscription(broker.family_paper, lifecycle_id="first",
+                               event_id="first-event", **kwargs)
+    assert broker._cash(STAMP, "ARS") == Decimal("1000")
+    # The earlier assessment still advertises 2,000, but only 1,000 remains.
+    # The second debit would leave 0, violating the 250 ARS buffer.
+    with pytest.raises(ValueError, match="FCI_PAPER_INSUFFICIENT_CASH"):
+        simulate_fund_subscription(broker.family_paper, lifecycle_id="second",
+                                   event_id="second-event", **kwargs)
+    assert broker._cash(STAMP, "ARS") == Decimal("1000")
+    with store.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 1
+        assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("balance", ["1249.99", "250", "0"])
+def test_locked_fci_buffer_uses_live_cash_not_asserted_budget(tmp_path, balance):
+    e, b = fixture()
+    store = PaperStore(str(tmp_path / "fund-live-buffer.db"))
+    broker = PaperBroker(store, initial_cash="2000")
+    with pytest.raises(ValueError, match="FCI_PAPER_INSUFFICIENT_CASH"):
+        simulate_fund_subscription(
+            broker.family_paper, evidence=e, budget=b, lifecycle_id="one",
+            event_id="one-event", occurred_at=STAMP,
+            cash_guard=lambda conn: Decimal(balance), admission_guard=lambda conn: "")
+    with store.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+        assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("alias_kind", ["hardlink", "symlink"])
+def test_fci_executor_rejects_store_alias_before_any_cash_event(tmp_path, monkeypatch,
+                                                                 alias_kind):
+    e, b = fixture()
+    store = PaperStore(str(tmp_path / "owned-paper.db"))
+    broker = PaperBroker(store, initial_cash="2000")
+    original = store.path
+    alias = tmp_path / "untrusted-alias.db"
+    if alias_kind == "hardlink":
+        os.link(original, alias)
+    else:
+        alias.symlink_to(original)
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "different-runtime.db"))
+    monkeypatch.setattr(store, "path", str(alias))
+    with pytest.raises(ValueError, match="FCI_PAPER_STORE_IDENTITY_UNVERIFIED"):
+        simulate_fund_subscription(
+            broker.family_paper, evidence=e, budget=b, lifecycle_id="alias",
+            event_id="alias-event", occurred_at=STAMP,
+            cash_guard=lambda conn: Decimal("2000"), admission_guard=lambda conn: "")
+    # Inspect the original inode, never open the rejected alias in the test.
+    with sqlite3.connect(f"file:{original}?mode=ro", uri=True) as conn:
+        conn.execute("PRAGMA query_only=ON")
+        assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+        assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
 def test_nonzero_fee_stays_hold_with_no_ledger_write_even_when_cash_is_sufficient(tmp_path):
     e, b = fixture()
     e = replace(e, subscription_fee_ars=Decimal("17.25"))
@@ -206,6 +271,10 @@ def test_nonzero_fee_stays_hold_with_no_ledger_write_even_when_cash_is_sufficien
      "FCI_EXACT_REGULATION_UNVERIFIED_AT_PIT"),
     (lambda e, b: (replace(e, cutoff_zone="UTC"), b),
      "FCI_CLASS_CUTOFF_ZONE_UNKNOWN"),
+    (lambda e, b: (replace(e, class_evidence=replace(
+        e.class_evidence, terms=replace(e.class_evidence.terms,
+                                        market="FCI_EXTERIOR", currency="USD"))), b),
+     "FCI_EXACT_CLASS_MISMATCH"),
 ])
 def test_missing_inconsistent_future_and_unverified_inputs_hold(alter, reason):
     e, b = fixture()
@@ -241,6 +310,31 @@ def test_executor_never_operates_with_missing_guards_or_runtime_store(tmp_path, 
         simulate_fund_subscription(broker.family_paper, **kwargs)
     with store.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("mode,order_counter", [
+    ("BROKER_LIVE", 0), ("PRODUCTION_PAPER", 1),
+])
+def test_fci_synthetic_adapter_never_enters_runtime_even_with_forged_go(
+        tmp_path, monkeypatch, mode, order_counter):
+    import rc6_paper_admission_gate as gate
+    e, b = fixture()
+    store = PaperStore(str(tmp_path / "forbidden-runtime.db"))
+    broker = PaperBroker(store, initial_cash="2000")
+    with store.connect() as conn:
+        conn.execute("UPDATE observer_state SET mode=?, real_orders_sent=? WHERE id=1",
+                     (mode, order_counter))
+    monkeypatch.setenv("PAPER_V17_DB_PATH", store.path)
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    with pytest.raises(ValueError, match="FCI_RUNTIME_ADAPTER_NOT_AUTHORIZED"):
+        simulate_fund_subscription(
+            broker.family_paper, evidence=e, budget=b, lifecycle_id="unsafe",
+            event_id="unsafe-event", occurred_at=STAMP,
+            cash_guard=lambda conn: Decimal("2000"), admission_guard=lambda conn: "")
+    with store.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+        observed = conn.execute("SELECT mode, real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        assert tuple(observed) == (mode, order_counter)
 
 
 def test_executor_denies_non_authorized_external_or_admission_guard(tmp_path):

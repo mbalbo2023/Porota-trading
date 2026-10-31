@@ -19,7 +19,8 @@ def test_a175_exact_running_classifier_precedes_generic_closed():
     code = code.split('      - name: Capture exact pre-suspend host fingerprint', 1)[0]
     assert code.index(f"marker_candidate=='{SOURCE}'") < code.index("print('CLOSED')")
     assert IMAGE in code and 'candidate.a175_failed_running_proof(' in code
-    assert 'operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation' in code
+    assert 'operator_current_no_go_proof=lambda:operator.exact_a176_operator_no_go_continuation(' in code
+    assert 'historical_anchor=True' in code
     assert 'require_installed_a175_source=True' in code
     assert "proof.get('origin_sha256')!=candidate.A175_FAILED_RECEIPT_SHA256" in code
     assert "proof.get('image_id')!=candidate.A175_LOADED_IMAGE_ID" in code
