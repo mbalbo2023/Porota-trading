@@ -44,14 +44,17 @@ CHECKPOINT_SCHEMA_VERSION = 2
 MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 MARKET_OPEN = clock_time(10, 30)
 MARKET_CLOSE = clock_time(17, 0)
-COM19024_EFFECTIVE = date(2026, 11, 2)
-COM19024_REVIEWED_THROUGH = date(2026, 12, 31)
-# BYMA official COM18782 is in force through 01-Nov-2026; COM19024 applies
-# from 02-Nov. This is a *family* contract, not one universal market close.
+COM19031_EFFECTIVE = date(2026, 11, 2)
+COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
+# BYMA official COM19031 (28-Oct-2026) supersedes COM19024 from 02-Nov.
+# https://www.byma.com.ar/comunicados/com19031-horarios
+# PDF SHA256: fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0
+# It moves only *intraday PPT/SENEBI* 17:45 -> 17:30, not regular T+1.
+# This is a *family* contract, not one universal market close.
 # Unverified futures underlyings/FCI/ETF sessions are not assigned a guessed
 # end-of-day window or promoted to PAPER readiness by this observation helper.
-COM19024_1800_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "OPCIONES"})
-COM19024_1700_FAMILIES = frozenset({
+COM19031_1800_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "OPCIONES"})
+COM19031_1700_FAMILIES = frozenset({
     "CAUCIONES", "BONOS", "LETRAS", "OBLIGACIONES", "ON"})
 
 
@@ -75,21 +78,21 @@ def is_operational_market_window(now: datetime | None = None, *,
             return False
     except (ValueError, TypeError, KeyError, OSError):
         return False
-    if local.date() < COM19024_EFFECTIVE:
+    if local.date() < COM19031_EFFECTIVE:
         return MARKET_OPEN <= local.time() < MARKET_CLOSE
     if family is None:
         # Mixed/unknown identity cannot implicitly stretch all families.
         return MARKET_OPEN <= local.time() < MARKET_CLOSE
     normalized = str(family).strip().upper()
-    if normalized in COM19024_1800_FAMILIES:
+    if normalized in COM19031_1800_FAMILIES:
         return MARKET_OPEN <= local.time() < clock_time(18, 0)
-    if normalized in COM19024_1700_FAMILIES:
+    if normalized in COM19031_1700_FAMILIES:
         return MARKET_OPEN <= local.time() < MARKET_CLOSE
     return False  # Futures/subtypes and unknown contracts need their own proof.
 
 
 def is_late_observation_window(now: datetime | None = None) -> bool:
-    """COM19024 date/time window for *considering* exact late identities.
+    """COM19031 date/time window for *considering* exact late identities.
 
     The official BYMA schedule is segmented: variable-income T+1 and regular
     options/plazos close at 18:00, but cash-immediate, fixed income and
@@ -99,7 +102,7 @@ def is_late_observation_window(now: datetime | None = None) -> bool:
     if now is not None and (now.tzinfo is None or now.utcoffset() is None):
         return False
     local = (now or datetime.now(MARKET_TZ)).astimezone(MARKET_TZ)
-    if (not COM19024_EFFECTIVE <= local.date() <= COM19024_REVIEWED_THROUGH
+    if (not COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
             or local.year not in byma.ANIOS_AUDITADOS):
         return False
     try:
@@ -120,7 +123,7 @@ def is_verified_late_contract_window(now: datetime | None = None, *,
     their own verified adapter/segment before any after-17 collection.
     """
     return (is_late_observation_window(now)
-            and str(family).strip().upper() in COM19024_1800_FAMILIES
+            and str(family).strip().upper() in COM19031_1800_FAMILIES
             and str(market).strip().upper() == "BYMA"
             and str(settlement).strip().upper() == "A-24HS"
             and str(settlement_source).strip().upper() == "PPI_FIELD")

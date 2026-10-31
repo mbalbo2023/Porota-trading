@@ -167,8 +167,10 @@ def _operational_universe() -> list[str]:
 def _late_verified_universe_with_source(now: datetime, scope: str) -> tuple[list[str], str]:
     """After 17:00, admit only exact BYMA/T+1 identities verified by PPI.
 
-    COM19024 does not extend immediate settlement, fixed income, cauciones or
-    every future to 18:00. This IOL adapter requests term=t1, so broader
+    BYMA COM19031 (02-Nov-2026, replacing COM19024) does not extend immediate
+    settlement, fixed income, cauciones or every future to 18:00. Its separate
+    PPT/SENEBI intraday limit is 17:30, NOT a limit on regular T+1 equities.
+    This IOL adapter requests term=t1, so broader
     family-only catalog queries are unsafe. No emergency ticker fallback,
     IOL reauthentication, writes to the DB or PAPER admission occur here.
     """

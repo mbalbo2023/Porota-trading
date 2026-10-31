@@ -8,7 +8,8 @@ from be_paper_engine import PaperBroker, PaperStore
 from rc6_fund_paper_allocator import (
     PAPER_ONLY, REAL_ROUTES_USED, RUNTIME_ENTRY_AUTHORITY,
     FundAllocationBudget, FundAllocationEvidence, FundNavMark,
-    assess_fund_cash_parking, simulate_fund_subscription,
+    assess_fund_cash_parking, project_fund_subscription_cash,
+    simulate_fund_subscription,
 )
 from rc6_fund_paper_reconciler import FundClassEvidence, reconcile_fund_store
 from rc6_paper_family_lifecycle import PaperFundTerms
@@ -49,6 +50,62 @@ def test_synthetic_cash_parking_is_explicitly_not_runtime_authority():
     assert d.paper_only and PAPER_ONLY and d.real_routes_used == REAL_ROUTES_USED == ()
 
 
+def test_fee_aware_projection_distinguishes_net_gross_and_cash_buffer_without_authority():
+    projection = project_fund_subscription_cash(
+        subscription_net_ars=Decimal("1000.10"),
+        fee_ars=Decimal("17.25"), available_cash_ars=Decimal("2000"),
+        minimum_cash_buffer_ars=Decimal("250"),
+        maximum_position_ars=Decimal("1500"))
+    assert projection.subscription_net_ars == Decimal("1000.10")
+    assert projection.fee_ars == Decimal("17.25")
+    assert projection.gross_cash_debit_ars == Decimal("1017.35")
+    assert projection.minimum_cash_required_ars == Decimal("1267.35")
+    assert projection.cash_after_debit_ars == Decimal("982.65")
+    assert projection.cash_after_buffer_ars == Decimal("732.65")
+    assert projection.within_cash_limit and projection.within_position_limit
+    assert projection.paper_only is True
+    assert projection.runtime_entry_authority is False
+
+
+@pytest.mark.parametrize("fee", [None, Decimal("-0.01"), Decimal("NaN"),
+                                  Decimal("Infinity"), True, "unverified"])
+def test_fee_aware_projection_rejects_unverified_negative_or_nonfinite_fees(fee):
+    with pytest.raises(ValueError, match="FCI_CASH_PROJECTION_INVALID"):
+        project_fund_subscription_cash(
+            subscription_net_ars=Decimal("1000"), fee_ars=fee,
+            available_cash_ars=Decimal("2000"),
+            minimum_cash_buffer_ars=Decimal("250"),
+            maximum_position_ars=Decimal("1500"))
+
+
+def test_fee_aware_projection_uses_gross_for_buffer_and_net_for_position_limit():
+    exact = project_fund_subscription_cash(
+        subscription_net_ars="1000", fee_ars="25.50",
+        available_cash_ars="1275.50", minimum_cash_buffer_ars="250",
+        maximum_position_ars="1000")
+    assert exact.within_cash_limit and exact.within_position_limit
+    short_cash = project_fund_subscription_cash(
+        subscription_net_ars="1000", fee_ars="25.50",
+        available_cash_ars="1275.49", minimum_cash_buffer_ars="250",
+        maximum_position_ars="999.99")
+    assert not short_cash.within_cash_limit
+    assert not short_cash.within_position_limit
+    assert short_cash.cash_after_buffer_ars == Decimal("-0.01")
+
+
+def test_allocator_rejects_fee_inclusive_shortfall_even_when_net_and_buffer_fit():
+    evidence, budget = fixture()
+    evidence = replace(evidence, subscription_fee_ars=Decimal("17.25"))
+    budget = replace(budget, available_cash_ars=Decimal("1250"))
+    decision = assess_fund_cash_parking(evidence, budget, as_of=STAMP)
+    assert decision.status == "HOLD" and decision.amount_ars is None
+    assert "FCI_NONZERO_FEE_NOT_MODELED_IN_LEDGER" in decision.reason_codes
+    assert "FCI_FEE_INCLUSIVE_CASH_LIMIT" in decision.reason_codes
+    # Net amount plus cash buffer fits exactly; only the *extra fee* exceeds it.
+    assert "FCI_CASH_OR_POSITION_LIMIT" not in decision.reason_codes
+    assert decision.runtime_entry_authority is False
+
+
 def test_synthetic_exercises_actual_durable_subscription_and_open_reconciliation(tmp_path):
     e, b = fixture()
     store = PaperStore(str(tmp_path / "fund.db"))
@@ -63,6 +120,47 @@ def test_synthetic_exercises_actual_durable_subscription_and_open_reconciliation
     assert snap.units is None and snap.net_pnl_ars is None
     with store.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 1
+        assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_synthetic_same_event_retry_debits_cash_once_and_never_creates_real_order(tmp_path):
+    e, b = fixture()
+    store = PaperStore(str(tmp_path / "fund-idempotent.db"))
+    broker = PaperBroker(store, initial_cash="2000")
+    kwargs = dict(
+        evidence=e, budget=b, lifecycle_id="fci-once", event_id="fci-exact-event",
+        occurred_at=STAMP, cash_guard=lambda conn: broker._cash(
+            STAMP, "ARS", connection=conn, for_execution=True),
+        admission_guard=lambda conn: "")
+    assert broker._cash(STAMP, "ARS") == Decimal("2000")
+    first = simulate_fund_subscription(broker.family_paper, **kwargs)
+    assert first["state"] == "SUBSCRIBE_REQUESTED"
+    assert broker._cash(STAMP, "ARS") == Decimal("1000")
+    again = simulate_fund_subscription(broker.family_paper, **kwargs)
+    assert again["state"] == "SUBSCRIBE_REQUESTED"
+    assert broker._cash(STAMP, "ARS") == Decimal("1000")
+    with store.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 1
+        assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_nonzero_fee_stays_hold_with_no_ledger_write_even_when_cash_is_sufficient(tmp_path):
+    e, b = fixture()
+    e = replace(e, subscription_fee_ars=Decimal("17.25"))
+    decision = assess_fund_cash_parking(e, b, as_of=STAMP)
+    assert decision.status == "HOLD" and decision.amount_ars is None
+    assert "FCI_NONZERO_FEE_NOT_MODELED_IN_LEDGER" in decision.reason_codes
+    store = PaperStore(str(tmp_path / "fund-fee-hold.db"))
+    broker = PaperBroker(store, initial_cash="2000")
+    with pytest.raises(ValueError, match="FCI_NONZERO_FEE_NOT_MODELED_IN_LEDGER"):
+        simulate_fund_subscription(
+            broker.family_paper, evidence=e, budget=b, lifecycle_id="fci-fee",
+            event_id="fci-fee-event", occurred_at=STAMP,
+            cash_guard=lambda conn: Decimal("2000"),
+            admission_guard=lambda conn: "")
+    assert broker._cash(STAMP, "ARS") == Decimal("2000")
+    with store.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
         assert conn.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 

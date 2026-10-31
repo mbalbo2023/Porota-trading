@@ -66,6 +66,28 @@ class FundAllocationBudget:
 
 
 @dataclass(frozen=True)
+class FundCashProjection:
+    """Pure ARS cash arithmetic, not a subscription or broker authorization.
+
+    ``subscription_net_ars`` is the intended fund amount *before* account
+    fees. The eventual locked lifecycle must debit ``gross_cash_debit_ars``
+    exactly once before a nonzero fee can ever be admitted. At present the
+    executor debits the net amount only, so nonzero fees remain HOLD.
+    """
+
+    subscription_net_ars: Decimal
+    fee_ars: Decimal
+    gross_cash_debit_ars: Decimal
+    minimum_cash_required_ars: Decimal
+    cash_after_debit_ars: Decimal
+    cash_after_buffer_ars: Decimal
+    within_position_limit: bool
+    within_cash_limit: bool
+    paper_only: bool = True
+    runtime_entry_authority: bool = False
+
+
+@dataclass(frozen=True)
 class FundAllocationDecision:
     status: str
     reason_codes: tuple[str, ...]
@@ -103,6 +125,30 @@ def _source(reference, digest, known_at, at, *, synthetic):
         return False
     stamp = _at(known_at)
     return stamp is not None and stamp <= at
+
+
+def project_fund_subscription_cash(*, subscription_net_ars, fee_ars,
+                                   available_cash_ars, minimum_cash_buffer_ars,
+                                   maximum_position_ars) -> FundCashProjection:
+    """Calculate fee-inclusive cash needs without granting entry authority.
+
+    An unknown, negative or non-finite fee is a hard error. This projection
+    cannot mutate a PAPER ledger, authenticate a source, or release the
+    separate nonzero-fee guard in ``assess_fund_cash_parking``.
+    """
+    net = _amount(subscription_net_ars)
+    fee = _amount(fee_ars)
+    available = _amount(available_cash_ars)
+    buffer = _amount(minimum_cash_buffer_ars)
+    maximum = _amount(maximum_position_ars)
+    if any(x is None for x in (net, fee, available, buffer, maximum)) or net == 0:
+        raise ValueError("FCI_CASH_PROJECTION_INVALID")
+    gross = net + fee
+    after_debit = available - gross
+    return FundCashProjection(
+        net, fee, gross, gross + buffer, after_debit, after_debit - buffer,
+        net <= maximum, after_debit >= buffer,
+    )
 
 
 def assess_fund_cash_parking(evidence: FundAllocationEvidence | None,
@@ -210,8 +256,13 @@ def assess_fund_cash_parking(evidence: FundAllocationEvidence | None,
     else:
         if amount > maximum or amount + buffer > available:
             block("FCI_CASH_OR_POSITION_LIMIT")
-        if fee is not None and amount + fee + buffer > available:
-            block("FCI_FEE_INCLUSIVE_CASH_LIMIT")
+        if fee is not None:
+            projection = project_fund_subscription_cash(
+                subscription_net_ars=amount, fee_ars=fee,
+                available_cash_ars=available, minimum_cash_buffer_ars=buffer,
+                maximum_position_ars=maximum)
+            if not projection.within_cash_limit:
+                block("FCI_FEE_INCLUSIVE_CASH_LIMIT")
         if isinstance(ce, FundClassEvidence) and isinstance(ce.terms, PaperFundTerms):
             try:
                 ce.terms.subscription_amount(amount)
