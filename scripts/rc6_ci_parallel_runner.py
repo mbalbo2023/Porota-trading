@@ -1,9 +1,10 @@
 """Fail-closed, opt-in offline proof runner for future lossless pytest shards.
 
-Not enabled by Predeploy V2. It never contacts GitHub, Docker, a host, market,
-or deploy plane; it runs only local pytest tests. Until an actual candidate's
-Actions job proves end-to-end parity, the existing single-suite job remains
-authoritative. No time-of-day, weekday or market calendar restriction applies.
+Enabled only as a non-authoritative Predeploy V2 pilot for the exact selected
+candidate or explicit repository opt-in. It never contacts GitHub, Docker, a
+host, market or deploy plane; it runs only local pytest tests. The existing
+single-suite job remains authoritative, even if pilot quorum is GREEN.
+No time-of-day, weekday or market calendar restriction applies.
 """
 
 from __future__ import annotations

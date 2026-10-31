@@ -105,6 +105,55 @@ class TestShardQuorum(unittest.TestCase):
                 with self.assertRaises(shards.ShardQuorumRed):
                     shards.manifest(SHA, TREE, ids)
 
+    def test_printable_utf8_param_nodeids_preserve_exact_identity_and_quorum(self):
+        unicode_ids = [
+            'tests/test_spanish.py::test_param[año]',
+            'tests/test_spanish.py::test_param[á]',
+            'tests/test_spanish.py::test_param[a\u0301]',  # Distinct NFD spelling.
+            'tests/test_unicode.py::test_param[日本語]',
+            'tests/test_unicode.py::test_param[🚀]',
+        ]
+        proof = shards.manifest(SHA, TREE, unicode_ids)
+        self.assertEqual(proof['discovered'],len(unicode_ids))
+        self.assertEqual(proof['nodeids'],sorted(unicode_ids))
+        self.assertEqual(shards.manifest(SHA,TREE,list(reversed(unicode_ids))),proof)
+        split = shards.partition(proof,2)
+        self.assertEqual(sorted(split[0]+split[1]),sorted(unicode_ids))
+        reports=[]
+        for i,part in enumerate(split):
+            reports.append({'shard_index':i,'source_sha':SHA,
+                            'source_tree_sha':TREE,
+                            'collection_sha256':proof['collection_sha256'],
+                            'executed_nodeids':part,'pytest_exit_code':0,
+                            'junit_testcases':len(part),'failures':0,'errors':0,
+                            'skipped':0,'xfail':0,'junit_sha256':f'{i+1:064x}'})
+        result=shards.quorum(proof,2,reports)
+        self.assertEqual((result['discovered'],result['executed']),(5,5))
+        self.assertFalse(result['automatic_go'])
+        forged=copy.deepcopy(reports)
+        replaced=False
+        for shard in forged:
+            for index,nodeid in enumerate(shard['executed_nodeids']):
+                if '[á]' in nodeid:
+                    shard['executed_nodeids'][index]=nodeid.replace('[á]','[a\u0301]')
+                    replaced=True
+        self.assertTrue(replaced)
+        with self.assertRaises(shards.ShardQuorumRed):
+            shards.quorum(proof,2,forged)
+
+    def test_utf8_byte_ceiling_and_control_bidi_surrogate_injection_red(self):
+        for unsafe in ('test\nnewline','test\rreturn','test\ttab','test\x7fdel',
+                       'test\u0085c1','test\u202eline',  # Right-to-left override.
+                       'test\u2066isolate','test\u200fmark',
+                       'test\u200djoiner','test\ufeffbom','test\u2028separator',
+                       'test\ud800surrogate','test\U0010ffffnoncharacter',
+                       '界'*1400,  # 4,200 UTF-8 bytes even though <2,048 chars.
+                       'a'*2049):
+            with self.subTest(unsafe=repr(unsafe)[:60]):
+                with self.assertRaises(shards.ShardQuorumRed):
+                    shards.manifest(SHA,TREE,[unsafe])
+        self.assertEqual(shards.manifest(SHA,TREE,['界'*1300])['discovered'],1)
+
     def test_tampered_manifest_or_bad_shard_count_blocks(self):
         m, _ = fixtures()
         bad = copy.deepcopy(m)

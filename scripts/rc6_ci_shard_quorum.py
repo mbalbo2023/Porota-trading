@@ -1,10 +1,10 @@
-"""A222 offline prototype for lossless pytest sharding, NOT enabled in CI.
+"""A222 lossless pytest sharding, used by a non-authoritative Predeploy pilot.
 
 The current single-job 6,060-test governed suite remains authoritative.  This
 module demonstrates deterministic partitioning and an exact, fail-closed quorum
-contract before any future Actions job/matrix rewiring.  A shard report must
-come from a trusted test runner; this code does not attest its origin or execute
-tests.  In particular, do not substitute a green plan for CI evidence.
+contract without an Actions job/matrix rewiring. A shard report must come from
+a trusted test runner; this code does not attest its origin or execute tests.
+In particular, do not substitute pilot GREEN for merge or runtime authority.
 """
 
 from __future__ import annotations
@@ -12,6 +12,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
+
+
+MAX_NODEID_CHARS = 2048
+MAX_NODEID_UTF8_BYTES = 4096
+_BIDI_CONTROLS = frozenset({"LRE", "RLE", "LRO", "RLO", "PDF",
+                            "LRI", "RLI", "FSI", "PDI"})
 
 
 class ShardQuorumRed(ValueError):
@@ -32,8 +39,19 @@ def _nodeids(items: object) -> list[str]:
     if not isinstance(items, list) or not items or len(items) > 100_000:
         _red()
     for name in items:
-        if (not isinstance(name, str) or not 1 <= len(name) <= 2048 or
-                any(ord(char) < 32 or ord(char) > 126 for char in name)):
+        if not isinstance(name, str) or not 1 <= len(name) <= MAX_NODEID_CHARS:
+            _red()
+        # Real pytest param IDs may contain printable UTF-8 (e.g. "á").
+        # Keep exact Unicode codepoints for digest and quorum identity: no
+        # normalization, lossy ASCII folding, or hidden control characters.
+        try:
+            encoded = name.encode("utf-8", errors="strict")
+        except UnicodeEncodeError:
+            _red()  # Unpaired surrogate: not a valid UTF-8 node ID.
+        if (len(encoded) > MAX_NODEID_UTF8_BYTES or not name.isprintable() or
+                any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} or
+                    unicodedata.bidirectional(char) in _BIDI_CONTROLS
+                    for char in name)):
             _red()
     if len(set(items)) != len(items):
         _red()

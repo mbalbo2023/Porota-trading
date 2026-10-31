@@ -57,6 +57,18 @@ class TestJUnitNodeidQuorum(unittest.TestCase):
         self.assertEqual(len(receipt["junit_xml_sha256"]), 64)
         self.assertNotIn("test_case", str(receipt))
 
+    def test_printable_unicode_nodeid_digest_survives_actual_utf8_xml(self):
+        nodeids=['tests/test_unicode.py::test_parameter[árbol]',
+                 'tests/test_unicode.py::test_parameter[a\u0301rbol]']
+        collection=shards.manifest(SHA,TREE,nodeids)
+        xml_for(self.xml,nodeids)
+        receipt=quorum.verify_junit(collection,collection,self.xml,0)
+        self.assertEqual((receipt['discovered'],receipt['executed']),(2,2))
+        self.assertFalse(receipt['automatic_go'])
+        xml_for(self.xml,[nodeids[0],nodeids[0]])
+        with self.assertRaises(quorum.JunitQuorumRed):
+            quorum.verify_junit(collection,collection,self.xml,0)
+
     def test_wrong_sha_tree_or_mutated_manifest_is_red(self):
         for changed in (shards.manifest("c" * 40, TREE, NODES),
                         shards.manifest(SHA, "d" * 40, NODES),

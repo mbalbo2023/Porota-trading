@@ -3,6 +3,8 @@
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -93,6 +95,33 @@ class TestPytestNodeidIdentity(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "TARGET_UNSAFE"):
                     identity.pytest_collection_finish(SimpleNamespace(items=items()))
             self.assertEqual(victim.read_text(encoding="utf-8"), "STABLE")
+
+    def test_real_pytest_collection_labels_megabyte_payload_without_nodeid_leak(self):
+        with tempfile.TemporaryDirectory(prefix='rc6-ci-oversized-') as directory:
+            root=Path(directory)
+            test_path=root/'test_large_parameter.py'
+            test_path.write_text('import pytest\n'
+                '@pytest.mark.parametrize("bad", ["{broken", "x"*(1024**2+1)], '
+                'ids=["MALFORMED","OVERSIZED_1M"])\n'
+                'def test_payload(bad):\n    assert isinstance(bad,str)\n',
+                encoding='utf-8')
+            target=root/'manifest.json'
+            env=os.environ.copy()
+            env.update(environment(target))
+            env['PYTEST_DISABLE_PLUGIN_AUTOLOAD']='1'
+            env.pop('PYTEST_ADDOPTS',None)
+            env.pop('PYTEST_PLUGINS',None)
+            result=subprocess.run(
+                [sys.executable,'-m','pytest','-p','scripts.rc6_ci_pytest_identity',
+                 '-p','no:cacheprovider','--collect-only','-q',str(test_path)],
+                cwd=Path(__file__).resolve().parents[1],env=env,
+                capture_output=True,text=True,timeout=30,check=False)
+            self.assertEqual(result.returncode,0)
+            proof=json.loads(target.read_text(encoding='utf-8'))
+            self.assertEqual(proof['discovered'],2)
+            self.assertTrue(any('[OVERSIZED_1M]' in value for value in proof['nodeids']))
+            self.assertTrue(all(len(name.encode('utf-8')) < 256 for name in proof['nodeids']))
+            self.assertFalse(any('x'*256 in name for name in proof['nodeids']))
 
 
 if __name__ == "__main__":
