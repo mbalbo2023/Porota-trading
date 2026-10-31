@@ -15,6 +15,7 @@ import pytest
 from scripts import rc6_deploy_quiescence as q
 from scripts import rc6_deploy_scheduler_suspend as scheduler
 from be_paper_engine import PaperStore
+from rc6_paper_fixture_contracts import create_empty_family_parent_ledger
 
 
 SHA = 'a' * 40
@@ -71,6 +72,7 @@ def incident(tmp_path, monkeypatch):
                    (NOW-timedelta(seconds=5)).isoformat()))
         for table in ('paper_positions', 'paper_cauciones', 'paper_future_positions'):
             c.execute('CREATE TABLE ' + table + '(status)')
+        create_empty_family_parent_ledger(c)
     write_marker(tmp_path)
     health_path=target/'artifacts/observer_v17.db/runtime-health.json'
     health_path.parent.mkdir(parents=True)
@@ -117,7 +119,20 @@ def test_rescue_fixture_observer_schema_matches_production(incident, tmp_path):
         production_columns=[row[1] for row in production.execute('PRAGMA table_info(observer_state)')]
     assert fixture_columns == production_columns
     assert 'source_sha' not in production_columns
+    with sqlite3.connect(fixture_db) as fixture, sqlite3.connect(production_db) as production:
+        family_columns = [row[1] for row in fixture.execute('PRAGMA table_info(paper_family_lifecycle)')]
+        productive_family_columns = [row[1] for row in production.execute('PRAGMA table_info(paper_family_lifecycle)')]
+    assert family_columns == productive_family_columns
     assert q.rescue_flat_book()['source_sha'] == q.RESCUE_SOURCE_SHA
+
+
+def test_missing_family_parent_ledger_is_still_hard_red(incident):
+    db, _, _ = incident
+    with sqlite3.connect(db) as c:
+        c.execute('DROP TABLE paper_family_lifecycle')
+        c.execute("UPDATE observer_state SET process_state='WAITING_MARKET',session_state='CLOSED'")
+    with pytest.raises(ValueError, match='QUIESCENCE_FUND_LEDGER_SCHEMA_UNVERIFIED'):
+        q.admit()
 
 
 def stopped_crash_incident(incident, monkeypatch, *, running_child=False):

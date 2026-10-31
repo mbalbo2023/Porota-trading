@@ -190,4 +190,3 @@ def test_a207_v2_void_proof_tamper_detected_by_independent_recompute(partial_spo
     path.write_text(json.dumps(row, sort_keys=True, separators=(',', ':')) + '\n')
     with pytest.raises(EvidenceError, match='FILE_DIGEST_MISMATCH'):
         verify_package(destination)
-

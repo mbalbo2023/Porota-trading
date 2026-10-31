@@ -1181,10 +1181,14 @@ jobs:
           A125_SHA256="$(sha256sum scripts/rc6_deploy_scheduler_suspend.py | cut -d' ' -f1)"
           # The staged scheduler's exact A176 daily NO_GO proof rejects a
           # pending A175 host module. Give it the candidate quiescence source
-          # before drain; scheduler suspension alone is not sufficient.
+          # before drain; scheduler suspension alone is not sufficient. A210:
+          # gzip argv exceeded 110 KB, so send bounded xz + exact SHA-256.
           A143_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A175_PENDING_FIX_FORWARD ] || [ "$RC6_QUIESCENCE_MODE" = OPEN_A175_PENDING_FIX_FORWARD ]; then
-            A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
+            A143_XZ_B64="$(python3 -c 'import base64,lzma,sys;print(base64.b64encode(lzma.compress(sys.stdin.buffer.read(),preset=6)).decode())' < scripts/rc6_deploy_quiescence.py)"
+            A143_SHA256="$(sha256sum scripts/rc6_deploy_quiescence.py | cut -d' ' -f1)"
+            [[ "$A143_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            A143_ENV="RC6_A145_QUIESCENCE_XZ_B64=$A143_XZ_B64 RC6_A145_QUIESCENCE_SOURCE_SHA256=$A143_SHA256"
           fi
           DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + ${#A143_ENV} + ${#FLAG} + 4096 ))
           if [ "$DRAIN_ARG_BOUND" -gt 110000 ]; then

@@ -25,6 +25,27 @@ def test_productive_scope_is_repository_root_automatic_discovery():
     assert 'python -m pytest -q "${TEST_ARGS[@]}"' in PREDEPLOY
 
 
+def test_a210_early_host_incident_replay_covers_all_known_failure_families():
+    """A CI host-transition RCA is incomplete if its regressions run only late."""
+    early = PREDEPLOY.split('      - name: Fast host-transition incident replay', 1)[1].split(
+        '      - name:', 1)[0]
+    required = (
+        'test_rc6_cold2_apply_guard.py',
+        'test_rc6_degraded_closed_rescue.py',
+        'test_rc6_a145_pending_rescue.py',
+        'test_rc6_a151_operator_hold_deploy.py',
+        'test_rc6_a166_ssh_argument_budget.py',
+        'test_rc6_a172_running_continuation.py',
+        'test_rc6_a175_running_continuation.py',
+        'test_rc6_a178_a175_wiring.py',
+        'test_rc6_deploy_failure_cleanup.py',
+    )
+    for name in required:
+        assert (Path('tests') / name).is_file()
+        assert early.count('tests/' + name) == 1, name
+    assert 'POROTA_HOST_TRANSITION_EARLY=GREEN' in early
+
+
 def test_every_exclusion_is_versioned_justified_and_has_a_successor():
     exclusions = POLICY["productive_scope"]["exclusions"]
     assert exclusions

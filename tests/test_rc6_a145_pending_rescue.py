@@ -15,6 +15,7 @@ import pytest
 
 from scripts import rc6_deploy_quiescence as q
 from scripts import rc6_cold2_apply_guard as cold2
+from rc6_paper_fixture_contracts import create_empty_family_parent_ledger
 
 
 SHA = "b" * 40
@@ -35,6 +36,7 @@ def incident(tmp_path, monkeypatch):
                   (datetime.now(timezone.utc).isoformat(),))
         for name in ("paper_positions", "paper_cauciones", "paper_future_positions"):
             c.execute(f"CREATE TABLE {name}(status TEXT)")
+        create_empty_family_parent_ledger(c)
     monkeypatch.setattr(q, "ROOT", root)
     monkeypatch.setattr(q, "adopted_rescue_closed_proof", lambda: {"business_day_art": "2026-10-27"})
     monkeypatch.setattr(q, "critical_admission", lambda: {"authority": "ISSUES_ONLY", "orders": 0})

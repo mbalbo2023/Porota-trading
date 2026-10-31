@@ -103,7 +103,15 @@ jobs:
             tests/test_rc6_failed_cold_fix_forward.py \
             tests/test_rc6_cold2_complete_queue.py \
             tests/test_rc6_deploy_generation_gate.py \
-            tests/test_rc6_native_soak.py
+            tests/test_rc6_native_soak.py \
+            tests/test_rc6_degraded_closed_rescue.py \
+            tests/test_rc6_a145_pending_rescue.py \
+            tests/test_rc6_a151_operator_hold_deploy.py \
+            tests/test_rc6_a166_ssh_argument_budget.py \
+            tests/test_rc6_a172_running_continuation.py \
+            tests/test_rc6_a175_running_continuation.py \
+            tests/test_rc6_a178_a175_wiring.py \
+            tests/test_rc6_deploy_failure_cleanup.py
           echo 'POROTA_HOST_TRANSITION_EARLY=GREEN'
 
       - name: Governed automatic test discovery and execution

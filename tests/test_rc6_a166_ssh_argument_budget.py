@@ -3,6 +3,7 @@ import base64
 import gzip
 import hashlib
 import importlib.util
+import lzma
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +23,7 @@ def load(name):
 
 budget = load('rc6_deploy_ssh_arg_budget')
 quiescence = load('rc6_deploy_quiescence')
+scheduler = load('rc6_deploy_scheduler_suspend')
 
 
 def test_exact_sources_fit_with_headroom_and_old_raw_wire_fails():
@@ -30,11 +32,41 @@ def test_exact_sources_fit_with_headroom_and_old_raw_wire_fails():
     assert observed['classify'] <= budget.MAX_REMOTE_ARG_BYTES
     assert max(observed.values()) == observed['drain_a175']
     assert observed['drain_a175'] <= budget.MAX_REMOTE_ARG_BYTES
+    assert sizes['a143_xz'] < sizes['a143_gzip']
     raw = budget.encoded_size('scripts/rc6_deploy_scheduler_suspend.py')
-    assert raw > 90000 and sizes['a125_gzip'] < 24000
+    assert raw > 90000 and sizes['a125_gzip'] < 30000
     assert sizes['audit_gzip'] < sizes['audit']
     with pytest.raises(ValueError, match='SSH_REMOTE_SINGLE_ARGUMENT_TOO_LARGE'):
         budget.require_budget({**sizes, 'a125_gzip': raw})
+
+
+def test_a210_exact_xz_staged_helper_and_rejects_tamper():
+    source = (ROOT/'scripts/rc6_deploy_quiescence.py').read_bytes()
+    encoded = base64.b64encode(lzma.compress(source,preset=6)).decode()
+    digest = hashlib.sha256(source).hexdigest()
+    variables = {'RC6_A145_QUIESCENCE_XZ_B64':encoded,
+                 'RC6_A145_QUIESCENCE_SOURCE_SHA256':digest}
+    with patch.dict(os.environ,variables,clear=True):
+        assert scheduler.a143_staged_module().A143_PENDING_SOURCE_SHA == \
+            scheduler.A143_PENDING_CANDIDATE
+        with patch.dict(os.environ,{'RC6_A145_QUIESCENCE_SOURCE_SHA256':'0'*64}):
+            with pytest.raises(ValueError,match='SCHEDULER_A143_XZ_DIGEST_CHANGED'):
+                scheduler.a143_staged_module()
+        with patch.dict(os.environ,{'RC6_A145_QUIESCENCE_GZIP_B64':encoded}):
+            with pytest.raises(ValueError,match='SCHEDULER_A143_STAGED_HELPER_AMBIGUOUS'):
+                scheduler.a143_staged_module()
+        trailing=base64.b64encode(lzma.compress(source,preset=6)+b'junk').decode()
+        with patch.dict(os.environ,{'RC6_A145_QUIESCENCE_XZ_B64':trailing}):
+            with pytest.raises(ValueError,match='SCHEDULER_A143_XZ_INVALID'):
+                scheduler.a143_staged_module()
+
+
+def test_a210_xz_decompression_bomb_fails_bounded():
+    encoded=base64.b64encode(lzma.compress(b'X'*270000,preset=6)).decode()
+    with patch.dict(os.environ,{'RC6_A145_QUIESCENCE_XZ_B64':encoded,
+                                 'RC6_A145_QUIESCENCE_SOURCE_SHA256':'0'*64},clear=True):
+        with pytest.raises(ValueError,match='SCHEDULER_A143_XZ_INVALID'):
+            scheduler.a143_staged_module()
 
 
 def test_future_growth_fails_before_host_contact():
@@ -105,7 +137,9 @@ def test_workflow_bounds_both_preinstall_and_drain_routes():
     assert 'RC6_CLASSIFY_REMOTE_ARGUMENT=RED' in workflow
     assert 'RC6_DRAIN_REMOTE_ARGUMENT=RED' in workflow
     drain=workflow.split('      - name: Admit PAPER book before draining RC6',1)[1].split('      - name: Account pre-suspend failure',1)[0]
-    assert 'RC6_A145_QUIESCENCE_GZIP_B64=' in drain
+    assert 'RC6_A145_QUIESCENCE_XZ_B64=' in drain
+    assert 'RC6_A145_QUIESCENCE_SOURCE_SHA256=' in drain
+    assert 'lzma.compress(sys.stdin.buffer.read(),preset=6)' in drain
     assert '${#A143_ENV}' in drain and 'env $AUDIT_ENV $A125_ENV $A143_ENV' in drain
     assert workflow.count('gzip -9 -n -c < scripts/rc6_deploy_scheduler_suspend.py') >= 2
     assert "RC6_A125_CANDIDATE_SOURCE_GZIP_B64=\"$A125_CANDIDATE_SOURCE_GZIP_B64\"" in workflow

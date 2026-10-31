@@ -9,6 +9,7 @@ import pytest
 
 from scripts import rc6_deploy_quiescence as q
 from scripts import rc6_deploy_scheduler_suspend as s
+from rc6_paper_fixture_contracts import create_empty_family_parent_ledger
 
 NEXT='f'*40
 CLOCK=[datetime(2026,10,28,23,40,tzinfo=timezone.utc)]
@@ -32,6 +33,7 @@ def running_a174(tmp_path,monkeypatch):
         c.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,'WAITING_MARKET','MARKET_CLOSED',?)",(CLOCK[0].isoformat(),))
         for table in ('paper_positions','paper_cauciones','paper_future_positions'):
             c.execute('CREATE TABLE '+table+'(status TEXT)')
+        create_empty_family_parent_ledger(c)
     monkeypatch.setattr(q,'ROOT',root)
     monkeypatch.setattr(q,'datetime',Clock)
     monkeypatch.setattr(q,'critical_admission',lambda:{'capability':'issues_only','status':'healthy'})

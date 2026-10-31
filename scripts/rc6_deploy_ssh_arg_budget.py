@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import gzip
+import lzma
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,15 +14,20 @@ MAX_REMOTE_ARG_BYTES = 110000
 COMMAND_OVERHEAD_BYTES = 4096
 
 
-def encoded_size(path: str, *, compressed: bool = False) -> int:
+def encoded_size(path: str, *, compressed: bool = False,
+                 xz: bool = False) -> int:
     source = (ROOT / path).read_bytes()
+    if compressed and xz:
+        raise ValueError('SSH_ARG_COMPRESSION_AMBIGUOUS')
     if compressed:
         source = gzip.compress(source, compresslevel=9, mtime=0)
+    if xz:
+        source = lzma.compress(source, preset=6)
     return len(base64.b64encode(source))
 
 
 def budgets(sizes: dict[str, int]) -> dict[str, int]:
-    required = {'mutex', 'stage', 'audit', 'audit_gzip', 'a125_gzip', 'a143_gzip',
+    required = {'mutex', 'stage', 'audit', 'audit_gzip', 'a125_gzip', 'a143_gzip', 'a143_xz',
                 'host_policy', 'host_policy_gzip', 'disk_policy', 'image_cleanup', 'housekeeping'}
     if (set(sizes) != required or any(type(value) is not int or value <= 0
                                       for value in sizes.values())):
@@ -35,7 +41,7 @@ def budgets(sizes: dict[str, int]) -> dict[str, int]:
         'drain_caucion': m + sizes['audit'] + sizes['a125_gzip'] + o,
         # A175 daily NO_GO is validated by staged scheduler -> staged
         # quiescence, both carried in the *same* drain command before install.
-        'drain_a175': m + sizes['a125_gzip'] + sizes['a143_gzip'] + o,
+        'drain_a175': m + sizes['a125_gzip'] + sizes['a143_xz'] + o,
         'suspend_or_recover': m + sizes['a143_gzip'] + sizes['host_policy_gzip'] + o,
         'preclean': m + sizes['disk_policy'] + sizes['image_cleanup'] +
                     sizes['housekeeping'] + o,
@@ -60,6 +66,7 @@ def source_sizes() -> dict[str, int]:
                                    compressed=True),
         'a143_gzip': encoded_size('scripts/rc6_deploy_quiescence.py',
                                    compressed=True),
+        'a143_xz': encoded_size('scripts/rc6_deploy_quiescence.py',xz=True),
         'host_policy': encoded_size('ops/policy/host-control-plane-reconciliation-v2.json'),
         'host_policy_gzip': encoded_size('ops/policy/host-control-plane-reconciliation-v2.json',compressed=True),
         'disk_policy': encoded_size('ops/policy/rc6-disk-housekeeping-v1.json'),

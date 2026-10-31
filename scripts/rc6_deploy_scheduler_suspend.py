@@ -11,6 +11,7 @@ import gzip
 from datetime import datetime, timezone
 import hashlib
 import json
+import lzma
 import os
 from pathlib import Path
 import re
@@ -68,12 +69,7 @@ def _operator_pause_json(path, limit):
 
 def exact_operator_preopen_pause(*, require_original_marker=False,
                                  historical_hold_only=False):
-    """Prove the sole A125 operator pause, without changing systemd or PPI.
-
-    This is not permission to resume PAPER. It only explains the one disabled
-    timer on the exact 2026-10-27 ART trading day. The original A92 marker is
-    checked before the install, not after Deploy V2 writes its new marker.
-    """
+    """Prove 27-Oct A125 pause using pre-install A92; never rearm PAPER/PPI."""
     if ROOT.is_symlink() or not ROOT.is_dir():
         raise ValueError('SCHEDULER_OPERATOR_PAUSE_ROOT_UNSAFE')
     now_utc = datetime.now(timezone.utc)
@@ -155,12 +151,7 @@ def operator_preopen_hold_evidence():
 
 
 def exact_a151_operator_preopen_pause(*, historical_hold_only=False):
-    """Attest the 28-Oct A151 sidecar without erasing A125 historical proof.
-
-    The receipt attests the A143/PAPER-0 host at issuance, not a permanently
-    pinned release marker: Deploy V2 is expected to update CURRENT_STATE_V2.
-    It never authorizes PAPER, timer activation or a future trading day.
-    """
+    """Verify 28-Oct A151 PAPER/0 sidecar; no future trading or timer GO."""
     now_utc = datetime.now(timezone.utc)
     day = now_utc.astimezone(
         ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
@@ -339,13 +330,9 @@ def exact_a176_operator_no_go_continuation(*, historical_anchor=False):
 
 
 def a176_quiescence_helper():
-    """Use the staged candidate before install, or the installed module AFTER validation.
-
-    Native preopen/systemd does not inherit Deploy V2's short-lived gzip env.
-    The installed fallback must never allow a failed/pending A175 runtime to
-    masquerade as a completed deployment or admit PAPER on a fresh day.
-    """
-    if os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64'):
+    """Use staged source until VALIDATED_RUNTIME; never trust pending A175."""
+    if (os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64') or
+            os.environ.get('RC6_A145_QUIESCENCE_XZ_B64')):
         return a143_staged_module()
     marker, _ = _operator_pause_json(ROOT/'CURRENT_STATE_V2.json', 65536)
     if (type(marker) is not dict or
@@ -414,13 +401,7 @@ def resolve_closed_recovery():
 
 
 def require_a207_failure_hold(candidate):
-    """Hold paused timers after any failed A207 attempt; never rearm blindly.
-
-    Once A207 administrative accounting is authorized, the prior container
-    source may not understand the new terminal ledger states.  A running
-    Docker pair and PAPER/0 are insufficient grounds to start its timers.
-    This is a read-only *hold*, not authorization to recover the old image.
-    """
+    """After A207 ledger mutation keep timers paused; old image cannot rearm."""
     path = ROOT / ('quiescence-' + candidate + '.json')
     if not path.exists():
         # Only a pre-drain failure is allowed to have no quiescence receipt.
@@ -775,14 +756,31 @@ def _iol_guard_status(expected):
 
 
 def a143_staged_module():
-    """Use exact A145 source before host installation, not stale #751 imports."""
-    encoded = os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64','')
+    legacy = os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64','')
+    xz = os.environ.get('RC6_A145_QUIESCENCE_XZ_B64','')
+    if legacy and xz:
+        raise ValueError('SCHEDULER_A143_STAGED_HELPER_AMBIGUOUS')
+    encoded = xz or legacy
     if not 0 < len(encoded) < 150000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_MISSING')
     compressed = base64.b64decode(encoded,validate=True)
     if not 0 < len(compressed) < 110000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_COMPRESSED_RED')
-    source = gzip.decompress(compressed)
+    if xz:
+        digest = os.environ.get('RC6_A145_QUIESCENCE_SOURCE_SHA256','')
+        if not re.fullmatch(r'[0-9a-f]{64}',digest):
+            raise ValueError('SCHEDULER_A143_XZ_DIGEST_RED')
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
+        try:
+            source = decoder.decompress(compressed,max_length=260000)
+        except lzma.LZMAError as exc:
+            raise ValueError('SCHEDULER_A143_XZ_INVALID') from exc
+        if not decoder.eof or decoder.unused_data:
+            raise ValueError('SCHEDULER_A143_XZ_INVALID')
+        if hashlib.sha256(source).hexdigest() != digest:
+            raise ValueError('SCHEDULER_A143_XZ_DIGEST_CHANGED')
+    else:
+        source = gzip.decompress(compressed)
     if not 20000 < len(source) < 260000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_SIZE_RED')
     module = types.ModuleType('rc6_a145_scheduler_staged_quiescence')
@@ -1257,11 +1255,7 @@ def require_a175_fix_forward_hold(candidate):
 
 
 def adopt_a143_legacy_hold_with_iol(candidate,path,names,digest,before,states):
-    """Migrate A138's *exact* 16-paused hold to 15-paused + OAuth-only timer.
-
-    Durable intent precedes the sole `systemctl start`. Never rearm preopen.
-    A failure remains RED and never retries activation without new review.
-    """
+    """A138 16-to-15 hold: durable receipt before OAuth start, no preopen GO."""
     if (candidate == A143_PENDING_CANDIDATE or
             IOL_OAUTH_GUARD_TIMER not in names or len(names)!=16 or
             any(state != (('inactive','disabled') if name==OPERATOR_PREOPEN_TIMER
@@ -1433,13 +1427,7 @@ def persist(path, payload):
 
 
 def adopt_a138_operator_paused_timers(candidate, path, names, digest, before, states):
-    """A141: adopt the exact A138 16-timer hold without stopping another job.
-
-    A125 intentionally disabled preopen while A138 stopped all other owned
-    timers. The generic 'all inactive/enabled' recovery missed that one
-    disabled timer and attempted to start a new suspension, failing before
-    writing its receipt. Never infer a healthy runtime or rearm old A92.
-    """
+    """A141 adopt exact A138 16-paused/A125-disabled timers; no rearm or GO."""
     if (candidate == FAILED_A138_SUSPENSION_CANDIDATE or
             OPERATOR_PREOPEN_TIMER not in names or
             any(state != (('inactive', 'disabled') if name == OPERATOR_PREOPEN_TIMER
