@@ -3,6 +3,9 @@ from pathlib import Path
 
 import rc6_validation_operational_daily as m
 from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_REASON
+from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY_A207, cancel_open_paper_position
+from test_production_paper_v1634 import partial_spot
+from test_rc6_paper_deploy_preflight import pending_eod
 
 
 def _db(path: Path):
@@ -94,6 +97,28 @@ def test_missing_admin_receipt_cannot_hide_a_missing_sale(tmp_path):
     except m.OperationalDailyEvidenceError as exc:
         assert 'ADMIN_CANCEL_RECEIPT_UNVERIFIED' in str(exc)
     else:raise AssertionError('missing administrative receipt must fail closed')
+
+
+def test_a207_daily_accepts_full_reversal_but_rejects_forged_original(partial_spot):
+    broker, p, quote, _ = partial_spot()
+    pending_eod(broker, p)
+    when = '2026-10-30T20:30:00-03:00'
+    with broker.store.connect() as c:
+        c.execute('BEGIN IMMEDIATE')
+        cancel_open_paper_position(c, p['paper_id'], when,
+                                   ADMIN_CANCEL_AUTHORITY_A207)
+    result = m.collect(db_path=str(broker.store.path))
+    assert sum(item['cancelled_admin'] for item in result['days']) == 1
+    assert all(not item['realized_by_currency'] for item in result['days'])
+    with broker.store.connect() as c:
+        c.execute('UPDATE paper_fills SET costs=? WHERE paper_id=?',
+                  ('9999', p['paper_id']))
+    try:
+        m.collect(db_path=str(broker.store.path))
+    except m.OperationalDailyEvidenceError as exc:
+        assert str(exc) == 'ADMIN_CANCEL_RECEIPT_UNVERIFIED'
+    else:
+        raise AssertionError('Tampered A207 BUY must not pass the read-only dashboard')
 
 
 def test_unknown_closed_state_still_fails_closed(tmp_path):

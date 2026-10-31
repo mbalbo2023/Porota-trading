@@ -413,6 +413,61 @@ def resolve_closed_recovery():
     raise ValueError('SCHEDULER_CLOSED_RECOVERY_MIXED_OR_UNKNOWN')
 
 
+def require_a207_failure_hold(candidate):
+    """Hold paused timers after any failed A207 attempt; never rearm blindly.
+
+    Once A207 administrative accounting is authorized, the prior container
+    source may not understand the new terminal ledger states.  A running
+    Docker pair and PAPER/0 are insufficient grounds to start its timers.
+    This is a read-only *hold*, not authorization to recover the old image.
+    """
+    path = ROOT / ('quiescence-' + candidate + '.json')
+    if not path.exists():
+        # Only a pre-drain failure is allowed to have no quiescence receipt.
+        # No host mutation is permitted by this fallback, even when running.
+        require_owned_running()
+        return 'A207_PREDRAIN_FAILED_TIMERS_HELD'
+    receipt, _ = _operator_pause_json(path, 65536)
+    if (receipt.get('candidate_sha') != candidate or
+            receipt.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1' or
+            receipt.get('a207_approval_candidate') != candidate or
+            not re.fullmatch('[0-9a-f]{40}', str(receipt.get('a207_approval_tree', ''))) or
+            not re.fullmatch('[1-9][0-9]*', str(receipt.get('a207_owner_approval', ''))) or
+            type(receipt.get('real_orders_sent')) is not int or
+            receipt['real_orders_sent'] != 0 or
+            receipt.get('ppi_watch_accessed') is not False):
+        raise ValueError('SCHEDULER_A207_AUTHORITY_OR_RECEIPT_CHANGED')
+    status = receipt.get('status')
+    if status not in {'ADMIN_DRAINED_PENDING', 'ADMIN_WRITE_AUTHORIZED',
+                      'DRAINED', 'HOST_INSTALLATION_STARTED',
+                      'FIX_FORWARD_VALIDATION_REQUIRED'}:
+        raise ValueError('SCHEDULER_A207_RECOVERY_STATUS_UNKNOWN')
+    started = receipt.get('installation_started')
+    if (type(started) is not bool or
+            (status in {'ADMIN_WRITE_AUTHORIZED', 'DRAINED',
+                        'HOST_INSTALLATION_STARTED'} and not started)):
+        raise ValueError('SCHEDULER_A207_INSTALLATION_FLAG_INVALID')
+    if status == 'DRAINED' and receipt.get('admin_cancel_status') != 'A207_ATOMIC_ACCOUNTING_REVERSED':
+        raise ValueError('SCHEDULER_A207_ACCOUNTING_RECEIPT_MISSING')
+    # An interrupted run can leave both old containers stopped or a new
+    # unvalidated candidate started. Both must remain held, irrespective of
+    # a superficially healthy PAPER/0 value.
+    statuses = []
+    for name in ('porota_production_observer', 'porota_production_dashboard'):
+        current, rc = command('docker', 'inspect', '-f', '{{.State.Status}}', name)
+        if rc or current not in {'exited', 'running'}:
+            raise ValueError('SCHEDULER_A207_RUNTIME_STATUS_UNVERIFIED')
+        statuses.append(current)
+    if statuses[0] != statuses[1]:
+        raise ValueError('SCHEDULER_A207_MIXED_RUNTIME_UNVERIFIED')
+    db_path = ROOT.parent / 'paper_v17/observer_v17.db'
+    with sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True, timeout=.2) as db:
+        db.execute('PRAGMA query_only=ON')
+        if db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone() != ('PRODUCTION_PAPER', 0):
+            raise ValueError('SCHEDULER_A207_PAPER_ZERO_CHANGED')
+    return 'A207_FAILED_UNVALIDATED_TIMERS_HELD'
+
+
 def require_rescue_degraded_hold(candidate):
     """Leave timers paused only with the exact A92 incident and PAPER book."""
     sys.path.insert(0, '/opt/porota-trading')
@@ -1657,9 +1712,48 @@ def run(candidate, action, policy_b64, *, allow_a175_intraday=False):
             action = 'hold-a174-pending'
         if action == 'recover-a175-pending':
             action = 'hold-a175-pending'
+        if action == 'recover-a207-pending':
+            action = 'hold-a207-pending'
+        if action == 'hold-a207-pending' and receipt.get('status') in {
+                'SUSPENDED', 'RESTORED', 'A207_REHOLDING'}:
+            # A207 can pass the immediate poststart checks and then fail a
+            # later acceptance step. The generic RESTORED receipt must never
+            # leave its timers armed for an unvalidated PAPER successor. A
+            # crash *during* restore may have active timers even while the
+            # last durable status is still SUSPENDED.
+            # Read-only accounting/owner proof precedes any systemd change.
+            require_a207_failure_hold(candidate)
+            for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
+                expected = (('inactive','disabled') if name == operator_pause_timer
+                            else None)
+                observed = (command('systemctl','is-active',name)[0],
+                            command('systemctl','is-enabled',name)[0])
+                if (observed != expected if expected is not None
+                        else observed not in {('active','enabled'),('inactive','enabled')}):
+                    raise ValueError('SCHEDULER_A207_REHOLD_TIMER_UNEXPECTED:' + name)
+            receipt['status'] = 'A207_REHOLDING'
+            persist(path, receipt)  # durable intent BEFORE any timer stop
+            for name in names:
+                if name == preserved:
+                    continue
+                if name == operator_pause_timer:
+                    if not operator_preopen_timer_disabled():
+                        raise ValueError('SCHEDULER_A207_OPERATOR_PAUSE_CHANGED')
+                    continue
+                if command('systemctl','is-active',name)[0] == 'active':
+                    _, rc = command('systemctl','stop',name)
+                    if rc:
+                        raise ValueError('SCHEDULER_A207_REHOLD_STOP_FAILED:' + name)
+                if command('systemctl','is-active',name)[0] != 'inactive':
+                    raise ValueError('SCHEDULER_A207_REHOLD_TIMER_STILL_ACTIVE:' + name)
+            receipt['status'] = 'SUSPENDED'
+            persist(path, receipt)
         if action in {'hold-rescue-degraded','hold-adopted-rescue',
                       'hold-a143-pending','hold-a171-pending','hold-a174-pending',
-                      'hold-a175-pending'}:
+                      'hold-a175-pending', 'hold-a207-pending'}:
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_RESCUE_PAUSE_RECEIPT_RED')
@@ -1676,7 +1770,9 @@ def run(candidate, action, policy_b64, *, allow_a175_intraday=False):
                         command('systemctl', 'is-active', service)[0] in
                         ('active', 'activating', 'reloading', 'deactivating')):
                     raise ValueError('SCHEDULER_RESCUE_TIMER_OR_JOB_CHANGED:' + name)
-            status = (require_rescue_degraded_hold(candidate) if
+            status = (require_a207_failure_hold(candidate) if
+                      action == 'hold-a207-pending' else
+                      require_rescue_degraded_hold(candidate) if
                       action == 'hold-rescue-degraded' else
                       require_adopted_rescue_hold(candidate) if
                       action == 'hold-adopted-rescue' else
@@ -1774,7 +1870,8 @@ def main():
                                            'recover-a143-pending',
                                            'recover-a171-pending',
                                            'recover-a174-pending',
-                                           'recover-a175-pending'], required=True)
+                                           'recover-a175-pending',
+                                           'recover-a207-pending'], required=True)
     policy=parser.add_mutually_exclusive_group(required=True)
     policy.add_argument('--policy-b64')
     policy.add_argument('--policy-gzip-b64')

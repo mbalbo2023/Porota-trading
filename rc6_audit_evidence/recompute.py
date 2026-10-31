@@ -9,7 +9,9 @@ from collections import Counter, defaultdict
 from decimal import Decimal, localcontext
 from pathlib import Path
 
-from .package import (ART, CALCULATION, EXIT_CODES, FAMILIES, FILES, METHOD, SCHEMA, Budget, EvidenceError, Limits,
+from .package import (ART, ADMIN_VOID_AUTHORITIES, ADMIN_VOID_REASON, A207_ADMIN_AUTHORITY,
+                      CALCULATION, EXIT_CODES, FAMILIES,
+                      FILES, FILES_V2, METHOD, METHOD_V2, SCHEMA, SCHEMA_V2, Budget, EvidenceError, Limits,
                       _safe_file, bounds, canonical, cohort_sessions, decimal,
                       money, sha256, stamp, token)
 
@@ -28,6 +30,15 @@ MANIFEST_FIELDS = {
     "schema", "calculation_version", "mode", "source_access", "real_orders_sent", "real_routes", "runtime_mutation",
     "source_safety", "cohort", "session_rows", "limits", "counts", "currencies", "currency_totals_combined", "files",
     "missing_evidence", "source_authentication", "truncated", "invented_rows", "calibration_or_edge_claim",
+}
+MANIFEST_FIELDS_V2 = MANIFEST_FIELDS | {"admin_void_exclusions"}
+VOID_FIELDS = {
+    "position_id", "family", "currency", "opened_at", "cancelled_at",
+    "entry_session", "admin_cancel_day", "lifecycle", "authority",
+    "close_reason", "source_proof", "sell_simulated_fills", "realized_pnl",
+    "a207_batch_commitment", "a207_full_batch_complete",
+    "source_row_commitment", "source_receipt_commitment",
+    "source_buy_commitment", "source_event_commitment", "row_sha256",
 }
 
 
@@ -259,6 +270,61 @@ def _recompute(positions, fills, sessions, budget):
     return results, currencies
 
 
+def _verify_admin_voids(voids, positions, sessions, budget):
+    start, cutoff = bounds(sessions)
+    seen = {p["position_id"] for p in positions}
+    if any(not isinstance(row, dict) or set(row) != VOID_FIELDS for row in voids):
+        raise EvidenceError("ADMIN_VOID_SCHEMA_MISMATCH")
+    if voids != sorted(voids, key=lambda row: row.get("position_id", "")):
+        raise EvidenceError("ADMIN_VOID_DETERMINISTIC_ORDER_REQUIRED")
+    for void in voids:
+        budget.check()
+        if not isinstance(void, dict) or set(void) != VOID_FIELDS:
+            raise EvidenceError("ADMIN_VOID_SCHEMA_MISMATCH")
+        item = dict(void)
+        digest = item.pop("row_sha256")
+        if digest != sha256(canonical(item).encode()):
+            raise EvidenceError("ADMIN_VOID_ROW_HASH_MISMATCH")
+        ident = void["position_id"]
+        if (not isinstance(ident, str) or not re.fullmatch(r"pos_[0-9a-f]{64}", ident)
+                or ident in seen):
+            raise EvidenceError("ADMIN_VOID_DUPLICATE_POSITION")
+        seen.add(ident)
+        a207 = void["authority"] == A207_ADMIN_AUTHORITY
+        if (token(void["family"]) not in FAMILIES
+                or token(void["currency"]) not in {"ARS", "USD", "USD_MEP", "USD_CCL"}
+                or void["lifecycle"] != "CANCELLED_ADMIN_NO_EXECUTION"
+                or not isinstance(void["authority"], str)
+                or void["authority"] not in ADMIN_VOID_AUTHORITIES
+                or void["close_reason"] != ADMIN_VOID_REASON
+                or void["source_proof"] != (
+                    "A207_SEALED_BATCH_SPOT_MEMBERSHIP_ONLY_FULL_BATCH_UNVERIFIED" if a207
+                    else "BOUNDED_READ_ONLY_SOURCE_RECEIPT_VERIFIED")
+                or void["a207_full_batch_complete"] != (
+                    "NO_VERIFICADO" if a207 else "NOT_APPLICABLE")
+                or type(void["sell_simulated_fills"]) is not int
+                or void["sell_simulated_fills"] != 0
+                or void["realized_pnl"] is not None):
+            raise EvidenceError("ADMIN_VOID_ECONOMIC_TREATMENT_MISMATCH")
+        if (a207 and (not isinstance(void["a207_batch_commitment"], str)
+                      or not re.fullmatch(r"srcbatch_[0-9a-f]{64}",
+                                          void["a207_batch_commitment"]))
+                or not a207 and void["a207_batch_commitment"] is not None):
+            raise EvidenceError("ADMIN_VOID_BATCH_MEMBERSHIP_COMMITMENT_MISSING")
+        opened, cancelled = stamp(void["opened_at"]), stamp(void["cancelled_at"])
+        if (opened >= cutoff or cancelled < start or cancelled >= cutoff or cancelled < opened
+                or void["entry_session"] != opened.astimezone(ART).date().isoformat()
+                or void["admin_cancel_day"] != cancelled.astimezone(ART).date().isoformat()):
+            raise EvidenceError("ADMIN_VOID_CLOCK_MISMATCH")
+        for key, prefix in (("source_row_commitment", "srcvoid"),
+                            ("source_receipt_commitment", "srcadmin"),
+                            ("source_buy_commitment", "srcbuy"),
+                            ("source_event_commitment", "srcevent")):
+            value = void[key]
+            if not isinstance(value, str) or not re.fullmatch(prefix + r"_[0-9a-f]{64}", value):
+                raise EvidenceError("ADMIN_VOID_SOURCE_COMMITMENT_MISSING")
+
+
 def verify_package(directory, *, expected_manifest_sha256=None, limits=None, _deadline=None):
     """Reject corrupt, incomplete, mixed, over-budget or arithmetically false evidence."""
     limits = limits or Limits()
@@ -271,12 +337,12 @@ def verify_package(directory, *, expected_manifest_sha256=None, limits=None, _de
     entries = set()
     for entry in directory.iterdir():
         entries.add(entry.name)
-        if len(entries) > len(FILES):
+        if len(entries) > len(FILES_V2):
             raise EvidenceError("PACKAGE_FILE_SET_MISMATCH")
-    if entries != FILES:
+    if entries not in (FILES, FILES_V2):
         raise EvidenceError("PACKAGE_FILE_SET_MISMATCH")
     payloads, total = {}, 0
-    for name in sorted(FILES):
+    for name in sorted(entries):
         budget.check()
         path = _safe_file(directory / name)
         size = path.stat().st_size
@@ -296,9 +362,13 @@ def verify_package(directory, *, expected_manifest_sha256=None, limits=None, _de
     manifest = _json(manifest_data)
     if not isinstance(manifest, dict) or manifest_data != (canonical(manifest) + "\n").encode():
         raise EvidenceError("CANONICAL_PACKAGE_REQUIRED")
-    if set(manifest) != MANIFEST_FIELDS:
+    version_v2 = manifest.get("schema") == SCHEMA_V2
+    if (not isinstance(manifest.get("schema"), str)
+            or manifest.get("schema") not in {SCHEMA, SCHEMA_V2}
+            or entries != (FILES_V2 if version_v2 else FILES)
+            or set(manifest) != (MANIFEST_FIELDS_V2 if version_v2 else MANIFEST_FIELDS)):
         raise EvidenceError("SANITIZED_MANIFEST_SCHEMA_MISMATCH")
-    if (manifest.get("schema") != SCHEMA or manifest.get("calculation_version") != CALCULATION
+    if (manifest.get("calculation_version") != CALCULATION
             or manifest.get("mode") != "PAPER/SHADOW"
             or manifest.get("source_access") != "READ_ONLY/mode=ro/query_only/SELECT_ONLY"
             or type(manifest.get("real_orders_sent")) is not int or manifest.get("real_orders_sent") != 0
@@ -317,12 +387,14 @@ def verify_package(directory, *, expected_manifest_sha256=None, limits=None, _de
     if not isinstance(manifest["cohort"], dict) or set(manifest["cohort"]) != {"sessions", "session_count", "timezone", "cutoff_exclusive", "selection"}:
         raise EvidenceError("COHORT_CONTRACT_MISMATCH")
     sessions = cohort_sessions(manifest["cohort"]["sessions"])
+    expected_selection = ("OVERLAPPING_SPOT_POSITIONS_WITH_ADMIN_VOIDS_V2"
+                          if version_v2 else "OVERLAPPING_SPOT_POSITIONS")
     if (type(manifest["cohort"]["session_count"]) is not int or manifest["cohort"]["session_count"] != 20
-            or manifest["cohort"]["timezone"] != str(ART) or manifest["cohort"]["selection"] != "OVERLAPPING_SPOT_POSITIONS"
+            or manifest["cohort"]["timezone"] != str(ART) or manifest["cohort"]["selection"] != expected_selection
             or manifest["cohort"]["cutoff_exclusive"] != bounds(sessions)[1].isoformat()
             or manifest["cohort"]["sessions"] != sessions):
         raise EvidenceError("COHORT_CONTRACT_MISMATCH")
-    if set(manifest.get("files", {})) != FILES - {"manifest.json"}:
+    if set(manifest.get("files", {})) != entries - {"manifest.json"}:
         raise EvidenceError("MANIFEST_FILE_SET_MISMATCH")
     for name, detail in manifest["files"].items():
         if (not isinstance(detail, dict) or set(detail) != {"sha256", "bytes", "rows"}
@@ -330,24 +402,40 @@ def verify_package(directory, *, expected_manifest_sha256=None, limits=None, _de
                 or detail["bytes"] != len(payloads[name]) or detail["sha256"] != sha256(payloads[name])):
             raise EvidenceError("FILE_DIGEST_MISMATCH")
     methodology = _json(payloads["methodology.json"])
-    if methodology != METHOD:
+    if methodology != (METHOD_V2 if version_v2 else METHOD):
         raise EvidenceError("CALCULATION_VERSION_MISMATCH")
     positions = _rows(payloads["positions.jsonl"], limits.positions, budget)
     fills = _rows(payloads["fills.jsonl"], limits.fills, budget)
+    voids = _rows(payloads["voids.jsonl"], limits.positions, budget) if version_v2 else []
     if (len(positions) > declared_limits.positions or len(fills) > declared_limits.fills
-            or any(len(line) > declared_limits.row_bytes for name in ("positions.jsonl", "fills.jsonl")
+            or len(positions) + len(voids) > declared_limits.positions
+            or any(len(line) > declared_limits.row_bytes for name in (
+                       ("positions.jsonl", "fills.jsonl", "voids.jsonl") if version_v2
+                       else ("positions.jsonl", "fills.jsonl"))
                    for line in payloads[name].splitlines(keepends=True))):
         raise EvidenceError("MANIFEST_BUDGET_MISMATCH")
-    if not positions:
+    if not positions and not voids:
         raise EvidenceError("EMPTY_COHORT_EXTERNAL_EVIDENCE_PENDING")
     counts = {"positions": len(positions), "fills": len(fills),
               "closed_positions": sum(p.get("lifecycle") == "CLOSED" for p in positions),
               "open_survivors": sum(p.get("lifecycle") == "OPEN_AT_CUTOFF" for p in positions)}
+    if version_v2:
+        counts["admin_voids"] = len(voids)
     if (not isinstance(manifest["counts"], dict) or any(type(v) is not int for v in manifest["counts"].values())
             or manifest["counts"] != counts or manifest["files"]["positions.jsonl"]["rows"] != len(positions)
-            or manifest["files"]["fills.jsonl"]["rows"] != len(fills) or manifest["files"]["methodology.json"]["rows"] != 1):
+            or manifest["files"]["fills.jsonl"]["rows"] != len(fills) or manifest["files"]["methodology.json"]["rows"] != 1
+            or (version_v2 and manifest["files"]["voids.jsonl"]["rows"] != len(voids))):
         raise EvidenceError("ROW_COUNT_MISMATCH")
     results, currencies = _recompute(positions, fills, sessions, budget)
+    if version_v2:
+        _verify_admin_voids(voids, positions, sessions, budget)
+        has_a207 = any(v["authority"] == A207_ADMIN_AUTHORITY for v in voids)
+        if manifest["admin_void_exclusions"] != {
+                "count": len(voids), "trade_pnl_effect": "NONE",
+                "source_proof": ("A207_SPOT_BATCH_MEMBERSHIP_FULL_BATCH_UNVERIFIED"
+                                 if has_a207 else "BOUNDED_READ_ONLY_SOURCE_RECEIPT_VERIFIED"),
+                "external_authentication": "SOURCE_OWNER_RECONCILIATION_REQUIRED"}:
+            raise EvidenceError("ADMIN_VOID_MANIFEST_MISMATCH")
     expected_missing = ["ACCOUNT_SPECIFIC_FEES", "COMMISSION_RIGHTS_VAT_BREAKDOWN", "FILL_PROVIDER_CLOCKS",
                         "UNITS_PER_LOT", "CASH_EQUITY_RECONCILIATION", "CORPORATE_ACTIONS", "SPECIALIZED_NONSPOT_LEDGERS"]
     if any(p["lineage"]["status"] == "NO_VERIFICADO" for p in positions):
@@ -356,19 +444,32 @@ def verify_package(directory, *, expected_manifest_sha256=None, limits=None, _de
         expected_missing.append("STRATEGY_ID")
     if any(p["exit_reason_status"] == "NO_VERIFICADO" for p in positions):
         expected_missing.append("LEGACY_EXIT_REASON_MAPPING")
+    if version_v2:
+        expected_missing.append("ADMIN_VOID_EXTERNAL_SOURCE_OWNER_RECONCILIATION")
+        if any(v["authority"] == A207_ADMIN_AUTHORITY for v in voids):
+            expected_missing.append("A207_BATCH_FULL_TARGET_SET_COMPLETENESS_NO_VERIFICADO")
     if manifest["missing_evidence"] != expected_missing:
         raise EvidenceError("MISSING_EVIDENCE_PROVENANCE_MISMATCH")
     session_rows = {session: {"fills": sum(f["session"] == session for f in fills),
                               "closed_positions": sum(p["exit_session"] == session for p in positions),
                               "source_coverage": "NO_VERIFICADO"}
                     for session in sessions}
+    if version_v2:
+        for session in sessions:
+            session_rows[session]["admin_voids"] = sum(v["admin_cancel_day"] == session for v in voids)
     if manifest.get("session_rows") != session_rows:
         raise EvidenceError("SESSION_ROW_COUNT_MISMATCH")
     if manifest["currencies"] != sorted(currencies):
         raise EvidenceError("CURRENCY_MANIFEST_MISMATCH")
-    return {"schema": "rc6.independent-20session-recomputation.v1", "status": "RECOMPUTED",
+    report = {"schema": ("rc6.independent-20session-recomputation.v2" if version_v2
+                       else "rc6.independent-20session-recomputation.v1"),
+            "status": ("RECOMPUTED_ADMIN_VOIDS_NO_PERFORMANCE" if version_v2 and not positions
+                       else "RECOMPUTED"),
             "manifest_sha256": sha256(manifest_data), "calculation_version": CALCULATION,
             "source_authentication": "EXTERNAL_EVIDENCE_PENDING_UNTIL_SOURCE_OWNER_RECONCILIATION",
             "counts": counts, "currencies": currencies, "positions": results,
             "currency_totals_combined": False, "gross_costs_equals_net": True,
             "real_orders_sent": 0, "real_routes": "NOT_CALLED", "economic_edge_validated": False}
+    if version_v2:
+        report["administrative_voids"] = voids
+    return report

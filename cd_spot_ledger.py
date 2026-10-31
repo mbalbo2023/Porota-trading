@@ -47,6 +47,18 @@ def sales(c, paper_id):
         ORDER BY julianday(f.filled_at),s.fill_id''',(paper_id,))]
 
 
+def has_fi_sidecar(c, paper_id):
+    """Treat even an unliquidated FI seed as economic exposure, not a voidable buy."""
+    for table in ('paper_fi_lots', 'paper_fi_economic_events',
+                  'paper_fi_cash_entries'):
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                     (table,)).fetchone() and c.execute(
+                f'SELECT 1 FROM {table} WHERE paper_id=? LIMIT 1',
+                (paper_id,)).fetchone():
+            return True
+    return False
+
+
 def entry_terms(p):
     """Unidades/costos históricos explícitos; no consulta un tarifario actual."""
     if cash_currency(p['currency']) != p['currency']:
@@ -110,6 +122,8 @@ def single_close_proceeds(p, fills):
 
 def _admin_cancel_partition(c, p, at):
     """An administrative PAPER void has no sale, settlement or trade label."""
+    if has_fi_sidecar(c, p['paper_id']):
+        raise ValueError('Anulación PAPER con exposición FI persistente')
     receipt = c.execute('SELECT * FROM paper_admin_cancellations WHERE paper_id=?',
                         (p['paper_id'],)).fetchone()
     if (not receipt or receipt['reason'] != ADMIN_CANCEL_REASON
@@ -193,6 +207,12 @@ def plan_open_paper_admin_cancel(c, paper_id, at):
             or Decimal(buy[0]['price']) != Decimal(p['entry_price'])
             or Decimal(buy[0]['costs']) != Decimal(p['entry_cost'])):
         raise ValueError('Anulación PAPER exige compra original íntegra')
+    # A nominally intact spot lot may already own fixed-income cashflows or
+    # an immutable FI economic seed. Voiding only its BUY would orphan that
+    # sidecar and could leave fictional coupon cash (even with no payout yet).
+    # A207 does not implement FI economics reversal; preserve it fail-closed.
+    if has_fi_sidecar(c, paper_id):
+        raise ValueError('Anulación PAPER requiere conciliación FI separada')
     sample = c.execute('SELECT label_timestamp FROM paper_learning_samples WHERE paper_id=?',
                        (paper_id,)).fetchone()
     if sample and sample[0] is not None:

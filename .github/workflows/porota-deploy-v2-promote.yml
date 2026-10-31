@@ -335,8 +335,27 @@ jobs:
                 marker_candidate!='18ba517a846c6798f0d12f39072465fc02fa03b5' and
                 not any(v['Image']=='sha256:9841cba8df3345fa22e39457645ba250431ad1f465ce4204d92f73f7816215b9'
                         for v in originals.values())):
-              assert admit(allow_market_open_suspend=True)=='RUNNING'
-              print('OPEN')
+              try:
+                  assert admit(allow_market_open_suspend=True)=='RUNNING'
+                  print('OPEN')
+              except ValueError as exc:
+                  if str(exc) != 'QUIESCENCE_OPEN_POSITION':
+                      raise
+                  # The owner must independently authorize the new A207 mode
+                  # on exact SHA/tree before any host mutation. This read-only
+                  # branch is merely bounded classification; no ledger is
+                  # silently closed or treated as economically reconciled.
+                  with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.2) as c:
+                      c.execute('PRAGMA query_only=ON')
+                      counts=[c.execute('SELECT COUNT(*) FROM '+t+' WHERE status=?',(s,)).fetchone()[0]
+                              for t,s in (('paper_positions','OPEN'),
+                                          ('paper_cauciones','OPEN'),
+                                          ('paper_future_positions','ACTIVE'))]
+                  if not 0 < sum(counts) <= 96 or any(n > 32 for n in counts):
+                      raise SystemExit('RC6_A207_PAPER_EXPOSURE_BOUND_RED')
+                  print('RC6_A207_PREMERGE_COUNTS=SPOT:%d|CAUCION:%d|FUTURE:%d' %
+                        tuple(counts),file=sys.stderr)
+                  print('OPEN_ADMIN_A207')
           elif (statuses=={'running'} and
                 state in (('DEGRADED','BOOT_CALENDAR'),
                           ('DEGRADED','MARKET_CLOSED'),('STOPPED','CLOSED')) and
@@ -676,6 +695,9 @@ jobs:
                           ('paper_future_positions','ACTIVE'))]
                   print('RC6_A205_BOOK_OPEN_COUNTS=SPOT:%d|CAUCION:%d|FUTURE:%d' %
                         tuple(exposure_counts),file=sys.stderr)
+                  if 0 < sum(exposure_counts) <= 96 and all(n <= 32 for n in exposure_counts):
+                      print('CLOSED_ADMIN_A207')
+                      sys.exit(0)  # additional #624 authority checked on runner
                   # The only exception is one intact PAPER caucion in this
                   # incident. The staged candidate verifies allocation and
                   # full-row hash repeatedly before any installation.
@@ -753,7 +775,7 @@ jobs:
             "$DO_USER@$DO_HOST" \
             "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase classify env PYTHONDONTWRITEBYTECODE=1 timeout 12 python3 - '$CANDIDATE_SHA' '$CANDIDATE_A125_SHA256' '$CANDIDATE_A143_SHA256' '$CANDIDATE_AUDIT_SHA256'"
           )"
-          case "$SESSION_MODE" in OPEN|CLOSED|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|CLOSED_A171_PENDING_FIX_FORWARD|CLOSED_A174_PENDING_FIX_FORWARD|CLOSED_A175_PENDING_FIX_FORWARD|OPEN_A175_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
+          case "$SESSION_MODE" in OPEN|CLOSED|OPEN_ADMIN_A207|CLOSED_ADMIN_A207|CLOSED_CAUCION|DEGRADED_CLOSED_20261026|CLOSED_STOPPED_FAILED_RESCUE|CLOSED_A143_PENDING_FIX_FORWARD|CLOSED_A171_PENDING_FIX_FORWARD|CLOSED_A174_PENDING_FIX_FORWARD|CLOSED_A175_PENDING_FIX_FORWARD|OPEN_A175_PENDING_FIX_FORWARD|A151_HELD_OPEN|A151_HELD_STOPPED) ;; *) echo 'RC6_PAPER_SESSION=RED'; exit 31;; esac
           echo "RC6_QUIESCENCE_MODE=$SESSION_MODE" >> "$GITHUB_ENV"
           if [ "$SESSION_MODE" = DEGRADED_CLOSED_20261026 ]; then
             echo 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED|PAPER=0'
@@ -781,20 +803,43 @@ jobs:
         run: |
           set -Eeuo pipefail
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          A207_FLAG=''
+          if [[ "$RC6_QUIESCENCE_MODE" = OPEN_ADMIN_A207 || "$RC6_QUIESCENCE_MODE" = CLOSED_ADMIN_A207 ]]; then
+            A207_FLAG='--a207-authorized-open'
+          fi
           RECEIPT="$(timeout 60 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 - --policy-b64 '$POLICY_B64'" \
+            "sudo -n python3 - --policy-b64 '$POLICY_B64' $A207_FLAG" \
             < scripts/rc6_pre_suspend_fingerprint.py)"
           [[ "$RECEIPT" =~ ^RC6_PRE_SUSPEND_FINGERPRINT=GREEN\|[0-9a-f]{64}$ ]]
           FINGERPRINT="${RECEIPT##*|}"
           echo "RC6_PRE_SUSPEND_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
-          echo 'RC6_PRE_SUSPEND_SNAPSHOT=GREEN|PAPER=0|containers=ALL|timers=16'
+          echo "RC6_PRE_SUSPEND_SNAPSHOT=GREEN|PAPER_MODE=$RC6_QUIESCENCE_MODE|real_orders=0|containers=ALL|timers=16"
+
+      - name: Require exact A207 PAPER administrative preparation owner approval
+        id: a207_prepare_authority
+        if: ${{ env.RC6_QUIESCENCE_MODE == 'OPEN_ADMIN_A207' || env.RC6_QUIESCENCE_MODE == 'CLOSED_ADMIN_A207' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          COMMENT="$(python3 - <<'PY'
+          import os
+          from scripts.rc6_owner_authorization import require_exact_owner_authorization
+          print(require_exact_owner_authorization(
+              os.environ['GITHUB_REPOSITORY'],os.environ['CANDIDATE_SHA'],
+              os.environ['CANDIDATE_TREE'],
+              decision='RC6_624_APPROVE_PAPER_ADMIN_PREPARE'))
+          PY
+          )"
+          [[ "$COMMENT" =~ ^[1-9][0-9]*$ ]]
+          echo "RC6_A207_OWNER_APPROVAL_ID=$COMMENT" >> "$GITHUB_ENV"
+          echo "RC6_624_A207_EXACT_OWNER_APPROVAL=GREEN|comment=$COMMENT"
 
       - name: Require exact intraday owner authorization for OPEN suspension
         id: a151_intraday_auth
-        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A174_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' }}
+        if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A174_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' || env.RC6_QUIESCENCE_MODE == 'OPEN_ADMIN_A207' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -1122,7 +1167,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
-          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) FLAG='--adopt-a143-stopped-pending --a151-held-open';; CLOSED_A171_PENDING_FIX_FORWARD) FLAG='--adopt-a171-running-pending';; CLOSED_A174_PENDING_FIX_FORWARD) FLAG='--adopt-a174-running-pending';; CLOSED_A175_PENDING_FIX_FORWARD) FLAG='--adopt-a175-running-pending';; OPEN_A175_PENDING_FIX_FORWARD) FLAG='--adopt-a175-running-pending --market-open-suspend';; *) exit 31;; esac
+          case "$RC6_QUIESCENCE_MODE" in OPEN) FLAG='--market-open-suspend';; CLOSED) FLAG='';; OPEN_ADMIN_A207) FLAG='--market-open-suspend --a207-admin';; CLOSED_ADMIN_A207) FLAG='--a207-admin';; CLOSED_CAUCION) FLAG='--pending-paper-caucion';; DEGRADED_CLOSED_20261026) FLAG='--rescue-degraded-closed-20261026';; CLOSED_STOPPED_FAILED_RESCUE) FLAG='--adopt-failed-rescue-candidate';; CLOSED_A143_PENDING_FIX_FORWARD) FLAG='--adopt-a143-running-pending';; A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open';; A151_HELD_STOPPED) FLAG='--adopt-a143-stopped-pending --a151-held-open';; CLOSED_A171_PENDING_FIX_FORWARD) FLAG='--adopt-a171-running-pending';; CLOSED_A174_PENDING_FIX_FORWARD) FLAG='--adopt-a174-running-pending';; CLOSED_A175_PENDING_FIX_FORWARD) FLAG='--adopt-a175-running-pending';; OPEN_A175_PENDING_FIX_FORWARD) FLAG='--adopt-a175-running-pending --market-open-suspend';; *) exit 31;; esac
+          if [[ "$RC6_QUIESCENCE_MODE" = OPEN_ADMIN_A207 || "$RC6_QUIESCENCE_MODE" = CLOSED_ADMIN_A207 ]]; then
+            [[ "${RC6_A207_OWNER_APPROVAL_ID:-}" =~ ^[1-9][0-9]*$ ]]
+            [[ "$CANDIDATE_TREE" =~ ^[0-9a-f]{40}$ ]]
+            FLAG="$FLAG --a207-owner-comment-id $RC6_A207_OWNER_APPROVAL_ID --a207-owner-tree $CANDIDATE_TREE"
+          fi
           AUDIT_ENV=''
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_CAUCION ]; then
             AUDIT_ENV="RC6_CANDIDATE_CAUCION_AUDIT_B64=$(base64 -w0 cb_caucion_audit.py)"
@@ -1136,7 +1186,7 @@ jobs:
           if [ "$RC6_QUIESCENCE_MODE" = CLOSED_A175_PENDING_FIX_FORWARD ] || [ "$RC6_QUIESCENCE_MODE" = OPEN_A175_PENDING_FIX_FORWARD ]; then
             A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=$(gzip -9 -n -c < scripts/rc6_deploy_quiescence.py | base64 -w0)"
           fi
-          DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + ${#A143_ENV} + 4096 ))
+          DRAIN_ARG_BOUND=$(( ${#RC6_MUTEX_B64} + ${#AUDIT_ENV} + ${#A125_ENV} + ${#A143_ENV} + ${#FLAG} + 4096 ))
           if [ "$DRAIN_ARG_BOUND" -gt 110000 ]; then
             echo "RC6_DRAIN_REMOTE_ARGUMENT=RED|bound=$DRAIN_ARG_BOUND|max=110000"
             exit 31
@@ -1150,7 +1200,7 @@ jobs:
 
       - name: Account pre-suspend failure without recovery or timer writes
         id: pre_suspend_account
-        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.pre_suspend_snapshot.outcome == 'failure' || steps.pre_suspend_snapshot.outcome == 'cancelled' || steps.a151_intraday_auth.outcome == 'failure' || steps.a151_intraday_auth.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
+        if: ${{ always() && (steps.host_reconcile.outcome == 'failure' || steps.host_reconcile.outcome == 'cancelled' || steps.classify.outcome == 'failure' || steps.classify.outcome == 'cancelled' || steps.pre_suspend_snapshot.outcome == 'failure' || steps.pre_suspend_snapshot.outcome == 'cancelled' || steps.a207_prepare_authority.outcome == 'failure' || steps.a207_prepare_authority.outcome == 'cancelled' || steps.a151_intraday_auth.outcome == 'failure' || steps.a151_intraday_auth.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' }}
         timeout-minutes: 1
         shell: bash
         run: |
@@ -1166,18 +1216,22 @@ jobs:
             'python3 -c '\''import shutil; print("RC6_PRE_SUSPEND_DISK_FREE=" + str(shutil.disk_usage("/").free))'\'''
 
       - name: Retire only unchanged own pre-suspend attempt barrier
-        if: ${{ always() && (steps.a151_intraday_auth.outcome == 'failure' || steps.a151_intraday_auth.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' && steps.pre_suspend_account.outcome == 'success' && env.RC6_PRE_SUSPEND_FINGERPRINT != '' }}
+        if: ${{ always() && (steps.a207_prepare_authority.outcome == 'failure' || steps.a207_prepare_authority.outcome == 'cancelled' || steps.a151_intraday_auth.outcome == 'failure' || steps.a151_intraday_auth.outcome == 'cancelled' || steps.restatement_continuity.outcome == 'failure' || steps.restatement_continuity.outcome == 'cancelled' || steps.diskguard.outcome == 'failure' || steps.diskguard.outcome == 'cancelled') && steps.suspend.outcome == 'skipped' && steps.pre_suspend_account.outcome == 'success' && env.RC6_PRE_SUSPEND_FINGERPRINT != '' }}
         timeout-minutes: 2
         shell: bash
         run: |
           set -Eeuo pipefail
           [[ "$RC6_PRE_SUSPEND_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]
           POLICY_B64="$(base64 -w0 ops/policy/host-control-plane-reconciliation-v2.json)"
+          A207_FLAG=''
+          if [[ "$RC6_QUIESCENCE_MODE" = OPEN_ADMIN_A207 || "$RC6_QUIESCENCE_MODE" = CLOSED_ADMIN_A207 ]]; then
+            A207_FLAG='--a207-authorized-open'
+          fi
           timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_presuspend python3 - --policy-b64 '$POLICY_B64' --expected-fingerprint '$RC6_PRE_SUSPEND_FINGERPRINT'" \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_presuspend python3 - --policy-b64 '$POLICY_B64' --expected-fingerprint '$RC6_PRE_SUSPEND_FINGERPRINT' $A207_FLAG" \
             < scripts/rc6_pre_suspend_fingerprint.py
 
       - name: Transfer frozen artifact
@@ -1201,7 +1255,7 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -1313,13 +1367,34 @@ jobs:
           PY
           )"
           if [ "$ADMIN_STATE" = ADMIN_DRAINED_PENDING ]; then
-            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
-              --candidate-sha "$CANDIDATE_SHA" --action admin-begin --admin-cancel-issue624
-            sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_paper_admin_cancel.py" \
-              --candidate-sha "$CANDIDATE_SHA" \
-              --receipt "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" --apply
-            sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
-              --candidate-sha "$CANDIDATE_SHA" --action admin-commit --admin-cancel-issue624
+            if [[ "$RC6_QUIESCENCE_MODE" = OPEN_ADMIN_A207 || "$RC6_QUIESCENCE_MODE" = CLOSED_ADMIN_A207 ]]; then
+              [[ "$RC6_A207_OWNER_APPROVAL_ID" =~ ^[1-9][0-9]*$ ]]
+              [[ "$CANDIDATE_TREE" =~ ^[0-9a-f]{40}$ ]]
+              A207_AUTH="--a207-admin --a207-owner-comment-id $RC6_A207_OWNER_APPROVAL_ID --a207-owner-tree $CANDIDATE_TREE"
+              # Staged bundle and all hashes were verified before this line.
+              # The installed OLD runtime does not understand A207 ledger
+              # terminal states; keep it stopped after any committed reversal.
+              sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+                --candidate-sha "$CANDIDATE_SHA" --action admin-begin $A207_AUTH
+              sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_paper_admin_cancel.py" \
+                --candidate-sha "$CANDIDATE_SHA" --a207-batch \
+                --receipt "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" --apply
+              sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+                --candidate-sha "$CANDIDATE_SHA" --action admin-commit $A207_AUTH
+              echo 'RC6_A207_ACCOUNTING=RECONCILED|atomic=YES|broker_routes=NOT_CALLED'
+              RC6_QUIESCENCE_MODE="${RC6_QUIESCENCE_MODE%_ADMIN_A207}"
+            else
+              sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+                --candidate-sha "$CANDIDATE_SHA" --action admin-begin --admin-cancel-issue624
+              sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/rc6_paper_admin_cancel.py" \
+                --candidate-sha "$CANDIDATE_SHA" \
+                --receipt "$REPO/data/deploy/quiescence-$CANDIDATE_SHA.json" --apply
+              sudo -n python3 "$STAGE/scripts/rc6_deploy_quiescence.py" \
+                --candidate-sha "$CANDIDATE_SHA" --action admin-commit --admin-cancel-issue624
+            fi
+          elif [[ "$RC6_QUIESCENCE_MODE" = OPEN_ADMIN_A207 || "$RC6_QUIESCENCE_MODE" = CLOSED_ADMIN_A207 ]]; then
+            echo 'RC6_A207_DRAIN_RECEIPT_MISSING=RED'
+            exit 31
           fi
 
           # No candidate host file can change until owned runtime processes
@@ -2438,6 +2513,17 @@ jobs:
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
+          # A207 is a pre-install administrative state only. Once the staged
+          # atomic reversal and entire promotion succeeded, downstream runtime
+          # checks must use the ordinary OPEN/CLOSED contract, not a bypass.
+          if [[ "$RC6_QUIESCENCE_MODE" = OPEN_ADMIN_A207 || "$RC6_QUIESCENCE_MODE" = CLOSED_ADMIN_A207 ]]; then
+            # Preserve the immutable A207 origin for failure recovery. The
+            # downstream mode is normalized for normal flat admission, but
+            # timers must still NEVER be rearmed if validation later fails.
+            echo 'RC6_A207_PROMOTION_ORIGIN=1' >> "$GITHUB_ENV"
+            echo "RC6_QUIESCENCE_MODE=${RC6_QUIESCENCE_MODE%_ADMIN_A207}" >> "$GITHUB_ENV"
+            echo 'RC6_A207_DOWNSTREAM_MODE=NORMALIZED_AFTER_VERIFIED_PROMOTION'
+          fi
 
       - name: Verify same flat PAPER session after runtime restart
         id: flat_book
@@ -2883,6 +2969,73 @@ jobs:
             echo "RC6_FAILURE_PAYLOAD_CLEANUP_RC=$PAYLOAD_RC|barrier_retained=true"
             exit "$RECOVERY_RC"
           fi
+          if { [ "${RC6_QUIESCENCE_MODE:-}" = OPEN_ADMIN_A207 ] || \
+               [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_ADMIN_A207 ]; } && \
+             grep -Fq '"a207_resume_required": true' <<< "$RECOVERY_OUTPUT"; then
+            # A crash during A207 SQL may leave the old runtime stopped and
+            # the owner-authorized ledger transition half completed. Resume
+            # *accounting only*, never promotion or old Docker startup.
+            # Re-verify the frozen stage source against the runner artifact
+            # before importing it; the installed host may still be old.
+            EXPECTED_A207_MANIFEST_SHA="$(sha256sum /tmp/porota-deploy-bundle-v2-manifest.json | cut -d' ' -f1)"
+            timeout 150 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+              -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$DO_USER@$DO_HOST" \
+              "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase cleanup_admin_resume python3 - '$CANDIDATE_SHA' '$CANDIDATE_TREE' '$RC6_A207_OWNER_APPROVAL_ID' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' '$EXPECTED_A207_MANIFEST_SHA'" <<'PY'
+          import hashlib, json, os, re, subprocess, sys
+          from pathlib import Path
+          candidate, tree, owner, run, attempt, expected_manifest = sys.argv[1:]
+          if (not re.fullmatch('[0-9a-f]{40}',candidate) or
+                  not re.fullmatch('[0-9a-f]{40}',tree) or
+                  not re.fullmatch('[1-9][0-9]*',owner) or
+                  not re.fullmatch('[0-9a-f]{64}',expected_manifest) or
+                  not re.fullmatch('[1-9][0-9]*',run) or
+                  not re.fullmatch('[1-9][0-9]*',attempt)):
+              raise ValueError('A207_RESUME_INPUT_INVALID')
+          remote=Path('/tmp') / f'porota-deploy-v2-{candidate}-{run}-{attempt}'
+          stage=remote/'stage'
+          manifest=remote/'porota-deploy-bundle-v2-manifest.json'
+          if (remote.is_symlink() or stage.is_symlink() or not stage.is_dir() or
+                  manifest.is_symlink() or not manifest.is_file() or
+                  hashlib.sha256(manifest.read_bytes()).hexdigest()!=expected_manifest):
+              raise ValueError('A207_RESUME_FROZEN_STAGE_MISSING_OR_CHANGED')
+          data=json.loads(manifest.read_bytes())
+          if data.get('status')!='GREEN' or not isinstance(data.get('files'),list):
+              raise ValueError('A207_RESUME_MANIFEST_INVALID')
+          seen=set()
+          for item in data['files']:
+              rel=Path(item['path'])
+              if (rel.is_absolute() or '..' in rel.parts or str(rel) in seen or
+                      not re.fullmatch('[0-9a-f]{64}',str(item.get('sha256')))):
+                  raise ValueError('A207_RESUME_MANIFEST_PATH_INVALID')
+              seen.add(str(rel))
+              src=stage/rel
+              if (src.is_symlink() or not src.is_file() or
+                      hashlib.sha256(src.read_bytes()).hexdigest()!=item['sha256']):
+                  raise ValueError('A207_RESUME_STAGE_TAMPERED')
+          if not {'scripts/rc6_deploy_quiescence.py',
+                  'scripts/rc6_paper_admin_cancel.py', 'cd_spot_ledger.py',
+                  'rc6_paper_family_lifecycle.py', 'bt_caucion_paper.py'} <= seen:
+              raise ValueError('A207_RESUME_STAGE_INCOMPLETE')
+          env=os.environ.copy()
+          env['PYTHONPATH']=str(stage)
+          env['PYTHONDONTWRITEBYTECODE']='1'
+          subprocess.run(['python3',str(stage/'scripts/rc6_deploy_quiescence.py'),
+                          '--candidate-sha',candidate,'--action','admin-resume',
+                          '--a207-admin','--a207-owner-comment-id',owner,
+                          '--a207-owner-tree',tree],env=env,check=True,timeout=90)
+          print('A207_RECOVERY=ACCOUNTING_ONLY|OLD_RUNTIME_HELD|NO_DEPLOY')
+          PY
+            A207_RESUME_RC=$?
+            if [ "$A207_RESUME_RC" -ne 0 ]; then
+              # Preserve the sole frozen source bundle and exact attempt
+              # barrier. A failed accounting continuation is not a cleanup
+              # opportunity; deleting STAGE would destroy recovery evidence.
+              echo "A207_RECOVERY=RED|rc=$A207_RESUME_RC|staged_bundle_preserved=true|timers_held=true"
+              exit "$A207_RESUME_RC"
+            fi
+          fi
           POLICY_GZIP_B64="$(gzip -9 -n -c < ops/policy/host-control-plane-reconciliation-v2.json | base64 -w0)"
           SCHEDULER_ACTION=restore
           if [ "${RC6_QUIESCENCE_MODE:-}" = OPEN ] && \
@@ -2942,6 +3095,14 @@ jobs:
             # receipt. Never fall through to generic restore on this mode.
             # Without exact hold evidence, the dedicated action fails closed.
             SCHEDULER_ACTION=recover-a175-pending
+          fi
+          if [ "${RC6_A207_PROMOTION_ORIGIN:-}" = 1 ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = OPEN_ADMIN_A207 ] || \
+             [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_ADMIN_A207 ]; then
+            # Overrides normal OPEN/CLOSED recovery even after the candidate
+            # promotion normalized its mode. PAPER/0 plus Docker running is
+            # never enough to rearm an unvalidated A207 successor.
+            SCHEDULER_ACTION=recover-a207-pending
           fi
           A143_ENV=''
           if [ "${RC6_QUIESCENCE_MODE:-}" = CLOSED_A143_PENDING_FIX_FORWARD ] || \

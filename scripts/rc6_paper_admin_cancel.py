@@ -28,13 +28,18 @@ OWNED = {'porota_production_observer', 'porota_production_dashboard'}
 IDENTITY = ('SUPV', 'ACCIONES', 'BYMA', 'ARS', 'A-24HS', '9')
 
 
-def verify_receipt(path, candidate):
+def verify_receipt(path, candidate, *, allow_a207_resume=False):
     path = Path(path)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
         raise ValueError('ADMIN_RECEIPT_PATH_INVALID')
     receipt = json.loads(path.read_text(encoding='utf-8'))
+    status = receipt.get('status')
+    resumed = (allow_a207_resume and
+               status == 'FIX_FORWARD_VALIDATION_REQUIRED' and
+               receipt.get('a207_resume_from') == 'ADMIN_WRITE_AUTHORIZED' and
+               receipt.get('admin_policy') == 'A207_ALL_PAPER_REVERSAL_V1')
     if (receipt.get('candidate_sha') != candidate
-            or receipt.get('status') != 'ADMIN_WRITE_AUTHORIZED'
+            or (status != 'ADMIN_WRITE_AUTHORIZED' and not resumed)
             or receipt.get('installation_started') is not True
             or receipt.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED'
             or receipt.get('ppi_watch_accessed') is not False
@@ -225,7 +230,7 @@ def execute_a205_batch(db, receipt, candidate, *, apply=False, at=None):
             if not allowed:
                 raise ValueError('A205_RUNTIME_NOT_QUIESCENT')
             counts, rows = open_exposure_rows(c)
-            if counts['caucion'] or counts['future']:
+            if counts['caucion'] or counts['future'] or counts['fund']:
                 raise ValueError('A205_OTHER_FAMILY_NOT_ADMIN_VOIDABLE')
             targets = proof['admin_cancel_paper_ids']
             current = [row['paper_id'] for row in rows['spot']]
@@ -297,7 +302,7 @@ def execute_a207_batch(db, receipt, candidate, *, apply=False, at=None):
     from cd_spot_ledger import plan_open_paper_admin_cancel
     if not re.fullmatch(r'[0-9a-f]{40}', candidate):
         raise ValueError('A207_CANDIDATE_INVALID')
-    proof = verify_receipt(receipt, candidate)
+    proof = verify_receipt(receipt, candidate, allow_a207_resume=True)
     targets = proof.get('a207_targets')
     if (proof.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1'
             or proof.get('a207_approval_candidate') != candidate
@@ -349,6 +354,8 @@ def execute_a207_batch(db, receipt, candidate, *, apply=False, at=None):
             if not allowed:
                 raise ValueError('A207_RUNTIME_NOT_QUIESCENT')
             counts, rows = open_exposure_rows(c)
+            if counts['fund']:
+                raise ValueError('A207_FCI_NAV_OR_REDEMPTION_UNSUPPORTED')
             current = {name: sorted(row['paper_id'] if name != 'future' else row['lifecycle_id']
                                      for row in rows[name]) for name in targets}
             expected = {name: sorted(values) for name, values in targets.items()}

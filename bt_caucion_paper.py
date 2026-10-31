@@ -7,6 +7,7 @@ Los términos normalizados deben estar respaldados por datos del instrumento.
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -288,14 +289,23 @@ def cancel_open_caucion_admin(connection, paper_id, at, authority):
         AND event_type IN ('PAPER_CAUCION_MATURED','PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION')
         LIMIT 1''', (str(paper_id),)).fetchone():
         raise ValueError('CAUCION_ADMIN_SETTLEMENT_EVENT_PRESENT')
-    allocation = connection.execute('''SELECT decision_json FROM paper_caucion_allocations
+    original_events = connection.execute('''SELECT * FROM paper_events
+        WHERE paper_id=? ORDER BY id''', (str(paper_id),)).fetchall()
+    if (len(original_events) != 1
+            or original_events[0]['event_type'] != 'PAPER_CAUCION_PLACED'
+            or original_events[0]['source'] != 'PRODUCTION_PAPER'
+            or aware_datetime(original_events[0]['event_at']) != aware_datetime(row['opened_at'])):
+        raise ValueError('CAUCION_ADMIN_ORIGINAL_PLACEMENT_EVENT_REQUIRED')
+    allocation = connection.execute('''SELECT * FROM paper_caucion_allocations
         WHERE paper_id=?''', (str(paper_id),)).fetchone()
     if allocation is not None:
         try:
-            decision = json.loads(allocation['decision_json'])
-        except (TypeError, ValueError) as exc:
+            from cb_caucion_audit import _validated
+            decision, placement = _validated(allocation, connection)
+        except (TypeError, ValueError, KeyError, sqlite3.Error) as exc:
             raise ValueError('CAUCION_ADMIN_ALLOCATION_INVALID') from exc
-        if decision.get('status') != 'PLACED_SIMULATED':
+        if (decision.get('status') != 'PLACED_SIMULATED'
+                or placement is None or placement['paper_id'] != str(paper_id)):
             raise ValueError('CAUCION_ADMIN_ALLOCATION_NOT_PLACED')
     connection.execute('''CREATE TABLE IF NOT EXISTS paper_caucion_admin_cancellations(
       paper_id TEXT PRIMARY KEY REFERENCES paper_cauciones(paper_id),

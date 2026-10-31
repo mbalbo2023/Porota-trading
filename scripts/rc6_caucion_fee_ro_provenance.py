@@ -85,12 +85,39 @@ def _strict_contract(row, terms, principal, interest):
             or maturity != contract_maturity or maturity <= opened
             or quoted > opened
             or (maturity.astimezone(ART).date() - start).days != row["interest_days"]
-            or row["status"] not in {"OPEN", "MATURED"}
+            or row["status"] not in {"OPEN", "MATURED", "CANCELLED_ADMIN"}
             or (row["status"] == "MATURED") != (settled is not None)
             or (settled is not None and settled < maturity)
             or interest <= _amount(row["total_fees"])):
         return False
     return True
+
+
+def _verified_admin_cancellation(conn, row):
+    """A207 cancellation is *not* a maturity or a broker settlement.
+
+    Require the original booked contract, an exact immutable administrative
+    receipt and one matching compensating event before accepting its legacy
+    tariff model. A cancelled record's original costs remain historical data.
+    """
+    if row["status"] != "CANCELLED_ADMIN" or row["settled_at"] is not None:
+        return False
+    try:
+        from bt_caucion_paper import (ADMIN_CANCEL_AUTHORITY_A207,
+                                       validate_caucion_admin_receipt)
+        receipt = conn.execute("""SELECT * FROM paper_caucion_admin_cancellations
+            WHERE paper_id=?""", (row["paper_id"],)).fetchone()
+        if receipt is None or receipt["authority"] != ADMIN_CANCEL_AUTHORITY_A207:
+            return False
+        validate_caucion_admin_receipt(row, receipt)
+        events = conn.execute("""SELECT event_type FROM paper_events
+            WHERE paper_id=? AND event_type IN
+             ('PAPER_CAUCION_MATURED', 'PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION')""",
+            (row["paper_id"],)).fetchall()
+        return (len(events) == 1 and
+                events[0][0] == 'PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION')
+    except (sqlite3.Error, ValueError, TypeError, KeyError, ImportError):
+        return False
 
 
 def _allocation_link(conn, row, terms):
@@ -130,6 +157,7 @@ def historical_public_fee_provenance(db_path):
         "source": PUBLIC_SOURCE, "broker_account_fees_verified": False,
         "accounting_reconciled": False, "data_mutation_attempted": False,
         "rows": 0, "legacy_rows": 0, "legacy_matured": 0,
+        "legacy_admin_cancelled_verified": 0,
         "legacy_original_model_matches": 0, "legacy_original_model_mismatches": 0,
         "public_model_higher_than_saved": 0, "public_model_not_higher": 0,
         "unsupported_terms": 0, "other_authority_rows": 0,
@@ -193,6 +221,10 @@ def historical_public_fee_provenance(db_path):
                             or _money(principal * rate * days / day_count) != interest
                             or not _strict_contract(row, terms, principal, interest)):
                         raise ValueError("INCONSISTENT_OR_UNSUPPORTED_LEGACY_ROW")
+                    if status == "CANCELLED_ADMIN":
+                        if not _verified_admin_cancellation(conn, row):
+                            raise ValueError("UNVERIFIED_A207_CANCELLATION")
+                        result["legacy_admin_cancelled_verified"] += 1
                     result["strict_contracts_checked"] += 1
                     allocation = _allocation_link(conn, row, terms) if allocations else "ABSENT"
                     result[{"LINKED": "allocation_linked", "ABSENT": "allocation_absent",

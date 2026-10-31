@@ -24,6 +24,7 @@ def installation(tmp_path, monkeypatch):
                   ('PRODUCTION_PAPER', 0, 'WAITING_MARKET', 'MARKET_CLOSED', datetime.now(timezone.utc).isoformat()))
         for table in ('paper_positions', 'paper_cauciones', 'paper_future_positions'):
             c.execute('CREATE TABLE ' + table + '(status)')
+        c.execute('CREATE TABLE paper_family_lifecycle(family TEXT,state TEXT)')
     states = {name: {'Id': name + '_id', 'Image': 'old_image',
                     'State': {'Status': 'running', 'OOMKilled': False, 'ExitCode': 0}} for name in q.OWNED}
     states['porota_critical_approval_rc6'] = {'Id': 'critical_id', 'Image': 'old_image',
@@ -59,6 +60,36 @@ def test_unsafe_or_unknown_cannot_stop_runtime(installation, change):
     # A read-only Docker inspect may distinguish a prior stopped receipt from
     # a running scanner; an unsafe state must never stop/start either service.
     assert not any(call[1] in ('stop', 'start') for call in calls)
+
+
+def test_outstanding_fund_nav_blocks_even_authorized_a207_stop(installation):
+    _, db, _, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO paper_family_lifecycle VALUES('FCI','NAV_APPLIED')")
+    with pytest.raises(ValueError, match='QUIESCENCE_FUND_NAV_LIABILITY_UNRECONCILED'):
+        q.run(SHA, 'drain', allow_a207_admin=True,
+              a207_owner_comment_id='1234567', a207_owner_tree='b' * 40)
+    assert not any(call[1] in ('stop', 'start') for call in calls)
+
+
+def test_a207_nonflat_drain_requires_exact_owner_and_never_bypasses_install(installation):
+    root, db, states, calls, _ = installation
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO paper_positions VALUES('OPEN')")
+        c.execute("INSERT INTO paper_future_positions VALUES('ACTIVE')")
+    with pytest.raises(ValueError, match='A207_EXCLUSIVE_VERIFIED_AUTHORITY_REQUIRED'):
+        q.run(SHA, 'drain', allow_a207_admin=True)
+    assert not any(call[1] in {'stop','start'} for call in calls)
+    proof = q.run(SHA, 'drain', allow_a207_admin=True,
+                  a207_owner_comment_id='1234567',a207_owner_tree='b'*40)
+    assert proof['status'] == 'ADMIN_DRAINED_PENDING'
+    assert proof['installation_started'] is False
+    assert proof['admin_policy'] == 'A207_ALL_PAPER_REVERSAL_V1'
+    assert proof['a207_owner_approval'] == '1234567'
+    assert all(states[name]['State']['Status'] == 'exited' for name in q.OWNED)
+    with pytest.raises(ValueError, match='QUIESCENCE_NOT_DRAINED'):
+        q.run(SHA, 'install')
+    assert not any(call[1] == 'start' for call in calls)
 
 
 @pytest.mark.parametrize('before,process,session,after', [

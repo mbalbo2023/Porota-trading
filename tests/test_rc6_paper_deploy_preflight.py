@@ -39,7 +39,7 @@ def test_readonly_spot_classifies_valid_eod_void_and_is_stable(partial_spot):
     assert a == b
     assert a['status'] == 'ADMIN_CLOSE_REQUIRED'
     assert a['read_only'] is True and a['host_mutations'] == 0
-    assert a['exposures'] == {'spot': 1, 'caucion': 0, 'future': 0}
+    assert a['exposures'] == {'spot': 1, 'caucion': 0, 'future': 0, 'fund': 0}
     assert a['plans']['spot'] == {'admin_void_eod_intact': 1, 'unsupported': 0}
     assert len(a['snapshot_sha256']) == 64
     assert len(a['exposures_sha256']) == 64
@@ -91,6 +91,27 @@ def test_active_future_is_not_faked_closed(partial_spot):
         inspect_book(broker.store.path, as_of=now)
     with broker.store.connect() as c:
         assert c.execute('SELECT status FROM paper_future_positions').fetchone()[0] == 'ACTIVE'
+
+
+@pytest.mark.parametrize('state', ['SUBSCRIBE_REQUESTED', 'PENDING', 'NAV_APPLIED',
+                                    'SETTLED', 'REDEEM_REQUESTED'])
+def test_outstanding_fci_commitment_never_masquerades_as_flat(partial_spot, state):
+    broker, p, _, now = fixture_book(partial_spot)
+    pending_eod(broker, p)
+    with broker.store.connect() as c:
+        c.execute('''INSERT INTO paper_family_lifecycle
+            (lifecycle_id,family,instrument,currency,state,updated_at,ledger_total,metadata_json)
+            VALUES(?,?,?,?,?,?,?,?)''',
+                  ('FCI-PENDING-TEST', 'FCI', 'PAPEL-TEST', 'ARS', state, now,
+                   '-1000', '{}'))
+    report = inspect_book(broker.store.path, as_of=now, barrier={'status':'ABSENT'})
+    assert report['status'] == 'BLOCKED_RECONCILIATION'
+    assert report['exposures']['fund'] == 1
+    assert report['plans']['fund']['requires_fund_nav_reconciliation'] == 1
+    assert 'FCI_SUBSCRIPTION_REDEMPTION_OR_NAV_OUTSTANDING' in report['reasons']
+    with broker.store.connect() as c:
+        c.execute("UPDATE paper_family_lifecycle SET state='REDEEMED' WHERE family='FCI'")
+    assert inspect_book(broker.store.path, as_of=now)['status'] == 'ADMIN_CLOSE_REQUIRED'
 
 
 def test_missing_family_table_and_real_orders_are_red(partial_spot):

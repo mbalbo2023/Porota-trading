@@ -82,7 +82,7 @@ def _load_signed_candidate_ledger():
 
 
 def open_exposure_rows(c):
-    """Snapshot three families on one caller-owned SQLite transaction."""
+    """Snapshot three reversible families plus unsupported fund liabilities."""
     counts, data = {}, {}
     for name, table, active_state in EXPOSURES:
         columns = {row['name'] for row in c.execute('PRAGMA table_info("' + table + '")')}
@@ -102,6 +102,22 @@ def open_exposure_rows(c):
         if rows and not required <= set(rows[0]):
             raise UnsafeBook('BOOK_ACTIVE_SCHEMA_MISSING_' + name.upper())
         counts[name], data[name] = count, rows
+    # FCI subscriptions and redemptions have their own cash/NAV ledger.
+    # They are not spot lots and must not be mistaken for a flat book; A207
+    # cannot void an applied NAV or invent a fund redemption/settlement.
+    columns = {row['name'] for row in c.execute('PRAGMA table_info("paper_family_lifecycle")')}
+    if not {'lifecycle_id', 'family', 'state'} <= columns:
+        raise UnsafeBook('BOOK_SCHEMA_MISSING_FUND_LIFECYCLE')
+    fund_rows = [dict(row) for row in c.execute('''SELECT * FROM paper_family_lifecycle
+        WHERE family='FCI' AND state!='REDEEMED' ORDER BY rowid LIMIT ?''',
+        (MAX_OPEN_PER_FAMILY + 1,))]
+    if len(fund_rows) > MAX_OPEN_PER_FAMILY:
+        raise UnsafeBook('BOOK_EXPOSURE_BOUND_FUND')
+    unknown = c.execute("SELECT 1 FROM paper_family_lifecycle WHERE family NOT IN ('FCI','FUTUROS') LIMIT 1").fetchone()
+    if unknown:
+        raise UnsafeBook('BOOK_UNSUPPORTED_LIFECYCLE_FAMILY')
+    counts['fund'] = len(fund_rows)
+    data['fund'] = fund_rows
     # A PAPER position may be partially sold without its own OPEN row
     # changing. Include related fills, intents, receivables, allocations and
     # settlement marks in the digest so an intervening ledger event cannot
@@ -118,7 +134,7 @@ def open_exposure_rows(c):
         ('paper_caucion_allocations', 'paper_id', [r['paper_id'] for r in data['caucion']]),
         ('paper_future_marks', 'lifecycle_id', [r['lifecycle_id'] for r in data['future']]),
         ('paper_family_lifecycle', 'lifecycle_id', [r['lifecycle_id'] for r in data['future']]),
-        ('paper_family_lifecycle_events', 'lifecycle_id', [r['lifecycle_id'] for r in data['future']]),
+        ('paper_family_lifecycle_events', 'lifecycle_id', [r['lifecycle_id'] for r in data['future'] + data['fund']]),
     )
     for table, column, ids in relations:
         if not ids:
@@ -185,15 +201,25 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
                         validate_position(row)
                         if row['settled_at'] is not None or _utc_time(row['opened_at']) > now:
                             raise UnsafeBook('CAUCION_ALREADY_SETTLED_OR_FUTURE')
+                        original = c.execute('''SELECT source,event_type,event_at FROM paper_events
+                            WHERE paper_id=? ORDER BY id''', (row['paper_id'],)).fetchall()
+                        if (len(original) != 1 or original[0]['source'] != 'PRODUCTION_PAPER'
+                                or original[0]['event_type'] != 'PAPER_CAUCION_PLACED'
+                                or _utc_time(original[0]['event_at']) != _utc_time(row['opened_at'])):
+                            raise UnsafeBook('CAUCION_ORIGINAL_PLACEMENT_EVENT_REQUIRED')
                         if c.execute('''SELECT 1 FROM paper_events WHERE paper_id=?
                             AND event_type IN ('PAPER_CAUCION_MATURED',
                                                'PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION')
                             LIMIT 1''', (row['paper_id'],)).fetchone():
                             raise UnsafeBook('CAUCION_ECONOMIC_TERMINAL_EVENT_PRESENT')
-                        alloc = c.execute('''SELECT decision_json FROM paper_caucion_allocations
+                        alloc = c.execute('''SELECT * FROM paper_caucion_allocations
                             WHERE paper_id=?''', (row['paper_id'],)).fetchone()
-                        if alloc is not None and json.loads(alloc['decision_json']).get('status') != 'PLACED_SIMULATED':
-                            raise UnsafeBook('CAUCION_ALLOCATION_INVALID')
+                        if alloc is not None:
+                            from cb_caucion_audit import _validated
+                            decision, placed = _validated(alloc, c)
+                            if (decision.get('status') != 'PLACED_SIMULATED' or
+                                    placed is None or placed['paper_id'] != row['paper_id']):
+                                raise UnsafeBook('CAUCION_ALLOCATION_INVALID')
                         admin_void += 1
                     except (ValueError, TypeError, KeyError, sqlite3.Error):
                         reasons.append('CAUCION_CONTRACT_OR_CASH_RECONCILIATION_REQUIRED')
@@ -204,29 +230,16 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
                 for row in rows:
                     try:
                         from decimal import Decimal
-                        from rc6_paper_family_lifecycle import future_position_contract
-                        future_position_contract(row)
-                        events = c.execute('''SELECT to_state,amount FROM paper_family_lifecycle_events
-                            WHERE lifecycle_id=?''', (row['lifecycle_id'],)).fetchall()
-                        parent = c.execute('''SELECT state,ledger_total,family FROM paper_family_lifecycle
-                            WHERE lifecycle_id=?''', (row['lifecycle_id'],)).fetchone()
-                        if (not parent or parent['family'] != 'FUTUROS'
-                                or parent['state'] != 'MARGIN_RESERVED'
-                                or len(events) != 2 or
-                                {e['to_state'] for e in events} != {'OPEN','MARGIN_RESERVED'}
-                                or sum((Decimal(e['amount']) for e in events), Decimal('0'))
-                                != Decimal(parent['ledger_total'])
-                                or Decimal(parent['ledger_total']) != -(
-                                    Decimal(row['margin_reserved']) + Decimal(row['entry_cost']))
-                                or c.execute('''SELECT 1 FROM paper_future_marks
-                                    WHERE lifecycle_id=? AND is_settlement=1 LIMIT 1''',
-                                    (row['lifecycle_id'],)).fetchone()):
-                            raise UnsafeBook('FUTURE_ECONOMIC_SETTLEMENT_OR_MARGIN_CONFLICT')
+                        from rc6_paper_family_lifecycle import plan_open_future_admin
+                        plan_open_future_admin(c, row['lifecycle_id'], now)
                         admin_void += 1
                     except (ValueError, TypeError, KeyError, sqlite3.Error):
                         reasons.append('FUTURE_MARK_AND_MARGIN_RECONCILIATION_REQUIRED')
                 plans[name] = {'admin_void_unsettled': admin_void,
                                'requires_reconciliation': count - admin_void}
+        plans['fund'] = {'admin_void': 0, 'requires_fund_nav_reconciliation': counts['fund']}
+        if counts['fund']:
+            reasons.append('FCI_SUBSCRIPTION_REDEMPTION_OR_NAV_OUTSTANDING')
         c.rollback()  # close the read-only snapshot; no journal change
     if barrier is not None:
         if not isinstance(barrier, dict) or barrier.get('status') not in {
@@ -238,7 +251,8 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
     total = sum(counts.values())
     unsupported = (plans['spot']['unsupported'] or
                    plans['caucion']['requires_reconciliation'] or
-                   plans['future']['requires_reconciliation'])
+                   plans['future']['requires_reconciliation'] or
+                   plans['fund']['requires_fund_nav_reconciliation'])
     # An unresolved host-attempt barrier is never compatible with promotion
     # readiness, even if every PAPER ledger is currently flat.  This read-only
     # diagnostic must not retire someone else's IDLE/INFLIGHT state.

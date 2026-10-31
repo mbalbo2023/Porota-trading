@@ -1,13 +1,15 @@
 """A207: purely simulated multi-family reversals, never exchange execution."""
 from datetime import datetime
 from decimal import Decimal
+from dataclasses import replace
 import json
 import sqlite3
 
 import pytest
 
 from rc6_paper_family_lifecycle import (FamilyPaperExecutor, future_positions,
-                                       future_cash_effect)
+                                       future_cash_effect, apply_paper_event,
+                                       plan_open_future_admin)
 from be_paper_engine import PaperStore, PaperBroker
 from bt_caucion_paper import CaucionBook
 from bt_caucion_paper import (ADMIN_CANCEL_AUTHORITY_A207 as CAUCION_AUTHORITY,
@@ -24,7 +26,8 @@ FUTURE_OPEN = '2026-10-05T12:00:00-03:00'
 CANCEL_AT = '2026-10-05T12:10:00-03:00'
 
 
-def _make_book(partial_spot, tmp_path, *, include_caucion=True, include_future=True):
+def _make_book(partial_spot, tmp_path, *, include_caucion=True, include_future=True,
+               future_contract=None, future_fee='2'):
     broker, p, quote, _ = partial_spot()
     _pending(broker, p)
     paper_ids = {'spot': [p['paper_id']],
@@ -39,8 +42,8 @@ def _make_book(partial_spot, tmp_path, *, include_caucion=True, include_future=T
         paper_ids['caucion'] = [caucion['paper_id']]
     if include_future:
         FamilyPaperExecutor(broker.store).open_future(
-            contract(), lifecycle_id='PAPER-FUT-A207', event_id='OPEN-A207',
-            entry_price='1500', quantity='1', entry_cost='2',
+            future_contract or contract(), lifecycle_id='PAPER-FUT-A207', event_id='OPEN-A207',
+            entry_price='1500', quantity='1', entry_cost=future_fee,
             occurred_at=FUTURE_OPEN, book_at=FUTURE_OPEN)
         paper_ids['future'] = ['PAPER-FUT-A207']
     broker.store.state(process_state='STOPPED', session_state='MARKET_CLOSED')
@@ -126,6 +129,146 @@ def test_a207_database_error_on_last_family_rolls_back_all_three(partial_spot, t
         assert c.execute('SELECT COUNT(*) FROM paper_caucion_admin_cancellations').fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events WHERE to_state='ADMIN_CANCEL'").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM sqlite_master WHERE name='paper_admin_reversal_batches'").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('multiplier,fee,expected_margin', [
+    # Exchange-standard DLR notional must be numerically 1000, but decimal
+    # representations may keep a scale which propagates to the cash ledger.
+    ('1000.00', '2.37', '1500000.00'),
+    ('1000.000', '2.1250', '1500000.000'),
+])
+def test_a207_future_decimal_scale_reverses_to_exact_numeric_zero(
+        partial_spot, tmp_path, multiplier, fee, expected_margin):
+    # Real money amounts often preserve fractional scale, producing Decimal
+    # zero as e.g. 0.00 or 0.0000. That is still an exact, settled zero.
+    terms = replace(contract(), cash_multiplier=D(multiplier))
+    broker, targets, receipt = _make_book(
+        partial_spot, tmp_path, future_contract=terms, future_fee=fee)
+    ident = targets['future'][0]
+    with broker.store.connect() as c:
+        opened = c.execute('''SELECT margin_reserved,entry_cost FROM paper_future_positions
+            WHERE lifecycle_id=?''', (ident,)).fetchone()
+        assert opened['margin_reserved'] == expected_margin
+        assert opened['entry_cost'] == fee
+    assert admin.execute_a207_batch(
+        broker.store.path, receipt, 'a'*40, at=CANCEL_AT,
+        apply=True)['status'] == 'CANCELLED_ADMIN'
+    assert admin.execute_a207_batch(
+        broker.store.path, receipt, 'a'*40, at=CANCEL_AT,
+        apply=True)['status'] == 'ALREADY_CLOSED'
+    with broker.store.connect() as c:
+        balance = c.execute('''SELECT ledger_total FROM paper_family_lifecycle
+            WHERE lifecycle_id=?''', (ident,)).fetchone()[0]
+        assert D(balance) == 0
+        assert balance != '0'
+    assert future_cash_effect(broker.store, 'ARS', CANCEL_AT) == 0
+    assert broker._cash(as_of=CANCEL_AT) == broker.initial_balances['ARS']
+
+
+@pytest.mark.parametrize('sidecar', ['paper_fi_lots', 'paper_fi_economic_events',
+                                     'paper_fi_cash_entries'])
+def test_a207_rejects_spot_with_fixed_income_economic_sidecar(partial_spot, tmp_path,
+                                                                sidecar):
+    broker, targets, receipt = _make_book(partial_spot, tmp_path)
+    paper_id = targets['spot'][0]
+    with broker.store.connect() as c:
+        # A corrupt legacy FI sidecar must never be silently converted into
+        # fictitious available cash by an otherwise valid A207 spot reversal.
+        if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                         (sidecar,)).fetchone():
+            c.execute(f'CREATE TABLE {sidecar}(paper_id TEXT)')
+        columns = [r['name'] for r in c.execute(f'PRAGMA table_info({sidecar})')]
+        if columns != ['paper_id']:
+            # Use a self-contained sidecar for the adversarial fixture while
+            # retaining every real PAPER table, ledger and cash invariant.
+            c.execute(f'ALTER TABLE {sidecar} RENAME TO a207_unused_{sidecar}')
+            c.execute(f'CREATE TABLE {sidecar}(paper_id TEXT)')
+        c.execute(f'INSERT INTO {sidecar} VALUES(?)', (paper_id,))
+    with pytest.raises(ValueError, match='FI separada'):
+        admin.execute_a207_batch(broker.store.path, receipt, 'a'*40,
+                                  at=CANCEL_AT, apply=True)
+    with broker.store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM paper_cauciones WHERE status='OPEN'").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'").fetchone()[0] == 1
+        assert c.execute('SELECT COUNT(*) FROM paper_admin_cancellations').fetchone()[0] == 0
+
+
+def test_generic_future_lifecycle_cannot_forge_admin_cash_refund(partial_spot, tmp_path):
+    broker, targets, receipt = _make_book(partial_spot, tmp_path)
+    lifecycle_id = targets['future'][0]
+    before = future_cash_effect(broker.store, 'ARS', CANCEL_AT)
+    with broker.store.connect() as c:
+        records_before = c.execute('SELECT COUNT(*) FROM paper_family_lifecycle_events').fetchone()[0]
+        with pytest.raises(ValueError, match='FUTURES_ADMIN_DIRECT_TRANSITION_FORBIDDEN'):
+            apply_paper_event(
+                broker.store, lifecycle_id=lifecycle_id, event_id='FORGED-ADMIN-A207',
+                family='FUTUROS', instrument=contract().symbol, currency='ARS',
+                to_state='ADMIN_CANCEL', amount='99999999', occurred_at=CANCEL_AT,
+                detail={'authority':'UNAUTHORIZED','real_routes_used':[]},
+                connection=c)
+    with broker.store.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM paper_family_lifecycle_events').fetchone()[0] == records_before
+    assert future_cash_effect(broker.store, 'ARS', CANCEL_AT) == before
+
+
+@pytest.mark.parametrize('tamper', ['broker_route','cash_split'])
+def test_future_admin_rejects_original_event_tampering(partial_spot, tmp_path, tamper):
+    broker, targets, receipt = _make_book(partial_spot, tmp_path)
+    ident = targets['future'][0]
+    with broker.store.connect() as c:
+        event = c.execute("""SELECT event_id,detail_json,amount FROM paper_family_lifecycle_events
+            WHERE lifecycle_id=? AND to_state='OPEN'""", (ident,)).fetchone()
+        if tamper == 'broker_route':
+            detail = json.loads(event['detail_json'])
+            detail['real_routes_used'] = ['BROKER_UNVERIFIED']
+            c.execute('UPDATE paper_family_lifecycle_events SET detail_json=? WHERE event_id=?',
+                      (json.dumps(detail), event['event_id']))
+        else:
+            c.execute("""UPDATE paper_family_lifecycle_events SET amount='9999'
+                WHERE lifecycle_id=? AND to_state='OPEN'""", (ident,))
+            c.execute("""UPDATE paper_family_lifecycle_events SET amount=CAST(amount AS TEXT)
+                WHERE lifecycle_id=? AND to_state='MARGIN_RESERVED'""", (ident,))
+        with pytest.raises(ValueError, match='FUTURES_ADMIN_'):
+            plan_open_future_admin(c, ident, CANCEL_AT)
+    with broker.store.connect() as c:
+        assert c.execute("SELECT status FROM paper_future_positions WHERE lifecycle_id=?",
+                         (ident,)).fetchone()[0] == 'ACTIVE'
+
+
+def test_a207_spoofed_caucion_allocation_cannot_be_cancelled(partial_spot, tmp_path):
+    broker, targets, receipt = _make_book(partial_spot, tmp_path, include_future=False)
+    paper_id = targets['caucion'][0]
+    with broker.store.connect() as c:
+        c.execute("""INSERT INTO paper_caucion_allocations VALUES(?,?,?,?,?)""",
+                  ('rogue-request','forged-fingerprint',CANCEL_AT,
+                   json.dumps({'status':'PLACED_SIMULATED'}),paper_id))
+        c.commit()
+        c.execute('BEGIN IMMEDIATE')
+        with pytest.raises(ValueError, match='CAUCION_ADMIN_ALLOCATION_INVALID'):
+            cancel_open_caucion_admin(c, paper_id, CANCEL_AT, CAUCION_AUTHORITY)
+        c.rollback()
+    with broker.store.connect() as c:
+        assert c.execute('SELECT status FROM paper_cauciones WHERE paper_id=?',
+                         (paper_id,)).fetchone()[0] == 'OPEN'
+
+
+def test_a207_caucion_without_original_placement_event_is_not_voidable(partial_spot, tmp_path):
+    broker, targets, receipt = _make_book(partial_spot, tmp_path, include_future=False)
+    paper_id = targets['caucion'][0]
+    with broker.store.connect() as c:
+        c.execute("DELETE FROM paper_events WHERE paper_id=? AND event_type='PAPER_CAUCION_PLACED'",
+                  (paper_id,))
+        c.commit()
+        c.execute('BEGIN IMMEDIATE')
+        with pytest.raises(ValueError, match='CAUCION_ADMIN_ORIGINAL_PLACEMENT_EVENT_REQUIRED'):
+            cancel_open_caucion_admin(c, paper_id, CANCEL_AT, CAUCION_AUTHORITY)
+        c.rollback()
+    with broker.store.connect() as c:
+        assert c.execute('SELECT status FROM paper_cauciones WHERE paper_id=?',
+                         (paper_id,)).fetchone()[0] == 'OPEN'
+    report = inspect_book(broker.store.path, as_of=CANCEL_AT, barrier={'status':'ABSENT'})
+    assert report['status'] == 'BLOCKED_RECONCILIATION'
 
 
 def test_a207_retry_seal_cannot_be_reassigned_to_another_owner_comment(partial_spot, tmp_path):

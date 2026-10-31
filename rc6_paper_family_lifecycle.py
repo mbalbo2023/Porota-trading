@@ -116,6 +116,10 @@ TRANSITIONS = {
 # executor's locked catalog, cash and preopen checks. The generic lifecycle
 # primitive remains available for offline fixtures and subsequent NAV events.
 _FCI_LOCKED_SUBSCRIPTION = object()
+# A207's compensating cash event must never be writable through the public
+# generic lifecycle primitive. Only the reconciled administrative writer may
+# supply this module-private capability within its caller-owned transaction.
+_FUTURE_LOCKED_ADMIN_CANCEL = object()
 
 
 def _positive(value, name):
@@ -765,7 +769,8 @@ def ensure_initialized(store):
 
 def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                       currency, to_state, amount="0", occurred_at=None,
-                      detail=None, connection=None, _subscription_authority=None):
+                      detail=None, connection=None, _subscription_authority=None,
+                      _admin_cancel_authority=None):
     """Apply one idempotent PAPER transition or fail closed.
 
     A repeated event_id returns the original result without a second ledger
@@ -775,6 +780,9 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
     to_state = str(to_state or "").upper()
     if family not in TRANSITIONS:
         raise ValueError("PAPER_LIFECYCLE_FAMILY_UNSUPPORTED")
+    if (family == 'FUTUROS' and to_state == 'ADMIN_CANCEL'
+            and _admin_cancel_authority is not _FUTURE_LOCKED_ADMIN_CANCEL):
+        raise ValueError('FUTURES_ADMIN_DIRECT_TRANSITION_FORBIDDEN')
     if connection is None:
         ensure_initialized(store)
         with store.connect() as owned:
@@ -784,7 +792,8 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 family=family, instrument=instrument, currency=currency,
                 to_state=to_state, amount=amount, occurred_at=occurred_at,
                 detail=detail, connection=owned,
-                _subscription_authority=_subscription_authority)
+                _subscription_authority=_subscription_authority,
+                _admin_cancel_authority=_admin_cancel_authority)
     existing_event = connection.execute(
         "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
         (str(event_id),),
@@ -990,6 +999,76 @@ FUTURE_ADMIN_CANCEL_AUTHORITY_A207 = 'ISSUE773_A207_PAPER_ACCOUNTING_REVERSAL_20
 FUTURE_ADMIN_CANCEL_REASON = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
 
 
+def plan_open_future_admin(connection, lifecycle_id, at):
+    """Check the *individual* immutable OPEN and MARGIN funding events.
+
+    Matching only the aggregate cash can accept a malicious positive OPEN
+    event plus an offsetting margin event. Neither a non-PAPER transition nor
+    a broker-routed detail may become administrative buying power.
+    """
+    at = aware_datetime(at)
+    row = connection.execute('SELECT * FROM paper_future_positions WHERE lifecycle_id=?',
+                             (str(lifecycle_id),)).fetchone()
+    if row is None or row['status'] != 'ACTIVE':
+        raise ValueError('FUTURES_ADMIN_ACTIVE_POSITION_REQUIRED')
+    contract = future_position_contract(row)
+    events = connection.execute('''SELECT * FROM paper_family_lifecycle_events
+        WHERE lifecycle_id=? ORDER BY rowid''', (str(lifecycle_id),)).fetchall()
+    parent = connection.execute('''SELECT * FROM paper_family_lifecycle
+        WHERE lifecycle_id=?''', (str(lifecycle_id),)).fetchone()
+    if not parent or parent['family'] != 'FUTUROS' or (
+            parent['instrument'], parent['currency']) != (row['symbol'], row['currency']):
+        raise ValueError('FUTURES_ADMIN_LIFECYCLE_IDENTITY_INVALID')
+    if (parent['state'] != 'MARGIN_RESERVED'
+            or utc_microseconds(at) < max(utc_microseconds(row['opened_at']),
+                                           utc_microseconds(parent['updated_at']),
+                                           utc_microseconds(row['last_mark_at']))):
+        raise ValueError('FUTURES_ADMIN_INVALID_STATE_OR_CLOCK')
+    if connection.execute('''SELECT 1 FROM paper_future_marks
+            WHERE lifecycle_id=? AND is_settlement=1 LIMIT 1''',
+            (str(lifecycle_id),)).fetchone():
+        raise ValueError('FUTURES_ADMIN_OFFICIAL_OR_SETTLEMENT_MARK_PRESENT')
+    if (len(events) != 2 or events[0]['from_state'] is not None
+            or events[0]['to_state'] != 'OPEN'
+            or events[1]['from_state'] != 'OPEN'
+            or events[1]['to_state'] != 'MARGIN_RESERVED'
+            or any(e['family'] != 'FUTUROS' for e in events)):
+        raise ValueError('FUTURES_ADMIN_OPEN_RESERVE_EVENTS_INVALID')
+    booked = decimal_value(parent['ledger_total'], 'ledger futuro')
+    reserve = decimal_value(row['margin_reserved'], 'garantía', positive=True)
+    fee = decimal_value(row['entry_cost'], 'costo futuro', nonnegative=True)
+    if (decimal_value(events[0]['amount'], 'OPEN_AMOUNT') != 0
+            or decimal_value(events[1]['amount'], 'MARGIN_AMOUNT') != -(reserve + fee)
+            or booked != -(reserve + fee)
+            or decimal_value(row['variation_realized'], 'variación futuro') != 0):
+        raise ValueError('FUTURES_ADMIN_MARGIN_RECONCILIATION_REQUIRED')
+    try:
+        opening = json.loads(events[0]['detail_json'])
+        margin = json.loads(events[1]['detail_json'])
+        metadata = json.loads(row['metadata_json'])
+    except (ValueError, TypeError) as exc:
+        raise ValueError('FUTURES_ADMIN_ORIGINAL_DETAIL_INVALID') from exc
+    if not all(isinstance(obj, dict) for obj in (opening, margin, metadata)):
+        raise ValueError('FUTURES_ADMIN_ORIGINAL_DETAIL_INVALID')
+    original = {key: value for key, value in margin.items() if key != 'cash_effect'}
+    if (opening != original or
+            any(opening.get(key) != value for key, value in (
+                ('mode','PRODUCTION_PAPER'), ('execution','SIMULATION'),
+                ('side','LONG'), ('real_routes_used',[]), ('price_kind','FILL'))) or
+            opening.get('cash_multiplier') != row['cash_multiplier'] or
+            opening.get('quantity') != row['quantity'] or
+            opening.get('margin_reserved') != row['margin_reserved'] or
+            opening.get('entry_cost') != row['entry_cost'] or
+            opening.get('entry_price') != row['entry_price'] or
+            decimal_value(margin.get('cash_effect'), 'MARGIN_CASH_EFFECT') != -(reserve + fee) or
+            any(metadata.get(key) != value for key, value in opening.items()
+                if key not in {'metadata_source'}) or
+            opening.get('financial_contract') is None or
+            opening.get('contract_snapshot_sha256') != _contract_digest(contract)):
+        raise ValueError('FUTURES_ADMIN_ORIGINAL_ROUTE_OR_TERMS_INVALID')
+    return contract, booked, reserve, fee, metadata
+
+
 def cancel_open_future_admin(connection, lifecycle_id, at, authority):
     """Void one *unsettled* PAPER future under the caller's exclusive TX.
 
@@ -1001,48 +1080,10 @@ def cancel_open_future_admin(connection, lifecycle_id, at, authority):
     if authority != FUTURE_ADMIN_CANCEL_AUTHORITY_A207 or not connection.in_transaction:
         raise ValueError('FUTURES_ADMIN_AUTHORITY_OR_TRANSACTION_REQUIRED')
     at = aware_datetime(at)
-    row = connection.execute('SELECT * FROM paper_future_positions WHERE lifecycle_id=?',
-                             (str(lifecycle_id),)).fetchone()
-    if row is None or row['status'] != 'ACTIVE':
-        raise ValueError('FUTURES_ADMIN_ACTIVE_POSITION_REQUIRED')
-    contract = future_position_contract(row)
-    events = connection.execute('''SELECT * FROM paper_family_lifecycle_events
-        WHERE lifecycle_id=? ORDER BY rowid''', (str(lifecycle_id),)).fetchall()
-    parent = connection.execute('''SELECT * FROM paper_family_lifecycle
-        WHERE lifecycle_id=?''', (str(lifecycle_id),)).fetchone()
-    if not events or not parent or parent['family'] != 'FUTUROS' or (
-            parent['instrument'], parent['currency']) != (row['symbol'], row['currency']):
-        raise ValueError('FUTURES_ADMIN_LIFECYCLE_IDENTITY_INVALID')
-    if (parent['state'] not in TRANSITIONS['FUTUROS'] or
-            'ADMIN_CANCEL' not in TRANSITIONS['FUTUROS'][parent['state']] or
-            utc_microseconds(at) < max(utc_microseconds(row['opened_at']),
-                                       utc_microseconds(parent['updated_at']),
-                                       utc_microseconds(row['last_mark_at']))):
-        raise ValueError('FUTURES_ADMIN_INVALID_STATE_OR_CLOCK')
-    if connection.execute('''SELECT 1 FROM paper_future_marks
-            WHERE lifecycle_id=? AND is_settlement=1 LIMIT 1''',
-            (str(lifecycle_id),)).fetchone():
-        raise ValueError('FUTURES_ADMIN_OFFICIAL_OR_SETTLEMENT_MARK_PRESENT')
-    if any(event['to_state'] in {'CLOSE', 'EXPIRY', 'ADMIN_CANCEL', 'DAILY_VARIATION'}
-           for event in events):
-        # A daily variation is a financial settlement, not an unfilled OPEN;
-        # canceling it without price/clearing reconciliation could void income.
-        raise ValueError('FUTURES_ADMIN_SETTLED_OR_TERMINAL_EVENT_PRESENT')
-    if (len([e for e in events if e['to_state'] == 'OPEN']) != 1
-            or len([e for e in events if e['to_state'] == 'MARGIN_RESERVED']) != 1):
-        raise ValueError('FUTURES_ADMIN_OPEN_RESERVE_EVENTS_INVALID')
-    total = sum((decimal_value(e['amount'], 'cash futuro') for e in events), Decimal('0'))
-    booked = decimal_value(parent['ledger_total'], 'ledger futuro')
-    reserve = decimal_value(row['margin_reserved'], 'garantía', positive=True)
-    fee = decimal_value(row['entry_cost'], 'costo futuro', nonnegative=True)
-    if (total != booked or booked != -(reserve + fee)
-            or decimal_value(row['variation_realized'], 'variación futuro') != 0):
-        raise ValueError('FUTURES_ADMIN_MARGIN_RECONCILIATION_REQUIRED')
+    contract, booked, reserve, fee, metadata = plan_open_future_admin(
+        connection, lifecycle_id, at)
     event_id = 'A207-FUTURE-' + hashlib.sha256(
         (str(lifecycle_id) + '|' + authority).encode()).hexdigest()
-    metadata = json.loads(row['metadata_json'])
-    if metadata.get('real_routes_used') != []:
-        raise ValueError('FUTURES_ADMIN_REAL_ROUTE_PROOF_INVALID')
     detail = {'authority': authority, 'reason': FUTURE_ADMIN_CANCEL_REASON,
               'cash_reversal': str(-booked), 'margin_released': str(reserve),
               'entry_fee_reversed': str(fee), 'real_routes_used': [],
@@ -1050,7 +1091,8 @@ def cancel_open_future_admin(connection, lifecycle_id, at, authority):
     apply_paper_event(None, lifecycle_id=lifecycle_id, event_id=event_id,
                       family='FUTUROS', instrument=contract.symbol, currency=contract.currency,
                       to_state='ADMIN_CANCEL', amount=str(-booked),
-                      occurred_at=at.isoformat(), detail=detail, connection=connection)
+                      occurred_at=at.isoformat(), detail=detail, connection=connection,
+                      _admin_cancel_authority=_FUTURE_LOCKED_ADMIN_CANCEL)
     connection.execute('''UPDATE paper_future_positions SET
         status='CLOSED',closed_at=?,close_reason=?,exit_cost='0',
         variation_realized='0',unrealized_pnl='0',metadata_json=?
@@ -1059,8 +1101,14 @@ def cancel_open_future_admin(connection, lifecycle_id, at, authority):
          _canonical_json({**metadata, 'terminal_state': 'ADMIN_CANCEL',
                           'realized_pnl': '0', 'admin_cancel_event_id': event_id,
                           'admin_cancel_authority': authority}), str(lifecycle_id)))
-    if connection.execute('SELECT ledger_total FROM paper_family_lifecycle WHERE lifecycle_id=?',
-                          (str(lifecycle_id),)).fetchone()[0] != '0':
+    # Decimal preserves the original monetary scale: -105.00 + 105.00 is
+    # numerically zero but serializes as '0.00', not the literal string '0'.
+    # Compare the exact value without discarding significant ledger evidence.
+    recorded_total = connection.execute(
+        'SELECT ledger_total FROM paper_family_lifecycle WHERE lifecycle_id=?',
+        (str(lifecycle_id),)).fetchone()
+    if (recorded_total is None or
+            decimal_value(recorded_total[0], 'saldo futuro') != Decimal('0')):
         raise ValueError('FUTURES_ADMIN_CASH_NOT_NEUTRAL')
     return {'status': 'CLOSED', 'cancel_event_id': event_id,
             'cash_reversal': str(-booked), 'real_routes_used': []}

@@ -9,6 +9,7 @@ import base64
 import binascii
 from contextlib import closing
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import fcntl
 import hashlib
 import json
@@ -1676,13 +1677,13 @@ def clean_stop(before, after):
     raise ValueError('QUIESCENCE_STOP_OOM_NEW_OR_UNVERIFIED')
 
 
-def admit(*, stopped=False, allow_admin_issue624=False,
+def admit(*, stopped=False, allow_admin_issue624=False, allow_a207_admin=False,
           allow_market_open_suspend=False, allow_open_paper_carryover=False,
           allow_postclose_pending=False, allow_intraday_caucion=False,
           allow_pending_caucion=False, allow_degraded_closed_rescue=False,
           initial=False, stopped_receipt=None):
     if allow_degraded_closed_rescue:
-        if (allow_admin_issue624 or allow_market_open_suspend or
+        if (allow_admin_issue624 or allow_a207_admin or allow_market_open_suspend or
                 allow_open_paper_carryover or allow_postclose_pending or
                 allow_intraday_caucion or allow_pending_caucion):
             raise ValueError('QUIESCENCE_RESCUE_MODE_INVALID')
@@ -1778,6 +1779,16 @@ def admit(*, stopped=False, allow_admin_issue624=False,
                              ('paper_future_positions', 'ACTIVE')):
             # Missing schemas and unknown state fail rather than imply zero.
             if c.execute('SELECT 1 FROM ' + table + ' WHERE status=? LIMIT 1', (state,)).fetchone():
+                if allow_a207_admin:
+                    # This is only a bounded *pre-administrative* stop gate.
+                    # Candidate-side A207 proof and exact single-transaction
+                    # reconciliation must still succeed before install; the
+                    # ordinary install gate never accepts this exception.
+                    count = c.execute('SELECT COUNT(*) FROM ' + table +
+                                      ' WHERE status=?', (state,)).fetchone()[0]
+                    if type(count) is not int or not 1 <= count <= 32:
+                        raise ValueError('QUIESCENCE_A207_EXPOSURE_BOUND')
+                    continue
                 if table == 'paper_positions' and allow_open_paper_carryover and allow_market_open_suspend:
                     continue
                 if table == 'paper_cauciones' and allow_postclose_pending:
@@ -1795,6 +1806,17 @@ def admit(*, stopped=False, allow_admin_issue624=False,
                     admin_issue624_target(c)
                     continue
                 raise ValueError('QUIESCENCE_OPEN_POSITION')
+        # FCI has an independent NAV/subscription cash lifecycle. Its active
+        # obligations cannot be treated as a flat book or administratively
+        # voided by the three-family A207 path, even when spot/caucion/future
+        # exposure counts are zero. Fail before any host mutation.
+        family_columns = {r[1] for r in c.execute('PRAGMA table_info(paper_family_lifecycle)')}
+        if not {'family', 'state'} <= family_columns:
+            raise ValueError('QUIESCENCE_FUND_LEDGER_SCHEMA_UNVERIFIED')
+        if c.execute("SELECT 1 FROM paper_family_lifecycle WHERE family='FCI' AND state!='REDEEMED' LIMIT 1").fetchone():
+            raise ValueError('QUIESCENCE_FUND_NAV_LIABILITY_UNRECONCILED')
+        if c.execute("SELECT 1 FROM paper_family_lifecycle WHERE family NOT IN ('FCI','FUTUROS') LIMIT 1").fetchone():
+            raise ValueError('QUIESCENCE_UNKNOWN_FAMILY_LEDGER')
         return process
 
 
@@ -2368,6 +2390,236 @@ def adopt_exact_pending_intraday_stop(candidate, folder, originals, *, postclose
                 prior_receipt_sha256=hashlib.sha256(prior_path.read_bytes()).hexdigest())
 
 
+def verify_a207_stopped_predecessor(previous, db):
+    """Independently attest the prior A207 SQL commit before fix-forward.
+
+    A new candidate must never infer that a stopped, flat book means a prior
+    administrative reversal committed.  The authoritative sealed batch is in
+    SQLite; neither the previous workflow's success nor its receipt alone can
+    substitute for it.  This check is read-only and never restarts a runtime.
+    """
+    prior_candidate = previous.get('candidate_sha')
+    targets = previous.get('a207_targets')
+    if (previous.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1'
+            or previous.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED'
+            or previous.get('admin_cancel_status') != 'A207_ATOMIC_ACCOUNTING_REVERSED'
+            or previous.get('a207_resume_from') is not None
+            or previous.get('a207_approval_candidate') != prior_candidate
+            or not isinstance(prior_candidate, str)
+            or not re.fullmatch(r'[0-9a-f]{40}', prior_candidate)
+            or not re.fullmatch(r'[0-9a-f]{40}', str(previous.get('a207_approval_tree', '')))
+            or not re.fullmatch(r'[1-9][0-9]*', str(previous.get('a207_owner_approval', '')))
+            or not re.fullmatch(r'[0-9a-f]{64}', str(previous.get('a207_exposures_sha256', '')))
+            or type(targets) is not dict
+            or set(targets) != {'spot', 'caucion', 'future'}
+            or not any(targets.values())
+            or any(type(values) is not list or len(values) > 32
+                   or len(values) != len(set(values))
+                   or any(type(value) is not str or not 0 < len(value) <= 128
+                          for value in values)
+                   for values in targets.values())):
+        raise ValueError('QUIESCENCE_A207_PRIOR_ACCOUNTING_UNRESOLVED')
+    path = Path(db)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('QUIESCENCE_A207_PRIOR_DB_UNSAFE')
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+        c.row_factory = sqlite3.Row
+        c.execute('PRAGMA query_only=ON')
+        c.execute('PRAGMA busy_timeout=200')
+        c.set_progress_handler(lambda: int(time.monotonic() - begun > 2), 1000)
+        begun = time.monotonic()
+        state = c.execute('SELECT mode, real_orders_sent FROM observer_state WHERE id=1').fetchone()
+        if (not state or state['mode'] != 'PRODUCTION_PAPER'
+                or type(state['real_orders_sent']) is not int
+                or state['real_orders_sent'] != 0):
+            raise ValueError('QUIESCENCE_A207_PRIOR_PAPER_ZERO_CHANGED')
+        # This reader runs on the *old installed* host before transfer of the
+        # new frozen artifact.  Importing A207 helpers here fails even when
+        # the sealed SQL reversal is correct.  Use independent, bounded SQL
+        # only; no candidate-only imports, schema writes or broker routes.
+        if any(c.execute('SELECT 1 FROM ' + table + ' WHERE status=? LIMIT 1',
+                         (status,)).fetchone() for table, status in (
+                             ('paper_positions','OPEN'),
+                             ('paper_cauciones','OPEN'),
+                             ('paper_future_positions','ACTIVE'))):
+            raise ValueError('QUIESCENCE_A207_PRIOR_BOOK_NOT_FLAT')
+        if (c.execute("SELECT 1 FROM paper_family_lifecycle WHERE family='FCI' "
+                      "AND state!='REDEEMED' LIMIT 1").fetchone() or
+                c.execute("SELECT 1 FROM paper_family_lifecycle "
+                          "WHERE family NOT IN ('FCI','FUTUROS') LIMIT 1").fetchone()):
+            raise ValueError('QUIESCENCE_A207_PRIOR_UNSUPPORTED_FAMILY')
+        if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                         "AND name='paper_admin_reversal_batches'").fetchone():
+            raise ValueError('QUIESCENCE_A207_PRIOR_BATCH_MISSING')
+        targets_json = json.dumps({name: sorted(targets[name])
+                                   for name in ('spot','caucion','future')},
+                                  sort_keys=True, separators=(',',':'))
+        seal = hashlib.sha256('|'.join((prior_candidate,
+                                       previous['a207_approval_tree'],
+                                       str(previous['a207_owner_approval']),
+                                       previous['a207_exposures_sha256'],
+                                       targets_json)).encode()).hexdigest()
+        batches = c.execute('SELECT * FROM paper_admin_reversal_batches '
+                            'WHERE candidate_sha=? LIMIT 2', (prior_candidate,)).fetchall()
+        if (len(batches) != 1 or
+                batches[0]['tree_sha'] != previous['a207_approval_tree'] or
+                batches[0]['owner_comment_id'] != str(previous['a207_owner_approval']) or
+                batches[0]['exposures_sha256'] != previous['a207_exposures_sha256'] or
+                batches[0]['targets_json'] != targets_json or
+                batches[0]['audit_digest_sha256'] != seal):
+            raise ValueError('QUIESCENCE_A207_PRIOR_BATCH_SEAL_CHANGED')
+
+        authority = 'ISSUE773_A207_PAPER_ACCOUNTING_REVERSAL_20261030'
+        reason = 'ADMIN_CANCEL_NO_MARKET_EXECUTION'
+
+        def money(value):
+            try:
+                number = Decimal(str(value))
+                if not number.is_finite():
+                    raise ValueError('QUIESCENCE_A207_PRIOR_NONFINITE_AMOUNT')
+                return number
+            except (InvalidOperation, TypeError):
+                raise ValueError('QUIESCENCE_A207_PRIOR_INVALID_AMOUNT') from None
+
+        def timestamp(value):
+            try:
+                observed = datetime.fromisoformat(str(value))
+                if observed.utcoffset() is None:
+                    raise ValueError('QUIESCENCE_A207_PRIOR_NAIVE_TIMESTAMP')
+                return observed.astimezone(timezone.utc)
+            except (TypeError, AttributeError):
+                raise ValueError('QUIESCENCE_A207_PRIOR_TIMESTAMP_INVALID') from None
+
+        def one(table, key, identity):
+            rows = c.execute('SELECT * FROM ' + table + ' WHERE ' + key + '=? LIMIT 2',
+                             (identity,)).fetchall()
+            if len(rows) != 1:
+                raise ValueError('QUIESCENCE_A207_PRIOR_ROW_MISSING_OR_DUPLICATE')
+            return rows[0]
+
+        for paper_id in targets['spot']:
+            p = one('paper_positions','paper_id',paper_id)
+            receipt = one('paper_admin_cancellations','paper_id',paper_id)
+            buy = one('paper_fills','paper_id',paper_id)
+            intent = one('paper_exit_intents','paper_id',paper_id)
+            if (p['status'] != 'CANCELLED_ADMIN' or p['close_reason'] != reason or
+                    receipt['authority'] != authority or receipt['reason'] != reason or
+                    any(p[key] is not None for key in
+                        ('exit_price','exit_cost','gross_pnl','net_pnl')) or
+                    buy['side'] != 'BUY_SIMULATED' or buy['source'] != p['source'] or
+                    any(money(buy[a]) != money(p[b]) for a,b in (
+                        ('quantity','quantity'),('price','entry_price'),('costs','entry_cost'))) or
+                    any(money(receipt[a]) != money(p[b]) for a,b in (
+                        ('original_quantity','quantity'),
+                        ('original_entry_price','entry_price'),
+                        ('original_entry_cost','entry_cost'))) or
+                    intent['state'] != 'CANCELLED_ADMIN' or intent['cause'] != 'EOD_PAPER'):
+                raise ValueError('QUIESCENCE_A207_PRIOR_SPOT_ACCOUNTING_CHANGED')
+            if (timestamp(p['opened_at']) != timestamp(buy['filled_at']) or
+                    timestamp(p['closed_at']) != timestamp(receipt['cancelled_at']) or
+                    timestamp(p['closed_at']) < timestamp(p['opened_at'])):
+                raise ValueError('QUIESCENCE_A207_PRIOR_SPOT_CLOCK_CHANGED')
+            for table in ('paper_spot_sales', 'paper_sale_receivables'):
+                if c.execute('SELECT 1 FROM ' + table + ' WHERE paper_id=? LIMIT 1',
+                             (paper_id,)).fetchone():
+                    raise ValueError('QUIESCENCE_A207_PRIOR_SPOT_FAKE_SALE')
+            label = c.execute('SELECT label_timestamp FROM paper_learning_samples '
+                              'WHERE paper_id=?', (paper_id,)).fetchone()
+            if label and label[0] is not None:
+                raise ValueError('QUIESCENCE_A207_PRIOR_SPOT_LABEL_CHANGED')
+            for table in ('paper_fi_lots','paper_fi_economic_events','paper_fi_cash_entries'):
+                if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                             (table,)).fetchone() and c.execute(
+                        'SELECT 1 FROM ' + table + ' WHERE paper_id=? LIMIT 1',
+                        (paper_id,)).fetchone():
+                    raise ValueError('QUIESCENCE_A207_PRIOR_SPOT_FI_EXPOSURE')
+            events = c.execute('SELECT detail FROM paper_events WHERE paper_id=? '
+                               "AND event_type='PAPER_ADMIN_CANCELLED_NO_MARKET' LIMIT 2",
+                               (paper_id,)).fetchall()
+            if len(events) != 1 or authority not in events[0]['detail']:
+                raise ValueError('QUIESCENCE_A207_PRIOR_SPOT_EVENT_MISSING')
+
+        for paper_id in targets['caucion']:
+            p = one('paper_cauciones','paper_id',paper_id)
+            receipt = one('paper_caucion_admin_cancellations','paper_id',paper_id)
+            if (p['status'] != 'CANCELLED_ADMIN' or p['settled_at'] is not None or
+                    p['source'] != 'PRODUCTION_PAPER' or
+                    receipt['authority'] != authority or receipt['reason'] != reason or
+                    receipt['principal'] != p['principal'] or
+                    receipt['total_fees'] != p['total_fees'] or
+                    receipt['request_fingerprint'] != p['request_fingerprint'] or
+                    receipt['terms_sha256'] != hashlib.sha256(p['terms_json'].encode()).hexdigest()):
+                raise ValueError('QUIESCENCE_A207_PRIOR_CAUCION_ACCOUNTING_CHANGED')
+            terms = json.loads(p['terms_json'])
+            principal = money(p['principal'])
+            if (type(terms) is not dict or principal <= 0 or money(p['total_fees']) < 0 or
+                    hashlib.sha256((p['terms_json'] + '|' +
+                        format(principal.normalize(), 'f')).encode()).hexdigest()
+                        != p['request_fingerprint'] or
+                    p['instrument_id'] != terms.get('instrument_id') or
+                    p['currency'] != terms.get('currency') or
+                    p['fee_payment'] != terms.get('fee_payment') or
+                    timestamp(receipt['cancelled_at']) < timestamp(p['opened_at']) or
+                    timestamp(p['maturity_at']) <= timestamp(p['opened_at'])):
+                raise ValueError('QUIESCENCE_A207_PRIOR_CAUCION_TERMS_CHANGED')
+            events = c.execute('SELECT event_type,source FROM paper_events '
+                               'WHERE paper_id=? ORDER BY rowid LIMIT 4',
+                               (paper_id,)).fetchall()
+            if (len(events) != 2 or
+                    [(e['event_type'],e['source']) for e in events] != [
+                        ('PAPER_CAUCION_PLACED','PRODUCTION_PAPER'),
+                        ('PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION','PRODUCTION_PAPER')]):
+                raise ValueError('QUIESCENCE_A207_PRIOR_CAUCION_EVENTS_CHANGED')
+
+        for lifecycle_id in targets['future']:
+            p = one('paper_future_positions','lifecycle_id',lifecycle_id)
+            parent = one('paper_family_lifecycle','lifecycle_id',lifecycle_id)
+            metadata = json.loads(p['metadata_json'])
+            if (p['status'] != 'CLOSED' or p['close_reason'] != reason or
+                    parent['state'] != 'ADMIN_CANCEL' or parent['family'] != 'FUTUROS' or
+                    money(parent['ledger_total']) != 0 or
+                    metadata.get('admin_cancel_authority') != authority or
+                    metadata.get('terminal_state') != 'ADMIN_CANCEL' or
+                    metadata.get('realized_pnl') != '0'):
+                raise ValueError('QUIESCENCE_A207_PRIOR_FUTURE_ACCOUNTING_CHANGED')
+            last_event = one('paper_family_lifecycle_events','event_id',
+                             metadata.get('admin_cancel_event_id'))
+            if (last_event['lifecycle_id'] != lifecycle_id or
+                    last_event['to_state'] != 'ADMIN_CANCEL'):
+                raise ValueError('QUIESCENCE_A207_PRIOR_FUTURE_TERMINAL_CHANGED')
+            events = c.execute('SELECT * FROM paper_family_lifecycle_events '
+                               'WHERE lifecycle_id=? ORDER BY rowid LIMIT 5',
+                               (lifecycle_id,)).fetchall()
+            if (len(events) != 3 or
+                    [(e['from_state'], e['to_state']) for e in events] != [
+                        (None,'OPEN'),('OPEN','MARGIN_RESERVED'),
+                        ('MARGIN_RESERVED','ADMIN_CANCEL')] or
+                    any(e['family'] != 'FUTUROS' for e in events) or
+                    money(events[0]['amount']) != 0 or
+                    money(events[1]['amount']) != -(
+                        money(p['margin_reserved']) + money(p['entry_cost'])) or
+                    money(events[2]['amount']) != (
+                        money(p['margin_reserved']) + money(p['entry_cost'])) or
+                    sum((money(e['amount']) for e in events), Decimal('0')) != 0 or
+                    sum(e['to_state']=='ADMIN_CANCEL' for e in events) != 1):
+                raise ValueError('QUIESCENCE_A207_PRIOR_FUTURE_CASH_CHANGED')
+            opening, margin, cancel_detail = (json.loads(e['detail_json']) for e in events)
+            if (any(type(detail) is not dict for detail in (opening, margin, cancel_detail)) or
+                    any(opening.get(key) != value for key, value in (
+                        ('mode','PRODUCTION_PAPER'),('execution','SIMULATION'),
+                        ('side','LONG'),('real_routes_used',[]),('price_kind','FILL'))) or
+                    {key:value for key,value in margin.items() if key != 'cash_effect'} != opening or
+                    money(margin.get('cash_effect')) != money(events[1]['amount']) or
+                    cancel_detail.get('authority') != authority or
+                    cancel_detail.get('reason') != reason or
+                    cancel_detail.get('real_routes_used') != [] or
+                    cancel_detail.get('no_exit_price_or_pnl') is not True or
+                    money(cancel_detail.get('cash_reversal')) != money(events[2]['amount']) or
+                    last_event['event_id'] != events[-1]['event_id']):
+                raise ValueError('QUIESCENCE_A207_PRIOR_FUTURE_DETAILS_CHANGED')
+    return True
+
+
 def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_paper_id=None,
                                        allow_market_open_suspend=False,
                                        allow_open_paper_carryover=False,
@@ -2451,6 +2703,13 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
     if len(raw) > 64 * 1024:
         raise ValueError('QUIESCENCE_PRIOR_RECEIPT_BOUND')
     previous = json.loads(raw)
+    # A prior A207 failure may leave a perfectly flat book *before* its
+    # quiescence receipt reaches DRAINED (or after a failed install).  Treat
+    # any A207-shaped receipt as an accounting continuation, never as a
+    # generic empty-book adoption.  Incomplete/forged reversals must fail.
+    a207_prior = (previous.get('admin_policy') == 'A207_ALL_PAPER_REVERSAL_V1'
+                  or previous.get('admin_cancel_status') == 'A207_ATOMIC_ACCOUNTING_REVERSED'
+                  or any(key.startswith('a207_') for key in previous))
     closed_admin_prior = (admin_paper_id is None and
                           previous.get('admin_cancel_paper_id') is not None)
     if (previous.get('candidate_sha') != previous_candidate or
@@ -2492,6 +2751,9 @@ def adopt_stopped_after_failed_install(candidate, folder, originals, *, admin_pa
                 proof.get('after') != state or
                 proof.get('classification') not in {'CLEAN_EXIT','INHERITED_OOM_FLAG_CLEAN_EXIT'}):
             raise ValueError('QUIESCENCE_PRIOR_STOP_IDENTITY_CHANGED')
+    if a207_prior:
+        verify_a207_stopped_predecessor(
+            previous, ROOT / 'data/paper_v17/observer_v17.db')
     critical = critical_admission()
     if bool(previous.get('market_open_suspended', False)) != allow_market_open_suspend:
         raise ValueError('QUIESCENCE_PRIOR_SESSION_MODE_CHANGED')
@@ -2606,7 +2868,8 @@ def wait_for_admin_resources(*, sample=None, clock=None, pause=None):
         pause(min(5, remaining))
 
 
-def run(candidate, action, *, allow_admin_issue624=False,
+def run(candidate, action, *, allow_admin_issue624=False, allow_a207_admin=False,
+        a207_owner_comment_id=None, a207_owner_tree=None,
         allow_market_open_suspend=False, allow_open_paper_carryover=False,
         allow_postclose_pending=False, allow_intraday_caucion=False,
          allow_pending_caucion=False, allow_degraded_closed_rescue=False,
@@ -2618,6 +2881,20 @@ def run(candidate, action, *, allow_admin_issue624=False,
          allow_a175_running_pending=False,
          candidate_image_id=None,
          frozen_manifest=None):
+    if allow_a207_admin:
+        if (action not in {'drain','admin-begin','admin-commit','admin-resume'} or
+                allow_admin_issue624 or allow_open_paper_carryover or
+                allow_postclose_pending or allow_intraday_caucion or
+                allow_pending_caucion or allow_degraded_closed_rescue or
+                allow_adopt_failed_rescue or allow_a143_pending_running or
+                allow_a143_pending_stopped or allow_a151_held_open or
+                allow_a171_running_pending or allow_a174_running_pending or
+                allow_a175_running_pending or
+                not re.fullmatch('[1-9][0-9]*', str(a207_owner_comment_id or '')) or
+                not re.fullmatch('[0-9a-f]{40}', a207_owner_tree or '')):
+            raise ValueError('QUIESCENCE_A207_EXCLUSIVE_VERIFIED_AUTHORITY_REQUIRED')
+    elif a207_owner_comment_id is not None or a207_owner_tree is not None:
+        raise ValueError('QUIESCENCE_A207_AUTHORITY_WITHOUT_ADMIN_MODE')
     if allow_a175_running_pending and (
             allow_a174_running_pending or allow_a171_running_pending or
             allow_admin_issue624 or
@@ -2818,8 +3095,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
             return receipt
         if action == 'drain':
             if receipt is not None:
-                if (receipt.get('candidate_sha') != candidate or receipt.get('status') != 'DRAINED' or
+                wanted_status = 'ADMIN_DRAINED_PENDING' if allow_a207_admin else 'DRAINED'
+                if (receipt.get('candidate_sha') != candidate or receipt.get('status') != wanted_status or
                         receipt.get('installation_started') is not False or
+                        (receipt.get('admin_policy') == 'A207_ALL_PAPER_REVERSAL_V1') != allow_a207_admin or
+                        (allow_a207_admin and (receipt.get('a207_owner_approval') !=
+                             str(a207_owner_comment_id) or receipt.get('a207_approval_tree') !=
+                             a207_owner_tree)) or
                         receipt.get('degraded_closed_rescue', False) != allow_degraded_closed_rescue or
                         receipt.get('market_open_suspended') != allow_market_open_suspend or
                         receipt.get('open_paper_carryover') != allow_open_paper_carryover or
@@ -2841,7 +3123,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 if allow_a175_running_pending:
                     a175_stopped_continuation(receipt)
                 exact_clean_stopped(receipt)
-                admit(stopped=True, allow_market_open_suspend=allow_market_open_suspend,
+                admit(stopped=True, allow_a207_admin=allow_a207_admin,
+                      allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
                       allow_postclose_pending=allow_postclose_pending,
                       allow_intraday_caucion=allow_intraday_caucion,
@@ -2856,7 +3139,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     raise ValueError('QUIESCENCE_INTRADAY_CAUCION_CHANGED')
                 if allow_pending_caucion and verified_pending_caucion_snapshot() != receipt.get('caucion_carryover'):
                     raise ValueError('QUIESCENCE_PENDING_CAUCION_CHANGED')
-                print(json.dumps({'status': 'DRAINED', 'candidate_sha': candidate,
+                print(json.dumps({'status': wanted_status, 'candidate_sha': candidate,
                                   'prepaused_runtime_adopted': True, 'real_orders_sent': 0,
                                   'ppi_watch_accessed': False}), flush=True)
                 return receipt
@@ -2910,6 +3193,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
             else:
                 process = admit(stopped=not (allow_postclose_pending or allow_degraded_closed_rescue),
                                 allow_admin_issue624=allow_admin_issue624,
+                                allow_a207_admin=allow_a207_admin,
                                 allow_market_open_suspend=allow_market_open_suspend,
                                 allow_open_paper_carryover=allow_open_paper_carryover,
                                 allow_postclose_pending=allow_postclose_pending,
@@ -2936,6 +3220,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 if process != required_process or any(v['State']['Status'] != 'running' for v in originals.values()):
                     raise ValueError('QUIESCENCE_RUNTIME_NOT_RUNNING_OR_EXACT_PRIOR_STOP')
                 confirmed_process = admit(allow_admin_issue624=bool(admin_paper_id),
+                      allow_a207_admin=allow_a207_admin,
                       allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
                       allow_postclose_pending=allow_postclose_pending,
@@ -2970,6 +3255,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     'rescue_calendar_and_hours': rescue_proof,
                     'critical_admission': critical,
                     'postclose_live_closed': allow_postclose_pending}
+                if allow_a207_admin:
+                    receipt.update(admin_policy='A207_ALL_PAPER_REVERSAL_V1',
+                                   a207_owner_approval=str(a207_owner_comment_id),
+                                   a207_approval_candidate=candidate,
+                                   a207_approval_tree=a207_owner_tree)
                 if a171_proof is not None:
                     receipt.update(a171_pending_adopted=True,
                                    a171_origin_candidate=A171_FAILED_CANDIDATE,
@@ -2998,6 +3288,7 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     receipt['stop_evidence'][name]['classification'] = classification
                     persist(path, receipt)
                 admit(stopped=True, allow_admin_issue624=bool(admin_paper_id),
+                      allow_a207_admin=allow_a207_admin,
                       allow_market_open_suspend=allow_market_open_suspend,
                       allow_open_paper_carryover=allow_open_paper_carryover,
                       allow_postclose_pending=allow_postclose_pending,
@@ -3014,7 +3305,8 @@ def run(candidate, action, *, allow_admin_issue624=False,
                     raise ValueError('QUIESCENCE_PENDING_CAUCION_CHANGED_AFTER_STOP')
                 if admin_paper_id and admin_target_on_host() != admin_paper_id:
                     raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED_AFTER_STOP')
-                receipt.update(status='ADMIN_DRAINED_PENDING' if admin_paper_id else 'DRAINED',
+                receipt.update(status='ADMIN_DRAINED_PENDING'
+                               if (admin_paper_id or allow_a207_admin) else 'DRAINED',
                                inflight='ABSENT_OWNED_RUNTIME_STOPPED',
                                spot_carryover=spot_carryover_snapshot() if allow_open_paper_carryover else None,
                                caucion_carryover=(verified_pending_caucion_snapshot() if allow_pending_caucion
@@ -3029,42 +3321,162 @@ def run(candidate, action, *, allow_admin_issue624=False,
                 if allow_postclose_pending and receipt['spot_carryover']['open_count'] != 2:
                     raise ValueError('QUIESCENCE_POSTCLOSE_SPOT_COUNT_CHANGED')
         elif action == 'admin-begin':
-            if (not allow_admin_issue624 or not receipt
-                    or receipt['status'] != 'ADMIN_DRAINED_PENDING'
-                    or not receipt.get('admin_cancel_paper_id')):
-                raise ValueError('QUIESCENCE_ADMIN_NOT_DRAINED')
+            if allow_a207_admin:
+                if (not receipt or receipt.get('status') != 'ADMIN_DRAINED_PENDING'
+                        or receipt.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1'
+                        or receipt.get('installation_started') is not False
+                        or receipt.get('a207_owner_approval') != str(a207_owner_comment_id)
+                        or receipt.get('a207_approval_tree') != a207_owner_tree
+                        or receipt.get('a207_approval_candidate') != candidate
+                        or receipt.get('inflight') != 'ABSENT_OWNED_RUNTIME_STOPPED'):
+                    raise ValueError('QUIESCENCE_A207_DRAIN_OR_OWNER_CHANGED')
+                exact_clean_stopped(receipt)
+                for name in OWNED:
+                    value = inspect(name)
+                    prior = receipt['containers'][name]
+                    if (value['Id'] != prior['id'] or value['Image'] != prior['image']
+                            or value['State']['Status'] != 'exited'):
+                        raise ValueError('QUIESCENCE_A207_RUNTIME_CHANGED')
+                admit(stopped=True, allow_a207_admin=True,
+                      allow_market_open_suspend=receipt.get('market_open_suspended') is True,
+                      stopped_receipt=receipt)
+                from scripts.rc6_paper_deploy_preflight import (
+                    DB, open_exposure_rows, _fingerprint, inspect_book)
+                now = datetime.now(timezone.utc).isoformat()
+                # The host mutex is already owned by the exact GHA attempt;
+                # inspect_book's ABSENT value is a pure classification input,
+                # not a claim that the live mutex/barrier disappeared.
+                report = inspect_book(DB, as_of=now, barrier={'status':'ABSENT'})
+                if (report['status'] != 'ADMIN_CLOSE_REQUIRED' or
+                        report['real_orders_sent'] != 0 or
+                        report['admin_reversal_policy'] != 'A207_ALL_PAPER_REVERSAL_V1'):
+                    raise ValueError('QUIESCENCE_A207_ACCOUNTING_PLAN_RED')
+                with closing(sqlite3.connect(DB.as_uri() + '?mode=ro',
+                                              uri=True, timeout=.2)) as c:
+                    c.row_factory = sqlite3.Row
+                    c.execute('PRAGMA query_only=ON')
+                    counts, rows = open_exposure_rows(c)
+                    if (_fingerprint(rows, {}) != report['exposures_sha256'] or
+                            counts != report['exposures'] or not any(counts.values())):
+                        raise ValueError('QUIESCENCE_A207_SNAPSHOT_CHANGED')
+                    targets = {name: sorted(p['paper_id'] if name != 'future'
+                                      else p['lifecycle_id'] for p in rows[name])
+                               for name in ('spot','caucion','future')}
+                wait_for_admin_resources()
+                # This root-owned 0600 write is durable BEFORE the irreversible
+                # SQLite transition. Recovery must not restart the old image
+                # when it may not understand A207's terminal states.
+                receipt.update(status='ADMIN_WRITE_AUTHORIZED',
+                               installation_started=True,
+                               a207_targets=targets,
+                               a207_exposures_sha256=report['exposures_sha256'],
+                               a207_plan_snapshot_sha256=report['snapshot_sha256'],
+                               a207_plan_at=now)
+                # The shared persist() at the end of run seals this receipt.
+            else:
+                if (not allow_admin_issue624 or not receipt
+                        or receipt['status'] != 'ADMIN_DRAINED_PENDING'
+                        or not receipt.get('admin_cancel_paper_id')):
+                    raise ValueError('QUIESCENCE_ADMIN_NOT_DRAINED')
+                for name in OWNED:
+                    value = inspect(name)
+                    expected = receipt['containers'][name]
+                    if (value['Id'] != expected['id'] or value['Image'] != expected['image']
+                            or value['State']['Status'] != 'exited'):
+                        raise ValueError('QUIESCENCE_ADMIN_RUNTIME_CHANGED')
+                admit(stopped=True, allow_admin_issue624=True)
+                if admin_target_on_host() != receipt['admin_cancel_paper_id']:
+                    raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED')
+                # A failed capacity check leaves the old runtime recoverable.
+                wait_for_admin_resources()
+                receipt.update(status='ADMIN_WRITE_AUTHORIZED', installation_started=True)
+        elif action == 'admin-commit':
+            if allow_a207_admin:
+                if (not receipt or receipt.get('status') != 'ADMIN_WRITE_AUTHORIZED'
+                        or receipt.get('installation_started') is not True
+                        or receipt.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1'
+                        or receipt.get('a207_owner_approval') != str(a207_owner_comment_id)
+                        or receipt.get('a207_approval_tree') != a207_owner_tree):
+                    raise ValueError('QUIESCENCE_A207_WRITE_OR_OWNER_CHANGED')
+                exact_clean_stopped(receipt)
+                for name in OWNED:
+                    value = inspect(name)
+                    prior = receipt['containers'][name]
+                    if (value['Id'] != prior['id'] or value['Image'] != prior['image']
+                            or value['State']['Status'] != 'exited'):
+                        raise ValueError('QUIESCENCE_A207_RUNTIME_CHANGED_AFTER_WRITE')
+                from scripts.rc6_paper_admin_cancel import execute_a207_batch
+                from scripts.rc6_paper_deploy_preflight import DB
+                # The idempotent replay takes a write lock but rolls back;
+                # apply=True is essential here to recheck exact Docker stop
+                # identity when the scanner left WAITING_MARKET in SQLite.
+                status = execute_a207_batch(DB, path, candidate, apply=True)
+                if status.get('status') != 'ALREADY_CLOSED' or status.get('real_orders_sent') != 0:
+                    raise ValueError('QUIESCENCE_A207_SQL_SEAL_NOT_RECONCILED')
+                admit(stopped=True,
+                      allow_market_open_suspend=receipt.get('market_open_suspended') is True,
+                      stopped_receipt=receipt)
+                receipt.update(status='DRAINED',
+                               admin_cancel_status='A207_ATOMIC_ACCOUNTING_REVERSED')
+            else:
+                if (not allow_admin_issue624 or not receipt
+                        or receipt['status'] != 'ADMIN_WRITE_AUTHORIZED'
+                        or receipt['installation_started'] is not True):
+                    raise ValueError('QUIESCENCE_ADMIN_WRITE_NOT_AUTHORIZED')
+                admit(stopped=True)
+                db = ROOT / 'data/paper_v17/observer_v17.db'
+                with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+                    c.execute('PRAGMA query_only=ON')
+                    c.execute('PRAGMA busy_timeout=200')
+                    row = c.execute('''SELECT p.status,p.close_reason,p.exit_price,p.net_pnl,
+                      a.authority FROM paper_positions p JOIN paper_admin_cancellations a
+                      USING(paper_id) WHERE p.paper_id=?''',
+                      (receipt['admin_cancel_paper_id'],)).fetchone()
+                    if (row != ('CANCELLED_ADMIN', ADMIN_CANCEL_REASON, None, None,
+                                'ISSUE624_OPERATOR_REQUEST_20261019')
+                            or c.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                                         (receipt['admin_cancel_paper_id'],)).fetchone()):
+                        raise ValueError('QUIESCENCE_ADMIN_LEDGER_NOT_RECONCILED')
+                receipt.update(status='DRAINED', admin_cancel_status='APPLIED_NO_MARKET_SALE')
+        elif action == 'admin-resume':
+            if (not allow_a207_admin or not receipt or
+                    receipt.get('status') != 'FIX_FORWARD_VALIDATION_REQUIRED' or
+                    receipt.get('installation_started') is not True or
+                    receipt.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1' or
+                    receipt.get('a207_owner_approval') != str(a207_owner_comment_id) or
+                    receipt.get('a207_approval_tree') != a207_owner_tree or
+                    receipt.get('a207_approval_candidate') != candidate):
+                raise ValueError('QUIESCENCE_A207_RESUME_AUTHORITY_OR_STATE_CHANGED')
+            # Only the originally stopped pair may complete an interrupted
+            # administrative transaction. Never restart a prior image and
+            # never resume after a new/unvalidated Docker image was launched.
+            exact_clean_stopped(receipt)
             for name in OWNED:
                 value = inspect(name)
-                expected = receipt['containers'][name]
-                if (value['Id'] != expected['id'] or value['Image'] != expected['image']
-                        or value['State']['Status'] != 'exited'):
-                    raise ValueError('QUIESCENCE_ADMIN_RUNTIME_CHANGED')
-            admit(stopped=True, allow_admin_issue624=True)
-            if admin_target_on_host() != receipt['admin_cancel_paper_id']:
-                raise ValueError('QUIESCENCE_ADMIN_TARGET_CHANGED')
-            # A failed capacity check leaves the old runtime recoverable.
-            wait_for_admin_resources()
-            receipt.update(status='ADMIN_WRITE_AUTHORIZED', installation_started=True)
-        elif action == 'admin-commit':
-            if (not allow_admin_issue624 or not receipt
-                    or receipt['status'] != 'ADMIN_WRITE_AUTHORIZED'
-                    or receipt['installation_started'] is not True):
-                raise ValueError('QUIESCENCE_ADMIN_WRITE_NOT_AUTHORIZED')
-            admit(stopped=True)
-            db = ROOT / 'data/paper_v17/observer_v17.db'
-            with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
-                c.execute('PRAGMA query_only=ON')
-                c.execute('PRAGMA busy_timeout=200')
-                row = c.execute('''SELECT p.status,p.close_reason,p.exit_price,p.net_pnl,
-                  a.authority FROM paper_positions p JOIN paper_admin_cancellations a
-                  USING(paper_id) WHERE p.paper_id=?''',
-                  (receipt['admin_cancel_paper_id'],)).fetchone()
-                if (row != ('CANCELLED_ADMIN', ADMIN_CANCEL_REASON, None, None,
-                            'ISSUE624_OPERATOR_REQUEST_20261019')
-                        or c.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
-                                     (receipt['admin_cancel_paper_id'],)).fetchone()):
-                    raise ValueError('QUIESCENCE_ADMIN_LEDGER_NOT_RECONCILED')
-            receipt.update(status='DRAINED', admin_cancel_status='APPLIED_NO_MARKET_SALE')
+                old = receipt['containers'][name]
+                if (value['Id'] != old['id'] or value['Image'] != old['image'] or
+                        value['State']['Status'] != 'exited'):
+                    raise ValueError('QUIESCENCE_A207_RESUME_RUNTIME_CHANGED')
+            if receipt.get('a207_resume_from') == 'ADMIN_WRITE_AUTHORIZED':
+                from scripts.rc6_paper_admin_cancel import execute_a207_batch
+                from scripts.rc6_paper_deploy_preflight import DB
+                result = execute_a207_batch(DB, path, candidate, apply=True)
+                if result['status'] not in {'CANCELLED_ADMIN','ALREADY_CLOSED'} or (
+                        result.get('real_orders_sent') != 0):
+                    raise ValueError('QUIESCENCE_A207_RESUME_SQL_NOT_RECONCILED')
+                receipt['a207_resume_from'] = None
+                receipt['a207_resume_result'] = result['status']
+                receipt['admin_cancel_status'] = 'A207_ATOMIC_ACCOUNTING_REVERSED'
+            elif (receipt.get('admin_cancel_status') != 'A207_ATOMIC_ACCOUNTING_REVERSED'
+                    or receipt.get('a207_resume_result') not in
+                        {'CANCELLED_ADMIN','ALREADY_CLOSED'}):
+                raise ValueError('QUIESCENCE_A207_RESUME_NOT_SEALED')
+            admit(stopped=True,
+                  allow_market_open_suspend=receipt.get('market_open_suspended') is True,
+                  stopped_receipt=receipt)
+            receipt['runtime_health'] = 'A207_ACCOUNTING_RECOVERED_OLD_RUNTIME_HELD'
+            # Do NOT change status to DRAINED: the authorized deploy attempt
+            # has failed and must not proceed with installing its artifact.
         elif action == 'install':
             if not receipt or receipt['status'] != 'DRAINED': raise ValueError('QUIESCENCE_NOT_DRAINED')
             if allow_a171_running_pending != (receipt.get('a171_pending_adopted') is True):
@@ -3180,6 +3592,13 @@ def run(candidate, action, *, allow_admin_issue624=False,
         elif action == 'recover':
             if not receipt: return {'status': 'NO_DRAIN_RECEIPT'}
             if receipt['installation_started']:
+                # An interrupted A207 write needs an exact, idempotent
+                # accounting-only continuation. Preserve the only permitted
+                # resume origin BEFORE replacing the display status; never
+                # treat an arbitrary failed install as permission to write.
+                if (receipt.get('admin_policy') == 'A207_ALL_PAPER_REVERSAL_V1'
+                        and receipt.get('status') == 'ADMIN_WRITE_AUTHORIZED'):
+                    receipt['a207_resume_from'] = 'ADMIN_WRITE_AUTHORIZED'
                 receipt['status'] = 'FIX_FORWARD_VALIDATION_REQUIRED'
                 if receipt.get('degraded_closed_rescue') is True:
                     try:
@@ -3376,7 +3795,11 @@ def run(candidate, action, *, allow_admin_issue624=False,
         persist(path, receipt)
         print(json.dumps({'status': receipt['status'], 'candidate_sha': candidate,
                           'installation_started': receipt['installation_started'],
-                          'real_orders_sent': 0, 'ppi_watch_accessed': False}), flush=True)
+                          'real_orders_sent': 0, 'ppi_watch_accessed': False,
+                          'a207_resume_required': (
+                              receipt.get('admin_policy') == 'A207_ALL_PAPER_REVERSAL_V1'
+                              and receipt.get('a207_resume_from') == 'ADMIN_WRITE_AUTHORIZED')}),
+              flush=True)
         return receipt
 
 
@@ -3384,9 +3807,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     parser.add_argument('--action', choices=['drain', 'admin-begin', 'admin-commit',
+                                            'admin-resume',
                                             'install', 'image-intent', 'capture-runtime',
                                             'verify-carryover', 'recover'], required=True)
     parser.add_argument('--admin-cancel-issue624', action='store_true')
+    parser.add_argument('--a207-admin', action='store_true',
+                        help='bounded PAPER 3-family reversal; only under exact #624 approval')
+    parser.add_argument('--a207-owner-comment-id')
+    parser.add_argument('--a207-owner-tree')
     parser.add_argument('--market-open-suspend', action='store_true')
     parser.add_argument('--carry-open-paper-spots', action='store_true')
     parser.add_argument('--paused-postclose', action='store_true')
@@ -3409,6 +3837,14 @@ def main(argv=None):
         parser.error('--allow-validation-pending requires --action recover')
     if args.admin_cancel_issue624 and args.action not in {'drain', 'admin-begin', 'admin-commit'}:
         parser.error('--admin-cancel-issue624 only for controlled admin actions')
+    if args.a207_admin:
+        if (args.admin_cancel_issue624 or args.action not in
+                {'drain','admin-begin','admin-commit','admin-resume'} or
+                not re.fullmatch('[1-9][0-9]*', args.a207_owner_comment_id or '') or
+                not re.fullmatch('[0-9a-f]{40}', args.a207_owner_tree or '')):
+            parser.error('A207 requires one isolated exact #624 owner decision')
+    elif args.a207_owner_comment_id is not None or args.a207_owner_tree is not None:
+        parser.error('A207 authority parameters require --a207-admin')
     if args.market_open_suspend and args.action not in {'drain', 'install'}:
         parser.error('--market-open-suspend only for drain and install')
     if args.carry_open_paper_spots and (not args.market_open_suspend or
@@ -3481,6 +3917,10 @@ def main(argv=None):
     options = {}
     if args.admin_cancel_issue624:
         options['allow_admin_issue624'] = True
+    if args.a207_admin:
+        options.update(allow_a207_admin=True,
+                       a207_owner_comment_id=args.a207_owner_comment_id,
+                       a207_owner_tree=args.a207_owner_tree)
     if args.market_open_suspend:
         options['allow_market_open_suspend'] = True
     if args.carry_open_paper_spots:
@@ -3512,7 +3952,12 @@ def main(argv=None):
                        frozen_manifest=args.frozen_manifest)
     receipt = run(args.candidate_sha, args.action, **options)
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
-    if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:return 2
+    if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:
+        if (args.action=='admin-resume' and args.a207_admin and
+                receipt.get('admin_cancel_status')=='A207_ATOMIC_ACCOUNTING_REVERSED' and
+                receipt.get('runtime_health')=='A207_ACCOUNTING_RECOVERED_OLD_RUNTIME_HELD'):
+            return 0  # accounting succeeded, deployment is STILL NO_GO
+        return 2
     return 0
 
 

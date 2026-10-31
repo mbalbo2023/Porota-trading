@@ -109,3 +109,39 @@ def test_inconsistent_allocation_never_gets_recast_as_fee_reconciliation(tmp_pat
     assert receipt["status"] == "RED"
     assert receipt["allocation_inconsistent"] == 1
     assert receipt["allocation_absent"] == 5
+
+
+def test_a207_cancelled_legacy_caucion_is_historical_not_matured(tmp_path):
+    from bt_caucion_paper import ADMIN_CANCEL_AUTHORITY_A207
+
+    path = _six_legacy_matured(tmp_path)
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        old = conn.execute("SELECT * FROM paper_cauciones WHERE paper_id='PAPER-CAUCION-0'").fetchone()
+        conn.execute("""CREATE TABLE paper_caucion_admin_cancellations(
+            paper_id TEXT,cancelled_at TEXT,authority TEXT,principal TEXT,total_fees TEXT,
+            request_fingerprint TEXT,terms_sha256 TEXT,reason TEXT)""")
+        conn.execute("CREATE TABLE paper_events(event_type TEXT,paper_id TEXT)")
+        conn.execute("""INSERT INTO paper_caucion_admin_cancellations VALUES(?,?,?,?,?,?,?,?)""",
+                     (old['paper_id'], '2026-08-28T16:00:00-03:00', ADMIN_CANCEL_AUTHORITY_A207,
+                      old['principal'], old['total_fees'], old['request_fingerprint'],
+                      hashlib.sha256(old['terms_json'].encode()).hexdigest(),
+                      'ADMIN_CANCEL_NO_MARKET_EXECUTION'))
+        conn.execute("""INSERT INTO paper_events VALUES('PAPER_CAUCION_ADMIN_CANCELLED_NO_EXECUTION',?)""",
+                     (old['paper_id'],))
+        conn.execute("""UPDATE paper_cauciones SET status='CANCELLED_ADMIN',settled_at=NULL
+                        WHERE paper_id=?""", (old['paper_id'],))
+    before = path.read_bytes()
+    result = historical_public_fee_provenance(path)
+    assert result['status'] == 'GREEN'
+    assert result['legacy_admin_cancelled_verified'] == 1
+    assert result['legacy_matured'] == 5
+    assert result['strict_contracts_checked'] == 6
+    assert result['accounting_reconciled'] is False
+    assert path.read_bytes() == before
+    with sqlite3.connect(path) as conn:
+        conn.execute("""UPDATE paper_caucion_admin_cancellations SET terms_sha256='0'
+                        WHERE paper_id='PAPER-CAUCION-0'""")
+    result = historical_public_fee_provenance(path)
+    assert result['status'] == 'RED'
+    assert result['unsupported_terms'] == 1
