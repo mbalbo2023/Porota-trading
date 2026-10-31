@@ -1681,7 +1681,15 @@ def admit(*, stopped=False, allow_admin_issue624=False, allow_a207_admin=False,
           allow_market_open_suspend=False, allow_open_paper_carryover=False,
           allow_postclose_pending=False, allow_intraday_caucion=False,
           allow_pending_caucion=False, allow_degraded_closed_rescue=False,
-          initial=False, stopped_receipt=None):
+          initial=False, stopped_receipt=None,
+          allow_poststart_ppi_auth_degraded=False):
+    if allow_poststart_ppi_auth_degraded and (
+            stopped or initial or stopped_receipt is not None or
+            allow_admin_issue624 or allow_a207_admin or
+            allow_market_open_suspend or allow_open_paper_carryover or
+            allow_postclose_pending or allow_intraday_caucion or
+            allow_pending_caucion or allow_degraded_closed_rescue):
+        raise ValueError('QUIESCENCE_POSTSTART_PPI_EXCEPTION_COMBINATION_RED')
     if allow_degraded_closed_rescue:
         if (allow_admin_issue624 or allow_a207_admin or allow_market_open_suspend or
                 allow_open_paper_carryover or allow_postclose_pending or
@@ -1711,9 +1719,14 @@ def admit(*, stopped=False, allow_admin_issue624=False, allow_a207_admin=False,
         c.execute('PRAGMA busy_timeout=200')
         end = time.monotonic() + 2
         c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
-        mode, orders, process, session, stamp = c.execute(
-            'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
-            'FROM observer_state WHERE id=1').fetchone()
+        if allow_poststart_ppi_auth_degraded:
+            (mode, orders, process, session, stamp, ppi_auth, detail) = c.execute(
+                'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,'
+                'ppi_auth,detail FROM observer_state WHERE id=1').fetchone()
+        else:
+            mode, orders, process, session, stamp = c.execute(
+                'SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at '
+                'FROM observer_state WHERE id=1').fetchone()
         if mode != 'PRODUCTION_PAPER' or type(orders) is not int or orders != 0:
             raise ValueError('QUIESCENCE_PAPER_REQUIRED')
         if allow_degraded_closed_rescue:
@@ -1735,6 +1748,23 @@ def admit(*, stopped=False, allow_admin_issue624=False, allow_a207_admin=False,
                 raise ValueError('QUIESCENCE_RESCUE_STATE_CHANGED')
             else:
                 fresh_a92_child_source()
+        elif allow_poststart_ppi_auth_degraded:
+            # Only the established post-start technical deploy may tolerate
+            # the scanner's *PPI authentication* AMBER state. An unrelated
+            # DEGRADED cause (e.g. CAUCION_LEDGER_INVALID) remains RED.
+            # Query the cause and process in the same read-only transaction;
+            # the standard PAPER/0, heartbeat and all ledger guards still run.
+            if (process != 'DEGRADED' or
+                    ppi_auth not in {'ERROR', 'COOLDOWN'} or
+                    session not in {'BOOT_CALENDAR', 'BOOT_PPI_SECRET',
+                                    'BOOT_PPI_CLIENT', 'BOOT_PPI_LOGIN',
+                                    'CLOSED', 'MARKET_CLOSED', 'PREOPEN',
+                                    'OPEN', 'MARKET_OPEN'} or
+                    not isinstance(detail, str) or
+                    not detail.startswith(('Login fallo:',
+                                           'PPI en espera de reintento;',
+                                           'Login local bloqueado por interlock'))):
+                raise ValueError('QUIESCENCE_POSTSTART_PPI_CAUSE_UNVERIFIED')
         elif allow_postclose_pending and (not stopped or
                 (stopped_receipt or {}).get('postclose_live_closed') is True):
             # Postclose is a distinct authorized window. Demand a fresh
@@ -1821,7 +1851,12 @@ def admit(*, stopped=False, allow_admin_issue624=False, allow_a207_admin=False,
 
 
 def admit_poststart_flat(pre_mode, candidate=None):
-    """Recheck live PAPER book and the exact untouched pending receipt."""
+    """Recheck live PAPER book and the exact untouched pending receipt.
+
+    External PPI authentication failures are AMBER, not deploy failures, but
+    never evidence of strategy readiness. Unknown internal errors and
+    unstabilized startup fail closed with a bounded, sanitized diagnostic.
+    """
     if pre_mode not in {'OPEN', 'CLOSED', 'CLOSED_CAUCION', RESCUE_MODE,
                         ADOPTED_RESCUE_MODE, A143_PENDING_MODE,
                         A151_HELD_STOPPED_MODE, A171_PENDING_MODE,
@@ -1829,17 +1864,41 @@ def admit_poststart_flat(pre_mode, candidate=None):
                         A175_INTRADAY_PENDING_MODE}:
         raise ValueError('QUIESCENCE_PRESTART_MODE_UNKNOWN')
     path = ROOT / 'data/paper_v17/observer_v17.db'
-    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
-        c.execute('PRAGMA query_only=ON')
-        c.execute('PRAGMA busy_timeout=200')
-        state = c.execute(
-            'SELECT process_state,session_state FROM observer_state WHERE id=1').fetchone()
-    if state == ('RUNNING', 'MARKET_OPEN'):
-        actual, expected = 'OPEN', 'RUNNING'
-    elif state and state[0] == 'WAITING_MARKET' and state[1] in {'CLOSED', 'MARKET_CLOSED'}:
-        actual, expected = 'CLOSED', 'WAITING_MARKET'
-    else:
-        raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED')
+    deadline = time.monotonic() + 45
+    while True:
+        with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)) as c:
+            c.execute('PRAGMA query_only=ON')
+            c.execute('PRAGMA busy_timeout=200')
+            state = c.execute(
+                'SELECT process_state,session_state FROM observer_state WHERE id=1').fetchone()
+        if state == ('RUNNING', 'MARKET_OPEN'):
+            actual, expected = 'OPEN', 'RUNNING'
+            break
+        if state and state[0] == 'WAITING_MARKET' and state[1] in {'CLOSED', 'MARKET_CLOSED'}:
+            actual, expected = 'CLOSED', 'WAITING_MARKET'
+            break
+        if state and state[0] == 'DEGRADED' and pre_mode in {'OPEN', 'CLOSED'}:
+            # admit() independently proves the exact PPI cause and enforces
+            # fresh PAPER/0 plus every flat ledger. BOOT_CALENDAR is not a
+            # verified CLOSED session, so report an explicit AMBER outcome.
+            actual, expected = 'PPI_SOURCE_AMBER', 'DEGRADED'
+            break
+        if (state and state[0] == 'STARTING' and
+                state[1] in {'CHECKING', 'BOOT_COMMAND', 'BOOT_CALENDAR',
+                             'BOOT_PPI_SECRET', 'BOOT_PPI_CLIENT',
+                             'BOOT_PPI_LOGIN', 'CLOSED', 'OPEN',
+                             'MARKET_CLOSED', 'PREOPEN'} and
+                time.monotonic() < deadline):
+            time.sleep(3)
+            continue
+        observed = ':'.join(str(x) if x in {
+            'RUNNING', 'WAITING_MARKET', 'DEGRADED', 'STARTING',
+            'MARKET_OPEN', 'MARKET_CLOSED', 'CLOSED', 'OPEN',
+            'BOOT_CALENDAR', 'BOOT_COMMAND', 'CHECKING',
+            'BOOT_PPI_SECRET', 'BOOT_PPI_CLIENT', 'BOOT_PPI_LOGIN',
+            'PREOPEN', 'READY_PREOPEN'} else 'UNKNOWN'
+            for x in (state or (None, None)))
+        raise ValueError('QUIESCENCE_POSTSTART_SESSION_UNVERIFIED:' + observed)
     if pre_mode in {RESCUE_MODE, ADOPTED_RESCUE_MODE, A143_PENDING_MODE,
                     A171_PENDING_MODE, A174_PENDING_MODE} and actual != 'CLOSED':
         # Only the explicitly owner-paused 27-Oct A92 rescue can validate a
@@ -1871,7 +1930,8 @@ def admit_poststart_flat(pre_mode, candidate=None):
     if pending and actual != 'CLOSED':
         raise ValueError('QUIESCENCE_PENDING_POSTSTART_PHASE_CHANGED')
     if admit(allow_market_open_suspend=actual == 'OPEN',
-             allow_pending_caucion=pending) != expected:
+             allow_pending_caucion=pending,
+             allow_poststart_ppi_auth_degraded=actual == 'PPI_SOURCE_AMBER') != expected:
         raise ValueError('QUIESCENCE_POSTSTART_BOOK_CHANGED')
     if pre_mode in {A175_PENDING_MODE,A175_INTRADAY_PENDING_MODE}:
         if not candidate or not re.fullmatch('[0-9a-f]{40}',candidate):
