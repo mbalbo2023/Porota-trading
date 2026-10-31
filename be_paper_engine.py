@@ -928,6 +928,13 @@ class PaperBroker:
                 for row in connection.execute('SELECT '+','.join(fields)+' FROM '+table+' WHERE currency=?',(currency,)):
                     if any(value and utc_microseconds(value)>utc_microseconds(at) for value in row):
                         raise ValueError('CASH_CLOCK_ROLLBACK')
+            if connection.execute('''SELECT 1 FROM sqlite_master WHERE type='table'
+                    AND name='paper_caucion_admin_cancellations' ''').fetchone():
+                if connection.execute('''SELECT 1 FROM paper_caucion_admin_cancellations a
+                    JOIN paper_cauciones p USING(paper_id)
+                    WHERE p.currency=? AND rc6_instant_us(a.cancelled_at)>rc6_instant_us(?) LIMIT 1''',
+                    (currency, at.isoformat())).fetchone():
+                    raise ValueError('CASH_CLOCK_ROLLBACK')
             if connection.execute("""SELECT 1
                 FROM paper_family_lifecycle_events e
                 JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id

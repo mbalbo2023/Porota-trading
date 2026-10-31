@@ -623,10 +623,12 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(by_id['flat_book'].count('RC6_MUTEX_B64'), 2)
         failure = next(step['run'] for step in steps
                        if step['name'] == 'Failure-safe host cleanup')
-        self.assertEqual(failure.count('RC6_MUTEX_B64'), 5)
+        # A207 adds an accounting-only recovery owner phase. It must run
+        # under the same serialized host mutex as every other cleanup writer.
+        self.assertEqual(failure.count('RC6_MUTEX_B64'), 6)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 21)
+        self.assertEqual(len(boundaries), 22)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
@@ -644,6 +646,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('--apply-plan "$PLAN" --require-empty', by_id['backup_retire'])
         self.assertEqual(sum('--phase finalize ' in line for line in boundaries), 1)
         self.assertEqual(sum('--phase cleanup_final ' in line for line in boundaries), 1)
+        self.assertEqual(sum('--phase cleanup_admin_resume ' in line for line in boundaries), 1)
         self.assertEqual(failure.count('--allow-contract-lifecycle'), 1)
         self.assertIn('RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED', failure)
         self.assertIn('RC6_FAILURE_RECOVERY=RED', failure)

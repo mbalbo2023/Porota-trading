@@ -57,7 +57,51 @@ def timer_names(raw):
     return names
 
 
-def fingerprint(policy_raw, *, opener=None):
+def _a207_exposure_digest(db):
+    """Read full bounded PAPER position/support bytes, never log identifiers."""
+    collections = {}
+    identifiers = {'spot':[], 'caucion':[], 'future':[]}
+    for family, table, state, identity in (
+            ('spot','paper_positions','OPEN','paper_id'),
+            ('caucion','paper_cauciones','OPEN','paper_id'),
+            ('future','paper_future_positions','ACTIVE','lifecycle_id')):
+        db.row_factory = sqlite3.Row
+        rows = [dict(r) for r in db.execute('SELECT * FROM ' + table +
+                    ' WHERE status=? ORDER BY rowid LIMIT 33', (state,))]
+        if len(rows) > 32 or any(identity not in row for row in rows):
+            raise FingerprintRejected('A207_EXPOSURE_SCHEMA_OR_BOUND')
+        identifiers[family] = [r[identity] for r in rows]
+        collections[family] = rows
+    if not any(identifiers.values()):
+        raise FingerprintRejected('A207_OPEN_EXPOSURE_NO_LONGER_PRESENT')
+    for table, key, values in (
+            ('paper_fills','paper_id',identifiers['spot']),
+            ('paper_spot_sales','paper_id',identifiers['spot']),
+            ('paper_exit_intents','paper_id',identifiers['spot']),
+            ('paper_sale_receivables','paper_id',identifiers['spot']),
+            ('paper_admin_cancellations','paper_id',identifiers['spot']),
+            ('paper_learning_samples','paper_id',identifiers['spot']),
+            ('paper_events','paper_id',identifiers['spot']+identifiers['caucion']),
+            ('paper_caucion_allocations','paper_id',identifiers['caucion']),
+            ('paper_future_marks','lifecycle_id',identifiers['future']),
+            ('paper_family_lifecycle','lifecycle_id',identifiers['future']),
+            ('paper_family_lifecycle_events','lifecycle_id',identifiers['future'])):
+        if not values:
+            continue
+        query = ('SELECT * FROM ' + table + ' WHERE ' + key + ' IN (' +
+                 ','.join('?' for _ in values) + ') ORDER BY rowid LIMIT 257')
+        rows = [dict(row) for row in db.execute(query, values)]
+        if len(rows) > 256:
+            raise FingerprintRejected('A207_EXPOSURE_SUPPORT_BOUND')
+        collections[table] = rows
+    raw = json.dumps(collections, sort_keys=True, separators=(',', ':'),
+                     default=str).encode()
+    if len(raw) > 256 * 1024:
+        raise FingerprintRejected('A207_EXPOSURE_SNAPSHOT_BOUND')
+    return hashlib.sha256(raw).hexdigest()
+
+
+def fingerprint(policy_raw, *, opener=None, a207_authorized_open=False):
     host_deadline = time.monotonic() + HOST_PROBE_BUDGET_SECONDS
     def bounded_command(*args, allowed=(0,)):
         remaining = host_deadline - time.monotonic()
@@ -77,14 +121,24 @@ def fingerprint(policy_raw, *, opener=None):
         row = db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
         if row != ('PRODUCTION_PAPER', 0) or type(row[1]) is not int:
             raise FingerprintRejected('PAPER_SAFETY_RED')
+        columns = {item[1] for item in db.execute('PRAGMA table_info(paper_family_lifecycle)')}
+        if not {'family', 'state'} <= columns:
+            raise FingerprintRejected('FCI_LIFECYCLE_SCHEMA_UNVERIFIED')
+        if db.execute("SELECT 1 FROM paper_family_lifecycle WHERE family='FCI' AND state!='REDEEMED' LIMIT 1").fetchone():
+            raise FingerprintRejected('FCI_PAPER_NAV_LIABILITY_NOT_FLAT')
         positions = tuple(int(db.execute('SELECT 1 FROM ' + table +
                                          ' WHERE status=? LIMIT 1',
                                          (status,)).fetchone() is not None)
                           for table, status in (('paper_positions', 'OPEN'),
                                                 ('paper_cauciones', 'OPEN'),
                                                 ('paper_future_positions', 'ACTIVE')))
+        a207_book = None
         if positions != (0, 0, 0):
-            raise FingerprintRejected('PAPER_POSITION_NOT_FLAT')
+            if not a207_authorized_open:
+                raise FingerprintRejected('PAPER_POSITION_NOT_FLAT')
+            a207_book = _a207_exposure_digest(db)
+        elif a207_authorized_open:
+            raise FingerprintRejected('A207_OPEN_EXPOSURE_NO_LONGER_PRESENT')
     ids = bounded_command('docker', 'ps', '-aq', '--no-trunc').splitlines()
     if len(ids) > 128 or any(re.fullmatch(r'[a-f0-9]{12,64}', cid) is None for cid in ids):
         raise FingerprintRejected('CONTAINER_LIST_INVALID')
@@ -132,7 +186,8 @@ def fingerprint(policy_raw, *, opener=None):
                                         allowed=(0, 1, 3))))
     state = {'droplet_id': EXPECTED_DROPLET_ID, 'region': EXPECTED_REGION,
              'mode': row[0], 'real_orders_sent': row[1],
-             'positions': positions, 'containers': sorted(containers),
+             'positions': positions, 'a207_exposure_digest': a207_book,
+             'containers': sorted(containers),
              'timers': timers, 'ppi_watch': sorted(ppi)}
     digest = hashlib.sha256(json.dumps(state, sort_keys=True,
                                        separators=(',', ':')).encode()).hexdigest()
@@ -143,12 +198,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--policy-b64', required=True)
     parser.add_argument('--expected-fingerprint')
+    parser.add_argument('--a207-authorized-open', action='store_true')
     args = parser.parse_args(argv)
     try:
         raw = base64.b64decode(args.policy_b64, validate=True)
         if not 0 < len(raw) < 100_000:
             raise FingerprintRejected('POLICY_SIZE_RED')
-        value = fingerprint(raw)
+        value = fingerprint(raw, a207_authorized_open=args.a207_authorized_open)
         if args.expected_fingerprint is not None:
             if not re.fullmatch('[0-9a-f]{64}', args.expected_fingerprint) or value != args.expected_fingerprint:
                 raise FingerprintRejected('HOST_FINGERPRINT_CHANGED')

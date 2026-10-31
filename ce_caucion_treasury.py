@@ -113,7 +113,9 @@ def allocate_conservative(broker, offers, window, request_id, *, as_of=None):
         if not code:
             if any(aware_datetime(p['opened_at']).astimezone(TZ).date().isoformat()==day for p in existing):
                 code = 'DAILY_PLACEMENT_LIMIT'
-            elif any(p['status']=='OPEN' or p['settled_at'] is None for p in existing):
+            elif any(p['status']=='OPEN' or
+                     (p['settled_at'] is None and p['status']!='CANCELLED_ADMIN')
+                     for p in existing):
                 code = 'EXISTING_CAUCION_EXPOSURE'
         frozen = c.execute('SELECT * FROM paper_caucion_treasury_days WHERE day=?',(day,)).fetchone()
         if not code and frozen and (frozen['profile']!=PROFILE or json.loads(frozen['window_json'])!=context['window']):

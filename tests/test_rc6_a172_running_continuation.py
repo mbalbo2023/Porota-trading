@@ -9,6 +9,7 @@ import pytest
 
 from scripts import rc6_deploy_quiescence as q
 from scripts import rc6_deploy_scheduler_suspend as scheduler
+from rc6_paper_fixture_contracts import create_empty_family_parent_ledger
 
 
 NEXT='f'*40
@@ -33,6 +34,7 @@ def running_a171(tmp_path,monkeypatch):
         connection.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,'WAITING_MARKET','MARKET_CLOSED',?)",(NOW.isoformat(),))
         for table in ('paper_positions','paper_cauciones','paper_future_positions'):
             connection.execute('CREATE TABLE '+table+'(status TEXT)')
+        create_empty_family_parent_ledger(connection)
     monkeypatch.setattr(q,'ROOT',root)
     monkeypatch.setattr(q,'datetime',Clock)
     monkeypatch.setattr(q,'critical_admission',lambda:{'capability':'issues_only','status':'healthy'})

@@ -152,8 +152,15 @@ def _validated(row, connection):
     # the historical raw bytes remain fingerprint-sealed by the six receipts.
     _require(normalized == original_offer, 'LEDGER_OFFER_MISMATCH')
     _require((placement['status'] == 'OPEN' and placement['settled_at'] is None)
+             or (placement['status'] == 'CANCELLED_ADMIN' and placement['settled_at'] is None)
              or (placement['status'] == 'MATURED' and placement['settled_at'] is not None
                  and stamp(placement['settled_at']) >= stamp(placement['maturity_at'])), 'LEDGER_STATE_MISMATCH')
+    admin_receipt = None
+    if placement['status'] == 'CANCELLED_ADMIN':
+        from bt_caucion_paper import validate_caucion_admin_receipt
+        admin_receipt = connection.execute('''SELECT * FROM paper_caucion_admin_cancellations
+            WHERE paper_id=?''', (placement['paper_id'],)).fetchone()
+        validate_caucion_admin_receipt(placement, admin_receipt)
     result = {k:placement[k] for k in ('paper_id','status','opened_at','maturity_at','settled_at')}
     if selected['candidate_id'] in historical:
         receipt = restated.get(placement['paper_id'])
@@ -170,7 +177,7 @@ def _validated(row, connection):
                       fee_known_at_utc=receipt['known_at_utc'], fee_model=receipt['model'],
                       broker_account_fees_verified=False)
     else:
-        validate_position(placement)
+        validate_position(placement, cancel_receipt=admin_receipt)
     return decision, result
 
 

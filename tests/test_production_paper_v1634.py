@@ -43,6 +43,14 @@ def rc6_isolate_legacy_accounting_scenarios_from_policy_admission(monkeypatch):
 
 
 @pytest.fixture
+def daily_sync_trading_clock():
+    """Stable ART session clock; CI must not depend on the runner's weekday."""
+    now = datetime(2026, 9, 29, 19, 0, tzinfo=observer.TZ)
+    assert observer._business_day(now.date())
+    return now
+
+
+@pytest.fixture
 def partial_spot(tmp_path, monkeypatch):
     # This fixture is imported by other ledger test modules; keep its isolation
     # explicit because module-level autouse fixtures do not follow that import.
@@ -1391,22 +1399,22 @@ def test_estado_declara_cero_ordenes_reales(tmp_path):
     assert row["real_orders_sent"] == 0
 
 
-def test_sync_diario_no_se_duplica(tmp_path):
+def test_sync_diario_no_se_duplica(tmp_path, daily_sync_trading_clock):
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
-    assert observer._daily_sync_needed(store)
-    today = datetime.now(observer.TZ).date().isoformat()
+    assert observer._daily_sync_needed(store, now=daily_sync_trading_clock)
+    today = daily_sync_trading_clock.date().isoformat()
     with store.connect() as connection:
         for source in ("PPI_PRODUCTION_CATALOG", "PPI_PRODUCTION_HISTORY"):
             connection.execute("INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
                                (source, "VERDE", today, today, 1, "ok"))
-    assert not observer._daily_sync_needed(store)
+    assert not observer._daily_sync_needed(store, now=daily_sync_trading_clock)
 
 
-def test_historia_no_retrigger_catalogo_antes_del_cierre(tmp_path, monkeypatch):
+def test_historia_no_retrigger_catalogo_antes_del_cierre(tmp_path, monkeypatch, daily_sync_trading_clock):
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
-    today = datetime.now(observer.TZ).date().isoformat()
+    today = daily_sync_trading_clock.date().isoformat()
     with store.connect() as connection:
         connection.execute(
             "INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
@@ -1417,10 +1425,10 @@ def test_historia_no_retrigger_catalogo_antes_del_cierre(tmp_path, monkeypatch):
             ("PPI_PRODUCTION_HISTORY", "AMARILLO", "2026-09-25", "2026-09-25", 1, "old"),
         )
     monkeypatch.setattr(observer, "_history_end_date", lambda now=None: None)
-    assert not observer._daily_sync_needed(store)
+    assert not observer._daily_sync_needed(store, now=daily_sync_trading_clock.replace(hour=13))
 
 
-def test_daily_sync_no_redescarga_catalogo_si_solo_historia_esta_due(tmp_path, monkeypatch):
+def test_daily_sync_no_redescarga_catalogo_si_solo_historia_esta_due(tmp_path, monkeypatch, daily_sync_trading_clock):
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
     calls = []
@@ -1441,15 +1449,15 @@ def test_daily_sync_no_redescarga_catalogo_si_solo_historia_esta_due(tmp_path, m
         lambda *_args, **_kwargs: calls.append("history") or 2,
     )
 
-    observer._daily_sync(object(), store)
+    observer._daily_sync(object(), store, now=daily_sync_trading_clock)
 
     assert calls == ["history"]
 
 
-def test_historia_postcierre_se_habilita_sin_forzar_catalogo(tmp_path, monkeypatch):
+def test_historia_postcierre_se_habilita_sin_forzar_catalogo(tmp_path, monkeypatch, daily_sync_trading_clock):
     store = PaperStore(str(tmp_path / "observer.db"))
     observer._support_schema(store)
-    today = datetime.now(observer.TZ).date().isoformat()
+    today = daily_sync_trading_clock.date().isoformat()
     with store.connect() as connection:
         connection.execute(
             "INSERT INTO source_sync VALUES(?,?,?,?,?,?)",
@@ -1462,8 +1470,25 @@ def test_historia_postcierre_se_habilita_sin_forzar_catalogo(tmp_path, monkeypat
     monkeypatch.setattr(observer, "_history_end_date", lambda now=None: date(2026, 9, 29))
     monkeypatch.setattr(observer, "_history_cutoff_repair_complete", lambda: True)
 
-    assert observer._history_daily_sync_due(store)
-    assert observer._daily_sync_needed(store)
+    assert observer._history_daily_sync_due(store, now=daily_sync_trading_clock)
+    assert observer._daily_sync_needed(store, now=daily_sync_trading_clock)
+
+
+@pytest.mark.parametrize("closed_session", [
+    datetime(2026, 10, 31, 19, 0, tzinfo=observer.TZ),  # Saturday
+    datetime(2026, 11, 1, 19, 0, tzinfo=observer.TZ),   # Sunday
+])
+def test_daily_sync_weekend_never_refetches_catalog_or_history(tmp_path, monkeypatch, closed_session):
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    calls = []
+    monkeypatch.setattr(observer, "_source_sync_due", lambda *_args, **_kw: calls.append("due") or True)
+    monkeypatch.setattr(observer, "_download_catalog", lambda *_args, **_kw: calls.append("catalog"))
+    monkeypatch.setattr(observer, "_download_histories", lambda *_args, **_kw: calls.append("history"))
+
+    assert not observer._daily_sync_needed(store, now=closed_session)
+    observer._daily_sync(object(), store, now=closed_session)
+    assert calls == []
 
 
 def test_busqueda_ppi_envia_ticker_y_name_no_vacios():

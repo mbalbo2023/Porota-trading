@@ -228,6 +228,9 @@ def test_observed_stopped_host_waiting_market_after_admin_cancel(
           CREATE TABLE paper_positions (status TEXT);
           CREATE TABLE paper_cauciones (status TEXT);
           CREATE TABLE paper_future_positions (status TEXT);
+          -- A207 requires the mandatory family ledger to be inspectable.
+          -- This synthetic COLD2 fixture intentionally has no live FCI.
+          CREATE TABLE paper_family_lifecycle (family TEXT, state TEXT);
         ''')
         c.execute('INSERT INTO paper_positions VALUES (?)', (position_status,))
     ids = {name: value['containers'][name]['id'] for name in NAMES}

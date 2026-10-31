@@ -300,7 +300,8 @@ def test_a175_workflow_wires_nested_staged_sources_in_every_failure_phase():
     assert "os.environ['RC6_A145_QUIESCENCE_GZIP_B64']=CANDIDATE_A143_B64" in classifier
     drain=workflow.split('      - name: Admit PAPER book before draining RC6',1)[1].split(
         '      - name: Account pre-suspend failure',1)[0]
-    assert 'A143_ENV="RC6_A145_QUIESCENCE_GZIP_B64=' in drain
+    assert 'A143_ENV="RC6_A145_QUIESCENCE_XZ_B64=' in drain
+    assert 'RC6_A145_QUIESCENCE_SOURCE_SHA256=' in drain
     assert 'env $AUDIT_ENV $A125_ENV $A143_ENV' in drain
     assert '${#A143_ENV}' in drain and 'RC6_DRAIN_REMOTE_ARGUMENT=RED' in drain
     install=workflow.split('# The reproducible bundle records mtime=0.',1)[1].split(

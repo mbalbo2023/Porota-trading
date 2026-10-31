@@ -427,6 +427,7 @@ if phase in os.environ['RC6_FAKE_FAILURES'].split(','):
         pre = workflow.split('      - name: Account pre-suspend failure without recovery or timer writes', 1)[1].split('      - name:', 1)[0]
         full = workflow.split('      - name: Failure-safe host cleanup', 1)[1].split('      - name:', 1)[0]
         outcomes = {'host_reconcile': 'success', 'classify': 'failure',
+                    'a207_prepare_authority': 'skipped',
                     'a151_intraday_auth': 'skipped',
                     'pre_suspend_snapshot': 'skipped',
                     'restatement_continuity': 'skipped', 'diskguard': 'skipped',
@@ -476,6 +477,11 @@ print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
         self.assertTrue(selected(pre))
         self.assertFalse(selected(full))
         retire = workflow.split('      - name: Retire only unchanged own pre-suspend attempt barrier', 1)[1].split('      - name:', 1)[0]
+        outcomes.update(a207_prepare_authority='failure', diskguard='skipped')
+        self.assertTrue(selected(pre))
+        self.assertFalse(selected(full))
+        self.assertIn("steps.a207_prepare_authority.outcome == 'failure'", retire)
+        outcomes.update(a207_prepare_authority='success')
         outcomes.update(a151_intraday_auth='failure', diskguard='skipped')
         self.assertTrue(selected(pre))
         self.assertFalse(selected(full))

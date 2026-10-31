@@ -28,6 +28,7 @@ def require_exact_owner_authorization(repo, candidate, tree, *,
     if decision not in {'RC6_624_APPROVE_DEPLOY_AND_COLD2',
                         'RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED',
                         'RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY',
+                        'RC6_624_APPROVE_PAPER_ADMIN_PREPARE',
                         'RC6_624_APPROVE_INTRADAY_PAPER_CARRYOVER',
                         'RC6_624_APPROVE_PAUSED_POSTCLOSE_WITH_CAUCION'}:
         raise ValueError('AUTHORIZATION_DECISION_INVALID')

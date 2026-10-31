@@ -38,6 +38,7 @@ class FingerprintTests(unittest.TestCase):
             db.execute("INSERT INTO observer_state VALUES (1,'PRODUCTION_PAPER',0)")
             for table in ('paper_positions','paper_cauciones','paper_future_positions'):
                 db.execute('CREATE TABLE ' + table + ' (status TEXT)')
+            db.execute('CREATE TABLE paper_family_lifecycle(family TEXT,state TEXT)')
         p = patch.object(proof, 'DB', self.db)
         p.start(); self.addCleanup(p.stop)
         self.names = [f'porota-fixture-{n:02d}.timer' for n in range(15)] + [
@@ -104,6 +105,45 @@ class FingerprintTests(unittest.TestCase):
             with self.assertRaisesRegex(proof.FingerprintRejected, 'PAPER_POSITION_NOT_FLAT'):
                 proof.fingerprint(self.policy, opener=Opener())
         self.assertEqual(len(baseline), 64)
+
+    def test_active_fci_subscription_is_never_flat_or_a207_eligible(self):
+        with sqlite3.connect(self.db) as db:
+            db.execute("INSERT INTO paper_family_lifecycle VALUES('FCI','NAV_APPLIED')")
+        with patch.object(proof, 'command', side_effect=self.command):
+            with self.assertRaisesRegex(proof.FingerprintRejected,
+                                        'FCI_PAPER_NAV_LIABILITY_NOT_FLAT'):
+                proof.fingerprint(self.policy, opener=Opener())
+            with self.assertRaisesRegex(proof.FingerprintRejected,
+                                        'FCI_PAPER_NAV_LIABILITY_NOT_FLAT'):
+                proof.fingerprint(self.policy, opener=Opener(), a207_authorized_open=True)
+
+    def test_a207_explicit_readonly_fingerprint_includes_bounded_support(self):
+        with sqlite3.connect(self.db) as db:
+            db.execute('ALTER TABLE paper_positions ADD COLUMN paper_id TEXT')
+            db.execute("INSERT INTO paper_positions(status,paper_id) VALUES('OPEN','PAPER-A207')")
+            for table in ('paper_fills','paper_spot_sales','paper_exit_intents',
+                          'paper_sale_receivables','paper_admin_cancellations',
+                          'paper_learning_samples','paper_events'):
+                db.execute('CREATE TABLE ' + table + ' (paper_id TEXT, detail TEXT)')
+            db.execute("INSERT INTO paper_events VALUES('PAPER-A207','OPEN')")
+        with patch.object(proof, 'command', side_effect=self.command):
+            with self.assertRaisesRegex(proof.FingerprintRejected,'PAPER_POSITION_NOT_FLAT'):
+                proof.fingerprint(self.policy, opener=Opener())
+            before = proof.fingerprint(self.policy, opener=Opener(),
+                                       a207_authorized_open=True)
+            assert len(before) == 64
+            with sqlite3.connect(self.db) as db:
+                db.execute("UPDATE paper_events SET detail='CHANGED' WHERE paper_id='PAPER-A207'")
+            after = proof.fingerprint(self.policy, opener=Opener(),
+                                      a207_authorized_open=True)
+            self.assertNotEqual(before, after)
+            with sqlite3.connect(self.db) as db:
+                db.execute('UPDATE observer_state SET real_orders_sent=1')
+            with self.assertRaisesRegex(proof.FingerprintRejected,'PAPER_SAFETY_RED'):
+                proof.fingerprint(self.policy, opener=Opener(),
+                                  a207_authorized_open=True)
+        self.assertFalse(any(args[:2] in {('systemctl','start'),('systemctl','stop'),
+                                          ('docker','rm')} for args in self.calls))
 
     def test_readonly_snapshot_accepts_active_iol_guardian_and_continues_gate(self):
         self.held['porota-iol-oauth-health-rc6.service'] = 'active'

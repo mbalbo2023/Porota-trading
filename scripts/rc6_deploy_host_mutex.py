@@ -33,7 +33,8 @@ PHASES = frozenset({
     'classify', 'offline_preclean', 'preclean', 'suspend', 'drain', 'transfer',
     'promotion', 'flat_book', 'verify_carryover', 'timers_restore',
     'timers_restored', 'backup_retire', 'finalize', 'cleanup_contract',
-    'cleanup_recover', 'cleanup_restore', 'cleanup_payload', 'cleanup_final',
+    'cleanup_recover', 'cleanup_admin_resume', 'cleanup_restore',
+    'cleanup_payload', 'cleanup_final',
     'cleanup_presuspend',
 })
 FINAL_PHASES = frozenset({'finalize', 'cleanup_final', 'cleanup_presuspend'})

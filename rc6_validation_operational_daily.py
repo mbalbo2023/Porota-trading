@@ -14,7 +14,8 @@ import inspect
 import os
 import sqlite3
 from zoneinfo import ZoneInfo
-from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_REASON
+from cd_spot_ledger import (ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_AUTHORITIES,
+                            ADMIN_CANCEL_REASON, partition)
 
 TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
 DEFAULT_DB = os.environ.get("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
@@ -101,10 +102,22 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
                     FROM paper_admin_cancellations WHERE paper_id=?""",
                     (row["paper_id"],)).fetchone() if conn.execute("""SELECT 1 FROM sqlite_master
                     WHERE type='table' AND name='paper_admin_cancellations'""").fetchone() else None
-                if (not marker or marker["authority"] != ADMIN_CANCEL_AUTHORITY
+                if (not marker or marker["authority"] not in ADMIN_CANCEL_AUTHORITIES
                         or marker["reason"] != ADMIN_CANCEL_REASON
                         or marker["cancelled_at"] != row["closed_at"]):
                     raise OperationalDailyEvidenceError("ADMIN_CANCEL_RECEIPT_UNVERIFIED")
+                if marker['authority'] != ADMIN_CANCEL_AUTHORITY:
+                    # A205/A207 are batch ledger reversals, not the historic
+                    # one-off SUPV proof. Verify their entire original BUY,
+                    # receipt, learning/intent and lack of FI sidecar through
+                    # the canonical point-in-time reducer, not merely a tag.
+                    complete = conn.execute('SELECT * FROM paper_positions WHERE paper_id=?',
+                                            (row['paper_id'],)).fetchone()
+                    try:
+                        if partition(conn, complete) != (None, []):
+                            raise ValueError('ADMIN_LEDGER_NOT_VOID')
+                    except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
+                        raise OperationalDailyEvidenceError('ADMIN_CANCEL_RECEIPT_UNVERIFIED') from exc
                 by_day[closed]["cancelled_admin"] += 1
                 by_day[closed]["paper_ids"].add(str(row["paper_id"]))
             elif closed and row["status"] == "CLOSED":

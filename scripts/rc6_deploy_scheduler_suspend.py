@@ -11,6 +11,7 @@ import gzip
 from datetime import datetime, timezone
 import hashlib
 import json
+import lzma
 import os
 from pathlib import Path
 import re
@@ -68,12 +69,7 @@ def _operator_pause_json(path, limit):
 
 def exact_operator_preopen_pause(*, require_original_marker=False,
                                  historical_hold_only=False):
-    """Prove the sole A125 operator pause, without changing systemd or PPI.
-
-    This is not permission to resume PAPER. It only explains the one disabled
-    timer on the exact 2026-10-27 ART trading day. The original A92 marker is
-    checked before the install, not after Deploy V2 writes its new marker.
-    """
+    """Prove 27-Oct A125 pause using pre-install A92; never rearm PAPER/PPI."""
     if ROOT.is_symlink() or not ROOT.is_dir():
         raise ValueError('SCHEDULER_OPERATOR_PAUSE_ROOT_UNSAFE')
     now_utc = datetime.now(timezone.utc)
@@ -155,12 +151,7 @@ def operator_preopen_hold_evidence():
 
 
 def exact_a151_operator_preopen_pause(*, historical_hold_only=False):
-    """Attest the 28-Oct A151 sidecar without erasing A125 historical proof.
-
-    The receipt attests the A143/PAPER-0 host at issuance, not a permanently
-    pinned release marker: Deploy V2 is expected to update CURRENT_STATE_V2.
-    It never authorizes PAPER, timer activation or a future trading day.
-    """
+    """Verify 28-Oct A151 PAPER/0 sidecar; no future trading or timer GO."""
     now_utc = datetime.now(timezone.utc)
     day = now_utc.astimezone(
         ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
@@ -339,13 +330,9 @@ def exact_a176_operator_no_go_continuation(*, historical_anchor=False):
 
 
 def a176_quiescence_helper():
-    """Use the staged candidate before install, or the installed module AFTER validation.
-
-    Native preopen/systemd does not inherit Deploy V2's short-lived gzip env.
-    The installed fallback must never allow a failed/pending A175 runtime to
-    masquerade as a completed deployment or admit PAPER on a fresh day.
-    """
-    if os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64'):
+    """Use staged source until VALIDATED_RUNTIME; never trust pending A175."""
+    if (os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64') or
+            os.environ.get('RC6_A145_QUIESCENCE_XZ_B64')):
         return a143_staged_module()
     marker, _ = _operator_pause_json(ROOT/'CURRENT_STATE_V2.json', 65536)
     if (type(marker) is not dict or
@@ -411,6 +398,55 @@ def resolve_closed_recovery():
     if observed == ['exited', 'exited']:
         return 'hold-closed-flat'
     raise ValueError('SCHEDULER_CLOSED_RECOVERY_MIXED_OR_UNKNOWN')
+
+
+def require_a207_failure_hold(candidate):
+    """After A207 ledger mutation keep timers paused; old image cannot rearm."""
+    path = ROOT / ('quiescence-' + candidate + '.json')
+    if not path.exists():
+        # Only a pre-drain failure is allowed to have no quiescence receipt.
+        # No host mutation is permitted by this fallback, even when running.
+        require_owned_running()
+        return 'A207_PREDRAIN_FAILED_TIMERS_HELD'
+    receipt, _ = _operator_pause_json(path, 65536)
+    if (receipt.get('candidate_sha') != candidate or
+            receipt.get('admin_policy') != 'A207_ALL_PAPER_REVERSAL_V1' or
+            receipt.get('a207_approval_candidate') != candidate or
+            not re.fullmatch('[0-9a-f]{40}', str(receipt.get('a207_approval_tree', ''))) or
+            not re.fullmatch('[1-9][0-9]*', str(receipt.get('a207_owner_approval', ''))) or
+            type(receipt.get('real_orders_sent')) is not int or
+            receipt['real_orders_sent'] != 0 or
+            receipt.get('ppi_watch_accessed') is not False):
+        raise ValueError('SCHEDULER_A207_AUTHORITY_OR_RECEIPT_CHANGED')
+    status = receipt.get('status')
+    if status not in {'ADMIN_DRAINED_PENDING', 'ADMIN_WRITE_AUTHORIZED',
+                      'DRAINED', 'HOST_INSTALLATION_STARTED',
+                      'FIX_FORWARD_VALIDATION_REQUIRED'}:
+        raise ValueError('SCHEDULER_A207_RECOVERY_STATUS_UNKNOWN')
+    started = receipt.get('installation_started')
+    if (type(started) is not bool or
+            (status in {'ADMIN_WRITE_AUTHORIZED', 'DRAINED',
+                        'HOST_INSTALLATION_STARTED'} and not started)):
+        raise ValueError('SCHEDULER_A207_INSTALLATION_FLAG_INVALID')
+    if status == 'DRAINED' and receipt.get('admin_cancel_status') != 'A207_ATOMIC_ACCOUNTING_REVERSED':
+        raise ValueError('SCHEDULER_A207_ACCOUNTING_RECEIPT_MISSING')
+    # An interrupted run can leave both old containers stopped or a new
+    # unvalidated candidate started. Both must remain held, irrespective of
+    # a superficially healthy PAPER/0 value.
+    statuses = []
+    for name in ('porota_production_observer', 'porota_production_dashboard'):
+        current, rc = command('docker', 'inspect', '-f', '{{.State.Status}}', name)
+        if rc or current not in {'exited', 'running'}:
+            raise ValueError('SCHEDULER_A207_RUNTIME_STATUS_UNVERIFIED')
+        statuses.append(current)
+    if statuses[0] != statuses[1]:
+        raise ValueError('SCHEDULER_A207_MIXED_RUNTIME_UNVERIFIED')
+    db_path = ROOT.parent / 'paper_v17/observer_v17.db'
+    with sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True, timeout=.2) as db:
+        db.execute('PRAGMA query_only=ON')
+        if db.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone() != ('PRODUCTION_PAPER', 0):
+            raise ValueError('SCHEDULER_A207_PAPER_ZERO_CHANGED')
+    return 'A207_FAILED_UNVALIDATED_TIMERS_HELD'
 
 
 def require_rescue_degraded_hold(candidate):
@@ -720,14 +756,31 @@ def _iol_guard_status(expected):
 
 
 def a143_staged_module():
-    """Use exact A145 source before host installation, not stale #751 imports."""
-    encoded = os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64','')
+    legacy = os.environ.get('RC6_A145_QUIESCENCE_GZIP_B64','')
+    xz = os.environ.get('RC6_A145_QUIESCENCE_XZ_B64','')
+    if legacy and xz:
+        raise ValueError('SCHEDULER_A143_STAGED_HELPER_AMBIGUOUS')
+    encoded = xz or legacy
     if not 0 < len(encoded) < 150000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_MISSING')
     compressed = base64.b64decode(encoded,validate=True)
     if not 0 < len(compressed) < 110000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_COMPRESSED_RED')
-    source = gzip.decompress(compressed)
+    if xz:
+        digest = os.environ.get('RC6_A145_QUIESCENCE_SOURCE_SHA256','')
+        if not re.fullmatch(r'[0-9a-f]{64}',digest):
+            raise ValueError('SCHEDULER_A143_XZ_DIGEST_RED')
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
+        try:
+            source = decoder.decompress(compressed,max_length=260000)
+        except lzma.LZMAError as exc:
+            raise ValueError('SCHEDULER_A143_XZ_INVALID') from exc
+        if not decoder.eof or decoder.unused_data:
+            raise ValueError('SCHEDULER_A143_XZ_INVALID')
+        if hashlib.sha256(source).hexdigest() != digest:
+            raise ValueError('SCHEDULER_A143_XZ_DIGEST_CHANGED')
+    else:
+        source = gzip.decompress(compressed)
     if not 20000 < len(source) < 260000:
         raise ValueError('SCHEDULER_A143_STAGED_HELPER_SIZE_RED')
     module = types.ModuleType('rc6_a145_scheduler_staged_quiescence')
@@ -1202,11 +1255,7 @@ def require_a175_fix_forward_hold(candidate):
 
 
 def adopt_a143_legacy_hold_with_iol(candidate,path,names,digest,before,states):
-    """Migrate A138's *exact* 16-paused hold to 15-paused + OAuth-only timer.
-
-    Durable intent precedes the sole `systemctl start`. Never rearm preopen.
-    A failure remains RED and never retries activation without new review.
-    """
+    """A138 16-to-15 hold: durable receipt before OAuth start, no preopen GO."""
     if (candidate == A143_PENDING_CANDIDATE or
             IOL_OAUTH_GUARD_TIMER not in names or len(names)!=16 or
             any(state != (('inactive','disabled') if name==OPERATOR_PREOPEN_TIMER
@@ -1378,13 +1427,7 @@ def persist(path, payload):
 
 
 def adopt_a138_operator_paused_timers(candidate, path, names, digest, before, states):
-    """A141: adopt the exact A138 16-timer hold without stopping another job.
-
-    A125 intentionally disabled preopen while A138 stopped all other owned
-    timers. The generic 'all inactive/enabled' recovery missed that one
-    disabled timer and attempted to start a new suspension, failing before
-    writing its receipt. Never infer a healthy runtime or rearm old A92.
-    """
+    """A141 adopt exact A138 16-paused/A125-disabled timers; no rearm or GO."""
     if (candidate == FAILED_A138_SUSPENSION_CANDIDATE or
             OPERATOR_PREOPEN_TIMER not in names or
             any(state != (('inactive', 'disabled') if name == OPERATOR_PREOPEN_TIMER
@@ -1657,9 +1700,48 @@ def run(candidate, action, policy_b64, *, allow_a175_intraday=False):
             action = 'hold-a174-pending'
         if action == 'recover-a175-pending':
             action = 'hold-a175-pending'
+        if action == 'recover-a207-pending':
+            action = 'hold-a207-pending'
+        if action == 'hold-a207-pending' and receipt.get('status') in {
+                'SUSPENDED', 'RESTORED', 'A207_REHOLDING'}:
+            # A207 can pass the immediate poststart checks and then fail a
+            # later acceptance step. The generic RESTORED receipt must never
+            # leave its timers armed for an unvalidated PAPER successor. A
+            # crash *during* restore may have active timers even while the
+            # last durable status is still SUSPENDED.
+            # Read-only accounting/owner proof precedes any systemd change.
+            require_a207_failure_hold(candidate)
+            for name in names:
+                if name == preserved:
+                    _iol_guard_status(('active','enabled'))
+                    continue
+                expected = (('inactive','disabled') if name == operator_pause_timer
+                            else None)
+                observed = (command('systemctl','is-active',name)[0],
+                            command('systemctl','is-enabled',name)[0])
+                if (observed != expected if expected is not None
+                        else observed not in {('active','enabled'),('inactive','enabled')}):
+                    raise ValueError('SCHEDULER_A207_REHOLD_TIMER_UNEXPECTED:' + name)
+            receipt['status'] = 'A207_REHOLDING'
+            persist(path, receipt)  # durable intent BEFORE any timer stop
+            for name in names:
+                if name == preserved:
+                    continue
+                if name == operator_pause_timer:
+                    if not operator_preopen_timer_disabled():
+                        raise ValueError('SCHEDULER_A207_OPERATOR_PAUSE_CHANGED')
+                    continue
+                if command('systemctl','is-active',name)[0] == 'active':
+                    _, rc = command('systemctl','stop',name)
+                    if rc:
+                        raise ValueError('SCHEDULER_A207_REHOLD_STOP_FAILED:' + name)
+                if command('systemctl','is-active',name)[0] != 'inactive':
+                    raise ValueError('SCHEDULER_A207_REHOLD_TIMER_STILL_ACTIVE:' + name)
+            receipt['status'] = 'SUSPENDED'
+            persist(path, receipt)
         if action in {'hold-rescue-degraded','hold-adopted-rescue',
                       'hold-a143-pending','hold-a171-pending','hold-a174-pending',
-                      'hold-a175-pending'}:
+                      'hold-a175-pending', 'hold-a207-pending'}:
             if (receipt.get('status') != 'SUSPENDED' or
                     set(receipt.get('attempted', [])) != set(names)):
                 raise ValueError('SCHEDULER_RESCUE_PAUSE_RECEIPT_RED')
@@ -1676,7 +1758,9 @@ def run(candidate, action, policy_b64, *, allow_a175_intraday=False):
                         command('systemctl', 'is-active', service)[0] in
                         ('active', 'activating', 'reloading', 'deactivating')):
                     raise ValueError('SCHEDULER_RESCUE_TIMER_OR_JOB_CHANGED:' + name)
-            status = (require_rescue_degraded_hold(candidate) if
+            status = (require_a207_failure_hold(candidate) if
+                      action == 'hold-a207-pending' else
+                      require_rescue_degraded_hold(candidate) if
                       action == 'hold-rescue-degraded' else
                       require_adopted_rescue_hold(candidate) if
                       action == 'hold-adopted-rescue' else
@@ -1774,7 +1858,8 @@ def main():
                                            'recover-a143-pending',
                                            'recover-a171-pending',
                                            'recover-a174-pending',
-                                           'recover-a175-pending'], required=True)
+                                           'recover-a175-pending',
+                                           'recover-a207-pending'], required=True)
     policy=parser.add_mutually_exclusive_group(required=True)
     policy.add_argument('--policy-b64')
     policy.add_argument('--policy-gzip-b64')
