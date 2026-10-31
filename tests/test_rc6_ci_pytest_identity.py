@@ -81,9 +81,25 @@ class TestPytestNodeidIdentity(unittest.TestCase):
             with patch.dict(os.environ, {**environment(target), "RC6_CI_SOURCE_SHA": "invalid"}):
                 with self.assertRaises(ValueError):
                     identity.pytest_collection_finish(SimpleNamespace(items=cases))
-            with patch.dict(os.environ, {"RC6_CI_IDENTITY_PROOF": "1"}):
+            # A real two-shard pilot provides RC6_CI_MANIFEST_PATH globally.
+            # Simulate a genuinely missing target without inheriting and
+            # accidentally replacing the runner's live executed.json proof.
+            with patch.dict(os.environ, {"RC6_CI_IDENTITY_PROOF": "1"}, clear=True):
                 with self.assertRaisesRegex(RuntimeError, "PATH_REQUIRED"):
                     identity.pytest_collection_finish(SimpleNamespace(items=cases))
+
+    def test_missing_path_adversarial_does_not_clobber_runner_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner_target=Path(directory)/'executed.json'
+            runner_target.write_text('RUNNER_MANIFEST_UNTOUCHED',encoding='utf-8')
+            with patch.dict(os.environ, environment(runner_target)):
+                with patch.dict(os.environ,
+                                {'RC6_CI_IDENTITY_PROOF':'1'},clear=True):
+                    with self.assertRaisesRegex(RuntimeError,'PATH_REQUIRED'):
+                        identity.pytest_collection_finish(
+                            SimpleNamespace(items=items()))
+            self.assertEqual(runner_target.read_text(encoding='utf-8'),
+                             'RUNNER_MANIFEST_UNTOUCHED')
 
     def test_symlink_does_not_overwrite_victim(self):
         with tempfile.TemporaryDirectory() as directory:

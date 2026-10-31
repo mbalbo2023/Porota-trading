@@ -22,6 +22,12 @@ from decimal import Decimal, ROUND_HALF_UP
 MODEL = "RC6_CAUCION_PAPER_PUBLIC_CONSERVATIVE_V2_2026_08_14"
 SOURCE_SHA256 = "f63f26bcecdcbd51263d798e75e0dda7c413afef6f9c2c3c37d487b7132aac87"
 ACCOUNT_FEES_VERIFIED = False
+# New, prospective PAPER offers must carry a distinct token.  The historical
+# au_fee_schedule authority and its already-sealed allocations keep their old
+# arithmetic; changing economics behind that token would corrupt replays.
+PAPER_FEE_AUTHORITY_V2 = (
+    "PAPER_PPI_PUBLIC_2026-07-01+BYMA_2026-08-14_CONSERVATIVE_V2_ACCOUNT_UNVERIFIED"
+)
 CENT = Decimal("0.01")
 PPI_ANNUAL_COMMISSION = Decimal("0.0200")
 BYMA_MARKET_RIGHT = Decimal("0.00045")

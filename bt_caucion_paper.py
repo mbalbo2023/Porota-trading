@@ -194,9 +194,12 @@ class CaucionOffer:
             raise ValueError("Falta provenance v2 o PPI live+policy verificable de la política PAPER de caución")
         if self.fee_authority is not None:
             from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+            from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
             if (self.currency != "ARS" or self.quoted_total_fees is not None
                     or self.paper_fill_policy not in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
-                    or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):
+                    or self.fee_authority not in {CAUCION_PAPER_FEE_AUTHORITY, PAPER_FEE_AUTHORITY_V2}
+                    or (self.fee_authority == PAPER_FEE_AUTHORITY_V2
+                        and self.paper_fill_policy != "LIVE_PPI_BID_PARTICIPATION_CAP")):
                 raise ValueError("Autoridad de costos PAPER incompatible")
         if self.currency != "ARS" and self.quoted_total_fees is None:
             raise ValueError("Caución en moneda extranjera requiere costos explícitos en esa moneda/plaza")
@@ -223,18 +226,34 @@ class CaucionOffer:
             if principal != self.fee_quote_principal:
                 raise ValueError("El costo presupuestado corresponde a otro capital")
             fees = money(self.quoted_total_fees)
+        elif self.fee_authority is not None and self._is_new_public_fee_model():
+            from rc6_caucion_fee_model import conservative_public_modeled_fee
+            # A public, conservative PAPER *scenario*; neither PPI account
+            # tariff nor actual BYMA pass-through is authenticated here.
+            # Unsupported 91+ day terms fail closed instead of falling back
+            # to the cheaper historical approximation.
+            fees = max(conservative_public_modeled_fee(principal, interest, self.interest_days),
+                       self._historical_paper_fee(principal))
         else:
-            import au_fee_schedule as tariff
-            fee = tariff.arancel_de("CAUCIONES")
-            vat = decimal_value(tariff.IVA_PCT, "IVA", nonnegative=True)
-            commission = decimal_value(fee.comision, "comisión anual", nonnegative=True)
-            rights = decimal_value(fee.derecho, "derechos anuales", nonnegative=True)
-            rate = commission * (1 + vat if fee.comision_iva else 1)
-            rate += rights * (1 + vat if fee.derecho_iva else 1)
-            # El arancel heredado define base 365. La tasa de interés puede
-            # tener otra base: no trasladar una convención a la otra.
-            fees = money(principal * rate * self.interest_days / 365)
+            fees = self._historical_paper_fee(principal)
         return interest, fees, interest - fees
+
+    def _historical_paper_fee(self, principal):
+        """Preserve old receipts and retain any stricter configured PAPER fee."""
+        import au_fee_schedule as tariff
+        fee = tariff.arancel_de("CAUCIONES")
+        vat = decimal_value(tariff.IVA_PCT, "IVA", nonnegative=True)
+        commission = decimal_value(fee.comision, "comisión anual", nonnegative=True)
+        rights = decimal_value(fee.derecho, "derechos anuales", nonnegative=True)
+        rate = commission * (1 + vat if fee.comision_iva else 1)
+        rate += rights * (1 + vat if fee.derecho_iva else 1)
+        # El arancel heredado define base 365. La tasa de interés puede tener
+        # otra base: no trasladar una convención a la otra.
+        return money(principal * rate * self.interest_days / 365)
+
+    def _is_new_public_fee_model(self):
+        from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
+        return self.fee_authority == PAPER_FEE_AUTHORITY_V2
 
 
 def automatic_liquidity_cap(offer, participation):
@@ -273,14 +292,14 @@ def _runtime_caucion_book_error(store, connection, offer, at):
     pure, local adapter reconstructs the terms from that exact PPI source.
     No network call, real order, or historical synthetic fixture is involved.
     """
-    from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
     from bu_instrument_catalog import (lookup, _candidate_has_ppi_primary,
                                        _candidate_timestamp_is_fresh)
     from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
     from dj_caucion_live_ppi_rc6 import SOURCE as PPI_LIVE_SOURCE
 
     if (offer.paper_fill_policy != "LIVE_PPI_BID_PARTICIPATION_CAP"
-            or offer.fee_authority != CAUCION_PAPER_FEE_AUTHORITY
+            or offer.fee_authority != PAPER_FEE_AUTHORITY_V2
             or offer.currency != "ARS"
             or not offer.metadata_source.startswith(
                 "PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1;")):

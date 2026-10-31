@@ -173,6 +173,39 @@ class CafciPublicReferenceTest(unittest.TestCase):
             with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
                 parse(payload)
 
+    def test_quality_holds_count_unique_class_ids_not_overlapping_reason_totals(self):
+        # A237: a single reference can have stale NAV, unknown broker currency
+        # and a liquidating/closed-fund settlement sentinel at the same time.
+        # Report counts remain keyed to distinct CAFCI class IDs.
+        report = parse(synthetic_xlsx(
+            reference_row(cafci_id="5101", effective="29/10/26",
+                          nav_mil=None, currency="USB", settlement="9999"),
+            reference_row(cafci_id="5102", effective=None,
+                          nav_mil="(**)", settlement="-1"),
+            reference_row(cafci_id="5103", nav_mil="1025.0"),
+        ))
+        summary = report.summary
+        self.assertEqual(summary["class_rows"], 3)
+        self.assertEqual(summary["rows_with_holds"], 2)
+        self.assertEqual(summary["classes_effective_on_report_date"], 1)
+        self.assertEqual(summary["nav_missing"], 2)
+        self.assertEqual(summary["nav_empty_cell"], 1)
+        self.assertEqual(summary["nav_placeholder"], 1)
+        self.assertEqual(summary["nav_date_missing"], 1)
+        self.assertGreater(sum(len(cls.quality_holds) for cls in report.classes),
+                           summary["rows_with_holds"])
+        self.assertEqual({cls.cafci_class_id for cls in report.classes
+                          if cls.quality_holds}, {5101, 5102})
+        self.assertFalse(report.runtime_entry_authority)
+
+    def test_class_data_without_exact_cafci_id_fails_closed(self):
+        # A237: a row with visible class/NAV/manager/currency but missing ID
+        # must not disappear silently from an apparently complete report.
+        for missing_id in (None, "0", "not-an-id"):
+            with self.subTest(missing_id=missing_id), self.assertRaisesRegex(
+                    ValueError, "CAFCI_CLASS_ID_MISSING|CAFCI_CLASS_ID_INVALID"):
+                parse(synthetic_xlsx(reference_row(cafci_id=missing_id)))
+
 
 if __name__ == "__main__":
     unittest.main()
