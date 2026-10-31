@@ -1,12 +1,17 @@
-"""COM19024 02-Nov-2026 late SOURCE-only contract, with no real provider.
+"""A200 late SOURCE-only contract, amended by BYMA COM19031 on 28-Oct-2026.
 
-Official source (BYMA, 22-Sep-2026):
+Current authority, effective 02-Nov-2026 and explicitly replacing COM19024:
+https://cdn.prod.website-files.com/6697a441a50c6b926e1972e0/6ae39100dbd9381f5489d706_BYMA-COM19031-Horarios_Negociacion_liquidacion_recepcion_de_informacion.pdf
+PDF SHA256: fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0
+
+Historical A200 authority (BYMA, 22-Sep-2026, superseded):
 https://cdn.prod.website-files.com/6697a441a50c6b926e1972e0/6ab2dda27ea9e2c80e659a15_BYMA-COM19024-Horarios_de_Negociacion_Liquidacion_Recepcion-v2.pdf
 PDF SHA256: 243aa692439f225d02ed1aac9648a6b224df8cab5a1bc18f3f05f20bcfe4ab98
 
 RV contado 24h and regular options/plazos close at 18:00; contado inmediato,
 cauciones and fixed income close at 17:00. Futures have subtype-specific
 hours, so the generic quote collector must never extend them by analogy.
+PPT/SENEBI intraday operations close at 17:30, not the regular T+1 close.
 """
 
 from contextlib import redirect_stdout
@@ -192,7 +197,7 @@ class BymaLateSourceTest(unittest.TestCase):
         self.assertEqual(result["status"], "COMPLETE")
         self.assertEqual(result["stages"], {"iol": "OK"})
         self.assertEqual(calls, ["rc6_iol_shadow_collect.py"])
-        self.assertEqual(result["reason"], "COM19024_EXACT_LATE_T1_OBSERVE_ONLY")
+        self.assertEqual(result["reason"], "COM19031_EXACT_LATE_T1_OBSERVE_ONLY")
         self.assertFalse((self.market / "rc6_public_sources_latest.json").exists())
 
     def test_no_late_contract_and_pre_effective_date_never_call_provider(self):

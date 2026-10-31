@@ -28,10 +28,35 @@ jobs:
 
     steps:
       - name: Checkout exact candidate
+        id: rc6_checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Verify exact PR provenance before tests
+        id: rc6_pr_provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          from scripts.rc6_ci_pr_provenance import verify
+
+          event_path = Path(os.environ['GITHUB_EVENT_PATH'])
+          assert event_path.is_file() and not event_path.is_symlink()
+          assert event_path.stat().st_size <= 4 * 1024 * 1024
+          event = json.loads(event_path.read_text(encoding='utf-8'))
+          candidate = os.environ['CANDIDATE_SHA']
+          proof = verify(event, expected_sha=candidate)
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == candidate
+          assert proof['automatic_go'] is False and proof['owner_go_verified'] is False
+          print(f"POROTA_PR_PROVENANCE=GREEN|pr={proof['pr_number']}|automatic_go=NO")
+          PY
 
       - name: Policy invariants
         shell: bash
@@ -90,6 +115,7 @@ jobs:
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
 
       - name: Fast host-transition incident replay
+        id: rc6_early_replay
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -115,6 +141,7 @@ jobs:
           echo 'POROTA_HOST_TRANSITION_EARLY=GREEN'
 
       - name: Governed automatic test discovery and execution
+        id: rc6_governed_suite
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -218,6 +245,74 @@ jobs:
           print(f'- Exclusions: {len(data["exclusions"])}')
           PY
 
+      - name: Optional exact-nodeid parallel proof pilot (non-authoritative)
+        id: rc6_parallel_pilot
+        # The productive 6k+ sequential suite above ALWAYS runs and remains
+        # authoritative. Automatically trial this ONLY on same-repo PR #776,
+        # exact consolidated head branch and canonical base; owners can still
+        # explicitly opt in via repo variable for a different candidate.
+        # A pilot failure makes this Predeploy RED for fix-forward RCA, never
+        # changes the sequential authority or grants merge/deploy/trading GO.
+        if: >-
+          ${{ vars.RC6_CI_PARALLEL_PILOT == '1' ||
+              (github.event.pull_request.number == 776 &&
+               github.event.pull_request.head.repo.full_name == 'mbalbo2023/Porota-trading' &&
+               github.event.pull_request.head.ref == 'candidate/rc6-a224-consolidated-after-775-20261031' &&
+               github.event.pull_request.base.repo.full_name == 'mbalbo2023/Porota-trading' &&
+               github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915') }}
+        env:
+          RC6_CI_PARALLEL_OPERATOR_OPT_IN: ${{ vars.RC6_CI_PARALLEL_PILOT }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          export CANDIDATE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from scripts.rc6_ci_pr_provenance import select_parallel_pilot
+
+          event_path = Path(os.environ['GITHUB_EVENT_PATH'])
+          assert event_path.is_file() and not event_path.is_symlink()
+          assert event_path.stat().st_size <= 4 * 1024 * 1024
+          event = json.loads(event_path.read_text(encoding='utf-8'))
+          scope = select_parallel_pilot(
+              event, expected_sha=os.environ['CANDIDATE_SHA'],
+              operator_opt_in=os.environ.get('RC6_CI_PARALLEL_OPERATOR_OPT_IN', ''))
+          assert scope['automatic_go'] is False and scope['runtime_authority'] is False
+          print('RC6_PARALLEL_PILOT_SCOPE=GREEN|' + scope['selection'] + '|automatic_go=NO')
+          PY
+          PILOT_RECEIPT="$(python -m scripts.rc6_ci_parallel_runner \
+            --source-sha "$CANDIDATE_SHA" \
+            --source-tree-sha "$CANDIDATE_TREE_SHA" \
+            --repo . --shards 2 --output-junit /tmp/porota-parallel-pilot.xml)"
+          PILOT_RECEIPT="${PILOT_RECEIPT#RC6_PARALLEL_PILOT=}"
+          PILOT_RECEIPT="$PILOT_RECEIPT" python - <<'PY'
+          from pathlib import Path
+          import json
+          import os
+
+          sequential = json.loads(Path('/tmp/porota-governed-tests.json').read_text(encoding='utf-8'))
+          pilot = json.loads(os.environ['PILOT_RECEIPT'])
+          assert sequential['status'] == 'GREEN'
+          assert pilot['status'] == 'GREEN_QUORUM_OFFLINE_ONLY'
+          assert pilot['source_sha'] == os.environ['CANDIDATE_SHA']
+          assert pilot['source_tree_sha'] == os.environ['CANDIDATE_TREE_SHA']
+          assert pilot['discovered'] == pilot['executed'] == sequential['discovered'] == sequential['executed']
+          assert sequential['failures'] == sequential['errors'] == sequential['skipped'] == sequential['xfail'] == 0
+          assert pilot['automatic_go'] is False and pilot['runtime_authority'] is False
+          assert pilot['ci_activated'] is False
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as report:
+              report.write('\n### Optional parallel offline pilot (non-authoritative)\n')
+              report.write(f"- SHA/tree: `{pilot['source_sha']}` / `{pilot['source_tree_sha']}`\n")
+              report.write(f"- Exact JUnit cases: {pilot['executed']} / {sequential['executed']}\n")
+              report.write(f"- Shards: {pilot['shards']} | automatic GO: NO\n")
+              report.write(f"- Phase elapsed ms: {json.dumps(pilot['phase_elapsed_ms'], sort_keys=True)}\n")
+          print('POROTA_OPTIONAL_PARALLEL_PILOT=GREEN|automatic_go=NO')
+          PY
+
       - name: Secret scan of tracked source
         shell: bash
         run: |
@@ -271,6 +366,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build candidate exactly once
+        id: rc6_build_once
         uses: docker/build-push-action@v7
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
@@ -360,6 +456,7 @@ jobs:
           grep -Fxq 'POROTA_RUNTIME_IMPORT_SMOKE=GREEN' /tmp/porota-image-import-smoke.txt
 
       - name: Exact image native sizing and generated catalog proof
+        id: rc6_native_proof
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -514,6 +611,7 @@ jobs:
             --tree-sha "$(git rev-parse HEAD^{tree})"
 
       - name: Verify required published native evidence
+        id: rc6_artifact_gate
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -589,6 +687,34 @@ jobs:
             /tmp/porota-negative-fixtures.json
             ${{ runner.temp }}/porota-predeploy-evidence/
 
+      - name: Sanitized RCA phase learning (diagnostic only)
+        # Observes even failed gates; uses only named step outcomes, no raw
+        # logs or inferred cause. No merge/deploy/trade/operational GO.
+        if: ${{ always() && steps.rc6_checkout.outcome == 'success' }}
+        shell: bash
+        env:
+          RC6_CI_OUTCOME_PR_PROVENANCE: ${{ steps.rc6_pr_provenance.outcome }}
+          RC6_CI_OUTCOME_EARLY_REPLAY: ${{ steps.rc6_early_replay.outcome }}
+          RC6_CI_OUTCOME_GOVERNED_SUITE: ${{ steps.rc6_governed_suite.outcome }}
+          RC6_CI_OUTCOME_PARALLEL_PILOT: ${{ steps.rc6_parallel_pilot.outcome }}
+          RC6_CI_OUTCOME_BUILD_ONCE: ${{ steps.rc6_build_once.outcome }}
+          RC6_CI_OUTCOME_NATIVE_PROOF: ${{ steps.rc6_native_proof.outcome }}
+          RC6_CI_OUTCOME_ARTIFACT_GATE: ${{ steps.rc6_artifact_gate.outcome }}
+        run: |
+          set -Eeuo pipefail
+          python -m scripts.rc6_ci_rca_snapshot \
+            --registry ops/policy/rc6-rca-signatures-v1.json \
+            --output /tmp/porota-rca-learning.json
+
+      - name: Upload sanitized RCA diagnostic (never promotion input)
+        if: ${{ always() && steps.rc6_checkout.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: porota-ci-rca-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+          path: /tmp/porota-rca-learning.json
+
       - name: Predeploy summary
         if: success()
         shell: bash
@@ -623,5 +749,5 @@ jobs:
           set +e
           docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
+          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

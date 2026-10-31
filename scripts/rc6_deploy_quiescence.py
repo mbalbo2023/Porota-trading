@@ -86,6 +86,7 @@ A175_FAILURE_BOOK_STATE = ('WAITING_MARKET','MARKET_CLOSED')
 A176_OPERATOR_NO_GO_RECEIPT_SHA256 = '3218ccf5296306068d051b12588c4fac253a768ea3c81e0fc31c501adb34338c'  # Actions #40875630811, PAPER admission held.
 A175_PENDING_MODE = 'CLOSED_A175_PENDING_FIX_FORWARD'
 A175_INTRADAY_PENDING_MODE = 'OPEN_A175_PENDING_FIX_FORWARD'
+A175_TECHNICAL_HOLD = 'A176_HISTORICAL_ANCHOR_CURRENT_DISABLED_TIMER'
 A143_PENDING_SOURCE_SHA = '2325eba329878c62a61cb47bb66d33ccf279bd4a'
 A143_PENDING_DEPLOY_SHA = '6676267140907a17e342a664f718cfdcf9b3ce72'
 A143_PENDING_TREE_SHA = 'e66e3756769e297687a062bec2fa6e8599c0a275'
@@ -102,10 +103,11 @@ RESCUE_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f1
 RESCUE_CALENDAR_SHA256 = '32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
 RESCUE_HOURS_SHA256 = '380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
 # The original wire-mode/CLI label contains the first incident date.  Keep it
-# stable for receipts, but bound admission to the verified COM18782 week.
-# Any later date or a pre-20:00 ART attempt remains strictly fail-closed.
+# stable for immutable historical receipts; successor technical recovery uses
+# a separate 24x7 proof with a live disabled-timer check, not market hours.
 RESCUE_FIRST_DAY = '2026-10-26'
 RESCUE_LAST_DAY = '2026-10-30'
+TECHNICAL_24X7_HOLD = 'PINNED_HISTORICAL_NO_GO_LIVE_DISABLED_TIMER'
 FAILED_A92_RESCUE_CANDIDATE = 'dd22a1b0761cc4f231813edb6b502d1dd21bb8de'
 FAILED_A92_RESCUE_DEPLOY = '7df3c8fb1d2e32f3eb07b9d969c5b00d16e49b21'
 
@@ -154,7 +156,8 @@ def candidate_operator_module(*, require_staged=False):
     return module
 
 
-def operator_paper_no_go_proof(*, require_original_marker=False):
+def operator_paper_no_go_proof(*, require_original_marker=False,
+                               historical_hold_only=False):
     """Verify A125 without trusting pre-candidate host code in streamed steps.
 
     The promote runner streams this exact candidate source before it installs
@@ -162,12 +165,30 @@ def operator_paper_no_go_proof(*, require_original_marker=False):
     Neither route changes systemd or grants PAPER trading permission.
     """
     module = candidate_operator_module()
-    digest = module.exact_operator_preopen_pause(
-        require_original_marker=require_original_marker)
+    options = {'require_original_marker': require_original_marker}
+    if historical_hold_only:
+        options['historical_hold_only'] = True
+    digest = module.exact_operator_preopen_pause(**options)
     if (not re.fullmatch('[0-9a-f]{64}',digest or '') or
             not module.operator_preopen_timer_disabled()):
         raise ValueError('QUIESCENCE_OPERATOR_PAUSE_TIMER_RED')
     return digest
+
+
+def a151_historical_no_go_with_live_timer(operator):
+    """Legacy current-day verifier or exact historical receipt, never GO."""
+    original_day = (datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+                    .date().isoformat() == '2026-10-28')
+    return (operator.exact_a151_operator_preopen_pause() if original_day else
+            operator.exact_a151_operator_preopen_pause(historical_hold_only=True))
+
+
+def a176_historical_no_go_with_live_timer(operator):
+    """The pinned A176 receipt is an anchor; current timers remain authoritative."""
+    original_day = (datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+                    .date().isoformat() == '2026-10-29')
+    return (operator.exact_a176_operator_no_go_continuation() if original_day else
+            operator.exact_a176_operator_no_go_continuation(historical_anchor=True))
 
 
 def a151_held_open_proof(*, operator_a151_proof=None,
@@ -226,17 +247,22 @@ def a151_held_open_proof(*, operator_a151_proof=None,
 
 
 def degraded_closed_rescue_proof():
-    """Exact A92 postclose incident, not a new healthy CLOSED phase."""
+    """Exact A92 source; legacy receipts or 24x7 NO_GO technical recovery."""
     local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
     day = local.date().isoformat()
-    if not RESCUE_FIRST_DAY <= day <= RESCUE_LAST_DAY:
-        raise ValueError('QUIESCENCE_RESCUE_WINDOW_RED')
+    legacy_week = RESCUE_FIRST_DAY <= day <= RESCUE_LAST_DAY
     operator_pause_sha = None
-    # The owner explicitly authorized immediate PAPER downtime on 27 Oct.
-    # A92 is known STOPPED/CLOSED with a failing scanner. Earlier than the
-    # normal postclose gate, require the independent exact A125 no-GO receipt
-    # and a still-disabled preopen timer; absence always blocks host writes.
-    if (local.hour, local.minute) < (20, 0):
+    technical_anchor_sha = None
+    # These historical A92 receipts keep their original day-specific meaning.
+    # Later technical recovery must re-prove the immutable A125 NO_GO and the
+    # CURRENT disabled timer, even on Sundays or during a market session.
+    if not legacy_week:
+        try:
+            technical_anchor_sha = operator_paper_no_go_proof(
+                historical_hold_only=True)
+        except (OSError, ValueError) as exc:
+            raise ValueError('QUIESCENCE_RESCUE_24X7_NO_GO_RED') from exc
+    elif (local.hour, local.minute) < (20, 0):
         if day != '2026-10-27':
             raise ValueError('QUIESCENCE_RESCUE_WINDOW_RED')
         try:
@@ -254,9 +280,9 @@ def degraded_closed_rescue_proof():
     exec(compile(calendar_path.read_bytes(), str(calendar_path), 'exec'), calendar.__dict__)
     if (2026 not in calendar.ANIOS_AUDITADOS or
             calendar.CALENDARIO_ACTUALIZADO_EL.isoformat() != '2026-10-14' or
-            not calendar.es_dia_habil_operativo(local.date())):
+            (legacy_week and not calendar.es_dia_habil_operativo(local.date()))):
         raise ValueError('QUIESCENCE_RESCUE_CALENDAR_DAY_RED')
-    return {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
+    proof = {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
             'observed_at_art': local.isoformat(), 'business_day': day,
             'operator_paper_early': operator_pause_sha is not None,
             'operator_pause_sha256': operator_pause_sha,
@@ -266,6 +292,13 @@ def degraded_closed_rescue_proof():
             'byma_hours_url': 'https://www.byma.com.ar/comunicados/comunicado-18782-horarios',
             'byma_latest_session_end_art': '19:00',
             'a3_latest_session_end_art': '17:30'}
+    if not legacy_week:
+        proof.update(technical_24x7=True,
+                     technical_hold=TECHNICAL_24X7_HOLD,
+                     historical_no_go_sha256=technical_anchor_sha,
+                     preopen_timer_disabled=True,
+                     paper_execution_authorized=False)
+    return proof
 
 
 def scanner_crash_full_proof():
@@ -329,6 +362,8 @@ def exact_rescue_receipt(receipt):
     proof = receipt.get('rescue_calendar_and_hours')
     prior_state = receipt.get('rescue_pre_state')
     crash = receipt.get('rescue_child_crash_proof')
+    technical = type(proof) is dict and proof.get('technical_24x7') is True
+    legacy = type(proof) is dict and 'technical_24x7' not in proof
     if (prior_state not in (['DEGRADED', 'BOOT_CALENDAR'], ['STOPPED', 'CLOSED']) or
             (prior_state == ['STOPPED', 'CLOSED'] and
              (not isinstance(crash, dict) or crash.get('failure') != 'A92_REPORT_SQLITE_FULL' or
@@ -341,12 +376,20 @@ def exact_rescue_receipt(receipt):
             receipt.get('rescue_source_sha') != RESCUE_SOURCE_SHA or
             receipt.get('rescue_image_id') != RESCUE_IMAGE_ID or
             not isinstance(proof, dict) or
-            not RESCUE_FIRST_DAY <= str(proof.get('business_day')) <= RESCUE_LAST_DAY or
+            not (legacy or technical) or
+            (legacy and not RESCUE_FIRST_DAY <=
+             str(proof.get('business_day')) <= RESCUE_LAST_DAY) or
+            (technical and (proof.get('technical_hold') != TECHNICAL_24X7_HOLD or
+             proof.get('preopen_timer_disabled') is not True or
+             proof.get('paper_execution_authorized') is not False or
+             not re.fullmatch('[0-9a-f]{64}',
+                              str(proof.get('historical_no_go_sha256'))))) or
             proof.get('calendar_sha256') != RESCUE_CALENDAR_SHA256 or
             proof.get('byma_hours_com18782_sha256') != RESCUE_HOURS_SHA256 or
             proof.get('byma_latest_session_end_art') != '19:00' or
             proof.get('a3_latest_session_end_art') != '17:30' or
             type(proof.get('operator_paper_early', False)) is not bool or
+            (technical and proof.get('operator_paper_early') is not False) or
             (proof.get('operator_paper_early', False) and
              (proof['business_day'] != '2026-10-27' or
               not re.fullmatch('[0-9a-f]{64}', proof.get('operator_pause_sha256') or ''))) or
@@ -366,7 +409,7 @@ def exact_rescue_receipt(receipt):
                 at != art.astimezone(timezone.utc) or at > now or
                 art.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
                 != proof['business_day'] or
-                ((art.hour, art.minute) < (20, 0) and
+                (legacy and (art.hour, art.minute) < (20, 0) and
                  not proof.get('operator_paper_early', False)) or
                 ((art.hour, art.minute) >= (20, 0) and
                  proof.get('operator_paper_early', False))):
@@ -385,6 +428,21 @@ def exact_rescue_receipt(receipt):
                 raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED')
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError('QUIESCENCE_RESCUE_RECEIPT_CLOCK_RED') from exc
+    if technical:
+        # Continuation is not a second opportunity to trust a stale pause.
+        # Re-read the exact immutable A125 anchor AND the current systemd
+        # timer (both are read-only); trading is never authorized here.
+        calendar_path=ROOT/'ak_byma_calendar.py'
+        if (calendar_path.is_symlink() or not calendar_path.is_file() or
+                hashlib.sha256(calendar_path.read_bytes()).hexdigest()!=
+                RESCUE_CALENDAR_SHA256):
+            raise ValueError('QUIESCENCE_RESCUE_24X7_CALENDAR_CHANGED')
+        try:
+            if (operator_paper_no_go_proof(historical_hold_only=True) !=
+                    proof['historical_no_go_sha256']):
+                raise ValueError('A125_ANCHOR_CHANGED')
+        except (OSError, ValueError) as exc:
+            raise ValueError('QUIESCENCE_RESCUE_24X7_HOLD_LOST') from exc
     return proof
 
 
@@ -576,7 +634,7 @@ def a143_pending_running_proof(originals=None, *, allow_a151_held_open=False,
         else:
             close = adopted_rescue_closed_proof()
     else:
-        close = adopted_rescue_closed_proof()  # Historical CLOSED route unchanged.
+        close = adopted_rescue_closed_proof()
     folder = ROOT/'data/deploy'
     marker, marker_digest = _a143_exact_json(folder/'CURRENT_STATE_V2.json', 65536)
     recorded = datetime.fromisoformat(marker['recorded_at'])
@@ -690,15 +748,13 @@ def a143_stopped_continuation(receipt, *, operator_a151_proof=None,
                 held_open.get('admission') != A151_HELD_OPEN_MODE or
                 held_open.get('business_day_art') != '2026-10-28' or
                 held_open.get('paper_execution_authorized') is not False or
-                proof.get('close') is not None or
-                datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-                .date().isoformat() != '2026-10-28'):
+                proof.get('close') is not None):
             raise ValueError('QUIESCENCE_A151_STOP_HOLD_EXPIRED_OR_CHANGED')
         if (operator_a151_proof is None) != (operator_timer_disabled is None):
             raise ValueError('QUIESCENCE_A151_STOP_CALLBACK_PAIR_REQUIRED')
         if operator_a151_proof is None:
             operator = candidate_operator_module(require_staged=True)
-            operator_a151_proof = operator.exact_a151_operator_preopen_pause
+            operator_a151_proof = lambda: a151_historical_no_go_with_live_timer(operator)
             operator_timer_disabled = operator.operator_preopen_timer_disabled
         receipt_sha, operation = operator_a151_proof()
         if (receipt_sha != held_open.get('operator_receipt_sha256') or
@@ -765,10 +821,9 @@ def a169_prior_a143_stopped_proof(candidate, originals=None, *,
             candidate in {A143_PENDING_SOURCE_SHA, A169_PRIOR_CANDIDATE,
                           A170_FAILED_CANDIDATE}):
         raise ValueError('QUIESCENCE_A169_NEW_CANDIDATE_REQUIRED')
-    local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-    if (local.date().isoformat() != '2026-10-28' or
-            (local.hour, local.minute) >= (20, 0)):
-        raise ValueError('QUIESCENCE_A169_HELD_CONTINUATION_WINDOW_RED')
+    # The 28-Oct A151 hold is an immutable origin, not an expiry date for
+    # technical fix-forward. a143_stopped_continuation rechecks its exact
+    # digest and CURRENT disabled timer for every new drain/install.
     prior, digest = _a143_exact_json(
         ROOT/'data/deploy'/('quiescence-'+A169_PRIOR_CANDIDATE+'.json'), 65536)
     admin = prior.get('administrative_reconciliation')
@@ -858,9 +913,6 @@ def a171_failed_running_proof(candidate, originals=None, *,
             candidate in {A143_PENDING_SOURCE_SHA, A169_PRIOR_CANDIDATE,
                           A170_FAILED_CANDIDATE, A171_FAILED_CANDIDATE}):
         raise ValueError('QUIESCENCE_A171_NEW_CANDIDATE_REQUIRED')
-    local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-    if local.date().isoformat() != '2026-10-28':
-        raise ValueError('QUIESCENCE_A171_DATED_HOLD_EXPIRED')
     prior, digest = _a143_exact_json(
         ROOT/'data/deploy'/('quiescence-'+A171_FAILED_CANDIDATE+'.json'),65536)
     intent, runtime = prior.get('candidate_image_intent'), prior.get('candidate_runtime_after_failure')
@@ -901,7 +953,7 @@ def a171_failed_running_proof(candidate, originals=None, *,
         if operator_a151_proof is not None or operator_timer_disabled is not None:
             raise ValueError('QUIESCENCE_A171_OPERATOR_CALLBACK_PAIR_REQUIRED')
         operator = candidate_operator_module(require_staged=True)
-        operator_a151_proof = operator.exact_a151_operator_preopen_pause
+        operator_a151_proof = lambda: a151_historical_no_go_with_live_timer(operator)
         operator_timer_disabled = operator.operator_preopen_timer_disabled
     receipt_sha, operation = operator_a151_proof()
     if (receipt_sha != held.get('operator_receipt_sha256') or
@@ -1042,8 +1094,6 @@ def a174_failed_running_proof(candidate, originals=None, *,
             {A143_PENDING_SOURCE_SHA,A169_PRIOR_CANDIDATE,A170_FAILED_CANDIDATE,
              A171_FAILED_CANDIDATE,A174_FAILED_CANDIDATE}):
         raise ValueError('QUIESCENCE_A174_NEW_CANDIDATE_REQUIRED')
-    if datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat() != '2026-10-28':
-        raise ValueError('QUIESCENCE_A174_A151_DATED_HOLD_EXPIRED')
     prior,digest=_a143_exact_json(
         ROOT/'data/deploy'/('quiescence-'+A174_FAILED_CANDIDATE+'.json'),65536)
     intent,runtime=prior.get('candidate_image_intent'),prior.get('candidate_runtime_after_failure')
@@ -1082,7 +1132,7 @@ def a174_failed_running_proof(candidate, originals=None, *,
         if operator_a151_proof is not None or operator_timer_disabled is not None:
             raise ValueError('QUIESCENCE_A174_OPERATOR_CALLBACK_PAIR_REQUIRED')
         operator=candidate_operator_module(require_staged=True)
-        operator_a151_proof=operator.exact_a151_operator_preopen_pause
+        operator_a151_proof=lambda: a151_historical_no_go_with_live_timer(operator)
         operator_timer_disabled=operator.operator_preopen_timer_disabled
     receipt_sha,operation=operator_a151_proof()
     if (receipt_sha!=previous.get('operator_receipt_sha256') or
@@ -1225,15 +1275,15 @@ def a175_failed_running_proof(candidate, originals=None, *,
     """Prove only the pinned, still-running A175 failure for fix-forward.
 
     The failed-run book and the current live book are separately attested.
-    A151 applies only on 28-Oct ART; 29-Oct requires a new exact NO_GO seal.
+    A151/A176 are immutable administrative NO_GO anchors; subsequent technical
+    recovery rechecks the CURRENT disabled preopen timer, not business hours.
     """
     if (not re.fullmatch('[0-9a-f]{40}',candidate) or candidate in
             {A143_PENDING_SOURCE_SHA,A169_PRIOR_CANDIDATE,A170_FAILED_CANDIDATE,
              A171_FAILED_CANDIDATE,A174_FAILED_CANDIDATE,A175_FAILED_CANDIDATE}):
         raise ValueError('QUIESCENCE_A175_NEW_CANDIDATE_REQUIRED')
     business_day=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
-    if business_day not in {'2026-10-28','2026-10-29'}:
-        raise ValueError('QUIESCENCE_A175_DATED_HOLD_EXPIRED')
+    technical_24x7=business_day not in {'2026-10-28','2026-10-29'}
     prior,digest=_a143_exact_json(
         ROOT/'data/deploy'/('quiescence-'+A175_FAILED_CANDIDATE+'.json'),65536)
     intent,runtime=prior.get('candidate_image_intent'),prior.get('candidate_runtime_after_failure')
@@ -1272,14 +1322,14 @@ def a175_failed_running_proof(candidate, originals=None, *,
         raise ValueError('QUIESCENCE_A175_EXACT_FAILURE_CHANGED')
     if operator_timer_disabled is None or (
             business_day=='2026-10-28' and operator_a151_proof is None) or (
-            business_day=='2026-10-29' and operator_current_no_go_proof is None):
+            business_day!='2026-10-28' and operator_current_no_go_proof is None):
         if (operator_a151_proof is not None or operator_timer_disabled is not None or
                 operator_current_no_go_proof is not None):
             raise ValueError('QUIESCENCE_A175_OPERATOR_CALLBACK_SET_REQUIRED')
         operator=candidate_operator_module(require_staged=True)
-        operator_a151_proof=operator.exact_a151_operator_preopen_pause
+        operator_a151_proof=lambda: a151_historical_no_go_with_live_timer(operator)
         operator_timer_disabled=operator.operator_preopen_timer_disabled
-        operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation
+        operator_current_no_go_proof=lambda: a176_historical_no_go_with_live_timer(operator)
     if business_day=='2026-10-28':
         receipt_sha,operation=operator_a151_proof()
         hold_valid=(receipt_sha==previous.get('operator_receipt_sha256') and
@@ -1368,7 +1418,11 @@ def a175_failed_running_proof(candidate, originals=None, *,
             'flat_book':book,'failure_flat_book':runtime['flat_book'],
             'operator_receipt_sha256':receipt_sha,'operator_operation_id':operation,
             'operator_a151_origin_sha256':previous.get('operator_receipt_sha256'),
-            'operator_hold_business_day':business_day,
+            'operator_hold_business_day':('2026-10-29' if technical_24x7 else business_day),
+            **({'technical_24x7': True,
+                'technical_hold':A175_TECHNICAL_HOLD,
+                'technical_admission_at_utc':datetime.now(timezone.utc).isoformat(),
+                'paper_execution_authorized':False} if technical_24x7 else {}),
             'marker_sha256':marker_sha,'frozen_sha256':frozen_sha}
 
 
@@ -1394,6 +1448,30 @@ def a175_receipt_origin(receipt):
         raise ValueError('QUIESCENCE_A175_STOPPED_RECEIPT_CHANGED')
     prior,prior_sha=_a143_exact_json(
         ROOT/'data/deploy'/('quiescence-'+A175_FAILED_CANDIDATE+'.json'),65536)
+    technical=proof.get('technical_24x7') is True
+    if not technical and 'technical_24x7' in proof:
+        raise ValueError('QUIESCENCE_A175_RECEIPT_MODE_CHANGED')
+    try:
+        recorded=datetime.fromisoformat(receipt['recorded_at'])
+        if (recorded.tzinfo is None or recorded>datetime.now(timezone.utc)):
+            raise ValueError('RECORDED_CLOCK_RED')
+    except (ValueError,TypeError,KeyError,AttributeError) as exc:
+        raise ValueError('QUIESCENCE_A175_RECEIPT_CLOCK_RED') from exc
+    if technical:
+        try:
+            admitted=datetime.fromisoformat(proof['technical_admission_at_utc'])
+            recorded=datetime.fromisoformat(receipt['recorded_at'])
+            technical_clock_ok=(admitted.tzinfo is not None and
+                admitted.utcoffset().total_seconds()==0 and
+                recorded.tzinfo is not None and
+                admitted<=recorded<=datetime.now(timezone.utc))
+        except (ValueError,TypeError,KeyError,AttributeError):
+            technical_clock_ok=False
+        if (not technical_clock_ok or
+                proof.get('technical_hold')!=A175_TECHNICAL_HOLD or
+                proof.get('paper_execution_authorized') is not False or
+                proof.get('operator_hold_business_day')!='2026-10-29'):
+            raise ValueError('QUIESCENCE_A175_24X7_RECEIPT_CHANGED')
     if (prior_sha!=A175_FAILED_RECEIPT_SHA256 or
             prior.get('status')!='FIX_FORWARD_VALIDATION_REQUIRED' or
             prior.get('candidate_runtime_after_failure',{}).get('status')!='running' or
@@ -1404,8 +1482,8 @@ def a175_receipt_origin(receipt):
             proof.get('frozen_sha256')!=A175_FROZEN_SHA256 or
             proof.get('operator_a151_origin_sha256')!=
                 prior.get('a174_previous_proof',{}).get('operator_receipt_sha256') or
-            proof.get('operator_hold_business_day')!=
-                datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat() or
+            (not technical and proof.get('operator_hold_business_day') not in
+             {'2026-10-28','2026-10-29'}) or
             proof.get('operator_receipt_sha256')!=
                 (A176_OPERATOR_NO_GO_RECEIPT_SHA256 if
                  proof.get('operator_hold_business_day')=='2026-10-29' else
@@ -1416,10 +1494,17 @@ def a175_receipt_origin(receipt):
         raise ValueError('QUIESCENCE_A175_ORIGIN_RECEIPT_CHANGED')
     if proof.get('operator_hold_business_day')=='2026-10-29':
         operator=candidate_operator_module()
-        current=operator.exact_a176_operator_no_go_continuation()
+        current=a176_historical_no_go_with_live_timer(operator)
         if (current.get('receipt_sha256')!=proof.get('operator_receipt_sha256') or
                 current.get('operation_id')!=proof.get('operator_operation_id') or
                 current.get('paper_execution_authorized') is not False or
+                not operator.operator_preopen_timer_disabled()):
+            raise ValueError('QUIESCENCE_A175_CURRENT_NO_GO_CHANGED')
+    elif proof.get('operator_hold_business_day')=='2026-10-28':
+        operator=candidate_operator_module()
+        sha,operation=a151_historical_no_go_with_live_timer(operator)
+        if (sha!=proof.get('operator_receipt_sha256') or
+                operation!=proof.get('operator_operation_id') or
                 not operator.operator_preopen_timer_disabled()):
             raise ValueError('QUIESCENCE_A175_CURRENT_NO_GO_CHANGED')
     for name in OWNED:
@@ -1458,10 +1543,10 @@ def a175_stopped_continuation(receipt):
 
 
 def adopted_rescue_closed_proof():
-    """Independent current-day close; the 26 October incident clock is spent."""
+    """Read-only technical continuity with current NO_GO, never trading GO."""
     local = datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-    if (not '2026-10-26' <= local.date().isoformat() <= '2026-10-30' or
-            (local.hour, local.minute) < (20, 0)):
+    legacy_week = RESCUE_FIRST_DAY <= local.date().isoformat() <= RESCUE_LAST_DAY
+    if legacy_week and (local.hour, local.minute) < (20, 0):
         raise ValueError('QUIESCENCE_ADOPTED_CLOSE_WINDOW_RED')
     path = ROOT/'ak_byma_calendar.py'
     if (path.is_symlink() or not path.is_file() or
@@ -1470,14 +1555,24 @@ def adopted_rescue_closed_proof():
     calendar = types.ModuleType('rc6_adopted_byma_calendar')
     exec(compile(path.read_bytes(), str(path), 'exec'), calendar.__dict__)
     if (calendar.CALENDARIO_ACTUALIZADO_EL.isoformat() != '2026-10-14' or
-            not calendar.es_dia_habil_operativo(local.date())):
+            (legacy_week and not calendar.es_dia_habil_operativo(local.date()))):
         raise ValueError('QUIESCENCE_ADOPTED_CALENDAR_DAY_RED')
-    # COM18782 expires with the November replacement. No admission on/after 2 Nov.
-    return {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
+    proof = {'observed_at_utc': local.astimezone(timezone.utc).isoformat(),
             'business_day_art': local.date().isoformat(),
             'calendar_sha256': RESCUE_CALENDAR_SHA256,
             'byma_hours_com18782_sha256': RESCUE_HOURS_SHA256,
             'latest_session_end_art': '19:00'}
+    if not legacy_week:
+        try:
+            anchor = operator_paper_no_go_proof(historical_hold_only=True)
+        except (OSError, ValueError) as exc:
+            raise ValueError('QUIESCENCE_ADOPTED_24X7_NO_GO_RED') from exc
+        proof.update(technical_24x7=True,
+                     technical_hold=TECHNICAL_24X7_HOLD,
+                     historical_no_go_sha256=anchor,
+                     preopen_timer_disabled=True,
+                     paper_execution_authorized=False)
+    return proof
 
 
 def failed_rescue_candidate_matches(folder, originals):
@@ -1994,7 +2089,7 @@ def admit_poststart_flat(pre_mode, candidate=None):
                 re.fullmatch('sha256:[0-9a-f]{64}',intent.get('image_id','')) is None):
             raise ValueError('QUIESCENCE_A169_POSTSTART_ORIGIN_CHANGED')
         operator=candidate_operator_module()
-        proof_sha,operation=operator.exact_a151_operator_preopen_pause()
+        proof_sha,operation=a151_historical_no_go_with_live_timer(operator)
         if (proof_sha != held.get('operator_receipt_sha256') or
                 operation != held.get('operator_operation_id') or
                 not operator.operator_preopen_timer_disabled()):
@@ -3143,7 +3238,12 @@ def run(candidate, action, *, allow_admin_issue624=False, allow_a207_admin=False
                              'containers','stop_evidence','adopted_book',
                              'critical_admission')) or
                         receipt.get('adopted_close_proof',{}).get('business_day_art') !=
-                        expected['adopted_close_proof']['business_day_art']):
+                        expected['adopted_close_proof']['business_day_art'] or
+                        any(receipt.get('adopted_close_proof',{}).get(key) !=
+                            expected['adopted_close_proof'].get(key) for key in
+                            ('technical_24x7','technical_hold',
+                             'historical_no_go_sha256','preopen_timer_disabled',
+                             'paper_execution_authorized'))):
                     raise ValueError('QUIESCENCE_ADOPTED_RECEIPT_CHANGED')
                 if action == 'install':
                     receipt.update(status='HOST_INSTALLATION_STARTED',
@@ -3212,23 +3312,23 @@ def run(candidate, action, *, allow_admin_issue624=False, allow_a207_admin=False
                 operator=candidate_operator_module(require_staged=True)
                 a171_proof=a171_failed_running_proof(
                     candidate,originals,
-                    operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                    operator_a151_proof=lambda:a151_historical_no_go_with_live_timer(operator),
                     operator_timer_disabled=operator.operator_preopen_timer_disabled,
                     require_installed_a171_source=True)
             if allow_a174_running_pending:
                 operator=candidate_operator_module(require_staged=True)
                 a174_proof=a174_failed_running_proof(
                     candidate,originals,
-                    operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                    operator_a151_proof=lambda:a151_historical_no_go_with_live_timer(operator),
                     operator_timer_disabled=operator.operator_preopen_timer_disabled,
                     require_installed_a174_source=True)
             if allow_a175_running_pending:
                 operator=candidate_operator_module(require_staged=True)
                 a175_proof=a175_failed_running_proof(
                     candidate,originals,
-                    operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                    operator_a151_proof=lambda:a151_historical_no_go_with_live_timer(operator),
                     operator_timer_disabled=operator.operator_preopen_timer_disabled,
-                    operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation,
+                    operator_current_no_go_proof=lambda:a176_historical_no_go_with_live_timer(operator),
                     require_installed_a175_source=True,
                     allow_intraday_a175=allow_market_open_suspend)
             stopped_owned = all(v['State']['Status'] == 'exited' for v in originals.values())

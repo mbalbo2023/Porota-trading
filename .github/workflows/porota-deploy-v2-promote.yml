@@ -407,12 +407,11 @@ jobs:
               print('A151_HELD_STOPPED')
           elif statuses=={'running'} and state in (
                   ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
-              # Incident-specific postclose rescue of the installed A92 image.
-              # Wire-mode/CLI retain the 26-Oct label for receipt compatibility.
-              # Calendar COM18782 is pinned only through 30 Oct. Owner's
-              # 27-Oct immediate PAPER pause is independently evidenced by
-              # exact A125 NO_GO/timer proof; other days require postclose.
-              # This is a RED runtime and never counts as a healthy CLOSED state.
+              # Incident-specific exact A92 recovery. Historical 26–30 Oct
+              # receipts retain their old calendar semantics; later technical
+              # recovery is 24x7 with the immutable A125 NO_GO anchor AND a
+              # CURRENT disabled preopen timer. Never grant PAPER trading GO.
+              # This RED runtime is not a healthy CLOSED state.
               from datetime import datetime,timezone
               from zoneinfo import ZoneInfo
               import hashlib,json,re,subprocess,time
@@ -422,16 +421,32 @@ jobs:
               RESCUE_CALENDAR_SHA256='32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
               RESCUE_HOURS_SHA256='380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
               local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-              if not '2026-10-26'<=local.date().isoformat()<='2026-10-30':
-                  raise SystemExit('RC6_RESCUE_WINDOW_RED')
-              if (local.hour,local.minute)<(20,0):
-                  if local.date().isoformat()!='2026-10-27':
-                      raise SystemExit('RC6_RESCUE_WINDOW_RED')
+              legacy_week='2026-10-26'<=local.date().isoformat()<='2026-10-30'
+              if not legacy_week or (local.hour,local.minute)<(20,0):
+                  # Code is from the frozen candidate, not the unvalidated
+                  # A92 image running on the host.
                   try:
                       operator_source=staged_operator_source()
                       operator=types.ModuleType('rc6_candidate_a125_verifier')
                       exec(compile(operator_source,'candidate/a125-verifier.py','exec'),
                            operator.__dict__)
+                  except (OSError,ValueError,ImportError) as exc:
+                      raise SystemExit('RC6_RESCUE_OPERATOR_SOURCE_RED') from exc
+              if not legacy_week:
+                  try:
+                      exact_digest=operator.exact_operator_preopen_pause(
+                          historical_hold_only=True)
+                      if (not operator.operator_preopen_timer_disabled() or
+                          not re.fullmatch('[0-9a-f]{64}',exact_digest)):
+                          raise ValueError('HISTORICAL_NO_GO_OR_LIVE_TIMER_RED')
+                  except (OSError,ValueError,ImportError) as exc:
+                      raise SystemExit('RC6_RESCUE_24X7_NO_GO_RED') from exc
+                  print('RC6_RESCUE_TECHNICAL_24X7=GREEN|NO_GO_HELD|PAPER=0',
+                        file=sys.stderr)
+              elif (local.hour,local.minute)<(20,0):
+                  if local.date().isoformat()!='2026-10-27':
+                      raise SystemExit('RC6_RESCUE_WINDOW_RED')
+                  try:
                       exact_digest=operator.exact_operator_preopen_pause(
                           require_original_marker=True)
                       if not operator.operator_preopen_timer_disabled() or not re.fullmatch(
@@ -448,7 +463,7 @@ jobs:
               exec(compile(calendar_path.read_bytes(),str(calendar_path),'exec'),calendar.__dict__)
               if (calendar.CALENDARIO_ACTUALIZADO_EL.isoformat()!='2026-10-14' or
                   2026 not in calendar.ANIOS_AUDITADOS or
-                  not calendar.es_dia_habil_operativo(local.date())):
+                  (legacy_week and not calendar.es_dia_habil_operativo(local.date()))):
                   raise SystemExit('RC6_RESCUE_CALENDAR_DAY_RED')
               # BYMA COM18782, PDF SHA256 pinned in the candidate; its latest
               # exercise-expiry segment ends at 19:00 ART. A3 ends by 17:30.
@@ -599,7 +614,7 @@ jobs:
               # A175 reached running PAPER, then failed before validation.
               # The staged A176 source must prove its exact installed source,
               # failed receipt, new image/IDs, immutable marker, held timers,
-              # flat book and the date-current NO_GO administrative receipt.
+              # flat book and a pinned historical NO_GO plus live disabled timer.
               # The nested scheduler verifier must load the same hashed
               # staged quiescence source; the installed A175 is still pending.
               os.environ['RC6_A145_QUIESCENCE_GZIP_B64']=CANDIDATE_A143_B64
@@ -609,9 +624,11 @@ jobs:
                    operator.__dict__)
               proof=candidate.a175_failed_running_proof(
                   sys.argv[1],originals,
-                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_a151_proof=lambda:operator.exact_a151_operator_preopen_pause(
+                      historical_hold_only=True),
                   operator_timer_disabled=operator.operator_preopen_timer_disabled,
-                  operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation,
+                  operator_current_no_go_proof=lambda:operator.exact_a176_operator_no_go_continuation(
+                      historical_anchor=True),
                   require_installed_a175_source=True,
                   allow_intraday_a175=state==('RUNNING','MARKET_OPEN'))
               if (proof.get('origin_sha256')!=candidate.A175_FAILED_RECEIPT_SHA256 or
@@ -637,7 +654,8 @@ jobs:
                    operator.__dict__)
               proof=candidate.a174_failed_running_proof(
                   sys.argv[1],originals,
-                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_a151_proof=lambda:operator.exact_a151_operator_preopen_pause(
+                      historical_hold_only=True),
                   operator_timer_disabled=operator.operator_preopen_timer_disabled,
                   require_installed_a174_source=True)
               if (proof.get('origin_sha256')!=candidate.A174_FAILED_RECEIPT_SHA256 or
@@ -662,7 +680,8 @@ jobs:
                    operator.__dict__)
               proof=candidate.a171_failed_running_proof(
                   sys.argv[1],originals,
-                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_a151_proof=lambda:operator.exact_a151_operator_preopen_pause(
+                      historical_hold_only=True),
                   operator_timer_disabled=operator.operator_preopen_timer_disabled,
                   require_installed_a171_source=True)
               if (proof.get('origin_sha256')!=candidate.A171_FAILED_RECEIPT_SHA256 or

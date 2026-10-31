@@ -46,6 +46,30 @@ def installation(tmp_path, monkeypatch):
     return tmp_path, db, states, calls, command
 
 
+@pytest.mark.parametrize('instant', [
+    '2026-10-31T20:00:00+00:00',  # Saturday, outside exchange hours
+    '2026-11-01T20:00:00+00:00',  # Sunday
+    '2026-11-02T04:00:00+00:00',  # Monday before the market
+    '2026-12-25T17:00:00+00:00',  # holiday test fixture
+])
+def test_a229_24x7_closed_market_deploy_not_vetoed_by_calendar(
+        installation, monkeypatch, instant):
+    """Quiescence validates live PAPER state, not weekday or wall-clock slot."""
+    _, db, _, _, _ = installation
+    frozen = datetime.fromisoformat(instant)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen if tz is None else frozen.astimezone(tz)
+
+    with sqlite3.connect(db) as c:
+        c.execute('UPDATE observer_state SET heartbeat_at=? WHERE id=1', (instant,))
+    monkeypatch.setattr(q, 'datetime', FixedDateTime)
+    assert q.admit() == 'WAITING_MARKET'
+    assert q.admit_poststart_flat('CLOSED') == 'CLOSED'
+
+
 @pytest.mark.parametrize('change', ['open_spot', 'active_future', 'missing_ledger', 'real', 'open_session', 'old_heartbeat'])
 def test_unsafe_or_unknown_cannot_stop_runtime(installation, change):
     root, db, states, calls, _ = installation

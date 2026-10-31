@@ -547,7 +547,8 @@ def select_batch(store, *, limit, cursor=0):
     back to every AVAILABLE catalog row used to spend most rotations on
     families that this strategy must reject later and could also collapse two
     currency/market identities into one request.  Absence of the v2 gate is
-    therefore fail-closed for scalping.
+    therefore fail-closed for scalping. The PPI Intraday call has no venue
+    selector: a foreign-market catalog identity cannot inherit a BYMA signal.
     """
     if not 8 <= limit <= 40:
         raise ValueError("INTRADAY_BATCH_LIMIT_OUT_OF_RANGE")
@@ -568,6 +569,7 @@ def select_batch(store, *, limit, cursor=0):
           WHERE c.status='AVAILABLE' AND r.status='AVAILABLE'
             AND r.can_simulate=1
             AND UPPER(c.instrument_type) IN ({placeholders})
+            AND c.market='BYMA'
             AND c.capability LIKE 'READY_PAPER_%'
             AND c.currency<>'UNKNOWN' AND c.market<>'UNKNOWN'
           ORDER BY c.instrument_type,c.market,c.currency,c.ticker,c.settlement
@@ -615,6 +617,7 @@ def select_runtime_batch(store, *, limit, cursor=0, at, controller=None):
             c.capability,c.status,c.settlement_source,c.metadata_json FROM financial_instrument_catalog c JOIN candidate_identity_v2 r
             USING(ticker,instrument_type,market,currency,settlement)
             WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+              AND c.market='BYMA'
               AND c.capability LIKE 'READY_PAPER_%' AND c.instrument_type IN ('ACCIONES','CEDEARS','ETFS')""")]
     selection = controller.selection("SCALPING", baseline, as_of=at, opened=opened)
     if not selection["dynamic"]:
@@ -877,7 +880,14 @@ def evaluate_candidate(store, record, *, at):
     economics["temporal_contract"] = temporal
     freshness_reason = _intraday_freshness_reason(
         contract, at=at, latest_event_at=points[-1]["event_at"] if points else None)
-    if record.get("capability") not in SCALPING_PAPER_CAPABILITIES:
+    # The independent worker checks this session before reading PPI. Recheck
+    # at the signal boundary as well: a direct replay/caller must never turn
+    # valid-looking after-hours or holiday events into BUY_CANDIDATE evidence.
+    # This is the conservative BYMA PAPER window, not COM19031's wider T+1
+    # source-observation clock nor its separate PPT/SENEBI intraday segment.
+    if not _market_open(at):
+        reason = "OUTSIDE_SCALPING_PAPER_SESSION"
+    elif record.get("capability") not in SCALPING_PAPER_CAPABILITIES:
         reason = record.get("capability") or "CONTRACT_NOT_SIMULATABLE"
     elif freshness_reason:
         reason = freshness_reason
@@ -1002,6 +1012,11 @@ def promote_paper_candidate(store, record, *, at):
     mode = os.getenv("PAPER_SCALPING_MODE", "ACTIVE_OBSERVE").upper()
     if mode != "ACTIVE_PAPER":
         return "OBSERVE_ONLY"
+    # A stale candidate may have been evaluated while the market was open.
+    # Fail before recording a BUY decision or constructing any broker if a
+    # weekend/holiday/after-close caller tries to promote that evidence.
+    if not _market_open(at):
+        return "OUTSIDE_SCALPING_PAPER_SESSION"
     contract = _state(store, _identity(record)) or {}
     with store.connect() as connection:
         register_exact_time(connection)

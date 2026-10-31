@@ -50,7 +50,8 @@ def test_pit_comparability_is_required(tmp_path,change):
         assert result['counts']['WOULD_CONFIRM']==0
 
 
-@pytest.mark.parametrize('bad', ['{broken','x'*(1024**2+1)])
+@pytest.mark.parametrize('bad', ['{broken','x'*(1024**2+1)],
+                         ids=['MALFORMED','OVERSIZED_1M'])
 def test_corrupt_or_oversized_fallback_cannot_resurrect_other_publications(tmp_path,bad):
     (tmp_path/'decision_evidence_latest.json').write_text(bad)
     result=read_bounded(tmp_path,as_of=NOW)

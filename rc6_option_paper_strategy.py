@@ -147,9 +147,11 @@ def evaluate_option_entry(
                 or participation > Decimal("0.25") or participation > ONE
                 or momentum_limit < Decimal("0.003")):
             return hold("OPTION_RESEARCH_LIMIT_CANNOT_BE_LOOSENED")
-        expiry_seconds = (utc_microseconds(contract.expires_at)
-                          - utc_microseconds(at)) / 1_000_000
-        if not min_expiry_days * 86400 <= expiry_seconds <= max_expiry_days * 86400:
+        # Integer UTC microseconds avoid float rounding exactly at the
+        # min/max expiry horizon; timestamps may carry microsecond precision.
+        expiry_us = utc_microseconds(contract.expires_at) - utc_microseconds(at)
+        if not (min_expiry_days * 86_400_000_000 <= expiry_us
+                <= max_expiry_days * 86_400_000_000):
             return hold("OPTION_EXPIRY_OUTSIDE_SAFE_HORIZON")
         session_error = PaperSessionPolicy().admission_error(q, at)
         if session_error:
@@ -198,14 +200,19 @@ def evaluate_option_entry(
                    else momentum <= -threshold)
         features.update(underlying_identity=list((u.symbol, u.family, u.market,
                                                   u.currency, u.settlement)),
-                        underlying_book_at=u.book_at, observed_trade_count=len(prices),
-                        trade_window=[u.trades[-8].traded_at, u.trades[-1].traded_at],
+                        underlying_book_at=aware_datetime(u.book_at).isoformat(),
+                        observed_trade_count=len(prices),
+                        trade_window=[aware_datetime(u.trades[-8].traded_at).isoformat(),
+                                      aware_datetime(u.trades[-1].traded_at).isoformat()],
                         short_average=str(short), long_average=str(long),
                         underlying_momentum=str(momentum), option_right=contract.option_right,
                         option_spread_bps=str(option_spread_bps),
                         underlying_spread_bps=str(underlying_spread_bps),
                         strike=str(contract.strike), spot_mid=str(spot),
-                        expires_at=contract.expires_at)
+                        # A caller can supply an aware datetime here, but the
+                        # decision features must remain JSON-serializable for
+                        # immutable PAPER diagnostic/replay receipts.
+                        expires_at=aware_datetime(contract.expires_at).isoformat())
         if not aligned:
             return hold("OPTION_UNDERLYING_DIRECTIONAL_SIGNAL_NOT_READY")
 
@@ -231,7 +238,8 @@ def evaluate_option_entry(
                     if (str(iv["source"]).strip() and value <= ONE and
                             _fresh(iv["source_at"], iv["received_at"], at)):
                         features["iv"] = {"status": "OBSERVED_FRESH", "value": str(value),
-                                          "source": iv["source"], "source_at": iv["source_at"]}
+                                          "source": iv["source"],
+                                          "source_at": aware_datetime(iv["source_at"]).isoformat()}
                         features["warnings"].remove("IV_NO_VERIFICADO")
                 except (ValueError, TypeError, OverflowError):
                     pass
