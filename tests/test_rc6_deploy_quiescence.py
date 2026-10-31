@@ -128,6 +128,7 @@ def test_poststart_refuses_unproven_or_nonflat_phase(installation, change):
     ('COOLDOWN', 'BOOT_CALENDAR', 'PPI en espera de reintento; no se abre una tormenta de logins.'),
     ('ERROR', 'BOOT_PPI_LOGIN', 'Login fallo: JSONDecodeError'),
     ('COOLDOWN', 'MARKET_CLOSED', 'Login local bloqueado por interlock persistente.'),
+    ('COOLDOWN', 'BOOT_COMMAND', 'Login local bloqueado por interlock.'),
 ])
 def test_poststart_ppi_auth_outage_amber_but_never_operational_ready(
         installation, auth, session, detail):
