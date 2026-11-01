@@ -97,7 +97,11 @@ def test_economia_shadow_cuenta_apertura_con_fallo(tmp_path):
                       "opened_with_failure": 1, "blocked_with_failure": 0}
 
 
-def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path):
+def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path, monkeypatch):
+    # A missing EOD is still pending after the one-time cutoff repair.
+    # Reattempts may occur in the same session, but never before the
+    # source-pending retry cooldown or the audited EOD floor.
+    monkeypatch.setattr(observer, "_history_cutoff_repair_complete", lambda: True)
     store = engine.PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
     first_attempt = datetime(2026, 9, 28, 17, 5, tzinfo=observer.TZ)
@@ -106,20 +110,36 @@ def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path):
                            ("PPI_PRODUCTION_HISTORY", "ROJO", first_attempt.isoformat(),
                             None, 0, "falló"))
     assert observer._background_ingest_due(
-        store, now=datetime(2026, 9, 28, 23, 30, tzinfo=observer.TZ)
+        store, now=datetime(2026, 9, 28, 17, 16, tzinfo=observer.TZ)
     ) is False
+    cooldown = timedelta(seconds=observer.HISTORY_SOURCE_PENDING_RETRY_SECONDS)
+    assert observer._background_ingest_due(
+        store, now=first_attempt + cooldown - timedelta(seconds=1)
+    ) is False
+    assert observer._background_ingest_due(
+        store, now=first_attempt + cooldown
+    ) is True
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 28, 23, 30, tzinfo=observer.TZ)
+    ) is True
     assert observer._background_ingest_due(
         store, now=datetime(2026, 9, 29, 16, 59, tzinfo=observer.TZ)
     ) is False
     assert observer._background_ingest_due(
-        store, now=datetime(2026, 9, 29, 17, 1, tzinfo=observer.TZ)
+        store, now=datetime(2026, 9, 29, 17, 14, tzinfo=observer.TZ)
+    ) is False
+    # The historical Sept 2026 EOD floor is 17:15 ART, not the 17:00 close.
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 29, 17, 16, tzinfo=observer.TZ)
     ) is True
 
 
 def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
         tmp_path, monkeypatch):
+    monkeypatch.setattr(observer, "_history_cutoff_repair_complete", lambda: True)
     due = observer._background_ingest_due
     stamp = "2026-09-29T20:05:00+00:00"  # 17:05 ART
+    last_attempt = datetime(2026, 9, 29, 17, 5, tzinfo=observer.TZ)
     monkeypatch.setattr(observer, "now_iso", lambda: stamp)
     monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: True)
     for failure in (False, True):
@@ -144,9 +164,14 @@ def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
                 WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()[0]
         assert checked == stamp
         assert source == "2026-09-25T20:00:00+00:00"
-        assert due(store, now=datetime(2026, 9, 29, 23, 30, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 29, 17, 16, tzinfo=observer.TZ)) is False
+        cooldown = timedelta(seconds=observer.HISTORY_SOURCE_PENDING_RETRY_SECONDS)
+        assert due(store, now=last_attempt + cooldown - timedelta(seconds=1)) is False
+        assert due(store, now=last_attempt + cooldown) is True
+        assert due(store, now=datetime(2026, 9, 29, 23, 30, tzinfo=observer.TZ)) is True
         assert due(store, now=datetime(2026, 9, 30, 16, 59, tzinfo=observer.TZ)) is False
-        assert due(store, now=datetime(2026, 9, 30, 17, 1, tzinfo=observer.TZ)) is True
+        assert due(store, now=datetime(2026, 9, 30, 17, 14, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 30, 17, 16, tzinfo=observer.TZ)) is True
 
 
 def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypatch):
