@@ -4,12 +4,17 @@ name: RC6 historical source evidence offhost
 # executes one read-only PPI History GET inside the exact pinned PAPER Docker
 # image using credentials already held ONLY there. It never deploys or writes
 # host files/DB/History v2, and cannot prove causal PIT from retrospective EOD.
+# A338 adds a separate manual Book mode with the EXISTING atomic PPI budget
+# lease. Only the global PPI budget sidecar's native acquire/start/finish may
+# write; never trading DB/History v2/PPI Watch, no independent PIT claim.
 on:
   pull_request:
     paths:
       - '.github/workflows/rc6-history-fresh-offhost-evidence.yml'
       - 'scripts/rc6_a331_host_ppi_history_readonly.py'
       - 'tests/test_rc6_a331_host_ppi_history_readonly.py'
+      - 'scripts/rc6_a338_host_ppi_book_atomic.py'
+      - 'tests/test_rc6_a338_host_ppi_book_atomic.py'
   workflow_dispatch:
     inputs:
       execution_mode:
@@ -20,18 +25,19 @@ on:
         options:
           - DROPLET_EXISTING_CREDENTIALS
           - RUNNER_EXISTING
+          - DROPLET_ATOMIC_BOOK
       from_day:
-        description: First ART trading date, YYYY-MM-DD
+        description: History-only first ART day; ignored for Book
         required: true
         default: '2026-10-30'
         type: string
       to_day:
-        description: Last ART trading date, YYYY-MM-DD
+        description: History-only last ART day; ignored for Book
         required: true
         default: '2026-10-30'
         type: string
       targets_json:
-        description: One exact [symbol,family,market,currency,settlement] target
+        description: One exact [symbol,family,market,currency,settlement] target (History or Book)
         required: true
         type: string
 
@@ -80,6 +86,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m unittest discover -s tests -p test_rc6_a331_host_ppi_history_readonly.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a338_host_ppi_book_atomic.py -v
       - uses: actions/checkout@v4
         with:
           ref: bcbd445f94234188a1ae88888f1587eb2eb149d0
@@ -461,5 +468,181 @@ jobs:
           for path in "$HOME/.ssh/rc6_a331_readonly" \
               "$RUNNER_TEMP/rc6-a331-stdout.private" \
               "$RUNNER_TEMP/rc6-a331-stderr.private"; do
+            if test -f "$path"; then shred -u "$path"; fi
+          done
+
+  a338-host-ppi-atomic-book:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' && inputs.execution_mode == 'DROPLET_ATOMIC_BOOK' }}
+    # A Book GET uses the same host budget authority as the running observer.
+    # Serializing diagnostics against Deploy V2 prevents image pin races.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      RC6_A338_TARGETS_JSON: ${{ inputs.targets_json }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Enforce one reviewed 5-key Book target and run adversarial tests before SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m unittest discover -s tests -p test_rc6_a338_host_ppi_book_atomic.py -q
+          export RC6_A338_SCRIPT_SHA256="$(sha256sum scripts/rc6_a338_host_ppi_book_atomic.py | cut -d' ' -f1)"
+          python3 - <<'PY'
+          import base64, json, os, re
+          from scripts.rc6_a338_host_ppi_book_atomic import preflight
+          raw = os.environ['RC6_A338_TARGETS_JSON']
+          if len(raw.encode()) > 512:
+              raise SystemExit('A338_TARGET_JSON_BUDGET_EXCEEDED')
+          target = json.loads(raw)
+          encoded = base64.b64encode(json.dumps(target, separators=(',', ':')).encode()).decode()
+          preflight(encoded)
+          assert re.fullmatch('[a-f0-9]{64}', os.environ['RC6_A338_SCRIPT_SHA256'])
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write('RC6_A338_TARGET_B64=' + encoded + '\n')
+              env.write('RC6_A338_SCRIPT_SHA256=' + os.environ['RC6_A338_SCRIPT_SHA256'] + '\n')
+          print('A338_PREFLIGHT=GREEN|exact_targets=1|book_get_max=1|atomic_budget=REQUIRED|real_orders=0')
+          PY
+
+      - name: Strict SSH pin and one Book GET through existing global PPI budget
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a338_atomic"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a338_atomic" "$HOME/.ssh/known_hosts"
+          set +e
+          timeout --signal=TERM --kill-after=5s 70s ssh \
+            -i "$HOME/.ssh/rc6_a338_atomic" -o BatchMode=yes \
+            -o ConnectTimeout=8 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\\n' \"\$image\"; sudo -n timeout 45 docker exec -i -e RC6_A338_TARGET_B64=$RC6_A338_TARGET_B64 -e RC6_A338_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B -" \
+            < scripts/rc6_a338_host_ppi_book_atomic.py \
+            > "$RUNNER_TEMP/rc6-a338-stdout.private" \
+            2> "$RUNNER_TEMP/rc6-a338-stderr.private"
+          host_rc=$?
+          set -e
+          export RC6_A338_HOST_RC="$host_rc"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.rc6_a338_host_ppi_book_atomic import (
+              SCHEMA, preflight, verify_sanitized_receipt)
+          root = Path(os.environ['RUNNER_TEMP'])
+          captured = root / 'rc6-a338-stdout.private'
+          raw = captured.read_bytes() if captured.exists() and captured.stat().st_size <= 65536 else b''
+          lines = raw.decode('utf-8', errors='replace').splitlines()
+          image = lines[0].partition('=')[2] if len(lines) == 2 and lines[0].startswith('RUNTIME_IMAGE_ID=') else ''
+          try:
+              result = json.loads(lines[1]) if image == os.environ['RC6_EXPECTED_IMAGE_ID'] else {}
+          except (ValueError, IndexError):
+              result = {}
+          identity = preflight(os.environ['RC6_A338_TARGET_B64'])
+          valid = bool(result and verify_sanitized_receipt(result, identity)
+              and result.get('schema') == SCHEMA
+              and result.get('expected_product_sha') == os.environ['RC6_EXPECTED_PRODUCT_SHA']
+              and result.get('paper_mode') == 'PRODUCTION_PAPER'
+              and result.get('real_order_capability') == 'BLOCKED'
+              and result.get('real_orders_sent_by_action') == 0
+              and result.get('trading_db_writes_by_action') == 0
+              and result.get('history_v2_writes_by_action') == 0
+              and result.get('ppi_watch_mutations_by_action') == 0
+              and result.get('execution_allowed') is False
+              and result.get('independent_ed25519_verified') is False
+              and result.get('source_pit_verified') is False
+              and result.get('book_gets') in (0, 1))
+          if not valid:
+              result = {'schema': SCHEMA, 'state': 'NO_VERIFICADO',
+                  'reason': 'A338_HOST_OR_RECEIPT_UNVERIFIED',
+                  'book_gets': None, 'source_pit_verified': False,
+                  'real_orders_sent_by_action': 0,
+                  'trading_db_writes_by_action': 0,
+                  'history_v2_writes_by_action': 0,
+                  'ppi_watch_mutations_by_action': 0,
+                  'execution_allowed': False}
+          manifest = {'schema': 'rc6.a338.action.sanitized.v1',
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_sha': os.environ['GITHUB_SHA'],
+              'source_sha256': os.environ['RC6_A338_SCRIPT_SHA256'],
+              'expected_product_sha': os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+              'expected_runtime_image_id': os.environ['RC6_EXPECTED_IMAGE_ID'],
+              'credential_handling': 'EXISTING_CONTAINER_ONLY',
+              'budget_writes_only': 'GLOBAL_PPI_BUDGET_ATOMIC_LEASE',
+              'host_exit': int(os.environ['RC6_A338_HOST_RC']),
+              'result': result, 'no_raw_provider_data_uploaded': True,
+              'real_orders_sent_by_action': 0, 'predeploy_dispatches': 0,
+              'deploy_dispatches': 0}
+          out = root / 'rc6-a338-sanitized-only.json'
+          out.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
+          print('A338_DROPLET_BOOK=' + result['state'] +
+                '|book_gets=' + str(result.get('book_gets')) +
+                '|atomic_lease=' + str(result.get('lease_started', False)) +
+                '|PIT=NO_VERIFICADO|real_orders=0')
+          if not valid or int(os.environ['RC6_A338_HOST_RC']) != 0:
+              raise SystemExit(2)
+          PY
+
+      - name: Materialize fail-closed receipt on precheck or SSH failure
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          out = Path(os.environ['RUNNER_TEMP']) / 'rc6-a338-sanitized-only.json'
+          if not out.is_file():
+              out.write_text(json.dumps({
+                  'schema': 'rc6.a338.action.sanitized.v1',
+                  'run_id': os.environ['GITHUB_RUN_ID'],
+                  'workflow_sha': os.environ['GITHUB_SHA'],
+                  'state': 'NO_VERIFICADO',
+                  'reason': 'A338_PREFLIGHT_OR_SSH_FAILED',
+                  'expected_product_sha': os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+                  'expected_runtime_image_id': os.environ['RC6_EXPECTED_IMAGE_ID'],
+                  'book_gets': None, 'source_pit_verified': False,
+                  'credential_handling': 'EXISTING_CONTAINER_ONLY',
+                  'no_raw_provider_data_uploaded': True,
+                  'real_orders_sent_by_action': 0,
+                  'trading_db_writes_by_action': 0,
+                  'history_v2_writes_by_action': 0,
+                  'ppi_watch_mutations_by_action': 0,
+                  'predeploy_dispatches': 0, 'deploy_dispatches': 0},
+                  sort_keys=True, indent=2) + '\n')
+          PY
+
+      - name: Publish only sanitized Book proof, no quotes or credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a338-host-ppi-book-atomic-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-a338-sanitized-only.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Destroy runner private SSH and stdio files
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for path in "$HOME/.ssh/rc6_a338_atomic" \
+              "$RUNNER_TEMP/rc6-a338-stdout.private" \
+              "$RUNNER_TEMP/rc6-a338-stderr.private"; do
             if test -f "$path"; then shred -u "$path"; fi
           done
