@@ -1,0 +1,367 @@
+name: RC6 retention offhost census
+
+# #478 evidence only. The A74 host capture is repeated only after a fresh
+# closed/PAPER/capacity preflight. No host DB write, purge or deployment.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-retention-offhost-census
+  cancel-in-progress: false
+
+jobs:
+  census:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RC6_SOURCE_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+      RC6_SOURCE_TREE: 743f066f1e1cae196d0518f9f6633b18e33544bf
+    steps:
+      - name: Check out this manual workflow guard
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Test the offhost Action safety contract before host credentials
+        run: python3 -m unittest discover -s tests -p 'test_rc6_retention_offhost_action.py'
+
+      - name: Check out exact deployed PAPER census code
+        uses: actions/checkout@v4
+        with:
+          ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          persist-credentials: false
+
+      - name: Verify exact source SHA, tree and PAPER constants
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_SOURCE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$RC6_SOURCE_TREE"
+          grep -Fq 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -Fq 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python3 -m py_compile scripts/rc6_history_offhost_preflight.py rc6_data_retention.py
+          echo "RETENTION_CENSUS_CODE=GREEN|sha=$RC6_SOURCE_SHA|tree=$RC6_SOURCE_TREE"
+
+      - name: Bounded quiescent read into private runner scratch
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          root="$RUNNER_TEMP"
+          if test -z "$DO_HOST" || test -z "$DO_USER" || \
+              test -z "$SSH_KEY" || test -z "$KNOWN_HOSTS"; then
+            printf '%s\n' '{"schema":"RC6_RETENTION_OFFHOST_ACTION_V1","state":"NO_VERIFICADO","failure_class":"HOST_CREDENTIALS_UNAVAILABLE","host_purge_allowed":false,"source_mutated":false,"real_orders_sent_by_action":0}' > "$root/rc6-retention-sanitized.json"
+            exit 2
+          fi
+          if test "$(df --output=avail -B1 "$root" | tail -1)" -le 4294967296; then
+            printf '%s\n' '{"schema":"RC6_RETENTION_OFFHOST_ACTION_V1","state":"NO_VERIFICADO","failure_class":"RUNNER_SCRATCH_CAPACITY","host_purge_allowed":false,"source_mutated":false,"real_orders_sent_by_action":0}' > "$root/rc6-retention-sanitized.json"
+            exit 2
+          fi
+          umask 077
+          install -m 700 -d "$root/rc6-retention-ssh"
+          printf '%s\n' "$SSH_KEY" > "$root/rc6-retention-ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$root/rc6-retention-ssh/known_hosts"
+          chmod 600 "$root/rc6-retention-ssh/key" "$root/rc6-retention-ssh/known_hosts"
+          set +e
+          timeout 95 ssh -i "$root/rc6-retention-ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$root/rc6-retention-ssh/known_hosts" \
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+            'sudo -n nice -n 19 ionice -c 3 python3 -' \
+            > "$root/rc6-retention-source.private.sqlite" \
+            2> "$root/rc6-retention-capture.private.log" <<'PY_CAPTURE'
+          """A74-style read-only quiescent capture; stdout is an exact image."""
+          import datetime
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import sqlite3
+          import stat
+          import subprocess
+          import sys
+          import time
+
+          SOURCE = Path('/opt/porota-trading/data/market_history.db')
+          START = time.monotonic()
+          LIMIT = 60
+          MAX_BYTES = 1024**3
+
+          def check():
+              if time.monotonic() - START >= LIMIT:
+                  raise ValueError('CAPTURE_TIME_BUDGET')
+              available = next(int(line.split()[1]) * 1024 for line in
+                  Path('/proc/meminfo').read_text().splitlines()
+                  if line.startswith('MemAvailable:'))
+              if available < 512 * 1024**2:
+                  raise ValueError('CAPTURE_MEMORY_RESERVE')
+
+          def inventory():
+              if SOURCE.resolve() != SOURCE or any(p.is_symlink() for p in SOURCE.parents):
+                  raise ValueError('SOURCE_ALIAS')
+              files = {}
+              for suffix in ('', '-wal', '-shm', '-journal'):
+                  path = Path(str(SOURCE) + suffix)
+                  try:
+                      entry = path.lstat()
+                  except FileNotFoundError:
+                      continue
+                  if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+                      raise ValueError('SOURCE_ALIAS')
+                  files[suffix] = (entry.st_dev, entry.st_ino, entry.st_size,
+                                   entry.st_mtime_ns, entry.st_ctime_ns)
+                  if suffix and entry.st_size:
+                      raise ValueError('SOURCE_NOT_QUIESCENT')
+              if '' not in files or not 4096 <= files[''][2] <= MAX_BYTES:
+                  raise ValueError('SOURCE_BYTE_BUDGET')
+              return files
+
+          def preflight():
+              check()
+              if shutil.disk_usage('/').free < 4 * 1024**3:
+                  raise ValueError('HOST_DISK_RESERVE')
+              for name in ('daily', 'reconcile', 'weekend'):
+                  unit = 'porota-a3-history-' + name + '-rc6.timer'
+                  result = subprocess.run(
+                      ['systemctl', 'show', unit, '--property=ActiveState,UnitFileState'],
+                      capture_output=True, text=True, timeout=3)
+                  values = dict(x.split('=', 1) for x in result.stdout.splitlines() if '=' in x)
+                  if result.returncode or values != {'ActiveState': 'inactive',
+                                                     'UnitFileState': 'masked'}:
+                      raise ValueError('A3_QUARANTINE_REQUIRED')
+              writer = subprocess.run(
+                  ['systemctl', 'is-active', 'porota-local-eod-history-rc6.service'],
+                  capture_output=True, text=True, timeout=3)
+              if writer.stdout.strip() not in ('inactive', 'failed'):
+                  raise ValueError('HISTORY_WRITER_ACTIVE')
+              with sqlite3.connect(
+                  'file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',
+                  uri=True, timeout=.05) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  row = db.execute('SELECT mode,real_orders_sent,session_state,heartbeat_at '
+                                   'FROM observer_state WHERE id=1').fetchone()
+              now = datetime.datetime.now(datetime.timezone.utc)
+              if not row or row[:3] != ('PRODUCTION_PAPER', 0, 'MARKET_CLOSED'):
+                  raise ValueError('CLOSED_PAPER_REQUIRED')
+              heartbeat = datetime.datetime.fromisoformat(row[3])
+              if not 0 <= (now - heartbeat).total_seconds() <= 180:
+                  raise ValueError('HEARTBEAT_REQUIRED')
+              return now
+
+          def sha_pass(expected, output=None):
+              digest = hashlib.sha256()
+              count = 0
+              fd = os.open(SOURCE, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+              with os.fdopen(fd, 'rb') as source:
+                  entry = os.fstat(source.fileno())
+                  actual = (entry.st_dev, entry.st_ino, entry.st_size,
+                            entry.st_mtime_ns, entry.st_ctime_ns)
+                  if actual != expected['']:
+                      raise ValueError('SOURCE_CHANGED')
+                  while True:
+                      check()
+                      chunk = source.read(min(1024**2, expected[''][2] - count + 1))
+                      if not chunk:
+                          break
+                      count += len(chunk)
+                      if count > expected[''][2]:
+                          raise ValueError('SOURCE_GREW')
+                      digest.update(chunk)
+                      if output is not None:
+                          output.write(chunk)
+              if count != expected[''][2] or inventory() != expected:
+                  raise ValueError('SOURCE_CHANGED')
+              return digest.hexdigest()
+
+          try:
+              at = preflight()
+              before = inventory()
+              digest = sha_pass(before, sys.stdout.buffer)
+              sys.stdout.buffer.flush()
+              if sha_pass(before) != digest:
+                  raise ValueError('SOURCE_HASH_CHANGED')
+              print('CAPTURE_RECEIPT=' + json.dumps({
+                  'schema': 'RC6_RETENTION_QUIESCENT_CAPTURE_V1',
+                  'source_utc': at.isoformat(), 'source_bytes': before[''][2],
+                  'source_sha256': digest, 'wal_bytes': 0,
+                  'second_full_hash_equal': True, 'source_noatime': True,
+                  'source_mutated': False, 'host_purge_allowed': False},
+                  sort_keys=True), file=sys.stderr)
+          except Exception as exc:
+              code = str(exc) if isinstance(exc, ValueError) and str(exc).isupper() else type(exc).__name__
+              print('CAPTURE_REJECTED=' + code, file=sys.stderr)
+              raise SystemExit(2)
+          PY_CAPTURE
+          capture_rc=$?
+          set -e
+          export RC6_CAPTURE_RC="$capture_rc"
+          python3 - <<'PY_CAPTURE_STATUS'
+          import json
+          import os
+          from pathlib import Path
+          import re
+
+          root = Path(os.environ['RUNNER_TEMP'])
+          lines = (root / 'rc6-retention-capture.private.log').read_text(errors='replace').splitlines()
+          codes = [line.split('=', 1)[1] for line in lines if line.startswith('CAPTURE_REJECTED=')]
+          code = codes[-1] if codes and re.fullmatch(r'[A-Z][A-Z0-9_]{2,79}', codes[-1]) else 'NO_VERIFICADO'
+          if int(os.environ['RC6_CAPTURE_RC']) != 0:
+              (root / 'rc6-retention-sanitized.json').write_text(json.dumps({
+                  'schema': 'RC6_RETENTION_OFFHOST_ACTION_V1', 'state': 'NO_VERIFICADO',
+                  'failure_class': code, 'host_purge_allowed': False,
+                  'source_mutated': False, 'real_orders_sent_by_action': 0}, sort_keys=True) + '\n')
+              raise SystemExit(0)
+          receipts = [line.split('=', 1)[1] for line in lines if line.startswith('CAPTURE_RECEIPT=')]
+          try:
+              if len(receipts) != 1:
+                  raise ValueError('receipt count')
+              receipt = json.loads(receipts[0])
+              if (not isinstance(receipt, dict)
+                      or receipt.get('schema') != 'RC6_RETENTION_QUIESCENT_CAPTURE_V1'
+                      or type(receipt.get('source_bytes')) is not int
+                      or not 4096 <= receipt['source_bytes'] <= 1024**3
+                      or not isinstance(receipt.get('source_sha256'), str)
+                      or not re.fullmatch(r'[0-9a-f]{64}', receipt['source_sha256'])
+                      or receipt.get('host_purge_allowed') is not False
+                      or receipt.get('source_mutated') is not False):
+                  raise ValueError('receipt fields')
+          except (ValueError, TypeError):
+              (root / 'rc6-retention-sanitized.json').write_text(json.dumps({
+                  'schema': 'RC6_RETENTION_OFFHOST_ACTION_V1', 'state': 'NO_VERIFICADO',
+                  'failure_class': 'CAPTURE_RECEIPT_UNVERIFIED',
+                  'host_purge_allowed': False, 'source_mutated': False,
+                  'real_orders_sent_by_action': 0}, sort_keys=True) + '\n')
+              raise SystemExit('CAPTURE_RECEIPT_UNVERIFIED')
+          (root / 'rc6-retention-capture.private.json').write_text(json.dumps(receipt))
+          PY_CAPTURE_STATUS
+          test "$capture_rc" -eq 0
+
+      - name: Verify copy and census local pins with the 365 ART date window
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY_CENSUS'
+          import datetime
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import sqlite3
+          import time
+          from urllib.parse import quote
+
+          from rc6_data_retention import ART, daily_start
+          from scripts.rc6_history_offhost_preflight import census
+
+          root = Path(os.environ['RUNNER_TEMP']).resolve()
+          source = root / 'rc6-retention-source.private.sqlite'
+          capture = json.loads((root / 'rc6-retention-capture.private.json').read_text())
+          output = root / 'rc6-retention-sanitized.json'
+
+          def classify_day(raw, cutoff, today):
+              try:
+                  day = datetime.date.fromisoformat(raw)
+                  if day.isoformat() != raw:
+                      raise ValueError('not canonical ISO date')
+              except (TypeError, ValueError):
+                  return 'unclassifiable_held'
+              if day > today:
+                  return 'future_held'
+              if day < cutoff:
+                  return 'older_review_only'
+              return 'at_cutoff_held' if day == cutoff else 'newer_held'
+
+          try:
+              report = census(source, capture, runner_root=root, seconds=240)
+              now = datetime.datetime.now(datetime.timezone.utc)
+              cutoff = daily_start(now)
+              counts = {'older_review_only': 0, 'at_cutoff_held': 0,
+                        'newer_held': 0, 'future_held': 0,
+                        'unclassifiable_held': 0}
+              today = now.astimezone(ART).date()
+              uri = 'file:' + quote(str(source), safe='/') + '?mode=ro&immutable=1'
+              deadline = time.monotonic() + 60
+              checked = 0
+              with sqlite3.connect(uri, uri=True, timeout=.2) as db:
+                  db.execute('PRAGMA query_only=ON')
+                  db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
+                  for (raw,) in db.execute('SELECT date FROM history_versions_v2'):
+                      checked += 1
+                      if checked > 1_000_000 or time.monotonic() >= deadline:
+                          raise ValueError('RETENTION_DATE_CENSUS_BUDGET_EXCEEDED')
+                      counts[classify_day(raw, cutoff, today)] += 1
+              if sum(counts.values()) != report['legacy_versions']:
+                  raise ValueError('RETENTION_DATE_CENSUS_COUNT_MISMATCH')
+              after = hashlib.sha256()
+              with source.open('rb') as handle:
+                  for chunk in iter(lambda: handle.read(1024**2), b''):
+                      after.update(chunk)
+              if after.hexdigest() != report['copy_sha256']:
+                  raise ValueError('RETENTION_COPY_CHANGED')
+              graph = report['local_reference_graph']
+              summary = {
+                  'schema': 'RC6_RETENTION_OFFHOST_ACTION_V1',
+                  'state': 'OFFHOST_CENSUS_COMPLETE_HOLD',
+                  'source_sha256': report['copy_sha256'],
+                  'source_bytes': report['copy_bytes'],
+                  'source_capture_utc': capture['source_utc'],
+                  'analyzed_utc': now.isoformat(),
+                  'analyzed_art': now.astimezone(ART).isoformat(),
+                  'cutoff_inclusive_art': cutoff.isoformat(),
+                  'legacy_versions': report['legacy_versions'],
+                  'date_counts': counts,
+                  'tables_scanned': graph['tables_scanned'],
+                  'declared_fk_count': len(graph['declared_foreign_keys']),
+                  'possible_reference_columns': len(graph['possible_version_reference_columns']),
+                  'json_columns_unverified': len(graph['json_columns_with_unverified_embedded_links']),
+                  'version_ids_safe_to_purge': 0,
+                  'json_payload_linkage_verified': False,
+                  'cross_store_and_artifact_pins_verified': False,
+                  'identity_pit_per_row_verified': False,
+                  'host_purge_allowed': False,
+                  'source_mutated': False, 'real_orders_sent_by_action': 0,
+              }
+              output.write_text(json.dumps(summary, sort_keys=True) + '\n')
+              print('RETENTION_OFFHOST_CENSUS=HOLD|versions=' + str(report['legacy_versions']) +
+                    '|older_review_only=' + str(counts['older_review_only']) +
+                    '|host_purge_allowed=false|real_orders_sent_by_action=0')
+          except Exception as exc:
+              output.write_text(json.dumps({
+                  'schema': 'RC6_RETENTION_OFFHOST_ACTION_V1',
+                  'state': 'NO_VERIFICADO', 'failure_class': type(exc).__name__,
+                  'host_purge_allowed': False, 'source_mutated': False,
+                  'real_orders_sent_by_action': 0}, sort_keys=True) + '\n')
+              raise SystemExit('RETENTION_OFFHOST_CENSUS_NO_VERIFICADO')
+          PY_CENSUS
+
+      - name: Publish only the sanitized HOLD receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-retention-offhost-census-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-retention-sanitized.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Destroy private runner copy, log and SSH material
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for path in "$RUNNER_TEMP/rc6-retention-source.private.sqlite" \
+              "$RUNNER_TEMP/rc6-retention-capture.private.log" \
+              "$RUNNER_TEMP/rc6-retention-capture.private.json" \
+              "$RUNNER_TEMP/rc6-retention-ssh/key" \
+              "$RUNNER_TEMP/rc6-retention-ssh/known_hosts"; do
+            if test -f "$path"; then shred -u "$path"; fi
+          done
+          rmdir "$RUNNER_TEMP/rc6-retention-ssh" 2>/dev/null || true
