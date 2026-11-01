@@ -139,7 +139,7 @@ def test_recibo_pendiente_sin_confirmacion_no_inventa_fecha(closed):
 
 
 @pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
-def test_cierre_unico_respeta_nominal_por_cien(tmp_path,family):
+def test_cierre_spot_generico_no_vende_renta_fija_sin_lifecycle(tmp_path,family):
     from bs_instrument_contracts import InstrumentContract
     b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
     cut = '2026-10-26T19:12:01Z' if family in {'LETRAS','ON'} else AT
@@ -150,10 +150,15 @@ def test_cierre_unico_respeta_nominal_por_cien(tmp_path,family):
     q=replace(q,contract=contract)
     assert b._open(q,D('.8'),{})[0]
     p=b.store.open_positions()[0]
-    assert b._close(p,replace(q,bid=D(110),ask=D(111),observed_at=close,book_at=close),'TEST')
-    row=b.store.recent_closed()[0]
-    assert D(row['gross_pnl'])==D(1)
-    assert b._cash(later)==10000+D(row['net_pnl'])
+    before = b._cash(cut)
+    assert not b._close(p,replace(q,bid=D(110),ask=D(111),observed_at=close,book_at=close),'TEST')
+    assert b.store.recent_closed()==[]
+    assert b.store.open_positions()[0]['quantity']==p['quantity']
+    with b.store.connect() as c:
+        assert [r[0] for r in c.execute('SELECT side FROM paper_fills WHERE paper_id=?',(p['paper_id'],))]==['BUY_SIMULATED']
+        assert c.execute('SELECT COUNT(*) FROM paper_spot_sales WHERE paper_id=?',(p['paper_id'],)).fetchone()[0]==0
+        assert c.execute('SELECT real_orders_sent FROM observer_state').fetchone()[0]==0
+    assert b._cash(later)==before
 
 
 def test_cierre_inconsistente_no_detiene_stop_de_otra_posicion(closed):
