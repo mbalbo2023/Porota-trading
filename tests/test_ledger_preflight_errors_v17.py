@@ -1,7 +1,6 @@
 """Errores nativos y lectura WAL sin ampliar permisos del diagnóstico."""
 from contextlib import closing
 import json
-import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -14,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import v17_ledger_preflight as probe
 from scripts import build_v17_ledger_preflight as builder
+from ledger_nonroot_fixture import permission_subprocess_options
 from test_ledger_preflight_v17 import position
 from test_production_paper_v1634 import partial_spot
 
@@ -145,14 +145,9 @@ def test_success_reports_done_and_runtime(position):
 
 
 @pytest.mark.parametrize('journal', ['DELETE','WAL'])
-@pytest.mark.skipif(os.geteuid() == 0, reason='Requiere usuario no-root; no cambia identidades ni permisos del entorno')
 def test_actual_nonprivileged_sqlite_on_readonly_fixture(journal):
-    """Permisos sólo de una fixture propia; nunca toca servidor/datos del operador.
-
-    Utiliza el usuario no-root habitual del CI y sólo permisos de su fixture.
-    No cambia identidad del proceso ni solicita capacidades adicionales.
-    """
-    with tempfile.TemporaryDirectory(prefix='porota-wal-fixture-') as directory:
+    """Permisos de fixture propia, denegación de escritura efectiva en subprocess."""
+    with tempfile.TemporaryDirectory(prefix='porota-wal-fixture-', dir='/tmp') as directory:
         folder = Path(directory)
         archive = folder/'reader.zip'
         database = folder/'observer.db'
@@ -167,13 +162,23 @@ def test_actual_nonprivileged_sqlite_on_readonly_fixture(journal):
         archive.chmod(0o444)
         folder.chmod(0o555)
         before = database.read_bytes()
-        code = "import sys,runpy,json; sys.path.insert(0,sys.argv[1]); m=runpy.run_path(sys.argv[1]); print(json.dumps(m['collect'](sys.argv[2])))"
+        code = ("import sys,runpy,json,os; sys.path.insert(0,sys.argv[1]);"
+                "m=runpy.run_path(sys.argv[1]);"
+                "p=sys.argv[2]+'.permission-probe';denied=False;"
+                "\ntry:\n fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\n"
+                "except PermissionError: denied=True\n"
+                "else: os.close(fd);os.unlink(p)\n"
+                "print(json.dumps({'euid':os.geteuid(),'write_denied':denied,"
+                "'report':m['collect'](sys.argv[2])}))")
         try:
             run = subprocess.run([sys._base_executable, '-I', '-S', '-c', code,
                                   str(archive), str(database)], cwd=folder,
-                                 capture_output=True, text=True, timeout=20)
+                                 capture_output=True, text=True, timeout=20,
+                                 **permission_subprocess_options())
             assert run.returncode == 0, run.stderr
-            report = json.loads(run.stdout)
+            outcome = json.loads(run.stdout)
+            assert outcome['write_denied'] is True
+            report = outcome['report']
             assert report['filesystem_evidence']['database']['read_open_succeeded']
             assert report['filesystem_evidence']['wal']['state'] == 'MISSING'
             if journal == 'WAL':

@@ -14,6 +14,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  draft-ledger-permissions:
+    name: Draft ledger permission regression (offhost)
+    # Draft PRs cannot run artifact-gate. This small permission regression is
+    # useful before finalizing the candidate, with no build or host access.
+    if: ${{ github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restrict focused run to changed ledger permission paths
+        id: scope
+        shell: bash
+        env:
+          RC6_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RC6_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_HEAD_SHA"
+          git cat-file -e "$RC6_BASE_SHA^{commit}"
+          git diff --name-only "$RC6_BASE_SHA" "$RC6_HEAD_SHA" > /tmp/rc6-ledger-permission-paths.txt
+          if grep -Eq '^tests/(test_ledger_(preflight_errors|copy_preflight|preflight_copy)_v17|ledger_nonroot_fixture)\.py$' \
+               /tmp/rc6-ledger-permission-paths.txt; then
+            echo 'run_tests=true' >> "$GITHUB_OUTPUT"
+            echo 'RC6_DRAFT_LEDGER_PERMISSION_SCOPE=IN_SCOPE'
+          else
+            echo 'run_tests=false' >> "$GITHUB_OUTPUT"
+            echo 'RC6_DRAFT_LEDGER_PERMISSION_SCOPE=NOT_APPLICABLE'
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.scope.outputs.run_tests == 'true'
+        with:
+          python-version: '3.12'
+      - name: Four real kernel permission cases and existing ledger negatives
+        if: steps.scope.outputs.run_tests == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(id -u)" -ne 0
+          python -m pip install --disable-pip-version-check 'pytest==9.2.0' 'requests==2.34.2'
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -o addopts='' \
+            tests/test_ledger_preflight_errors_v17.py \
+            tests/test_ledger_copy_preflight_v17.py \
+            tests/test_ledger_preflight_copy_v17.py \
+            --junitxml=/tmp/rc6-draft-ledger-permissions.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('/tmp/rc6-draft-ledger-permissions.xml').getroot()
+          suite = root if root.tag == 'testsuite' else root.find('testsuite')
+          assert suite is not None
+          assert int(suite.get('tests', 0)) >= 5
+          assert all(int(suite.get(key, -1)) == 0 for key in
+                     ('failures', 'errors', 'skipped'))
+          names = [test.get('name') for test in suite.findall('testcase')]
+          required = {
+              'test_actual_nonprivileged_sqlite_on_readonly_fixture[DELETE]',
+              'test_actual_nonprivileged_sqlite_on_readonly_fixture[WAL]',
+              'test_direct_wal_blocked_but_authorized_copy_succeeds_nonroot',
+              'test_wal_copy_succeeds_where_readonly_original_cannot_open',
+              'test_permission_fixture_rejects_accidentally_writable_source',
+          }
+          assert required <= set(names) and len(names) == len(set(names))
+          print(f'RC6_LEDGER_PERMISSION_REGRESSION=GREEN|tests={len(names)}|'
+                'required=5|skipped=0|host_mutations=0')
+          PY
+
   artifact-gate:
     name: Exact artifact predeploy gate
     # Draft PRs cannot be promoted. Certify their final SHA once they become
