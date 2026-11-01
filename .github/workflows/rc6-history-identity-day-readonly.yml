@@ -1,8 +1,14 @@
 name: RC6 exact identity historical day census read-only
 
-# One identity/day only. No provider call, full-history scan, DB write, timer,
-# trading route, or product Deploy. Publish only a sanitized receipt.
+# PR runs only eight offhost unit tests. A separate manual main job reads one
+# identity/day; no provider call, full-history scan, DB write, timer, trading
+# route, or product Deploy. Publish only a sanitized receipt.
 on:
+  pull_request:
+    paths:
+      - .github/workflows/rc6-history-identity-day-readonly.yml
+      - scripts/rc6_history_identity_day_census.py
+      - tests/test_rc6_history_identity_day_census.py
   workflow_dispatch:
     inputs:
       symbol:
@@ -33,13 +39,28 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: rc6-unified-paper-deploy
-  cancel-in-progress: false
-
 jobs:
+  offhost-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test exact identity/day helper without host or secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m unittest discover -s tests -p test_rc6_history_identity_day_census.py -v
+          echo 'RC6_HISTORY_IDENTITY_DAY_OFFHOST_TESTS=GREEN'
+
   exact-day:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:

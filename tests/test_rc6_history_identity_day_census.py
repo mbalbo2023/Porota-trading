@@ -128,10 +128,14 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(receipt["reason"], "CENSUS_DB_READ_UNAVAILABLE")
         self.assertNotIn(self.scratch.name, output.getvalue())
 
-    def test_action_is_manual_single_target_and_serialized(self):
+    def test_action_host_is_manual_single_target_and_serialized(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/"
                     "rc6-history-identity-day-readonly.yml").read_text()
         self.assertIn("  workflow_dispatch:", workflow)
+        self.assertIn("  pull_request:", workflow)
+        self.assertIn("if: github.event_name == 'pull_request'", workflow)
+        self.assertIn("if: github.event_name == 'workflow_dispatch' && github.repository", workflow)
+        self.assertIn("RC6_HISTORY_IDENTITY_DAY_OFFHOST_TESTS=GREEN", workflow)
         self.assertNotIn("  push:", workflow)
         self.assertNotIn("  schedule:", workflow)
         self.assertIn("group: rc6-unified-paper-deploy", workflow)
