@@ -112,9 +112,17 @@ def _validated_events(connection, paper_id, seed, as_of):
                 raise ValueError("FI_PORTFOLIO_BOOKING_CLOCK_INVALID")
             last_booked = booked
             cash = cash_rows.get(row["id"])
-            if event.kind == "FIXING":
+            if event.kind in {"FIXING", "MARKET_SALE"}:
                 if cash is not None or row["entitlement_record_at"] is not None:
-                    raise ValueError("FI_PORTFOLIO_FIXING_CASH_CONFLICT")
+                    raise ValueError("FI_PORTFOLIO_NON_ISSUER_EVENT_CASH_CONFLICT")
+                if event.kind == "MARKET_SALE":
+                    receipt = connection.execute("""SELECT fill_id,nominal,receipt_sha256
+                        FROM paper_fi_native_sales WHERE event_row_id=? AND paper_id=?""",
+                        (row["id"], paper_id)).fetchone()
+                    if (receipt is None or receipt["receipt_sha256"] != row["receipt_sha256"]
+                            or decimal_value(receipt["nominal"], "sale VN", positive=True) !=
+                               decimal_value(event.nominal_redeemed, "event sold VN", positive=True)):
+                        raise ValueError("FI_PORTFOLIO_NATIVE_SALE_JOURNAL_CONFLICT")
             else:
                 if (cash is None or cash["paper_id"] != paper_id
                         or cash["kind"] != event.kind
@@ -138,7 +146,9 @@ def _validated_events(connection, paper_id, seed, as_of):
         raise ValueError("FI_PORTFOLIO_ORPHAN_CASH_ENTRY")
     # The reducer validates contractual order, nominal and economic clocks.
     if events:
-        reduce_events(seed, events, as_of=max(as_of, last_booked).isoformat())
+        reduce_events(seed, events, as_of=max(as_of, last_booked).isoformat(),
+            entitlement_records={row["event_id"]:row["entitlement_record_at"]
+                for row in rows if row["entitlement_record_at"]})
     return visible
 
 
@@ -167,16 +177,25 @@ def position_at(connection, paper_id, as_of):
     cutoff = _instant(as_of)
     if cutoff < _instant(seed.opened_at):
         return None
-    snapshot = reduce_events(seed, _validated_events(connection, paper_id, seed, cutoff),
-                             as_of=cutoff.isoformat())
+    verified_events = _validated_events(connection, paper_id, seed, cutoff)
+    record_dates = {row["event_id"]:row["entitlement_record_at"] for row in
+        connection.execute("""SELECT event_id,entitlement_record_at FROM paper_fi_economic_events
+            WHERE paper_id=? AND entitlement_record_at IS NOT NULL""", (paper_id,))}
+    snapshot = reduce_events(seed, verified_events, as_of=cutoff.isoformat(),
+                             entitlement_records=record_dates)
     coupons, principal = {}, {}
     for entry in snapshot.cash_entries:
         target = coupons if entry.kind == "COUPON" else principal
         target[entry.currency] = target.get(entry.currency, Decimal(0)) + entry.amount
+    # MARKET_SALE reduces owned VN but is not issuer amortization. Keeping
+    # redeemed_nominal strictly issuer-only avoids charging its cost basis
+    # twice through FI coupon/principal PnL and native sale proceeds.
+    issuer_redeemed = sum((decimal_value(e.nominal_redeemed, "amortized VN", positive=True)
+                           for e in verified_events if e.kind == "AMORTIZATION"), Decimal(0))
     return FiPositionProjection(
         seed.paper_id, seed.symbol, seed.family, seed.trading_currency, seed.opened_at,
         snapshot.initial_nominal, snapshot.residual_nominal,
-        snapshot.initial_nominal - snapshot.residual_nominal,
+        issuer_redeemed,
         snapshot.cash_by_currency, tuple(sorted(coupons.items())),
         tuple(sorted(principal.items())), len(snapshot.applied_event_ids),
         snapshot.applied_event_ids)
@@ -228,7 +247,9 @@ def valuation_at(connection, paper_id, as_of, mark_price):
     mark = decimal_value(mark_price, "FI mark", positive=True)
     basis_redeemed = entry * view.redeemed_nominal * multiplier
     entry_cost_redeemed = entry_cost * view.redeemed_nominal / view.initial_nominal
-    residual_cost = entry_cost - entry_cost_redeemed
+    # A native PAPER sale has also consumed an exact share of entry fees.
+    # Residual cost follows owned VN, not just issuer amortization.
+    residual_cost = entry_cost * view.residual_nominal / view.initial_nominal
     unrealized = ((mark-entry) * view.residual_nominal * multiplier - residual_cost)
     payouts = dict(view.cash_by_currency)
     cross_currency = any(amount != 0 and currency != view.trading_currency

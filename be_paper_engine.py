@@ -490,6 +490,10 @@ class PaperStore:
         init_fi_redemption_schema(self)
         from rc6_fixed_income_native_exit import init_schema as init_fi_native_exit_schema
         init_fi_native_exit_schema(self)
+        # A321 native PAPER market sale uses its own immutable fill/event/depth
+        # receipt. No child/runtime sale transaction performs DDL.
+        from rc6_fixed_income_paper_market_sale import init_schema as init_fi_sale_schema
+        init_fi_sale_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -1013,18 +1017,36 @@ class PaperBroker:
                 WHERE currency=? AND rc6_instant_us(booked_at)>rc6_instant_us(?)
                 LIMIT 1""", (currency, at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
+            if connection.execute("""SELECT 1 FROM paper_fi_native_sales s
+                JOIN paper_positions p USING(paper_id) WHERE p.currency=?
+                  AND rc6_instant_us(s.applied_at)>rc6_instant_us(?) LIMIT 1""",
+                (currency,at.isoformat())).fetchone():
+                raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
+        from rc6_fixed_income_paper_market_sale import sale_cash_effect
+        native_sale_ids = {r[0] for r in connection.execute(
+            "SELECT DISTINCT paper_id FROM paper_fi_native_sales")}
         # A native maturity has issuer cash already booked in FI. Counting
         # its economic PnL as spot-sale proceeds would credit it twice.
         realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed
                         if p['currency']==currency and
-                        p.get('close_reason')!='FI_NATIVE_MATURITY_REVIEWED'), ZERO)
+                        p.get('close_reason') not in {
+                            'FI_NATIVE_MATURITY_REVIEWED',
+                            'FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT'}), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
                          for p in opened + [p for p in closed
                                           if p.get('close_reason')=='FI_NATIVE_MATURITY_REVIEWED']
-                         if p['currency']==currency), ZERO)
+                         if p['currency']==currency and p['paper_id'] not in native_sale_ids), ZERO)
+        for root in connection.execute("""SELECT * FROM paper_positions
+             WHERE paper_id IN (SELECT paper_id FROM paper_fi_native_sales)
+               AND currency=?""", (currency,)):
+            if aware_datetime(root["opened_at"]) <= at:
+                committed += (decimal_value(root["entry_price"],"FI entry",positive=True) *
+                    decimal_value(root["quantity"],"FI original VN",positive=True) *
+                    self._position_multiplier(dict(root)) +
+                    decimal_value(root["entry_cost"],"FI entry fee",nonnegative=True))
         from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
         funds = fund_cash_effect(self.store, currency, at, connection=connection)
@@ -1033,9 +1055,11 @@ class PaperBroker:
         # repayments and coupons are credited exactly once in payout currency,
         # after immutable receipt/lot reconciliation, never via implicit FX.
         fixed_income = cash_effect_checked(connection, currency, at)
+        native_settled = sale_cash_effect(connection,currency,at)
+        native_pending = sale_cash_effect(connection,currency,at,pending=True)
         return (self.initial_balances[currency] + realized - committed
                 + self.cauciones.cash_effect(currency,at,connection=connection)
-                + futures + funds + fixed_income
+                + futures + funds + fixed_income + native_settled + native_pending
                 - pending_proceeds(self.store, at, currency, connection=connection))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
@@ -2966,6 +2990,24 @@ class PaperBroker:
             stale += sum(1 for p in closed if p["currency"] == currency and
                          p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED' and
                          p.get('net_pnl') is None)
+            # After the final PAPER market sale there is no open FI row to
+            # contribute issuer coupon/amortization PnL. Preserve that leg
+            # exactly once alongside the separately modeled sale fills.
+            fully_sold = {p["paper_id"] for p in closed
+                          if p["currency"] == currency and p.get("close_reason") ==
+                          "FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT"}
+            still_open = {p["paper_id"] for p in opened}
+            for paper_id in fully_sold - still_open:
+                from rc6_fixed_income_portfolio_bridge import valuation_at
+                root = c.execute("SELECT entry_price,close_reason FROM paper_positions WHERE paper_id=?",
+                                 (paper_id,)).fetchone()
+                if root["close_reason"] != "FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT":
+                    continue  # mixed issuer maturity already contributes its PnL
+                fi = valuation_at(c, paper_id, measured_at, root["entry_price"])
+                if fi.realized_pnl is None:
+                    stale += 1
+                else:
+                    fi_realized += fi.realized_pnl
             realized = (fi_realized + sum((D(p.get("net_pnl")) for p in closed
                                           if p["currency"] == currency), ZERO))
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)

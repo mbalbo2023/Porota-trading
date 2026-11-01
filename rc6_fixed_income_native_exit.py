@@ -134,6 +134,7 @@ def terminal_at(connection, paper_id, as_of=None):
     valuation = valuation_at(connection, paper_id, row["closed_at"], root["entry_price"])
     pnl = valuation.realized_pnl
     gross = (pnl + decimal_value(root["entry_cost"], "FI entry cost", nonnegative=True)
+             * view.redeemed_nominal / view.initial_nominal
              if pnl is not None else None)
     if (receipt["family"] != seed.family or
             receipt["realized_pnl"] != (str(pnl) if pnl is not None else None) or
@@ -209,12 +210,14 @@ def apply_reviewed_maturity(store, *, paper_id, request_id,
                           (paper_id,)).fetchone()
         if root["status"] != "OPEN" or root["closed_at"] is not None:
             raise ValueError("FI_TERMINAL_ALREADY_CLOSED_OR_INVALID")
-        if db.execute("SELECT 1 FROM paper_fills WHERE paper_id=? AND side!='BUY_SIMULATED'",
-                      (paper_id,)).fetchone():
-            raise ValueError("FI_TERMINAL_SELL_FILL_FORBIDDEN")
+        # A native PAPER sale is an allocated SELL with its own receipt. It
+        # cannot be reclassified as issuer cash or another maturity event.
+        from rc6_fixed_income_paper_market_sale import sale_rows_checked
+        sale_rows_checked(db,paper_id)
         valuation = valuation_at(db, paper_id, at_iso, root["entry_price"])
         pnl = valuation.realized_pnl
         gross = (pnl + decimal_value(root["entry_cost"], "FI entry cost", nonnegative=True)
+                 * view.redeemed_nominal / view.initial_nominal
                  if pnl is not None else None)
         result = {
             "schema": SCHEMA, "paper_id": paper_id, "request_id": request_id,
