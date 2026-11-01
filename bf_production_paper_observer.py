@@ -34,7 +34,9 @@ from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from co_market_sessions_hf6 import (byma_eod_publication_floor,
                                     byma_paper_instrument_open,
-                                    byma_paper_spot_open)
+                                    byma_paper_spot_open,
+                                    phase_for,
+                                    verified_byma_segment_session)
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -354,6 +356,80 @@ def _equity_t1_readonly_identities(store, *, limit=EQUITY_T1_READONLY_BATCH_LIMI
     return unique[:max(1, min(12, int(limit)))]
 
 
+def _option_t0_late_readonly_identities(store, at, *, limit=2):
+    """Source-only BYMA option premium T+0; no entry/session authority.
+
+    BYMA Clearing 24-Apr-2026: option premium settles immediate T+0; on
+    expiry day trading ends 15:30. An IOL late T+1 request cannot substitute
+    for a PPI option contract. Require exact PPI-field identity and a future
+    aware expiry from a validated option contract before spending PPI calls.
+    """
+    from bs_instrument_contracts import aware_datetime
+    if limit <= 0 or not _equity_t1_readonly_window(at):
+        return []
+    segment = verified_byma_segment_session("OPCIONES_PLAZOS")
+    if phase_for(segment, at) != "OPEN":
+        return []
+    with store.connect() as conn:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"financial_instrument_catalog", "candidate_identity_v2"} <= tables:
+            return []
+        # PPI Current/Book request has ticker/type/settlement but NO currency
+        # or market argument. Even a non-admitted available sibling makes
+        # the entire provider request ambiguous; never choose one by guess.
+        sibling_count = dict(conn.execute("""SELECT ticker,COUNT(*)
+          FROM financial_instrument_catalog
+          WHERE status='AVAILABLE' AND instrument_type='OPCIONES'
+            AND settlement='INMEDIATA'
+          GROUP BY ticker""").fetchall())
+        rows = [dict(row) for row in conn.execute("""SELECT
+            c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+            c.settlement_source,c.capability,c.metadata_json
+          FROM financial_instrument_catalog c
+          JOIN candidate_identity_v2 r
+            ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type
+           AND r.market=c.market AND r.currency=c.currency
+           AND r.settlement=c.settlement
+          WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+            AND c.instrument_type='OPCIONES' AND c.market='BYMA'
+            AND c.currency NOT IN ('', 'UNKNOWN')
+            AND c.settlement='INMEDIATA' AND c.settlement_source='PPI_FIELD'
+            AND c.capability='READY_PAPER_OPTION_LONG'
+          ORDER BY c.ticker,c.currency""")]
+    requests = {}
+    for row in rows:
+        if sibling_count.get(row["ticker"]) != 1:
+            continue
+        try:
+            raw = json.loads(row["metadata_json"])
+            if not isinstance(raw, dict) or raw.get("_discovery_source") != "PPI_PRIMARY":
+                continue
+            contract = financial_catalog.contract_for({**row, "raw": raw})
+            expiry = aware_datetime(contract.expires_at, "option_expires_at").astimezone(TZ)
+            # For this 17–18 source window, a same-day expiry has already
+            # reached BYMA's official 15:30 negotiation cutoff.
+            if expiry.date() <= at.astimezone(TZ).date():
+                continue
+        except (TypeError, ValueError, KeyError):
+            continue
+        identity = (row["ticker"], row["instrument_type"],row["market"],
+                    row["currency"],row["settlement"])
+        requests.setdefault((identity[0],identity[1],identity[4]), []).append(identity)
+    unique = sorted(values[0] for values in requests.values() if len(values) == 1)
+    opened = {(p["symbol"],p["asset_class"],p["market"],
+               p["currency"],p["settlement"]) for p in store.open_positions()}
+    opened_options = [identity for identity in unique if identity in opened]
+    queued = [identity for identity in unique if identity not in opened]
+    # Rotating fixed quota prevents an alphabetic option subset from becoming
+    # the only observed series. The whole late reader still uses at most its
+    # existing configured total budget (default eight full-key identities).
+    if queued:
+        offset = (at.astimezone(TZ).minute * max(1,int(limit))) % len(queued)
+        queued = queued[offset:] + queued[:offset]
+    return (opened_options + queued)[:max(0, min(2,int(limit)))]
+
+
 def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None):
     """Bounded PPI Current+Book source capture; NEVER broker.on_quote."""
     from bs_instrument_contracts import aware_datetime
@@ -363,7 +439,11 @@ def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None):
                 "failed": 0, "real_routes": []}
     if reader is None or not all(hasattr(reader, name) for name in ("current", "book")):
         raise ValueError("EQUITY_T1_READONLY_READER_REQUIRED")
-    identities = _equity_t1_readonly_identities(store)
+    options = _option_t0_late_readonly_identities(store, at,
+        limit=min(2,EQUITY_T1_READONLY_BATCH_LIMIT))
+    equities = _equity_t1_readonly_identities(store)
+    identities = (options + [identity for identity in equities if identity not in options])[
+        :EQUITY_T1_READONLY_BATCH_LIMIT]
     opened = {(p["symbol"], p["asset_class"], p["market"],
                p["currency"], p["settlement"]) for p in store.open_positions()}
     read = failed = 0
@@ -391,7 +471,8 @@ def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None):
             failed += 1
             errors[symbol] = str(exc)[:100] if isinstance(exc, ValueError) else type(exc).__name__
     return {"state": "READONLY_T1", "read": read, "failed": failed,
-            "identity_count": len(identities), "errors": errors, "real_routes": []}
+            "identity_count": len(identities), "option_t0_source_only": len(options),
+            "errors": errors, "real_routes": []}
 
 
 def _support_schema(store):
@@ -2276,8 +2357,8 @@ def _announce_phase(store, previous, current):
                     "Login e ingesta activos. Cero evaluaciones y cero operaciones."),
         "OPEN": ("🟢 POROTA — RUEDA ABIERTA",
                  "Motor Python evaluando. Operaciones 100% simuladas. Órdenes reales: NINGUNA."),
-        "EQUITY_T1_READONLY": ("🟡 POROTA — RENTA VARIABLE T+1",
-                  "PAPER conservador cerrado; lectura PPI hasta 18:00 sin órdenes ni EOD."),
+        "EQUITY_T1_READONLY": ("🟡 POROTA — BYMA T+1 / OPCIONES T+0",
+                  "PAPER cerrado; sólo lectura PPI exacta hasta 18:00, sin órdenes ni EOD."),
         "CLOSED": ("🌙 POROTA — RUEDA CERRADA",
                    "Estrategia detenida; EOD sólo tras publicación efectiva de fuente."),
     }
@@ -2559,7 +2640,7 @@ def run():
                 if phase == "EQUITY_T1_READONLY":
                     store.state(process_state="WAITING_MARKET", session_state="EQUITY_T1_READONLY",
                                 heartbeat_at=now_iso(), real_orders_sent=0,
-                                detail="PAPER entrada/salida cerrado; BYMA T+1 17:00-18:00 "
+                                detail="PAPER entrada/salida cerrado; BYMA T+1 y opciones T+0 17:00-18:00 "
                                        "PPI read-only/full-key, sin EOD ni órdenes.")
                 else:
                     store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
