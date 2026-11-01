@@ -354,14 +354,20 @@ class FamilyPaperExecutor:
         ensure_initialized(store)
 
     def subscribe_fund(self, terms, *, lifecycle_id, event_id, amount, occurred_at=None,
-                       cash_guard=None, admission_guard=None):
+                       subscription_fee="0", cash_guard=None, admission_guard=None):
         if not isinstance(terms, PaperFundTerms):
             raise ValueError("FCI_TERMS_REQUIRED")
         subscribed = terms.subscription_amount(amount)
+        fee = decimal_value(subscription_fee, "FCI_SUBSCRIPTION_FEE_INVALID", nonnegative=True)
+        gross = subscribed + fee
         detail = {"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
                   "subscription_amount": _number_text(subscribed),
                   "metadata_source": terms.metadata_source,
                   "fund_terms": json.loads(_canonical_json(asdict(terms)))}
+        # Zero-fee legacy events and their exact retry fingerprints stay intact.
+        if fee:
+            detail.update(subscription_fee=_number_text(fee),
+                          gross_cash_debit=_number_text(gross))
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             # A retry is checked against the immutable original intent; it
@@ -397,7 +403,7 @@ class FamilyPaperExecutor:
                 if cash_guard is not None:
                     available = decimal_value(cash_guard(connection),
                                               "caja FCI disponible", nonnegative=True)
-                    if available < subscribed:
+                    if available < gross:
                         raise ValueError("FCI_PAPER_INSUFFICIENT_CASH")
                 if admission_guard is not None:
                     blocked = str(admission_guard(connection) or "")
@@ -419,7 +425,7 @@ class FamilyPaperExecutor:
             return apply_paper_event(
                 self.store, lifecycle_id=lifecycle_id, event_id=event_id,
                 family="FCI", instrument=terms.symbol, currency=terms.currency,
-                to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
+                to_state="SUBSCRIBE_REQUESTED", amount=-gross, occurred_at=occurred_at,
                 detail=detail, connection=connection,
                 _subscription_authority=_FCI_LOCKED_SUBSCRIPTION)
 

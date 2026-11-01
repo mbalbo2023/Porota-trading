@@ -158,6 +158,7 @@ def reconcile_fund_events(
     seen_events = set()
     source_refs = [evidence.regulation_reference]
     paid = None
+    intended_fee = None
     units = nav = redemption = net = None
     nav_reference = nav_effective_at = None
     initial_at = redeem_requested_at = None
@@ -190,8 +191,22 @@ def reconcile_fund_events(
             if (detail.get("mode") != "PRODUCTION_PAPER"
                     or detail.get("execution") != "SIMULATION"
                     or detail.get("fund_terms") != expected
-                    or detail.get("metadata_source") != terms.metadata_source
-                    or detail.get("subscription_amount") != str(paid)):
+                    or detail.get("metadata_source") != terms.metadata_source):
+                raise ValueError("FCI_SUBSCRIPTION_TERMS_OR_AMOUNT_MISMATCH")
+            if "subscription_fee" in detail or "gross_cash_debit" in detail:
+                # Fee-aware intents explicitly bind net amount, fee and total
+                # debit. Legacy events have neither field and retain their
+                # original gross subscription/receipt semantics.
+                intended_fee = _amount(detail.get("subscription_fee"),
+                                       "FCI_SUBSCRIPTION_FEE_INTENT_INVALID")
+                net_subscription = _amount(detail.get("subscription_amount"),
+                                           "FCI_SUBSCRIPTION_AMOUNT_INVALID", positive=True)
+                gross_detail = _amount(detail.get("gross_cash_debit"),
+                                       "FCI_SUBSCRIPTION_GROSS_DEBIT_INVALID", positive=True)
+                if (intended_fee == 0 or net_subscription + intended_fee != paid
+                        or gross_detail != paid):
+                    raise ValueError("FCI_SUBSCRIPTION_FEE_DEBIT_MISMATCH")
+            elif detail.get("subscription_amount") != str(paid):
                 raise ValueError("FCI_SUBSCRIPTION_TERMS_OR_AMOUNT_MISMATCH")
             if _time(evidence.known_at, "FCI_REGULATION_TIME_INVALID") > at:
                 raise ValueError("FCI_REGULATION_NOT_KNOWN_BEFORE_SUBSCRIPTION")
@@ -216,6 +231,8 @@ def reconcile_fund_events(
                                         expected_source="BROKER_FUND_ALLOCATION"))
             units = _amount(receipt.units, "FCI_UNITS_INVALID", positive=True)
             fee = _amount(receipt.explicit_fee, "FCI_SUBSCRIPTION_FEE_UNKNOWN")
+            if intended_fee is not None and fee != intended_fee:
+                raise ValueError("FCI_SUBSCRIPTION_FEE_RECEIPT_MISMATCH")
             if (receipt.nav_per_unit != nav or receipt.cash_amount != paid
                     or receipt.nav_reference != nav_reference
                     or _time(receipt.nav_effective_at, "FCI_ALLOCATION_NAV_DATE_REQUIRED") != nav_effective_at):

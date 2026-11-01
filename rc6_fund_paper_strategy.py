@@ -189,8 +189,8 @@ def assess_paper_fund_strategy(evidence: FundAllocationEvidence | None,
             if observed is None or not 0 <= age <= risk.max_source_age_seconds:
                 fail("FCI_STRATEGY_SOURCE_RECEIPT_STALE_OR_FUTURE")
 
-    # ``fee==0`` is currently the only fee model the existing locked ledger
-    # can debit correctly. We intentionally reuse its fee check above.
+    # The offline ledger reserves net plus an explicit fee atomically. This
+    # research candidate still has no authenticated runtime entry adapter.
     status = "HOLD" if errors else "PAPER_STRATEGY_CANDIDATE"
     return FundStrategyDecision(status, tuple(errors), class_key,
                                 _amount(budget.requested_subscription_ars) if not errors else None,

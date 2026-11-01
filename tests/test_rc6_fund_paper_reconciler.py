@@ -72,6 +72,66 @@ def complete_cycle(tmp_path):
     return store, broker, evidence, receipts
 
 
+def complete_fee_cycle(tmp_path):
+    """Synthetic exact fee, not an authenticated fund or broker receipt."""
+    store, broker, terms, evidence = setup_fund(tmp_path)
+    broker.family_paper.subscribe_fund(
+        terms, lifecycle_id="fund-1", event_id="e0", amount="1000",
+        subscription_fee="17.25", occurred_at="2026-10-27T12:00:00+00:00",
+        cash_guard=lambda db: broker._cash(AS_OF, "ARS", connection=db, for_execution=True),
+        admission_guard=lambda db: "")
+    event(store, "PENDING", 1)
+    event(store, "NAV_APPLIED", 2)
+    event(store, "SETTLED", 3)
+    event(store, "REDEEM_REQUESTED", 4, detail={"units": "100"})
+    event(store, "REDEEMED", 5, amount="1091")
+    receipts = [
+        receipt("e2", "NAV_APPLIED", "FUND_ADMINISTRATOR_NAV", at=3,
+                nav=Decimal("10"), nav_effective_at="2026-10-27T12:02:00+00:00"),
+        receipt("e3", "SETTLED", "BROKER_FUND_ALLOCATION", at=5,
+                nav=Decimal("10"), units=Decimal("100"), fee=Decimal("17.25"),
+                cash=Decimal("1017.25"),
+                nav_effective_at="2026-10-27T12:02:00+00:00",
+                nav_reference="SYNTHETIC_RECEIPT:e2"),
+        receipt("e5", "REDEEMED", "BROKER_FUND_PAYMENT", at=9,
+                nav=Decimal("11"), units=Decimal("100"), fee=Decimal("9"),
+                cash=Decimal("1091"),
+                nav_effective_at="2026-10-27T12:08:00+00:00",
+                nav_reference="SYNTHETIC_REDEMPTION_NAV:e5"),
+    ]
+    return store, broker, evidence, receipts
+
+
+def test_fee_aware_fci_reconciles_gross_cash_net_units_and_pnl(tmp_path):
+    store, broker, evidence, receipts = complete_fee_cycle(tmp_path)
+    # Independent Decimal oracle: 1000+17.25 debit; 100*11-9 redemption.
+    gross = Decimal("1000") + Decimal("17.25")
+    redemption = Decimal("100") * Decimal("11") - Decimal("9")
+    result = reconcile_fund_store(store.path, "fund-1", receipts, evidence, as_of=AS_OF)
+    assert result.subscription_ars == gross == Decimal("1017.25")
+    assert result.redemption_cash_ars == redemption == Decimal("1091")
+    assert result.net_pnl_ars == redemption - gross == Decimal("73.75")
+    assert fund_cash_effect(store, "ARS", AS_OF) == Decimal("73.75")
+    assert broker._cash(AS_OF, "ARS") == Decimal("2073.75")
+    with store.connect() as db:
+        assert db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("mutation,code", [
+    (lambda rs: [rs[0], replace(rs[1], explicit_fee=Decimal("17.26")), rs[2]],
+     "FCI_SUBSCRIPTION_FEE_RECEIPT_MISMATCH"),
+    (lambda rs: [rs[0], replace(rs[1], cash_amount=Decimal("1017.26")), rs[2]],
+     "FCI_ALLOCATION_NAV_OR_CASH_MISMATCH"),
+    (lambda rs: [rs[0], replace(rs[1], units=Decimal("99")), rs[2]],
+     "FCI_ALLOCATION_ARITHMETIC_MISMATCH"),
+])
+def test_fee_aware_receipt_disagreement_never_reconciles(tmp_path, mutation, code):
+    store, _, evidence, receipts = complete_fee_cycle(tmp_path)
+    with pytest.raises(ValueError, match=code):
+        reconcile_fund_store(store.path, "fund-1", mutation(receipts),
+                             evidence, as_of=AS_OF)
+
+
 def test_fci_real_paper_lifecycle_reconciles_only_with_three_distinct_receipts(tmp_path):
     store, broker, evidence, receipts = complete_cycle(tmp_path)
     result = reconcile_fund_store(store.path, "fund-1", receipts, evidence, as_of=AS_OF)
