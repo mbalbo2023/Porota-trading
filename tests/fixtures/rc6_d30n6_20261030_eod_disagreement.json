@@ -1,0 +1,22 @@
+{
+  "schema": "rc6.offhost.d30n6.20261030.reference-conflict.v1",
+  "identity": ["D30N6", "LETRAS", "BYMA", "ARS", "A-24HS"],
+  "trading_day_ar": "2026-10-30",
+  "iol_capture": {
+    "source": "IOL_CONNECTED_READONLY",
+    "capture_sha256": "f195be8579d43a6af87494448314e6af151df222c28e2ca2d4b382538fb4b309",
+    "first_known_at_utc": "2026-11-01T03:46:34.668Z",
+    "bar": {"date": "2026-10-30", "time": 1793390429, "open": 153500,
+            "high": 154090, "low": 153400, "close": 153960, "volume": 75445611},
+    "last_trade": {"time": 1793390429, "price": 153900, "volume": 500000}
+  },
+  "external_references": [
+    {"source": "RAVA_PUBLIC_HISTORY", "url": "https://www.rava.com/perfil/D30N6",
+     "close": 153900, "volume": 75445611},
+    {"source": "LARUEDA_PUBLIC_HISTORY", "url": "https://www.larueda.com.ar/datos/bonos/D30N6/?denominacion=ARS",
+     "price_unit": "ARS_PER_100_VN", "close": 153900, "volume": 75945611}
+  ],
+  "cross_source_price_basis": "UNVERIFIED",
+  "canonical_selection": null,
+  "paper_entry_authority": false
+}

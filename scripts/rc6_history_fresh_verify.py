@@ -55,7 +55,9 @@ def verify(path, *, now=None):
             raise ValueError('FRESH_VERIFY_GENERATION_INVALID')
         created = instant(generation[0]['created_at'])
         cutoff = daily_start(clock)
-        if generation[0]['cutoff_day'] < cutoff.isoformat():
+        if (created > clock or
+                generation[0]['cutoff_day'] != daily_start(created).isoformat()
+                or generation[0]['cutoff_day'] < cutoff.isoformat()):
             raise ValueError('FRESH_VERIFY_RETENTION_OVERDUE')
         counts = {'captures': 0, 'retained_rows': 0, 'quarantined': 0,
                   'request_only_currency': 0, 'row_revisions': 0}
@@ -76,6 +78,7 @@ def verify(path, *, now=None):
             if known < created or known > clock:
                 raise ValueError('FRESH_VERIFY_PIT_CLOCK_INVALID')
             if (row['requested_from'] < cutoff.isoformat() or
+                    row['requested_from'] > row['requested_to'] or
                     row['requested_to'] > known.astimezone(ART).date().isoformat()):
                 raise ValueError('FRESH_VERIFY_REQUEST_OUTSIDE_RETENTION')
             if row['readiness_implication'] != 'NONE' or row['execution_allowed'] != 0:
@@ -106,7 +109,8 @@ def verify(path, *, now=None):
                 if not isinstance(evidence, dict) or _identity_conflicts(evidence, identity):
                     raise ValueError('FRESH_VERIFY_ROW_IDENTITY_CONFLICT')
                 day = _day(evidence, source, known)
-                if not cutoff <= day <= known.astimezone(ART).date():
+                if not (cutoff <= day <= known.astimezone(ART).date()
+                        and row['requested_from'] <= day.isoformat() <= row['requested_to']):
                     raise ValueError('FRESH_VERIFY_ROW_OUTSIDE_RETENTION')
                 monetary = _explicit_currency(evidence)
                 if monetary is not None and monetary != identity[3]:
