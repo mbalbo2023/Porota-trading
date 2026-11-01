@@ -164,6 +164,21 @@ def _evidence_safe(value, *, field_name=""):
     return str(value)
 
 
+def _option_native_quote_sha256(q: Quote) -> str:
+    """Bind the whole option book and contract evaluated by the native BUY.
+
+    The hash is an immutable decision/commit comparison, not authentication
+    of PPI.  Source provenance is checked separately by the normalizer and
+    catalog guards; even a changed receipt clock or depth must require a new
+    decision rather than borrowing the previous signal.
+    """
+    payload = {"schema": "rc6.option.native-decision-quote.v1",
+               "quote": _evidence_safe(asdict(q))}
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                     ensure_ascii=False, allow_nan=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
                                ai: str, patrimonial: str, final: str,
                                reason: str, paper_id, detail: dict, *, action=None,
@@ -648,6 +663,19 @@ class PaperStore:
 
     def record_decision(self, key: str, q: Quote, action: str, score: Decimal,
                         reason: str, features: dict) -> bool:
+        action_code = str(action or "").upper()
+        try:
+            native_family = family_name(q.asset_class)
+        except ValueError:
+            native_family = None
+        if action_code == "BUY" and native_family == "OPCIONES":
+            digest = _option_native_quote_sha256(q)
+            supplied = features.get("native_quote_sha256")
+            if supplied is not None and supplied != digest:
+                raise ValueError("OPTION_NATIVE_QUOTE_DIGEST_MISMATCH")
+            # The same dict continues through on_quote -> locked admission.
+            # Never trust a caller-supplied hash without recomputing its quote.
+            features["native_quote_sha256"] = digest
         try:
             with self.connect() as c:
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
@@ -657,7 +685,6 @@ class PaperStore:
                 # after their final gates are known. Every other decision is
                 # captured here with the current IOL cache as a SHADOW input.
                 # That local read cannot change the factual PAPER action.
-                action_code = str(action or "").upper()
                 if action_code not in EVIDENCE_GATE_ACTIONS:
                     evidence = _decision_evidence_payload(
                         q, key, "NOT_CANDIDATE", "NOT_USED", "NOT_EVALUATED",
@@ -1599,6 +1626,11 @@ class PaperBroker:
                     frozen.get("real_routes_used") != []):
                 return "PAPER_SPECIALIZED_FROZEN_DECISION_MISMATCH"
             if family == "OPCIONES":
+                digest = frozen.get("native_quote_sha256")
+                if (not isinstance(digest, str) or len(digest) != 64
+                        or features.get("native_quote_sha256") != digest
+                        or _option_native_quote_sha256(q) != digest):
+                    return "OPTION_NATIVE_QUOTE_CHANGED_BEFORE_ADMISSION"
                 fields = ("quantity", "underlying_identity", "trade_window",
                           "cost_policy_sha256", "maximum_simulated_loss")
                 if any(frozen.get(name) is None or
@@ -2756,17 +2788,12 @@ class PaperBroker:
             root = dict(root)
             if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
                 return False
+            # FI sale/redemption needs a dedicated atomic VN, entitlement and
+            # cash ledger. A missing paper_fi_lots row must not turn this
+            # generic spot SELL path into an implicit native exit.
+            if family_name(root['asset_class']) in {'BONOS', 'LETRAS', 'OBLIGACIONES'}:
+                return False
             current, prior = spot_ledger.partition(c,root)
-            # A redeemed FI lot cannot be sold through the generic equity
-            # close path: that would credit principal a second time and label
-            # an issuer redemption as an exchange fill. Native FI sale and
-            # maturity-close ledgers need their own separately certified owner.
-            fi_view = self._fi_position_at(c, root, at)
-            if fi_view is not None:
-                from rc6_fixed_income_portfolio_bridge import native_exit_authorized
-                allowed, _ = native_exit_authorized(c, root['paper_id'], at)
-                if not allowed:
-                    return False
             # Snapshot viejo: no consumir otra porción con un reintento ciego.
             if not current or any(current[k]!=p[k] for k in ('quantity','entry_cost','entry_price')):
                 return False
