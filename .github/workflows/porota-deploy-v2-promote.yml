@@ -19,11 +19,8 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-24.04
-    # Ten native cycles before stress and ten after exact restoration add up
-    # to two bounded20-minute observation windows; freshness gates stay120s.
     timeout-minutes: 150
     env:
-      RC6_HOST_STRESS_MODE: DEFERRED_BY_EXACT_OWNER_20261020
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -152,15 +149,9 @@ jobs:
           comment = require_exact_owner_authorization(
               os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
               os.environ['CANDIDATE_TREE'])
-          deferred = require_exact_owner_authorization(
-              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
-              os.environ['CANDIDATE_TREE'],
-              decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
               env.write(f'RC6_A151_OWNER_APPROVAL_ID={comment}\n')
-              env.write(f'RC6_A151_OWNER_DEFERRED_ID={deferred}\n')
           print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
-          print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
           PY
 
       - name: Prepare strict SSH
@@ -1278,7 +1269,7 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -1597,7 +1588,6 @@ jobs:
             --deploy-sha "$DEPLOY_SHA" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --quiescence-mode "$RC6_QUIESCENCE_MODE" \
             --owner-approval-comment-id "$RC6_A151_OWNER_APPROVAL_ID" \
-            --owner-deferred-comment-id "$RC6_A151_OWNER_DEFERRED_ID" \
             "${INTRADAY_OWNER_FLAG[@]}" \
             --continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64" \
             --receipt-dir "$REPO/data/deploy" --apply)"
@@ -3217,95 +3207,6 @@ jobs:
                 str(len(proof['removed_tags']))+'|free_bytes='+str(proof['disk_after']))
           PY
 
-      - name: Postdeploy full-session stress in the exact installed image
-        id: stress
-        # This one candidate has a separate, exact, later owner deferral
-        # verified before any host action. Keep the phase available for a
-        # future candidate; do not run it during this promotion.
-        if: ${{ success() && env.RC6_HOST_STRESS_MODE == 'RUN' }}
-        timeout-minutes: 40
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          set +e
-          timeout --signal=TERM --kill-after=180s 2100s ssh \
-            -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID'" \
-            < scripts/rc6_postdeploy_stress_host.py > evidence/postdeploy-stress/host-summary.json
-          result=$?
-          set -e
-          cat evidence/postdeploy-stress/host-summary.json
-          echo "RC6_POSTDEPLOY_STRESS_EXIT=$result"
-          test "$result" -eq 0
-
-      - name: Re-establish two current native generations after restoration
-        if: success() && steps.stress.outcome == 'success'
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          # An advanced observer heartbeat does not advance SHADOW CURRENT.
-          # Use the same read-only startup gate as promotion, preserving its
-          # rejected observations. The following ten-cycle soak stays strict.
-          timeout 210 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n docker exec porota_production_dashboard timeout 195 python /app/scripts/rc6_deploy_generation_gate.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output /app/data/deploy/native-postrestore-generation-acceptance.json" \
-            > evidence/postdeploy-stress/native-postrestore-generation-acceptance.json
-          cat evidence/postdeploy-stress/native-postrestore-generation-acceptance.json
-
-      - name: Independent sustained native acceptance after stress restoration
-        if: success() && steps.stress.outcome == 'success'
-        timeout-minutes: 22
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          timeout 1260 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n python3 /opt/porota-trading/scripts/rc6_native_soak.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output '/opt/porota-trading/data/deploy/native-postrestore-soak.json'" \
-            > evidence/postdeploy-stress/native-postrestore-soak.json
-          cat evidence/postdeploy-stress/native-postrestore-soak.json
-
-      - name: Collect postdeploy stress evidence even on RED
-        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
-        timeout-minutes: 3
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n tar -C '/opt/porota-trading/data/deploy/stress/$CANDIDATE_SHA/$GITHUB_RUN_ID' -czf - ." \
-            > evidence/postdeploy-stress/isolated-stress.tgz
-          timeout 30 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n cat /opt/porota-trading/data/deploy/native-ten-generation-soak.json" \
-            > evidence/postdeploy-stress/native-prestress-soak.json
-
-      - name: Preserve postdeploy stress and capacity receipts
-        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-postdeploy-stress-${{ github.run_id }}
-          path: evidence/postdeploy-stress
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Deployment summary
         if: success()
         shell: bash
@@ -3320,9 +3221,7 @@ jobs:
             echo '- real_orders_sent: 0 required'
             echo '- PPI Watch: untouched'
             echo '- MARKET_OPEN: operator-authorized RC6 timer suspend and PAPER quiescence; actual session retained'
-            echo '- Host stress 405 virtual minutes: DEFERRED_BY_EXACT_OWNER (NOT EXECUTED)'
-            echo '- Poststress restoration and native postrestore gates: NOT EXECUTED'
-            echo '- Mission #624 E09/E10: NO_VERIFICADO; no global completion claim'
+            echo '- Host stress: removed from release acceptance by operator direction'
             echo '- Strategy: FIX-FORWARD ONLY'
           } >> "$GITHUB_STEP_SUMMARY"
 
