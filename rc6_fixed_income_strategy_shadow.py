@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 from be_paper_engine import Quote
 from bq_exit_policy import PaperSessionPolicy
@@ -28,6 +30,7 @@ FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})
 BOOK_SOURCES = frozenset({"PPI_PRIMARY", "IOL_MCP", "BYMA_PUBLIC", "SYNTHETIC_TEST"})
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 ZERO = Decimal(0)
+ART = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,25 @@ class ProjectedFlow:
     kind: str  # COUPON or AMORTIZATION; the latter fully redeems at maturity.
     due_at: str
     cash_per_vn: object
+    payment_currency: str
+    source_reference: str
+    source_sha256: str
+    source_at: str
+    known_at: str
+
+
+@dataclass(frozen=True)
+class NextEconomicEventProof:
+    """Issuer calendar's *next* due event, authenticated by the caller.
+
+    This is a calendar boundary, never a promised future amount or a receipt.
+    In particular a USD coupon beyond an ARS market-exit window is not
+    converted to ARS or included in the scenario's trade PnL.
+    """
+    identity: tuple[str, str, str, str, str]
+    obligation_id: str
+    kind: str
+    due_on: str  # issuer date, YYYY-MM-DD; no fictional intraday payment time
     payment_currency: str
     source_reference: str
     source_sha256: str
@@ -87,6 +109,7 @@ class ShadowScenario:
     observed_book_source: str = "NO_VERIFICADO"
     entry_authority: bool = False
     real_routes_used: tuple = ()
+    next_economic_event: tuple[str, str, str, str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -148,11 +171,15 @@ def _blocked(key, at, exit_at, mode, qty, reason, *, flows=(), policy_sha=None):
 def evaluate_shadow(quote: Quote, proof: ContractProof, flows: Iterable[ProjectedFlow],
                     limits: RiskLimits, *, quantity_vn, decision_at, planned_exit_at,
                     exit_mode="MARKET_EXIT", book_reference, book_sha256,
-                    book_source_kind) -> ShadowScenario:
+                    book_source_kind, next_event: NextEconomicEventProof | None = None
+                    ) -> ShadowScenario:
     """Score a static-bid carry or fixed-redemption scenario with PIT inputs.
 
-    A positive result is a research hypothesis. No OOS validation, live exit
-    liquidity, actual account tariff, or future fixing is implied.
+    A positive result is a research hypothesis. When there is no economic
+    event in a MARKET_EXIT window, the caller must independently authenticate
+    the issuer calendar's next due date. A plain asserted proof is not issuer
+    authentication. No OOS validation, live exit liquidity, actual account
+    tariff, or future fixing is implied.
     """
     if not isinstance(quote, Quote) or not isinstance(proof, ContractProof):
         raise ValueError("FI_SHADOW_QUOTE_AND_CONTRACT_REQUIRED")
@@ -211,9 +238,36 @@ def evaluate_shadow(quote: Quote, proof: ContractProof, flows: Iterable[Projecte
                         "FI_SHADOW_" + fee_error, policy_sha=policy.diagnostic()["policy_sha256"])
     policy_sha = policy.diagnostic()["policy_sha256"]
     flow_rows = tuple(flows)
+    next_event_record = None
     if not flow_rows:
-        return _blocked(key, at, exit_at, exit_mode, qty,
-                        "FI_SHADOW_CASHFLOW_SCHEDULE_REQUIRED", policy_sha=policy_sha)
+        if exit_mode != "MARKET_EXIT" or next_event is None:
+            return _blocked(key, at, exit_at, exit_mode, qty,
+                            "FI_SHADOW_CASHFLOW_SCHEDULE_REQUIRED", policy_sha=policy_sha)
+        if (not isinstance(next_event, NextEconomicEventProof) or
+                next_event.identity != key or
+                not isinstance(next_event.obligation_id, str) or
+                not next_event.obligation_id.strip() or
+                next_event.kind not in {"COUPON", "AMORTIZATION"} or
+                not isinstance(next_event.due_on, str) or
+                not re.fullmatch(r"\d{4}-\d{2}-\d{2}", next_event.due_on)):
+            raise ValueError("FI_SHADOW_NEXT_EVENT_PROOF_INVALID")
+        try:
+            due_on = date.fromisoformat(next_event.due_on)
+            currency = cash_currency(next_event.payment_currency)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("FI_SHADOW_NEXT_EVENT_PROOF_INVALID") from exc
+        _provenance(next_event.source_reference, next_event.source_sha256,
+                    next_event.source_at, next_event.known_at, cutoff)
+        # Reject the whole issuer payment date, even if a putative intraday
+        # timestamp would fall after the intended market exit.
+        if due_on <= aware_datetime(exit_at).astimezone(ART).date():
+            return _blocked(key, at, exit_at, exit_mode, qty,
+                            "FI_SHADOW_DUE_EVENT_WITHIN_EXIT_WINDOW",
+                            policy_sha=policy_sha)
+        next_event_record = (next_event.obligation_id, next_event.kind,
+                             next_event.due_on, currency, next_event.source_sha256)
+    elif next_event is not None:
+        raise ValueError("FI_SHADOW_NEXT_EVENT_PROOF_UNUSED")
     totals: dict[str, Decimal] = {}
     obligations: set[str] = set()
     scheduled: list[tuple[str, str, str, str]] = []
@@ -286,7 +340,8 @@ def evaluate_shadow(quote: Quote, proof: ContractProof, flows: Iterable[Projecte
                           policy_sha, tuple(sorted(scheduled)), "SHADOW_HYPOTHESIS",
                           "STATIC_BID_OR_FIXED_REDEMPTION_SCENARIO",
                           "POSITIVE_SCENARIO" if positive else "NONPOSITIVE_SCENARIO",
-                          observed_book_source=book_source_kind)
+                          observed_book_source=book_source_kind,
+                          next_economic_event=next_event_record)
 
 
 def replay_shadow_exit(plan: ShadowScenario, seed: PositionSeed,
