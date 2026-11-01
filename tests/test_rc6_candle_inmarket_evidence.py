@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import patch
 import hashlib
 import io
+import re
+import subprocess
 import sys
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
@@ -319,6 +321,9 @@ class CandleMondaySessionRegressionTests(unittest.TestCase):
         self.assertTrue(dispatch.phase_status(monday, "open")[0])
         self.assertFalse(dispatch.phase_status(monday.replace(hour=17, minute=10), "open")[0])
         self.assertTrue(dispatch.phase_status(monday.replace(hour=17, minute=10), "late_source")[0])
+        self.assertEqual(dispatch.phase_status(monday.replace(hour=17, minute=10),
+                                               "candle_observation"),
+                         (True, "CANDLE_T1_READONLY_OBSERVATION"))
         self.assertFalse(dispatch.phase_status(datetime(2026, 11, 9, 10, 40, tzinfo=art), "open")[0])
         self.assertFalse(dispatch.phase_status(datetime(2026, 11, 10, 10, 40, tzinfo=art), "open")[0])
         base = Path(__file__).resolve().parents[1]
@@ -326,7 +331,9 @@ class CandleMondaySessionRegressionTests(unittest.TestCase):
         service = (base / "ops/systemd/porota-rc6-candle-inmarket-verify.service").read_text()
         self.assertIn("10:40,50:00", timer)
         self.assertIn("11..16:00/10:00", timer)
-        self.assertIn("--check-phase open", service)
+        self.assertIn("17:00/10:00 America/Argentina/Buenos_Aires", timer)
+        self.assertIn("--check-phase candle_observation", service)
+        self.assertNotIn("--check-phase open\n", service)
 
     def test_timer_wrapper_has_no_historical_static_cursor(self):
         wrapper = (Path(__file__).resolve().parents[1] /
@@ -334,6 +341,101 @@ class CandleMondaySessionRegressionTests(unittest.TestCase):
         self.assertNotIn("BASELINE_FILE", wrapper)
         self.assertNotIn("--baseline-cursor", wrapper)
         self.assertIn("--summary-path", wrapper)
+
+    def test_monday_t1_source_only_cursor_advance_is_not_full_key_pit_proof(self):
+        # An aggregate worker advance is important operational evidence, but
+        # cannot establish five-key completeness or instrument-level PIT/READY.
+        self.sample("2026-11-02T19:50:00+00:00")  # 16:50 ART baseline
+        self.update(cursor=118742, snapshot=118742,
+                    heartbeat="2026-11-02T19:59:45+00:00")
+        _, late = self.sample("2026-11-02T20:00:00+00:00")  # 17:00 ART
+        self.assertEqual(late["status"], "GREEN")
+        self.assertEqual(late["baseline_cursor"], 118741)
+        self.assertEqual(late["current_cursor"], 118742)
+        self.assertEqual(late["session_date"], "2026-11-02")
+        self.update(cursor=118743, snapshot=118743,
+                    heartbeat="2026-11-02T20:09:45+00:00")
+        _, later = self.sample("2026-11-02T20:10:00+00:00")  # 17:10 ART
+        self.assertEqual(later["status"], "GREEN")
+        self.assertEqual(later["baseline_cursor"], 118742)
+        self.assertNotIn("instrument_pit", late)
+        self.assertNotIn("full_key_coverage", late)
+        self.assertNotIn("ready", late)
+
+
+class CandleLateCursorTimerContractTests(unittest.TestCase):
+    """Static and virtual-time safety gates; never alters host runtime."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+    ART = ZoneInfo("America/Argentina/Buenos_Aires")
+
+    def test_exact_postclose_phase_does_not_extend_paper_or_pre_com_source(self):
+        from scripts.rc6_source_cycle_dispatch import phase_status
+        cases = (
+            ("2026-10-30T16:50:00", True, "CANDLE_REGULAR_OBSERVATION"),
+            ("2026-10-30T17:00:00", False, "CANDLE_OBSERVATION_NOT_DUE"),
+            ("2026-11-02T16:50:00", True, "CANDLE_REGULAR_OBSERVATION"),
+            ("2026-11-02T17:00:00", True, "CANDLE_T1_READONLY_OBSERVATION"),
+            ("2026-11-02T17:30:00", True, "CANDLE_T1_READONLY_OBSERVATION"),
+            ("2026-11-02T17:59:00", True, "CANDLE_T1_READONLY_OBSERVATION"),
+            ("2026-11-02T18:00:00", False, "CANDLE_OBSERVATION_NOT_DUE"),
+            ("2027-01-04T17:10:00", False, "CALENDAR_YEAR_UNVERIFIED"),
+        )
+        for clock, allowed, reason in cases:
+            with self.subTest(clock=clock):
+                instant = datetime.fromisoformat(clock).replace(tzinfo=self.ART)
+                self.assertEqual(phase_status(instant, "candle_observation"),
+                                 (allowed, reason))
+                if instant.hour >= 17:
+                    self.assertFalse(phase_status(instant, "open")[0])
+        for date_text in ("2026-11-01", "2026-11-09", "2026-11-10"):
+            with self.subTest(nontrading_date=date_text):
+                instant = datetime.fromisoformat(f"{date_text}T17:10:00").replace(tzinfo=self.ART)
+                self.assertFalse(phase_status(instant, "candle_observation")[0])
+
+    def test_existing_cursor_worker_is_only_readonly_evidence_no_new_provider_worker(self):
+        timer = (self.ROOT / "ops/systemd/porota-rc6-candle-inmarket-verify.timer").read_text()
+        service = (self.ROOT / "ops/systemd/porota-rc6-candle-inmarket-verify.service").read_text()
+        wrapper = (self.ROOT / "ops/porota-rc6-candle-inmarket-verify").read_text()
+        semantic = (self.ROOT / "systemd/porota-candle-integrity-rc6.timer").read_text()
+        self.assertIn("OnCalendar=Mon..Fri *-*-* 17:00/10:00 America/Argentina/Buenos_Aires", timer)
+        self.assertIn("Persistent=false", timer)
+        self.assertNotIn("OnUnitActiveSec", timer)
+        self.assertIn("--check-phase candle_observation", service)
+        self.assertIn("ExecStart=/usr/local/sbin/porota-rc6-candle-inmarket-verify", service)
+        self.assertIn("rc6_candle_inmarket_evidence.py", wrapper)
+        self.assertIn("--summary-path", wrapper)
+        for prohibited in ("rc6_iol_shadow_collect", "rc6_public_source_capture",
+                           "rc6_history_", "broker", "place_order", "--live"):
+            self.assertNotIn(prohibited, service + wrapper)
+        self.assertIn("17:05,35:00", semantic)
+        self.assertIn("18:05:00", semantic)
+        self.assertNotIn("17:05,35:00", timer)
+        self.assertNotIn("18:05:00", timer)
+
+    def test_real_calendar_exposes_1700_to_1750_only_not_semantic_audit_minutes(self):
+        if not shutil.which("systemd-analyze"):
+            self.skipTest("systemd-analyze unavailable off host")
+        timer = (self.ROOT / "ops/systemd/porota-rc6-candle-inmarket-verify.timer").read_text()
+        calendar_lines = [line.split("=", 1)[1] for line in timer.splitlines()
+                          if line.startswith("OnCalendar=")]
+        events = []
+        for expression in calendar_lines:
+            result = subprocess.run(["systemd-analyze", "calendar",
+                                     "--base-time=2026-11-01 00:00 UTC",
+                                     "--iterations=70", expression],
+                                    capture_output=True, text=True, check=True)
+            events.extend(datetime.fromisoformat(value + "+00:00")
+                          for value in re.findall(
+                              r"(?m)^\s+(?:Next elapse|Iteration #\d+): \w{3} "
+                              r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC$",
+                              result.stdout))
+        monday = {event.astimezone(self.ART).strftime("%H:%M") for event in events
+                  if event.astimezone(self.ART).date().isoformat() == "2026-11-02"}
+        for minute in range(0, 60, 10):
+            self.assertIn(f"17:{minute:02d}", monday)
+        for absent in ("17:05", "17:35", "18:00", "18:05"):
+            self.assertNotIn(absent, monday)
 
 
 if __name__ == "__main__":
