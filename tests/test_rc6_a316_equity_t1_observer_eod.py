@@ -1,6 +1,7 @@
 """COM19031 T+1 source-only observer and verified postclose receipt guards."""
 from datetime import datetime
 from decimal import Decimal
+import sqlite3
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -81,7 +82,8 @@ def test_missing_eod_retries_bounded_and_exact_success_stops(tmp_path, monkeypat
             last_attempt_at=?,last_success_at=?,items=1,detail=?
             WHERE source='PPI_PRODUCTION_HISTORY'""",
             (at_1845.isoformat(),at_1845.isoformat(),
-             "session=2026-11-02; exact_source_receipt=CONFIRMED; readiness=NONE"))
+             "session=2026-11-02; "
+             "source_session_verified=2026-11-02:1/1; readiness=NONE"))
     assert services._postclose_history_source_ready(store, at_1845)
     assert not observer._history_daily_sync_due(store, at("2026-11-02T19:15:00-03:00"))
     assert not observer._background_ingest_due(store, at("2026-11-02T19:15:00-03:00"))
@@ -195,11 +197,64 @@ def test_eod_report_requires_actual_late_source_receipt(tmp_path):
     with store.connect() as conn:
         conn.execute("""UPDATE source_sync SET detail=? WHERE source='PPI_PRODUCTION_HISTORY'""",
                      ("session=2026-11-02; readiness=NONE",))
+    assert not services._postclose_history_source_ready(store, now)
+    with store.connect() as conn:
+        conn.execute("""UPDATE source_sync SET detail=? WHERE source='PPI_PRODUCTION_HISTORY'""",
+                     ("session=2026-11-02; "
+                      "source_session_verified=2026-11-02:0/1; readiness=NONE",))
+    assert not services._postclose_history_source_ready(store, now)
+    with store.connect() as conn:
+        conn.execute("""UPDATE source_sync SET detail=? WHERE source='PPI_PRODUCTION_HISTORY'""",
+                     ("session=2026-11-02; "
+                      "source_session_verified=2026-11-02:1/2; readiness=NONE",))
+    assert not services._postclose_history_source_ready(store, now)
+    with store.connect() as conn:
+        conn.execute("""UPDATE source_sync SET detail=? WHERE source='PPI_PRODUCTION_HISTORY'""",
+                     ("session=2026-11-02; "
+                      "source_session_verified=2026-11-02:1/1; readiness=NONE",))
     assert services._postclose_history_source_ready(store, now)
     with store.connect() as conn:
         conn.execute("""UPDATE source_sync SET status='AMARILLO'
             WHERE source='PPI_PRODUCTION_HISTORY'""")
     assert not services._postclose_history_source_ready(store, now)
+
+
+def test_requested_history_day_never_proves_provider_eod_row(tmp_path):
+    """An authentic older PPI payload cannot be promoted via session=end."""
+    history_db = tmp_path / "history.db"
+    with sqlite3.connect(history_db) as conn:
+        conn.execute("""CREATE TABLE history_canonical_v2(
+            symbol TEXT,instrument_type TEXT,market TEXT,currency TEXT,
+            settlement TEXT,date TEXT,price_basis TEXT,adjustment_basis TEXT,
+            source TEXT,version_known_at TEXT)""")
+    class Historical:
+        def connect(self):
+            return sqlite3.connect(history_db)
+    history = Historical()
+    key = ("GGAL","ACCIONES","BYMA","ARS","A-24HS")
+    now = at("2026-11-02T18:45:00-03:00")
+    def raw(day,known,source="PPI_PRODUCTION_HISTORY",symbol="GGAL"):
+        with sqlite3.connect(history_db) as conn:
+            conn.execute("DELETE FROM history_canonical_v2")
+            conn.execute("""INSERT INTO history_canonical_v2 VALUES(
+                ?,?,?,?,?,?,'RAW','RAW_NO_ADJUSTMENT',?,?)""",
+                (symbol,*key[1:],day,source,known))
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 0
+    raw("2026-10-30", "2026-11-02T18:20:00-03:00")
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 0
+    raw("2026-11-02", "2026-11-02T18:14:59-03:00")
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 0
+    raw("2026-11-02", "2026-11-02T18:20:00-03:00",source="IOL")
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 0
+    raw("2026-11-02", "2026-11-02T18:20:00-03:00",symbol="DUAL")
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 0
+    raw("2026-11-02", "2026-11-02T19:00:00-03:00")
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 0
+    raw("2026-11-02", "2026-11-02T18:20:00-03:00")
+    assert observer._verified_ppi_eod_keys(history,[key],now.date(),now) == 1
+    other=("YPFD","ACCIONES","BYMA","ARS","A-24HS")
+    assert observer._verified_ppi_eod_keys(history,[key,other],now.date(),now) == 1
+    assert observer._verified_ppi_eod_keys(history,[key,key],now.date(),now) == 1
 
 
 def test_service_tick_without_source_marks_provisional_no_report_or_summary(tmp_path, monkeypatch):

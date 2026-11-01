@@ -195,7 +195,10 @@ def _postclose_history_source_ready(store, at):
 
     This does not authenticate an FCI NAV or guarantee every ticker's EOD.
     Report remains provisional unless the existing full-key history pipeline
-    published a verified batch after the last BYMA close.
+    published a verified batch after the last BYMA close. In particular,
+    ``session=`` is only the requested range end and is never authority:
+    source_session_verified is emitted only after checking canonical PPI RAW
+    full-key rows with a first-known clock after the official EOD floor.
     """
     from co_market_sessions_hf6 import byma_eod_publication_floor
     try:
@@ -207,10 +210,20 @@ def _postclose_history_source_ready(store, at):
         seen = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
         if seen.tzinfo is None or seen.utcoffset() is None:
             return False
+        if at.tzinfo is None or at.utcoffset() is None:
+            return False
         local = at.astimezone(TZ)
+        prefix = "source_session_verified=" + local.date().isoformat() + ":"
+        attested = [part.strip()[len(prefix):]
+                    for part in str(row[2]).split(";")
+                    if part.strip().startswith(prefix)]
+        if len(attested) != 1:
+            return False
+        verified, required = (int(item) for item in attested[0].split("/"))
         return (seen.astimezone(TZ).date() == local.date()
                 and seen >= byma_eod_publication_floor(local)
-                and "session=" + local.date().isoformat() in str(row[2]))
+                and seen <= at
+                and verified > 0 and verified == required)
     except (ValueError, TypeError, sqlite3.Error):
         return False
 

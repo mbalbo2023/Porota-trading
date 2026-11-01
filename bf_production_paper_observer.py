@@ -1637,6 +1637,42 @@ def _history_batch_semantics(statuses):
     }
 
 
+def _verified_ppi_eod_keys(history_store, exact_keys, session, at):
+    """Count genuine same-session PPI RAW bars, never requested dates.
+
+    Full-key canonical rows must be PPI-sourced and first known after BYMA's
+    closing-price floor. A successful REST response carrying only a prior
+    session must not certify the requested EOD or produce a final report.
+    """
+    if at.tzinfo is None or at.utcoffset() is None:
+        return 0
+    now = at.astimezone(TZ)
+    if now.date() != session:
+        return 0
+    floor = byma_eod_publication_floor(now)
+    if now < floor:
+        return 0
+    verified = 0
+    with history_store.connect() as conn:
+        for identity in dict.fromkeys(exact_keys):
+            if len(identity) != 5:
+                continue
+            row = conn.execute("""SELECT source,version_known_at
+              FROM history_canonical_v2 WHERE symbol=? AND instrument_type=?
+                AND market=? AND currency=? AND settlement=? AND date=?
+                AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
+                (*identity,session.isoformat())).fetchone()
+            if not row or row[0] != 'PPI_PRODUCTION_HISTORY':
+                continue
+            try:
+                known = datetime.fromisoformat(str(row[1]).replace('Z','+00:00'))
+                if known.tzinfo and known.utcoffset() is not None and floor <= known <= now:
+                    verified += 1
+            except (TypeError, ValueError):
+                continue
+    return verified
+
+
 def _historical_targets(store):
     """The whole exact-key PPI catalog, ordered by its own durable attempt.
 
@@ -1929,19 +1965,30 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
     with history_store.connect() as c:
         coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
             consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
+    # Only the bounded batch actually requested in this cycle can attest a
+    # source receipt. Global catalog counts or session=requested_end cannot.
+    batch_keys=[identity for identity,_,_,_ in requests[:HISTORY_BATCH_LIMIT]]
+    observed_now=datetime.now(TZ)
+    exact_eod=_verified_ppi_eod_keys(history_store,batch_keys,end,observed_now)
+    exact_required=len(batch_keys)
+    current_session_verified=bool(exact_required and exact_eod==exact_required)
     semantics=_history_batch_semantics(batch_statuses)
     state=semantics['state']
     if not batch_statuses:
-        state='VERDE' if coverage['denominator'] and coverage['covered']==coverage['denominator'] else 'AMARILLO'
-    detail=(f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
+        state='AMARILLO'
+    if state=='VERDE' and not current_session_verified:
+        state='AMARILLO'
+    detail=(f"session={end.isoformat()}; "
+        f"source_session_verified={end.isoformat()}:{exact_eod}/{exact_required}; "
+        f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
         f"parciales={semantics['partial_with_valid_evidence']}; errores={semantics['hard_failures']}; "
         f"cobertura exacta {coverage['covered']}/{coverage['denominator']}; "
         f"suficientes30={coverage['sufficient']}; faltantes={coverage['missing']}; "
         f"cohort={coverage['cohort_sha256']}; consumer={coverage['consumer']}; "
-        f"cut={coverage['as_of']}; session={coverage['session']}; "
+        f"cut={coverage['as_of']}; session_requested={coverage['session']}; "
         f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; readiness=NONE; "
         f"{total} filas FULL_OHLC válidas hasta {end.isoformat()}.")
-    usable=bool(semantics['usable'])
+    usable=bool(semantics['usable'] and current_session_verified and state=='VERDE')
     _sync_state(store,'PPI_PRODUCTION_HISTORY',state,total,detail,success=usable)
     _health(store,'PPI_PRODUCTION_HISTORY',state,detail,'PPI Producción',success=usable)
     return total
