@@ -7,6 +7,7 @@ contacts a market provider, writes a host file/SQLite row, or grants entry.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -244,22 +245,45 @@ def _container(name):
     }
 
 
-def _installed_source(expected_tree):
-    """Pin the host checkout before importing its read-only operator helpers."""
-    actual = _command(["git", "-C", str(PRODUCT), "rev-parse", "HEAD^{tree}"])
-    if actual != expected_tree:
-        raise ProbeBlocked("HOST_SOURCE_TREE_MISMATCH")
+def _installed_source():
+    """Pin imported helpers to the frozen bundle installed by Deploy V2.
+
+    Deploy V2 copies manifest-verified source from STAGE into PRODUCT and
+    persists its manifest; it does not move PRODUCT's git HEAD. The caller
+    first verifies the installed marker, frozen candidate and image identity.
+    """
+    manifest = _read_json(DEPLOY / "porota-deploy-bundle-v2-manifest.json",
+                          maximum=8 * 1024 * 1024, root_owned=True)
+    rows = manifest.get("files")
+    if (manifest.get("schema_version") != 1 or manifest.get("status") != "GREEN"
+            or not isinstance(rows, list) or not rows
+            or manifest.get("file_count") != len(rows)
+            or not isinstance(manifest.get("bundle_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest["bundle_sha256"])):
+        raise ProbeBlocked("FROZEN_BUNDLE_MANIFEST_INVALID")
     for relative in ("scripts/rc6_operator_paper_rearm.py",
                      "am_us_equity_calendar_rc6.py"):
-        path = PRODUCT / relative
-        if path.is_symlink() or not path.is_file():
-            raise ProbeBlocked("HOST_HELPER_UNTRUSTED")
-        tracked = _command(["git", "-C", str(PRODUCT), "rev-parse",
-                            "HEAD:" + relative])
-        working = _command(["git", "hash-object", str(path)])
-        if tracked != working:
+        matches = [row for row in rows if isinstance(row, dict)
+                   and row.get("path") == relative]
+        if len(matches) != 1:
+            raise ProbeBlocked("FROZEN_HELPER_MANIFEST_ENTRY_INVALID")
+        row = matches[0]
+        if (type(row.get("bytes")) is not int or not 0 < row["bytes"] <= 1048576
+                or not isinstance(row.get("sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])):
+            raise ProbeBlocked("FROZEN_HELPER_MANIFEST_ENTRY_INVALID")
+        fd = os.open(PRODUCT / relative, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or info.st_mode & 0o022 or info.st_size != row["bytes"]):
+                raise ProbeBlocked("HOST_HELPER_UNTRUSTED")
+            source = os.read(fd, row["bytes"] + 1)
+        finally:
+            os.close(fd)
+        if len(source) != row["bytes"] or hashlib.sha256(source).hexdigest() != row["sha256"]:
             raise ProbeBlocked("HOST_HELPER_DRIFT")
-    return actual
+    return "FROZEN_BUNDLE_HELPERS_VERIFIED"
 
 
 def _timer(base):
@@ -531,7 +555,7 @@ def probe(request, now):
         observer = _container("porota_production_observer")
         dashboard = _container("porota_production_dashboard")
         validate_release(request, marker, frozen, observer, dashboard)
-        _installed_source(request["candidate_tree_sha"])
+        _installed_source()
         evidence = _db_snapshot(request, local)
         from scripts.rc6_operator_paper_rearm import evaluate_rearm
         intent_ok, intent_reason, proof = evaluate_rearm(now=local, context="host")

@@ -237,7 +237,7 @@ def test_integrated_receipt_uses_marker_frozen_container_t10_and_exact_db(
             "phase": "T_MINUS_10", "issued_at_ar": at(10, 23).isoformat()}}
     monkeypatch.setattr(probe, "_read_json", lambda path, **_kw: expected_paths[path.name])
     monkeypatch.setattr(probe, "_container", lambda _name: dict(container))
-    monkeypatch.setattr(probe, "_installed_source", lambda _tree: TREE)
+    monkeypatch.setattr(probe, "_installed_source", lambda: "FROZEN_BUNDLE_HELPERS_VERIFIED")
     monkeypatch.setattr(probe, "_timer", lambda _name: {
         "enabled": True, "active": True, "last_trigger": at(10, 20).isoformat(),
         "service_result": "success"})
@@ -313,26 +313,53 @@ def test_droplet_pin_uses_two_independent_metadata_keys():
         probe.verify_droplet_identity(Opener("111111111", probe.DROPLET_REGION))
 
 
-def test_host_helpers_must_match_pinned_product_tree_before_import(tmp_path, monkeypatch):
+def test_host_helpers_must_match_installed_frozen_bundle_before_import(tmp_path, monkeypatch):
     (tmp_path / "scripts").mkdir()
-    (tmp_path / "scripts/rc6_operator_paper_rearm.py").write_text("read only\n")
-    (tmp_path / "am_us_equity_calendar_rc6.py").write_text("read only\n")
+    sources = {
+        "scripts/rc6_operator_paper_rearm.py": b"read only\n",
+        "am_us_equity_calendar_rc6.py": b"calendar\n",
+    }
+    for relative, source in sources.items():
+        (tmp_path / relative).write_bytes(source)
     monkeypatch.setattr(probe, "PRODUCT", tmp_path)
-    def command(argv, **_kw):
-        if argv[-1] == "HEAD^{tree}":
-            return TREE
-        if argv[-1].startswith("HEAD:"):
-            return "f" * 40
-        return "f" * 40
-    monkeypatch.setattr(probe, "_command", command)
-    assert probe._installed_source(TREE) == TREE
-    with pytest.raises(probe.ProbeBlocked, match="HOST_SOURCE_TREE_MISMATCH"):
-        probe._installed_source(SHA)
-    monkeypatch.setattr(probe, "_command", lambda argv, **_kw: (
-        TREE if argv[-1] == "HEAD^{tree}" else
-        "f" * 40 if argv[-1].startswith("HEAD:") else "0" * 40))
+    manifest = {
+        "schema_version": 1, "status": "GREEN", "file_count": 2,
+        "bundle_sha256": "f" * 64,
+        "files": [{"path": relative, "sha256": hashlib.sha256(source).hexdigest(),
+                   "bytes": len(source)} for relative, source in sources.items()],
+    }
+    monkeypatch.setattr(probe, "_read_json", lambda _path, **_kw: manifest)
+    monkeypatch.setattr(probe, "_command", lambda *_args, **_kw: pytest.fail(
+        "host git checkout is not Deploy V2 installed source authority"))
+    assert probe._installed_source() == "FROZEN_BUNDLE_HELPERS_VERIFIED"
+    (tmp_path / "am_us_equity_calendar_rc6.py").write_bytes(b"altered!\n")
     with pytest.raises(probe.ProbeBlocked, match="HOST_HELPER_DRIFT"):
-        probe._installed_source(TREE)
+        probe._installed_source()
+    (tmp_path / "am_us_equity_calendar_rc6.py").write_bytes(sources[
+        "am_us_equity_calendar_rc6.py"])
+    manifest["files"] = manifest["files"][:1]
+    manifest["file_count"] = 1
+    with pytest.raises(probe.ProbeBlocked, match="FROZEN_HELPER_MANIFEST_ENTRY_INVALID"):
+        probe._installed_source()
+    manifest["file_count"] = 2
+    with pytest.raises(probe.ProbeBlocked, match="FROZEN_BUNDLE_MANIFEST_INVALID"):
+        probe._installed_source()
+
+
+def test_frozen_bundle_manifest_requires_root_owned_regular_bounded_file(tmp_path, monkeypatch):
+    import json
+    manifest = tmp_path / "porota-deploy-bundle-v2-manifest.json"
+    manifest.write_text(json.dumps({"schema_version": 1}))
+    original_fstat = probe.os.fstat
+    def pretend_root(fd):
+        value = original_fstat(fd)
+        return SimpleNamespace(st_uid=0, st_mode=value.st_mode,
+                               st_nlink=value.st_nlink, st_size=value.st_size)
+    monkeypatch.setattr(probe.os, "fstat", pretend_root)
+    assert probe._read_json(manifest, root_owned=True)["schema_version"] == 1
+    manifest.chmod(0o666)
+    with pytest.raises(probe.ProbeBlocked, match="RECEIPT_FILE_UNTRUSTED"):
+        probe._read_json(manifest, root_owned=True)
 
 
 def test_workflow_manual_only_fixed_host_and_no_market_or_write_route():
