@@ -53,12 +53,12 @@ def latest_exact_ci(runs, branch, sha):
         raise PromotionBlocked("PROMOTION_CI_RUNS_INVALID")
     candidates = [run for run in runs["workflow_runs"] if isinstance(run, dict)
                   and run.get("head_sha") == sha and run.get("head_branch") == branch
-                  and run.get("event") == "push" and run.get("status") == "completed"
+                  and run.get("event") == "push"
                   and type(run.get("id")) is int and run["id"] > 0]
     if not candidates:
         raise PromotionBlocked("PROMOTION_EXACT_PUSH_CI_MISSING")
     selected = max(candidates, key=lambda run: run["id"])
-    if selected.get("conclusion") != "success":
+    if selected.get("status") != "completed" or selected.get("conclusion") != "success":
         raise PromotionBlocked("PROMOTION_LATEST_EXACT_CI_RED")
     return selected
 

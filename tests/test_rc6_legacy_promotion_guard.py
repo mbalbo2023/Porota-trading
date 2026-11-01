@@ -61,7 +61,7 @@ class LegacyPromotionGuardTests(unittest.TestCase):
                            ("conclusion", "skipped")):
             runs, jobs = valid()
             runs["workflow_runs"][0][key] = value
-            reason = "PROMOTION_LATEST_EXACT_CI_RED" if key == "conclusion" else "PROMOTION_EXACT_PUSH_CI_MISSING"
+            reason = "PROMOTION_LATEST_EXACT_CI_RED" if key in {"conclusion", "status"} else "PROMOTION_EXACT_PUSH_CI_MISSING"
             with self.subTest(key=key), self.assertRaisesRegex(PromotionBlocked, reason):
                 application_ci_proof(runs, jobs, "testing", SHA)
 
@@ -69,6 +69,10 @@ class LegacyPromotionGuardTests(unittest.TestCase):
         runs, jobs = valid()
         newer = dict(runs["workflow_runs"][0], id=RUN_ID + 1, conclusion="failure")
         runs["workflow_runs"].append(newer)
+        with self.assertRaisesRegex(PromotionBlocked, "PROMOTION_LATEST_EXACT_CI_RED"):
+            application_ci_proof(runs, jobs, "testing", SHA)
+        newer["conclusion"] = None
+        newer["status"] = "in_progress"
         with self.assertRaisesRegex(PromotionBlocked, "PROMOTION_LATEST_EXACT_CI_RED"):
             application_ci_proof(runs, jobs, "testing", SHA)
 
@@ -107,6 +111,7 @@ class LegacyPromotionGuardTests(unittest.TestCase):
         self.assertIn('git rev-parse "refs/remotes/origin/$SOURCE_BRANCH"', workflow)
         self.assertIn("PROMOTION_REASON: ${{ inputs.motivo }}", workflow)
         self.assertIn("CONFIRMATION: ${{ inputs.confirmacion }}", workflow)
+        self.assertIn("Revalidar CI exacta inmediatamente antes de la escritura", workflow)
         self.assertNotIn("github.event.workflow_run.head_sha", workflow)
         self.assertNotIn("gh run list", workflow)
 
