@@ -6,8 +6,10 @@ tests must not be reported as a product test, build, runtime, or READY result.
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import sys
-import unittest
+import tempfile
+import xml.etree.ElementTree as ET
 
 
 class ScopeError(ValueError):
@@ -36,14 +38,42 @@ def run_control_tests(root: Path) -> int:
     tests = root / "tests"
     if not tests.is_dir():
         raise ScopeError("CI_CONTROL_TESTS_MISSING")
-    suite = unittest.TestLoader().discover(str(tests), pattern="test_*.py")
-    count = suite.countTestCases()
-    if count < 1:
-        raise ScopeError("CI_CONTROL_TESTS_EMPTY")
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
-    if not result.wasSuccessful() or result.skipped or result.testsRun != count:
-        raise ScopeError("CI_CONTROL_TESTS_INCOMPLETE_OR_FAILED")
-    return count
+    # pytest includes unittest.TestCase *and* pytest-style functions. JUnit
+    # gives an exact collected/executed denominator even when pytest exits 0
+    # after skipping every test. Keep the XML in the runner's temp directory.
+    with tempfile.TemporaryDirectory(prefix="rc6-main-ci-") as scratch:
+        report = Path(scratch) / "control-tests.xml"
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                 "--junitxml=" + str(report), "tests"],
+                cwd=root, timeout=120, check=False)
+        except subprocess.TimeoutExpired:
+            raise ScopeError("CI_CONTROL_TESTS_TIMEOUT") from None
+        if completed.returncode == 5:
+            raise ScopeError("CI_CONTROL_TESTS_EMPTY")
+        if not report.is_file():
+            raise ScopeError("CI_CONTROL_TESTS_REPORT_MISSING")
+        try:
+            xml = ET.parse(report).getroot()
+            suites = [xml] if xml.tag == "testsuite" else xml.findall("testsuite")
+            if not suites or xml.tag not in {"testsuite", "testsuites"}:
+                raise ValueError("unknown report")
+            count = sum(int(s.attrib["tests"]) for s in suites)
+            failures = sum(int(s.attrib.get("failures", "0")) for s in suites)
+            errors = sum(int(s.attrib.get("errors", "0")) for s in suites)
+            skipped = sum(int(s.attrib.get("skipped", "0")) for s in suites)
+            cases = sum(len(s.findall("testcase")) for s in suites)
+        except (ET.ParseError, KeyError, TypeError, ValueError):
+            raise ScopeError("CI_CONTROL_TESTS_REPORT_INVALID") from None
+        if count < 1:
+            raise ScopeError("CI_CONTROL_TESTS_EMPTY")
+        # pytest's JUnit `tests` includes unittest subtests, which share a
+        # testcase element; count may exceed elements but never be lower.
+        if (completed.returncode != 0 or cases < 1 or count < cases or
+                failures or errors or skipped):
+            raise ScopeError("CI_CONTROL_TESTS_INCOMPLETE_OR_FAILED")
+        return count
 
 
 def main(argv: list[str] | None = None) -> int:

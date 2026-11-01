@@ -63,9 +63,19 @@ jobs:
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "CI_SCOPE=$scope"
 
+      - name: Setup control-plane Python 3.11
+        if: steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned control-plane test dependencies
+        if: steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'
+        run: python -m pip install --disable-pip-version-check pytest==9.1.1 PyYAML==6.0.3
+
       - name: Run mandatory control-plane tests
         if: steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'
-        run: python3 -m scripts.rc6_main_ci_scope test-control
+        run: python -m scripts.rc6_main_ci_scope test-control
 
       - name: Record why application-only checks do not apply
         if: steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'
