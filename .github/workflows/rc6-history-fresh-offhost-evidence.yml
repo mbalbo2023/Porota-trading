@@ -1,10 +1,25 @@
 name: RC6 historical source evidence offhost
 
-# No Droplet, database import, schedule or order route. Two isolated push runs
-# proved the workflow path; the durable main version is manual-only.
+# A331: manual-only. RUNNER_EXISTING is original #785; the new opt-in mode
+# executes one read-only PPI History GET inside the exact pinned PAPER Docker
+# image using credentials already held ONLY there. It never deploys or writes
+# host files/DB/History v2, and cannot prove causal PIT from retrospective EOD.
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/rc6-history-fresh-offhost-evidence.yml'
+      - 'scripts/rc6_a331_host_ppi_history_readonly.py'
+      - 'tests/test_rc6_a331_host_ppi_history_readonly.py'
   workflow_dispatch:
     inputs:
+      execution_mode:
+        description: Existing PPI credential boundary; no new GitHub secrets
+        required: true
+        default: DROPLET_EXISTING_CREDENTIALS
+        type: choice
+        options:
+          - DROPLET_EXISTING_CREDENTIALS
+          - RUNNER_EXISTING
       from_day:
         description: First ART trading date, YYYY-MM-DD
         required: true
@@ -16,9 +31,8 @@ on:
         default: '2026-10-30'
         type: string
       targets_json:
-        description: Exact [symbol,family,market,currency,settlement] targets, max 40
+        description: One exact [symbol,family,market,currency,settlement] target
         required: true
-        default: '[["D30N6","LETRAS","BYMA","ARS","A-24HS"]]'
         type: string
 
 permissions:
@@ -29,21 +43,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  offhost-contracts:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert manual-only remote path and bounded identity/day gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/rc6-history-fresh-offhost-evidence.yml').read_text()
+          required = (
+              "github.event_name == 'workflow_dispatch'",
+              "github.ref == 'refs/heads/main'",
+              "github.repository == 'mbalbo2023/Porota-trading'",
+              'FRESH_ACTION_ONE_TARGET_REQUIRED',
+              'FRESH_ACTION_ONE_ART_DAY_REQUIRED',
+              'len(raw.encode()) > 512',
+              'persist-credentials: false',
+              'Destroy private runner capture',
+              'DROPLET_EXISTING_CREDENTIALS',
+              'RC6_EXPECTED_IMAGE_ID',
+              'sudo -n timeout 45 docker exec -i',
+              'python -B -',
+              'A331_DROPLET_PAPER_RUNTIME_IDENTITY',
+          )
+          assert all(item in text for item in required), 'A327_MANUAL_OR_SCOPE_GUARD_DRIFT'
+          PY
+      - name: Test A331 hostile inputs and no-provider no-host path
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m unittest discover -s tests -p test_rc6_a331_host_ppi_history_readonly.py -v
+      - uses: actions/checkout@v4
+        with:
+          ref: bcbd445f94234188a1ae88888f1587eb2eb149d0
+          persist-credentials: false
+      - name: Test immutable reviewed source offline without provider or host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = bcbd445f94234188a1ae88888f1587eb2eb149d0
+          test "$(git rev-parse HEAD^{tree})" = 35be1605dc73ca33888b276bb457971ca3dab34b
+          python3 -m pip install --disable-pip-version-check pytest==9.1.1
+          python3 -m pytest -q tests/test_rc6_history_fresh_sidecar.py
+          echo RC6_A327_OFFHOST_ONLY_CONTRACT=GREEN
+
   capture:
-    if: github.repository == 'mbalbo2023/Porota-trading'
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' && inputs.execution_mode == 'RUNNER_EXISTING' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      RC6_SOURCE_SHA: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
-      RC6_SOURCE_TREE: 2c5a4171e5f51687924ba0a4a54702c9e5144023
+      RC6_SOURCE_SHA: bcbd445f94234188a1ae88888f1587eb2eb149d0
+      RC6_SOURCE_TREE: 35be1605dc73ca33888b276bb457971ca3dab34b
       RC6_FROM_DAY: ${{ inputs.from_day || '2026-10-30' }}
       RC6_TO_DAY: ${{ inputs.to_day || '2026-10-30' }}
-      RC6_TARGETS_JSON: ${{ inputs.targets_json || '[["D30N6","LETRAS","BYMA","ARS","A-24HS"]]' }}
+      RC6_TARGETS_JSON: ${{ inputs.targets_json }}
     steps:
       - name: Checkout exact reviewed evidence code
         uses: actions/checkout@v4
         with:
-          ref: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
+          ref: bcbd445f94234188a1ae88888f1587eb2eb149d0
           persist-credentials: false
 
       - name: Verify source SHA, tree and PAPER safety before secrets
@@ -75,13 +140,15 @@ jobs:
           from scripts.rc6_history_fresh_sidecar import preflight, request_window
 
           raw = os.environ["RC6_TARGETS_JSON"]
-          if len(raw.encode()) > 4096:
+          if len(raw.encode()) > 512:
               raise SystemExit("FRESH_ACTION_TARGET_BUDGET_EXCEEDED")
           targets = json.loads(raw)
-          if not isinstance(targets, list):
-              raise SystemExit("FRESH_ACTION_TARGETS_INVALID")
+          if not isinstance(targets, list) or len(targets) != 1:
+              raise SystemExit("FRESH_ACTION_ONE_TARGET_REQUIRED")
           from_day = date.fromisoformat(os.environ["RC6_FROM_DAY"])
           to_day = date.fromisoformat(os.environ["RC6_TO_DAY"])
+          if from_day != to_day:
+              raise SystemExit("FRESH_ACTION_ONE_ART_DAY_REQUIRED")
           request_window(datetime.now(timezone.utc), from_day, to_day)
           preflight(targets, "PPI")
           path = Path(os.environ["RUNNER_TEMP"]) / "rc6-fresh-targets.json"
@@ -208,5 +275,191 @@ jobs:
               rc6-fresh-receipt.json rc6-fresh-stdout.private \
               rc6-fresh-stderr.private rc6-fresh-error-class.private; do
             path="$RUNNER_TEMP/$name"
+            if test -f "$path"; then shred -u "$path"; fi
+          done
+
+  a331-host-ppi-existing-credentials:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' && inputs.execution_mode == 'DROPLET_EXISTING_CREDENTIALS' }}
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      RC6_FROM_DAY: ${{ inputs.from_day }}
+      RC6_TO_DAY: ${{ inputs.to_day }}
+      RC6_TARGETS_JSON: ${{ inputs.targets_json }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate one exact ART day, identity, image pin and PAPER boundaries before SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m unittest discover -s tests -p test_rc6_a331_host_ppi_history_readonly.py -q
+          export RC6_A331_SCRIPT_SHA256="$(sha256sum scripts/rc6_a331_host_ppi_history_readonly.py | cut -d' ' -f1)"
+          python3 - <<'PY'
+          import base64, json, os, re
+          from scripts.rc6_a331_host_ppi_history_readonly import preflight
+          raw = os.environ['RC6_TARGETS_JSON']
+          if len(raw.encode()) > 512:
+              raise SystemExit('A331_TARGET_JSON_BUDGET_EXCEEDED')
+          target = json.loads(raw)
+          encoded = base64.b64encode(json.dumps(target, separators=(',', ':')).encode()).decode()
+          identity, day = preflight(encoded, os.environ['RC6_FROM_DAY'], os.environ['RC6_TO_DAY'])
+          assert re.fullmatch('[a-f0-9]{64}', os.environ['RC6_A331_SCRIPT_SHA256'])
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write('RC6_A331_TARGET_B64=' + encoded + '\n')
+              env.write('RC6_A331_SCRIPT_SHA256=' + os.environ['RC6_A331_SCRIPT_SHA256'] + '\n')
+          print('A331_PREFLIGHT=GREEN|exact_targets=1|art_days=1|read_only=YES')
+          PY
+
+      - name: Strict SSH known-host pin and existing Docker PPI credentials only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a331_readonly"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a331_readonly" "$HOME/.ssh/known_hosts"
+          set +e
+          timeout --signal=TERM --kill-after=5s 70s ssh \
+            -i "$HOME/.ssh/rc6_a331_readonly" -o BatchMode=yes \
+            -o ConnectTimeout=8 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\\n' \"\$image\"; sudo -n timeout 45 docker exec -i -e RC6_A331_TARGET_B64=$RC6_A331_TARGET_B64 -e RC6_A331_FROM_DAY=$RC6_FROM_DAY -e RC6_A331_TO_DAY=$RC6_TO_DAY -e RC6_A331_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B -" \
+            < scripts/rc6_a331_host_ppi_history_readonly.py \
+            > "$RUNNER_TEMP/rc6-a331-stdout.private" \
+            2> "$RUNNER_TEMP/rc6-a331-stderr.private"
+          host_rc=$?
+          set -e
+          export RC6_A331_HOST_RC="$host_rc"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          from scripts.rc6_a331_host_ppi_history_readonly import (
+              SCHEMA, preflight, verify_sanitized_receipt)
+          root = Path(os.environ['RUNNER_TEMP'])
+          captured = root / 'rc6-a331-stdout.private'
+          raw = captured.read_bytes() if captured.exists() and captured.stat().st_size <= 65536 else b''
+          lines = raw.decode('utf-8', errors='replace').splitlines()
+          image = lines[0].partition('=')[2] if len(lines) == 2 and lines[0].startswith('RUNTIME_IMAGE_ID=') else ''
+          try:
+              result = json.loads(lines[1]) if image == os.environ['RC6_EXPECTED_IMAGE_ID'] else {}
+          except (ValueError, IndexError):
+              result = {}
+          allowed = {'schema', 'source', 'requested_identity', 'ppi_instrument_type', 'art_day',
+              'state', 'reason', 'expected_product_sha', 'credential_location', 'provider_requests',
+              'history_invocations', 'rows_in_day', 'total_provider_rows', 'canonical_payload_sha256',
+              'canonical_payload_bytes', 'first_known_at_utc', 'source_knowledge',
+              'causal_pit_rows_verified', 'paper_sim_rows_verified', 'paper_mode',
+              'paper_mode_evidence', 'real_order_capability', 'real_orders_scope',
+              'real_orders_sent', 'host_db_writes', 'history_v2_writes',
+              'read_only_transport', 'row_identity', 'row_settlement', 'row_volume_kind',
+              'row_currency', 'row_price_basis', 'ready_implication',
+              'execution_allowed', 'raw_provider_payload_persisted'}
+          identity, day = preflight(os.environ['RC6_A331_TARGET_B64'],
+                                    os.environ['RC6_FROM_DAY'], os.environ['RC6_TO_DAY'])
+          valid = bool(result and set(result) <= allowed
+              and verify_sanitized_receipt(result, identity, day)
+              and result.get('schema') == SCHEMA
+              and result.get('state') in {'EVIDENCE_ONLY_NO_GO', 'NO_VERIFICADO'}
+              and result.get('expected_product_sha') == os.environ['RC6_EXPECTED_PRODUCT_SHA']
+              and result.get('paper_mode') == 'PRODUCTION_PAPER'
+              and result.get('real_order_capability') == 'BLOCKED'
+              and result.get('real_orders_sent') == 0 and result.get('host_db_writes') == 0
+              and result.get('history_v2_writes') == 0 and result.get('causal_pit_rows_verified') == 0
+              and result.get('paper_sim_rows_verified') == 0
+              and result.get('execution_allowed') is False
+              and result.get('raw_provider_payload_persisted') is False
+              and isinstance(result.get('provider_requests'), int)
+              and 0 <= result['provider_requests'] <= 4
+              and isinstance(result.get('rows_in_day'), int)
+              and 0 <= result['rows_in_day'] <= 500
+              and (result.get('canonical_payload_sha256') is None
+                   or re.fullmatch('[a-f0-9]{64}', result['canonical_payload_sha256'])))
+          if not valid:
+              result = {'schema': SCHEMA, 'state': 'NO_VERIFICADO',
+                  'reason': 'A331_DROPLET_PAPER_RUNTIME_IDENTITY_OR_RECEIPT_UNVERIFIED',
+                  'provider_requests': None, 'causal_pit_rows_verified': 0,
+                  'paper_sim_rows_verified': 0, 'real_orders_sent': 0,
+                  'host_db_writes': 0, 'history_v2_writes': 0,
+                  'execution_allowed': False, 'raw_provider_payload_persisted': False}
+          manifest = {'schema': 'rc6.a331.action.sanitized.v1',
+              'run_id': os.environ['GITHUB_RUN_ID'], 'workflow_sha': os.environ['GITHUB_SHA'],
+              'source_sha256': os.environ['RC6_A331_SCRIPT_SHA256'],
+              'expected_product_sha': os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+              'expected_runtime_image_id': os.environ['RC6_EXPECTED_IMAGE_ID'],
+              'host_exit': int(os.environ['RC6_A331_HOST_RC']),
+              'credential_handling': 'EXISTING_CONTAINER_ONLY',
+              'result': result, 'no_host_file_writes': True,
+              'no_raw_data_uploaded': True, 'no_new_credentials': True,
+              'real_orders_sent_by_action': 0, 'deploy_dispatches': 0}
+          output = root / 'rc6-a331-sanitized-only.json'
+          output.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
+          print('A331_DROPLET_HISTORY=' + result['state'] +
+                '|provider_requests=' + str(result.get('provider_requests')) +
+                '|rows=' + str(result.get('rows_in_day', 0)) +
+                '|causal_pit=0|paper=0|host_db_writes=0|real_orders=0')
+          if not valid or int(os.environ['RC6_A331_HOST_RC']) != 0:
+              raise SystemExit(2)
+          PY
+
+      - name: Always materialize fail-closed sanitized receipt even on preflight or SSH error
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          out = Path(os.environ['RUNNER_TEMP']) / 'rc6-a331-sanitized-only.json'
+          if not out.is_file():
+              manifest = {
+                  'schema': 'rc6.a331.action.sanitized.v1',
+                  'run_id': os.environ['GITHUB_RUN_ID'],
+                  'workflow_sha': os.environ['GITHUB_SHA'],
+                  'state': 'NO_VERIFICADO',
+                  'reason': 'A331_PREFLIGHT_OR_SSH_FAILED_BEFORE_SANITIZATION',
+                  'expected_product_sha': os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+                  'expected_runtime_image_id': os.environ['RC6_EXPECTED_IMAGE_ID'],
+                  'provider_requests': None, 'causal_pit_rows_verified': 0,
+                  'paper_sim_rows_verified': 0, 'real_orders_sent_by_action': 0,
+                  'host_db_writes_by_action': 0, 'history_v2_writes_by_action': 0,
+                  'credential_handling': 'EXISTING_CONTAINER_ONLY',
+                  'no_new_credentials': True, 'no_raw_data_uploaded': True,
+                  'deploy_dispatches': 0}
+              out.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
+          PY
+
+      - name: Publish sanitized digest/count only, no PPI raw or credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a331-host-ppi-history-readonly-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-a331-sanitized-only.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Destroy runner private SSH/stdio capture
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for path in "$HOME/.ssh/rc6_a331_readonly" \
+              "$RUNNER_TEMP/rc6-a331-stdout.private" \
+              "$RUNNER_TEMP/rc6-a331-stderr.private"; do
             if test -f "$path"; then shred -u "$path"; fi
           done

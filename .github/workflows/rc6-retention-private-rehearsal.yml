@@ -1,0 +1,139 @@
+name: RC6 A330 private offhost retention rehearsal
+
+# Manual control only. No host DELETE, VACUUM, checkpoint, backup write,
+# timer change, broker request, PPI Watch access, deployment or order route.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Only REHEARSAL_ONLY is accepted; all evidence remains HOLD"
+        required: true
+        type: choice
+        options:
+          - REHEARSAL_ONLY
+
+permissions:
+  contents: read
+
+concurrency:
+  # Shared with the A315/#783 manual source reader: never overlap host I/O.
+  group: rc6-retention-offhost-census
+  cancel-in-progress: false
+
+jobs:
+  private-rehearsal:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.mode == 'REHEARSAL_ONLY'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact main control-plane code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prove manual-only code safety before loading host credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f scripts/rc6_retention_a319_offhost.py || {
+            echo '::error::A319_NOT_REGISTERED_IN_MAIN'
+            exit 2
+          }
+          test -f scripts/rc6_retention_a330_private_capture.py
+          python3 -m py_compile scripts/rc6_retention_a319_offhost.py \
+            scripts/rc6_retention_a330_private_capture.py
+          python3 -m unittest discover -s tests -p 'test_rc6_retention_a330_private_capture.py'
+          echo 'A330_STATIC_SAFETY=GREEN|HOST_WRITE_ALLOWED=false|PURGE_ALLOWED=false'
+
+      - name: Check exact PAPER product source remains available
+        uses: actions/checkout@v4
+        with:
+          ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          path: a330-product-identity
+          persist-credentials: false
+
+      - name: Validate product PAPER identity without invoking product
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C a330-product-identity rev-parse HEAD)" = \
+            7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          test "$(git -C a330-product-identity rev-parse HEAD^{tree})" = \
+            743f066f1e1cae196d0518f9f6633b18e33544bf
+          grep -Fq 'MODE = "PRODUCTION_PAPER"' a330-product-identity/_version.py
+          grep -Fq 'REAL_ORDER_CAPABILITY = "BLOCKED"' a330-product-identity/_version.py
+
+      - name: Allocate exclusive ephemeral runner-only directory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$(mktemp -d -p "$RUNNER_TEMP" rc6-a330-private-XXXXXX)"
+          chmod 700 "$private"
+          test "$(df --output=avail -B1 "$private" | tail -1)" -gt 5368709120
+          echo "RC6_A330_DIR=$private" >> "$GITHUB_ENV"
+
+      - name: SSH read-only single-session private stream, no host write
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          root="$RC6_A330_DIR"
+          if test -z "$DO_HOST" || test -z "$DO_USER" || \
+             test -z "$DO_SSH_KEY" || test -z "$DO_KNOWN_HOSTS"; then
+            printf '%s\n' '{"schema":"RC6_A330_PRIVATE_SAME_SESSION_V1","state":"NO_VERIFICADO","failure_class":"HOST_CREDENTIALS_UNAVAILABLE","host_purge_allowed":false,"physical_host_delete_count":0,"real_orders_sent_by_action":0}' > "$root/a330-sanitized.json"
+            exit 2
+          fi
+          printf '%s\n' "$DO_SSH_KEY" > "$root/id_key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$root/known_hosts"
+          chmod 600 "$root/id_key" "$root/known_hosts"
+          set +e
+          timeout 170 ssh -i "$root/id_key" -o BatchMode=yes \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$root/known_hosts" \
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+            'sudo -n nice -n 19 ionice -c 3 python3 - --host-export' \
+            < scripts/rc6_retention_a330_private_capture.py \
+            > "$root/a330-private.tar" 2> "$root/a330-private.log"
+          capture_rc=$?
+          set -e
+          if test "$capture_rc" -ne 0; then
+            printf '%s\n' '{"schema":"RC6_A330_PRIVATE_SAME_SESSION_V1","state":"NO_VERIFICADO","failure_class":"HOST_CAPTURE_FAILED","host_purge_allowed":false,"physical_host_delete_count":0,"real_orders_sent_by_action":0}' > "$root/a330-sanitized.json"
+            exit 2
+          fi
+          python3 scripts/rc6_retention_a330_private_capture.py \
+            --runner-rehearsal --bundle "$root/a330-private.tar" \
+            --capture-log "$root/a330-private.log" \
+            --runner-root "$root" --repo-root "$GITHUB_WORKSPACE" \
+            --sanitized-output "$root/a330-sanitized.json"
+
+      - name: Upload ONLY sanitized fail-closed HOLD receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a330-sanitized-${{ github.run_id }}
+          path: ${{ env.RC6_A330_DIR }}/a330-sanitized.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Destroy private runner-only files and SSH secrets
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A330_DIR:-}"
+          if test -n "$private" && test -d "$private" && \
+             test "${private#"$RUNNER_TEMP"/}" != "$private" && \
+             test "$(stat -c %a "$private")" = 700; then
+            find "$private" -mindepth 1 -maxdepth 1 -type f \
+              -exec shred -u -- {} +
+            rmdir "$private"
+          fi

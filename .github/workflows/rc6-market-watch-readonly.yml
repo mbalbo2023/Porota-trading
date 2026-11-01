@@ -22,6 +22,9 @@ on:
   schedule:
     # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
     - cron: '7,17,27,37,47,57 13-20 * * 1-5'
+    # COM19031 (02-Nov): bounded T+1 equity/CEDEAR surveillance after 17:00.
+    # One last 18:07 ART attempt; gate rejects ticks after 18:15.
+    - cron: '7 21 * * 1-5'
   workflow_dispatch:
     inputs:
       notification_mode:
@@ -74,12 +77,15 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
-          from datetime import datetime, timezone
+          from datetime import date, datetime, timezone
           from zoneinfo import ZoneInfo
           local = datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
           minutes = local.hour*60 + local.minute
+          # Only surveillance extends; PAPER entry, FI and caucion do not.
+          late = date(2026,11,2) <= local.date() <= date(2026,12,31)
+          close = 18*60+15 if late else 17*60+15
           active = (os.environ.get('GITHUB_EVENT_NAME') != 'schedule' or
-                    (local.weekday() < 5 and 10*60+30 <= minutes < 17*60+15))
+                    (local.weekday() < 5 and 10*60+30 <= minutes < close))
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
               out.write('active=' + ('1' if active else '0') + '\n')
           print('MARKET_WATCH_TIME_GATE=' + ('ACTIVE' if active else 'SKIP_OFF_HOURS'))
