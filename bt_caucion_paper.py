@@ -130,7 +130,16 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
         LEFT JOIN paper_sale_receivables r USING(paper_id) WHERE p.currency=? AND p.status='CLOSED'""",
         (cash_currency(currency),)).fetchall()
     pending = spot_ledger.pending(connection,at,currency)
+    from rc6_fixed_income_paper_market_sale import sale_cash_effect
+    pending += sale_cash_effect(connection,currency,at,pending=True)
     for row in rows:
+        if row['close_reason'] == 'FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT':
+            # Native PAPER sale receivables are reconciled above, separate
+            # from issuer cash and generic spot settlement.
+            if not connection.execute("""SELECT 1 FROM paper_fi_native_sales
+                WHERE paper_id=?""", (row['paper_id'],)).fetchone():
+                raise ValueError('FI_NATIVE_SALE_TERMINAL_RECEIPT_REQUIRED')
+            continue
         if row['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
             # An issuer payout is booked by the FI event ledger, not as a
             # receivable from a SELL. Reject a torn/tampered terminal instead

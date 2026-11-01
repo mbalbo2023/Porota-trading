@@ -85,6 +85,17 @@ def _seed(db, paper_id):
             or not paper_id.startswith("PAPER-")):
         raise ValueError("FI_LEDGER_PAPER_FIXED_INCOME_REQUIRED")
     fills = db.execute("SELECT * FROM paper_fills WHERE paper_id=? ORDER BY id", (paper_id,)).fetchall()
+    buys = [fill for fill in fills if fill["side"] == "BUY_SIMULATED"]
+    sells = [fill for fill in fills if fill["side"] == "SELL_SIMULATED"]
+    if sells:
+        present = db.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+            AND name='paper_fi_native_sales'""").fetchone()
+        matched = (db.execute("""SELECT COUNT(*) FROM paper_fi_native_sales
+            WHERE paper_id=?""", (paper_id,)).fetchone()[0] if present else -1)
+        if matched != len(sells) or any(not db.execute(
+                "SELECT 1 FROM paper_fi_native_sales WHERE fill_id=? AND paper_id=?",
+                (fill["id"], paper_id)).fetchone() for fill in sells):
+            raise ValueError("FI_LEDGER_INTACT_BUY_LOT_REQUIRED: NATIVE_SALE_RECEIPT_MISSING")
     # A paid terminal maturity can close the PAPER position *without* a fake
     # SELL. Its immutable receipt and same-transaction status transition are
     # checked here before preserving the original BUY seed for FI readers.
@@ -96,11 +107,17 @@ def _seed(db, paper_id):
                      WHERE paper_id=?""", (paper_id,)).fetchone() if table else None)
         terminal = (receipt is not None and
                     aware_datetime(receipt[0]) == aware_datetime(root["closed_at"]))
-    if (len(fills) != 1 or fills[0]["side"] != "BUY_SIMULATED"
-            or fills[0]["source"] != "PRODUCTION_PAPER" or
-            (root["status"] != "OPEN" and not terminal)):
+    native_sale_closed = (
+        root["status"] == "CLOSED" and root["close_reason"] ==
+            "FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT"
+        and bool(sells) and aware_datetime(root["closed_at"]) ==
+        aware_datetime(sells[-1]["filled_at"]))
+    if (len(buys) != 1 or len(fills) != 1 + len(sells) or
+            buys[0]["source"] != "PRODUCTION_PAPER" or
+            any(fill["source"] != "PRODUCTION_PAPER" for fill in sells) or
+            (root["status"] != "OPEN" and not terminal and not native_sale_closed)):
         raise ValueError("FI_LEDGER_INTACT_BUY_LOT_REQUIRED")
-    buy = dict(fills[0])
+    buy = dict(buys[0])
     quantity = decimal_value(root["quantity"], "nominal", positive=True)
     if (decimal_value(buy["quantity"], "buy nominal", positive=True) != quantity
             or aware_datetime(buy["filled_at"]) != aware_datetime(root["opened_at"])
@@ -160,6 +177,9 @@ def _entitlement(seed, event, receipt, at, prior_events):
         if (prior.event_id != event.event_id and prior.kind == "AMORTIZATION"
                 and aware_datetime(prior.effective_at) <= record_at):
             entitled_nominal -= decimal_value(prior.nominal_redeemed, "redeemed nominal", positive=True)
+        if (prior.event_id != event.event_id and prior.kind == "MARKET_SALE"
+                and aware_datetime(prior.recorded_at) <= record_at):
+            entitled_nominal -= decimal_value(prior.nominal_redeemed, "sold nominal", positive=True)
     if entitled_nominal != decimal_value(event.nominal_base, "entitled nominal", positive=True):
         raise ValueError("FI_LEDGER_RECORD_DATE_NOMINAL_MISMATCH")
     # The source-confirmed amount is scaled from an explicit unit convention;
@@ -191,6 +211,8 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
             or receipt.get("review_authority") != "RELEASE_REVIEWED_ECONOMIC_EVENT"):
         raise ValueError("FI_LEDGER_REVIEW_ATTESTATION_INVALID")
     event = EconomicEvent(**receipt["event"])
+    if event.kind == "MARKET_SALE":
+        raise ValueError("FI_LEDGER_MARKET_SALE_SEPARATE_ATOMIC_ROUTE_REQUIRED")
     if _hash(source_bytes) != _digest(event.source_sha256):
         raise ValueError("FI_LEDGER_SOURCE_HASH_MISMATCH")
     at, booked_at = aware_datetime(applied_at), _time(applied_at)
@@ -219,7 +241,9 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
             if at < max(aware_datetime(row["booked_at"]) for row in rows):
                 raise ValueError("FI_LEDGER_BOOKING_CLOCK_ROLLBACK")
             return reduce_events(seed, tuple(EconomicEvent(**json.loads(row["event_json"]))
-                                             for row in rows), as_of=applied_at)
+                                             for row in rows), as_of=applied_at,
+                entitlement_records={row["event_id"]:row["entitlement_record_at"]
+                                     for row in rows if row["entitlement_record_at"]})
         if db.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
             AND name='paper_fi_native_maturities'""").fetchone() and db.execute(
                 "SELECT 1 FROM paper_fi_native_maturities WHERE paper_id=?",
@@ -238,12 +262,26 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
             for row in rows:
                 if row["kind"] == "FIXING":
                     continue
+                if row["kind"] == "MARKET_SALE":
+                    sold = EconomicEvent(**json.loads(row["event_json"]))
+                    # A later issuer payment may redeem the unsold VN.  An
+                    # amortization effective before a committed market sale,
+                    # however, would retrospectively change the VN delivered
+                    # by that fill and must not be silently accepted.
+                    if aware_datetime(event.effective_at) <= aware_datetime(sold.recorded_at):
+                        raise ValueError("FI_LEDGER_RETROACTIVE_AMORTIZATION_CHANGES_SOLD_BASIS")
+                    continue
                 if row["entitlement_record_at"] is None:
                     raise ValueError("FI_LEDGER_PRIOR_ENTITLEMENT_UNVERIFIED")
                 if aware_datetime(event.effective_at) <= aware_datetime(row["entitlement_record_at"]):
                     raise ValueError("FI_LEDGER_RETROACTIVE_AMORTIZATION_CHANGES_ENTITLEMENT")
         events = prior_events + (event,)
-        snapshot = reduce_events(seed, events, as_of=applied_at)
+        entitlement_records = {row["event_id"]:row["entitlement_record_at"]
+                               for row in rows if row["entitlement_record_at"]}
+        if event.kind != "FIXING":
+            entitlement_records[event.event_id] = receipt["entitlement"]["record_at"]
+        snapshot = reduce_events(seed, events, as_of=applied_at,
+                                 entitlement_records=entitlement_records)
         db.execute("INSERT OR IGNORE INTO paper_fi_lots VALUES(?,?,?)",
                    (seed.paper_id, seed_json, seed.position_sha256))
         inserted = db.execute("""INSERT INTO paper_fi_economic_events
@@ -281,7 +319,10 @@ def snapshot_at(connection, paper_id, as_of):
         return None
     seed = PositionSeed(**json.loads(row[0]))
     at = aware_datetime(as_of)
-    events = [EconomicEvent(**json.loads(row[0])) for row in connection.execute(
-        "SELECT event_json,booked_at FROM paper_fi_economic_events WHERE paper_id=? ORDER BY id", (paper_id,))
-        if aware_datetime(row[1]) <= at]
-    return reduce_events(seed, events, as_of=as_of)
+    rows = connection.execute("""SELECT event_id,event_json,booked_at,entitlement_record_at
+        FROM paper_fi_economic_events WHERE paper_id=? ORDER BY id""", (paper_id,)).fetchall()
+    visible = [row for row in rows if aware_datetime(row["booked_at"]) <= at]
+    events = [EconomicEvent(**json.loads(row["event_json"])) for row in visible]
+    return reduce_events(seed, events, as_of=as_of,
+        entitlement_records={row["event_id"]:row["entitlement_record_at"]
+                             for row in visible if row["entitlement_record_at"]})
