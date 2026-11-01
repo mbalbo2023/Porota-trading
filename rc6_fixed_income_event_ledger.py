@@ -85,8 +85,20 @@ def _seed(db, paper_id):
             or not paper_id.startswith("PAPER-")):
         raise ValueError("FI_LEDGER_PAPER_FIXED_INCOME_REQUIRED")
     fills = db.execute("SELECT * FROM paper_fills WHERE paper_id=? ORDER BY id", (paper_id,)).fetchall()
+    # A paid terminal maturity can close the PAPER position *without* a fake
+    # SELL. Its immutable receipt and same-transaction status transition are
+    # checked here before preserving the original BUY seed for FI readers.
+    terminal = False
+    if root["status"] == "CLOSED" and root["close_reason"] == "FI_NATIVE_MATURITY_REVIEWED":
+        table = db.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+                          AND name='paper_fi_native_maturities'""").fetchone()
+        receipt = (db.execute("""SELECT closed_at FROM paper_fi_native_maturities
+                     WHERE paper_id=?""", (paper_id,)).fetchone() if table else None)
+        terminal = (receipt is not None and
+                    aware_datetime(receipt[0]) == aware_datetime(root["closed_at"]))
     if (len(fills) != 1 or fills[0]["side"] != "BUY_SIMULATED"
-            or fills[0]["source"] != "PRODUCTION_PAPER" or root["status"] != "OPEN"):
+            or fills[0]["source"] != "PRODUCTION_PAPER" or
+            (root["status"] != "OPEN" and not terminal)):
         raise ValueError("FI_LEDGER_INTACT_BUY_LOT_REQUIRED")
     buy = dict(fills[0])
     quantity = decimal_value(root["quantity"], "nominal", positive=True)
@@ -208,6 +220,11 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
                 raise ValueError("FI_LEDGER_BOOKING_CLOCK_ROLLBACK")
             return reduce_events(seed, tuple(EconomicEvent(**json.loads(row["event_json"]))
                                              for row in rows), as_of=applied_at)
+        if db.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+            AND name='paper_fi_native_maturities'""").fetchone() and db.execute(
+                "SELECT 1 FROM paper_fi_native_maturities WHERE paper_id=?",
+                (seed.paper_id,)).fetchone():
+            raise ValueError("FI_LEDGER_TERMINAL_EVENT_APPEND_FORBIDDEN")
         # Capacity limits new events, never an exact replay already committed.
         if len(rows) >= MAX_LOT_EVENTS:
             raise ValueError("FI_LEDGER_EVENT_BOUND_EXCEEDED")

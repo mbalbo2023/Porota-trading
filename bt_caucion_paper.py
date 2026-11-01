@@ -131,6 +131,14 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
         (cash_currency(currency),)).fetchall()
     pending = spot_ledger.pending(connection,at,currency)
     for row in rows:
+        if row['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+            # An issuer payout is booked by the FI event ledger, not as a
+            # receivable from a SELL. Reject a torn/tampered terminal instead
+            # of fabricating a sale receipt or blocking valid cash.
+            from rc6_fixed_income_native_exit import terminal_at
+            if terminal_at(connection, row['paper_id']) is None:
+                raise ValueError('FI_NATIVE_MATURITY_RECEIPT_MISSING')
+            continue
         if spot_ledger.sales(connection,row['paper_id']):
             continue
         if aware_datetime(row['closed_at']) > at:
