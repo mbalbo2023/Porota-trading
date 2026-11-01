@@ -62,9 +62,14 @@ def test_provisional_and_final_marker_are_atomic_and_readable_by_publisher(tmp_p
     assert stat.S_IMODE(marker.stat().st_mode) == 0o640
 
     # The final snippet's preceding checks touch Docker and native receipts.
-    # Exercise its exact atomic write after a valid in-memory acceptance.
+    # Exercise its exact atomic marker write after a valid acceptance. The
+    # later A248 timer reconciliation is covered by its own tests and must
+    # not accidentally execute the actual /opt/porota-trading host helper.
     final = snippets[1]
-    tail = final[final.index("state['native_acceptance_mode'] = mode"):]
+    tail = final[
+        final.index("state['native_acceptance_mode'] = mode"):
+        final.index("project = Path('/opt/porota-trading')")
+    ]
     context = {
         "grp": grp, "json": json, "os": os, "tempfile": tempfile,
         "datetime": datetime, "timezone": timezone, "root": tmp_path,

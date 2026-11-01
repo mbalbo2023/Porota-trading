@@ -49,6 +49,17 @@ def scenario(tmp_path, monkeypatch):
     monkeypatch.setattr(host, "_require_inherited_finalizer_mutex", lambda: None)
     monkeypatch.setattr(operator, "_root_owned_receipt",
                         lambda directory: json.loads(receipt_path.read_text()))
+    # evaluate_rearm binds the real root-only reader in its default argument
+    # at import time.  Inject the simulated root-owned reader explicitly so
+    # the full host transition is reproducible on non-root GitHub runners too;
+    # all real release, schema, provenance and PAPER/0 checks still execute.
+    real_evaluate_rearm = operator.evaluate_rearm
+
+    def evaluate_with_simulated_root_receipt(**kwargs):
+        return real_evaluate_rearm(
+            **kwargs, read_receipt=operator._root_owned_receipt)
+
+    monkeypatch.setattr(operator, "evaluate_rearm", evaluate_with_simulated_root_receipt)
     state = {"enabled": "disabled", "active": "inactive", "docker_image": IMAGE}
     calls = []
 
