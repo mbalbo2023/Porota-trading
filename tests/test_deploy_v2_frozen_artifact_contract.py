@@ -5,6 +5,7 @@ import yaml
 
 
 WORKFLOW = Path(".github/workflows/porota-predeploy-v2.yml").read_text(encoding="utf-8")
+LEDGER_GUARD = "${{ github.event.pull_request.draft && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}"
 
 
 def test_frozen_artifact_is_exported_only_after_paper_safety():
@@ -39,7 +40,7 @@ def _assert_governed_pytest_isolated(workflow_text: str) -> None:
     artifact = jobs["artifact-gate"]
     draft = jobs["draft-ledger-permissions"]
     assert artifact["if"] == _expected_artifact_guard(workflow)
-    assert draft["if"] == "${{ github.event.pull_request.draft }}"
+    assert draft["if"] == LEDGER_GUARD
 
     command = "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest"
     artifact_scripts = "\n".join(step.get("run", "") for step in artifact["steps"])
@@ -81,7 +82,7 @@ def test_governed_pytest_isolated_from_runner_entrypoints():
 def test_governed_pytest_rejects_draft_guard_or_junit_regression(regression):
     mutations = {
         "artifact_guard": (_expected_artifact_guard(yaml.safe_load(WORKFLOW)), "${{ github.event.pull_request.draft }}"),
-        "draft_guard": ("${{ github.event.pull_request.draft }}", "${{ !github.event.pull_request.draft }}"),
+        "draft_guard": (LEDGER_GUARD, "${{ github.event.pull_request.draft }}"),
         "junit_skipped": ("('failures', 'errors', 'skipped')", "('failures', 'errors')"),
         "required_names": ("required <= set(names) and len(names) == len(set(names))", "len(names) == len(set(names))"),
     }
