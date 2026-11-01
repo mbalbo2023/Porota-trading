@@ -1,9 +1,11 @@
 
-"""Bounded dynamic PPI caucion book collector for PAPER EOD.
+"""Bounded dynamic PPI caucion book collector during verified BYMA rueda.
 
 Uses an already-authenticated read-only ProductionMarketReader supplied by
 the observer. Dynamic rate/depth are deliberately NOT written to Contract
 Evidence v2: normal market movement must never become contract-change review.
+The market-data collection clock is NOT the EOD cash-sweep window; neither
+authorizes real orders or bypasses original PPI source and receipt gates.
 """
 from __future__ import annotations
 import json
@@ -40,7 +42,8 @@ def init_schema(store):
           observed_at TEXT NOT NULL);
         """)
 
-def collection_window(at):
+def cash_sweep_window(at):
+    """Conservative EOD cash sweep, not a market data collection bound."""
     from di_caucion_cash_sweep_runtime_hf6 import paper_schedule
     local=aware_datetime(at).astimezone(TZ)
     schedule=paper_schedule(local)
@@ -48,6 +51,11 @@ def collection_window(at):
         return False
     warmup=schedule["sweep_start_at"]-timedelta(minutes=5)
     return warmup <= local <= schedule["order_cutoff_at"]
+
+
+def collection_window(at):
+    from co_market_sessions_hf6 import byma_caucion_collection_open
+    return byma_caucion_collection_open(aware_datetime(at))
 
 def _catalog(store):
     # Use the exact bounded PPI read-only discovery policy. A separately

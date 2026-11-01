@@ -32,6 +32,9 @@ from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, c
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
+from co_market_sessions_hf6 import (byma_eod_publication_floor,
+                                    byma_paper_instrument_open,
+                                    byma_paper_spot_open)
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -55,6 +58,11 @@ LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "9
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
 )
+# A not-yet-published PPI EOD is an expected source state after 18:15. Retry
+# on the existing observer tick, never more than once/30m by default, without
+# creating a timer or interpreting the BYMA close as a provider receipt.
+HISTORY_SOURCE_PENDING_RETRY_SECONDS = max(900, min(3600, int(os.getenv(
+    "PPI_HISTORY_SOURCE_PENDING_RETRY_SECONDS", "1800"))))
 READINESS_CHECK_SECONDS = max(
     60, int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))
 )
@@ -69,6 +77,10 @@ OFFHOURS_RECONCILE_SECONDS = max(
     int(os.getenv("PAPER_OFFHOURS_RECONCILE_SECONDS", "3600")),
 )
 CAUCION_LIVE_REFRESH_SECONDS = max(30, int(os.getenv("PAPER_CAUCION_LIVE_REFRESH_SECONDS", "60")))
+EQUITY_T1_READONLY_REFRESH_SECONDS = max(60, int(os.getenv(
+    "PAPER_EQUITY_T1_READONLY_REFRESH_SECONDS", "60")))
+EQUITY_T1_READONLY_BATCH_LIMIT = max(1, min(12, int(os.getenv(
+    "PAPER_EQUITY_T1_READONLY_BATCH_LIMIT", "8"))))
 COMPLEMENTARY_CONTRACT_TTL_SECONDS = max(
     300, int(os.getenv("PAPER_COMPLEMENTARY_CONTRACT_TTL_SECONDS", "86400"))
 )
@@ -188,6 +200,8 @@ def _market_phase(now=None):
         return "PREOPEN"
     if opening <= minute < closing:
         return "OPEN"
+    if now.tzinfo is not None and now.utcoffset() is not None and _equity_t1_readonly_window(now):
+        return "EQUITY_T1_READONLY"
     return "CLOSED"
 
 
@@ -204,7 +218,7 @@ def _cooldown_session_state(phase, now=None):
     produce MARKET_CLOSED here; an unknown year or calendar error stays boot.
     """
     local = (now or datetime.now(TZ)).astimezone(TZ)
-    if phase != "CLOSED" or local.hour * 60 + local.minute < 17 * 60 + 15:
+    if phase != "CLOSED" or local < byma_eod_publication_floor(local):
         return "BOOT_CALENDAR"
     try:
         import ak_byma_calendar as calendar
@@ -297,6 +311,87 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, prior
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
         market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
     return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+
+
+def _equity_t1_readonly_window(at):
+    """Only COM19031 BYMA equity T+1 17:00-18:00, no PAPER authority."""
+    return (byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS", at)
+            and not byma_paper_spot_open(at))
+
+
+def _equity_t1_readonly_identities(store, *, limit=EQUITY_T1_READONLY_BATCH_LIMIT):
+    """Exact full-key PPI identities; exclude ambiguous currency siblings."""
+    with store.connect() as conn:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"financial_instrument_catalog", "candidate_identity_v2"} <= tables:
+            return []
+        rows = [dict(row) for row in conn.execute("""SELECT
+            c.ticker,c.instrument_type,c.market,c.currency,c.settlement
+          FROM financial_instrument_catalog c
+          JOIN candidate_identity_v2 r
+            ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type
+           AND r.market=c.market AND r.currency=c.currency
+           AND r.settlement=c.settlement
+          WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+            AND c.market='BYMA' AND c.currency NOT IN ('', 'UNKNOWN')
+            AND c.settlement='A-24HS'
+            AND c.instrument_type IN ('ACCIONES','CEDEARS','ETFS','ETF')
+            AND c.capability LIKE 'READY_PAPER_%'
+          ORDER BY c.instrument_type,c.ticker,c.currency""")]
+    requests = {}
+    for row in rows:
+        request = (row["ticker"], row["instrument_type"], row["settlement"])
+        identity = (row["ticker"], row["instrument_type"], row["market"],
+                    row["currency"], row["settlement"])
+        requests.setdefault(request, []).append(identity)
+    unique = [values[0] for values in requests.values() if len(values) == 1]
+    opened = {(p["symbol"], p["asset_class"], p["market"],
+               p["currency"], p["settlement"]) for p in store.open_positions()}
+    focus = {ticker for ticker, _family, _term in DEFAULT_FOCUS_SYMBOLS}
+    unique.sort(key=lambda identity: (0 if identity in opened else
+                                      1 if identity[0] in focus else 2, identity))
+    return unique[:max(1, min(12, int(limit)))]
+
+
+def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None):
+    """Bounded PPI Current+Book source capture; NEVER broker.on_quote."""
+    from bs_instrument_contracts import aware_datetime
+    at = aware_datetime(now)
+    if not _equity_t1_readonly_window(at):
+        return {"state": "OUTSIDE_EQUITY_T1_READONLY_WINDOW", "read": 0,
+                "failed": 0, "real_routes": []}
+    if reader is None or not all(hasattr(reader, name) for name in ("current", "book")):
+        raise ValueError("EQUITY_T1_READONLY_READER_REQUIRED")
+    identities = _equity_t1_readonly_identities(store)
+    opened = {(p["symbol"], p["asset_class"], p["market"],
+               p["currency"], p["settlement"]) for p in store.open_positions()}
+    read = failed = 0
+    errors = {}
+    for identity in identities:
+        symbol, family, market, currency, settlement = identity
+        observed = aware_datetime(clock_fn() if clock_fn else datetime.now(TZ))
+        if not _equity_t1_readonly_window(observed):
+            break
+        try:
+            quote = _read_scanner_quote(reader, store, symbol, family, settlement,
+                priority="OPENED_CRITICAL" if identity in opened else "WARM", identity=identity)
+            received = aware_datetime(clock_fn() if clock_fn else datetime.now(TZ))
+            if not _equity_t1_readonly_window(received):
+                break
+            if (quote.symbol, quote.asset_class, quote.market, quote.currency,
+                    quote.settlement) != identity:
+                raise ValueError("EQUITY_T1_EXACT_SOURCE_IDENTITY_MISMATCH")
+            reason = quote.time_error(received.isoformat(), max_age_seconds=120)
+            if reason:
+                raise ValueError("EQUITY_T1_SOURCE_" + reason)
+            store.add_quote(quote)
+            read += 1
+        except Exception as exc:
+            failed += 1
+            errors[symbol] = str(exc)[:100] if isinstance(exc, ValueError) else type(exc).__name__
+    return {"state": "READONLY_T1", "read": read, "failed": failed,
+            "identity_count": len(identities), "errors": errors, "real_routes": []}
 
 
 def _support_schema(store):
@@ -967,7 +1062,7 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     """
     interval = (OFFHOURS_RECONCILE_SECONDS if phase == "CLOSED"
                 else COMPLEMENTARY_RECONCILE_SECONDS)
-    if phase == "OPEN" or time.time() - last_completed < interval:
+    if phase in {"OPEN", "EQUITY_T1_READONLY"} or time.time() - last_completed < interval:
         return last_completed
     _reconcile_complementary_catalog(store)
     if phase == "CLOSED":
@@ -1542,6 +1637,42 @@ def _history_batch_semantics(statuses):
     }
 
 
+def _verified_ppi_eod_keys(history_store, exact_keys, session, at):
+    """Count genuine same-session PPI RAW bars, never requested dates.
+
+    Full-key canonical rows must be PPI-sourced and first known after BYMA's
+    closing-price floor. A successful REST response carrying only a prior
+    session must not certify the requested EOD or produce a final report.
+    """
+    if at.tzinfo is None or at.utcoffset() is None:
+        return 0
+    now = at.astimezone(TZ)
+    if now.date() != session:
+        return 0
+    floor = byma_eod_publication_floor(now)
+    if now < floor:
+        return 0
+    verified = 0
+    with history_store.connect() as conn:
+        for identity in dict.fromkeys(exact_keys):
+            if len(identity) != 5:
+                continue
+            row = conn.execute("""SELECT source,version_known_at
+              FROM history_canonical_v2 WHERE symbol=? AND instrument_type=?
+                AND market=? AND currency=? AND settlement=? AND date=?
+                AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
+                (*identity,session.isoformat())).fetchone()
+            if not row or row[0] != 'PPI_PRODUCTION_HISTORY':
+                continue
+            try:
+                known = datetime.fromisoformat(str(row[1]).replace('Z','+00:00'))
+                if known.tzinfo and known.utcoffset() is not None and floor <= known <= now:
+                    verified += 1
+            except (TypeError, ValueError):
+                continue
+    return verified
+
+
 def _historical_targets(store):
     """The whole exact-key PPI catalog, ordered by its own durable attempt.
 
@@ -1620,8 +1751,10 @@ def _history_cutoff_repair_complete() -> bool:
 
 def _history_end_date(now=None):
     now = now or datetime.now(TZ)
-    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
-    if now.hour * 60 + now.minute < close_minute:
+    if now.tzinfo is None or now.utcoffset() is None:
+        return None
+    now = now.astimezone(TZ)
+    if now < byma_eod_publication_floor(now):
         return None
     day = now.date()
     while day.year == BYMA_CALENDAR_AUDITED_YEAR and not _business_day(day):
@@ -1832,19 +1965,30 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
     with history_store.connect() as c:
         coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
             consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
+    # Only the bounded batch actually requested in this cycle can attest a
+    # source receipt. Global catalog counts or session=requested_end cannot.
+    batch_keys=[identity for identity,_,_,_ in requests[:HISTORY_BATCH_LIMIT]]
+    observed_now=datetime.now(TZ)
+    exact_eod=_verified_ppi_eod_keys(history_store,batch_keys,end,observed_now)
+    exact_required=len(batch_keys)
+    current_session_verified=bool(exact_required and exact_eod==exact_required)
     semantics=_history_batch_semantics(batch_statuses)
     state=semantics['state']
     if not batch_statuses:
-        state='VERDE' if coverage['denominator'] and coverage['covered']==coverage['denominator'] else 'AMARILLO'
-    detail=(f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
+        state='AMARILLO'
+    if state=='VERDE' and not current_session_verified:
+        state='AMARILLO'
+    detail=(f"session={end.isoformat()}; "
+        f"source_session_verified={end.isoformat()}:{exact_eod}/{exact_required}; "
+        f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
         f"parciales={semantics['partial_with_valid_evidence']}; errores={semantics['hard_failures']}; "
         f"cobertura exacta {coverage['covered']}/{coverage['denominator']}; "
         f"suficientes30={coverage['sufficient']}; faltantes={coverage['missing']}; "
         f"cohort={coverage['cohort_sha256']}; consumer={coverage['consumer']}; "
-        f"cut={coverage['as_of']}; session={coverage['session']}; "
+        f"cut={coverage['as_of']}; session_requested={coverage['session']}; "
         f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; readiness=NONE; "
         f"{total} filas FULL_OHLC válidas hasta {end.isoformat()}.")
-    usable=bool(semantics['usable'])
+    usable=bool(semantics['usable'] and current_session_verified and state=='VERDE')
     _sync_state(store,'PPI_PRODUCTION_HISTORY',state,total,detail,success=usable)
     _health(store,'PPI_PRODUCTION_HISTORY',state,detail,'PPI Producción',success=usable)
     return total
@@ -1893,11 +2037,88 @@ def _history_daily_sync_due(store, now=None):
     stale history metadata must not force another full PPI catalog download.
     """
     now = now or datetime.now(TZ)
-    if _history_end_date(now) is None:
+    return _history_source_retry_due(store, now)
+
+
+def _history_source_retry_due(store, now=None):
+    """Bounded retry after missing EOD; exact source receipt stops all retries."""
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None or now.utcoffset() is None:
+        return False
+    local = now.astimezone(TZ)
+    if not _business_day(local.date()) or _history_end_date(local) is None:
         return False
     if not _history_cutoff_repair_complete():
         return False
-    return _source_sync_due(store, "PPI_PRODUCTION_HISTORY", now)
+    if operations._postclose_history_source_ready(store, local):
+        return False
+    try:
+        with store.connect() as conn:
+            row = conn.execute("""SELECT last_attempt_at FROM source_sync
+              WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+            health = conn.execute("""SELECT checked_at FROM api_health
+              WHERE component='PPI_BACKGROUND_INGEST'""").fetchone()
+    except sqlite3.Error:
+        return False
+    attempts = []
+    for receipt in (row, health):
+        if not receipt or not receipt[0]:
+            continue
+        try:
+            raw = str(receipt[0]).strip()
+            if len(raw) == 10:
+                # Old source receipts contain an ART session day only, never
+                # an intraday retry clock. Permit the next business day, but
+                # not a source storm within the same date.
+                prior = date.fromisoformat(raw)
+                if prior == local.date() or prior > local.date():
+                    return False
+                attempts.append(datetime.combine(prior, datetime.min.time(), tzinfo=TZ))
+                continue
+            stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if stamp.tzinfo is None or stamp.utcoffset() is None:
+                return False
+            attempts.append(stamp.astimezone(TZ))
+        except (TypeError, ValueError):
+            return False
+    if not attempts:
+        return True
+    latest = max(attempts)
+    if latest > local:
+        return False
+    return (latest.date() != local.date() or
+            (local - latest).total_seconds() >= HISTORY_SOURCE_PENDING_RETRY_SECONDS)
+
+
+def _history_source_attempt_marker(store):
+    with store.connect() as conn:
+        row = conn.execute("""SELECT last_attempt_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+    return row[0] if row else None
+
+
+def _record_unreported_history_attempt(store, now, marker):
+    """Fence failed/lock-skipped attempts before the next observer tick.
+
+    The PPI history writer normally records its own source receipt; an early
+    exception or held repair lock does not. Neither case permits hammering the
+    provider or claiming a source success before a later verified response.
+    """
+    attempt = now.astimezone(TZ).isoformat()
+    with store.connect() as conn:
+        row = conn.execute("""SELECT last_attempt_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        if (row[0] if row else None) != marker:
+            return
+        old = conn.execute("""SELECT last_success_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        conn.execute("""INSERT INTO source_sync VALUES(?,?,?,?,?,?)
+          ON CONFLICT(source) DO UPDATE SET status=excluded.status,
+          last_attempt_at=excluded.last_attempt_at,items=0,detail=excluded.detail""",
+          ('PPI_PRODUCTION_HISTORY','AMARILLO',attempt,
+           old[0] if old else None,0,
+           f'session={now.date().isoformat()}; SOURCE_PENDING_AFTER_ATTEMPT; '
+           'readiness=NONE'))
 
 
 def _daily_sync_needed(store, now=None):
@@ -1930,7 +2151,13 @@ def _daily_sync(reader, store, now=None):
         return
     try:
         catalog = _download_catalog(reader, store) if catalog_due else 0
-        histories = _download_histories(reader, store) if history_due else 0
+        histories = 0
+        if history_due:
+            marker = _history_source_attempt_marker(store)
+            try:
+                histories = _download_histories(reader, store)
+            finally:
+                _record_unreported_history_attempt(store, now, marker)
         store.event(
             "DAILY_READONLY_SYNC",
             f"{catalog} instrumentos; {histories} filas históricas; "
@@ -1944,35 +2171,7 @@ def _daily_sync(reader, store, now=None):
 
 def _background_ingest_due(store, now=None):
     """Como máximo un intento histórico por rueda, después del cierre."""
-    now = now or datetime.now(TZ)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=TZ)
-    local_now = now.astimezone(TZ)
-    if not _business_day(local_now.date()):
-        return False
-    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
-    if local_now.hour * 60 + local_now.minute < close_minute:
-        return False
-    with store.connect() as connection:
-        source = connection.execute("""SELECT last_attempt_at FROM source_sync
-          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
-        background = connection.execute("""SELECT checked_at FROM api_health
-          WHERE component='PPI_BACKGROUND_INGEST'""").fetchone()
-    # A blocked history migration cannot advance source_sync. Its own health
-    # timestamp still records the attempt, including a failed one, so CLOSED
-    # does not retry and write another event every scanner poll (~5 seconds).
-    for row in (source, background):
-        if not row or not row[0]:
-            continue
-        try:
-            last = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=TZ)
-            if last.astimezone(TZ).date() >= local_now.date():
-                return False
-        except (TypeError, ValueError):
-            continue
-    return True
+    return _history_source_retry_due(store, now)
 
 def _background_ingest(reader, store, *, force=False):
     """Completa históricos una vez por rueda después del cierre; force no salta el límite."""
@@ -2077,8 +2276,10 @@ def _announce_phase(store, previous, current):
                     "Login e ingesta activos. Cero evaluaciones y cero operaciones."),
         "OPEN": ("🟢 POROTA — RUEDA ABIERTA",
                  "Motor Python evaluando. Operaciones 100% simuladas. Órdenes reales: NINGUNA."),
+        "EQUITY_T1_READONLY": ("🟡 POROTA — RENTA VARIABLE T+1",
+                  "PAPER conservador cerrado; lectura PPI hasta 18:00 sin órdenes ni EOD."),
         "CLOSED": ("🌙 POROTA — RUEDA CERRADA",
-                   "Estrategia detenida. Ingesta histórica y dashboard continúan activos."),
+                   "Estrategia detenida; EOD sólo tras publicación efectiva de fuente."),
     }
     if current not in messages:
         return
@@ -2208,10 +2409,12 @@ def run():
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
     last_caucion_live_refresh = 0.0
+    last_equity_t1_readonly_refresh = 0.0
     caucion_ledger_blocked = False
     next_caucion_ledger_recheck = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
+    previous_source_open = False
     startup_watchdog_armed = True
     try:
         while not STOP:
@@ -2315,6 +2518,14 @@ def run():
                     continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             operations.service_tick(store, phase)
+            if (phase == "EQUITY_T1_READONLY" and
+                    time.time() - last_equity_t1_readonly_refresh >= EQUITY_T1_READONLY_REFRESH_SECONDS):
+                try:
+                    result = _equity_t1_readonly_tick(reader, store, now=datetime.now(TZ))
+                    store.event("EQUITY_T1_READONLY_BOOK_REFRESH", json.dumps(result, sort_keys=True))
+                    last_equity_t1_readonly_refresh = time.time()
+                except Exception as exc:
+                    store.event("EQUITY_T1_READONLY_BOOK_ERROR", type(exc).__name__)
             if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
                 try:
                     import dj_caucion_live_ppi_rc6 as caucion_live
@@ -2327,14 +2538,16 @@ def run():
             if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
                 _public_probe(store)
                 last_public_check = time.time()
-            should_capture = phase == "OPEN" and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
-            closing_snapshot = previous_phase == "OPEN" and phase == "CLOSED"
+            source_open = phase in {"OPEN", "EQUITY_T1_READONLY"}
+            should_capture = source_open and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
+            closing_snapshot = previous_source_open and not source_open
+            previous_source_open = source_open
             if should_capture or closing_snapshot:
                 _public_probe(store, structured=True)
                 last_structured_capture = time.time()
             last_complementary_reconcile = _periodic_complementary_reconcile(
                 store, phase, last_complementary_reconcile)
-            if phase == "CLOSED":
+            if phase in {"CLOSED", "EQUITY_T1_READONLY"}:
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
                 _daily_sync(reader, store)
@@ -2343,10 +2556,16 @@ def run():
                     _runtime_readiness(store)
                     _publish_economic_shadow_health(store)
                     last_readiness_check = time.time()
-                store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
-                            heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="PPI de solo lectura activo; ingesta histórica disponible. "
-                                   "Estrategia y market data vivo detenidos por mercado cerrado.")
+                if phase == "EQUITY_T1_READONLY":
+                    store.state(process_state="WAITING_MARKET", session_state="EQUITY_T1_READONLY",
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="PAPER entrada/salida cerrado; BYMA T+1 17:00-18:00 "
+                                       "PPI read-only/full-key, sin EOD ni órdenes.")
+                else:
+                    store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="EOD sólo tras piso COM19031 y recibo de origen; "
+                                       "sin ruta de órdenes reales.")
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
             if phase == "PREOPEN":
