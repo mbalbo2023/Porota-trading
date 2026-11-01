@@ -19,38 +19,56 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 jobs:
   verify:
     name: Verificar condiciones de promoción
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Confirmación humana
-        run: test "${{ inputs.confirmacion }}" = "PROMOVER"
+        env:
+          CONFIRMATION: ${{ inputs.confirmacion }}
+        run: test "$CONFIRMATION" = PROMOVER
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.rama_origen }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Verificar CI del commit que se promueve
+      - name: Pin del commit origen y paquete de aplicación completo
+        id: source
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ inputs.rama_origen }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          case "$SOURCE_BRANCH" in testing|develop) ;; *) exit 2 ;; esac
+          git fetch origin "+refs/heads/$SOURCE_BRANCH:refs/remotes/origin/$SOURCE_BRANCH"
+          source_sha="$(git rev-parse "refs/remotes/origin/$SOURCE_BRANCH^{commit}")"
+          python3 -m scripts.rc6_legacy_promotion_guard source "$SOURCE_BRANCH" "$source_sha"
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Verificar CI de aplicación ejecutada para el SHA origen
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: |
-          runs="$(gh run list --workflow ci.yml --branch "${{ inputs.rama_origen }}" --limit 20 --json headSha,conclusion --jq '.[] | select(.headSha == env.SHA) | .conclusion')"
-          echo "$runs"
-          test -n "$runs"
-          ! echo "$runs" | grep -qv '^success$'
+          SOURCE_BRANCH: ${{ inputs.rama_origen }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: python3 -m scripts.rc6_legacy_promotion_guard ci
 
       - name: Auditoría de promoción
+        env:
+          PROMOTION_REASON: ${{ inputs.motivo }}
         run: |
           {
             echo "### Promoción solicitada"
             echo "- Rama: ${{ inputs.rama_origen }}"
-            echo "- Motivo: ${{ inputs.motivo }}"
+            echo "- Motivo: $PROMOTION_REASON"
             echo "- Solicitante: ${{ github.actor }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -60,19 +78,32 @@ jobs:
     needs: verify
     permissions:
       contents: write
+    env:
+      SOURCE_BRANCH: ${{ inputs.rama_origen }}
+      SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
+      PROMOTION_REASON: ${{ inputs.motivo }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ github.token }}
       - name: Merge y tag
+        shell: bash
         run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          case "$SOURCE_BRANCH" in testing|develop) ;; *) exit 2 ;; esac
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/$SOURCE_BRANCH:refs/remotes/origin/$SOURCE_BRANCH"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$GITHUB_SHA"
+          test "$(git rev-parse "refs/remotes/origin/$SOURCE_BRANCH")" = "$SOURCE_SHA"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main "${{ inputs.rama_origen }}"
           git checkout main
-          git merge --no-ff "origin/${{ inputs.rama_origen }}" -m "Promoción a producción: ${{ inputs.motivo }}"
-          git push origin main
+          git merge --no-ff "$SOURCE_SHA" -m "Promoción a producción: $PROMOTION_REASON"
+          git push origin HEAD:main
           TAG="prod-$(date +%Y%m%d-%H%M%S)"
-          git tag -a "$TAG" -m "${{ inputs.motivo }}"
+          git tag -a "$TAG" -m "$PROMOTION_REASON"
           git push origin "$TAG"
