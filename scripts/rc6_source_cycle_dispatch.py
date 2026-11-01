@@ -41,8 +41,9 @@ MORNING_END = clock_time(9, 0)
 # BYMA COM19031 (28-Oct-2026) explicitly supersedes COM19024 from 02-Nov.
 # Official PDF SHA256: fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0
 # https://www.byma.com.ar/comunicados/com19031-horarios
-# COM19031 changes only PPT/SENEBI intraday operations (17:45 -> 17:30);
-# regular T+1 equities/options and postclose still depend on the 18:00 close.
+# COM19031 moves PPT/SENEBI intraday 17:45 -> 17:30, keeps T+1 variable
+# PPT/options to 18:00 and runs the closing-price segment 18:05–18:15.
+# The price-publication floor never certifies provider EOD availability.
 COM19031_EFFECTIVE = date(2026, 11, 2)
 COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
 # This is a live SHADOW input, not an optional background scraper. A longer
@@ -93,12 +94,16 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
         allowed = clock_time(23, 20) <= local.time() < clock_time(23, 45)
         return allowed, "DB_POSTCLOSE_WINDOW" if allowed else "OUTSIDE_DB_POSTCLOSE"
     if phase == "postclose_snapshot":
-        # COM18782 closes regular PPT at 17 until 01-Nov. COM19031 retains
-        # regular equities/options to 18 starting 02-Nov while caucions remain
-        # 17. The single global snapshot belongs after the LAST verified close.
-        hour = 18 if local.date() >= COM19031_EFFECTIVE else 17
-        allowed = clock_time(hour, 8) <= local.time() < clock_time(hour, 30)
-        return allowed, "VERIFIED_PPT_CLOSE" if allowed else "PPT_STILL_OPEN_OR_TOO_LATE"
+        # Pre-COM19031 paper snapshot remains 17:08. On/after 02-Nov the
+        # 18:08 tick is only an operational PAPER review, not final EOD.
+        # The *existing* timer retries its read-only reports 18:20..22:20;
+        # downstream consumers alone check source-positive same-session data.
+        if local.date() >= COM19031_EFFECTIVE:
+            allowed = clock_time(18, 8) <= local.time() < clock_time(22, 30)
+        else:
+            allowed = clock_time(17, 8) <= local.time() < clock_time(17, 30)
+        return allowed, ("PAPER_POSTCLOSE_REVIEW_WINDOW" if allowed
+                         else "PAPER_POSTCLOSE_NOT_DUE")
     if phase == "open":
         allowed = OPEN <= local.time() < CLOSE
         return allowed, "COLLECTOR_BASELINE_WINDOW" if allowed else "OUTSIDE_COLLECTOR_WINDOW"

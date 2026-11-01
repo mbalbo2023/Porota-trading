@@ -12,12 +12,16 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
+from rc6_postclose_source_contract import (PENDING as EOD_PENDING,
+                                          postclose_eod_receipt,
+                                          verified_current_source)
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 BASE_URL = os.getenv("RC6_SNAPSHOT_DASHBOARD_URL", "http://127.0.0.1:8000")
 OUTPUT = Path(os.getenv("RC6_SNAPSHOT_OUTPUT", "data/paper_v17/snapshots/latest.json"))
 MAX_OPERATIONS = 500
 MAX_DECISIONS = 5000
+COM19031_EFFECTIVE = datetime(2026, 11, 2).date()
 
 def _request_state() -> dict:
     token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
@@ -65,7 +69,8 @@ def _operation(row: dict) -> dict:
         "counterfactual": "INSUFFICIENT_EVIDENCE",
     }
 
-def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
+def build_snapshot(phase: str, now: datetime, payload: dict,
+                   *, eod_source: dict | None = None) -> dict:
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     closed = payload.get("closed") if isinstance(payload.get("closed"), list) else []
     decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
@@ -111,7 +116,14 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         for item in operations
     ):
         alerts.append("CLOSED_OPERATION_CURRENCY_MISSING")
-    status = "VERIFIED" if not alerts else "INSUFFICIENT_EVIDENCE"
+    # The 18:08 snapshot validates the PAPER operational ledger, but cannot
+    # certify EOD while BYMA still computes its closing price (18:05–18:15)
+    # or PPI has not published an exact current-session RAW source receipt.
+    eod_required = phase == "postclose" and now.astimezone(TZ).date() >= COM19031_EFFECTIVE
+    eod_observed = (eod_source if isinstance(eod_source, dict) else {})
+    eod_ready = verified_current_source(eod_observed, now)
+    status = ("INSUFFICIENT_EVIDENCE" if alerts else
+              EOD_PENDING if eod_required and not eod_ready else "VERIFIED")
     return {
         "schema_version": 2,
         "status": status,
@@ -120,6 +132,8 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         "source": "/api/observer/state",
         "mode": mode,
         "real_orders_sent": real_orders_sent,
+        "paper_safety_status": "VERIFIED" if not alerts else "INSUFFICIENT_EVIDENCE",
+        "postclose_eod_source": eod_observed if eod_required else {"state": "NOT_APPLICABLE"},
         "summary": "Snapshot RC6 de solo lectura; métricas exclusivamente PAPER/SIMULATED.",
         "metrics": metrics,
         "operations": operations,
@@ -149,10 +163,14 @@ def main() -> int:
         print(json.dumps({"schema_version": 1, "phase": args.phase, "status": "NOT_DUE", "read_only": True}, sort_keys=True))
         return 0
     try:
-        snapshot = build_snapshot(args.phase, now, _request_state())
+        eod = (postclose_eod_receipt(now) if args.phase == "postclose"
+               and now.date() >= COM19031_EFFECTIVE else None)
+        snapshot = build_snapshot(args.phase, now, _request_state(), eod_source=eod)
         write_snapshot(snapshot)
         print(json.dumps({"schema_version": 1, "phase": args.phase, "status": snapshot["status"], "read_only": True, "real_orders_sent": snapshot["real_orders_sent"]}, sort_keys=True))
-        return 0 if snapshot["status"] == "VERIFIED" else 2
+        # AMBER source unavailability does not fail a healthy PAPER service or
+        # gate deployment. The artifact itself remains explicitly provisional.
+        return 0 if snapshot["status"] in {"VERIFIED", EOD_PENDING} else 2
     except Exception as exc:
         print(json.dumps({"schema_version": 1, "phase": args.phase, "status": "ERROR", "read_only": True, "error": type(exc).__name__}, sort_keys=True))
         return 2
