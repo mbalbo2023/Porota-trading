@@ -89,9 +89,10 @@ jobs:
 
   draft-ledger-permissions:
     name: Draft ledger permission regression (offhost)
-    # Draft PRs cannot run artifact-gate. This small permission regression is
-    # useful before finalizing the candidate, with no build or host access.
-    if: ${{ github.event.pull_request.draft }}
+    # Only Draft PRs targeting the exact product branch need this A309 proof.
+    # Candidate sub-PRs based on pre-A309 c76 must not see reverse-diff ledger
+    # paths as in-scope or rerun a fixture absent from their source HEAD.
+    if: ${{ github.event.pull_request.draft && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:

@@ -11,6 +11,7 @@ PRODUCT = "deploy/rc6-pr69-isolated-20260915"
 CANDIDATE = "candidate/rc6-a279-a280-20261101"
 ARTIFACT_GUARD = "${{ !github.event.pull_request.draft && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}"
 FOCUSED_GUARD = "${{ github.event.pull_request.base.ref == 'candidate/rc6-a279-a280-20261101' }}"
+LEDGER_GUARD = "${{ github.event.pull_request.draft && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}"
 
 
 def assert_candidate_ci_contract(source: str) -> None:
@@ -26,7 +27,7 @@ def assert_candidate_ci_contract(source: str) -> None:
     jobs = workflow["jobs"]
     assert jobs["artifact-gate"]["if"] == ARTIFACT_GUARD
     assert jobs["candidate-focused-offhost"]["if"] == FOCUSED_GUARD
-    assert jobs["draft-ledger-permissions"]["if"] == "${{ github.event.pull_request.draft }}"
+    assert jobs["draft-ledger-permissions"]["if"] == LEDGER_GUARD
 
     focused = jobs["candidate-focused-offhost"]
     assert focused["runs-on"] == "ubuntu-24.04"
@@ -64,10 +65,30 @@ def test_candidate_pr_focus_is_isolated_from_exact_product_predeploy():
 
 
 @pytest.mark.parametrize(
+    ("base_ref", "is_draft", "ledger_runs"),
+    [
+        (PRODUCT, True, True),
+        (PRODUCT, False, False),
+        (CANDIDATE, True, False),
+        (CANDIDATE, False, False),
+    ],
+)
+def test_a309_ledger_job_does_not_follow_reverse_diff_on_candidate_pr(
+    base_ref, is_draft, ledger_runs
+):
+    # A source HEAD inherited from c76 can lack the A309 WAL cases present
+    # in candidate d11. Its two-tip diff must never admit the product ledger
+    # job merely because those tests appear in the reverse diff.
+    assert_candidate_ci_contract(WORKFLOW)
+    assert (is_draft and base_ref == PRODUCT) is ledger_runs
+
+
+@pytest.mark.parametrize(
     ("before", "after"),
     [
         (ARTIFACT_GUARD, "${{ !github.event.pull_request.draft }}"),
         (FOCUSED_GUARD, "${{ github.event.pull_request.draft }}"),
+        (LEDGER_GUARD, "${{ github.event.pull_request.draft }}"),
         ('("failures", "errors", "skipped")', '("failures", "errors")'),
         ("RC6_CANDIDATE_TEST_TARGET_MISSING", "RC6_CANDIDATE_TEST_TARGET_DISABLED"),
         ("persist-credentials: false", "persist-credentials: true"),
