@@ -137,7 +137,8 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
     that exact quote for the decision receipt. It needs no per-tick release.
     """
     from rc6_fixed_income_strategy_shadow import (
-        ContractProof, ProjectedFlow, RiskLimits, evaluate_shadow,
+        ContractProof, NextEconomicEventProof, ProjectedFlow, RiskLimits,
+        evaluate_shadow,
     )
 
     pin = (manifest_sha256 if manifest_sha256 is not None else
@@ -221,8 +222,10 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
         proof = ContractProof(quote.contract, terms["source_reference"],
                               terms["source_sha256"], terms["source_at"], terms["known_at"])
         rows = receipt.get("flows")
-        if not isinstance(rows, list) or not 0 < len(rows) <= MAX_FLOWS:
+        if not isinstance(rows, list) or len(rows) > MAX_FLOWS:
             _fail("FI_EVIDENCE_FLOW_SET_INVALID")
+        if rows and "next_event" in receipt:
+            _fail("FI_EVIDENCE_NEXT_EVENT_CONFLICT")
         minutes = receipt.get("market_exit_horizon_minutes")
         if type(minutes) is not int or not 0 < minutes <= 360:
             _fail("FI_EVIDENCE_EXIT_HORIZON_INVALID")
@@ -242,15 +245,54 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
             obligation_ids.add(flow.obligation_id)
             if at < aware_datetime(flow.due_at) <= exit_at:
                 flows.append(flow)
+        next_event = None
         if not flows:
-            _fail("FI_EVIDENCE_NO_FLOWS_IN_HOLDING_HORIZON")
+            # Do not ignore a projected flow outside this window: the issuer
+            # calendar must be reviewed explicitly without invented payment
+            # timestamps or future amounts. Existing nonempty flow receipts
+            # retain their original fail-closed behavior. The release reviewer
+            # must check the issuer schedule and subsequent event/call notices;
+            # a matching hash alone cannot prove the claim of "next" event.
+            if rows:
+                _fail("FI_EVIDENCE_NO_FLOWS_IN_HOLDING_HORIZON")
+            reviewed = receipt.get("next_event")
+            fields = {"identity", "obligation_id", "kind", "due_on",
+                      "payment_currency", "source_reference", "source_sha256",
+                      "source_at", "known_at", "review_authority"}
+            if reviewed is None:
+                _fail("FI_EVIDENCE_FLOW_SET_INVALID")
+            if (not isinstance(reviewed, dict) or set(reviewed) != fields or
+                    reviewed.get("review_authority") !=
+                    "RELEASE_REVIEWED_ISSUER_NEXT_EVENT" or
+                    not isinstance(reviewed.get("identity"), list) or
+                    tuple(reviewed["identity"]) != key):
+                _fail("FI_EVIDENCE_NEXT_EVENT_REVIEW_INVALID")
+            if (exit_at >= aware_datetime(receipt["valid_until"]) or
+                    exit_at >= aware_datetime(manifest["valid_until"])):
+                _fail("FI_EVIDENCE_NEXT_EVENT_REVIEW_WINDOW_EXPIRED")
+            if aware_datetime(reviewed["known_at"]) > aware_datetime(receipt["known_at"]):
+                _fail("FI_EVIDENCE_NEXT_EVENT_REVIEW_CLOCK_INVALID")
+            if (reviewed["source_sha256"] != issuer["sha256"] or
+                    reviewed["source_reference"] != terms["source_reference"] or
+                    aware_datetime(reviewed["source_at"]) !=
+                    aware_datetime(terms["source_at"]) or
+                    aware_datetime(reviewed["known_at"]) !=
+                    aware_datetime(terms["known_at"])):
+                _fail("FI_EVIDENCE_NEXT_EVENT_PROVENANCE_MISMATCH")
+            next_event = NextEconomicEventProof(**{
+                field: tuple(reviewed[field]) if field == "identity" else reviewed[field]
+                for field in fields - {"review_authority"}
+            })
         live_quote_sha = quote_sha256(quote)
         scenario = evaluate_shadow(
             quote, proof, flows, RiskLimits(**receipt["risk_limits"]),
             quantity_vn=receipt["quantity_vn"], decision_at=decision_at,
             planned_exit_at=exit_at.isoformat(), exit_mode="MARKET_EXIT",
             book_reference="native-ppi-quote:" + live_quote_sha,
-            book_sha256=live_quote_sha, book_source_kind="PPI_PRIMARY")
+            book_sha256=live_quote_sha, book_source_kind="PPI_PRIMARY",
+            next_event=next_event)
+        if scenario.reason == "FI_SHADOW_DUE_EVENT_WITHIN_EXIT_WINDOW":
+            _fail("FI_EVIDENCE_DUE_EVENT_OMITTED")
         return {"scenario": scenario, "terms": terms, "validation": validation,
                 "upstream_authenticated": True, "receipt_attested_by_release": True,
                 "source_kind": "PPI_PRIMARY",
