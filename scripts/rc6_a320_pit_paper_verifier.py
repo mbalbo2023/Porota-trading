@@ -364,6 +364,20 @@ def _capture_temporal(record, *, cutoff=None, max_age_ms=MAX_QUOTE_AGE_MS):
     return first, published
 
 
+def _book_provider_fresh_at(record, asof, family):
+    """Receiving an old quote *now* never refreshes its market timestamp.
+
+    FCI prior class NAV is not an intraday executable book: its prior known
+    value is checked through class/cutoff and a later separately published NAV.
+    """
+    if family == "FCI":
+        return
+    published = _utc(record.get("provider_at_utc"), "QUOTE_PROVIDER")
+    age_ms = (asof - published).total_seconds() * 1000
+    if not 0 <= age_ms <= MAX_QUOTE_AGE_MS:
+        raise ValueError("A320_MARKET_BOOK_PROVIDER_TIMESTAMP_STALE_OR_FUTURE")
+
+
 def _source_url(record):
     from urllib.parse import urlsplit
     source = record.get("source")
@@ -424,6 +438,7 @@ def _verify_primary(record, family, identity, key_pair, decision_at):
     if source not in PRIMARY_FOR_FAMILY[family] or body.get("provenance") != "AUTHENTIC_READONLY_CAPTURE":
         raise ValueError("A320_PRIMARY_CAPTURE_ORIGIN_UNVERIFIED")
     _capture_temporal(body, cutoff=decision_at)
+    _book_provider_fresh_at(body, decision_at, family)
     if body.get("orders_sent") != 0 or body.get("history_v2_writes") != 0:
         raise ValueError("A320_PRIMARY_NOT_READONLY")
     if source == "PPI":
@@ -482,6 +497,7 @@ def _verify_reference(record, family, identity, primary_source, primary_record,
             or body.get("history_v2_writes") != 0 or body.get("orders_sent") != 0):
         raise ValueError("A320_REFERENCE_CAPTURE_INDEPENDENCE_UNVERIFIED")
     _capture_temporal(body, cutoff=decision_at)
+    _book_provider_fresh_at(body, decision_at, family)
     raw = body.get("raw_payload")
     if _hash_string(body.get("raw_payload_sha256"), "REFERENCE_RAW") != _sha(raw):
         raise ValueError("A320_REFERENCE_RAW_HASH_MISMATCH")
@@ -715,6 +731,8 @@ def _one_case(case, keys):
         decision, decision_at, qty = _verify_decision(
             case.get("paper_decision"), family, identity, keys.get("decision"),
             evaluated_at, primary, reference)
+        _book_provider_fresh_at(p_body, decision_at, family)
+        _book_provider_fresh_at(r_body, decision_at, family)
         _calendar(contract, decision_at, _utc(p_body["provider_at_utc"], "QUOTE_PROVIDER"), family)
         fee_role = keys.get("fees")
         if (not fee_role or fee_role[0] in {p_role[0], r_role[0], keys["decision"][0]}
@@ -774,6 +792,13 @@ def review_bundle(bundle, keys=None, *, evidence_mode="OFFHOST_SYNTHETIC",
         raise ValueError("A320_UNASSIGNED_OR_INVALID_FAMILY_CASE")
     keys = keys or {}
     family_results = {}
+    # This first version proves fail-closed contract paths and can authenticate
+    # a PPI raw Book captured by our read-only runner. HMAC verification here
+    # is NOT sufficient to establish external independence: the same verifier
+    # necessarily holds each symmetric secret. Until reviewed external sensors
+    # supply independently timestamped Ed25519 signatures with private keys
+    # kept *off* the verification runner, no production row may be promoted.
+    sensor_public_verifier_ready = False
     for family in FAMILIES:
         entries = [case for case in cases if isinstance(case, dict)
                    and case.get("family") == family]
@@ -786,6 +811,8 @@ def review_bundle(bundle, keys=None, *, evidence_mode="OFFHOST_SYNTHETIC",
         seen_exact_cases = set()
         for case in entries:
             try:
+                if evidence_mode == "AUTHENTIC_OFFHOST_EVIDENCE" and not sensor_public_verifier_ready:
+                    raise ValueError("A320_INDEPENDENT_SENSOR_PUBLIC_SIGNATURE_VERIFICATION_REQUIRED")
                 source, paper = _one_case(case, keys)
                 source_pair = (source["primary_receipt_sha256"],
                                source["independent_receipt_sha256"])
@@ -815,7 +842,8 @@ def review_bundle(bundle, keys=None, *, evidence_mode="OFFHOST_SYNTHETIC",
             except (ValueError, KeyError, TypeError, OverflowError, AttributeError) as error:
                 invalid_case_count += 1
                 reasons.append(str(error))
-        approved = evidence_mode == "AUTHENTIC_OFFHOST_EVIDENCE" and trusted_main_run
+        approved = (evidence_mode == "AUTHENTIC_OFFHOST_EVIDENCE"
+                    and trusted_main_run and sensor_public_verifier_ready)
         family_results[family] = {
             "case_count": len(entries),
             "unique_source_receipt_pairs": len(seen_source_pairs),
@@ -832,6 +860,7 @@ def review_bundle(bundle, keys=None, *, evidence_mode="OFFHOST_SYNTHETIC",
         }
     return {"schema": "rc6.a320.pit.paper.report.v1", "evidence_mode": evidence_mode,
             "trusted_main_run": trusted_main_run, "input_case_count": len(cases),
+            "independent_public_sensor_verifier": "NOT_INTEGRATED_FAIL_CLOSED",
             "source_families_verified": sum(bool(value["source_pit_rows_verified"])
                                             for value in family_results.values()),
             "paper_families_verified": sum(bool(value["paper_sim_rows_verified"])
