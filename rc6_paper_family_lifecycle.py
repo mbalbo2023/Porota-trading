@@ -9,10 +9,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from types import SimpleNamespace
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
 from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_currency,
                                      decimal_value, register_exact_time_sql,
@@ -35,6 +35,33 @@ def _within_mark_age(stamp, source, maximum_seconds):
     elapsed = utc_microseconds(stamp) - utc_microseconds(source)
     maximum = decimal_value(maximum_seconds, "mark age", nonnegative=True) * Decimal("1000000")
     return 0 <= elapsed <= maximum
+
+
+def _runtime_fund_session_error(at):
+    """Necessary market floor, never a replacement for each FCI class cutoff.
+
+    FCI has no authenticated per-class calendar/NAV/fee runtime handoff yet.
+    A READY catalog label, a permissive caller callback and even a weekday
+    must not manufacture one.  Offline fixture entry is unaffected.
+    """
+    from zoneinfo import ZoneInfo
+    from ak_byma_calendar import es_dia_habil_operativo
+    from co_market_sessions_hf6 import BYMA_PAPER_SPOT_OPEN, BYMA_PAPER_SPOT_CLOSE
+
+    local = aware_datetime(at).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
+    if not es_dia_habil_operativo(local.date()):
+        return "FCI_RUNTIME_MARKET_CLOSED_OR_CALENDAR_UNKNOWN"
+    clock = local.time().replace(tzinfo=None)
+    if not BYMA_PAPER_SPOT_OPEN <= clock < BYMA_PAPER_SPOT_CLOSE:
+        return "FCI_RUNTIME_OUTSIDE_CONSERVATIVE_MARKET_WINDOW"
+    # The spot hours above are only a necessary guard. FCI subscription
+    # cutoffs and class-specific operating dates are not spot session hours.
+    from rc6_fund_paper_allocator import RUNTIME_ENTRY_AUTHORITY
+    if RUNTIME_ENTRY_AUTHORITY is not False:
+        # A future explicit adapter must add independently checked class
+        # schedule, fee/NAV and cash authority before this executor can open.
+        return "FCI_RUNTIME_AUTHENTICATED_ADAPTER_REVIEW_REQUIRED"
+    return "FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED"
 
 
 def _json_default(value):
@@ -114,8 +141,14 @@ TRANSITIONS = {
 
 # An initial FCI commitment in the effective runtime book must pass the
 # executor's locked catalog, cash and preopen checks. The generic lifecycle
-# primitive remains available for offline fixtures and subsequent NAV events.
+# primitive remains available for offline fixtures; runtime settlement has no
+# authenticated NAV/redemption writer and therefore cannot mint buying power.
 _FCI_LOCKED_SUBSCRIPTION = object()
+# Money-bearing futures transitions require an executor-owned transaction;
+# the runtime opening/mark/exit writer additionally requires the broker's
+# private validated-quote handoff. Neither is public generic event authority.
+_FUTURE_LOCKED_FINANCIAL_EVENT = object()
+_FUTURE_LOCKED_BROKER_COMMIT = object()
 # A207's compensating cash event must never be writable through the public
 # generic lifecycle primitive. Only the reconciled administrative writer may
 # supply this module-private capability within its caller-owned transaction.
@@ -130,6 +163,119 @@ def _positive(value, name):
     if not result.is_finite() or result <= 0:
         raise ValueError(f"{name}: valor fuera de rango")
     return result
+
+
+def _require_runtime_future_broker(store, connection, authority):
+    """Reject direct new runtime mark/settle/close without a validated book."""
+    from rc6_paper_runtime_safety import runtime_admission_context
+    runtime_book, safety_error = runtime_admission_context(store, connection=connection)
+    if safety_error:
+        raise ValueError(safety_error)
+    if runtime_book and authority is not _FUTURE_LOCKED_BROKER_COMMIT:
+        raise ValueError("FUTURES_RUNTIME_BROKER_EVIDENCE_REQUIRED")
+
+
+def _verify_runtime_future_fill_snapshot(connection, *, detail, lifecycle_id,
+                                         contract, result, book_at, at):
+    """Verify the trusted broker actually recorded its atomic PPI quote proof.
+
+    Merely supplying the broker handoff sentinel and a no-op callback cannot
+    manufacture the receipt. The snapshot must bind the *same transaction*,
+    exact future, quote identity, cash reserve and source clocks. This does not
+    claim that a forged local SQLite row could authenticate an external feed.
+    """
+    if not isinstance(detail, dict):
+        raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_REQUIRED")
+    key = detail.get("financial_admission_snapshot_key")
+    digest = detail.get("financial_admission_snapshot_sha256")
+    if (not isinstance(key, str) or not key or not isinstance(digest, str)
+            or len(digest) != 64):
+        raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_REQUIRED")
+    native_key = detail.get("native_decision_key")
+    expected_key = ("PAPER_ADMISSION:" + native_key if native_key else
+                    "PAPER_FUTURE_FILL:" + str(lifecycle_id))
+    if key != expected_key:
+        raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_KEY_MISMATCH")
+    receipt = connection.execute("""SELECT schema_version,payload_sha256,payload_json
+        FROM decision_evidence_snapshots WHERE decision_key=?""", (key,)).fetchone()
+    if not receipt:
+        raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_REQUIRED")
+    raw = receipt["payload_json"]
+    if (not isinstance(raw, str) or hashlib.sha256(raw.encode()).hexdigest() != digest
+            or receipt["payload_sha256"] != digest):
+        raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_DIGEST_MISMATCH")
+    try:
+        payload = json.loads(raw)
+        quote = payload["quote_used"]
+        decision = payload["decision"]
+        filled = payload["inputs_used"]["financial_commit"]
+        if (receipt["schema_version"] != payload["schema"]
+                or payload["capture_phase"] != "ATOMIC_PAPER_ADMISSION"
+                or payload["decision_key"] != key
+                or payload.get("native_decision_key") != native_key
+                or decision["paper_id"] != str(lifecycle_id)
+                or decision["action"] != "BUY"
+                or decision["final_result"] != "OPENED_SIMULATED"
+                or payload["runtime"]["execution_mode"] != "PRODUCTION_PAPER_SIMULATED"
+                or payload["runtime"]["real_money_authorized"] is not False
+                or filled["lifecycle_id"] != str(lifecycle_id)
+                or filled["state"] != "ACTIVE"
+                or filled["margin_reserved"] != result["margin_reserved"]
+                or quote["asset_class"] != "FUTUROS"
+                or (quote["symbol"], quote["market"], quote["currency"], quote["settlement"])
+                   != (contract.symbol, contract.market, contract.currency, contract.settlement)
+                or quote["financial_contract"] != json.loads(_canonical_json(asdict(contract)))
+                or not str(quote["metadata_source"]).startswith("PPI_CATALOG:")
+                or utc_microseconds(quote["book_at"]) != utc_microseconds(book_at)
+                or not _within_mark_age(at, quote["observed_at"], 120)):
+            raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_UNVERIFIED")
+    except (TypeError, ValueError, KeyError, IndexError) as exc:
+        raise ValueError("FUTURES_RUNTIME_ADMISSION_SNAPSHOT_UNVERIFIED") from exc
+
+
+FUTURE_QUOTE_PROOF_SCHEMA = "RC6_FUTURE_ATOMIC_PPI_QUOTE_V1"
+
+
+def _verify_runtime_future_quote_proof(connection, *, event_id, lifecycle_id,
+                                       contract, phase, price, book_at, at):
+    """Bind a mark/exit to a broker-recorded, same-TX PPI quote snapshot."""
+    key = "PAPER_FUTURE_" + phase + ":" + str(event_id)
+    receipt = connection.execute("""SELECT schema_version,payload_sha256,payload_json
+        FROM decision_evidence_snapshots WHERE decision_key=?""", (key,)).fetchone()
+    if receipt is None:
+        raise ValueError("FUTURES_RUNTIME_QUOTE_PROOF_REQUIRED")
+    raw = receipt["payload_json"]
+    if (receipt["schema_version"] != FUTURE_QUOTE_PROOF_SCHEMA
+            or not isinstance(raw, str) or receipt["payload_sha256"] !=
+            hashlib.sha256(raw.encode()).hexdigest()):
+        raise ValueError("FUTURES_RUNTIME_QUOTE_PROOF_DIGEST_INVALID")
+    try:
+        proof = json.loads(raw)
+        quoted = proof["quote"]
+        if (proof["schema"] != FUTURE_QUOTE_PROOF_SCHEMA
+                or proof["phase"] != phase or proof["event_id"] != str(event_id)
+                or proof["lifecycle_id"] != str(lifecycle_id)
+                or proof["real_routes_used"] != []
+                or proof["execution"] != "PRODUCTION_PAPER_SIMULATED"
+                or quoted["asset_class"] != "FUTUROS"
+                or (quoted["symbol"], quoted["market"], quoted["currency"], quoted["settlement"])
+                   != (contract.symbol, contract.market, contract.currency, contract.settlement)
+                or quoted["financial_contract"] != json.loads(_canonical_json(asdict(contract)))
+                or not str(quoted["metadata_source"]).startswith("PPI_CATALOG:")
+                or utc_microseconds(proof["recorded_at"]) != utc_microseconds(at)
+                or utc_microseconds(quoted["book_at"]) != utc_microseconds(book_at)
+                or not _within_mark_age(at, quoted["observed_at"], 120)
+                or decimal_value(quoted["bid"], "bid fuente", positive=True)
+                   > decimal_value(quoted["ask"], "ask fuente", positive=True)
+                or decimal_value(quoted["bid_size"], "tamaño bid", positive=True) <= 0
+                or decimal_value(quoted["ask_size"], "tamaño ask", positive=True) <= 0
+                or (phase == "MARK" and
+                    decimal_value(quoted["bid"], "bid fuente", positive=True) != price)
+                or (phase == "CLOSE" and
+                    decimal_value(quoted["bid"], "bid fuente", positive=True) < price)):
+            raise ValueError("FUTURES_RUNTIME_QUOTE_PROOF_UNVERIFIED")
+    except (TypeError, ValueError, KeyError, IndexError) as exc:
+        raise ValueError("FUTURES_RUNTIME_QUOTE_PROOF_UNVERIFIED") from exc
 
 
 @dataclass(frozen=True)
@@ -224,11 +370,11 @@ class FamilyPaperExecutor:
                 "SELECT 1 FROM paper_family_lifecycle_events WHERE event_id=?",
                 (str(event_id),)).fetchone()
             if not prior:
-                try:
-                    from cg_paper_workspace import database_path
-                    runtime_book = Path(self.store.path).resolve() == database_path()
-                except (OSError, ValueError, TypeError) as exc:
-                    raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+                from rc6_paper_runtime_safety import runtime_admission_context
+                runtime_book, safety_error = runtime_admission_context(
+                    self.store, connection=connection)
+                if safety_error:
+                    raise ValueError(safety_error)
                 if runtime_book and (cash_guard is None or admission_guard is None):
                     raise ValueError("FCI_PAPER_ADMISSION_GUARDS_REQUIRED")
                 if runtime_book:
@@ -265,6 +411,11 @@ class FamilyPaperExecutor:
                         raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
                     if not allowed:
                         raise ValueError(reason or "NO_GO_PAPER_SCALPING")
+                    # GO is an operator/preopen decision, never a broker/fund
+                    # manager class calendar or proof of a trading session.
+                    session_error = _runtime_fund_session_error(occurred_at or _now())
+                    if session_error:
+                        raise ValueError(session_error)
             return apply_paper_event(
                 self.store, lifecycle_id=lifecycle_id, event_id=event_id,
                 family="FCI", instrument=terms.symbol, currency=terms.currency,
@@ -273,7 +424,8 @@ class FamilyPaperExecutor:
                 _subscription_authority=_FCI_LOCKED_SUBSCRIPTION)
 
     def future_event(self, contract, *, lifecycle_id, event_id, to_state,
-                     amount="0", occurred_at=None, detail=None, connection=None):
+                     amount="0", occurred_at=None, detail=None, connection=None,
+                     _financial_authority=None):
         if not isinstance(contract, InstrumentContract) or contract.family != "FUTUROS":
             raise ValueError("FUTURES_CONTRACT_REQUIRED")
         return apply_paper_event(
@@ -284,12 +436,13 @@ class FamilyPaperExecutor:
             detail={**(detail or {}), "mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
                     "metadata_source": contract.metadata_source,
                     "financial_contract": _contract_snapshot(contract)},
-            connection=connection)
+            connection=connection, _financial_authority=_financial_authority)
 
     def open_future(self, contract, *, lifecycle_id, event_id, entry_price,
                     quantity, entry_cost="0", occurred_at=None, side="LONG",
                     detail=None, cash_guard=None, admission_guard=None,
-                    book_at=None, max_mark_age_seconds=120, commit_evidence=None):
+                    book_at=None, max_mark_age_seconds=120, commit_evidence=None,
+                    _runtime_broker_authority=None):
         """Reserve collateral, position and optional evidence in one transaction.
 
         ``commit_evidence(connection, result)`` runs once for a new fill, after
@@ -356,23 +509,11 @@ class FamilyPaperExecutor:
                 (contract.symbol, contract.currency, contract.market, contract.settlement)).fetchone():
                 raise ValueError("FUTURES_POSITION_ALREADY_OPEN")
 
-            if cash_guard is not None:
-                available = decimal_value(
-                    cash_guard(connection), "caja futura disponible", nonnegative=True)
-                if available < reserve + cost:
-                    raise ValueError("FUTURES_INSUFFICIENT_CASH")
-            if admission_guard is not None:
-                blocked = str(admission_guard(connection) or "")
-                if blocked:
-                    raise ValueError(blocked)
-            # The executor is also callable directly. The normal broker passes
-            # a locked guard, but a missing callback must not bypass the global
-            # receipt when this is the effective PAPER runtime database.
-            try:
-                from cg_paper_workspace import database_path
-                runtime_book = Path(self.store.path).resolve() == database_path()
-            except (OSError, ValueError, TypeError) as exc:
-                raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
+            from rc6_paper_runtime_safety import runtime_admission_context
+            runtime_book, safety_error = runtime_admission_context(
+                self.store, connection=connection)
+            if safety_error:
+                raise ValueError(safety_error)
             if runtime_book:
                 if admission_guard is None:
                     raise ValueError("PAPER_ADMISSION_GUARD_MISSING")
@@ -383,6 +524,36 @@ class FamilyPaperExecutor:
                     raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
                 if not allowed:
                     raise ValueError(reason or "NO_GO_PAPER_SCALPING")
+                # Technical tests run 24x7, but a real PAPER book cannot be
+                # opened on an unverified A3 session, with hindsight pricing
+                # rules or by invoking the generic executor directly.
+                from rc6_ppi_future_contract_policy import admission_error
+                market_error = admission_error(stamp, contract)
+                if market_error:
+                    raise ValueError(market_error)
+                price_terms = contract.execution_price_terms()
+                known_at = price_terms.get("known_at")
+                effective_at = price_terms.get("effective_at")
+                if (not known_at or utc_microseconds(known_at) > utc_microseconds(stamp)
+                        or (effective_at and
+                            utc_microseconds(effective_at) > utc_microseconds(stamp))):
+                    raise ValueError("FUTURES_EXECUTION_GRID_NOT_KNOWN_AT_PIT")
+                if contract.metadata_source != "CONTRACT_EVIDENCE_V2_BOUND":
+                    raise ValueError("FUTURES_CONTRACT_PROVENANCE_UNVERIFIED")
+                if cash_guard is None:
+                    raise ValueError("FUTURES_RUNTIME_CASH_GUARD_REQUIRED")
+                if (_runtime_broker_authority is not _FUTURE_LOCKED_BROKER_COMMIT
+                        or commit_evidence is None):
+                    raise ValueError("FUTURES_RUNTIME_BROKER_EVIDENCE_REQUIRED")
+            if cash_guard is not None:
+                available = decimal_value(
+                    cash_guard(connection), "caja futura disponible", nonnegative=True)
+                if available < reserve + cost:
+                    raise ValueError("FUTURES_INSUFFICIENT_CASH")
+            if admission_guard is not None:
+                blocked = str(admission_guard(connection) or "")
+                if blocked:
+                    raise ValueError(blocked)
             base_detail = {
                 **(detail or {}),
                 "mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
@@ -407,13 +578,15 @@ class FamilyPaperExecutor:
             self.future_event(
                 contract, lifecycle_id=lifecycle_id, event_id=event_id,
                 to_state="OPEN", occurred_at=stamp.isoformat(),
-                detail=base_detail, connection=connection)
+                detail=base_detail, connection=connection,
+                _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
             self.future_event(
                 contract, lifecycle_id=lifecycle_id,
                 event_id=f"{event_id}:MARGIN", to_state="MARGIN_RESERVED",
                 amount=str(-(reserve + cost)), occurred_at=stamp.isoformat(),
                 detail={**base_detail, "cash_effect": str(-(reserve + cost))},
-                connection=connection)
+                connection=connection,
+                _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
             connection.execute("""INSERT INTO paper_future_positions
               (lifecycle_id,symbol,currency,market,settlement,side,quantity,
                cash_multiplier,entry_price,settlement_base_price,last_mark_price,
@@ -432,12 +605,17 @@ class FamilyPaperExecutor:
             result = _future_result(row, idempotent=False)
             if commit_evidence is not None:
                 commit_evidence(connection, result)
+            if runtime_book:
+                _verify_runtime_future_fill_snapshot(
+                    connection, detail=detail, lifecycle_id=lifecycle_id,
+                    contract=contract, result=result, book_at=native_book, at=stamp)
         return result
 
     def mark_future(self, contract, *, lifecycle_id, event_id, mark_price,
                     book_at, occurred_at=None, settlement=False, detail=None,
                     max_mark_age_seconds=120, price_kind=None, price_source=None,
-                    price_rule=None):
+                    price_rule=None, _runtime_broker_authority=None,
+                    commit_evidence=None):
         """Persist a fresh mark; settlement=True applies explicit daily variation."""
         _validate_future_contract(contract)
         stamp = aware_datetime(occurred_at or _now())
@@ -489,6 +667,13 @@ class FamilyPaperExecutor:
                     "SELECT 1 FROM paper_family_lifecycle_events WHERE event_id=?",
                     (str(event_id),)).fetchone():
                 raise ValueError("FUTURES_MARK_EVENT_COLLISION")
+            from rc6_paper_runtime_safety import runtime_admission_context
+            runtime_book, safety_error = runtime_admission_context(self.store, connection=connection)
+            if safety_error:
+                raise ValueError(safety_error)
+            if runtime_book and (commit_evidence is None or
+                    _runtime_broker_authority is not _FUTURE_LOCKED_BROKER_COMMIT):
+                raise ValueError("FUTURES_RUNTIME_QUOTE_PROOF_REQUIRED")
             row = connection.execute(
                 "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
                 (str(lifecycle_id),)).fetchone()
@@ -520,7 +705,8 @@ class FamilyPaperExecutor:
                             "price_kind": kind, "price_rule": price_rule,
                             "paper_request_v1": request,
                             "real_routes_used": []},
-                    connection=connection)
+                    connection=connection,
+                    _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
                 collateral = decimal_value(row["margin_reserved"], "garantía", positive=True) + realized
                 deficit = contract.margin_deficit(collateral, qty, price=price)
                 margin_state = "MARGIN_DEFICIT" if deficit > 0 else "MARGIN_OK"
@@ -531,7 +717,8 @@ class FamilyPaperExecutor:
                     detail={"margin_deficit": str(deficit),
                             "collateral_after_variation": str(collateral),
                             "real_routes_used": []},
-                    connection=connection)
+                    connection=connection,
+                    _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
                 base = price
                 unrealized = Decimal("0")
             connection.execute("""INSERT INTO paper_future_marks
@@ -557,12 +744,21 @@ class FamilyPaperExecutor:
             row = dict(connection.execute(
                 "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
                 (str(lifecycle_id),)).fetchone())
-        return _future_result(row, idempotent=False)
+            result = _future_result(row, idempotent=False)
+            if commit_evidence is not None:
+                commit_evidence(connection, result)
+            if runtime_book:
+                _verify_runtime_future_quote_proof(
+                    connection, event_id=event_id, lifecycle_id=lifecycle_id,
+                    contract=contract, phase="MARK", price=price,
+                    book_at=source_at, at=stamp)
+        return result
 
     def close_future(self, contract, *, lifecycle_id, event_id, exit_price,
                      book_at, occurred_at=None, reason="EXIT", expiry=False,
                      exit_cost="0", detail=None, max_mark_age_seconds=120,
-                     price_kind="FILL", price_source=None, price_rule=None):
+                     price_kind="FILL", price_source=None, price_rule=None,
+                     _runtime_broker_authority=None, commit_evidence=None):
         """Release PAPER collateral and realize the final marked variation."""
         _validate_future_contract(contract)
         stamp = aware_datetime(occurred_at or _now())
@@ -615,6 +811,13 @@ class FamilyPaperExecutor:
             if connection.execute("SELECT 1 FROM paper_future_marks WHERE event_id=?",
                                   (str(event_id),)).fetchone():
                 raise ValueError("FUTURES_CLOSE_EVENT_COLLISION")
+            from rc6_paper_runtime_safety import runtime_admission_context
+            runtime_book, safety_error = runtime_admission_context(self.store, connection=connection)
+            if safety_error:
+                raise ValueError(safety_error)
+            if runtime_book and (commit_evidence is None or
+                    _runtime_broker_authority is not _FUTURE_LOCKED_BROKER_COMMIT):
+                raise ValueError("FUTURES_RUNTIME_QUOTE_PROOF_REQUIRED")
             if row["status"] != "ACTIVE":
                 raise ValueError("FUTURES_ACTIVE_POSITION_REQUIRED")
             _future_row_matches_contract(row, contract)
@@ -647,7 +850,8 @@ class FamilyPaperExecutor:
                         "price_kind": kind, "price_source": price_source,
                         "price_rule": price_rule, "paper_request_v1": request,
                         "real_routes_used": []},
-                connection=connection)
+                connection=connection,
+                _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
             connection.execute("""INSERT INTO paper_future_marks
               (event_id,lifecycle_id,mark_price,book_at,observed_at,
                is_settlement,unrealized_pnl,detail_json)
@@ -671,7 +875,15 @@ class FamilyPaperExecutor:
                 "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
                 (str(lifecycle_id),)).fetchone())
             row["realized_pnl"] = str(net_realized)
-        return _future_result(row, idempotent=False)
+            result = _future_result(row, idempotent=False)
+            if commit_evidence is not None:
+                commit_evidence(connection, result)
+            if runtime_book:
+                _verify_runtime_future_quote_proof(
+                    connection, event_id=event_id, lifecycle_id=lifecycle_id,
+                    contract=contract, phase="CLOSE", price=price,
+                    book_at=source_at, at=stamp)
+        return result
 
     def active_future(self, symbol):
         with self.store.connect() as connection:
@@ -770,7 +982,7 @@ def ensure_initialized(store):
 def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                       currency, to_state, amount="0", occurred_at=None,
                       detail=None, connection=None, _subscription_authority=None,
-                      _admin_cancel_authority=None):
+                      _admin_cancel_authority=None, _financial_authority=None):
     """Apply one idempotent PAPER transition or fail closed.
 
     A repeated event_id returns the original result without a second ledger
@@ -793,19 +1005,30 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 to_state=to_state, amount=amount, occurred_at=occurred_at,
                 detail=detail, connection=owned,
                 _subscription_authority=_subscription_authority,
-                _admin_cancel_authority=_admin_cancel_authority)
+                _admin_cancel_authority=_admin_cancel_authority,
+                _financial_authority=_financial_authority)
     existing_event = connection.execute(
         "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
         (str(event_id),),
     ).fetchone()
-    if family == "FCI" and to_state in {"SUBSCRIBE", "SUBSCRIBE_REQUESTED"} and not existing_event:
-        try:
-            from cg_paper_workspace import database_path
-            runtime_book = Path(store.path).resolve() == database_path()
-        except (OSError, ValueError, TypeError) as exc:
-            raise ValueError("PAPER_PREOPEN_GATE_UNAVAILABLE") from exc
-        if runtime_book and _subscription_authority is not _FCI_LOCKED_SUBSCRIPTION:
-            raise ValueError("FCI_DIRECT_RUNTIME_SUBSCRIPTION_BLOCKED")
+    if (family in {"FCI", "FUTUROS"} and not existing_event and
+            not (family == "FUTUROS" and to_state == "ADMIN_CANCEL" and
+                 _admin_cancel_authority is _FUTURE_LOCKED_ADMIN_CANCEL)):
+        from rc6_paper_runtime_safety import runtime_admission_context
+        runtime_book, safety_error = runtime_admission_context(store, connection=connection)
+        if safety_error:
+            raise ValueError(safety_error)
+        if runtime_book:
+            if family == "FCI":
+                if to_state in {"SUBSCRIBE", "SUBSCRIBE_REQUESTED"}:
+                    if _subscription_authority is not _FCI_LOCKED_SUBSCRIPTION:
+                        raise ValueError("FCI_DIRECT_RUNTIME_SUBSCRIPTION_BLOCKED")
+                else:
+                    # No source-authenticated NAV/clearing/units writer exists
+                    # in runtime: never let generic transitions mint cash.
+                    raise ValueError("FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED")
+            elif _financial_authority is not _FUTURE_LOCKED_FINANCIAL_EVENT:
+                raise ValueError("FUTURES_DIRECT_RUNTIME_FINANCIAL_EVENT_FORBIDDEN")
     # Retrying an implicitly timestamped request reuses its original instant.
     # Supplying another explicit instant remains a conflicting intention.
     stamp = aware_datetime(occurred_at or (existing_event["occurred_at"]
@@ -971,6 +1194,165 @@ def _future_result(row, *, idempotent):
     }
 
 
+def _projection_runtime_context(store, connection):
+    """Recognize the on-disk book even for the A207 admin connection API.
+
+    The administrative reconciler intentionally passes ``store=None`` while
+    owning its externally verified SQLite transaction; the attached ``main``
+    database path must still be checked rather than assumed to be synthetic.
+    """
+    from rc6_paper_runtime_safety import runtime_admission_context
+    if store is None:
+        attached = connection.execute("PRAGMA database_list").fetchall()
+        file_path = next((row[2] for row in attached if row[1] == "main"), "")
+        if not file_path:
+            return False, ""
+        store = SimpleNamespace(path=file_path)
+    return runtime_admission_context(store)
+
+
+def _validate_runtime_future_cash_event(connection, row, amount):
+    """Refuse historical runtime buying power without matching financial rows.
+
+    Every monetary amount is derived from the immutable OPEN reserve, posted
+    settlement mark or terminal position. This is a conservative consistency
+    check, not a representation that SQLite evidence authenticates A3/PPI.
+    """
+    state = row["to_state"]
+    if row.get("position_id") is None:
+        raise ValueError("FUTURES_RUNTIME_ORPHAN_CASH_EVENT")
+    if utc_microseconds(row["occurred_at"]) < utc_microseconds(row["opened_at"]):
+        raise ValueError("FUTURES_RUNTIME_FINANCIAL_EVENT_BEFORE_OPEN")
+    if ((row["symbol"], row["currency"]) !=
+            (row["lifecycle_instrument"], row["lifecycle_currency"])):
+        raise ValueError("FUTURES_RUNTIME_POSITION_IDENTITY_MISMATCH")
+    reserve = decimal_value(row["margin_reserved"], "garantía", positive=True)
+    entry_fee = decimal_value(row["entry_cost"], "costo entrada", nonnegative=True)
+    if state == "OPEN":
+        if amount or utc_microseconds(row["opened_at"]) != utc_microseconds(row["occurred_at"]):
+            raise ValueError("FUTURES_RUNTIME_OPEN_CASH_EVENT_INVALID")
+        return
+    if state == "MARGIN_RESERVED":
+        if (amount != -(reserve + entry_fee)
+                or utc_microseconds(row["occurred_at"]) != utc_microseconds(row["opened_at"])):
+            raise ValueError("FUTURES_RUNTIME_MARGIN_CASH_MISMATCH")
+        return
+    if state in {"MARGIN_OK", "MARGIN_DEFICIT"}:
+        if amount:
+            raise ValueError("FUTURES_RUNTIME_MARGIN_STATE_CASH_INVALID")
+        return
+    try:
+        detail = json.loads(row["detail_json"])
+        if not isinstance(detail, dict):
+            raise ValueError("detail must be a dictionary")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("FUTURES_RUNTIME_FINANCIAL_DETAIL_UNVERIFIED") from exc
+    if state == "ADMIN_CANCEL":
+        metadata = json.loads(row["metadata_json"] or "{}")
+        history = connection.execute("""SELECT from_state,to_state,amount,event_id,occurred_at
+            FROM paper_family_lifecycle_events WHERE lifecycle_id=? ORDER BY rowid""",
+            (row["lifecycle_id"],)).fetchall()
+        ledger = connection.execute("""SELECT state,ledger_total FROM paper_family_lifecycle
+            WHERE lifecycle_id=?""", (row["lifecycle_id"],)).fetchone()
+        if (row["status"] != "CLOSED"
+                or row["close_reason"] != FUTURE_ADMIN_CANCEL_REASON
+                or metadata.get("terminal_state") != "ADMIN_CANCEL"
+                or metadata.get("admin_cancel_event_id") != row["event_id"]
+                or metadata.get("admin_cancel_authority") != FUTURE_ADMIN_CANCEL_AUTHORITY_A207
+                or detail.get("authority") != FUTURE_ADMIN_CANCEL_AUTHORITY_A207
+                or detail.get("reason") != FUTURE_ADMIN_CANCEL_REASON
+                or detail.get("no_exit_price_or_pnl") is not True
+                or detail.get("real_routes_used") != []
+                or decimal_value(detail.get("cash_reversal"), "reversal", positive=True)
+                   != reserve + entry_fee
+                or decimal_value(detail.get("margin_released"), "garantía recuperada", positive=True)
+                   != reserve
+                or decimal_value(detail.get("entry_fee_reversed"), "fee recuperado", nonnegative=True)
+                   != entry_fee
+                or amount != reserve + entry_fee
+                or len(history) != 3
+                or history[0][0] is not None or history[0][1] != "OPEN"
+                or decimal_value(history[0][2], "apertura") != 0
+                or history[1][0] != "OPEN" or history[1][1] != "MARGIN_RESERVED"
+                or decimal_value(history[1][2], "reserva") != -(reserve + entry_fee)
+                or history[2][0] != "MARGIN_RESERVED" or history[2][1] != "ADMIN_CANCEL"
+                or history[2][3] != row["event_id"]
+                or utc_microseconds(history[0][4]) != utc_microseconds(row["opened_at"])
+                or utc_microseconds(history[1][4]) != utc_microseconds(row["opened_at"])
+                or utc_microseconds(history[2][4]) < utc_microseconds(history[1][4])
+                or ledger is None or ledger[0] != "ADMIN_CANCEL"
+                or decimal_value(ledger[1], "balance reversado") != 0):
+            raise ValueError("FUTURES_RUNTIME_ADMIN_REVERSAL_UNRECONCILED")
+        return
+    if state not in {"DAILY_VARIATION", "CLOSE", "EXPIRY"}:
+        raise ValueError("FUTURES_RUNTIME_CASH_EVENT_STATE_UNVERIFIED")
+    contract = future_position_contract(row)
+    qty = contract.quantity(row["quantity"])
+    if state == "DAILY_VARIATION":
+        mark = connection.execute("""SELECT lifecycle_id,mark_price,book_at,observed_at,
+            is_settlement FROM paper_future_marks WHERE event_id=?""",
+            (row["event_id"],)).fetchone()
+        if not mark or mark[0] != row["lifecycle_id"] or mark[4] != 1:
+            raise ValueError("FUTURES_RUNTIME_VARIATION_MARK_MISSING")
+        previous = connection.execute("""SELECT mark_price FROM paper_future_marks
+            WHERE lifecycle_id=? AND is_settlement=1 AND
+                  rc6_instant_us(observed_at)<rc6_instant_us(?)
+            ORDER BY rc6_instant_us(observed_at) DESC LIMIT 1""",
+            (row["lifecycle_id"], mark[3])).fetchone()
+        base = previous[0] if previous else row["entry_price"]
+        expected = contract.pnl(base, mark[1], qty)
+        if (amount != expected
+                or utc_microseconds(row["occurred_at"]) != utc_microseconds(mark[3])
+                or utc_microseconds(detail.get("book_at")) != utc_microseconds(mark[2])
+                or decimal_value(detail.get("settlement_price"), "precio variación", positive=True)
+                   != decimal_value(mark[1], "precio marca", positive=True)
+                or decimal_value(detail.get("variation_pnl"), "variación") != expected):
+            raise ValueError("FUTURES_RUNTIME_VARIATION_CASH_UNRECONCILED")
+        _verify_runtime_future_quote_proof(
+            connection, event_id=row["event_id"], lifecycle_id=row["lifecycle_id"],
+            contract=contract, phase="MARK", price=decimal_value(mark[1], "marca", positive=True),
+            book_at=mark[2], at=row["occurred_at"])
+        return
+    # CLOSE/EXPIRY: a real terminal row, explicit fill and same-book mark are
+    # required. Exit cash is exactly reserved collateral + PnL - exit cost;
+    # never use a caller-provided positive ledger amount as its own proof.
+    metadata = json.loads(row["metadata_json"] or "{}")
+    try:
+        exit_price = decimal_value(detail.get("exit_price"), "precio salida", positive=True)
+        exit_fee = decimal_value(detail.get("exit_cost"), "costo salida", nonnegative=True)
+        variation = contract.pnl(row["settlement_base_price"], exit_price, qty)
+        book_at = detail.get("book_at")
+        if utc_microseconds(book_at) is None:
+            raise ValueError("no book instant")
+    except (ValueError, TypeError) as exc:
+        raise ValueError("FUTURES_RUNTIME_TERMINAL_DETAIL_UNVERIFIED") from exc
+    source_mark = connection.execute("""SELECT mark_price FROM paper_future_marks
+        WHERE lifecycle_id=? AND rc6_instant_us(book_at)=? AND
+              rc6_instant_us(observed_at)<=? AND is_settlement=0 LIMIT 1""",
+        (row["lifecycle_id"], utc_microseconds(book_at),
+         utc_microseconds(row["occurred_at"]))).fetchone()
+    terminals = connection.execute("""SELECT COUNT(*) FROM paper_family_lifecycle_events
+        WHERE lifecycle_id=? AND to_state IN ('CLOSE','EXPIRY','ADMIN_CANCEL')""",
+        (row["lifecycle_id"],)).fetchone()[0]
+    if (row["status"] != "CLOSED" or metadata.get("terminal_state") != state
+            or row["close_reason"] != detail.get("reason")
+            or utc_microseconds(row["closed_at"]) != utc_microseconds(row["occurred_at"])
+            or not source_mark or terminals != 1
+            or decimal_value(source_mark[0], "book de cierre", positive=True) < exit_price
+            or decimal_value(row["last_mark_price"], "última marca", positive=True) != exit_price
+            or decimal_value(row["exit_cost"], "costo salida", nonnegative=True) != exit_fee
+            or decimal_value(row["variation_realized"], "PnL bruto") !=
+               decimal_value(detail.get("gross_realized_pnl"), "PnL bruto detalle")
+            or decimal_value(detail.get("final_variation"), "PnL final") != variation
+            or decimal_value(detail.get("margin_released"), "garantía devuelta") != reserve
+            or amount != reserve + variation - exit_fee):
+        raise ValueError("FUTURES_RUNTIME_TERMINAL_CASH_UNRECONCILED")
+    _verify_runtime_future_quote_proof(
+        connection, event_id=row["event_id"], lifecycle_id=row["lifecycle_id"],
+        contract=contract, phase="CLOSE", price=exit_price,
+        book_at=book_at, at=row["occurred_at"])
+
+
 def future_cash_effect(store, currency, at, *, connection=None, exclusive=False):
     """Cash movement only: collateral reserve/release, variation and fees."""
     point = aware_datetime(at)
@@ -985,14 +1367,27 @@ def future_cash_effect(store, currency, at, *, connection=None, exclusive=False)
         raise RuntimeError("FUTURES_PARENT_SCHEMA_REQUIRED")
     register_exact_time_sql(connection)
     operator = "<" if exclusive else "<="
-    rows = connection.execute("""SELECT amount FROM paper_family_lifecycle_events
-      WHERE family='FUTUROS' AND EXISTS(
-        SELECT 1 FROM paper_family_lifecycle l
-        WHERE l.lifecycle_id=paper_family_lifecycle_events.lifecycle_id
-          AND l.currency=?
-      ) AND rc6_instant_us(occurred_at)""" + operator + "?",
+    runtime_book, safety_error = _projection_runtime_context(store, connection)
+    if safety_error:
+        raise ValueError(safety_error)
+    rows = connection.execute("""SELECT e.event_id,e.lifecycle_id,e.to_state,e.amount,
+        e.occurred_at,e.detail_json,l.instrument AS lifecycle_instrument,
+        l.currency AS lifecycle_currency,p.lifecycle_id AS position_id,p.*
+      FROM paper_family_lifecycle_events e
+      JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
+      LEFT JOIN paper_future_positions p ON p.lifecycle_id=e.lifecycle_id
+      WHERE e.family='FUTUROS' AND l.family='FUTUROS' AND l.currency=?
+        AND rc6_instant_us(e.occurred_at)""" + operator + "?",
       (cash_currency(currency), utc_microseconds(point)))
-    return sum((decimal_value(row[0], "flujo futuro") for row in rows), Decimal("0"))
+    names = [column[0] for column in rows.description]
+    total = Decimal("0")
+    for values in rows:
+        record = dict(zip(names, values))
+        cash = decimal_value(record["amount"], "flujo futuro")
+        if runtime_book:
+            _validate_runtime_future_cash_event(connection, record, cash)
+        total += cash
+    return total
 
 
 FUTURE_ADMIN_CANCEL_AUTHORITY_A207 = 'ISSUE773_A207_PAPER_ACCOUNTING_REVERSAL_20261030'
@@ -1130,6 +1525,9 @@ def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
                                     exclusive=exclusive)
     register_exact_time_sql(connection)
     operator = "<" if exclusive else "<="
+    runtime_book, safety_error = _projection_runtime_context(store, connection)
+    if safety_error:
+        raise ValueError(safety_error)
     rows = connection.execute("""SELECT e.to_state,e.amount FROM paper_family_lifecycle_events e
       JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
       WHERE e.family='FCI' AND l.family='FCI' AND l.currency=?
@@ -1142,6 +1540,8 @@ def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
         if ((state in {"SUBSCRIBE_REQUESTED", "SUBSCRIBE"} and amount > 0)
                 or (state == "REDEEMED" and amount < 0)):
             raise ValueError("FCI_CASH_EVENT_DIRECTION_INVALID")
+        if runtime_book and state == "REDEEMED" and amount > 0:
+            raise ValueError("FCI_RUNTIME_REDEMPTION_SOURCE_UNVERIFIED")
         total += amount
     return total
 

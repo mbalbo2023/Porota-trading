@@ -94,6 +94,7 @@ def exact_fee_offers(offers) -> list[CaucionOffer]:
 def fee_authorized_offers(offers) -> list[CaucionOffer]:
     """Exact broker budgets or the versioned ARS PAPER tariff are admissible."""
     from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
     result = []
     for offer in offers or ():
         if not isinstance(offer, CaucionOffer):
@@ -101,8 +102,10 @@ def fee_authorized_offers(offers) -> list[CaucionOffer]:
         exact = (offer.quoted_total_fees is not None
                  and offer.fee_quote_principal is not None)
         paper = (offer.currency == "ARS"
-                 and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
-                 and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)
+                 and ((offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
+                       and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)
+                      or (offer.paper_fill_policy == "LIVE_PPI_BID_PARTICIPATION_CAP"
+                          and offer.fee_authority == PAPER_FEE_AUTHORITY_V2)))
         if exact or paper:
             result.append(offer)
     return result
@@ -381,6 +384,7 @@ def offers_from_store(store, *, now):
     from datetime import datetime, time as dt_time
     from ak_byma_calendar import ANIOS_AUDITADOS, es_dia_habil_operativo
     from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
     from rc6_cauciones_contract import parse_ticker, theoretical_liquidity_date
     from cp_contract_evidence_v2_hf6 import pending_material_changes
     from dj_caucion_live_ppi_rc6 import SOURCE as PPI_BOOK_SOURCE
@@ -454,7 +458,10 @@ def offers_from_store(store, *, now):
                 metadata_source=("PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1;"
                                  "THEORETICAL_MATURITY_BYMA_CALENDAR_CHECKED"),
                 paper_fill_policy="LIVE_PPI_BID_PARTICIPATION_CAP",
-                fee_authority=CAUCION_PAPER_FEE_AUTHORITY)
+                # Upgrade the *new offer*, not the durable PPI contract, to a
+                # separately versioned conservative PAPER cost overlay.
+                # Historical decisions/receipts remain byte-for-byte sealed.
+                fee_authority=PAPER_FEE_AUTHORITY_V2)
             if identity.term_days != int(row["term_days"]):
                 raise ValueError("CAUCION_TERM_IDENTITY_MISMATCH")
             offers.append(offer)

@@ -159,7 +159,7 @@ def test_runtime_fci_subscription_requires_global_and_atomic_cash_gates(tmp_path
         db.execute("INSERT OR REPLACE INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)",
             ("FUND1", "FCI", "FCI", "ARS", "INMEDIATA", 1, "AVAILABLE", "fixture",
              "2026-10-26T12:00:00+00:00"))
-    at = "2026-10-26T12:00:00+00:00"
+    at = "2026-10-26T16:00:00+00:00"  # lunes 13:00 ART; en ventana, sin fuente FCI autenticada
     request = dict(lifecycle_id="fund-1", event_id="subscription-1", amount="1000",
                    occurred_at=at)
     for initial in ("SUBSCRIBE", "SUBSCRIBE_REQUESTED"):
@@ -198,13 +198,13 @@ def test_runtime_fci_subscription_requires_global_and_atomic_cash_gates(tmp_path
                    (original,))
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
-    result = broker.family_paper.subscribe_fund(terms, **request, **callbacks)
-    assert result["state"] == "SUBSCRIBE_REQUESTED"
-    monkeypatch.setattr(gate, "admission_status", lambda: (False, "NO_GO_PAPER_SCALPING"))
-    assert broker.family_paper.subscribe_fund(terms, **request)["idempotent"] is True
-    assert broker._cash(at, "ARS") == 9000
+    # A catalogue-ready label and even a valid GO are not authenticated
+    # fund-manager class cutoffs, fee terms or NAV source receipts.
+    with pytest.raises(ValueError, match="FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED"):
+        broker.family_paper.subscribe_fund(terms, **request, **callbacks)
+    assert broker._cash(at, "ARS") == 10000
     with store.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 

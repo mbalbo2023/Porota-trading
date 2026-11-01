@@ -22,6 +22,64 @@ REQUIRED_IDENTITY = {'id', 'symbol', 'instrument_type', 'market', 'settlement',
                      'date', 'source', 'metadata_json'}
 POINTERS = ('history_canonical_v2', 'history_canonical_v2_quarantine_rc6')
 MAX_BYTES = 2 * 1024**3
+MAX_SCHEMA_TABLES = 256
+MAX_REFERENCE_COLUMNS = 512
+
+
+def _quoted(name: str) -> str:
+    """Quote names obtained from this exact SQLite schema, never from callers."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _local_reference_graph(connection: sqlite3.Connection, tables: set[str], check) -> dict:
+    """Inspect ALL local table definitions and possible version-id pointers.
+
+    A matching integer is only a *possible* pin: undeclared relationships,
+    JSON payloads, PAPER ledgers, artifacts and other databases are outside
+    SQLite's FK metadata.  This audit therefore cannot authorize a DELETE.
+    """
+    names = sorted(name for name in tables if not name.startswith('sqlite_'))
+    if len(names) > MAX_SCHEMA_TABLES:
+        raise ValueError('OFFHOST_SCHEMA_TABLE_BUDGET_EXCEEDED')
+    references = []
+    declared_fks = []
+    json_columns = []
+    reference_count = 0
+    for name in names:
+        check()
+        table = _quoted(name)
+        columns = [row[1] for row in connection.execute(f'PRAGMA table_info({table})')]
+        for column in columns:
+            if column.lower().endswith(('json', '_json')):
+                json_columns.append({'table': name, 'column': column})
+        for fk in connection.execute(f'PRAGMA foreign_key_list({table})'):
+            declared_fks.append({'from_table': name, 'from_column': fk[3],
+                                 'to_table': fk[2], 'to_column': fk[4]})
+        for column in columns:
+            if column != 'version_id' and not column.endswith('_version_id'):
+                continue
+            reference_count += 1
+            if reference_count > MAX_REFERENCE_COLUMNS:
+                raise ValueError('OFFHOST_REFERENCE_COLUMN_BUDGET_EXCEEDED')
+            col = _quoted(column)
+            nonnull = connection.execute(
+                f'SELECT COUNT(*) FROM {table} WHERE {col} IS NOT NULL').fetchone()[0]
+            matched = connection.execute(
+                f'SELECT COUNT(*) FROM {table} AS x WHERE x.{col} IS NOT NULL '
+                f'AND EXISTS (SELECT 1 FROM history_versions_v2 AS v '
+                f'WHERE v.id=x.{col})').fetchone()[0]
+            references.append({'table': name, 'column': column,
+                               'nonnull_rows': int(nonnull),
+                               'matching_legacy_version_ids': int(matched),
+                               'relationship': 'POSSIBLE_PIN_UNVERIFIED'})
+    return {'schema': 'RC6_OFFHOST_LOCAL_PIN_GRAPH_A244_V1',
+            'tables_scanned': len(names), 'declared_foreign_keys': declared_fks,
+            'possible_version_reference_columns': references,
+            'json_columns_with_unverified_embedded_links': json_columns,
+            'local_schema_survey_completed': True,
+            'json_payload_linkage_verified': False,
+            'cross_store_and_artifact_pins_verified': False,
+            'version_ids_safe_to_purge': 0, 'host_purge_allowed': False}
 
 
 def _sha256(path: Path, check):
@@ -162,6 +220,8 @@ def census(database: Path, capture: dict, *, runner_root: Path, seconds=180,
         if 'history_versions_v2' not in tables:
             raise ValueError('OFFHOST_LEGACY_VERSIONS_MISSING')
 
+        local_reference_graph = _local_reference_graph(connection, tables, check)
+
         def columns(table):
             # All names are constants, never user supplied SQL identifiers.
             return {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')}
@@ -214,6 +274,7 @@ def census(database: Path, capture: dict, *, runner_root: Path, seconds=180,
                    'invalid_legacy_metadata': dict(metadata_bad),
                    'families': dict(sorted(family.items())),
                    'sources': dict(sorted(sources.items())),
+                   'local_reference_graph': local_reference_graph,
                    'pointers': pointers, 'close_legacy_versions': close_count,
                    'cross_database_and_artifact_pins': 'NO_VERIFICADO',
                    'per_row_currency_provenance': 'NO_VERIFICADO',

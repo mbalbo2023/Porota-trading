@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, replace
@@ -290,6 +289,34 @@ def _atomic_admission_snapshot(q, features, paper_id, at, recorded_at, score, *,
     from rc6_performance.common import decision_snapshot_phase
     decision_snapshot_phase(evidence)
     return evidence
+
+
+def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, at):
+    """Record an immutable PAPER-only PPI quote binding inside the cash TX."""
+    from rc6_paper_family_lifecycle import FUTURE_QUOTE_PROOF_SCHEMA
+    payload = _evidence_safe({
+        "schema": FUTURE_QUOTE_PROOF_SCHEMA,
+        "phase": phase,
+        "event_id": str(event_id), "lifecycle_id": str(lifecycle_id),
+        "recorded_at": at,
+        "execution": "PRODUCTION_PAPER_SIMULATED", "real_routes_used": [],
+        "quote": {
+            "symbol": q.symbol, "asset_class": q.asset_class,
+            "market": q.market, "currency": q.currency,
+            "settlement": q.settlement, "bid": q.bid, "ask": q.ask,
+            "bid_size": q.bid_size, "ask_size": q.ask_size,
+            "observed_at": q.observed_at, "book_at": q.book_at or q.observed_at,
+            "metadata_source": q.metadata_source,
+            "financial_contract": asdict(q.contract) if q.contract else None,
+        },
+    })
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    connection.execute("""INSERT INTO decision_evidence_snapshots
+        (decision_key,captured_at,schema_version,payload_sha256,payload_json)
+        VALUES(?,?,?,?,?)""", (
+            "PAPER_FUTURE_" + phase + ":" + str(event_id),
+            at, FUTURE_QUOTE_PROOF_SCHEMA, digest, raw))
 
 
 
@@ -1468,7 +1495,7 @@ class PaperBroker:
             return self._open_future(q, score, features)
         return self._open(q, score, features)
 
-    def _runtime_preopen_error(self, q=None):
+    def _runtime_preopen_error(self, q=None, *, connection=None):
         """The effective PAPER book needs an injected guard and a live receipt.
 
         Synthetic books have independent admission contracts. Call this again
@@ -1476,8 +1503,12 @@ class PaperBroker:
         with a quote, recheck the exact-contract callback under that lock.
         """
         try:
-            from cg_paper_workspace import database_path
-            if Path(self.store.path).resolve() != database_path():
+            from rc6_paper_runtime_safety import runtime_admission_context
+            runtime_book, safety_error = runtime_admission_context(
+                self.store, connection=connection)
+            if safety_error:
+                return safety_error
+            if not runtime_book:
                 return ""
             if self.admission_guard is None:
                 return "PAPER_ADMISSION_GUARD_MISSING"
@@ -1531,8 +1562,12 @@ class PaperBroker:
             family = family_name(q.asset_class)
             if family not in {"OPCIONES", "BONOS", "LETRAS", "OBLIGACIONES"}:
                 return ""
-            from cg_paper_workspace import database_path
-            if Path(self.store.path).resolve() != database_path():
+            from rc6_paper_runtime_safety import runtime_admission_context
+            runtime_book, safety_error = runtime_admission_context(
+                self.store, connection=connection)
+            if safety_error:
+                return safety_error
+            if not runtime_book:
                 return ""
             strategy = features.get("strategy")
             if not isinstance(strategy, str) or not strategy or len(strategy) > 100:
@@ -1795,6 +1830,18 @@ class PaperBroker:
             return "FUTURES_TOTAL_EXPOSURE_CAP"
         return ""
 
+    def _future_quote_callback(self, q, lifecycle_id, event_id, phase, at):
+        """Use an atomic PPI quote receipt for the effective runtime only."""
+        from rc6_paper_runtime_safety import runtime_admission_context
+        runtime_book, safety_error = runtime_admission_context(self.store)
+        if safety_error:
+            raise ValueError(safety_error)
+        if not runtime_book:
+            return None
+        return lambda connection, _result: _commit_future_quote_proof(
+            connection, q=q, lifecycle_id=lifecycle_id, event_id=event_id,
+            phase=phase, at=at)
+
     def _open_future(self, q: Quote, score: Decimal, features: dict):
         gate_error = self._preopen_admission_error(q)
         if gate_error:
@@ -1815,7 +1862,8 @@ class PaperBroker:
             return False, "FUTURES_EXACT_PAPER_CONTRACT_REQUIRED", None
         if not str(q.metadata_source or "").startswith("PPI_CATALOG:"):
             return False, "FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED", None
-        from rc6_paper_family_lifecycle import _validate_future_contract
+        from rc6_paper_family_lifecycle import (_validate_future_contract,
+            _FUTURE_LOCKED_BROKER_COMMIT)
         try:
             _validate_future_contract(contract)
             contract.price(q.bid, price_kind="QUOTE")
@@ -1971,7 +2019,8 @@ class PaperBroker:
                 cash_guard=lambda connection: self._cash(
                     as_of=at, currency=currency, connection=connection,
                     for_execution=True),
-                admission_guard=locked_guard,commit_evidence=commit_evidence)
+                admission_guard=locked_guard, commit_evidence=commit_evidence,
+                _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT)
         except ValueError as exc:
             return False, str(exc), None
         mark_lineage(features, "entry_fill_committed", self)
@@ -1984,7 +2033,8 @@ class PaperBroker:
         return True, "FUTURES_PAPER_OPENED_SIMULATED", lifecycle_id
 
     def _close_future(self, q, position, reason):
-        from rc6_paper_family_lifecycle import future_position_contract
+        from rc6_paper_family_lifecycle import (future_position_contract,
+            _FUTURE_LOCKED_BROKER_COMMIT)
         try:
             contract = future_position_contract(position)
             if (q.symbol, q.asset_class, q.market, q.currency, q.settlement) != (
@@ -2011,19 +2061,26 @@ class PaperBroker:
             f"{position['lifecycle_id']}:CLOSE:{q.book_at or q.observed_at}:{reason}")
         try:
             if reason in {"EOD_PAPER", "EXPIRY", "OVERNIGHT_CARRY_EXIT"}:
+                mark_id = f"{position['lifecycle_id']}:PAPER_CUT:{q.book_at}"
                 self.family_paper.mark_future(
                     contract, lifecycle_id=position["lifecycle_id"],
-                    event_id=f"{position['lifecycle_id']}:PAPER_CUT:{q.book_at}",
+                    event_id=mark_id,
                     mark_price=q.bid, book_at=q.book_at, occurred_at=at,
                     settlement=True, max_mark_age_seconds=self.quote_max_age_seconds,
                     detail={"source": "PPI_BOOK_PAPER_EOD_VARIATION",
-                            "broker_settlement": "NO_VERIFICADO", "reason": reason})
+                            "broker_settlement": "NO_VERIFICADO", "reason": reason},
+                    _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
+                    commit_evidence=self._future_quote_callback(
+                        q, position["lifecycle_id"], mark_id, "MARK", at))
             result = self.family_paper.close_future(
                 contract, lifecycle_id=position["lifecycle_id"], event_id=event_id,
                 exit_price=exit_price, exit_cost=exit_cost,
                 book_at=q.book_at or q.observed_at, occurred_at=at,
                 reason=reason, expiry=(reason == "EXPIRY"),
-                max_mark_age_seconds=self.quote_max_age_seconds)
+                max_mark_age_seconds=self.quote_max_age_seconds,
+                _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
+                commit_evidence=self._future_quote_callback(
+                    q, position["lifecycle_id"], event_id, "CLOSE", at))
         except ValueError:
             return False
         if self.daily_risk:
@@ -2078,6 +2135,7 @@ class PaperBroker:
 
     def _on_future_quote(self, q: Quote, *, allow_new_openings=True,
                          opening_block_reason="", evaluate_when_blocked=False):
+        from rc6_paper_family_lifecycle import _FUTURE_LOCKED_BROKER_COMMIT
         at = self.execution_time(q)
         position = self.family_paper.active_future(q.symbol)
         if position:
@@ -2119,7 +2177,10 @@ class PaperBroker:
                     event_id=mark_id, mark_price=q.bid,
                     book_at=q.book_at or q.observed_at, occurred_at=at,
                     detail={"source": "PPI_BOOK"},
-                    max_mark_age_seconds=self.quote_max_age_seconds)
+                    max_mark_age_seconds=self.quote_max_age_seconds,
+                    _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
+                    commit_evidence=self._future_quote_callback(
+                        q, position["lifecycle_id"], mark_id, "MARK", at))
                 position = self.family_paper.active_future(q.symbol) or position
             except ValueError:
                 self._future_exit_state(position,at,"WATCH_INVALID_MARK","Canonical mark rejected",cause=time_cause or None)
@@ -2583,9 +2644,25 @@ class PaperBroker:
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, identidad o exposición cambiaron antes de registrar la compra", None
-            receipt_error = self._runtime_preopen_error(q)
+            receipt_error = self._runtime_preopen_error(q, connection=c)
             if receipt_error:
                 return False, receipt_error, None
+            # A229: technical tests/deploys are allowed 24x7, but a live
+            # PAPER entry still requires an audited BYMA session.  The
+            # operational book may be reached by a direct PaperBroker caller
+            # with session_policy=None (valid for isolated offline fixtures).
+            # Enforce the native conservative session *under this same write
+            # lock*, independently of the caller-supplied optional policy.
+            from rc6_paper_runtime_safety import runtime_admission_context
+            runtime_book, runtime_error = runtime_admission_context(
+                self.store, connection=c)
+            if runtime_error:
+                return False, runtime_error, None
+            if runtime_book:
+                from bq_exit_policy import PaperSessionPolicy
+                session_error = PaperSessionPolicy().admission_error(q, at)
+                if session_error:
+                    return False, session_error, None
             mark_lineage(features, "intent", self)
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,

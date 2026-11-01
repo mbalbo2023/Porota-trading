@@ -17,13 +17,16 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]*rc6[A-Za-z0-9_.@-]*\.(?:service|timer)$")
 LEGACY_RETIRE_UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]+\.(?:service|timer)$")
 IOL_OAUTH_GUARD_TIMER = 'porota-iol-oauth-health-rc6.timer'
+PAPER_PREOPEN_TIMER = 'porota-preopen-rc6.timer'
 
 
 def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -100,6 +103,129 @@ def build_legacy_retire_plan(policy: dict) -> list[str]:
         seen.add(name)
         result.append(name)
     return result
+
+
+def _require_inherited_finalizer_mutex():
+    """Trust only the actual root-owned lock FD passed by Deploy V2."""
+    from scripts import rc6_deploy_host_mutex as mutex
+    fd_raw = os.environ.get('RC6_DEPLOY_MUTEX_FD', '')
+    if not re.fullmatch(r'[0-9]{1,8}', fd_raw):
+        raise RuntimeError('POSTFINAL_OPERATOR_TIMER_MUTEX_REQUIRED')
+    try:
+        held = os.fstat(int(fd_raw))
+        path = os.lstat(mutex.LOCK_PATH)
+    except OSError as error:
+        raise RuntimeError('POSTFINAL_OPERATOR_TIMER_MUTEX_UNVERIFIED') from error
+    if (not stat.S_ISREG(held.st_mode) or not stat.S_ISREG(path.st_mode)
+            or (held.st_dev, held.st_ino) != (path.st_dev, path.st_ino)
+            or path.st_uid != 0 or path.st_mode & 0o022):
+        raise RuntimeError('POSTFINAL_OPERATOR_TIMER_MUTEX_UNTRUSTED')
+
+
+def reconcile_finalized_operator_paper_timer(candidate_sha: str,
+                                             candidate_tree_sha: str) -> dict:
+    """Apply current owner PAPER intent only AFTER exact runtime finalization.
+
+    The caller is Deploy V2's already-exclusive `finalize` host-mutex phase,
+    after it atomically published VALIDATED_RUNTIME. Do not call this helper
+    during COLD, scheduler restore, a pending marker, or outside that mutex.
+    The root-owned durable ACTIVE/PAUSED receipt is independent of code SHA;
+    each call nevertheless proves the *current* frozen release and PAPER/0.
+    Never touch unrelated timers, providers, PPI Watch or real-order routes.
+    """
+    from scripts import rc6_operator_paper_rearm as operator
+
+    if os.geteuid() != 0:
+        raise RuntimeError('POSTFINAL_OPERATOR_TIMER_ROOT_REQUIRED')
+    if (not operator.SHA.fullmatch(candidate_sha) or
+            not operator.SHA.fullmatch(candidate_tree_sha)):
+        raise ValueError('POSTFINAL_OPERATOR_TIMER_CANDIDATE_INVALID')
+    _require_inherited_finalizer_mutex()
+
+    # Fatal release/safety corruption aborts before *any* systemd mutation.
+    source, tree, image = operator._validated_paper_release(
+        marker_path=operator.MARKER_HOST, frozen_path=operator.FROZEN_HOST,
+        context='host', candidate_sha=candidate_sha,
+        candidate_tree_sha=candidate_tree_sha)
+    for name in ('porota_production_observer', 'porota_production_dashboard',
+                 'porota_critical_approval_rc6'):
+        result = _run('docker', 'inspect', '-f', '{{.State.Running}}|{{.Image}}',
+                      name, check=False)
+        if result.returncode or result.stdout.strip() != 'true|' + image:
+            raise RuntimeError('POSTFINAL_OPERATOR_TIMER_RUNTIME_IMAGE_RED:' + name)
+
+    now = datetime.now(operator.TZ)
+    try:
+        receipt = operator._root_owned_receipt(operator.OPERATOR_DIR_HOST)
+        intent = operator._validated_intent(receipt, now)
+    except (OSError, ValueError, TypeError, KeyError):
+        # An absent/invalid receipt cannot invent or prolong a PAPER GO.
+        # It is a scoped NO_GO, never an impediment to technical deployment.
+        intent = 'UNKNOWN_NO_GO'
+    authorized, reason, summary = operator.evaluate_rearm(now=now, context='host')
+    if intent == operator.REARM_STATUS:
+        if (not authorized or not isinstance(summary, dict) or
+                summary.get('candidate_sha') != source or
+                summary.get('candidate_tree_sha') != tree or
+                summary.get('image_id') != image):
+            raise RuntimeError('POSTFINAL_OPERATOR_TIMER_ACTIVE_PROOF_RED:' + reason)
+        target = ('enabled', 'active')
+    else:
+        if authorized:
+            raise RuntimeError('POSTFINAL_OPERATOR_TIMER_INCONSISTENT_NO_GO')
+        target = ('disabled', 'inactive')
+
+    def timer_state():
+        enabled = _run('systemctl', 'is-enabled', PAPER_PREOPEN_TIMER,
+                       check=False).stdout.strip()
+        active = _run('systemctl', 'is-active', PAPER_PREOPEN_TIMER,
+                      check=False).stdout.strip()
+        if (enabled not in {'enabled', 'disabled'} or
+                active not in {'active', 'inactive'}):
+            raise RuntimeError('POSTFINAL_OPERATOR_TIMER_STATE_UNKNOWN')
+        return enabled, active
+
+    before = timer_state()
+    try:
+        if target == ('enabled', 'active'):
+            if before == ('disabled', 'inactive'):
+                _run('systemctl', 'enable', '--now', PAPER_PREOPEN_TIMER)
+            elif before == ('enabled', 'inactive'):
+                _run('systemctl', 'start', PAPER_PREOPEN_TIMER)
+            elif before != target:
+                raise RuntimeError('POSTFINAL_OPERATOR_TIMER_UNEXPECTED_ACTIVE_STATE')
+        elif before != target:
+            # Explicit PAUSE (or absent trustworthy ACTIVE consent) is fail-
+            # closed even if an earlier T-10 receipt still says GO.
+            _run('systemctl', 'disable', '--now', PAPER_PREOPEN_TIMER)
+        after = timer_state()
+        if after != target:
+            raise RuntimeError('POSTFINAL_OPERATOR_TIMER_POSTVERIFY_RED')
+    except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
+        if target == ('enabled', 'active'):
+            # `enable --now` can partially mutate the timer before systemctl
+            # fails. Keep the durable operator ACTIVE intent unchanged, but
+            # quarantine this unverified technical admission until a tested
+            # fix-forward retry. A failure may never be called PAPER GO.
+            try:
+                _run('systemctl', 'disable', '--now', PAPER_PREOPEN_TIMER)
+                if timer_state() != ('disabled', 'inactive'):
+                    raise RuntimeError('POSTFINAL_OPERATOR_TIMER_QUARANTINE_NOT_CONFIRMED')
+            except (OSError, subprocess.CalledProcessError, RuntimeError) as failure:
+                raise RuntimeError('POSTFINAL_OPERATOR_TIMER_QUARANTINE_RED') from failure
+            raise RuntimeError('POSTFINAL_OPERATOR_TIMER_QUARANTINED_NO_GO') from error
+        raise
+    # Do not assert an ACTIVATE after an owner PAUSE raced our first read.
+    # The same root mutex serializes the authoritative operator Actions.
+    next_authorized, _, next_summary = operator.evaluate_rearm(
+        now=datetime.now(operator.TZ), context='host')
+    if next_authorized != authorized or (authorized and next_summary != summary):
+        raise RuntimeError('POSTFINAL_OPERATOR_TIMER_INTENT_CHANGED')
+    return {'status': 'GREEN', 'candidate_sha': source,
+            'candidate_tree_sha': tree, 'intent': intent,
+            'timer_before': '|'.join(before), 'timer_after': '|'.join(after),
+            'paper_mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0,
+            'real_order_routes': 'NOT_CALLED', 'ppi_watch_mutated': False}
 
 
 def apply(root: Path, policy: dict, systemd_root: Path, *, keep_active_timers_paused: bool = False) -> dict:

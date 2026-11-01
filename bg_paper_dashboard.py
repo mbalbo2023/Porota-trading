@@ -902,8 +902,10 @@ def _health_components():
             state="NO_APLICA", applicable=False,
             detail="Rueda cerrada: current/book en vivo no se exige. Autenticación, catálogo e históricos continúan por separado.",
             next_check="Al abrir la próxima rueda")
-    add("Cobertura del foco PAPER", "PAPER_FOCUS_COVERAGE", "SIMULACIÓN PRODUCTIVA",
-        "Verifica todas las identidades prioritarias configuradas y bloquea aperturas si hay menos de cuatro")
+    add("Cobertura del foco histórico", "PAPER_FOCUS_COVERAGE", "SIMULACIÓN PRODUCTIVA",
+        "Diagnóstico de las identidades prioritarias de muestreo; no habilita ni veta aperturas")
+    add("Capacidad PIT Spot individual", "PAPER_SPOT_PIT_READINESS", "SIMULACIÓN PRODUCTIVA",
+        "Identidades exactas listas en catálogo y ledger PIT; cada apertura requiere además señales, sesión y gates PAPER")
     add("Muestreo del foco PAPER", "PAPER_SIGNAL_SAMPLING", "SIMULACIÓN PRODUCTIVA",
         "Capacidad de reunir seis muestras dentro de 90 minutos")
     add("Muestreo del universo rotativo", "PAPER_SIGNAL_ROTATION", "SIMULACIÓN PRODUCTIVA",
@@ -1484,6 +1486,7 @@ def _next_check(component, checked):
         "BYMA_OPEN_DATA": int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
         "FINANCIAL_REFRESH": 43200,
         "PAPER_FOCUS_COVERAGE": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
+        "PAPER_SPOT_PIT_READINESS": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
         "PAPER_SIGNAL_SAMPLING": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
         "PAPER_SIGNAL_ROTATION": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
         "SRE_SNAPSHOT": 1800,
@@ -1510,6 +1513,7 @@ def health_page():
         "BYMA_OPEN_DATA": int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")),
         "FINANCIAL_REFRESH": 43200,
         "PAPER_FOCUS_COVERAGE": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
+        "PAPER_SPOT_PIT_READINESS": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
         "PAPER_SIGNAL_SAMPLING": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
         "PAPER_SIGNAL_ROTATION": int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300")),
         "SRE_SNAPSHOT": 300,

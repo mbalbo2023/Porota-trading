@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import urllib.request
 
-ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
+ORIGIN_SCHEMA_V2 = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
+ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V3"
 PROBE_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_ORIGIN_PROBE_V1"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
 INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED",
@@ -295,7 +296,7 @@ def probe(db_path, candidate_sha, receipt_dir):
             row["seal_sha256"] = seal
         combined = _seal([r["seal_sha256"] for r in receipts])
         seal = origin.pop("seal_sha256")
-        if (origin.get("id") != 1 or origin.get("schema") != ORIGIN_SCHEMA or
+        if (origin.get("id") != 1 or origin.get("schema") not in {ORIGIN_SCHEMA_V2, ORIGIN_SCHEMA} or
                 origin.get("combined_receipt_sha256") != combined or seal != _seal(origin) or
                 any(r["candidate_sha"] != origin.get("candidate_sha") for r in receipts)):
             raise ValueError("PAPER_RESTATEMENT_ORIGIN_PROBE_SEAL_RED")
@@ -325,8 +326,15 @@ def authorize(probe_payload, candidate_sha, repo, get):
     if probe_payload.get("status") != "SEALED_ORIGIN":
         raise ValueError("PAPER_RESTATEMENT_CONTINUITY_PROBE_RED")
     origin = probe_payload["origin"]
-    if (type(origin) is not dict or origin.get("schema") != ORIGIN_SCHEMA or
+    if (type(origin) is not dict or origin.get("schema") not in {ORIGIN_SCHEMA_V2, ORIGIN_SCHEMA} or
             SHA.fullmatch(str(origin.get("candidate_sha", ""))) is None):
+        raise ValueError("PAPER_RESTATEMENT_CONTINUITY_ORIGIN_RED")
+    deferred = origin.get("owner_deferred_comment_id")
+    if (type(origin.get("owner_approval_comment_id")) is not int or
+            origin["owner_approval_comment_id"] <= 0 or
+            type(deferred) is not int or
+            (origin["schema"] == ORIGIN_SCHEMA and deferred != 0) or
+            (origin["schema"] == ORIGIN_SCHEMA_V2 and deferred <= 0)):
         raise ValueError("PAPER_RESTATEMENT_CONTINUITY_ORIGIN_RED")
     mode = origin.get("quiescence_mode")
     third = origin.get("owner_intraday_comment_id")
@@ -365,8 +373,10 @@ def authorize(probe_payload, candidate_sha, repo, get):
     if (not run_started <= receipt_at <= run_updated or
             run_updated > datetime.now(timezone.utc)):
         raise ValueError("PAPER_RESTATEMENT_PRIOR_RUN_RECEIPT_CLOCK_RED")
-    decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
-                 ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")]
+    decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2")]
+    if origin["schema"] == ORIGIN_SCHEMA_V2:
+        decisions.append(("owner_deferred_comment_id",
+                          "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED"))
     if mode in INTRADAY_MODES:
         decisions.append(("owner_intraday_comment_id", "RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY"))
     for field, decision in decisions:

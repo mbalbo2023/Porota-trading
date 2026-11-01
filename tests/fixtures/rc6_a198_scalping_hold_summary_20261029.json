@@ -1,0 +1,15 @@
+{
+  "schema": "rc6.a198.scalping-hold-observed-summary.v1",
+  "market_day_art": "2026-10-29",
+  "provenance": "https://github.com/mbalbo2023/Porota-trading/blob/e9a3a7999f46321a65c025db586ff99802c43a6d/docs/a198-family-source-engine-audit.md",
+  "snapshot_scope": "HISTORICAL_2026_10_29_NOT_CURRENT_RUNTIME",
+  "source": "A198_29_OCT_SCALPING_FUNNEL",
+  "total_hold": 2582,
+  "reason_counts": {
+    "PPI_VOLUME_CONTRACT_UNVERIFIED": 1272,
+    "REJECTED_MUTABLE_CLOSED_POINTS": 857,
+    "EMPTY_INTRADAY_PAYLOAD": 452,
+    "INTRADAY_CAPABILITY_WARMUP_PENDING": 1
+  },
+  "limits": "Aggregated cause-count receipt only; not actual provider payload pairs, source-volume semantics, BUY evidence, OOS or current runtime readiness."
+}

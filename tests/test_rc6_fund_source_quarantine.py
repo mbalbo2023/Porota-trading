@@ -147,6 +147,22 @@ def test_conflicting_fresh_nav_and_exact_class_market_mismatch_are_not_selected(
     assert "FCI_SOURCE_CLASS_IDENTITY_COLLISION" in decision.reasons
 
 
+@pytest.mark.parametrize("market,currency", [
+    ("FCI_EXTERIOR", "USD"), ("FCI", "USD"), ("EXTERIOR", "ARS"),
+])
+def test_fci_exterior_or_nonlocal_currency_remains_quarantined_even_with_valid_hash(
+        market, currency):
+    facts = []
+    for original in bundle():
+        changed = replace(original, market=market, currency=currency)
+        facts.append(replace(changed, content_sha256=content_hash(changed)))
+    review = inspect_fund_source_bundle(facts, as_of=AT)
+    assert review.status == "QUARANTINED_INCOMPLETE"
+    assert "FCI_SOURCE_IDENTITY_OR_KIND_INVALID" in review.reasons
+    assert review.source_authenticated is SOURCE_AUTHENTICATED is False
+    assert review.runtime_entry_authority is RUNTIME_ENTRY_AUTHORITY is False
+
+
 def test_malformed_scope_raises_without_any_host_or_auth_operation():
     for args in ({"max_nav_age_days": True}, {"max_nav_age_days": -1},
                  {"max_nav_age_days": 367}):

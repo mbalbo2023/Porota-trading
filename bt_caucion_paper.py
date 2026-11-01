@@ -10,9 +10,8 @@ import json
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
@@ -195,9 +194,12 @@ class CaucionOffer:
             raise ValueError("Falta provenance v2 o PPI live+policy verificable de la política PAPER de caución")
         if self.fee_authority is not None:
             from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+            from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
             if (self.currency != "ARS" or self.quoted_total_fees is not None
                     or self.paper_fill_policy not in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
-                    or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):
+                    or self.fee_authority not in {CAUCION_PAPER_FEE_AUTHORITY, PAPER_FEE_AUTHORITY_V2}
+                    or (self.fee_authority == PAPER_FEE_AUTHORITY_V2
+                        and self.paper_fill_policy != "LIVE_PPI_BID_PARTICIPATION_CAP")):
                 raise ValueError("Autoridad de costos PAPER incompatible")
         if self.currency != "ARS" and self.quoted_total_fees is None:
             raise ValueError("Caución en moneda extranjera requiere costos explícitos en esa moneda/plaza")
@@ -224,18 +226,34 @@ class CaucionOffer:
             if principal != self.fee_quote_principal:
                 raise ValueError("El costo presupuestado corresponde a otro capital")
             fees = money(self.quoted_total_fees)
+        elif self.fee_authority is not None and self._is_new_public_fee_model():
+            from rc6_caucion_fee_model import conservative_public_modeled_fee
+            # A public, conservative PAPER *scenario*; neither PPI account
+            # tariff nor actual BYMA pass-through is authenticated here.
+            # Unsupported 91+ day terms fail closed instead of falling back
+            # to the cheaper historical approximation.
+            fees = max(conservative_public_modeled_fee(principal, interest, self.interest_days),
+                       self._historical_paper_fee(principal))
         else:
-            import au_fee_schedule as tariff
-            fee = tariff.arancel_de("CAUCIONES")
-            vat = decimal_value(tariff.IVA_PCT, "IVA", nonnegative=True)
-            commission = decimal_value(fee.comision, "comisión anual", nonnegative=True)
-            rights = decimal_value(fee.derecho, "derechos anuales", nonnegative=True)
-            rate = commission * (1 + vat if fee.comision_iva else 1)
-            rate += rights * (1 + vat if fee.derecho_iva else 1)
-            # El arancel heredado define base 365. La tasa de interés puede
-            # tener otra base: no trasladar una convención a la otra.
-            fees = money(principal * rate * self.interest_days / 365)
+            fees = self._historical_paper_fee(principal)
         return interest, fees, interest - fees
+
+    def _historical_paper_fee(self, principal):
+        """Preserve old receipts and retain any stricter configured PAPER fee."""
+        import au_fee_schedule as tariff
+        fee = tariff.arancel_de("CAUCIONES")
+        vat = decimal_value(tariff.IVA_PCT, "IVA", nonnegative=True)
+        commission = decimal_value(fee.comision, "comisión anual", nonnegative=True)
+        rights = decimal_value(fee.derecho, "derechos anuales", nonnegative=True)
+        rate = commission * (1 + vat if fee.comision_iva else 1)
+        rate += rights * (1 + vat if fee.derecho_iva else 1)
+        # El arancel heredado define base 365. La tasa de interés puede tener
+        # otra base: no trasladar una convención a la otra.
+        return money(principal * rate * self.interest_days / 365)
+
+    def _is_new_public_fee_model(self):
+        from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
+        return self.fee_authority == PAPER_FEE_AUTHORITY_V2
 
 
 def automatic_liquidity_cap(offer, participation):
@@ -248,6 +266,94 @@ def automatic_liquidity_cap(offer, participation):
     # Exact live PPI depth stays provider evidence; PAPER participates
     # only up to the configured conservative fraction.
     return offer.available_principal * participation
+
+
+def _runtime_caucion_market_error(at):
+    """Conservative *internal PAPER* market floor, not a broker cutoff."""
+    from ak_byma_calendar import es_dia_habil_operativo
+    from co_market_sessions_hf6 import BYMA_PAPER_SPOT_OPEN, BYMA_PAPER_SPOT_CLOSE
+
+    local = aware_datetime(at).astimezone(TZ)
+    if not es_dia_habil_operativo(local.date()):
+        return "CAUCION_RUNTIME_MARKET_CLOSED_OR_CALENDAR_UNKNOWN"
+    clock = local.time().replace(tzinfo=None)
+    cutoff = (datetime.combine(local.date(), BYMA_PAPER_SPOT_CLOSE)
+              - timedelta(minutes=5)).time()
+    if not BYMA_PAPER_SPOT_OPEN <= clock < cutoff:
+        return "CAUCION_RUNTIME_OUTSIDE_CONSERVATIVE_MARKET_WINDOW"
+    return ""
+
+
+def _runtime_caucion_book_error(store, connection, offer, at):
+    """Rebind live PPI BID, exact catalog/policy and original quote under lock.
+
+    An offer's ``metadata_source`` string proves nothing by itself. The
+    canonical collector persists matching current+history book rows; its
+    pure, local adapter reconstructs the terms from that exact PPI source.
+    No network call, real order, or historical synthetic fixture is involved.
+    """
+    from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
+    from bu_instrument_catalog import (lookup, _candidate_has_ppi_primary,
+                                       _candidate_timestamp_is_fresh)
+    from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
+    from dj_caucion_live_ppi_rc6 import SOURCE as PPI_LIVE_SOURCE
+
+    if (offer.paper_fill_policy != "LIVE_PPI_BID_PARTICIPATION_CAP"
+            or offer.fee_authority != PAPER_FEE_AUTHORITY_V2
+            or offer.currency != "ARS"
+            or not offer.metadata_source.startswith(
+                "PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1;")):
+        return "CAUCION_RUNTIME_PPI_LIVE_CONTRACT_REQUIRED"
+    try:
+        reconstructed, _ = offers_from_store(store, now=at)
+        matching = [item for item in reconstructed
+                    if item.instrument_id == offer.instrument_id and item.currency == offer.currency]
+        if len(matching) != 1 or asdict(matching[0]) != asdict(offer):
+            return "CAUCION_RUNTIME_PPI_LIVE_BOOK_OR_TERMS_UNVERIFIED"
+        source_rows = connection.execute("""SELECT f.market,f.settlement,f.settlement_source,
+                f.last_seen_at,f.metadata_json,b.quoted_at,b.tna_fraction,
+                b.available_principal,b.term_days,b.state,b.source,b.observed_at
+            FROM financial_instrument_catalog f JOIN paper_caucion_live_book b
+              ON b.ticker=f.ticker AND b.market=f.market
+             AND b.currency=f.currency AND b.settlement=f.settlement
+            WHERE f.ticker=? AND f.instrument_type='CAUCIONES' AND f.currency='ARS'
+              AND f.market='BYMA' AND f.status='AVAILABLE'
+              AND f.capability='READY_PAPER_CAUCION_PLACING'""",
+            (offer.instrument_id,)).fetchall()
+        valid = []
+        for row in source_rows:
+            if (row["source"] != PPI_LIVE_SOURCE or row["state"] != "BOOK_READY"
+                    or not _candidate_has_ppi_primary(row["settlement_source"],
+                                                      row["metadata_json"])
+                    or not _candidate_timestamp_is_fresh(row["last_seen_at"],
+                                                         aware_datetime(at).isoformat(), 86400)):
+                continue
+            quote_at = aware_datetime(row["quoted_at"], "book caución")
+            received_at = aware_datetime(row["observed_at"], "recepción book caución")
+            age = (aware_datetime(at) - received_at).total_seconds()
+            if not (quote_at <= received_at <= aware_datetime(at) and 0 <= age <= 90):
+                continue
+            # The collector writes a historical receipt alongside the current
+            # book. Reject an isolated current row or a mismatching revision.
+            receipt = connection.execute("""SELECT quoted_at,tna_fraction,
+                    available_principal,term_days,state,source,observed_at
+                FROM paper_caucion_live_book_history
+                WHERE ticker=? AND market=? AND currency='ARS' AND settlement=?
+                ORDER BY id DESC LIMIT 1""",
+                (offer.instrument_id, row["market"], row["settlement"])).fetchone()
+            if (receipt is None or any(receipt[field] != row[field] for field in (
+                    "quoted_at", "tna_fraction", "available_principal", "term_days",
+                    "state", "source", "observed_at"))):
+                continue
+            contract = lookup(store, offer.instrument_id, "CAUCIONES", row["settlement"],
+                              market=row["market"], currency="ARS")
+            if (not contract or contract.get("_admission_reason")
+                    or contract.get("capability") != "READY_PAPER_CAUCION_PLACING"):
+                continue
+            valid.append(row)
+        return "" if len(valid) == 1 else "CAUCION_RUNTIME_PPI_IDENTITY_OR_RECEIPT_UNVERIFIED"
+    except (ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
+        return "CAUCION_RUNTIME_PPI_LIVE_BOOK_OR_TERMS_UNVERIFIED"
 
 
 def validate_caucion_admin_receipt(p, receipt):
@@ -607,12 +713,21 @@ class CaucionBook:
         # The workspace resolver identifies the actual PAPER runtime database,
         # including an explicit path override. Synthetic books remain isolated
         # even when their tests run inside an image with POROTA_BUILD_SHA set.
-        from cg_paper_workspace import database_path
-        if Path(self.store.path).resolve() == database_path():
+        from rc6_paper_runtime_safety import runtime_admission_context
+        runtime_book, safety_error = runtime_admission_context(self.store, connection=c)
+        if safety_error:
+            raise ValueError(safety_error)
+        if runtime_book:
             from rc6_paper_admission_gate import admission_status
             allowed, reason = admission_status()
             if not allowed:
                 raise ValueError(reason or "NO_GO_PAPER_SCALPING")
+            market_error = _runtime_caucion_market_error(at)
+            if market_error:
+                raise ValueError(market_error)
+            source_error = _runtime_caucion_book_error(self.store, c, offer, at)
+            if source_error:
+                raise ValueError(source_error)
         age = (at - aware_datetime(offer.quoted_at)).total_seconds()
         if age < 0 or age > max_quote_age_seconds:
             raise ValueError("Cotización de caución vencida o futura")

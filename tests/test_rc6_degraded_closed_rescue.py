@@ -620,8 +620,9 @@ def test_a138_exact_a92_rescue_admits_operator_paused_27oct_not_unproven_day(
     previous = FrozenDateTime.current
     try:
         calls = []
-        def exact_pause(*, require_original_marker=False):
-            calls.append(require_original_marker)
+        def exact_pause(*, require_original_marker=False,
+                        historical_hold_only=False):
+            calls.append((require_original_marker,historical_hold_only))
             return 'e'*64
         monkeypatch.setattr(scheduler,'exact_operator_preopen_pause',exact_pause)
         monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',lambda:True)
@@ -631,7 +632,7 @@ def test_a138_exact_a92_rescue_admits_operator_paused_27oct_not_unproven_day(
         assert early['business_day']=='2026-10-27'
         assert early['operator_paper_early'] is True
         assert early['operator_pause_sha256']=='e'*64
-        assert calls==[True]
+        assert calls==[(True,False)]
         monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',lambda:False)
         with pytest.raises(ValueError,match='RESCUE_OPERATOR_PAUSE_RED'):
             q.degraded_closed_rescue_proof()
@@ -643,8 +644,14 @@ def test_a138_exact_a92_rescue_admits_operator_paused_27oct_not_unproven_day(
         assert proof['byma_latest_session_end_art'] == '19:00'
         FrozenDateTime.current = RealDateTime(2026, 10, 31, 23, 5,
                                               tzinfo=timezone.utc)
-        with pytest.raises(ValueError, match='RESCUE_WINDOW_RED'):
+        with pytest.raises(ValueError, match='RESCUE_24X7_NO_GO_RED'):
             q.degraded_closed_rescue_proof()
+        monkeypatch.setattr(scheduler,'operator_preopen_timer_disabled',lambda:True)
+        continuation=q.degraded_closed_rescue_proof()
+        assert continuation['technical_24x7'] is True
+        assert continuation['paper_execution_authorized'] is False
+        assert continuation['historical_no_go_sha256']=='e'*64
+        assert calls[-1]==(False,True)
     finally:
         FrozenDateTime.current = previous
 
@@ -703,7 +710,8 @@ def test_a138_early_rescue_accepts_actual_open_only_with_paper_no_go(
      'RC6_RESCUE_OPERATOR_PAUSE_RED'),
     (RealDateTime(2026, 10, 27, 23, 5, tzinfo=timezone.utc), False, True, ''),
     (RealDateTime(2026, 10, 31, 23, 5, tzinfo=timezone.utc), False, False,
-     'RC6_RESCUE_WINDOW_RED'),
+     'RC6_RESCUE_24X7_NO_GO_RED'),
+    (RealDateTime(2026, 11, 1, 15, 5, tzinfo=timezone.utc), True, True, ''),
 ])
 def test_a138_pretransfer_classifier_window_fails_closed(
         incident, monkeypatch, capsys, when, paused, admitted, error):
@@ -741,9 +749,9 @@ def test_a138_pretransfer_classifier_window_fails_closed(
         backup = ModuleType('scripts.rc6_679_backup_suspension')
         backup.inventory = lambda: []
         operator_source = (
-            "def exact_operator_preopen_pause(*,require_original_marker=False):\n"
-            "    if require_original_marker is not True:\n"
-            "        raise ValueError('ORIGINAL_MARKER_REQUIRED')\n"
+            "def exact_operator_preopen_pause(*,require_original_marker=False, historical_hold_only=False):\n"
+            "    if not (require_original_marker or historical_hold_only):\n"
+            "        raise ValueError('IMMUTABLE_OPERATOR_ANCHOR_REQUIRED')\n"
             "    return 'e'*64\n"
             "def operator_preopen_timer_disabled():\n"
             f"    return {paused!r}\n"

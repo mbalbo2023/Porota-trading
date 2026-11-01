@@ -126,12 +126,8 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert contract_block.index('CONTRACT_LIFECYCLE="$(sudo -n python3') < contract_block.index('sudo -n docker start porota_production_observer')
     assert source.index('CONTRACT_ORPHAN_RC=$?') < source.index('RECOVERY_RC=$?')
     job = yaml.safe_load(source)['jobs']['promote']
-    stress = next(step for step in job['steps'] if step.get('id') == 'stress')
-    restored = next(step for step in job['steps'] if step.get('name') ==
-        'Independent sustained native acceptance after stress restoration')
-    # The parent covers bounded local v2, native soak, stress and restore.
-    mandatory_seconds = 1200 + SOAK_TIMEOUT_SECONDS + 60 * (
-        stress['timeout-minutes'] + restored['timeout-minutes'])
+    # The parent covers bounded local v2 and native acceptance.
+    mandatory_seconds = 1200 + SOAK_TIMEOUT_SECONDS
     assert job['timeout-minutes'] * 60 > mandatory_seconds
     assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in source
     assert '--entrypoint timeout' not in source
@@ -150,15 +146,18 @@ def test_predeploy_preserves_the_entire_native_proof_directory():
     assert upload['if']=='always()'
 
 
-def test_native_soak_receipts_are_preserved_before_and_after_stress():
+def test_host_stress_and_its_second_owner_go_are_absent_from_promotion():
     import yaml
-    steps=yaml.safe_load(_deploy())['jobs']['promote']['steps']
-    before=next(step for step in steps if step.get('name')=='Collect postdeploy stress evidence even on RED')
-    after=next(step for step in steps if step.get('name')==
-        'Independent sustained native acceptance after stress restoration')
-    assert 'native-ten-generation-soak.json' in before['run']
-    assert '> evidence/postdeploy-stress/native-prestress-soak.json' in before['run']
-    assert '> evidence/postdeploy-stress/native-postrestore-soak.json' in after['run']
+    source = _deploy()
+    steps = yaml.safe_load(source)['jobs']['promote']['steps']
+    assert all(step.get('id') != 'stress' for step in steps)
+    assert all('stress' not in step.get('name', '').lower() for step in steps)
+    assert 'RC6_HOST_STRESS_MODE' not in source
+    assert 'RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED' not in source
+    assert 'RC6_A151_OWNER_DEFERRED_ID' not in source
+    assert 'scripts/rc6_postdeploy_stress_host.py' not in source
+    assert 'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN' in source
+    assert 'native-ten-generation-soak.json' in source
 
 
 def test_native_proof_ownership_is_reclaimed_after_sandbox_before_upload():

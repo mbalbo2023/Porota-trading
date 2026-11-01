@@ -158,14 +158,27 @@ def test_a174_tamper_rejects_before_any_docker_stop(running_a174,monkeypatch,cha
     assert all(states[name]['State']['Status']=='running' for name in q.OWNED)
 
 
-def test_a174_clock_boundary_requires_fresh_daily_no_go(running_a174):
+def test_a174_clock_boundary_requires_pinned_no_go_and_live_disabled_timer(
+        running_a174,monkeypatch):
     _,db,_,_,_,_=running_a174
     CLOCK[0]=datetime(2026,10,29,2,59,tzinfo=timezone.utc) # 23:59 ART on 28th
     with sqlite3.connect(db) as c:
         c.execute('UPDATE observer_state SET heartbeat_at=?',(CLOCK[0].isoformat(),))
     assert q.a174_failed_running_proof(NEXT)['flat_book']['real_orders_sent']==0
     CLOCK[0]=datetime(2026,10,29,3,0,tzinfo=timezone.utc) # 00:00 ART on 29th
-    with pytest.raises(ValueError,match='QUIESCENCE_A174_A151_DATED_HOLD_EXPIRED'):
+    with sqlite3.connect(db) as c:
+        c.execute('UPDATE observer_state SET heartbeat_at=?',(CLOCK[0].isoformat(),))
+    hold={'timer_disabled':True}
+    historical=type('HistoricalA151',(),{
+        'exact_a151_operator_preopen_pause':staticmethod(
+            lambda *,historical_hold_only=False:
+                ('e'*64,'A151-40686116017-1') if historical_hold_only else
+                (_ for _ in ()).throw(ValueError('HISTORICAL_ANCHOR_REQUIRED'))),
+        'operator_preopen_timer_disabled':staticmethod(lambda:hold['timer_disabled'])})
+    monkeypatch.setattr(q,'candidate_operator_module',lambda **_:historical)
+    assert q.a174_failed_running_proof(NEXT)['flat_book']['real_orders_sent']==0
+    hold['timer_disabled']=False
+    with pytest.raises(ValueError,match='QUIESCENCE_A174_NO_GO_HOLD_CHANGED'):
         q.a174_failed_running_proof(NEXT)
 
 

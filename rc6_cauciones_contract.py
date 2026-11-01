@@ -34,8 +34,9 @@ def validate_amount(ticker:str,amount:Any)->Decimal:
 def gross_interest(capital:Any,tna_percent:Any,term_days:int)->Decimal:
     try: capital_d=Decimal(str(capital)); tna_d=Decimal(str(tna_percent))
     except (InvalidOperation,ValueError,TypeError) as exc: raise CaucionContractError("capital/TNA must be numeric") from exc
-    if term_days<=0: raise CaucionContractError("term_days must be positive")
-    if capital_d<0 or tna_d<0: raise CaucionContractError("capital and TNA must be non-negative")
+    if type(term_days) is not int or term_days<=0: raise CaucionContractError("term_days must be positive")
+    if not capital_d.is_finite() or not tna_d.is_finite() or capital_d<0 or tna_d<0:
+        raise CaucionContractError("capital and TNA must be finite and non-negative")
     return capital_d*(tna_d/Decimal("100"))*Decimal(term_days)/Decimal("365")
 def gross_interest_for_ticker(ticker:str,capital:Any,tna_percent:Any)->Decimal:
     identity=parse_ticker(ticker); validate_amount(ticker,capital); return gross_interest(capital,tna_percent,identity.term_days)
@@ -49,7 +50,9 @@ def estimate_ppi_costs_before_market_rights(ticker:str,capital:Any,tna_percent:A
     identity=parse_ticker(ticker); capital_d=validate_amount(ticker,capital)
     try: commission_pct=Decimal(str(ppi_commission_annual_percent)); iva_pct=Decimal(str(iva_percent))
     except (InvalidOperation,ValueError,TypeError) as exc: raise CaucionContractError("commission and IVA must be numeric") from exc
-    if commission_pct<0 or iva_pct<0: raise CaucionContractError("commission and IVA must be non-negative")
+    if (not commission_pct.is_finite() or not iva_pct.is_finite()
+            or commission_pct<0 or iva_pct<0):
+        raise CaucionContractError("commission and IVA must be finite and non-negative")
     if identity.currency_prefix=="PESOS" and commission_pct!=Decimal("2"): raise CaucionContractError("PESOS colocadora PPI annual commission must be 2 percent")
     if identity.currency_prefix=="DOLAR" and commission_pct>Decimal("1"): raise CaucionContractError("DOLAR colocadora PPI annual commission cannot exceed 1 percent")
     gross=gross_interest(capital_d,tna_percent,identity.term_days); commission=gross_interest(capital_d,commission_pct,identity.term_days); iva=commission*iva_pct/Decimal("100")
@@ -67,5 +70,6 @@ def quote_from_book_level(ticker:str,level:Mapping[str,Any])->CaucionQuote:
     parse_ticker(ticker)
     try: price=Decimal(str(level["price"])); quantity=Decimal(str(level["quantity"]))
     except (KeyError,InvalidOperation,ValueError,TypeError) as exc: raise CaucionContractError("book level requires numeric price and quantity") from exc
-    if price<0 or quantity<0: raise CaucionContractError("price/TNA and quantity must be non-negative")
+    if not price.is_finite() or not quantity.is_finite() or price<0 or quantity<0:
+        raise CaucionContractError("book BID price/TNA and quantity must be finite and non-negative")
     return CaucionQuote(ticker.upper(),price,quantity,"BIDS")

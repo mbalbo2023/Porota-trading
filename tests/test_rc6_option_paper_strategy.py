@@ -2,6 +2,7 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
+import json
 from zoneinfo import ZoneInfo
 
 from be_paper_engine import Quote
@@ -186,3 +187,61 @@ def test_iv_warnings_never_invent_greeks_or_theoretical_edge():
     assert "delta" not in str(result.features).lower()
     assert "theoretical_price" not in result.features
     assert "EDGE_OOS_NO_VERIFICADO" in result.features["warnings"]
+
+
+def test_long_cash_premium_plus_fee_exact_budget_and_one_micro_shortfall():
+    q, kwargs = _inputs()
+    accepted = _decide(q, kwargs)
+    assert accepted.action == "BUY"
+    premium = Decimal(accepted.features["premium_cash"])
+    fee = Decimal(accepted.features["entry_fee"])
+    max_loss = Decimal(accepted.features["maximum_simulated_loss"])
+    assert max_loss == premium + fee and fee > 0
+    kwargs["available_cash"] = str(max_loss)
+    assert _decide(q, kwargs).action == "BUY"  # equality is funded
+    kwargs["available_cash"] = str(max_loss - Decimal("0.000001"))
+    assert _decide(q, kwargs).reason == "OPTION_FULL_PREMIUM_LOSS_EXCEEDS_BUDGET"
+    kwargs["available_cash"] = "NaN"
+    assert _decide(q, kwargs).reason == "OPTION_SIGNAL_INPUT_UNVERIFIED"
+
+
+def test_aware_option_expiry_features_are_json_serializable_and_no_broker_authority():
+    q, kwargs = _inputs()
+    aware_expiry = datetime.fromisoformat(EXPIRY)
+    q = replace(q, contract=replace(q.contract, expires_at=aware_expiry))
+    decision = _decide(q, kwargs)
+    assert decision.action == "BUY"
+    assert json.loads(json.dumps(decision.features))["expires_at"] == aware_expiry.isoformat()
+    assert decision.entry_authority is False and decision.real_routes_used == ()
+
+
+def test_option_expiry_research_minimum_is_exact_to_microsecond():
+    q, kwargs = _inputs()
+    exact = AT + timedelta(days=1)
+    q_exact = replace(q, contract=replace(q.contract, expires_at=exact))
+    assert _decide(q_exact, kwargs).action == "BUY"
+    too_soon = replace(q, contract=replace(
+        q.contract, expires_at=exact - timedelta(microseconds=1)))
+    assert _decide(too_soon, kwargs).reason == "OPTION_EXPIRY_OUTSIDE_SAFE_HORIZON"
+
+
+def test_aware_underlying_pit_clocks_and_optional_iv_replay_serialize_without_future_leak():
+    q, kwargs = _inputs()
+    u = kwargs["underlying_evidence"]
+    trades = tuple(replace(row,
+                           traded_at=datetime.fromisoformat(row.traded_at),
+                           received_at=datetime.fromisoformat(row.received_at))
+                   for row in u.trades)
+    kwargs["underlying_evidence"] = replace(
+        u, book_at=datetime.fromisoformat(u.book_at), trades=trades)
+    kwargs["implied_volatility_evidence"] = {
+        "value": "0.55", "source": "SYNTHETIC_COMPLEMENTARY_IV",
+        "source_at": AT - timedelta(seconds=20),
+        "received_at": AT - timedelta(seconds=15),
+    }
+    decision = _decide(q, kwargs)
+    assert decision.action == "BUY" and decision.entry_authority is False
+    encoded = json.loads(json.dumps(decision.features))
+    assert encoded["underlying_book_at"] == u.book_at
+    assert encoded["trade_window"][1] == u.trades[-1].traded_at
+    assert encoded["iv"]["source_at"] == (AT - timedelta(seconds=20)).isoformat()

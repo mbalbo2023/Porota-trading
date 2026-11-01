@@ -19,11 +19,8 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-24.04
-    # Ten native cycles before stress and ten after exact restoration add up
-    # to two bounded20-minute observation windows; freshness gates stay120s.
     timeout-minutes: 150
     env:
-      RC6_HOST_STRESS_MODE: DEFERRED_BY_EXACT_OWNER_20261020
       GH_TOKEN: ${{ github.token }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
@@ -152,15 +149,9 @@ jobs:
           comment = require_exact_owner_authorization(
               os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
               os.environ['CANDIDATE_TREE'])
-          deferred = require_exact_owner_authorization(
-              os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_SHA'],
-              os.environ['CANDIDATE_TREE'],
-              decision='RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED')
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
               env.write(f'RC6_A151_OWNER_APPROVAL_ID={comment}\n')
-              env.write(f'RC6_A151_OWNER_DEFERRED_ID={deferred}\n')
           print(f'RC6_624_EXACT_DEPLOY_AND_COLD2_AUTHORIZATION=GREEN|comment={comment}')
-          print(f'RC6_624_HOST_STRESS_DEFERRED_BY_OWNER=GREEN|comment={deferred}')
           PY
 
       - name: Prepare strict SSH
@@ -407,12 +398,11 @@ jobs:
               print('A151_HELD_STOPPED')
           elif statuses=={'running'} and state in (
                   ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):
-              # Incident-specific postclose rescue of the installed A92 image.
-              # Wire-mode/CLI retain the 26-Oct label for receipt compatibility.
-              # Calendar COM18782 is pinned only through 30 Oct. Owner's
-              # 27-Oct immediate PAPER pause is independently evidenced by
-              # exact A125 NO_GO/timer proof; other days require postclose.
-              # This is a RED runtime and never counts as a healthy CLOSED state.
+              # Incident-specific exact A92 recovery. Historical 26–30 Oct
+              # receipts retain their old calendar semantics; later technical
+              # recovery is 24x7 with the immutable A125 NO_GO anchor AND a
+              # CURRENT disabled preopen timer. Never grant PAPER trading GO.
+              # This RED runtime is not a healthy CLOSED state.
               from datetime import datetime,timezone
               from zoneinfo import ZoneInfo
               import hashlib,json,re,subprocess,time
@@ -422,16 +412,32 @@ jobs:
               RESCUE_CALENDAR_SHA256='32c5b024e6166b91adaff473b4884ec838f2cb2c0f9197427ab9b6f276b15c7a'
               RESCUE_HOURS_SHA256='380bb2dd5e7250201d76f765ea1cae854ee34c344d05e0da911e9501c68be86f'
               local=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-              if not '2026-10-26'<=local.date().isoformat()<='2026-10-30':
-                  raise SystemExit('RC6_RESCUE_WINDOW_RED')
-              if (local.hour,local.minute)<(20,0):
-                  if local.date().isoformat()!='2026-10-27':
-                      raise SystemExit('RC6_RESCUE_WINDOW_RED')
+              legacy_week='2026-10-26'<=local.date().isoformat()<='2026-10-30'
+              if not legacy_week or (local.hour,local.minute)<(20,0):
+                  # Code is from the frozen candidate, not the unvalidated
+                  # A92 image running on the host.
                   try:
                       operator_source=staged_operator_source()
                       operator=types.ModuleType('rc6_candidate_a125_verifier')
                       exec(compile(operator_source,'candidate/a125-verifier.py','exec'),
                            operator.__dict__)
+                  except (OSError,ValueError,ImportError) as exc:
+                      raise SystemExit('RC6_RESCUE_OPERATOR_SOURCE_RED') from exc
+              if not legacy_week:
+                  try:
+                      exact_digest=operator.exact_operator_preopen_pause(
+                          historical_hold_only=True)
+                      if (not operator.operator_preopen_timer_disabled() or
+                          not re.fullmatch('[0-9a-f]{64}',exact_digest)):
+                          raise ValueError('HISTORICAL_NO_GO_OR_LIVE_TIMER_RED')
+                  except (OSError,ValueError,ImportError) as exc:
+                      raise SystemExit('RC6_RESCUE_24X7_NO_GO_RED') from exc
+                  print('RC6_RESCUE_TECHNICAL_24X7=GREEN|NO_GO_HELD|PAPER=0',
+                        file=sys.stderr)
+              elif (local.hour,local.minute)<(20,0):
+                  if local.date().isoformat()!='2026-10-27':
+                      raise SystemExit('RC6_RESCUE_WINDOW_RED')
+                  try:
                       exact_digest=operator.exact_operator_preopen_pause(
                           require_original_marker=True)
                       if not operator.operator_preopen_timer_disabled() or not re.fullmatch(
@@ -448,7 +454,7 @@ jobs:
               exec(compile(calendar_path.read_bytes(),str(calendar_path),'exec'),calendar.__dict__)
               if (calendar.CALENDARIO_ACTUALIZADO_EL.isoformat()!='2026-10-14' or
                   2026 not in calendar.ANIOS_AUDITADOS or
-                  not calendar.es_dia_habil_operativo(local.date())):
+                  (legacy_week and not calendar.es_dia_habil_operativo(local.date()))):
                   raise SystemExit('RC6_RESCUE_CALENDAR_DAY_RED')
               # BYMA COM18782, PDF SHA256 pinned in the candidate; its latest
               # exercise-expiry segment ends at 19:00 ART. A3 ends by 17:30.
@@ -599,7 +605,7 @@ jobs:
               # A175 reached running PAPER, then failed before validation.
               # The staged A176 source must prove its exact installed source,
               # failed receipt, new image/IDs, immutable marker, held timers,
-              # flat book and the date-current NO_GO administrative receipt.
+              # flat book and a pinned historical NO_GO plus live disabled timer.
               # The nested scheduler verifier must load the same hashed
               # staged quiescence source; the installed A175 is still pending.
               os.environ['RC6_A145_QUIESCENCE_GZIP_B64']=CANDIDATE_A143_B64
@@ -609,9 +615,11 @@ jobs:
                    operator.__dict__)
               proof=candidate.a175_failed_running_proof(
                   sys.argv[1],originals,
-                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_a151_proof=lambda:operator.exact_a151_operator_preopen_pause(
+                      historical_hold_only=True),
                   operator_timer_disabled=operator.operator_preopen_timer_disabled,
-                  operator_current_no_go_proof=operator.exact_a176_operator_no_go_continuation,
+                  operator_current_no_go_proof=lambda:operator.exact_a176_operator_no_go_continuation(
+                      historical_anchor=True),
                   require_installed_a175_source=True,
                   allow_intraday_a175=state==('RUNNING','MARKET_OPEN'))
               if (proof.get('origin_sha256')!=candidate.A175_FAILED_RECEIPT_SHA256 or
@@ -637,7 +645,8 @@ jobs:
                    operator.__dict__)
               proof=candidate.a174_failed_running_proof(
                   sys.argv[1],originals,
-                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_a151_proof=lambda:operator.exact_a151_operator_preopen_pause(
+                      historical_hold_only=True),
                   operator_timer_disabled=operator.operator_preopen_timer_disabled,
                   require_installed_a174_source=True)
               if (proof.get('origin_sha256')!=candidate.A174_FAILED_RECEIPT_SHA256 or
@@ -662,7 +671,8 @@ jobs:
                    operator.__dict__)
               proof=candidate.a171_failed_running_proof(
                   sys.argv[1],originals,
-                  operator_a151_proof=operator.exact_a151_operator_preopen_pause,
+                  operator_a151_proof=lambda:operator.exact_a151_operator_preopen_pause(
+                      historical_hold_only=True),
                   operator_timer_disabled=operator.operator_preopen_timer_disabled,
                   require_installed_a171_source=True)
               if (proof.get('origin_sha256')!=candidate.A171_FAILED_RECEIPT_SHA256 or
@@ -1259,7 +1269,7 @@ jobs:
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -1578,7 +1588,6 @@ jobs:
             --deploy-sha "$DEPLOY_SHA" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --quiescence-mode "$RC6_QUIESCENCE_MODE" \
             --owner-approval-comment-id "$RC6_A151_OWNER_APPROVAL_ID" \
-            --owner-deferred-comment-id "$RC6_A151_OWNER_DEFERRED_ID" \
             "${INTRADAY_OWNER_FLAG[@]}" \
             --continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64" \
             --receipt-dir "$REPO/data/deploy" --apply)"
@@ -2621,11 +2630,11 @@ jobs:
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase finalize python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase finalize python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA' '$CANDIDATE_TREE'" <<'PY'
           import grp, json, os, subprocess, sys, tempfile
           from datetime import datetime, timezone
           from pathlib import Path
-          candidate, deploy = sys.argv[1:]
+          candidate, deploy, tree = sys.argv[1:]
           root = Path('/opt/porota-trading/data/deploy')
           path = root / 'CURRENT_STATE_V2.json'
           if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
@@ -2679,6 +2688,23 @@ jobs:
               os.replace(tmp, path)
           finally:
               if os.path.exists(tmp): os.unlink(tmp)
+          # A248: the October A125/A176 timer hold remains immutable history,
+          # not an expiration of the operator's later ACTIVE intent. Reconcile
+          # only after the exact PAPER/0 marker is VALIDATED_RUNTIME, under the
+          # SAME finalizer root mutex, and before unstaged preopen is probed.
+          # No generic scheduler restore may grant PAPER permission in COLD.
+          project = Path('/opt/porota-trading')
+          sys.path.insert(0, str(project))
+          from scripts.porota_apply_host_control_plane_v2 import (
+              reconcile_finalized_operator_paper_timer)
+          timer_proof = reconcile_finalized_operator_paper_timer(candidate, tree)
+          if (timer_proof.get('status') != 'GREEN' or
+                  timer_proof.get('candidate_sha') != candidate or
+                  timer_proof.get('candidate_tree_sha') != tree or
+                  timer_proof.get('real_orders_sent') != 0 or
+                  timer_proof.get('ppi_watch_mutated') is not False):
+              raise ValueError('FINAL_OPERATOR_PAPER_TIMER_RED')
+          print('RC6_FINAL_OPERATOR_PAPER_TIMER=' + json.dumps(timer_proof, sort_keys=True))
           print('CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME')
           PY
 
@@ -3181,95 +3207,6 @@ jobs:
                 str(len(proof['removed_tags']))+'|free_bytes='+str(proof['disk_after']))
           PY
 
-      - name: Postdeploy full-session stress in the exact installed image
-        id: stress
-        # This one candidate has a separate, exact, later owner deferral
-        # verified before any host action. Keep the phase available for a
-        # future candidate; do not run it during this promotion.
-        if: ${{ success() && env.RC6_HOST_STRESS_MODE == 'RUN' }}
-        timeout-minutes: 40
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          set +e
-          timeout --signal=TERM --kill-after=180s 2100s ssh \
-            -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n python3 - --candidate-sha '$CANDIDATE_SHA' --run-id '$GITHUB_RUN_ID'" \
-            < scripts/rc6_postdeploy_stress_host.py > evidence/postdeploy-stress/host-summary.json
-          result=$?
-          set -e
-          cat evidence/postdeploy-stress/host-summary.json
-          echo "RC6_POSTDEPLOY_STRESS_EXIT=$result"
-          test "$result" -eq 0
-
-      - name: Re-establish two current native generations after restoration
-        if: success() && steps.stress.outcome == 'success'
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          # An advanced observer heartbeat does not advance SHADOW CURRENT.
-          # Use the same read-only startup gate as promotion, preserving its
-          # rejected observations. The following ten-cycle soak stays strict.
-          timeout 210 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n docker exec porota_production_dashboard timeout 195 python /app/scripts/rc6_deploy_generation_gate.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output /app/data/deploy/native-postrestore-generation-acceptance.json" \
-            > evidence/postdeploy-stress/native-postrestore-generation-acceptance.json
-          cat evidence/postdeploy-stress/native-postrestore-generation-acceptance.json
-
-      - name: Independent sustained native acceptance after stress restoration
-        if: success() && steps.stress.outcome == 'success'
-        timeout-minutes: 22
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          timeout 1260 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ServerAliveInterval=20 -o ServerAliveCountMax=3 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n python3 /opt/porota-trading/scripts/rc6_native_soak.py --expected-sha '$CANDIDATE_SHA' --expected-tree '$CANDIDATE_TREE' --output '/opt/porota-trading/data/deploy/native-postrestore-soak.json'" \
-            > evidence/postdeploy-stress/native-postrestore-soak.json
-          cat evidence/postdeploy-stress/native-postrestore-soak.json
-
-      - name: Collect postdeploy stress evidence even on RED
-        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
-        timeout-minutes: 3
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence/postdeploy-stress
-          timeout 90 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n tar -C '/opt/porota-trading/data/deploy/stress/$CANDIDATE_SHA/$GITHUB_RUN_ID' -czf - ." \
-            > evidence/postdeploy-stress/isolated-stress.tgz
-          timeout 30 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
-            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n cat /opt/porota-trading/data/deploy/native-ten-generation-soak.json" \
-            > evidence/postdeploy-stress/native-prestress-soak.json
-
-      - name: Preserve postdeploy stress and capacity receipts
-        if: always() && steps.stress.outcome != 'skipped' && steps.stress.outcome != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-postdeploy-stress-${{ github.run_id }}
-          path: evidence/postdeploy-stress
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Deployment summary
         if: success()
         shell: bash
@@ -3284,9 +3221,7 @@ jobs:
             echo '- real_orders_sent: 0 required'
             echo '- PPI Watch: untouched'
             echo '- MARKET_OPEN: operator-authorized RC6 timer suspend and PAPER quiescence; actual session retained'
-            echo '- Host stress 405 virtual minutes: DEFERRED_BY_EXACT_OWNER (NOT EXECUTED)'
-            echo '- Poststress restoration and native postrestore gates: NOT EXECUTED'
-            echo '- Mission #624 E09/E10: NO_VERIFICADO; no global completion claim'
+            echo '- Host stress: removed from release acceptance by operator direction'
             echo '- Strategy: FIX-FORWARD ONLY'
           } >> "$GITHUB_STEP_SUMMARY"
 

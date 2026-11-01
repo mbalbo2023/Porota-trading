@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import pytest
-from rc6_cauciones_contract import CaucionContractError,estimate_ppi_costs_before_market_rights,gross_interest_for_ticker,is_same_day_concertation_window,parse_ticker,placed_side_book_levels,ppi_annual_commission_percent,quote_from_book_level,theoretical_liquidity_date,validate_amount
+from rc6_cauciones_contract import CaucionContractError,estimate_ppi_costs_before_market_rights,gross_interest,gross_interest_for_ticker,is_same_day_concertation_window,parse_ticker,placed_side_book_levels,ppi_annual_commission_percent,quote_from_book_level,theoretical_liquidity_date,validate_amount
 
 def test_parse_ticker_pesos_and_dolar():
     assert parse_ticker('PESOS1').term_days==1; assert parse_ticker('pesos120').term_days==120; assert parse_ticker('DOLAR7').currency_prefix=='DOLAR'
@@ -37,3 +37,57 @@ def test_partial_cost_estimate_never_certifies_full_account_costs(
     assert estimate.ppi_commission.quantize(Decimal('0.01'))==expected_commission
     assert estimate.market_rights_known is False
     assert estimate.budget_is_authoritative_for_full_costs is False
+
+
+@pytest.mark.parametrize("capital,tna,days", [
+    ("NaN", "20", 7), ("Infinity", "20", 7), ("100000", "NaN", 7),
+    ("100000", "Infinity", 7), ("100000", "20", True),
+    ("100000", "20", 0),
+])
+def test_caucion_interest_never_accepts_nonfinite_or_invalid_tenor(capital, tna, days):
+    with pytest.raises(CaucionContractError):
+        gross_interest(capital, tna, days)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("price", "NaN"), ("price", "Infinity"),
+    ("quantity", "NaN"), ("quantity", "Infinity"),
+    ("quantity", "-1"),
+])
+def test_caucion_bid_book_rejects_nonfinite_and_negative_liquidity(field, value):
+    level = {"price": "20.1", "quantity": "150000"}
+    level[field] = value
+    with pytest.raises(CaucionContractError):
+        quote_from_book_level("PESOS3", level)
+
+
+def test_zero_bid_quantity_stays_explicit_empty_book_not_broker_fill():
+    # The downstream SHADOW classifier labels this EMPTY_PLACED_BID.
+    quote = quote_from_book_level("PESOS3", {"price": "20.1", "quantity": "0"})
+    assert quote.quantity == Decimal(0) and quote.side_source == "BIDS"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("ppi_commission_annual_percent", "NaN"),
+    ("ppi_commission_annual_percent", "Infinity"),
+    ("iva_percent", "NaN"), ("iva_percent", "Infinity"),
+])
+def test_caucion_partial_fee_model_never_normalizes_nonfinite_inputs(field, value):
+    kwargs = {"ppi_commission_annual_percent": "2", "iva_percent": "21"}
+    kwargs[field] = value
+    with pytest.raises(CaucionContractError):
+        estimate_ppi_costs_before_market_rights("PESOS3", "100000", "20.1", **kwargs)
+
+
+def test_synthetic_bid_fee_and_theoretical_settlement_stay_non_authoritative():
+    bid = quote_from_book_level("PESOS3", {"price": "20.1", "quantity": "150000"})
+    amount = validate_amount(bid.ticker, "100000")
+    estimate = estimate_ppi_costs_before_market_rights(
+        bid.ticker, amount, bid.tna_percent,
+        ppi_commission_annual_percent="2", iva_percent="21")
+    assert estimate.gross_interest > 0
+    assert estimate.net_before_market_rights_and_other_taxes < estimate.gross_interest
+    assert estimate.market_rights_known is False
+    assert estimate.budget_is_authoritative_for_full_costs is False
+    # Calendar-day settlement is only theoretical, not a broker confirmation.
+    assert theoretical_liquidity_date(date(2026, 9, 11), bid.ticker) == date(2026, 9, 14)

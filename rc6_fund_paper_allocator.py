@@ -12,7 +12,6 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from bs_instrument_contracts import aware_datetime, decimal_value
@@ -66,6 +65,28 @@ class FundAllocationBudget:
 
 
 @dataclass(frozen=True)
+class FundCashProjection:
+    """Pure ARS cash arithmetic, not a subscription or broker authorization.
+
+    ``subscription_net_ars`` is the intended fund amount *before* account
+    fees. The eventual locked lifecycle must debit ``gross_cash_debit_ars``
+    exactly once before a nonzero fee can ever be admitted. At present the
+    executor debits the net amount only, so nonzero fees remain HOLD.
+    """
+
+    subscription_net_ars: Decimal
+    fee_ars: Decimal
+    gross_cash_debit_ars: Decimal
+    minimum_cash_required_ars: Decimal
+    cash_after_debit_ars: Decimal
+    cash_after_buffer_ars: Decimal
+    within_position_limit: bool
+    within_cash_limit: bool
+    paper_only: bool = True
+    runtime_entry_authority: bool = False
+
+
+@dataclass(frozen=True)
 class FundAllocationDecision:
     status: str
     reason_codes: tuple[str, ...]
@@ -103,6 +124,30 @@ def _source(reference, digest, known_at, at, *, synthetic):
         return False
     stamp = _at(known_at)
     return stamp is not None and stamp <= at
+
+
+def project_fund_subscription_cash(*, subscription_net_ars, fee_ars,
+                                   available_cash_ars, minimum_cash_buffer_ars,
+                                   maximum_position_ars) -> FundCashProjection:
+    """Calculate fee-inclusive cash needs without granting entry authority.
+
+    An unknown, negative or non-finite fee is a hard error. This projection
+    cannot mutate a PAPER ledger, authenticate a source, or release the
+    separate nonzero-fee guard in ``assess_fund_cash_parking``.
+    """
+    net = _amount(subscription_net_ars)
+    fee = _amount(fee_ars)
+    available = _amount(available_cash_ars)
+    buffer = _amount(minimum_cash_buffer_ars)
+    maximum = _amount(maximum_position_ars)
+    if any(x is None for x in (net, fee, available, buffer, maximum)) or net == 0:
+        raise ValueError("FCI_CASH_PROJECTION_INVALID")
+    gross = net + fee
+    after_debit = available - gross
+    return FundCashProjection(
+        net, fee, gross, gross + buffer, after_debit, after_debit - buffer,
+        net <= maximum, after_debit >= buffer,
+    )
 
 
 def assess_fund_cash_parking(evidence: FundAllocationEvidence | None,
@@ -210,8 +255,13 @@ def assess_fund_cash_parking(evidence: FundAllocationEvidence | None,
     else:
         if amount > maximum or amount + buffer > available:
             block("FCI_CASH_OR_POSITION_LIMIT")
-        if fee is not None and amount + fee + buffer > available:
-            block("FCI_FEE_INCLUSIVE_CASH_LIMIT")
+        if fee is not None:
+            projection = project_fund_subscription_cash(
+                subscription_net_ars=amount, fee_ars=fee,
+                available_cash_ars=available, minimum_cash_buffer_ars=buffer,
+                maximum_position_ars=maximum)
+            if not projection.within_cash_limit:
+                block("FCI_FEE_INCLUSIVE_CASH_LIMIT")
         if isinstance(ce, FundClassEvidence) and isinstance(ce.terms, PaperFundTerms):
             try:
                 ce.terms.subscription_amount(amount)
@@ -234,21 +284,45 @@ def simulate_fund_subscription(executor: FamilyPaperExecutor, *, evidence,
                                cash_guard, admission_guard):
     """Delegate only a synthetic offline fixture to the durable PAPER ledger.
 
-    Both guards are required; the existing executor rechecks cash and admission
-    in its locked transaction and retains idempotency. The runtime store path
-    is forbidden regardless of what caller-supplied evidence claims.
+    Both guards are required. The existing executor rechecks cash and admission
+    in its locked transaction and retains idempotency. The independent minimum
+    cash buffer is subtracted inside that lock, not trusted from the earlier
+    budget assessment. Runtime stores and filesystem aliases are forbidden.
     """
     if not isinstance(executor, FamilyPaperExecutor):
         raise ValueError("FCI_PAPER_EXECUTOR_REQUIRED")
     if cash_guard is None or not callable(cash_guard) or not callable(admission_guard):
         raise ValueError("FCI_PAPER_ADMISSION_GUARDS_REQUIRED")
-    from cg_paper_workspace import database_path
-    if Path(executor.store.path).resolve() == Path(database_path()).resolve():
+    from cg_paper_workspace import checked_path, database_path
+    try:
+        # resolve() alone misses hardlinks. The workspace's canonical check
+        # already rejects both symlinks and multiply-linked database inodes.
+        store_path = checked_path(executor.store.path)
+        runtime_path = checked_path(database_path())
+        same_database = (store_path == runtime_path or
+                         (store_path.exists() and runtime_path.exists() and
+                          store_path.samefile(runtime_path)))
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError("FCI_PAPER_STORE_IDENTITY_UNVERIFIED") from exc
+    if same_database:
         raise ValueError("FCI_RUNTIME_ADAPTER_NOT_AUTHORIZED")
     decision = assess_fund_cash_parking(evidence, budget, as_of=occurred_at)
     if decision.status != "SYNTHETIC_OFFLINE_PAPER_CANDIDATE":
         raise ValueError("FCI_PAPER_ALLOCATION_HOLD:" + ",".join(decision.reason_codes))
+
+    def locked_cash_after_buffer(connection):
+        # The callback is re-read by FamilyPaperExecutor after BEGIN IMMEDIATE.
+        # Use the smaller of the live PAPER balance and the assessed budget;
+        # never permit a stale budget or concurrent subscription to consume the
+        # cash reserve. Nonzero fees still remain HOLD upstream.
+        live = decimal_value(cash_guard(connection), "FCI_PAPER_LIVE_CASH", nonnegative=True)
+        assessed = decimal_value(budget.available_cash_ars, "FCI_PAPER_BUDGET_CASH",
+                                 nonnegative=True)
+        buffer = decimal_value(budget.minimum_cash_buffer_ars, "FCI_PAPER_BUFFER",
+                               nonnegative=True)
+        return max(Decimal(0), min(live, assessed) - buffer)
+
     return executor.subscribe_fund(
         evidence.class_evidence.terms, lifecycle_id=lifecycle_id,
         event_id=event_id, amount=decision.amount_ars, occurred_at=occurred_at,
-        cash_guard=cash_guard, admission_guard=admission_guard)
+        cash_guard=locked_cash_after_buffer, admission_guard=admission_guard)

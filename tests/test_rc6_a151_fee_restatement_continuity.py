@@ -22,6 +22,7 @@ WORKFLOW = ".github/workflows/porota-deploy-v2-promote.yml"
 OPEN_ORIGIN = dict(ORIGIN, quiescence_mode="OPEN", owner_intraday_comment_id=1003)
 HELD_ORIGIN = dict(OPEN_ORIGIN, quiescence_mode="A151_HELD_OPEN")
 STOPPED_ORIGIN = dict(OPEN_ORIGIN, quiescence_mode="A151_HELD_STOPPED")
+NEW_ORIGIN = dict(ORIGIN, owner_deferred_comment_id=0)
 
 
 def failed_receipt(tmp_path, *, market_open=False, held_a143=False,
@@ -104,8 +105,10 @@ def github_get(*, conclusion="failure", owner="mbalbo2023", tree="c" * 40,
         f"repos/{REPO}/commits/{CANDIDATE}": {
             "sha": CANDIDATE, "commit": {"tree": {"sha": origin["candidate_tree"]}}},
     }
-    decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2"),
-                 ("owner_deferred_comment_id", "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED")]
+    decisions = [("owner_approval_comment_id", "RC6_624_APPROVE_DEPLOY_AND_COLD2")]
+    if origin["owner_deferred_comment_id"]:
+        decisions.append(("owner_deferred_comment_id",
+                          "RC6_624_APPROVE_DEPLOY_WITH_HOST_STRESS_DEFERRED"))
     if origin["quiescence_mode"] in ("OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED"):
         decisions.append(("owner_intraday_comment_id", "RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY"))
     for field, decision in decisions:
@@ -160,6 +163,42 @@ def test_atomic_origin_exact_failed_deploy_reuses_without_second_money(six_posit
             db.execute("UPDATE paper_caucion_fee_restatement_origin SET candidate_sha=?", (NEXT,))
         with pytest.raises(sqlite3.IntegrityError, match="APPEND_ONLY"):
             db.execute("DELETE FROM paper_caucion_fee_restatement_origin")
+
+
+def test_new_single_go_origin_is_sealed_and_failed_deploy_continuity_needs_only_that_go(
+        six_positions, tmp_path):
+    applied = apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=NEW_ORIGIN)
+    assert applied["inserted"] == 6
+    with sqlite3.connect(six_positions) as db:
+        row = db.execute("SELECT schema,owner_approval_comment_id,owner_deferred_comment_id "
+                         "FROM paper_caucion_fee_restatement_origin").fetchone()
+        assert row == ("RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V3", 1001, 0)
+    before = _sealed(six_positions)
+    folder = failed_receipt(tmp_path)
+    payload = probe(six_positions, NEXT, folder)
+    seen = []
+    get = github_get(origin=NEW_ORIGIN)
+
+    def traced(path):
+        seen.append(path)
+        return get(path)
+
+    proof = authorize(payload, NEXT, REPO, traced)
+    assert not any(path.endswith("/0") for path in seen)
+    assert len([path for path in seen if "/issues/comments/" in path]) == 1
+    assert apply_restatement(six_positions, NEXT, now=KNOWN_AT,
+                             continuity_proof=proof, receipt_dir=folder)["inserted"] == 0
+    assert _sealed(six_positions) == before
+
+
+@pytest.mark.parametrize("bad", [None, -1, True, 1001])
+def test_new_origin_rejects_invalid_legacy_deferral_marker(six_positions, bad):
+    origin = dict(NEW_ORIGIN, owner_deferred_comment_id=bad)
+    with pytest.raises(ValueError, match="PAPER_RESTATEMENT_DEPLOY_ORIGIN_INVALID"):
+        apply_restatement(six_positions, CANDIDATE, now=KNOWN_AT, origin=origin)
+    with sqlite3.connect(six_positions) as db:
+        assert db.execute("SELECT 1 FROM sqlite_master "
+                          "WHERE name='paper_caucion_fee_restatement_origin'").fetchone() is None
 
 
 def test_mid_insert_failure_rolls_back_all_six_and_origin(six_positions):
@@ -380,4 +419,5 @@ def test_workflow_checks_prior_owner_before_suspend_and_rechecks_before_restart(
         "RC6_A151_CAUCION_FEE_APPLY") < source.index("MODE_OUTPUT=")
     assert source.count('--continuity-proof-b64 "$RC6_A151_CONTINUITY_PROOF_B64"') == 2
     assert "RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID'" in source
-    assert "RC6_A151_OWNER_DEFERRED_ID='$RC6_A151_OWNER_DEFERRED_ID'" in source
+    assert "RC6_A151_OWNER_DEFERRED_ID" not in source
+    assert "--owner-deferred-comment-id" not in source

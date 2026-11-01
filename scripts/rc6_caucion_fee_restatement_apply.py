@@ -32,7 +32,8 @@ from scripts.rc6_caucion_fee_ro_provenance import (
 from scripts.rc6_caucion_fee_restatement_continuity import validate_prior_receipt
 
 SCHEMA = "RC6_PAPER_CAUCION_PUBLIC_FEE_RESTATEMENT_V1"
-ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
+ORIGIN_SCHEMA_V2 = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V2"
+ORIGIN_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_DEPLOY_ORIGIN_V3"
 CONTINUITY_SCHEMA = "RC6_PAPER_CAUCION_FEE_RESTATEMENT_CONTINUITY_V1"
 INTRADAY_MODES = frozenset({"OPEN", "A151_HELD_OPEN", "A151_HELD_STOPPED",
                             "CLOSED_A171_PENDING_FIX_FORWARD",
@@ -108,8 +109,10 @@ def _origin_payload(origin, candidate_sha, receipts):
                type(origin[k]) is not str or POSITIVE.fullmatch(origin[k]) is None
                for k in ("run_id", "run_attempt")) or any(
                    type(origin[k]) is not int or origin[k] <= 0
-                   for k in ("owner_approval_comment_id", "owner_deferred_comment_id")) or (
-                       origin["owner_approval_comment_id"] == origin["owner_deferred_comment_id"] or
+                   for k in ("owner_approval_comment_id",)) or (
+            type(origin["owner_deferred_comment_id"]) is not int or
+            origin["owner_deferred_comment_id"] < 0 or
+            origin["owner_approval_comment_id"] == origin["owner_deferred_comment_id"] or
             type(origin["quiescence_mode"]) is not str or
             origin["quiescence_mode"] not in QUIESCENCE_MODES):
         raise ValueError("PAPER_RESTATEMENT_DEPLOY_ORIGIN_INVALID")
@@ -121,7 +124,10 @@ def _origin_payload(origin, candidate_sha, receipts):
             raise ValueError("PAPER_RESTATEMENT_INTRADAY_OWNER_REQUIRED")
     elif third is not None:
         raise ValueError("PAPER_RESTATEMENT_UNEXPECTED_INTRADAY_OWNER")
-    payload = dict(origin, id=1, schema=ORIGIN_SCHEMA,
+    # Existing V2 receipts keep their exact seal and owner provenance. V3 uses
+    # zero in the legacy NOT NULL column to mean no stress decision was made.
+    schema = ORIGIN_SCHEMA_V2 if origin["owner_deferred_comment_id"] else ORIGIN_SCHEMA
+    payload = dict(origin, id=1, schema=schema,
                    combined_receipt_sha256=_combined(receipts))
     payload["seal_sha256"] = _seal(payload)
     return payload
@@ -451,7 +457,8 @@ if __name__ == "__main__":
               "deploy_sha": args.deploy_sha, "run_id": args.run_id,
               "run_attempt": args.run_attempt, "quiescence_mode": args.quiescence_mode,
               "owner_approval_comment_id": args.owner_approval_comment_id,
-              "owner_deferred_comment_id": args.owner_deferred_comment_id,
+              "owner_deferred_comment_id": (args.owner_deferred_comment_id
+                                            if args.owner_deferred_comment_id is not None else 0),
               "owner_intraday_comment_id": args.owner_intraday_comment_id}
     result = (apply_restatement(args.db, args.candidate_sha, origin=origin,
                                 continuity_proof=proof, receipt_dir=args.receipt_dir)

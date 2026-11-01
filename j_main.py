@@ -611,72 +611,31 @@ def run_daily_backup_job():
 
 
 # ---------------------------------------------------------------------- #
-# NUEVO EN v11.0 — Poda mensual de datos de bajo valor histórico.
+# A244 — La antigua poda mensual queda BLOQUEADA sin pruebas de PIT/pins.
 #
-# Por qué existe: la tabla `signals` graba CADA evaluación de CADA
-# instrumento (pase o no los filtros) — es la fuente que alimenta el
-# diagnóstico semanal (s_learning_engine.py) y, a futuro, cualquier
-# reentrenamiento. En modo scalping, con escaneos cada
-# SCALPING_SCAN_INTERVAL_SECONDS, esta tabla puede acumular miles de filas
-# por día. `global_news_247` y `daily_headlines` son el mismo caso: texto
-# de noticias en bruto, útil para el día en que se generaron, pero sin
-# valor a largo plazo una vez que ya se usaron.
+# `signals`, `global_news_247` y `daily_headlines` alimentan diagnósticos,
+# reconstrucciones y decisiones; no hay inventario de consumidores ni
+# snapshot PIT suficiente para afirmar que los datos antiguos son descartables.
 #
-# QUÉ NO SE TOCA NUNCA acá (a propósito): closed_trades,
-# learning_diagnostics, daily_balance_snapshot, auto_tune_history,
-# recommendations_log y risk_halts — son las tablas chicas (pocas filas
-# por día) que sí tienen valor permanente para aprendizaje/backtest y para
-# auditar decisiones pasadas. Nunca se borran automáticamente.
+# Ninguna tabla se borra por esta función. La ejecución de una tarea legacy
+# genera HOLD explícito y requiere revisión mediante el procedimiento #478.
 #
-# SIGNALS_RETENTION_DAYS (default 365): filas de `signals` más viejas que
-# esto se eliminan. daily_headlines/global_news_247 usan un límite fijo más
-# corto (90 días) porque son solo insumo de la evaluación del día, no un
-# registro de decisiones. Se corre una vez al mes, junto al auto-tuning,
-# nunca durante el horario de rueda.
+# Las variables legacy de días quedan como configuración histórica, NO como
+# autorización para ejecutar una purga física. La política objetivo son 365
+# fechas ART, sujeta a identidad de cinco claves, PIT y todos los pins.
 SIGNALS_RETENTION_DAYS = int(os.getenv("SIGNALS_RETENTION_DAYS", "365"))
 NEWS_ARCHIVE_RETENTION_DAYS = int(os.getenv("NEWS_ARCHIVE_RETENTION_DAYS", "90"))
 
 
 def run_monthly_data_retention_job():
-    """Poda mensual de `signals` y del archivo crudo de noticias. Nunca
-    toca closed_trades/learning_diagnostics/auto_tune_history/etc. Corre
-    en VACUUM al final para que el espacio liberado en disco se refleje de
-    verdad en el tamaño del archivo .db (SQLite no lo libera solo)."""
-    conn = ac_db.connect_raw()
-    c = conn.cursor()
-    deleted = {}
-    try:
-        c.execute(
-            "DELETE FROM signals WHERE timestamp < datetime('now', ?)",
-            (f"-{SIGNALS_RETENTION_DAYS} days",),
-        )
-        deleted["signals"] = c.rowcount
-        c.execute(
-            "DELETE FROM daily_headlines WHERE date < date('now', ?)",
-            (f"-{NEWS_ARCHIVE_RETENTION_DAYS} days",),
-        )
-        deleted["daily_headlines"] = c.rowcount
-        c.execute(
-            "DELETE FROM global_news_247 WHERE fetched_at < datetime('now', ?)",
-            (f"-{NEWS_ARCHIVE_RETENTION_DAYS} days",),
-        )
-        deleted["global_news_247"] = c.rowcount
-        conn.commit()
-    finally:
-        conn.close()
+    """Fail closed on the obsolete monolithic DELETE/VACUUM job (A244).
 
-    # VACUUM necesita su propia conexión, fuera de cualquier transacción abierta.
-    conn2 = ac_db.connect_raw()
-    conn2.execute("VACUUM")
-    conn2.close()
-
-    logger.info(
-        "Poda mensual de datos: %s filas de signals (>%sd), %s headlines/noticias (>%sd). "
-        "closed_trades y learning_diagnostics no se tocan.",
-        deleted.get("signals", 0), SIGNALS_RETENTION_DAYS,
-        deleted.get("daily_headlines", 0) + deleted.get("global_news_247", 0),
-        NEWS_ARCHIVE_RETENTION_DAYS,
-    )
+    Even news and signals can be pinned by PAPER decisions, learning and
+    exported receipts. An elapsed date alone cannot prove safe deletion.
+    The separately versioned offhost planner has no host purge authority;
+    until cross-store pins and PIT are checked, callers get an explicit HOLD.
+    """
+    raise RuntimeError("RC6_RETENTION_PHYSICAL_PURGE_BLOCKED_PIN_PIT_UNVERIFIED")
 
 
 def market_open_job(ppi, notifier):

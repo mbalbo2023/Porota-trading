@@ -177,12 +177,30 @@ def test_un_futuro_sin_garantia_no_es_operable():
     assert spec.blocking_code == "CAPACIDAD_SIN_DATO_DE_GARANTIA"
 
 
+def _futuro_vigente_metadata():
+    """Fixture relativa al reloj: un contrato real vence, el código no caduca.
+
+    La fecha fija 2026-10-31 dejó de representar un futuro vigente el
+    2026-11-01 en runners UTC; los tests no deben depender de esa fecha.
+    """
+    return {
+        "contractMultiplier": 1000,
+        "initialMargin": 50000,
+        "expirationDate": (date.today() + timedelta(days=90)).isoformat(),
+    }
+
+
 def test_un_futuro_completo_es_operable():
-    spec = deriv.describe_future("DLR/OCT26", {
-        "contractMultiplier": 1000, "initialMargin": 50000,
-        "expirationDate": "2026-10-31",
-    })
+    spec = deriv.describe_future("DLR/FIXTURE", _futuro_vigente_metadata())
     assert spec.capable is True
+
+
+def test_un_futuro_con_vencimiento_real_pasado_no_es_operable():
+    metadata = _futuro_vigente_metadata()
+    metadata["expirationDate"] = (date.today() - timedelta(days=1)).isoformat()
+    spec = deriv.describe_future("DLR/VENCIDO-FIXTURE", metadata)
+    assert spec.capable is False
+    assert spec.blocking_code == "CAPACIDAD_VENCIMIENTO_EXPIRADO"
 
 
 def test_un_futuro_sin_vencimiento_no_es_operable():
@@ -195,10 +213,7 @@ def test_un_futuro_sin_vencimiento_no_es_operable():
 def test_la_garantia_limita_por_encima_del_riesgo():
     """Si el riesgo permite tres contratos pero la garantía alcanza para uno,
     manda la garantía."""
-    spec = deriv.describe_future("DLR/OCT26", {
-        "contractMultiplier": 1000, "initialMargin": 50000,
-        "expirationDate": "2026-10-31",
-    })
+    spec = deriv.describe_future("DLR/FIXTURE", _futuro_vigente_metadata())
     qty = deriv.size_future(10_000_000, spec, entry_price=1300.0, stop_price=1290.0,
                             risk_pct=1.0, free_margin_ars=60_000,
                             initial_margin_per_contract=50_000)

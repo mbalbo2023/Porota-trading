@@ -16,7 +16,10 @@ from bs_instrument_contracts import aware_datetime
 from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
 
 TZ=ZoneInfo("America/Argentina/Buenos_Aires")
-MAX_ROWS=2000
+# A244: a review threshold, NOT a purge limit. History rows are evidence
+# consumed by PAPER admission; their pins and PIT clocks have not been
+# reconciled across stores, so a rolling DELETE is unsafe.
+REVIEW_AT_ROWS=2000
 SOURCE="PPI_MARKETDATA_BOOK_READONLY"
 POLICY="LIVE_PPI_BID_PARTICIPATION_CAP"
 
@@ -123,10 +126,15 @@ def refresh(reader,store,*,now,clock_fn=None):
               (ticker,market,currency,settlement,term_days,quoted_at,tna_fraction,
                available_principal,state,source,observed_at)
               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",values)
-        c.execute("""DELETE FROM paper_caucion_live_book_history
-          WHERE id NOT IN (SELECT id FROM paper_caucion_live_book_history
-          ORDER BY id DESC LIMIT ?)""",(MAX_ROWS,))
+        # Never truncate a receipt merely because it is old or outside a
+        # rolling row cap. Even a formerly referenced quote may be needed by
+        # an immutable PAPER decision, audit or external export.
+        history_rows = int(c.execute(
+            'SELECT COUNT(*) FROM paper_caucion_live_book_history').fetchone()[0])
     return {"state":"OK","records":len(rows),
             "ready":sum(r["state"]=="BOOK_READY" for r in rows),
             "states":{r["ticker"]:r["state"] for r in rows},
+            "history_rows":history_rows,
+            "history_review_threshold_exceeded":history_rows>REVIEW_AT_ROWS,
+            "history_retention":"HOLD_PIN_AND_PIT_UNVERIFIED",
             "real_routes":[]}

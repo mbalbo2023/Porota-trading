@@ -580,6 +580,35 @@ def test_a169_stopped_parent_is_adopted_without_docker_stop_or_restart(
     assert json.loads((folder/('quiescence-'+candidate+'.json')).read_text())['status']=='HOST_INSTALLATION_STARTED'
 
 
+def test_a169_stopped_technical_sunday_rechecks_a151_anchor_and_current_timer(
+        incident,monkeypatch):
+    _,_,_,states,_,_,_=a169_stopped_incident(incident,monkeypatch)
+    class SundayClock(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            value=datetime(2026,11,1,15,0,tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+    monkeypatch.setattr(q,'datetime',SundayClock)
+    controls={'timer':True}
+    def historical(*,historical_hold_only=False):
+        if not historical_hold_only:
+            raise ValueError('ORIGINAL_A151_DATE_EXPIRED')
+        return ('e'*64,'A151-40686116017-1')
+    monkeypatch.setattr(q,'candidate_operator_module',lambda **_:SimpleNamespace(
+        exact_a151_operator_preopen_pause=historical,
+        operator_preopen_timer_disabled=lambda:controls['timer']))
+    candidate='f'*40
+    receipt=q.run(candidate,'drain',allow_a143_pending_stopped=True,
+                  allow_a151_held_open=True)
+    assert receipt['status']=='DRAINED'
+    assert receipt['real_orders_sent']==0
+    assert all(states[name]['State']['Status']=='exited' for name in q.OWNED)
+    controls['timer']=False
+    with pytest.raises(ValueError,match='QUIESCENCE_A151_STOP_HOLD_CHANGED'):
+        q.run(candidate,'install',allow_a143_pending_stopped=True,
+              allow_a151_held_open=True)
+
+
 def test_a170_cold2_uses_real_stopped_held_proof_with_a151_callbacks(
         incident,monkeypatch):
     from scripts import rc6_cold2_apply_guard as guard

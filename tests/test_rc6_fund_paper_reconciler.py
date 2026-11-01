@@ -1,4 +1,5 @@
 """Synthetic receipt arithmetic on the actual durable PAPER FCI lifecycle."""
+import os
 from dataclasses import replace
 from decimal import Decimal
 import sqlite3
@@ -151,3 +152,25 @@ def test_fci_without_class_specific_regulation_has_no_economic_authority(tmp_pat
     with pytest.raises(ValueError, match="FCI_REGULATION_NOT_KNOWN_BEFORE_SUBSCRIPTION"):
         reconcile_fund_store(store.path, "fund-1", receipts,
                              replace(evidence, known_at="2026-10-27T12:01:00+00:00"), as_of=AS_OF)
+
+
+@pytest.mark.parametrize("alias_kind", ["hardlink", "symlink"])
+def test_fci_read_only_reconciliation_rejects_alias_of_paper_dataset(tmp_path,
+                                                                      alias_kind):
+    store, _, _, evidence = setup_fund(tmp_path)
+    alias = tmp_path / "reconcile-alias.db"
+    if alias_kind == "hardlink":
+        os.link(store.path, alias)
+    else:
+        alias.symlink_to(store.path)
+    with pytest.raises(ValueError, match="PAPER_V17_DATABASE_ALIAS_FORBIDDEN"):
+        reconcile_fund_store(alias, "fund-1", [], evidence, as_of=AS_OF)
+
+
+def test_fci_read_only_reconciliation_requires_owned_paper_identity(tmp_path):
+    _, _, _, evidence = setup_fund(tmp_path)
+    foreign = tmp_path / "foreign-database.db"
+    with sqlite3.connect(foreign) as conn:
+        conn.execute("CREATE TABLE arbitrary_schema (id INTEGER)")
+    with pytest.raises(ValueError, match="PAPER_V17_UNVERIFIED_DATABASE"):
+        reconcile_fund_store(foreign, "fund-1", [], evidence, as_of=AS_OF)

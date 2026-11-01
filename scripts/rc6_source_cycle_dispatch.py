@@ -35,10 +35,16 @@ ART = ZoneInfo("America/Argentina/Buenos_Aires")
 OPEN = clock_time(10, 30)
 CLOSE = clock_time(17, 0)  # Current collector baseline; 02-Nov family extension is separate.
 LATE_CLOSE = clock_time(18, 0)
+PPT_SENEBI_INTRADAY_CLOSE = clock_time(17, 30)
 MORNING_OPEN = clock_time(8, 30)
 MORNING_END = clock_time(9, 0)
-COM19024_EFFECTIVE = date(2026, 11, 2)
-COM19024_REVIEWED_THROUGH = date(2026, 12, 31)
+# BYMA COM19031 (28-Oct-2026) explicitly supersedes COM19024 from 02-Nov.
+# Official PDF SHA256: fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0
+# https://www.byma.com.ar/comunicados/com19031-horarios
+# COM19031 changes only PPT/SENEBI intraday operations (17:45 -> 17:30);
+# regular T+1 equities/options and postclose still depend on the 18:00 close.
+COM19031_EFFECTIVE = date(2026, 11, 2)
+COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
 # This is a live SHADOW input, not an optional background scraper. A longer
 # TTL would silently change source-observation cadence and SHADOW checkpoints.
 PUBLIC_TTL_SECONDS = 60
@@ -65,7 +71,7 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
     """Check an audited Argentine trading day before scheduling external work.
 
     The OPEN phase is intentionally the current *collector* window, not an
-    assertion that every family closes at 17:00 after the COM19024 transition.
+    assertion that every family closes at 17:00 after the COM19031 transition.
     """
     if instant.tzinfo is None:
         return False, "CLOCK_MISSING_TIMEZONE"
@@ -87,22 +93,29 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
         allowed = clock_time(23, 20) <= local.time() < clock_time(23, 45)
         return allowed, "DB_POSTCLOSE_WINDOW" if allowed else "OUTSIDE_DB_POSTCLOSE"
     if phase == "postclose_snapshot":
-        # COM18782 closes regular PPT at 17 until 01-Nov. COM19024 moves
+        # COM18782 closes regular PPT at 17 until 01-Nov. COM19031 retains
         # regular equities/options to 18 starting 02-Nov while caucions remain
         # 17. The single global snapshot belongs after the LAST verified close.
-        hour = 18 if local.date() >= COM19024_EFFECTIVE else 17
+        hour = 18 if local.date() >= COM19031_EFFECTIVE else 17
         allowed = clock_time(hour, 8) <= local.time() < clock_time(hour, 30)
         return allowed, "VERIFIED_PPT_CLOSE" if allowed else "PPT_STILL_OPEN_OR_TOO_LATE"
     if phase == "open":
         allowed = OPEN <= local.time() < CLOSE
         return allowed, "COLLECTOR_BASELINE_WINDOW" if allowed else "OUTSIDE_COLLECTOR_WINDOW"
+    if phase == "intraday_ppt_senebi":
+        # This is a separate audited eligibility check, NOT the IOL T+1
+        # observation window and NOT the regular 18:00 equity close.
+        allowed = (COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
+                   and OPEN <= local.time() < PPT_SENEBI_INTRADAY_CLOSE)
+        return (allowed, "COM19031_PPT_SENEBI_INTRADAY"
+                if allowed else "PPT_SENEBI_INTRADAY_NOT_DUE")
     if phase == "late_source":
         # This admits a bounded *attempt*, not a market-wide quote collection.
         # The IOL child selects only PPI_FIELD/BYMA/A-24HS exact identities;
         # futures, cash-immediate and cauciones cannot inherit an 18:00 close.
-        allowed = (COM19024_EFFECTIVE <= local.date() <= COM19024_REVIEWED_THROUGH
+        allowed = (COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
                    and CLOSE <= local.time() < LATE_CLOSE)
-        return allowed, "COM19024_EXACT_LATE_SOURCE" if allowed else "LATE_SOURCE_NOT_DUE"
+        return allowed, "COM19031_EXACT_LATE_SOURCE" if allowed else "LATE_SOURCE_NOT_DUE"
     raise SourceCycleBlocked("UNKNOWN_PHASE")
 
 
@@ -328,13 +341,13 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
               else "COMPLETE" if all(value in {"OK", "NOT_DUE_TTL"}
                                      for value in results.values()) else "DEGRADED")
     return {"status": status,
-            "reason": "COM19024_EXACT_LATE_T1_OBSERVE_ONLY" if late else "PAPER_OBSERVE_ONLY",
+            "reason": "COM19031_EXACT_LATE_T1_OBSERVE_ONLY" if late else "PAPER_OBSERVE_ONLY",
             "stages": results, "real_orders_sent": 0}
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "business_day", "db_postclose", "postclose_snapshot"))
+    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "intraday_ppt_senebi", "business_day", "db_postclose", "postclose_snapshot"))
     args = parser.parse_args(argv)
     now = datetime.now(timezone.utc)
     if args.check_phase:

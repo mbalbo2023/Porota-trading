@@ -19,9 +19,12 @@ ZERO = Decimal('0')
 
 def _paper_tariff_authorized(offer):
     from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
     return (offer.currency == "ARS"
-            and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
-            and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)
+            and ((offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
+                  and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)
+                 or (offer.paper_fill_policy == "LIVE_PPI_BID_PARTICIPATION_CAP"
+                     and offer.fee_authority == PAPER_FEE_AUTHORITY_V2)))
 
 
 def encoded(value):

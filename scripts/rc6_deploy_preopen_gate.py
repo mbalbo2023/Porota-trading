@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from zoneinfo import ZoneInfo
+from scripts.rc6_operator_paper_rearm import PAUSE_STATUS, trusted_operator_pause
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 SCHEMA = 'POROTA_RC6_PREOPEN_V3'
@@ -88,8 +89,9 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                     for item in checks.values()), 'CHECK_NOT_ACCEPTABLE')
         timer = checks['required_rc6_timers']
         if status == 'PAUSED_NO_GO':
-            # Each trade day needs its own exact NO_GO authority. The A125/A151
-            # dated receipts cannot become an implicit 29-Oct rearm.
+            # Historical A125/A151/A176 evidence remains immutable. A later
+            # owner PAUSE V2 is a DIFFERENT authority, rooted in the exact
+            # no-follow receipt instead of relabeling A176 as a new action.
             day = local_now.date().isoformat()
             require(day >= '2026-10-27', 'OPERATOR_PAUSE_DAY_INVALID')
             require(report.get('operator_paper_paused') is True and
@@ -99,20 +101,69 @@ def validate_report(report, *, phase, return_code, now, is_operational):
             require(report.get('operator_pause_day_ar') == day and
                     timer.get('operator_pause_day_ar') == day and
                     isinstance(operation, str) and
-                    ((day == '2026-10-27' and operation == 'A125-40501523106-1') or
-                     (day == '2026-10-28' and re.fullmatch(
-                         r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
-                     (day == '2026-10-29' and re.fullmatch(
-                         r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
-                     (day > '2026-10-29' and re.fullmatch(
-                         r'A180-NO-GO-[0-9a-f]{16}', operation))) and
                     timer.get('operator_pause_operation_id') == operation,
                     'OPERATOR_PAUSE_IDENTITY_RED')
             digest = report.get('operator_pause_receipt_sha256')
             require(isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest) and
                     timer.get('operator_pause_receipt_sha256') == digest,
                     'OPERATOR_PAUSE_RECEIPT_RED')
-            if day >= '2026-10-29':
+            new_pause = report.get('operator_pause_v2')
+            if new_pause is not None:
+                require(day >= '2026-10-29' and type(new_pause) is dict and
+                        set(new_pause) == {
+                            'status', 'receipt_sha256', 'operator_comment_id',
+                            'rearm_run_id', 'issued_at_ar', 'candidate_sha',
+                            'candidate_tree_sha'} and
+                        new_pause.get('status') == PAUSE_STATUS and
+                        timer.get('operator_pause_v2') == new_pause and
+                        new_pause.get('receipt_sha256') == digest and
+                        type(new_pause.get('operator_comment_id')) is int and
+                        new_pause['operator_comment_id'] > 0 and
+                        type(new_pause.get('rearm_run_id')) is int and
+                        new_pause['rearm_run_id'] > 0 and
+                        all(re.fullmatch(r'[0-9a-f]{40}', str(new_pause.get(k)))
+                            for k in ('candidate_sha', 'candidate_tree_sha')) and
+                        operation == 'RC6-OWNER-PAUSE-V2-' + str(new_pause['rearm_run_id']),
+                        'OPERATOR_V2_PAUSE_IDENTITY_RED')
+                # This validator runs on the host. Re-read the exact root-owned
+                # FD (including its hash), not just self-consistent JSON from
+                # the preopen command's stdout or a writable DATA copy.
+                require(trusted_operator_pause(now=local_now, context='host') == new_pause,
+                        'OPERATOR_V2_ROOT_RECEIPT_UNTRUSTED')
+                units = timer.get('units')
+                preopen_timer = units.get('porota-preopen-rc6.timer') if type(units) is dict else None
+                require(type(preopen_timer) is dict and
+                        preopen_timer.get('state') == 'GREEN' and
+                        preopen_timer.get('enabled') == 'disabled' and
+                        preopen_timer.get('active') == 'inactive',
+                        'OPERATOR_V2_PREOPEN_TIMER_NOT_DISABLED')
+                require('operator_no_go_continuation' not in report and
+                        'operator_no_go_continuation' not in timer and
+                        report.get('paper_admission_hold') ==
+                        'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                        'OPERATOR_V2_PAUSE_MUST_NOT_REUSE_A176')
+                admission_receipt = report.get('paper_admission_receipt')
+                if admission_receipt is not None:
+                    require(type(admission_receipt) is dict and
+                            admission_receipt.get('status') == 'NO_GO_PAPER_SCALPING' and
+                            admission_receipt.get('reason') ==
+                            'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+                            admission_receipt.get('new_receipt_written') is False and
+                            admission_receipt.get('operator_intent_receipt_sha256') == digest and
+                            'continuation_receipt_sha256' not in admission_receipt,
+                            'OPERATOR_V2_ADMISSION_RECEIPT_INVALID')
+            else:
+                require('operator_pause_v2' not in timer,
+                        'OPERATOR_V2_TIMER_WITHOUT_REPORT_PROOF')
+                require((day == '2026-10-27' and operation == 'A125-40501523106-1') or
+                        (day == '2026-10-28' and re.fullmatch(
+                            r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
+                        (day == '2026-10-29' and re.fullmatch(
+                            r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
+                        (day > '2026-10-29' and re.fullmatch(
+                            r'A180-NO-GO-[0-9a-f]{16}', operation)),
+                        'OPERATOR_PAUSE_IDENTITY_RED')
+            if new_pause is None and day >= '2026-10-29':
                 proof = report.get('operator_no_go_continuation')
                 require(type(proof) is dict and
                         timer.get('operator_no_go_continuation') == proof and
@@ -129,7 +180,7 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                         report.get('paper_admission_hold') ==
                         'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
                         'OPERATOR_A176_NO_GO_CONTINUATION_RED')
-            else:
+            elif new_pause is None:
                 require('operator_no_go_continuation' not in report and
                         'operator_no_go_continuation' not in timer,
                         'OPERATOR_FUTURE_RECEIPT_ON_HISTORICAL_DAY')
@@ -140,7 +191,9 @@ def validate_report(report, *, phase, return_code, now, is_operational):
             require(report.get('operator_paper_paused') is not True and
                     timer.get('operator_paper_paused') is not True and
                     'operator_no_go_continuation' not in report and
-                    'operator_no_go_continuation' not in timer,
+                    'operator_no_go_continuation' not in timer and
+                    'operator_pause_v2' not in report and
+                    'operator_pause_v2' not in timer,
                     'GREEN_CANNOT_MASK_OPERATOR_PAUSE')
             if local_now.date().isoformat() >= '2026-10-29':
                 authority = report.get('operator_rearm_authority')
