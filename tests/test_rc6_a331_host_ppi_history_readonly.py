@@ -6,14 +6,82 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 import io
 import json
+import os
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import rc6_a331_host_ppi_history_readonly as a331
+
+
+class TestA343MountedProviderKeypair(unittest.TestCase):
+    """Canonical observer key mount; no credential/host access in the test."""
+
+    def test_key_json_is_read_without_env_alias_or_console_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "ppi_production.json"
+            file.write_text(json.dumps({"api_key": "KEY_ONLY_TEST", "api_secret": "SECRET_ONLY_TEST"}))
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, {
+                    "PPI_PRODUCTION_SECRET_FILE": str(file),
+                    "PPI_API_KEY": "WRONG_ENV", "PPI_API_SECRET": "WRONG_ENV"}), \
+                    redirect_stdout(output):
+                self.assertEqual(("KEY_ONLY_TEST", "SECRET_ONLY_TEST"),
+                                 a331.existing_container_keypair())
+            self.assertEqual("", output.getvalue())
+
+    def test_unsafe_missing_malformed_or_ambiguous_mount_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "ppi_production.json"
+            cases = ("", "{}", '{"api_key":"KEY"}',
+                     '{"api_key":"X","api_key":"Y","api_secret":"SECRET"}',
+                     "Z" * 4097)
+            for payload in cases:
+                with self.subTest(payload_size=len(payload)):
+                    file.write_text(payload)
+                    with mock.patch.dict(os.environ, {
+                            "PPI_PRODUCTION_SECRET_FILE": str(file)}):
+                        self.assertIsNone(a331.existing_container_keypair())
+            file.write_text('{"api_key":"KEY","api_secret":"SECRET"}')
+            alias = Path(folder) / "aliased.json"
+            alias.symlink_to(file)
+            with mock.patch.dict(os.environ, {
+                    "PPI_PRODUCTION_SECRET_FILE": str(alias)}):
+                self.assertIsNone(a331.existing_container_keypair())
+            with mock.patch.dict(os.environ, {
+                    "PPI_PRODUCTION_SECRET_FILE": str(Path(folder) / "missing.json"),
+                    "PPI_API_KEY": "UNSAFE", "PPI_API_SECRET": "UNSAFE"}):
+                self.assertIsNone(a331.existing_container_keypair())
+
+    def test_streamed_host_main_passes_mounted_keypair_to_existing_reader(self):
+        target_b64, first, last = request()
+        captured = []
+        def read(target, day, credentials, reader_factory):
+            captured.append((credentials, reader_factory))
+            return a331._result(target, day)
+        environment = {"RC6_A331_EXPECTED_PRODUCT_SHA": a331.SHA_PRODUCT,
+                       "RC6_A331_TARGET_B64": target_b64,
+                       "RC6_A331_FROM_DAY": first, "RC6_A331_TO_DAY": last}
+        output = io.StringIO()
+        reader_module = types.SimpleNamespace(ProductionMarketReader=object())
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.dict(sys.modules, {
+                    "_version": types.SimpleNamespace(MODE="PRODUCTION_PAPER",
+                                                      REAL_ORDER_CAPABILITY="BLOCKED"),
+                    "bd_ppi_readonly_guard": reader_module}), \
+                mock.patch.object(a331, "_read_only_process_limits"), \
+                mock.patch.object(a331, "existing_container_keypair",
+                                  return_value=("MOUNTED_KEY", "MOUNTED_SECRET")), \
+                mock.patch.object(a331, "capture_one", side_effect=read), \
+                redirect_stdout(output):
+            self.assertEqual(2, a331.main())
+        self.assertEqual([(("MOUNTED_KEY", "MOUNTED_SECRET"),
+                           reader_module.ProductionMarketReader)], captured)
+        self.assertNotIn("MOUNTED_SECRET", output.getvalue())
 
 
 def request(identity=None, day="2026-10-30"):
