@@ -4,6 +4,8 @@ on:
     types: [opened, edited, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 jobs:
   checkpoint-attestation:
     runs-on: ubuntu-latest
@@ -46,4 +48,149 @@ jobs:
           require_line '^Checkpoint commit SHA: [0-9a-fA-F]{40}$' 'checkpoint commit SHA'
           require_line '^RC6 baseline SHA: [0-9a-fA-F]{40}$' 'RC6 baseline SHA'
           require_line '^Safety invariants: .*PRODUCTION_PAPER.*REAL_ORDERS_SENT=0.*CASH_SWEEP_ORDER_ROUTING_ALLOWED=False.*fail-closed' 'safety invariants'
+          if grep -Eq '^(Checkpoint ID|Continuity checkpoint path|Checkpoint commit SHA|RC6 baseline SHA|Safety invariants):.*(<completar>|TODO|TBD)' <<< "$BODY"; then
+            echo '::error::PR attestation still contains a placeholder.'
+            exit 1
+          fi
           echo "Attestation fields found; checkpoint completeness and runtime state still require human verification."
+      - name: Test main PR metadata guard fixtures
+        if: github.event.pull_request.base.ref == 'main'
+        run: python3 -m unittest discover -s tests -p 'test_rc6_main_pr_governance.py'
+      - name: Require current main PR workstream declaration
+        if: github.event.pull_request.base.ref == 'main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          REPO = "mbalbo2023/Porota-trading"
+          OWNER = "mbalbo2023"
+          URL = re.compile(
+              r"https://github[.]com/mbalbo2023/Porota-trading/issues/([1-9][0-9]*)"
+              r"#issuecomment-([1-9][0-9]*)\Z")
+          WORKSTREAM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{1,79}\Z")
+          PATH = re.compile(r"[A-Za-z0-9_./-]{1,180}\Z")
+          SHA = re.compile(r"[0-9a-f]{40}\Z")
+          MAX_FILES = 300
+          PAGE_SIZE = 100
+
+
+          def field(body, name):
+              values = re.findall(r"^" + re.escape(name) + r": *([^\n]*)$", body,
+                                  flags=re.MULTILINE)
+              if len(values) != 1 or not values[0].strip():
+                  raise ValueError("MAIN_PR_" + name.upper().replace(" ", "_") + "_MISSING_OR_DUPLICATE")
+              value = values[0].strip()
+              if value.upper() in {"TODO", "TBD", "UNKNOWN", "NO_VERIFICADO"} or "[" in value:
+                  raise ValueError("MAIN_PR_METADATA_PLACEHOLDER")
+              return value
+
+
+          def changed_paths(event, fetch_page):
+              pr = event["pull_request"]
+              total = pr.get("changed_files")
+              if type(total) is not int or not 1 <= total <= MAX_FILES:
+                  raise ValueError("MAIN_PR_FILES_BUDGET_OR_COUNT_INVALID")
+              seen = set()
+              changed = set()
+              count = 0
+              for page in range(1, MAX_FILES // PAGE_SIZE + 1):
+                  batch = fetch_page(page)
+                  if not isinstance(batch, list) or not 1 <= len(batch) <= PAGE_SIZE:
+                      raise ValueError("MAIN_PR_FILES_PAGE_INVALID")
+                  for entry in batch:
+                      if not isinstance(entry, dict) or not isinstance(entry.get("filename"), str):
+                          raise ValueError("MAIN_PR_FILES_ENTRY_INVALID")
+                      current = entry["filename"]
+                      if current in seen:
+                          raise ValueError("MAIN_PR_FILES_DUPLICATE")
+                      seen.add(current)
+                      changed.add(current)
+                      if entry.get("status") == "renamed":
+                          previous = entry.get("previous_filename")
+                          if not isinstance(previous, str):
+                              raise ValueError("MAIN_PR_RENAME_PREVIOUS_MISSING")
+                          changed.add(previous)
+                  count += len(batch)
+                  if count == total:
+                      return changed
+                  if count > total or len(batch) != PAGE_SIZE:
+                      raise ValueError("MAIN_PR_FILES_PAGINATION_MISMATCH")
+              raise ValueError("MAIN_PR_FILES_BUDGET_EXCEEDED")
+
+
+          def validate(event, receipt, changed):
+              pr = event["pull_request"]
+              body = pr.get("body") or ""
+              workstream = field(body, "Workstream ID")
+              owner_url = field(body, "Owner declaration URL")
+              branch = field(body, "Work branch")
+              base_sha = field(body, "Base SHA")
+              scope = field(body, "Scope paths")
+              match = URL.fullmatch(owner_url)
+              paths = [value.strip() for value in scope.split(",")]
+              if not WORKSTREAM.fullmatch(workstream):
+                  raise ValueError("MAIN_PR_WORKSTREAM_INVALID")
+              if not match or not all(PATH.fullmatch(path) and not path.startswith("/")
+                                      and ".." not in path.split("/") for path in paths):
+                  raise ValueError("MAIN_PR_OWNER_OR_SCOPE_INVALID")
+              if len(paths) != len(set(paths)) or set(paths) != changed:
+                  raise ValueError("MAIN_PR_CHANGED_PATHS_OUTSIDE_OWNER_SCOPE")
+              if branch != pr["head"]["ref"] or not SHA.fullmatch(base_sha) or base_sha != pr["base"]["sha"]:
+                  raise ValueError("MAIN_PR_BRANCH_OR_BASE_MISMATCH")
+              owner_body = receipt.get("body") or ""
+              if (receipt.get("html_url") != owner_url
+                      or receipt.get("issue_url", "").rsplit("/", 1)[-1] != match.group(1)
+                      or receipt.get("user", {}).get("login") != OWNER
+                      or workstream not in owner_body
+                      or "WRITE_OWNER" not in owner_body
+                      or any(not re.search(r"(?<![A-Za-z0-9_./-])" + re.escape(path)
+                                           + r"(?![A-Za-z0-9_./-])", owner_body)
+                             for path in paths)):
+                  raise ValueError("MAIN_PR_OWNER_RECEIPT_UNVERIFIED")
+              return workstream
+
+
+          def fetch_json(url, token, max_bytes):
+              request = urllib.request.Request(
+                  url, headers={"Authorization": "Bearer " + token,
+                                "Accept": "application/vnd.github+json",
+                                "X-GitHub-Api-Version": "2022-11-28"})
+              with urllib.request.urlopen(request, timeout=12) as response:
+                  data = response.read(max_bytes + 1)
+              if len(data) > max_bytes:
+                  raise ValueError("MAIN_PR_API_RESPONSE_BUDGET_EXCEEDED")
+              return json.loads(data)
+
+
+          def main():
+              with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as handle:
+                  event = json.load(handle)
+              body = event["pull_request"].get("body") or ""
+              owner_url = field(body, "Owner declaration URL")
+              match = URL.fullmatch(owner_url)
+              if not match:
+                  raise ValueError("MAIN_PR_OWNER_URL_INVALID")
+              token = os.environ["GH_TOKEN"]
+              api = "https://api.github.com/repos/" + REPO
+              receipt = fetch_json(api + "/issues/comments/" + match.group(2), token, 65536)
+              number = event["pull_request"].get("number")
+              if type(number) is not int or number < 1:
+                  raise ValueError("MAIN_PR_NUMBER_INVALID")
+              changed = changed_paths(event, lambda page: fetch_json(
+                  api + "/pulls/" + str(number) + "/files?per_page=100&page=" + str(page),
+                  token, 6 * 1024 * 1024))
+              workstream = validate(event, receipt, changed)
+              print("MAIN_PR_OWNERSHIP_METADATA=GREEN|workstream=" + workstream)
+              print("Receipt proves a declared owner, not a current lease or runtime state.")
+
+
+          if __name__ == "__main__":
+              main()
+          PY
