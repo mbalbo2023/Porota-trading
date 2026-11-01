@@ -162,7 +162,7 @@ def validate_report(report, *, phase, return_code, now, is_operational):
                             r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
                         (day > '2026-10-29' and re.fullmatch(
                             r'A180-NO-GO-[0-9a-f]{16}', operation)),
-                        'OPERATOR_HISTORICAL_PAUSE_IDENTITY_RED')
+                        'OPERATOR_PAUSE_IDENTITY_RED')
             if new_pause is None and day >= '2026-10-29':
                 proof = report.get('operator_no_go_continuation')
                 require(type(proof) is dict and
