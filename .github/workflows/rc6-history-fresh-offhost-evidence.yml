@@ -111,13 +111,27 @@ jobs:
         run: |
           set -Eeuo pipefail
           set +e
-          timeout 150 python scripts/rc6_history_fresh_probe.py \
-            --source PPI --targets "$RUNNER_TEMP/rc6-fresh-targets.json" \
-            --sidecar "$RUNNER_TEMP/rc6-fresh-private.sqlite" \
-            --receipt "$RUNNER_TEMP/rc6-fresh-receipt.json" \
-            --from-day "$RC6_FROM_DAY" --to-day "$RC6_TO_DAY" \
-            > "$RUNNER_TEMP/rc6-fresh-stdout.private" \
-            2> "$RUNNER_TEMP/rc6-fresh-stderr.private"
+          timeout 150 python - > "$RUNNER_TEMP/rc6-fresh-stdout.private" \
+            2> "$RUNNER_TEMP/rc6-fresh-stderr.private" <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.rc6_history_fresh_probe import main
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          args = ["--source", "PPI", "--targets", str(root / "rc6-fresh-targets.json"),
+                  "--sidecar", str(root / "rc6-fresh-private.sqlite"),
+                  "--receipt", str(root / "rc6-fresh-receipt.json"),
+                  "--from-day", os.environ["RC6_FROM_DAY"],
+                  "--to-day", os.environ["RC6_TO_DAY"]]
+          try:
+              raise SystemExit(main(args))
+          except Exception as exc:
+              # Never print provider response, URL, token or exception text.
+              name = type(exc).__name__
+              (root / "rc6-fresh-error-class.private").write_text(
+                  name if name.isidentifier() and len(name) <= 80 else "UNCLASSIFIED")
+              raise SystemExit(1)
+          PY
           probe_rc=$?
           set -e
           export RC6_PROBE_RC="$probe_rc"
@@ -130,10 +144,13 @@ jobs:
           root = Path(os.environ["RUNNER_TEMP"])
           receipt = root / "rc6-fresh-receipt.json"
           sidecar = root / "rc6-fresh-private.sqlite"
+          error_file = root / "rc6-fresh-error-class.private"
           rc = int(os.environ["RC6_PROBE_RC"])
+          error_class = error_file.read_text().strip() if error_file.is_file() else (
+              "TIMEOUT" if rc == 124 else "NO_VERIFICADO")
           result = json.loads(receipt.read_text()) if rc == 0 and receipt.is_file() else {
               "state": "NO_VERIFICADO", "reason": "PROBE_PROCESS_FAILED",
-              "provider_requests": 0, "history_v2_writes": 0,
+              "provider_requests": None, "history_v2_writes": 0,
               "execution_allowed": False}
           if (result.get("history_v2_writes") != 0 or result.get("execution_allowed") is not False
                   or result.get("state") not in {"EVIDENCE_ONLY_NO_GO", "NO_VERIFICADO"}):
@@ -157,12 +174,16 @@ jobs:
               "requested_from": os.environ["RC6_FROM_DAY"],
               "requested_to": os.environ["RC6_TO_DAY"],
               "probe_exit": rc, "result": result, "verification": proof,
+              "error_class": error_class if rc else None,
+              "credentials_present": bool(os.getenv("PPI_API_KEY") and
+                                          os.getenv("PPI_API_SECRET")),
               "host_access": False, "history_v2_writes": 0,
               "real_orders_sent_by_action": 0, "order_routes_called": False}
           out = root / "rc6-fresh-sanitized-action-receipt.json"
           out.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
           print("HISTORY_OFFHOST_ACTION=" + result["state"] +
-                "|provider_requests=" + str(result.get("provider_requests", 0)) +
+                "|provider_requests=" + str(result.get("provider_requests")) +
+                "|error_class=" + str(error_class if rc else "NONE") +
                 "|history_v2_writes=0|host_access=NO|real_orders_sent=0")
           PY
           test "$probe_rc" -eq 0
@@ -183,7 +204,7 @@ jobs:
           set -Eeuo pipefail
           for name in rc6-fresh-targets.json rc6-fresh-private.sqlite \
               rc6-fresh-receipt.json rc6-fresh-stdout.private \
-              rc6-fresh-stderr.private; do
+              rc6-fresh-stderr.private rc6-fresh-error-class.private; do
             path="$RUNNER_TEMP/$name"
             if test -f "$path"; then shred -u "$path"; fi
           done
