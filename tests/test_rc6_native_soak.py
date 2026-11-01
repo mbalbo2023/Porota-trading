@@ -56,19 +56,18 @@ def test_restored_heartbeat_needs_new_current_before_unchanged_strict_ten(tmp_pa
     assert len(sustained['generations'])==10 and sustained['strict'] is True
 
 
-def test_restore_readiness_is_separate_and_precedes_unmodified_strict_soak():
+def test_installed_image_readiness_precedes_unmodified_strict_soak_without_host_stress():
     from pathlib import Path
     text=(Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    stress=text.index('- name: Postdeploy full-session stress in the exact installed image')
-    ready=text.index('- name: Re-establish two current native generations after restoration')
-    strict=text.index('- name: Independent sustained native acceptance after stress restoration')
-    assert stress<ready<strict
+    ready=text.index('python /app/scripts/rc6_deploy_generation_gate.py')
+    strict=text.index('python3 "$REPO/scripts/rc6_native_soak.py"')
+    marker=text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
+    assert ready<strict<marker
     segment=text[ready:strict]
-    assert "steps.stress.outcome == 'success'" in segment
-    assert 'docker exec porota_production_dashboard timeout 195' in segment
+    assert 'docker exec porota_production_dashboard timeout 195' in text[ready-100:ready]
     assert '/app/scripts/rc6_deploy_generation_gate.py' in segment
-    assert 'native-postrestore-generation-acceptance.json' in segment
     assert 'rc6_native_soak.py' not in segment
+    assert 'Postdeploy full-session stress' not in text
     assert 'minimum_generations=10,strict=True' in Path(soak.__file__).read_text().replace(' ','')
 
 def test_one_stale_cut_ends_the_soak_without_waiting_for_later_recovery(tmp_path):

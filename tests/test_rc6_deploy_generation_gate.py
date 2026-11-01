@@ -251,7 +251,10 @@ def test_predeploy_replays_a72_closed_idle_after_prior_soak():
     assert prior < gate < soak < workflow.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
     assert '--allow-closed-idle' in workflow[gate:soak]
     assert '--allow-closed-idle' in workflow[soak:workflow.index('PPI_WATCH_AFTER=')]
-    assert '--allow-closed-idle' not in workflow[workflow.index('native-postrestore-generation-acceptance.json'):]
+    # The operator removed the host stress/restore branch. The ordinary
+    # installed-image gate and strict soak still precede VALIDATED_RUNTIME.
+    assert 'native-postrestore-generation-acceptance.json' not in workflow
+    assert 'Postdeploy full-session stress' not in workflow
 
 
 def test_a72_host_incident_provenance_and_full_gate_transition(tmp_path):
