@@ -606,6 +606,44 @@ class MonitorContracts(unittest.TestCase):
         self.assertFalse(monitor.active_hours(datetime(2026, 10, 14, 12, tzinfo=timezone.utc)))
         self.assertFalse(monitor.active_hours(datetime(2026, 10, 18, 14, tzinfo=timezone.utc)))
 
+    def test_com19031_late_reference_window_is_not_universal_market_open(self):
+        art = monitor.ART
+        old = datetime(2026, 10, 30, 17, 30, tzinfo=art)
+        late = datetime(2026, 11, 2, 17, 30, tzinfo=art)
+        after = datetime(2026, 11, 2, 18, 15, tzinfo=art)
+        self.assertFalse(monitor.late_source_observation_hours(old))
+        self.assertTrue(monitor.late_source_observation_hours(late))
+        self.assertTrue(monitor.active_hours(late))
+        self.assertFalse(monitor.active_hours(after))
+        current = {'expected_session':{'state':'CLOSED','operational_day':True},
+                   'generated_at':late.isoformat(), 'findings':[]}
+        monitor.add_schedule_health(current, 'mbalbo2023/Porota-trading',
+                                    get=lambda url:{'workflow_runs':[]})
+        self.assertEqual(current['schedule_health']['state'], 'SCHEDULE_SILENT')
+        current['expected_session']['operational_day'] = False
+        monitor.add_schedule_health(current, 'mbalbo2023/Porota-trading',
+                                    get=lambda url:{'workflow_runs':[]})
+        self.assertFalse(current['schedule_health']['silence'])
+
+    def test_com19031_main_workflow_has_last_1807_tick_and_date_aware_gate(self):
+        workflow = (SOURCE.parents[1] / '.github/workflows/rc6-market-watch-readonly.yml').read_text()
+        self.assertIn("cron: '7 21 * * 1-5'", workflow)
+        self.assertIn('close = 18*60+15 if late else 17*60+15', workflow)
+        self.assertIn('date(2026,11,2)', workflow)
+
+    def test_late_mixed_observer_state_cannot_assert_spot_scope_failure(self):
+        late = datetime(2026, 11, 2, 17, 30, tzinfo=monitor.ART)
+        with patch.object(monitor, 'independent_session', return_value={
+                'state':'CLOSED','scope':'BYMA_PAPER_SPOT','operational_day':True}), \
+             patch.object(monitor, '_resources', return_value=self.resources), \
+             patch.object(monitor, '_host_control_state', return_value={}):
+            snapshot = monitor.probe(root=self.root, at=late, expected_sha=SHA,
+                                     inspect=self.inspect)
+        self.assertTrue(snapshot['late_source_observation_window'])
+        self.assertEqual(snapshot['late_source_contract_scope'], 'EXACT_BYMA_T1_REFERENCE_ONLY')
+        self.assertNotIn('OBSERVER_SESSION_DISAGREEMENT', self.codes(snapshot))
+        self.assertIn('OBSERVER_LATE_SOURCE_SCOPE_UNVERIFIED', self.codes(snapshot, 'P2'))
+
     def test_host_diagnostic_uses_bounded_container_read_and_redacts_stderr(self):
         payload = {"schema": "rc6.shadow-readonly-diagnostic.v1", "read_only": True,
                    "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}],

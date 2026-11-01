@@ -7,7 +7,7 @@ import base64
 import io
 import zipfile
 from contextlib import closing
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 import hashlib
 import json
 import os
@@ -31,6 +31,8 @@ CONTAINERS = ("porota_production_observer", "porota_production_dashboard",
 TRACKED = ("paper_decisions", "trade_gate_evaluations", "paper_fills",
            "paper_events", "market_snapshots", "scalping_candidates")
 MAX_JSON_BYTES = 1024 * 1024
+COM19031_EFFECTIVE = date(2026, 11, 2)
+COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
 
 
 def previous_artifact_candidates(current_run, own_artifacts, runs, artifacts_by_run):
@@ -231,10 +233,20 @@ def finding(code, severity, *, evidence=None):
     return record
 
 
+def late_source_observation_hours(at):
+    """COM19031 surveillance only: this cannot confer PAPER entry authority."""
+    local = at.astimezone(ART)
+    minute = local.hour * 60 + local.minute
+    return (local.weekday() < 5
+            and COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
+            and 17 * 60 <= minute < 18 * 60 + 15)
+
+
 def active_hours(at):
     local = at.astimezone(ART)
     minute = local.hour * 60 + local.minute
-    return local.weekday() < 5 and 10 * 60 + 30 <= minute < 17 * 60 + 15
+    return (local.weekday() < 5 and 10 * 60 + 30 <= minute < 17 * 60 + 15
+            or late_source_observation_hours(at))
 
 
 def independent_session(at, root=ROOT):
@@ -251,8 +263,9 @@ from co_market_sessions_hf6 import TZ,BYMA_PAPER_SPOT_OPEN,BYMA_PAPER_SPOT_CLOSE
 at=datetime.fromisoformat(sys.argv[2]).astimezone(TZ)
 audited=c.CALENDARIO_ACTUALIZADO_EL
 known=at.year in c.ANIOS_AUDITADOS and 0<=(at.date()-audited).days<=60
-opened=known and c.es_dia_habil_operativo(at.date()) and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
-print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
+ operational=known and c.es_dia_habil_operativo(at.date())
+ opened=operational and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
+ print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','operational_day':operational if known else None,'source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
     try:
         out = subprocess.run([sys.executable, '-B', '-c', code, str(root), at.isoformat()],
                              capture_output=True, text=True, timeout=2, check=True)
@@ -293,7 +306,11 @@ def add_schedule_health(current, repo, *, get=None):
                 raw=response.read(2*1024**2+1)
             if len(raw)>2*1024**2: raise ValueError('SCHEDULE_RESPONSE_LIMIT')
             return json.loads(raw)
-    expected=(current.get('expected_session') or {}).get('state')=='OPEN'
+    expected_session=current.get('expected_session') or {}
+    now=timestamp(current.get('generated_at'))
+    expected=(expected_session.get('state')=='OPEN' or
+              (now is not None and late_source_observation_hours(now)
+               and expected_session.get('operational_day') is True))
     try:
         result=get(f'https://api.github.com/repos/{repo}/actions/workflows/384354765/runs?event=schedule&per_page=100')
         health=schedule_health(result['workflow_runs'],timestamp(current['generated_at']),expected_open=expected)
@@ -512,6 +529,15 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         findings.append(finding(code, level, evidence=evidence))
     expected = independent_session(at, root)
     result['expected_session'] = expected
+    # The late phase is an exact-identity source observation window, not a
+    # statement that spot, FI, cauciones or every future remains OPEN.
+    late_source = (late_source_observation_hours(at)
+                   and expected.get('operational_day') is True)
+    result['late_source_observation_window'] = late_source
+    result['late_source_contract_scope'] = ('EXACT_BYMA_T1_REFERENCE_ONLY'
+                                            if late_source else 'NOT_DUE')
+    if expected.get('operational_day') is False:
+        result['market_clock_window'] = False
     if expected['state']=='UNKNOWN':
         add('MARKET_SESSION_UNKNOWN','P1' if active_hours(at) else 'P2')
     market_should_be_open = expected['state']=='OPEN'
@@ -530,12 +556,16 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         if heartbeat_age is None or not 0 <= heartbeat_age <= 180:
             add("OBSERVER_HEARTBEAT_INVALID", "P0")
         if str(observer.get("ppi_auth") or "").upper() not in {"OK", "AUTHENTICATED"}:
-            add("PPI_AUTH_NOT_OK", "P1" if result["market_clock_window"] else "P2")
+            add("PPI_AUTH_NOT_OK", "P1" if market_should_be_open else "P2")
         market_open_observed = str(observer.get("session_state") or "").upper() in {
             "OPEN", "MARKET_OPEN", "TRADING"}
         result["market_open_observed"] = market_open_observed
         if expected['state']!='UNKNOWN' and market_open_observed != market_should_be_open:
-            add('OBSERVER_SESSION_DISAGREEMENT','P1')
+            # The composite observer may truthfully run an exact T+1 source
+            # after the narrower spot-session oracle has closed. Do not call
+            # that mismatch a global session failure or a trading GO.
+            add('OBSERVER_LATE_SOURCE_SCOPE_UNVERIFIED' if late_source and market_open_observed
+                else 'OBSERVER_SESSION_DISAGREEMENT', 'P2' if late_source else 'P1')
         market_freshness_required = market_should_be_open or (expected['state']=='UNKNOWN' and market_open_observed)
         market_age = age_seconds(observer.get("last_market_data_at"), at)
         result["ppi_market_age_seconds"] = market_age
