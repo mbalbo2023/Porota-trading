@@ -1,0 +1,182 @@
+name: RC6 02-Nov manual OPEN receipt read-only
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/rc6-monday-open-readonly.yml
+      - scripts/rc6_monday_open_readonly.py
+      - tests/test_rc6_a302_monday_open_readonly.py
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "ART phase; host clock must be inside its narrow window"
+        required: true
+        type: choice
+        options: [T45, T10, SPOT, CEDEAR, SCALPING, CAUCION, POSTCLOSE]
+      trade_day_ar:
+        description: "Exact audited trading date, YYYY-MM-DD"
+        required: true
+        default: "2026-11-02"
+        type: string
+      expected_candidate_sha:
+        description: "Frozen installed candidate SHA; may differ from main merge SHA"
+        required: true
+        type: string
+      expected_tree_sha:
+        description: "Installed frozen candidate tree SHA"
+        required: true
+        type: string
+      expected_image_id:
+        description: "Loaded Docker image ID from validated runtime marker"
+        required: true
+        type: string
+      family:
+        description: "Exact family, NONE for preopen/postclose"
+        required: true
+        type: choice
+        options: [NONE, ACCIONES, CEDEARS, CAUCIONES]
+      ticker:
+        description: "Exact ticker, NONE for preopen/postclose"
+        required: true
+        type: string
+      currency:
+        description: "Exact currency, NONE for preopen/postclose"
+        required: true
+        type: choice
+        options: [NONE, ARS, USD]
+      settlement:
+        description: "Exact settlement, NONE for preopen/postclose"
+        required: true
+        type: choice
+        options: [NONE, A-24HS, INMEDIATA]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-20261102-manual-ro
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify isolated manual-only contract, no host connection
+        run: |
+          python3 -m pip install --disable-pip-version-check 'pytest==9.2.0' 'PyYAML==6.0.3'
+          python3 -m pytest -q -o addopts='' tests/test_rc6_a302_monday_open_readonly.py
+          python3 -m py_compile scripts/rc6_monday_open_readonly.py
+          git diff --check
+
+  one-receipt:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == 'mbalbo2023' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      RC6_PHASE: ${{ inputs.phase }}
+      RC6_TRADE_DAY_AR: ${{ inputs.trade_day_ar }}
+      RC6_EXPECTED_SHA: ${{ inputs.expected_candidate_sha }}
+      RC6_EXPECTED_TREE: ${{ inputs.expected_tree_sha }}
+      RC6_EXPECTED_IMAGE: ${{ inputs.expected_image_id }}
+      RC6_FAMILY: ${{ inputs.family }}
+      RC6_TICKER: ${{ inputs.ticker }}
+      RC6_CURRENCY: ${{ inputs.currency }}
+      RC6_SETTLEMENT: ${{ inputs.settlement }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Pin exact manual source and validate bounded request
+        id: request
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = refs/heads/main
+          test -s scripts/rc6_monday_open_readonly.py
+          export RC6_SOURCE_SHA256="$(sha256sum scripts/rc6_monday_open_readonly.py | cut -d' ' -f1)"
+          REQUEST_B64="$(python3 -B scripts/rc6_monday_open_readonly.py --encode-request)"
+          [[ "$REQUEST_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#REQUEST_B64}" -lt 3000
+          echo "request_b64=$REQUEST_B64" >> "$GITHUB_OUTPUT"
+          echo "RC6_MANUAL_SOURCE=$GITHUB_SHA|script_sha256=$RC6_SOURCE_SHA256|host_mutations=0"
+
+      - name: Strict SSH and pinned DigitalOcean identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" &&
+            test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_monday_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_monday_ro" "$HOME/.ssh/known_hosts"
+          timeout 20 ssh -i "$HOME/.ssh/rc6_monday_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 -B - --verify-droplet' \
+            < scripts/rc6_monday_open_readonly.py
+
+      - name: Observe one ART phase without host writes or provider calls
+        shell: bash
+        env:
+          REQUEST_B64: ${{ steps.request.outputs.request_b64 }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$REQUEST_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
+          set +e
+          RECEIPT="$(timeout --signal=TERM --kill-after=2s 35s \
+            ssh -i "$HOME/.ssh/rc6_monday_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading RC6_MONDAY_REQUEST_B64='$REQUEST_B64' python3 -B -" \
+            < scripts/rc6_monday_open_readonly.py)"
+          RC=$?
+          set -e
+          RECEIPT="$RECEIPT" RC="$RC" python3 - <<'PY'
+          import json,os
+          try:
+              receipt=json.loads(os.environ["RECEIPT"])
+              expected=(receipt.get("schema")=="rc6.monday-open-readonly.v1"
+                        and receipt.get("entry_authority") is False
+                        and receipt.get("real_orders_sent")==0
+                        and receipt.get("host_mutations")==0)
+              if not expected or int(os.environ["RC"]) not in {0,2}:
+                  raise ValueError("RECEIPT_INVALID")
+              print(json.dumps(receipt,sort_keys=True))
+              print("RC6_MANUAL_PROBE="+receipt["status"]+"|ENTRY_AUTHORITY=NO|REAL_ORDERS=0")
+              if int(os.environ["RC"])!=0 or receipt["status"]!="OBSERVED_ONLY":
+                  raise ValueError("HOST_READONLY_PROBE_BLOCKED")
+          except (ValueError,KeyError,TypeError,json.JSONDecodeError) as exc:
+              raise SystemExit("RC6_MANUAL_RECEIPT_RED:"+str(exc))
+          PY
+          echo "### RC6 manual observational receipt" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run phase: $RC6_PHASE; exact instrument: $RC6_FAMILY/$RC6_TICKER/$RC6_CURRENCY/$RC6_SETTLEMENT. No BUY/fill authority." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Destroy runner-only SSH material
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$HOME/.ssh/rc6_monday_ro" ]; then
+            shred -u "$HOME/.ssh/rc6_monday_ro"
+          fi
