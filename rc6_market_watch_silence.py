@@ -6,7 +6,7 @@ database or a provider. Its own state file is separate from trading SQLite.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -21,48 +21,81 @@ import ak_byma_calendar as calendar
 
 
 RUNS_URL = ("https://api.github.com/repos/mbalbo2023/Porota-trading/actions/"
-            "workflows/rc6-market-watch-readonly.yml/runs?event=schedule&per_page=1")
+            "workflows/rc6-market-watch-readonly.yml/runs?event=schedule&per_page=3")
+JOBS_URL = "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/{}/jobs?per_page=20"
+WATCH_STEP = "Collect bounded read-only host truth"
 STATE = Path("/app/data/paper_v17/market_watch_silence.json")
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 WORKFLOW = ".github/workflows/rc6-market-watch-readonly.yml"
 MAX_AGE_SECONDS = 25 * 60  # Two ten-minute intervals plus five minutes of jitter.
+COM19031_EFFECTIVE = date(2026, 11, 2)
+COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
 
 
 def active_window(now: datetime) -> bool:
     local = now.astimezone(ART)
     minutes = local.hour * 60 + local.minute
     # First expected scheduled run is 10:37 ART. Give two full intervals.
+    # COM19031 regular T+1 equity/CEDEAR trading lasts to 18:00; this is
+    # schedule-silence observation, never admission of caucion/FI/other routes.
+    end = (18 * 60 + 15 if COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
+           else 17 * 60 + 15)
     return (local.year in calendar.ANIOS_AUDITADOS and
             0 <= (local.date()-calendar.CALENDARIO_ACTUALIZADO_EL).days <= 60 and
             calendar.es_dia_habil_operativo(local.date()) and
-            11 * 60 + 2 <= minutes < 17 * 60 + 15)
+            11 * 60 + 2 <= minutes < end)
 
 
-def latest_schedule(*, opener=urlopen):
-    request = Request(RUNS_URL, headers={"Accept": "application/vnd.github+json",
-                                         "User-Agent": "porota-rc6-paper-silence/1"})
+def _bounded_github_json(url: str, *, opener):
+    request = Request(url, headers={"Accept": "application/vnd.github+json",
+                                     "User-Agent": "porota-rc6-paper-silence/1"})
     with opener(request, timeout=6) as response:
         raw = response.read(131073)
     if len(raw) > 131072:
         raise ValueError("GITHUB_RESPONSE_OVERSIZE")
-    payload = json.loads(raw)
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise ValueError("GITHUB_RESPONSE_INVALID")
+    return result
+
+
+def latest_schedule(*, opener=urlopen):
+    payload = _bounded_github_json(RUNS_URL, opener=opener)
     runs = payload.get("workflow_runs")
     if not isinstance(runs, list):
         raise ValueError("GITHUB_RESPONSE_INVALID")
     if not runs:
         return None
-    run = runs[0]
-    if not isinstance(run, dict) or run.get("event") != "schedule" or (
-            run.get("path") != WORKFLOW or run.get("head_branch") != "main"):
-        raise ValueError("GITHUB_RUN_IDENTITY_INVALID")
-    # A queued, in-progress or manually retried run never proves that the
-    # scheduler completed a probe. Creation time is not execution time.
-    if run.get('status') != 'completed' or run.get('run_attempt') != 1:
-        return None
-    stamp = datetime.fromisoformat(str(run["run_started_at"]).replace("Z", "+00:00"))
-    if stamp.tzinfo is None:
-        raise ValueError("GITHUB_RUN_CLOCK_INVALID")
-    return stamp.astimezone(timezone.utc)
+    # A queued/in-progress current run is not silence if the previous genuine
+    # watch probe completed inside SLA. Bound the search to three schedule runs
+    # (the 25m freshness window includes at most three ten-minute intervals).
+    for run in runs[:3]:
+        if not isinstance(run, dict) or run.get("event") != "schedule" or (
+                run.get("path") != WORKFLOW or run.get("head_branch") != "main"):
+            raise ValueError("GITHUB_RUN_IDENTITY_INVALID")
+        if run.get('status') != 'completed' or run.get('run_attempt') != 1:
+            continue
+        # A completed *workflow* with a skipped watch job does not prove the
+        # host was probed. Require a successful Collect step in that run.
+        run_id = run.get("id")
+        if type(run_id) is not int or run_id <= 0:
+            raise ValueError("GITHUB_RUN_IDENTITY_INVALID")
+        jobs = _bounded_github_json(JOBS_URL.format(run_id), opener=opener).get("jobs")
+        if not isinstance(jobs, list):
+            raise ValueError("GITHUB_JOBS_INVALID")
+        for job in jobs:
+            if (not isinstance(job, dict) or job.get("name") != "watch"
+                    or job.get("status") != "completed" or job.get("conclusion") != "success"):
+                continue
+            for step in job.get("steps", []):
+                if (isinstance(step, dict) and step.get("name") == WATCH_STEP
+                        and step.get("status") == "completed"
+                        and step.get("conclusion") == "success"):
+                    stamp = datetime.fromisoformat(str(step["started_at"]).replace("Z", "+00:00"))
+                    if stamp.tzinfo is None:
+                        raise ValueError("GITHUB_RUN_CLOCK_INVALID")
+                    return stamp.astimezone(timezone.utc)
+    return None
 
 
 def classify(now: datetime, last: datetime | None) -> str:
