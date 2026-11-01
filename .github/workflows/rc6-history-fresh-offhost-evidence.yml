@@ -1,0 +1,189 @@
+name: RC6 historical source evidence offhost
+
+# No Droplet, database import, schedule or order route. The push trigger proves
+# this workflow once on its isolated development branch; after main review the
+# same bounded workflow can be dispatched with an explicit ART window.
+on:
+  push:
+    branches:
+      - fix/rc6-a288-history-offhost-action-20261101
+    paths:
+      - .github/workflows/rc6-history-fresh-offhost-evidence.yml
+  workflow_dispatch:
+    inputs:
+      from_day:
+        description: First ART trading date, YYYY-MM-DD
+        required: true
+        default: '2026-10-30'
+        type: string
+      to_day:
+        description: Last ART trading date, YYYY-MM-DD
+        required: true
+        default: '2026-10-30'
+        type: string
+      targets_json:
+        description: Exact [symbol,family,market,currency,settlement] targets, max 40
+        required: true
+        default: '[["D30N6","LETRAS","BYMA","ARS","A-24HS"]]'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-history-fresh-offhost-evidence
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.repository == 'mbalbo2023/Porota-trading'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      RC6_SOURCE_SHA: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
+      RC6_SOURCE_TREE: 2c5a4171e5f51687924ba0a4a54702c9e5144023
+      RC6_FROM_DAY: ${{ inputs.from_day || '2026-10-30' }}
+      RC6_TO_DAY: ${{ inputs.to_day || '2026-10-30' }}
+      RC6_TARGETS_JSON: ${{ inputs.targets_json || '[["D30N6","LETRAS","BYMA","ARS","A-24HS"]]' }}
+    steps:
+      - name: Checkout exact reviewed evidence code
+        uses: actions/checkout@v4
+        with:
+          ref: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
+          persist-credentials: false
+
+      - name: Verify source SHA, tree and PAPER safety before secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_SOURCE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$RC6_SOURCE_TREE"
+          grep -Fq 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -Fq 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo "HISTORY_OFFHOST_CODE=GREEN|sha=$RC6_SOURCE_SHA|tree=$RC6_SOURCE_TREE"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned read-only probe dependencies
+        run: python -m pip install --disable-pip-version-check ppi-client==1.3.0 requests==2.34.2 pytest==9.1.1
+
+      - name: Test evidence and validate bounded ART request before credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pytest -q tests/test_rc6_history_fresh_sidecar.py
+          python - <<'PY'
+          import json, os
+          from datetime import date, datetime, timezone
+          from pathlib import Path
+          from scripts.rc6_history_fresh_sidecar import preflight, request_window
+
+          raw = os.environ["RC6_TARGETS_JSON"]
+          if len(raw.encode()) > 4096:
+              raise SystemExit("FRESH_ACTION_TARGET_BUDGET_EXCEEDED")
+          targets = json.loads(raw)
+          if not isinstance(targets, list):
+              raise SystemExit("FRESH_ACTION_TARGETS_INVALID")
+          from_day = date.fromisoformat(os.environ["RC6_FROM_DAY"])
+          to_day = date.fromisoformat(os.environ["RC6_TO_DAY"])
+          request_window(datetime.now(timezone.utc), from_day, to_day)
+          preflight(targets, "PPI")
+          if os.environ["GITHUB_EVENT_NAME"] == "push" and (
+                  targets != [["D30N6", "LETRAS", "BYMA", "ARS", "A-24HS"]]
+                  or from_day != date(2026, 10, 30) or to_day != from_day):
+              raise SystemExit("FRESH_ACTION_BOOTSTRAP_SCOPE_CHANGED")
+          path = Path(os.environ["RUNNER_TEMP"]) / "rc6-fresh-targets.json"
+          path.write_text(json.dumps(targets), encoding="utf-8")
+          path.chmod(0o600)
+          print("HISTORY_OFFHOST_PREFLIGHT=GREEN|targets=" + str(len(targets)) +
+                "|from=" + from_day.isoformat() + "|to=" + to_day.isoformat())
+          PY
+
+      - name: Capture one bounded PPI source window without host access
+        shell: bash
+        env:
+          # Optional runner-only read-only credentials. Their history
+          # entitlement is unproven; absence remains NO_VERIFICADO.
+          PPI_API_KEY: ${{ secrets.PPI_CAPACITY_READONLY_API_KEY }}
+          PPI_API_SECRET: ${{ secrets.PPI_CAPACITY_READONLY_API_SECRET }}
+        run: |
+          set -Eeuo pipefail
+          set +e
+          timeout 150 python scripts/rc6_history_fresh_probe.py \
+            --source PPI --targets "$RUNNER_TEMP/rc6-fresh-targets.json" \
+            --sidecar "$RUNNER_TEMP/rc6-fresh-private.sqlite" \
+            --receipt "$RUNNER_TEMP/rc6-fresh-receipt.json" \
+            --from-day "$RC6_FROM_DAY" --to-day "$RC6_TO_DAY" \
+            > "$RUNNER_TEMP/rc6-fresh-stdout.private" \
+            2> "$RUNNER_TEMP/rc6-fresh-stderr.private"
+          probe_rc=$?
+          set -e
+          export RC6_PROBE_RC="$probe_rc"
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from scripts.rc6_history_fresh_verify import verify
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          receipt = root / "rc6-fresh-receipt.json"
+          sidecar = root / "rc6-fresh-private.sqlite"
+          rc = int(os.environ["RC6_PROBE_RC"])
+          result = json.loads(receipt.read_text()) if rc == 0 and receipt.is_file() else {
+              "state": "NO_VERIFICADO", "reason": "PROBE_PROCESS_FAILED",
+              "provider_requests": 0, "history_v2_writes": 0,
+              "execution_allowed": False}
+          if (result.get("history_v2_writes") != 0 or result.get("execution_allowed") is not False
+                  or result.get("state") not in {"EVIDENCE_ONLY_NO_GO", "NO_VERIFICADO"}):
+              raise SystemExit("FRESH_ACTION_UNSAFE_RECEIPT")
+          proof = None
+          if result["state"] == "EVIDENCE_ONLY_NO_GO":
+              if not sidecar.is_file():
+                  raise SystemExit("FRESH_ACTION_SIDECAR_MISSING")
+              proof = verify(sidecar)
+              if proof["history_v2_writes"] != 0 or proof["state"] != "EVIDENCE_ONLY_NO_GO":
+                  raise SystemExit("FRESH_ACTION_VERIFY_RED")
+          elif sidecar.exists():
+              raise SystemExit("FRESH_ACTION_UNEXPECTED_SIDECAR")
+          manifest = {
+              "schema": "rc6.history.offhost.action.v1",
+              "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+              "workflow_commit": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "source_commit": os.environ["RC6_SOURCE_SHA"],
+              "source_tree": os.environ["RC6_SOURCE_TREE"],
+              "requested_from": os.environ["RC6_FROM_DAY"],
+              "requested_to": os.environ["RC6_TO_DAY"],
+              "probe_exit": rc, "result": result, "verification": proof,
+              "host_access": False, "history_v2_writes": 0,
+              "real_orders_sent_by_action": 0, "order_routes_called": False}
+          out = root / "rc6-fresh-sanitized-action-receipt.json"
+          out.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+          print("HISTORY_OFFHOST_ACTION=" + result["state"] +
+                "|provider_requests=" + str(result.get("provider_requests", 0)) +
+                "|history_v2_writes=0|host_access=NO|real_orders_sent=0")
+          PY
+          test "$probe_rc" -eq 0
+
+      - name: Publish only sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-history-offhost-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-fresh-sanitized-action-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Destroy private runner capture
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in rc6-fresh-targets.json rc6-fresh-private.sqlite \
+              rc6-fresh-receipt.json rc6-fresh-stdout.private \
+              rc6-fresh-stderr.private; do
+            path="$RUNNER_TEMP/$name"
+            if test -f "$path"; then shred -u "$path"; fi
+          done
