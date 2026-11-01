@@ -197,6 +197,9 @@ def _fixed_postclose_clock(monkeypatch):
             return real_clock(2026, 10, 27, 18, 30, tzinfo=services.TZ)
 
     monkeypatch.setattr(services, "datetime", Clock)
+    # Intentional verified-source fixture for report/ledger behavior only.
+    # The independent A316 tests cover missing/stale/mismatched source receipts.
+    monkeypatch.setattr(services, "_postclose_history_source_ready", lambda *_: True)
 
 
 def test_invalid_caucion_fee_evidence_quarantines_postclose_report_without_restart(
