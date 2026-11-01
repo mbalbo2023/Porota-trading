@@ -46,7 +46,7 @@ def _successful_step(job, name):
                for step in job.get("steps", []) if isinstance(step, dict))
 
 
-def application_ci_proof(runs, jobs, branch, sha):
+def latest_exact_ci(runs, branch, sha):
     if branch not in BRANCHES or not SHA.fullmatch(sha):
         raise PromotionBlocked("PROMOTION_SOURCE_IDENTITY_INVALID")
     if not isinstance(runs, dict) or not isinstance(runs.get("workflow_runs"), list):
@@ -54,11 +54,17 @@ def application_ci_proof(runs, jobs, branch, sha):
     candidates = [run for run in runs["workflow_runs"] if isinstance(run, dict)
                   and run.get("head_sha") == sha and run.get("head_branch") == branch
                   and run.get("event") == "push" and run.get("status") == "completed"
-                  and run.get("conclusion") == "success"
                   and type(run.get("id")) is int and run["id"] > 0]
     if not candidates:
         raise PromotionBlocked("PROMOTION_EXACT_PUSH_CI_MISSING")
     selected = max(candidates, key=lambda run: run["id"])
+    if selected.get("conclusion") != "success":
+        raise PromotionBlocked("PROMOTION_LATEST_EXACT_CI_RED")
+    return selected
+
+
+def application_ci_proof(runs, jobs, branch, sha):
+    selected = latest_exact_ci(runs, branch, sha)
     if (not isinstance(jobs, dict) or type(jobs.get("total_count")) is not int
             or not 1 <= jobs["total_count"] <= 100
             or not isinstance(jobs.get("jobs"), list)
@@ -108,15 +114,7 @@ def main(argv=None):
             raise PromotionBlocked("PROMOTION_CI_INPUT_INVALID")
         query = urlencode({"branch": branch, "event": "push", "per_page": 30})
         runs = _fetch("/actions/workflows/ci.yml/runs?" + query, token)
-        if not isinstance(runs, dict) or not isinstance(runs.get("workflow_runs"), list):
-            raise PromotionBlocked("PROMOTION_CI_RUNS_INVALID")
-        matches = [run for run in runs.get("workflow_runs", []) if isinstance(run, dict)
-                   and run.get("head_sha") == sha and run.get("head_branch") == branch
-                   and run.get("event") == "push" and run.get("status") == "completed"
-                   and run.get("conclusion") == "success" and type(run.get("id")) is int]
-        if not matches:
-            raise PromotionBlocked("PROMOTION_EXACT_PUSH_CI_MISSING")
-        run_id = max(run["id"] for run in matches)
+        run_id = latest_exact_ci(runs, branch, sha)["id"]
         jobs = _fetch(f"/actions/runs/{run_id}/jobs?per_page=100&filter=latest", token)
         proven = application_ci_proof(runs, jobs, branch, sha)
         print(f"PROMOTION_CI=APPLICATION_TESTED|source_sha={sha}|run_id={proven}")

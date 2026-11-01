@@ -61,9 +61,16 @@ class LegacyPromotionGuardTests(unittest.TestCase):
                            ("conclusion", "skipped")):
             runs, jobs = valid()
             runs["workflow_runs"][0][key] = value
-            with self.subTest(key=key), self.assertRaisesRegex(
-                    PromotionBlocked, "PROMOTION_EXACT_PUSH_CI_MISSING"):
+            reason = "PROMOTION_LATEST_EXACT_CI_RED" if key == "conclusion" else "PROMOTION_EXACT_PUSH_CI_MISSING"
+            with self.subTest(key=key), self.assertRaisesRegex(PromotionBlocked, reason):
                 application_ci_proof(runs, jobs, "testing", SHA)
+
+    def test_old_success_cannot_mask_newer_failure_for_same_source_sha(self):
+        runs, jobs = valid()
+        newer = dict(runs["workflow_runs"][0], id=RUN_ID + 1, conclusion="failure")
+        runs["workflow_runs"].append(newer)
+        with self.assertRaisesRegex(PromotionBlocked, "PROMOTION_LATEST_EXACT_CI_RED"):
+            application_ci_proof(runs, jobs, "testing", SHA)
 
     def test_skipped_suite_coverage_build_or_health_is_red(self):
         for job_index, step_name in ((0, "Ejecutar la suite"),
