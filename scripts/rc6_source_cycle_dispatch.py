@@ -107,6 +107,18 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
     if phase == "open":
         allowed = OPEN <= local.time() < CLOSE
         return allowed, "COLLECTOR_BASELINE_WINDOW" if allowed else "OUTSIDE_COLLECTOR_WINDOW"
+    if phase == "candle_observation":
+        # The existing candle worker can receive source-only T+1 snapshots
+        # after PAPER closes. Its read-only cursor proof must observe that
+        # window without widening PAPER or any provider capture schedule.
+        # Reuse the exact late-source contract rather than reinterpreting
+        # COM19031 as an all-family trading extension.
+        regular = OPEN <= local.time() < CLOSE
+        late, _ = phase_status(instant, "late_source")
+        allowed = regular or late
+        return (allowed, "CANDLE_REGULAR_OBSERVATION" if regular else
+                "CANDLE_T1_READONLY_OBSERVATION" if late else
+                "CANDLE_OBSERVATION_NOT_DUE")
     if phase == "intraday_ppt_senebi":
         # This is a separate audited eligibility check, NOT the IOL T+1
         # observation window and NOT the regular 18:00 equity close.
@@ -352,7 +364,7 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "intraday_ppt_senebi", "business_day", "db_postclose", "postclose_snapshot"))
+    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "candle_observation", "intraday_ppt_senebi", "business_day", "db_postclose", "postclose_snapshot"))
     args = parser.parse_args(argv)
     now = datetime.now(timezone.utc)
     if args.check_phase:
