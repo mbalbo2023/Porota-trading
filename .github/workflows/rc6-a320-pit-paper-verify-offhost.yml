@@ -1,0 +1,101 @@
+name: RC6 A320 PIT+PAPER offhost verification (read-only)
+
+# All PR jobs are deterministic synthetic contract tests, not broker validation.
+# Scheduled capture is opt-in, main-only and ephemeral. In particular it does
+# NOT upload non-public, licensed raw market data to a GitHub artifact and
+# cannot count as reproducible SOURCE_PIT_VERIFIED without a separately
+# approved encrypted/retained receipt channel and independent feeds.
+on:
+  pull_request:
+    paths:
+      - scripts/rc6_a320_pit_paper_verifier.py
+      - tests/test_rc6_a320_pit_paper_verifier.py
+      - .github/workflows/rc6-a320-pit-paper-verify-offhost.yml
+  push:
+    paths:
+      - scripts/rc6_a320_pit_paper_verifier.py
+      - tests/test_rc6_a320_pit_paper_verifier.py
+      - .github/workflows/rc6-a320-pit-paper-verify-offhost.yml
+  schedule:
+    # Approximate 10:45, 12:45, 14:45, 16:45, 17:45 ART; segmented
+    # market session times still gate every verified instrument separately.
+    - cron: '45 13,15,17,19,20 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a320-offhost-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-contract-tests:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile A320 read-only verifier
+        run: python -m py_compile scripts/rc6_a320_pit_paper_verifier.py
+      - name: Ten family contract paths and anti-lookahead negatives
+        run: python -m unittest discover -s tests -p 'test_rc6_a320_pit_paper_verifier.py' -v
+      - name: Deny unsafe promotion from synthetic suite
+        run: |
+          echo 'A320 OFFHOST_SYNTHETIC: fixture candidates are NOT SOURCE_PIT_VERIFIED/PAPER_SIM_VERIFIED'
+          echo 'REAL_ORDERS_SENT=0; HISTORY_V2_WRITES=0; NO_PREDEPLOY_OR_DEPLOY'
+
+  scheduled-ppi-book-only:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      vars.A320_PPI_READONLY_CAPTURE_ENABLED == 'YES' &&
+      vars.A320_PPI_MARKET_DATA_ENTITLEMENT == 'AUTHORIZED' &&
+      vars.A320_EPHEMERAL_CAPTURE_ACKNOWLEDGED == 'YES'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: rc6-a320-readonly-market-data
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_REF: ${{ github.ref }}
+      GITHUB_EVENT_NAME: ${{ github.event_name }}
+      A320_PPI_READONLY_CAPTURE_ENABLED: ${{ vars.A320_PPI_READONLY_CAPTURE_ENABLED }}
+      A320_PPI_MARKET_DATA_ENTITLEMENT: ${{ vars.A320_PPI_MARKET_DATA_ENTITLEMENT }}
+      A320_PPI_KEY_ID: ${{ vars.A320_PPI_KEY_ID }}
+      A320_PPI_HMAC_KEY_HEX: ${{ secrets.A320_PPI_HMAC_KEY_HEX }}
+      PPI_AUTHORIZED_CLIENT: ${{ secrets.PPI_AUTHORIZED_CLIENT }}
+      PPI_CLIENT_KEY: ${{ secrets.PPI_CLIENT_KEY }}
+      PPI_API_KEY: ${{ secrets.PPI_API_KEY }}
+      PPI_API_SECRET: ${{ secrets.PPI_API_SECRET }}
+      A320_EXACT_TARGETS_JSON: ${{ secrets.A320_EXACT_TARGETS_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Capture bounded PPI Book with full key, raw bytes SHA and UTC first-known
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "${A320_EXACT_TARGETS_JSON:-}" ]]; then
+            echo 'A320_NO_CONFIGURED_EXACT_TARGETS: CAPTURE_NOT_PERSISTED'
+            exit 2
+          fi
+          printf '%s' "$A320_EXACT_TARGETS_JSON" > "$RUNNER_TEMP/a320-targets-private.json"
+          python scripts/rc6_a320_pit_paper_verifier.py capture-ppi-book-readonly \
+            --targets "$RUNNER_TEMP/a320-targets-private.json" \
+            --output "$RUNNER_TEMP/a320-ppi-book-ephemeral.json"
+          echo 'CAPTURE_NOT_PERSISTED: private source bytes held only in ephemeral runner; not a PIT verification receipt'
+          echo 'SOURCE_PIT_VERIFIED=0; PAPER_SIM_VERIFIED=0; REAL_ORDERS_SENT=0'
+      - name: Confirm no raw or secrets uploaded
+        if: always()
+        run: |
+          echo 'NO_UPLOAD_ARTIFACT; NO_HOST; NO_HISTORY_V2_WRITES; NO_PPI_ORDERS; NO_PREDEPLOY_OR_DEPLOY'
