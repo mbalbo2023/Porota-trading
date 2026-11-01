@@ -20,9 +20,10 @@ def state(path, *, candidate=SHA):
                                 "mode": "PRODUCTION_PAPER", "real_orders_sent": 0}))
 
 
-def result(*, green=True, focus=True):
+def result(*, green=True, advisory="GREEN"):
     return {"status": "GREEN" if green else "RED", "phase": "T_MINUS_10",
-            "checks": {"paper_focus_contracts": {"state": "GREEN" if focus else "RED"}}}
+            "checks": {"paper_catalog_diagnostic": {"state": advisory,
+                                                    "effect": "ADVISORY_ONLY"}}}
 
 
 def test_persisted_gate_is_fail_closed_across_restart_and_release(tmp_path):
@@ -31,9 +32,10 @@ def test_persisted_gate_is_fail_closed_across_restart_and_release(tmp_path):
     assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
     gate.publish_preopen(result(green=False), now=DAY, state_path=release, receipt_path=receipt)
     assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
-    gate.publish_preopen(result(focus=False), now=DAY, state_path=release, receipt_path=receipt)
-    assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
-    issued = gate.publish_preopen(result(), now=DAY, state_path=release, receipt_path=receipt)
+    # A partial catalog sample does not issue a quote permission, and cannot
+    # veto other contract families when the real global controls are healthy.
+    issued = gate.publish_preopen(result(advisory="AMBER"), now=DAY,
+                                  state_path=release, receipt_path=receipt)
     assert issued["status"] == "GO_PAPER_SCALPING"
     assert gate.admission_status(now=DAY + timedelta(hours=1), candidate_sha=SHA, receipt_path=receipt) == (True, "")
     for date, candidate in [(DAY + timedelta(days=1), SHA), (DAY, "b" * 40)]:
@@ -50,6 +52,24 @@ def test_only_real_t_minus_ten_can_publish_go(tmp_path):
         assert gate.admission_status(now=at, candidate_sha=SHA, receipt_path=receipt)[0] is False
     state(release, candidate="not-a-sha")
     gate.publish_preopen(result(), now=DAY, state_path=release, receipt_path=receipt)
+    assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
+
+
+@pytest.mark.parametrize("release_override", (
+    {"real_orders_sent": 1},
+    {"real_orders_sent": False},  # bool is not a verified integer zero.
+    {"mode": "LIVE"},
+    {"validation_status": "DEPLOYED_VALIDATION_PENDING"},
+))
+def test_paper_zero_and_runtime_release_remain_exact_after_focus_decoupling(
+        tmp_path, release_override):
+    release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
+    state(release)
+    altered = {**json.loads(release.read_text()), **release_override}
+    release.write_text(json.dumps(altered))
+    issued = gate.publish_preopen(result(advisory="GREEN"), now=DAY,
+                                  state_path=release, receipt_path=receipt)
+    assert issued["status"] == "NO_GO_PAPER_SCALPING"
     assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
 
 
@@ -116,6 +136,18 @@ def test_operator_pause_persists_across_candidate_release_validation_and_paper_i
             assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
+def test_operator_day_normalizes_utc_before_dated_pause_or_rearm(monkeypatch):
+    # UTC 02:59 is still 28-Oct 23:59 ART, despite its UTC calendar date.
+    monkeypatch.setattr(gate, "evaluate_rearm", lambda **_: (True, "AUTHORIZED", {}))
+    assert gate.operator_pause_reason(datetime(2026, 10, 29, 2, 59,
+                                               tzinfo=ZoneInfo("UTC"))) == (
+        "OPERATOR_PAPER_PAUSE_2026_10_28")
+    assert gate.operator_pause_reason(datetime(2026, 10, 29, 3, 0,
+                                               tzinfo=ZoneInfo("UTC"))) == ""
+    assert gate.operator_pause_reason(datetime(2026, 10, 29, 3, 0)) == (
+        "OPERATOR_PAUSE_CLOCK_INVALID")
+
+
 def test_no_go_persists_after_dated_pause_until_explicit_rearm(tmp_path):
     release, receipt = tmp_path / "release.json", tmp_path / "gate.json"
     state(release)
@@ -155,24 +187,134 @@ def test_host_publish_never_overwrites_immutable_a125_gate(tmp_path, monkeypatch
     assert receipt.read_text() == original
 
 
-def test_focus_requires_eight_exact_ready_contracts(tmp_path):
-    from bf_production_paper_observer import DEFAULT_FOCUS_SYMBOLS
-    assert gate.FOCUS == DEFAULT_FOCUS_SYMBOLS
-    path = tmp_path / "focus.db"
+def test_catalog_advisory_samples_actual_families_without_eight_ticker_veto(tmp_path):
+    assert not hasattr(gate, "FOCUS")
+    path = tmp_path / "families.db"
     with sqlite3.connect(path) as db:
         db.executescript("""CREATE TABLE financial_instrument_catalog(
           ticker TEXT,instrument_type TEXT,settlement TEXT,market TEXT,currency TEXT,
           status TEXT,capability TEXT);
           CREATE TABLE candidate_identity_v2(ticker TEXT,instrument_type TEXT,
           settlement TEXT,market TEXT,currency TEXT,status TEXT,can_simulate INTEGER);""")
-        for ticker, kind, term in gate.FOCUS:
-            values = (ticker, kind, term, "BYMA", "ARS")
-            db.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,'AVAILABLE','READY_PAPER_SPOT')", values)
+        for ticker, kind, term, market, capability in (
+                ("GGAL", "ACCIONES", "A-24HS", "BYMA", "READY_PAPER_SPOT"),
+                ("DLR/OCT26", "FUTUROS", "INMEDIATA", "A3", "READY_PAPER_FUTURES"),
+                ("CAUCION/7D", "CAUCIONES", "A-24HS", "BYMA", "READY_PAPER_CAUCION_PLACING"),
+                ("FCI-TEST", "FCI", "INMEDIATA", "BYMA", "READY_PAPER_FCI_SUBSCRIPTION")):
+            values = (ticker, kind, term, market, "ARS")
+            db.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,'AVAILABLE',?)",
+                       (*values, capability))
             db.execute("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,'AVAILABLE',1)", values)
-    assert gate.focus_contracts(path)["ready"] == 8
+    first = gate.focus_contracts(path)
+    assert first == {"effect": "ADVISORY_ONLY", "scope": "BOUNDED_CATALOG_SAMPLE",
+                     "sample_limit": gate.CATALOG_DIAGNOSTIC_LIMIT, "state": "GREEN",
+                     "sampled": 4, "ready": 4, "truncated": False,
+                     "not_ready_by_family": {}}
     with sqlite3.connect(path) as db:
         db.execute("UPDATE financial_instrument_catalog SET capability='NEEDS_CONTRACT' WHERE ticker='GGAL'")
-    assert gate.focus_contracts(path) == {"state": "RED", "ready": 7, "required": 8, "missing": ["GGAL"]}
+    second = gate.focus_contracts(path)
+    assert second["state"] == "AMBER"
+    assert second["ready"] == 3 and second["sampled"] == 4
+    assert second["not_ready_by_family"] == {"ACCIONES": 1}
+    assert second["effect"] == "ADVISORY_ONLY"
+
+
+def test_catalog_advisory_does_not_invent_readiness_on_empty_missing_or_ambiguous_db(tmp_path):
+    absent = gate.focus_contracts(tmp_path / "missing.sqlite")
+    assert absent["state"] == "AMBER" and absent["effect"] == "ADVISORY_ONLY"
+
+    path = tmp_path / "no-quotes.sqlite"
+    with sqlite3.connect(path) as db:
+        db.executescript("""CREATE TABLE financial_instrument_catalog(
+            ticker TEXT,instrument_type TEXT,settlement TEXT,market TEXT,currency TEXT,
+            status TEXT,capability TEXT);
+            CREATE TABLE candidate_identity_v2(ticker TEXT,instrument_type TEXT,
+            settlement TEXT,market TEXT,currency TEXT,status TEXT,can_simulate INTEGER);""")
+    empty = gate.focus_contracts(path)
+    assert empty["state"] == "AMBER" and empty["ready"] == empty["sampled"] == 0
+
+    with sqlite3.connect(path) as db:
+        exact = ("DLR/OCT26", "FUTUROS", "INMEDIATA", "A3", "ARS")
+        db.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,'AVAILABLE','READY_PAPER_FUTURES')", exact)
+        for _ in range(2):
+            db.execute("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,'AVAILABLE',1)", exact)
+    ambiguous = gate.focus_contracts(path)
+    assert ambiguous["state"] == "AMBER" and ambiguous["sampled"] == 1
+    assert ambiguous["ready"] == 0 and ambiguous["not_ready_by_family"] == {"FUTUROS": 1}
+
+
+def test_catalog_advisory_is_bounded_and_never_claims_complete_large_catalog(tmp_path):
+    path = tmp_path / "catalog.sqlite"
+    with sqlite3.connect(path) as db:
+        db.executescript("""CREATE TABLE financial_instrument_catalog(
+            ticker TEXT,instrument_type TEXT,settlement TEXT,market TEXT,currency TEXT,
+            status TEXT,capability TEXT);
+            CREATE TABLE candidate_identity_v2(ticker TEXT,instrument_type TEXT,
+            settlement TEXT,market TEXT,currency TEXT,status TEXT,can_simulate INTEGER);""")
+        for index in range(gate.CATALOG_DIAGNOSTIC_LIMIT + 5):
+            key = (f"X{index}", "ACCIONES", "A-24HS", "BYMA", "ARS")
+            db.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,'AVAILABLE','READY_PAPER_SPOT')", key)
+            db.execute("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,'AVAILABLE',1)", key)
+    report = gate.focus_contracts(path)
+    assert report["sampled"] == gate.CATALOG_DIAGNOSTIC_LIMIT
+    assert report["ready"] == gate.CATALOG_DIAGNOSTIC_LIMIT
+    assert report["truncated"] is True and report["state"] == "AMBER"
+
+
+def test_preopen_runtime_has_no_global_scalping_minimum_for_other_families():
+    import rc6_preopen as preopen
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE candidate_identity_v2(instrument_type TEXT,status TEXT,can_simulate INTEGER)")
+    db.execute("INSERT INTO candidate_identity_v2 VALUES('FUTUROS','AVAILABLE',1)")
+    for table in ("paper_positions", "paper_cauciones"):
+        db.execute(f"CREATE TABLE {table}(id INTEGER)")
+    for table in ("intraday_scalping_worker_state", "paper_caucion_cash_sweep_state",
+                  "paper_supervisor_state"):
+        db.execute(f"CREATE TABLE {table}(id INTEGER PRIMARY KEY,heartbeat_at TEXT,"
+                   "state TEXT,real_orders_sent INTEGER,routes_json TEXT)")
+        db.execute(f"INSERT INTO {table} VALUES(1,?,'RUNNING',0,'[]')", (DAY.isoformat(),))
+    runtime = preopen.runtime_contracts(db, DAY)
+    assert runtime["state"] == "GREEN"
+    assert runtime["scalping_eligible_identities"] == 0
+    assert runtime["scalping_family_readiness"] == "NO_READY_SPOT_CANDIDATES"
+    assert all(item["state"] == "GREEN" for item in runtime["workers"].values())
+
+    db.execute("UPDATE candidate_identity_v2 SET can_simulate=0")
+    assert preopen.runtime_contracts(db, DAY)["state"] == "RED"  # Unclassified future.
+    db.execute("UPDATE candidate_identity_v2 SET can_simulate=1")
+    db.execute("UPDATE paper_supervisor_state SET heartbeat_at='2026-10-01T00:00:00-03:00'")
+    assert preopen.runtime_contracts(db, DAY)["state"] == "RED"  # Worker safety.
+
+
+def test_preopen_catalog_advisory_amber_does_not_enter_global_red_checks(monkeypatch, capsys):
+    import rc6_preopen as preopen
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(preopen.byma, "es_dia_habil_operativo", lambda *_: True)
+    monkeypatch.setattr(preopen, "release_identity", lambda: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "container", lambda *_args, **_kwargs: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "observer_db", lambda: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "required_timers", lambda *_: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "byma_morning_watch", lambda *_args, **_kwargs: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "iol_reference_state", lambda *_: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "blocked_history_timers", lambda: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "foreign_market_policy", lambda *_: {"state": "GREEN"})
+    monkeypatch.setattr(preopen, "operator_pause_reason", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(preopen, "evaluate_rearm", lambda **_: (False, "NO_REARM", None))
+    monkeypatch.setattr(preopen, "focus_contracts", lambda *_: {"state": "AMBER",
+                            "effect": "ADVISORY_ONLY", "not_ready_by_family": {"ACCIONES": 1}})
+    monkeypatch.setattr(preopen.shutil, "disk_usage", lambda *_: SimpleNamespace(free=9*1024**3))
+    recorded = []
+    monkeypatch.setattr(preopen, "publish_preopen", lambda result, **_:
+                        recorded.append(result) or {"status": "GO_PAPER_SCALPING"})
+    assert preopen.main("T_MINUS_10", publish_paper_gate=True) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "GREEN" and report["red_checks"] == []
+    assert report["checks"]["paper_catalog_diagnostic"]["state"] == "AMBER"
+    assert "paper_focus_contracts" not in report["checks"]
+    assert recorded == [report]
 
 
 def test_live_broker_guard_blocks_fill_but_preserves_paper_state(tmp_path):

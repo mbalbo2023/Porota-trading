@@ -28,6 +28,9 @@ Before changing Porota, every agent/chat MUST:
 - Before the *next* Deploy V2, verify/reclaim residual unreferenced candidate-only images under the same global Actions mutex and root-owned host lock, never by broad prune, force, or deletion of container-referenced images. A passed disk threshold is not evidence that cleanup was done.
 - Never delete or prune active containers, volumes, databases, bind-mounted data, PPI Watch assets, or referenced runtime images.
 - Every new deployment failure class must produce a permanent regression guard or an explicit documented reason why no automated guard is possible.
+- A PAPER operator activation remains in effect until the operator explicitly pauses it: never invent a 14-day or other arbitrary expiry, or revoke operator intent only because a safe code SHA changes. Revalidate the actual release, zero-real-order invariants, current session and each instrument independently.
+- A fixed demonstration/watchlist (such as eight Scalping symbols) must not be promoted into a global entry veto for unrelated PAPER families. Missing provider evidence blocks the affected instrument and raises a scoped alarm, not all technical tests or deployments.
+- Do not invent business restrictions or silently elevate diagnostic checks into operator policy. When a user decision is genuinely needed, present precise alternatives and a recommended choice. Honor an already-granted autonomous scope without repeatedly demanding generic permission; preserve exact deployment control gates defined by the canonical workflow.
 - A GitHub Action marked FAILED must not leave an ambiguous partially promoted runtime. Promotion must have an explicit state and evidence.
 
 ## Change discipline

@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 import ak_byma_calendar as byma
 from bu_instrument_catalog import rc6_underlying_opening_block
 from rc6_paper_admission_gate import focus_contracts, operator_pause_reason, publish_preopen
-from scripts.rc6_operator_paper_rearm import evaluate_rearm
+from scripts.rc6_operator_paper_rearm import evaluate_rearm, trusted_operator_pause
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 ROOT = Path('/opt/porota-trading')
@@ -248,9 +248,11 @@ def observer_db():
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
-        # Zero candidates is *instrument readiness*, not a broken SQLite
-        # contract. It remains RED in regular PAPER preopen, but a technical
-        # Deploy V2 may classify this exact, independently safe state AMBER.
+        # Historic runtime summaries reported an empty *scalping* universe as
+        # a global RED. Only grandfather that precise legacy shape for Deploy
+        # V2 evidence; current runtime_contracts() reports family readiness
+        # separately, so missing spot contracts cannot veto valid cauciones,
+        # futures or FCI. Each actual admission still requires its own quote.
         workers = runtime.get('workers') or {}
         candidate_only_red = (
             runtime.get('state') == 'RED' and
@@ -304,7 +306,11 @@ def runtime_contracts(connection, now):
       WHERE status='AVAILABLE' AND can_simulate=1
         AND instrument_type IN ('ACCIONES','CEDEARS','ETFS')""").fetchone()[0]
     workers = {}
-    ok = not unclassified and scalping_eligible > 0
+    # This is an infrastructure and PAPER/0 check. There is no universal
+    # business minimum of spot/scalping candidates: one unrelated family being
+    # empty must not close all other families. The exact candidate ledger and
+    # contract lookup reject each individually unready quote on insertion.
+    ok = not unclassified
     for name, table in (
             ('scalping','intraday_scalping_worker_state'),
             ('caucion_cash_sweep','paper_caucion_cash_sweep_state'),
@@ -335,6 +341,8 @@ def runtime_contracts(connection, now):
             'residual_classification':residual,
             'unclassified_residuals':unclassified,
             'scalping_eligible_identities':scalping_eligible,
+            'scalping_family_readiness':('HAS_CANDIDATES' if scalping_eligible
+                                          else 'NO_READY_SPOT_CANDIDATES'),
             'workers':workers,'real_routes_expected':[]}
 
 
@@ -435,6 +443,28 @@ def deploy_optional_source_availability(check_name, result):
     return degraded
 
 
+def paper_optional_iol_reference_availability(result):
+    """Classify one absent OPTIONAL IOL reference without authorizing a quote.
+
+    A missing cache file is not a failed PPI, CAFCI, caucion or futures quote.
+    No saved IOL value is trusted or promoted to a current observation; the
+    consumer of an IOL-sourced quote must independently prove its source,
+    clock, exact contract, economics and PAPER receipt. Corruption, permission
+    errors and an unsafe IOL fallback contract remain RED.
+    """
+    if (type(result) is not dict or result.get('state') != 'RED' or
+            result.get('reason') != 'IOL_REFERENCE_UNAVAILABLE' or
+            not isinstance(result.get('detail'), str) or
+            not result['detail'].startswith('FileNotFoundError:')):
+        return result
+    degraded = dict(result)
+    degraded.update(state='AMBER', source_state='RED', provider='IOL',
+                    paper_effect='ADVISORY_ONLY',
+                    paper_readiness='FAIL_CLOSED_PER_INSTRUMENT',
+                    scope='IOL_OPTIONAL_REFERENCE_ONLY')
+    return degraded
+
+
 def preopen_phase(now):
     local = now.astimezone(TZ)
     minutes = local.hour*60 + local.minute
@@ -448,6 +478,11 @@ def preopen_phase(now):
 BLOCKED_HISTORY_TIMERS = (
     'porota-history-postclose-rc6.timer',
 )
+
+
+def _operator_v2_pause_operation(proof):
+    """Report the current root-owned Actions PAUSE, not a historical A176 ID."""
+    return 'RC6-OWNER-PAUSE-V2-' + str(proof['rearm_run_id'])
 
 
 def blocked_history_timers():
@@ -479,8 +514,13 @@ def required_timers(deploy_scheduler_candidate=None):
     operator_pause_sha = None
     operator_no_go_continuation = None
     preserved_iol_timer = None
-    today_ar = datetime.now(TZ).date().isoformat()
-    rearmed = evaluate_rearm(now=datetime.now(TZ), context='host')[0]
+    checked_at = datetime.now(TZ)
+    today_ar = checked_at.date().isoformat()
+    rearmed = evaluate_rearm(now=checked_at, context='host')[0]
+    # A new PAUSE is an owner action with its own exact root-owned receipt.
+    # It must never be attributed to the 29-Oct A176 continuation receipt.
+    operator_pause_v2 = (trusted_operator_pause(now=checked_at, context='host')
+                         if not rearmed and today_ar >= '2026-10-29' else None)
     if deploy_scheduler_candidate is None and today_ar >= '2026-10-29' and not rearmed:
         # The operator keeps the daily preopen timer disabled. Other daily
         # timers may have been restored after Deploy; A176 verifies the
@@ -488,26 +528,28 @@ def required_timers(deploy_scheduler_candidate=None):
         # snapshot as a live timer-status claim.
         try:
             from scripts import rc6_deploy_scheduler_suspend as suspend
-            proof = suspend.exact_a176_operator_no_go_continuation(
-                **({'historical_anchor': True} if today_ar > '2026-10-29' else {}))
-            if (type(proof) is not dict or
-                    proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
-                    proof.get('business_day_art') != '2026-10-29' or
-                    proof.get('paper_execution_authorized') is not False or
-                    not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
-                                     str(proof.get('operation_id'))) or
-                    any(not re.fullmatch(r'[0-9a-f]{64}', str(proof.get(key)))
-                        for key in ('receipt_sha256', 'a151_origin_sha256',
-                                    'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
-                raise ValueError('PREOPEN_DAILY_A176_NO_GO_PROOF_RED')
-            operator_no_go_continuation = proof
             operator_pause_timer = suspend.OPERATOR_PREOPEN_TIMER
-            operator_pause_sha = proof['receipt_sha256']
-            # A176 is historical 29-Oct authority, not a fresh 30-Oct receipt.
-            # Its unchanged digest plus the *current* disabled timer proves
-            # continued NO_GO without fabricating a new operator operation.
-            operator_pause_operation = (proof['operation_id'] if today_ar == '2026-10-29'
-                                        else 'A180-NO-GO-' + proof['receipt_sha256'][:16])
+            if operator_pause_v2 is not None:
+                operator_pause_sha = operator_pause_v2['receipt_sha256']
+                operator_pause_operation = _operator_v2_pause_operation(operator_pause_v2)
+            else:
+                proof = suspend.exact_a176_operator_no_go_continuation(
+                    **({'historical_anchor': True} if today_ar > '2026-10-29' else {}))
+                if (type(proof) is not dict or
+                        proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
+                        proof.get('business_day_art') != '2026-10-29' or
+                        proof.get('paper_execution_authorized') is not False or
+                        not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
+                                         str(proof.get('operation_id'))) or
+                        any(not re.fullmatch(r'[0-9a-f]{64}', str(proof.get(key)))
+                            for key in ('receipt_sha256', 'a151_origin_sha256',
+                                        'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
+                    raise ValueError('PREOPEN_DAILY_A176_NO_GO_PROOF_RED')
+                operator_no_go_continuation = proof
+                # A176 is historical 29-Oct authority, not a fresh receipt.
+                operator_pause_sha = proof['receipt_sha256']
+                operator_pause_operation = (proof['operation_id'] if today_ar == '2026-10-29'
+                                            else 'A180-NO-GO-' + proof['receipt_sha256'][:16])
             day = today_ar
         except (OSError, ValueError, TypeError, KeyError, AttributeError,
                 json.JSONDecodeError) as exc:
@@ -539,6 +581,9 @@ def required_timers(deploy_scheduler_candidate=None):
                     receipt.get('preserved_iol_timer') != preserved_iol_timer or
                     receipt.get('ppi_before') != suspend.ppi_snapshot()):
                 raise ValueError('PREOPEN_DEPLOY_RECEIPT_CHANGED')
+            if (operator_pause_v2 is not None and
+                    receipt.get('operator_pause_timer') != suspend.OPERATOR_PREOPEN_TIMER):
+                raise ValueError('PREOPEN_OPERATOR_V2_PAUSE_TIMER_UNATTESTED')
             if receipt.get('operator_pause_timer') is not None:
                 operator_pause_timer = receipt['operator_pause_timer']
                 # The scheduler chain still anchors A125's original 27-Oct
@@ -558,26 +603,29 @@ def required_timers(deploy_scheduler_candidate=None):
                     operator_pause_sha, operator_pause_operation = (
                         suspend.exact_a151_operator_preopen_pause())
                 elif day >= '2026-10-29' and not rearmed:
-                    # A151's dated authorization cannot be carried forward by
-                    # inference. A176 is an independently checked host receipt,
-                    # issued under the canonical mutex with PAPER admission held.
-                    operator_no_go_continuation = (
-                        suspend.exact_a176_operator_no_go_continuation(
-                            **({'historical_anchor': True} if day > '2026-10-29' else {})))
-                    proof = operator_no_go_continuation
-                    if (type(proof) is not dict or
-                            proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
-                            proof.get('business_day_art') != '2026-10-29' or
-                            proof.get('paper_execution_authorized') is not False or
-                            not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
-                                             str(proof.get('operation_id'))) or
-                            any(not re.fullmatch(r'[0-9a-f]{64}', str(proof.get(key)))
-                                for key in ('receipt_sha256', 'a151_origin_sha256',
-                                            'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
-                        raise ValueError('PREOPEN_A176_NO_GO_PROOF_RED')
-                    operator_pause_sha = proof['receipt_sha256']
-                    operator_pause_operation = (proof['operation_id'] if day == '2026-10-29'
-                                                else 'A180-NO-GO-' + proof['receipt_sha256'][:16])
+                    if operator_pause_v2 is not None:
+                        operator_pause_sha = operator_pause_v2['receipt_sha256']
+                        operator_pause_operation = _operator_v2_pause_operation(operator_pause_v2)
+                    else:
+                        # Historical A176 NO_GO remains independently checked
+                        # when there is no later verified operator PAUSE V2.
+                        operator_no_go_continuation = (
+                            suspend.exact_a176_operator_no_go_continuation(
+                                **({'historical_anchor': True} if day > '2026-10-29' else {})))
+                        proof = operator_no_go_continuation
+                        if (type(proof) is not dict or
+                                proof.get('status') != 'NO_GO_PENDING_EXPLICIT_REARM' or
+                                proof.get('business_day_art') != '2026-10-29' or
+                                proof.get('paper_execution_authorized') is not False or
+                                not re.fullmatch(r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}',
+                                                 str(proof.get('operation_id'))) or
+                                any(not re.fullmatch(r'[0-9a-f]{64}', str(proof.get(key)))
+                                    for key in ('receipt_sha256', 'a151_origin_sha256',
+                                                'a175_quiescence_sha256', 'a175_scheduler_sha256'))):
+                            raise ValueError('PREOPEN_A176_NO_GO_PROOF_RED')
+                        operator_pause_sha = proof['receipt_sha256']
+                        operator_pause_operation = (proof['operation_id'] if day == '2026-10-29'
+                                                    else 'A180-NO-GO-' + proof['receipt_sha256'][:16])
                 else:
                     raise ValueError('PREOPEN_OPERATOR_PAUSE_DAY_EXPIRED')
         except (OSError, ValueError, TypeError, KeyError, AttributeError,
@@ -660,6 +708,8 @@ def required_timers(deploy_scheduler_candidate=None):
                       operator_pause_receipt_sha256=operator_pause_sha)
         if operator_no_go_continuation is not None:
             output['operator_no_go_continuation'] = operator_no_go_continuation
+        if operator_pause_v2 is not None:
+            output['operator_pause_v2'] = operator_pause_v2
     return output
 
 
@@ -805,11 +855,22 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
         'foreign_market_policy': foreign_market_policy(today),
     }
     if publish_paper_gate:
-        checks['paper_focus_contracts'] = focus_contracts(DB)
+        # Legacy function name is kept for compatibility; its evidence is now
+        # a bounded *dynamic* catalog sample, never an eight-symbol whitelist.
+        checks['paper_catalog_diagnostic'] = focus_contracts(DB)
     if deploy_scheduler_candidate is not None:
         for key in SOURCE_CHECK_PROVIDER:
             checks[key] = deploy_optional_source_availability(key, checks[key])
-    reds = [k for k,v in checks.items() if v.get('state') == 'RED']
+    else:
+        # A248: an OPTIONAL IOL reference file's absence is a provider-scoped
+        # alert, not authority to halt unrelated PPI/CAFCI-validated families.
+        # Keep every other provider and malformed IOL contract fail-closed.
+        checks['iol_reference_fallback'] = paper_optional_iol_reference_availability(
+            checks['iol_reference_fallback'])
+    # A catalog sample cannot certify a quote or veto a different family.
+    # Safety, release, time, runtime and source-contract checks remain hard.
+    reds = [k for k,v in checks.items() if k != 'paper_catalog_diagnostic'
+            and v.get('state') == 'RED']
     paused = checks['required_rc6_timers'].get('operator_paper_paused') is True
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
               'phase':phase_override or preopen_phase(now),
@@ -842,15 +903,23 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
         if 'operator_no_go_continuation' in checks['required_rc6_timers']:
             result['operator_no_go_continuation'] = (
                 checks['required_rc6_timers']['operator_no_go_continuation'])
+        if 'operator_pause_v2' in checks['required_rc6_timers']:
+            result['operator_pause_v2'] = checks['required_rc6_timers']['operator_pause_v2']
     if publish_paper_gate:
         if paused and today.isoformat() >= '2026-10-29':
-            # The historical A125 LIVE gate is immutable. The durable A176
-            # sidecar is the NO_GO authority; no GO receipt is written here.
+            # A125 LIVE gate is immutable. A176's historical continuation OR
+            # the separately verified root-owned V2 operator PAUSE is the
+            # NO_GO authority. Neither writes a new GO receipt.
             result['paper_admission_receipt'] = {
                 'status':'NO_GO_PAPER_SCALPING',
                 'reason':'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
-                'continuation_receipt_sha256':result['operator_pause_receipt_sha256'],
                 'new_receipt_written':False}
+            if 'operator_pause_v2' in result:
+                result['paper_admission_receipt']['operator_intent_receipt_sha256'] = (
+                    result['operator_pause_receipt_sha256'])
+            else:
+                result['paper_admission_receipt']['continuation_receipt_sha256'] = (
+                    result['operator_pause_receipt_sha256'])
         else:
             try:
                 result['paper_admission_receipt'] = publish_preopen(result, now=now)

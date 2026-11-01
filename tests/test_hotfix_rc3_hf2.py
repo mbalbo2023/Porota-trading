@@ -189,6 +189,15 @@ def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):
     assert "PAPER_FOCUS_COVERAGE" in keys
     assert "PPI_BACKGROUND_INGEST" in keys
     page = dashboard.motor_page()
-    assert "PORTÓN ECONÓMICO OBLIGATORIO" in page
-    # RC6 policy: economic gate remains SHADOW; sector concentration is the BINDING gate.
-    assert "Economía matemática SHADOW" in page
+    # The v17 HF2 standalone panel is retained for historical callers.
+    # Importing the canonical o_dashboard installs the later RC6 truth-layer
+    # panel, which correctly labels economics as counterfactual SHADOW instead
+    # of falsely promising a mandatory PAPER veto. Both import orders must
+    # pass without weakening the economic audit or hiding its actual policy.
+    if "Portón económico de aperturas PAPER" in page:
+        assert "Etapa de aprendizaje SHADOW" in page
+        assert "NO veta PAPER" in page
+        assert "PORTÓN ECONÓMICO OBLIGATORIO" not in page
+    else:
+        assert "PORTÓN ECONÓMICO OBLIGATORIO" in page
+        assert "Economía matemática SHADOW" in page

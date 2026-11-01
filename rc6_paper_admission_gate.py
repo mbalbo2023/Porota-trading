@@ -27,12 +27,9 @@ RUNTIME_RECEIPT = Path("/app/data/deploy/paper_scalping_preopen_gate_v1.json")
 # container may write DATA, so placing a new GO file in DATA would be forgeable.
 HOST_V2_RECEIPT = OPERATOR_DIR_HOST / "paper-preopen-v2.json"
 RUNTIME_V2_RECEIPT = OPERATOR_DIR_RUNTIME / "paper-preopen-v2.json"
-FOCUS = (
-    ("GGAL", "ACCIONES", "A-24HS"), ("YPFD", "ACCIONES", "A-24HS"),
-    ("PAMP", "ACCIONES", "A-24HS"), ("BMA", "ACCIONES", "A-24HS"),
-    ("BBAR", "ACCIONES", "A-24HS"), ("SUPV", "ACCIONES", "A-24HS"),
-    ("CEPU", "ACCIONES", "A-24HS"), ("AAPL", "CEDEARS", "A-24HS"),
-)
+# An operational sampling preference is never an admission whitelist. Keep
+# diagnostics bounded independently of the configured sampling universe.
+CATALOG_DIAGNOSTIC_LIMIT = 64
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 # Historical date-scoped receipts remain immutable. The later operator mission
 # explicitly keeps NO_GO until a separate, specific reactivation. A successful
@@ -42,6 +39,11 @@ NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR = "2026-10-29"
 
 
 def operator_pause_reason(now, *, context="runtime"):
+    # Every operator day is an Argentine business day, including direct helper
+    # callers passing UTC at 00:00-02:59. Never classify by the caller's zone.
+    if now.tzinfo is None or now.utcoffset() is None:
+        return "OPERATOR_PAUSE_CLOCK_INVALID"
+    now = now.astimezone(TZ)
     day = now.date().isoformat()
     if day in OPERATOR_PAUSED_TRADE_DAYS_AR:
         return "OPERATOR_PAPER_PAUSE_" + day.replace("-", "_")
@@ -52,27 +54,63 @@ def operator_pause_reason(now, *, context="runtime"):
 
 
 def focus_contracts(db_path):
-    """Require every configured focus identity to be unambiguous and ready."""
+    """Bounded catalog *advisory*, retained under its legacy entry-point name.
+
+    The preopen receipt is infrastructure/release authority, not a vote on a
+    fixed group of unrelated tickers. Contract readiness belongs to the exact
+    quote's final PAPER admission. This probe never grants quote readiness.
+    """
+    advisory = {"effect": "ADVISORY_ONLY", "scope": "BOUNDED_CATALOG_SAMPLE",
+                "sample_limit": CATALOG_DIAGNOSTIC_LIMIT}
     try:
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2) as db:
             db.execute("PRAGMA query_only=ON")
-            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_identity_v2'").fetchone():
-                return {"state": "RED", "reason": "EXACT_CANDIDATE_LEDGER_MISSING"}
-            missing = []
-            for ticker, kind, settlement in FOCUS:
-                rows = db.execute("""SELECT f.market,f.currency FROM financial_instrument_catalog f
-                    JOIN candidate_identity_v2 c USING(ticker,instrument_type,market,currency,settlement)
-                    WHERE f.ticker=? AND f.instrument_type=? AND f.settlement=?
-                      AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
-                      AND c.status='AVAILABLE' AND c.can_simulate=1""",
-                    (ticker, kind, settlement)).fetchall()
-                if len(rows) != 1:
-                    missing.append(ticker)
-            return {"state": "GREEN" if not missing else "RED",
-                    "ready": len(FOCUS) - len(missing), "required": len(FOCUS),
-                    "missing": missing}
+            names = {row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND "
+                "name IN ('financial_instrument_catalog','candidate_identity_v2')")}
+            if names != {"financial_instrument_catalog", "candidate_identity_v2"}:
+                return {**advisory, "state": "AMBER",
+                        "reason": "CATALOG_OR_EXACT_IDENTITY_LEDGER_MISSING"}
+            # The LEFT JOIN is over *catalog rows*, rather than a fixed ticker
+            # basket. Group by rowid to detect duplicate/missing exact ledger
+            # identities without unbounded result materialization.
+            rows = db.execute("""WITH sampled AS (
+                  SELECT rowid AS rid, ticker,instrument_type,market,currency,
+                         settlement,status,capability
+                  FROM financial_instrument_catalog
+                  ORDER BY rowid LIMIT ?)
+                SELECT f.instrument_type,f.status,f.capability,
+                       COUNT(c.ticker) AS identity_rows,
+                       SUM(CASE WHEN c.status='AVAILABLE' AND c.can_simulate=1
+                                THEN 1 ELSE 0 END) AS ready_identity_rows
+                FROM sampled f LEFT JOIN candidate_identity_v2 c
+                  ON f.ticker=c.ticker AND f.instrument_type=c.instrument_type
+                 AND f.market=c.market AND f.currency=c.currency
+                 AND f.settlement=c.settlement
+                GROUP BY f.rid ORDER BY f.rid""",
+                (CATALOG_DIAGNOSTIC_LIMIT + 1,)).fetchall()
+            truncated = len(rows) > CATALOG_DIAGNOSTIC_LIMIT
+            sampled = rows[:CATALOG_DIAGNOSTIC_LIMIT]
+            ready = 0
+            not_ready_by_family = {}
+            for family, status, capability, identities, ready_identities in sampled:
+                expected = {"FUTUROS": "READY_PAPER_FUTURES",
+                            "OPCIONES": "READY_PAPER_OPTION_LONG",
+                            "CAUCIONES": "READY_PAPER_CAUCION_PLACING",
+                            "FCI": "READY_PAPER_FCI_SUBSCRIPTION"}.get(
+                                family, "READY_PAPER_SPOT")
+                if (status == "AVAILABLE" and capability == expected
+                        and identities == ready_identities == 1):
+                    ready += 1
+                else:
+                    not_ready_by_family[family] = not_ready_by_family.get(family, 0) + 1
+            return {**advisory, "state": ("GREEN" if sampled and not truncated
+                                            and ready == len(sampled) else "AMBER"),
+                    "sampled": len(sampled), "ready": ready,
+                    "truncated": truncated,
+                    "not_ready_by_family": not_ready_by_family}
     except (sqlite3.Error, OSError, ValueError) as exc:
-        return {"state": "RED", "reason": type(exc).__name__}
+        return {**advisory, "state": "AMBER", "reason": type(exc).__name__}
 
 
 def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
@@ -91,13 +129,13 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
         valid_release = (isinstance(candidate, str) and SHA.fullmatch(candidate)
                          and state.get("validation_status") == "VALIDATED_RUNTIME"
                          and state.get("mode") == "PRODUCTION_PAPER"
-                         and state.get("real_orders_sent") == 0)
+                         and type(state.get("real_orders_sent")) is int
+                         and state["real_orders_sent"] == 0)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         valid_release = False
     pause_reason = operator_pause_reason(now, context="host")
     allowed = (not pause_reason and result.get("status") == "GREEN" and result.get("phase") == "T_MINUS_10"
                and 10 * 60 + 20 <= now.hour * 60 + now.minute < 10 * 60 + 30
-               and result.get("checks", {}).get("paper_focus_contracts", {}).get("state") == "GREEN"
                and valid_release)
     receipt = {"schema": ("RC6_PAPER_PREOPEN_GATE_V2" if
                now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
@@ -106,7 +144,7 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                "candidate_sha": candidate if valid_release else "", "trade_day_ar": now.date().isoformat(),
                "issued_at_ar": now.isoformat(timespec="seconds"), "phase": result.get("phase"),
                "reason": (pause_reason if pause_reason else
-                          "PREOPEN_GREEN_EXACT_FOCUS" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN")}
+                          "PREOPEN_GREEN_RELEASE_PAPER_ZERO" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN")}
     # A125's 27-Oct LIVE gate is an immutable link in the A138/A143 scheduler
     # recovery chain. Neither a manual preopen nor a subsequent day's T-10
     # may overwrite it while that chain is active. The separate A151 sidecar

@@ -2640,11 +2640,11 @@ jobs:
           timeout 120 ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ConnectTimeout=10 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase finalize python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA'" <<'PY'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase finalize python3 - '$CANDIDATE_SHA' '$DEPLOY_SHA' '$CANDIDATE_TREE'" <<'PY'
           import grp, json, os, subprocess, sys, tempfile
           from datetime import datetime, timezone
           from pathlib import Path
-          candidate, deploy = sys.argv[1:]
+          candidate, deploy, tree = sys.argv[1:]
           root = Path('/opt/porota-trading/data/deploy')
           path = root / 'CURRENT_STATE_V2.json'
           if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
@@ -2698,6 +2698,23 @@ jobs:
               os.replace(tmp, path)
           finally:
               if os.path.exists(tmp): os.unlink(tmp)
+          # A248: the October A125/A176 timer hold remains immutable history,
+          # not an expiration of the operator's later ACTIVE intent. Reconcile
+          # only after the exact PAPER/0 marker is VALIDATED_RUNTIME, under the
+          # SAME finalizer root mutex, and before unstaged preopen is probed.
+          # No generic scheduler restore may grant PAPER permission in COLD.
+          project = Path('/opt/porota-trading')
+          sys.path.insert(0, str(project))
+          from scripts.porota_apply_host_control_plane_v2 import (
+              reconcile_finalized_operator_paper_timer)
+          timer_proof = reconcile_finalized_operator_paper_timer(candidate, tree)
+          if (timer_proof.get('status') != 'GREEN' or
+                  timer_proof.get('candidate_sha') != candidate or
+                  timer_proof.get('candidate_tree_sha') != tree or
+                  timer_proof.get('real_orders_sent') != 0 or
+                  timer_proof.get('ppi_watch_mutated') is not False):
+              raise ValueError('FINAL_OPERATOR_PAPER_TIMER_RED')
+          print('RC6_FINAL_OPERATOR_PAPER_TIMER=' + json.dumps(timer_proof, sort_keys=True))
           print('CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME')
           PY
 

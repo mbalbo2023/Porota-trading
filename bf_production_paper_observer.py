@@ -107,6 +107,7 @@ DEFAULT_FOCUS_SYMBOLS = (
     ("CEPU", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
 )
+PAPER_SPOT_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
 
 
 def configured_focus(raw=None):
@@ -1067,7 +1068,7 @@ def _active_symbols(store):
 
 
 def _focus_coverage(store):
-    """Contrasta el foco declarado con identidades PAPER realmente habilitadas.
+    """Diagnóstico del foco histórico de muestreo; no autoriza aperturas.
 
     Un ticker parecido no alcanza: tipo y liquidacion deben coincidir, y el
     catalogo normalizado debe declarar READY_PAPER_SPOT. El fallback legado se
@@ -1141,17 +1142,65 @@ def _focus_coverage(store):
     }
 
 
+def _exact_pit_ready_spot_requests(store):
+    """Spot READY en catálogo y ledger PIT, sin elegir hermanos monetarios.
+
+    La proyección es por identidad completa; un request PPI sin market/currency
+    inequívocos queda fuera. No sustituye frescura, sesión, preopen ni el gate
+    de contrato individual en la transacción PAPER.
+    """
+    try:
+        with store.connect() as c:
+            rows = c.execute("""WITH
+                f_full AS (
+                  SELECT ticker,instrument_type,market,currency,settlement,
+                         COUNT(*) AS n
+                  FROM financial_instrument_catalog
+                  GROUP BY ticker,instrument_type,market,currency,settlement),
+                p_full AS (
+                  SELECT ticker,instrument_type,market,currency,settlement,
+                         COUNT(*) AS n
+                  FROM candidate_identity_v2
+                  GROUP BY ticker,instrument_type,market,currency,settlement),
+                f_request AS (
+                  SELECT ticker,instrument_type,settlement,SUM(n) AS n
+                  FROM f_full GROUP BY ticker,instrument_type,settlement),
+                p_request AS (
+                  SELECT ticker,instrument_type,settlement,SUM(n) AS n
+                  FROM p_full GROUP BY ticker,instrument_type,settlement)
+                SELECT f.ticker,f.instrument_type,f.settlement
+                FROM financial_instrument_catalog f
+                JOIN candidate_identity_v2 p
+                  USING(ticker,instrument_type,market,currency,settlement)
+                JOIN f_full fc USING(ticker,instrument_type,market,currency,settlement)
+                JOIN p_full pc USING(ticker,instrument_type,market,currency,settlement)
+                JOIN f_request fr USING(ticker,instrument_type,settlement)
+                JOIN p_request pr USING(ticker,instrument_type,settlement)
+                WHERE f.instrument_type IN ('ACCIONES','CEDEARS','ETFS')
+                  AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
+                  AND p.status='AVAILABLE' AND p.can_simulate=1
+                  AND fc.n=1 AND pc.n=1 AND fr.n=1 AND pr.n=1
+                ORDER BY f.instrument_type,f.ticker,f.settlement""").fetchall()
+    except sqlite3.Error:
+        # A missing/incomplete PIT ledger never falls back to ticker-only GO.
+        return ()
+    return tuple(tuple(row) for row in rows)
+
+
 def _publish_focus_health(store, coverage):
     missing = "; ".join(
         f"{item['identity'][0]}={item['reason']}" for item in coverage["missing"]
     ) or "ninguno"
     detail = (
         f"Foco efectivo {coverage['matched_count']}/{coverage['configured_count']}; "
-        f"mínimo para nuevas aperturas simuladas {coverage['minimum_for_openings']}; "
+        f"meta observacional histórica {coverage['minimum_for_openings']}; "
         f"fuente {coverage['source']}; faltantes: {missing}. "
         f"Ingesta y cierres permanecen activos."
     )
-    _health(store, "PAPER_FOCUS_COVERAGE", coverage["state"], detail,
+    # En A248 un faltante de la lista histórica es aviso de muestreo, no un
+    # fallo operativo ROJO ni una autorización/veto de nuevas entradas.
+    advisory_state = "AMARILLO" if coverage["state"] == "ROJO" else coverage["state"]
+    _health(store, "PAPER_FOCUS_COVERAGE", advisory_state, detail,
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
@@ -1313,12 +1362,19 @@ def _publish_economic_shadow_health(store):
 
 
 def _runtime_readiness(store, *, record_event=False):
-    """Publica la capacidad declarada antes de permitir nuevas aperturas."""
+    """Distingue cobertura histórica, presupuesto de señales y PIT exacto."""
     focus = _focus_coverage(store)
     _publish_focus_health(store, focus)
+    pit_ready = _exact_pit_ready_spot_requests(store)
+    ready_set = set(pit_ready)
+    # El foco antiguo sólo influye el orden de lectura cuando también prueba
+    # PIT/capacidad. No exige 4/8 ni vetará otro ticker exacto READY_PAPER.
+    priority = tuple(dict.fromkeys(
+        (*(tuple(key) for key in focus["matched"] if tuple(key) in ready_set),
+         *pit_ready)))
     open_count = len(store.open_positions())
     symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
-        store, focus_candidates=focus["matched"]
+        store, focus_candidates=priority
     )
     if active_plan.get("dynamic_selection"):
         native_ready = list(active_plan["opening_identities"])
@@ -1329,6 +1385,25 @@ def _runtime_readiness(store, *, record_event=False):
             missing=[{"identity": symbol, "reason": "NATIVE_SIGNAL_WINDOW_NOT_READY"}
                 for symbol in symbols if symbol not in native_ready])
         _publish_focus_health(store, focus)
+    else:
+        # Sólo la capacidad exacta de cada identidad seleccionada puede abrir
+        # una señal Spot en fallback. El diagnóstico 4/8 ya no decide GO.
+        selected_spot = [key for key in symbols if key[1] in PAPER_SPOT_FAMILIES]
+        native_ready = [key for key in selected_spot if key in ready_set]
+        focus = dict(focus, source="POINT_IN_TIME_EXACT_SPOT_FALLBACK",
+            matched=native_ready, matched_count=len(native_ready),
+            configured_count=len(selected_spot), minimum_for_openings=1,
+            allow_new_openings=bool(native_ready),
+            state="VERDE" if native_ready else "AMARILLO",
+            missing=[{"identity": key, "reason": "PIT_SPOT_EXACT_NOT_READY"}
+                for key in selected_spot if key not in ready_set])
+    # La métrica existe tanto en fallback como en capacidad PIT dinámica;
+    # nunca muestra NO_DATA permanente por usar el modo aprobado.
+    _health(store, "PAPER_SPOT_PIT_READINESS", focus["state"],
+            f"Identidades Spot PIT/READY en lote: {focus['matched_count']}/{focus['configured_count']}; "
+            f"fuente {focus['source']}; cobertura histórica 4/8 sin veto; "
+            "sesión, fuente, contrato y riesgo siguen por instrumento.",
+            "Catálogo y candidate_identity_v2", success=bool(focus["matched"]))
     matched_set = set(focus["matched"])
     selected_focus = sum(symbol in matched_set for symbol in symbols)
     feasibility = _sampling_feasibility(
@@ -1355,6 +1430,24 @@ def _runtime_readiness(store, *, record_event=False):
             "Factibilidad rotativa: " + json.dumps(feasibility, sort_keys=True),
             "Runtime PAPER", success=rotation_state == "VERDE")
     return focus, symbols, eligible_total, cursor_before, cursor_after, feasibility
+
+
+def _scanner_opening_capacity(request, *, focus, feasibility):
+    """Presupuesto de señal + PIT Spot, nunca autorización de ejecución.
+
+    El camino dinámico usa las identidades ya verificadas por la selección
+    aprobada; el fallback sólo admite un Spot si el *mismo* request está PIT
+    READY. El broker mantiene sus gates por identidad, sesión, riesgo y PAPER/0.
+    """
+    plan = feasibility["active_plan"]
+    if not feasibility["feasible"]:
+        return False, "SCANNER_INFEASIBLE"
+    if request not in {tuple(key) for key in plan["opening_identities"]}:
+        return False, "COLD_DISCOVERY_NO_SIGNAL_BUDGET"
+    if request[1] in PAPER_SPOT_FAMILIES and request not in {
+            tuple(key) for key in focus["matched"]}:
+        return False, "PAPER_SPOT_EXACT_PIT_NOT_READY"
+    return True, ""
 
 
 def _gemini_context(store, symbol):
@@ -2305,17 +2398,8 @@ def run():
                         store.event("DATA_REJECTED", f"{symbol}: {data_error}")
                         broker.record_observation_rejection(q, data_error)
                         continue
-                    active_plan = feasibility["active_plan"]
-                    sampling_allowed = (feasibility["feasible"] and
-                        (symbol, asset_class, settlement) in map(tuple, active_plan["opening_identities"]))
-                    allow_openings = bool(focus["allow_new_openings"]) and sampling_allowed
-                    opening_reason = (
-                        f"Cobertura prioritaria insuficiente: "
-                        f"{focus['matched_count']}/{focus['configured_count']}"
-                    )
-                    if not sampling_allowed:
-                        opening_reason = ("SCANNER_INFEASIBLE" if not feasibility["feasible"]
-                                          else "COLD_DISCOVERY_NO_SIGNAL_BUDGET")
+                    allow_openings, opening_reason = _scanner_opening_capacity(
+                        request_key, focus=focus, feasibility=feasibility)
                     # Para CEDEARs se conserva la observación BYMA, pero la
                     # apertura requiere también rueda regular del subyacente US.
                     cedear_allowed, cedear_reason = cedear_opening_gate(asset_class, datetime.now(TZ))
