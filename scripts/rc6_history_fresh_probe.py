@@ -102,7 +102,8 @@ def main(argv=None):
     fetch, close = _fetcher(args.source)
     if fetch is None:
         result = {"state": "NO_VERIFICADO", "reason": "FRESH_READONLY_CREDENTIALS_ABSENT",
-                  "source": args.source, "provider_requests": 0,
+                  "source": args.source, "fetch_invocations": 0,
+                  "provider_requests": 0,
                   "requested_from": from_day.isoformat(),
                   "requested_to": to_day.isoformat(), "cutoff_day": cutoff.isoformat(),
                   "history_v2_writes": 0, "execution_allowed": False}
@@ -111,7 +112,11 @@ def main(argv=None):
             result = capture(args.sidecar, targets, args.source, fetch,
                              now=clock, protected_paths=(args.targets, args.receipt),
                              requested_from=args.from_day, requested_to=args.to_day)
-            result['provider_requests'] = result.pop('fetch_invocations')
+            # A fetch callback invocation is not an observed HTTP request: the
+            # adapter may use a cache, retry, or fail before sending anything.
+            # Until the transport reports a verified wire count, keep this
+            # metric unknown even when rows were returned.
+            result['provider_requests'] = None
         finally:
             close()
     result.pop("generation_path", None)
@@ -119,6 +124,7 @@ def main(argv=None):
                             encoding="utf-8")
     args.receipt.chmod(0o600)
     print(json.dumps({"state": result["state"], "source": args.source,
+                      "fetch_invocations": result["fetch_invocations"],
                       "provider_requests": result["provider_requests"],
                       "history_v2_writes": 0, "execution_allowed": False}))
     return 0

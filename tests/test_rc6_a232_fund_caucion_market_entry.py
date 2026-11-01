@@ -109,6 +109,21 @@ def test_fci_weekday_go_and_ready_catalog_still_need_authenticated_class_calenda
             "PRODUCTION_PAPER", 0)
 
 
+def test_fee_aware_offline_change_does_not_authorize_runtime_fci_entry(tmp_path, monkeypatch):
+    store, broker = _runtime(tmp_path, monkeypatch)
+    at = "2026-10-05T13:00:00-03:00"
+    terms = _catalog_fci(store, at)
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    with pytest.raises(ValueError, match="FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED"):
+        broker.family_paper.subscribe_fund(
+            terms, lifecycle_id="FCI:FEE", event_id="FCI:FEE:NEW",
+            amount="10000", subscription_fee="17.25", occurred_at=at,
+            cash_guard=lambda db: Decimal("1000000"), admission_guard=lambda db: "")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("clock", ["09:00:00", "17:00:00"])
 def test_fci_and_caucion_weekday_outside_conservative_session_stay_closed(
         tmp_path, monkeypatch, clock):

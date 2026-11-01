@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
+from hashlib import sha256
 from decimal import Decimal
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -62,6 +63,19 @@ def test_ppi_unknown_currency_basis_pit_stays_in_evidence_only_sidecar(tmp_path)
     assert row['retained_rows'] == 1 and json.loads(row['retained_rows_json']) == payload
     with sqlite3.connect(sidecar) as db:
         assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='history_canonical_v2'").fetchone()
+
+
+def test_decoded_payload_hash_cannot_certify_transport_bytes(tmp_path):
+    compact = b'[{"date":"2026-10-23","price":100}]'
+    spaced = b'[ { "price": 100, "date": "2026-10-23" } ]'
+    assert sha256(compact).hexdigest() != sha256(spaced).hexdigest()
+    digests = []
+    for name, wire in [('compact', compact), ('spaced', spaced)]:
+        path = tmp_path / f'{name}.sqlite'
+        capture(path, [TARGET], 'PPI', lambda *_: json.loads(wire), now=NOW)
+        digests.append(_records(path)[0]['canonical_payload_sha256'])
+        assert verify(path)['transport_raw_hash_verified'] is False
+    assert digests[0] == digests[1]
 
 
 def test_expired_and_unknown_dates_are_physically_absent_from_sidecar(tmp_path):
@@ -288,7 +302,7 @@ def test_probe_cli_rejects_bad_window_before_login(tmp_path, monkeypatch):
     assert not (tmp_path / 'fresh.sqlite').exists()
 
 
-def test_probe_cli_passes_exact_range_without_trading_or_host_writes(tmp_path, monkeypatch):
+def test_probe_cli_passes_exact_range_without_trading_or_inventing_wire_count(tmp_path, monkeypatch):
     class ProbeClock:
         @classmethod
         def now(cls, tz=None):
@@ -312,6 +326,10 @@ def test_probe_cli_passes_exact_range_without_trading_or_host_writes(tmp_path, m
     assert calls == [(TARGET, date(2026, 10, 23), date(2026, 10, 23))]
     output = json.loads(receipt.read_text())
     assert output['requested_from'] == output['requested_to'] == '2026-10-23'
+    # This stub returned a row but the autouse fixture forbids all sockets.
+    # One adapter invocation is not evidence of a provider HTTP request.
+    assert output['fetch_invocations'] == 1
+    assert output['provider_requests'] is None
     assert output['history_v2_writes'] == 0 and output['ready_paper_implication'] == 'NONE'
     assert verify(sidecar)['state'] == 'EVIDENCE_ONLY_NO_GO'
 
@@ -333,6 +351,7 @@ def test_probe_without_credentials_reports_requested_day_as_unverified(tmp_path,
                               '--from-day', '2026-10-23', '--to-day', '2026-10-23']) == 0
     output = json.loads(receipt.read_text())
     assert output['state'] == 'NO_VERIFICADO' and output['provider_requests'] == 0
+    assert output['fetch_invocations'] == 0
     assert output['requested_from'] == output['requested_to'] == '2026-10-23'
     assert not sidecar.exists()
 
