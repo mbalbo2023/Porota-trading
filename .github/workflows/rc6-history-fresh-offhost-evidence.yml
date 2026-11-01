@@ -3,6 +3,9 @@ name: RC6 historical source evidence offhost
 # No Droplet, database import, schedule or order route. Two isolated push runs
 # proved the workflow path; the durable main version is manual-only.
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/rc6-history-fresh-offhost-evidence.yml'
   workflow_dispatch:
     inputs:
       from_day:
@@ -16,9 +19,8 @@ on:
         default: '2026-10-30'
         type: string
       targets_json:
-        description: Exact [symbol,family,market,currency,settlement] targets, max 40
+        description: One exact [symbol,family,market,currency,settlement] target
         required: true
-        default: '[["D30N6","LETRAS","BYMA","ARS","A-24HS"]]'
         type: string
 
 permissions:
@@ -29,21 +31,62 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  offhost-contracts:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert manual-only remote path and bounded identity/day gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/rc6-history-fresh-offhost-evidence.yml').read_text()
+          required = (
+              "github.event_name == 'workflow_dispatch'",
+              "github.ref == 'refs/heads/main'",
+              "github.repository == 'mbalbo2023/Porota-trading'",
+              'FRESH_ACTION_ONE_TARGET_REQUIRED',
+              'FRESH_ACTION_ONE_ART_DAY_REQUIRED',
+              'len(raw.encode()) > 512',
+              'persist-credentials: false',
+              'Destroy private runner capture',
+          )
+          assert all(item in text for item in required), 'A327_MANUAL_OR_SCOPE_GUARD_DRIFT'
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: bcbd445f94234188a1ae88888f1587eb2eb149d0
+          persist-credentials: false
+      - name: Test immutable reviewed source offline without provider or host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = bcbd445f94234188a1ae88888f1587eb2eb149d0
+          test "$(git rev-parse HEAD^{tree})" = 35be1605dc73ca33888b276bb457971ca3dab34b
+          python3 -m pip install --disable-pip-version-check pytest==9.1.1
+          python3 -m pytest -q tests/test_rc6_history_fresh_sidecar.py
+          echo RC6_A327_OFFHOST_ONLY_CONTRACT=GREEN
+
   capture:
-    if: github.repository == 'mbalbo2023/Porota-trading'
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      RC6_SOURCE_SHA: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
-      RC6_SOURCE_TREE: 2c5a4171e5f51687924ba0a4a54702c9e5144023
+      RC6_SOURCE_SHA: bcbd445f94234188a1ae88888f1587eb2eb149d0
+      RC6_SOURCE_TREE: 35be1605dc73ca33888b276bb457971ca3dab34b
       RC6_FROM_DAY: ${{ inputs.from_day || '2026-10-30' }}
       RC6_TO_DAY: ${{ inputs.to_day || '2026-10-30' }}
-      RC6_TARGETS_JSON: ${{ inputs.targets_json || '[["D30N6","LETRAS","BYMA","ARS","A-24HS"]]' }}
+      RC6_TARGETS_JSON: ${{ inputs.targets_json }}
     steps:
       - name: Checkout exact reviewed evidence code
         uses: actions/checkout@v4
         with:
-          ref: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
+          ref: bcbd445f94234188a1ae88888f1587eb2eb149d0
           persist-credentials: false
 
       - name: Verify source SHA, tree and PAPER safety before secrets
@@ -75,13 +118,15 @@ jobs:
           from scripts.rc6_history_fresh_sidecar import preflight, request_window
 
           raw = os.environ["RC6_TARGETS_JSON"]
-          if len(raw.encode()) > 4096:
+          if len(raw.encode()) > 512:
               raise SystemExit("FRESH_ACTION_TARGET_BUDGET_EXCEEDED")
           targets = json.loads(raw)
-          if not isinstance(targets, list):
-              raise SystemExit("FRESH_ACTION_TARGETS_INVALID")
+          if not isinstance(targets, list) or len(targets) != 1:
+              raise SystemExit("FRESH_ACTION_ONE_TARGET_REQUIRED")
           from_day = date.fromisoformat(os.environ["RC6_FROM_DAY"])
           to_day = date.fromisoformat(os.environ["RC6_TO_DAY"])
+          if from_day != to_day:
+              raise SystemExit("FRESH_ACTION_ONE_ART_DAY_REQUIRED")
           request_window(datetime.now(timezone.utc), from_day, to_day)
           preflight(targets, "PPI")
           path = Path(os.environ["RUNNER_TEMP"]) / "rc6-fresh-targets.json"
