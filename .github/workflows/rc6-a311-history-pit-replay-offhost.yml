@@ -1,0 +1,192 @@
+name: RC6 A311 historical PIT replay offhost
+
+# A replay is an evidence read, not a History v2 writer, PPI Watch task,
+# deploy, or operator rearm. The manual job is available only on main.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/rc6-a311-history-pit-replay-offhost.yml
+      - scripts/rc6_a311_history_pit_replay.py
+      - tests/test_rc6_a311_history_pit_replay.py
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      targets_json:
+        description: 'Reviewed exact [symbol,family,market,currency,settlement] entries'
+        required: true
+        type: string
+      decision_at_utc:
+        description: 'Historical decision instant (UTC offset required)'
+        required: true
+        default: '2026-10-30T20:00:00+00:00'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a311-history-pit-offhost-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offhost-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove ten-family gates and no side effects
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile scripts/rc6_a311_history_pit_replay.py
+          python -m unittest -v tests/test_rc6_a311_history_pit_replay.py
+          echo 'RC6_A311_OFFHOST_TESTS=GREEN|families=10|real_orders_sent=0|host_access=NO'
+
+  bounded-readonly-capture:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      RC6_EVIDENCE_SOURCE_SHA: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
+      RC6_EVIDENCE_SOURCE_TREE: 2c5a4171e5f51687924ba0a4a54702c9e5144023
+      RC6_FROM_DAY: '2026-10-30'
+      RC6_TO_DAY: '2026-10-30'
+      RC6_DECISION_AT: ${{ inputs.decision_at_utc }}
+      RC6_TARGETS_JSON: ${{ inputs.targets_json }}
+    steps:
+      - name: Checkout reviewed replay code from main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: reviewer
+      - name: Checkout existing read-only source probe at exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: b68149083a9dc2e4c67379cadd8dd1a250be5cc3
+          persist-credentials: false
+          path: source
+      - name: Verify both code roots and source policy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C reviewer rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C source rev-parse HEAD)" = "$RC6_EVIDENCE_SOURCE_SHA"
+          test "$(git -C source rev-parse HEAD^{tree})" = "$RC6_EVIDENCE_SOURCE_TREE"
+          grep -Fq 'MODE = "PRODUCTION_PAPER"' source/_version.py
+          grep -Fq 'REAL_ORDER_CAPABILITY = "BLOCKED"' source/_version.py
+          test -f reviewer/scripts/rc6_a311_history_pit_replay.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing read-only PPI probe dependencies
+        run: python -m pip install --disable-pip-version-check ppi-client==1.3.0 requests==2.34.2
+      - name: Validate strict one-day source request and replay unit tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          python -m unittest -q reviewer/tests/test_rc6_a311_history_pit_replay.py
+          python - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'source')
+          from scripts.rc6_history_fresh_sidecar import preflight
+          raw = os.environ['RC6_TARGETS_JSON']
+          if len(raw.encode()) > 4096:
+              raise SystemExit('A311_TARGETS_UNBOUNDED')
+          targets = json.loads(raw)
+          if not isinstance(targets, list) or len(targets) > 40:
+              raise SystemExit('A311_TARGETS_INVALID')
+          preflight(targets, 'PPI')
+          destination = Path(os.environ['RUNNER_TEMP']) / 'rc6-a311-targets.private'
+          destination.write_text(json.dumps(targets, separators=(',', ':')))
+          destination.chmod(0o600)
+          print('RC6_A311_TARGET_PREFLIGHT=GREEN|day=2026-10-30|targets=' + str(len(targets)))
+          PY
+      - name: Capture historical source without host or order access
+        shell: bash
+        env:
+          PPI_HISTORY_KEY: ${{ secrets.PPI_HISTORY_READONLY_API_KEY }}
+          PPI_HISTORY_SECRET: ${{ secrets.PPI_HISTORY_READONLY_API_SECRET }}
+          PPI_CAPACITY_KEY: ${{ secrets.PPI_CAPACITY_READONLY_API_KEY }}
+          PPI_CAPACITY_SECRET: ${{ secrets.PPI_CAPACITY_READONLY_API_SECRET }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          if test -n "$PPI_HISTORY_KEY" && test -n "$PPI_HISTORY_SECRET"; then
+            export PPI_API_KEY="$PPI_HISTORY_KEY" PPI_API_SECRET="$PPI_HISTORY_SECRET"
+            credential_pair=HISTORY_READONLY
+          elif test -n "$PPI_CAPACITY_KEY" && test -n "$PPI_CAPACITY_SECRET"; then
+            export PPI_API_KEY="$PPI_CAPACITY_KEY" PPI_API_SECRET="$PPI_CAPACITY_SECRET"
+            credential_pair=CAPACITY_READONLY
+          else
+            export PPI_API_KEY= PPI_API_SECRET=
+            credential_pair=NONE
+          fi
+          echo "RC6_A311_CREDENTIAL_PAIR=$credential_pair" >> "$GITHUB_ENV"
+          set +e
+          timeout 150 python -m scripts.rc6_history_fresh_probe \
+            --source PPI \
+            --targets "$RUNNER_TEMP/rc6-a311-targets.private" \
+            --sidecar "$RUNNER_TEMP/rc6-a311-capture.private.sqlite" \
+            --receipt "$RUNNER_TEMP/rc6-a311-source-receipt.private" \
+            --from-day "$RC6_FROM_DAY" --to-day "$RC6_TO_DAY" \
+            > "$RUNNER_TEMP/rc6-a311-source.stdout.private" \
+            2> "$RUNNER_TEMP/rc6-a311-source.stderr.private"
+          status=$?
+          set -e
+          echo "RC6_A311_SOURCE_EXIT=$status" >> "$GITHUB_ENV"
+        working-directory: source
+      - name: Produce separated sanitized receipts for ten families
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if test "${RC6_A311_SOURCE_EXIT:-1}" -eq 0 && \
+             test -f "$RUNNER_TEMP/rc6-a311-capture.private.sqlite"; then
+            python reviewer/scripts/rc6_a311_history_pit_replay.py \
+              --source-sidecar "$RUNNER_TEMP/rc6-a311-capture.private.sqlite" \
+              --decision-at-utc "$RC6_DECISION_AT" \
+              --sanitized-receipt "$RUNNER_TEMP/rc6-a311-sanitized.json"
+          else
+            python - <<'PY'
+          import os, json
+          from pathlib import Path
+          from scripts.rc6_a311_history_pit_replay import absent_source_receipt, _atomic_receipt
+          reason = ('READONLY_CREDENTIAL_PAIR_ABSENT' if
+                    os.getenv('RC6_A311_CREDENTIAL_PAIR') == 'NONE' else
+                    'SOURCE_PROBE_UNAVAILABLE')
+          result = absent_source_receipt(decision_at=os.environ['RC6_DECISION_AT'],
+                                         reason=reason)
+          _atomic_receipt(Path(os.environ['RUNNER_TEMP']) / 'rc6-a311-sanitized.json', result)
+          print('RC6_A311_HISTORY_PIT=NO_VERIFICADO|families=10|causal_verified=0|fills=0|host_access=NO')
+          PY
+          fi
+        env:
+          PYTHONPATH: reviewer
+      - name: Upload only bounded sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a311-pit-sanitized-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-a311-sanitized.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy only private runner captures
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in rc6-a311-targets.private rc6-a311-capture.private.sqlite \
+                      rc6-a311-source-receipt.private rc6-a311-source.stdout.private \
+                      rc6-a311-source.stderr.private; do
+            path="$RUNNER_TEMP/$name"
+            if test -f "$path"; then shred -u "$path"; fi
+          done
