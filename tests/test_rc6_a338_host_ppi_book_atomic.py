@@ -5,6 +5,7 @@ from contextlib import nullcontext, redirect_stdout
 from datetime import datetime, timedelta, timezone
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -14,6 +15,66 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import rc6_a338_host_ppi_book_atomic as a338
+
+
+class TestA343MountedBookKeypair(unittest.TestCase):
+    def test_book_uses_pinned_observer_secret_not_untrusted_env_aliases(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "ppi_production.json"
+            file.write_text('{"api_key":"KEY_ONLY_TEST","api_secret":"SECRET_ONLY_TEST"}')
+            stdout = io.StringIO()
+            with mock.patch.dict(os.environ, {
+                    "PPI_PRODUCTION_SECRET_FILE": str(file),
+                    "PPI_API_KEY": "BAD_ENV", "PPI_API_SECRET": "BAD_ENV"}), \
+                    redirect_stdout(stdout):
+                self.assertEqual(("KEY_ONLY_TEST", "SECRET_ONLY_TEST"),
+                                 a338.existing_container_keypair())
+            self.assertEqual("", stdout.getvalue())
+
+    def test_book_mount_missing_bad_json_duplicate_symlink_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "ppi_production.json"
+            for bad in ("", "[]", '{"api_key":"KEY"}',
+                        '{"api_key":"X","api_key":"Y","api_secret":"SECRET"}',
+                        "x" * 4097):
+                with self.subTest(length=len(bad)):
+                    file.write_text(bad)
+                    with mock.patch.dict(os.environ, {"PPI_PRODUCTION_SECRET_FILE": str(file)}):
+                        self.assertIsNone(a338.existing_container_keypair())
+            file.write_text('{"api_key":"KEY","api_secret":"SECRET"}')
+            alias = Path(folder) / "alias.json"
+            alias.symlink_to(file)
+            with mock.patch.dict(os.environ, {"PPI_PRODUCTION_SECRET_FILE": str(alias)}):
+                self.assertIsNone(a338.existing_container_keypair())
+            with mock.patch.dict(os.environ, {
+                    "PPI_PRODUCTION_SECRET_FILE": str(Path(folder) / "missing.json"),
+                    "PPI_API_KEY": "BAD_ENV", "PPI_API_SECRET": "BAD_ENV"}):
+                self.assertIsNone(a338.existing_container_keypair())
+
+    def test_book_main_only_passes_mounted_keypair_to_budgeted_reader(self):
+        captured = []
+        def read(target, credentials, budget, factory):
+            captured.append((credentials, budget, factory))
+            return a338._receipt(target)
+        output = io.StringIO()
+        reader_module = types.SimpleNamespace(ProductionMarketReader=object())
+        with mock.patch.dict(os.environ, {
+                    "RC6_A338_EXPECTED_PRODUCT_SHA": a338.PRODUCT_SHA,
+                    "RC6_A338_TARGET_B64": encoded()}, clear=True), \
+                mock.patch.dict(sys.modules, {
+                    "_version": types.SimpleNamespace(MODE="PRODUCTION_PAPER",
+                                                      REAL_ORDER_CAPABILITY="BLOCKED"),
+                    "bd_ppi_readonly_guard": reader_module}), \
+                mock.patch.object(a338.resource, "setrlimit"), \
+                mock.patch.object(a338, "existing_container_keypair",
+                                  return_value=("MOUNTED_KEY", "MOUNTED_SECRET")), \
+                mock.patch.object(a338, "_existing_shared_budget", return_value="BUDGET"), \
+                mock.patch.object(a338, "capture_one", side_effect=read), \
+                redirect_stdout(output):
+            self.assertEqual(2, a338.main())
+        self.assertEqual([(("MOUNTED_KEY", "MOUNTED_SECRET"), "BUDGET",
+                           reader_module.ProductionMarketReader)], captured)
+        self.assertNotIn("MOUNTED_SECRET", output.getvalue())
 
 
 TARGET = ["GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"]

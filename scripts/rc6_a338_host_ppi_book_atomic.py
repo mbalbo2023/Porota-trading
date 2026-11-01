@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import resource
+import stat
 from urllib.parse import urlsplit
 
 
@@ -37,6 +38,48 @@ PPI_TYPES = {
 }
 MARKETS = frozenset({"BYMA", "BCBA", "ROFEX", "A3", "NYSE", "NASDAQ", "AMEX"})
 CURRENCIES = frozenset({"ARS", "USD"})
+
+
+def existing_container_keypair():
+    """Read observer's existing mounted PPI API keypair, never runner secrets.
+
+    The pinned observer uses PPI_PRODUCTION_SECRET_FILE and its default Docker
+    secret path, not PPI_API_KEY/PPI_API_SECRET environment variables. Read a
+    small, regular, non-symlink file without writing or logging credentials.
+    """
+    path = os.environ.get("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
+    if not isinstance(path, str) or not path.startswith("/") or len(path) > 512:
+        return None
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        metadata = os.fstat(fd)
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 4096:
+            return None
+        with os.fdopen(fd, "rb") as source:
+            fd = None
+            payload = source.read(4097)
+        if not 0 < len(payload) <= 4096:
+            return None
+        def unique_fields(fields):
+            value = {}
+            for name, item in fields:
+                if name in value:
+                    raise ValueError("A343_DUPLICATE_SECRET_FIELD")
+                value[name] = item
+            return value
+        pair = json.loads(payload, object_pairs_hook=unique_fields)
+        if not isinstance(pair, dict):
+            return None
+        key, secret = pair.get("api_key"), pair.get("api_secret")
+        if all(isinstance(item, str) and 1 <= len(item) <= 2048 for item in (key, secret)):
+            return key, secret
+    except (OSError, ValueError, UnicodeError, TypeError):
+        pass
+    finally:
+        if fd is not None:
+            os.close(fd)
+    return None
 REASONS = frozenset({
     "NO_PROVIDER_CALL", "EXISTING_CONTAINER_CREDENTIALS_ABSENT",
     "PPI_BUDGET_EXISTING_SIDECAR_NOT_CERTIFIED", "PPI_BUDGET_ATOMIC_LEASE_UNVERIFIED",
@@ -404,10 +447,10 @@ def main():
         if os.environ.get("RC6_A338_EXPECTED_PRODUCT_SHA") != PRODUCT_SHA:
             raise ValueError("A338_PRODUCT_PIN_MISMATCH")
         target = preflight(os.environ.get("RC6_A338_TARGET_B64"))
-        credentials = (os.environ.get("PPI_API_KEY"), os.environ.get("PPI_API_SECRET"))
+        credentials = existing_container_keypair()
         with redirect_stdout(_Silence()), redirect_stderr(_Silence()):
             budget = _existing_shared_budget()
-            if all(credentials):
+            if credentials:
                 from bd_ppi_readonly_guard import ProductionMarketReader
             else:
                 ProductionMarketReader = None
