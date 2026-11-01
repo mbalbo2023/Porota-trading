@@ -1,6 +1,7 @@
 """A320 ten-family offhost fixtures: contract-path tests, NEVER real approval."""
 
 import copy
+import base64
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -285,6 +286,52 @@ class TestA320PITPaperVerifier(unittest.TestCase):
         self.assertEqual(0, row["synthetic_source_contract_candidates"])
         self.assertIn("A320_PROVIDER_LOOKAHEAD_OR_UNBOUNDED_CLOCK", row["rejection_reasons"])
 
+    def test_stale_eight_hour_book_even_with_fresh_receive_clock_is_denied(self):
+        case = one_case("ACCIONES")
+        raw = copy.deepcopy(case["primary_capture"]["raw_book"])
+        raw["date"] = DAY + "T13:00:00Z"
+        wire = pit._canonical(raw)
+        case["primary_capture"] = resign(
+            case["primary_capture"], "primary", raw_book=raw,
+            provider_at_utc=raw["date"], raw_book_sha256=pit._sha(raw),
+            raw_http_body_sha256=pit.sha256(wire).hexdigest(),
+            raw_http_body_base64=base64.b64encode(wire).decode("ascii"))
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["ACCIONES"]
+        self.assertEqual(0, row["synthetic_source_contract_candidates"])
+        self.assertIn("A320_MARKET_BOOK_PROVIDER_TIMESTAMP_STALE_OR_FUTURE",
+                      row["rejection_reasons"])
+
+    def test_stale_independent_book_does_not_corrobate_fresh_ppi(self):
+        case = one_case("BONOS")
+        case["independent_capture"] = resign(
+            case["independent_capture"], "independent",
+            provider_at_utc=DAY + "T13:00:00Z")
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["BONOS"]
+        self.assertEqual(0, row["synthetic_source_contract_candidates"])
+        self.assertIn("A320_MARKET_BOOK_PROVIDER_TIMESTAMP_STALE_OR_FUTURE",
+                      row["rejection_reasons"])
+
+    def test_book_fresh_for_capture_but_stale_at_later_paper_decision(self):
+        case = one_case("ACCIONES")
+        raw = copy.deepcopy(case["primary_capture"]["raw_book"])
+        raw["date"] = DAY + "T13:58:50Z"
+        wire = pit._canonical(raw)
+        case["primary_capture"] = resign(
+            case["primary_capture"], "primary", raw_book=raw,
+            provider_at_utc=raw["date"], raw_book_sha256=pit._sha(raw),
+            raw_http_body_sha256=pit.sha256(wire).hexdigest(),
+            raw_http_body_base64=base64.b64encode(wire).decode("ascii"))
+        case["paper_decision"] = resign(
+            case["paper_decision"], "decision",
+            inputs_sha256={"primary": pit._sha(case["primary_capture"]),
+                            "reference": pit._sha(case["independent_capture"])},
+            decision_at_utc=DAY + "T14:01:20Z")
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["ACCIONES"]
+        self.assertEqual(1, row["synthetic_source_contract_candidates"])
+        self.assertEqual(0, row["synthetic_paper_contract_candidates"])
+        self.assertIn("A320_MARKET_BOOK_PROVIDER_TIMESTAMP_STALE_OR_FUTURE",
+                      row["rejection_reasons"])
+
     def test_independent_must_not_be_self_copy_of_ppi(self):
         case = one_case("LETRAS")
         case["independent_capture"] = resign(case["independent_capture"], "independent",
@@ -393,6 +440,36 @@ class TestA320PITPaperVerifier(unittest.TestCase):
                 pit.review_bundle(bundle(one_case("ACCIONES")), KEYS,
                                   evidence_mode="AUTHENTIC_OFFHOST_EVIDENCE",
                                   trusted_main_run=True)
+
+    def test_hmac_authentic_looking_sources_still_zero_without_external_public_signatures(self):
+        case = one_case("ACCIONES")
+        raw = case["independent_capture"]["raw_payload"]
+        raw["official_contract_document"]["publisher"] = "UNVERIFIED_HMAC_ONLY"
+        raw["official_calendar_document"]["publisher"] = "UNVERIFIED_HMAC_ONLY"
+        raw["contract"]["official_source_sha256"] = pit._sha(raw["official_contract_document"])
+        raw["contract"]["calendar_official_source_sha256"] = pit._sha(
+            raw["official_calendar_document"])
+        case["independent_capture"] = resign(case["independent_capture"], "independent",
+                                              raw_payload=raw, raw_payload_sha256=pit._sha(raw))
+        case["paper_decision"] = resign(
+            case["paper_decision"], "decision",
+            inputs_sha256={"primary": pit._sha(case["primary_capture"]),
+                            "reference": pit._sha(case["independent_capture"])})
+        environment = {"GITHUB_REPOSITORY": "mbalbo2023/Porota-trading",
+                       "GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "workflow_dispatch",
+                       "A320_PIT_PAPER_VERIFY_ENABLED": "YES"}
+        with mock.patch.dict("os.environ", environment, clear=True):
+            report = pit.review_bundle(bundle(case), KEYS,
+                                       evidence_mode="AUTHENTIC_OFFHOST_EVIDENCE",
+                                       trusted_main_run=True)
+        row = report["families"]["ACCIONES"]
+        self.assertEqual(1, row["case_count"])
+        self.assertEqual(0, row["source_pit_rows_verified"])
+        self.assertEqual(0, row["paper_sim_rows_verified"])
+        self.assertIn("A320_INDEPENDENT_SENSOR_PUBLIC_SIGNATURE_VERIFICATION_REQUIRED",
+                      row["rejection_reasons"])
+        self.assertEqual("NOT_INTEGRATED_FAIL_CLOSED", report[
+            "independent_public_sensor_verifier"])
 
     def test_option_exercise_risk_required(self):
         case = one_case("OPCIONES")
