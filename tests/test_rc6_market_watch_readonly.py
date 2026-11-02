@@ -837,6 +837,30 @@ class A363ScalpingSanitizedErrors(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(r).lower())
         self.assertNotIn("TICKER", json.dumps(r))
 
+    def test_a366_phase_forward_compatible_with_a365(self):
+        self.add_event("INTRADAY_SCALPING_ERROR",
+            'GGAL: PPI_VALUEERROR;phase=NORMALIZE;shadow_identity=["GGAL","ACCIONES","BYMA","ARS","A-24HS"]')
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("PPI_VALUEERROR", r["events"][0]["code"])
+        self.assertEqual("NORMALIZE", r["events"][0]["phase"])
+        self.assertNotIn("GGAL", json.dumps(r))
+        self.assertNotIn("ARS", json.dumps(r))
+
+    def test_a366_legacy_error_retains_code_with_unknown_phase(self):
+        self.add_event("INTRADAY_SCALPING_ERROR",
+            'OLD_SYM: PPI_VALUEERROR;shadow_identity=["OLD_SYM","ACCIONES","BYMA","ARS","A-24HS"]')
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("PPI_VALUEERROR", r["events"][0]["code"])
+        self.assertEqual("NO_VERIFICADO", r["events"][0]["phase"])
+        self.assertNotIn("OLD_SYM", json.dumps(r))
+
+    def test_a366_malformed_phase_never_exports_secret(self):
+        self.add_event("INTRADAY_SCALPING_ERROR",
+            'GGAL: PPI_VALUEERROR;phase=AUTHORIZATION_SECRET;shadow_identity=["GGAL"]')
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("NO_VERIFICADO", r["events"][0]["phase"])
+        self.assertNotIn("AUTHORIZATION_SECRET", json.dumps(r))
+
     def test_clock_rollback_code_not_ticker(self):
         self.add_event("INTRADAY_SCALPING_CLOCK_ROLLBACK", "CUSTOMER_ACCOUNT_NUMBER")
         r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
