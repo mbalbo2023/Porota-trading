@@ -33,6 +33,12 @@ MAX_INSTRUMENTS = 60_000
 MAX_AGE_SECONDS = 15 * 60  # Published every 5m; tolerate two missed cycles.
 MAX_FUTURE_SKEW_SECONDS = 30
 SAFE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,55}(?::[A-Z][A-Z0-9_]{0,55})?$")
+MARKET_ALIASES = {"BCBA": "BYMA", "BYMA": "BYMA", "ROFEX": "A3", "A3": "A3"}
+SETTLEMENT_ALIASES = {
+    "T1": "A-24HS", "T+1": "A-24HS", "24HS": "A-24HS", "A-24HS": "A-24HS",
+    "T0": "INMEDIATA", "T+0": "INMEDIATA", "CI": "INMEDIATA",
+    "INMEDIATA": "INMEDIATA",
+}
 
 
 class EvidenceRejected(Exception):
@@ -53,6 +59,33 @@ def _utc_timestamp(value: object) -> datetime:
 
 def _strict_nonnegative(value: object) -> bool:
     return type(value) is int and 0 <= value <= MAX_INSTRUMENTS
+
+
+def _identity_semantically_matches(row: dict, key: list[str]) -> bool:
+    """Validate ordered producer five-key without guessing missing fields.
+
+    A source missing its canonical key is counted separately; a producer that
+    claims an exact key with wrong ordering or contradictory fields is a census
+    integrity failure, never a reason to guess another instrument identity.
+    """
+    symbol = str(row.get("symbol") or "").strip().upper()
+    family = str(row.get("family") or "").strip().upper()
+    if key[0] != symbol or key[1] != family:
+        return False
+    for offset, field, aliases in (
+        (2, "market", MARKET_ALIASES),
+        (4, "settlement", SETTLEMENT_ALIASES),
+    ):
+        value = row.get(field)
+        if value in (None, ""):
+            return False
+        raw = str(value).strip().upper()
+        if key[offset] != aliases.get(raw, raw):
+            return False
+    currency = row.get("currency")
+    if currency in (None, "") or key[3] != str(currency).strip().upper():
+        return False
+    return True
 
 
 def _safe_reason(value: object) -> str:
@@ -197,6 +230,7 @@ def _validate_and_summarize(payload: object) -> dict:
     ready_total = 0
     exact_keys = set()
     duplicate_exact = 0
+    semantic_mismatches = 0
     for row in instruments:
         if not isinstance(row, dict) or row.get("paper_auto_enabled") is not False or row.get("entry_authority") is not False or row.get("real_money_authorized") is not False:
             raise EvidenceRejected("INSTRUMENT_PAPER_GUARD_UNVERIFIED")
@@ -214,6 +248,8 @@ def _validate_and_summarize(payload: object) -> dict:
             if tup in exact_keys:
                 duplicate_exact += 1
             exact_keys.add(tup)
+            if not _identity_semantically_matches(row, key):
+                semantic_mismatches += 1
     if counters.get("paper_contract_ready") != ready_total:
         raise EvidenceRejected("GLOBAL_READY_COUNT_MISMATCH")
     report_lookup = {}
@@ -242,6 +278,7 @@ def _validate_and_summarize(payload: object) -> dict:
         "mapped_family_instruments": actual - unmapped,
         "unmapped_family_instruments": unmapped,
         "duplicate_exact_identity_count": duplicate_exact,
+        "identity_semantic_mismatch_count": semantic_mismatches,
         "source_contract_ready_in_export": ready_total,
         "families_present": sum(bool(x["instruments"]) for x in families),
         "families_expected": len(FAMILIES),
@@ -295,7 +332,9 @@ def inspect_snapshot(path: Path = SOURCE_PATH, *, current: datetime | None = Non
         })
         if elapsed > MAX_AGE_SECONDS or file_elapsed > MAX_AGE_SECONDS:
             report["reason"] = "SNAPSHOT_STALE"
-        elif summary["unmapped_family_instruments"] or summary["duplicate_exact_identity_count"]:
+        elif (summary["unmapped_family_instruments"] or
+              summary["duplicate_exact_identity_count"] or
+              summary["identity_semantic_mismatch_count"]):
             report["reason"] = "IDENTITY_CENSUS_REVIEW_REQUIRED"
         elif summary["families_present"] < len(FAMILIES):
             report["reason"] = "FAMILY_COVERAGE_INCOMPLETE"
