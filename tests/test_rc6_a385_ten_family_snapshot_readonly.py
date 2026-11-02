@@ -25,7 +25,9 @@ def fixture(now):
         rows.append({
             "symbol": f"PRIVATE_TEST_SYMBOL_{index}",
             "family": family,
-            "canonical_identity": [f"PRIVATE_TEST_SYMBOL_{index}", "BCBA", "ARS", "T1", family],
+            "market": "BCBA", "currency": "ARS", "settlement": "T1",
+            "canonical_identity": [f"PRIVATE_TEST_SYMBOL_{index}", family,
+                                   "BYMA", "ARS", "A-24HS"],
             "paper_contract_ready": True,
             "paper_auto_enabled": False,
             "entry_authority": False,
@@ -73,6 +75,7 @@ class TenFamilySnapshotContracts(unittest.TestCase):
         self.assertEqual(report["status"], "VALID_SOURCE_EXPORT_ONLY")
         self.assertEqual(report["families_present"], 10)
         self.assertEqual(report["universe_instruments"], 10)
+        self.assertEqual(report["identity_semantic_mismatch_count"], 0)
         self.assertTrue(report["read_only"])
         self.assertFalse(report["admission_authority"])
         self.assertFalse(report["causal_pit_receipt_validated"])
@@ -192,6 +195,34 @@ class TenFamilySnapshotContracts(unittest.TestCase):
         case = deepcopy(self.data)
         case["instruments"][1]["canonical_identity"] = case["instruments"][0]["canonical_identity"]
         self.assertEqual(self.result(case)["reason"], "IDENTITY_CENSUS_REVIEW_REQUIRED")
+
+    def test_ordered_five_key_permutation_and_identity_conflicts_fail_closed(self):
+        for mutation in ("permuted", "wrong_market", "wrong_currency", "wrong_settlement"):
+            with self.subTest(mutation):
+                case = deepcopy(self.data)
+                row = case["instruments"][0]
+                if mutation == "permuted":
+                    row["canonical_identity"] = [row["symbol"], "BCBA", "ARS", "T1", row["family"]]
+                elif mutation == "wrong_market":
+                    row["canonical_identity"][2] = "A3"
+                elif mutation == "wrong_currency":
+                    row["canonical_identity"][3] = "USD"
+                else:
+                    row["canonical_identity"][4] = "INMEDIATA"
+                result = self.result(case)
+                self.assertEqual(result["status"], "NO_VERIFICADO")
+                self.assertEqual(result["reason"], "IDENTITY_CENSUS_REVIEW_REQUIRED")
+                self.assertEqual(result["identity_semantic_mismatch_count"], 1)
+                self.assertNotIn(row["symbol"], json.dumps(result))
+
+    def test_market_and_settlement_aliases_preserve_valid_exact_identity(self):
+        case = deepcopy(self.data)
+        row = case["instruments"][0]
+        row["market"], row["canonical_identity"][2] = "ROFEX", "A3"
+        row["settlement"], row["canonical_identity"][4] = "CI", "INMEDIATA"
+        result = self.result(case)
+        self.assertEqual(result["status"], "VALID_SOURCE_EXPORT_ONLY")
+        self.assertEqual(result["identity_semantic_mismatch_count"], 0)
 
     def test_malicious_freeform_reason_never_exports(self):
         case = deepcopy(self.data)
