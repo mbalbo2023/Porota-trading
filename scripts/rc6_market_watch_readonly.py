@@ -293,19 +293,25 @@ def schedule_health(runs, at, *, expected_open):
             'independent_watchdog_ack':'NO_VERIFICADO'}
 
 
-def schedule_watch_due_by_clock(now):
-    """Expect GitHub schedule only after the first slot's 12-minute grace.
+def schedule_watch_due_by_clock(now, *, expected_session=None):
+    """Detect missing technical cron even if audited spot calendar is UNKNOWN.
 
-    Mirror the remote workflow's weekday/time gate, NOT the provider or
-    audited exchange calendar. Never grants PAPER instrument admission.
+    Normal weekday clock duty is independent of exchange eligibility.
+    COM19031 late T+1 reference surveillance retains the operational-day
+    guard; neither branch grants any PAPER instrument admission.
     """
     if now is None:
         return False
     local=now.astimezone(ART)
     minutes=local.hour*60+local.minute
+    if local.weekday() >= 5 or minutes < 10*60+49:
+        return False
+    if minutes < 17*60+15:
+        return True
     late=COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
-    close=18*60+15 if late else 17*60+15
-    return local.weekday()<5 and 10*60+49 <= minutes < close
+    session=expected_session if isinstance(expected_session,dict) else {}
+    return (late and minutes < 18*60+15
+            and session.get('operational_day') is True)
 
 
 def add_schedule_health(current, repo, *, get=None):
@@ -325,7 +331,7 @@ def add_schedule_health(current, repo, *, get=None):
     # market calendar is available. An UNKNOWN market session must not mask
     # missing GitHub triggers; this is monitoring, never PAPER admission.
     now=timestamp(current.get('generated_at'))
-    expected=schedule_watch_due_by_clock(now)
+    expected=schedule_watch_due_by_clock(now, expected_session=current.get('expected_session'))
     try:
         result=get(f'https://api.github.com/repos/{repo}/actions/workflows/384354765/runs?event=schedule&per_page=100')
         health=schedule_health(result['workflow_runs'],timestamp(current['generated_at']),expected_open=expected)

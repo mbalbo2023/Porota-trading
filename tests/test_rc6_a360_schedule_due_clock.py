@@ -46,6 +46,15 @@ class ScheduleDueClockTests(unittest.TestCase):
                                   get=lambda _:{"workflow_runs":[]})
         self.assertEqual("SCHEDULE_SILENT",context["schedule_health"]["state"])
 
+    def test_t1_late_requires_operational_day(self):
+        at=utc("2026-11-02T20:30:00Z")  # 17:30 ART
+        self.assertTrue(watch.schedule_watch_due_by_clock(
+            at,expected_session={"state":"CLOSED","operational_day":True}))
+        self.assertFalse(watch.schedule_watch_due_by_clock(
+            at,expected_session={"state":"CLOSED","operational_day":False}))
+        self.assertFalse(watch.schedule_watch_due_by_clock(
+            at,expected_session={"state":"UNKNOWN"}))
+
     def test_weekend_and_post_gate_are_not_expected(self):
         for value in ("2026-11-01T15:27:42Z","2026-11-02T21:16:00Z",
                       "2026-11-03T02:00:00Z"):
