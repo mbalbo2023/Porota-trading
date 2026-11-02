@@ -263,9 +263,9 @@ from co_market_sessions_hf6 import TZ,BYMA_PAPER_SPOT_OPEN,BYMA_PAPER_SPOT_CLOSE
 at=datetime.fromisoformat(sys.argv[2]).astimezone(TZ)
 audited=c.CALENDARIO_ACTUALIZADO_EL
 known=at.year in c.ANIOS_AUDITADOS and 0<=(at.date()-audited).days<=60
- operational=known and c.es_dia_habil_operativo(at.date())
- opened=operational and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
- print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','operational_day':operational if known else None,'source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
+operational=known and c.es_dia_habil_operativo(at.date())
+opened=operational and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
+print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','operational_day':operational if known else None,'source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
     try:
         out = subprocess.run([sys.executable, '-B', '-c', code, str(root), at.isoformat()],
                              capture_output=True, text=True, timeout=2, check=True)
@@ -466,18 +466,25 @@ def _scalping_recent_error_codes(db, tables):
         event_at = timestamp(row["event_at"])
         event_time = (event_at.astimezone(timezone.utc).isoformat()
                       if event_at is not None else None)
+        phase = "NO_VERIFICADO"
         if row["event_type"] == "INTRADAY_SCALPING_CLOCK_ROLLBACK":
             code = "INTRADAY_SCALPING_CLOCK_ROLLBACK"
         else:
-            # Engine stores "{ticker}: {code};shadow_identity={five-key-json}".
-            # Only extract the uppercase code, NOT identity or raw text.
+            # Historical: "{ticker}: {code};shadow_identity={five-key-json}".
+            # A365 staged: "{ticker}: {code};phase={enum};shadow_identity=...".
+            # Only return allowlisted code + phase, never any identity/raw text.
             prefix = row["detail_prefix"]
             match = (re.match(
-                r"^[A-Za-z0-9._-]{1,32}: ((?:PPI|INTRADAY|SCALPING)_[A-Z0-9_]{2,72});shadow_identity=",
+                r"^[A-Za-z0-9._-]{1,32}: ((?:PPI|INTRADAY|SCALPING)_[A-Z0-9_]{2,72});(?:phase=([A-Z_]{4,24});)?shadow_identity=",
                 prefix, flags=re.ASCII)
                 if isinstance(prefix, str) and len(prefix) <= 180 else None)
             code = match.group(1) if match else "NO_VERIFICADO"
-        receipt["events"].append({"code": code, "event_at_utc": event_time})
+            phase = (match.group(2) if match and match.group(2) in {
+                "CAPABILITY", "READ_SCOPE", "PPI_READ", "NORMALIZE",
+                "SOURCE_VALIDATION", "PERSIST", "EVALUATE", "PAPER_GATE"}
+                else "NO_VERIFICADO")
+        receipt["events"].append({"code": code, "phase": phase,
+                                  "event_at_utc": event_time})
     receipt["status"] = "EVIDENCE_ONLY_NO_GO"
     receipt["reason"] = "SANITIZED_EVENTS_NOT_TRADING_AUTHORITY"
     receipt["possibly_truncated"] = len(rows) == 12
