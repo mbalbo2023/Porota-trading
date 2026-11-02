@@ -77,12 +77,13 @@ def _identity_semantically_matches(row: dict, key: list[str]) -> bool:
         (4, "settlement", SETTLEMENT_ALIASES),
     ):
         value = row.get(field)
-        if value not in (None, ""):
-            raw = str(value).strip().upper()
-            if key[offset] != aliases.get(raw, raw):
-                return False
+        if value in (None, ""):
+            return False
+        raw = str(value).strip().upper()
+        if key[offset] != aliases.get(raw, raw):
+            return False
     currency = row.get("currency")
-    if currency not in (None, "") and key[3] != str(currency).strip().upper():
+    if currency in (None, "") or key[3] != str(currency).strip().upper():
         return False
     return True
 
