@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -588,6 +589,44 @@ def _db_snapshot(path):
                 'paper_open_contracts':activity}
 
 
+def performance_evidence_capacity_stat(root, *, default_limit=128*1024*1024):
+    """Only lstat existing dedicated performance evidence DB/WAL/SHM files.
+
+    Never opens or modifies SQLite, never exposes host paths, never treats
+    below-quota as a fresh performance report. The limit mirrors the current
+    product's EvidenceStore default, not an operator-approved quota increase.
+    """
+    if type(default_limit) is not int or default_limit < 1:
+        raise ValueError("PERFORMANCE_DEFAULT_CAPACITY_LIMIT_INVALID")
+    db = Path(root) / DB_REL
+    stem = Path(str(db) + ".performance.sqlite")
+    sizes = {}
+    for name, path in (("db", stem), ("wal", Path(str(stem) + "-wal")),
+                       ("shm", Path(str(stem) + "-shm"))):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            sizes[name] = 0
+            continue
+        except OSError:
+            return {"state": "NO_VERIFICADO_FILESYSTEM_STAT", "health": "NO_VERIFICADO",
+                    "read_only": True, "report_freshness": "NO_VERIFICADO"}
+        if not stat.S_ISREG(info.st_mode) or info.st_size < 0:
+            return {"state": "NO_VERIFICADO_UNSAFE_FILE_TYPE", "health": "NO_VERIFICADO",
+                    "read_only": True, "report_freshness": "NO_VERIFICADO"}
+        sizes[name] = info.st_size
+    total = sum(sizes.values())
+    return {"state": ("AT_OR_ABOVE_DEFAULT_LIMIT" if total >= default_limit
+                       else "NO_EVIDENCE_FILES" if total == 0
+                       else "BELOW_DEFAULT_LIMIT_NOT_HEALTH"),
+            "default_capacity_bytes": default_limit,
+            "evidence_total_bytes": total,
+            "evidence_by_component_bytes": sizes,
+            "read_only": True,
+            "report_freshness": "NO_VERIFICADO",
+            "provider_requests": 0, "real_order_routes_called": 0}
+
+
 def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
     root = Path(root)
     live_clock = at is None
@@ -607,6 +646,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
               "expected_deploy_sha": expected_sha, "market_clock_window": active_hours(at),
               "broker_requests": 0, "real_order_routes_called": 0,
               "ppi_watch_accessed": False, "findings": findings}
+    result["performance_evidence_capacity"] = performance_evidence_capacity_stat(root)
     def add(code, level, evidence=None):
         findings.append(finding(code, level, evidence=evidence))
     expected = independent_session(at, root)
