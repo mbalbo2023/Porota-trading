@@ -437,6 +437,53 @@ def historical_observer_oom(state, current, at):
         heartbeat and started<heartbeat<=at and (at-heartbeat).total_seconds()<=180)
 
 
+def _scalping_recent_error_codes(db, tables):
+    """Bounded scalping event RCA; NEVER export ticker, detail or PPI payload.
+
+    Uses the caller's existing read-only SQLite connection and 2s deadline.
+    Last 5000 event IDs only, at most 12 matching events. Missing evidence is
+    not equivalent to zero failures, and a code is not a root-cause verdict.
+    """
+    receipt = {"status": "NO_VERIFICADO", "reason": "NO_EVENT_EVIDENCE",
+               "scan_tail_max_ids": 5000, "limit": 12, "events": []}
+    if "paper_events" not in tables:
+        receipt["reason"] = "PAPER_EVENTS_TABLE_ABSENT"
+        return receipt
+    try:
+        rows = db.execute("""SELECT event_at,event_type,substr(detail,1,180) AS detail_prefix
+           FROM paper_events
+           WHERE id > COALESCE((SELECT MAX(id) FROM paper_events),0)-5000
+             AND event_type IN ('INTRADAY_SCALPING_ERROR',
+                                'INTRADAY_SCALPING_CLOCK_ROLLBACK')
+           ORDER BY id DESC LIMIT 12""").fetchall()
+    except sqlite3.Error:
+        receipt["reason"] = "ERROR_EVENT_READ_UNAVAILABLE"
+        return receipt
+    if not rows:
+        receipt["reason"] = "NO_MATCH_IN_LAST_5000_EVENTS"
+        return receipt
+    for row in rows:
+        event_at = timestamp(row["event_at"])
+        event_time = (event_at.astimezone(timezone.utc).isoformat()
+                      if event_at is not None else None)
+        if row["event_type"] == "INTRADAY_SCALPING_CLOCK_ROLLBACK":
+            code = "INTRADAY_SCALPING_CLOCK_ROLLBACK"
+        else:
+            # Engine stores "{ticker}: {code};shadow_identity={five-key-json}".
+            # Only extract the uppercase code, NOT identity or raw text.
+            prefix = row["detail_prefix"]
+            match = (re.match(
+                r"^[A-Za-z0-9._-]{1,32}: ((?:PPI|INTRADAY|SCALPING)_[A-Z0-9_]{2,72});shadow_identity=",
+                prefix, flags=re.ASCII)
+                if isinstance(prefix, str) and len(prefix) <= 180 else None)
+            code = match.group(1) if match else "NO_VERIFICADO"
+        receipt["events"].append({"code": code, "event_at_utc": event_time})
+    receipt["status"] = "EVIDENCE_ONLY_NO_GO"
+    receipt["reason"] = "SANITIZED_EVENTS_NOT_TRADING_AUTHORITY"
+    receipt["possibly_truncated"] = len(rows) == 12
+    return receipt
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -522,8 +569,15 @@ def _db_snapshot(path):
                     activity[table] = db.execute('SELECT COUNT(*) FROM '+table+' WHERE status=?',(status,)).fetchone()[0]
                 except sqlite3.Error:
                     pass
+        scalping_worker = workers.get("intraday_scalping_worker_state") or {}
+        scalping_codes = (_scalping_recent_error_codes(db, tables)
+                          if scalping_worker.get("state") in {"DEGRADED", "ERROR",
+                                                              "SECURITY_BLOCK"}
+                          else {"status": "NOT_DUE", "reason": "SCALPING_NOT_DEGRADED",
+                                "events": []})
         return {"observer": observer, "workers": workers,
                 "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops,
+                "scalping_recent_error_codes": scalping_codes,
                 'paper_open_contracts':activity}
 
 
