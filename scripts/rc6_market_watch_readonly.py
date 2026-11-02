@@ -293,6 +293,21 @@ def schedule_health(runs, at, *, expected_open):
             'independent_watchdog_ack':'NO_VERIFICADO'}
 
 
+def schedule_watch_due_by_clock(now):
+    """Expect GitHub schedule only after the first slot's 12-minute grace.
+
+    Mirror the remote workflow's weekday/time gate, NOT the provider or
+    audited exchange calendar. Never grants PAPER instrument admission.
+    """
+    if now is None:
+        return False
+    local=now.astimezone(ART)
+    minutes=local.hour*60+local.minute
+    late=COM19031_EFFECTIVE <= local.date() <= COM19031_REVIEWED_THROUGH
+    close=18*60+15 if late else 17*60+15
+    return local.weekday()<5 and 10*60+49 <= minutes < close
+
+
 def add_schedule_health(current, repo, *, get=None):
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repo):
         raise ValueError('INVALID_REPOSITORY')
@@ -306,11 +321,11 @@ def add_schedule_health(current, repo, *, get=None):
                 raw=response.read(2*1024**2+1)
             if len(raw)>2*1024**2: raise ValueError('SCHEDULE_RESPONSE_LIMIT')
             return json.loads(raw)
-    expected_session=current.get('expected_session') or {}
+    # The GitHub cron runs Monday-Friday, regardless of whether the audited
+    # market calendar is available. An UNKNOWN market session must not mask
+    # missing GitHub triggers; this is monitoring, never PAPER admission.
     now=timestamp(current.get('generated_at'))
-    expected=(expected_session.get('state')=='OPEN' or
-              (now is not None and late_source_observation_hours(now)
-               and expected_session.get('operational_day') is True))
+    expected=schedule_watch_due_by_clock(now)
     try:
         result=get(f'https://api.github.com/repos/{repo}/actions/workflows/384354765/runs?event=schedule&per_page=100')
         health=schedule_health(result['workflow_runs'],timestamp(current['generated_at']),expected_open=expected)
