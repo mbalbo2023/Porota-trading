@@ -15,7 +15,7 @@ import sqlite3
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from rc6_family_readiness import normalize_family
+from rc6_family_readiness import CANONICAL_PAPER_FAMILIES, normalize_family
 from rc6_dynamic_universe.sources import _canonical_identity
 from rc6_shadow_runtime.source_authority import native_time, receipt_time, source_rank
 from rc6_source_consolidation import consolidate, _fold_source
@@ -26,6 +26,61 @@ OUT = Path(os.getenv("POROTA_FULL_EVIDENCE_PATH", str(ROOT / "rc6_instrument_evi
 SCHEMA = "rc6-full-universe-instrument-evidence-v1"
 FRESH_SECONDS = int(os.getenv("POROTA_EVIDENCE_MAX_AGE_SECONDS", "3600"))
 PPI_FRESH_SECONDS = int(os.getenv("POROTA_PPI_EVIDENCE_MAX_AGE_SECONDS", "900"))
+
+# Source/contract readiness is NOT the same as an authenticated economic
+# valuation or a PAPER admission.  The public crawler currently publishes
+# BYMA structured rows and reference pages for CNV/A3/ROFEX; none of those
+# reference pages is an executable FCI NAV or futures clearing receipt.
+# Keep the specialized authority requirements visible instead of allowing a
+# fresh PPI last alone to masquerade as a complete financial contract.
+SPECIALIZED_VALUATION_REQUIREMENTS = {
+    "FUTUROS": {
+        "sources": ("PPI", "A3", "A3_CEM"),
+        "fields": ("expiry_day", "contract_multiplier", "margin_per_contract",
+                   "variation_mark_verified", "clearing_event_at_utc"),
+    },
+    "CAUCIONES": {
+        "sources": ("PPI", "BYMA", "A3"),
+        "fields": ("term_days", "maturity_day", "day_count_basis", "principal_unit",
+                   "tna_bid", "depth_cash", "fee_vat"),
+    },
+    "FCI": {
+        "sources": ("PPI", "CAFCI", "CNV"),
+        "fields": ("fund_id", "fund_class_id", "fund_cutoff_at_utc",
+                   "redemption_days", "nav_publication_contract", "nav_asof",
+                   "terminal_redemption_cash_receipt"),
+    },
+}
+
+
+def valuation_boundary(family: str, identity: Any, sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Separate PPI identity from unverified family-specific economic terms.
+
+    Existing PPI/IOL/BYMA observations have no authenticated independent
+    A320 fee, margin, NAV, or terminal cash receipts.  They can establish a
+    source/contract *candidate*, never a specialized economic positive.
+    """
+    ppi = sources["PPI"]
+    ppi_bound = bool(identity and ppi["selection_eligible"]
+                     and ppi["identity_binding"] == "EXACT_FIVE_PART_IDENTITY"
+                     and ppi["identity"] == list(identity)
+                     and ppi["source_authority"] == "PPI_PRIMARY")
+    requirement = SPECIALIZED_VALUATION_REQUIREMENTS.get(family)
+    return {
+        "identity_authority_policy": "PPI_PRIMARY",
+        "identity_authority": "PPI_PRIMARY" if ppi_bound else "NO_VERIFICADO",
+        "identity_status": "PPI_EXACT_FRESH_SOURCE_OBSERVED" if ppi_bound else "NO_VERIFICADO",
+        "catalog_identity": list(identity) if identity else None,
+        "economic_source_role": "SPECIALIZED_VALUATION" if requirement else "PPI_SPOT_SOURCE_VIEW",
+        "economic_source_candidates": list(requirement["sources"]) if requirement else ["PPI"],
+        "required_economic_fields": list(requirement["fields"]) if requirement else [],
+        "specialized_receipt_status": "NO_VERIFICADO" if requirement else "NOT_APPLICABLE",
+        "specialized_receipt_reason": (
+            "A320_AUTHENTICATED_EXACT_CONTRACT_AND_CAUSAL_PIT_NOT_INGESTED"
+            if requirement else "SPOT_PIT_AND_FEES_REQUIRE_SEPARATE_EVIDENCE"),
+        "causal_pit_verified": False,
+        "paper_admission_authorized": False,
+    }
 
 
 def now() -> datetime:
@@ -293,7 +348,12 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
 
 
 def family_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
+    # Every contract family remains visible even if the catalog has zero rows.
+    # Lack of a single instrument must not make a family disappear, and a bad
+    # sibling must not overwrite verified per-instrument counts.
+    grouped: dict[str, list[dict[str, Any]]] = {
+        name: [] for name in CANONICAL_PAPER_FAMILIES
+    }
     for row in rows:
         grouped.setdefault(row["family"], []).append(row)
     result = []
@@ -304,8 +364,11 @@ def family_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "instrument_count": len(members),
             "paper_shadow_ready": sum(bool(row["paper_contract_ready"]) for row in members),
             "paper_contract_ready": sum(bool(row["paper_contract_ready"]) for row in members),
+            "catalog_contract_candidates": sum(bool(row["catalog_contract_candidate"]) for row in members),
             "paper_auto_enabled": 0,
             "pending": sum(row["status"] == "PENDING_EVIDENCE" for row in members),
+            "pending_specialized_receipt": sum(
+                row["status"] == "PENDING_SPECIALIZED_VALUATION_RECEIPT" for row in members),
             "blocked": sum(row["status"].startswith("BLOCKED") for row in members),
             "ingestion_attempted": sum(bool(row["ingestion"]["any_source_attempted"]) for row in members),
             "ppi_fresh": sum(row["sources"]["PPI"]["freshness"]["state"] == "FRESH" for row in members),
@@ -339,11 +402,21 @@ def build() -> dict[str, Any]:
                  if detail["selection_eligible"]]
         attempted = bool(available or any(detail["present"] for detail in sources.values()))
         capability = str(item.get("capability") or "UNKNOWN")
-        contract_ready = capability.startswith("READY_PAPER_") and key is not None
+        contract_candidate = capability.startswith("READY_PAPER_") and key is not None
+        contract_ready = contract_candidate
+        boundary = valuation_boundary(item["family"], key, sources)
         if source_conflict or item.get("review_status"):
             status, contract_ready = "BLOCKED_SOURCE_REVIEW", False
             reason = "SOURCE_OR_CATALOG_CONFLICT_REVIEW_REQUIRED"
-        elif contract_ready and "PPI" in fresh and len(available) >= 2:
+        elif (item["family"] in SPECIALIZED_VALUATION_REQUIREMENTS
+              and contract_ready and "PPI" in fresh):
+            # Missing a specialist receipt must neither grant PAPER nor veto
+            # other independently verified identities or families.  PPI can
+            # authenticate the contract key without proving margin, TNA,
+            # or fund-class NAV economics.
+            status, contract_ready = "PENDING_SPECIALIZED_VALUATION_RECEIPT", False
+            reason = "SPECIALIZED_ECONOMIC_SOURCE_AND_CAUSAL_PIT_NOT_ATTESTED"
+        elif contract_ready and "PPI" in fresh and len(fresh) >= 2:
             status, contract_ready = "READY_PAPER_SHADOW", True
             reason = "CONTRACT_READY_PPI_PRIMARY_PLUS_COMPLEMENTARY_SOURCE"
         elif contract_ready and "PPI" in fresh:
@@ -364,8 +437,10 @@ def build() -> dict[str, Any]:
             "entry_authority": False,
             "settlement": item.get("settlement") or item.get("term") or "",
             "status": status, "paper_contract_ready": contract_ready,
+            "catalog_contract_candidate": contract_candidate,
             "paper_auto_enabled": False,
             "signal_authorized": False,
+            "identity_valuation_boundary": boundary,
             "contract_capability": capability,
             "real_money_authorized": False,
             "sources": sources,
@@ -398,11 +473,14 @@ def build() -> dict[str, Any]:
         "counts": {
             "paper_shadow_ready": sum(row["paper_contract_ready"] for row in rows),
             "paper_contract_ready": sum(row["paper_contract_ready"] for row in rows),
+            "catalog_contract_candidates": sum(row["catalog_contract_candidate"] for row in rows),
             "paper_auto_enabled": 0,
             "ready_paper_shadow": sum(row["status"] == "READY_PAPER_SHADOW" for row in rows),
             "ready_shadow_partial": sum(row["status"] == "READY_SHADOW_PARTIAL" for row in rows),
             "ready_paper_partial_source": sum(row["status"] == "READY_PAPER_PARTIAL_SOURCE" for row in rows),
             "pending_evidence": sum(row["status"] == "PENDING_EVIDENCE" for row in rows),
+            "pending_specialized_receipt": sum(
+                row["status"] == "PENDING_SPECIALIZED_VALUATION_RECEIPT" for row in rows),
             "blocked": sum(row["status"].startswith("BLOCKED") for row in rows),
             "ingestion_attempted": sum(row["ingestion"]["any_source_attempted"] for row in rows),
             "ppi_fresh": sum(row["sources"]["PPI"]["freshness"]["state"] == "FRESH" for row in rows),
