@@ -197,7 +197,8 @@ class TenFamilySnapshotContracts(unittest.TestCase):
         self.assertEqual(self.result(case)["reason"], "IDENTITY_CENSUS_REVIEW_REQUIRED")
 
     def test_ordered_five_key_permutation_and_identity_conflicts_fail_closed(self):
-        for mutation in ("permuted", "wrong_market", "wrong_currency", "wrong_settlement"):
+        for mutation in ("permuted", "wrong_market", "wrong_currency", "wrong_settlement",
+                         "missing_market", "missing_currency", "missing_settlement"):
             with self.subTest(mutation):
                 case = deepcopy(self.data)
                 row = case["instruments"][0]
@@ -207,8 +208,10 @@ class TenFamilySnapshotContracts(unittest.TestCase):
                     row["canonical_identity"][2] = "A3"
                 elif mutation == "wrong_currency":
                     row["canonical_identity"][3] = "USD"
-                else:
+                elif mutation == "wrong_settlement":
                     row["canonical_identity"][4] = "INMEDIATA"
+                else:
+                    row.pop(mutation.removeprefix("missing_"))
                 result = self.result(case)
                 self.assertEqual(result["status"], "NO_VERIFICADO")
                 self.assertEqual(result["reason"], "IDENTITY_CENSUS_REVIEW_REQUIRED")
