@@ -103,8 +103,13 @@ jobs:
                          'age_seconds','universe_instruments','mapped_family_instruments',
                          'unmapped_family_instruments','duplicate_exact_identity_count',
                          'source_contract_ready_in_export','families_present',
+                         'identity_semantic_mismatch_count',
                          'families_expected','families'}
               source = {key:value for key,value in source.items() if key in allowed}
+              if ('identity_semantic_mismatch_count' in source and
+                  (type(source['identity_semantic_mismatch_count']) is not int or
+                   not 0<=source['identity_semantic_mismatch_count']<=60000)):
+                  raise ValueError('invalid semantic identity counter')
               if (source.get('status') not in ('NO_VERIFICADO','VALID_SOURCE_EXPORT_ONLY') or
                   not re.fullmatch(r'[A-Z][A-Z0-9_]{1,70}',str(source.get('reason','')))):
                   raise ValueError('invalid state')
@@ -162,6 +167,8 @@ jobs:
           # Only validated, allowlisted aggregate values reach public logs. Never
           # print raw host JSON, instrument identities or provider credentials.
           print('A385_FAMILIES_PRESENT='+str(source.get('families_present','NO_VERIFICADO')))
+          print('A385_IDENTITY_SEMANTIC_MISMATCH_COUNT='+str(
+              source.get('identity_semantic_mismatch_count','NO_VERIFICADO')))
           for family in source.get('families',[]):
               label=family['family']
               print('A385_FAMILY='+label+
