@@ -1,0 +1,89 @@
+name: RC6 A358 Market Watch scheduler watchdog (GitHub-only)
+
+# A358: independent of rc6-market-watch-readonly.yml, not independent of
+# GitHub's own scheduler. External ChatGPT recurring supervision is required
+# to detect missing runs of BOTH Actions workflows.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/rc6-schedule-watchdog.yml
+      - scripts/rc6_schedule_watchdog.py
+      - tests/test_rc6_schedule_watchdog.py
+      - docs/ops/RC6_SCHEDULE_WATCHDOG.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/rc6-schedule-watchdog.yml
+      - scripts/rc6_schedule_watchdog.py
+      - tests/test_rc6_schedule_watchdog.py
+      - docs/ops/RC6_SCHEDULE_WATCHDOG.md
+  schedule:
+    # Different minute offsets from Market Watch; 13-21 UTC (10-18 ART).
+    # This is an extra check, NOT a guaranteed scheduler SLA.
+    - cron: '12,32,52 13-21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      notification_mode:
+        type: choice
+        required: true
+        default: report_only
+        options: [report_only, notify]
+        description: 'Only notify mode can create a deduplicated P1 issue comment'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: rc6-a358-watchdog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-and-report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NOTIFY_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.notification_mode == 'notify') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Deterministic tests and no-host safety guards
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_schedule_watchdog.py tests/test_rc6_schedule_watchdog.py
+          python3 -m unittest discover -s tests -p test_rc6_schedule_watchdog.py -v
+          git diff --check
+      - name: Inspect actual workflow state, first-attempt schedules and report P1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            printf '%s\n' '{"schema":"rc6.a358.schedule-watch.v1","status":"NOT_APPLICABLE_PR","reason":"NO_RUNTIME_OR_EXTERNAL_API_IN_PR","read_only":true,"host_access":false}' > evidence/a358-watchdog.json
+            echo 'RC6_A358_STATUS=NOT_APPLICABLE_PR'
+            exit 0
+          fi
+          args=(--output evidence/a358-watchdog.json)
+          if [ "$NOTIFY_REQUESTED" = true ]; then args+=(--notify); fi
+          set +e
+          python3 -B scripts/rc6_schedule_watchdog.py "${args[@]}"
+          result=$?
+          set -e
+          if [ "$result" -eq 2 ]; then
+            echo '::error::Market Watch scheduled runs missing or workflow disabled (P1).'
+          elif [ "$result" -ne 0 ]; then
+            echo '::error::Cannot verify scheduler/API or publish deduplicated alert.'
+          fi
+          exit "$result"
+      - name: Publish sanitized machine-readable receipt regardless of outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a358-schedule-watchdog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/a358-watchdog.json
+          if-no-files-found: error
