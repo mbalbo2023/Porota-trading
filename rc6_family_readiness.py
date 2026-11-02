@@ -309,10 +309,12 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         pending = len(rows) - ready - blocked
         if ready == len(rows) and rows:
             state = "READY_CONTRACT_ONLY"
+        elif ready:
+            # Family summaries must not veto independently verified identities.
+            # A blocked sibling is still counted and held at instrument level.
+            state = "PARTIAL"
         elif blocked:
             state = "BLOCKED"
-        elif ready:
-            state = "PARTIAL"
         else:
             state = "PENDING"
         gaps: list[str] = []
@@ -328,6 +330,9 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
             "real_money_authorized": False, "gaps": gaps[:8],
             "next_action": ("Evaluar señal, costos, riesgo y admisión PAPER por instrumento."
                             if state == "READY_CONTRACT_ONLY" else
+                            "Evaluar los contratos READY por instrumento; mantener HOLD para los demás. "
+                            + ("Resolver: " + ", ".join(gaps[:3]) if gaps else "")
+                            if state == "PARTIAL" else
                             "Resolver: " + ", ".join(gaps[:3]) if gaps else
                             "Publicar capturas PPI/IOL comparables."),
         })
