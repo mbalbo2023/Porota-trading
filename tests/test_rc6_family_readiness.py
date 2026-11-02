@@ -67,6 +67,53 @@ def test_one_family_does_not_block_another():
     assert states["BONOS"] == "PENDING"
 
 
+def test_one_conflicted_instrument_does_not_block_ready_sibling_family_summary():
+    catalog = [
+        {"family": "ACCIONES", "symbol": symbol, "market": "BYMA",
+         "currency": "ARS", "settlement": "A-24HS"}
+        for symbol in ("YPFD", "GGAL")
+    ]
+    good = {"symbol": "YPFD", "asset_type": "ACCIONES", "market": "BYMA",
+            "currency": "ARS", "term": "A-24HS",
+            "primary_comparison": _verified_comparison()}
+    duplicate = {"symbol": "GGAL", "asset_type": "ACCIONES", "market": "BYMA",
+                 "currency": "ARS", "term": "A-24HS",
+                 "primary_comparison": _verified_comparison()}
+    result = readiness.evaluate(catalog, [good, duplicate, duplicate])
+    members = {item["symbol"]: item for item in result["instruments"]}
+    summary = next(item for item in result["families"] if item["family"] == "ACCIONES")
+    assert summary["state"] == "PARTIAL"
+    assert summary["instrument_count"] == 2
+    assert summary["paper_contract_ready"] == 1
+    assert summary["blocked"] == 1
+    assert summary["pending"] == 0
+    assert "mantener HOLD" in summary["next_action"]
+    assert members["YPFD"]["paper_contract_ready"] is True
+    assert members["GGAL"]["contract_state"] == "BLOCKED_CONFLICT"
+    assert members["GGAL"]["paper_contract_ready"] is False
+    assert all(not item["paper_auto_enabled"] and not item["entry_authority"]
+               and not item["real_money_authorized"] for item in members.values())
+    assert summary["paper_auto_enabled"] == 0
+    assert summary["entry_authority"] is False
+
+
+def test_pending_sibling_is_hold_without_erasing_ready_contract():
+    catalog = [
+        {"family": "FCI", "symbol": symbol, "market": "BYMA",
+         "currency": "ARS", "settlement": "A-24HS"}
+        for symbol in ("FCI-READY", "FCI-NO-DATA")
+    ]
+    observed = [{"symbol": "FCI-READY", "asset_type": "FCI", "market": "BYMA",
+                 "currency": "ARS", "term": "A-24HS",
+                 "primary_comparison": _verified_comparison()}]
+    report = readiness.evaluate(catalog, observed)
+    summary = next(item for item in report["families"] if item["family"] == "FCI")
+    assert (summary["state"], summary["paper_contract_ready"], summary["pending"],
+            summary["blocked"]) == ("PARTIAL", 1, 1, 0)
+    assert all(not item["entry_authority"] and not item["paper_auto_enabled"]
+               for item in report["instruments"])
+
+
 def test_only_explicit_paper_states_are_simulatable():
     assert "READY_PAPER" in readiness.PAPER_SIMULATABLE_STATES
     assert "READY_PAPER_SHADOW" in readiness.PAPER_SIMULATABLE_STATES
