@@ -28,6 +28,11 @@ FAMILIES = (
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 )
 SOURCES = ("PPI", "IOL", "BYMA", "A3", "A3_CEM", "CAFCI", "CNV", "ROFEX")
+SOURCE_PROBE_NAMES = ("PPI", "IOL", "BYMA")
+SOURCE_DIAGNOSTIC_COUNTERS = (
+    "records", "present", "structured", "native_fresh", "native_stale",
+    "native_unknown", "receipt_present", "exact_identity", "selection_eligible",
+)
 MAX_BYTES = 48 * 1024 * 1024
 MAX_INSTRUMENTS = 60_000
 MAX_AGE_SECONDS = 15 * 60  # Published every 5m; tolerate two missed cycles.
@@ -231,6 +236,10 @@ def _validate_and_summarize(payload: object) -> dict:
     exact_keys = set()
     duplicate_exact = 0
     semantic_mismatches = 0
+    source_diagnostics = {
+        name: {"source": name, **{field: 0 for field in SOURCE_DIAGNOSTIC_COUNTERS}}
+        for name in SOURCE_PROBE_NAMES
+    }
     for row in instruments:
         if not isinstance(row, dict) or row.get("paper_auto_enabled") is not False or row.get("entry_authority") is not False or row.get("real_money_authorized") is not False:
             raise EvidenceRejected("INSTRUMENT_PAPER_GUARD_UNVERIFIED")
@@ -250,6 +259,26 @@ def _validate_and_summarize(payload: object) -> dict:
             exact_keys.add(tup)
             if not _identity_semantically_matches(row, key):
                 semantic_mismatches += 1
+        views = row.get("sources") if isinstance(row.get("sources"), dict) else {}
+        for source in SOURCE_PROBE_NAMES:
+            detail = views.get(source)
+            if not isinstance(detail, dict):
+                continue
+            counts = source_diagnostics[source]
+            counts["records"] += 1
+            counts["present"] += detail.get("present") is True
+            counts["structured"] += detail.get("structured") is True
+            freshness = detail.get("freshness")
+            state = freshness.get("state") if isinstance(freshness, dict) else None
+            if state == "FRESH":
+                counts["native_fresh"] += 1
+            elif state == "STALE":
+                counts["native_stale"] += 1
+            else:
+                counts["native_unknown"] += 1
+            counts["receipt_present"] += bool(detail.get("capture_observed_at"))
+            counts["exact_identity"] += detail.get("identity_binding") == "EXACT_FIVE_PART_IDENTITY"
+            counts["selection_eligible"] += detail.get("selection_eligible") is True
     if counters.get("paper_contract_ready") != ready_total:
         raise EvidenceRejected("GLOBAL_READY_COUNT_MISMATCH")
     report_lookup = {}
@@ -279,6 +308,7 @@ def _validate_and_summarize(payload: object) -> dict:
         "unmapped_family_instruments": unmapped,
         "duplicate_exact_identity_count": duplicate_exact,
         "identity_semantic_mismatch_count": semantic_mismatches,
+        "source_diagnostics": [source_diagnostics[name] for name in SOURCE_PROBE_NAMES],
         "source_contract_ready_in_export": ready_total,
         "families_present": sum(bool(x["instruments"]) for x in families),
         "families_expected": len(FAMILIES),
