@@ -103,7 +103,7 @@ jobs:
                          'age_seconds','universe_instruments','mapped_family_instruments',
                          'unmapped_family_instruments','duplicate_exact_identity_count',
                          'source_contract_ready_in_export','families_present',
-                         'identity_semantic_mismatch_count',
+                         'identity_semantic_mismatch_count','source_diagnostics',
                          'families_expected','families'}
               source = {key:value for key,value in source.items() if key in allowed}
               if ('identity_semantic_mismatch_count' in source and
@@ -113,6 +113,20 @@ jobs:
               if (source.get('status') not in ('NO_VERIFICADO','VALID_SOURCE_EXPORT_ONLY') or
                   not re.fullmatch(r'[A-Z][A-Z0-9_]{1,70}',str(source.get('reason','')))):
                   raise ValueError('invalid state')
+              diagnostics=source.get('source_diagnostics')
+              if diagnostics is not None:
+                  fields={'records','present','structured','native_fresh','native_stale',
+                          'native_unknown','receipt_present','exact_identity',
+                          'selection_eligible'}
+                  if (not isinstance(diagnostics,list) or len(diagnostics)!=3 or
+                      [d.get('source') for d in diagnostics if isinstance(d,dict)]!=
+                      ['PPI','IOL','BYMA']):
+                      raise ValueError('invalid source diagnostics')
+                  for detail in diagnostics:
+                      if (set(detail)!=(fields|{'source'}) or
+                          any(type(detail.get(k)) is not int or not 0<=detail[k]<=60000
+                              for k in fields)):
+                          raise ValueError('invalid source diagnostic counts')
               families = source.get('families',[])
               valid_names = {'ACCIONES','CEDEARS','ETFS','BONOS','LETRAS','OBLIGACIONES',
                              'OPCIONES','FUTUROS','CAUCIONES','FCI'}
@@ -180,6 +194,11 @@ jobs:
                     ' status='+family['status'])
               for reason,count in sorted(family['reason_counts'].items()):
                   print('A385_REASON family='+label+' code='+reason+' count='+str(count))
+          for detail in source.get('source_diagnostics',[]):
+              print('A404_SOURCE='+detail['source']+' '+
+                    ' '.join(field+'='+str(detail[field]) for field in (
+                        'records','present','structured','native_fresh','native_stale',
+                        'native_unknown','receipt_present','exact_identity','selection_eligible')))
           PY
           rm -f evidence/.raw.json
       - name: Save sanitized immutable evidence, including NO_VERIFICADO

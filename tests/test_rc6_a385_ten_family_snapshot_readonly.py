@@ -240,6 +240,47 @@ class TenFamilySnapshotContracts(unittest.TestCase):
         case["source_order"] = "IOL_PRIMARY_PPI_COMPLEMENTARY"
         self.assertEqual(self.result(case)["reason"], "PPI_IDENTITY_AUTHORITY_UNVERIFIED")
 
+    def test_source_rejection_histogram_is_bounded_aggregate_not_a_quote_dump(self):
+        case = deepcopy(self.data)
+        for i, state in ((0, "STALE"), (1, "UNKNOWN")):
+            row = case["instruments"][i]
+            row["paper_contract_ready"] = False
+            row["sources"]["PPI"] = {
+                "present": i == 0, "structured": i == 0,
+                "freshness": {"state": state},
+                "capture_observed_at": self.now.isoformat() if i == 0 else None,
+                "identity_binding": "EXACT_FIVE_PART_IDENTITY" if i == 0 else "REFERENCE_ONLY",
+                "selection_eligible": False,
+            }
+            case["families"][i]["paper_contract_ready"] = 0
+        case["counts"]["paper_contract_ready"] -= 2
+        case["instruments"][2]["sources"]["IOL"] = {
+            "present": True, "structured": True,
+            "freshness": {"state": "FRESH"},
+            "capture_observed_at": self.now.isoformat(),
+            "identity_binding": "EXACT_FIVE_PART_IDENTITY",
+            "selection_eligible": True,
+            "raw_provider_secret": "NEVER_SHOW_PRIVATE_TOKEN",
+        }
+        case["instruments"][3]["sources"]["PPI"]["capture_observed_at"] = "PRIVATE_RECEIPT_DO_NOT_SHOW"
+        result = self.result(case)
+        self.assertEqual(result["status"], "VALID_SOURCE_EXPORT_ONLY")
+        counters = {v["source"]: v for v in result["source_diagnostics"]}
+        self.assertEqual(list(counters), ["PPI", "IOL", "BYMA"])
+        self.assertEqual(counters["PPI"]["records"], 10)
+        self.assertEqual(counters["PPI"]["native_stale"], 1)
+        self.assertEqual(counters["PPI"]["native_unknown"], 9)
+        self.assertEqual(counters["PPI"]["selection_eligible"], 8)
+        self.assertEqual(counters["PPI"]["present"], 1)
+        self.assertEqual(counters["PPI"]["exact_identity"], 1)
+        self.assertEqual(counters["IOL"]["native_fresh"], 1)
+        self.assertEqual(counters["IOL"]["selection_eligible"], 1)
+        self.assertEqual(counters["BYMA"]["records"], 0)
+        serialized = json.dumps(result)
+        self.assertNotIn("NEVER_SHOW_PRIVATE_TOKEN", serialized)
+        self.assertNotIn("PRIVATE_RECEIPT_DO_NOT_SHOW", serialized)
+        self.assertNotIn("PRIVATE_TEST_SYMBOL", serialized)
+
 
 if __name__ == "__main__":
     unittest.main()
