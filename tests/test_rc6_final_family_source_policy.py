@@ -444,6 +444,200 @@ def test_full_evidence_ready_contract_does_not_claim_automatic_paper_entry(tmp_p
     assert result["counts"]["paper_auto_enabled"] == 0
 
 
+def test_full_evidence_keeps_ten_family_denominators_when_catalog_empty(tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    result = evidence.build()
+    assert not result["universe"]["ledger_complete"]
+    assert {row["family"] for row in result["families"]} == evidence.CANONICAL_PAPER_FAMILIES
+    assert all(row["instrument_count"] == row["paper_contract_ready"] == 0
+               for row in result["families"])
+
+
+@pytest.mark.parametrize("family", ("FUTUROS", "CAUCIONES", "FCI"))
+def test_specialized_family_never_promoted_by_ppi_spot_or_reference_page(
+        family, tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    specialist = instrument("SPECIAL", family) | {
+        "symbol": "SPECIAL", "family": family, "capability": "READY_PAPER_CONTRACT"}
+    equity = instrument("GGAL", "ACCIONES") | {
+        "symbol": "GGAL", "family": "ACCIONES", "capability": "READY_PAPER_SPOT"}
+    values = {}
+    for record in (specialist, equity):
+        key = evidence._exact_key(record)
+        assert key is not None
+        values[key] = quote_claim(record, source="PPI", last=100,
+                                  source_at=AT.isoformat(), received_at=AT.isoformat())
+    # Real public collector's A3/CNV/MATBA endpoints are reference pages, not
+    # authenticated series/margin/NAV/cash receipts.  A fabricated "records"
+    # array in a reference page must not become valuation authority.
+    (tmp_path / "rc6_public_sources_latest.json").write_text(json.dumps({
+        "schema": "rc6-consolidated-source-evidence-v1", "collected_at": AT.isoformat(),
+        "sources": [{"source": "A3_MAE", "status": "REFERENCE_ONLY", "records": [
+            {**specialist, "source_at": AT.isoformat(), "last": 100, "margin": 10}]},
+            {"source": "MATBA_ROFEX", "status": "REFERENCE_ONLY", "records": []},
+            {"source": "CNV", "status": "REFERENCE_ONLY", "records": [
+                {**specialist, "nav": 100, "source_at": AT.isoformat()}]}]}))
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [specialist, equity])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: values)
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {})
+    result = evidence.build()
+    by_family = {row["family"]: row for row in result["instruments"]}
+    row = by_family[family]
+    assert row["status"] == "PENDING_SPECIALIZED_VALUATION_RECEIPT"
+    assert row["reason"] == "SPECIALIZED_ECONOMIC_SOURCE_AND_CAUSAL_PIT_NOT_ATTESTED"
+    assert row["paper_contract_ready"] is False
+    boundary = row["identity_valuation_boundary"]
+    assert boundary["identity_authority"] == "PPI_PRIMARY"
+    assert boundary["identity_authority_policy"] == "PPI_PRIMARY"
+    assert boundary["identity_status"] == "PPI_EXACT_FRESH_SOURCE_OBSERVED"
+    assert boundary["economic_source_role"] == "SPECIALIZED_VALUATION"
+    assert boundary["specialized_receipt_status"] == "NO_VERIFICADO"
+    assert "A320_AUTHENTICATED" in boundary["specialized_receipt_reason"]
+    assert set(boundary["economic_source_candidates"]) <= {
+        "PPI", "BYMA", "A3", "A3_CEM", "CAFCI", "CNV"}
+    assert boundary["causal_pit_verified"] is False
+    assert not boundary["paper_admission_authorized"]
+    assert not row["paper_auto_enabled"] and not row["entry_authority"]
+    # One missing specialist is NOT a global veto of a different READY species.
+    assert by_family["ACCIONES"]["status"] == "READY_PAPER_PARTIAL_SOURCE"
+    assert by_family["ACCIONES"]["paper_contract_ready"] is True
+    summary = {item["family"]: item for item in result["families"]}
+    assert summary[family]["pending_specialized_receipt"] == 1
+    assert summary[family]["catalog_contract_candidates"] == 1
+    assert summary[family]["paper_contract_ready"] == 0
+    assert summary["ACCIONES"]["paper_contract_ready"] == 1
+    assert result["counts"]["pending_specialized_receipt"] == 1
+    assert result["counts"]["paper_auto_enabled"] == 0
+
+
+def test_specialized_identity_currency_conflict_never_borrows_another_quote(
+        tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    target = instrument("FUND", "FCI") | {
+        "symbol": "FUND", "family": "FCI", "capability": "READY_PAPER_FUND"}
+    other_currency = {**target, "currency": "USD"}
+    wrong_key = evidence._exact_key(other_currency)
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [target])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {
+        wrong_key: quote_claim(other_currency, source="PPI")})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    row = evidence.build()["instruments"][0]
+    assert row["identity_valuation_boundary"]["identity_status"] == "NO_VERIFICADO"
+    assert row["identity_valuation_boundary"]["identity_authority"] == "NO_VERIFICADO"
+    assert row["identity_valuation_boundary"]["identity_authority_policy"] == "PPI_PRIMARY"
+    # No exact primary quote: absence must be attributed to the missing
+    # source, not misreported as an otherwise-ready specialized valuation.
+    assert row["status"] == "PENDING_EVIDENCE"
+    assert row["paper_contract_ready"] is False
+
+
+@pytest.mark.parametrize("family", ("FUTUROS", "CAUCIONES", "FCI"))
+def test_specialized_stale_ppi_is_source_missing_not_economic_receipt(
+        family, tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    specialist = instrument("SPECIAL", family) | {"symbol": "SPECIAL", "family": family,
+                                                     "capability": "READY_PAPER_CONTRACT"}
+    key = evidence._exact_key(specialist)
+    stale = (AT - timedelta(seconds=evidence.PPI_FRESH_SECONDS + 1)).isoformat()
+    quote = quote_claim(specialist, source="PPI", source_at=stale,
+                        received_at=AT.isoformat())
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [specialist])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {key: quote})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    row = evidence.build()["instruments"][0]
+    assert row["status"] == "PENDING_EVIDENCE"
+    assert row["identity_valuation_boundary"]["identity_status"] == "NO_VERIFICADO"
+    assert row["identity_valuation_boundary"]["identity_authority"] == "NO_VERIFICADO"
+    assert row["catalog_contract_candidate"] is True
+    assert row["paper_contract_ready"] is False
+    assert row["identity_valuation_boundary"]["paper_admission_authorized"] is False
+
+
+def test_stale_complement_does_not_count_as_two_fresh_sources(tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    asset = instrument("GGAL", "ACCIONES") | {"symbol": "GGAL", "family": "ACCIONES",
+                                                  "capability": "READY_PAPER_SPOT"}
+    key = evidence._exact_key(asset)
+    ppi = quote_claim(asset, source="PPI", source_at=AT.isoformat(),
+                      received_at=AT.isoformat())
+    old = (AT - timedelta(seconds=evidence.FRESH_SECONDS + 1)).isoformat()
+    iol = quote_claim(asset, source="IOL", source_at=old,
+                      received_at=AT.isoformat())
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [asset])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {key: ppi})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {key: iol})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    row = evidence.build()["instruments"][0]
+    assert row["ingestion"]["source_count"] == 2
+    assert row["sources"]["IOL"]["freshness"]["state"] == "STALE"
+    assert row["status"] == "READY_PAPER_PARTIAL_SOURCE"
+    assert row["entry_authority"] is False
+
+
+def test_two_exact_fresh_sources_are_observable_but_never_paper_admission(
+        tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    asset = instrument("GGAL", "ACCIONES") | {"symbol": "GGAL", "family": "ACCIONES",
+                                                  "capability": "READY_PAPER_SPOT"}
+    key = evidence._exact_key(asset)
+    ppi = quote_claim(asset, source="PPI", source_at=AT.isoformat(),
+                      received_at=AT.isoformat())
+    iol = quote_claim(asset, source="IOL", source_at=AT.isoformat(),
+                      received_at=AT.isoformat())
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [asset])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {key: ppi})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {key: iol})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    row = evidence.build()["instruments"][0]
+    assert row["status"] == "READY_PAPER_SHADOW"
+    assert row["paper_contract_ready"] is True
+    assert row["identity_valuation_boundary"]["causal_pit_verified"] is False
+    assert row["entry_authority"] is False and row["paper_auto_enabled"] is False
+
+
+def test_missing_quote_on_one_instrument_does_not_veto_sibling_contract(
+        tmp_path, monkeypatch):
+    import scripts.rc6_full_universe_evidence as evidence
+    ready = instrument("READY", "ACCIONES") | {
+        "symbol": "READY", "family": "ACCIONES", "capability": "READY_PAPER_SPOT"}
+    unknown = instrument("UNKNOWN", "ACCIONES") | {
+        "symbol": "UNKNOWN", "family": "ACCIONES", "capability": "READY_PAPER_SPOT"}
+    ready_key = evidence._exact_key(ready)
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    monkeypatch.setattr(evidence, "now", lambda: AT)
+    monkeypatch.setattr(evidence, "catalog_rows", lambda: [ready, unknown])
+    monkeypatch.setattr(evidence, "primary_rows", lambda at: {
+        ready_key: quote_claim(ready, source="PPI")})
+    monkeypatch.setattr(evidence, "iol_rows", lambda: {})
+    monkeypatch.setattr(evidence, "byma_rows", lambda: ({}, {}))
+    result = evidence.build()
+    rows = {row["symbol"]: row for row in result["instruments"]}
+    assert rows["READY"]["status"] == "READY_PAPER_PARTIAL_SOURCE"
+    assert rows["UNKNOWN"]["status"] == "PENDING_EVIDENCE"
+    acc = next(row for row in result["families"] if row["family"] == "ACCIONES")
+    assert acc["instrument_count"] == 2
+    assert acc["paper_contract_ready"] == 1 and acc["pending"] == 1
+    assert acc["blocked"] == 0 and acc["paper_auto_enabled"] == 0
+
+
 def test_full_evidence_unavailable_iol_is_path_scoped_with_native_reference_visible(tmp_path, monkeypatch):
     import scripts.rc6_full_universe_evidence as evidence
     record = instrument("GGAL", "ACCIONES")
