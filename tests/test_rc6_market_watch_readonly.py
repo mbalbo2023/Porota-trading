@@ -801,6 +801,72 @@ class MonitorContracts(unittest.TestCase):
 
 
 
+class A363ScalpingSanitizedErrors(unittest.TestCase):
+    """No trading DB, network, secrets or real market input in these tests."""
+
+    def setUp(self):
+        self.db = sqlite3.connect(":memory:")
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("""CREATE TABLE paper_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, event_at TEXT, event_type TEXT,
+            detail TEXT)""")
+
+    def tearDown(self):
+        self.db.close()
+
+    def add_event(self, kind, detail, at="2026-11-02T15:30:00+00:00"):
+        self.db.execute(
+            "INSERT INTO paper_events(event_at,event_type,detail) VALUES (?,?,?)",
+            (at, kind, detail))
+
+    def test_extract_code_and_utc_without_exporting_identity(self):
+        self.add_event("INTRADAY_SCALPING_ERROR",
+                       'GGAL: PPI_HTTP_403;shadow_identity=["GGAL","ACCIONES","BYMA","ARS","A-24HS"]')
+        result = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("PPI_HTTP_403", result["events"][0]["code"])
+        self.assertEqual("2026-11-02T15:30:00+00:00", result["events"][0]["event_at_utc"])
+        self.assertEqual("EVIDENCE_ONLY_NO_GO", result["status"])
+        self.assertNotIn("GGAL", json.dumps(result))
+        self.assertNotIn("ARS", json.dumps(result))
+
+    def test_malformed_or_confidential_detail_never_leaves(self):
+        self.add_event("INTRADAY_SCALPING_ERROR",
+                       'TICKER: token=secret-provider-response;shadow_identity=["SECRET"]')
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("NO_VERIFICADO", r["events"][0]["code"])
+        self.assertNotIn("secret", json.dumps(r).lower())
+        self.assertNotIn("TICKER", json.dumps(r))
+
+    def test_clock_rollback_code_not_ticker(self):
+        self.add_event("INTRADAY_SCALPING_CLOCK_ROLLBACK", "CUSTOMER_ACCOUNT_NUMBER")
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("INTRADAY_SCALPING_CLOCK_ROLLBACK", r["events"][0]["code"])
+        self.assertNotIn("CUSTOMER", json.dumps(r))
+
+    def test_nonmatching_event_not_counted_as_no_failures(self):
+        self.add_event("SOME_OTHER_EVENT", "PPI_HTTP_403")
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual("NO_VERIFICADO", r["status"])
+        self.assertEqual([], r["events"])
+
+    def test_tail_and_output_budget(self):
+        for i in range(5005):
+            self.add_event("OTHER", "token=SECRET")
+        self.add_event("INTRADAY_SCALPING_ERROR",
+                       'GGAL: PPI_TIMEOUTERROR;shadow_identity=["GGAL"]')
+        r = monitor._scalping_recent_error_codes(self.db, {"paper_events"})
+        self.assertEqual(1, len(r["events"]))
+        self.assertEqual("PPI_TIMEOUTERROR", r["events"][0]["code"])
+
+    def test_missing_table_or_query_failure_fail_closed(self):
+        self.assertEqual("PAPER_EVENTS_TABLE_ABSENT",
+                         monitor._scalping_recent_error_codes(self.db, set())["reason"])
+        self.db.execute("DROP TABLE paper_events")
+        self.assertEqual("ERROR_EVENT_READ_UNAVAILABLE",
+                         monitor._scalping_recent_error_codes(self.db, {"paper_events"})["reason"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
 
