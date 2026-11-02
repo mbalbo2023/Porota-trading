@@ -1,0 +1,194 @@
+name: RC6 A385 ten-family JSON snapshot READ_ONLY
+
+# Control-plane action, independent of Deploy V2 and GitHub's degraded cron.
+# Pull requests execute tests ONLY. Main push/manual may read the already
+# published JSON from the host; never opens SQLite or triggers source capture.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a385-ten-family-snapshot-readonly.yml'
+      - 'scripts/rc6_a385_ten_family_snapshot_readonly.py'
+      - 'tests/test_rc6_a385_ten_family_snapshot_readonly.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a385-ten-family-snapshot-readonly.yml'
+      - 'scripts/rc6_a385_ten_family_snapshot_readonly.py'
+      - 'tests/test_rc6_a385_ten_family_snapshot_readonly.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a385-ten-family-json-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile host-only parser and run adversarial offline tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a385_ten_family_snapshot_readonly.py tests/test_rc6_a385_ten_family_snapshot_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a385_ten_family_snapshot_readonly.py -v
+          git diff --check
+
+  host_snapshot:
+    needs: contracts
+    # Never expose host credentials or execute remote probes from PR branches.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict SSH for already-published JSON snapshot only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a385_family_json"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a385_family_json" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Host read-only JSON probe with no source, DB or provider access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a385_family_json" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 24 python3 -B - host-probe' \
+            < scripts/rc6_a385_ten_family_snapshot_readonly.py > evidence/.raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          # Validate output's fixed schema before a sanitized public artifact.
+          # Raw provider/instrument data is never copied from the host.
+          REMOTE_RC="$remote_rc" python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          path = Path('evidence/.raw.json')
+          try:
+              if path.stat().st_size > 128*1024:
+                  raise ValueError('response too large')
+              source = json.loads(path.read_text(encoding='utf-8'))
+              if (not isinstance(source,dict) or
+                  source.get('schema') != 'rc6.a385.ten-family-source-export-readonly.v1' or
+                  source.get('read_only') is not True or source.get('db_opened') is not False or
+                  source.get('order_routes_called') is not False or
+                  source.get('admission_authority') is not False or
+                  source.get('runtime_sha_verified') is not False):
+                  raise ValueError('untrusted response')
+              # Protect even against unexpected stdout from a host code change.
+              allowed = {'schema','read_only','source','db_opened','provider_calls',
+                         'order_routes_called','admission_authority','causal_pit_receipt_validated',
+                         'fees_risk_and_fill_lineage_validated','runtime_sha_verified',
+                         'status','reason','observed_at_utc','source_sha256',
+                         'source_bytes','source_generated_at_utc','source_file_mtime_utc',
+                         'age_seconds','universe_instruments','mapped_family_instruments',
+                         'unmapped_family_instruments','duplicate_exact_identity_count',
+                         'source_contract_ready_in_export','families_present',
+                         'families_expected','families'}
+              source = {key:value for key,value in source.items() if key in allowed}
+              if (source.get('status') not in ('NO_VERIFICADO','VALID_SOURCE_EXPORT_ONLY') or
+                  not re.fullmatch(r'[A-Z][A-Z0-9_]{1,70}',str(source.get('reason','')))):
+                  raise ValueError('invalid state')
+              families = source.get('families',[])
+              valid_names = {'ACCIONES','CEDEARS','ETFS','BONOS','LETRAS','OBLIGACIONES',
+                             'OPCIONES','FUTUROS','CAUCIONES','FCI'}
+              valid_sources = {'PPI','IOL','BYMA','A3','A3_CEM','CAFCI','CNV','ROFEX'}
+              if not isinstance(families,list) or len(families)>10:
+                  raise ValueError('invalid family aggregate')
+              seen=set()
+              for family in families:
+                  if not isinstance(family,dict) or family.get('family') not in valid_names:
+                      raise ValueError('invalid family name')
+                  if family['family'] in seen:
+                      raise ValueError('duplicate family')
+                  seen.add(family['family'])
+                  for key in ('instruments','source_contract_ready','source_contract_not_ready',
+                              'identity_unresolved','source_selection_absent',
+                              'first_known_at_not_exported'):
+                      value=family.get(key)
+                      if type(value) is not int or not 0<=value<=60000:
+                          raise ValueError('invalid count')
+                  if family.get('status') not in ('NO_FAMILY_SAMPLE_IN_EXPORT',
+                                                  'NO_SOURCE_CONTRACT_READY',
+                                                  'SOME_SOURCE_CONTRACT_READY',
+                                                  'ALL_SOURCE_CONTRACT_READY'):
+                      raise ValueError('invalid family state')
+                  reasons=family.get('reason_counts')
+                  eligible=family.get('eligible_source_counts')
+                  if not isinstance(reasons,dict) or not isinstance(eligible,dict):
+                      raise ValueError('invalid aggregate')
+                  if len(reasons)>17 or any(
+                      not re.fullmatch(r'[A-Z][A-Z0-9_]{1,55}(?::[A-Z][A-Z0-9_]{0,55})?',key)
+                      or type(value) is not int or not 0<=value<=60000
+                      for key,value in reasons.items()):
+                      raise ValueError('invalid reason codes')
+                  if set(eligible)!=valid_sources or any(type(v) is not int or not 0<=v<=60000
+                                                       for v in eligible.values()):
+                      raise ValueError('invalid source counters')
+              if (os.environ['REMOTE_RC']!='0' and
+                  source.get('status')=='VALID_SOURCE_EXPORT_ONLY'):
+                  raise ValueError('remote failed despite positive output')
+          except (OSError,ValueError,UnicodeError,TypeError):
+              source = {'schema':'rc6.a385.ten-family-source-export-readonly.v1',
+                        'read_only':True,'status':'NO_VERIFICADO',
+                        'reason':'REMOTE_RESPONSE_INVALID_OR_UNAVAILABLE',
+                        'runtime_sha_verified':False,'db_opened':False,
+                        'order_routes_called':False,'admission_authority':False}
+          source['remote_exit_code_class'] = ('ZERO' if os.environ['REMOTE_RC']=='0'
+                                              else 'NONZERO')
+          Path('evidence/family_snapshot.json').write_text(
+              json.dumps(source,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          print('A385_SNAPSHOT_STATUS='+str(source.get('status','NO_VERIFICADO')))
+          print('A385_SNAPSHOT_REASON='+str(source.get('reason','REMOTE_RESPONSE_INVALID_OR_UNAVAILABLE')))
+          PY
+          rm -f evidence/.raw.json
+      - name: Save sanitized immutable evidence, including NO_VERIFICADO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a385-ten-family-snapshot-${{ github.run_id }}
+          path: evidence/family_snapshot.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail closed when host or family denominator is unverified
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          path=pathlib.Path('evidence/family_snapshot.json')
+          if not path.is_file():
+              raise SystemExit('::error::A385 no evidence artifact produced')
+          data=json.loads(path.read_text(encoding='utf-8'))
+          if data.get('status')!='VALID_SOURCE_EXPORT_ONLY':
+              print('::error::A385 evidence unavailable: '+str(data.get('reason','NO_VERIFICADO')))
+              raise SystemExit(1)
+          print('A385_SOURCE_EXPORT=VALID_READONLY_ONLY')
+          print('A385_PIT_CAUSAL=NO_VERIFICADO')
+          print('A385_PAPER_ENTRY_AUTHORITY=FALSE')
+          PY
+      - name: Destroy runner-only SSH credential
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/rc6_a385_family_json"
