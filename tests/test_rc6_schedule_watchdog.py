@@ -83,6 +83,10 @@ class ScheduleWatchdogTest(unittest.TestCase):
                               get=lambda *_: [{"body": "x"}] * 100,
                               post=lambda *_: self.fail("must not post"))
 
+    def test_unknown_workflow_state_does_not_become_false_disabled(self):
+        result = a358.classify([], at(10, 40), workflow_state="NO_VERIFICADO")
+        self.assertEqual("NO_VERIFICADO", result["status"])
+
     def test_post_url_pinned(self):
         with self.assertRaisesRegex(ValueError, "A358_INVALID_POST_TARGET"):
             a358._post("https://example.org/", {}, "mock")

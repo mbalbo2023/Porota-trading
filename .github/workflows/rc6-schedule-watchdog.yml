@@ -51,6 +51,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Initialize fail-closed receipt before tests
+        shell: bash
+        run: |
+          mkdir -p evidence
+          printf '%s\\n' '{"schema":"rc6.a358.schedule-watch.v1","status":"NO_VERIFICADO","reason":"CHECK_NOT_EXECUTED","read_only":true,"host_access":false}' > evidence/a358-watchdog.json
       - name: Deterministic tests and no-host safety guards
         shell: bash
         run: |
