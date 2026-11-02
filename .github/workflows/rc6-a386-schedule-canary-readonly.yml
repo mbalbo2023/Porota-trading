@@ -1,0 +1,65 @@
+name: RC6 A386 GitHub Schedule Canary READ_ONLY
+
+on:
+  # Independent schedule registration: proves native event delivery only.
+  # UTC 13:23-21:53 weekdays, two tiny offhost samples per hour.
+  schedule:
+    - cron: '23,53 13-21 * * 1-5'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a386-schedule-canary-readonly.yml'
+      - 'scripts/rc6_a386_schedule_canary.py'
+      - 'tests/test_rc6_a386_schedule_canary.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a386-schedule-canary-readonly.yml'
+      - 'scripts/rc6_a386_schedule_canary.py'
+      - 'tests/test_rc6_a386_schedule_canary.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a386-schedule-canary-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  classify-github-event:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolation and native-schedule evidence logic
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a386_schedule_canary.py tests/test_rc6_a386_schedule_canary.py
+          python3 -m unittest discover -s tests -p test_rc6_a386_schedule_canary.py -v
+      - name: Record run metadata only, no host access
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_a386_schedule_canary.py --out evidence/a386_canary.json
+          python3 - <<'PY'
+          import json, os
+          with open('evidence/a386_canary.json', encoding='utf-8') as handle:
+              receipt = json.load(handle)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('### RC6 A386 GitHub native scheduler canary\n\n')
+              summary.write('- Event: `' + str(receipt['github_event']) + '`\n')
+              summary.write('- Classification: `' + str(receipt['classification']) + '`\n')
+              summary.write('- Market Watch recovered: `NO_VERIFICADO`\n')
+              summary.write('- Host, PPI Watch, databases and orders: not accessed\n')
+          PY
+      - name: Upload immutable sanitized native-event receipt
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a386-schedule-canary-${{ github.run_id }}
+          path: evidence/a386_canary.json
+          if-no-files-found: error
+          retention-days: 7
