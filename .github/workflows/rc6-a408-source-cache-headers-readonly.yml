@@ -1,0 +1,176 @@
+name: RC6 A408 source cache headers READ_ONLY
+
+# Read existing JSON headers only; no SQLite, providers, trade route or deploy.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a408-source-cache-headers-readonly.yml'
+      - 'scripts/rc6_a408_source_cache_headers_readonly.py'
+      - 'tests/test_rc6_a408_source_cache_headers_readonly.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a408-source-cache-headers-readonly.yml'
+      - 'scripts/rc6_a408_source_cache_headers_readonly.py'
+      - 'tests/test_rc6_a408_source_cache_headers_readonly.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a408-source-cache-headers-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run source-cache negative contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a408_source_cache_headers_readonly.py tests/test_rc6_a408_source_cache_headers_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a408_source_cache_headers_readonly.py -v
+          git diff --check
+
+  host_headers:
+    needs: contracts
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict runner-only SSH for header inspection
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a408_cache_headers"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a408_cache_headers" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Read only bounded existing JSON cache headers on host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a408_cache_headers" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 24 python3 -B - host-probe' \
+            < scripts/rc6_a408_source_cache_headers_readonly.py > evidence/.raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          REMOTE_RC="$remote_rc" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path=Path('evidence/.raw.json')
+          result={'schema':'rc6.a408.cache-header-census-readonly.v1',
+                  'read_only':True,'db_opened':False,'provider_calls':0,
+                  'order_routes_called':False,'admission_authority':False,
+                  'runtime_sha_verified':False,'source_contract_ready':False,
+                  'market_readiness':'NO_VERIFICADO','fixed_paths_only':True,
+                  'cache_headers':[],'probe_status':'NO_VERIFICADO'}
+          try:
+              if os.environ['REMOTE_RC']!='0' or path.stat().st_size>16*1024:
+                  raise ValueError('bad remote output')
+              raw=json.loads(path.read_text(encoding='utf-8'))
+              if not isinstance(raw,dict):
+                  raise ValueError('bad schema')
+              for key,value in result.items():
+                  if key in ('cache_headers','probe_status'):
+                      continue
+                  if raw.get(key)!=value or type(raw.get(key)) is not type(value):
+                      raise ValueError('untrusted read-only invariant')
+              records=raw.get('cache_headers')
+              codes=['PRIMARY_MARKET','PRIMARY_APP','IOL_SHADOW','BYMA_PUBLIC']
+              fields={'records','dictionary_records','identity_fields_complete',
+                      'native_clock_present','receipt_clock_present','numeric_present'}
+              statuses={'HEADER_READ','MISSING','PATH_UNSAFE','FILE_UNSAFE',
+                        'READ_UNAVAILABLE','SIZE_INVALID','FILE_CHANGED',
+                        'JSON_SHAPE_INVALID','RECORD_LIMIT_EXCEEDED',
+                        'FILE_CLOCK_FUTURE','JSON_INVALID'}
+              shapes={'NOT_READ','NO_PRIMARY_MAP','PRIMARY_SYMBOL_MAP',
+                      'NO_IOL_LIST','IOL_SYMBOL_LIST','NO_BYMA_BLOCKS',
+                      'BYMA_SOURCE_BLOCKS'}
+              if not isinstance(records,list) or len(records)!=4:
+                  raise ValueError('invalid denominator')
+              for code,item in zip(codes,records):
+                  if (not isinstance(item,dict) or item.get('input')!=code or
+                      item.get('status') not in statuses or
+                      item.get('shape') not in shapes or
+                      set(item)!=(fields|{'input','status','shape','file_bytes',
+                                          'mtime_age_seconds'})):
+                      raise ValueError('invalid cache header')
+                  if any(type(item.get(k)) is not int or not 0<=item[k]<=60000
+                         for k in fields):
+                      raise ValueError('invalid count')
+                  if type(item.get('file_bytes')) is not int or not 0<=item['file_bytes']<=12*1024*1024:
+                      raise ValueError('invalid byte count')
+                  age=item.get('mtime_age_seconds')
+                  if age is not None and (type(age) is not int or not 0<=age<=1000000000):
+                      raise ValueError('invalid age')
+              result['cache_headers']=records
+              result['probe_status']='HEADER_COUNTS_ONLY'
+          except (OSError,ValueError,UnicodeError,TypeError):
+              result['probe_status']='NO_VERIFICADO'
+          Path('evidence/source_cache_headers.json').write_text(
+              json.dumps(result,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          print('A408_PROBE_STATUS='+result['probe_status'])
+          print('A408_MARKET_READINESS=NO_VERIFICADO')
+          for item in result['cache_headers']:
+              print('A408_INPUT='+item['input']+
+                    ' status='+item['status']+
+                    ' shape='+item['shape']+
+                    ' records='+str(item['records'])+
+                    ' identity_fields='+str(item['identity_fields_complete'])+
+                    ' native_clock='+str(item['native_clock_present'])+
+                    ' receipt_clock='+str(item['receipt_clock_present'])+
+                    ' numeric_field='+str(item['numeric_present'])+
+                    ' file_age_seconds='+str(item['mtime_age_seconds']))
+          PY
+          rm -f evidence/.raw.json
+      - name: Save immutable sanitized diagnostic including negative results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a408-source-cache-headers-${{ github.run_id }}
+          path: evidence/source_cache_headers.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Require validated diagnostic shape, never market readiness
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('evidence/source_cache_headers.json')
+          if not p.is_file():
+              raise SystemExit('::error::A408 no diagnostic receipt')
+          r=json.loads(p.read_text(encoding='utf-8'))
+          if r.get('probe_status')!='HEADER_COUNTS_ONLY':
+              raise SystemExit('::error::A408 unverified cache header')
+          if r.get('market_readiness')!='NO_VERIFICADO' or r.get('source_contract_ready') is not False:
+              raise SystemExit('::error::A408 false market readiness')
+          print('A408_HEADER_DIAGNOSTIC=VALID_ONLY')
+          print('A408_PIT_FEES_RISK_FILLS=NO_VERIFICADO')
+          PY
+      - name: Destroy runner-only SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/rc6_a408_cache_headers"
