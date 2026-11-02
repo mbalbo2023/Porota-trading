@@ -891,6 +891,62 @@ class A363ScalpingSanitizedErrors(unittest.TestCase):
 
 
 
+class A367CalendarSubprocessRegression(unittest.TestCase):
+    """Execute the real embedded Python -c probe against synthetic modules.
+
+    Before A367 its top-level unexpected indentation caused IndentationError
+    and all real host market sessions were classified UNKNOWN.
+    """
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="a367-calendar-")
+        self.addCleanup(self.directory.cleanup)
+        self.fixture_root = Path(self.directory.name)
+        (self.fixture_root / "ak_byma_calendar.py").write_text(
+            'from datetime import date\n'
+            'CALENDARIO_ACTUALIZADO_EL = date(2026,10,14)\n'
+            'ANIOS_AUDITADOS = frozenset({2026})\n'
+            'FUENTE_OFICIAL = "SYNTHETIC_CALENDAR_ONLY"\n'
+            'def es_dia_habil_operativo(day):\n'
+            '    return day.weekday() < 5 and day != date(2026,11,6)\n',
+            encoding="utf-8")
+        (self.fixture_root / "co_market_sessions_hf6.py").write_text(
+            'from datetime import time\n'
+            'from zoneinfo import ZoneInfo\n'
+            'TZ = ZoneInfo("America/Argentina/Buenos_Aires")\n'
+            'BYMA_PAPER_SPOT_OPEN = time(10,30)\n'
+            'BYMA_PAPER_SPOT_CLOSE = time(17,0)\n',
+            encoding="utf-8")
+
+    def session_at(self, instant):
+        return monitor.independent_session(
+            datetime.fromisoformat(instant), root=self.fixture_root)
+
+    def test_monday_20261102_open_is_not_indentation_unknown(self):
+        result = self.session_at("2026-11-02T14:05:00-03:00")
+        self.assertEqual("OPEN", result["state"])
+        self.assertIs(result["operational_day"], True)
+        self.assertEqual("BYMA_PAPER_SPOT", result["scope"])
+        self.assertEqual("2026-10-14", result["audited_at"])
+
+    def test_operational_day_before_and_after_spot_gate_is_closed(self):
+        for instant in ("2026-11-02T10:20:00-03:00",
+                        "2026-11-02T17:30:00-03:00"):
+            self.assertEqual("CLOSED", self.session_at(instant)["state"])
+
+    def test_weekend_and_holiday_fixture_are_closed(self):
+        self.assertEqual("CLOSED", self.session_at(
+            "2026-11-01T14:05:00-03:00")["state"])
+        self.assertEqual("CLOSED", self.session_at(
+            "2026-11-06T14:05:00-03:00")["state"])
+
+    def test_unaudited_year_remains_unknown_and_fail_closed(self):
+        result = self.session_at("2027-01-04T14:05:00-03:00")
+        self.assertEqual("UNKNOWN", result["state"])
+        self.assertIsNone(result["operational_day"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
 

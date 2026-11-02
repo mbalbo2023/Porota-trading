@@ -263,9 +263,9 @@ from co_market_sessions_hf6 import TZ,BYMA_PAPER_SPOT_OPEN,BYMA_PAPER_SPOT_CLOSE
 at=datetime.fromisoformat(sys.argv[2]).astimezone(TZ)
 audited=c.CALENDARIO_ACTUALIZADO_EL
 known=at.year in c.ANIOS_AUDITADOS and 0<=(at.date()-audited).days<=60
- operational=known and c.es_dia_habil_operativo(at.date())
- opened=operational and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
- print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','operational_day':operational if known else None,'source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
+operational=known and c.es_dia_habil_operativo(at.date())
+opened=operational and BYMA_PAPER_SPOT_OPEN<=at.time().replace(tzinfo=None)<BYMA_PAPER_SPOT_CLOSE
+print(json.dumps({'state':'OPEN' if opened else 'CLOSED' if known else 'UNKNOWN','scope':'BYMA_PAPER_SPOT','operational_day':operational if known else None,'source':c.FUENTE_OFICIAL,'audited_at':audited.isoformat()}))'''
     try:
         out = subprocess.run([sys.executable, '-B', '-c', code, str(root), at.isoformat()],
                              capture_output=True, text=True, timeout=2, check=True)
