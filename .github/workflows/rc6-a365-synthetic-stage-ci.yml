@@ -1,0 +1,40 @@
+name: RC6 A365 scalping stage contract (isolated; no predeploy)
+
+# Only isolated branch tests. The canonical Predeploy V2 remains untouched.
+# This workflow is not an operational timer nor a deploy trigger.
+on:
+  push:
+    branches:
+      - work/rc6-a365-scalping-phase-20261102
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a365-synthetic-stage-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-stage-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Ensure product PAPER invariants without broker or host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -Fq 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -Fq 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          grep -Fq 'real_trading_allowed: false' ops/policy/porota-policy.yaml
+          grep -Fq 'real_orders_sent_required: 0' ops/policy/porota-policy.yaml
+      - name: Compile and execute exact A365 isolated regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile cf_intraday_scalping.py tests/test_rc6_a365_scalping_phase.py
+          python3 -m unittest discover -s tests -p 'test_rc6_a365_scalping_phase.py' -v
+          git diff --check
+          echo 'RC6_A365_SCALPING_PHASE_CONTRACT=GREEN|source=ISOLATED_BRANCH_ONLY|runtime=NO_VERIFICADO'
