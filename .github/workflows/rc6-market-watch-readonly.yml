@@ -21,7 +21,7 @@ on:
       - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
   schedule:
     # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
-    - cron: '7,17,27,37,47,57 13-20 * * 1-5'
+    - cron: '7-57/10 13-20 * * 1-5'
     # COM19031 (02-Nov): bounded T+1 equity/CEDEAR surveillance after 17:00.
     # One last 18:07 ART attempt; gate rejects ticks after 18:15.
     - cron: '7 21 * * 1-5'
@@ -54,6 +54,7 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_market_watch_readonly.py tests/test_rc6_market_watch_readonly.py
           python3 -m unittest discover -s tests -p test_rc6_market_watch_readonly.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a359_cron_equivalence.py -v
           python3 -m py_compile scripts/rc6_operator_dashboard_readonly.py
           python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
           git diff --check
