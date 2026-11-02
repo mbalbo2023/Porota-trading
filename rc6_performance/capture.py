@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .common import canonical, digest, stamp
+from .segments import (CREATE_TABLES, capture_write_guard, evidence_bytes,
+                       evidence_paths, rollover_when_full)
 
 LOG = logging.getLogger("rc6_performance")
 TABLES = ("decision_evidence_snapshots", "market_snapshots", "paper_fills", "paper_events", "universe_cycle_metrics")
@@ -38,6 +40,8 @@ class EvidenceStore:
         self.path = Path(path).resolve()
         self.maximum_bytes = maximum_bytes
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # The historical base remains present; a manifest never rewrites it.
+        evidence_paths(self.path)
         if self.path.exists():
             with closing(sqlite3.connect(self.path.as_uri()+"?mode=ro", uri=True, timeout=.005)) as existing:
                 tables = {r[0] for r in existing.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -45,33 +49,26 @@ class EvidenceStore:
                 raise ValueError("SEPARATE_EVIDENCE_DATABASE_REQUIRED")
         with closing(self.connect()) as c:
             c.execute("PRAGMA journal_mode=WAL")
-            c.executescript("""
-                CREATE TABLE IF NOT EXISTS events(
-                  id INTEGER PRIMARY KEY, event_key TEXT NOT NULL UNIQUE,
-                  source_table TEXT NOT NULL, source_rowid INTEGER NOT NULL,
-                  recorded_at TEXT NOT NULL, payload_sha256 TEXT NOT NULL, payload_json TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS cursors(
-                  source_key TEXT NOT NULL, source_table TEXT NOT NULL, last_rowid INTEGER NOT NULL,
-                  PRIMARY KEY(source_key,source_table));
-                CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value_json TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS exit_probes(
-                  paper_id TEXT NOT NULL, stage TEXT NOT NULL, at TEXT NOT NULL,
-                  detail_json TEXT NOT NULL, PRIMARY KEY(paper_id,stage));
-            """)
+            c.executescript(CREATE_TABLES)
 
     def connect(self):
-        c = sqlite3.connect(self.path, timeout=.005)
+        # Other processes may have published a successor after construction.
+        c = sqlite3.connect(evidence_paths(self.path)[-1], timeout=.005)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA busy_timeout=5")
         return c
 
     def at_capacity(self):
-        return sum(p.stat().st_size for p in (self.path, Path(str(self.path)+"-wal"), Path(str(self.path)+"-shm")) if p.exists()) >= self.maximum_bytes
+        return evidence_bytes(evidence_paths(self.path)[-1]) >= self.maximum_bytes
+
+    def ensure_writable(self):
+        # Serializes rollover without acquiring a lock on the trading DB.
+        return rollover_when_full(self.path, self.maximum_bytes)
 
     def probe(self, paper_id, stage, at, detail):
-        if self.at_capacity():
-            return False
         try:
+            if not self.ensure_writable():
+                return False
             stamp(at)
             with closing(self.connect()) as c, c:
                 c.execute("INSERT OR IGNORE INTO exit_probes VALUES(?,?,?,?)",
@@ -104,7 +101,13 @@ class BoundedCapture:
         self.source_key = digest([str(self.source), stat.st_dev, stat.st_ino])
 
     def read_batch(self):
-        if self.evidence.at_capacity():
+        try:
+            writable = self.evidence.ensure_writable()
+        except ValueError as exc:
+            if str(exc) == "EVIDENCE_DISK_RESERVE_REQUIRED":
+                return {"status": "EVIDENCE_DISK_RESERVE_REQUIRED", "rows": 0}
+            raise
+        if not writable:
             return {"status": "EVIDENCE_CAPACITY_REACHED", "rows": 0}
         deadline = time.monotonic() + self.seconds
         data, cursors, starts, dropped, serialized_bytes = [], {}, {}, 0, 0
@@ -162,13 +165,28 @@ class BoundedCapture:
         report = {"status": "CAPTURED", "rows": len(data), "oversize_rows_not_captured": dropped,
                   "started_at_tail": starts, "source_key": self.source_key,
                   "source_read_seconds": self.seconds-(deadline-time.monotonic()), "context": capture_context()}
-        with closing(self.evidence.connect()) as target, target:
-            for event_key, table, rowid, payload in data:
-                target.execute("INSERT OR IGNORE INTO events VALUES(NULL,?,?,?,?,?,?)",
-                               (event_key, table, rowid, at, hashlib.sha256(payload.encode()).hexdigest(), payload))
-            for table, cursor in cursors.items():
-                target.execute("INSERT OR REPLACE INTO cursors VALUES(?,?,?)", (self.source_key, table, cursor))
-            target.execute("INSERT OR REPLACE INTO state VALUES('last_capture',?)", (canonical(report),))
+        # Rollover and capture commits share one narrow lock.  A probe that was
+        # already open may finish on the old shard; it cannot advance cursors.
+        with capture_write_guard(self.evidence.path):
+            active = evidence_paths(self.evidence.path)[-1]
+            with closing(self.evidence.connect()) as target, target:
+                connected = Path(target.execute("PRAGMA database_list").fetchone()[2]).resolve()
+                if connected != active:
+                    raise ValueError("EVIDENCE_CAPTURE_STALE_SEGMENT")
+                current = {r["source_table"]: r["last_rowid"] for r in target.execute(
+                    "SELECT * FROM cursors WHERE source_key=?", (self.source_key,))}
+                if current != prior:
+                    # No partial event/cursor commit and no silent replay.
+                    raise ValueError("EVIDENCE_CAPTURE_CURSOR_CHANGED_RETRY")
+                for event_key, table, rowid, payload in data:
+                    target.execute("INSERT OR IGNORE INTO events VALUES(NULL,?,?,?,?,?,?)",
+                                   (event_key, table, rowid, at,
+                                    hashlib.sha256(payload.encode()).hexdigest(), payload))
+                for table, cursor in cursors.items():
+                    target.execute("INSERT OR REPLACE INTO cursors VALUES(?,?,?)",
+                                   (self.source_key, table, cursor))
+                target.execute("INSERT OR REPLACE INTO state VALUES('last_capture',?)",
+                               (canonical(report),))
         return report
 
 
