@@ -89,5 +89,104 @@ class ScalpingStageRegression(unittest.TestCase):
         self.assertNotIn("store.event", source)
 
 
+
+class A369ScalpingWorkerExceptionFlow(unittest.TestCase):
+    """End-to-end fake batch, no provider/DB/network/positions."""
+
+    def _run(self, fail_stage):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import sys
+        import types
+
+        class FakeStop:
+            done = False
+            def is_set(self):
+                return self.done
+            def wait(self, seconds):
+                self.done = True
+
+        class FakeStore:
+            def __init__(self):
+                self.events = []
+            def event(self, *args):
+                self.events.append(args)
+            def audit_http(self, *args):
+                raise AssertionError("no PPI HTTP may be called")
+
+        class FakeReader:
+            budget_enabled = False
+            metrics = {"http_blocked": 0}
+            last_read_error_code = None
+            def __init__(self, *args, **kwargs):
+                pass
+            def login_once(self):
+                pass
+            def intraday(self, *args):
+                if fail_stage == "PPI_READ":
+                    raise ValueError("PRIVATE_VENDOR_SECRET_EXAMPLE")
+                return [{"date": "2026-11-02T14:05:00-03:00",
+                         "price": 101, "volume": 12}]
+            def close(self):
+                pass
+
+        class FakeCache:
+            entries = {}
+            maximum = 24
+            evictions = 0
+            def restore(self, record, state):
+                return None
+            def decision(self, capability, *, at, fingerprint):
+                return {"allowed": True, "reprobe": False}
+
+        fake_guard = types.ModuleType("bd_ppi_readonly_guard")
+        fake_guard.ProductionMarketReader = FakeReader
+        fake_guard.retry_read = lambda call, *, retries: call()
+        fake_guard.classify_read_error = lambda error: "PPI_VALUEERROR"
+        fake_guard.instrument_not_found = lambda error: False
+        fake_observer = types.ModuleType("bf_production_paper_observer")
+        fake_observer._secret = lambda: ("SYNTHETIC_ONLY", "SYNTHETIC_ONLY")
+
+        store = FakeStore()
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(sys.modules, {
+                "bd_ppi_readonly_guard": fake_guard,
+                "bf_production_paper_observer": fake_observer}))
+            for name, value in {
+                "init_schema": lambda store: None,
+                "_market_open": lambda at: True,
+                "_request_capability_state": lambda store, record: None,
+                "_capability_fingerprint": lambda record, selection: "synthetic",
+                "IntradayCapabilityCache": FakeCache,
+                "_heartbeat": lambda *args, **kwargs: True,
+                "select_runtime_batch": lambda store, *, limit, cursor, at: (
+                    [dict(RECORD)], 0, 1,
+                    {"dynamic": False, "cadence_seconds": 180}),
+            }.items():
+                stack.enter_context(patch.object(scalping, name, value))
+            if fail_stage == "NORMALIZE":
+                def normalize_payload(*args, **kwargs):
+                    raise ValueError("PRIVATE_NORMALIZER_SECRET_EXAMPLE")
+                stack.enter_context(patch.object(
+                    scalping, "normalize_payload", normalize_payload))
+            scalping.run_worker(store, FakeStop(),
+                clock_fn=lambda: "2026-11-02T14:05:00-03:00")
+        matches = [event for event in store.events
+                   if event[0] == "INTRADAY_SCALPING_ERROR"]
+        self.assertEqual(1, len(matches))
+        detail = matches[0][1]
+        self.assertIn(": PPI_VALUEERROR;phase=" + fail_stage + ";", detail)
+        self.assertNotIn("PRIVATE_", detail)
+        self.assertNotIn("SECRET_EXAMPLE", detail)
+        self.assertIn("shadow_identity=", detail)
+
+    def test_actual_except_labels_pyi_read_valueerror(self):
+        self._run("PPI_READ")
+
+    def test_actual_except_labels_local_normalize_valueerror(self):
+        self._run("NORMALIZE")
+
+
+
 if __name__ == "__main__":
     unittest.main()
