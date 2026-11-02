@@ -1132,6 +1132,37 @@ def observer_lifecycle_host():
                 "status": "UNAVAILABLE", "events": []}
 
 
+def _performance_log_signatures(content, *, at):
+    """Classify bounded child-worker log codes, never export untrusted details."""
+    allowed_status = {"EVIDENCE_CAPACITY_REACHED"}
+    allowed_errors = {"OperationalError", "DatabaseError", "ValueError",
+                      "OSError", "PermissionError", "FileNotFoundError",
+                      "IntegrityError", "TimeoutError"}
+    found = []
+    if not isinstance(content, str) or len(content) > 262144:
+        return {"status": "NO_VERIFICADO", "reason": "LOG_BUDGET_EXCEEDED",
+                "observations": []}
+    for line in content.splitlines()[-1000:]:
+        stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
+        observed = (timestamp(stamp.group(1) + "Z") if stamp else None)
+        if observed is None or not timedelta(0) <= at - observed <= timedelta(minutes=30):
+            continue
+        status = re.search(r'PERFORMANCE_CAPTURE:([A-Za-z0-9_]{3,50})\b', line)
+        error = re.search(r'PERFORMANCE_CAPTURE_UNVERIFIED:([A-Za-z]{3,40})\b', line)
+        if status:
+            label = ("CAPTURE_" + status.group(1) if status.group(1) in allowed_status
+                     else "CAPTURE_UNCLASSIFIED_STATUS")
+        elif error:
+            label = ("ERROR_" + error.group(1) if error.group(1) in allowed_errors
+                     else "ERROR_UNCLASSIFIED_CLASS")
+        else:
+            continue
+        found.append({"code": label, "observed_utc": observed.isoformat()})
+    return {"status": "DIAGNOSTIC_OBSERVED_NO_GO" if found else "NO_VERIFICADO",
+            "reason": "SANITIZED_ERROR_CLASSES" if found else "NO_RECENT_LOG_SIGNATURE",
+            "possibly_truncated": len(found) > 12, "observations": found[-12:]}
+
+
 def recent_critical_host():
     """Classify bounded current-container signatures; never export raw logs."""
     result = {"schema": "rc6.recent-critical-readonly.v1", "read_only": True,
@@ -1146,6 +1177,7 @@ def recent_critical_host():
             if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
                 raise ValueError("LOG_PROBE_UNAVAILABLE")
             content = logs.stdout + "\n" + logs.stderr
+            performance_log_codes = _performance_log_signatures(content, at=collected_at)
             tracebacks = []
             last_frame = None
             traceback_count = 0
@@ -1196,6 +1228,7 @@ def recent_critical_host():
                 "status": "OK", "traceback_count": traceback_count,
                 "tracebacks": tracebacks[-12:],
                 "exception_lines_last_5m": last_five_minutes,
+                "performance_log_codes": performance_log_codes,
                 "capability_signature_count": capability_count,
                 "nonzero_order_signature_count": order_count}
         except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):

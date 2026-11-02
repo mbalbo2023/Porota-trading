@@ -947,6 +947,51 @@ class A367CalendarSubprocessRegression(unittest.TestCase):
 
 
 
+class A372PerformanceWorkerLogClassification(unittest.TestCase):
+    """Only synthetic logs; non-sensitive labels and stable temporal budget."""
+
+    def test_status_code_capacity_reached_is_preserved(self):
+        line = "2026-10-14T13:59:00Z WARNING PERFORMANCE_CAPTURE:EVIDENCE_CAPACITY_REACHED user=secret"
+        result = monitor._performance_log_signatures(line, at=NOW)
+        self.assertEqual("DIAGNOSTIC_OBSERVED_NO_GO", result["status"])
+        self.assertEqual("CAPTURE_EVIDENCE_CAPACITY_REACHED", result["observations"][0]["code"])
+        self.assertNotIn("secret", json.dumps(result))
+
+    def test_generic_exception_redacted_without_inventing_cause(self):
+        line = "2026-10-14T13:59:00Z WARNING PERFORMANCE_CAPTURE_UNVERIFIED:OperationalError ticker=GGAL token=secret"
+        result = monitor._performance_log_signatures(line, at=NOW)
+        self.assertEqual("ERROR_OperationalError", result["observations"][0]["code"])
+        self.assertNotIn("GGAL", json.dumps(result))
+        self.assertNotIn("secret", json.dumps(result))
+
+    def test_unknown_error_class_is_not_echoed(self):
+        line = "2026-10-14T13:59:00Z WARNING PERFORMANCE_CAPTURE_UNVERIFIED:CustomerTokenXYZ"
+        result = monitor._performance_log_signatures(line, at=NOW)
+        self.assertEqual("ERROR_UNCLASSIFIED_CLASS", result["observations"][0]["code"])
+        self.assertNotIn("CustomerTokenXYZ", json.dumps(result))
+
+    def test_empty_or_unrelated_logs_are_not_green(self):
+        result = monitor._performance_log_signatures("2026-10-14T13:59:00Z unrelated", at=NOW)
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual([], result["observations"])
+
+    def test_outside_window_does_not_count(self):
+        lines = ("2026-10-14T13:00:00Z WARNING PERFORMANCE_CAPTURE:EVIDENCE_CAPACITY_REACHED\n"
+                 "2026-10-14T14:01:00Z WARNING PERFORMANCE_CAPTURE_UNVERIFIED:ValueError")
+        result = monitor._performance_log_signatures(lines, at=NOW)
+        self.assertEqual("NO_VERIFICADO", result["status"])
+
+    def test_response_budget_and_max_events(self):
+        line = "2026-10-14T13:59:00Z WARNING PERFORMANCE_CAPTURE:EVIDENCE_CAPACITY_REACHED"
+        many = "\n".join([line] * 24)
+        result = monitor._performance_log_signatures(many, at=NOW)
+        self.assertTrue(result["possibly_truncated"])
+        self.assertEqual(12, len(result["observations"]))
+        blocked = monitor._performance_log_signatures("x" * 262145, at=NOW)
+        self.assertEqual("LOG_BUDGET_EXCEEDED", blocked["reason"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
 
