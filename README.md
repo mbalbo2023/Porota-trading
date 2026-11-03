@@ -7,7 +7,7 @@ POROTA TRADING RC6 es un sistema de investigación, observación y simulación d
 ## Reglas inviolables
 
 - `PAPER/SHADOW ONLY`; `real_orders_sent=0` como invariante obligatoria, **no** como medición actual inferida del código.
-- Rutas de órdenes reales bloqueadas y nunca llamadas. No existe opción de habilitar trading real mediante Telegram, configuración o este README.
+- Rutas de órdenes reales bloqueadas y nunca llamadas. **Ninguna opción, incluida Telegram o configuración, está autorizada a habilitar órdenes reales; cualquier ruta existente debe permanecer bloqueada.**
 - **PPI Watch NO TOCAR** salvo autorización expresa y acotada; su existencia, unidades y estado se verifican antes de atribuirle cualquier resultado.
 - **FIX-FORWARD ONLY**: sin rollback, sin retroceder silenciosamente el estado productivo y sin purgas inseguras.
 - GitHub y GitHub Actions son el plano de control habitual. No se exige al operador una terminal, SSH ni comandos de contenedores manuales para tareas normales; SSH sólo es excepcional (*break-glass*).
