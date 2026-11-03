@@ -54,17 +54,20 @@ def _complete_key(key):
                                  for part in key)
 
 
+def _catalog_metadata(row):
+    try:
+        value = json.loads(row["metadata_json"] or "{}")
+    except (ValueError, TypeError):
+        return {}, True
+    return (value, False) if isinstance(value, dict) else ({}, True)
+
+
 def _catalog_primary_claim(row):
     """Catalog-side provenance claim, not a fresh provider authorization."""
     source = str(row["settlement_source"] or "").strip().upper()
     if source in PPI_SOURCES:
         return True
-    try:
-        value = json.loads(row["metadata_json"] or "{}")
-    except (ValueError, TypeError):
-        return False
-    if not isinstance(value, dict):
-        return False
+    value = row["_metadata"]
     discovery = str(value.get("_discovery_source") or "").strip().upper()
     availability = str(value.get("_availability_source") or "").strip().upper()
     return discovery == "PPI_PRIMARY" or availability.startswith("PPI_PRIMARY")
@@ -175,11 +178,38 @@ def _bucket():
             "ppi_catalog_identity_absent": 0, "ppi_symbol_multiple": 0,
             "gap_catalog_primary_claimed": 0, "gap_catalog_complementary_only": 0,
             "catalog_incomplete_five_key": 0,
+            "catalog_financial_contract_v17_declared": 0,
+            "catalog_paper_family_contract_v1_declared": 0,
+            "catalog_paper_caucion_contract_v1_declared": 0,
+            "catalog_contract_payload_invalid": 0,
+            "catalog_metadata_json_invalid": 0,
+            "catalog_contract_conflicts_declared": 0,
+            "catalog_bridge_present_not_accredited": 0,
             "exact_v2_ppi": 0, "exact_v2_complement_only": 0,
             "ticker_only_v2_mismatch": 0, "v2_absent": 0,
+            "historic_ppi_exact_without_current": 0,
+            "historic_complement_exact_without_current": 0,
             "ppi_partial_or_unverified": 0, "ppi_missing_required_fields": 0,
             "ppi_field_conflicts": 0, "ppi_fields_present_not_accredited": 0,
             "missing_contract_fields": Counter(), "gap_capability": Counter()}
+
+
+def _historic_sources(conn, key):
+    family, ticker, market, currency, settlement = key
+    if not _complete_key(key):
+        return set()
+    aliases = (("ON", "OBLIGACIONES") if family == "OBLIGACIONES"
+               else ("FCI", "FCI_LOCAL") if family == "FCI"
+               else (family,))
+    sources = set()
+    for alias in aliases:
+        for row in conn.execute(
+                """SELECT DISTINCT source_class FROM contract_evidence_v2_snapshots
+                   WHERE family=? AND ticker=? AND market=?
+                     AND currency=? AND settlement=? LIMIT 100""",
+                (alias, ticker, market, currency, settlement)):
+            sources.add(str(row[0]))
+    return sources
 
 
 def _analyze(conn):
@@ -208,6 +238,7 @@ def _analyze(conn):
     current = _current_rows(conn)
     ppi_by_symbol = Counter()
     for row in catalog:
+        row["_metadata"], row["_metadata_invalid"] = _catalog_metadata(row)
         row["_catalog_primary_claim"] = _catalog_primary_claim(row)
         if row["_catalog_primary_claim"]:
             ppi_by_symbol[str(row["ticker"] or "").strip().upper()] += 1
@@ -236,6 +267,22 @@ def _analyze(conn):
             result["catalog_prelim_ready"] += 1
             continue
         result["capability_gaps"] += 1
+        metadata = row["_metadata"]
+        if row["_metadata_invalid"]:
+            result["catalog_metadata_json_invalid"] += 1
+        for name, metric in (
+                ("financial_contract_v17", "catalog_financial_contract_v17_declared"),
+                ("paper_family_contract_v1", "catalog_paper_family_contract_v1_declared"),
+                ("paper_caucion_contract_v1", "catalog_paper_caucion_contract_v1_declared")):
+            if name in metadata:
+                if isinstance(metadata[name], dict) and metadata[name]:
+                    result[metric] += 1
+                else:
+                    result["catalog_contract_payload_invalid"] += 1
+        if metadata.get("_contract_conflicts"):
+            result["catalog_contract_conflicts_declared"] += 1
+        if metadata.get("_contract_bridge"):
+            result["catalog_bridge_present_not_accredited"] += 1
         result["gap_catalog_primary_claimed" if primary_claim
                else "gap_catalog_complementary_only"] += 1
         capability = str(row["capability"] or "")
@@ -252,6 +299,12 @@ def _analyze(conn):
             continue
         candidates = by_key.get(key, [])
         primary = [r for r in candidates if str(r["source_class"]).startswith("PPI_")]
+        historic_sources = _historic_sources(conn, key)
+        if not primary and any(name.startswith("PPI_") for name in historic_sources):
+            result["historic_ppi_exact_without_current"] += 1
+        if not candidates and historic_sources and not any(
+                name.startswith("PPI_") for name in historic_sources):
+            result["historic_complement_exact_without_current"] += 1
         if not primary:
             if candidates:
                 result["exact_v2_complement_only"] += 1
