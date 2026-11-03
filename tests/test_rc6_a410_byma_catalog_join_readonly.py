@@ -299,7 +299,7 @@ class A410JoinContracts(unittest.TestCase):
     def test_address_space_limit_is_enforced_in_real_offhost_child(self):
         # An isolated runner process gets both RLIMIT_AS hard and soft caps;
         # never alter the parent process address space budget.
-        child = "\\n".join([
+        child = "\n".join([
             "import importlib.util, resource",
             f"spec=importlib.util.spec_from_file_location('a410_guard', {str(PATH)!r})",
             "m=importlib.util.module_from_spec(spec)",
