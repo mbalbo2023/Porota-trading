@@ -232,8 +232,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Sanitizer failure, early exit and SIGTERM must not leave untrusted
-          # host stdout behind on the runner. Scope to this A504 raw file only.
+          # Sanitizer failure and command errors must not leave untrusted
+          # host stdout after shell exit. Scope to this A504 raw file only.
           trap 'rm -f -- evidence/.a504-raw.json' EXIT
           set +e
           ssh -i "$HOME/.ssh/rc6_a420_source_layout" \
