@@ -140,7 +140,8 @@ jobs:
                      'source_contract_terms_fresh_verified','causal_pit_verified',
                      'v2_payload_hash_checked','host_db_writes','provider_gets',
                      'real_orders_sent_by_probe','paper_auto_enabled','host_runtime_order_count',
-                     'catalog_rows','v2_current_rows','historical_819_gap_match',
+                     'catalog_rows','v2_current_rows','v2_history_ppi_rows_scanned',
+                     'v2_history_identity_bytes_scanned','historical_819_gap_match',
                      'capability_gaps_measured','families','wal_present','shm_present',
                      'journal_present','db_bytes','measured_at_utc'}
           assert set(obj) <= allowed, 'A626_UNEXPECTED_OUTPUT_FIELDS'
