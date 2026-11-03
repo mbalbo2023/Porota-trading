@@ -79,6 +79,16 @@ def legacy_ppi_cache(tmp_path, *, row=None):
     return item
 
 
+def nest_legacy_ppi_cache(tmp_path, inner, *, top_source=None):
+    path = tmp_path / "primary_last.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    outer = payload["quotes_by_symbol"]["GGAL"]
+    outer["quote"] = inner
+    if top_source is not None:
+        outer["source"] = top_source
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_reader_market_root_matches_observer_persistent_data_mount(tmp_path):
     # Docker binds host DATA to container /app/data. Both sides refer to the
     # same market directory; no independent path override may silently drift.
@@ -413,6 +423,52 @@ def test_iol_ambiguous_fallback_identity_does_not_resurrect_scanner(tmp_path, mo
     assert values == {}
     assert any(row["reason"] == "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES"
                for row in meta["identity_reviews"])
+
+
+@pytest.mark.parametrize("outer_source", [None, "PPI"])
+def test_iol_nested_complement_quote_must_not_launder_ppi_authority(
+        tmp_path, monkeypatch, outer_source):
+    root = legacy_ppi_cache(tmp_path)
+    inner = {**root, "source": "IOL"}
+    nest_legacy_ppi_cache(tmp_path, inner, top_source=outer_source)
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {} and meta["state"] == "UNAVAILABLE"
+    assert any(review["reason"] == "PPI_NESTED_QUOTE_AUTHORITY_OR_IDENTITY_CONFLICT"
+               for review in meta["identity_reviews"])
+
+
+@pytest.mark.parametrize("invalid", ["missing_nested_source", "currency_mismatch",
+                                     "book_stale_inside", "last_zero_inside", "clock_conflict"])
+def test_iol_nested_ppi_fallback_requires_own_exact_native_evidence(tmp_path, monkeypatch,
+                                                                      invalid):
+    root = legacy_ppi_cache(tmp_path)
+    inner = {**root, "source": "PPI"}
+    if invalid == "missing_nested_source":
+        inner.pop("source")
+    elif invalid == "currency_mismatch":
+        inner["currency"] = "USD"
+    elif invalid == "book_stale_inside":
+        inner["book_at"] = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    elif invalid == "last_zero_inside":
+        inner["last"] = "0"
+    elif invalid == "clock_conflict":
+        inner["trade_at"] = (datetime.now(timezone.utc) - timedelta(seconds=40)).isoformat()
+    nest_legacy_ppi_cache(tmp_path, inner, top_source="PPI")
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {} and meta["state"] == "UNAVAILABLE"
+    assert any(review["reason"] == "PPI_NESTED_QUOTE_AUTHORITY_OR_IDENTITY_CONFLICT"
+               for review in meta["identity_reviews"])
+
+
+@pytest.mark.parametrize("top_source", [None, "PPI"])
+def test_iol_nested_exact_ppi_native_quote_remains_eligible(tmp_path, monkeypatch,
+                                                             top_source):
+    root = legacy_ppi_cache(tmp_path)
+    inner = {**root, "source": "PPI"}
+    nest_legacy_ppi_cache(tmp_path, inner, top_source=top_source)
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values["GGAL"]["provider_observed_at"] == root["trade_at"]
+    assert meta["state"] == "READY"
 
 
 def test_newer_unavailable_scanner_blocks_older_same_identity_fallback(tmp_path, monkeypatch):

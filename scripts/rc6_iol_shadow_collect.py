@@ -7,6 +7,7 @@ by arbitrary rows accumulated in cache across older cycles.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 import os
@@ -335,10 +336,66 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
 
     current = datetime.now(timezone.utc)
 
+    def normalized_nested_quote(row):
+        """A nested provider quote may not borrow a wrapper's PPI identity/clocks.
+
+        The nested record must independently prove source, exact contract,
+        native trade/book and positive last before any field reaches bind().
+        """
+        if "quote" not in row:
+            return row, False
+        nested = row["quote"]
+        if not isinstance(nested, dict):
+            return row, True
+        nested_source = str(nested.get("source") or "").strip().upper()
+        outer_source = str(row.get("source") or "").strip().upper()
+        if (not nested_source or source_rank(nested_source) != 0
+                or nested_source == "PPI_CATALOG"
+                or (outer_source and (source_rank(outer_source) != 0
+                                      or outer_source == "PPI_CATALOG"))):
+            return row, True
+        try:
+            if tuple(_canonical_identity(nested)) != tuple(_canonical_identity(row)):
+                return row, True
+        except (TypeError, ValueError):
+            return row, True
+        # A contradictory wrapper is review evidence, never a way to pick
+        # whichever clock/price happens to make a stale quote look current.
+        for field in ("last", "bid", "ask", "trade_at", "book_at", "source_at",
+                      "last_kind", "state", "review_status"):
+            outer, inner = row.get(field), nested.get(field)
+            if outer in (None, "") or inner in (None, ""):
+                continue
+            if field in {"trade_at", "book_at", "source_at"}:
+                same = bool(_parse_time(outer) and _parse_time(outer) == _parse_time(inner))
+            elif field in {"last", "bid", "ask"}:
+                try:
+                    left, right = Decimal(str(outer)), Decimal(str(inner))
+                    same = left.is_finite() and right.is_finite() and left == right
+                except (InvalidOperation, TypeError, ValueError):
+                    same = False
+            else:
+                same = str(outer).strip().upper() == str(inner).strip().upper()
+            if not same:
+                return row, True
+        if not native_trade_book_ready(nested, current, receipt=receipt_time(nested),
+                                       require_trade_kind=bool(nested.get("provider_origin") == ORIGIN)):
+            return row, True
+        normalized = {**row, **nested, "source": nested_source}
+        normalized.pop("quote", None)
+        return normalized, False
+
     def bind(records, *, capture=None):
         by_symbol, reviews, observed_identities, unavailable_since = {}, [], {}, {}
         for record in records:
             row = dict(record)
+            row, nested_conflict = normalized_nested_quote(row)
+            if nested_conflict:
+                if len(reviews) < 1000:
+                    reviews.append({"symbol": row.get("symbol"),
+                                    "reason": "PPI_NESTED_QUOTE_AUTHORITY_OR_IDENTITY_CONFLICT",
+                                    "identity_assigned": False})
+                continue
             native = _parse_time(native_time(row))
             received = _parse_time(receipt_time(row) or capture)
             try:
