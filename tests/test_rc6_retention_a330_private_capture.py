@@ -625,6 +625,7 @@ class SyntheticPrivateCapture(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", body)
         self.assertIn("inputs.mode == 'HISTORY_COPY_ONLY'", body)
         self.assertIn("--host-history-export", body)
+        self.assertIn("python3 -B - --host-history-export", body)
         self.assertIn("--runner-history-rehearsal", body)
         self.assertIn("--classify-history-capture-failure", body)
         self.assertIn("permissions:\n  contents: read", body)

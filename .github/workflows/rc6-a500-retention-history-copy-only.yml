@@ -115,7 +115,7 @@ jobs:
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$root/known_hosts" \
             -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
-            'sudo -n nice -n 19 ionice -c 3 python3 - --host-history-export' \
+            'sudo -n nice -n 19 ionice -c 3 python3 -B - --host-history-export' \
             < scripts/rc6_retention_a330_private_capture.py \
             > "$root/a330-private.tar" 2> "$root/a330-private.log"
           capture_rc=$?
