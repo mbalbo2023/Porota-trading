@@ -138,6 +138,7 @@ def test_candidate_row_count_is_bounded_and_deduped():
     ]
     result = capture({'data':rows})
     assert len(result['unverified_ppi_five_key_candidates']) == PASSIVE_FCI_MAX_IDENTITY_ROWS
+    assert result['identity_candidates_limit_reached'] is True
     assert result['auto_ready'] is False
 
 
