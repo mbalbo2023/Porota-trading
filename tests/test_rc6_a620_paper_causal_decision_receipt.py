@@ -14,6 +14,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from be_paper_engine import PaperStore, Quote, SOURCE, STRATEGY_VERSION
+from bs_instrument_contracts import InstrumentContract
+from bv_paper_runtime import broker_from_environment
 import rc6_paper_causal_decision_receipt as causal_module
 from rc6_paper_causal_decision_receipt import (
     attest_after_commit, freeze_in_decision_transaction, verify_signed_receipt,
@@ -287,6 +289,63 @@ class TestA620CausalDecisionFreeze(unittest.TestCase):
             self.assertIsNone(rows[0][1])
             self.assertEqual(rows[1][1], first["receipt_sha256"])
         self.assertTrue(self.verify("A620:GGAL:BUY:SECOND")["decision_signature_verified"])
+
+    def test_spot_native_runtime_path_sets_real_decision_at_before_gate(self):
+        """Exercise the real broker on_quote path; veto after decision, no fill."""
+        at = (QUOTE_AT + timedelta(seconds=1)).isoformat()
+        normalized_at = (QUOTE_AT + timedelta(seconds=1)).astimezone(timezone.utc).isoformat(
+            timespec="microseconds")
+        broker = broker_from_environment(self.store, clock_fn=lambda: at,
+                                         require_supervisor=False, ai_mode="OFF")
+        broker.decide = lambda _q: ("BUY", Decimal("0.8"), "SYNTHETIC_NATIVE_SIGNAL",
+                                    {"performance_lineage": {"strategy_id": "A620_INTEGRATION"}})
+        with patch.dict(os.environ, {"POROTA_RC6_RELEASE_SHA256": RELEASE}):
+            broker.on_quote(self.quote(), allow_new_openings=False,
+                            opening_block_reason="TEST_NO_ENTRY",
+                            evaluate_when_blocked=True)
+        with self.store.connect() as connection:
+            decisions = connection.execute("SELECT decision_key FROM paper_decisions "
+                                           "WHERE action='BUY'").fetchall()
+            self.assertEqual(len(decisions), 1)
+            frozen = self.freeze(decisions[0][0])[0]
+            self.assertEqual(frozen["claimed_decision_at"], normalized_at)
+            self.assertEqual(frozen["quote_observed_at"], QUOTE_AT.isoformat())
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
+
+    def test_future_native_runtime_path_sets_real_decision_at_before_gate(self):
+        """Future-specific _on_future_quote also calls mark_lineage before store."""
+        at = (QUOTE_AT + timedelta(seconds=1)).isoformat()
+        normalized_at = (QUOTE_AT + timedelta(seconds=1)).astimezone(timezone.utc).isoformat(
+            timespec="microseconds")
+        spec = InstrumentContract(
+            "DLR/OCT26", "FUTUROS", "ARS", "A3", "INMEDIATA",
+            Decimal("1000"), Decimal("1"), "CONTRACT_EVIDENCE_V2_BOUND",
+            expires_at="2026-11-30T15:00:00-03:00",
+            minimum_quantity=Decimal("1"),
+            paper_margin_policy="CONSERVATIVE_NOTIONAL_RATE",
+            paper_margin_rate=Decimal("1"), underlying="DOLAR_A3500")
+        q = Quote("DLR/OCT26", "FUTUROS", "INMEDIATA", Decimal("1500"),
+                  Decimal("1499"), Decimal("1500"), Decimal("10"), Decimal("10"),
+                  QUOTE_AT.isoformat(), contract=spec, currency="ARS", market="A3",
+                  metadata_source="PPI_CATALOG:SYNTHETIC", book_at=QUOTE_AT.isoformat(),
+                  trade_at=QUOTE_AT.isoformat(), last_kind="TRADE")
+        broker = broker_from_environment(self.store, clock_fn=lambda: at,
+                                         require_supervisor=False, ai_mode="OFF")
+        broker._decide_future = lambda _q: ("BUY", Decimal("0.8"), "SYNTHETIC_FUTURE_SIGNAL",
+                                            {"performance_lineage": {"strategy_id": "A620_FUTURE"}})
+        with patch.dict(os.environ, {"POROTA_RC6_RELEASE_SHA256": RELEASE}):
+            broker.on_quote(q, allow_new_openings=False,
+                            opening_block_reason="TEST_NO_FUTURE_ENTRY",
+                            evaluate_when_blocked=True)
+        with self.store.connect() as connection:
+            keys = connection.execute("SELECT decision_key FROM paper_decisions "
+                                      "WHERE action='BUY'").fetchall()
+            self.assertEqual(len(keys), 1)
+            frozen = self.freeze(keys[0][0])[0]
+            self.assertEqual(frozen["claimed_decision_at"], normalized_at)
+            self.assertEqual(frozen["identity"], ["DLR/OCT26", "FUTUROS", "A3", "ARS", "INMEDIATA"])
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_future_positions").fetchone()[0], 0)
 
 
 if __name__ == "__main__":
