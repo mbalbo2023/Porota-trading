@@ -39,12 +39,16 @@ class Blocked(Exception):
 
 
 def _family(value):
+    """Reporting bucket only; never use a family alias for evidence identity."""
     value = str(value or "").strip().upper()
     return {"ON": "OBLIGACIONES", "FCI_LOCAL": "FCI"}.get(value, value)
 
 
 def _key(row):
-    return (_family(row["family"]), str(row["ticker"] or "").strip().upper(),
+    # Physical 5-key equality must be literal across catalog/current/snapshot/
+    # historical provenance. Display aliases cannot accredit PPI evidence.
+    return (str(row["family"] or "").strip().upper(),
+            str(row["ticker"] or "").strip().upper(),
             str(row["market"] or "").strip().upper(),
             str(row["currency"] or "").strip().upper(),
             str(row["settlement"] or "").strip().upper())
@@ -264,9 +268,10 @@ def _aggregate(conn):
     pending_historical = []
     for row in rows:
         key = _key(row)
-        if key[0] not in out or str(row["status"] or "").upper() not in ACTIVE:
+        bucket = _family(row["family"])
+        if bucket not in out or str(row["status"] or "").upper() not in ACTIVE:
             continue
-        item = out[key[0]]
+        item = out[bucket]
         item["catalog_active"] += 1
         if str(row["capability"] or "").startswith("READY_PAPER_"):
             item["catalog_prelim_ready"] += 1
