@@ -38,6 +38,10 @@ STAGE_STATES = frozenset({
     "NOT_DUE_LATE_EXACT_CONTRACT", "OUTPUT_NOT_REPUBLISHED", "OUTPUT_UNVERIFIED",
     "NOT_REPORTED",
 })
+# A542: IOL is optional, and absent OAuth is a diagnostic failure of IOL
+# ONLY; PUBLIC/EVIDENCE retain independent TTL execution. Never promote this
+# marker to provider readiness or accept it as COMPLETE.
+IOL_STAGE_STATES = STAGE_STATES | frozenset({"COMPLEMENT_AUTH_UNAVAILABLE"})
 REASONS = frozenset({
     "PAPER_OBSERVE_ONLY", "COM19031_EXACT_LATE_T1_OBSERVE_ONLY",
     "PAPER_DATABASE_UNVERIFIED", "PAPER_DATABASE_IDENTITY_UNVERIFIED", "PAPER_ZERO_REQUIRED",
@@ -149,8 +153,9 @@ def _parsed_marker(message: str) -> tuple[str, str, dict[str, str]] | None:
     stage_data = data.get("stages")
     if not isinstance(stage_data, dict) or not set(stage_data).issubset(STAGE_NAMES):
         return None
-    if any(not isinstance(val, str) or val not in STAGE_STATES - {"NOT_REPORTED"}
-           for val in stage_data.values()):
+    if any(not isinstance(val, str) or val not in (
+            IOL_STAGE_STATES if name == "iol" else STAGE_STATES) - {"NOT_REPORTED"}
+           for name, val in stage_data.items()):
         return None
     state = data["status"]
     if state in {"COMPLETE", "DEGRADED"} and not stage_data:
@@ -246,8 +251,9 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
             value["reported_status"] not in RESULT_STATES | {"NO_VERIFICADO"} or
             value["reported_reason"] not in REASONS or
             value["marker_age"] not in AGE_BUCKETS or
+            value["stage_iol"] not in IOL_STAGE_STATES or
             any(value[key] not in STAGE_STATES for key in
-                ("stage_iol", "stage_public", "stage_evidence"))):
+                ("stage_public", "stage_evidence"))):
             return fallback
         if value["marker"] == "NO_VERIFICADO":
             return value if value == fallback else fallback

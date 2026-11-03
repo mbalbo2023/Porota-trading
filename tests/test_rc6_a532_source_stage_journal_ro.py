@@ -74,6 +74,34 @@ class A532OffhostTests(unittest.TestCase):
         self.assertFalse(result["paper_ready"])
         self.assertFalse(result["ppi_book_verified"])
 
+    def test_a546_iol_complement_auth_unavailable_is_degraded_and_iol_only(self):
+        # A542 product contract: IOL auth may be unavailable, but public and
+        # evidence stages are independent; no inferred IOL or PAPER GO.
+        unavailable = "COMPLEMENT_AUTH_UNAVAILABLE"
+        stages = {"iol": unavailable, "public": "OK", "evidence": "OK"}
+        report = a532.summarize_journal(marker("DEGRADED", stages), now=NOW)
+        self.assertEqual(report["marker"], "OBSERVED_UNATTESTED")
+        self.assertEqual(report["reported_status"], "DEGRADED")
+        self.assertEqual(report["stage_iol"], unavailable)
+        self.assertEqual(report["stage_public"], "OK")
+        self.assertEqual(report["stage_evidence"], "OK")
+        self.assertFalse(report["paper_ready"])
+        self.assertFalse(report["ppi_book_verified"])
+        self.assertFalse(report["cadence_verified"])
+        self.assertEqual(a532.sanitize_receipt(json.dumps(report).encode()), report)
+        self.assertEqual(a532.summarize_journal(marker("COMPLETE", stages), now=NOW),
+                         a532.default_receipt())
+        for wrong_stage in ("public", "evidence"):
+            with self.subTest(wrong_stage=wrong_stage):
+                forged = {"iol": "FAILED", "public": "OK", "evidence": "OK"}
+                forged[wrong_stage] = unavailable
+                self.assertEqual(a532.summarize_journal(marker("DEGRADED", forged), now=NOW),
+                                 a532.default_receipt())
+                receipt = dict(report)
+                receipt["stage_" + wrong_stage] = unavailable
+                self.assertEqual(a532.sanitize_receipt(json.dumps(receipt).encode()),
+                                 a532.default_receipt())
+
     def test_latest_valid_marker_wins_without_raw_data_or_timestamps(self):
         past = marker("COMPLETE", {"iol": "OK", "public": "OK", "evidence": "OK"},
                       event_time=NOW - timedelta(minutes=20))
