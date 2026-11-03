@@ -47,6 +47,10 @@ REASONS = frozenset({
     "HOST_PREFLIGHT_OR_RUNTIME_HOLD", "SLOT_OR_DAY_HOLD",
     "PRODUCT_IMAGE_OR_MODE_HOLD", "PPI_KEYPAIR_UNAVAILABLE",
     "SHARED_BUDGET_OR_EXIT_RESERVE_NOT_ATTESTED", "ATOMIC_LEASE_DENIED",
+    "PPI_BUDGET_SIDECAR_ABSENT", "PPI_BUDGET_SIDECAR_PATH_UNSAFE",
+    "PPI_BUDGET_SNAPSHOT_NOT_OBSERVED", "PPI_RETENTION_NOT_READY",
+    "PPI_EXIT_LOWER_SUSPENDED", "PPI_EXIT_ROUND_NOT_ATTESTED",
+    "PPI_BUDGET_RUNTIME_BACKEND_MISMATCH", "PPI_BUDGET_PROBE_UNAVAILABLE",
     "PROVIDER_GET_SCOPE_OR_COUNT_INVALID", "PPI_PROVIDER_OR_AUTH_FAILED",
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
     "PPI_NATIVE_CLOCK_STALE_OR_FUTURE", "BODY_BUDGET_OR_DIGEST_INVALID",
@@ -184,6 +188,35 @@ def _utc(raw):
     return dt.astimezone(timezone.utc)
 
 
+def _ppi_url_path(method, url, target):
+    """Independently pre-check the PreparedRequest before HTTPAdapter.send."""
+    try:
+        parsed = urlsplit(str(url))
+        if (parsed.scheme != "https" or parsed.hostname != PPI_HOST
+                or parsed.port not in (None, 443) or parsed.username is not None
+                or parsed.password is not None or bool(parsed.fragment)):
+            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+        path = parsed.path.lower().rstrip("/")
+        if method == "POST" and path in {
+                "/api/1.0/account/loginapi", "/api/1.0/account/refreshtoken"}:
+            if parsed.query:
+                raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+            return path
+        if method != "GET" or path not in {
+                "/api/1.0/marketdata/current", "/api/1.0/marketdata/book"}:
+            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+        query = [(k.lower(), value) for k, value in
+                 parse_qsl(parsed.query, keep_blank_values=True)]
+        if (len(query) != 3 or len({key for key, _ in query}) != 3 or
+                dict(query) != {"ticker": target[0],
+                                "type": PPI_TYPES[target[1]],
+                                "settlement": target[4]}):
+            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+        return path
+    except (ValueError, TypeError):
+        raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID") from None
+
+
 class _Silence:
     def write(self, content):
         return len(content)
@@ -234,28 +267,33 @@ def _existing_shared_budget():
     database = database_path()
     sidecar = artifact_root(database) / "ppi-budget/global.sqlite"
     if any(path.is_symlink() for path in (sidecar, *sidecar.parents)):
-        return None
+        return None, "PPI_BUDGET_SIDECAR_PATH_UNSAFE"
     try:
         before = sidecar.stat()
         if not sidecar.is_file() or before.st_nlink != 1:
-            return None
+            return None, "PPI_BUDGET_SIDECAR_PATH_UNSAFE"
         snapshot = runtime_budget_snapshot(database)
+        if snapshot.get("status") != "OBSERVED":
+            return None, "PPI_BUDGET_SNAPSHOT_NOT_OBSERVED"
+        if (snapshot.get("receipt_retention") or {}).get("status") != "READY":
+            return None, "PPI_RETENTION_NOT_READY"
         exit_service = snapshot.get("exit_service") or {}
+        if exit_service.get("lower_suspended") is not False:
+            return None, "PPI_EXIT_LOWER_SUSPENDED"
         cycle = exit_service.get("round") or {}
-        if (snapshot.get("status") != "OBSERVED" or
-            (snapshot.get("receipt_retention") or {}).get("status") != "READY" or
-            exit_service.get("lower_suspended") is not False or
-            cycle.get("status") != "COMPLETE" or
-            cycle.get("required_scope_verified_current") is not True):
-            return None
+        if (cycle.get("status") != "COMPLETE" or
+                cycle.get("required_scope_verified_current") is not True):
+            return None, "PPI_EXIT_ROUND_NOT_ATTESTED"
         shared = budget_from_environment(database)
         after = sidecar.stat()
         if (type(shared) is not RuntimePPIBudget or Path(shared.path) != sidecar
                 or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)):
-            return None
-        return shared
+            return None, "PPI_BUDGET_RUNTIME_BACKEND_MISMATCH"
+        return shared, None
+    except FileNotFoundError:
+        return None, "PPI_BUDGET_SIDECAR_ABSENT"
     except (OSError, ValueError, TypeError, AttributeError):
-        return None
+        return None, "PPI_BUDGET_PROBE_UNAVAILABLE"
 
 
 class TwoGetAtomicBudget:
@@ -270,7 +308,7 @@ class TwoGetAtomicBudget:
         expected = ("current", "book")
         if len(self.acquired) >= 2 or endpoint != expected[len(self.acquired)]:
             return {"allowed": False, "reason": "A630_ENDPOINT_ORDER_DENIED"}
-        if consumer != "RC6_A630_PPI_SAMPLE" or priority != "DISCOVERY":
+        if consumer != "UNSCOPED" or priority != "DISCOVERY":
             return {"allowed": False, "reason": "A630_CONSUMER_PRIORITY_DENIED"}
         # Append BEFORE contacting the budget: no second lease attempt on errors.
         self.acquired.append((endpoint, None))
@@ -318,6 +356,48 @@ class TwoGetAtomicBudget:
 
 
 @contextmanager
+def _strict_adapter_send(target, budget):
+    """Deny Search/Estimate/Book2/redirect BEFORE any adapter wire send.
+
+    ProductMarketReader's own SDK guard may use configuration/search GETs in
+    other workflows; no such route has authority in this two-slot diagnostic.
+    The native shared lease is still mandatory for each of the two sends.
+    """
+    from requests.adapters import HTTPAdapter
+    original = HTTPAdapter.send
+    sends = []
+    posts = []
+
+    def guarded(adapter, request, *args, **kwargs):
+        method = getattr(request, "method", None)
+        if method not in {"POST", "GET"} or kwargs.get("verify", True) in (False, None):
+            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+        path = _ppi_url_path(method, getattr(request, "url", None), target)
+        if method == "POST":
+            if path in posts or len(posts) >= 2:
+                raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+            posts.append(path)
+        else:
+            expected = ("/api/1.0/marketdata/current", "/api/1.0/marketdata/book")
+            if len(sends) >= 2 or path != expected[len(sends)]:
+                raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+            if len(budget.acquired) != len(sends) + 1:
+                raise ValueError("ATOMIC_LEASE_DENIED")
+            endpoint, lease = budget.acquired[-1]
+            if (endpoint != path.rsplit("/", 1)[1] or not lease
+                    or lease not in budget.started or lease in budget.finished):
+                raise ValueError("ATOMIC_LEASE_DENIED")
+            sends.append(path)  # increment before calling adapter; retry denied
+        return original(adapter, request, *args, **kwargs)
+
+    HTTPAdapter.send = guarded
+    try:
+        yield sends
+    finally:
+        HTTPAdapter.send = original
+
+
+@contextmanager
 def _http_body_hashes(target):
     """Hash bounded decompressed HTTP response body in the ephemeral process.
 
@@ -333,23 +413,7 @@ def _http_body_hashes(target):
         path = parsed.path.lower().rstrip("/")
         if path not in {"/api/1.0/marketdata/current", "/api/1.0/marketdata/book"}:
             return original(response, chunk_size=chunk_size, decode_unicode=decode_unicode)
-        try:
-            restricted = (parsed.scheme != "https" or parsed.hostname != PPI_HOST
-                or parsed.port not in (None, 443) or parsed.username is not None
-                or parsed.password is not None or bool(parsed.fragment))
-        except ValueError:
-            restricted = True
-        if restricted:
-            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
-        # Official PPI Book and Current GETs require Ticker/Type/Settlement.
-        # Do not persist/log query strings, and never silently resolve aliases.
-        query = parse_qsl(parsed.query, keep_blank_values=True)
-        canonical = [(key.lower(), value) for key, value in query]
-        if (len(canonical) != 3 or len({key for key, _ in canonical}) != 3 or
-                dict(canonical) != {"ticker": target[0],
-                                  "type": PPI_TYPES[target[1]],
-                                  "settlement": target[4]}):
-            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+        _ppi_url_path("GET", response.url, target)
         if any(hit[0] == path for hit in hits):
             raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
         row = [path, sha256(), 0]
@@ -377,12 +441,14 @@ def _base_receipt(target):
     return {"schema": SCHEMA, "phase": "CONTAINER_CAPTURE", "state": "NO_VERIFICADO",
         "reason": "NOT_REQUESTED", "target": list(target), "ppi_type": PPI_TYPES[target[1]],
         "source": "PPI_SDK_HTTPS_ALLOWLIST_NOT_PROVIDER_SIGNED",
+        "budget_consumer": "UNSCOPED", "budget_priority": "DISCOVERY",
         "expected_product_sha": PRODUCT_SHA, "mode": "PRODUCTION_PAPER",
         "real_order_capability": "BLOCKED", "orders_sent": 0,
         "trading_db_writes": 0, "history_db_writes": 0, "ppi_watch_mutations": 0,
         "global_budget_lease_only": True, "source_pit_verified": False,
         "independent_provider_signature_verified": False, "paper_sim_verified": False,
         "current_gets": 0, "book_gets": 0, "lease_acquires": 0,
+        "adapter_current_sends": 0, "adapter_book_sends": 0,
         "lease_starts": 0, "lease_finishes": 0,
         "first_known_at_utc": None, "current_provider_at_utc": None,
         "book_provider_at_utc": None, "current_http_body_sha256": None,
@@ -393,20 +459,40 @@ def _base_receipt(target):
         "execution_allowed": False, "raw_provider_payload_persisted": False}
 
 
+def unverified_transport_receipt(reason="HOST_PREFLIGHT_OR_RUNTIME_HOLD"):
+    """No false zero counters after SSH timeout/partial Current or lost stdio.
+
+    A transport timeout can happen AFTER a shared-budget Current GET and before
+    Book or receipt emission. Absence of a verified receipt is not proof that
+    no provider quota was consumed; counters MUST be unknown, not zero.
+    """
+    if reason not in REASONS:
+        reason = "HOST_PREFLIGHT_OR_RUNTIME_HOLD"
+    return {"schema": SCHEMA, "state": "NO_VERIFICADO", "reason": reason,
+            "current_gets": None, "book_gets": None,
+            "transport_count_authority": "NO_VERIFICADO",
+            "orders_sent": 0, "execution_allowed": False,
+            "source_pit_verified": False}
+
+
 def capture_two(target, credentials, shared_budget, reader_factory,
-                *, clock=None, http_limiter=None):
+                *, clock=None, http_limiter=None, adapter_guard=None,
+                budget_reason=None):
     receipt = _base_receipt(target)
     if credentials is None:
         receipt["reason"] = "PPI_KEYPAIR_UNAVAILABLE"
         return receipt
     if shared_budget is None:
-        receipt["reason"] = "SHARED_BUDGET_OR_EXIT_RESERVE_NOT_ATTESTED"
+        receipt["reason"] = budget_reason if budget_reason in REASONS else (
+            "SHARED_BUDGET_OR_EXIT_RESERVE_NOT_ATTESTED")
         return receipt
     budget = TwoGetAtomicBudget(shared_budget)
     reads = {"current": None, "book": None}
     events = []
     reader = None
+    adapter_sends = []
     limiter = http_limiter or (lambda: _http_body_hashes(target))
+    guard = adapter_guard or (lambda: _strict_adapter_send(target, budget))
     observed = clock or (lambda: datetime.now(timezone.utc))
     try:
         def audit(method, path, action):
@@ -416,11 +502,12 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                 events.append(("OVERFLOW", "", "BLOCKED"))
         with redirect_stdout(_Silence()), redirect_stderr(_Silence()):
             reader = reader_factory(credentials[0], credentials[1], budget=budget,
-                consumer="RC6_A630_PPI_SAMPLE", priority="DISCOVERY", audit=audit)
-            reader.login_once()
-            with limiter() as body:
-                reads["current"] = reader.current(target[0], PPI_TYPES[target[1]], target[4])
-                reads["book"] = reader.book(target[0], PPI_TYPES[target[1]], target[4])
+                consumer="UNSCOPED", priority="DISCOVERY", audit=audit)
+            with guard() as adapter_sends:
+                reader.login_once()
+                with limiter() as body:
+                    reads["current"] = reader.current(target[0], PPI_TYPES[target[1]], target[4])
+                    reads["book"] = reader.book(target[0], PPI_TYPES[target[1]], target[4])
         now = observed()
         if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("PPI_NATIVE_CLOCK_INVALID")
@@ -457,6 +544,8 @@ def capture_two(target, credentials, shared_budget, reader_factory,
         receipt["lease_acquires"] = len(budget.acquired)
         receipt["lease_starts"] = len(budget.started)
         receipt["lease_finishes"] = len(budget.finished)
+        receipt["adapter_current_sends"] = adapter_sends.count("/api/1.0/marketdata/current")
+        receipt["adapter_book_sends"] = adapter_sends.count("/api/1.0/marketdata/book")
         receipt["current_gets"] = sum(e == ("GET", "/api/1.0/marketdata/current", "ALLOWED")
                                       for e in events)
         receipt["book_gets"] = sum(e == ("GET", "/api/1.0/marketdata/book", "ALLOWED")
@@ -467,11 +556,13 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                    ("GET", "/api/1.0/marketdata/book", "ALLOWED")}
         if (any(event not in allowed for event in events) or
                 receipt["current_gets"] > 1 or receipt["book_gets"] > 1 or
+                receipt["adapter_current_sends"] > 1 or receipt["adapter_book_sends"] > 1 or
                 sum(e == ("POST", "/api/1.0/account/loginapi", "ALLOWED")
                     for e in events) > 1):
             receipt["reason"] = "PROVIDER_GET_SCOPE_OR_COUNT_INVALID"
         if (receipt["reason"] == "NOT_REQUESTED" and budget.completed() and
                 receipt["current_gets"] == receipt["book_gets"] == 1 and
+                receipt["adapter_current_sends"] == receipt["adapter_book_sends"] == 1 and
                 receipt["current_http_body_sha256"] and receipt["book_http_body_sha256"]):
             receipt["state"] = "EVIDENCE_ONLY_NO_GO"
             receipt["reason"] = "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT"
@@ -493,12 +584,14 @@ def verify_receipt(obj, target):
         "history_db_writes", "ppi_watch_mutations", "global_budget_lease_only",
         "source_pit_verified", "independent_provider_signature_verified",
         "paper_sim_verified", "http_digest_semantics", "credential_location",
+        "budget_consumer", "budget_priority",
         "execution_allowed", "raw_provider_payload_persisted")
     if any(obj[key] != _base_receipt(target)[key] for key in fixed):
         return False
     if obj["reason"] not in REASONS or obj["state"] not in {"NO_VERIFICADO", "EVIDENCE_ONLY_NO_GO"}:
         return False
-    for field in ("current_gets", "book_gets", "lease_acquires", "lease_starts",
+    for field in ("current_gets", "book_gets", "adapter_current_sends",
+                  "adapter_book_sends", "lease_acquires", "lease_starts",
                   "lease_finishes", "current_body_bytes", "book_body_bytes",
                   "book_bid_levels", "book_offer_levels"):
         if type(obj[field]) is not int or not 0 <= obj[field] <= (
@@ -509,6 +602,7 @@ def verify_receipt(obj, target):
     if obj["state"] == "EVIDENCE_ONLY_NO_GO":
         if (obj["reason"] != "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT" or
                 obj["current_gets"] != 1 or obj["book_gets"] != 1 or
+                obj["adapter_current_sends"] != 1 or obj["adapter_book_sends"] != 1 or
                 any(obj[k] != 2 for k in ("lease_acquires", "lease_starts", "lease_finishes")) or
                 not all(isinstance(x, str) and SHA256.fullmatch(x) for x in digests) or
                 not all(isinstance(x, str) for x in dates) or
@@ -531,21 +625,21 @@ def container_main():
         target = decode_target(os.environ.get("RC6_A630_TARGET_B64"))
         credentials = existing_container_keypair()
         with redirect_stdout(_Silence()), redirect_stderr(_Silence()):
-            budget = _existing_shared_budget() if credentials is not None else None
+            budget, budget_reason = (_existing_shared_budget() if credentials is not None
+                                     else (None, "PPI_KEYPAIR_UNAVAILABLE"))
             if credentials and budget:
                 from bd_ppi_readonly_guard import ProductionMarketReader
             else:
                 ProductionMarketReader = None
-            receipt = capture_two(target, credentials, budget, ProductionMarketReader)
+            receipt = capture_two(target, credentials, budget, ProductionMarketReader,
+                                  budget_reason=budget_reason)
         if not verify_receipt(receipt, target):
             raise ValueError("RECEIPT_INVALID")
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
         return 0 if receipt["state"] == "EVIDENCE_ONLY_NO_GO" else 2
     except Exception:
-        print(json.dumps({"schema": SCHEMA, "phase": "CONTAINER_CAPTURE",
-            "state": "NO_VERIFICADO", "reason": "PRODUCT_IMAGE_OR_MODE_HOLD",
-            "current_gets": None, "book_gets": None,
-            "orders_sent": 0, "execution_allowed": False}, sort_keys=True))
+        print(json.dumps({**unverified_transport_receipt("PRODUCT_IMAGE_OR_MODE_HOLD"),
+            "phase": "CONTAINER_CAPTURE"}, sort_keys=True))
         return 2
 
 
