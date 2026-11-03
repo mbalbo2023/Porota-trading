@@ -86,6 +86,64 @@ class A504ClassifyTests(unittest.TestCase):
         self.assertEqual(result["classification"], "NO_VERIFICADO")
         self.assertEqual(result["journal_metadata_state"], "MATCHING_NOT_EVALUATED")
         self.assertEqual(result["observed_distinct_slots"], 0)
+        self.assertEqual(result["last_trigger_validation_state"], "MISSING_OR_INVALID")
+
+    def test_a559_four_bounded_trigger_bins_reject_untrusted_types(self):
+        examples = (
+            (None, 100, "MISSING_OR_INVALID"),
+            ("123", 100, "MISSING_OR_INVALID"),
+            (-1, 100, "MISSING_OR_INVALID"),
+            (True, 100, "MISSING_OR_INVALID"),
+            (23.5, 100, "MISSING_OR_INVALID"),
+            (1, None, "MISSING_OR_INVALID"),
+            (1, 0, "MISSING_OR_INVALID"),
+            (1, True, "MISSING_OR_INVALID"),
+            (0, 100, "ZERO"),
+            (101, 100, "EXCEEDS_BOOT"),
+            (100, 100, "VALID"),
+            (99, 100, "VALID"),
+        )
+        for trigger, boot, expected in examples:
+            with self.subTest(trigger=trigger, boot=boot):
+                state = a504.last_trigger_validation_state(trigger, boot)
+                self.assertEqual(state, expected)
+                self.assertIn(state, a504.LAST_TRIGGER_VALIDATION_STATES)
+                self.assertNotIn("123", state)
+
+    def test_a559_diagnostic_distinguishes_trigger_pre_match_failures(self):
+        now = art(h=14, minute=36)
+        sample = sample_two(now)
+        counts = dict(zip(a504.JOURNAL_COUNT_FIELDS, (290, 58, 58, 58)))
+        for trigger, expected in (
+                (None, "MISSING_OR_INVALID"),
+                ("unparsed-systemctl-string", "MISSING_OR_INVALID"),
+                (0, "ZERO"),
+                (10_000_000_001, "EXCEEDS_BOOT")):
+            with self.subTest(expected=expected):
+                actual = a504.classify(
+                    "SOURCE_CYCLE", now, sample, host(last_trigger_us=trigger),
+                    boot_us=10_000_000_000, source="PUBLIC_STALE_OR_MISSING",
+                    journal_counts=counts)
+                self.assertEqual(actual["last_trigger_validation_state"], expected)
+                self.assertEqual(actual["journal_metadata_state"], "MATCHING_NOT_EVALUATED")
+                self.assertEqual(actual["observed_distinct_slots"], 0)
+                self.assertEqual(actual["classification"], "NO_VERIFICADO")
+                self.assertEqual(actual["timer"], "active")
+                self.assertEqual(actual["service"], "success")
+                self.assertFalse(actual["full_day_cadence_certified"])
+
+    def test_a559_valid_monotonic_value_does_not_certify_calendar_or_source(self):
+        now = art(h=14, minute=36)
+        counts = dict(zip(a504.JOURNAL_COUNT_FIELDS, (290, 58, 58, 58)))
+        actual = a504.classify(
+            "SOURCE_CYCLE", now, sample_two(now), host(), boot_us=10_000_000_000,
+            source="UNKNOWN", journal_counts=counts)
+        self.assertEqual(actual["last_trigger_validation_state"], "VALID")
+        self.assertEqual(actual["journal_metadata_state"], "MATCHED_NOMINAL_SLOTS")
+        self.assertEqual(actual["observed_distinct_slots"], 2)
+        self.assertEqual(actual["classification"], "NO_VERIFICADO")
+        self.assertFalse(actual["schedule_parity_verified"])
+        self.assertFalse(actual["clock_compatible"])
 
     def test_recent_two_distinct_source_invocations_are_observations_only(self):
         now = art(h=11, minute=5)
@@ -362,6 +420,7 @@ class A504MetadataTests(unittest.TestCase):
                                   "journal_metadata_state":"NO_JOURNAL_ROWS",
                                   "journal_records":0,"journal_unit_records":0,
                                   "journal_invocation_records":0,"journal_timestamp_records":0,
+                                  "last_trigger_validation_state":"VALID",
                                   "schedule_parity_verified":False,"clock_compatible":False,
                                   "source":"UNKNOWN",
                                   "timer":"active","service":"success",
@@ -383,6 +442,7 @@ class A504MetadataTests(unittest.TestCase):
                                   "journal_metadata_state":"NO_JOURNAL_ROWS",
                                   "journal_records":0,"journal_unit_records":0,
                                   "journal_invocation_records":0,"journal_timestamp_records":0,
+                                  "last_trigger_validation_state":"VALID",
                                   "schedule_parity_verified":False,"clock_compatible":False,
                                   "source":"UNKNOWN",
                                   "timer":"active","service":"success",
@@ -405,6 +465,7 @@ class A504MetadataTests(unittest.TestCase):
                 "journal_metadata_state":"NO_NOMINAL_SLOT_MATCH",
                 "journal_records":4, "journal_unit_records":3,
                 "journal_invocation_records":2, "journal_timestamp_records":1,
+                "last_trigger_validation_state":"VALID",
                 "schedule_parity_verified":False, "clock_compatible":False,
                 "source":"UNKNOWN", "timer":"active", "service":"success",
                 "full_day_cadence_certified":False})
@@ -427,6 +488,41 @@ class A504MetadataTests(unittest.TestCase):
         self.assertEqual(a504.sanitize_receipt(json.dumps(pending).encode()), pending)
         pending["roles"][0]["classification"] = "RECENT_INVOCATIONS_OBSERVED"
         self.assertEqual(a504.sanitize_receipt(json.dumps(pending).encode())["roles"], [])
+
+    def test_a559_sanitizer_rejects_raw_monotonic_fields_and_false_trigger_states(self):
+        raw = a504.default_receipt()
+        raw["probe_status"] = "METADATA_ONLY"
+        for role, _ in a504.ROLES:
+            raw["roles"].append({
+                "role":role, "classification":"NO_VERIFICADO",
+                "nominal_mature_slots":3, "observed_distinct_slots":0,
+                "last_two_mature_distinct":False, "journal_available":True,
+                "last_trigger_validation_state":"ZERO",
+                "journal_metadata_state":"MATCHING_NOT_EVALUATED",
+                "journal_records":290, "journal_unit_records":58,
+                "journal_invocation_records":58, "journal_timestamp_records":58,
+                "schedule_parity_verified":False, "clock_compatible":False,
+                "source":"PUBLIC_STALE_OR_MISSING", "timer":"active",
+                "service":"success", "full_day_cadence_certified":False})
+        self.assertEqual(a504.sanitize_receipt(json.dumps(raw).encode()), raw)
+        for bad in (123, True, "2026-11-03T14:36:00", "SECRET", "VALIDATE_ME", None):
+            with self.subTest(bad=bad):
+                forged = json.loads(json.dumps(raw))
+                forged["roles"][0]["last_trigger_validation_state"] = bad
+                self.assertEqual(a504.sanitize_receipt(json.dumps(forged).encode())["roles"], [])
+        for extra in ("last_trigger_us", "boot_us", "message", "service_timestamp"):
+            with self.subTest(extra=extra):
+                forged = json.loads(json.dumps(raw))
+                forged["roles"][0][extra] = 123456789
+                self.assertEqual(a504.sanitize_receipt(json.dumps(forged).encode())["roles"], [])
+        for changed in (("observed_distinct_slots", 1),
+                        ("classification", "RECENT_INVOCATIONS_OBSERVED"),
+                        ("last_two_mature_distinct", True)):
+            with self.subTest(changed=changed):
+                forged = json.loads(json.dumps(raw))
+                key, val = changed
+                forged["roles"][0][key] = val
+                self.assertEqual(a504.sanitize_receipt(json.dumps(forged).encode())["roles"], [])
 
     def test_workflow_uses_existing_nonrecurring_host_job_and_pr_is_offhost(self):
         text = WORKFLOW.read_text(encoding="utf-8")
