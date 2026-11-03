@@ -509,6 +509,7 @@ def capture_two(target, credentials, shared_budget, reader_factory,
     events = []
     reader = None
     adapter_sends = []
+    reader_close_failed = False
     limiter = http_limiter or (lambda: _http_body_hashes(target))
     guard = adapter_guard or (lambda: _strict_adapter_send(target, budget))
     observed = clock or (lambda: datetime.now(timezone.utc))
@@ -519,13 +520,26 @@ def capture_two(target, credentials, shared_budget, reader_factory,
             else:
                 events.append(("OVERFLOW", "", "BLOCKED"))
         with redirect_stdout(_Silence()), redirect_stderr(_Silence()):
-            reader = reader_factory(credentials[0], credentials[1], budget=budget,
-                consumer="UNSCOPED", priority="DISCOVERY", audit=audit)
+            # CRITICAL TRANSPORT ORDER: ProductMarketReader.__init__ installs
+            # its own ReadOnlyTransportGuard.guarded_send, which acquires and
+            # STARTS the native budget lease before calling its saved adapter.
+            # Install strict send first so native guarded_send wraps it. Then
+            # close the reader BEFORE restoring our strict adapter seam.
             with guard() as adapter_sends:
-                reader.login_once()
-                with limiter() as body:
-                    reads["current"] = reader.current(target[0], PPI_TYPES[target[1]], target[4])
-                    reads["book"] = reader.book(target[0], PPI_TYPES[target[1]], target[4])
+                try:
+                    reader = reader_factory(credentials[0], credentials[1], budget=budget,
+                        consumer="UNSCOPED", priority="DISCOVERY", audit=audit)
+                    reader.login_once()
+                    with limiter() as body:
+                        reads["current"] = reader.current(target[0], PPI_TYPES[target[1]], target[4])
+                        reads["book"] = reader.book(target[0], PPI_TYPES[target[1]], target[4])
+                finally:
+                    if reader is not None:
+                        try:
+                            reader.close()
+                        except Exception:
+                            reader_close_failed = True
+                        reader = None
         now = observed()
         if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("PPI_NATIVE_CLOCK_INVALID")
@@ -553,12 +567,8 @@ def capture_two(target, credentials, shared_budget, reader_factory,
         receipt["reason"] = (str(error) if str(error) in REASONS
                              else "PPI_PROVIDER_OR_AUTH_FAILED")
     finally:
-        if reader is not None:
-            try:
-                with redirect_stdout(_Silence()), redirect_stderr(_Silence()):
-                    reader.close()
-            except Exception:
-                receipt["reason"] = "PPI_PROVIDER_OR_AUTH_FAILED"
+        if reader_close_failed:
+            receipt["reason"] = "PPI_PROVIDER_OR_AUTH_FAILED"
         receipt["lease_acquires"] = len(budget.acquired)
         receipt["lease_starts"] = len(budget.started)
         receipt["lease_finishes"] = len(budget.finished)
