@@ -1,9 +1,11 @@
 """A428: scanner PPI origin is distinct from PRODUCTION_PAPER execution mode."""
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 from pathlib import Path
 import sqlite3
+import stat
 
 import pytest
 
@@ -38,6 +40,16 @@ def emit(tmp_path, *quotes):
     return receipt
 
 
+def isolated_iol(monkeypatch, market_root, db=None):
+    import scripts.rc6_iol_shadow_collect as iol
+    monkeypatch.setattr(iol, "DEFAULT_ROOT", market_root)
+    monkeypatch.setattr(iol, "DEFAULT_DB", str(db or market_root / "absent.sqlite"))
+    monkeypatch.delenv("POROTA_PRIMARY_LAST_CACHE_PATH", raising=False)
+    monkeypatch.delenv("POROTA_OBSERVER_DB", raising=False)
+    monkeypatch.delenv("POROTA_IOL_OPERATIONAL_DB", raising=False)
+    return iol
+
+
 def test_reader_market_root_matches_observer_persistent_data_mount(tmp_path):
     # Docker binds host DATA to container /app/data. Both sides refer to the
     # same market directory; no independent path override may silently drift.
@@ -51,6 +63,20 @@ def test_reader_market_root_matches_observer_persistent_data_mount(tmp_path):
     writer.capture(quote(), request=("GGAL", "ACCIONES", "A-24HS"))
     writer.publish()
     assert primary_records(market, datetime.now(timezone.utc))[0]
+
+
+def test_private_receipt_matches_packaged_consumer_user_contract():
+    # The observer image writes as UID 1000, while the packaged host reader
+    # systemd unit has no User= (systemd root default). Runtime overrides need
+    # a separate host inspection before deployment; a future unit change must
+    # force a deliberate reconsideration of private receipt readability.
+    project = Path(__file__).parents[1]
+    docker = (project / "Dockerfile").read_text(encoding="utf-8")
+    service = (project / "systemd/porota-iol-shadow-collector-rc6.service").read_text(
+        encoding="utf-8")
+    assert "USER botuser" in docker
+    assert "ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py" in service
+    assert not any(line.strip().startswith("User=") for line in service.splitlines())
 
 
 def test_product_paper_snapshot_does_not_implicitly_prove_ppi_quote(tmp_path, monkeypatch):
@@ -138,7 +164,7 @@ def test_iol_scanner_overlay_cannot_launder_ambiguous_sqlite_ticker(tmp_path, mo
 
 
 @pytest.mark.parametrize("invalid", ["missing_trade", "missing_book", "future_native", "not_trade"])
-def test_native_quote_clock_and_trade_type_are_fail_closed(tmp_path, invalid):
+def test_native_quote_clock_and_trade_type_are_fail_closed(tmp_path, monkeypatch, invalid):
     now = datetime.now(timezone.utc) - timedelta(seconds=3)
     kwargs = {"trade_at": now.isoformat(), "book_at": now.isoformat()}
     if invalid == "missing_trade":
@@ -150,10 +176,89 @@ def test_native_quote_clock_and_trade_type_are_fail_closed(tmp_path, invalid):
     if invalid == "not_trade":
         kwargs["last_kind"] = "UNAVAILABLE"
     emit(tmp_path, quote(**kwargs))
-    records, _ = primary_records(tmp_path, datetime.now(timezone.utc))
+    records, meta = primary_records(tmp_path, datetime.now(timezone.utc))
     assert len(records) == 1 and records[0]["state"] == "UNAVAILABLE"
+    assert meta["state"] == "UNAVAILABLE" and meta["accepted_records"] == 1
+    assert meta["eligible_records"] == 0 and meta["native_unavailable_records"] == 1
     from scripts.rc6_full_universe_evidence import source_view
     assert not source_view(records[0], "PPI", datetime.now(timezone.utc))["selection_eligible"]
+    values, snapshot = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {} and snapshot["state"] == "UNAVAILABLE"
+    assert snapshot["scanner_selectable_records"] == 0
+
+
+def test_conflicting_native_receipt_is_diagnostic_only_in_both_readers(tmp_path, monkeypatch):
+    first = quote()
+    second = replace(first, bid=Decimal("98"))
+    recorder = ScannerPrimaryRecorder(tmp_path / FILENAME)
+    recorder.capture(first, request=(first.symbol, first.asset_class, first.settlement))
+    recorder.capture(second, request=(second.symbol, second.asset_class, second.settlement))
+    recorder.publish()
+    rows, meta = primary_records(tmp_path, datetime.now(timezone.utc))
+    assert len(rows) == 1 and rows[0]["state"] == "UNAVAILABLE"
+    assert rows[0]["review_status"] == "CONFLICT_REVIEW_REQUIRED"
+    assert meta["eligible_records"] == 0 and meta["state"] == "UNAVAILABLE"
+    values, status = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {} and status["scanner_selectable_records"] == 0
+
+
+def test_scanner_book_must_be_fresh_independently_of_native_trade(tmp_path, monkeypatch):
+    observed = datetime.now(timezone.utc) - timedelta(seconds=3)
+    old_book = observed - timedelta(minutes=10)
+    emit(tmp_path, quote(observed_at=observed.isoformat(), trade_at=observed.isoformat(),
+                         book_at=old_book.isoformat()))
+    rows, meta = primary_records(tmp_path, datetime.now(timezone.utc))
+    assert rows[0]["state"] == "READY" and meta["eligible_records"] == 1
+    values, snapshot = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {} and snapshot["scanner_selectable_records"] == 0
+
+
+def test_newer_unavailable_scanner_blocks_older_same_identity_fallback(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    earlier, later = now - timedelta(seconds=40), now - timedelta(seconds=5)
+    previous = quote(observed_at=earlier.isoformat(), trade_at=earlier.isoformat(),
+                     book_at=earlier.isoformat())
+    db = tmp_path / "old_ppi.sqlite"
+    PaperStore(db).add_quote(previous)
+    with sqlite3.connect(db) as conn:
+        # Legacy PPI fallback fixture only: NEVER change operational source.
+        conn.execute("UPDATE market_snapshots SET source='PPI'")
+    emit(tmp_path, quote(observed_at=later.isoformat(), trade_at=later.isoformat(),
+                         book_at=""))
+    values, meta = isolated_iol(monkeypatch, tmp_path, db)._primary_snapshot()
+    assert values == {} and meta["scanner_older_fallbacks_suppressed"] == 1
+    assert meta["scanner_selectable_records"] == 0
+
+
+def test_newer_verified_fallback_survives_older_scanner_unavailable(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    earlier, later = now - timedelta(seconds=40), now - timedelta(seconds=5)
+    emit(tmp_path, quote(observed_at=earlier.isoformat(), trade_at=earlier.isoformat(),
+                         book_at=""))
+    verified = quote(observed_at=later.isoformat(), trade_at=later.isoformat(),
+                     book_at=later.isoformat())
+    db = tmp_path / "new_ppi.sqlite"
+    PaperStore(db).add_quote(verified)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE market_snapshots SET source='PPI'")
+    values, meta = isolated_iol(monkeypatch, tmp_path, db)._primary_snapshot()
+    assert values["GGAL"]["provider_observed_at"] == verified.trade_at
+    assert meta["scanner_older_fallbacks_suppressed"] == 0
+
+
+def test_unavailable_alternate_currency_still_blocks_ambiguous_ticker(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc) - timedelta(seconds=3)
+    emit(tmp_path, quote("SAME", currency="USD", observed_at=now.isoformat(),
+                         trade_at=now.isoformat(), book_at=""))
+    db = tmp_path / "ambiguous_ppi.sqlite"
+    PaperStore(db).add_quote(quote("SAME", currency="ARS", observed_at=now.isoformat(),
+                                  trade_at=now.isoformat(), book_at=now.isoformat()))
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE market_snapshots SET source='PPI'")
+    values, meta = isolated_iol(monkeypatch, tmp_path, db)._primary_snapshot()
+    assert "SAME" not in values
+    assert any(review["reason"] == "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES"
+               for review in meta["identity_reviews"])
 
 
 def test_unknown_or_catalog_only_file_cannot_forge_quote_provenance(tmp_path):
@@ -253,8 +358,9 @@ def test_explicit_request_mismatch_or_naive_receipt_is_not_published_as_ppi(tmp_
 def test_atomic_receipt_is_bounded_and_rejects_symlink(tmp_path):
     emit(tmp_path, quote())
     records, meta = primary_records(tmp_path, datetime.now(timezone.utc))
-    assert len(records) == 1 and meta["accepted_records"] == 1
+    assert len(records) == 1 and meta["accepted_records"] == meta["eligible_records"] == 1
     original = tmp_path / FILENAME
+    assert stat.S_IMODE(original.stat().st_mode) == 0o600
     original.rename(tmp_path / "real-receipt.json")
     original.symlink_to(tmp_path / "real-receipt.json")
     assert primary_records(tmp_path, datetime.now(timezone.utc))[0] == []

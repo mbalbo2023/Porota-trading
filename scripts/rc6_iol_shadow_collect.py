@@ -376,7 +376,50 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
         # any ticker that has multiple distinct five-key observations.
         if not scanner_rows:
             return fallback, meta
-        values, scanner_reviews = bind([*fallback.values(), *scanner_rows])
+        scanner_selectable, unavailable_since = [], {}
+        identities_by_symbol = {}
+        for row in [*fallback.values(), *scanner_rows]:
+            try:
+                key = tuple(_canonical_identity(row))
+            except (TypeError, ValueError):
+                continue
+            identities_by_symbol.setdefault(key[0], set()).add(key)
+        for row in scanner_rows:
+            key = tuple(row["canonical_identity"])  # verified by primary_records()
+            received = _parse_time(row.get("received_at"))
+            trade = _parse_time(row.get("trade_at"))
+            source_at = _parse_time(row.get("source_at"))
+            book = _parse_time(row.get("book_at"))
+            # A diagnostic UNAVAILABLE receipt can never become a primary
+            # quote merely because its native trade clock is still fresh.
+            eligible = bool(row.get("state") == "READY" and row.get("last_kind") == "TRADE"
+                            and row.get("review_status") in (None, "", "NO_CURRENT_CONFLICT")
+                            and received and trade and trade == source_at and book
+                            and trade <= received <= current and book <= received
+                            and 0 <= (current - trade).total_seconds() <= PRIMARY_MAX_AGE_SECONDS
+                            and 0 <= (current - book).total_seconds() <= PRIMARY_MAX_AGE_SECONDS)
+            if eligible:
+                scanner_selectable.append(row)
+            elif received:
+                previous = unavailable_since.get(key)
+                if previous is None or received > previous:
+                    unavailable_since[key] = received
+        safe_fallback, suppressed = [], 0
+        for row in fallback.values():
+            try:
+                key = tuple(_canonical_identity(row))
+            except (TypeError, ValueError):
+                continue
+            latest_unavailable = unavailable_since.get(key)
+            fallback_received = _parse_time(receipt_time(row))
+            if latest_unavailable is not None and (fallback_received is None
+                                                   or fallback_received <= latest_unavailable):
+                # A newer invalid scanner observation for this EXACT contract
+                # must not silently resurrect an older primary fallback.
+                suppressed += 1
+                continue
+            safe_fallback.append(row)
+        values, scanner_reviews = bind([*safe_fallback, *scanner_selectable])
         # bind() returns no scalar for an ambiguous fallback ticker. Do not
         # make that ambiguity disappear by overlaying just one scanner quote.
         # Full source reviews retain precedence over per-symbol convenience.
@@ -385,6 +428,12 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
                            if review.get("reason") in {
                                "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES",
                                "DUPLICATE_SOURCE_EVIDENCE_CONFLICT"}}
+        for symbol, identities in identities_by_symbol.items():
+            if len(identities) > 1:
+                blocked_symbols.add(symbol)
+                scanner_reviews.append({"symbol": symbol,
+                                        "reason": "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES",
+                                        "identity_assigned": False})
         for symbol in blocked_symbols:
             values.pop(symbol, None)
         return values, {**meta,
@@ -393,6 +442,9 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             "source_scope": "SCANNER_ROTATED_SUBSET_PLUS_AVAILABLE_FALLBACK",
             "scanner_receipt_records": len(scanner_rows),
             "scanner_receipt_status": scanner_meta.get("state"),
+            "scanner_selectable_records": len(scanner_selectable),
+            "scanner_unavailable_records": len(scanner_rows) - len(scanner_selectable),
+            "scanner_older_fallbacks_suppressed": suppressed,
             "provider_clock_basis": "NATIVE_PER_ROW_NOT_RECEIPT",
             "identity_reviews": [*(meta.get("identity_reviews") or []), *scanner_reviews][:1000],
             "reason": "OK" if values else "PRIMARY_SCANNER_AND_FALLBACK_NO_NATIVE_EXACT_EVIDENCE"}

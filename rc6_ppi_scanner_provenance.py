@@ -7,6 +7,7 @@ full-universe capture, order gate, or proof of a future provider session.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import json
 import os
 from pathlib import Path
@@ -46,6 +47,14 @@ def _key(row: dict[str, Any]) -> tuple[str, ...] | None:
         return tuple(_canonical_identity(row))
     except (TypeError, ValueError):
         return None
+
+
+def _positive_last(value: Any) -> bool:
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+    return amount.is_finite() and amount > 0
 
 
 def _safe_read(path: Path) -> dict[str, Any] | None:
@@ -113,20 +122,27 @@ def primary_records(root: Path, current: datetime) -> tuple[list[dict[str, Any]]
             continue
         # The native quote/event time is never replaced with the receipt or
         # atomic publication time. An invalid provider clock stays invalid.
-        ready = (raw.get("state") == "READY" and _aware(raw.get("source_at"))
-                 and _aware(raw.get("book_at")) and _aware(raw.get("source_at")) <= received
-                 and _aware(raw.get("book_at")) <= received)
+        trade_at = _aware(raw.get("trade_at"))
+        source_at = _aware(raw.get("source_at"))
+        book_at = _aware(raw.get("book_at"))
+        ready = bool(raw.get("state") == "READY" and raw.get("last_kind") == "TRADE"
+                     and raw.get("review_status") in (None, "", "NO_CURRENT_CONFLICT")
+                     and trade_at and trade_at == source_at and book_at
+                     and trade_at <= received and book_at <= received
+                     and _positive_last(raw.get("last")))
         row = dict(raw)
         row["source"] = "PPI"  # trusted scanner call-site provenance only
         row["state"] = "READY" if ready else "UNAVAILABLE"
         accepted.append(row)
-    return accepted, {"state": "READY" if accepted else "UNAVAILABLE", "schema": SCHEMA,
+    eligible_count = sum(row["state"] == "READY" for row in accepted)
+    return accepted, {"state": "READY" if eligible_count else "UNAVAILABLE", "schema": SCHEMA,
                        "source": "PPI_SCANNER_RECEIPT", "source_scope": "SCANNER_ROTATED_SUBSET_ONLY",
                        "provider_clock_basis": "NATIVE_TRADE_AND_BOOK_PER_ROW",
                        "capture_clock_basis": "RECEIPT_NOT_PROVIDER_CLOCK", "provider_available": None,
-                       "accepted_records": len(accepted), "rejected_records": rejected,
-                       "native_unavailable_records": sum(row["state"] != "READY" for row in accepted),
-                       "reason": "OK" if accepted else "SCANNER_PRIMARY_RECEIPT_NO_ELIGIBLE_RECORDS"}
+                       "accepted_records": len(accepted), "eligible_records": eligible_count,
+                       "rejected_records": rejected,
+                       "native_unavailable_records": len(accepted) - eligible_count,
+                       "reason": "OK" if eligible_count else "SCANNER_PRIMARY_RECEIPT_NO_ELIGIBLE_RECORDS"}
 
 
 class ScannerPrimaryRecorder:
@@ -207,7 +223,10 @@ class ScannerPrimaryRecorder:
         fd, temporary = tempfile.mkstemp(prefix=".ppi-scanner-", dir=self.path.parent)
         try:
             with os.fdopen(fd, "wb") as stream:
-                os.fchmod(stream.fileno(), 0o644)
+                # The packaged host source-cycle unit has no User= override;
+                # the observer writer uses botuser (UID 1000). A deployment
+                # must recheck host overrides before consuming this receipt.
+                os.fchmod(stream.fileno(), 0o600)
                 stream.write(encoded)
                 stream.flush()
                 os.fsync(stream.fileno())
