@@ -1271,7 +1271,7 @@ def _release_idle_catalog_heap():
             "allocator_trim_available": available}
 
 
-def _eligible_symbols(store):
+def _eligible_symbols(store, *, diagnostic=None):
     """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
 
     El catálogo puede contener más familias que el lote activo. La selección
@@ -1279,6 +1279,8 @@ def _eligible_symbols(store):
     se descartan familias por pertenecer a renta fija, cauciones o derivados.
     """
     core = []
+    evidence = diagnostic if isinstance(diagnostic, dict) else None
+    gate = "UNKNOWN"
     family_order = (
         "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
         "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
@@ -1303,6 +1305,9 @@ def _eligible_symbols(store):
                     AND UPPER(instrument_type) IN ({allowed_sql})
                   ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
                            instrument_type,ticker,settlement""").fetchall()
+        if evidence is not None:
+            evidence.update(status="QUERY_OK", gate=gate,
+                            request_rows_after_sql=len(rows))
         seen = set(core)
         groups = {kind: [] for kind in family_order}
         for ticker, kind, settlement in rows:
@@ -1320,8 +1325,46 @@ def _eligible_symbols(store):
                         core.append(value)
                         seen.add(value)
     except Exception:
-        pass
+        # An unreadable selector is not evidence that every contract is HOLD.
+        # Keep the historical fail-closed empty result, but expose the cause
+        # in the next cycle-metrics receipt without provider/host I/O.
+        if evidence is not None:
+            evidence.update(status="READ_HOLD", gate=gate,
+                            reason="ELIGIBLE_SELECTOR_READ_HOLD")
+    if evidence is not None:
+        evidence["eligible_count"] = len(core)
+        if not core and evidence.get("status") == "QUERY_OK":
+            evidence["reason"] = "ELIGIBLE_SELECTOR_EMPTY"
     return tuple(core)
+
+
+def _cold_bootstrap_diagnostic(selector, *, eligible_count, cold_slots, capacity_status):
+    """Explain zero-source loops without inventing a bootstrap PPI allowance.
+
+    This is *not* a new scanner, quota grant, lease or provider call. A606 can
+    only substitute a cold slot already selected by the READY-only sampler.
+    When it does not exist, a separate genuinely authorized provider budget
+    and EXIT reserve (or an authenticated contract importer creating a READY
+    identity) are required before any additional network discovery is designed.
+    """
+    if selector.get("status") != "QUERY_OK":
+        status = "ELIGIBLE_SELECTOR_READ_HOLD"
+    elif eligible_count == 0:
+        status = "NO_COLD_BOOTSTRAP_AUTHORITY"
+    elif cold_slots == 0:
+        status = "NO_BASELINE_COLD_SLOT"
+    else:
+        status = "BASELINE_COLD_SLOT_AVAILABLE"
+    return {"schema": "rc6.ppi-cold-bootstrap-diagnostic.v1",
+            "status": status, "selector_status": selector.get("status", "NOT_RECORDED"),
+            "selector_gate": selector.get("gate", "UNKNOWN"),
+            "selector_reason": selector.get("reason"),
+            "request_rows_after_sql": selector.get("request_rows_after_sql"),
+            "eligible_count": eligible_count, "cold_slots": cold_slots,
+            "capacity_status": capacity_status,
+            "bootstrap_authority": "NOT_GRANTED",
+            "additional_ppi_get": 0,
+            "paper_admission": "NOT_GRANTED"}
 
 
 # A606: An incomplete but authentic PPI contract is deliberately absent from
@@ -1609,7 +1652,8 @@ def _publish_focus_health(store, coverage):
 def _cycle_plan(store, focus_candidates=None):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
-    universe = list(_eligible_symbols(store))
+    selector_evidence = {}
+    universe = list(_eligible_symbols(store, diagnostic=selector_evidence))
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
     with store.connect() as c:
@@ -1643,6 +1687,9 @@ def _cycle_plan(store, focus_candidates=None):
         plan["_a606_previous"] = previous or {}
         symbols, after, plan = _ppi_observe_only_replace_cold(
             store, symbols, plan, at=at, before=before, after=after)
+    plan["ppi_cold_bootstrap_diagnostic"] = _cold_bootstrap_diagnostic(
+        selector_evidence, eligible_count=len(universe),
+        cold_slots=len(plan.get("cold", ())), capacity_status=capacity_status)
     return symbols, len(universe), before, after, plan
 
 
