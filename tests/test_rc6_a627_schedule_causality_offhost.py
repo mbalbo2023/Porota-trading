@@ -171,8 +171,11 @@ class ScheduleCausalityTest(unittest.TestCase):
     def test_missing_jobs_or_rerun_never_prove_host(self):
         target=SLOTS[3]
         result=audit([run(target,attempt=2)],{})
-        self.assertEqual('NO_VERIFICADO',slot_record(result,target)['classification'])
+        self.assertEqual('NO_VERIFICADO_RERUN',slot_record(result,target)['classification'])
         self.assertEqual('JOB_EVIDENCE_UNAVAILABLE',slot_record(result,target)['watch_probe'])
+        with_success_jobs=audit([run(target,attempt=2)],{'100':jobs()})
+        self.assertEqual('NO_VERIFICADO_RERUN',
+                         slot_record(with_success_jobs,target)['classification'])
 
     def test_incomplete_identity_and_unaware_clock_fail_closed(self):
         bad=run(SLOTS[3]);bad['workflow_id']=1
