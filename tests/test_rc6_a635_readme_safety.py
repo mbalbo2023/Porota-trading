@@ -15,6 +15,7 @@ SAFETY_MARKERS = (
     "PRODUCTION_PAPER / SIMULATION",
     "real_orders_sent=0",
     "Rutas de órdenes reales bloqueadas",
+    "Ninguna opción, incluida Telegram o configuración, está autorizada a habilitar órdenes reales",
     "PPI Watch NO TOCAR",
     "FIX-FORWARD ONLY",
     "GitHub Actions",
@@ -39,6 +40,7 @@ def violations(document: str) -> list[str]:
         "MANUAL_DOCKER_COMPOSE": r"(?i)\bdocker\s+compose\b",
         "LEGACY_REAL_CHOICE": r"(?i)simulaci[oó]n\s+contra\s+el\s+sandbox\s+de\s+PPI\s*,\s*real\s*,\s*o",
         "LEGACY_TELEGRAM_REAL_CHOICE": r"(?i)Telegram[^\n]{0,100}(?:modo|opci[oó]n)\s+real\b",
+        "UNPROVEN_CODE_ABSENCE": r"(?i)\bNo\s+existe\s+opci[oó]n\s+de\s+habilitar\s+trading\s+real\b",
         "COMMAND_BLOCK": r"(?im)^```(?:bash|shell|sh|console)\s*$",
         "COMMAND_LINE": r"(?im)^\s*(?:\$\s*)?(?:sudo\s+|ssh\s+|docker\s+(?:run|build|compose|exec))",
     }
@@ -103,6 +105,11 @@ class ReadmeSafetyTest(unittest.TestCase):
         self.assertIn(f"/blob/{LEGACY_README_SHA}/README.md", self.document)
         self.assertIn("archivo histórico no operativo", self.document)
         self.assertNotIn("# Porota Trading v16.2", self.document)
+
+    def test_policy_does_not_infer_historical_code_absence(self):
+        injected = self.document + "\nNo existe opción de habilitar trading real."
+        self.assertIn("README_FORBIDDEN_UNPROVEN_CODE_ABSENCE",
+                      violations(injected))
 
 
 if __name__ == "__main__":
