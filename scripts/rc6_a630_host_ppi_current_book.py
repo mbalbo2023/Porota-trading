@@ -15,6 +15,7 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -194,11 +195,16 @@ def _exit_round_fresh(cycle, *, now=None):
     if not isinstance(cycle, dict):
         return False
     try:
-        at = _utc(cycle.get("recorded_at"))
+        # runtime_budget_snapshot() exposes normalized UNIX epoch seconds,
+        # not an ISO string. It has already structurally checked its own
+        # current ledger coverage and basis when returning OBSERVED.
+        at = cycle.get("recorded_at")
+        if type(at) not in (int, float) or not math.isfinite(at) or at < 0:
+            return False
         current = now or datetime.now(timezone.utc)
         if not isinstance(current, datetime) or current.tzinfo is None:
             return False
-        age_ms = (current.astimezone(timezone.utc) - at).total_seconds() * 1000
+        age_ms = (current.astimezone(timezone.utc).timestamp() - at) * 1000
         return 0 <= age_ms <= MAX_EXIT_ROUND_AGE_MS
     except (TypeError, ValueError):
         return False
@@ -298,7 +304,8 @@ def _existing_shared_budget():
             return None, "PPI_EXIT_LOWER_SUSPENDED"
         cycle = exit_service.get("round") or {}
         if (cycle.get("status") != "COMPLETE" or
-                cycle.get("required_scope_verified_current") is not True):
+                cycle.get("required_scope_verified_current") is not True or
+                cycle.get("required_scope_basis") != "CURRENT_VERIFIED_PAPER_LEDGER"):
             return None, "PPI_EXIT_ROUND_NOT_ATTESTED"
         if not _exit_round_fresh(cycle):
             return None, "PPI_EXIT_ROUND_STALE_OR_CLOCK_INVALID"
