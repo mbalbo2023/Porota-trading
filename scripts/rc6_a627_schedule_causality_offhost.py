@@ -179,7 +179,11 @@ def classify_cadence(runs, jobs_by_run, *, as_of, day_art, lookback_days=1,
             record['start_delay_seconds'] = int(start_delay.total_seconds()) if start_delay else None
             detail = _watch_job_detail(jobs_by_run.get(str(run['id'])))
             record['watch_probe'] = detail
-            if run.get('conclusion') == 'failure' or detail == 'FAILED':
+            if run['run_attempt'] > 1:
+                # Latest jobs describe the rerun, not the original scheduled
+                # probe. Its existence proves a trigger, not a fresh tick.
+                state = 'NO_VERIFICADO_RERUN'
+            elif run.get('conclusion') == 'failure' or detail == 'FAILED':
                 state = 'FAILED'
             elif detail == 'SKIPPED':
                 state = 'SKIPPED'
