@@ -205,7 +205,9 @@ def test_ticker_only_or_cross_family_observation_never_promotes_paper_contract()
 
 def test_duplicate_exact_identity_requires_review():
     catalog = [{"family": "ON", "symbol": "SAME", "market": "BYMA", "currency": "ARS", "settlement": "A-24HS"}]
-    row = {"symbol": "SAME", "asset_type": "OBLIGACIONES", "market": "BYMA", "currency": "ARS",
+    # A650: truly duplicate raw ON rows. The old ON-vs-OBL case is alias-only
+    # and cannot count as even one exact match.
+    row = {"symbol": "SAME", "asset_type": "ON", "market": "BYMA", "currency": "ARS",
            "term": "A-24HS", "primary_comparison": _verified_comparison()}
     result = readiness.evaluate(catalog, [row, row])
     instrument = result["instruments"][0]
@@ -438,5 +440,8 @@ def test_a650_unlinked_alias_duplicates_not_promoted_or_overcounted():
     rows = readiness.evaluate(catalog, [row, dict(row)])["instruments"]
     assert len(rows) == 2  # catalog pending + one raw observed-only diagnostic
     assert sum(x["raw_family"] == "OBLIGACIONES" for x in rows) == 1
+    unlinked = next(x for x in rows if x["raw_family"] == "OBLIGACIONES")
+    assert unlinked["contract_state"] == "BLOCKED_CONFLICT"
+    assert "DUPLICATE_UNLINKED_OBSERVATION_REVIEW_REQUIRED" in unlinked["reasons"]
     assert all(not x["paper_contract_ready"] and not x["paper_auto_enabled"]
                for x in rows)
