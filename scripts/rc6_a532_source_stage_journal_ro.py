@@ -54,7 +54,8 @@ AGE_BUCKETS = frozenset({"WITHIN_2M", "WITHIN_10M", "WITHIN_45M", "UNKNOWN"})
 def default_receipt() -> dict[str, object]:
     return {
         "schema": SCHEMA, "read_only": True, "host_metadata_only": True,
-        "raw_journal_exported": False, "journal_message_read_host_only": True,
+        "raw_journal_exported": False,
+        "journal_message_access_scope": "HOST_ONLY_IF_AVAILABLE",
         "database_opened": False, "provider_calls": 0,
         "ppi_watch_touched": False, "order_routes_called": False,
         "real_orders_sent_by_action": 0, "paper_ready": False,
@@ -74,7 +75,7 @@ def journal_command(now: datetime) -> list[str]:
     since = (now - timedelta(minutes=LOOKBACK_MINUTES)).astimezone(timezone.utc)
     until = now.astimezone(timezone.utc)
     return [
-        "journalctl", "--quiet", "--no-pager", "--output=json",
+        "/usr/bin/journalctl", "--quiet", "--no-pager", "--output=json",
         "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,MESSAGE",
         "--unit", UNIT, "--grep=^RC6_SOURCE_CYCLE_DISPATCH=",
         f"--since={since.strftime('%Y-%m-%d %H:%M:%S UTC')}",
@@ -152,6 +153,8 @@ def _parsed_marker(message: str) -> tuple[str, str, dict[str, str]] | None:
            for val in stage_data.values()):
         return None
     state = data["status"]
+    if state in {"COMPLETE", "DEGRADED"} and not stage_data:
+        return None
     if state == "COMPLETE" and any(val not in {"OK", "NOT_DUE_TTL"}
                                    for val in stage_data.values()):
         return None

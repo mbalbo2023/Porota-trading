@@ -32,7 +32,7 @@ def marker(status="DEGRADED", stages=None, *, reason="PAPER_OBSERVE_ONLY",
 class A532OffhostTests(unittest.TestCase):
     def test_fixed_journal_command_is_bounded_and_never_calls_provider(self):
         args = a532.journal_command(NOW)
-        self.assertEqual(args[0], "journalctl")
+        self.assertEqual(args[0], "/usr/bin/journalctl")
         self.assertIn("--unit", args)
         self.assertEqual(args[args.index("--unit") + 1], a532.UNIT)
         self.assertIn("--grep=^RC6_SOURCE_CYCLE_DISPATCH=", args)
@@ -59,6 +59,7 @@ class A532OffhostTests(unittest.TestCase):
         self.assertFalse(result["cadence_verified"])
         self.assertFalse(result["ppi_book_verified"])
         self.assertFalse(result["raw_journal_exported"])
+        self.assertEqual(result["journal_message_access_scope"], "HOST_ONLY_IF_AVAILABLE")
         self.assertEqual(result["provider_calls"], 0)
         self.assertEqual(result["real_orders_sent_by_action"], 0)
         self.assertEqual(a532.sanitize_receipt(json.dumps(result).encode()), result)
@@ -103,6 +104,8 @@ class A532OffhostTests(unittest.TestCase):
     def test_only_valid_status_and_zero_provider_side_effects_enter_receipt(self):
         for raw in (
                 marker("COMPLETE", {"public": "FAILED"}),
+                marker("COMPLETE", {}),
+                marker("DEGRADED", {}),
                 marker("DEGRADED", {"public": "REALLY_SUCCEEDED"}),
                 marker("COMPLETE", {"public": "OK"}, orders=1),
                 marker("BLOCKED", {"public": "FAILED"}),
@@ -144,6 +147,9 @@ class A532OffhostTests(unittest.TestCase):
                 self.assertEqual(a532.sanitize_receipt(json.dumps(dict(report, **changes)).encode()),
                                  a532.default_receipt())
         self.assertEqual(a532.sanitize_receipt(b"not-json"), a532.default_receipt())
+        self.assertEqual(a532.default_receipt()["journal_message_access_scope"],
+                         "HOST_ONLY_IF_AVAILABLE")
+        self.assertEqual(a532.default_receipt()["marker"], "NO_VERIFICADO")
 
     def test_bounded_reader_never_needs_journalctl_in_offhost_tests(self):
         good = a532.read_journal_bounded(["python3", "-c", "print('only-local-smoke')"])
