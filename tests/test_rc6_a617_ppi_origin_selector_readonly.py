@@ -242,7 +242,12 @@ def test_host_workflow_requires_private_ro_namespace_and_sanitizer_failclose():
     assert "unshare --mount --propagation private" in workflow
     assert "mount -o remount,bind,ro /opt/porota-trading/data" in workflow
     assert "safe=failed_closed" in workflow
-    assert "if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'" in workflow
+    assert ("if: github.ref == 'refs/heads/main' && "
+            "(github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')") in workflow
+    # A scheduled run is allowed only on the exact 04-Nov ART date; the manual
+    # fallback remains allowed and the immutable private RO mount is unchanged.
+    assert "local.date().isoformat()=='2026-11-04'" in workflow
+    assert workflow.count("steps.day_gate.outputs.active == '1'") >= 4
     assert "immutable=1" not in workflow
 
 
