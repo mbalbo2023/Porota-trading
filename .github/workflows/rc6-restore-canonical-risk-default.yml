@@ -1,0 +1,56 @@
+name: RC6 restore canonical paper risk default
+
+on:
+  push:
+    branches: [candidate/v17.0.0-rc6-weekend-20260905]
+    paths:
+      - '.github/workflows/rc6-restore-canonical-risk-default.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: candidate/v17.0.0-rc6-weekend-20260905
+          fetch-depth: 0
+      - name: Apply exact scoped correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('be_paper_engine.py')
+          text = p.read_text(encoding='utf-8')
+          old = 'daily_loss_pct=None, daily_soft_stop_pct=None,'
+          new = 'daily_loss_pct="2.5", daily_soft_stop_pct=None,'
+          assert text.count(old) == 1, f'unexpected constructor match count: {text.count(old)}'
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          t = Path('tests/test_rc6_runtime_safety.py')
+          s = t.read_text(encoding='utf-8')
+          old_test = '''def test_isolated_broker_does_not_invent_daily_risk_policy(tmp_path):\n    broker = PaperBroker(PaperStore(str(tmp_path / 'isolated.db')))\n    assert broker.daily_risk is None\n    assert broker.economics_mode == 'SHADOW'\n'''
+          new_test = '''def test_isolated_broker_keeps_canonical_daily_risk_guard(tmp_path):\n    broker = PaperBroker(PaperStore(str(tmp_path / 'isolated.db')))\n    assert broker.daily_risk is not None\n    assert str(broker.daily_risk.limit_pct) == '2.5'\n    assert broker.economics_mode == 'SHADOW'\n'''
+          assert s.count(old_test) == 1, f'unexpected focused test match count: {s.count(old_test)}'
+          t.write_text(s.replace(old_test, new_test, 1), encoding='utf-8')
+          PY
+          git diff --check
+          python -m compileall -q be_paper_engine.py tests/test_rc6_runtime_safety.py
+          grep -n 'daily_loss_pct="2.5"' be_paper_engine.py
+          grep -n 'canonical_daily_risk_guard' tests/test_rc6_runtime_safety.py
+      - name: Commit scoped correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'porota-rc6-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add be_paper_engine.py tests/test_rc6_runtime_safety.py
+          git diff --cached --check
+          git commit -m 'RC6: restore canonical 2.5 percent paper risk default'
+          git push origin HEAD:candidate/v17.0.0-rc6-weekend-20260905

@@ -1,0 +1,17 @@
+[Unit]
+Description=Porota RC6 PAPER GitHub market watch silence during monitored wheel
+
+[Timer]
+# Effective 02-Nov-2026 (BYMA COM19031), exact T+1 equity/CEDEAR observation
+# continues to 18:00. Runtime active_window gates these 17/18 ticks on date
+# and holiday; it does not extend PAPER admission for FI/caucion/futures.
+# Avoid the hourly evidence publisher at :50.
+OnCalendar=Mon..Fri *-*-* 11..16:03,13,23,33,43,53:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 17:03,13,23,33,43,53:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 18:03,13:00 America/Argentina/Buenos_Aires
+Persistent=false
+AccuracySec=30s
+Unit=porota-market-watch-silence-rc6.service
+
+[Install]
+WantedBy=timers.target

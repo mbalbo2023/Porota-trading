@@ -1,0 +1,88 @@
+name: RC6 CP3 CP4 Semantic Gates 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp3-cp4-semantic-gates-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  semantic_gates:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Evaluate CP3 CP4 semantic gates read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ACTUAL="$(git -C /opt/porota-trading rev-parse HEAD)"
+          echo "HOST_HEAD=$ACTUAL"
+          test "$ACTUAL" = "$TARGET"
+          echo MUTATIONS=NONE
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timezone
+          import json
+          root=Path('/opt/porota-trading/data/contract_evidence/rc6_trusted')
+          files=list(root.glob('contract_*.json'))
+          if not files:
+              print('CP3_CAPTURE_GATE=RED|REASON=NO_CAPTURE')
+          else:
+              p=max(files,key=lambda x:x.stat().st_mtime)
+              d=json.loads(p.read_text())
+              age_h=(datetime.now(timezone.utc)-datetime.fromtimestamp(p.stat().st_mtime,timezone.utc)).total_seconds()/3600
+              blocked=d.get('blocked_nonread')
+              allowed={'GET','HEAD','OPTIONS'}
+              if isinstance(blocked,list):
+                  bad=[x for x in blocked if not isinstance(x,dict) or str(x.get('method','')).upper() in allowed]
+                  print(f'CP3_NONREAD_ENFORCEMENT_GATE={"GREEN" if not bad else "RED"}|BLOCKED_COUNT={len(blocked)}|MALFORMED_OR_READLIKE={len(bad)}')
+              else:
+                  print('CP3_NONREAD_ENFORCEMENT_GATE=RED|REASON=UNKNOWN_SHAPE')
+              print('CP3_REAL_ORDERS_GATE='+('GREEN' if d.get('real_orders_sent')==0 else 'RED')+'|VALUE='+repr(d.get('real_orders_sent')))
+              ep=d.get('endpoints')
+              print(f'CP3_ENDPOINT_INPUT_GATE={"GREEN" if isinstance(ep,dict) and len(ep)>0 else "YELLOW"}|COUNT={len(ep) if isinstance(ep,dict) else -1}')
+              print(f'CP3_CAPTURE_FRESHNESS_GATE={"GREEN" if age_h <= 24 else "YELLOW"}|AGE_HOURS={age_h:.2f}|FILE={p.name}')
+          PY
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          from datetime import datetime, timezone
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          print('PAPER_SAFETY_GATE='+('GREEN' if mode=='PRODUCTION_PAPER' and int(orders or 0)==0 else 'RED')+f'|MODE={mode}|REAL_ORDERS={orders}')
+          ce_rows=c.execute('select count(*) from contract_evidence_v2_current').fetchone()[0]
+          ce_max=c.execute('select max(observed_at) from contract_evidence_v2_current').fetchone()[0]
+          print(f'CP3_DB_MATERIALIZATION_GATE={"GREEN" if ce_rows>0 else "RED"}|ROWS={ce_rows}|MAX_OBSERVED_AT={ce_max}')
+          if ce_max:
+              dt=datetime.fromisoformat(str(ce_max).replace('Z','+00:00'))
+              if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+              age=(datetime.now(timezone.utc)-dt).total_seconds()/3600
+              print(f'CP3_DB_FRESHNESS_GATE={"GREEN" if age<=24 else "YELLOW"}|AGE_HOURS={age:.2f}')
+          fut=c.execute("select count(*) from a3_history_ingest_state_rc6 where instrument_type='FUTURES'").fetchone()[0]
+          complete=c.execute("select count(*) from a3_history_ingest_state_rc6 where instrument_type='FUTURES' and upper(coalesce(status,''))='COMPLETE'").fetchone()[0]
+          print(f'CP4_FUTURES_RUNTIME_PERSISTENCE_GATE={"GREEN" if fut>0 and complete>0 else "YELLOW"}|ROWS={fut}|COMPLETE={complete}')
+          c.close()
+          PY
+          echo CP3_CP4_SEMANTIC_GATES_COMPLETE=YES
+          HOST

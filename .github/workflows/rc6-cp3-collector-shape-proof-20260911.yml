@@ -1,0 +1,95 @@
+name: RC6 CP3 Collector Shape Proof 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp3-collector-shape-proof-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp3_collector_shape_readonly:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Inspect collector and capture shapes without values
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          LIB=/usr/local/lib/porota-contract-evidence-rc6
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo MUTATIONS=NONE
+          echo REAL_ORDER_ROUTES=NOT_CALLED
+          echo '--- COLLECTOR SOURCE ---'
+          sudo -n sed -n '1,760p' "$LIB/rc6_trusted_browser_contract_collector.py"
+          echo '--- IMPORTER SOURCE ---'
+          sudo -n sed -n '1,620p' "$LIB/rc6_contract_capture_importer.py"
+          echo '--- SAFE CAPTURE SHAPE SUMMARY ---'
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import json, os, re, time
+          roots=[Path('/var/lib/porota-contract-evidence-rc6'),Path('/opt/porota-trading/data'),Path('/opt/porota-trading')]
+          deny=re.compile(r'(token|cookie|auth|secret|password|passwd|credential|header|body|html|session|otp|key)',re.I)
+          files=[]
+          for root in roots:
+              if not root.exists(): continue
+              try:
+                  for p in root.rglob('*.json'):
+                      n=p.name.lower()
+                      if ('capture' in n or 'contract' in n) and p.is_file():
+                          try:
+                              st=p.stat()
+                              if st.st_size <= 20_000_000: files.append((st.st_mtime,p,st.st_size))
+                          except OSError: pass
+              except PermissionError: pass
+          files=sorted(files,reverse=True)[:20]
+          print('CANDIDATE_FILES',len(files))
+          def safe_shape(obj,depth=0):
+              if depth>3: return '<depth-limit>'
+              if isinstance(obj,dict):
+                  out={}
+                  for k,v in obj.items():
+                      ks=str(k)
+                      if deny.search(ks):
+                          out[ks]='<redacted-key>'
+                      elif isinstance(v,dict): out[ks]={'type':'dict','count':len(v),'keys':[str(x) for x in list(v.keys())[:80] if not deny.search(str(x))]}
+                      elif isinstance(v,list): out[ks]={'type':'list','count':len(v)}
+                      else: out[ks]={'type':type(v).__name__}
+                  return out
+              return {'type':type(obj).__name__}
+          for mt,p,size in files:
+              print('FILE',str(p),'mtime',time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(mt)),'size',size)
+              try:
+                  raw=json.loads(p.read_text(errors='replace'))
+              except Exception as exc:
+                  print('PARSE',type(exc).__name__); continue
+              print('TOP_SHAPE',json.dumps(safe_shape(raw),ensure_ascii=False,sort_keys=True))
+              if isinstance(raw,dict):
+                  ep=raw.get('endpoints')
+                  print('ENDPOINTS_TYPE',type(ep).__name__,'COUNT',len(ep) if isinstance(ep,(dict,list)) else 0)
+                  if isinstance(ep,dict):
+                      print('ENDPOINT_KEYS',json.dumps([str(k) for k in list(ep.keys())[:120] if not deny.search(str(k))],ensure_ascii=False))
+          print('CP3_CAPTURE_SHAPE_PROOF_COMPLETE=YES')
+          PY
+          HOST

@@ -1,0 +1,6 @@
+POROTA TRADING RC6 FINAL CANDIDATE GATE V2
+Date: 2026-09-06
+Purpose: authoritative trigger after pinning the acceptance workflow checkout to github.sha.
+This SHA must be the exact source built, tested offline, safety-checked, archived to GHCR and re-pulled by immutable digest.
+Safety identity: PRODUCTION_PAPER / SIMULATED / REAL_ORDER_CAPABILITY=BLOCKED.
+RC5 runtime remains unchanged until all subsequent host and rollback gates are GREEN.

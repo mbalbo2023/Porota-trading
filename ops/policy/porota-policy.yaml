@@ -1,0 +1,182 @@
+schema_version: 1
+project: POROTA_TRADING
+
+repository:
+  public_repository_intentional: true
+  source_code_may_be_public: true
+  secrets_in_repository: false
+  runtime_data_in_repository: false
+  broker_account_data_in_repository: false
+  production_databases_in_repository: false
+
+operating_mode:
+  required_mode: PRODUCTION_PAPER
+  shadow_allowed: true
+  real_trading_allowed: false
+  real_orders_sent_required: 0
+
+# A248: operator intent is a durable decision, not a release lease.  Runtime
+# safety and each instrument's market/contract eligibility are separate checks.
+paper_admission_governance:
+  operator_paper_intent_persists_until_explicit_pause: true
+  operator_paper_intent_arbitrary_ttl_allowed: false
+  operator_paper_intent_invalidated_by_new_code_sha: false
+  exact_release_safety_reverification_required: true
+  exact_market_and_instrument_admission_required: true
+  hardcoded_ticker_watchlist_as_global_admission_veto_allowed: false
+  unrelated_family_source_failure_as_global_admission_veto_allowed: false
+  live_paper_entry_requires_genuine_session_and_fresh_data: true
+  offline_historical_and_synthetic_tests_24x7_allowed: true
+  real_order_routes_must_remain_blocked: true
+
+operator_collaboration:
+  arbitrary_new_business_controls_allowed: false
+  decisions_require_reason_and_evidence: true
+  consultations_must_offer_options_and_recommendation: true
+  do_not_repeat_generic_approval_when_autonomous_scope_is_granted: true
+  exact_release_deploy_authorization_controls_still_apply: true
+
+accessibility:
+  primary_control_plane:
+    - GITHUB_MCP
+    - GITHUB_ACTIONS
+  interactive_ssh: BREAK_GLASS_ONLY
+  user_terminal_required: false
+  user_copy_paste_commands_required: false
+  codespaces_allowed: false
+
+development:
+  direct_main_changes_allowed: false
+  direct_deploy_branch_development_allowed: false
+  isolated_branch_required: true
+  parallel_development_default: true
+  maximize_safe_parallelism: true
+  shared_runtime_writers_serialized: true
+  ppi_watch_must_not_be_modified: true
+  chat_memory_is_runtime_source_of_truth: false
+  runtime_evidence_required: true
+
+deployment:
+  strategy: FIX_FORWARD_ONLY
+  # A229: an exchange calendar cannot veto technical validation or a safe
+  # promotion.  CLOSED/weekend/holiday is a valid deployment session; market
+  # hours still gate simulated instrument admission and real OPEN evidence.
+  technical_predeploy_and_deploy_24x7_required: true
+  offhours_weekends_holidays_are_deploy_veto: false
+  market_calendar_only_gates_paper_entry_and_live_market_proof: true
+  single_consolidated_deploy_required: true
+  single_frozen_candidate_required: true
+  single_final_predeploy_v2_gate_required: true
+  new_changes_after_candidate_freeze_go_to_next_batch: true
+  rollback_allowed: false
+  build_once_required: true
+  exact_artifact_promotion_required: true
+  immutable_artifact_identity_required: true
+  exact_sha_required: true
+  artifact_manifest_required: true
+  artifact_hashes_required: true
+  manual_partial_runtime_file_lists_allowed: false
+  canonical_deploy_workflow: .github/workflows/porota-deploy-v2-promote.yml
+  droplet_disk_pretransfer_gate_required: true
+  droplet_disk_pretransfer_min_free_bytes: dynamic
+  droplet_disk_pretransfer_formula: image_tar_bytes + 2 * image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes
+  droplet_disk_guard_must_run_before_transfer: true
+  failed_host_transition_replay_required: true
+  external_market_source_connectivity_veto_allowed: false
+  external_market_source_freshness_veto_allowed: false
+  external_market_source_unavailability_effect: AMBER_ALERT_ONLY
+  external_market_sources:
+    - PPI
+    - IOL
+    - BYMA
+    - A3
+    - ROFEX
+    - OTHER_COMPLEMENTARY_PROVIDERS
+  external_source_contract_corruption_remains_red: true
+  paper_instrument_readiness_on_source_failure: FAIL_CLOSED
+  host_access_artifact_integrity_and_paper_safety_still_blocking: true
+
+predeploy_gates:
+  required:
+    - POLICY
+    - COMPILE
+    - DEPENDENCY_CLOSURE
+    - ARTIFACT_COMPLETENESS
+    - IMPORT_CLOSURE
+    - UNIT_TESTS
+    - INTEGRATION_TESTS
+    - FAILED_HOST_TRANSITION_REPLAY
+    - RUNTIME_SMOKE
+    - PAPER_SAFETY
+    - SECRET_SCAN
+  rule: "Any failure reproducible without the droplet MUST fail before the droplet is modified. Incident fixtures must reproduce the observed host state and the whole affected transition, including prior receipt, Docker identities, PAPER ledger and critical control plane."
+
+promotion:
+  healthy_runtime_must_remain_untouched_until_candidate_green: true
+  partial_promotion_allowed: false
+  observer_and_dashboard_same_artifact_required: true
+  post_start_health_required: true
+  success_requires_state_manifest: true
+
+failure_learning:
+  failure_signature_required: true
+  root_cause_required: true
+  permanent_regression_guard_required: true
+  incident_fixture_provenance_required: true
+  guard_fixture_contract_drift_must_fail_predeploy: true
+  repeated_known_failure_class_allowed: false
+  fix_forward_required: true
+
+cleanup:
+  required_after_success: true
+  required_after_failure_when_safe: true
+  failed_attempt_owned_artifacts_cleanup_required: true
+  failed_deploy_reference_safe_orphan_gc_required_when_runtime_safe: true
+  orphan_cleanup_must_use_same_host_deploy_mutex: true
+  orphan_cleanup_must_not_create_new_deploy_attempt_barrier: true
+  failed_attempt_cleanup_receipt_required: true
+  residual_orphans_must_be_audited_and_cleaned_before_next_deploy: true
+  reference_rechecks_before_each_image_delete: true
+  docker_prune_or_force_delete_allowed: false
+  maximize_safe_space_recovery: true
+  report_before_after: true
+  periodic_housekeeping_required: true
+  disk_housekeeping_policy: ops/policy/rc6-disk-housekeeping-v1.json
+  backups_suspended_by_operator: true
+  paper_backup_keep_newest: 0
+  history_backup_keep_newest: 0
+  general_backup_keep_newest: 0
+  journal_max_bytes: 536870912
+  tmp_min_age_days: 7
+  allowed_targets:
+    - unreferenced_candidate_images
+    - dangling_images
+    - safe_build_cache
+    - safe_buildkit_cache
+    - deploy_staging_directories
+    - deploy_tarballs
+    - stopped_deploy_containers
+    - stale_porota_tmp_older_than_policy
+    - apt_cache_and_lists
+    - journal_above_policy_cap
+  forbidden_targets:
+    - active_containers
+    - referenced_runtime_images
+    - volumes_with_runtime_data
+    - sqlite_databases
+    - bind_mounted_data
+    - ppi_watch
+
+workflow_governance:
+  prefer_parameterized_control_plane: true
+  one_off_workflows_discouraged: true
+  workflow_creation_requires_reason: true
+  cleanup_of_legacy_workflows_must_be_classified_first: true
+
+baseline:
+  established_utc: "2026-09-25T00:40:18Z"
+  deployed_sha: "c81f8d7c089433e89f3d664b57d3a9b915565419"
+  deploy_run_id: 36076749369
+  deploy_result: SUCCESS
+  required_mode_verified: PRODUCTION_PAPER
+  real_orders_sent_verified: 0

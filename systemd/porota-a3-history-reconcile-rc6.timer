@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 A3 history nightly bounded reconciliation
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 23:30:00 America/Argentina/Buenos_Aires
+Unit=porota-a3-history-rc6@RECONCILE.service
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

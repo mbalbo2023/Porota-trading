@@ -1,0 +1,313 @@
+"""Read-only official-source adapters for RC6 contract evidence.
+
+Reachable landing pages are recorded as REFERENCE_ONLY, never as contract
+approval. Structured provider fields are normalized without inference.
+"""
+from __future__ import annotations
+
+import hashlib
+import html
+import json
+import os
+import re
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Callable
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+SCHEMA = "rc6-official-source-evidence-v1"
+MAX_BYTES = 2_000_000
+TIMEOUT_SECONDS = float(os.getenv("POROTA_OFFICIAL_SOURCE_TIMEOUT", "15"))
+OFFICIAL_SOURCE_URLS = {
+    "BYMA": os.getenv("POROTA_BYMA_OFFICIAL_URL", "https://www.byma.com.ar/productos/productos-de-datos/market-data/apis"),
+    "CNV": os.getenv("POROTA_CNV_OFFICIAL_URL", "https://www.cnv.gov.ar/sitioweb/empresas?seccion=buscador"),
+    "MATBA_ROFEX": os.getenv("POROTA_MATBA_ROFEX_OFFICIAL_URL", "https://cem.matbarofex.com.ar/"),
+}
+# Historical probes are opt-in because official providers expose different
+# authenticated/download contracts. An unset template is explicitly reported
+# as NOT_CONFIGURED; it is never treated as historical evidence.
+HISTORICAL_SOURCE_URL_TEMPLATES = {
+    "BYMA": os.getenv("POROTA_BYMA_HISTORICAL_URL", ""),
+    "CNV": os.getenv("POROTA_CNV_HISTORICAL_URL", ""),
+    "MATBA_ROFEX": os.getenv("POROTA_MATBA_ROFEX_HISTORICAL_URL", ""),
+}
+HISTORICAL_DATES = tuple(
+    item.strip() for item in os.getenv(
+        "POROTA_OFFICIAL_HISTORICAL_DATES", "2026-09-22,2026-09-15,2026-09-01"
+    ).split(",") if item.strip()
+)
+FIELD_ALIASES = {
+    "ticker": ("ticker", "symbol", "simbolo", "codigo", "code"),
+    "isin": ("isin",),
+    "maturity": ("maturity", "maturity_date", "vencimiento", "fecha_vencimiento"),
+    "currency": ("currency", "moneda", "currency_code"),
+    "coupon": ("coupon", "coupon_rate", "cupon", "tasa_cupon"),
+    "multiplier": ("contractMultiplier", "contract_multiplier", "multiplier", "tamctra"),
+    "initial_margin": ("initialMargin", "initial_margin", "margen_inicial"),
+}
+
+@dataclass(frozen=True)
+class FetchResult:
+    source: str
+    url: str
+    observed_at: str
+    status: str
+    http_status: int | None
+    content_type: str
+    digest: str
+    evidence: dict[str, Any]
+    error: str = ""
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+def _safe_url(url: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("OFFICIAL_SOURCE_URL_INVALID")
+    return parsed.geturl()
+
+def _fetch(url: str, opener: Callable[..., Any] = urlopen) -> tuple[int, str, bytes]:
+    safe = _safe_url(url)
+    request = Request(safe, headers={"User-Agent": "Porota-RC6-read-only-evidence/1.0", "Accept": "application/json,text/html;q=0.9"})
+    response = opener(request, timeout=TIMEOUT_SECONDS)
+    try:
+        status = int(getattr(response, "status", 200))
+        content_type = str(response.headers.get("Content-Type", ""))[:160]
+        body = response.read(MAX_BYTES + 1)
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+    if len(body) > MAX_BYTES:
+        raise ValueError("OFFICIAL_SOURCE_RESPONSE_TOO_LARGE")
+    return status, content_type, body
+
+def _flatten_dicts(value: Any) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        keys = {str(k).lower() for k in value}
+        if keys.intersection({"ticker", "symbol", "isin", "codigo", "code", "vencimiento", "maturity"}):
+            found.append(value)
+        for nested in value.values():
+            found.extend(_flatten_dicts(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            found.extend(_flatten_dicts(nested))
+    return found[:500]
+
+def _pick(record: dict[str, Any], aliases: tuple[str, ...]) -> Any:
+    lowered = {str(k).lower(): v for k, v in record.items()}
+    for alias in aliases:
+        if alias.lower() in lowered and lowered[alias.lower()] not in (None, ""):
+            return lowered[alias.lower()]
+    return None
+
+def normalize_records(source: str, payload: Any) -> list[dict[str, Any]]:
+    result = []
+    for raw in _flatten_dicts(payload):
+        normalized = {"source": source}
+        for field, aliases in FIELD_ALIASES.items():
+            value = _pick(raw, aliases)
+            if value not in (None, ""):
+                normalized[field] = value
+        if len(normalized) > 1:
+            result.append(normalized)
+    return result
+
+def parse_payload(source: str, url: str, status: int, content_type: str, body: bytes, *, observed_at: str | None = None) -> FetchResult:
+    observed_at = observed_at or _now()
+    digest = hashlib.sha256(body).hexdigest()
+    text = body.decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(text)
+        structured = True
+    except json.JSONDecodeError:
+        payload = None
+        structured = False
+    records = normalize_records(source, payload) if structured else []
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+    evidence = {
+        "schema": SCHEMA, "source": source, "url": url, "http_status": status,
+        "content_type": content_type, "structured": structured, "records": records,
+        "record_count": len(records), "official_links": sorted(set(re.findall(r"https?://[^\\s\"'<>]+", text)))[:100],
+        "page_title": html.unescape(title_match.group(1)).strip() if title_match else "",
+        "retrieved_at": observed_at,
+    }
+    state = "UNAVAILABLE_HTTP" if status >= 400 else "REACHABLE_STRUCTURED" if structured and records else "REFERENCE_ONLY"
+    return FetchResult(source, url, observed_at, state, status, content_type, digest, evidence)
+
+def init_schema(store: Any) -> None:
+    with store.connect() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS official_source_evidence(
+          source TEXT NOT NULL, url TEXT NOT NULL, observed_at TEXT NOT NULL,
+          status TEXT NOT NULL, http_status INTEGER, content_type TEXT NOT NULL,
+          digest TEXT NOT NULL, evidence_json TEXT NOT NULL, error TEXT NOT NULL,
+          PRIMARY KEY(source,url,observed_at))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS official_source_historical_evidence(
+          source TEXT NOT NULL, requested_date TEXT NOT NULL, url TEXT NOT NULL,
+          observed_at TEXT NOT NULL, status TEXT NOT NULL, http_status INTEGER,
+          content_type TEXT NOT NULL, digest TEXT NOT NULL, evidence_json TEXT NOT NULL,
+          error TEXT NOT NULL, PRIMARY KEY(source,requested_date,url,observed_at))""")
+
+def _historical_checks(
+    store: Any,
+    source: str,
+    template: str,
+    dates: tuple[str, ...],
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    if not template:
+        return {"status": "NOT_CONFIGURED", "dates": [
+            {"date": date, "status": "NOT_CONFIGURED", "record_count": 0} for date in dates
+        ]}
+    checks = []
+    for requested_date in dates:
+        url = template.replace("{date}", requested_date)
+        observed_at = _now()
+        content_type = ""
+        try:
+            status, content_type, body = _fetch(url, opener)
+            result = parse_payload(source, url, status, content_type, body, observed_at=observed_at)
+            item = {"date": requested_date, "status": result.status, "http_status": result.http_status,
+                    "record_count": result.evidence.get("record_count", 0), "url": url}
+            error = result.error
+            digest = result.digest
+            evidence = result.evidence
+        except Exception as exc:
+            item = {"date": requested_date, "status": "UNAVAILABLE", "http_status": None,
+                    "record_count": 0, "url": url}
+            error = f"{type(exc).__name__}:{str(exc)[:240]}"
+            digest = ""
+            evidence = {}
+        with store.connect() as c:
+            c.execute("""INSERT INTO official_source_historical_evidence
+              (source,requested_date,url,observed_at,status,http_status,content_type,digest,evidence_json,error)
+              VALUES(?,?,?,?,?,?,?,?,?,?)""", (source,requested_date,url,observed_at,item["status"],
+              item["http_status"],content_type if "content_type" in locals() else "",digest,
+              json.dumps(evidence,ensure_ascii=False,sort_keys=True),error))
+        checks.append(item)
+    states = {str(item["status"]) for item in checks}
+    overall = "REACHABLE_STRUCTURED" if checks and all(item["status"] == "REACHABLE_STRUCTURED" and item["record_count"] > 0 for item in checks) else "REFERENCE_ONLY" if checks and any(item["status"] == "REFERENCE_ONLY" for item in checks) else "UNAVAILABLE"
+    return {"status": overall, "dates": checks}
+
+def collect(store: Any, *, opener: Callable[..., Any] = urlopen, urls: dict[str, str] | None = None,
+            historical_urls: dict[str, str] | None = None,
+            historical_dates: tuple[str, ...] | None = None) -> dict[str, Any]:
+    init_schema(store)
+    results = []
+    historical = {}
+    for source, raw_url in (urls or OFFICIAL_SOURCE_URLS).items():
+        url, observed_at = str(raw_url or "").strip(), _now()
+        try:
+            status, content_type, body = _fetch(url, opener)
+            result = parse_payload(source, url, status, content_type, body, observed_at=observed_at)
+        except Exception as exc:
+            result = FetchResult(source, url, observed_at, "UNAVAILABLE", None, "", "", {}, f"{type(exc).__name__}:{str(exc)[:240]}")
+        with store.connect() as c:
+            c.execute("""INSERT INTO official_source_evidence
+              (source,url,observed_at,status,http_status,content_type,digest,evidence_json,error)
+              VALUES(?,?,?,?,?,?,?,?,?)""", (result.source,result.url,result.observed_at,result.status,
+              result.http_status,result.content_type,result.digest,json.dumps(result.evidence,ensure_ascii=False,sort_keys=True),result.error))
+        results.append({"source": result.source, "status": result.status, "http_status": result.http_status,
+                        "record_count": result.evidence.get("record_count", 0), "error": result.error,
+                        "url": result.url, "observed_at": result.observed_at})
+        templates = historical_urls or HISTORICAL_SOURCE_URL_TEMPLATES
+        historical[source] = _historical_checks(store, source, str(templates.get(source) or ""),
+                                                tuple(historical_dates or HISTORICAL_DATES), opener)
+    return {"schema": SCHEMA, "sources": results, "historical": historical, "collected_at": _now()}
+
+def assert_read_only_invariants() -> None:
+    assert all(urlparse(url).scheme in {"http", "https"} for url in OFFICIAL_SOURCE_URLS.values())
+
+
+def probe_technical_endpoint(source: str, url: str, expected_symbol: str,
+                             required_fields: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Probe a documented technical endpoint without treating HTTP 200 as success.
+
+    A usable result must be a non-HTML structured payload, contain at least one
+    record, match the requested instrument, expose the requested fields, and
+    carry a provider timestamp. Missing authentication or an undocumented
+    endpoint remains an explicit non-success state.
+    """
+    result: dict[str, Any] = {
+        "source": str(source),
+        "url": str(url),
+        "expected_symbol": str(expected_symbol),
+        "status": "NOT_CONFIGURED" if not str(url or "").strip() else "UNAVAILABLE",
+        "http_status": None,
+        "content_type": "",
+        "record_count": 0,
+        "symbol_match": False,
+        "required_fields": list(required_fields),
+        "present_fields": [],
+        "provider_timestamp": None,
+        "usable": False,
+        "error": "",
+        "observed_at": _now(),
+    }
+    if not str(url or "").strip():
+        result["error"] = "TECHNICAL_ENDPOINT_NOT_CONFIGURED"
+        return result
+    try:
+        endpoint = _safe_url(url)
+        request = Request(endpoint, headers={
+            "User-Agent": "Porota-RC6-technical-probe/1.0",
+            "Accept": "application/json",
+        })
+        with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            body = response.read(MAX_BYTES + 1)
+            result["http_status"] = int(getattr(response, "status", 200))
+            result["content_type"] = str(response.headers.get("Content-Type", ""))
+        if len(body) > MAX_BYTES:
+            result["status"] = "INVALID_PAYLOAD"
+            result["error"] = "TECHNICAL_RESPONSE_TOO_LARGE"
+            return result
+        if "json" not in result["content_type"].lower():
+            result["status"] = "HTTP_200_NON_DATA_DOCUMENT" if result["http_status"] < 400 else "UNAVAILABLE_HTTP"
+            result["error"] = "CONTENT_TYPE_NOT_JSON"
+            return result
+        try:
+            payload = json.loads(body.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            result["status"] = "INVALID_PAYLOAD"
+            result["error"] = f"JSON_PARSE_ERROR:{type(exc).__name__}"
+            return result
+        values = payload if isinstance(payload, list) else (
+            payload.get("items", payload.get("data", payload.get("results", [])))
+            if isinstance(payload, dict) else []
+        )
+        records = [item for item in values if isinstance(item, dict)] if isinstance(values, list) else []
+        result["record_count"] = len(records)
+        if not records:
+            result["status"] = "EMPTY_STRUCTURED_RESPONSE"
+            result["error"] = "NO_RECORDS"
+            return result
+        expected = str(expected_symbol or "").strip().upper()
+        for item in records:
+            normalized = {str(k).strip().lower(): v for k, v in item.items()}
+            symbol = next((str(normalized.get(k, "")).strip().upper()
+                           for k in ("ticker", "symbol", "simbolo", "code", "instrument")
+                           if normalized.get(k) not in (None, "")), "")
+            if symbol == expected:
+                result["symbol_match"] = True
+                result["present_fields"] = sorted(str(k) for k, v in item.items()
+                                                  if v not in (None, ""))
+                result["provider_timestamp"] = next((item.get(k) for k in (
+                    "timestamp", "observed_at", "updated_at", "fecha", "time"
+                ) if item.get(k) not in (None, "")), None)
+                break
+        missing = [field for field in required_fields
+                   if str(field).lower() not in {x.lower() for x in result["present_fields"]}]
+        result["usable"] = bool(result["symbol_match"] and result["provider_timestamp"] and not missing)
+        result["status"] = "USABLE_STRUCTURED" if result["usable"] else "STRUCTURED_NOT_USABLE"
+        result["error"] = "" if result["usable"] else (
+            "SYMBOL_TIMESTAMP_OR_FIELDS_MISSING:" + ",".join(missing)
+        )
+        return result
+    except Exception as exc:
+        result["status"] = "UNAVAILABLE"
+        result["error"] = f"{type(exc).__name__}:{str(exc)[:240]}"
+        return result

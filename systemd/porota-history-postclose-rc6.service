@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 post-close History Store reconciliation
+After=docker.service
+Requires=docker.service
+# Keep the host gate closed until the schema and cutoff are verified.
+ConditionPathExists=/etc/porota/rc6-postclose-history-explicitly-authorized
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec -e RC6_POSTCLOSE_HISTORY_RECOVERY=APPROVED porota_production_observer python /app/rc6_postclose_history_job.py
+TimeoutStartSec=20min

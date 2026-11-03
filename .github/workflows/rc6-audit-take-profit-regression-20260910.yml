@@ -1,0 +1,42 @@
+name: RC6 Audit Take Profit Regression 2026-09-10
+on:
+  push:
+    branches: [audit/rc6-take-profit-regression-20260910]
+    paths:
+      - 'tests/test_rc6_take_profit_regression.py'
+      - '.github/workflows/rc6-audit-take-profit-regression-20260910.yml'
+      - 'be_paper_engine.py'
+      - 'bm_exit_supervisor.py'
+      - 'bq_exit_policy.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  take-profit-regression:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify immutable PAPER safety markers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          echo 'PAPER_SAFETY_MARKERS=GREEN'
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Run isolated audited take-profit regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_rc6_take_profit_regression.py
+          echo 'TAKE_PROFIT_TRIGGER=GREEN'
+          echo 'TAKE_PROFIT_NO_LIQUIDITY_RETRY=GREEN'
+          echo 'TAKE_PROFIT_GAP_BID_FILL=GREEN'
+          echo 'TARGET_EOD_PRECEDENCE=GREEN'
+          echo 'REAL_ORDERS_SENT_BY_TESTS=0'
+          echo 'RC6_AUDIT_TAKE_PROFIT_GATE=GREEN'

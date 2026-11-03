@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Validate preopen output without converting NOT_DUE into trading permission.
+
+This is a deployment-result contract, not a replacement for rc6_preopen or its
+calendar. No network, database, service or order operation is performed here.
+"""
+from __future__ import annotations
+import argparse
+from datetime import datetime
+import json
+import re
+import sys
+from zoneinfo import ZoneInfo
+from scripts.rc6_operator_paper_rearm import PAUSE_STATUS, trusted_operator_pause
+
+TZ = ZoneInfo('America/Argentina/Buenos_Aires')
+SCHEMA = 'POROTA_RC6_PREOPEN_V3'
+PHASES = {'T_MINUS_45', 'T_MINUS_10'}
+CHECKS = {
+    'release_identity', 'observer_container', 'dashboard_container',
+    'observer_db', 'disk', 'required_rc6_timers', 'byma_morning_watch',
+    'iol_reference_fallback', 'history_quarantine', 'foreign_market_policy',
+}
+NOT_DUE_KEYS = {
+    'schema', 'generated_at_ar', 'status', 'reason',
+    'read_only', 'network_order_test_performed',
+}
+
+class PreopenRejected(ValueError):
+    pass
+
+def require(condition, message):
+    if not condition:
+        raise PreopenRejected(message)
+
+def strict_json(text):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            require(key not in result, 'DUPLICATE_JSON_KEY')
+            result[key] = value
+        return result
+    def invalid_constant(value):
+        raise PreopenRejected('NONFINITE_JSON_CONSTANT')
+    require(isinstance(text, str) and len(text) <= 1024 * 1024, 'OUTPUT_SIZE')
+    try:
+        return json.loads(text, object_pairs_hook=pairs, parse_constant=invalid_constant)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise PreopenRejected('INVALID_JSON') from exc
+
+def validate_report(report, *, phase, return_code, now, is_operational):
+    require(type(return_code) is int and return_code == 0, 'PROCESS_FAILED')
+    require(phase in PHASES, 'PHASE_INVALID')
+    require(isinstance(report, dict), 'REPORT_NOT_OBJECT')
+    require(report.get('schema') == SCHEMA, 'SCHEMA_INVALID')
+    require(report.get('read_only') is True, 'READ_ONLY_NOT_TRUE')
+    require(report.get('network_order_test_performed') is False, 'ORDER_TEST_NOT_FALSE')
+    require(isinstance(now, datetime) and now.tzinfo is not None, 'NOW_NOT_AWARE')
+    try:
+        observed = datetime.fromisoformat(str(report.get('generated_at_ar', '')).replace('Z', '+00:00'))
+    except (ValueError, TypeError) as exc:
+        raise PreopenRejected('TIMESTAMP_INVALID') from exc
+    require(observed.tzinfo is not None, 'TIMESTAMP_NAIVE')
+    local_now = now.astimezone(TZ)
+    local_observed = observed.astimezone(TZ)
+    require(observed.utcoffset() == local_observed.utcoffset(), 'TIMESTAMP_NOT_ARGENTINA')
+    require(local_observed.date() == local_now.date(), 'CALENDAR_DATE_MISMATCH')
+    require(0 <= (now - observed).total_seconds() <= 300, 'TIMESTAMP_NOT_FRESH')
+    try:
+        operational = is_operational(local_observed.date())
+    except Exception as exc:
+        raise PreopenRejected('CALENDAR_UNAVAILABLE') from exc
+    require(type(operational) is bool, 'CALENDAR_RESULT_NOT_BOOL')
+    status = report.get('status')
+    if status == 'NOT_DUE':
+        require(set(report) == NOT_DUE_KEYS, 'NOT_DUE_SHAPE_INVALID')
+        require(report.get('reason') == 'BYMA_NON_OPERATIONAL_DAY', 'NOT_DUE_REASON_INVALID')
+        require(operational is False, 'NOT_DUE_ON_OPERATIONAL_DAY')
+    elif status in {'GREEN','PAUSED_NO_GO'}:
+        require(operational is True, 'GREEN_ON_NON_OPERATIONAL_DAY' if status == 'GREEN'
+                else 'OPERATOR_PAUSE_ON_NON_OPERATIONAL_DAY')
+        require(report.get('phase') == phase, 'PHASE_MISMATCH')
+        require(report.get('dry_equivalent') is True, 'DRY_EQUIVALENT_NOT_TRUE')
+        require(report.get('direct_telegram_send') is False, 'TELEGRAM_NOT_FALSE')
+        require(report.get('red_checks') == [], 'RED_CHECKS_PRESENT')
+        checks = report.get('checks')
+        require(isinstance(checks, dict) and CHECKS <= set(checks), 'REQUIRED_CHECKS_MISSING')
+        require(all(isinstance(item, dict) and item.get('state') in {'GREEN', 'AMBER'}
+                    for item in checks.values()), 'CHECK_NOT_ACCEPTABLE')
+        timer = checks['required_rc6_timers']
+        if status == 'PAUSED_NO_GO':
+            # Historical A125/A151/A176 evidence remains immutable. A later
+            # owner PAUSE V2 is a DIFFERENT authority, rooted in the exact
+            # no-follow receipt instead of relabeling A176 as a new action.
+            day = local_now.date().isoformat()
+            require(day >= '2026-10-27', 'OPERATOR_PAUSE_DAY_INVALID')
+            require(report.get('operator_paper_paused') is True and
+                    timer.get('operator_paper_paused') is True,
+                    'OPERATOR_PAUSE_NOT_ATTESTED')
+            operation = report.get('operator_pause_operation_id')
+            require(report.get('operator_pause_day_ar') == day and
+                    timer.get('operator_pause_day_ar') == day and
+                    isinstance(operation, str) and
+                    timer.get('operator_pause_operation_id') == operation,
+                    'OPERATOR_PAUSE_IDENTITY_RED')
+            digest = report.get('operator_pause_receipt_sha256')
+            require(isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest) and
+                    timer.get('operator_pause_receipt_sha256') == digest,
+                    'OPERATOR_PAUSE_RECEIPT_RED')
+            new_pause = report.get('operator_pause_v2')
+            if new_pause is not None:
+                require(day >= '2026-10-29' and type(new_pause) is dict and
+                        set(new_pause) == {
+                            'status', 'receipt_sha256', 'operator_comment_id',
+                            'rearm_run_id', 'issued_at_ar', 'candidate_sha',
+                            'candidate_tree_sha'} and
+                        new_pause.get('status') == PAUSE_STATUS and
+                        timer.get('operator_pause_v2') == new_pause and
+                        new_pause.get('receipt_sha256') == digest and
+                        type(new_pause.get('operator_comment_id')) is int and
+                        new_pause['operator_comment_id'] > 0 and
+                        type(new_pause.get('rearm_run_id')) is int and
+                        new_pause['rearm_run_id'] > 0 and
+                        all(re.fullmatch(r'[0-9a-f]{40}', str(new_pause.get(k)))
+                            for k in ('candidate_sha', 'candidate_tree_sha')) and
+                        operation == 'RC6-OWNER-PAUSE-V2-' + str(new_pause['rearm_run_id']),
+                        'OPERATOR_V2_PAUSE_IDENTITY_RED')
+                # This validator runs on the host. Re-read the exact root-owned
+                # FD (including its hash), not just self-consistent JSON from
+                # the preopen command's stdout or a writable DATA copy.
+                require(trusted_operator_pause(now=local_now, context='host') == new_pause,
+                        'OPERATOR_V2_ROOT_RECEIPT_UNTRUSTED')
+                units = timer.get('units')
+                preopen_timer = units.get('porota-preopen-rc6.timer') if type(units) is dict else None
+                require(type(preopen_timer) is dict and
+                        preopen_timer.get('state') == 'GREEN' and
+                        preopen_timer.get('enabled') == 'disabled' and
+                        preopen_timer.get('active') == 'inactive',
+                        'OPERATOR_V2_PREOPEN_TIMER_NOT_DISABLED')
+                require('operator_no_go_continuation' not in report and
+                        'operator_no_go_continuation' not in timer and
+                        report.get('paper_admission_hold') ==
+                        'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                        'OPERATOR_V2_PAUSE_MUST_NOT_REUSE_A176')
+                admission_receipt = report.get('paper_admission_receipt')
+                if admission_receipt is not None:
+                    require(type(admission_receipt) is dict and
+                            admission_receipt.get('status') == 'NO_GO_PAPER_SCALPING' and
+                            admission_receipt.get('reason') ==
+                            'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+                            admission_receipt.get('new_receipt_written') is False and
+                            admission_receipt.get('operator_intent_receipt_sha256') == digest and
+                            'continuation_receipt_sha256' not in admission_receipt,
+                            'OPERATOR_V2_ADMISSION_RECEIPT_INVALID')
+            else:
+                require('operator_pause_v2' not in timer,
+                        'OPERATOR_V2_TIMER_WITHOUT_REPORT_PROOF')
+                require((day == '2026-10-27' and operation == 'A125-40501523106-1') or
+                        (day == '2026-10-28' and re.fullmatch(
+                            r'A151-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
+                        (day == '2026-10-29' and re.fullmatch(
+                            r'A176-[1-9][0-9]{0,15}-[1-9][0-9]{0,3}', operation)) or
+                        (day > '2026-10-29' and re.fullmatch(
+                            r'A180-NO-GO-[0-9a-f]{16}', operation)),
+                        'OPERATOR_PAUSE_IDENTITY_RED')
+            if new_pause is None and day >= '2026-10-29':
+                proof = report.get('operator_no_go_continuation')
+                require(type(proof) is dict and
+                        timer.get('operator_no_go_continuation') == proof and
+                        proof.get('status') == 'NO_GO_PENDING_EXPLICIT_REARM' and
+                        proof.get('business_day_art') == '2026-10-29' and
+                        proof.get('paper_execution_authorized') is False and
+                        proof.get('receipt_sha256') == digest and
+                        (proof.get('operation_id') == operation if day == '2026-10-29'
+                         else operation == 'A180-NO-GO-' + digest[:16]) and
+                        all(isinstance(proof.get(key), str) and
+                            re.fullmatch(r'[0-9a-f]{64}', proof[key])
+                            for key in ('a151_origin_sha256', 'a175_quiescence_sha256',
+                                        'a175_scheduler_sha256')) and
+                        report.get('paper_admission_hold') ==
+                        'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM',
+                        'OPERATOR_A176_NO_GO_CONTINUATION_RED')
+            elif new_pause is None:
+                require('operator_no_go_continuation' not in report and
+                        'operator_no_go_continuation' not in timer,
+                        'OPERATOR_FUTURE_RECEIPT_ON_HISTORICAL_DAY')
+        else:
+            require(local_now.date().isoformat() not in
+                    {'2026-10-27', '2026-10-28'},
+                    'GREEN_CANNOT_OVERRIDE_OPERATOR_HOLD')
+            require(report.get('operator_paper_paused') is not True and
+                    timer.get('operator_paper_paused') is not True and
+                    'operator_no_go_continuation' not in report and
+                    'operator_no_go_continuation' not in timer and
+                    'operator_pause_v2' not in report and
+                    'operator_pause_v2' not in timer,
+                    'GREEN_CANNOT_MASK_OPERATOR_PAUSE')
+            if local_now.date().isoformat() >= '2026-10-29':
+                authority = report.get('operator_rearm_authority')
+                require(type(authority) is dict and
+                        all(re.fullmatch(r'[0-9a-f]{40}', str(authority.get(key)))
+                            for key in ('candidate_sha', 'candidate_tree_sha')) and
+                        re.fullmatch(r'sha256:[0-9a-f]{64}',
+                                     str(authority.get('image_id'))) and
+                        type(authority.get('operator_comment_id')) is int and
+                        authority['operator_comment_id'] > 0 and
+                        type(authority.get('rearm_run_id')) is int and
+                        authority['rearm_run_id'] > 0 and
+                        report.get('paper_admission_hold') is None,
+                        'GREEN_PAPER_REARM_AUTHORITY_UNPROVEN')
+    else:
+        raise PreopenRejected('STATUS_NOT_ACCEPTABLE')
+    if local_now.date().isoformat() >= '2026-10-29' and status == 'PAUSED_NO_GO':
+        require(report.get('paper_admission_hold') ==
+                'OPERATOR_NO_GO_PENDING_EXPLICIT_REARM' and
+                'operator_rearm_authority' not in report,
+                'PAPER_REARM_HOLD_UNPROVEN')
+    return {
+        'schema': 'POROTA_DEPLOY_PREOPEN_RESULT_V1', 'accepted': True,
+        'preopen_status': status, 'phase': phase,
+        'calendar_operational': operational,
+        'readiness_verified': status == 'GREEN',
+        'operator_paper_paused': status == 'PAUSED_NO_GO',
+        'execution_authorized': False,
+        'paper_admission_hold': report.get('paper_admission_hold'),
+        'generated_at_ar': report['generated_at_ar'],
+    }
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--phase', choices=sorted(PHASES), required=True)
+    parser.add_argument('--return-code', type=int, required=True)
+    args = parser.parse_args(argv)
+    try:
+        # Use the exact installed RC6 calendar. Import failure is blocking.
+        import ak_byma_calendar as calendar
+        report = strict_json(sys.stdin.read(1024 * 1024 + 1))
+        result = validate_report(report, phase=args.phase, return_code=args.return_code,
+                                 now=datetime.now(TZ),
+                                 is_operational=calendar.es_dia_habil_operativo)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except Exception as exc:
+        print(json.dumps({'accepted': False, 'execution_authorized': False,
+                          'error': type(exc).__name__, 'reason': str(exc)}), file=sys.stderr)
+        return 2
+
+if __name__ == '__main__':
+    raise SystemExit(main())

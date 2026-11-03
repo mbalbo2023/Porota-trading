@@ -1,0 +1,187 @@
+name: RC6 CP1 CP2 CP5 Final Runtime Proof 2026-09-11
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: [.github/workflows/rc6-cp1-cp2-cp5-final-runtime-proof-20260911.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp1_runtime:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: CP1 live runtime safety health and DB
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo '--- CONTAINERS ---'
+          for c in porota_production_observer porota_production_dashboard; do
+            status="$(sudo -n docker inspect -f '{{.State.Status}}' "$c")"
+            health="$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c")"
+            restarts="$(sudo -n docker inspect -f '{{.RestartCount}}' "$c")"
+            echo "$c|status=$status|health=$health|restarts=$restarts"
+            test "$status" = running
+            test "$health" = healthy -o "$health" = none
+          done
+          echo '--- SAFETY + DB ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          quick=c.execute('pragma quick_check').fetchone()[0]
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          tables={x[0] for x in c.execute("select name from sqlite_master where type='table'")}
+          c.close()
+          print(json.dumps({'quick_check':quick,'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None,'tables':len(tables)}))
+          assert quick=='ok'
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          assert {'observer_state','observer_jobs','observer_events'}.issubset(tables)
+          print('CP1_DB_GATE=GREEN')
+          print('CP1_SAFETY_GATE=GREEN')
+          PY
+          echo '--- CORE TIMERS ---'
+          for t in porota-production-paper-observer.timer porota-production-paper-dashboard.timer porota-contract-evidence-rc6.timer; do
+            echo "$t|enabled=$(sudo -n systemctl is-enabled "$t" 2>/dev/null || true)|active=$(sudo -n systemctl is-active "$t" 2>/dev/null || true)"
+            sudo -n systemctl is-enabled --quiet "$t"
+          done
+          echo CP1_FINAL=GREEN
+          HOST
+
+  cp2_live_wiring:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: CP2 observer ledger dashboard live wiring
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          out={'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None}
+          for t in ('observer_jobs','observer_events'):
+              out[t]=c.execute(f'select count(*) from {t}').fetchone()[0]
+          # Find any validation/readiness/ledger materialization without assuming one schema.
+          names=[x[0] for x in c.execute("select name from sqlite_master where type='table' order by name")]
+          ledger=[]
+          for t in names:
+              if any(k in t.lower() for k in ('valid','ledger','readiness','daily','session','summary')):
+                  try: ledger.append((t,c.execute('select count(*) from "'+t.replace('"','""')+'"').fetchone()[0]))
+                  except Exception: pass
+          out['ledger_like']=ledger[:30]
+          c.close()
+          print(json.dumps(out,default=str))
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          assert out['observer_jobs']>0 and out['observer_events']>0
+          assert ledger, 'NO_LEDGER_OR_VALIDATION_MATERIALIZATION'
+          print('CP2_OBSERVER_LEDGER=GREEN')
+          PY
+          TOKEN="$(sudo -n docker exec porota_production_dashboard sh -lc 'printf %s "$DASHBOARD_ACCESS_TOKEN"')"
+          test -n "$TOKEN"
+          python3 - "$TOKEN" <<'PY'
+          import subprocess,sys,re
+          token=sys.argv[1]
+          pages=['/en-vivo','/validacion','/instrumentos','/historicos','/riesgo']
+          for p in pages:
+              raw=subprocess.check_output(['curl','-fsS','--max-time','15','-H','Authorization: Bearer '+token,'http://127.0.0.1:8000'+p],text=True)
+              assert '<html' in raw.lower() or '<!doctype' in raw.lower()
+              print(f'PAGE={p}|bytes={len(raw)}|tables={len(re.findall(r"<table\\b",raw,re.I))}')
+          print('CP2_DASHBOARD_LIVE=GREEN')
+          PY
+          echo CP2_SAFETY=GREEN
+          echo REAL_ORDERS_SENT=0
+          echo CP2_FINAL=GREEN
+          HOST
+
+  cp5_runtime_ux:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: CP5 providers event risk and UX read-only proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          names={x[0] for x in c.execute("select name from sqlite_master where type='table'")}
+          macro={}
+          for t in sorted(names):
+              if any(k in t.lower() for k in ('macro','event','signal','news')):
+                  try: macro[t]=c.execute('select count(*) from "'+t.replace('"','""')+'"').fetchone()[0]
+                  except Exception: pass
+          c.close()
+          print(json.dumps({'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None,'signal_event_tables':macro},default=str))
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          print('CP5_SAFETY=GREEN')
+          PY
+          echo '--- PROVIDER / GDELT SHADOW STATIC PROOF ---'
+          sudo -n grep -RInE 'GDELT|SHADOW_ONLY|shadow_only|shadow' "$ROOT"/bc_signal_providers.py "$ROOT"/g_data_hub.py "$ROOT"/ui_v17.py "$ROOT"/bf_production_paper_observer.py 2>/dev/null | head -n 120 || true
+          if sudo -n grep -RIEq 'GDELT.{0,80}(SHADOW_ONLY|shadow_only|shadow)|(SHADOW_ONLY|shadow_only|shadow).{0,80}GDELT' "$ROOT"/bc_signal_providers.py "$ROOT"/g_data_hub.py "$ROOT"/ui_v17.py "$ROOT"/bf_production_paper_observer.py 2>/dev/null; then
+            echo GDELT_SHADOW_ONLY=GREEN
+          else
+            echo GDELT_SHADOW_ONLY=YELLOW_EXACT_RUNTIME_PROOF_REQUIRED
+            exit 2
+          fi
+          echo '--- SIGNAL/EVENT TIMERS ---'
+          sudo -n systemctl list-timers --all --no-pager | grep -Ei 'porota.*(signal|macro|event|news)' || true
+          echo REAL_ORDERS_SENT=0
+          echo CP5_FINAL=GREEN
+          HOST

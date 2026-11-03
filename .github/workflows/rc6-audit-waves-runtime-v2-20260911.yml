@@ -1,0 +1,194 @@
+name: RC6 Audit Waves Runtime V2 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-audit-waves-runtime-v2-20260911.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-audit-waves-runtime-v2
+  cancel-in-progress: false
+
+jobs:
+  ancestry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prove wave ancestry on current branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "AUDIT_HEAD=$(git rev-parse HEAD)"
+          echo 'MUTATIONS=NONE'
+          python3 - <<'PY'
+          import re,subprocess
+          log=subprocess.check_output(['git','log','HEAD','-n','1800','--pretty=%H|%s'],text=True,errors='replace').splitlines()
+          for n in range(1,19):
+              rx=re.compile(rf'(?i)(?:\bw(?:ave)?[ _-]*0?{n}\b|\bola[ _-]*0?{n}\b)')
+              hits=[x for x in log if rx.search(x)]
+              print(f'ANCESTRY_W{n:02d}|COMMITS={len(hits)}')
+              for x in hits[:12]: print('  '+x)
+          print('--- KNOWN INTEGRATION/DEPLOY COMMIT ANCESTRY ---')
+          known={
+            'W09':'5152b07','W10':'3d7512b','W11':'c4ed6f0','W12':'181e078',
+            'W13':'e8b0283','W14':'e824b10','W15':'8410156','W16':'d8b2639','W17':'8a31a72','W18':'5470c3a'
+          }
+          for w,sha in known.items():
+              p=subprocess.run(['git','merge-base','--is-ancestor',sha,'HEAD'])
+              print(f'{w}|KNOWN_SHA={sha}|ANCESTOR={"YES" if p.returncode==0 else "NO"}')
+          print('ANCESTRY_AUDIT_COMPLETE=YES')
+          PY
+
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit_v2"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit_v2"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Read-only runtime proof
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit_v2" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TARGET=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          echo '=== RC6 RUNTIME AUDIT V2 READ-ONLY ==='
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo 'MUTATIONS=NONE'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          ACTUAL="$(git -C "$REPO" rev-parse HEAD)"
+          echo "HOST_SHA=$ACTUAL"
+          test "$ACTUAL" = "$TARGET"
+
+          CORE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import os,sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(f'{mode}|{orders}|ORDER_EXECUTION_MODE={os.getenv("ORDER_EXECUTION_MODE","")}|REAL_ORDER_CAPABILITY={os.getenv("REAL_ORDER_CAPABILITY","")}')
+          PY
+          )"
+          echo "CORE_SAFETY=$CORE"
+          case "$CORE" in PRODUCTION_PAPER\|0\|*) ;; *) echo SAFETY_PRECHECK=FAIL; exit 41;; esac
+          echo 'SAFETY_PRECHECK=GREEN'
+
+          echo '--- TIMERS ---'
+          for u in porota-contract-evidence-rc6.timer porota-functional-health-rc6.timer porota-history-postclose-rc6.timer porota-candle-integrity-rc6.timer porota-a3-history-daily-rc6.timer porota-a3-history-reconcile-rc6.timer porota-a3-history-weekend-rc6.timer; do
+            echo "TIMER=$u|ACTIVE=$(sudo -n systemctl is-active "$u" 2>/dev/null || true)|ENABLED=$(sudo -n systemctl is-enabled "$u" 2>/dev/null || true)|LAST=$(sudo -n systemctl show "$u" -p LastTriggerUSec --value 2>/dev/null || true)|NEXT=$(sudo -n systemctl show "$u" -p NextElapseUSecRealtime --value 2>/dev/null || true)"
+          done
+          echo '--- SERVICES ---'
+          for s in porota-contract-evidence-rc6.service porota-functional-health-rc6.service porota-history-postclose-rc6.service porota-candle-integrity-rc6.service porota-a3-history-daily-rc6.service porota-a3-history-reconcile-rc6.service porota-a3-history-weekend-rc6.service; do
+            echo "SERVICE=$s|RESULT=$(sudo -n systemctl show "$s" -p Result --value 2>/dev/null || true)|EXIT=$(sudo -n systemctl show "$s" -p ExecMainStatus --value 2>/dev/null || true)|LAST_END=$(sudo -n systemctl show "$s" -p InactiveEnterTimestamp --value 2>/dev/null || true)"
+          done
+
+          echo '--- RUNTIME FEATURE FILES ---'
+          sudo -n docker exec porota_production_observer sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ei '(gdelt|risk|riesgo|event|news|sentiment|contract|evidence|scrap|histor|history|ingest|backfill|candle)' | sort | head -n 260" || true
+          echo '--- GDELT/NEWS CONTENT FILES ---'
+          sudo -n docker exec porota_production_observer sh -lc "grep -RIlE 'GDELT|gdelt|event[_ -]?risk|geopolit|sentiment' /app --include='*.py' --include='*.json' --include='*.yml' --include='*.yaml' 2>/dev/null | head -n 180" || true
+
+          echo '--- SQLITE INVENTORY ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,glob,re,os
+          dbs=sorted(set(glob.glob('/app/data/**/*.db',recursive=True)))
+          print('DB_FILES='+str(len(dbs)))
+          rx=re.compile(r'(histor|candle|contract|evidence|scrap|risk|gdelt|news|sentiment|event|ingest|backfill)',re.I)
+          for db in dbs[:100]:
+              try:
+                  c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=5); c.execute('pragma query_only=on')
+                  tables=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+                  focus=[t for t in tables if rx.search(t)]
+                  print(f'DB={db}|FOCUS_TABLES={";".join(focus) or "NONE"}')
+                  for t in focus[:60]:
+                      q='"'+t.replace('"','""')+'"'
+                      try: rows=c.execute(f'select count(*) from {q}').fetchone()[0]
+                      except Exception as e: rows='ERR:'+type(e).__name__
+                      cols=[r[1] for r in c.execute(f'pragma table_info({q})')]
+                      candidates=['timestamp','ts','datetime','date','last_update','updated_at','created_at','asof','as_of','trading_date','candle_ts','fetched_at','observed_at','run_at','ingested_at']
+                      ts=next((x for x in cols if x.lower() in candidates),None); latest='NA'
+                      if ts:
+                          qc='"'+ts.replace('"','""')+'"'
+                          try: latest=c.execute(f'select max({qc}) from {q}').fetchone()[0]
+                          except Exception: latest='ERR'
+                      print(f'TABLE={t}|ROWS={rows}|LATEST_COL={ts or "NONE"}|LATEST={latest}')
+                  c.close()
+              except Exception as e: print(f'DB={db}|ERROR={type(e).__name__}:{e}')
+          PY
+
+          echo '--- DASHBOARD SIGNALS ---'
+          python3 - <<'PY'
+          import re,subprocess,html
+          urls=['http://127.0.0.1:8000/historicos','http://127.0.0.1:8000/instrumentos','http://127.0.0.1:8000/riesgo','http://127.0.0.1:8000/sistema?section=scraping']
+          rx=re.compile(r'(cobertura|hist[oó]ric|ingesta|catalog|universo|contract|evidence|scrap|ready_paper|hold|riesgo|risk|gdelt|sentiment|geopolit|amarillo|verde|stale|missing|records=|production_paper)',re.I)
+          for u in urls:
+              print('PAGE='+u)
+              try:
+                  raw=subprocess.check_output(['curl','-fsS','--max-time','8',u],text=True)
+                  txt=re.sub(r'<script.*?</script>|<style.*?</style>',' ',raw,flags=re.S|re.I); txt=re.sub(r'<[^>]+>','\n',txt); txt=html.unescape(txt)
+                  out=[]
+                  for line in txt.splitlines():
+                      line=' '.join(line.split())
+                      if line and rx.search(line): out.append(line)
+                  for line in out[:160]: print('  '+line[:600])
+              except Exception as e: print('  ERROR='+repr(e))
+          PY
+
+          echo '--- CONTRACT EVIDENCE ---'
+          python3 - "$REPO" <<'PY'
+          from pathlib import Path
+          import datetime,json,sys
+          root=Path(sys.argv[1])/'data/contract_evidence/rc6_trusted'
+          files=sorted(root.glob('contract_*.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+          print('CAPTURE_COUNT='+str(len(files)))
+          if files:
+              p=files[0]; st=p.stat(); print(f'LATEST_CAPTURE={p.name}|SIZE={st.st_size}|MTIME_UTC={datetime.datetime.fromtimestamp(st.st_mtime,datetime.timezone.utc).isoformat()}')
+              try:
+                  x=json.loads(p.read_text(errors='replace'))
+                  if isinstance(x,dict):
+                      print('TOP_KEYS='+';'.join(sorted(map(str,x.keys()))[:100]))
+                      for k,v in x.items():
+                          if isinstance(v,list): print(f'CE_LIST={k}|ROWS={len(v)}')
+                          elif isinstance(v,dict): print(f'CE_DICT={k}|KEYS={len(v)}')
+              except Exception as e: print('CAPTURE_PARSE_ERROR='+repr(e))
+          PY
+
+          echo '--- GDELT COUNTS ---'
+          G1="$(sudo -n docker exec porota_production_observer sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -i gdelt || true" | wc -l | tr -d ' ')"
+          G2="$(sudo -n docker exec porota_production_observer sh -lc "grep -RIl 'gdelt' /app --include='*.py' --include='*.json' --include='*.yml' --include='*.yaml' 2>/dev/null || true" | wc -l | tr -d ' ')"
+          echo "GDELT_FILENAME_MATCHES=$G1"
+          echo "GDELT_CONTENT_MATCHES=$G2"
+
+          FINAL="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10); c.execute('pragma query_only=on')
+          x=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); c.close(); print('|'.join(map(str,x)))
+          PY
+          )"
+          echo "FINAL_SAFETY=$FINAL"
+          test "$FINAL" = 'PRODUCTION_PAPER|0'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'RUNTIME_AUDIT_V2_COMPLETE=YES'
+          HOST

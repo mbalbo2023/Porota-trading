@@ -1,0 +1,17 @@
+[Unit]
+Description=Porota RC6 intramarket candle evidence every ten minutes
+
+[Timer]
+# Proof of live candles belongs to the audited trading session only.
+OnCalendar=Mon..Fri *-*-* 10:40,50:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 11..16:00/10:00 America/Argentina/Buenos_Aires
+# COM19031 since 02-Nov: use the SAME existing bounded read-only cursor
+# verifier for PPI-qualified T+1 source snapshots. The ExecCondition rejects
+# these ticks on earlier dates/holidays, and no PAPER admission is extended.
+# Semantic candle-integrity has separate 17:05/17:35/18:05 checks: no overlap.
+OnCalendar=Mon..Fri *-*-* 17:00/10:00 America/Argentina/Buenos_Aires
+Persistent=false
+Unit=porota-rc6-candle-inmarket-verify.service
+
+[Install]
+WantedBy=timers.target

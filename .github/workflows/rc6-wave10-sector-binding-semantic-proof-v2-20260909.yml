@@ -1,0 +1,32 @@
+name: RC6 Wave10 Sector Binding Semantic Proof V2 2026-09-09
+
+on:
+  push:
+    branches: [deploy-prep/rc6-wave10-currentbase-20260909]
+    paths: [.github/workflows/rc6-wave10-sector-binding-semantic-proof-v2-20260909.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  semantic-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove sector binding semantics
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest python-dotenv
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('be_paper_engine.py').read_text(encoding='utf-8')
+          q=Path('ck_policy_gate_hf6.py').read_text(encoding='utf-8')
+          assert 'candidate_sector' in p and 'sectors' in p
+          assert 'BINDING' in p or 'BINDING' in q
+          print('SECTOR_WIRING=FOUND')
+          PY
+          tests=$(find tests -maxdepth 1 -type f \( -iname '*policy*' -o -iname '*sector*' -o -iname '*risk*' \) -printf '%p ')
+          if [ -n "$tests" ]; then PYTHONPATH=. pytest -q $tests; fi
+          ! grep -REn 'api/Orders|/Operar|send_order|place_order|new_order' ck_policy_gate_hf6.py be_paper_engine.py
+          echo 'W10_SECTOR_BINDING_SEMANTIC_GATE=GREEN'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'

@@ -1,0 +1,198 @@
+name: RC6 Legacy Control Plane Retirement 2026-09-09
+
+on:
+  push:
+    branches: [fix/rc6-legacy-control-plane-retirement-20260909]
+    paths: ['.github/workflows/rc6-legacy-control-plane-retirement-20260909.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: porota-rc6-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  migrate-deploy-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Materialize RC6 introspection sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp ops_introspection_hf4.py ops_introspection_rc6.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('ops_introspection_rc6.py'); s=p.read_text()
+          s=s.replace('Introspección funcional horaria y bajo demanda de Porota HF5.','Introspección funcional horaria y bajo demanda de Porota RC6.')
+          p.write_text(s)
+          p=Path('ops_publish_introspection_hf6.py'); s=p.read_text()
+          s=s.replace('porota_introspection_hf*_*.json','porota_introspection_rc6_*.json')
+          Path('ops_publish_introspection_rc6.py').write_text(s)
+          p=Path('scripts/porota_publish_introspection_github_hf6.sh'); s=p.read_text()
+          s=s.replace('ops_publish_introspection_hf6.py','ops_publish_introspection_rc6.py')
+          Path('scripts/porota_publish_introspection_github_rc6.sh').write_text(s)
+          PY
+          cat > scripts/porota_introspection_rc6_host.sh <<'SH'
+          #!/bin/sh
+          set -eu
+          exec docker exec porota_production_observer python /app/ops_introspection_rc6.py --enqueue-critical
+          SH
+          chmod +x scripts/porota_introspection_rc6_host.sh scripts/porota_publish_introspection_github_rc6.sh
+          mkdir -p systemd
+          cat > systemd/porota-introspection-rc6.service <<'UNIT'
+          [Unit]
+          Description=Porota RC6 functional introspection
+          After=docker.service
+          Wants=docker.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/porota-introspection-rc6.sh
+          SuccessExitStatus=2
+          TimeoutStartSec=180
+          Nice=10
+          IOSchedulingClass=idle
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          UNIT
+          cat > systemd/porota-introspection-rc6.timer <<'UNIT'
+          [Unit]
+          Description=Hourly Porota RC6 functional introspection at minute 15
+          [Timer]
+          OnCalendar=*-*-* *:15:00
+          Persistent=true
+          Unit=porota-introspection-rc6.service
+          [Install]
+          WantedBy=timers.target
+          UNIT
+          cat > systemd/porota-introspection-publish-rc6.service <<'UNIT'
+          [Unit]
+          Description=Porota RC6 sanitized introspection publication
+          After=docker.service porota-introspection-rc6.service
+          Wants=docker.service
+          [Service]
+          Type=oneshot
+          User=porotaadmin
+          Group=porotaadmin
+          SupplementaryGroups=docker
+          RuntimeDirectory=porota-introspection-publish
+          RuntimeDirectoryMode=0750
+          ExecStart=/bin/sh /opt/porota-trading/scripts/porota_publish_introspection_github_rc6.sh
+          TimeoutStartSec=180
+          Nice=10
+          IOSchedulingClass=idle
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=read-only
+          ReadWritePaths=/opt/porota-trading/data/introspection_publish /var/lib/porota-observability /run/porota-introspection-publish
+          UNIT
+          cat > systemd/porota-introspection-publish-rc6.timer <<'UNIT'
+          [Unit]
+          Description=Publish Porota RC6 introspection after hourly snapshot
+          [Timer]
+          OnCalendar=*-*-* *:20:00
+          Persistent=true
+          RandomizedDelaySec=30
+          Unit=porota-introspection-publish-rc6.service
+          [Install]
+          WantedBy=timers.target
+          UNIT
+          python -m py_compile ops_introspection_rc6.py ops_publish_introspection_rc6.py
+          grep -q "porota_introspection_rc6_\*\.json" ops_publish_introspection_rc6.py
+          ! grep -RIE 'porota-introspeccion-hf5|ops_introspection_hf4|ops_publish_introspection_hf6|publish_introspection_github_hf6' systemd/porota-introspection-*rc6* scripts/porota_*rc6* ops_introspection_rc6.py ops_publish_introspection_rc6.py
+          git config user.name 'Porota RC6 Automation'
+          git config user.email 'runtime@porota.invalid'
+          git add ops_introspection_rc6.py ops_publish_introspection_rc6.py scripts/porota_introspection_rc6_host.sh scripts/porota_publish_introspection_github_rc6.sh systemd/porota-introspection-rc6.service systemd/porota-introspection-rc6.timer systemd/porota-introspection-publish-rc6.service systemd/porota-introspection-publish-rc6.timer
+          git commit -m 'fix(rc6): canonicalize introspection control plane'
+          git push origin HEAD:fix/rc6-legacy-control-plane-retirement-20260909
+          echo "TARGET_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail; install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy exact RC6 source and retire legacy units
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading; cd "$REPO"
+          PRE_HEAD=$(git rev-parse HEAD); echo "PRE_HEAD=$PRE_HEAD"
+          test "$PRE_HEAD" = '0906d7d029f1a1a17cc8dc445a9f20c788cc7830'
+          PRE=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          ); echo "PRE_DB=$PRE"; test "$PRE" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          git fetch --no-tags origin fix/rc6-legacy-control-plane-retirement-20260909
+          test "$(git rev-parse origin/fix/rc6-legacy-control-plane-retirement-20260909)" = "$TARGET_SHA"
+          TMP=$(mktemp -d "$HOME/porota-legacy-retire.XXXXXX")
+          trap 'git -C "$REPO" worktree remove --force "$TMP/source" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+          git worktree add --detach "$TMP/source" "$TARGET_SHA" >/dev/null
+          sudo -n docker build --pull=false --label "porota.commit=$TARGET_SHA" --label porota.controlplane=rc6-only -t porota-trading-bot:17.0.0-rc6 "$TMP/source"
+          git checkout -f -B fix/rc6-legacy-control-plane-retirement-20260909 "$TARGET_SHA"
+          sudo -n python3 "$REPO/porota_mode_manager.py" simulation
+          sleep 12
+          sudo -n install -m 0755 "$REPO/scripts/porota_introspection_rc6_host.sh" /usr/local/sbin/porota-introspection-rc6.sh
+          sudo -n install -m 0644 "$REPO/systemd/porota-introspection-rc6.service" /etc/systemd/system/porota-introspection-rc6.service
+          sudo -n install -m 0644 "$REPO/systemd/porota-introspection-rc6.timer" /etc/systemd/system/porota-introspection-rc6.timer
+          sudo -n install -m 0644 "$REPO/systemd/porota-introspection-publish-rc6.service" /etc/systemd/system/porota-introspection-publish-rc6.service
+          sudo -n install -m 0644 "$REPO/systemd/porota-introspection-publish-rc6.timer" /etc/systemd/system/porota-introspection-publish-rc6.timer
+          # Retire old schedulers first so no legacy process can race the RC6 owner.
+          for u in porota-contract-evidence-rc4.timer porota-contract-evidence-rc4.service porota-introspeccion-hf5.timer porota-introspeccion-hf5.service porota-introspection-publish.timer porota-introspection-publish.service; do
+            sudo -n systemctl disable --now "$u" >/dev/null 2>&1 || true
+            sudo -n systemctl stop "$u" >/dev/null 2>&1 || true
+          done
+          ARCH=/var/lib/porota-legacy-archive/systemd/20260909
+          sudo -n mkdir -p "$ARCH"
+          # Preserve old unit definitions outside systemd's load path.
+          for f in /etc/systemd/system/porota-*rc4*.service /etc/systemd/system/porota-*rc4*.timer /etc/systemd/system/porota-*rc5*.service /etc/systemd/system/porota-*rc5*.timer /etc/systemd/system/porota-*hf5*.service /etc/systemd/system/porota-*hf5*.timer; do
+            [ -e "$f" ] || continue
+            sudo -n cp -a "$f" "$ARCH/"
+            sudo -n rm -f "$f"
+          done
+          # Replace the unversioned publisher unit that still depended on HF5/HF6.
+          sudo -n rm -f /etc/systemd/system/porota-introspection-publish.service /etc/systemd/system/porota-introspection-publish.timer
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl reset-failed
+          sudo -n systemctl enable --now porota-introspection-rc6.timer porota-introspection-publish-rc6.timer porota-contract-evidence-rc6.timer
+          sudo -n systemctl start porota-introspection-rc6.service
+          sudo -n systemctl start porota-introspection-publish-rc6.service
+          echo '=== LEGACY GATE ==='
+          LEGACY_FILES=$(systemctl list-unit-files --no-pager | grep -Ei '^porota-.*(rc4|rc5|hf5).*\.(service|timer)' || true)
+          LEGACY_ACTIVE=$(systemctl list-units --all --no-pager | grep -Ei '^ *porota-.*(rc4|rc5|hf5).*\.(service|timer)' || true)
+          test -z "$LEGACY_FILES"; test -z "$LEGACY_ACTIVE"
+          echo ACTIVE_LEGACY_RUNTIME=0
+          echo ENABLED_LEGACY_TIMERS=0
+          systemctl is-enabled porota-introspection-rc6.timer porota-introspection-publish-rc6.timer porota-contract-evidence-rc6.timer
+          systemctl status porota-introspection-rc6.service porota-introspection-publish-rc6.service --no-pager -l | tail -80 || true
+          test -f "$REPO/data/introspection_publish/latest.json"
+          grep -q '"schema"' "$REPO/data/introspection_publish/latest.json"
+          sudo -n docker inspect -f 'POST_OBSERVER={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_observer
+          sudo -n docker inspect -f 'POST_DASHBOARD={{.State.Running}}|RESTARTS={{.RestartCount}}' porota_production_dashboard
+          POST=$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,os
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]; m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); raw=c.execute('select count(*) from historical_raw_archive').fetchone()[0]; c.close(); print(f'{q}|{m}|{r}|{raw}|{os.getenv("PPI_HISTORY_RAW_STORAGE_MODE")}')
+          PY
+          ); echo "POST_DB=$POST"; test "$POST" = 'ok|PRODUCTION_PAPER|0|0|EXTERNAL_EXACT_V1'
+          echo "POST_HEAD=$(git rev-parse HEAD)"
+          echo RC6_CONTROL_PLANE_LEGACY_RETIREMENT=GREEN
+          echo REAL_ORDER_TEST=NOT_PERFORMED
+          echo ORDER_ROUTES=NOT_CALLED
+          echo ROLLBACK_AUTOMATICO=NO
+          REMOTE

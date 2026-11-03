@@ -1,0 +1,10 @@
+[Unit]
+Description=Porota RC6 lightweight functional health (read-only DB)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+ExecStart=/usr/bin/docker exec porota_production_observer python /app/rc6_functional_health.py
+TimeoutStartSec=2min

@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota HF6 provider-backed contract evidence collection
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/porota-contract-evidence-hf6-runtime.sh
+TimeoutStartSec=20min
+TimeoutStopSec=2min
+Nice=10

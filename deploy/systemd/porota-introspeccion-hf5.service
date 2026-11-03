@@ -1,0 +1,19 @@
+[Unit]
+Description=Porota functional introspection (HF5-compatible entrypoint)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/porota-introspeccion-hf5-manual.sh
+SuccessExitStatus=2
+TimeoutStartSec=180
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

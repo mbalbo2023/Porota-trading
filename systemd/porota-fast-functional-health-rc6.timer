@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 fast functional health every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=porota-fast-functional-health-rc6.service
+
+[Install]
+WantedBy=timers.target

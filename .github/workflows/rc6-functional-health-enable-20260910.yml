@@ -1,0 +1,91 @@
+name: RC6 Functional Health Timer Enable 2026-09-10
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths:
+      - .github/workflows/rc6-functional-health-enable-20260910.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-functional-health-host-enable
+  cancel-in-progress: false
+
+jobs:
+  enable-functional-health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_fh"
+          chmod 600 "$HOME/.ssh/porota_fh"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify unit contract and enable timer only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/porota_fh" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          TIMER=porota-functional-health-rc6.timer
+          SERVICE=porota-functional-health-rc6.service
+
+          echo '=== RC6 FUNCTIONAL HEALTH ENABLE ==='
+          test -f "/etc/systemd/system/$TIMER"
+          test -f "/etc/systemd/system/$SERVICE"
+          sudo -n systemctl cat "$TIMER" | grep -Fq 'OnUnitActiveSec=5min'
+          sudo -n systemctl cat "$TIMER" | grep -Fq 'Unit=porota-functional-health-rc6.service'
+          sudo -n systemctl cat "$SERVICE" | grep -Fq 'ExecStart=/usr/bin/docker exec porota_production_observer python /app/rc6_functional_health.py'
+
+          BEFORE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,row)))
+          PY
+          )"
+          echo "SAFETY_BEFORE=$BEFORE"
+          test "$BEFORE" = 'PRODUCTION_PAPER|0'
+
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now "$TIMER"
+          test "$(sudo -n systemctl is-enabled "$TIMER")" = enabled
+          test "$(sudo -n systemctl is-active "$TIMER")" = active
+
+          sudo -n systemctl start "$SERVICE"
+          test "$(sudo -n systemctl show "$SERVICE" -p Result --value)" = success
+
+          AFTER="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=10)
+          c.execute('PRAGMA query_only=ON')
+          row=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print('|'.join(map(str,row)))
+          PY
+          )"
+          echo "SAFETY_AFTER=$AFTER"
+          test "$AFTER" = 'PRODUCTION_PAPER|0'
+          echo "FH_TIMER_ACTIVE=$(sudo -n systemctl is-active "$TIMER")"
+          echo "FH_TIMER_ENABLED=$(sudo -n systemctl is-enabled "$TIMER")"
+          echo "FH_SERVICE_RESULT=$(sudo -n systemctl show "$SERVICE" -p Result --value)"
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'RC6_FUNCTIONAL_HEALTH_TIMER=GREEN'
+          HOST

@@ -1,0 +1,137 @@
+"""Canonical UX/navigation model for HF6 v2.
+
+Pure definitions only: no runtime mutation, no order routing, no broker access.
+Legacy URLs remain compatible. RC4 explicitly restores Scalping as a top-level
+destination and adds a top-level Validation dashboard while keeping all trading
+families visible under Trading.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable
+
+
+@dataclass(frozen=True)
+class NavItem:
+    href: str
+    label: str
+
+
+TOP_NAV = (
+    NavItem("/", "Panel"),
+    NavItem("/en-vivo", "En vivo"),
+    NavItem("/trading", "Trading"),
+    NavItem("/scalping", "Scalping"),
+    NavItem("/validacion", "Validación"),
+    NavItem("/instrumentos", "Instrumentos y contratos"),
+    NavItem("/riesgo", "Riesgo"),
+    NavItem("/historicos", "Históricos"),
+    NavItem("/analisis", "Análisis"),
+    NavItem("/aprendizaje", "Aprendizaje"),
+    NavItem("/reportes", "Reportes"),
+    NavItem("/postcierre", "Cierre"),
+    NavItem("/sistema", "Sistema"),
+)
+
+TRADING_NAV = (
+    NavItem("/trading", "Resumen y motor"),
+    NavItem("/trading/estrategias", "Estrategias"),
+    NavItem("/trading/acciones-cedears", "Acciones y CEDEAR"),
+    NavItem("/trading/bonos", "Bonos"),
+    NavItem("/trading/on", "ON"),
+    NavItem("/trading/cauciones", "Cauciones"),
+    NavItem("/trading/letras", "Letras"),
+    NavItem("/trading/etf", "ETF"),
+    NavItem("/trading/indices", "Índices"),
+    NavItem("/trading/futuros", "Futuros"),
+    NavItem("/trading/opciones", "Opciones"),
+)
+
+# Alcance PAPER configurado, no certificación READY de cada instrumento.
+# Contrato, datos, estrategia, riesgo y preopen conservan sus gates separados.
+OPERATIONAL_FAMILIES = frozenset((
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+))
+
+# Legacy routes are kept intentionally so bookmarks and old links do not break.
+LEGACY_ROUTE_REDIRECTS = {
+    "/motor-trading": "/trading",
+    "/informacion-financiera": "/instrumentos",
+}
+
+FAMILY_GROUPS = {
+    "acciones-cedears": ("ACCIONES", "CEDEARS"),
+    "renta-fija": ("BONOS", "LETRAS", "OBLIGACIONES"),
+    "cauciones": ("CAUCIONES",),
+    "opciones": ("OPCIONES",),
+    "futuros": ("FUTUROS",),
+    "fci": ("FCI", "FCI_LOCAL", "FCI_EXTERIOR"),
+    "etf": ("ETFS",),
+    "indices": ("INDICES",),
+    "bonos": ("BONOS",),
+    "on": ("OBLIGACIONES",),
+    "letras": ("LETRAS",),
+    "licitaciones": ("LICITACIONES", "CANJES"),
+}
+
+FAMILY_LABELS = {
+    "ACCIONES": "Acciones",
+    "CEDEARS": "CEDEAR",
+    "BONOS": "Bonos",
+    "LETRAS": "Letras",
+    "ON": "Obligaciones Negociables",
+    "OBLIGACIONES": "Obligaciones Negociables",
+    "ETFS": "ETF",
+    "CAUCIONES": "Cauciones",
+    "OPCIONES": "Opciones",
+    "FUTUROS": "Futuros",
+    "FCI": "FCI",
+    "FCI_LOCAL": "FCI local",
+    "FCI_EXTERIOR": "FCI exterior",
+    "LICITACIONES": "Licitaciones",
+    "CANJES": "Canjes",
+    "ETF": "ETF",
+    "ACCIONES_USA": "Acciones USA",
+}
+
+
+def nav_html(items: Iterable[NavItem], *, css_class: str = "") -> str:
+    cls = f" class='{css_class}'" if css_class else ""
+    return "<nav" + cls + ">" + "".join(
+        f"<a href='{item.href}'>{item.label}</a>" for item in items
+    ) + "</nav>"
+
+
+def top_nav_html() -> str:
+    return "<nav id='porota-canonical-nav' aria-label='Menú principal'>" + "".join(
+        f"<a href='{item.href}'>{item.label}</a>" for item in TOP_NAV
+    ) + "</nav>"
+
+
+def trading_nav_html() -> str:
+    return nav_html(TRADING_NAV, css_class="subnav")
+
+
+def families_for_group(group: str) -> tuple[str, ...]:
+    """Return visible/auditable families; operational permission stays separate."""
+    return tuple(FAMILY_GROUPS.get(str(group or "").lower(), ()))
+
+
+def assert_ux_invariants() -> None:
+    hrefs = [item.href for item in TOP_NAV]
+    if len(hrefs) != len(set(hrefs)):
+        raise AssertionError("duplicate top-level navigation route")
+    if "/scalping" not in hrefs:
+        raise AssertionError("Scalping must be top-level in RC4")
+    if "/validacion" not in hrefs:
+        raise AssertionError("Validation destination missing")
+    if "/trading" not in hrefs or "/instrumentos" not in hrefs:
+        raise AssertionError("canonical Trading/Instrumentos destinations missing")
+    if families_for_group("acciones-cedears") != ("ACCIONES", "CEDEARS"):
+        raise AssertionError("operational actions/CEDEAR scope missing")
+    if families_for_group("futuros") != ("FUTUROS",):
+        raise AssertionError("Futuros readiness submenu must remain visible")
+    visible_families = {family for group in FAMILY_GROUPS.values() for family in group}
+    if not OPERATIONAL_FAMILIES.issubset(visible_families):
+        raise AssertionError("PAPER family missing from UX navigation")

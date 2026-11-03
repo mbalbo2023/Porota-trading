@@ -1,0 +1,110 @@
+name: RC6 A205 PAPER book premerge read-only
+
+on:
+  # Dedicated diagnostic ref, never the product branch. A fresh branch is
+  # created from the exact audited candidate only for an operator-owned probe.
+  push:
+    branches:
+      - 'rc6-a205-paper-book-ro-v1-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a205-paper-book-ro-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  paper-preflight:
+    if: github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify immutable diagnostic ref and source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_REF_NAME" == "rc6-a205-paper-book-ro-v1-$GITHUB_SHA" ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -s scripts/rc6_paper_deploy_preflight.py
+          test -s cd_spot_ledger.py
+          python3 -m py_compile scripts/rc6_paper_deploy_preflight.py cd_spot_ledger.py
+          echo "RC6_A205_SOURCE=GREEN|candidate=$GITHUB_SHA|host_written=NO"
+
+      - name: Prepare pin-checked read-only connection
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a205_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a205_ro" "$HOME/.ssh/known_hosts"
+          timeout 20 ssh -i "$HOME/.ssh/rc6_a205_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 -B - --expected-id 594077619 --expected-region nyc1' \
+            < scripts/rc6_droplet_identity_guard.py
+
+      - name: Classify live PAPER spot caucion future and deploy barrier without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          LEDGER_B64="$(gzip -9 -n -c < cd_spot_ledger.py | base64 -w0)"
+          LEDGER_SHA="$(sha256sum cd_spot_ledger.py | cut -d' ' -f1)"
+          test "${#LEDGER_B64}" -gt 1 && test "${#LEDGER_B64}" -lt 120000
+          [[ "$LEDGER_SHA" =~ ^[0-9a-f]{64}$ ]]
+          # The executable script comes from the exact candidate SHA on
+          # runner stdin; the installed host's old ledger is not substituted.
+          # No position IDs, prices, account details or credentials cross stdout.
+          set +e
+          RESULT="$(timeout 45 ssh -i "$HOME/.ssh/rc6_a205_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading RC6_A205_SPOT_LEDGER_GZIP_B64='$LEDGER_B64' RC6_A205_SPOT_LEDGER_SHA256='$LEDGER_SHA' python3 -B - --host-barrier" \
+            < scripts/rc6_paper_deploy_preflight.py)"
+          RETURN_CODE=$?
+          set -e
+          # Exit 2 is an expected *business* block, never a hidden technical
+          # exception. The diagnostic Action itself remains successful if it
+          # exposed a truthful, explicit BLOCKED_RECONCILIATION receipt.
+          RESULT="$RESULT" RETURN_CODE="$RETURN_CODE" python3 - <<'PY'
+          import json,os
+          rc=int(os.environ['RETURN_CODE'])
+          value=json.loads(os.environ['RESULT'])
+          expected={'FLAT_GREEN':0,'ADMIN_CLOSE_REQUIRED':0,
+                    'BLOCKED_RECONCILIATION':2,'BLOCKED_BARRIER':2}
+          state=value.get('status')
+          if (value.get('contract')!='RC6_A205_PAPER_DEPLOY_PREFLIGHT_V1' or
+                  value.get('read_only') is not True or
+                  state not in expected or rc!=expected[state]):
+              raise SystemExit('RC6_A205_PAPER_PREFLIGHT_PROBE_RED')
+          print('RC6_A205_PAPER_PREFLIGHT=' + state)
+          print(json.dumps(value,sort_keys=True))
+          if state!='FLAT_GREEN':
+              print('RC6_A205_PROMOTION_READY=NO|prepare_closure_before_merge')
+          else:
+              print('RC6_A205_PROMOTION_READONLY_BOOK=GREEN|TOCTOU_recheck_required')
+          PY
+
+      - name: Remove runner-only SSH material
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [ -f "$HOME/.ssh/rc6_a205_ro" ]; then
+            shred -u "$HOME/.ssh/rc6_a205_ro"
+          fi

@@ -1,0 +1,26 @@
+name: RC6 legacy candidate tests pointer
+
+# Automatic candidate testing is canonical in porota-predeploy-v2.yml. This
+# historical workflow remains manually inspectable but cannot publish a second,
+# partial GREEN signal from a hand-maintained test allowlist.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-predeploy-pointer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify canonical governed test policy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f .github/workflows/porota-predeploy-v2.yml
+          test -f ops/policy/test-policy.yaml
+          grep -Fq 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
+          grep -Fq 'automatic_discovery_required: true' ops/policy/test-policy.yaml
+          echo 'POROTA_LEGACY_CANDIDATE_PIPELINE=RETIRED_TO_CANONICAL_PREDEPLOY_V2'
+          echo 'TEST_RESULT_CLAIM=NONE'

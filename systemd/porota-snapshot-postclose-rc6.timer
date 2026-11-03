@@ -1,0 +1,20 @@
+[Unit]
+Description=Porota RC6 PAPER post-close snapshot plus bounded EOD-source review
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:08:00 America/Argentina/Buenos_Aires
+# From 02-Nov-2026 BYMA COM19031 keeps T+1 equities/options open until 18:00.
+# 18:08 is an OPERATIONAL PAPER snapshot: EOD source may still be missing.
+# The date-aware ExecCondition rejects 17:08 from 02-Nov onward.
+OnCalendar=Mon..Fri *-*-* 18:08:00 America/Argentina/Buenos_Aires
+# BYMA closing-price window is 18:05–18:15, *not* guaranteed PPI EOD.
+# Re-render read-only reports after the earliest floor with 30m bounded retry
+# until a same-session, first-known-after-floor PPI receipt exists. Missing
+# source remains PROVISIONAL/AMBER; no new timer, order route or provider call.
+OnCalendar=Mon..Fri *-*-* 18..21:20,50:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 22:20:00 America/Argentina/Buenos_Aires
+AccuracySec=30s
+Unit=porota-snapshot-postclose-rc6.service
+
+[Install]
+WantedBy=timers.target

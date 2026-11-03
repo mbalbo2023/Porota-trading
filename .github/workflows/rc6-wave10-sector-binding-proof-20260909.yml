@@ -1,0 +1,74 @@
+name: RC6 Wave10 Sector Binding Proof 2026-09-09
+on:
+  push:
+    branches: [deploy-prep/rc6-wave10-currentbase-20260909]
+    paths: ['.github/workflows/rc6-wave10-sector-binding-proof-20260909.yml']
+permissions:
+  contents: read
+jobs:
+  sector-binding-proof:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Targeted binding semantic proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q tests/test_rc6_wave10_sector_binding_default.py
+          PYTHONPATH=. python - <<'PY'
+          import ck_policy_gate_hf6 as g
+          import porota_mode_manager as m
+          assert g.active_policies()['sector_concentration']=='BINDING'
+          assert m.paper_settings({})['PAPER_SECTOR_CONCENTRATION_POLICY']=='BINDING'
+          block=g.evaluate(sectors={'groups':[{'sector':'BANKS','open_positions':2}]},candidate_sector='BANKS',sector_limit=2)
+          assert block['execute_block'] and block['verdict']=='SECTOR_CONCENTRATION_LIMIT_BANKS'
+          missing=g.evaluate(sectors=None,candidate_sector=None,sector_limit=2)
+          assert missing['execute_block'] and missing['evidence_block'] and missing['verdict']=='SECTOR_UNMAPPED_BINDING'
+          allow=g.evaluate(sectors={'groups':[{'sector':'ENERGY','open_positions':1}]},candidate_sector='ENERGY',sector_limit=2)
+          assert not allow['execute_block']
+          print('SECTOR_DEFAULT=BINDING')
+          print('AT_LIMIT=BLOCK')
+          print('MISSING_EVIDENCE=FAIL_CLOSED')
+          print('BELOW_LIMIT=ALLOW')
+          PY
+          echo 'W10_SECTOR_BINDING_SEMANTICS=GREEN'
+      - name: Prepare strict SSH
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/w10proof"
+          chmod 600 "$HOME/.ssh/w10proof"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify live PAPER safety remains untouched
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/w10proof" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          test "$(git rev-parse HEAD)" = "9197aedf35fe1739b594c742902e80df069c47c9"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          q=c.execute('pragma quick_check').fetchone()[0]
+          m,r=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone()
+          c.close()
+          print(f'DB={q}|MODE={m}|REAL_ORDERS={r}')
+          assert q=='ok' and m=='PRODUCTION_PAPER' and int(r)==0
+          PY
+          echo 'ORDER_ROUTES=NOT_CALLED'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          echo 'RUNTIME_CHANGED=NO'
+          echo 'W10_LIVE_SAFETY=GREEN'
+          REMOTE

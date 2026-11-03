@@ -1,0 +1,19 @@
+{
+  "source": "Diagnóstico de catálogo proporcionado por el operador, generado 2026-08-28T00:17:19Z",
+  "downloaded_at": "2026-08-27T13:45:03+00:00",
+  "reported_counts": {"ACCIONES": 55, "BONOS": 42, "CEDEARS": 188, "FUTUROS": 45},
+  "records": [
+    {"ticker":"AGRO","description":"Agrometal","currency":"Pesos","type":"ACCIONES","market":"BYMA"},
+    {"ticker":"ALUA","description":"Aluar Aluminio Argentino","currency":"Pesos","type":"ACCIONES","market":"BYMA"},
+    {"ticker":"ALUAC","description":"Aluar Aluminio Argentino","currency":"Dolares divisa | CCL","type":"ACCIONES","market":"BYMA"},
+    {"ticker":"AE38","description":"BONOS ARGENTINA USD 2038 L.A","currency":"Pesos","type":"BONOS","market":"BYMA"},
+    {"ticker":"AE38C","description":"BONOS ARGENTINA USD 2038 L.A","currency":"Dolares divisa | CCL","type":"BONOS","market":"BYMA"},
+    {"ticker":"AE38D","description":"BONOS ARGENTINA USD 2038 L.A","currency":"Dolares billete | MEP","type":"BONOS","market":"BYMA"},
+    {"ticker":"AAPL","description":"Apple","currency":"Pesos","type":"CEDEARS","market":"BYMA"},
+    {"ticker":"AAPLC","description":"Apple","currency":"Dolares divisa | CCL","type":"CEDEARS","market":"BYMA"},
+    {"ticker":"AAPLD","description":"Apple","currency":"Dolares billete | MEP","type":"CEDEARS","market":"BYMA"},
+    {"ticker":"DLR/ABR27","description":"Futuro DLR Vto. 01/05/2027","currency":"Pesos","type":"FUTUROS","market":"ROFEX"},
+    {"ticker":"DLR/ABR27M","description":"Futuro DLR Vto. 01/05/2027","currency":"Pesos","type":"FUTUROS","market":"ROFEX"},
+    {"ticker":"DLR/AGO26","description":"Futuro DLR Vto. 01/09/2026","currency":"Pesos","type":"FUTUROS","market":"ROFEX"}
+  ]
+}

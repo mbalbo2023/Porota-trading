@@ -1,0 +1,91 @@
+name: RC6 CP4 A3 Overlay Verify V3 2026-09-11
+
+on:
+  push:
+    branches: [fix/rc6-w10-sector-map-binding-20260910]
+    paths: [.github/workflows/rc6-cp4-a3-overlay-verify-v3-20260911.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_HOST_SHA: e47eeffcb94a9468ac7e7f610beee0869353a77e
+
+jobs:
+  cp4_verify:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"; chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Verify deployed A3 path and safe execution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" "TARGET='$TARGET_HOST_SHA' bash -s" <<'HOST'
+          set -Eeuo pipefail
+          ROOT=/opt/porota-trading
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo HOST_HEAD="$TARGET"
+          echo '--- EFFECTIVE A3 UNIT ---'
+          UNIT="$(sudo -n systemctl cat porota-a3-history-rc6@.service --no-pager)"
+          printf '%s\n' "$UNIT"
+          printf '%s\n' "$UNIT" | grep -F '/app/data/rc6_a3_overlay/ex_a3_history_job_rc6.py'
+          echo '--- EXACT SCRIPT-PATH IMPORT SEMANTICS ---'
+          sudo -n docker exec -i -w /tmp -e PYTHONPATH=/app/data/rc6_a3_overlay:/app porota_production_observer python - <<'PY'
+          import sys,ew_a3_history_rc6 as h,fd_a3_identity_mapper_rc6 as m
+          print('SYS_PATH_0='+sys.path[0]); print('EW_FILE='+h.__file__); print('FD_FILE='+m.__file__)
+          assert h.__file__.startswith('/app/data/rc6_a3_overlay/')
+          assert m.__file__.startswith('/app/data/rc6_a3_overlay/')
+          assert m.porota_to_a3_dlr('DLR/SEP26')=='DLR092026'
+          for s in ('DLR/SEP26/OCT26','DLR/SEP26M'):
+              try: m.porota_to_a3_dlr(s)
+              except Exception as e: print(s+'=FAIL_CLOSED:'+type(e).__name__)
+              else: raise SystemExit('FAIL_OPEN:'+s)
+          print('CP4_IMPORT_GATE=GREEN')
+          PY
+          echo '--- SAFETY PRE ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone(); c.close()
+          print(json.dumps({'mode':r[0] if r else None,'session':r[1] if r else None,'orders':r[2] if r else None}))
+          assert r and r[0]=='PRODUCTION_PAPER' and int(r[2] or 0)==0
+          PY
+          set +e
+          sudo -n systemctl start porota-a3-history-rc6@DAILY_INCREMENTAL.service
+          RC=$?
+          set -e
+          echo A3_SERVICE_START_RC="$RC"
+          echo '--- CURRENT ATTEMPT LOG ---'
+          sudo -n journalctl -u porota-a3-history-rc6@DAILY_INCREMENTAL.service --since '-3 min' --no-pager | tail -n 160
+          echo '--- DB POST ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          r=c.execute('select mode,session_state,real_orders_sent from observer_state where id=1').fetchone()
+          rows=[]
+          if c.execute("select 1 from sqlite_master where type='table' and name='a3_history_ingest_state_rc6'").fetchone():
+              rows=[dict(x) for x in c.execute("select symbol,instrument_type,status,last_complete_day,last_success_at,rows_last,error from a3_history_ingest_state_rc6 where instrument_type='FUTUROS' order by coalesce(last_success_at,'') desc,symbol limit 50")]
+          print(json.dumps({'mode':r['mode'] if r else None,'session':r['session_state'] if r else None,'orders':r['real_orders_sent'] if r else None,'futures':rows},default=str))
+          assert r and r['mode']=='PRODUCTION_PAPER' and int(r['real_orders_sent'] or 0)==0
+          complete=[x for x in rows if str(x.get('status')).upper()=='COMPLETE']
+          print('CP4_RUNTIME_WIRING_GATE=GREEN')
+          print('CP4_PERSISTENCE_GATE='+('GREEN' if complete else 'YELLOW_MARKET_OPEN_OR_POSTCLOSE_REQUIRED'))
+          print('CP4_COMPLETE_FUTURES='+str(len(complete)))
+          print('REAL_ORDERS_SENT=0')
+          c.close()
+          PY
+          test "$RC" -eq 0
+          echo CP4_VERIFY_V3=GREEN
+          HOST

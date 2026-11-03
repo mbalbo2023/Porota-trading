@@ -1,0 +1,32 @@
+{
+  "provenance": "Extracto del diagnóstico pegado por el operador; no descarga independiente ni catálogo completo.",
+  "diagnostic": "v17-public-probe-1",
+  "generated_at": "2026-08-28T17:32:17.791080+00:00",
+  "status": "COMPLETED_OBSERVATION",
+  "configuration": {
+    "instrument_types": ["BONOS", "LETRAS", "NOBAC", "LEBAC", "ON", "FCI", "CAUCIONES", "ACCIONES", "ETF", "CEDEARS", "OPCIONES", "FUTUROS", "LICITACIONES", "ACCIONES-USA", "FCI-EXTERIOR"],
+    "markets": ["ROFEX", "OTC", "NYSE", "NASDAQ", "BYMA"],
+    "settlements": ["INMEDIATA", "A-24HS", "A-48HS", "A-72HS"],
+    "quantity_types": ["DINERO", "PAPELES", "CANTIDAD-TOTAL"],
+    "operation_terms": ["POR-EL-DIA", "HASTA-SU-EJECUCION", "VALIDA-HASTA-EL", "72-HS"],
+    "operation_types": ["PRECIO-DE-MERCADO", "PRECIO-LIMITE"],
+    "operations": ["COMPRA", "VENTA", "SUSCRIPCION-FCI", "RESCATE-FCI", "EJERCER-CALL", "EJERCER-PUT", "LANZAMIENTO", "COLOCAR-CAUCION", "STOP-ORDER", "LICITAR"]
+  },
+  "searches": [
+    {"filter": "CAUCION", "family": "CAUCIONES", "market": "BYMA", "status": "EMPTY_FILTER_RESULT", "count": 0, "sample": []},
+    {"filter": "PESOS", "family": "CAUCIONES", "market": "BYMA", "status": "EMPTY_FILTER_RESULT", "count": 0, "sample": []},
+    {"filter": "DOLAR", "family": "CAUCIONES", "market": "BYMA", "status": "EMPTY_FILTER_RESULT", "count": 0, "sample": []},
+    {"filter": "ALUA", "family": "ACCIONES", "market": "BYMA", "status": "FILTER_RESULTS", "count": 3, "sample": [
+      {"ticker": "ALUA", "description": "Aluar Aluminio Argentino", "currency": "Pesos", "type": "ACCIONES", "market": "BYMA", "_omitted_fields": 3},
+      {"ticker": "ALUAC", "description": "Aluar Aluminio Argentino", "currency": "Dolares divisa | CCL", "type": "ACCIONES", "market": "BYMA", "_omitted_fields": 3},
+      {"ticker": "ALUAD", "description": "Aluar Aluminio Argentino", "currency": "Dolares billete | MEP", "type": "ACCIONES", "market": "BYMA", "_omitted_fields": 3}
+    ]}
+  ],
+  "quote_summary": {"ticker": "ALUA", "query_settlement": "A-24HS", "settlement_certified": false, "book_date": "2026-08-28T14:32:19.496-03:00", "current_date": "2026-08-28T14:31:56-03:00", "last": 848, "best_offer": 848, "best_bid": 846},
+  "reader_metrics": {"http_allowed": 14, "http_blocked": 0, "login_calls": 1, "authenticated": true},
+  "host_evidence": {"engines_stopped_before_probe": true, "secret_mount_readonly": true, "data_and_env_mounted": false},
+  "temporary_container_removed": true,
+  "caucion_readiness": "HOLD_UNVERIFIED_TERMS",
+  "data_certified": false,
+  "promotion_allowed": false
+}

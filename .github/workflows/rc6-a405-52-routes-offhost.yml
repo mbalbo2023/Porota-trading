@@ -1,0 +1,88 @@
+name: RC6 A405 52 routes plus BYMA caucion EOD OFFHOST
+
+# Candidate-only synthetic regression. No SSH, provider, live DB, PPI Watch,
+# container promotion or market-open dependency.
+on:
+  pull_request:
+    branches: [candidate/rc6-a279-a280-20261101]
+    paths:
+      - '.github/workflows/rc6-a405-52-routes-offhost.yml'
+      - 'tests/test_rc6_a228_52_route_closed_replay.py'
+      - 'tests/test_rc6_a222_byma_com19031_time_contract.py'
+      - 'tests/test_rc6_a200_byma_com19024_late_source.py'
+      - 'tests/test_rc6_eod_ready_idempotence.py'
+      - 'tests/test_rc6_postclose_schedule_stagger.py'
+      - 'tests/test_rc6_a199_caucion_cash_reserve.py'
+      - 'tests/test_rc6_byma_calendar_failclosed.py'
+  push:
+    branches: [candidate/rc6-a279-a280-20261101]
+    paths:
+      - '.github/workflows/rc6-a405-52-routes-offhost.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a405-offhost-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  closed_replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned repository dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Verify denominator and run bounded synthetic regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from rc6_trader_dashboard.navigation import CANONICAL_PATHS
+          assert len(CANONICAL_PATHS) == 52, 'A405_CANONICAL_ROUTE_DENOMINATOR_DRIFT'
+          print('A405_CANONICAL_ROUTES=52')
+          PY
+          mkdir -p evidence
+          python3 -m pytest -q -o addopts='' -p no:cacheprovider \
+            --junitxml=evidence/a405-offhost-junit.xml \
+            tests/test_rc6_a228_52_route_closed_replay.py \
+            tests/test_rc6_a222_byma_com19031_time_contract.py \
+            tests/test_rc6_a200_byma_com19024_late_source.py \
+            tests/test_rc6_eod_ready_idempotence.py \
+            tests/test_rc6_postclose_schedule_stagger.py \
+            tests/test_rc6_a199_caucion_cash_reserve.py \
+            tests/test_rc6_byma_calendar_failclosed.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          path = Path('evidence/a405-offhost-junit.xml')
+          if not path.is_file():
+              raise SystemExit('A405_JUNIT_MISSING')
+          root = ET.parse(path).getroot()
+          suites = list(root.iter('testsuite'))
+          cases = sum(int(x.get('tests', '0')) for x in suites)
+          failures = sum(int(x.get('failures', '0')) for x in suites)
+          errors = sum(int(x.get('errors', '0')) for x in suites)
+          skipped = sum(int(x.get('skipped', '0')) for x in suites)
+          if cases < 53 or failures or errors or skipped:
+              raise SystemExit('A405_JUNIT_DENOMINATOR_OR_NON_GREEN')
+          print(f'A405_OFFHOST_REPLAY=GREEN|routes=52|cases={cases}|'
+                'failures=0|errors=0|skipped=0|host_mutations=0')
+          PY
+          git diff --check
+      - name: Archive synthetic JUnit report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a405-offhost-${{ github.run_id }}
+          path: evidence/a405-offhost-junit.xml
+          if-no-files-found: warn
+          retention-days: 14

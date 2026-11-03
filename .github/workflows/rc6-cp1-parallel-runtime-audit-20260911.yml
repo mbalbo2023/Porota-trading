@@ -1,0 +1,290 @@
+name: RC6 CP1 Parallel Runtime Audit 2026-09-11
+
+on:
+  push:
+    branches:
+      - fix/rc6-w10-sector-map-binding-20260910
+    paths:
+      - .github/workflows/rc6-cp1-parallel-runtime-audit-20260911.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-cp1-parallel-runtime-audit
+  cancel-in-progress: false
+
+jobs:
+  wave_matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prove deployed ancestry and current RC6 safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          TARGET=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          git cat-file -e "$TARGET^{commit}"
+          echo "DEPLOYED_TARGET=$TARGET"
+          echo 'MUTATIONS=NONE'
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          for item in \
+            W01A:origin/integration/rc6-wave1-safety-observability-20260908 \
+            W01B:origin/integration/rc6-wave1b-sla-scraping-20260908 \
+            W02:origin/integration/rc6-wave2-ppi130-runtime-20260908 \
+            W03:origin/integration/rc6-wave3-browser-v3-20260908 \
+            W04:origin/integration/rc6-wave4-disk-phase-a-20260908 \
+            W05:origin/integration/rc6-wave5-contract-evidence-dashboard-20260908 \
+            W06:origin/integration/rc6-wave6-history-web-shadow-20260908 \
+            W07:origin/integration/rc6-wave7-event-risk-binding-20260908 \
+            W08:origin/integration/rc6-wave8-learning-ux-20260908 \
+            W09:origin/wave9/rc6-p0-api-family-readiness-20260909 \
+            W10:origin/wave10/rc6-p0-risk-engine-binding-20260909 \
+            W11:origin/wave11/rc6-event-risk-gdelt-binding-20260909 \
+            W12:origin/wave12/rc6-dom-universe-contract-evidence-20260909 \
+            W13:origin/wave13/rc6-history-a3-backfill-reconcile-20260909 \
+            W14:origin/wave14/rc6-sre-introspection-early-warning-20260909 \
+            W15:origin/wave15/rc6-forward-lab-learning-mfe-mae-20260909 \
+            W16:origin/wave16/rc6-backup-retention-disk-governance-20260909 \
+            W17:origin/wave17/rc6-tablet-voice-access-ux-final-20260909 \
+            W18:origin/wave18/rc6-control-plane-recovery-housekeeping-20260909; do
+            key=${item%%:*}; ref=${item#*:}
+            if git rev-parse --verify "$ref" >/dev/null 2>&1; then
+              sha=$(git rev-parse "$ref")
+              if git merge-base --is-ancestor "$sha" "$TARGET"; then anc=YES; else anc=NO; fi
+              echo "$key|TIP=$sha|ANCESTOR_OF_DEPLOYED=$anc"
+            else
+              echo "$key|TIP=MISSING_REF|ANCESTOR_OF_DEPLOYED=UNKNOWN"
+            fi
+          done
+          echo 'NOTE=NO_ANCESTRY_DOES_NOT_EQUAL_MISSING_FUNCTIONALITY'
+
+  ux_validation:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit table headers and validation ledger read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TARGET=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$TARGET"
+          echo 'MUTATIONS=NONE'
+          CORE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))
+          c.close()
+          PY
+          )"
+          echo "SAFETY=$CORE"; test "$CORE" = 'PRODUCTION_PAPER|0'
+          TOKEN="$(sudo -n docker exec porota_production_dashboard sh -lc 'printf %s "$DASHBOARD_ACCESS_TOKEN"')"
+          test -n "$TOKEN"
+          python3 - "$TOKEN" <<'PY'
+          import sys,re,subprocess
+          token=sys.argv[1]
+          paths=['/en-vivo','/universo-operativo','/validacion','/instrumentos','/historicos','/riesgo','/sistema?section=scraping']
+          for path in paths:
+              raw=subprocess.check_output(['curl','-fsS','--max-time','12','-H','Authorization: Bearer '+token,'http://127.0.0.1:8000'+path],text=True)
+              tables=re.findall(r'<table\b.*?</table>',raw,re.I|re.S)
+              print(f'PAGE={path}|TABLES={len(tables)}')
+              for i,t in enumerate(tables,1):
+                  th=len(re.findall(r'<th\b',t,re.I)); thead=len(re.findall(r'<thead\b',t,re.I)); tr=len(re.findall(r'<tr\b',t,re.I))
+                  txt=re.sub(r'<[^>]+>',' ',t); txt=' '.join(txt.split())[:180]
+                  print(f'  TABLE={i}|TH={th}|THEAD={thead}|TR={tr}|SAMPLE={txt}')
+                  if th==0: print(f'  DEFECT=NO_HEADER_CELLS|PAGE={path}|TABLE={i}')
+              low=raw.lower()
+              for needle in ['todavia no hay jornadas','todavía no hay jornadas','historial por día','historial por dia']:
+                  if needle in low: print(f'  VALIDATION_LEDGER_SIGNAL={needle}')
+          PY
+          echo '--- SOURCE LOCATION FOR EMPTY VALIDATION LEDGER ---'
+          sudo -n docker exec porota_production_dashboard sh -lc "grep -RInE 'Todav[ií]a no hay jornadas|Historial por d[ií]a' /app --include='*.py' 2>/dev/null | head -n 80" || true
+          echo '--- LEDGER-LIKE TABLES ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,re
+          p='/app/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.execute('pragma query_only=on')
+          names=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+          for t in names:
+              if re.search(r'(valid|ledger|daily|day|session|readiness|milestone|summary)',t,re.I):
+                  q='"'+t.replace('"','""')+'"'; n=c.execute(f'select count(*) from {q}').fetchone()[0]
+                  cols=[r[1] for r in c.execute(f'pragma table_info({q})')]
+                  print(f'TABLE={t}|ROWS={n}|COLS={";".join(cols[:35])}')
+          c.close()
+          PY
+          echo 'UX_VALIDATION_AUDIT_COMPLETE=YES'
+          HOST
+
+  ce_history:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit scraping materialization and historical backlog read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          TARGET=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo 'MUTATIONS=NONE'
+          CORE="$(sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('file:/app/data/paper_v17/observer_v17.db?mode=ro',uri=True); c.execute('pragma query_only=on')
+          print('|'.join(map(str,c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone())))
+          c.close()
+          PY
+          )"; echo "SAFETY=$CORE"; test "$CORE" = 'PRODUCTION_PAPER|0'
+          echo '--- CE SERVICE WIRING ---'
+          sudo -n systemctl cat porota-contract-evidence-rc6.service || true
+          sudo -n systemctl cat porota-contract-evidence-rc6.timer || true
+          sudo -n journalctl -u porota-contract-evidence-rc6.service -n 120 --no-pager || true
+          echo '--- CE DB RCA ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,json
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          for t in ['contract_evidence_v2_runs','contract_evidence_v2_current','contract_evidence_v2_snapshots']:
+              n=c.execute(f'select count(*) from {t}').fetchone()[0]; print(f'{t}|ROWS={n}')
+          print('RECENT_CE_RUNS:')
+          for r in c.execute('select run_id,job_key,started_at,finished_at,state,records,changed,conflicts,detail from contract_evidence_v2_runs order by started_at desc limit 35'):
+              print(dict(r))
+          print('CURRENT_BY_FAMILY:')
+          for r in c.execute('select family,count(*) n,max(observed_at) latest from contract_evidence_v2_current group by family order by family'):
+              print(dict(r))
+          c.close()
+          PY
+          echo '--- LATEST TRUSTED CAPTURE ---'
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,datetime
+          root=Path('/opt/porota-trading/data/contract_evidence/rc6_trusted')
+          fs=sorted(root.glob('contract_*.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+          print('COUNT='+str(len(fs)))
+          for p in fs[:3]:
+              print(f'FILE={p.name}|SIZE={p.stat().st_size}|MTIME={datetime.datetime.fromtimestamp(p.stat().st_mtime,datetime.timezone.utc).isoformat()}')
+              try:
+                  x=json.loads(p.read_text(errors='replace'))
+                  print('  KEYS='+';'.join(sorted(map(str,x.keys()))))
+                  for k,v in x.items():
+                      if isinstance(v,list): print(f'  LIST={k}|ROWS={len(v)}')
+              except Exception as e: print('  PARSE_ERROR='+repr(e))
+          PY
+          echo '--- HISTORY ATTEMPT/REJECTION RCA ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,collections
+          obs='/app/data/paper_v17/observer_v17.db'; hist='/app/data/market_history.db'
+          c=sqlite3.connect(f'file:{obs}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          print('ATTEMPT_STATES:')
+          for r in c.execute('select state,count(*) n from history_attempt_ledger_v2 group by state order by n desc'): print(dict(r))
+          print('ERROR_CLASSES:')
+          for r in c.execute("select coalesce(error_class,'') error_class,count(*) n from history_attempt_ledger_v2 group by coalesce(error_class,'') order by n desc limit 40"): print(dict(r))
+          print('SOURCE_FAMILY_STATES:')
+          for r in c.execute("select source,instrument_type,state,count(*) n,sum(valid_rows) valid,sum(rejected_rows) rejected from history_attempt_ledger_v2 group by source,instrument_type,state order by source,instrument_type,state"): print(dict(r))
+          cols=[r[1] for r in c.execute('pragma table_info(history_row_rejections_v2)')]
+          print('REJECTION_COLS='+';'.join(cols))
+          print('REJECTION_ROWS='+str(c.execute('select count(*) from history_row_rejections_v2').fetchone()[0]))
+          for candidate in ['reason','error_class','rejection_reason','code','detail']:
+              if candidate in cols:
+                  q='"'+candidate+'"'
+                  print('TOP_REJECTION_BY='+candidate)
+                  for r in c.execute(f'select {q} k,count(*) n from history_row_rejections_v2 group by {q} order by n desc limit 40'): print(dict(r))
+                  break
+          print('A3_STATES:')
+          for r in c.execute('select source,instrument_type,status,count(*) n,sum(attempts) attempts,sum(empty_observations) empty,max(last_attempt_at) last_attempt,max(last_success_at) last_success from a3_history_ingest_state_rc6 group by source,instrument_type,status order by source,instrument_type,status'): print(dict(r))
+          c.close()
+          h=sqlite3.connect(f'file:{hist}?mode=ro',uri=True); h.row_factory=sqlite3.Row; h.execute('pragma query_only=on')
+          for t in ['history_canonical_v2','history_versions_v2','market_historical_ohlcv','ingest_runs']:
+              print(f'HISTORY_TABLE={t}|ROWS={h.execute(f"select count(*) from {t}").fetchone()[0]}')
+          print('CANONICAL_BY_FAMILY:')
+          cols=[r[1] for r in h.execute('pragma table_info(history_canonical_v2)')]
+          fam='instrument_type' if 'instrument_type' in cols else ('family' if 'family' in cols else None)
+          if fam:
+              for r in h.execute(f'select {fam} family,count(*) rows,count(distinct symbol) symbols,max(date) latest from history_canonical_v2 group by {fam} order by {fam}'): print(dict(r))
+          h.close()
+          PY
+          echo 'CE_HISTORY_AUDIT_COMPLETE=YES'
+          HOST
+
+  risk_gdelt:
+    runs-on: ubuntu-latest
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          chmod 600 "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Audit event-risk and prove generic news remains off
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          set -Eeuo pipefail
+          TARGET=e47eeffcb94a9468ac7e7f610beee0869353a77e
+          test "$(git -C /opt/porota-trading rev-parse HEAD)" = "$TARGET"
+          echo 'MUTATIONS=NONE'
+          echo 'GENERAL_NEWS_FEED_POLICY=INTENTIONALLY_OFF_DO_NOT_REENABLE'
+          echo '--- EVENT/GDELT UNITS ---'
+          sudo -n systemctl list-unit-files --type=timer --type=service --no-pager --no-legend | grep -Ei 'porota.*(gdelt|event.?risk|news|sentiment)' || true
+          echo '--- ACTIVE EVENT/GDELT UNITS ---'
+          sudo -n systemctl list-units --all --type=timer --type=service --no-pager --no-legend | grep -Ei 'porota.*(gdelt|event.?risk|news|sentiment)' || true
+          echo '--- GDELT MODULE ---'
+          sudo -n docker exec porota_production_observer sh -lc "sed -n '1,260p' /app/fk_gdelt_shadow_feed_rc6.py 2>/dev/null || true"
+          echo '--- EVENT RISK MODULE ---'
+          sudo -n docker exec porota_production_observer sh -lc "sed -n '1,320p' /app/fi_event_risk_shadow_rc6.py 2>/dev/null || true"
+          echo '--- CALLERS / WIRING ---'
+          sudo -n docker exec porota_production_observer sh -lc "grep -RInE 'fk_gdelt_shadow_feed_rc6|fi_event_risk_shadow_rc6|GDELT|event_risk' /app --include='*.py' --include='*.service' --include='*.timer' 2>/dev/null | head -n 240" || true
+          echo '--- RISK PERSISTENCE ---'
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3,re
+          p='/app/data/paper_v17/observer_v17.db'; c=sqlite3.connect(f'file:{p}?mode=ro',uri=True); c.row_factory=sqlite3.Row; c.execute('pragma query_only=on')
+          mode,orders=c.execute('select mode,real_orders_sent from observer_state where id=1').fetchone(); print(f'SAFETY={mode}|{orders}'); assert mode=='PRODUCTION_PAPER' and orders==0
+          names=[r[0] for r in c.execute("select name from sqlite_master where type='table' order by name")]
+          for t in names:
+              if re.search(r'(risk|event|gdelt|sentiment|geopolit|news|alert)',t,re.I):
+                  q='"'+t.replace('"','""')+'"'; print(f'TABLE={t}|ROWS={c.execute(f"select count(*) from {q}").fetchone()[0]}')
+          c.close()
+          PY
+          echo 'REAL_ORDER_ROUTES=NOT_CALLED'
+          echo 'RISK_GDELT_AUDIT_COMPLETE=YES'
+          HOST
