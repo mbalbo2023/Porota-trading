@@ -81,7 +81,27 @@ def slots(day):
             for h, m in minutes]
 
 
-def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES):
+def api_page_covers_art_day(runs, now, *, page_size=100):
+    """A full first API page proves coverage only if it crosses ART midnight."""
+    if not isinstance(runs, list) or len(runs) > page_size or now.tzinfo is None:
+        return False
+    stamps = []
+    for run in runs:
+        stamp = parse_clock(run.get("created_at")) if isinstance(run, dict) else None
+        if stamp is None or stamp > now.astimezone(timezone.utc):
+            return False
+        stamps.append(stamp)
+    if any(previous < following for previous, following in zip(stamps, stamps[1:])):
+        return False
+    if len(runs) < page_size:
+        return True
+    local = now.astimezone(ART)
+    midnight_art = datetime(local.year, local.month, local.day, tzinfo=ART)
+    return stamps[-1] < midnight_art.astimezone(timezone.utc)
+
+
+def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
+             api_day_covered=True):
     if now.tzinfo is None:
         raise ValueError("A358_CLOCK_NAIVE")
     now = now.astimezone(timezone.utc)
@@ -94,6 +114,8 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES):
               "event_required": "schedule", "first_attempt_required": 1,
               "real_order_routes_called": 0, "host_access": False,
               "genuine_runs_today": 0, "overdue_slots_after_last_run": 0,
+              "genuine_in_session": 0, "off_session_runs": 0,
+              "missing_mature_run_lower_bound": 0, "api_day_covered": bool(api_day_covered),
               "last_genuine_run_at_utc": None, "reason": None, "status": "NO_VERIFICADO"}
     if not expected:
         result.update(status="NOT_APPLICABLE_CLOSED", reason="WEEKEND_OR_NONSESSION")
@@ -101,7 +123,7 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES):
     if workflow_state in {"disabled_manually", "disabled_inactivity", "disabled_fork", "deleted"}:
         result.update(status="P1_WORKFLOW_DISABLED", reason="WORKFLOW_NOT_ACTIVE")
         return result
-    valid = []
+    valid_by_id = {}
     for run in runs:
         if not isinstance(run, dict):
             continue
@@ -110,11 +132,22 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES):
             continue
         stamp = parse_clock(run.get("created_at"))
         if stamp is not None and stamp <= now and stamp.astimezone(ART).date() == local.date():
-            valid.append(stamp)
-    valid = sorted(set(valid))
+            run_id = run.get("id")
+            if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
+                result.update(reason="GENUINE_RUN_ID_MISSING_OR_INVALID")
+                return result
+            if run_id in valid_by_id and valid_by_id[run_id] != stamp:
+                result.update(reason="GENUINE_RUN_ID_CONFLICT")
+                return result
+            valid_by_id[run_id] = stamp
+    valid = sorted(valid_by_id.values())
     result["genuine_runs_today"] = len(valid)
     if valid:
         result["last_genuine_run_at_utc"] = valid[-1].isoformat().replace("+00:00", "Z")
+    allowed_start = expected[0]
+    allowed_end = expected[-1] + timedelta(minutes=grace_minutes)
+    result["genuine_in_session"] = sum(allowed_start <= stamp <= allowed_end for stamp in valid)
+    result["off_session_runs"] = len(valid) - result["genuine_in_session"]
     mature = [s for s in expected if s + timedelta(minutes=grace_minutes) <= now]
     # A delayed run does NOT prove each individual cron slot ran. For alarms,
     # only compare current absence since the last genuine creation timestamp.
@@ -123,7 +156,14 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES):
     result["overdue_slots_after_last_run"] = len(late)
     result["mature_expected_slots"] = len(mature)
     result["grace_minutes"] = grace_minutes
-    if len(late) >= 2:
+    # Cardinality alone gives a conservative lower bound; an event created
+    # after the final market slot cannot erase earlier uncreated schedule runs.
+    result["missing_mature_run_lower_bound"] = max(0, len(mature) - len(valid))
+    if not api_day_covered:
+        result.update(status="NO_VERIFICADO", reason="SCHEDULE_API_DAY_INCOMPLETE")
+    elif result["missing_mature_run_lower_bound"] >= 2:
+        result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_SCHEDULE_CREATION")
+    elif len(late) >= 2:
         result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_RUN")
     elif len(valid) >= 2:
         gaps = [(a - b).total_seconds() for a, b in zip(valid[1:], valid[:-1])]
@@ -237,7 +277,9 @@ def main(argv=None):
         runs = payload.get("workflow_runs")
         if not isinstance(runs, list) or len(runs) > 100:
             raise ValueError("A358_RUNS_SHAPE_INVALID")
-        result = classify(runs, datetime.now(timezone.utc), workflow_state=state)
+        observed_at = datetime.now(timezone.utc)
+        result = classify(runs, observed_at, workflow_state=state,
+                          api_day_covered=api_page_covers_art_day(runs, observed_at))
         if args.notify:
             result["notification"] = dedupe_issue(result["status"], result, token)
         exit_code = 2 if result["status"].startswith("P1_") else 0
@@ -255,4 +297,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
