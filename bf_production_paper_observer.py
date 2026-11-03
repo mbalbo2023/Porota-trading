@@ -31,6 +31,7 @@ from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
+from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from co_market_sessions_hf6 import (byma_eod_publication_floor,
                                     byma_paper_instrument_open,
@@ -430,7 +431,7 @@ def _option_t0_late_readonly_identities(store, at, *, limit=2):
     return (opened_options + queued)[:max(0, min(2,int(limit)))]
 
 
-def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None):
+def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None, scanner_primary=None):
     """Bounded PPI Current+Book source capture; NEVER broker.on_quote."""
     from bs_instrument_contracts import aware_datetime
     at = aware_datetime(now)
@@ -466,10 +467,21 @@ def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None):
             if reason:
                 raise ValueError("EQUITY_T1_SOURCE_" + reason)
             store.add_quote(quote)
+            if scanner_primary is not None:
+                try:
+                    scanner_primary.capture(quote, request=(symbol, family, settlement))
+                except Exception as origin_error:
+                    store.event("PPI_SCANNER_PRIMARY_CAPTURE_ERROR", type(origin_error).__name__)
             read += 1
         except Exception as exc:
             failed += 1
             errors[symbol] = str(exc)[:100] if isinstance(exc, ValueError) else type(exc).__name__
+    if scanner_primary is not None:
+        try:
+            primary_receipt = scanner_primary.publish()
+            store.event("PPI_SCANNER_PRIMARY_RECEIPT", json.dumps(primary_receipt, sort_keys=True))
+        except Exception as origin_error:
+            store.event("PPI_SCANNER_PRIMARY_PUBLISH_ERROR", type(origin_error).__name__)
     return {"state": "READONLY_T1", "read": read, "failed": failed,
             "identity_count": len(identities), "option_t0_source_only": len(options),
             "errors": errors, "real_routes": []}
@@ -2485,6 +2497,12 @@ def run():
     reader = None
     login_interlock = ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
     quotes = {}
+    # Only this observer receives PPI current/book through the read-only SDK.
+    # Keep the fact of provider origin outside market_snapshots.source, whose
+    # PRODUCTION_PAPER meaning is an existing Options invariant. Persist once
+    # per scanner cycle, never once per symbol on the hot path.
+    scanner_primary = ScannerPrimaryRecorder(
+        Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
@@ -2602,7 +2620,8 @@ def run():
             if (phase == "EQUITY_T1_READONLY" and
                     time.time() - last_equity_t1_readonly_refresh >= EQUITY_T1_READONLY_REFRESH_SECONDS):
                 try:
-                    result = _equity_t1_readonly_tick(reader, store, now=datetime.now(TZ))
+                    result = _equity_t1_readonly_tick(reader, store, now=datetime.now(TZ),
+                                                      scanner_primary=scanner_primary)
                     store.event("EQUITY_T1_READONLY_BOOK_REFRESH", json.dumps(result, sort_keys=True))
                     last_equity_t1_readonly_refresh = time.time()
                 except Exception as exc:
@@ -2686,6 +2705,12 @@ def run():
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
                         priority=priority, identity=scope_identity)
+                    try:
+                        scanner_primary.capture(q, request=request_key)
+                    except Exception as origin_error:
+                        # Observational sidecar must never change PAPER gates or
+                        # interrupt a genuine scanner current/book observation.
+                        store.event("PPI_SCANNER_PRIMARY_CAPTURE_ERROR", type(origin_error).__name__)
                     # Persistir la observación sirve para trazabilidad, pero un
                     # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)
@@ -2735,6 +2760,13 @@ def run():
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
                            "current + book; PPI Producción solo lectura"))
                     last_cycle_pulse = _pulse_observed_progress(store, last_cycle_pulse)
+            try:
+                primary_receipt = scanner_primary.publish()
+                store.event("PPI_SCANNER_PRIMARY_RECEIPT", json.dumps(primary_receipt, sort_keys=True))
+            except Exception as origin_error:
+                # The legacy PAPER quote and Options provenance are unchanged;
+                # publish failures are observable but cannot enable entries.
+                store.event("PPI_SCANNER_PRIMARY_PUBLISH_ERROR", type(origin_error).__name__)
             broker.mark_equity(quotes)
             duration = round(time.perf_counter() - cycle_clock, 3)
             avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL
