@@ -7,6 +7,8 @@ from pathlib import Path
 import sqlite3
 import sys
 import uuid
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -190,3 +192,41 @@ def test_idempotent_host_readonly_diagnostic(tmp_path):
     b.pop("measured_at_utc", None)
     assert a == b
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_positive_private_ro_mount_guard_requires_isolated_ns(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    mount_info = ("12 1 0:42 / " + str(data) +
+                  " ro,relatime - tmpfs tmpfs ro\n")
+    real_stat = host.os.stat
+    real_read = Path.read_text
+    def fake_stat(path, *args, **kwargs):
+        if str(path) == "/proc/self/ns/mnt":
+            return SimpleNamespace(st_ino=10001)
+        if str(path) == "/proc/1/ns/mnt":
+            return SimpleNamespace(st_ino=10000)
+        return real_stat(path, *args, **kwargs)
+    def fake_read(self, *args, **kwargs):
+        if str(self) == "/proc/self/mountinfo":
+            return mount_info
+        return real_read(self, *args, **kwargs)
+    with patch.object(host.os, "stat", side_effect=fake_stat), patch.object(
+            Path, "read_text", new=fake_read):
+        assert host.private_ro_mount_verified(data)
+        mount_info += ("13 12 0:42 / " + str(data / "paper_v17") +
+                       " rw,relatime - tmpfs tmpfs rw\n")
+        assert not host.private_ro_mount_verified(data)
+
+
+def test_workflow_host_never_runs_on_pull_request(tmp_path):
+    del tmp_path
+    text = (ROOT / ".github/workflows/rc6-a626-financial-contract-host-readonly.yml"
+            ).read_text(encoding="utf-8")
+    assert "github.event_name == 'workflow_dispatch'" in text
+    assert "github.ref_name == 'main'" in text
+    assert "inputs.permit_readonly_host_probe == true" in text
+    assert "sudo -n timeout 25 unshare --mount --propagation private" in text
+    assert "mount -o remount,bind,ro /opt/porota-trading/data" in text
+    assert "exec python3 -B -" in text
+    assert "docker exec" not in text
