@@ -66,8 +66,22 @@ class ScheduleCausalityTest(unittest.TestCase):
         yaml=(Path(__file__).parents[1]/'.github/workflows/'/
               'rc6-a617-ppi-origin-selector-readonly.yml').read_text(encoding='utf-8')
         crons=re.findall(r"^\s+- cron: '([^']+)'",yaml,re.MULTILINE)
-        self.assertEqual(['45 13 4 11 *','30 17 4 11 *',
-                          '30 19 4 11 *','20 21 4 11 *'],crons)
+        self.assertEqual(['05 14 4 11 *','50 17 4 11 *',
+                          '50 19 4 11 *','20 21 4 11 *'],crons)
+        # The A630 #908 host slots are 10:45/11:20/14:30/16:30 ART.
+        a630={'45 13 4 11 *','20 14 4 11 *',
+              '30 17 4 11 *','30 19 4 11 *'}
+        self.assertFalse(a630.intersection(crons))
+        def art_minute(expr):
+            minute,hour,*_=expr.split()
+            return ((int(hour)-3)%24)*60+int(minute)
+        self.assertGreaterEqual(min(abs(art_minute(left)-art_minute(right))
+            for left in crons for right in a630),15)
+        self.assertIn('  host_provenance:\n',yaml)
+        host_section=yaml.split('  host_provenance:\n',1)[1]
+        self.assertIn('    concurrency:\n      group: rc6-unified-paper-deploy\n'
+                      '      cancel-in-progress: false',host_section)
+        self.assertNotIn('concurrency:\n  group: rc6-unified-paper-deploy',yaml)
         self.assertIn("local.date().isoformat()=='2026-11-04'",yaml)
         self.assertIn("github.event_name == 'schedule'",yaml)
         self.assertIn('workflow_dispatch:',yaml)
