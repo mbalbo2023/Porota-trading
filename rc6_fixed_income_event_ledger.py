@@ -179,9 +179,18 @@ def register_native_buy_in_transaction(connection, paper_id):
         "SELECT features_json FROM paper_positions WHERE paper_id=?", (paper_id,)).fetchone()
     features = _json(root[0])
     plan = features.get("fixed_income_exit_plan")
-    if (not isinstance(plan, dict) or plan.get("mode") != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
+    if not isinstance(plan, dict):
+        raise ValueError("FI_NATIVE_BUY_MATURITY_CONTRACT_MISMATCH")
+    try:
+        # The review may encode exactly 100 VN as '100.0'. Compare the
+        # validated *quantity*, not its textual representation. The seed
+        # already enforces the contract's minimum and VN lot step.
+        plan_nominal = decimal_value(plan.get("quantity_vn"), "FI native plan VN", positive=True)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("FI_NATIVE_BUY_MATURITY_CONTRACT_MISMATCH") from exc
+    if (plan.get("mode") != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
             or plan.get("strategy_id") != "FI_LETRA_PAPER_V1"
-            or plan.get("quantity_vn") != seed.initial_nominal
+            or plan_nominal != decimal_value(seed.initial_nominal, "FI seed VN", positive=True)
             or not isinstance(plan.get("issuer_source_reference"), str)
             or not plan["issuer_source_reference"].strip()
             or plan.get("maturity_redemption_receipt_contract") !=

@@ -20,7 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from be_paper_engine import PaperBroker, PaperStore
 from bm_exit_supervisor import PositionExitSupervisor
 from cf_sale_settlement import conservative_unconfirmed_availability
-from rc6_fixed_income_event_ledger import apply_verified_receipt
+from rc6_fixed_income_event_ledger import (
+    apply_verified_receipt, register_native_buy_in_transaction,
+)
 from rc6_fixed_income_native_redemption import (
     REVIEW_AUTHORITY, REVIEW_SCHEMA, SCHEDULE_SCHEMA,
     apply_verified_redemption_review, normalized_issuer_schedule_sha256,
@@ -351,6 +353,50 @@ def test_atomic_native_lot_insert_failure_rolls_back_entire_buy(tmp_path, monkey
     with store.connect() as db:
         for table in ("paper_positions", "paper_fills", "paper_fi_lots", "paper_fi_cash_entries"):
             assert db.execute("SELECT count(*) FROM " + table).fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_native_buy_accepts_equal_decimal_vn_representation_without_duplicate_lot(
+        tmp_path, monkeypatch):
+    q, root, _, store, broker = _bill_bundle(tmp_path, monkeypatch)
+    pin = repin(root, "receipt.json", lambda d: d.update(quantity_vn="100.0"))
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
+    assert broker._decide_fixed_income(q, AT.isoformat())[0] == "BUY"
+    broker.on_quote(q)
+    positions = store.open_positions()
+    assert len(positions) == 1
+    features = json.loads(positions[0]["features_json"])
+    assert features["fixed_income_exit_plan"]["quantity_vn"] == "100.0"
+    with store.connect() as db:
+        view = position_at(db, positions[0]["paper_id"], AT.isoformat())
+        assert view.initial_nominal == Decimal("100")
+        assert db.execute("SELECT count(*) FROM paper_fi_lots").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 1
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("bad_nominal", ["100.5", "NaN", "not-a-number", "-100", "0"])
+def test_native_buy_lot_rejects_fractional_or_nonnumeric_vn_under_lock(
+        tmp_path, monkeypatch, bad_nominal):
+    q, _, _, store, broker = _bill_bundle(tmp_path, monkeypatch)
+    broker.on_quote(q)
+    positions = store.open_positions()
+    assert len(positions) == 1
+    paper_id = positions[0]["paper_id"]
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        features = json.loads(db.execute(
+            "SELECT features_json FROM paper_positions WHERE paper_id=?",
+            (paper_id,)).fetchone()[0])
+        features["fixed_income_exit_plan"]["quantity_vn"] = bad_nominal
+        db.execute("UPDATE paper_positions SET features_json=? WHERE paper_id=?",
+                   (_raw(features).decode(), paper_id))
+        with pytest.raises(ValueError, match="FI_NATIVE_BUY_MATURITY_CONTRACT_MISMATCH"):
+            register_native_buy_in_transaction(db, paper_id)
+        db.execute("ROLLBACK")
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM paper_fi_lots").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 1
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
