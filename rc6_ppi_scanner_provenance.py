@@ -307,18 +307,24 @@ def _pit_hash(value: Any) -> str:
 def _pit_decimal(value: Any, *, positive: bool) -> str:
     if isinstance(value, bool):
         raise ValueError("RAW_BOOK_NUMERIC_INVALID")
+    text = str(value)
+    if len(text) > 80:
+        raise ValueError("RAW_BOOK_NUMERIC_INVALID")
     try:
-        number = Decimal(str(value))
+        number = Decimal(text)
     except (ValueError, TypeError, InvalidOperation):
         raise ValueError("RAW_BOOK_NUMERIC_INVALID") from None
-    if not number.is_finite() or number < 0 or (positive and number == 0):
+    if (not number.is_finite() or number < 0 or (positive and number == 0)
+            or number.adjusted() > 18 or number.as_tuple().exponent < -18):
         raise ValueError("RAW_BOOK_NUMERIC_INVALID")
     return format(number, "f")
 
 
 def _pit_depth(raw: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw, list) or len(raw) > PIT_BOOK_MAX_DEPTH_PER_SIDE:
-        raise ValueError("RAW_BOOK_DEPTH_INVALID_OR_CAPACITY_HOLD")
+    if not isinstance(raw, list):
+        raise ValueError("RAW_BOOK_DEPTH_INVALID")
+    if len(raw) > PIT_BOOK_MAX_DEPTH_PER_SIDE:
+        raise ValueError("PPI_BOOK_DEPTH_CAPACITY_HOLD")
     result = []
     positions = set()
     for original in raw:
@@ -395,6 +401,8 @@ def _pit_verified_rows(doc: Any) -> list[dict[str, Any]]:
     for sequence, event in enumerate(doc["records"], start=1):
         if not isinstance(event, dict):
             raise ValueError("PPI_BOOK_JOURNAL_EVENT_INVALID")
+        if len(_pit_bytes(event)) > PIT_EVENT_MAX_BYTES:
+            raise ValueError("PPI_BOOK_JOURNAL_EVENT_CAPACITY_HOLD")
         expected = _pit_hash({k: v for k, v in event.items() if k != "event_sha256"})
         if (event.get("sequence") != sequence or event.get("previous_sha256") != prior_hash
                 or event.get("event_sha256") != expected
@@ -490,7 +498,9 @@ def capture_native_book_journal(path: Path, quote: Any, *, raw_book: dict[str, A
         event = _pit_event(quote, raw_book=raw_book, request=request,
                            identity=identity, observed_at=observed_at)
     except (ValueError, TypeError, AttributeError) as exc:
-        return {"status": "CAPTURE_INVALID_HOLD", "reason": str(exc)}
+        reason = str(exc) if isinstance(exc, ValueError) else "PPI_BOOK_INPUT_INVALID"
+        return {"status": ("CAPTURE_CAPACITY_HOLD" if "CAPACITY_HOLD" in reason
+                            else "CAPTURE_INVALID_HOLD"), "reason": reason}
     try:
         with _pit_exclusive_lock(Path(path)):
             doc = _pit_read_private(Path(path))
@@ -521,6 +531,8 @@ def capture_native_book_journal(path: Path, quote: Any, *, raw_book: dict[str, A
             event["sequence"] = len(rows) + 1
             event["previous_sha256"] = rows[-1]["event_sha256"] if rows else None
             event["event_sha256"] = _pit_hash(event)
+            if len(_pit_bytes(event)) > PIT_EVENT_MAX_BYTES:
+                return {"status": "CAPTURE_CAPACITY_HOLD", "reason": "PPI_BOOK_EVENT_BYTES_BUDGET"}
             candidate = {**doc, "records": [*rows, event], "record_count": len(rows) + 1}
             encoded = _pit_bytes(candidate)
             if len(encoded) > PIT_JOURNAL_MAX_BYTES:

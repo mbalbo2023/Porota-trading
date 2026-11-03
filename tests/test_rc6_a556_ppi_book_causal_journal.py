@@ -152,6 +152,20 @@ class TestNativeBookCausalJournal(unittest.TestCase):
         self.assertEqual(response["reason"], "PPI_BOOK_TOTAL_BYTES_BUDGET")
         self.assertEqual(self.journal.read_bytes(), original)
 
+    def test_raw_depth_and_numeric_caps_failclosed_before_writing(self):
+        quote, book = fixture()
+        book["bids"] = [{"price": "100", "quantity": "1"}] * 65
+        capped = self.writer.capture_raw_book(quote, raw_book=book, request=REQUEST,
+                                              identity=IDENTITY, observed_at=quote.observed_at)
+        self.assertEqual(capped["status"], "CAPTURE_CAPACITY_HOLD")
+        self.assertFalse(self.journal.exists())
+        quote, book = fixture()
+        book["bids"][0]["price"] = "1e100000"
+        invalid = self.writer.capture_raw_book(quote, raw_book=book, request=REQUEST,
+                                               identity=IDENTITY, observed_at=quote.observed_at)
+        self.assertEqual(invalid["status"], "CAPTURE_INVALID_HOLD")
+        self.assertFalse(self.journal.exists())
+
     def test_native_clock_naive_and_regressive_books_failclosed(self):
         quote, book = fixture()
         quote = Quote(**{**quote.__dict__, "book_at": "2026-11-03T11:00:00"})
