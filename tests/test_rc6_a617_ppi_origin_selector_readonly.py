@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+import uuid
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import rc6_a617_ppi_origin_selector_readonly as audit
@@ -16,6 +17,8 @@ def _db(tmp_path, *, selector=True, mode=True):
     db = tmp_path / "observer.sqlite"
     with sqlite3.connect(db) as conn:
         conn.executescript("""
+          CREATE TABLE paper_workspace(
+            id INTEGER,namespace TEXT,origin TEXT,imported_legacy INTEGER,dataset_id TEXT);
           CREATE TABLE financial_instrument_catalog(
             ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
             settlement TEXT, status TEXT);
@@ -26,6 +29,8 @@ def _db(tmp_path, *, selector=True, mode=True):
             ask TEXT, bid_size TEXT, ask_size TEXT);
           CREATE TABLE universe_cycle_metrics(id INTEGER PRIMARY KEY, detail TEXT);
         """)
+        conn.execute("INSERT INTO paper_workspace VALUES (1,?,?,0,?)",
+          ("POROTA_PAPER_V17_FRESH", "FRESH_EMPTY", str(uuid.uuid4())))
         if selector:
             conn.execute("""CREATE TABLE candidate_identity_v2(
              ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
@@ -94,7 +99,7 @@ def _journal(root, *, corrupt=False):
 def test_json_a385_zero_does_not_prove_zero_ppi_in_db_or_cold_selector(tmp_path):
     db = _db(tmp_path)
     before = db.stat().st_mtime_ns
-    report = audit.diagnose(db, tmp_path)
+    report = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert db.stat().st_mtime_ns == before, "read-only must not modify DB"
     assert report["state"] == "READ_ONLY_OBSERVED"
     assert report["selector"]["eligible_sql_exact_request"] == 1
@@ -113,7 +118,7 @@ def test_matching_primary_receipt_correlates_mode_but_never_confers_authority(tm
         observed = conn.execute("SELECT observed_at FROM market_snapshots").fetchone()[0]
     _receipt(tmp_path, stamp=observed)
     _journal(tmp_path)
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["scanner_receipt"]["record_count_asserted"] == 1
     assert result["scanner_receipt"]["fresh_native_trade_book_rows_structural"] == 1
     assert result["snapshots"]["paper_mode_exact_receipt_correlations"] == 1
@@ -126,7 +131,7 @@ def test_matching_primary_receipt_correlates_mode_but_never_confers_authority(tm
 def test_legacy_mode_snapshot_and_mismatched_receipt_remain_unbound(tmp_path):
     db = _db(tmp_path)
     _receipt(tmp_path, altered=True)
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["snapshots"]["paper_mode_exact_receipt_correlations"] == 0
     assert result["snapshots"]["paper_mode_provider_attested_rows"] == 0
 
@@ -134,21 +139,21 @@ def test_legacy_mode_snapshot_and_mismatched_receipt_remain_unbound(tmp_path):
 def test_reject_world_readable_private_receipt_and_symlink(tmp_path):
     db = _db(tmp_path)
     path = _receipt(tmp_path, private=False)
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["scanner_receipt"]["state"] == "NO_VERIFICADO"
     assert result["scanner_receipt"]["reason"] == "PRIVATE_FILE_PERMISSIONS_OR_SIZE_HOLD"
     path.unlink()
     target = tmp_path / "untrusted.json"
     target.write_text("{}")
     path.symlink_to(target)
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["scanner_receipt"]["reason"] == "PRIVATE_FILE_OPEN_HOLD"
 
 
 def test_corrupt_journal_hash_chain_fails_closed(tmp_path):
     db = _db(tmp_path)
     _journal(tmp_path, corrupt=True)
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["native_book_journal"]["state"] == "NO_VERIFICADO"
     assert result["native_book_journal"]["reason"] == "JOURNAL_CHAIN_HOLD"
     assert not result["native_book_journal"]["fill_authority"]
@@ -156,20 +161,20 @@ def test_corrupt_journal_hash_chain_fails_closed(tmp_path):
 
 def test_zero_eligible_or_absent_selector_does_not_create_cold_calls(tmp_path):
     db = _db(tmp_path, selector=False, mode=False)
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["selector"]["state"] == "SCHEMA_HOLD"
     assert result["selector"]["eligible_sql_exact_request"] is None
     assert result["provider_gets"] == 0
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE candidate_identity_v2(ticker TEXT,instrument_type TEXT,settlement TEXT,can_simulate INTEGER,status TEXT)")
-    result = audit.diagnose(db, tmp_path)
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert result["selector"]["eligible_sql_exact_request"] == 0
     assert result["provider_gets"] == 0
 
 
 def test_unknown_db_is_no_verificado_even_with_structurally_valid_receipt(tmp_path):
     _receipt(tmp_path)
-    result = audit.diagnose(tmp_path / "not-here.sqlite", tmp_path)
+    result = audit.diagnose(tmp_path / "not-here.sqlite", tmp_path, enforce_ro_mount=False)
     assert result["state"] == "NO_VERIFICADO"
     assert result["reason"] == "DB_RO_QUERY_UNAVAILABLE"
     assert not result["db_opened"] and not result["admission_authority"]
@@ -181,11 +186,38 @@ def test_recent_sample_is_explicitly_bounded(tmp_path):
         conn.execute("INSERT INTO market_snapshots(source,symbol) VALUES (?,?)",
                      ("PPI", "GGAL"))
     with mock.patch.object(audit, "MAX_SNAPSHOT_ROWS", 1):
-        report = audit.diagnose(db, tmp_path)
+        report = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
     assert report["snapshots"]["recent_sampled"] == 1
     assert report["snapshots"]["recent_sample_truncated"] is True
     assert report["snapshots"]["ppi_source_label_rows"] == 1
     assert report["snapshots"]["ppi_source_label_provider_attested_rows"] == 0
+
+
+def test_writable_mount_with_wal_shm_fail_closed_before_open(tmp_path):
+    db = _db(tmp_path)
+    wal = Path(str(db) + "-wal")
+    shm = Path(str(db) + "-shm")
+    wal.write_bytes(b"WAL-SENTINEL")
+    shm.write_bytes(b"SHM-SENTINEL")
+    before = [(path.stat().st_mtime_ns, path.read_bytes()) for path in (db, wal, shm)]
+    with mock.patch.object(audit, "_mount_is_readonly", return_value=False):
+        result = audit.diagnose(db, tmp_path)
+    assert result["state"] == "NO_VERIFICADO"
+    assert result["reason"] == "SQLITE_READONLY_MOUNT_REQUIRED"
+    assert result["db_opened"] is False
+    assert result["sqlite_ro_mount_protected"] is False
+    assert [(path.stat().st_mtime_ns, path.read_bytes()) for path in (db, wal, shm)] == before
+
+
+def test_wrong_fixed_db_identity_fails_closed(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE paper_workspace SET namespace='OTHER'")
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
+    assert result["state"] == "NO_VERIFICADO"
+    assert result["reason"] == "PAPER_V17_DATABASE_IDENTITY_HOLD"
+    assert result["db_fixed_path_identity_verified"] is False
+    assert not result["runtime_db_binding_verified"]
 
 
 class HostReadOnlyA617Tests(unittest.TestCase):
@@ -221,6 +253,12 @@ class HostReadOnlyA617Tests(unittest.TestCase):
 
     def test_sample_cap_is_reported(self):
         test_recent_sample_is_explicitly_bounded(self.root)
+
+    def test_wal_shm_mount_guard(self):
+        test_writable_mount_with_wal_shm_fail_closed_before_open(self.root)
+
+    def test_default_host_db_identity_guard(self):
+        test_wrong_fixed_db_identity_fails_closed(self.root)
 
 
 if __name__ == "__main__":
