@@ -47,6 +47,34 @@ HOST_SECONDS = 125
 RUNNER_SECONDS = 360
 SIDECARS = ("-wal", "-shm", "-journal")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
+# These are literal, reviewed host-export guard codes, never arbitrary stderr.
+# The classifier below is runner-only and never makes a retention GO decision.
+HOST_EXPORT_REJECTION_ALLOWLIST = frozenset({
+    "A330_TIME_BUDGET", "A330_SOURCE_ALIAS", "A330_SOURCE_UNAVAILABLE",
+    "A330_SOURCE_UNSAFE_FILE", "A330_SQLITE_SIDECAR_PRESENT",
+    "A330_HOST_DISK_RESERVE", "A330_HOST_MEMORY_RESERVE",
+    "A330_A3_TIMER_NOT_QUARANTINED", "A330_HISTORY_WRITER_ACTIVE",
+    "A330_CLOSED_PAPER_ZERO_REQUIRED", "A330_HEARTBEAT_UNZONED",
+    "A330_HEARTBEAT_INVALID", "A330_HEARTBEAT_STALE",
+    "A330_VERSION_REFERENCE_AMBIGUOUS", "A330_JSON_NODE_BUDGET",
+    "A330_PIN_BUDGET", "A330_JSON_DUPLICATE_KEY",
+    "A330_JSON_NONFINITE", "A330_JSON_INVALID", "A330_JSON_DIRECTORY_UNSAFE",
+    "A330_JSON_FILE_BUDGET", "A330_JSON_FILE_UNSAFE",
+    "A330_JSON_FILE_BYTES", "A330_JSON_GROUP_BYTES",
+    "A330_JSON_INODE_CHANGED", "A330_JSON_CHANGED_DURING_READ",
+    "A330_JSON_PATH_CHANGED", "A330_OBSERVER_TABLE_BUDGET",
+    "A330_OBSERVER_ROW_BUDGET", "A330_OBSERVER_JSON_TYPE",
+    "A330_OBSERVER_JSON_VALUE_BUDGET", "A330_OBSERVER_CHANGED_DURING_SCAN",
+    "A330_ARCHIVE_MEMBER_INVALID", "A330_SOURCE_CHANGED_SINCE_PAPER_GATE",
+    "A330_PIN_ENVELOPE_BUDGET", "A330_SOURCE_CHANGED_BEFORE_STREAM",
+    "A330_SOURCE_STREAM_SHORT", "A330_SOURCE_CHANGED_AFTER_STREAM",
+    "A330_HOST_MODE_INPUTS_FORBIDDEN",
+})
+HOST_EXPORT_GENERIC_EXCEPTIONS = frozenset({
+    "OSError", "ValueError", "DatabaseError", "TarError",
+})
+PRIVATE_FAILURE_LOG_BUDGET = 16 * 1024
+PRIVATE_REJECTION_LINE = re.compile(r"A330_REJECTED=([A-Za-z][A-Za-z0-9_]{0,90})\Z")
 
 
 class GuardError(ValueError):
@@ -61,6 +89,77 @@ def require(condition: bool, code: str) -> None:
 def encoded(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False).encode("utf-8")
+
+
+def classify_capture_failure(capture_rc: int, private_stderr: bytes | None,
+                             archive_size: int) -> str:
+    """Pure, bounded, fail-closed classifier; no raw stderr enters receipts.
+
+    A code 255 alone cannot prove network failure: remote commands may also
+    exit 255. This class deliberately records that ambiguity.
+    """
+    if capture_rc == 124:
+        return "SSH_TIMEOUT_124"
+    if capture_rc == 255:
+        return "SSH_EXIT_255_TRANSPORT_OR_REMOTE"
+    if capture_rc == 0:
+        return "ARTIFACT_EMPTY" if archive_size == 0 else "CLASSIFIER_NOT_APPLICABLE"
+    if private_stderr is None:
+        return "REMOTE_LOG_UNAVAILABLE"
+    if len(private_stderr) > PRIVATE_FAILURE_LOG_BUDGET:
+        return "REMOTE_LOG_OVERSIZED"
+    try:
+        message = private_stderr.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return "REMOTE_LOG_NON_UTF8"
+    if any(ord(char) < 32 and char not in "\t\r\n" for char in message):
+        return "REMOTE_LOG_NON_TEXT"
+    rejected: list[str] = []
+    for line in message.splitlines():
+        if "A330_REJECTED=" not in line:
+            continue
+        match = PRIVATE_REJECTION_LINE.fullmatch(line)
+        if match is None:
+            return "REMOTE_REJECTION_MALFORMED"
+        rejected.append(match.group(1))
+    if len(rejected) != 1:
+        return "REMOTE_REJECTION_AMBIGUOUS" if rejected else "REMOTE_EXIT_UNCLASSIFIED"
+    if capture_rc != 2:
+        return "REMOTE_REJECTION_EXIT_MISMATCH"
+    code = rejected[0]
+    if code in HOST_EXPORT_REJECTION_ALLOWLIST:
+        return "REMOTE_GUARD_" + code
+    if code in HOST_EXPORT_GENERIC_EXCEPTIONS:
+        return "REMOTE_EXCEPTION_" + code.upper()
+    return "REMOTE_REJECTION_UNALLOWLISTED"
+
+
+def bounded_private_failure_log(path: Path, private_root: Path) -> bytes | None:
+    """Read at most budget+1 bytes from an isolated, non-symlink runner file."""
+    require(private_root.is_absolute() and private_root.resolve() == private_root
+            and private_root.is_dir() and not private_root.is_symlink()
+            and path.parent == private_root and path.name == "a330-private.log",
+            "A330_CLASSIFIER_PRIVATE_PATH_INVALID")
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    with os.fdopen(descriptor, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            return None
+        return stream.read(PRIVATE_FAILURE_LOG_BUDGET + 1)
+
+
+def sanitized_capture_failure(capture_rc: int, private_stderr: bytes | None,
+                              archive_size: int) -> dict:
+    return {
+        "schema": SCHEMA, "state": "NO_VERIFICADO",
+        "failure_class": classify_capture_failure(capture_rc, private_stderr,
+                                                  archive_size),
+        "host_purge_allowed": False, "physical_host_delete_count": 0,
+        "real_orders_sent_by_action": 0,
+    }
 
 
 def sha_file(path: Path, deadline: float) -> str:
@@ -548,6 +647,8 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--host-export", action="store_true")
     group.add_argument("--runner-rehearsal", action="store_true")
+    group.add_argument("--classify-capture-failure", action="store_true")
+    parser.add_argument("--capture-exit-code", type=int)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--capture-log", type=Path)
     parser.add_argument("--runner-root", type=Path)
@@ -557,15 +658,17 @@ def main() -> None:
     try:
         if args.host_export:
             require(not any((args.bundle, args.capture_log, args.runner_root,
-                             args.sanitized_output)), "A330_HOST_MODE_INPUTS_FORBIDDEN")
+                             args.sanitized_output)) and args.capture_exit_code is None,
+                    "A330_HOST_MODE_INPUTS_FORBIDDEN")
             gate = host_gate()
             receipt = export_bundle(HOST_SOURCE, HOST_OBSERVER, HOST_DATA,
                                     sys.stdout.buffer,
                                     time.monotonic() + HOST_SECONDS, gate)
             print("A330_CAPTURE_RECEIPT=" + encoded(receipt).decode(), file=sys.stderr)
-        else:
+        elif args.runner_rehearsal:
             require(all((args.bundle, args.capture_log, args.runner_root,
-                         args.sanitized_output)), "A330_RUNNER_INPUTS_REQUIRED")
+                         args.sanitized_output)) and args.capture_exit_code is None,
+                    "A330_RUNNER_INPUTS_REQUIRED")
             result = runner_rehearsal(args.bundle, args.capture_log,
                                       args.runner_root, args.repo_root,
                                       deadline=time.monotonic() + RUNNER_SECONDS)
@@ -574,9 +677,34 @@ def main() -> None:
                     "A330_SANITIZED_OUTPUT_OUTSIDE_RUNNER")
             write_exclusive(output.parent, output.name, io.BytesIO(encoded(result) + b"\n"))
             print("A330_SANITIZED_RECEIPT=NO_VERIFICADO|host_purge_allowed=false")
+        else:
+            root = args.runner_root
+            require(root is not None and args.capture_log is not None and
+                    args.bundle is not None and args.sanitized_output is not None and
+                    args.capture_exit_code is not None,
+                    "A330_CLASSIFIER_INPUTS_REQUIRED")
+            require(args.capture_exit_code >= 0 and
+                    args.bundle.parent == root and
+                    args.bundle.name == "a330-private.tar" and
+                    args.sanitized_output.parent == root and
+                    args.sanitized_output.name == "a330-sanitized.json",
+                    "A330_CLASSIFIER_PRIVATE_PATH_INVALID")
+            stderr = bounded_private_failure_log(args.capture_log, root)
+            try:
+                info = args.bundle.lstat()
+                archive_size = (info.st_size if stat.S_ISREG(info.st_mode)
+                                and info.st_nlink == 1 else 0)
+            except OSError:
+                archive_size = 0
+            receipt = sanitized_capture_failure(args.capture_exit_code,
+                                                stderr, archive_size)
+            write_exclusive(root, args.sanitized_output.name,
+                            io.BytesIO(encoded(receipt) + b"\n"))
+            print("A330_CAPTURE_FAILURE_CLASS=" + receipt["failure_class"])
     except (GuardError, OSError, ValueError, sqlite3.DatabaseError, tarfile.TarError) as exc:
         code = str(exc) if isinstance(exc, GuardError) else type(exc).__name__
-        if args.runner_rehearsal and args.sanitized_output and args.runner_root:
+        if (args.runner_rehearsal or args.classify_capture_failure) and \
+                args.sanitized_output and args.runner_root:
             try:
                 output = Path(args.sanitized_output)
                 if output.parent.resolve() == args.runner_root.resolve():

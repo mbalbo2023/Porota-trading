@@ -105,8 +105,14 @@ jobs:
             > "$root/a330-private.tar" 2> "$root/a330-private.log"
           capture_rc=$?
           set -e
-          if test "$capture_rc" -ne 0; then
-            printf '%s\n' '{"schema":"RC6_A330_PRIVATE_SAME_SESSION_V1","state":"NO_VERIFICADO","failure_class":"HOST_CAPTURE_FAILED","host_purge_allowed":false,"physical_host_delete_count":0,"real_orders_sent_by_action":0}' > "$root/a330-sanitized.json"
+          if test "$capture_rc" -ne 0 || ! test -s "$root/a330-private.tar"; then
+            # The raw SSH stderr stays in the private runner directory; publish
+            # only a bounded, static-allowlisted failure class, never stderr.
+            python3 -B scripts/rc6_retention_a330_private_capture.py \
+              --classify-capture-failure --capture-exit-code "$capture_rc" \
+              --capture-log "$root/a330-private.log" \
+              --bundle "$root/a330-private.tar" \
+              --runner-root "$root" --sanitized-output "$root/a330-sanitized.json"
             exit 2
           fi
           python3 scripts/rc6_retention_a330_private_capture.py \
