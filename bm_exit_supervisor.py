@@ -1,10 +1,11 @@
 """Reloj de salidas PAPER sin red ni IA; intención persistente separada del fill."""
 import json
 import os
+import sqlite3
 from dataclasses import dataclass
 from decimal import Decimal
 
-from bs_instrument_contracts import aware_datetime, decimal_value, utc_microseconds
+from bs_instrument_contracts import aware_datetime, decimal_value, family_name, utc_microseconds
 
 EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING"})
 
@@ -120,7 +121,89 @@ class PositionExitSupervisor:
             self._probe(p["paper_id"], "INTENT_COMMITTED", self.clock_fn(), cause)
         return Verdict(p['paper_id'],verdict.state,cause,verdict.reason)
 
+    def _supervise_fixed_income(self, p, at):
+        """FI is a reviewed cash/VN lifecycle, never the generic EOD SELL.
+
+        Called even if the book is absent/market closed. The issuer reviewer
+        separately imports the payment and pins the terminal review; only a
+        previously reconciled review can trigger the idempotent no-SELL close.
+        A missing issuer event is a per-position watch, never fake settlement.
+        """
+        try:
+            features = json.loads(p.get("features_json") or "{}")
+            plan = features.get("fixed_income_exit_plan")
+            if (family_name(p["asset_class"]) != "LETRAS" or
+                    not isinstance(plan, dict) or
+                    plan.get("mode") != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1" or
+                    plan.get("strategy_id") != "FI_LETRA_PAPER_V1" or
+                    plan.get("max_hold_minutes") is not None or
+                    plan.get("nominal_rebase_required") is not True):
+                return self._persist(p, Verdict(p["paper_id"], "WATCH_FI_NATIVE_EXIT_UNVERIFIED",
+                                  None, "No existe salida FI contractual validada"), at)
+            maturity = aware_datetime(plan["exit_at"])
+            if maturity <= aware_datetime(p["opened_at"]):
+                raise ValueError("FI_EXIT_MATURITY_BEFORE_BUY")
+            from rc6_fixed_income_event_ledger import _seed
+            from rc6_fixed_income_portfolio_bridge import position_at
+            with self.store.connect() as db:
+                seed = _seed(db, p["paper_id"])
+                if (seed.family != "LETRAS" or
+                        decimal_value(plan["quantity_vn"], "FI VN", positive=True) !=
+                        decimal_value(seed.initial_nominal, "FI seed VN", positive=True) or
+                        db.execute("SELECT 1 FROM paper_fi_lots WHERE paper_id=?",
+                                   (p["paper_id"],)).fetchone() is None):
+                    raise ValueError("FI_EXIT_NATIVE_LOT_INVALID")
+                view = position_at(db, p["paper_id"], at)
+                if view is None:
+                    raise ValueError("FI_EXIT_NATIVE_PIT_SNAPSHOT_MISSING")
+                row = db.execute("SELECT receipt_sha256,reviewed_at,review_json FROM "
+                                 "paper_fi_native_redemption_reviews WHERE paper_id=?",
+                                 (p["paper_id"],)).fetchone()
+            if aware_datetime(at) < maturity:
+                if row is not None:
+                    raise ValueError("FI_EXIT_PREMATURE_REVIEW_CONFLICT")
+                return self._persist(p, Verdict(p["paper_id"], "OPEN", None,
+                                   "FI_WAIT_REVIEWED_ISSUER_MATURITY"), at)
+            if row is None:
+                # No guessed payment or EOD exit. The native risk/cash bridge
+                # retains exposure until independently reviewed receipts land.
+                return self._persist(p, Verdict(p["paper_id"], "OPEN", None,
+                                   "FI_MATURITY_OFFICIAL_EVENT_RECEIPT_PENDING"), at)
+            review = json.loads(row["review_json"])
+            if (review.get("paper_id") != p["paper_id"] or
+                    review.get("family") != "LETRAS" or
+                    # The independent FI reviewer serializes its instant in
+                    # UTC. Issuer terms can carry ART (-03:00) for the *same*
+                    # maturity: compare aware instants, not their text form.
+                    aware_datetime(review.get("maturity_at")) != maturity or
+                    review.get("issuer_sha256") != plan.get("issuer_source_sha256") or
+                    review.get("issuer_source_reference") !=
+                    plan.get("issuer_source_reference") or
+                    review.get("receipt_sha256") != row["receipt_sha256"] or
+                    review.get("residual_nominal") != "0" or
+                    aware_datetime(row["reviewed_at"]) > aware_datetime(at) or
+                    view.residual_nominal != 0):
+                raise ValueError("FI_EXIT_REDEMPTION_PLAN_REVIEW_MISMATCH")
+            from rc6_fixed_income_native_exit import apply_reviewed_maturity, terminal_at
+            receipt = apply_reviewed_maturity(
+                self.store, paper_id=p["paper_id"],
+                request_id="fi-maturity:" + p["paper_id"],
+                approved_review_receipt_sha256=row["receipt_sha256"],
+                applied_at=at)
+            with self.store.connect() as db:
+                if terminal_at(db, p["paper_id"]) != receipt:
+                    raise ValueError("FI_EXIT_TERMINAL_RECEIPT_UNVERIFIED")
+            return Verdict(p["paper_id"], "CLOSED", "FI_NATIVE_MATURITY_REVIEWED",
+                           "FI_PAPER_NO_SELL_TERMINAL_RECEIPT_VERIFIED")
+        except (KeyError, ValueError, TypeError, OSError, sqlite3.Error) as exc:
+            return self._persist(p, Verdict(p["paper_id"], "WATCH_FI_NATIVE_LEDGER_BLOCKED",
+                                 None, str(exc)[:160]), at)
+
     def supervise(self, p, q, at):
+        # A456 owns only the LETRAS native-maturity callback. Existing BONOS
+        # and ON supervision paths remain unchanged by this scoped patch.
+        if family_name(p.get("asset_class")) == "LETRAS":
+            return self._supervise_fixed_income(p, at)
         with self.store.connect() as c:
             previous = c.execute("SELECT * FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
         cause = previous["cause"] if previous else None

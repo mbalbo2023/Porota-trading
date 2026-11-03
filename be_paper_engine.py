@@ -1395,6 +1395,64 @@ class PaperBroker:
                      "reason_codes": ["SPECIALIZED_LIFECYCLE", "STRATEGY_NOT_VALIDATED"],
                      "error_type": type(exc).__name__})
 
+    def fixed_income_native_exit_authorized(self, q, plan, at, *, connection=None):
+        """Read-only capability check for release-pinned native Letras maturity.
+
+        Availability is never granted by OPERATIONAL_SCOPE or a source flag.
+        The separately checked issuer/OOS producer must supply this exact
+        receipt, and the existing FI ledger/review/terminal tables must all
+        be installed. BONOS/ON remain HOLD: their market sale authority is
+        intentionally not inferred from the maturity implementation.
+        """
+        try:
+            from rc6_fixed_income_runtime import quote_sha256
+            from bs_instrument_contracts import aware_datetime
+            from rc6_fixed_income_runtime import _digest
+            if (family_name(q.asset_class) != "LETRAS" or not isinstance(plan, dict)
+                    or plan.get("mode") != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
+                    or plan.get("verified") is not True
+                    or plan.get("strategy_id") != "FI_LETRA_PAPER_V1"
+                    or plan.get("maturity_redemption_receipt_contract") !=
+                    "EXACT_NOMINAL_EVENT_REDUCER_V1"
+                    or plan.get("economic_event_policy") != "EXACT_NOMINAL_EVENT_REDUCER_V1"
+                    or plan.get("nominal_rebase_required") is not True
+                    or plan.get("max_hold_minutes") is not None
+                    or plan.get("issuer_source_reference") in (None, "")
+                    or q.contract is None or q.contract.key != (
+                        q.symbol, "LETRAS", q.market, q.currency, q.settlement)
+                    or q.contract.quantity_step <= 0
+                    or q.contract.minimum_quantity is None
+                    or plan.get("quote_sha256") != quote_sha256(q)
+                    or not str(q.metadata_source or "").startswith("PPI_CATALOG:")
+                    or q.time_error(at, require_trade=True, max_age_seconds=120,
+                                    max_trade_age_seconds=900)
+                    or aware_datetime(plan["exit_at"]) <= aware_datetime(at)
+                    or _digest(plan.get("release_manifest_sha256")) !=
+                       os.getenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", "")):
+                return False
+            for key in ("issuer_source_sha256", "release_receipt_sha256"):
+                _digest(plan.get(key))
+            nominal = decimal_value(plan["quantity_vn"], "FI nominal", positive=True)
+            q.contract.quantity(nominal)
+            def schema_and_safety_ok(db):
+                state = db.execute(
+                    "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+                if state is None or state[0] != "PRODUCTION_PAPER" or type(state[1]) is not int or state[1] != 0:
+                    return False
+                tables = {r[0] for r in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {"paper_fi_lots", "paper_fi_economic_events", "paper_fi_cash_entries",
+                        "paper_fi_native_redemption_reviews", "paper_fi_native_maturities",
+                        "paper_exit_intents"}.issubset(tables):
+                    return False
+                return True
+            if connection is not None:
+                return schema_and_safety_ok(connection)
+            with self.store.connect() as db:
+                return schema_and_safety_ok(db)
+        except (KeyError, OSError, ValueError, TypeError, sqlite3.Error):
+            return False
+
     @trace_spot_signal
     def decide(self, q: Quote):
         try:
@@ -1625,6 +1683,20 @@ class PaperBroker:
             family = family_name(q.asset_class)
             if family not in {"OPCIONES", "BONOS", "LETRAS", "OBLIGACIONES"}:
                 return ""
+            if family in {"BONOS", "OBLIGACIONES"}:
+                return "FI_NATIVE_MARKET_EXIT_NOT_ADMITTED"
+            if family == "LETRAS":
+                plan = features.get("fixed_income_exit_plan")
+                proof = features.get("fixed_income_runtime_evidence")
+                if (q.contract is None or
+                        not isinstance(proof, dict) or not isinstance(plan, dict)
+                        or plan.get("release_manifest_sha256") != proof.get("manifest_sha256")
+                        or plan.get("release_receipt_sha256") != proof.get("receipt_sha256")
+                        or plan.get("quote_sha256") != proof.get("quote_sha256")
+                        or tuple(proof.get("identity") or ()) != q.contract.key
+                        or not self.fixed_income_native_exit_authorized(
+                            q, plan, self.execution_time(q), connection=connection)):
+                    return "FI_NATIVE_MATURITY_RELEASE_OR_OWNER_UNVERIFIED"
             from rc6_paper_runtime_safety import runtime_admission_context
             runtime_book, safety_error = runtime_admission_context(
                 self.store, connection=connection)
@@ -1661,6 +1733,11 @@ class PaperBroker:
                     frozen.get("entry_authority") is not False or
                     frozen.get("real_routes_used") != []):
                 return "PAPER_SPECIALIZED_FROZEN_DECISION_MISMATCH"
+            if family == "LETRAS":
+                for name in ("fixed_income_exit_plan", "fixed_income_runtime_evidence",
+                             "scenario_quantity_vn", "scenario_entry_cash"):
+                    if frozen.get(name) != features.get(name):
+                        return "FI_NATIVE_MATURITY_FROZEN_DECISION_CHANGED"
             if family == "OPCIONES":
                 digest = frozen.get("native_quote_sha256")
                 if (not isinstance(digest, str) or len(digest) != 64
@@ -2530,10 +2607,11 @@ class PaperBroker:
         if concurrent_risk_budget <= 0:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: riesgo concurrente agotado")
             return False, "CONCURRENT_RISK_BUDGET_EXHAUSTED", None
-        if family == "OPCIONES":
+        if family in {"OPCIONES", "LETRAS"}:
             # A long option may gap to zero before a stop can execute. Size
-            # against the full premium at risk plus entry costs, not the
-            # nominal stop distance used by spot families.
+            # against the full premium at risk plus entry costs. A fixed-face
+            # LETRA also has full principal credit/default risk without a
+            # guaranteed executable stop, so the same conservative cap holds.
             by_risk = self._quantity_in_budget(
                 entry * factor, concurrent_risk_budget,
                 lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
@@ -2576,8 +2654,27 @@ class PaperBroker:
                 q.contract.quantity(qty)
             except ValueError as exc:
                 return False, "CONTRACT_QUANTITY_INVALID:" + str(exc), None
+        if family == "LETRAS":
+            try:
+                committed_nominal = decimal_value(features["scenario_quantity_vn"],
+                                                  "FI committed VN", positive=True)
+                scenario_cash = decimal_value(features["scenario_entry_cash"],
+                                              "FI reviewed entry cash", positive=True)
+                planned_cash = entry * qty * factor + self._cost(
+                    entry * factor, qty, q.asset_class, currency=currency)
+                if qty != committed_nominal or planned_cash > scenario_cash:
+                    return False, "FI_NATIVE_BUY_NOMINAL_OR_COST_CHANGED", None
+            except (KeyError, TypeError, ValueError):
+                return False, "FI_NATIVE_BUY_SCENARIO_CONTRACT_INVALID", None
         max_hold_minutes = int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360"))
-        features["exit_policy"] = {
+        features["exit_policy"] = ({
+            "mode": "FI_MATURITY_REDEMPTION",
+            "end_of_day": False,
+            "max_hold_minutes": None,
+            "execution": "REVIEWED_ISSUER_CASH_AND_NATIVE_NO_SELL_TERMINAL",
+            "exit_at": features["fixed_income_exit_plan"]["exit_at"],
+            "meaning": "Sin venta simulada al cierre: el cupón y VN requieren recibos oficiales separados.",
+        } if family == "LETRAS" else {
             "mode": "SIMULATED",
             "stop_loss_price": str(stop),
             "take_profit_price": str(target),
@@ -2585,7 +2682,7 @@ class PaperBroker:
             "end_of_day": bool(getattr(self.session_policy, "close_at_eod", False)),
             "execution": "SUPERVISED_EXIT_READER",
             "meaning": "Una salida requiere libro fresco y se registra; nunca envía una orden real.",
-        }
+        })
         features.update({
             "book_source_at": q.book_at, "trade_source_at": q.trade_at,
             "received_at": q.observed_at, "last_kind": q.last_kind,
@@ -2621,6 +2718,9 @@ class PaperBroker:
         candidate_risk_value = candidate_stop_risk(
             self, entry_price=entry, stop_price=stop, quantity=qty,
             cash_multiplier=factor, asset_class=q.asset_class, currency=currency)
+        if family == "LETRAS":
+            candidate_risk_value = entry * factor * qty + self._cost(
+                entry * factor, qty, q.asset_class, currency=currency)
         try:
             concurrent_preview = portfolio_capacity(
                 self, currency, at, candidate_risk=candidate_risk_value,
@@ -2659,9 +2759,11 @@ class PaperBroker:
             # The exact policy captured before sizing also owns the locked cash
             # and risk amounts; a mutable environment cannot mix two tariffs.
             cost = cost_policy.leg_cost(entry * factor * qty, decision_at=at)
-            candidate_risk_value = (entry * factor * qty + cost if family == "OPCIONES"
+            candidate_risk_value = (entry * factor * qty + cost if family in {"OPCIONES", "LETRAS"}
                 else (entry - modeled_stop_fill) * factor * qty + cost
                 + cost_policy.leg_cost(modeled_stop_fill * factor * qty, decision_at=at))
+            if family == "LETRAS" and entry * qty * factor + cost > scenario_cash:
+                return False, "FI_NATIVE_BUY_LOCKED_COST_EXCEEDS_SCENARIO", None
             features["candidate_stop_risk"] = str(candidate_risk_value)
             try:
                 if qty > spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation):
@@ -2744,6 +2846,9 @@ class PaperBroker:
                       (paper_id, SOURCE, "BUY_SIMULATED", at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
             spot_liquidity.record(c,fill.lastrowid,q)
+            if family == "LETRAS":
+                from rc6_fixed_income_event_ledger import register_native_buy_in_transaction
+                register_native_buy_in_transaction(c, paper_id)
             evidence = _atomic_admission_snapshot(q, features, paper_id, at, self.execution_time(q), score)
             sha = _insert_evidence_snapshot(c, evidence)
             features.update(financial_admission_snapshot_key=evidence["decision_key"],
