@@ -74,14 +74,43 @@ def test_exact_ppi_book_persists_current_and_history_intraday(tmp_path, clock):
             return {"date": observed.isoformat(), "bids":[
                 {"price":"19.1", "quantity":"100000"}], "offers":[]}
     result = live.refresh(Reader(), store, now=observed, clock_fn=lambda:observed)
-    assert result["state"] == "OK" and result["ready"] == 1
+    assert result["state"] == "OK" and result["ready"] == 0
     assert result["real_routes"] == []
     assert calls == [("PESOS1", "CAUCIONES", "INMEDIATA")]
     with store.connect() as conn:
         current = conn.execute("SELECT state,source FROM paper_caucion_live_book").fetchone()
         receipt = conn.execute("SELECT state,source FROM paper_caucion_live_book_history").fetchone()
-    assert tuple(current) == ("BOOK_READY",live.SOURCE)
+    assert tuple(current) == ("BOOK_QUANTITY_UNIT_UNVERIFIED",live.SOURCE)
     assert tuple(receipt) == tuple(current)
+
+
+def test_unattested_quantity_unit_cannot_be_forged_in_book_payload(tmp_path):
+    observed = at("2026-11-02T12:00:00-03:00")
+    store = _store(tmp_path, observed)
+
+    class Reader:
+        def book(self, _ticker, _family, _settlement):
+            # Neither a per-level claim nor a top-level provider-like claim
+            # establishes an independently verified monetary-unit contract.
+            return {
+                "date": observed.isoformat(), "quantity_unit": "ARS_PRINCIPAL",
+                "bids": [{"price": "19.1", "quantity": "100000",
+                          "quantity_unit": "ARS_PRINCIPAL"}],
+                "offers": [],
+            }
+
+    result = live.refresh(Reader(), store, now=observed, clock_fn=lambda: observed)
+    assert result["ready"] == 0
+    assert result["states"] == {"PESOS1": "BOOK_QUANTITY_UNIT_UNVERIFIED"}
+    with store.connect() as conn:
+        current = conn.execute(
+            "SELECT state,tna_fraction,available_principal FROM paper_caucion_live_book"
+        ).fetchone()
+        history = conn.execute(
+            "SELECT state,tna_fraction,available_principal FROM paper_caucion_live_book_history"
+        ).fetchone()
+    assert tuple(current) == tuple(history) == (
+        "BOOK_QUANTITY_UNIT_UNVERIFIED", None, None)
 
 
 @pytest.mark.parametrize("clock", [

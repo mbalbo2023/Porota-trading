@@ -368,7 +368,14 @@ def _runtime_caucion_book_error(store, connection, offer, at):
                     or contract.get("capability") != "READY_PAPER_CAUCION_PLACING"):
                 continue
             valid.append(row)
-        return "" if len(valid) == 1 else "CAUCION_RUNTIME_PPI_IDENTITY_OR_RECEIPT_UNVERIFIED"
+        if len(valid) != 1:
+            return "CAUCION_RUNTIME_PPI_IDENTITY_OR_RECEIPT_UNVERIFIED"
+        # Historical BOOK_READY rows predate the verified Book.quantity unit
+        # contract. Matching identity/current/history does not establish
+        # that Book.quantity is ARS principal. Do not allow legacy rows to
+        # open a new PAPER placement until that independent authority is
+        # proven and bound at this exact transaction boundary.
+        return "CAUCION_BOOK_QUANTITY_UNIT_UNVERIFIED"
     except (ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
         return "CAUCION_RUNTIME_PPI_LIVE_BOOK_OR_TERMS_UNVERIFIED"
 

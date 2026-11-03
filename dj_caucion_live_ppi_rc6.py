@@ -10,7 +10,6 @@ authorizes real orders or bypasses original PPI source and receipt gates.
 from __future__ import annotations
 import json
 from datetime import datetime, timedelta
-from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bd_ppi_readonly_guard import caucion_discovery_days, retry_read
@@ -99,9 +98,14 @@ def _book_row(reader,item,observed_at,now,clock_fn):
             elif age > 120: state="STALE_BOOK"
             elif quote.tna_percent <= 0 or quote.quantity <= 0: state="EMPTY_PLACED_BID"
             else:
-                state="BOOK_READY"
-                rate=str((quote.tna_percent/Decimal("100")).normalize())
-                principal=str(quote.quantity.normalize())
+                # PPI Book documents a numeric quantity, not the economic
+                # unit of that quantity for this caucion contract. A price
+                # and a positive quantity cannot attest available ARS
+                # principal. Until an independent, exact PPI/ALyC unit
+                # contract is verified, do not publish BOOK_READY or turn
+                # Book.quantity into money. Preserve its clocks and lineage
+                # in the current/history receipt for later reconciliation.
+                state="BOOK_QUANTITY_UNIT_UNVERIFIED"
     except Exception as exc:
         state="READ_ERROR:"+type(exc).__name__
     return {**item,"quoted_at":quoted_at,"tna_fraction":rate,

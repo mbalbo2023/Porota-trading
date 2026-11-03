@@ -117,7 +117,7 @@ def test_caucion_quote_preserves_old_receipts_past_previous_2000_cap(tmp_path, m
                     'bids': [{'price': '21.0', 'quantity': '100000'}], 'offers': []}
 
     result = caucion.refresh(Reader(), store, now=now, clock_fn=lambda: now)
-    assert result['ready'] == 1 and result['real_routes'] == []
+    assert result['ready'] == 0 and result['real_routes'] == []
     assert result['history_rows'] == 2051
     assert result['history_review_threshold_exceeded'] is True
     assert result['history_retention'] == 'HOLD_PIN_AND_PIT_UNVERIFIED'
@@ -127,4 +127,4 @@ def test_caucion_quote_preserves_old_receipts_past_previous_2000_cap(tmp_path, m
         assert db.execute('SELECT ticker FROM paper_caucion_live_book_history '
                           'WHERE id=1').fetchone()[0] == 'PESOS7'
         assert db.execute('SELECT state FROM paper_caucion_live_book '
-                          'WHERE ticker=?', ('PESOS3',)).fetchone()[0] == 'BOOK_READY'
+                          'WHERE ticker=?', ('PESOS3',)).fetchone()[0] == 'BOOK_QUANTITY_UNIT_UNVERIFIED'
