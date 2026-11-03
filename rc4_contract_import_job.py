@@ -17,6 +17,15 @@ MAX_PRIMARY_ROWS=20_000
 PPI_SETTLEMENT_SOURCES=frozenset({'PPI_FIELD','REQUEST_CANDIDATE'})
 UNKNOWN_IDENTITY=frozenset({'','UNKNOWN','*'})
 
+UNBOUND_REFERENCE_KEYS=frozenset({
+    'appliedexchangerate','amountinvested','amountinvestedars',
+    'paymentcurrency','fxrate','exchangeconvertionrate',
+})
+
+def _unbound_reference_key(key):
+    # IOL/account valuation hints must never be promoted to PPI contract FX.
+    return ''.join(c for c in str(key).lower() if c.isalnum()) in UNBOUND_REFERENCE_KEYS
+
 def candidates(store):
     """Unique complete PPI-primary five-key per ticker, across ALL statuses.
 
@@ -91,6 +100,7 @@ def _source_evidence(row,*,exclude_fees=False):
         unbound_fees={}
     evidence={k:v for k,v in data.items()
               if k not in {'ticker','currency','market','settlement'}
+              and not _unbound_reference_key(k)
               and v not in (None,'',[],{})}
     if row.get('currency') not in (None,'',[],{}):
         evidence['provider_currency']=row['currency']
@@ -166,11 +176,53 @@ def import_capture(store,path):
                 total+=1; changed+=int(bool(r.get('changed')))
             except Exception as exc:
                 notes.append('PPI_CONTRACT_IMPORT_'+type(exc).__name__)
+        elif kind=='CaucionesOperables':
+            # Browser endpoint quantities are *not* an ARS principal amount.
+            # Preserve only partial metadata bound to an unambiguous PPI
+            # five-key; never create wildcard/UNKNOWN pseudo-contracts.
+            rows=item.get('rows') or []
+            if not isinstance(rows,list) or not rows:
+                notes.append('CAUCIONES_SCHEMA_ONLY_NOT_CONTRACT')
+                continue
+            for ev in rows:
+                if not isinstance(ev,dict):
+                    notes.append('CAUCIONES_XHR_ROW_INVALID')
+                    conflicts+=1
+                    continue
+                ticker=str(ev.get('ticker') or ev.get('simbolo') or
+                           ev.get('símbolo') or ev.get('especie') or '').strip().upper()
+                ident=_unique_ppi_identity(cmap,ticker,ev) if ticker else None
+                if ident is None or normalize_family(ident['instrument_type'])!='CAUCIONES':
+                    notes.append('CAUCIONES_PPI_FIVE_KEY_ABSENT_AMBIGUOUS_'+(ticker or 'UNKNOWN'))
+                    conflicts+=1
+                    continue
+                evidence,unbound=_source_evidence(ev,exclude_fees=True)
+                # A native Book quantity is not a principal-ARS conversion.
+                quantity_hints={}
+                for key in ('quantity','cantidad','principal','monto','amount','book_quantity'):
+                    if key in evidence:
+                        quantity_hints[key]=evidence.pop(key)
+                if quantity_hints:
+                    evidence['provider_quantity_unverified']=quantity_hints
+                evidence['book_quantity_unit_status']='BOOK_QUANTITY_UNIT_UNVERIFIED'
+                if unbound:
+                    notes.append('CAUCIONES_XHR_FEE_ESTIMATE_UNBOUND_'+ticker)
+                try:
+                    r=record_snapshot(store,family=ident['instrument_type'],ticker=ticker,
+                      market=ident['market'],currency=ident['currency'],
+                      settlement=ident['settlement'],source_class='PPI_AUTHENTICATED_XHR',
+                      source_ref=url,evidence=evidence)
+                    total+=1; changed+=int(bool(r.get('changed')))
+                    notes.append('CAUCIONES_PARTIAL_UNIT_UNVERIFIED')
+                except Exception as exc:
+                    notes.append('CAUCIONES_CONTRACT_IMPORT_'+type(exc).__name__)
         elif kind=='SubyacenteOpciones':
             notes.append('OPTION_UNDERLYING_CATALOG_OBSERVED_NOT_CONTRACT')
         elif kind=='SCHEMA_ONLY':
             notes.append('SCHEMA_ONLY_NO_CONTRACT_FIELDS')
-    final='VERDE' if not notes else 'AMARILLO'
+    if total==0:
+        notes.append('AUTHENTICATED_XHR_NO_BOUND_CONTRACT_EVIDENCE')
+    final='VERDE' if total>0 and conflicts==0 and not notes else 'AMARILLO'
     detail=f'records={total}; changed={changed}; notes={",".join(sorted(set(notes)))[:1000]}'
     for job,rid in run_ids.items(): finish_run(store,run_id=rid,state=final,records=total,changed=changed,conflicts=conflicts,detail=detail)
     return {'state':final,'auth_status':auth,'records':total,'changed':changed,'conflicts':conflicts,'notes':sorted(set(notes)),'real_orders_sent':0}
