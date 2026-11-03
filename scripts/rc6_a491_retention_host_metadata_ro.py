@@ -21,7 +21,9 @@ import time
 SCHEMA = "rc6.a491.retention-host-metadata.v1"
 DATA = Path("/opt/porota-trading/data")
 DATABASES = (
-    ("HISTORY_DB", DATA / "market_history.db", 2 * 1024**3),
+    # A330 private capture uses exactly this 1 GiB source limit. A491 must
+    # not report a larger history source as regular/eligible metadata.
+    ("HISTORY_DB", DATA / "market_history.db", 1024**3),
     ("PAPER_OBSERVER_DB", DATA / "paper_v17/observer_v17.db", 4 * 1024**3),
 )
 SIDECARS = ("WAL", "SHM", "JOURNAL")
