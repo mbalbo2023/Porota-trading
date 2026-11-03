@@ -110,6 +110,16 @@ class A516BudgetMetadataTests(unittest.TestCase):
         self.assertEqual(capacity_mode({"POROTA_DYNAMIC_CAPACITY_MODE": "approved"}), "APPROVED")
         self.assertEqual(capacity_mode({"POROTA_DYNAMIC_CAPACITY_MODE": "evil token"}), "OTHER_OR_UNSET")
 
+    def test_existing_action_requires_explicit_main_dispatch_and_immutable_image(self):
+        source = (Path(__file__).resolve().parents[1] / ".github" / "workflows"
+                  / "rc6-history-fresh-offhost-evidence.yml").read_text(encoding="utf-8")
+        self.assertIn("inputs.execution_mode == 'DROPLET_BUDGET_METADATA'", source)
+        self.assertIn("github.ref == 'refs/heads/main'", source)
+        self.assertIn("group: rc6-unified-paper-deploy", source)
+        self.assertIn("test \\\"\\$image\\\" = '$RC6_EXPECTED_IMAGE_ID'", source)
+        self.assertIn("< scripts/rc6_a516_host_budget_metadata_ro.py", source)
+        self.assertIn("'book_gets':0,'host_files_written':0", source)
+
 
 if __name__ == "__main__":
     unittest.main()
