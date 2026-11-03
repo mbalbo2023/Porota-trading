@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,19 @@ def _number(value):
         return None
 
 
+def _count(value):
+    # A boolean, fractional/overflow float or negative count cannot certify
+    # a PAPER ledger; preserve only integer and unambiguous decimal forms.
+    if type(value) is int and value >= 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value.strip()):
+        try:
+            return int(value.strip())
+        except ValueError:
+            pass
+    return None
+
+
 def _today(value):
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -40,7 +54,19 @@ def _today(value):
 def build_review(snapshot: dict, now: datetime) -> dict:
     operations = [row for row in (snapshot.get("operations") or []) if isinstance(row, dict)]
     metrics = snapshot.get("metrics") if isinstance(snapshot.get("metrics"), dict) else {}
-    closed = int(metrics.get("closed_operations") or len(operations))
+    raw_closed = metrics.get("closed_operations")
+    raw_decisions = metrics.get("decisions_observed")
+    closed = _count(raw_closed or len(operations))
+    decisions_observed = _count(raw_decisions or snapshot.get("decision_count") or 0)
+    invalid_counts = (
+        (raw_closed is not None and _count(raw_closed) is None)
+        or (raw_decisions is not None and _count(raw_decisions) is None)
+        or closed is None or decisions_observed is None
+    )
+    if closed is None:
+        closed = len(operations)
+    if decisions_observed is None:
+        decisions_observed = 0
     net_pnl = _number(metrics.get("net_pnl_ars"))
     win_rate = _number(metrics.get("win_rate_pct"))
     invalid_metrics = any(
@@ -64,7 +90,7 @@ def build_review(snapshot: dict, now: datetime) -> dict:
                if isinstance(snapshot.get("postclose_eod_source"), dict) else {})
     eod_ready = not eod_required or (snapshot_fresh and verified_current_source(receipt, generated))
     snapshot_current = (snapshot_fresh and snapshot.get("status") == "VERIFIED"
-                        and eod_ready and not invalid_metrics)
+                        and eod_ready and not invalid_metrics and not invalid_counts)
     findings, next_actions = [], []
     if not snapshot_fresh or snapshot.get("status") == "INSUFFICIENT_EVIDENCE":
         findings.append("POSTCLOSE_SNAPSHOT_MISSING_OR_STALE")
@@ -74,6 +100,9 @@ def build_review(snapshot: dict, now: datetime) -> dict:
         next_actions.append("RETRY_READ_ONLY_POSTCLOSE_AFTER_SOURCE_RECEIPT")
     if invalid_metrics:
         findings.append("POSTCLOSE_FINANCIAL_METRICS_INVALID")
+        next_actions.append("REGENERATE_READ_ONLY_POSTCLOSE_SNAPSHOT")
+    if invalid_counts:
+        findings.append("POSTCLOSE_COUNTERS_INVALID")
         next_actions.append("REGENERATE_READ_ONLY_POSTCLOSE_SNAPSHOT")
     if closed == 0:
         findings.append("NO_CLOSED_PAPER_OPERATIONS")
@@ -103,7 +132,7 @@ def build_review(snapshot: dict, now: datetime) -> dict:
         "paper_safety_status": snapshot.get("paper_safety_status"),
         "metrics": {
             "closed_operations": closed, "net_pnl_ars": net_pnl,
-            "win_rate_pct": win_rate, "decisions_observed": int(metrics.get("decisions_observed") or snapshot.get("decision_count") or 0),
+            "win_rate_pct": win_rate, "decisions_observed": decisions_observed,
         },
         "operations": operations,
         "findings": findings,
