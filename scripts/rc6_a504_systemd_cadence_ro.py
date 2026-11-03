@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
-SCHEMA = "rc6.a504.systemd-cadence-readonly.v2"
+SCHEMA = "rc6.a504.systemd-cadence-readonly.v3"
 SOURCE_STATE = Path("/opt/porota-trading/data/market/rc6_source_cycle_dispatch_state.json")
 # Fixed producer contract (rc6_source_cycle_dispatch.py). These two clocks
 # describe PUBLIC and EVIDENCE stages; neither proves authenticated PPI Book,
@@ -46,6 +46,9 @@ JOURNAL_COUNT_FIELDS = (
     "journal_records", "journal_unit_records",
     "journal_invocation_records", "journal_timestamp_records",
 )
+LAST_TRIGGER_VALIDATION_STATES = frozenset({
+    "MISSING_OR_INVALID", "ZERO", "EXCEEDS_BOOT", "VALID",
+})
 ROLES = (
     ("SOURCE_CYCLE", "porota-iol-shadow-collector-rc6"),
     ("EOD_LOCAL", "porota-local-eod-history-rc6"),
@@ -293,6 +296,22 @@ def journal_metadata_state(invocations, counts, observed_distinct_slots: int,
     return "MATCHED_NOMINAL_SLOTS" if observed_distinct_slots else "NO_NOMINAL_SLOT_MATCH"
 
 
+def last_trigger_validation_state(last_trigger_us: object, boot_us: object) -> str:
+    """One bounded diagnostic enum; never export raw monotonic timestamps.
+
+    This compares the values delivered by systemctl and CLOCK_BOOTTIME but
+    cannot by itself attest that their clock domains or calendar are equal.
+    """
+    if (type(last_trigger_us) is not int or type(boot_us) is not int or
+            boot_us <= 0 or last_trigger_us < 0):
+        return "MISSING_OR_INVALID"
+    if last_trigger_us == 0:
+        return "ZERO"
+    if last_trigger_us > boot_us:
+        return "EXCEEDS_BOOT"
+    return "VALID"
+
+
 def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
              host: dict[str, object], *, boot_us: int | None,
              source: str = "NOT_APPLICABLE",
@@ -307,6 +326,7 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
                                   "observed_distinct_slots": 0,
                                   "last_two_mature_distinct": False,
                                   "journal_available": invocations is not None,
+                                  "last_trigger_validation_state": "MISSING_OR_INVALID",
                                   "schedule_parity_verified": False,
                                   "clock_compatible": False,
                                   "source": source if source in SOURCE_CLASSES else "UNKNOWN",
@@ -328,7 +348,9 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
     result["clock_compatible"] = host.get("clock_compatible") is True
     last_trigger = host.get("last_trigger_us")
     last_exit = host.get("last_exit_us")
-    if not isinstance(last_trigger, int) or last_trigger <= 0 or last_trigger > boot_us:
+    result["last_trigger_validation_state"] = last_trigger_validation_state(
+        last_trigger, boot_us)
+    if result["last_trigger_validation_state"] != "VALID":
         return result
     # A fresh boot with less uptime than this evidence window cannot prove
     # missed slots before boot. Only the last two mature slots are assessed.
@@ -432,6 +454,7 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                   "last_two_mature_distinct", "source", "timer", "service",
                   "journal_available", "schedule_parity_verified", "clock_compatible",
                   "full_day_cadence_certified", "journal_metadata_state",
+                  "last_trigger_validation_state",
                   *JOURNAL_COUNT_FIELDS}
         for (role, _), item in zip(ROLES, items):
             if (not isinstance(item, dict) or set(item) != fields or item["role"] != role or
@@ -443,6 +466,7 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                 type(item["last_two_mature_distinct"]) is not bool or
                 type(item["journal_available"]) is not bool or
                 item["journal_metadata_state"] not in JOURNAL_METADATA_STATES or
+                item["last_trigger_validation_state"] not in LAST_TRIGGER_VALIDATION_STATES or
                 type(item["schedule_parity_verified"]) is not bool or
                 type(item["clock_compatible"]) is not bool or
                 item["full_day_cadence_certified"] is not False):
@@ -466,6 +490,11 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                      item["observed_distinct_slots"] > counts[3])):
                 return fallback
             if item["classification"] == "RECENT_INVOCATIONS_OBSERVED" and not item["last_two_mature_distinct"]:
+                return fallback
+            if (item["last_trigger_validation_state"] != "VALID" and
+                    (item["observed_distinct_slots"] != 0 or
+                     item["last_two_mature_distinct"] or
+                     item["classification"] not in {"NO_VERIFICADO", "NOT_DUE"})):
                 return fallback
             if item["classification"] == "NOT_DUE" and item["nominal_mature_slots"] != 0:
                 return fallback
