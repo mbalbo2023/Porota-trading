@@ -383,6 +383,67 @@ class TestA630(unittest.TestCase):
                                          '/api/1.0/marketdata/book'])
         self.assertEqual(len(wire_calls), 3)  # one auth POST, exactly 2 GET
 
+    def test_real_guard_order_native_budget_acquires_before_strict_adapter_send(self):
+        """Product transport guard must WRAP our strict pre-wire seam, not vice versa."""
+        network = []
+        class HTTPAdapter:
+            def send(self, request, *args, **kwargs):
+                network.append((request.method, request.url))
+                return object()  # fake socket boundary, no provider GET
+        base_send = HTTPAdapter.send
+        adapters = types.ModuleType('requests.adapters')
+        adapters.HTTPAdapter = HTTPAdapter
+        requests = types.ModuleType('requests')
+        requests.adapters = adapters
+        class Request:
+            def __init__(self, method, url):
+                self.method, self.url = method, url
+        domain = 'https://clientapi.portfoliopersonal.com/api/1.0/'
+        query = '?Ticker=AL30&Type=BONOS&Settlement=A-24HS'
+        class ProductGuardReader:
+            def __init__(self, key, secret, *, budget, consumer, priority, audit):
+                self.budget, self.consumer = budget, consumer
+                self.priority, self.audit = priority, audit
+                self.adapter=HTTPAdapter()
+                self.previous=HTTPAdapter.send
+                def guarded_send(adapter, request, *args, **kwargs):
+                    endpoint = request.url.split('/MarketData/')[-1].split('?')[0].lower()
+                    lease=None
+                    if request.method=='GET' and endpoint in {'current','book'}:
+                        result=budget.acquire(endpoint,consumer=consumer,priority=priority)
+                        if not result.get('allowed'):
+                            raise ValueError('ATOMIC_LEASE_DENIED')
+                        lease=result['lease']
+                        budget.start(lease)
+                    try:
+                        response=self.previous(adapter,request,*args,**kwargs)
+                        self.audit(request.method, '/api/1.0/'+request.url.split('/api/1.0/')[-1].split('?')[0].lower(), 'ALLOWED')
+                        return response
+                    finally:
+                        if lease:
+                            budget.finish(lease)
+                HTTPAdapter.send=guarded_send
+            def login_once(self):
+                self.adapter.send(Request('POST',domain+'Account/LoginApi'),verify=True)
+            def current(self, *args):
+                self.adapter.send(Request('GET',domain+'MarketData/Current'+query),verify=True)
+                return {'date':PROVIDER,'price':748.5}
+            def book(self, *args):
+                self.adapter.send(Request('GET',domain+'MarketData/Book'+query),verify=True)
+                return {'date':PROVIDER,'bids':[],'offers':[]}
+            def close(self):
+                HTTPAdapter.send=self.previous
+        shared=Shared()
+        with patch.dict(sys.modules, {'requests':requests,'requests.adapters':adapters}):
+            result=capture_two(TARGET,('k','s'),shared,ProductGuardReader,
+                clock=lambda:NOW,http_limiter=fake_hashes)
+        self.assertEqual(result['state'],'EVIDENCE_ONLY_NO_GO')
+        self.assertEqual(result['adapter_current_sends'],1)
+        self.assertEqual(result['adapter_book_sends'],1)
+        self.assertEqual([endpoint for endpoint, *_ in shared.calls],['current','book'])
+        self.assertEqual(len(network),3)  # auth POST + exactly Current,Book
+        self.assertIs(HTTPAdapter.send,base_send)  # nesting restored completely
+
     def test_forged_evidence_fails_sanitizer(self):
         result, _ = invoke(Shared())
         for edit in ({"source_pit_verified": True}, {"orders_sent": 1},
