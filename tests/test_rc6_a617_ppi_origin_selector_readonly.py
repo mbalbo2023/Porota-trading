@@ -220,6 +220,21 @@ def test_wrong_fixed_db_identity_fails_closed(tmp_path):
     assert not result["runtime_db_binding_verified"]
 
 
+def test_legacy_selector_count_matches_observer_without_v2_uniqueness(tmp_path):
+    db = _db(tmp_path, selector=False)
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE candidate_universe(
+          ticker TEXT,instrument_type TEXT,settlement TEXT,
+          can_simulate INTEGER,status TEXT)""")
+        conn.execute("""INSERT INTO candidate_universe VALUES
+          ('GGAL','ACCIONES','A-24HS',1,'AVAILABLE'),
+          ('GGAL','ACCIONES','A-24HS',1,'AVAILABLE')""")
+    result = audit.diagnose(db, tmp_path, enforce_ro_mount=False)
+    assert result["selector"]["table"] == "candidate_universe"
+    assert result["selector"]["eligible_sql_exact_request"] == 2
+    assert result["selector"]["source_authority_qualified"] is False
+
+
 def test_host_workflow_requires_private_ro_namespace_and_sanitizer_failclose():
     path = (Path(__file__).parents[1] / ".github" / "workflows" /
             "rc6-a617-ppi-origin-selector-readonly.yml")
@@ -273,6 +288,9 @@ class HostReadOnlyA617Tests(unittest.TestCase):
 
     def test_workflow_namespace_and_sanitizer_guards(self):
         test_host_workflow_requires_private_ro_namespace_and_sanitizer_failclose()
+
+    def test_legacy_selector_matches_actual_fallback(self):
+        test_legacy_selector_count_matches_observer_without_v2_uniqueness(self.root)
 
 
 if __name__ == "__main__":
