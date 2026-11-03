@@ -1,0 +1,259 @@
+name: RC6 A630 PPI Current Book bounded sampling 04-Nov READ_ONLY
+
+# One-day main control-plane mission: Wednesday 2026-11-04 ART, four windows.
+# The day/time preflight always runs BEFORE SSH or provider access.
+# GitHub schedule is best-effort and may be late; a late slot fails closed.
+on:
+  schedule:
+    - cron: '45 13 * * 3'  # 10:45 ART
+    - cron: '20 14 * * 3'  # 11:20 ART
+    - cron: '30 17 * * 3'  # 14:30 ART
+    - cron: '30 19 * * 3'  # 16:30 ART
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: 'Fallback slot for Wednesday 04/11 only (ART, max 60m late)'
+        type: choice
+        required: true
+        options: ['1045', '1120', '1430', '1630']
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a630-ppi-current-book-20261104.yml'
+      - 'scripts/rc6_a630_host_ppi_current_book.py'
+      - 'tests/test_rc6_a630_host_ppi_current_book.py'
+      - 'docs/handoffs/RC6_A630_PPI_CURRENT_BOOK_20261104.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: No provider GET synthetic and adversarial checks
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a630_host_ppi_current_book.py tests/test_rc6_a630_host_ppi_current_book.py
+          python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v
+          git diff --check
+
+  sample_main_only:
+    needs: contracts
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # The host sample and any candidate Deploy V2 must not race image rotation.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      RC6_SCHEDULE: ${{ github.event.schedule }}
+      RC6_MANUAL_SLOT: ${{ inputs.slot }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Pin exact checkout and one ART day/slot before ANY SSH
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(TZ=America/Argentina/Buenos_Aires date +%F)" = '2026-11-04'
+          if test "$GITHUB_EVENT_NAME" = schedule; then
+            case "$RC6_SCHEDULE" in
+              '45 13 * * 3') SLOT=1045 ;;
+              '20 14 * * 3') SLOT=1120 ;;
+              '30 17 * * 3') SLOT=1430 ;;
+              '30 19 * * 3') SLOT=1630 ;;
+              *) exit 2 ;;
+            esac
+            MAX_LAG=30
+          else
+            case "$RC6_MANUAL_SLOT" in
+              1045|1120|1430|1630) SLOT="$RC6_MANUAL_SLOT" ;;
+              *) exit 2 ;;
+            esac
+            MAX_LAG=60
+          fi
+          NOW_HHMM="$(TZ=America/Argentina/Buenos_Aires date +%H%M)"
+          NOW_MIN=$(( 10#${NOW_HHMM:0:2} * 60 + 10#${NOW_HHMM:2:2} ))
+          SLOT_MIN=$(( 10#${SLOT:0:2} * 60 + 10#${SLOT:2:2} ))
+          test "$NOW_MIN" -ge "$SLOT_MIN" && test "$NOW_MIN" -le "$((SLOT_MIN + MAX_LAG))"
+          printf 'RC6_A630_SLOT=%s\n' "$SLOT" >> "$GITHUB_ENV"
+          printf 'RC6_A630_SCRIPT_SHA=%s\n' "$(sha256sum scripts/rc6_a630_host_ppi_current_book.py | cut -d ' ' -f1)" >> "$GITHUB_ENV"
+          echo 'A630_ART_DATE_AND_WINDOW=PASS|PPI_GETS=0'
+
+      - name: Existing host exact PPI identity via PRIVATE OS RO mount — no GET
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a630_sampling"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a630_sampling" "$HOME/.ssh/known_hosts"
+          remote="sudo -n timeout 20 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-preflight $RC6_A630_SLOT'"
+          mkdir -p evidence
+          set +e
+          timeout 40 ssh -i "$HOME/.ssh/rc6_a630_sampling" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=9 \
+            "$DO_USER@$DO_HOST" "$remote" \
+            < scripts/rc6_a630_host_ppi_current_book.py \
+            > "$RUNNER_TEMP/rc6-a630-host.private" 2>/dev/null
+          rc=$?
+          set -e
+          export RC6_A630_PREFLIGHT_RC="$rc"
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import SCHEMA, REASONS, target_for_slot
+          path=Path(os.environ['RUNNER_TEMP'])/'rc6-a630-host.private'
+          raw=path.read_bytes() if path.exists() and path.stat().st_size<=8192 else b''
+          safe={'schema':SCHEMA,'phase':'HOST_PREFLIGHT','state':'NO_VERIFICADO',
+                'reason':'HOST_PREFLIGHT_OR_RUNTIME_HOLD','ppi_gets':0,
+                'db_opened':False,'sqlite_ro_mount_protected':False,
+                'paper_db_identity_verified':False,'ppi_primary_5key_unique':False}
+          try:
+              doc=json.loads(raw)
+              target=target_for_slot(os.environ['RC6_A630_SLOT'])
+              assert isinstance(doc,dict) and doc.get('schema')==SCHEMA
+              assert doc.get('phase')=='HOST_PREFLIGHT' and doc.get('ppi_gets')==0
+              assert doc.get('orders_sent')==0 and doc.get('source_pit_verified') is False
+              if doc.get('state')=='NO_VERIFICADO' and doc.get('reason') in REASONS:
+                  safe['reason']=doc['reason']
+              assert os.environ['RC6_A630_PREFLIGHT_RC']=='0'
+              assert set(doc)=={'schema','phase','state','reason','ppi_gets','target',
+                  'db_opened','sqlite_ro_mount_protected','paper_db_identity_verified',
+                  'ppi_primary_5key_unique','orders_sent','source_pit_verified'}
+              assert doc['schema']==SCHEMA and doc['phase']=='HOST_PREFLIGHT'
+              assert doc['state']=='IDENTITY_ONLY_NO_GET' and doc['reason']=='PPI_PRIMARY_FIVE_KEY_UNIQUE'
+              assert doc['target']==list(target) and doc['ppi_gets']==doc['orders_sent']==0
+              assert doc['db_opened'] is doc['sqlite_ro_mount_protected'] is True
+              assert doc['paper_db_identity_verified'] is doc['ppi_primary_5key_unique'] is True
+              assert doc['source_pit_verified'] is False
+          except (ValueError,AssertionError,TypeError):
+              Path('evidence/a630_host_preflight.json').write_text(
+                  json.dumps(safe,sort_keys=True)+'\n',encoding='utf-8')
+              raise SystemExit('A630_HOST_PPI_CATALOG_HOLD_ZERO_PROVIDER_GET')
+          safe.update(state='IDENTITY_ONLY_NO_GET',reason='PPI_PRIMARY_FIVE_KEY_UNIQUE',
+              db_opened=True,sqlite_ro_mount_protected=True,
+              paper_db_identity_verified=True,ppi_primary_5key_unique=True)
+          Path('evidence/a630_host_preflight.json').write_text(
+              json.dumps(safe,sort_keys=True)+'\n',encoding='utf-8')
+          b64=base64.b64encode(json.dumps(list(target),separators=(',',':')).encode()).decode()
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f:
+              f.write('RC6_A630_TARGET_B64='+b64+'\n')
+          print('A630_PPI_5KEY_IDENTITY=UNIQUE|HOST_RO=PASS|PROVIDER_GETS=0')
+          PY
+
+      - name: Two STRICT atomic PPI leases Current and Book via existing PAPER container
+        run: |
+          set -Eeuo pipefail
+          set +e
+          timeout --signal=TERM --kill-after=5s 100 ssh \
+            -i "$HOME/.ssh/rc6_a630_sampling" -o BatchMode=yes \
+            -o ConnectTimeout=8 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\n' \"\$image\"; sudo -n timeout 55 docker exec -i -e RC6_A630_TARGET_B64=$RC6_A630_TARGET_B64 -e RC6_A630_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B - container-capture" \
+            < scripts/rc6_a630_host_ppi_current_book.py \
+            > "$RUNNER_TEMP/rc6-a630-capture.private" 2>/dev/null
+          rc=$?
+          set -e
+          export RC6_A630_PROVIDER_RC="$rc"
+          mkdir -p evidence
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import (
+              SCHEMA,decode_target,verify_receipt,unverified_transport_receipt)
+          path=Path(os.environ['RUNNER_TEMP'])/'rc6-a630-capture.private'
+          raw=path.read_bytes() if path.exists() and path.stat().st_size<=65536 else b''
+          lines=raw.decode('utf-8',errors='replace').splitlines()
+          try:
+              target=decode_target(os.environ['RC6_A630_TARGET_B64'])
+              image=lines[0].partition('=')[2] if len(lines)==2 and lines[0].startswith('RUNTIME_IMAGE_ID=') else ''
+              result=json.loads(lines[1]) if image==os.environ['RC6_EXPECTED_IMAGE_ID'] else {}
+              assert verify_receipt(result,target)
+          except (ValueError,AssertionError,TypeError):
+              result=unverified_transport_receipt()
+          public={"schema":"rc6.a630.action.sanitized.v1","run_id":os.environ['GITHUB_RUN_ID'],
+              "control_plane_sha":os.environ['GITHUB_SHA'],
+              "source_sha256":os.environ['RC6_A630_SCRIPT_SHA'],
+              "product_sha":os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+              "image_id":os.environ['RC6_EXPECTED_IMAGE_ID'],
+              "art_date":"2026-11-04","slot":os.environ['RC6_A630_SLOT'],
+              "receipt":result,"ppi_watch_mutations_by_action":0,
+              "real_orders_sent_by_action":0,"predeploy_dispatches":0,"deploy_dispatches":0,
+              "provider_payload_uploaded":False,"provider_signature_verified":False}
+          Path('evidence/a630_ppi_current_book.json').write_text(
+              json.dumps(public,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          print('A630_CURRENT_BOOK='+result['state']+
+                '|current='+str(result.get('current_gets'))+
+                '|book='+str(result.get('book_gets'))+'|PIT=NO_VERIFICADO|real_orders=0')
+          if result['state']!='EVIDENCE_ONLY_NO_GO' or os.environ['RC6_A630_PROVIDER_RC']!='0':
+              raise SystemExit(2)
+          PY
+
+      - name: Always materialize bounded fail-closed receipt when preflight or SSH fails
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          if ! test -s evidence/a630_ppi_current_book.json; then
+            python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import unverified_transport_receipt
+          host=Path('evidence/a630_host_preflight.json')
+          reason='SLOT_OR_DAY_HOLD' if not os.environ.get('RC6_A630_SLOT') else 'HOST_PREFLIGHT_OR_RUNTIME_HOLD'
+          if host.is_file():
+              try:
+                  report=json.loads(host.read_text(encoding='utf-8'))
+                  if (report.get('schema')=='rc6.a630.ppi.current-book.sample.v1'
+                          and report.get('phase')=='HOST_PREFLIGHT'
+                          and report.get('state')=='NO_VERIFICADO'
+                          and report.get('ppi_gets')==0):
+                      reason=report.get('reason',reason)
+              except (OSError,ValueError,TypeError):
+                  pass
+          doc={**unverified_transport_receipt(reason),
+            "schema":"rc6.a630.action.sanitized.v1",
+            "run_id":os.environ['GITHUB_RUN_ID'],"control_plane_sha":os.environ['GITHUB_SHA'],
+            "real_orders_sent_by_action":0,
+            "predeploy_dispatches":0,"deploy_dispatches":0}
+          Path('evidence/a630_ppi_current_book.json').write_text(json.dumps(doc,sort_keys=True)+'\n')
+          PY
+          fi
+
+      - name: Upload sanitized immutable-per-run GitHub artifact (never raw quotes)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a630-ppi-current-book-${{ github.run_id }}
+          path: |
+            evidence/a630_ppi_current_book.json
+            evidence/a630_host_preflight.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove runner-side temporary SSH credentials and raw stdio
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          rm -f "$HOME/.ssh/rc6_a630_sampling" \
+            "$RUNNER_TEMP/rc6-a630-host.private" \
+            "$RUNNER_TEMP/rc6-a630-capture.private"
