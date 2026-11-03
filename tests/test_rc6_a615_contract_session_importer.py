@@ -164,3 +164,9 @@ def test_schema_only_or_no_ticker_never_creates_wildcard_contract(
     result, calls = _import(monkeypatch, tmp_path, [_caucion()], [])
     assert result["records"] == 0 and not calls
     assert "CAUCIONES_SCHEMA_ONLY_NOT_CONTRACT" in result["notes"]
+
+def test_authenticated_empty_capture_never_reports_job_green(monkeypatch, tmp_path):
+    result, calls = _import(monkeypatch, tmp_path, [_caucion()], [])
+    assert result["state"] == "AMARILLO"
+    assert result["records"] == 0 and not calls
+    assert "AUTHENTICATED_XHR_NO_BOUND_CONTRACT_EVIDENCE" in result["notes"]
