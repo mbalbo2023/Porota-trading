@@ -1,0 +1,165 @@
+name: RC6 A626 Financial Contract Host Aggregates READ_ONLY
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/rc6-a626-financial-contract-host-readonly.yml
+      - scripts/rc6_a626_host_contract_aggregates.py
+      - tests/test_rc6_a626_host_contract_aggregates.py
+  workflow_dispatch:
+    inputs:
+      permit_readonly_host_probe:
+        description: 'Confirma una sola consulta host PAPER en namespace de montaje privado RO'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a626-financial-contract-host-readonly
+  cancel-in-progress: false
+
+jobs:
+  offhost-focused-ci:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Strict no-host synthetic regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          python -m pip install --disable-pip-version-check pytest==9.2.0
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -o addopts='' \
+            tests/test_rc6_a626_host_contract_aggregates.py
+          echo 'A626_HOST_PROBE_CI=GREEN|host_access=0|real_orders_sent=0'
+
+  aggregate:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref_name == 'main' && inputs.permit_readonly_host_probe == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify immutable workflow checkout and source safety
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -s scripts/rc6_a626_host_contract_aggregates.py
+          python3 -B - <<'PY'
+          import ast
+          from pathlib import Path
+          src = Path('scripts/rc6_a626_host_contract_aggregates.py').read_text()
+          ast.parse(src)
+          assert 'sqlite3.connect' in src
+          assert 'mode=ro' in src
+          assert 'immutable=1' not in src
+          assert 'private_ro_mount_verified' in src
+          print('A626_RO_CODE_STATIC_GATE=GREEN')
+          PY
+      - name: Prepare strict ephemeral SSH credentials on runner only
+        shell: bash
+        env:
+          RC6_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          RC6_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$RC6_SSH_KEY"
+          test -n "$RC6_KNOWN_HOSTS"
+          umask 077
+          mkdir -p "$RUNNER_TEMP/a626-ssh"
+          printf '%s\n' "$RC6_SSH_KEY" > "$RUNNER_TEMP/a626-ssh/key"
+          printf '%s\n' "$RC6_KNOWN_HOSTS" > "$RUNNER_TEMP/a626-ssh/known_hosts"
+      - name: Remote private mount namespace RO bounded SQL aggregates
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST"
+          test -n "$DO_USER"
+          set +e
+          ssh -i "$RUNNER_TEMP/a626-ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/a626-ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 25 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B -'" \
+            < scripts/rc6_a626_host_contract_aggregates.py \
+            > "$RUNNER_TEMP/a626-contract-aggregate.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          RC6_A626_REMOTE_RC="$remote_rc" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report_file = Path(os.environ['RUNNER_TEMP']) / 'a626-contract-aggregate.json'
+          try:
+              obj = json.loads(report_file.read_text(encoding='utf-8'))
+          except (OSError, ValueError):
+              obj = {'schema': 'rc6.a626.host-contract-aggregates-ro.v1',
+                     'status': 'NO_VERIFICADO',
+                     'reason': 'REMOTE_RO_NAMESPACE_OR_READ_UNAVAILABLE'}
+          schema = 'rc6.a626.host-contract-aggregates-ro.v1'
+          assert obj.get('schema') == schema, 'A626_WRONG_SCHEMA'
+          if os.environ['RC6_A626_REMOTE_RC'] != '0':
+              reason = obj.get('reason', 'REMOTE_RO_NAMESPACE_OR_READ_UNAVAILABLE')
+              assert isinstance(reason, str) and reason.startswith(('HOST_', 'REMOTE_'))
+              print(json.dumps({'schema': schema, 'status': 'NO_VERIFICADO',
+                                'reason': reason}, sort_keys=True))
+              raise SystemExit(3)
+          assert obj.get('status') == 'DIAGNOSTIC_ONLY', 'A626_NOT_DIAGNOSTIC'
+          assert obj.get('private_ro_mount_verified') is True
+          assert obj.get('paper_workspace_identity_verified') is True
+          assert obj.get('paper_auto_enabled') is False
+          assert obj.get('ppi_identity_authority_verified') is False
+          assert obj.get('host_db_writes') == obj.get('provider_gets') == 0
+          expected = {'BONOS','OBLIGACIONES','OPCIONES','FUTUROS','CAUCIONES','FCI'}
+          families = obj.get('families')
+          assert isinstance(families, list) and len(families) == 6
+          assert {row['family'] for row in families} == expected
+          assert sum(row['capability_gaps'] for row in families) == obj['capability_gaps_measured']
+          allowed = {'schema','status','runtime_path','private_ro_mount_verified',
+                     'paper_workspace_identity_verified','ppi_identity_authority_verified',
+                     'source_contract_terms_fresh_verified','causal_pit_verified',
+                     'v2_payload_hash_checked','host_db_writes','provider_gets',
+                     'real_orders_sent_by_probe','paper_auto_enabled','host_runtime_order_count',
+                     'catalog_rows','v2_current_rows','historical_819_gap_match',
+                     'capability_gaps_measured','families','wal_present','shm_present',
+                     'journal_present','db_bytes','measured_at_utc'}
+          assert set(obj) <= allowed, 'A626_UNEXPECTED_OUTPUT_FIELDS'
+          safe_family = {'family','catalog_active','catalog_prelim_ready',
+                         'capability_gaps','gap_ppi_catalog_claimed',
+                         'gap_complement_catalog_only','gap_ticker_ambiguous',
+                         'gap_incomplete_five_key','exact_current_v2_ppi',
+                         'exact_current_v2_complement_only','ticker_only_v2_mismatch',
+                         'v2_current_absent','historic_ppi_exact_without_current',
+                         'catalog_financial_contract_v17_declared',
+                         'catalog_fund_terms_v1_declared','catalog_caucion_terms_v1_declared',
+                         'catalog_contract_conflicts_declared','capability_codes'}
+          for row in families:
+              assert set(row) == safe_family, 'A626_UNEXPECTED_FAMILY_FIELDS'
+              assert all(isinstance(v, int) and v >= 0 for k,v in row.items()
+                         if k not in {'family','capability_codes'})
+              assert isinstance(row['capability_codes'], dict)
+              assert all(str(k).isupper() and isinstance(v,int) and v>=0
+                         for k,v in row['capability_codes'].items())
+          print(json.dumps(obj, sort_keys=True, separators=(',',':')))
+          print('A626_HOST_READONLY_AGGREGATES=GREEN|NO_HOST_WRITES|NO_PROVIDER_GET|NO_ORDERS')
+          PY
