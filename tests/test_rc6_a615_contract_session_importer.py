@@ -127,6 +127,8 @@ def test_caucion_unique_ppi_identity_is_partial_not_ars_principal(
     }])
     # Contradictory payment currency is a valuation hint, not trading identity.
     assert result["records"] == 1 and result["conflicts"] == 0
+    assert result["state"] == "AMARILLO"
+    assert "CAUCIONES_PARTIAL_UNIT_UNVERIFIED" in result["notes"]
     assert len(calls) == 1
     target = calls[0]
     assert (target["ticker"], target["family"], target["market"],
@@ -159,11 +161,19 @@ def test_caucion_cross_currency_ambiguity_cannot_fanout(
                for x in result["notes"])
 
 
-def test_schema_only_or_no_ticker_never_creates_wildcard_contract(
-        monkeypatch, tmp_path):
+def test_schema_only_never_creates_wildcard_contract(monkeypatch, tmp_path):
     result, calls = _import(monkeypatch, tmp_path, [_caucion()], [])
     assert result["records"] == 0 and not calls
     assert "CAUCIONES_SCHEMA_ONLY_NOT_CONTRACT" in result["notes"]
+
+
+def test_missing_ticker_never_creates_wildcard_contract(monkeypatch, tmp_path):
+    result, calls = _import(monkeypatch, tmp_path, [_caucion()], [
+        {"tenor_days": 1, "quantity": 1}
+    ])
+    assert result["records"] == 0 and result["conflicts"] == 1
+    assert not calls
+    assert "CAUCIONES_PPI_FIVE_KEY_ABSENT_AMBIGUOUS_UNKNOWN" in result["notes"]
 
 def test_authenticated_empty_capture_never_reports_job_green(monkeypatch, tmp_path):
     result, calls = _import(monkeypatch, tmp_path, [_caucion()], [])
