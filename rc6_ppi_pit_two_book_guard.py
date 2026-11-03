@@ -47,12 +47,18 @@ def _base(family_group: str, decision_key: str) -> dict[str, Any]:
         "journal_chain_tip_sha256": None,
         "decision_snapshot_sha256": None,
         "decision_snapshot_digest_verified": False,
+        "claimed_decision_at": None,
+        "snapshot_captured_at": None,
+        "decision_receipt_known_at": None,
+        "decision_receipt_known_at_verified": False,
         "decision_signature_verified": False,
         "decision_origin_independently_verified": False,
         "source_artifact_independently_verified": False,
         "book1_asof_quote_bound": False,
         "book2_strictly_future": False,
         "book2_first_top_positive": False,
+        "market_clock_pair_relative_to_claimed_decision": False,
+        "two_book_clock_witness_scope": "NONE_WITHOUT_DECISION_RECEIPT_KNOWN_AT",
         "two_book_clock_witness": False,
         "quantity_unit_verified": False,
         "price_unit_verified": False,
@@ -139,7 +145,8 @@ def diagnose_two_book_pit(
 ) -> dict[str, Any]:
     """Explain an as-of decision + first future PPI Book2, without ever filling.
 
-    A valid clock witness is *necessary but not sufficient* for a PAPER fill.
+    A pair of market clocks compared to a *claimed* decision timestamp is
+    necessary but not sufficient for a genuine causal decision witness.
     The amount, charges, executable settlement, producer authentication and
     independent decision signature remain absent and cannot be caller asserted.
     FCI is NAV/cutoff-based, never an order-book IOC market fill.
@@ -189,6 +196,20 @@ def diagnose_two_book_pit(
             or _aware(used.get("observed_at")) is None
             or _aware(used["observed_at"]) > _aware(decision_at)):
         return {**result, "state": "BLOQUEADO", "reason": "DECISION_CAUSAL_CLOCK_UNATTESTED"}
+    # In the actual PAPER engine, a NATIVE_DECISION snapshot's captured_at is
+    # q.observed_at; it is NOT when SQLite committed the decision receipt.
+    # ATOMIC_PAPER_ADMISSION can instead set captured_at=recorded_at, *after*
+    # the simulation fill. Neither timestamp authenticates when a pre-Book2
+    # decision receipt was independently known. Do not substitute either for
+    # decision_receipt_known_at. The latter stays UNVERIFIED unconditionally.
+    captured_at = payload.get("captured_at")
+    if (_aware(captured_at) is None or
+            (payload["capture_phase"] == "NATIVE_DECISION"
+             and captured_at != used["observed_at"]) or
+            (payload["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
+             and _aware(captured_at) < _aware(decision_at))):
+        return {**result, "state": "BLOQUEADO", "reason": "DECISION_CAPTURE_PHASE_CLOCK_INVALID"}
+    result.update(claimed_decision_at=decision_at, snapshot_captured_at=captured_at)
 
     rows, verified = verified_native_book_journal(Path(journal_path))
     result["journal_chain_tip_sha256"] = verified.get("latest_sha256")
@@ -236,8 +257,12 @@ def diagnose_two_book_pit(
     if not result["book2_first_top_positive"]:
         return {**result, "reason": "PPI_BOOK2_FIRST_TOP_DEPTH_ZERO_OR_ABSENT"}
 
-    result["two_book_clock_witness"] = True
-    return {**result, "reason": "PIT_TWO_BOOK_WITNESS_ONLY_NOT_AN_AUTHENTICATED_FILL"}
+    # This proves a market-clock ordering only *relative to a self-described*
+    # decision_at. The producer did not attest the receipt was independently
+    # materialized before Book2. A forged/correctly hashed snapshot may be
+    # written after Book2: treating this as full causal witness is look-ahead.
+    result["market_clock_pair_relative_to_claimed_decision"] = True
+    return {**result, "reason": "PIT_MARKET_CLOCK_PAIR_ONLY_DECISION_RECEIPT_KNOWN_AT_UNVERIFIED"}
 
 
 def diagnostics_json(*args: Any, **kwargs: Any) -> str:
