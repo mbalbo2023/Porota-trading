@@ -58,10 +58,14 @@ DEFAULT_LOCK = Path("/var/lock/porota-rc6-source-cycle.lock")
 # reference/evidence stages of the same PAPER-only cycle.
 DEFAULT_IOL_BOOTSTRAP = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
 STAGES = (
-    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
-     "iol_shadow_latest.json"),
+    # The public SHADOW reference has a strict 60-second TTL.  An optional
+    # IOL child may consume 110 seconds; it must never delay the *start* of
+    # this independent public stage.  The economic source ranking remains
+    # PPI primary, with IOL/public sources complementary only.
     ("public", "scripts/rc6_public_source_capture.py", 50,
      "rc6_public_sources_latest.json"),
+    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
+     "iol_shadow_latest.json"),
     ("evidence", "scripts/rc6_full_universe_evidence.py", 25,
      "rc6_instrument_evidence_latest.json"),
 )
@@ -324,19 +328,31 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         # After 17:00 only the exact T+1/regular-options BYMA IOL subset may
         # be observed. Public-source sweeping and global projections keep the
         # established baseline and are not silently extended by this timer.
-        stages = STAGES[:1] if late else STAGES
+        # Late COM19031 is IOL exact-T+1 only.  Do not select by tuple
+        # position: the regular session intentionally prioritizes PUBLIC.
+        stages = tuple(row for row in STAGES if row[0] == "iol") if late else STAGES
+        # Preflight *every* due output before the first child.  A malicious
+        # later-stage alias must not be detected only after PUBLIC published.
+        # Absent IOL OAuth never blocks the independent public/evidence path.
+        iol_admitted = _iol_bootstrap_present(iol_bootstrap)
+        permitted = {name: due[name] and (name != "iol" or iol_admitted)
+                     for name, _, _, _ in stages}
+        original_outputs = {
+            name: _published_file_identity(market_root / output)
+            for name, _, _, output in stages if permitted[name]
+        }
         for name, relative, timeout, output in stages:
             if not due[name]:
                 results[name] = "NOT_DUE_TTL"
                 continue
-            if name == "iol" and not _iol_bootstrap_present(iol_bootstrap):
+            if name == "iol" and not iol_admitted:
                 # The former systemd ConditionPathExists suppressed *all*
                 # stages. Preserve the IOL-specific guard without treating
                 # an unavailable complement as a blocker for public/evidence.
                 results[name] = "COMPLEMENT_AUTH_UNAVAILABLE"
                 continue
             output_path = market_root / output
-            before_publication = _published_file_identity(output_path)
+            before_publication = original_outputs[name]
             try:
                 result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
                                 env=child_env, capture_output=True, text=True,

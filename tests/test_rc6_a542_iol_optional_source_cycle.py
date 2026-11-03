@@ -19,9 +19,9 @@ ART = ZoneInfo("America/Argentina/Buenos_Aires")
 OUTPUTS = {Path(script).name: filename for _, script, _, filename in dispatch.STAGES}
 
 
-def _run(tmp_path, writer, *, minute=30, bootstrap=None):
+def _run(tmp_path, writer, *, minute=30, bootstrap=None, now=None):
     return dispatch.run_cycle(
-        now=datetime(2026, 10, 28, 10, minute, tzinfo=ART),
+        now=now or datetime(2026, 10, 28, 10, minute, tzinfo=ART),
         db=tmp_path / "paper.db", market_root=tmp_path / "market",
         lock=tmp_path / "source.lock", runner=writer,
         iol_bootstrap=bootstrap or tmp_path / "missing-iol-bootstrap.json",
@@ -89,6 +89,46 @@ class IolOptionalSourceCycleTest(unittest.TestCase):
         assert result["stages"] == {"iol": "OK", "public": "OK", "evidence": "OK"}
         assert writer.calls == [Path(script).name for _, script, _, _ in dispatch.STAGES]
 
+    def test_optional_iol_failure_never_precedes_public_publication(self):
+        bootstrap = self.workspace / "iol_bootstrap.json"
+        bootstrap.write_text("{}", encoding="utf-8")
+        # The real IOL collector consumes rc6_public_sources_latest.json at
+        # consolidation time; this probe rejects reading a previous cycle.
+        class ReadsCurrentPublic(FakeWriter):
+            def __call__(self, command, **kwargs):
+                if Path(command[1]).name == "rc6_iol_shadow_collect.py":
+                    assert (self.market / "rc6_public_sources_latest.json").is_file()
+                return super().__call__(command, **kwargs)
+
+        writer = ReadsCurrentPublic(self.workspace / "market",
+                                    fail={"rc6_iol_shadow_collect.py"})
+        result = _run(self.workspace, writer, bootstrap=bootstrap)
+        assert result["status"] == "DEGRADED"
+        assert result["stages"] == {"public": "OK", "iol": "FAILED", "evidence": "OK"}
+        assert writer.calls == ["rc6_public_source_capture.py",
+                                "rc6_iol_shadow_collect.py",
+                                "rc6_full_universe_evidence.py"]
+        assert (self.workspace / "market" / "rc6_public_sources_latest.json").exists()
+        assert (self.workspace / "market" / "rc6_instrument_evidence_latest.json").exists()
+
+    def test_com19031_late_source_selects_iol_by_name_not_stage_position(self):
+        bootstrap = self.workspace / "iol_bootstrap.json"
+        bootstrap.write_text("{}", encoding="utf-8")
+        writer = FakeWriter(self.workspace / "market")
+        result = _run(self.workspace, writer, bootstrap=bootstrap,
+                      now=datetime(2026, 11, 3, 17, 15, tzinfo=ART))
+        assert result["status"] == "COMPLETE"
+        assert result["reason"] == "COM19031_EXACT_LATE_T1_OBSERVE_ONLY"
+        assert result["stages"] == {"iol": "OK"}
+        assert writer.calls == ["rc6_iol_shadow_collect.py"]
+        assert not (self.workspace / "market" / "rc6_public_sources_latest.json").exists()
+        assert not (self.workspace / "market" / "rc6_instrument_evidence_latest.json").exists()
+        assert not (self.workspace / "market" / "rc6_source_cycle_dispatch_state.json").exists()
+        assert dispatch.phase_status(datetime(2026, 11, 3, 18, 8, tzinfo=ART),
+                                     "postclose_snapshot")[0] is True
+        assert dispatch.phase_status(datetime(2026, 11, 3, 18, 8, tzinfo=ART),
+                                     "late_source")[0] is False
+
     def test_bootstrap_symlink_cannot_enable_iol_but_public_continues(self):
         real_file = self.workspace / "private-oauth.json"
         real_file.write_text("not used", encoding="utf-8")
@@ -132,7 +172,8 @@ class IolOptionalSourceCycleTest(unittest.TestCase):
         assert "10:30..59:00 America/Argentina/Buenos_Aires" in timer
         assert "AccuracySec=5s" in timer
         assert "ConditionPathExists=/root/.config/porota/iol_mcp_oauth_bootstrap.json" in oauth_health
-        assert [row[2] for row in dispatch.STAGES] == [110, 50, 25]
+        assert [(row[0], row[2]) for row in dispatch.STAGES] == [
+            ("public", 50), ("iol", 110), ("evidence", 25)]
         assert dispatch.PUBLIC_TTL_SECONDS == 60
         assert dispatch.EVIDENCE_TTL_SECONDS == 300
 

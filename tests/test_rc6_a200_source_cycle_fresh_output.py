@@ -120,6 +120,17 @@ class SourceCyclePublicationTest(unittest.TestCase):
             self.cycle(collector)
         self.assertEqual(collector.calls, [])
 
+    def test_unsafe_later_evidence_output_blocks_before_public_child(self):
+        target = self.root / "foreign.json"
+        target.write_text('{"protected":true}', encoding="utf-8")
+        (self.market / "rc6_instrument_evidence_latest.json").symlink_to(target)
+        collector = Collector(self.market, publishing=OUTPUTS)
+        with self.assertRaisesRegex(dispatch.SourceCycleBlocked, "SOURCE_CYCLE_OUTPUT_UNSAFE"):
+            self.cycle(collector)
+        self.assertEqual(collector.calls, [])
+        self.assertFalse((self.market / "rc6_public_sources_latest.json").exists())
+        self.assertEqual(target.read_text(encoding="utf-8"), '{"protected":true}')
+
 
 if __name__ == "__main__":
     unittest.main()
