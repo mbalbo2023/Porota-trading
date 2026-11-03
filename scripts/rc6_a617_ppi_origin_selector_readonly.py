@@ -17,6 +17,7 @@ from pathlib import Path
 import sqlite3
 import stat
 import sys
+import uuid
 from urllib.parse import quote
 
 
@@ -173,6 +174,52 @@ def _tables(conn):
     return {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
+def _mount_is_readonly(path: Path):
+    """Only query SQLite after the host Action creates a private RO bind mount.
+
+    SQLite URI mode=ro alone does NOT prove zero SHM writes in WAL mode. Never
+    use immutable=1 against a live WAL database. The mount guard must hold
+    for the longest matching mount point inside the *current* namespace.
+    """
+    chosen_length = -1
+    readonly = False
+    try:
+        for line in Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines():
+            fields = line.split(" - ", 1)[0].split()
+            if len(fields) < 6:
+                continue
+            mount = fields[4].replace("\\040", " ")
+            if (mount != "/" and path != Path(mount) and
+                    not str(path).startswith(mount.rstrip("/") + "/")):
+                continue
+            if len(mount) > chosen_length:
+                chosen_length = len(mount)
+                readonly = "ro" in fields[5].split(",")
+    except (OSError, UnicodeError, ValueError):
+        return False
+    return chosen_length >= 0 and readonly
+
+
+def _verified_paper_db(conn, tables):
+    """Verify the paper workspace marker; never export its private UUID."""
+    if "paper_workspace" not in tables:
+        return False
+    names = {str(row[1]) for row in conn.execute("PRAGMA table_info(paper_workspace)")}
+    required = {"id", "namespace", "origin", "imported_legacy", "dataset_id"}
+    if not required <= names:
+        return False
+    rows = conn.execute("""SELECT id,namespace,origin,imported_legacy,dataset_id
+      FROM paper_workspace LIMIT 2""").fetchall()
+    if len(rows) != 1:
+        return False
+    row = rows[0]
+    try:
+        return (row[:4] == (1, "POROTA_PAPER_V17_FRESH", "FRESH_EMPTY", 0)
+                and str(uuid.UUID(row[4])) == row[4])
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
 def _columns(conn, table):
     if table not in {"candidate_identity_v2", "candidate_universe", "market_snapshots",
                      "financial_instrument_catalog", "universe_cycle_metrics"}:
@@ -294,11 +341,14 @@ def _cycle_report(conn, tables):
         return {**result, "reason": "CYCLE_DETAIL_PARSE_HOLD"}
 
 
-def diagnose(db: Path = DB, root: Path = MARKET_ROOT):
+def diagnose(db: Path = DB, root: Path = MARKET_ROOT, *, enforce_ro_mount=True):
     report = {"schema": SCHEMA, "read_only": True, "db_opened": False,
               "provider_gets": 0, "orders_called": False, "admission_authority": False,
               "causal_fill_verified": False, "runtime_sha_verified": False,
               "effective_ppi_lease": "NO_VERIFICADO", "exit_budget_reserved": "NO_VERIFICADO",
+              "runtime_db_binding_verified": False,
+              "db_fixed_path_identity_verified": False,
+              "sqlite_ro_mount_protected": False,
               "source_provenance_authorized": False,
               "state": "NO_VERIFICADO", "reason": "DB_RO_UNAVAILABLE"}
     receipt, receipt_rows = _receipt_report(root)
@@ -309,11 +359,22 @@ def diagnose(db: Path = DB, root: Path = MARKET_ROOT):
     try:
         if not db.is_absolute() or db.is_symlink():
             raise ValueError("DB_PATH_HOLD")
+        # The Action must establish a PRIVATE read-only bind mount before any
+        # SQLite access. A writable host mount is a hard stop even for URI ro:
+        # WAL readers can create/update -shm; immutable=1 is never a fix.
+        if enforce_ro_mount and not _mount_is_readonly(db):
+            report["reason"] = "SQLITE_READONLY_MOUNT_REQUIRED"
+            return report
+        report["sqlite_ro_mount_protected"] = bool(enforce_ro_mount)
         uri = "file:" + quote(str(db), safe="/") + "?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=0.35, isolation_level=None)
         conn.execute("PRAGMA query_only=ON")
         tables = _tables(conn)
         report["db_opened"] = True
+        if not _verified_paper_db(conn, tables):
+            report["reason"] = "PAPER_V17_DATABASE_IDENTITY_HOLD"
+            return report
+        report["db_fixed_path_identity_verified"] = True
         report["selector"] = _selector_report(conn, tables)
         report["snapshots"] = _snapshot_report(conn, tables, receipt_rows)
         report["scanner_cycle"] = _cycle_report(conn, tables)
