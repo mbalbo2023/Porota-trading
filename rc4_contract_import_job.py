@@ -17,6 +17,15 @@ MAX_PRIMARY_ROWS=20_000
 PPI_SETTLEMENT_SOURCES=frozenset({'PPI_FIELD','REQUEST_CANDIDATE'})
 UNKNOWN_IDENTITY=frozenset({'','UNKNOWN','*'})
 
+UNBOUND_REFERENCE_KEYS=frozenset({
+    'appliedexchangerate','amountinvested','amountinvestedars',
+    'paymentcurrency','fxrate','exchangeconvertionrate',
+})
+
+def _unbound_reference_key(key):
+    # IOL/account valuation hints must never be promoted to PPI contract FX.
+    return ''.join(c for c in str(key).lower() if c.isalnum()) in UNBOUND_REFERENCE_KEYS
+
 def candidates(store):
     """Unique complete PPI-primary five-key per ticker, across ALL statuses.
 
@@ -91,6 +100,7 @@ def _source_evidence(row,*,exclude_fees=False):
         unbound_fees={}
     evidence={k:v for k,v in data.items()
               if k not in {'ticker','currency','market','settlement'}
+              and not _unbound_reference_key(k)
               and v not in (None,'',[],{})}
     if row.get('currency') not in (None,'',[],{}):
         evidence['provider_currency']=row['currency']
