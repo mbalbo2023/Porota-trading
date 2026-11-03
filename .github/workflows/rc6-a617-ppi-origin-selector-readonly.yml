@@ -89,6 +89,7 @@ jobs:
                 'db_fixed_path_identity_verified':False,
                 'sqlite_ro_mount_protected':False,
                 'effective_ppi_lease':'NO_VERIFICADO','exit_budget_reserved':'NO_VERIFICADO'}
+          failed_closed=safe.copy()
           def counter(obj,key,maximum):
               value=obj.get(key)
               return value if type(value) is int and 0 <= value <= maximum else None
@@ -159,7 +160,7 @@ jobs:
               }.items():
                   cycle[field]=allowed(obj.get('scanner_cycle',{}),field,values)
           except (OSError,ValueError,TypeError,UnicodeError):
-              pass
+              safe=failed_closed
           safe['remote_exit_code_class']='ZERO' if os.environ['REMOTE_RC']=='0' else 'NONZERO'
           Path('evidence/a617_ppi_origin_selector.json').write_text(
               json.dumps(safe,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
