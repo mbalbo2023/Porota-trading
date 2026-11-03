@@ -64,7 +64,9 @@ def test_marginal_positive_legacy_net_is_a_v2_negative_paper_hold(tmp_path, monk
         Decimal("20.55"), Decimal("20.34"), Decimal("0.21"))
     assert fee == conservative_public_modeled_fee(AMOUNT, interest, 3) == Decimal("23.52")
     assert net == Decimal("-2.97")
-    with pytest.raises(ValueError, match="retorno neto positivo"):
+    # Negative net is still established independently by the V2 economics
+    # model; runtime now rejects the unattested PPI Book quantity unit first.
+    with pytest.raises(ValueError, match="CAUCION_BOOK_QUANTITY_UNIT_UNVERIFIED"):
         broker.place_caucion(offer, AMOUNT, "A237:NET_NEGATIVE", as_of=MONDAY)
     # Reusing the old fee token is not a route to bypass the new PAPER gate.
     with pytest.raises(ValueError, match="CAUCION_RUNTIME_PPI_LIVE_CONTRACT_REQUIRED"):
