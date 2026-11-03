@@ -22,7 +22,7 @@ import resource
 import sqlite3
 import stat
 import sys
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 import uuid
 
 SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
@@ -312,7 +312,7 @@ class TwoGetAtomicBudget:
 
 
 @contextmanager
-def _http_body_hashes():
+def _http_body_hashes(target):
     """Hash bounded decompressed HTTP response body in the ephemeral process.
 
     Digest is NOT the original compressed TLS wire bytes, nor a PPI signature.
@@ -327,7 +327,22 @@ def _http_body_hashes():
         path = parsed.path.lower().rstrip("/")
         if path not in {"/api/1.0/marketdata/current", "/api/1.0/marketdata/book"}:
             return original(response, chunk_size=chunk_size, decode_unicode=decode_unicode)
-        if parsed.scheme != "https" or parsed.hostname != PPI_HOST:
+        try:
+            restricted = (parsed.scheme != "https" or parsed.hostname != PPI_HOST
+                or parsed.port not in (None, 443) or parsed.username is not None
+                or parsed.password is not None or bool(parsed.fragment))
+        except ValueError:
+            restricted = True
+        if restricted:
+            raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
+        # Official PPI Book and Current GETs require Ticker/Type/Settlement.
+        # Do not persist/log query strings, and never silently resolve aliases.
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        canonical = [(key.lower(), value) for key, value in query]
+        if (len(canonical) != 3 or len({key for key, _ in canonical}) != 3 or
+                dict(canonical) != {"ticker": target[0],
+                                  "type": PPI_TYPES[target[1]],
+                                  "settlement": target[4]}):
             raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
         if any(hit[0] == path for hit in hits):
             raise ValueError("PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
@@ -385,7 +400,7 @@ def capture_two(target, credentials, shared_budget, reader_factory,
     reads = {"current": None, "book": None}
     events = []
     reader = None
-    limiter = http_limiter or _http_body_hashes
+    limiter = http_limiter or (lambda: _http_body_hashes(target))
     observed = clock or (lambda: datetime.now(timezone.utc))
     try:
         def audit(method, path, action):
