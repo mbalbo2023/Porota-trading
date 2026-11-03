@@ -2,6 +2,8 @@ name: RC6 A617 PPI origin selector READ_ONLY
 
 # Only main can execute the host probe; PRs run self-contained tests.
 # No provider endpoint, Docker exec, live SQLite copy, runtime change, or order.
+# WAL may mutate -shm even with SQLite mode=ro. Only a private OS read-only
+# bind mount may open the DB; missing unshare/mount authority fails closed.
 on:
   workflow_dispatch:
   pull_request:
@@ -59,7 +61,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_a617_ppi_ro" "$HOME/.ssh/known_hosts"
           mkdir -p evidence
-      - name: Bounded host aggregate SQL and private receipt audit — ZERO PPI GET
+      - name: Private mount-namespace READ_ONLY host audit — ZERO PPI GET
         run: |
           set -Eeuo pipefail
           set +e
@@ -67,7 +69,8 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" 'sudo -n timeout 24 python3 -B - host-probe' \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 24 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-probe"' \
             < scripts/rc6_a617_ppi_origin_selector_readonly.py \
             > evidence/.host_raw.json 2>/dev/null
           remote_rc=$?
@@ -82,6 +85,9 @@ jobs:
                 'db_opened':False,'provider_gets':0,'orders_called':False,
                 'admission_authority':False,'causal_fill_verified':False,
                 'source_provenance_authorized':False,'runtime_sha_verified':False,
+                'runtime_db_binding_verified':False,
+                'db_fixed_path_identity_verified':False,
+                'sqlite_ro_mount_protected':False,
                 'effective_ppi_lease':'NO_VERIFICADO','exit_budget_reserved':'NO_VERIFICADO'}
           def counter(obj,key,maximum):
               value=obj.get(key)
@@ -102,6 +108,7 @@ jobs:
                   obj.get('runtime_sha_verified') is not False or
                   obj.get('effective_ppi_lease')!='NO_VERIFICADO' or
                   obj.get('exit_budget_reserved')!='NO_VERIFICADO' or
+                  obj.get('runtime_db_binding_verified') is not False or
                   os.environ['REMOTE_RC']!='0'):
                   raise ValueError('UNTRUSTED_OR_FAILED_HOST')
               safe['state']=allowed(obj,'state',{'READ_ONLY_OBSERVED','NO_VERIFICADO'})
@@ -109,6 +116,12 @@ jobs:
                 'SOURCE_AND_SELECTOR_AGGREGATES_NOT_PAPER_AUTHORITY',
                 'DB_RO_QUERY_UNAVAILABLE'})
               safe['db_opened']=obj.get('db_opened') is True
+              safe['sqlite_ro_mount_protected']=obj.get('sqlite_ro_mount_protected') is True
+              safe['db_fixed_path_identity_verified']=obj.get('db_fixed_path_identity_verified') is True
+              if safe['state']=='READ_ONLY_OBSERVED' and not (
+                 safe['db_opened'] and safe['sqlite_ro_mount_protected'] and
+                 safe['db_fixed_path_identity_verified']):
+                  raise ValueError('DB_RO_MOUNT_OR_IDENTITY_UNVERIFIED')
               for name in ('scanner_receipt','native_book_journal','selector',
                            'snapshots','scanner_cycle'):
                   section=obj.get(name,{})
