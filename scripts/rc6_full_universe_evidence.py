@@ -17,7 +17,10 @@ from typing import Any
 
 from rc6_family_readiness import CANONICAL_PAPER_FAMILIES, normalize_family
 from rc6_dynamic_universe.sources import _canonical_identity
-from rc6_ppi_scanner_provenance import primary_records as scanner_primary_records
+from rc6_ppi_scanner_provenance import (
+    NATIVE_QUOTE_MAX_AGE_SECONDS, ORIGIN, native_trade_book_ready,
+    primary_records as scanner_primary_records,
+)
 from rc6_shadow_runtime.source_authority import native_time, receipt_time, source_rank
 from rc6_source_consolidation import consolidate, _fold_source
 
@@ -377,8 +380,10 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
     row = row or {}
     quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
     evidence = {**row, **quote}
-    observed = native_time(evidence)
-    limit = PPI_FRESH_SECONDS if source == "PPI" else FRESH_SECONDS
+    # For PPI, a separate book clock and an actual native trade are required;
+    # source/capture-at alone cannot establish quote selection freshness.
+    observed = evidence.get("trade_at") if source == "PPI" else native_time(evidence)
+    limit = min(PPI_FRESH_SECONDS, NATIVE_QUOTE_MAX_AGE_SECONDS) if source == "PPI" else FRESH_SECONDS
     freshness = age_state(observed, limit, current)
     received = iso(receipt_time(evidence))
     key = _exact_key(evidence)
@@ -389,7 +394,11 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
     source_available = source_state in {"READY", "LIVE_FRESH", "FRESH", "AVAILABLE", "OBSERVE_ONLY"}
     primary_authority = source != "PPI" or source_rank(evidence.get("source")) == 0
     available = bool(received and datetime.fromisoformat(received) <= current and freshness["observed_at"] and datetime.fromisoformat(freshness["observed_at"]) <= datetime.fromisoformat(received))
-    eligible = bool(identity_match and not review and available and source_available and primary_authority and freshness["state"] == "FRESH" and numeric_present(evidence))
+    ppi_native_ready = (source != "PPI" or native_trade_book_ready(
+        evidence, current, receipt=receipt_time(evidence),
+        require_trade_kind=bool(evidence.get("provider_origin") == ORIGIN)))
+    eligible = bool(identity_match and not review and available and source_available and primary_authority
+                    and freshness["state"] == "FRESH" and numeric_present(evidence) and ppi_native_ready)
     return {"present": bool(row), "structured": numeric_present(evidence), "freshness": freshness,
         "capture_observed_at": received, "capture_is_provider_time": False, "identity": list(key) if key else None,
         "identity_binding": "EXACT_FIVE_PART_IDENTITY" if identity_match else "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED",

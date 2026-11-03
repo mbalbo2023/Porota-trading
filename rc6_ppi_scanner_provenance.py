@@ -30,6 +30,10 @@ MAX_BYTES = 2 * 1024 * 1024
 # Preserve after-hours diagnostics without making old values fresh. The two
 # consuming pipelines independently apply their own native-clock freshness.
 RETENTION_SECONDS = 48 * 3600
+# The IOL scanner primary reader already required both native clocks within
+# 300 seconds. Share that stricter bound with the scanner and ledger so a
+# stale book cannot become PAPER-ready through another consumer.
+NATIVE_QUOTE_MAX_AGE_SECONDS = 300
 
 
 def _aware(value: Any) -> datetime | None:
@@ -55,6 +59,33 @@ def _positive_last(value: Any) -> bool:
     except (InvalidOperation, TypeError, ValueError):
         return False
     return amount.is_finite() and amount > 0
+
+
+def native_trade_book_ready(row: dict[str, Any], current: datetime, *,
+                            receipt: Any = None, require_trade_kind: bool = False) -> bool:
+    """Pure PPI selection prerequisite, never an execution authority.
+
+    Native TRADE and BOOK clocks are independently recent at the consumer's
+    cutoff. A publication/receipt clock cannot stand in for either one.
+    """
+    if current.tzinfo is None or current.utcoffset() is None:
+        return False
+    received = _aware(row.get("received_at") if receipt is None else receipt)
+    trade_at = _aware(row.get("trade_at"))
+    declared_source_at = row.get("source_at")
+    source_at = _aware(declared_source_at)
+    source_consistent = bool(source_at == trade_at if declared_source_at not in (None, "")
+                             else not require_trade_kind)
+    book_at = _aware(row.get("book_at"))
+    at = current.astimezone(timezone.utc)
+    kind = row.get("last_kind")
+    return bool(received and trade_at and source_consistent and book_at
+                and (kind == "TRADE" if require_trade_kind else kind in (None, "", "TRADE"))
+                and row.get("review_status") in (None, "", "NO_CURRENT_CONFLICT")
+                and _positive_last(row.get("last"))
+                and trade_at <= received <= at and book_at <= received
+                and 0 <= (at - trade_at).total_seconds() <= NATIVE_QUOTE_MAX_AGE_SECONDS
+                and 0 <= (at - book_at).total_seconds() <= NATIVE_QUOTE_MAX_AGE_SECONDS)
 
 
 def _safe_read(path: Path) -> dict[str, Any] | None:
@@ -122,14 +153,8 @@ def primary_records(root: Path, current: datetime) -> tuple[list[dict[str, Any]]
             continue
         # The native quote/event time is never replaced with the receipt or
         # atomic publication time. An invalid provider clock stays invalid.
-        trade_at = _aware(raw.get("trade_at"))
-        source_at = _aware(raw.get("source_at"))
-        book_at = _aware(raw.get("book_at"))
-        ready = bool(raw.get("state") == "READY" and raw.get("last_kind") == "TRADE"
-                     and raw.get("review_status") in (None, "", "NO_CURRENT_CONFLICT")
-                     and trade_at and trade_at == source_at and book_at
-                     and trade_at <= received and book_at <= received
-                     and _positive_last(raw.get("last")))
+        ready = bool(raw.get("state") == "READY"
+                     and native_trade_book_ready(raw, at, require_trade_kind=True))
         row = dict(raw)
         row["source"] = "PPI"  # trusted scanner call-site provenance only
         row["state"] = "READY" if ready else "UNAVAILABLE"
@@ -183,10 +208,7 @@ class ScannerPrimaryRecorder:
         if not received:
             self.invalid_receipt_clock += 1
             return
-        native_trade, native_book = _aware(quote.trade_at), _aware(quote.book_at)
-        valid = bool(native_trade and native_book and native_trade <= received
-                     and native_book <= received and quote.last_kind == "TRADE"
-                     and quote.last > 0)
+        valid = native_trade_book_ready(row, received, require_trade_kind=True)
         row["canonical_identity"] = list(key)
         row["state"] = "READY" if valid else "UNAVAILABLE"
         previous = self.records.get(key)

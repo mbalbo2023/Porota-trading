@@ -31,9 +31,16 @@ def fixed_row(record, **values):
 
 
 def quote_claim(record, **values):
-    return {**record, "symbol": record["ticker"], "family": record["instrument_type"],
-        "term": record["settlement"], "source_at": AT.isoformat(), "received_at": AT.isoformat(),
-        "last": 100, "price_unit": "PER_SHARE", **values}
+    row = {**record, "symbol": record["ticker"], "family": record["instrument_type"],
+           "term": record["settlement"], "source_at": AT.isoformat(),
+           "received_at": AT.isoformat(), "last": 100, "price_unit": "PER_SHARE", **values}
+    if row.get("source") == "PPI":
+        # Positive PPI fixture explicitly models *two independent* native
+        # clocks; a source_at/receipt-only mock must no longer prove readiness.
+        row.setdefault("trade_at", row["source_at"])
+        row.setdefault("book_at", row["source_at"])
+        row.setdefault("last_kind", "TRADE")
+    return row
 
 
 @pytest.mark.parametrize("family", sorted(FAMILIES))

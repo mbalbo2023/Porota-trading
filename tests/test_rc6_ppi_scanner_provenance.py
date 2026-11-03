@@ -50,6 +50,21 @@ def isolated_iol(monkeypatch, market_root, db=None):
     return iol
 
 
+def isolated_ledger(monkeypatch, market_root, current):
+    import scripts.rc6_full_universe_evidence as ledger
+    monkeypatch.setattr(ledger, "ROOT", market_root)
+    monkeypatch.setattr(ledger, "DB", str(market_root / "absent.sqlite"))
+    monkeypatch.setattr(ledger, "now", lambda: current)
+    monkeypatch.setattr(ledger, "catalog_rows", lambda: [{
+        "symbol": "GGAL", "asset_class": "ACCIONES", "market": "BYMA", "currency": "ARS",
+        "settlement": "A-24HS", "family": "ACCIONES", "capability": "READY_PAPER_SPOT",
+    }])
+    monkeypatch.setattr(ledger, "iol_rows", lambda: {})
+    monkeypatch.setattr(ledger, "byma_rows", lambda: ({}, {}))
+    monkeypatch.delenv("POROTA_PRIMARY_LAST_CACHE_PATH", raising=False)
+    return ledger
+
+
 def test_reader_market_root_matches_observer_persistent_data_mount(tmp_path):
     # Docker binds host DATA to container /app/data. Both sides refer to the
     # same market directory; no independent path override may silently drift.
@@ -163,7 +178,7 @@ def test_iol_scanner_overlay_cannot_launder_ambiguous_sqlite_ticker(tmp_path, mo
                for row in meta["identity_reviews"])
 
 
-@pytest.mark.parametrize("invalid", ["missing_trade", "missing_book", "future_native", "not_trade"])
+@pytest.mark.parametrize("invalid", ["missing_trade", "missing_book", "future_native", "future_book", "not_trade"])
 def test_native_quote_clock_and_trade_type_are_fail_closed(tmp_path, monkeypatch, invalid):
     now = datetime.now(timezone.utc) - timedelta(seconds=3)
     kwargs = {"trade_at": now.isoformat(), "book_at": now.isoformat()}
@@ -173,6 +188,8 @@ def test_native_quote_clock_and_trade_type_are_fail_closed(tmp_path, monkeypatch
         kwargs["book_at"] = ""
     if invalid == "future_native":
         kwargs["trade_at"] = (now + timedelta(minutes=5)).isoformat()
+    if invalid == "future_book":
+        kwargs["book_at"] = (now + timedelta(minutes=5)).isoformat()
     if invalid == "not_trade":
         kwargs["last_kind"] = "UNAVAILABLE"
     emit(tmp_path, quote(**kwargs))
@@ -207,10 +224,95 @@ def test_scanner_book_must_be_fresh_independently_of_native_trade(tmp_path, monk
     old_book = observed - timedelta(minutes=10)
     emit(tmp_path, quote(observed_at=observed.isoformat(), trade_at=observed.isoformat(),
                          book_at=old_book.isoformat()))
+    persisted = json.loads((tmp_path / FILENAME).read_text(encoding="utf-8"))
+    assert persisted["records"][0]["state"] == "UNAVAILABLE"
+    assert persisted["native_unavailable_records"] == 1
     rows, meta = primary_records(tmp_path, datetime.now(timezone.utc))
-    assert rows[0]["state"] == "READY" and meta["eligible_records"] == 1
+    import scripts.rc6_full_universe_evidence as ledger
+    current = datetime.now(timezone.utc)
+    key = ledger._exact_key(rows[0])
+    assert not ledger.source_view(rows[0], "PPI", current, expected_identity=key)["selection_eligible"]
+    assert rows[0]["state"] == "UNAVAILABLE" and meta["eligible_records"] == 0
     values, snapshot = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
     assert values == {} and snapshot["scanner_selectable_records"] == 0
+    report = isolated_ledger(monkeypatch, tmp_path, current).build()
+    actual = report["instruments"][0]
+    assert not actual["sources"]["PPI"]["selection_eligible"]
+    assert actual["status"] == "PENDING_EVIDENCE"
+    assert actual["paper_contract_ready"] is False
+    assert report["counts"]["paper_contract_ready"] == 0
+
+
+def test_fresh_native_trade_and_book_survive_all_three_consumers(tmp_path, monkeypatch):
+    current = datetime.now(timezone.utc)
+    native = (current - timedelta(seconds=3)).isoformat()
+    emit(tmp_path, quote(observed_at=native, trade_at=native, book_at=native))
+    rows, meta = primary_records(tmp_path, current)
+    assert len(rows) == meta["eligible_records"] == 1 and rows[0]["state"] == "READY"
+    ledger = isolated_ledger(monkeypatch, tmp_path, current)
+    key = ledger._exact_key(rows[0])
+    assert ledger.source_view(rows[0], "PPI", current, expected_identity=key)["selection_eligible"]
+    assert "GGAL" in isolated_iol(monkeypatch, tmp_path)._primary_snapshot()[0]
+    report = ledger.build()
+    item = report["instruments"][0]
+    assert item["status"] == "READY_PAPER_PARTIAL_SOURCE"
+    assert item["paper_contract_ready"] is True
+    assert report["counts"]["paper_contract_ready"] == 1
+    assert next(row for row in report["families"] if row["family"] == "ACCIONES")[
+        "paper_contract_ready"] == 1
+
+
+@pytest.mark.parametrize("missing_alias", [True, False])
+def test_scanner_trade_source_alias_must_be_explicit_and_equal(tmp_path, missing_alias):
+    emit(tmp_path, quote())
+    path = tmp_path / FILENAME
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if missing_alias:
+        payload["records"][0].pop("source_at")
+    else:
+        payload["records"][0]["source_at"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat()
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    records, summary = primary_records(tmp_path, datetime.now(timezone.utc))
+    assert len(records) == 1 and records[0]["state"] == "UNAVAILABLE"
+    assert summary["eligible_records"] == 0 and summary["state"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("invalid", ["missing_trade", "missing_book", "future_book",
+                                     "stale_book", "stale_trade", "zero_last", "naive_book",
+                                     "mismatched_trade_alias", "not_trade", "nonfinite_last"])
+def test_direct_legacy_ppi_fallback_must_not_bypass_native_quote_gate(invalid):
+    import scripts.rc6_full_universe_evidence as ledger
+    current = datetime.now(timezone.utc)
+    recent = (current - timedelta(seconds=3)).isoformat()
+    fallback = {"symbol": "GGAL", "asset_class": "ACCIONES", "market": "BYMA",
+                "currency": "ARS", "settlement": "A-24HS", "source": "PPI",
+                "last": 100, "last_kind": "TRADE", "state": "READY",
+                "trade_at": recent, "source_at": recent, "book_at": recent,
+                "received_at": recent}
+    if invalid == "missing_trade":
+        fallback["trade_at"] = ""
+    elif invalid == "missing_book":
+        fallback["book_at"] = ""
+    elif invalid == "future_book":
+        fallback["book_at"] = (current + timedelta(minutes=5)).isoformat()
+    elif invalid == "stale_book":
+        fallback["book_at"] = (current - timedelta(minutes=10)).isoformat()
+    elif invalid == "stale_trade":
+        fallback["source_at"] = fallback["trade_at"] = (current - timedelta(minutes=10)).isoformat()
+    elif invalid == "zero_last":
+        fallback["last"] = 0
+    elif invalid == "naive_book":
+        fallback["book_at"] = "2026-11-02T12:00:00"
+    elif invalid == "mismatched_trade_alias":
+        fallback["source_at"] = (current - timedelta(seconds=95)).isoformat()
+    elif invalid == "not_trade":
+        fallback["last_kind"] = "BID"
+    elif invalid == "nonfinite_last":
+        fallback["last"] = "NaN"
+    key = ledger._exact_key(fallback)
+    assert not ledger.source_view(fallback, "PPI", current, expected_identity=key)[
+        "selection_eligible"]
 
 
 def test_newer_unavailable_scanner_blocks_older_same_identity_fallback(tmp_path, monkeypatch):

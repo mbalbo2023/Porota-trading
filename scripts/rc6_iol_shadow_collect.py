@@ -21,14 +21,17 @@ from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call
                                       is_operational_market_window,
                                       is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
-from rc6_ppi_scanner_provenance import primary_records as scanner_primary_records
+from rc6_ppi_scanner_provenance import (
+    NATIVE_QUOTE_MAX_AGE_SECONDS, native_trade_book_ready,
+    primary_records as scanner_primary_records,
+)
 from rc6_source_consolidation import consolidate
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 DEFAULT_DB = os.getenv("POROTA_IOL_OPERATIONAL_DB", "/opt/porota-trading/data/paper_v17/observer_v17.db")
 BATCH_SIZE = 12
-PRIMARY_MAX_AGE_SECONDS = 300
+PRIMARY_MAX_AGE_SECONDS = NATIVE_QUOTE_MAX_AGE_SECONDS
 LATE_CATALOG_MAX_ROWS = 20000
 
 
@@ -387,17 +390,10 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
         for row in scanner_rows:
             key = tuple(row["canonical_identity"])  # verified by primary_records()
             received = _parse_time(row.get("received_at"))
-            trade = _parse_time(row.get("trade_at"))
-            source_at = _parse_time(row.get("source_at"))
-            book = _parse_time(row.get("book_at"))
             # A diagnostic UNAVAILABLE receipt can never become a primary
             # quote merely because its native trade clock is still fresh.
-            eligible = bool(row.get("state") == "READY" and row.get("last_kind") == "TRADE"
-                            and row.get("review_status") in (None, "", "NO_CURRENT_CONFLICT")
-                            and received and trade and trade == source_at and book
-                            and trade <= received <= current and book <= received
-                            and 0 <= (current - trade).total_seconds() <= PRIMARY_MAX_AGE_SECONDS
-                            and 0 <= (current - book).total_seconds() <= PRIMARY_MAX_AGE_SECONDS)
+            eligible = bool(row.get("state") == "READY"
+                            and native_trade_book_ready(row, current, require_trade_kind=True))
             if eligible:
                 scanner_selectable.append(row)
             elif received:
