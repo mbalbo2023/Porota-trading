@@ -412,11 +412,31 @@ class A551ExistingFamilyAggregateTests(unittest.TestCase):
         os.chmod(path, 0o644)
         os.utime(path, (self.NOW.timestamp(), self.NOW.timestamp()))
 
+    def inspect_root_fixture(self, path: Path):
+        """Emulate the real root-owned host export on non-root CI runners.
+
+        Do not bypass production's UID=0 guard: only the fstat fixture is
+        synthetic. The production host probe still uses native os.fstat.
+        """
+        native_fstat = os.fstat
+
+        def simulated_root_fstat(fd):
+            record = native_fstat(fd)
+
+            class RootStat:
+                def __getattr__(self, key):
+                    return 0 if key == "st_uid" else getattr(record, key)
+
+            return RootStat()
+
+        with patch.object(module.os, "fstat", side_effect=simulated_root_fstat):
+            return module.inspect_family_rollup(now=self.NOW, path=path)
+
     def test_existing_root_owned_export_is_recomputed_and_never_exposes_quotes(self):
         with tempfile.TemporaryDirectory() as work:
             path = Path(work) / "existing.json"
             self.write_fixture(path, self.fixture())
-            receipt = module.inspect_family_rollup(now=self.NOW, path=path)
+            receipt = self.inspect_root_fixture(path)
             self.assertEqual(receipt["status"], "OBSERVED_AGGREGATE")
             self.assertEqual(receipt["reason"], "AGGREGATE_MATCHED")
             self.assertEqual(len(receipt["families"]), 10)
@@ -447,7 +467,7 @@ class A551ExistingFamilyAggregateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as work:
             path = Path(work) / "product-v1.json"
             self.write_fixture(path, baseline)
-            observed = module.inspect_family_rollup(now=self.NOW, path=path)
+            observed = self.inspect_root_fixture(path)
         self.assertEqual(observed["status"], "OBSERVED_AGGREGATE")
         self.assertEqual(observed["source_variant"], "PRODUCT_BASELINE")
         self.assertFalse(observed["specialized_receipt_guard_present"])
@@ -481,7 +501,7 @@ class A551ExistingFamilyAggregateTests(unittest.TestCase):
                     candidate = copy.deepcopy(base)
                     mutate(candidate)
                     self.write_fixture(path, candidate)
-                    result = module.inspect_family_rollup(now=self.NOW, path=path)
+                    result = self.inspect_root_fixture(path)
                     self.assertEqual(result["status"], "NO_VERIFICADO")
                     self.assertEqual(result["families"], [])
 
@@ -497,12 +517,12 @@ class A551ExistingFamilyAggregateTests(unittest.TestCase):
             self.assertEqual(module.inspect_family_rollup(now=self.NOW, path=alias)["status"],
                              "NO_VERIFICADO")
             os.utime(real, (self.NOW.timestamp() - 600, self.NOW.timestamp() - 600))
-            self.assertEqual(module.inspect_family_rollup(now=self.NOW, path=real)["reason"],
+            self.assertEqual(self.inspect_root_fixture(real)["reason"],
                              "STALE_EXPORT")
             self.write_fixture(real, self.fixture())
             real.write_bytes(real.read_bytes()[:-1] + b',"schema":"fake"}')
             os.utime(real, (self.NOW.timestamp(), self.NOW.timestamp()))
-            self.assertEqual(module.inspect_family_rollup(now=self.NOW, path=real)["status"],
+            self.assertEqual(self.inspect_root_fixture(real)["status"],
                              "NO_VERIFICADO")
 
     def test_untrusted_export_file_mode_fails_closed(self):
@@ -518,7 +538,7 @@ class A551ExistingFamilyAggregateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as work:
             path = Path(work) / "rollup.json"
             self.write_fixture(path, self.fixture())
-            good = module.inspect_family_rollup(now=self.NOW, path=path)
+            good = self.inspect_root_fixture(path)
         wrong = [
             {**good, "paper_ready": True},
             {**good, "real_orders_sent_by_action": 1},
