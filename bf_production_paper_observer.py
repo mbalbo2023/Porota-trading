@@ -1326,8 +1326,9 @@ def _eligible_symbols(store, *, diagnostic=None):
                         seen.add(value)
     except Exception:
         # An unreadable selector is not evidence that every contract is HOLD.
-        # Keep the historical fail-closed empty result, but expose the cause
-        # in the next cycle-metrics receipt without provider/host I/O.
+        # Keep the historical fail-closed selector behavior. If the existing
+        # metrics writer remains healthy, its receipt can expose this cause;
+        # an unreadable SQLite database cannot promise a persisted receipt.
         if evidence is not None:
             evidence.update(status="READ_HOLD", gate=gate,
                             reason="ELIGIBLE_SELECTOR_READ_HOLD")
@@ -1687,9 +1688,11 @@ def _cycle_plan(store, focus_candidates=None):
         plan["_a606_previous"] = previous or {}
         symbols, after, plan = _ppi_observe_only_replace_cold(
             store, symbols, plan, at=at, before=before, after=after)
+    cold_plan = plan.get("cold")
+    cold_slots = len(cold_plan) if isinstance(cold_plan, (list, tuple)) else 0
     plan["ppi_cold_bootstrap_diagnostic"] = _cold_bootstrap_diagnostic(
         selector_evidence, eligible_count=len(universe),
-        cold_slots=len(plan.get("cold", ())), capacity_status=capacity_status)
+        cold_slots=cold_slots, capacity_status=capacity_status)
     return symbols, len(universe), before, after, plan
 
 
