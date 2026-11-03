@@ -121,13 +121,95 @@ class TestPpiCausalWitnessBridge(unittest.TestCase):
 
     def test_nine_groups_absent_decision_explicit_and_etf_excluded(self):
         matrix = nine_family_witness_matrix(self.path, {})
+        self.assertEqual(NINE_FAMILY_GROUPS, (
+            "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
+            "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+        ))
         self.assertEqual(tuple(matrix["families"]), NINE_FAMILY_GROUPS)
         self.assertEqual(matrix["family_count"], 9)
-        self.assertNotIn("ETFS", matrix["families"])
+        for non_active in ("ETFS", "BONOS_LETRAS_ON", "ACCIONES_USA", "INDICES"):
+            self.assertNotIn(non_active, matrix["families"])
         self.assertEqual(matrix["fills_accredited"], 0)
         self.assertTrue(all(row["reason"] == "DECISION_RECEIPT_NOT_SUPPLIED"
                             and row["state"] == "NO_VERIFICADO"
                             for row in matrix["families"].values()))
+
+    def test_fixed_income_families_are_separate_exact_identity_witnesses(self):
+        requests = {}
+        for family in ("BONOS", "LETRAS", "OBLIGACIONES"):
+            identity = ("SIM", family, "BYMA", "ARS", "A-24HS")
+            requests[family] = {"identity": identity,
+                                "decision_at": START.isoformat(),
+                                "latency_seconds": 1, "side": "BUY"}
+            witness = causal_book_witness(
+                self.path, family_group=family, **requests[family])
+            self.assertEqual(witness["reason"], "PPI_BOOK_JOURNAL_ABSENT")
+            self.assertFalse(witness["fill_accredited"])
+            for other in {"BONOS", "LETRAS", "OBLIGACIONES"} - {family}:
+                mismatch = causal_book_witness(
+                    self.path, family_group=other, **requests[family])
+                self.assertEqual(mismatch["state"], "BLOQUEADO")
+                self.assertEqual(mismatch["reason"],
+                                 "PIT_WITNESS_FAMILY_IDENTITY_MISMATCH")
+
+        matrix = nine_family_witness_matrix(self.path, requests)
+        self.assertEqual(matrix["family_count"], 9)
+        self.assertEqual(set(requests), {"BONOS", "LETRAS", "OBLIGACIONES"})
+        self.assertEqual(matrix["fills_accredited"], 0)
+        self.assertEqual(matrix["provider_gets"], 0)
+        self.assertTrue(all(matrix["families"][family]["state"] == "NO_VERIFICADO"
+                            for family in requests))
+
+    def test_legacy_aggregated_and_contextual_group_requests_fail_closed(self):
+        for unsupported in ("BONOS_LETRAS_ON", "ACCIONES_USA", "INDICES", "ETFS"):
+            with self.subTest(unsupported=unsupported):
+                with self.assertRaisesRegex(ValueError, "PIT_WITNESS_FAMILY_REQUEST_INVALID"):
+                    nine_family_witness_matrix(self.path, {unsupported: {}})
+                witness = causal_book_witness(
+                    self.path, family_group=unsupported,
+                    identity=("TEST", "ACCIONES", "BYMA", "ARS", "A-24HS"),
+                    decision_at=START.isoformat(), latency_seconds=1, side="BUY")
+                self.assertEqual(witness["state"], "BLOQUEADO")
+                self.assertEqual(witness["reason"], "PIT_WITNESS_INPUT_INVALID")
+
+    def test_counterfactual_progression_clock_witness_never_substitutes_contract_or_source(self):
+        """Only a causal witness changes when the synthetic Book crosses latency.
+
+        A digest-shaped value is an unverified caller claim. This replay layer
+        cannot certify PPI source, economic units, decision, fees or a fill.
+        """
+        absent = self.witness()
+        self.assertEqual(absent["reason"], "PPI_BOOK_JOURNAL_ABSENT")
+        self.assertFalse(absent["causal_clock_witness"])
+
+        self.capture(1)
+        at_cutoff = self.witness()
+        self.assertEqual(at_cutoff["reason"],
+                         "PPI_BOOK_NOT_STRICTLY_AFTER_DECISION_PLUS_LATENCY")
+        self.assertFalse(at_cutoff["causal_clock_witness"])
+
+        self.capture(2)
+        after_cutoff = self.witness()
+        self.assertTrue(after_cutoff["causal_clock_witness"])
+        self.assertTrue(after_cutoff["first_book_has_positive_native_top_level"])
+        self.assertEqual(after_cutoff["reason"],
+                         "PIT_WITNESS_ONLY_UNITS_CONTRACT_AND_DECISION_UNVERIFIED")
+        self.assertEqual(after_cutoff["source_artifact_sha256_claim"], "b" * 64)
+        self.assertEqual(after_cutoff["decision_receipt_sha256_claim"], FAKE_DIGEST)
+        for stage in (absent, at_cutoff, after_cutoff):
+            self.assertFalse(stage["unit_contract_verified"])
+            self.assertFalse(stage["decision_signature_verified"])
+            self.assertFalse(stage["source_artifact_independently_verified"])
+            self.assertFalse(stage["family_ready"])
+            self.assertFalse(stage["fill_accredited"])
+            self.assertEqual(stage["provider_gets"], 0)
+            self.assertEqual(stage["real_orders_sent"], 0)
+
+        # A forged digest with invalid shape never advances even the clock gate.
+        malformed_source_claim = self.witness(source_artifact_sha256="NOT-A-DIGEST")
+        self.assertEqual(malformed_source_claim["state"], "BLOQUEADO")
+        self.assertEqual(malformed_source_claim["reason"], "PIT_WITNESS_INPUT_INVALID")
+        self.assertFalse(malformed_source_claim["fill_accredited"])
 
     def test_matrix_is_readonly_reuses_existing_verified_native_books(self):
         self.capture(2)
