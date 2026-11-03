@@ -17,7 +17,7 @@ def at(hour, minute):
 
 
 def run(hour, minute, **kw):
-    value = dict(event="schedule", run_attempt=1, head_branch="main",
+    value = dict(id=hour * 100 + minute, event="schedule", run_attempt=1, head_branch="main",
                  status="completed", created_at=at(hour, minute).isoformat())
     value.update(kw)
     return value
@@ -62,6 +62,87 @@ class ScheduleWatchdogTest(unittest.TestCase):
         result = a358.classify([run(10, 37)], at(11, 15))
         self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
         self.assertEqual(1, result["genuine_runs_today"])
+
+    def test_real_monday_late_20_12_does_not_erase_46_mature_slots(self):
+        """Actual #41543540643 was a genuine but off-session event."""
+        late = dict(id=41543540643, event="schedule", run_attempt=1,
+                    head_branch="main", created_at="2026-11-02T23:12:06Z")
+        now = datetime(2026, 11, 3, 2, 13, tzinfo=timezone.utc)
+        result = a358.classify([late], now, workflow_state="active")
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
+        self.assertEqual(46, result["mature_expected_slots"])
+        self.assertEqual(1, result["genuine_runs_today"])
+        self.assertEqual(0, result["genuine_in_session"])
+        self.assertEqual(1, result["off_session_runs"])
+        self.assertEqual(45, result["missing_mature_run_lower_bound"])
+        self.assertEqual(0, result["overdue_slots_after_last_run"])
+
+    def test_two_healthy_in_session_runs_do_not_create_false_p1(self):
+        result = a358.classify([run(10, 37), run(10, 47)], at(11, 4))
+        self.assertEqual("RECENT_SCHEDULE_OBSERVED", result["status"])
+        self.assertEqual(2, result["mature_expected_slots"])
+        self.assertEqual(2, result["genuine_in_session"])
+        self.assertEqual(0, result["missing_mature_run_lower_bound"])
+        self.assertEqual(0, result["off_session_runs"])
+
+    def test_two_missed_mature_slots_cannot_be_reset_by_late_run(self):
+        result = a358.classify([run(10, 37), run(10, 47),
+                                 run(20, 12)], datetime(2026, 11, 3, 2, 13,
+                                                       tzinfo=timezone.utc))
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual(46 - 3, result["missing_mature_run_lower_bound"])
+        self.assertEqual(1, result["off_session_runs"])
+
+    def test_all_genuine_runs_outside_business_window_still_p1(self):
+        # Native schedules can fire before the 10:37 useful window and long
+        # after 18:07. They remain real events but not evidence of 46 slots.
+        samples = [run(10, 7), run(10, 17), run(10, 27), run(20, 12)]
+        now = datetime(2026, 11, 3, 2, 13, tzinfo=timezone.utc)
+        result = a358.classify(samples, now)
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
+        self.assertEqual(0, result["genuine_in_session"])
+        self.assertEqual(4, result["off_session_runs"])
+        self.assertEqual(42, result["missing_mature_run_lower_bound"])
+
+    def test_same_run_id_does_not_double_count_and_conflict_fails_closed(self):
+        first = run(10, 37, id=11001)
+        duplicate = dict(first)
+        result = a358.classify([first, duplicate], at(11, 15))
+        self.assertEqual(1, result["genuine_runs_today"])
+        self.assertEqual(2, result["missing_mature_run_lower_bound"])
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+
+        conflicting = run(10, 47, id=11001)
+        result = a358.classify([first, conflicting], at(11, 15))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual("GENUINE_RUN_ID_CONFLICT", result["reason"])
+
+    def test_genuine_run_missing_id_fails_closed(self):
+        candidate = run(10, 37)
+        candidate.pop("id")
+        result = a358.classify([candidate], at(11, 15))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual("GENUINE_RUN_ID_MISSING_OR_INVALID", result["reason"])
+
+    def test_api_first_page_completeness_is_explicit(self):
+        now = datetime(2026, 11, 3, 2, 13, tzinfo=timezone.utc)
+        old = run(10, 37, created_at="2026-10-30T13:37:00Z")
+        fresh = run(20, 12, created_at="2026-11-02T23:12:06Z")
+        self.assertTrue(a358.api_page_covers_art_day([fresh, old], now))
+        full_day = [dict(fresh, id=i + 1) for i in range(100)]
+        self.assertFalse(a358.api_page_covers_art_day(full_day, now))
+        self.assertTrue(a358.api_page_covers_art_day(full_day[:-1] + [old], now))
+        self.assertFalse(a358.api_page_covers_art_day([old, fresh], now))
+        self.assertFalse(a358.api_page_covers_art_day([dict(fresh, created_at="bad")], now))
+
+        inconclusive = a358.classify([fresh], now, api_day_covered=False)
+        self.assertEqual("NO_VERIFICADO", inconclusive["status"])
+        self.assertEqual("SCHEDULE_API_DAY_INCOMPLETE", inconclusive["reason"])
+        self.assertEqual(45, inconclusive["missing_mature_run_lower_bound"])
 
     def test_bad_datetime_fails_closed(self):
         self.assertIsNone(a358.parse_clock("2026-11-02T12:01:00"))
@@ -188,4 +269,5 @@ class ScheduleWatchdogTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
