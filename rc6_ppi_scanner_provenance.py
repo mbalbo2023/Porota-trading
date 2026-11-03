@@ -332,13 +332,42 @@ def _pit_depth(raw: Any) -> list[dict[str, Any]]:
             raise ValueError("RAW_BOOK_LEVEL_CONTRACT_INVALID")
         position = original.get("position")
         if position is not None:
-            if (type(position) is not int or not 1 <= position <= PIT_BOOK_MAX_DEPTH_PER_SIDE
+            # PPI REST Book explicitly documents position=0; do not invent
+            # a 1-based index. Accept the provider ordinal verbatim.
+            if (type(position) is not int or not 0 <= position <= PIT_BOOK_MAX_DEPTH_PER_SIDE
                     or position in positions):
                 raise ValueError("RAW_BOOK_LEVEL_POSITION_INVALID")
             positions.add(position)
-        result.append({"position": position, "price": _pit_decimal(original["price"], positive=True),
+        # Official PPI example has price=0, quantity=0 at position=0. They
+        # are auditable placeholders but NEVER authorize an executable fill.
+        result.append({"position": position, "price": _pit_decimal(original["price"], positive=False),
                        "quantity": _pit_decimal(original["quantity"], positive=False)})
     return result
+
+
+def _pit_quote_matches_native_best(quote: Any, bids: list[dict[str, Any]],
+                                   offers: list[dict[str, Any]]) -> bool:
+    """Bind the raw Book to the *same* normalized quote seen by the engine.
+
+    The normalizer reads the first native level, not a favorable later level.
+    A missing side is only safe when both normalized price and size are zero.
+    This check does not assert that PPI supplied units or a fillable market.
+    """
+    for levels, price_field, quantity_field in (
+        (bids, "bid", "bid_size"), (offers, "ask", "ask_size")
+    ):
+        try:
+            quoted_price = Decimal(str(getattr(quote, price_field)))
+            quoted_quantity = Decimal(str(getattr(quote, quantity_field)))
+        except (InvalidOperation, TypeError, ValueError, AttributeError):
+            return False
+        if not quoted_price.is_finite() or not quoted_quantity.is_finite():
+            return False
+        expected_price = Decimal(levels[0]["price"]) if levels else Decimal(0)
+        expected_quantity = Decimal(levels[0]["quantity"]) if levels else Decimal(0)
+        if quoted_price != expected_price or quoted_quantity != expected_quantity:
+            return False
+    return True
 
 
 def _pit_event(quote: Any, *, raw_book: dict[str, Any], request: tuple[str, str, str],
@@ -372,6 +401,8 @@ def _pit_event(quote: Any, *, raw_book: dict[str, Any], request: tuple[str, str,
     offers = _pit_depth(raw_book["offers"])
     if not bids and not offers:
         raise ValueError("PPI_BOOK_NO_DEPTH")
+    if not _pit_quote_matches_native_best(quote, bids, offers):
+        raise ValueError("PPI_BOOK_NORMALIZED_BEST_LEVEL_MISMATCH")
     book = {"native_date": raw_book["date"], "bids": bids, "offers": offers}
     if len(_pit_bytes(book)) > PIT_EVENT_MAX_BYTES:
         raise ValueError("PPI_BOOK_EVENT_CAPACITY_HOLD")
@@ -380,7 +411,7 @@ def _pit_event(quote: Any, *, raw_book: dict[str, Any], request: tuple[str, str,
             "native_trade_at": quote.trade_at, "observed_at": observed_at,
             "known_at": observed_at, "session_art": received.astimezone(
                 timezone(timedelta(hours=-3))).date().isoformat(),
-            "book": book, "raw_book_sha256": _pit_hash(book),
+            "book": book, "normalized_book_sha256": _pit_hash(book),
             "quantity_unit": "NO_VERIFICADO", "price_unit": "NO_VERIFICADO",
             "depth_levels": {"bids": len(bids), "offers": len(offers)}}
     if len(_pit_bytes(event)) > PIT_EVENT_MAX_BYTES:
@@ -414,7 +445,7 @@ def _pit_verified_rows(doc: Any) -> list[dict[str, Any]]:
                 or _aware(event["native_book_at"]) > _aware(event["observed_at"])
                 or _aware(event["native_trade_at"]) > _aware(event["observed_at"])
                 or not isinstance(event.get("book"), dict)
-                or event.get("raw_book_sha256") != _pit_hash(event["book"])
+                or event.get("normalized_book_sha256") != _pit_hash(event["book"])
                 or event.get("quantity_unit") != "NO_VERIFICADO"
                 or event.get("price_unit") != "NO_VERIFICADO"):
             raise ValueError("PPI_BOOK_JOURNAL_CHAIN_OR_IDENTITY_HOLD")
@@ -515,7 +546,7 @@ def capture_native_book_journal(path: Path, quote: Any, *, raw_book: dict[str, A
                     continue
                 previous_at = _aware(previous["native_book_at"])
                 if previous_at == native_at:
-                    if previous["raw_book_sha256"] == event["raw_book_sha256"]:
+                    if previous["normalized_book_sha256"] == event["normalized_book_sha256"]:
                         return {"status": "DEDUPLICATED", "records": len(rows),
                                 "event_sha256": previous["event_sha256"]}
                     return {"status": "CAPTURE_INVALID_HOLD", "reason": "PPI_BOOK_NATIVE_CLOCK_CONFLICT"}

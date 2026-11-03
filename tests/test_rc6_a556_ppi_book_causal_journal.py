@@ -71,6 +71,8 @@ class TestNativeBookCausalJournal(unittest.TestCase):
         self.assertEqual(rows[1]["previous_sha256"], rows[0]["event_sha256"])
         self.assertEqual(rows[0]["source"], "PPI")
         self.assertEqual(rows[0]["quantity_unit"], "NO_VERIFICADO")
+        self.assertEqual(rows[0]["normalized_book_sha256"], pit._pit_hash(rows[0]["book"]))
+        self.assertNotIn("raw_book_sha256", rows[0])
         self.assertEqual(rows[0]["known_at"], rows[0]["observed_at"])
         self.assertNotEqual(rows[0]["native_book_at"], rows[1]["native_book_at"])
 
@@ -132,6 +134,72 @@ class TestNativeBookCausalJournal(unittest.TestCase):
                                               identity=IDENTITY, observed_at=quote.observed_at)
         self.assertEqual(result["reason"], "PPI_BOOK_NATIVE_SHAPE_UNVERIFIED")
         self.assertFalse(self.journal.exists())
+
+    def test_adversarial_native_depth_cannot_disagree_with_normalized_best(self):
+        # A560 P1: a Book of another instrument may carry the same provider
+        # date, but mismatched best bid/ask or size. Never chain that evidence.
+        for field, altered in (("bid", "99.99"), ("ask", "100.21"),
+                               ("bid_size", "15"), ("ask_size", "22")):
+            with self.subTest(field=field):
+                quote, book = fixture()
+                quote = Quote(**{**quote.__dict__, field: Decimal(altered)})
+                result = self.writer.capture_raw_book(quote, raw_book=book,
+                                                      request=REQUEST, identity=IDENTITY,
+                                                      observed_at=quote.observed_at)
+                self.assertEqual(result["status"], "CAPTURE_INVALID_HOLD")
+                self.assertEqual(result["reason"], "PPI_BOOK_NORMALIZED_BEST_LEVEL_MISMATCH")
+                self.assertFalse(self.journal.exists())
+
+    def test_missing_book_side_requires_normalized_zero_not_fallback_price(self):
+        quote, book = fixture()
+        book["bids"] = []
+        inconsistent = self.writer.capture_raw_book(
+            quote, raw_book=book, request=REQUEST, identity=IDENTITY,
+            observed_at=quote.observed_at)
+        self.assertEqual(inconsistent["reason"], "PPI_BOOK_NORMALIZED_BEST_LEVEL_MISMATCH")
+        self.assertFalse(self.journal.exists())
+        quote = Quote(**{**quote.__dict__, "bid": Decimal(0), "bid_size": Decimal(0)})
+        accepted = self.writer.capture_raw_book(
+            quote, raw_book=book, request=REQUEST, identity=IDENTITY,
+            observed_at=quote.observed_at)
+        self.assertEqual(accepted["status"], "CAPTURED")
+        rows, receipt = pit.verified_native_book_journal(self.journal)
+        self.assertEqual(receipt["state"], "HASH_CHAIN_VERIFIED")
+        self.assertEqual(rows[0]["book"]["bids"], [])
+        self.assertEqual(len(rows[0]["book"]["offers"]), 2)
+
+    def test_official_ppi_zero_based_positions_are_preserved_not_renumbered(self):
+        # PPI REST MarketData/Book official example: position:0 on both sides.
+        quote, book = fixture()
+        book["bids"][0]["position"] = 0
+        book["offers"][0]["position"] = 0
+        result = self.writer.capture_raw_book(quote, raw_book=book, request=REQUEST,
+                                              identity=IDENTITY, observed_at=quote.observed_at)
+        self.assertEqual(result["status"], "CAPTURED")
+        rows, _ = pit.verified_native_book_journal(self.journal)
+        self.assertEqual(rows[0]["book"]["bids"][0]["position"], 0)
+        self.assertEqual(rows[0]["book"]["offers"][0]["position"], 0)
+
+    def test_official_ppi_zero_price_depth_is_evidence_not_fill(self):
+        # PPI REST official example includes {position:0,price:0,quantity:0}.
+        quote, book = fixture()
+        book["bids"] = [{"position": 0, "price": 0, "quantity": 0}]
+        book["offers"] = [{"position": 0, "price": 0, "quantity": 0}]
+        quote = Quote(**{**quote.__dict__, "bid": Decimal(0), "bid_size": Decimal(0),
+                         "ask": Decimal(0), "ask_size": Decimal(0)})
+        result = self.writer.capture_raw_book(quote, raw_book=book, request=REQUEST,
+                                              identity=IDENTITY, observed_at=quote.observed_at)
+        self.assertEqual(result["status"], "CAPTURED")
+        rows, receipt = pit.verified_native_book_journal(self.journal)
+        self.assertEqual(receipt["state"], "HASH_CHAIN_VERIFIED")
+        self.assertEqual(rows[0]["book"]["bids"][0]["price"], "0")
+        # A timestamp after the decision can nominate a Book, but never
+        # assert fill when depth price/units are unusable.
+        future, receipt = pit.strictly_future_native_books(
+            self.journal, identity=IDENTITY,
+            decision_at=(START - timedelta(seconds=5)).isoformat(), latency_seconds=1)
+        self.assertEqual(len(future), 1)
+        self.assertIs(receipt["fill_accredited"], False)
 
     def test_bounded_session_blocks_second_without_replacing_evidence(self):
         first = self.capture()
