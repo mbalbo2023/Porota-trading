@@ -19,8 +19,11 @@ Ningún Predeploy, Deploy, reinicio, orden real o PPI Watch se invoca.
    evidencia de bloqueo allí, **NO** certificación del host actual. La reserva
    EXIT y retención también deben estar atestadas justo antes de hacer GET.
 4. La identidad API del SDK sólo pide `ticker/type/settlement`; para no colapsar
-   mercados o divisas arbitrariamente, A630 exige unicidad del 5-key completo
-   en el catálogo PPI físico, y rechaza hermanos con la misma terna API.
+   mercados o divisas arbitrariamente, A630 replica el guard probado A595/#883:
+   exige unicidad del 5-key entre `settlement_source IN ('PPI_FIELD',
+   'REQUEST_CANDIDATE')`. Un hermano IOL/BYMA exclusivamente complementario
+   no veta el GET PPI; otro hermano PPI sí. `REQUEST_CANDIDATE` es autoridad
+   local de selección, **no** procedencia PIT independiente.
 5. SQLite `mode=ro` contra WAL activo puede mutar `-shm`. El chequeo de catálogo
    corre exclusivamente en namespace de mount **privado con bind RO del data**;
    si `sudo unshare/mount` falla, no abre la DB ni hace GET.
@@ -44,7 +47,7 @@ Un slot, cuando **todos** los guards efectivamente certifican:
 
 1. `main@GITHUB_SHA`, imagen productiva exacta y modo `PRODUCTION_PAPER`,
    `REAL_ORDER_CAPABILITY=BLOCKED`; claves sólo del secreto montado original.
-2. Catálogo `financial_instrument_catalog` **fuente PPI** y 5-key único desde
+2. Catálogo `financial_instrument_catalog` **identidad primaria PPI** y 5-key único desde
    DB con marker `POROTA_PAPER_V17_FRESH`; controles de TOCTOU: image pin y
    período muy breve entre examen y lectura.
 3. Sidecar PPI previamente existente, identidad inode estable, estado OBSERVED,
@@ -90,10 +93,11 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
 
 `python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v`
 
-20 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
+22 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
 dos leases, denial/lease nulo/repetido, replay, POST/GET duplicado, forma
 Book inválida, reloj futuro/naive/stale, alias 3-key divisa, fuente IOL,
-URL host/puerto/query falsificado, Book2 duplicado, mount RO obligatorio,
+URL host/puerto/query falsificado, Book2 duplicado, hermano IOL permitido,
+hermano PPI denegado y source=PPI_FIELD, mount RO obligatorio,
 recibo falsificado, cero órdenes. Compilar script,
 validar workflow YAML, Bash y CI focal.
 
