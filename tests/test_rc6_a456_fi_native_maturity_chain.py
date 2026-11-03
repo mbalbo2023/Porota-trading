@@ -5,7 +5,7 @@ PAPER BUY still needs a separately release-approved manifest and PPI quote;
 this suite does not claim provider authorization or runtime readiness.
 """
 from dataclasses import replace
-from datetime import timedelta
+from datetime import timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -34,6 +34,9 @@ from tests.test_rc6_fixed_income_runtime import reviewed_bundle, repin
 
 
 MATURITY = (AT + timedelta(days=4, hours=1)).isoformat()
+MATURITY_ART = (AT + timedelta(days=4, hours=1)).astimezone(
+    timezone(-timedelta(hours=3))).isoformat()
+MATURITY_DIFFERENT_INSTANT = (AT + timedelta(days=4, hours=1, minutes=1)).isoformat()
 PAID_AT = (AT + timedelta(days=4, hours=1, minutes=6)).isoformat()
 BOOKED_AT = (AT + timedelta(days=4, hours=2)).isoformat()
 SETTLEMENT_SOURCE = b"SYNTHETIC bill settlement proof, not a market receipt"
@@ -85,7 +88,21 @@ def _bill_bundle(tmp_path, monkeypatch):
     return q, root, pin, store, broker
 
 
-def _book_paid_maturity(store, paper_id, issuer_file, q):
+def _bill_bundle_art_maturity(tmp_path, monkeypatch):
+    """Same instant in issuer -03:00, later reviewed as canonical UTC."""
+    q, root, _, store, broker = _bill_bundle(tmp_path, monkeypatch)
+    repin(root, "terms.json", lambda d: d.update(maturity_at=MATURITY_ART))
+
+    def offset_receipt(d):
+        d["maturity_at"] = MATURITY_ART
+        d["flows"][0]["due_at"] = MATURITY_ART
+
+    pin = repin(root, "receipt.json", offset_receipt)
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
+    return q, root, pin, store, broker
+
+
+def _book_paid_maturity(store, paper_id, issuer_file, q, *, maturity_at=MATURITY):
     source_sha = _sha(SETTLEMENT_SOURCE)
     settled = conservative_unconfirmed_availability(q.settlement, q.observed_at)
     event = {
@@ -96,7 +113,7 @@ def _book_paid_maturity(store, paper_id, issuer_file, q):
         "event": {
             "event_id": "bill-final", "obligation_id": "SYNTHETIC_BILL_FINAL",
             "paper_id": paper_id, "kind": "AMORTIZATION",
-            "effective_at": MATURITY, "recorded_at": PAID_AT,
+            "effective_at": maturity_at, "recorded_at": PAID_AT,
             "source_at": PAID_AT, "source_kind": "SETTLEMENT_PROOF",
             "source_reference": "SYNTHETIC_PAYMENT_NOTICE",
             "source_sha256": source_sha, "payment_currency": "ARS",
@@ -129,7 +146,7 @@ def _book_paid_maturity(store, paper_id, issuer_file, q):
         "bopreal_classification": "NOT_BOPREAL_INDEPENDENTLY_REVIEWED",
         "source_sha256": issuer_sha, "source_reference": issuer_reference,
         "source_at": issuer_at, "known_at": issuer_at,
-        "maturity_at": MATURITY, "principal_currency": "ARS",
+        "maturity_at": maturity_at, "principal_currency": "ARS",
         "redemption_basis": "FIXED_KNOWN_FACE", "indexation": "NONE",
         "redemption_face_official": True,
         "final_obligation_id": "SYNTHETIC_BILL_FINAL",
@@ -200,6 +217,60 @@ def test_release_pinned_native_letra_buy_lot_cash_and_no_sell_terminal(tmp_path,
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
         assert cash_effect_checked(db, "ARS", BOOKED_AT) == Decimal(115)
     assert broker._cash(as_of=BOOKED_AT, currency="ARS") == cash_before + Decimal(115)
+
+
+def test_issuer_art_maturity_and_utc_review_same_instant_closes_paper_no_sell(
+        tmp_path, monkeypatch):
+    q, root, pin, store, broker = _bill_bundle_art_maturity(tmp_path, monkeypatch)
+    assert MATURITY_ART != MATURITY
+    assert broker._decide_fixed_income(q, AT.isoformat())[0] == "BUY"
+    broker.on_quote(q)
+    positions = store.open_positions()
+    assert len(positions) == 1
+    paper_id = positions[0]["paper_id"]
+    plan = json.loads(positions[0]["features_json"])["fixed_income_exit_plan"]
+    assert plan["exit_at"] == MATURITY_ART
+    assert pin == json.loads(positions[0]["features_json"])[
+        "fixed_income_runtime_evidence"]["manifest_sha256"]
+
+    _, review = _book_paid_maturity(store, paper_id, root / "issuer.bin", q)
+    assert review["maturity_at"] == MATURITY
+    assert review["maturity_at"] != plan["exit_at"]
+    assert review["residual_nominal"] == "0"
+    sup = PositionExitSupervisor(broker, clock_fn=lambda: BOOKED_AT)
+    assert any(v.paper_id == paper_id and v.state == "CLOSED"
+               for v in sup.tick(quotes={}))
+    with store.connect() as db:
+        assert db.execute("SELECT status FROM paper_positions WHERE paper_id=?",
+                          (paper_id,)).fetchone()[0] == "CLOSED"
+        assert db.execute("SELECT count(*) FROM paper_fi_native_maturities").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_issuer_review_different_actual_maturity_remains_watch_despite_paid_cash(
+        tmp_path, monkeypatch):
+    q, root, _, store, broker = _bill_bundle_art_maturity(tmp_path, monkeypatch)
+    broker.on_quote(q)
+    positions = store.open_positions()
+    assert len(positions) == 1
+    paper_id = positions[0]["paper_id"]
+    _, review = _book_paid_maturity(
+        store, paper_id, root / "issuer.bin", q,
+        maturity_at=MATURITY_DIFFERENT_INSTANT)
+    assert review["maturity_at"] == MATURITY_DIFFERENT_INSTANT
+    assert review["residual_nominal"] == "0"
+    sup = PositionExitSupervisor(broker, clock_fn=lambda: BOOKED_AT)
+    verdict = sup.supervise(positions[0], None, BOOKED_AT)
+    assert verdict.state == "WATCH_FI_NATIVE_LEDGER_BLOCKED"
+    assert verdict.reason == "FI_EXIT_REDEMPTION_PLAN_REVIEW_MISMATCH"
+    with store.connect() as db:
+        assert db.execute("SELECT status FROM paper_positions WHERE paper_id=?",
+                          (paper_id,)).fetchone()[0] == "OPEN"
+        assert db.execute("SELECT count(*) FROM paper_fi_cash_entries").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM paper_fi_native_maturities").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
 def test_missing_release_pin_and_maturity_contract_fails_closed(tmp_path, monkeypatch):

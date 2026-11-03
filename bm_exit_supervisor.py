@@ -172,7 +172,10 @@ class PositionExitSupervisor:
             review = json.loads(row["review_json"])
             if (review.get("paper_id") != p["paper_id"] or
                     review.get("family") != "LETRAS" or
-                    review.get("maturity_at") != maturity.isoformat() or
+                    # The independent FI reviewer serializes its instant in
+                    # UTC. Issuer terms can carry ART (-03:00) for the *same*
+                    # maturity: compare aware instants, not their text form.
+                    aware_datetime(review.get("maturity_at")) != maturity or
                     review.get("issuer_sha256") != plan.get("issuer_source_sha256") or
                     review.get("issuer_source_reference") !=
                     plan.get("issuer_source_reference") or
