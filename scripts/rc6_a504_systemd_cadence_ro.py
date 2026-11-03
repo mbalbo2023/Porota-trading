@@ -24,6 +24,12 @@ from zoneinfo import ZoneInfo
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 SCHEMA = "rc6.a504.systemd-cadence-readonly.v1"
 SOURCE_STATE = Path("/opt/porota-trading/data/market/rc6_source_cycle_dispatch_state.json")
+# Fixed producer contract (rc6_source_cycle_dispatch.py). These two clocks
+# describe PUBLIC and EVIDENCE stages; neither proves authenticated PPI Book,
+# IOL availability, provider budget or instrument readiness.
+SOURCE_STATE_SCHEMA = "rc6.source-cycle-dispatch.v1"
+SOURCE_STAGE_TTLS = (("last_public_success_at", 60),
+                     ("last_evidence_success_at", 5 * 60))
 LOOKBACK_MINUTES = 90
 MATURE_GRACE_SECONDS = 120
 MAX_JOURNAL_BYTES = 128 * 1024
@@ -74,7 +80,14 @@ def nominal_slots(role: str, day: date) -> tuple[datetime, ...]:
 
 
 def _bounded_state_source(now: datetime) -> str:
-    """Only fixed small state JSON, no database/caches or source instruments."""
+    """Both producer stages fresh by their TTLs; never a PPI/Book assertion.
+
+    Read only the fixed small state JSON, not databases, caches or instruments.
+    The producer never writes ``last_iol_success_at``; requiring it produces
+    false negatives even when both real stage clocks are current.
+    """
+    if now.tzinfo is None:
+        return "UNKNOWN"
     fd = None
     directory = None
     try:
@@ -96,18 +109,23 @@ def _bounded_state_source(now: datetime) -> str:
                 after.st_dev, after.st_ino, after.st_mtime_ns):
             return "UNKNOWN"
         data = json.loads(raw.decode("utf-8"))
-        if not isinstance(data, dict) or data.get("schema") != "rc6.source-cycle-dispatch.v1":
+        if not isinstance(data, dict) or data.get("schema") != SOURCE_STATE_SCHEMA:
             return "UNKNOWN"
         if data.get("session_date") != now.astimezone(ART).date().isoformat():
             return "STALE_OR_MISSING"
-        stamp = data.get("last_iol_success_at")
-        if not isinstance(stamp, str):
-            return "STALE_OR_MISSING"
-        last = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-        if last.tzinfo is None:
-            return "UNKNOWN"
-        age = (now - last.astimezone(timezone.utc)).total_seconds()
-        return "FRESH" if -30 <= age <= 600 else "STALE_OR_MISSING"
+        for field, ttl_seconds in SOURCE_STAGE_TTLS:
+            stamp = data.get(field)
+            if not isinstance(stamp, str):
+                return "STALE_OR_MISSING"
+            last = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if last.tzinfo is None:
+                return "UNKNOWN"
+            age = (now - last.astimezone(timezone.utc)).total_seconds()
+            if age < 0:
+                return "UNKNOWN"  # do not certify future clocks as fresh
+            if age >= ttl_seconds:
+                return "STALE_OR_MISSING"
+        return "FRESH"
     except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
         return "UNKNOWN"
     finally:

@@ -16,11 +16,16 @@ from zoneinfo import ZoneInfo
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/rc6_a504_systemd_cadence_ro.py"
+SOURCE_LAYOUT_SCRIPT = Path(__file__).resolve().parents[1] / "scripts/rc6_a420_primary_source_layout_ro.py"
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/rc6-a420-primary-source-layout-readonly.yml"
 spec = importlib.util.spec_from_file_location("a504", SCRIPT)
 assert spec and spec.loader
 a504 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(a504)
+source_spec = importlib.util.spec_from_file_location("a420_source_layout", SOURCE_LAYOUT_SCRIPT)
+assert source_spec and source_spec.loader
+a420 = importlib.util.module_from_spec(source_spec)
+source_spec.loader.exec_module(a420)
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
@@ -178,6 +183,22 @@ class A504ClassifyTests(unittest.TestCase):
 
 
 class A504MetadataTests(unittest.TestCase):
+    @staticmethod
+    def _source_state(**changes):
+        # Actual deployed producer contract, not an invented IOL-only clock.
+        state = {"schema": "rc6.source-cycle-dispatch.v1", "session_date": "2026-11-03",
+                 "last_public_success_at": "2026-11-03T13:59:30Z",
+                 "last_evidence_success_at": "2026-11-03T13:57:00+00:00"}
+        state.update(changes)
+        return state
+
+    def _inspect_source_state(self, state, at=None):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            path.write_text(json.dumps(state), encoding="utf-8")
+            with patch.object(a504, "SOURCE_STATE", path):
+                return a504._bounded_state_source(at or art(h=11))
+
     def test_journal_query_excludes_message_and_bounds_data(self):
         now = art(h=11, minute=5)
         commands = []
@@ -201,15 +222,45 @@ class A504MetadataTests(unittest.TestCase):
         self.assertIsNone(a504.journal_invocations(
             "porota-iol-shadow-collector-rc6.service", art(), runner=runner))
 
-    def test_source_only_fixed_small_file_and_stale_class(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder)/"state.json"
-            path.write_text(json.dumps({"schema":"rc6.source-cycle-dispatch.v1",
-                                        "session_date":"2026-11-03",
-                                        "last_iol_success_at":"2026-11-03T13:58:00Z"}))
-            with patch.object(a504, "SOURCE_STATE", path):
-                self.assertEqual(a504._bounded_state_source(art(h=11)), "FRESH")
-                self.assertEqual(a504._bounded_state_source(art(h=12)), "STALE_OR_MISSING")
+    def test_source_real_stage_clocks_are_required_and_compatible_with_a420(self):
+        state = self._source_state()
+        self.assertEqual(a504.SOURCE_STATE_SCHEMA, a420.STATE_SCHEMA)
+        self.assertEqual(tuple(key for key, _ in a504.SOURCE_STAGE_TTLS),
+                         ("last_public_success_at", "last_evidence_success_at"))
+        self.assertEqual(a504.SOURCE_STAGE_TTLS[0][1], 60)
+        self.assertEqual(a504.SOURCE_STAGE_TTLS[1][1], 5 * 60)
+        self.assertEqual(self._inspect_source_state(state), "FRESH")
+        receipt = a420._state_receipt(json.dumps(state).encode(), art(h=11))
+        self.assertEqual(receipt["state_schema"], "MATCHED")
+        self.assertEqual(receipt["session"], "TODAY")
+        self.assertEqual(receipt["public_last_success"], "WITHIN_5M")
+        self.assertEqual(receipt["evidence_last_success"], "WITHIN_5M")
+        # No A338 budget sidecar, provider request or Book is read here.
+        self.assertEqual(self._inspect_source_state(state, art(h=12)), "STALE_OR_MISSING")
+
+    def test_source_old_fabricated_iol_clock_does_not_override_missing_producer_stages(self):
+        state = self._source_state(last_public_success_at=None,
+                                   last_evidence_success_at=None,
+                                   last_iol_success_at="2026-11-03T13:59:59Z")
+        self.assertEqual(self._inspect_source_state(state), "STALE_OR_MISSING")
+
+    def test_source_each_real_stage_missing_or_expired_fails_closed(self):
+        for field, expired_stamp in (("last_public_success_at", "2026-11-03T13:59:00Z"),
+                                     ("last_evidence_success_at", "2026-11-03T13:55:00Z")):
+            with self.subTest(field=field):
+                self.assertEqual(self._inspect_source_state(self._source_state(**{field: None})),
+                                 "STALE_OR_MISSING")
+                self.assertEqual(self._inspect_source_state(self._source_state(**{field: expired_stamp})),
+                                 "STALE_OR_MISSING")
+
+    def test_source_rejects_other_session_invalid_or_future_stage_clocks(self):
+        self.assertEqual(self._inspect_source_state(self._source_state(session_date="2026-11-02")),
+                         "STALE_OR_MISSING")
+        for bad_stamp in ("not-a-clock", "2026-11-03T13:59:30", "2026-11-03T14:00:01Z"):
+            with self.subTest(bad_stamp=bad_stamp):
+                self.assertEqual(self._inspect_source_state(
+                    self._source_state(last_public_success_at=bad_stamp)), "UNKNOWN")
+        self.assertEqual(self._inspect_source_state(self._source_state(schema="wrong")), "UNKNOWN")
 
     def test_source_rejects_symlink(self):
         with tempfile.TemporaryDirectory() as folder:
