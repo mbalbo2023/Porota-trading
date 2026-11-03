@@ -180,11 +180,34 @@ def _int_field(pairs: dict[str, str], key: str) -> int | None:
     return int(val)
 
 
+def _typed_timer_last_trigger(base: str, *, runner=subprocess.run) -> int | None:
+    """Read the fixed systemd Timer D-Bus uint64, not formatted systemctl text.
+
+    systemctl show may render LastTriggerUSecMonotonic as a human timespan
+    (for example "3d 8h ..."), which must never be passed to a decimal parser.
+    The fixed D-Bus property is unsigned microseconds; reject all other types,
+    extra fields and large values without exposing the raw value in receipts.
+    """
+    if base not in {x[1] for x in ROLES}:
+        raise ValueError("UNKNOWN_UNIT")
+    # All allowed names are lowercase ASCII with only hyphens as separators.
+    object_path = "/org/freedesktop/systemd1/unit/" + base.replace("-", "_2d") + "_2etimer"
+    stdout = _run([
+        "busctl", "--system", "--no-pager", "get-property",
+        "org.freedesktop.systemd1", object_path,
+        "org.freedesktop.systemd1.Timer", "LastTriggerUSecMonotonic",
+    ], runner=runner, timeout=3)
+    if stdout is None or len(stdout) > 64:
+        return None
+    value = re.fullmatch(r"t (0|[1-9][0-9]{0,17})\n?", stdout)
+    return int(value.group(1)) if value else None
+
+
 def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
     if base not in {x[1] for x in ROLES}:
         raise ValueError("UNKNOWN_UNIT")
     props = ["LoadState", "ActiveState", "Result", "ExecMainStatus",
-             "ExecMainExitTimestampMonotonic", "LastTriggerUSecMonotonic", "NeedDaemonReload",
+             "ExecMainExitTimestampMonotonic", "NeedDaemonReload",
              "DropInPaths"]
     units = {}
     for suffix in ("timer", "service"):
@@ -209,9 +232,12 @@ def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
         return {"query": "UNAVAILABLE", "timer_active": "UNKNOWN", "service_result": "UNKNOWN",
                 "last_trigger_us": None, "last_exit_us": None,
                 "schedule_parity_verified": False, "clock_compatible": False}
+    # This third call only reads a typed uint64 after both systemctl results
+    # passed the fixed-unit / drop-in / daemon-reload preflight above.
+    trigger_us = _typed_timer_last_trigger(base, runner=runner)
     return {"query": "READ_ONLY", "timer_active": _safe_enum(timer.get("ActiveState"), ACTIVE_CLASSES),
             "service_result": _safe_enum(service.get("Result"), RESULT_CLASSES),
-            "last_trigger_us": _int_field(timer, "LastTriggerUSecMonotonic"),
+            "last_trigger_us": trigger_us,
             "last_exit_us": _int_field(service, "ExecMainExitTimestampMonotonic"),
             # LoadState/NeedDaemonReload/DropInPaths do NOT prove the exact
             # installed OnCalendar or equivalence of CLOCK_BOOTTIME to the
