@@ -31,9 +31,16 @@ def fixed_row(record, **values):
 
 
 def quote_claim(record, **values):
-    return {**record, "symbol": record["ticker"], "family": record["instrument_type"],
-        "term": record["settlement"], "source_at": AT.isoformat(), "received_at": AT.isoformat(),
-        "last": 100, "price_unit": "PER_SHARE", **values}
+    row = {**record, "symbol": record["ticker"], "family": record["instrument_type"],
+           "term": record["settlement"], "source_at": AT.isoformat(),
+           "received_at": AT.isoformat(), "last": 100, "price_unit": "PER_SHARE", **values}
+    if row.get("source") == "PPI":
+        # Positive PPI fixture explicitly models *two independent* native
+        # clocks; a source_at/receipt-only mock must no longer prove readiness.
+        row.setdefault("trade_at", row["source_at"])
+        row.setdefault("book_at", row["source_at"])
+        row.setdefault("last_kind", "TRADE")
+    return row
 
 
 @pytest.mark.parametrize("family", sorted(FAMILIES))
@@ -332,14 +339,21 @@ def test_primary_collector_uses_trade_clock_not_receipt_and_keeps_native_book(tm
     monkeypatch.delenv("POROTA_PRIMARY_LAST_CACHE_PATH", raising=False)
     monkeypatch.delenv("POROTA_OBSERVER_DB", raising=False)
     values, metadata = collector._primary_snapshot()
-    assert values["GGAL"]["provider_observed_at"] == current.isoformat()
-    assert values["GGAL"]["book_at"] == (current-timedelta(hours=1)).isoformat()
+    # A fresh TRADE cannot launder a one-hour-old native BOOK into IOL READY.
+    # Both clocks must survive in bounded diagnostics, never in selectable values.
+    assert values == {} and metadata["state"] == "UNAVAILABLE"
+    review = next(row for row in metadata["identity_reviews"]
+                  if row["reason"] == "PPI_FALLBACK_NATIVE_QUOTE_INELIGIBLE")
+    assert review["native_trade_at"] == current.isoformat()
+    assert review["native_book_at"] == (current-timedelta(hours=1)).isoformat()
     assert metadata["provider_clock_basis"] == "NATIVE_TRADE_AT"
     with sqlite3.connect(path) as connection:
         connection.execute("UPDATE market_snapshots SET trade_at=NULL")
     values, metadata = collector._primary_snapshot()
     assert values == {} and metadata["provider_available"] is None
-    assert metadata["identity_reviews"][0]["reason"] == "NATIVE_QUOTE_CLOCK_MISSING_STALE_OR_UNAVAILABLE"
+    assert metadata["identity_reviews"][0]["reason"] == "PPI_FALLBACK_NATIVE_QUOTE_INELIGIBLE"
+    assert metadata["identity_reviews"][0]["native_trade_at"] is None
+    assert metadata["identity_reviews"][0]["native_book_at"] == (current-timedelta(hours=1)).isoformat()
     assert collector._parse_time("2026-10-02T15:04:00") is None
 
 

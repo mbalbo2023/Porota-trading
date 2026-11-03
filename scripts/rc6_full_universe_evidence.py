@@ -17,6 +17,10 @@ from typing import Any
 
 from rc6_family_readiness import CANONICAL_PAPER_FAMILIES, normalize_family
 from rc6_dynamic_universe.sources import _canonical_identity
+from rc6_ppi_scanner_provenance import (
+    NATIVE_QUOTE_MAX_AGE_SECONDS, ORIGIN, native_trade_book_ready,
+    primary_records as scanner_primary_records,
+)
 from rc6_shadow_runtime.source_authority import native_time, receipt_time, source_rank
 from rc6_source_consolidation import consolidate, _fold_source
 
@@ -235,7 +239,51 @@ def _indexed_records(records):
     return result
 
 
+def _overlay_scanner_primary(fallback, scanned):
+    """Combine five-key evidence without losing other primary source coverage.
+
+    A newer observation supersedes an older one *for the same exact key*.
+    Same-receipt conflicting facts are left together for _indexed_records to
+    mark as a review conflict. A stale scanner tombstone cannot resurrect an
+    older PAPER candidate from the SQLite fallback.
+    """
+    if not scanned:
+        return fallback
+    if not fallback:
+        return scanned
+    selected, references = {}, []
+    for index in (fallback, scanned):
+        for key, row in index.items():
+            if not isinstance(row, dict):
+                continue
+            if isinstance(key, tuple):
+                current = selected.get(key)
+                if not current:
+                    selected[key] = [row]
+                    continue
+                old = current[0]
+                old_at = iso(receipt_time(old))
+                new_at = iso(receipt_time(row))
+                if (new_at or "") > (old_at or ""):
+                    selected[key] = [row]
+                elif (new_at or "") == (old_at or ""):
+                    fields = ("last", "bid", "ask", "source_at", "trade_at", "book_at", "state")
+                    if any(old.get(field) != row.get(field) for field in fields):
+                        selected[key].append(row)
+                    elif row.get("provider_origin") == "PPI_READONLY_SDK_CURRENT_AND_BOOK":
+                        selected[key] = [row]
+            elif (isinstance(key, str) and row.get("canonical_identity") is None
+                  and row.get("identity_binding") == "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED"):
+                references.append(row)
+    return _indexed_records([*references, *(row for group in selected.values() for row in group)])
+
+
 def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
+    # This receipt is emitted only after scanner SDK current+book reads. The
+    # source column of market_snapshots is an execution-mode marker, not a PPI
+    # provider label; upgrading it in the reader would break Options safety.
+    scanner_rows, _ = scanner_primary_records(ROOT, current)
+    scanned = _indexed_records(scanner_rows)
     candidates = [os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(ROOT / "primary_last.json"), "/app/data/market/primary_last.json"]
     for name in candidates:
         if not name:
@@ -243,6 +291,12 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
         payload = load_json(Path(name))
         values = payload.get("quotes_by_symbol") or payload.get("last_by_symbol")
         if isinstance(values, dict) and values:
+            # Static identity in the PPI catalog is not a quote transport.
+            # An empty/untrusted source must not mask an actual scanner or
+            # SQLite PPI observation merely by being a non-empty JSON cache.
+            label = str(payload.get("source") or "").upper()
+            if source_rank(label) != 0 or label == "PPI_CATALOG":
+                continue
             records = []
             captured = receipt_time(payload)
             for symbol, value in values.items():
@@ -255,14 +309,14 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
                 if payload.get("market"):
                     row.setdefault("market", payload["market"])
                 records.append(row)
-            return _indexed_records(records)
+            return _overlay_scanner_primary(_indexed_records(records), scanned)
     conn = None
     try:
         conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=15)
         conn.execute("PRAGMA query_only=ON")
         columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(market_snapshots)")}
         if not {"symbol", "last"}.issubset(columns):
-            return {}
+            return scanned
         selected = [name for name in ("id", "source", "symbol", "asset_class", "market", "settlement", "currency",
                                       "bid", "ask", "last", "observed_at", "trade_at", "book_at") if name in columns]
         rows = conn.execute(f"SELECT {', '.join(selected)} FROM market_snapshots ORDER BY {'id' if 'id' in columns else 'rowid'} DESC LIMIT 20000").fetchall()
@@ -270,7 +324,9 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
         records, latest = [], {}
         for raw in rows:
             row = {name: raw[positions[name]] for name in selected if name != "id" and raw[positions[name]] is not None}
-            if row.get("source") and source_rank(row["source"]) != 0:
+            if (row.get("source") and
+                    (source_rank(row["source"]) != 0
+                     or str(row["source"]).strip().upper() == "PPI_CATALOG")):
                 continue
             # Quotes retain their native event and their separate receipt clocks.
             row["source_at"] = row.get("trade_at")
@@ -283,9 +339,9 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
             if key:
                 latest[key] = received
             records.append(row)
-        return _indexed_records(records)
+        return _overlay_scanner_primary(_indexed_records(records), scanned)
     except (sqlite3.Error, OSError):
-        return {}
+        return scanned
     finally:
         if conn is not None:
             conn.close()
@@ -324,8 +380,10 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
     row = row or {}
     quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
     evidence = {**row, **quote}
-    observed = native_time(evidence)
-    limit = PPI_FRESH_SECONDS if source == "PPI" else FRESH_SECONDS
+    # For PPI, a separate book clock and an actual native trade are required;
+    # source/capture-at alone cannot establish quote selection freshness.
+    observed = evidence.get("trade_at") if source == "PPI" else native_time(evidence)
+    limit = min(PPI_FRESH_SECONDS, NATIVE_QUOTE_MAX_AGE_SECONDS) if source == "PPI" else FRESH_SECONDS
     freshness = age_state(observed, limit, current)
     received = iso(receipt_time(evidence))
     key = _exact_key(evidence)
@@ -336,7 +394,11 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
     source_available = source_state in {"READY", "LIVE_FRESH", "FRESH", "AVAILABLE", "OBSERVE_ONLY"}
     primary_authority = source != "PPI" or source_rank(evidence.get("source")) == 0
     available = bool(received and datetime.fromisoformat(received) <= current and freshness["observed_at"] and datetime.fromisoformat(freshness["observed_at"]) <= datetime.fromisoformat(received))
-    eligible = bool(identity_match and not review and available and source_available and primary_authority and freshness["state"] == "FRESH" and numeric_present(evidence))
+    ppi_native_ready = (source != "PPI" or native_trade_book_ready(
+        evidence, current, receipt=receipt_time(evidence),
+        require_trade_kind=bool(evidence.get("provider_origin") == ORIGIN)))
+    eligible = bool(identity_match and not review and available and source_available and primary_authority
+                    and freshness["state"] == "FRESH" and numeric_present(evidence) and ppi_native_ready)
     return {"present": bool(row), "structured": numeric_present(evidence), "freshness": freshness,
         "capture_observed_at": received, "capture_is_provider_time": False, "identity": list(key) if key else None,
         "identity_binding": "EXACT_FIVE_PART_IDENTITY" if identity_match else "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED",
@@ -382,6 +444,9 @@ def build() -> dict[str, Any]:
     current = now()
     catalog = catalog_rows()
     ppi = primary_rows(current)
+    # Sanitized producer receipt diagnostics survive even when the file is
+    # absent. They distinguish source transport from the catalog population.
+    _, ppi_scanner_status = scanner_primary_records(ROOT, current)
     iol = iol_rows()
     byma, byma_meta = byma_rows()
     rotation = load_json(ROOT / "iol_shadow_rotation.json")
@@ -466,6 +531,7 @@ def build() -> dict[str, Any]:
             "ledger_complete": bool(catalog) and len(catalog) == len(rows),
         },
         "cycle": {
+            "ppi_scanner_primary_receipt": ppi_scanner_status,
             "iol_progress": iol_progress,
             "iol_rotation": rotation,
             "byma_capture": byma_meta,
