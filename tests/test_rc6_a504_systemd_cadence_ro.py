@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -258,6 +260,40 @@ class A504MetadataTests(unittest.TestCase):
         self.assertIn("github.event_name != 'pull_request'", text)
         self.assertNotIn("  schedule:", text)
         self.assertNotIn("PPI Watch", text)
+
+    def test_failing_sanitizer_executes_exact_raw_cleanup_without_touching_other_artifacts(self):
+        """Execute the workflow shell itself with mocked SSH and sanitizer only."""
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        body = workflow.split("      - name: A504 bounded systemd cadence metadata (no journal messages)\n", 1)[1]
+        body = body.split("      - name: A504 publish only sanitized bounded cadence classifications\n", 1)[0]
+        shell = textwrap.dedent(body.split("        run: |\n", 1)[1])
+        self.assertIn("trap 'rm -f -- evidence/.a504-raw.json' EXIT", shell)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "evidence").mkdir()
+            (root / "scripts").mkdir()
+            (root / "bin").mkdir()
+            (root / "scripts/rc6_a504_systemd_cadence_ro.py").write_text("# mock stdin\n")
+            (root / "evidence/.a504-raw.json").write_text("old untrusted stdout")
+            other = root / "evidence/.raw.json"
+            other.write_text("A420 raw artifact untouched")
+            receipt = root / "evidence/a504-cadence.json"
+            receipt.write_text("validated receipt untouched")
+            ssh_mock = root / "bin/ssh"
+            ssh_mock.write_text("#!/bin/sh\nprintf 'untrusted simulated stdout\\n'\n")
+            ssh_mock.chmod(0o700)
+            sanitizer_mock = root / "bin/python3"
+            sanitizer_mock.write_text("#!/bin/sh\nexit 49 # force sanitizer failure before its output\n")
+            sanitizer_mock.chmod(0o700)
+            env = dict(os.environ)
+            env.update({"PATH": str(root / "bin") + os.pathsep + env.get("PATH", ""),
+                        "DO_USER": "mock-user", "DO_HOST": "mock-host"})
+            completed = subprocess.run(["bash", "-c", shell], cwd=root, env=env,
+                                       capture_output=True, text=True, timeout=5, check=False)
+            self.assertEqual(completed.returncode, 49, completed.stderr)
+            self.assertFalse((root / "evidence/.a504-raw.json").exists())
+            self.assertEqual(other.read_text(), "A420 raw artifact untouched")
+            self.assertEqual(receipt.read_text(), "validated receipt untouched")
 
 
 if __name__ == "__main__":
