@@ -36,6 +36,37 @@ def folder(tmp_path, value):
     return target
 
 
+@pytest.mark.parametrize('untrusted', [
+    '"candidate_sha": "' + 'a' * 40 + '", ',
+    '"unexpected": NaN, ',
+    '"unexpected": Infinity, ',
+    '"unexpected": -Infinity, ',
+    '"unexpected": 1e999, ',
+    '"extra": {"nested": 1, "nested": 2}, ',
+])
+def test_quiescence_receipt_rejects_ambiguous_json_without_archiving(tmp_path, untrusted):
+    """An extra JSON member must not hide conflicting evidence in a receipt."""
+    target = folder(tmp_path, receipt())
+    path = target / ('quiescence-' + CANDIDATE + '.json')
+    valid = path.read_text()
+    path.write_text('{' + untrusted + valid[1:])
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_(DUPLICATE_KEY|NONFINITE)'):
+        guard.receipt_for(tmp_path, CANDIDATE)
+
+
+@pytest.mark.parametrize('value', [
+    '{"a": 1, "a": 2}',
+    '{"nested": {"a": 1, "a": 2}}',
+    '{"extra": NaN}',
+    '{"extra": 1e999}',
+])
+def test_bounded_json_rejects_untrusted_duplicate_and_nonfinite(tmp_path, value):
+    path = tmp_path / 'receipt.json'
+    path.write_text(value)
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_(DUPLICATE_KEY|NONFINITE)'):
+        guard.bounded_json(path)
+
+
 @pytest.mark.parametrize('change', [
     lambda r: r.update(status='FIX_FORWARD_VALIDATION_REQUIRED'),
     lambda r: r.update(inflight='NO_VERIFICADO'),
