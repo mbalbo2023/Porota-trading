@@ -18,7 +18,7 @@ The durable known clock for future A619/Book2 PIT must be the independently sign
 
 ## Tests / evidence
 
-`tests/test_rc6_a620_paper_causal_decision_receipt.py` uses synthetic quotes/keys and temporary SQLite files only. It covers same-transaction freeze, rollback on synthetic crash, recovery after unsigned freeze, genuine observer clock strictly later than commit preparation, Ed25519 signature/pin mismatch, forged key and release, missing release/env pin fail-closed, private key filesystem permissions, duplicate decision/receipt anti-replay, immutable triggers, clock in the future, **post-admission legacy snapshot with old quote `captured_at`**, and HOLD no storage fanout.
+`tests/test_rc6_a620_paper_causal_decision_receipt.py` uses synthetic quotes/keys and temporary SQLite files only. Its 15 cases cover same-transaction freeze, rollback on synthetic crash, recovery after unsigned freeze, genuine observer clock strictly later than commit preparation, Ed25519 signature/pin mismatch, forged key and release, missing release/env pin fail-closed, private key filesystem permissions, duplicate decision/receipt anti-replay, immutable triggers, multi-decision sequential previous-hash chain, tampered `paper_decisions` row after freeze, forged signature bytes even after privileged trigger removal, clock in the future, **post-admission legacy snapshot with old quote `captured_at`**, and HOLD no storage fanout.
 
 ```bash
 python -m unittest discover -s tests -p 'test_rc6_a620_paper_causal_decision_receipt.py' -v
