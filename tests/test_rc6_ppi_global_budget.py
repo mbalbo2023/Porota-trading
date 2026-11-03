@@ -596,6 +596,32 @@ def test_previously_active_budget_falls_back_and_exit_reader_remains_live(wire, 
     assert "NO_VERIFICADO" in runtime.budget.metrics()["policy_authority"]
 
 
+def test_off_baseline_without_ledger_keeps_legacy_scope_but_retained_exit_uses_lease(wire, tmp_path):
+    """A586 keeps issue #465 OFF semantics without dropping a committed EXIT reservation."""
+    from be_paper_engine import PaperStore
+
+    values = approved(wire)
+    clock = wire[0]
+    store = PaperStore(str(tmp_path / "existing-paper.sqlite"))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    ctl = controller(values)
+    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+    initially = use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    assert initially["allowed"] and initially["lease"]
+    assert runtime.path.is_file()
+
+    ctl.inputs["policy"]["mode"] = "OFF"
+    assert ctl.state(clock.now())["status"] == "OFF_BASELINE"
+    retained = use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    assert retained["allowed"] and retained["lease"]
+    assert runtime.budget.policy["version"] == "rc6-global-ppi-safe-factual-baseline-v1"
+
+    fresh = RuntimePPIBudget(tmp_path / "fresh-paper.sqlite", ctl, clock=clock.now)
+    assert fresh.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL") == {
+        "allowed": True, "lease": None}
+    assert fresh.budget is None and not fresh.path.exists()
+
+
 def test_invalid_approval_and_restart_cannot_erase_prior_global_circuit(wire, tmp_path):
     from be_paper_engine import PaperStore
     values = approved(wire)

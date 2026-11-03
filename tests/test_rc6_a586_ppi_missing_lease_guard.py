@@ -75,6 +75,20 @@ def test_original_unbudgeted_baseline_is_not_changed_when_sidecar_absent(
     finally:
         guard.restore()
 
+    # Issue #465 additionally pins the original explicit RuntimePPIBudget
+    # caller in OFF (and SHADOW): no dynamic request/ledger was ever enabled.
+    direct_runtime = RuntimePPIBudget(database, authority, clock=clock.now)
+    assert direct_runtime.acquire("book") == {"allowed": True, "lease": None}
+    direct_guard = ReadOnlyTransportGuard(budget=direct_runtime, consumer="SCANNER").install()
+    try:
+        result = requests.get(BOOK_URL)
+        assert result.status_code == 200
+        assert direct_guard.calls_allowed == 1
+        assert len(provider_calls) == 2  # one per explicit baseline fixture
+        assert not direct_runtime.path.exists()
+    finally:
+        direct_guard.restore()
+
 
 def test_genuine_approved_global_budget_keeps_durable_book_lease(wire, tmp_path, monkeypatch):
     from be_paper_engine import PaperStore
