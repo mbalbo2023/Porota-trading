@@ -327,8 +327,11 @@ def _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identi
     if not market or market == "UNKNOWN" or not currency or currency == "UNKNOWN":
         raise ValueError("PPI_SCANNER_CATALOG_IDENTITY_UNVERIFIED")
     exact = (symbol, asset_class, market, currency, settlement)
-    if identity is not None and tuple(identity) != exact:
-        raise ValueError("PPI_SCANNER_OPENED_IDENTITY_MISMATCH")
+    if identity is not None:
+        if not isinstance(identity, (tuple, list)) or len(identity) != 5:
+            raise ValueError("PPI_SCANNER_OPENED_IDENTITY_INVALID")
+        if tuple(identity) != exact:
+            raise ValueError("PPI_SCANNER_OPENED_IDENTITY_MISMATCH")
     return exact
 
 

@@ -44,9 +44,9 @@ def _store(tmp_path):
     return store
 
 
-def _catalog(store, currency, *, status="AVAILABLE"):
+def _catalog(store, currency, *, market="BYMA", status="AVAILABLE"):
     record = catalog.normalize_record(
-        {"ticker": "GGAL", "type": "ACCIONES", "market": "BYMA",
+        {"ticker": "GGAL", "type": "ACCIONES", "market": market,
          "currency": currency}, "A-24HS", NOW, "a550-ppi-fixture")
     record["status"] = status
     with store.connect() as connection:
@@ -94,6 +94,23 @@ class ScannerFullIdentityGuardTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "PPI_SCANNER_OPENED_IDENTITY_MISMATCH"):
             observer._read_scanner_quote(reader, self.store, *REQUEST,
                                          priority="OPENED_CRITICAL", identity=EXACT_USD)
+        self.assertEqual((reader.calls, reader.scopes), ([], []))
+
+    def test_market_sibling_with_same_currency_also_blocks_provider_get(self):
+        _catalog(self.store, "ARS")
+        _catalog(self.store, "ARS", market="NASDAQ", status="STALE")
+        reader = Reader()
+        with self.assertRaisesRegex(ValueError, "PPI_SCANNER_PROVIDER_REQUEST_IDENTITY_AMBIGUOUS"):
+            observer._read_scanner_quote(reader, self.store, *REQUEST,
+                                         identity=EXACT_ARS)
+        self.assertEqual((reader.calls, reader.scopes), ([], []))
+
+    def test_malformed_opened_identity_never_reaches_provider(self):
+        _catalog(self.store, "ARS")
+        reader = Reader()
+        with self.assertRaisesRegex(ValueError, "PPI_SCANNER_OPENED_IDENTITY_INVALID"):
+            observer._read_scanner_quote(reader, self.store, *REQUEST,
+                                         priority="OPENED_CRITICAL", identity="GGAL")
         self.assertEqual((reader.calls, reader.scopes), ([], []))
 
     def test_opened_critical_missing_full_identity_never_falls_back_to_catalog(self):
