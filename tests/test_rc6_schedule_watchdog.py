@@ -70,7 +70,8 @@ class ScheduleWatchdogTest(unittest.TestCase):
         now = datetime(2026, 11, 3, 2, 13, tzinfo=timezone.utc)
         result = a358.classify([late], now, workflow_state="active")
         self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
-        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_SCHEDULE_CREATION", result["reason"])
+        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
         self.assertEqual(46, result["mature_expected_slots"])
         self.assertEqual(1, result["genuine_runs_today"])
         self.assertEqual(0, result["genuine_in_session"])
@@ -93,6 +94,19 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
         self.assertEqual(46 - 3, result["missing_mature_run_lower_bound"])
         self.assertEqual(1, result["off_session_runs"])
+
+    def test_all_genuine_runs_outside_business_window_still_p1(self):
+        # Native schedules can fire before the 10:37 useful window and long
+        # after 18:07. They remain real events but not evidence of 46 slots.
+        samples = [run(10, 7), run(10, 17), run(10, 27), run(20, 12)]
+        now = datetime(2026, 11, 3, 2, 13, tzinfo=timezone.utc)
+        result = a358.classify(samples, now)
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
+        self.assertEqual(0, result["genuine_in_session"])
+        self.assertEqual(4, result["off_session_runs"])
+        self.assertEqual(42, result["missing_mature_run_lower_bound"])
 
     def test_same_run_id_does_not_double_count_and_conflict_fails_closed(self):
         first = run(10, 37, id=11001)
