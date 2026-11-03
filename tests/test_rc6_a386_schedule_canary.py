@@ -36,6 +36,9 @@ class ScheduleCanaryTest(unittest.TestCase):
         self.assertEqual(receipt["market_watch_scheduler_recovered"], "NO_VERIFICADO")
         self.assertEqual(receipt["paper_runtime"], "NO_VERIFICADO")
         self.assertEqual(receipt["real_orders_sent"], "NO_VERIFICADO")
+        self.assertEqual(0, receipt["observed_after_latest_nominal_seconds"])
+        self.assertTrue(receipt["native_event_inside_cadence_grace"])
+        self.assertFalse(receipt["observation_time_is_run_creation_time"])
 
     def test_manual_push_and_pr_never_prove_schedule(self):
         for event in ("workflow_dispatch", "push", "pull_request"):
@@ -44,6 +47,8 @@ class ScheduleCanaryTest(unittest.TestCase):
                 self.assertEqual(receipt["classification"], "DIAGNOSTIC_EVENT_ONLY")
                 self.assertFalse(receipt["native_schedule_event"])
                 self.assertIsNone(receipt["event_schedule"])
+                self.assertIsNone(receipt["observed_after_latest_nominal_seconds"])
+                self.assertFalse(receipt["native_event_inside_cadence_grace"])
 
     def test_schedule_ref_cron_and_attempt_fail_closed(self):
         cases = (
@@ -56,12 +61,37 @@ class ScheduleCanaryTest(unittest.TestCase):
                 receipt = module.derive_receipt(context(**kwargs), self.NOW)
                 self.assertEqual(receipt["classification"], "INVALID_NATIVE_SCHEDULE_CONTEXT")
                 self.assertFalse(receipt["native_schedule_event"])
+                self.assertIsNone(receipt["observed_after_latest_nominal_seconds"])
 
     def test_delayed_run_is_not_recast_as_absent(self):
         late = datetime(2026, 11, 2, 23, 30, tzinfo=timezone.utc)
         receipt = module.derive_receipt(context(), late)
         self.assertTrue(receipt["native_schedule_event"])
         self.assertFalse(receipt["observed_utc_in_nominal_window"])
+        self.assertEqual(5820, receipt["observed_after_latest_nominal_seconds"])
+        self.assertFalse(receipt["native_event_inside_cadence_grace"])
+        self.assertEqual("NO_VERIFICADO", receipt["market_watch_scheduler_recovered"])
+
+    def test_real_nov02_canary_observed_next_utc_day_is_late_not_recovery(self):
+        """A386 #41562409691 observed 01:51Z; script cannot infer created_at."""
+        observed = datetime(2026, 11, 3, 1, 51, 12, tzinfo=timezone.utc)
+        receipt = module.derive_receipt(context(), observed)
+        self.assertTrue(receipt["native_schedule_event"])
+        self.assertEqual("NATIVE_SCHEDULE_EVENT_SEEN", receipt["classification"])
+        self.assertEqual(14292, receipt["observed_after_latest_nominal_seconds"])
+        self.assertFalse(receipt["native_event_inside_cadence_grace"])
+        self.assertFalse(receipt["observation_time_is_run_creation_time"])
+        self.assertEqual("NO_VERIFICADO", receipt["market_watch_scheduler_recovered"])
+
+    def test_nominal_grace_boundary_is_explicit_and_independent(self):
+        within = module.derive_receipt(context(), datetime(
+            2026, 11, 2, 13, 35, tzinfo=timezone.utc))
+        beyond = module.derive_receipt(context(), datetime(
+            2026, 11, 2, 13, 35, 1, tzinfo=timezone.utc))
+        self.assertEqual(720, within["observed_after_latest_nominal_seconds"])
+        self.assertTrue(within["native_event_inside_cadence_grace"])
+        self.assertEqual(721, beyond["observed_after_latest_nominal_seconds"])
+        self.assertFalse(beyond["native_event_inside_cadence_grace"])
 
     def test_reject_bad_repo_id_and_metadata(self):
         for key, value in (

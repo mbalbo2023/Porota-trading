@@ -12,7 +12,7 @@ import argparse
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping
 
@@ -24,6 +24,30 @@ EXPECTED_BRANCH_REF = "refs/heads/main"
 _SHA = re.compile(r"[a-f0-9]{40}\Z")
 _RUN_ID = re.compile(r"[0-9]{1,20}\Z")
 _ALLOWED_EVENTS = frozenset({"schedule", "workflow_dispatch", "push", "pull_request"})
+NATIVE_GRACE_SECONDS = 12 * 60
+
+
+def elapsed_since_latest_nominal_slot(utc: datetime) -> int:
+    """Bound the age of the last eligible canary cron without calling GitHub.
+
+    This uses the job's *observation* time, not the GitHub run `created_at`.
+    It therefore detects late evidence but cannot prove creation latency.
+    A post-midnight UTC first attempt may belong to the prior weekday.
+    """
+    if utc.tzinfo is None:
+        raise ValueError("aware observation clock required")
+    utc = utc.astimezone(timezone.utc)
+    for days_back in range(8):
+        day = (utc - timedelta(days=days_back)).date()
+        if day.weekday() >= 5:
+            continue
+        for hour in range(21, 12, -1):
+            for minute in (53, 23):
+                nominal = datetime(day.year, day.month, day.day, hour, minute,
+                                   tzinfo=timezone.utc)
+                if nominal <= utc:
+                    return int((utc - nominal).total_seconds())
+    raise ValueError("nominal canary slot unavailable")
 
 
 def _bounded_string(env: Mapping[str, str], key: str, max_chars: int = 128) -> str:
@@ -81,6 +105,8 @@ def derive_receipt(
     else:
         classification = "DIAGNOSTIC_EVENT_ONLY"
 
+    nominal_age = elapsed_since_latest_nominal_slot(utc) if genuine else None
+
     return {
         "schema": SCHEMA,
         "read_only": True,
@@ -96,6 +122,11 @@ def derive_receipt(
         "observed_utc_in_nominal_window": (
             utc.weekday() < 5 and 13 <= utc.hour <= 21
         ),
+        "observed_after_latest_nominal_seconds": nominal_age,
+        "native_event_inside_cadence_grace": (
+            genuine and nominal_age is not None and nominal_age <= NATIVE_GRACE_SECONDS
+        ),
+        "observation_time_is_run_creation_time": False,
         "native_schedule_event": genuine,
         "classification": classification,
         "market_watch_scheduler_recovered": "NO_VERIFICADO",

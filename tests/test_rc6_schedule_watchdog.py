@@ -78,6 +78,61 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual(1, result["off_session_runs"])
         self.assertEqual(45, result["missing_mature_run_lower_bound"])
         self.assertEqual(0, result["overdue_slots_after_last_run"])
+        self.assertEqual(1, result["after_last_declared_slot_count"])
+        self.assertEqual(7506, result["latest_creation_after_last_slot_lower_bound_seconds"])
+        self.assertTrue(result["multi_hour_delayed_creation_proven"])
+        self.assertEqual("NO_VERIFICADO", result["market_watch_runtime_recovered"])
+
+    def test_both_actual_nov02_delayed_schedule_events_remain_p1(self):
+        """Actual GitHub created_at, not a synthetic provider delay claim."""
+        created = [
+            dict(id=41543540643, event="schedule", run_attempt=1,
+                 head_branch="main", created_at="2026-11-02T23:12:06Z"),
+            dict(id=41568900395, event="schedule", run_attempt=1,
+                 head_branch="main", created_at="2026-11-03T02:53:48Z"),
+        ]
+        result = a358.classify(created, datetime(2026, 11, 3, 2, 56,
+                                                 tzinfo=timezone.utc),
+                               workflow_state="active")
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
+        self.assertEqual(46, result["mature_expected_slots"])
+        self.assertEqual(2, result["genuine_runs_today"])
+        self.assertEqual(0, result["genuine_in_session"])
+        self.assertEqual(2, result["off_session_runs"])
+        self.assertEqual(44, result["missing_mature_run_lower_bound"])
+        self.assertEqual(2, result["after_last_declared_slot_count"])
+        self.assertEqual(20808, result["latest_creation_after_last_slot_lower_bound_seconds"])
+        self.assertTrue(result["multi_hour_delayed_creation_proven"])
+        self.assertEqual("NO_VERIFICADO", result["market_watch_runtime_recovered"])
+
+    def test_early_or_after_host_gate_runs_never_count_as_in_session_recovery(self):
+        early = a358.classify([run(10, 7), run(10, 17)], at(10, 45))
+        self.assertEqual("NO_VERIFICADO", early["status"])
+        self.assertEqual("INSUFFICIENT_IN_SESSION_SCHEDULE_EVIDENCE", early["reason"])
+        self.assertEqual(0, early["genuine_in_session"])
+        self.assertEqual(2, early["off_session_runs"])
+
+        # Market Watch stops at 18:15. The 18:07 cron's 12m grace does
+        # NOT authorize host evidence from a genuine run created at 18:16.
+        too_late_for_host = a358.classify([run(18, 16)], at(18, 17))
+        self.assertEqual(0, too_late_for_host["genuine_in_session"])
+        self.assertEqual(1, too_late_for_host["off_session_runs"])
+        self.assertEqual(540, too_late_for_host[
+            "latest_creation_after_last_slot_lower_bound_seconds"])
+        self.assertFalse(too_late_for_host["multi_hour_delayed_creation_proven"])
+
+    def test_host_time_gate_matches_existing_bounded_t1_extension(self):
+        for day, expected in (
+            ("2026-10-30", "17:15"),
+            ("2026-11-02", "18:15"),
+            ("2026-12-31", "18:15"),
+            ("2027-01-01", "17:15"),
+        ):
+            with self.subTest(day=day):
+                value = datetime.fromisoformat(day).date()
+                self.assertEqual(expected, a358.host_window_close(value)
+                                 .astimezone(a358.ART).strftime("%H:%M"))
 
     def test_two_healthy_in_session_runs_do_not_create_false_p1(self):
         result = a358.classify([run(10, 37), run(10, 47)], at(11, 4))
