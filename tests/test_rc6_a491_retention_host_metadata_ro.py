@@ -51,7 +51,7 @@ class LocalMetadataTests(unittest.TestCase):
         self.history.write_bytes(b"A" * 4096)
         self.observer.write_bytes(b"B" * 4096)
         self.database_patch = mock.patch.object(probe, "DATABASES", (
-            ("HISTORY_DB", self.history, 2 * 1024**3),
+            ("HISTORY_DB", self.history, 1024**3),
             ("PAPER_OBSERVER_DB", self.observer, 4 * 1024**3)))
         self.database_patch.start()
         self.addCleanup(self.database_patch.stop)
@@ -115,6 +115,41 @@ class LocalMetadataTests(unittest.TestCase):
     def test_db_size_over_budget_fails_closed(self):
         status, size, _ = probe._stat_regular(self.history, maximum=1000)
         self.assertEqual((status, size), ("SIZE_LIMIT", None))
+
+    def test_history_oversize_mocked_stat_fails_closed_no_large_file(self):
+        # Simulate one byte over A330's actual max, without creating a >1GiB file.
+        cap = 1024**3
+        self.assertEqual(probe.DATABASES[0][2], cap)
+        observed = []
+
+        def simulated_stat(path, *, maximum, minimum=0):
+            observed.append((path, maximum, minimum))
+            if path == self.history:
+                self.assertEqual((maximum, minimum), (cap, 4096))
+                simulated_size = cap + 1
+                if minimum <= simulated_size <= maximum:
+                    return ("PRESENT_REGULAR", simulated_size, (1, 2, simulated_size))
+                return ("SIZE_LIMIT", None, None)
+            if path == self.observer:
+                return ("PRESENT_REGULAR", 4096, (1, 3, 4096))
+            return ("MISSING", None, None)
+
+        with mock.patch.object(probe, "_stat_regular", side_effect=simulated_stat):
+            rows = probe._stability(probe._scan(), probe._scan())
+        self.assertTrue(any(path == self.history for path, _, _ in observed))
+        self.assertEqual((rows[0]["status"], rows[0]["size_bytes"]),
+                         ("SIZE_LIMIT", None))
+        self.assertEqual(rows[1]["status"], "PRESENT_REGULAR")
+        payload = sample()
+        payload["files"][0].update(status="SIZE_LIMIT", size_bytes=None)
+        receipt = probe.sanitize(raw(payload), 0)
+        self.assertEqual(receipt["state"], "METADATA_ONLY")
+        self.assertEqual(receipt["files"][0]["status"], "SIZE_LIMIT")
+        self.assertEqual(receipt["files"][0]["size_band"], "UNKNOWN")
+        # Even a hostile host payload claiming PRESENT_REGULAR over the cap
+        # cannot promote the public receipt to a false passing condition.
+        payload["files"][0].update(status="PRESENT_REGULAR", size_bytes=cap + 1)
+        self.assertEqual(probe.sanitize(raw(payload), 0)["state"], "NO_VERIFICADO")
 
     def test_unit_parser_is_fixed_and_no_shell(self):
         expected = "LoadState=loaded\nActiveState=inactive\nUnitFileState=masked\nResult=success\n"
@@ -308,10 +343,13 @@ class SanitizerTests(unittest.TestCase):
                              (1024*mib, "1G_TO_2G"),
                              (2*1024*mib, "2G_TO_4G")]:
             value = sample()
-            value["files"][0]["size_bytes"] = size
+            # The observer role has the 4GiB bound required for upper bands;
+            # history itself is capped at 1GiB to match A330.
+            file_index = 0 if size <= 1024**3 else 1
+            value["files"][file_index]["size_bytes"] = size
             result = probe.sanitize(raw(value), 0)
             self.assertEqual(result["state"], "METADATA_ONLY")
-            self.assertEqual(result["files"][0]["size_band"], expect)
+            self.assertEqual(result["files"][file_index]["size_band"], expect)
         for count in (probe.MIN_MEMORY-1, probe.MIN_MEMORY):
             value = sample()
             value["resources"]["mem_available_bytes"] = count
