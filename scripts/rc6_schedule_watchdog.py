@@ -116,6 +116,7 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
               "genuine_runs_today": 0, "overdue_slots_after_last_run": 0,
               "genuine_in_session": 0, "off_session_runs": 0,
               "missing_mature_run_lower_bound": 0, "api_day_covered": bool(api_day_covered),
+              "detection_basis": None,
               "last_genuine_run_at_utc": None, "reason": None, "status": "NO_VERIFICADO"}
     if not expected:
         result.update(status="NOT_APPLICABLE_CLOSED", reason="WEEKEND_OR_NONSESSION")
@@ -162,9 +163,11 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
     if not api_day_covered:
         result.update(status="NO_VERIFICADO", reason="SCHEDULE_API_DAY_INCOMPLETE")
     elif result["missing_mature_run_lower_bound"] >= 2:
-        result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_SCHEDULE_CREATION")
+        result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_RUN",
+                      detection_basis="MATURE_RUN_COUNT_LOWER_BOUND")
     elif len(late) >= 2:
-        result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_RUN")
+        result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_RUN",
+                      detection_basis="OVERDUE_SINCE_LAST_RUN")
     elif len(valid) >= 2:
         gaps = [(a - b).total_seconds() for a, b in zip(valid[1:], valid[:-1])]
         result["max_observed_gap_seconds"] = int(max(gaps)) if gaps else 0
