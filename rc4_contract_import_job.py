@@ -5,6 +5,7 @@ import argparse, json, os, sqlite3, uuid
 from pathlib import Path
 from cp_contract_evidence_v2_hf6 import start_run, finish_run, record_snapshot, normalize_family
 from rc6_ppi_contract_normalizer import separate_unbound_fee_estimate
+from bs_instrument_contracts import cash_currency
 
 DB=os.getenv('PAPER_V17_DB_PATH','/app/data/paper_v17/observer_v17.db')
 class Store:
@@ -61,12 +62,25 @@ def _unique_ppi_identity(cmap,ticker,provider_row):
     identity=identities[0]
     for field in ('market','currency','settlement'):
         value=provider_row.get(field)
-        # PPI InstrumentosOperables currency is a nested descriptor with an
-        # ID/symbol, NOT authenticated ARS/USD_MEP/USD_CCL. Keep it as source
-        # evidence, but never pretend it is a canonical monetary identity.
-        if isinstance(value,str) and value.strip() and value.strip().upper() not in (
-                'UNKNOWN',identity[field]):
-            return None
+        if field=='currency':
+            value=provider_row.get('currency',provider_row.get('provider_currency'))
+            # The PPI web XHR supplies a nested denomination descriptor,
+            # not a five-key trading identity. Never infer its settlement
+            # or market. If its *literal denomination* is recognizable,
+            # it must NOT contradict the unique PPI SearchInstrument key.
+            if isinstance(value,dict):
+                value=value.get('description') or value.get('descripcion')
+            if value not in (None,'','UNKNOWN'):
+                try:
+                    if cash_currency(value)!=identity['currency']:
+                        return None
+                except ValueError:
+                    return None
+            continue
+        if value not in (None,''):
+            if not isinstance(value,str) or value.strip().upper() not in (
+                    'UNKNOWN',identity[field]):
+                return None
     return identity
 
 def _source_evidence(row,*,exclude_fees=False):
