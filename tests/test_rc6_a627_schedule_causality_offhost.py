@@ -67,7 +67,10 @@ class ScheduleCausalityTest(unittest.TestCase):
               'rc6-a617-ppi-origin-selector-readonly.yml').read_text(encoding='utf-8')
         crons=re.findall(r"^\s+- cron: '([^']+)'",yaml,re.MULTILINE)
         self.assertEqual(['05 14 4 11 *','50 17 4 11 *',
-                          '50 19 4 11 *','20 21 4 11 *'],crons)
+                          '50 19 4 11 *'],crons)
+        # Product EOD local archive wakes every 5m from 18:00; candidate
+        # postclose snapshot also wakes 18:20. No A617 host cron that minute.
+        self.assertNotIn('20 21 4 11 *',crons)
         # The A630 #908 host slots are 10:45/11:20/14:30/16:30 ART.
         a630={'45 13 4 11 *','20 14 4 11 *',
               '30 17 4 11 *','30 19 4 11 *'}

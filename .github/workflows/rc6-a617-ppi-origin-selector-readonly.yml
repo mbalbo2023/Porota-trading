@@ -13,7 +13,9 @@ on:
     - cron: '05 14 4 11 *'  # 11:05 ART, after 10:45 PPI and before 11:20
     - cron: '50 17 4 11 *'  # 14:50 ART, 20m after 14:30
     - cron: '50 19 4 11 *'  # 16:50 ART, 20m after 16:30
-    - cron: '20 21 4 11 *'  # 18:20 ART postclose reference
+    # Deliberately no 18:20 ART: the product local EOD archive runs every 5m
+    # after 18:00; the candidate also adds a postclose snapshot at 18:20.
+    # GitHub schedule jitter makes a mere minute-shift insufficient as a guard.
   pull_request:
     branches: [main]
     paths:
