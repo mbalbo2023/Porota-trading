@@ -259,7 +259,8 @@ class TestA630(unittest.TestCase):
             forged = {**result, **edit}
             self.assertFalse(verify_receipt(forged, TARGET), edit)
 
-    def _catalog_db(self, target, *, source="PPI", extra=None):
+    def _catalog_db(self, target, *, source="REQUEST_CANDIDATE",
+                    extra=None, extra_source=None):
         temp = tempfile.TemporaryDirectory()
         path = Path(temp.name) / "observer_v17.db"
         with sqlite3.connect(path) as conn:
@@ -269,12 +270,12 @@ class TestA630(unittest.TestCase):
                          ("POROTA_PAPER_V17_FRESH", "FRESH_EMPTY", str(__import__('uuid').uuid4())))
             conn.execute("CREATE TABLE financial_instrument_catalog (ticker TEXT, "
                          "instrument_type TEXT, market TEXT, currency TEXT, "
-                         "settlement TEXT, source TEXT)")
+                         "settlement TEXT, settlement_source TEXT)")
             conn.execute("INSERT INTO financial_instrument_catalog VALUES (?,?,?,?,?,?)",
                          (*target, source))
             if extra:
                 conn.execute("INSERT INTO financial_instrument_catalog VALUES (?,?,?,?,?,?)",
-                             (*extra, source))
+                             (*extra, extra_source or source))
         return temp, path
 
     def test_host_paper_5key_primary_exact_only(self):
@@ -297,8 +298,28 @@ class TestA630(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_host_complementary_sibling_does_not_veto_unique_ppi(self):
+        extra = ("AL30", "BONOS", "BYMA", "USD", "A-24HS")
+        temp, path = self._catalog_db(TARGET, extra=extra,
+                                      extra_source="IOL_COMPLEMENTARY")
+        try:
+            result = host_preflight("1120", path, enforce_mount=False)
+            self.assertEqual(result["state"], "IDENTITY_ONLY_NO_GET")
+            self.assertEqual(result["target"], list(TARGET))
+            self.assertEqual(result["ppi_gets"], 0)
+        finally:
+            temp.cleanup()
+
+    def test_host_ppi_native_field_also_authorizes_unique_selection(self):
+        temp, path = self._catalog_db(TARGET, source="PPI_FIELD")
+        try:
+            result = host_preflight("1120", path, enforce_mount=False)
+            self.assertEqual(result["state"], "IDENTITY_ONLY_NO_GET")
+        finally:
+            temp.cleanup()
+
     def test_host_non_ppi_source_cannot_become_ppi_primary(self):
-        temp, path = self._catalog_db(TARGET, source="IOL")
+        temp, path = self._catalog_db(TARGET, source="IOL_COMPLEMENTARY")
         try:
             result = host_preflight("1120", path, enforce_mount=False)
             self.assertEqual(result["reason"], "PPI_PRIMARY_SOURCE_NOT_ATTESTED")
