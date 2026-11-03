@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""RC6 A330: bounded private same-session read/export and offhost rehearsal.
+"""RC6 A330/A500: bounded private offhost retention diagnostic modes.
 
 Host mode: fixed allowlist, read-only fds/SQLite and stdout tar; NO host files
 created, no DB DML, no timers/services modified. Runner mode: an isolated tar
 becomes SHA-verified private copies/projections and A319's copy-only rehearsal.
 It never certifies external-universe completeness or historical provider PIT.
+
+A500 HISTORY_COPY_ONLY is independent of A330: it never opens the live observer
+database and therefore cannot attest runtime PAPER/0 or external PIN coverage.
+It copies only a quiet historical database to a private offhost runner for A319
+HOLD-only census. The original A330 mode and its same-session contract remain.
 """
 from __future__ import annotations
 
@@ -29,6 +34,8 @@ from urllib.parse import quote
 
 SCHEMA = "RC6_A330_PRIVATE_SAME_SESSION_V1"
 PIN_SCHEMA = "RC6_A330_PIN_CENSUS_V1"
+HISTORY_SCHEMA = "RC6_A500_HISTORY_COPY_ONLY_V1"
+HISTORY_PIN_SCHEMA = "RC6_A500_UNAVAILABLE_PIN_GROUPS_V1"
 MANIFEST_SCHEMA = "RC6_RETENTION_A319_MANIFEST_V1"
 HOST_SOURCE = Path("/opt/porota-trading/data/market_history.db")
 HOST_OBSERVER = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
@@ -69,6 +76,8 @@ HOST_EXPORT_REJECTION_ALLOWLIST = frozenset({
     "A330_PIN_ENVELOPE_BUDGET", "A330_SOURCE_CHANGED_BEFORE_STREAM",
     "A330_SOURCE_STREAM_SHORT", "A330_SOURCE_CHANGED_AFTER_STREAM",
     "A330_HOST_MODE_INPUTS_FORBIDDEN",
+    "A500_HISTORY_WRITER_NOT_INACTIVE",
+    "A500_SOURCE_CHANGED_SINCE_HISTORY_GATE",
 })
 HOST_EXPORT_GENERIC_EXCEPTIONS = frozenset({
     "OSError", "ValueError", "DatabaseError", "TarError",
@@ -152,13 +161,16 @@ def bounded_private_failure_log(path: Path, private_root: Path) -> bytes | None:
 
 
 def sanitized_capture_failure(capture_rc: int, private_stderr: bytes | None,
-                              archive_size: int) -> dict:
+                              archive_size: int, *, history_only: bool = False) -> dict:
     return {
-        "schema": SCHEMA, "state": "NO_VERIFICADO",
+        "schema": HISTORY_SCHEMA if history_only else SCHEMA,
+        "state": "NO_VERIFICADO",
         "failure_class": classify_capture_failure(capture_rc, private_stderr,
                                                   archive_size),
         "host_purge_allowed": False, "physical_host_delete_count": 0,
         "real_orders_sent_by_action": 0,
+        **({"paper_runtime_state": "NO_VERIFICADO",
+            "observer_pins_state": "UNAVAILABLE"} if history_only else {}),
     }
 
 
@@ -241,6 +253,40 @@ def host_gate(source: Path = HOST_SOURCE, observer: Path = HOST_OBSERVER) -> dic
     return {"source_stat": source_stat, "gated_at_utc": now.isoformat(),
             "paper_zero_closed": True, "a3_timers_masked": True,
             "history_writer_idle": True}
+
+
+def host_history_gate(source: Path = HOST_SOURCE) -> dict:
+    """A500: evidence of a quiet history file, never a PAPER/runtime gate.
+
+    No observer path or SQLite connection is opened. This method does not
+    authorize physical retention deletion or certify zero real runtime orders.
+    """
+    require(shutil.disk_usage("/").free >= 4 * 1024**3,
+            "A330_HOST_DISK_RESERVE")
+    require(available_memory() >= 512 * 1024**2,
+            "A330_HOST_MEMORY_RESERVE")
+    for suffix in HOST_TIMERS:
+        result = subprocess.run(
+            ["systemctl", "show", "porota-a3-history-" + suffix + "-rc6.timer",
+             "--property=ActiveState,UnitFileState"],
+            capture_output=True, text=True, timeout=3)
+        entries = dict(row.split("=", 1) for row in result.stdout.splitlines()
+                       if "=" in row)
+        require(result.returncode == 0 and
+                entries == {"ActiveState": "inactive", "UnitFileState": "masked"},
+                "A330_A3_TIMER_NOT_QUARANTINED")
+    for service in ("porota-local-eod-history-rc6.service",
+                    "porota-history-postclose-rc6.service"):
+        result = subprocess.run(["systemctl", "is-active", service],
+                                capture_output=True, text=True, timeout=3)
+        require(result.returncode in (0, 3) and
+                result.stdout.strip() == "inactive",
+                "A500_HISTORY_WRITER_NOT_INACTIVE")
+    source_stat = check_quiet_file(source, 1024**3, sqlite_file=True)
+    return {"source_stat": source_stat,
+            "gated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "paper_runtime_state": "NO_VERIFICADO", "a3_timers_masked": True,
+            "both_history_writers_inactive": True}
 
 
 def version_id(value: object) -> int | None:
@@ -475,6 +521,69 @@ def export_bundle(source: Path, observer: Path, data_root: Path,
             "real_orders_sent_by_action": 0}
 
 
+def export_history_bundle(source: Path, output, deadline: float, gate: dict) -> dict:
+    """A500: no observer read, no host copy, no misleading PAPER/0 attestation.
+
+    A compact unavailable-PIN envelope satisfies the existing A319 runner
+    format but explicitly prevents claiming cross-store coverage. The archive
+    never includes provider secrets, observer data or live sidecars.
+    """
+    require(time.monotonic() < deadline, "A330_TIME_BUDGET")
+    source_before = check_quiet_file(source, 1024**3, sqlite_file=True)
+    require(source_before == gate.get("source_stat"),
+            "A500_SOURCE_CHANGED_SINCE_HISTORY_GATE")
+    unavailable = {"state": "UNAVAILABLE", "pins": []}
+    pins = {"schema": HISTORY_PIN_SCHEMA,
+            "observed_at_utc": gate["gated_at_utc"],
+            **{kind: dict(unavailable)
+               for kind in ("sqlite", "json", "artifact", "replay")},
+            "provider_capture_pit_authenticated": False,
+            "external_consumer_universe_verified": False,
+            "host_purge_allowed": False}
+    payload = encoded(pins)
+    require(len(payload) <= ALLOWED_MEMBERS[PINS_MEMBER],
+            "A330_PIN_ENVELOPE_BUDGET")
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME |
+                 os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        actual = os.fstat(stream.fileno())
+        require((actual.st_dev, actual.st_ino, actual.st_size, actual.st_mtime_ns,
+                 actual.st_ctime_ns) == source_before,
+                "A330_SOURCE_CHANGED_BEFORE_STREAM")
+        hash_reader = DigestReader(stream)
+        with tarfile.open(mode="w|", fileobj=output, format=tarfile.PAX_FORMAT) as tar:
+            add_member(tar, SOURCE_MEMBER, source_before[2], hash_reader)
+            add_member(tar, PINS_MEMBER, len(payload), io.BytesIO(payload))
+        require(hash_reader.read_bytes == source_before[2],
+                "A330_SOURCE_STREAM_SHORT")
+        first = hash_reader.sha.hexdigest()
+        stream.seek(0)
+        second = hashlib.sha256()
+        while True:
+            require(time.monotonic() < deadline, "A330_TIME_BUDGET")
+            chunk = stream.read(1024**2)
+            if not chunk:
+                break
+            second.update(chunk)
+        require(first == second.hexdigest() and
+                check_quiet_file(source, 1024**3, sqlite_file=True) == source_before,
+                "A330_SOURCE_CHANGED_AFTER_STREAM")
+    return {"schema": HISTORY_SCHEMA,
+            "state": "HISTORY_COPY_ONLY_HOST_READONLY_CAPTURE",
+            "source_sha256": first, "source_bytes": source_before[2],
+            "pin_envelope_sha256": hashlib.sha256(payload).hexdigest(),
+            "pin_envelope_bytes": len(payload),
+            "captured_at_utc": gate["gated_at_utc"],
+            "second_full_hash_equal": True,
+            "paper_runtime_state": "NO_VERIFICADO",
+            "observer_pins_state": "UNAVAILABLE",
+            "provider_capture_pit_authenticated": False,
+            "external_universe_verified": False,
+            "observer_database_opened": False,
+            "source_mutated": False, "host_purge_allowed": False,
+            "real_orders_sent_by_action": 0}
+
+
 def write_exclusive(root: Path, name: str, source) -> Path:
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", name),
             "A330_RUNNER_FILENAME_INVALID")
@@ -515,7 +624,7 @@ def extract_bundle(bundle: Path, runner_root: Path, deadline: float) -> dict[str
     return unpacked
 
 
-def read_receipt(path: Path) -> dict:
+def read_receipt(path: Path, *, history_only: bool = False) -> dict:
     require(path.is_file() and path.stat().st_size <= 128 * 1024,
             "A330_CAPTURE_LOG_BUDGET")
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -523,8 +632,12 @@ def read_receipt(path: Path) -> dict:
                 if line.startswith("A330_CAPTURE_RECEIPT=")]
     require(len(receipts) == 1, "A330_CAPTURE_RECEIPT_MISSING")
     result = decode_json(receipts[0].encode())
-    require(isinstance(result, dict) and result.get("schema") == SCHEMA and
-            result.get("state") == "HOST_READ_ONLY_CAPTURE" and
+    expected_schema = HISTORY_SCHEMA if history_only else SCHEMA
+    expected_state = ("HISTORY_COPY_ONLY_HOST_READONLY_CAPTURE" if history_only
+                      else "HOST_READ_ONLY_CAPTURE")
+    require(isinstance(result, dict) and
+            result.get("schema") == expected_schema and
+            result.get("state") == expected_state and
             result.get("source_mutated") is False and
             result.get("host_purge_allowed") is False and
             result.get("real_orders_sent_by_action") == 0 and
@@ -539,6 +652,13 @@ def read_receipt(path: Path) -> dict:
             isinstance(result.get("captured_at_utc"), str) and
             result.get("second_full_hash_equal") is True,
             "A330_CAPTURE_RECEIPT_INVALID")
+    if history_only:
+        require(result.get("paper_runtime_state") == "NO_VERIFICADO" and
+                result.get("observer_pins_state") == "UNAVAILABLE" and
+                result.get("observer_database_opened") is False and
+                result.get("provider_capture_pit_authenticated") is False and
+                result.get("external_universe_verified") is False,
+                "A330_CAPTURE_RECEIPT_INVALID")
     return result
 
 
@@ -567,12 +687,13 @@ def a319_module(repo_root: Path):
 
 
 def runner_rehearsal(bundle: Path, log: Path, runner_root: Path,
-                     repo_root: Path, *, deadline: float) -> dict:
+                     repo_root: Path, *, deadline: float,
+                     history_only: bool = False) -> dict:
     runner_root = Path(runner_root).resolve()
     require(runner_root.is_dir() and not runner_root.is_symlink() and
             not runner_root.is_relative_to(Path("/opt/porota-trading")),
             "A330_RUNNER_ROOT_UNSAFE")
-    receipt = read_receipt(log)
+    receipt = read_receipt(log, history_only=history_only)
     members = extract_bundle(bundle, runner_root, deadline)
     require(sha_file(members[SOURCE_MEMBER], deadline) == receipt["source_sha256"]
             and members[SOURCE_MEMBER].stat().st_size == receipt["source_bytes"],
@@ -581,7 +702,9 @@ def runner_rehearsal(bundle: Path, log: Path, runner_root: Path,
             and members[PINS_MEMBER].stat().st_size == receipt["pin_envelope_bytes"],
             "A330_PIN_ENVELOPE_SHA_NOT_REPRODUCED")
     census = decode_json(members[PINS_MEMBER].read_bytes())
-    require(isinstance(census, dict) and census.get("schema") == PIN_SCHEMA and
+    expected_pin_schema = HISTORY_PIN_SCHEMA if history_only else PIN_SCHEMA
+    require(isinstance(census, dict) and
+            census.get("schema") == expected_pin_schema and
             census.get("host_purge_allowed") is False and
             census.get("provider_capture_pit_authenticated") is False and
             census.get("external_consumer_universe_verified") is False,
@@ -594,6 +717,9 @@ def runner_rehearsal(bundle: Path, log: Path, runner_root: Path,
         entry = census.get(kind)
         require(isinstance(entry, dict) and isinstance(entry.get("pins"), list),
                 "A330_PIN_GROUP_INVALID")
+        if history_only:
+            require(entry.get("state") == "UNAVAILABLE" and not entry["pins"],
+                    "A330_PIN_GROUP_INVALID")
         if entry.get("state") == "UNAVAILABLE":
             require(not entry["pins"], "A330_UNAVAILABLE_WITH_PINS")
             continue
@@ -626,8 +752,12 @@ def runner_rehearsal(bundle: Path, log: Path, runner_root: Path,
     require(report.get("host_purge_allowed") is False and
             report.get("physical_host_delete_count") == 0,
             "A330_A319_UNSAFE_RECEIPT")
-    return {"schema": SCHEMA, "state": "NO_VERIFICADO",
-            "failure_class": "AUTHENTIC_PROVIDER_PIT_AND_EXTERNAL_UNIVERSE_UNVERIFIED",
+    return {"schema": HISTORY_SCHEMA if history_only else SCHEMA,
+            "state": "NO_VERIFICADO",
+            "failure_class": (
+                "OBSERVER_PINS_PIT_AND_EXTERNAL_UNIVERSE_UNVERIFIED"
+                if history_only else
+                "AUTHENTIC_PROVIDER_PIT_AND_EXTERNAL_UNIVERSE_UNVERIFIED"),
             "source_sha256": receipt["source_sha256"],
             "source_bytes": receipt["source_bytes"],
             "private_index_sha256": report.get("per_row_index", {}).get("sha256"),
@@ -639,7 +769,11 @@ def runner_rehearsal(bundle: Path, log: Path, runner_root: Path,
             "host_purge_allowed": False, "physical_host_delete_count": 0,
             "physical_host_bytes_reclaimed": 0,
             "provenance_pit_authenticated": False,
-            "external_consumer_universe_verified": False}
+            "external_consumer_universe_verified": False,
+            **({"paper_runtime_state": "NO_VERIFICADO",
+                "observer_pins_state": "UNAVAILABLE",
+                "observer_database_opened": False}
+               if history_only else {})}
 
 
 def main() -> None:
@@ -648,6 +782,9 @@ def main() -> None:
     group.add_argument("--host-export", action="store_true")
     group.add_argument("--runner-rehearsal", action="store_true")
     group.add_argument("--classify-capture-failure", action="store_true")
+    group.add_argument("--host-history-export", action="store_true")
+    group.add_argument("--runner-history-rehearsal", action="store_true")
+    group.add_argument("--classify-history-capture-failure", action="store_true")
     parser.add_argument("--capture-exit-code", type=int)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--capture-log", type=Path)
@@ -665,13 +802,22 @@ def main() -> None:
                                     sys.stdout.buffer,
                                     time.monotonic() + HOST_SECONDS, gate)
             print("A330_CAPTURE_RECEIPT=" + encoded(receipt).decode(), file=sys.stderr)
-        elif args.runner_rehearsal:
+        elif args.host_history_export:
+            require(not any((args.bundle, args.capture_log, args.runner_root,
+                             args.sanitized_output)) and args.capture_exit_code is None,
+                    "A330_HOST_MODE_INPUTS_FORBIDDEN")
+            gate = host_history_gate()
+            receipt = export_history_bundle(HOST_SOURCE, sys.stdout.buffer,
+                                            time.monotonic() + HOST_SECONDS, gate)
+            print("A330_CAPTURE_RECEIPT=" + encoded(receipt).decode(), file=sys.stderr)
+        elif args.runner_rehearsal or args.runner_history_rehearsal:
             require(all((args.bundle, args.capture_log, args.runner_root,
                          args.sanitized_output)) and args.capture_exit_code is None,
                     "A330_RUNNER_INPUTS_REQUIRED")
             result = runner_rehearsal(args.bundle, args.capture_log,
                                       args.runner_root, args.repo_root,
-                                      deadline=time.monotonic() + RUNNER_SECONDS)
+                                      deadline=time.monotonic() + RUNNER_SECONDS,
+                                      history_only=args.runner_history_rehearsal)
             output = Path(args.sanitized_output)
             require(output.parent.resolve() == args.runner_root.resolve(),
                     "A330_SANITIZED_OUTPUT_OUTSIDE_RUNNER")
@@ -697,22 +843,33 @@ def main() -> None:
             except OSError:
                 archive_size = 0
             receipt = sanitized_capture_failure(args.capture_exit_code,
-                                                stderr, archive_size)
+                                                stderr, archive_size,
+                                                history_only=args.classify_history_capture_failure)
             write_exclusive(root, args.sanitized_output.name,
                             io.BytesIO(encoded(receipt) + b"\n"))
             print("A330_CAPTURE_FAILURE_CLASS=" + receipt["failure_class"])
     except (GuardError, OSError, ValueError, sqlite3.DatabaseError, tarfile.TarError) as exc:
         code = str(exc) if isinstance(exc, GuardError) else type(exc).__name__
-        if (args.runner_rehearsal or args.classify_capture_failure) and \
+        if (args.runner_rehearsal or args.classify_capture_failure or
+            args.runner_history_rehearsal or args.classify_history_capture_failure) and \
                 args.sanitized_output and args.runner_root:
             try:
                 output = Path(args.sanitized_output)
                 if output.parent.resolve() == args.runner_root.resolve():
                     write_exclusive(output.parent, output.name, io.BytesIO(encoded({
-                        "schema": SCHEMA, "state": "NO_VERIFICADO",
+                        "schema": (HISTORY_SCHEMA if
+                                   (args.runner_history_rehearsal or
+                                    args.classify_history_capture_failure)
+                                   else SCHEMA),
+                        "state": "NO_VERIFICADO",
                         "failure_class": code, "host_purge_allowed": False,
                         "physical_host_delete_count": 0,
-                        "real_orders_sent_by_action": 0}) + b"\n"))
+                        "real_orders_sent_by_action": 0,
+                        **({"paper_runtime_state": "NO_VERIFICADO",
+                            "observer_pins_state": "UNAVAILABLE"}
+                           if (args.runner_history_rehearsal or
+                               args.classify_history_capture_failure) else {})
+                    }) + b"\n"))
             except OSError:
                 pass
         print("A330_REJECTED=" + code, file=sys.stderr)

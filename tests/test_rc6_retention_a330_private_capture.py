@@ -21,6 +21,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/rc6_retention_a330_private_capture.py"
 WORKFLOW = ROOT / ".github/workflows/rc6-retention-private-rehearsal.yml"
+HISTORY_WORKFLOW = ROOT / ".github/workflows/rc6-a500-retention-history-copy-only.yml"
 SPEC = importlib.util.spec_from_file_location("a330_private", SCRIPT)
 assert SPEC and SPEC.loader
 a330 = importlib.util.module_from_spec(SPEC)
@@ -364,6 +365,275 @@ class SyntheticPrivateCapture(unittest.TestCase):
         self.assertEqual(result["state"], "NO_VERIFICADO")
         self.assertFalse(result["host_purge_allowed"])
         self.assertEqual(result["physical_host_delete_count"], 0)
+
+    def test_a500_history_gate_checks_both_writers_and_masked_timers(self):
+        calls = []
+
+        def quiet(args, **_):
+            calls.append(tuple(args))
+            if args[1] == "show":
+                return SimpleNamespace(returncode=0,
+                                       stdout="ActiveState=inactive\nUnitFileState=masked\n")
+            return SimpleNamespace(returncode=3, stdout="inactive\n")
+
+        with (patch.object(a330, "available_memory", return_value=8 * 1024**3),
+              patch.object(a330.shutil, "disk_usage",
+                           return_value=SimpleNamespace(free=8 * 1024**3)),
+              patch.object(a330.subprocess, "run", side_effect=quiet),
+              patch.object(a330.sqlite3, "connect",
+                           side_effect=AssertionError("observer must not open"))):
+            gate = a330.host_history_gate(self.source)
+        self.assertEqual(gate["paper_runtime_state"], "NO_VERIFICADO")
+        self.assertTrue(gate["both_history_writers_inactive"])
+        self.assertEqual(len([call for call in calls if call[1] == "show"]), 3)
+        writer_calls = [call[2] for call in calls if call[1] == "is-active"]
+        self.assertEqual(writer_calls, [
+            "porota-local-eod-history-rc6.service",
+            "porota-history-postclose-rc6.service"])
+
+    def test_a500_any_active_or_unavailable_history_writer_fails_closed(self):
+        for failing in ("porota-local-eod-history-rc6.service",
+                        "porota-history-postclose-rc6.service"):
+            for bad_state, code in (("active", 0), ("failed", 3),
+                                    ("unknown", 4)):
+                with self.subTest(failing=failing, state=bad_state):
+                    def commands(args, **_):
+                        if args[1] == "show":
+                            return SimpleNamespace(returncode=0,
+                                                   stdout="ActiveState=inactive\nUnitFileState=masked\n")
+                        if args[2] == failing:
+                            return SimpleNamespace(returncode=code,
+                                                   stdout=bad_state + "\n")
+                        return SimpleNamespace(returncode=3, stdout="inactive\n")
+
+                    with (patch.object(a330, "available_memory",
+                                       return_value=8 * 1024**3),
+                          patch.object(a330.shutil, "disk_usage",
+                                       return_value=SimpleNamespace(free=8 * 1024**3)),
+                          patch.object(a330.subprocess, "run", side_effect=commands)):
+                        with self.assertRaisesRegex(a330.GuardError,
+                                                    "A500_HISTORY_WRITER_NOT_INACTIVE"):
+                            a330.host_history_gate(self.source)
+
+    def test_a500_history_source_wal_sidecar_and_timer_not_masked_fail(self):
+        def valid(args, **_):
+            if args[1] == "show":
+                return SimpleNamespace(returncode=0,
+                                       stdout="ActiveState=inactive\nUnitFileState=masked\n")
+            return SimpleNamespace(returncode=3, stdout="inactive\n")
+
+        with (patch.object(a330, "available_memory", return_value=8 * 1024**3),
+              patch.object(a330.shutil, "disk_usage",
+                           return_value=SimpleNamespace(free=8 * 1024**3)),
+              patch.object(a330.subprocess, "run", side_effect=valid)):
+            (self.root / "market_history.db-wal").touch()
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_SQLITE_SIDECAR_PRESENT"):
+                a330.host_history_gate(self.source)
+            (self.root / "market_history.db-wal").unlink()
+
+        def bad_timer(args, **_):
+            return SimpleNamespace(returncode=0,
+                                   stdout="ActiveState=active\nUnitFileState=enabled\n")
+        with (patch.object(a330, "available_memory", return_value=8 * 1024**3),
+              patch.object(a330.shutil, "disk_usage",
+                           return_value=SimpleNamespace(free=8 * 1024**3)),
+              patch.object(a330.subprocess, "run", side_effect=bad_timer)):
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_A3_TIMER_NOT_QUARANTINED"):
+                a330.host_history_gate(self.source)
+
+    def test_a500_history_gate_resource_thresholds_fail_before_host_read(self):
+        with (patch.object(a330.shutil, "disk_usage",
+                           return_value=SimpleNamespace(free=4 * 1024**3 - 1)),
+              patch.object(a330.subprocess, "run",
+                           side_effect=AssertionError("no systemd calls expected"))):
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_HOST_DISK_RESERVE"):
+                a330.host_history_gate(self.source)
+        with (patch.object(a330.shutil, "disk_usage",
+                           return_value=SimpleNamespace(free=4 * 1024**3)),
+              patch.object(a330, "available_memory",
+                           return_value=512 * 1024**2 - 1),
+              patch.object(a330.subprocess, "run",
+                           side_effect=AssertionError("no systemd calls expected"))):
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_HOST_MEMORY_RESERVE"):
+                a330.host_history_gate(self.source)
+
+    def make_a500_bundle(self):
+        archive = io.BytesIO()
+        receipt = a330.export_history_bundle(self.source, archive,
+                                             time.monotonic() + 30, self.gate)
+        bundle = self.private / "a330-private.tar"
+        bundle.write_bytes(archive.getvalue())
+        log = self.private / "a330-private.log"
+        log.write_text("A330_CAPTURE_RECEIPT=" +
+                       json.dumps(receipt, sort_keys=True) + "\n")
+        return bundle, log, receipt
+
+    def test_a500_live_wal_observer_never_opened_or_exported(self):
+        observer_connection = sqlite3.connect(self.observer)
+        try:
+            self.assertEqual(observer_connection.execute(
+                "PRAGMA journal_mode=WAL").fetchone()[0], "wal")
+            observer_connection.execute("INSERT INTO external_event VALUES (42)")
+            observer_connection.commit()
+            self.assertTrue((self.root / "observer_v17.db-wal").exists())
+            self.assertTrue((self.root / "observer_v17.db-shm").exists())
+            original_history = self.source.read_bytes()
+            with patch.object(a330.sqlite3, "connect",
+                              side_effect=AssertionError("live observer opened")):
+                bundle, log, receipt = self.make_a500_bundle()
+            self.assertFalse(receipt["observer_database_opened"])
+            self.assertEqual(receipt["paper_runtime_state"], "NO_VERIFICADO")
+            self.assertEqual(receipt["observer_pins_state"], "UNAVAILABLE")
+            self.assertFalse(receipt["host_purge_allowed"])
+            self.assertEqual(original_history, self.source.read_bytes())
+            self.assertTrue((self.root / "observer_v17.db-wal").exists())
+            self.assertTrue((self.root / "observer_v17.db-shm").exists())
+            with tarfile.open(bundle) as tar:
+                self.assertEqual(tar.getnames(), [a330.SOURCE_MEMBER, a330.PINS_MEMBER])
+                self.assertEqual(tar.extractfile(a330.SOURCE_MEMBER).read(), original_history)
+                pins = json.load(tar.extractfile(a330.PINS_MEMBER))
+                self.assertEqual(pins["schema"], a330.HISTORY_PIN_SCHEMA)
+                for kind in ("sqlite", "json", "artifact", "replay"):
+                    self.assertEqual(pins[kind], {"state": "UNAVAILABLE", "pins": []})
+            self.assertEqual(a330.read_receipt(log, history_only=True), receipt)
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_CAPTURE_RECEIPT_INVALID"):
+                a330.read_receipt(log)  # A500 cannot impersonate A330
+        finally:
+            observer_connection.close()
+
+    def test_a500_source_changed_during_stream_fails_closed(self):
+        original_read = a330.DigestReader.read
+        changed = False
+
+        def concurrent_write(reader, size=-1):
+            nonlocal changed
+            block = original_read(reader, size)
+            if block and not changed:
+                changed = True
+                with sqlite3.connect(self.source) as db:
+                    db.execute("UPDATE history_versions_v2 SET symbol='WRITER' WHERE id=7")
+            return block
+
+        with patch.object(a330.DigestReader, "read", concurrent_write):
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_SOURCE_CHANGED_AFTER_STREAM"):
+                a330.export_history_bundle(self.source, io.BytesIO(),
+                                           time.monotonic() + 30, self.gate)
+
+    def test_a500_runner_real_a319_census_keeps_missing_pins_on_hold(self):
+        bundle, log, _ = self.make_a500_bundle()
+        report = a330.runner_rehearsal(bundle, log, self.private, ROOT,
+                                       deadline=time.monotonic() + 30,
+                                       history_only=True)
+        self.assertEqual(report["schema"], a330.HISTORY_SCHEMA)
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["paper_runtime_state"], "NO_VERIFICADO")
+        self.assertEqual(report["observer_pins_state"], "UNAVAILABLE")
+        self.assertEqual(report["indexed_versions"], 8)
+        self.assertEqual(report["crossstore_scanned_kinds"], [])
+        self.assertEqual(report["a319_decision_counts"].get("RETAIN_PINNED"), 1)
+        self.assertEqual(report["a319_decision_counts"].get(
+            "HOLD_MISSING_CROSS_STORE_COVERAGE"), 7)
+        self.assertFalse(report["host_purge_allowed"])
+        self.assertEqual(report["physical_host_delete_count"], 0)
+
+    def test_a500_receipt_cannot_claim_paper_or_pins(self):
+        _, log, receipt = self.make_a500_bundle()
+        for key, value in (("paper_runtime_state", "PRODUCTION_PAPER"),
+                           ("observer_pins_state", "SCANNED"),
+                           ("observer_database_opened", True),
+                           ("provider_capture_pit_authenticated", True)):
+            with self.subTest(key=key):
+                mutated = dict(receipt)
+                mutated[key] = value
+                log.write_text("A330_CAPTURE_RECEIPT=" + json.dumps(mutated) + "\n")
+                with self.assertRaisesRegex(a330.GuardError,
+                                            "A330_CAPTURE_RECEIPT_INVALID"):
+                    a330.read_receipt(log, history_only=True)
+
+    def test_a500_failure_classifier_private_redaction_and_no_host_purge(self):
+        receipt = a330.sanitized_capture_failure(
+            2, b"private-host-path\nA330_REJECTED=A500_HISTORY_WRITER_NOT_INACTIVE\n",
+            0, history_only=True)
+        self.assertEqual(receipt["schema"], a330.HISTORY_SCHEMA)
+        self.assertEqual(receipt["failure_class"],
+                         "REMOTE_GUARD_A500_HISTORY_WRITER_NOT_INACTIVE")
+        self.assertEqual(receipt["paper_runtime_state"], "NO_VERIFICADO")
+        self.assertFalse(receipt["host_purge_allowed"])
+        self.assertNotIn("private-host-path", json.dumps(receipt))
+
+    def test_a500_host_cli_no_observer_access_or_paper_claim(self):
+        stdout_bytes = io.BytesIO()
+        stdout = SimpleNamespace(buffer=stdout_bytes)
+        stderr = io.StringIO()
+        argv = ["a500", "--host-history-export"]
+        with (patch.object(a330, "HOST_SOURCE", self.source),
+              patch.object(a330, "host_history_gate", return_value=self.gate),
+              patch.object(a330.sqlite3, "connect",
+                           side_effect=AssertionError("unexpected sqlite open")),
+              patch.object(sys, "stdout", stdout),
+              patch.object(sys, "stderr", stderr),
+              patch.object(sys, "argv", argv)):
+            a330.main()
+        receipts = [line.removeprefix("A330_CAPTURE_RECEIPT=")
+                    for line in stderr.getvalue().splitlines()
+                    if line.startswith("A330_CAPTURE_RECEIPT=")]
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(json.loads(receipts[0])["schema"], a330.HISTORY_SCHEMA)
+        with tarfile.open(fileobj=io.BytesIO(stdout_bytes.getvalue())) as tar:
+            self.assertEqual(tar.getnames(), [a330.SOURCE_MEMBER, a330.PINS_MEMBER])
+
+    def test_a500_runner_and_classifier_cli_mode_receipts(self):
+        bundle, log, _ = self.make_a500_bundle()
+        result_path = self.private / "a330-sanitized.json"
+        argv = ["a500", "--runner-history-rehearsal", "--bundle", str(bundle),
+                "--capture-log", str(log), "--runner-root", str(self.private),
+                "--repo-root", str(ROOT), "--sanitized-output", str(result_path)]
+        with (patch.object(sys, "argv", argv), redirect_stdout(io.StringIO())):
+            a330.main()
+        result = json.loads(result_path.read_text())
+        self.assertEqual(result["schema"], a330.HISTORY_SCHEMA)
+        self.assertFalse(result["host_purge_allowed"])
+
+        # Separate fresh destination: the classifier must not overwrite a receipt.
+        result_path.unlink()
+        log.write_text("sensitive path\nA330_REJECTED=A500_HISTORY_WRITER_NOT_INACTIVE\n")
+        argv = ["a500", "--classify-history-capture-failure",
+                "--capture-exit-code", "2", "--bundle", str(bundle),
+                "--capture-log", str(log), "--runner-root", str(self.private),
+                "--sanitized-output", str(result_path)]
+        with (patch.object(sys, "argv", argv), redirect_stdout(io.StringIO())):
+            a330.main()
+        result = json.loads(result_path.read_text())
+        self.assertEqual(result["schema"], a330.HISTORY_SCHEMA)
+        self.assertEqual(result["failure_class"],
+                         "REMOTE_GUARD_A500_HISTORY_WRITER_NOT_INACTIVE")
+        self.assertNotIn("sensitive path", result_path.read_text())
+
+    def test_a500_new_workflow_manual_host_only_and_pr_contracts_only(self):
+        body = HISTORY_WORKFLOW.read_text()
+        self.assertIn("pull_request:", body)
+        self.assertIn("workflow_dispatch:", body)
+        self.assertNotIn("\n  push:", body)
+        self.assertNotIn("\n  schedule:", body)
+        self.assertIn("github.event_name == 'workflow_dispatch'", body)
+        self.assertIn("github.ref == 'refs/heads/main'", body)
+        self.assertIn("inputs.mode == 'HISTORY_COPY_ONLY'", body)
+        self.assertIn("--host-history-export", body)
+        self.assertIn("--runner-history-rehearsal", body)
+        self.assertIn("--classify-history-capture-failure", body)
+        self.assertIn("permissions:\n  contents: read", body)
+        self.assertIn("path: ${{ env.RC6_A500_DIR }}/a330-sanitized.json", body)
+        self.assertNotIn("path: ${{ env.RC6_A500_DIR }}/a330-private.tar", body)
+        for forbidden in ("sudo systemctl", "docker compose", "rm -rf",
+                          "--host-export'", "PPI Watch"):
+            if forbidden != "PPI Watch":
+                self.assertNotIn(forbidden, body)
 
     def test_workflow_is_manual_main_runner_only_without_deploy(self):
         body = WORKFLOW.read_text()
