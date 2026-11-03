@@ -29,6 +29,8 @@ PPI_CATALOG = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE"})
 MAX_CATALOG_ROWS = 60_000
 MAX_CURRENT_ROWS = 60_000
 MAX_METADATA_BYTES = 128 * 1024 * 1024
+MAX_HISTORY_ROWS = 200_000
+MAX_HISTORY_IDENTITY_BYTES = 24 * 1024 * 1024
 MAX_SECONDS = 14.0
 
 
@@ -144,18 +146,27 @@ def _primary_claim(row, meta):
             or str(meta.get("_availability_source") or "").upper().startswith("PPI_PRIMARY"))
 
 
-def _historic_ppi_only(conn, key):
-    family, ticker, market, currency, settlement = key
-    aliases = ("ON", "OBLIGACIONES") if family == "OBLIGACIONES" else (
-        ("FCI", "FCI_LOCAL") if family == "FCI" else (family,))
-    for name in aliases:
-        rows = conn.execute("""SELECT source_class FROM contract_evidence_v2_snapshots
-           WHERE family=? AND ticker=? AND market=? AND currency=? AND settlement=?
-             AND substr(source_class,1,4)='PPI_' LIMIT 1""",
-                            (name, ticker, market, currency, settlement)).fetchall()
-        if rows:
-            return True
-    return False
+def _historical_ppi_memberships(conn, wanted):
+    """One bounded streaming pass, no per-gap SQL, DISTINCT temp-B-tree or disk."""
+    if not wanted:
+        return set(), 0, 0
+    matches = set()
+    rows_scanned = identity_bytes = 0
+    cursor = conn.execute("""SELECT family,ticker,market,currency,settlement
+       FROM contract_evidence_v2_snapshots
+       WHERE substr(source_class,1,4)='PPI_' LIMIT ?""",
+                          (MAX_HISTORY_ROWS + 1,))
+    for row in cursor:
+        rows_scanned += 1
+        if rows_scanned > MAX_HISTORY_ROWS:
+            raise Blocked("HOST_HISTORY_PPI_ROWS_BUDGET")
+        key = _key(row)
+        identity_bytes += sum(len(str(part).encode("utf-8")) for part in key)
+        if identity_bytes > MAX_HISTORY_IDENTITY_BYTES:
+            raise Blocked("HOST_HISTORY_PPI_IDENTITY_BYTES_BUDGET")
+        if key in wanted and _complete(key):
+            matches.add(key)
+    return matches, rows_scanned, identity_bytes
 
 
 def _bucket():
@@ -250,6 +261,7 @@ def _aggregate(conn):
         if row["_ppi_claim"]:
             ppi_symbol[str(row["ticker"] or "").strip().upper()] += 1
     out = {family: _bucket() for family in FAMILIES}
+    pending_historical = []
     for row in rows:
         key = _key(row)
         if key[0] not in out or str(row["status"] or "").upper() not in ACTIVE:
@@ -289,14 +301,19 @@ def _aggregate(conn):
             item["ticker_only_v2_mismatch"] += 1
         else:
             item["v2_current_absent"] += 1
-        if not primary and _historic_ppi_only(conn, key):
+        if not primary:
+            pending_historical.append((key, item))
+    historic, historical_rows, historical_bytes = _historical_ppi_memberships(
+        conn, {key for key, _ in pending_historical})
+    for key, item in pending_historical:
+        if key in historic:
             item["historic_ppi_exact_without_current"] += 1
     families = []
     for family in FAMILIES:
         families.append({name: (dict(sorted(value.items())) if isinstance(value, Counter)
                                 else value)
                          for name, value in {"family": family, **out[family]}.items()})
-    return len(rows), len(current), families
+    return len(rows), len(current), historical_rows, historical_bytes, families
 
 
 def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
@@ -312,7 +329,7 @@ def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
         start = time.monotonic()
         conn.set_progress_handler(lambda: int(time.monotonic() - start > MAX_SECONDS), 1000)
         conn.execute("BEGIN")
-        catalog_rows, current_rows, families = _aggregate(conn)
+        catalog_rows, current_rows, historical_rows, historical_bytes, families = _aggregate(conn)
         conn.execute("ROLLBACK")
     except sqlite3.Error:
         raise Blocked("HOST_SQLITE_READ_FAILED_OR_WAL_PERMISSION") from None
@@ -328,6 +345,8 @@ def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
             "host_db_writes": 0, "provider_gets": 0, "real_orders_sent_by_probe": 0,
             "paper_auto_enabled": False, "host_runtime_order_count": "NO_VERIFICADO",
             "catalog_rows": catalog_rows, "v2_current_rows": current_rows,
+            "v2_history_ppi_rows_scanned": historical_rows,
+            "v2_history_identity_bytes_scanned": historical_bytes,
             "historical_819_gap_match": sum(x["capability_gaps"] for x in families) == 819,
             "capability_gaps_measured": sum(x["capability_gaps"] for x in families),
             "families": families, **sidecars,
