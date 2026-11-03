@@ -183,8 +183,10 @@ def _verify_sidecar_access(path: Path, maximum: int, effective_user: str,
             # Fail closed on a swap between the root metadata read and the
             # unprivileged DAC probe. A different regular file proves nothing.
             if ((actual.st_dev, actual.st_ino, actual.st_size, actual.st_mtime_ns,
+                 actual.st_ctime_ns,
                  actual.st_uid, stat.S_IMODE(actual.st_mode)) !=
                 (expected.st_dev, expected.st_ino, expected.st_size, expected.st_mtime_ns,
+                 expected.st_ctime_ns,
                  expected.st_uid, stat.S_IMODE(expected.st_mode))):
                 os._exit(2)
             os._exit(0)
@@ -217,6 +219,11 @@ def inspect_private_receipt(path: Path, maximum: int, *, effective_user: str,
     fd = None
     try:
         fd, info = _open_bounded(path, maximum)
+        # SECURITY A473: _verify_sidecar_access forks and drops to UID1000.
+        # An inherited root-open descriptor would bypass that DAC check even
+        # after setuid. Close the privileged descriptor before ANY fork.
+        os.close(fd)
+        fd = None
         result["mtime_age_bucket"] = _age_bucket(info.st_mtime, now)
         mode_ok = stat.S_IMODE(info.st_mode) == 0o600
         owner_ok = info.st_uid == expected_owner_uid

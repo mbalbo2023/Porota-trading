@@ -162,6 +162,16 @@ jobs:
                   if role=='CYCLE_TIMER' and any(record[k]!='NOT_APPLICABLE'
                                                   for k in ('effective_user','dynamic_user','dropins')) and record['query']=='READ_ONLY':
                       raise ValueError('unexpected timer identity')
+              if files[-1]['consumer_access']=='ACCESS_OK':
+                  # A473-EXT: a positive DAC receipt must be tied to a
+                  # specifically verified fixed consumer identity. Do not
+                  # accept a forged ACCESS_OK with unknown/dynamic/other user.
+                  service=units[1]
+                  if not (service['unit']=='CYCLE_SERVICE' and
+                          service['query']=='READ_ONLY' and service['load']=='loaded' and
+                          service['effective_user'] in {'ROOT','UID1000'} and
+                          service['dynamic_user']=='NO'):
+                      raise ValueError('unbound positive DAC reader identity')
               data['files']=files
               data['units']=units
               data['probe_status']='METADATA_ONLY'

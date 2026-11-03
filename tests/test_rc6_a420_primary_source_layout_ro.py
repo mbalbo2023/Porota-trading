@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import copy
 import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/rc6_a420_primary_source_layout_ro.py"
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/rc6-a420-primary-source-layout-readonly.yml"
 spec = importlib.util.spec_from_file_location("rc6_a420_primary_source_layout_ro", SCRIPT)
 assert spec is not None and spec.loader is not None
 module = importlib.util.module_from_spec(spec)
@@ -190,6 +194,47 @@ class A420ReadOnlyLayoutTests(unittest.TestCase):
                                         'private_mode', 'owner_class',
                                         'consumer_access', 'access_scope'})
 
+    def test_private_sidecar_root_fd_not_inherited_by_dac_probe_fork(self):
+        # A473 P1 regression: a forked UID1000 child inherits *all* open FDs.
+        # If the parent keeps the privileged root-open sidecar descriptor,
+        # setuid is meaningless: the child can read through that same FD.
+        if not hasattr(os, "fork") or not Path("/proc/self/fd").is_dir():
+            self.skipTest("requires Linux fork and /proc/self/fd")
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "rc6_ppi_scanner_primary_latest.json"
+            path.write_bytes(b"PRIVATE_DO_NOT_INHERIT")
+            path.chmod(0o600)
+
+            def fork_snapshot(candidate, maximum, consumer, expected):
+                self.assertEqual(candidate, path)
+                pid = os.fork()
+                if pid == 0:
+                    try:
+                        for descriptor in os.listdir("/proc/self/fd"):
+                            if not descriptor.isdecimal() or int(descriptor) < 3:
+                                continue
+                            try:
+                                actual = os.fstat(int(descriptor))
+                            except OSError:
+                                continue
+                            if (actual.st_dev, actual.st_ino) == (expected.st_dev, expected.st_ino):
+                                os._exit(1)  # privileged FD leaked to child
+                        os._exit(0)
+                    except BaseException:
+                        os._exit(2)
+                _, status = os.waitpid(pid, 0)
+                self.assertTrue(os.WIFEXITED(status))
+                self.assertEqual(os.WEXITSTATUS(status), 0,
+                                 "root-open private sidecar FD inherited across fork")
+                return "NO_VERIFICADO"
+
+            with patch.object(module, "_verify_sidecar_access", side_effect=fork_snapshot):
+                row = module.inspect_private_receipt(
+                    path, 1024, effective_user="UID1000", now=NOW,
+                    expected_owner_uid=os.getuid())
+            self.assertEqual(row["status"], "PRESENT_REGULAR")
+            self.assertEqual(row["consumer_access"], "NO_VERIFICADO")
+
     def test_private_sidecar_missing_bad_mode_and_owner_never_claim_access(self):
         with tempfile.TemporaryDirectory() as work:
             path = Path(work) / "receipt.json"
@@ -233,6 +278,76 @@ class A420ReadOnlyLayoutTests(unittest.TestCase):
             os.link(path, hardlink)
             unsafe = module.inspect_private_receipt(path, 128, effective_user="ROOT", now=NOW)
             self.assertEqual(unsafe["status"], "UNSAFE_FILE")
+
+    def test_runner_sanitizer_rejects_access_ok_without_verified_reader_identity(self):
+        # A473-EXT: exercise the actual workflow inline Python sanitizer rather
+        # than merely duplicating its boolean predicate in this test.
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        marker = 'REMOTE_RC="$remote_rc" python3 - <<\'PY\''
+        self.assertIn(marker, workflow)
+        inline = textwrap.dedent(workflow.split(marker, 1)[1].split("\n          PY", 1)[0]).lstrip("\n")
+        compile(inline, "a420-runner-sanitizer", "exec")
+
+        files = [
+            {"role": role, "status": "MISSING", "mtime_age_bucket": "UNKNOWN"}
+            for role, _, _, _ in module.FILES[:-1]
+        ]
+        files.append({"role": "PPI_SCANNER_PRIVATE_RECEIPT", "status": "PRESENT_REGULAR",
+                      "mtime_age_bucket": "WITHIN_5M", "private_mode": "PRIVATE_0600",
+                      "owner_class": "UID1000", "consumer_access": "ACCESS_OK",
+                      "access_scope": "HOST_DAC_ONLY"})
+        units = [
+            {"unit": "CYCLE_TIMER", "query": "READ_ONLY", "load": "loaded",
+             "active": "active", "result": "success", "main_exit": "ZERO",
+             "effective_user": "NOT_APPLICABLE", "dynamic_user": "NOT_APPLICABLE",
+             "dropins": "NOT_APPLICABLE"},
+            {"unit": "CYCLE_SERVICE", "query": "READ_ONLY", "load": "loaded",
+             "active": "active", "result": "success", "main_exit": "ZERO",
+             "effective_user": "ROOT", "dynamic_user": "NO", "dropins": "NONE"},
+        ]
+        baseline = {"schema": module.SCHEMA, "read_only": True,
+                    "host_metadata_only": True, "database_opened": False,
+                    "provider_calls": 0, "order_routes_called": False,
+                    "ppi_watch_touched": False, "paper_ready": False,
+                    "diagnostic_only": True, "files": files, "units": units}
+
+        def actual_runner_probe(payload):
+            with tempfile.TemporaryDirectory() as work:
+                evidence = Path(work) / "evidence"
+                evidence.mkdir()
+                (evidence / ".raw.json").write_text(json.dumps(payload), encoding="utf-8")
+                process = subprocess.run([sys.executable, "-c", inline], cwd=work,
+                                         env={"REMOTE_RC": "0"}, capture_output=True,
+                                         text=True, check=False, timeout=4)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                return json.loads((evidence / "source_cycle_layout.json").read_text())
+
+        self.assertEqual(actual_runner_probe(baseline)["probe_status"], "METADATA_ONLY")
+        # Negative fixtures must fail closed even though sidecar mode and
+        # ownership fields remain correctly formatted.
+        invalid = [
+            ("effective_user", "OTHER"),
+            ("effective_user", "DYNAMIC"),
+            ("effective_user", "UNKNOWN"),
+            ("dynamic_user", "YES"),
+            ("dynamic_user", "UNKNOWN"),
+            ("query", "UNAVAILABLE"),
+            ("load", "not-found"),
+        ]
+        for key, value in invalid:
+            with self.subTest(key=key, value=value):
+                payload = copy.deepcopy(baseline)
+                payload["units"][1][key] = value
+                self.assertEqual(actual_runner_probe(payload)["probe_status"], "NO_VERIFICADO")
+
+        # A failed/unknown DAC receipt is allowed as a negative *diagnostic*
+        # even when a unit identity is unknown: never promote PAPER readiness.
+        negative = copy.deepcopy(baseline)
+        negative["files"][-1]["consumer_access"] = "READ_FAILED"
+        negative["units"][1]["effective_user"] = "UNKNOWN"
+        artifact = actual_runner_probe(negative)
+        self.assertEqual(artifact["probe_status"], "METADATA_ONLY")
+        self.assertFalse(artifact["paper_ready"])
 
     def test_unknown_unit_does_not_invoke_command(self):
         with patch.object(module.subprocess, "run", side_effect=AssertionError("called")):
