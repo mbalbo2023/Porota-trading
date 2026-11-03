@@ -220,6 +220,17 @@ def test_wrong_fixed_db_identity_fails_closed(tmp_path):
     assert not result["runtime_db_binding_verified"]
 
 
+def test_host_workflow_requires_private_ro_namespace_and_sanitizer_failclose():
+    path = (Path(__file__).parents[1] / ".github" / "workflows" /
+            "rc6-a617-ppi-origin-selector-readonly.yml")
+    workflow = path.read_text(encoding="utf-8")
+    assert "unshare --mount --propagation private" in workflow
+    assert "mount -o remount,bind,ro /opt/porota-trading/data" in workflow
+    assert "safe=failed_closed" in workflow
+    assert "if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'" in workflow
+    assert "immutable=1" not in workflow
+
+
 class HostReadOnlyA617Tests(unittest.TestCase):
     """Run the same isolated fixtures with the Python standard library."""
 
@@ -259,6 +270,9 @@ class HostReadOnlyA617Tests(unittest.TestCase):
 
     def test_default_host_db_identity_guard(self):
         test_wrong_fixed_db_identity_fails_closed(self.root)
+
+    def test_workflow_namespace_and_sanitizer_guards(self):
+        test_host_workflow_requires_private_ro_namespace_and_sanitizer_failclose()
 
 
 if __name__ == "__main__":
