@@ -12,10 +12,13 @@ stale source-cycle *producer*. It does not establish why a DB fallback failed.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
 import pwd
+import re
+import resource
 import stat
 import subprocess
 import sys
@@ -42,6 +45,46 @@ SAFE_LOAD = {"loaded", "not-found", "masked", "error"}
 SAFE_ACTIVE = {"active", "inactive", "failed", "activating", "deactivating", "reloading"}
 SAFE_RESULT = {"success", "exit-code", "timeout", "signal", "core-dump",
                "watchdog", "start-limit-hit", "protocol", "resources", "dependency"}
+
+# A551 reads *only* an already-produced host export. The public result is a
+# bounded aggregation, never individual tickers, prices, account data or GO.
+FAMILY_SCHEMA = "rc6.a551.existing-family-aggregate-readonly.v1"
+FAMILY_EXPORT_SCHEMA = "rc6-full-universe-instrument-evidence-v1"
+FAMILY_EXPORT = MARKET_ROOT / "rc6_instrument_evidence_latest.json"
+FAMILY_EXPORT_MAX = 48 * 1024 * 1024
+FAMILY_MEMORY_MAX = 256 * 1024 * 1024
+FAMILY_NAMES = tuple(sorted({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+}))
+FAMILY_METRICS = (
+    "instrument_count", "paper_shadow_ready", "paper_contract_ready",
+    "catalog_contract_candidates", "paper_auto_enabled", "pending",
+    "pending_specialized_receipt", "blocked", "ingestion_attempted",
+    "ppi_fresh", "iol_fresh", "byma_fresh",
+)
+FAMILY_COUNT_KEYS = (
+    "paper_shadow_ready", "paper_contract_ready", "catalog_contract_candidates",
+    "paper_auto_enabled", "ready_paper_shadow", "ready_shadow_partial",
+    "ready_paper_partial_source", "pending_evidence", "pending_specialized_receipt",
+    "blocked", "ingestion_attempted", "ppi_fresh", "iol_fresh", "byma_fresh",
+)
+# Both are called v1 upstream. Distinguish by exact fields: deployed PRODUCT
+# lacks the candidate's specialist valuation and catalog-candidate counters.
+FAMILY_METRICS_LEGACY = tuple(name for name in FAMILY_METRICS
+                              if name not in {"catalog_contract_candidates",
+                                              "pending_specialized_receipt"})
+FAMILY_COUNT_KEYS_LEGACY = tuple(name for name in FAMILY_COUNT_KEYS
+                                if name not in {"catalog_contract_candidates",
+                                                "pending_specialized_receipt"})
+FAMILY_VARIANTS = {"PRODUCT_BASELINE", "CANDIDATE_EXTENDED"}
+FAMILY_REASONS = frozenset({
+    "NOT_EXECUTED", "AGGREGATE_MATCHED", "MISSING", "UNSAFE_PATH", "UNSAFE_FILE", "SIZE_LIMIT",
+    "UNAVAILABLE_OR_ALIAS", "UNTRUSTED_OWNER", "CHANGED_DURING_READ",
+    "BAD_SCHEMA", "BAD_SHAPE", "BAD_COUNTER", "BAD_LINEAGE", "STALE_EXPORT",
+    "UNSAFE_TIMESTAMP", "RESOURCE_LIMIT_UNAVAILABLE", "HOST_PROBE_UNAVAILABLE",
+})
+FAMILY_HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class Rejected(Exception):
@@ -321,13 +364,340 @@ def inspect_all(*, now: datetime | None = None, files=FILES,
             "files": inspected, "units": units}
 
 
+def default_family_receipt(reason: str = "NOT_EXECUTED") -> dict[str, object]:
+    return {"schema": FAMILY_SCHEMA, "status": "NO_VERIFICADO", "reason": reason,
+            "read_only": True, "aggregates_only": True, "database_opened": False,
+            "provider_calls": 0, "order_routes_called": False,
+            "ppi_watch_touched": False, "real_orders_sent_by_action": 0,
+            "paper_ready": False, "ppi_book_verified": False,
+            "causal_fills_verified": False, "generated_at_utc": "",
+            "source_sha256": "", "catalog_count": 0, "ledger_count": 0,
+            "ledger_complete": False, "extra_family_count": 0, "families": [],
+            "source_variant": "NO_VERIFICADO", "specialized_receipt_guard_present": False}
+
+
+def _distinct_json_keys(pairs):
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise Rejected("BAD_SHAPE")
+        result[name] = value
+    return result
+
+
+def _positive_int(value: object, maximum: int) -> bool:
+    return type(value) is int and 0 <= value <= maximum
+
+
+def _producer_row_metrics(row: object, *, extended: bool) -> tuple[str, dict[str, int], bool]:
+    """Recompute counters independently of the producer's summary fields."""
+    if type(row) is not dict or type(row.get("family")) is not str:
+        raise Rejected("BAD_SHAPE")
+    family = row["family"]
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,39}", family):
+        raise Rejected("BAD_SHAPE")
+    if (type(row.get("paper_contract_ready")) is not bool or
+            (extended and type(row.get("catalog_contract_candidate")) is not bool) or
+            (not extended and "catalog_contract_candidate" in row) or
+            row.get("paper_auto_enabled") is not False or
+            type(row.get("ingestion")) is not dict or
+            type(row["ingestion"].get("any_source_attempted")) is not bool or
+            type(row.get("sources")) is not dict):
+        raise Rejected("BAD_SHAPE")
+    source = row["sources"]
+    freshness = {}
+    for name in ("PPI", "IOL", "BYMA"):
+        item = source.get(name)
+        if (type(item) is not dict or type(item.get("freshness")) is not dict or
+                item["freshness"].get("state") not in {"FRESH", "STALE", "UNKNOWN"}):
+            raise Rejected("BAD_SHAPE")
+        freshness[name] = item["freshness"]["state"] == "FRESH"
+    if type(source["PPI"].get("selection_eligible")) is not bool:
+        raise Rejected("BAD_SHAPE")
+    if source["PPI"]["selection_eligible"] and not freshness["PPI"]:
+        raise Rejected("BAD_COUNTER")
+    status = row.get("status")
+    if status not in {"PENDING_EVIDENCE", "PENDING_SPECIALIZED_VALUATION_RECEIPT",
+                      "BLOCKED_SOURCE_REVIEW", "READY_PAPER_SHADOW",
+                      "READY_PAPER_PARTIAL_SOURCE", "READY_SHADOW_PARTIAL"}:
+        raise Rejected("BAD_SHAPE")
+    if not extended and status == "PENDING_SPECIALIZED_VALUATION_RECEIPT":
+        raise Rejected("BAD_SHAPE")
+    ready = row["paper_contract_ready"]
+    candidate = row["catalog_contract_candidate"] if extended else False
+    if extended and ready and not candidate:
+        raise Rejected("BAD_COUNTER")
+    metrics = {
+        "instrument_count": 1,
+        "paper_shadow_ready": int(ready),
+        "paper_contract_ready": int(ready),
+        "catalog_contract_candidates": int(candidate),
+        "paper_auto_enabled": 0,
+        "pending": int(status == "PENDING_EVIDENCE"),
+        "pending_specialized_receipt": int(status == "PENDING_SPECIALIZED_VALUATION_RECEIPT"),
+        "blocked": int(status.startswith("BLOCKED")),
+        "ingestion_attempted": int(row["ingestion"]["any_source_attempted"]),
+        "ppi_fresh": int(freshness["PPI"]),
+        "iol_fresh": int(freshness["IOL"]),
+        "byma_fresh": int(freshness["BYMA"]),
+    }
+    return family, metrics, source["PPI"]["selection_eligible"]
+
+
+def _family_aggregate(data: object, *, now: datetime, digest: str) -> dict[str, object]:
+    if (type(data) is not dict or data.get("schema") != FAMILY_EXPORT_SCHEMA or
+            data.get("decision_effect") != "OBSERVE_ONLY" or
+            data.get("real_money_authorized") is not False or
+            data.get("paper_shadow_only") is not True):
+        raise Rejected("BAD_SCHEMA")
+    raw_time = data.get("generated_at")
+    try:
+        generated = datetime.fromisoformat(raw_time)
+        if generated.tzinfo is None or now.tzinfo is None:
+            raise ValueError("naive")
+        age = (now - generated.astimezone(timezone.utc)).total_seconds()
+        if age < -30:
+            raise Rejected("UNSAFE_TIMESTAMP")
+        if age > 300:
+            raise Rejected("STALE_EXPORT")
+        if generated.astimezone(ART).date() != now.astimezone(ART).date():
+            raise Rejected("STALE_EXPORT")
+    except (ValueError, TypeError, OverflowError, AttributeError):
+        raise Rejected("UNSAFE_TIMESTAMP") from None
+    universe, rows, summaries, totals = (data.get(key) for key in
+                                         ("universe", "instruments", "families", "counts"))
+    if (type(universe) is not dict or type(rows) is not list or
+            type(summaries) is not list or type(totals) is not dict or
+            len(rows) > 100_000 or len(summaries) > 100):
+        raise Rejected("BAD_SHAPE")
+    if set(totals) == set(FAMILY_COUNT_KEYS):
+        extended = True
+    elif set(totals) == set(FAMILY_COUNT_KEYS_LEGACY):
+        extended = False
+    else:
+        raise Rejected("BAD_SHAPE")
+    metrics_version = FAMILY_METRICS if extended else FAMILY_METRICS_LEGACY
+    counts_version = FAMILY_COUNT_KEYS if extended else FAMILY_COUNT_KEYS_LEGACY
+    catalog, ledger = universe.get("catalog_count"), universe.get("ledger_count")
+    if (not _positive_int(catalog, 100_000) or not _positive_int(ledger, 100_000) or
+            type(universe.get("ledger_complete")) is not bool or
+            ledger != len(rows) or (universe["ledger_complete"] and catalog != ledger)):
+        raise Rejected("BAD_COUNTER")
+    actual: dict[str, dict[str, int]] = {}
+    eligible: dict[str, int] = {}
+    global_statuses: dict[str, int] = {name: 0 for name in FAMILY_COUNT_KEYS}
+    for row in rows:
+        family, values, ppi_eligible = _producer_row_metrics(row, extended=extended)
+        bucket = actual.setdefault(family, {name: 0 for name in FAMILY_METRICS})
+        for key, value in values.items():
+            bucket[key] += value
+        eligible[family] = eligible.get(family, 0) + int(ppi_eligible)
+        status = row["status"]
+        for key, value in (("paper_shadow_ready", values["paper_contract_ready"]),
+                           ("paper_contract_ready", values["paper_contract_ready"]),
+                           ("catalog_contract_candidates", values["catalog_contract_candidates"]),
+                           ("ingestion_attempted", values["ingestion_attempted"]),
+                           ("ppi_fresh", values["ppi_fresh"]),
+                           ("iol_fresh", values["iol_fresh"]),
+                           ("byma_fresh", values["byma_fresh"]),
+                           ("ready_paper_shadow", int(status == "READY_PAPER_SHADOW")),
+                           ("ready_shadow_partial", int(status == "READY_SHADOW_PARTIAL")),
+                           ("ready_paper_partial_source", int(status == "READY_PAPER_PARTIAL_SOURCE")),
+                           ("pending_evidence", values["pending"]),
+                           ("pending_specialized_receipt", values["pending_specialized_receipt"]),
+                           ("blocked", values["blocked"])):
+            global_statuses[key] += value
+    raw_family: dict[str, dict[str, int]] = {}
+    for item in summaries:
+        if (type(item) is not dict or set(item) != set(metrics_version) | {"family"} or
+                type(item.get("family")) is not str or
+                item["family"] in raw_family):
+            raise Rejected("BAD_SHAPE")
+        name = item["family"]
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,39}", name):
+            raise Rejected("BAD_SHAPE")
+        values = {k: item.get(k, 0) for k in FAMILY_METRICS}
+        if any(not _positive_int(v, ledger) for v in values.values()):
+            raise Rejected("BAD_COUNTER")
+        raw_family[name] = values
+    if extended:
+        for name in FAMILY_NAMES:
+            actual.setdefault(name, {key: 0 for key in FAMILY_METRICS})
+    if set(raw_family) != set(actual) or any(raw_family[k] != actual[k] for k in actual):
+        raise Rejected("BAD_COUNTER")
+    if any(not _positive_int(totals.get(k), ledger) or totals[k] != global_statuses[k]
+           for k in counts_version):
+        raise Rejected("BAD_COUNTER")
+    for name in FAMILY_NAMES:
+        actual.setdefault(name, {key: 0 for key in FAMILY_METRICS})
+    exported = []
+    for name in FAMILY_NAMES:
+        values = actual[name]
+        exported.append({"family": name, "instrument_count": values["instrument_count"],
+                         "producer_contract_ready": values["paper_contract_ready"],
+                         "catalog_contract_candidates": values["catalog_contract_candidates"]
+                         if extended else None,
+                         "ingestion_attempted": values["ingestion_attempted"],
+                         "ppi_source_fresh": values["ppi_fresh"],
+                         "ppi_selection_eligible": eligible.get(name, 0),
+                         "pending_evidence": values["pending"],
+                         "pending_specialized_receipt": values["pending_specialized_receipt"],
+                         "blocked_source_review": values["blocked"]})
+    result = default_family_receipt()
+    result.update(status="OBSERVED_AGGREGATE", reason="AGGREGATE_MATCHED",
+                  generated_at_utc=generated.astimezone(timezone.utc).isoformat(),
+                  source_sha256=digest, catalog_count=catalog, ledger_count=ledger,
+                  ledger_complete=universe["ledger_complete"],
+                  extra_family_count=sum(values["instrument_count"] for name, values in actual.items()
+                                         if name not in FAMILY_NAMES), families=exported,
+                  source_variant="CANDIDATE_EXTENDED" if extended else "PRODUCT_BASELINE",
+                  specialized_receipt_guard_present=extended)
+    return result
+
+
+def inspect_family_rollup(*, now: datetime | None = None, path: Path = FAMILY_EXPORT) -> dict[str, object]:
+    """One bounded host-only read; a valid aggregate is NEVER entry authority."""
+    now = now or datetime.now(timezone.utc)
+    fd = None
+    try:
+        fd, before = _open_bounded(path, FAMILY_EXPORT_MAX)
+        if before.st_uid != 0 or before.st_mode & 0o022:
+            raise Rejected("UNTRUSTED_OWNER")
+        if not 32 <= before.st_size <= FAMILY_EXPORT_MAX:
+            raise Rejected("SIZE_LIMIT")
+        age = now.timestamp() - before.st_mtime
+        if age < -30:
+            raise Rejected("UNSAFE_TIMESTAMP")
+        if age > 300:
+            raise Rejected("STALE_EXPORT")
+        raw = os.read(fd, before.st_size + 1)
+        after = os.fstat(fd)
+        keys = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_uid", "st_mode")
+        if len(raw) != before.st_size or any(getattr(before, k) != getattr(after, k) for k in keys):
+            raise Rejected("CHANGED_DURING_READ")
+        def no_constant(_):
+            raise Rejected("BAD_SHAPE")
+        data = json.loads(raw.decode("utf-8"), object_pairs_hook=_distinct_json_keys,
+                          parse_constant=no_constant)
+        return _family_aggregate(data, now=now, digest=hashlib.sha256(raw).hexdigest())
+    except Rejected as exc:
+        return default_family_receipt(str(exc))
+    except (OSError, ValueError, TypeError, UnicodeError, MemoryError, OverflowError):
+        return default_family_receipt("BAD_SHAPE")
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def sanitize_family_rollup(raw: bytes, *, host_returncode: int) -> dict[str, object]:
+    """Runner refuses any extra key, raw quote, symbol, account or forged GO."""
+    fallback = default_family_receipt("HOST_PROBE_UNAVAILABLE")
+    if host_returncode != 0 or not isinstance(raw, bytes) or not 0 < len(raw) <= 12_000:
+        return fallback
+    try:
+        data = json.loads(raw.decode("utf-8"), object_pairs_hook=_distinct_json_keys)
+        if (type(data) is not dict or set(data) != set(fallback) or
+                data["schema"] != FAMILY_SCHEMA or
+                data["status"] not in {"OBSERVED_AGGREGATE", "NO_VERIFICADO"} or
+                data["reason"] not in FAMILY_REASONS):
+            return fallback
+        for key in ("read_only", "aggregates_only", "database_opened", "provider_calls",
+                    "order_routes_called", "ppi_watch_touched", "real_orders_sent_by_action",
+                    "paper_ready", "ppi_book_verified", "causal_fills_verified"):
+            if type(data[key]) is not type(fallback[key]) or data[key] != fallback[key]:
+                return fallback
+        if data["status"] == "NO_VERIFICADO":
+            return data if data == default_family_receipt(data["reason"]) else fallback
+        if (data["reason"] != "AGGREGATE_MATCHED" or
+                data["source_variant"] not in FAMILY_VARIANTS or
+                type(data["specialized_receipt_guard_present"]) is not bool or
+                data["specialized_receipt_guard_present"] != (
+                    data["source_variant"] == "CANDIDATE_EXTENDED") or
+                not isinstance(data["source_sha256"], str) or
+                not FAMILY_HASH.fullmatch(data["source_sha256"]) or
+                not isinstance(data["generated_at_utc"], str) or
+                len(data["generated_at_utc"]) > 48 or
+                type(data["catalog_count"]) is not int or
+                type(data["ledger_count"]) is not int or
+                type(data["extra_family_count"]) is not int or
+                type(data["ledger_complete"]) is not bool or
+                not 0 <= data["ledger_count"] <= 100_000 or
+                not 0 <= data["catalog_count"] <= 100_000 or
+                not 0 <= data["extra_family_count"] <= data["ledger_count"]):
+            return fallback
+        moment = datetime.fromisoformat(data["generated_at_utc"])
+        if moment.tzinfo is None or moment.utcoffset() != timezone.utc.utcoffset(moment):
+            return fallback
+        rows = data["families"]
+        fields = {"family", "instrument_count", "producer_contract_ready",
+                  "catalog_contract_candidates", "ingestion_attempted", "ppi_source_fresh",
+                  "ppi_selection_eligible", "pending_evidence", "pending_specialized_receipt",
+                  "blocked_source_review"}
+        if type(rows) is not list or len(rows) != len(FAMILY_NAMES):
+            return fallback
+        total = 0
+        for expected, row in zip(FAMILY_NAMES, rows):
+            if (type(row) is not dict or set(row) != fields or row["family"] != expected or
+                    any(not _positive_int(row[field], data["ledger_count"])
+                        for field in fields - {"family", "catalog_contract_candidates"}) or
+                    (data["source_variant"] == "CANDIDATE_EXTENDED" and
+                     not _positive_int(row["catalog_contract_candidates"], data["ledger_count"])) or
+                    (data["source_variant"] == "PRODUCT_BASELINE" and
+                     row["catalog_contract_candidates"] is not None) or
+                    row["ppi_selection_eligible"] > row["ppi_source_fresh"] or
+                    (data["source_variant"] == "CANDIDATE_EXTENDED" and
+                     row["producer_contract_ready"] > row["catalog_contract_candidates"]) or
+                    max(row["pending_evidence"], row["pending_specialized_receipt"],
+                        row["blocked_source_review"]) > row["instrument_count"]):
+                return fallback
+            total += row["instrument_count"]
+        if total + data["extra_family_count"] != data["ledger_count"]:
+            return fallback
+        return data
+    except (ValueError, TypeError, KeyError, UnicodeError, OverflowError):
+        return fallback
+
+
+def _limit_family_probe_memory():
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        resource.setrlimit(resource.RLIMIT_AS,
+                           (min(soft, FAMILY_MEMORY_MAX) if soft != resource.RLIM_INFINITY
+                            else FAMILY_MEMORY_MAX, hard))
+    except (ValueError, OSError):
+        raise Rejected("RESOURCE_LIMIT_UNAVAILABLE") from None
+
+
 def main(argv=None) -> int:
-    if (sys.argv[1:] if argv is None else argv) != ["host-probe"]:
-        print("Usage: primary source layout read-only host-probe", file=sys.stderr)
-        return 64
-    print(json.dumps(inspect_all(), sort_keys=True, separators=(",", ":"),
-                     ensure_ascii=True))
-    return 0
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args == ["host-probe"]:
+        print(json.dumps(inspect_all(), sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True))
+        return 0
+    if args == ["family-host-probe"]:
+        try:
+            _limit_family_probe_memory()
+            result = inspect_family_rollup()
+        except Rejected as exc:
+            result = default_family_receipt(str(exc))
+        print(json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=True))
+        return 0
+    if args == ["family-sanitize"]:
+        try:
+            with Path("evidence/.a551_family_raw.json").open("rb") as source:
+                raw = source.read(12_001)
+            code = int(os.environ.get("A551_REMOTE_RC", "2"))
+            result = sanitize_family_rollup(raw, host_returncode=code)
+        except (OSError, ValueError):
+            result = default_family_receipt("HOST_PROBE_UNAVAILABLE")
+        Path("evidence/a551_family_aggregate.json").write_text(
+            json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8")
+        print("A551_FAMILY_AGGREGATE=" + result["status"])
+        return 0
+    print("Usage: primary source layout host-probe|family-host-probe|family-sanitize",
+          file=sys.stderr)
+    return 64
 
 
 if __name__ == "__main__":
