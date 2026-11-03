@@ -5,7 +5,8 @@ certifica el producto #778, el host, órdenes PAPER o PPI. PPI Watch intacto.
 
 **Governance:** `RC6_A627_SCHEDULE_CAUSALITY_MAIN`, [owner y scope exactos
 en #732](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6615939404),
-base main `d94027f7af81e71d9f6fd8064c05d40fa0193835`. El PR debe cumplir
+base main reconciliada tras #905 `f33821b01c5342008f7de3aa4bb77058403efbbb`
+(base original `d94027f7af81e71d9f6fd8064c05d40fa0193835`). El PR debe cumplir
 `checkpoint-attestation` con URL de owner, rama, SHA base y seis paths; el
 workflow CI inicial falló por ausencia de esos campos, y el guard debe seguir
 siendo bloqueante. No se desprotegieron reglas.
@@ -43,14 +44,29 @@ estados acotados. El nuevo workflow
 de respaldo. Ningún `actions:write`, POST, deploy, proceso host ni orden.
 
 **A617, control host separado:** en la misma PR se amplía exclusivamente el
-trigger del Action A617 ya integrado con cuatro cron del 04/11 (10:45,
-14:30, 16:30, 18:20 ART). No modifica su script de lectura ni su comando:
+trigger del Action A617 ya integrado con cuatro cron del 04/11 (11:05,
+14:50, 16:50, 18:20 ART; UTC 14:05, 17:50, 19:50, 21:20). El primer diseño
+coincidía con tres slots de **A630 #908 Current+Book** (10:45, 14:30 y
+16:30 ART), con riesgo de competencia SSH/RAM/DB y leases de host; esos tres
+crons se desplazan 20 minutos, con un mínimo de separación entre ambos
+conjuntos de 15 minutos. Adicionalmente, el job `host_provenance` comparte
+`concurrency.group=rc6-unified-paper-deploy`,
+`cancel-in-progress=false` con el job host A630 y la exclusión canónica:
+**serializa** accesos incluso ante jitter de Actions, sin habilitar Deploy.
+Este mutex se aplica **a nivel job**, manteniendo la concurrencia propia del
+workflow a nivel root. No modifica su script de lectura ni su comando:
 `unshare --mount` con bind privado remontado RO antes de abrir SQLite.
 `host_provenance` sólo atraviesa SSH si `day_gate.active=1` (04-Nov ART para
 schedule; manual explícito de cualquier día). Si el kernel/sudo deniega
 `unshare`/mount, Action falla **NO_VERIFICADO**, no reintenta con permisos
 menores, no abre DB, no hace PPI GET. Este recibo es independiente de A627,
 que jamás consume ni altera el host.
+
+**Riesgo remanente:** el slot A617 18:20 ART puede coincidir con timers EOD
+locales; el mutex de Actions no serializa los systemd timers del droplet.
+Mantener el RO fail-closed y contrastar InvocationID/reintentos auténticos
+antes de afirmar ausencia de contención o EOD GREEN. No se mueve ese slot sin
+reconciliar el calendario de EOD y autorización de su dueño.
 
 **Evidencia host posterior:** [A617 manual run #41722452619](https://github.com/mbalbo2023/Porota-trading/actions/runs/41722452619),
 03-Nov 21:30Z, SUCCESS con montaje RO efectivo y `db_opened=true`;
@@ -96,8 +112,10 @@ desde una Action exitosa o de los 57/88 eventos.
 
 ## 04-Nov — observación y respaldo manual
 
-La misión A630 de PPI Current+Book dispone de sus propias ventanas previstas
-10:45, 11:20, 14:30, 16:30, 17:05, 18:20 ART; A627 **no las duplica**.
+La misión A630 de PPI Current+Book #908 dispone de cuatro ventanas
+de host 10:45, 11:20, 14:30 y 16:30 ART; A617 queda detrás en
+11:05, 14:50, 16:50 y 18:20 ART con mutex común.
+A627 **no duplica** capturas PPI y no conecta al host.
 A627 observa sólo GitHub metadata después, en estos checkpoints:
 
 | A627 ART 04/11 | UTC | Cobertura / advertencia |
