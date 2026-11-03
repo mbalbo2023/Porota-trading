@@ -3,6 +3,13 @@
 **Plano:** GitHub Actions `main`, OFFHOST/READ_ONLY. **No es un Deploy** ni
 certifica el producto #778, el host, órdenes PAPER o PPI. PPI Watch intacto.
 
+**Governance:** `RC6_A627_SCHEDULE_CAUSALITY_MAIN`, [owner y scope exactos
+en #732](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6615939404),
+base main `d94027f7af81e71d9f6fd8064c05d40fa0193835`. El PR debe cumplir
+`checkpoint-attestation` con URL de owner, rama, SHA base y seis paths; el
+workflow CI inicial falló por ausencia de esos campos, y el guard debe seguir
+siendo bloqueante. No se desprotegieron reglas.
+
 ## ERROR / RCA
 
 - A613/A614 reportaron **57/88 slots programados observados** para el monitor.
