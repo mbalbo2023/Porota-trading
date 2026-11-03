@@ -166,6 +166,38 @@ def import_capture(store,path):
                 total+=1; changed+=int(bool(r.get('changed')))
             except Exception as exc:
                 notes.append('PPI_CONTRACT_IMPORT_'+type(exc).__name__)
+        elif kind=='CaucionesOperables':
+            # Browser endpoint quantities are *not* an ARS principal amount.
+            # Preserve only partial metadata bound to an unambiguous PPI
+            # five-key; never create wildcard/UNKNOWN pseudo-contracts.
+            rows=item.get('rows') or []
+            if not isinstance(rows,list) or not rows:
+                notes.append('CAUCIONES_SCHEMA_ONLY_NOT_CONTRACT')
+                continue
+            for ev in rows:
+                if not isinstance(ev,dict):
+                    notes.append('CAUCIONES_XHR_ROW_INVALID')
+                    conflicts+=1
+                    continue
+                ticker=str(ev.get('ticker') or ev.get('simbolo') or
+                           ev.get('símbolo') or ev.get('especie') or '').strip().upper()
+                ident=_unique_ppi_identity(cmap,ticker,ev) if ticker else None
+                if ident is None or normalize_family(ident['instrument_type'])!='CAUCIONES':
+                    notes.append('CAUCIONES_PPI_FIVE_KEY_ABSENT_AMBIGUOUS_'+(ticker or 'UNKNOWN'))
+                    conflicts+=1
+                    continue
+                evidence,unbound=_source_evidence(ev,exclude_fees=True)
+                evidence['book_quantity_unit_status']='BOOK_QUANTITY_UNIT_UNVERIFIED'
+                if unbound:
+                    notes.append('CAUCIONES_XHR_FEE_ESTIMATE_UNBOUND_'+ticker)
+                try:
+                    r=record_snapshot(store,family=ident['instrument_type'],ticker=ticker,
+                      market=ident['market'],currency=ident['currency'],
+                      settlement=ident['settlement'],source_class='PPI_AUTHENTICATED_XHR',
+                      source_ref=url,evidence=evidence)
+                    total+=1; changed+=int(bool(r.get('changed')))
+                except Exception as exc:
+                    notes.append('CAUCIONES_CONTRACT_IMPORT_'+type(exc).__name__)
         elif kind=='SubyacenteOpciones':
             notes.append('OPTION_UNDERLYING_CATALOG_OBSERVED_NOT_CONTRACT')
         elif kind=='SCHEMA_ONLY':
