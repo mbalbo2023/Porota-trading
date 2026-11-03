@@ -47,8 +47,11 @@ class StubRunner:
 
 
 def _cycle(tmp_path, runner, now):
+    bootstrap = tmp_path / "iol_bootstrap.json"
+    bootstrap.write_text("{}", encoding="utf-8")
     return dispatch.run_cycle(now=now, db=tmp_path / "paper.db",
-        market_root=tmp_path / "market", lock=tmp_path / "source.lock", runner=runner)
+        market_root=tmp_path / "market", lock=tmp_path / "source.lock", runner=runner,
+        iol_bootstrap=bootstrap)
 
 
 def test_cycle_iol_public_minute_shadow_parity_evidence_5m_persistent_ttl(tmp_path):
