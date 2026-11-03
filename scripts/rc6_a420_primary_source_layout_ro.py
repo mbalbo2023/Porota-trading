@@ -22,6 +22,7 @@ import resource
 import stat
 import subprocess
 import sys
+import time
 from zoneinfo import ZoneInfo
 
 
@@ -85,6 +86,26 @@ FAMILY_REASONS = frozenset({
     "UNSAFE_TIMESTAMP", "RESOURCE_LIMIT_UNAVAILABLE", "HOST_PROBE_UNAVAILABLE",
 })
 FAMILY_HASH = re.compile(r"[0-9a-f]{64}\Z")
+
+# A580 is a separate metadata-only view of the observer SQLite *file names*.
+# It deliberately never opens or reads SQLite, WAL, SHM or their contents.
+A580_SCHEMA = "rc6.a580.observer-file-metadata-readonly.v1"
+A580_PARENT = Path("/opt/porota-trading/data/paper_v17")
+A580_NAMES = (
+    ("OBSERVER_DB", "observer_v17.db"),
+    ("OBSERVER_WAL", "observer_v17.db-wal"),
+    ("OBSERVER_SHM", "observer_v17.db-shm"),
+)
+A580_STATUS = frozenset({"PRESENT_REGULAR", "MISSING", "UNSAFE_ALIAS",
+                         "UNSAFE_TYPE", "PARENT_UNAVAILABLE", "UNAVAILABLE",
+                         "CHANGED_METADATA", "NO_VERIFICADO"})
+A580_OWNER = frozenset({"ROOT", "UID1000", "OTHER", "UNKNOWN"})
+A580_MODE = frozenset({"PRIVATE_0600", "OWNER_ONLY_OTHER_MODE", "GROUP_ACCESS",
+                        "WORLD_ACCESS", "NONOWNER_WRITABLE", "UNKNOWN"})
+A580_SIZE = frozenset({"EMPTY", "UP_TO_1M", "UP_TO_8M", "UP_TO_64M",
+                        "UP_TO_512M", "OVER_512M", "UNKNOWN"})
+A580_STABILITY = frozenset({"SAME_TWO_SAMPLES", "CONSISTENT_MISSING",
+                             "CHANGED", "NOT_COMPARABLE"})
 
 
 class Rejected(Exception):
@@ -362,6 +383,200 @@ def inspect_all(*, now: datetime | None = None, files=FILES,
             "order_routes_called": False, "ppi_watch_touched": False,
             "paper_ready": False, "diagnostic_only": True,
             "files": inspected, "units": units}
+
+
+def _a580_anchored_directory(parent: Path) -> tuple[int, os.stat_result]:
+    """Open only fixed parent *directories* with O_PATH and NOFOLLOW.
+
+    Never open the observer DB or sidecars, including as O_PATH descriptors.
+    """
+    if not parent.is_absolute() or ".." in parent.parts or not hasattr(os, "O_PATH"):
+        raise Rejected("PARENT_UNAVAILABLE")
+    flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = None
+    try:
+        fd = os.open("/", flags)
+        for component in parent.parts[1:]:
+            successor = os.open(component, flags, dir_fd=fd)
+            os.close(fd)
+            fd = successor
+        return fd, os.fstat(fd)
+    except OSError as exc:
+        if fd is not None:
+            os.close(fd)
+        raise Rejected("PARENT_UNAVAILABLE") from exc
+
+
+def _a580_sample(parent: Path, names) -> tuple[tuple | None, dict[str, tuple[str, os.stat_result | None]]]:
+    """Exactly one no-follow metadata stat per fixed basename, no file opens."""
+    try:
+        directory, parent_info = _a580_anchored_directory(parent)
+    except Rejected:
+        return None, {role: ("PARENT_UNAVAILABLE", None) for role, _ in names}
+    try:
+        rows = {}
+        for role, basename in names:
+            if basename in ("", ".", "..") or "/" in basename:
+                rows[role] = ("NO_VERIFICADO", None)
+                continue
+            try:
+                info = os.stat(basename, dir_fd=directory, follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) or info.st_nlink != 1:
+                    rows[role] = ("UNSAFE_ALIAS", None)
+                elif not stat.S_ISREG(info.st_mode):
+                    rows[role] = ("UNSAFE_TYPE", None)
+                else:
+                    rows[role] = ("PRESENT_REGULAR", info)
+            except FileNotFoundError:
+                rows[role] = ("MISSING", None)
+            except OSError:
+                rows[role] = ("UNAVAILABLE", None)
+        identity = (parent_info.st_dev, parent_info.st_ino,
+                    parent_info.st_mtime_ns, parent_info.st_ctime_ns)
+        return identity, rows
+    finally:
+        os.close(directory)
+
+
+def _a580_signature(row: tuple[str, os.stat_result | None]) -> tuple:
+    status, info = row
+    if info is None:
+        return (status,)
+    return (status, info.st_dev, info.st_ino, info.st_nlink, info.st_uid,
+            info.st_gid, stat.S_IMODE(info.st_mode), info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _a580_mode_bucket(info: os.stat_result) -> str:
+    mode = stat.S_IMODE(info.st_mode)
+    if mode & (stat.S_IWGRP | stat.S_IWOTH):
+        return "NONOWNER_WRITABLE"
+    if mode & (stat.S_IROTH | stat.S_IXOTH):
+        return "WORLD_ACCESS"
+    if mode & (stat.S_IRGRP | stat.S_IXGRP):
+        return "GROUP_ACCESS"
+    return "PRIVATE_0600" if mode == 0o600 else "OWNER_ONLY_OTHER_MODE"
+
+
+def _a580_size_bucket(size: int) -> str:
+    if size == 0:
+        return "EMPTY"
+    if size <= 1024 * 1024:
+        return "UP_TO_1M"
+    if size <= 8 * 1024 * 1024:
+        return "UP_TO_8M"
+    if size <= 64 * 1024 * 1024:
+        return "UP_TO_64M"
+    if size <= 512 * 1024 * 1024:
+        return "UP_TO_512M"
+    return "OVER_512M"
+
+
+def default_observer_metadata() -> dict[str, object]:
+    return {"schema": A580_SCHEMA, "probe_status": "NO_VERIFICADO",
+            "read_only": True, "host_metadata_only": True, "database_opened": False,
+            "provider_calls": 0, "order_routes_called": False,
+            "ppi_watch_touched": False, "paper_ready": False,
+            "writer_quiet_verified": False, "snapshot_consistent_verified": False,
+            "files": [{"role": role, "status": "NO_VERIFICADO",
+                       "owner_class": "UNKNOWN", "mode_class": "UNKNOWN",
+                       "size_bucket": "UNKNOWN", "mtime_age_bucket": "UNKNOWN",
+                       "stability": "NOT_COMPARABLE"} for role, _ in A580_NAMES]}
+
+
+def inspect_observer_metadata(*, parent: Path = A580_PARENT, names=A580_NAMES,
+                              now: datetime | None = None,
+                              sleeper=time.sleep) -> dict[str, object]:
+    """A580 two bounded metadata samples; identical samples do NOT prove quiet writers."""
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("aware time required")
+    first_parent, first = _a580_sample(parent, names)
+    sleeper(0.2)
+    second_parent, second = _a580_sample(parent, names)
+    same_parent = first_parent is not None and first_parent == second_parent
+    result = default_observer_metadata()
+    result["probe_status"] = "METADATA_ONLY" if same_parent else "NO_VERIFICADO"
+    result["files"] = []
+    for role, _ in names:
+        before = first[role]
+        after = second[role]
+        code, info = after
+        stable = same_parent and _a580_signature(before) == _a580_signature(after)
+        if not stable and (first_parent is not None or second_parent is not None):
+            code, stability = "CHANGED_METADATA", "CHANGED"
+        elif code == "PRESENT_REGULAR" and stable:
+            stability = "SAME_TWO_SAMPLES"
+        elif code == "MISSING" and stable:
+            stability = "CONSISTENT_MISSING"
+        else:
+            stability = "NOT_COMPARABLE"
+        trusted = info is not None and after[0] == "PRESENT_REGULAR"
+        result["files"].append({
+            "role": role, "status": code,
+            "owner_class": ("ROOT" if info.st_uid == 0 else
+                            "UID1000" if info.st_uid == 1000 else "OTHER") if trusted else "UNKNOWN",
+            "mode_class": _a580_mode_bucket(info) if trusted else "UNKNOWN",
+            "size_bucket": _a580_size_bucket(info.st_size) if trusted else "UNKNOWN",
+            "mtime_age_bucket": _age_bucket(info.st_mtime, now) if trusted else "UNKNOWN",
+            "stability": stability,
+        })
+    return result
+
+
+def sanitize_observer_metadata(raw: bytes, *, host_returncode: int = 0) -> dict[str, object]:
+    """Strict public whitelist. Host JSON is never carried through verbatim."""
+    fallback = default_observer_metadata()
+    if host_returncode != 0 or len(raw) > 8192:
+        return fallback
+    try:
+        data = json.loads(raw.decode("utf-8"), object_pairs_hook=_distinct_json_keys)
+        if type(data) is not dict or set(data) != set(fallback):
+            return fallback
+        for key, expected in fallback.items():
+            if key in ("probe_status", "files"):
+                continue
+            if data[key] != expected or type(data[key]) is not type(expected):
+                return fallback
+        if data["probe_status"] not in {"METADATA_ONLY", "NO_VERIFICADO"}:
+            return fallback
+        if type(data["files"]) is not list or len(data["files"]) != len(A580_NAMES):
+            return fallback
+        output = []
+        for (role, _), row in zip(A580_NAMES, data["files"]):
+            if type(row) is not dict or set(row) != set(fallback["files"][0]):
+                return fallback
+            if (row["role"] != role or row["status"] not in A580_STATUS or
+                    row["owner_class"] not in A580_OWNER or
+                    row["mode_class"] not in A580_MODE or
+                    row["size_bucket"] not in A580_SIZE or
+                    row["mtime_age_bucket"] not in
+                    {"UNKNOWN", "FUTURE_CLOCK", "WITHIN_5M", "WITHIN_30M",
+                     "WITHIN_2H", "WITHIN_DAY", "OLDER_THAN_DAY"} or
+                    row["stability"] not in A580_STABILITY):
+                return fallback
+            if (row["status"] == "PRESENT_REGULAR" and
+                    ("UNKNOWN" in {row["owner_class"], row["mode_class"], row["size_bucket"]} or
+                     row["stability"] != "SAME_TWO_SAMPLES")):
+                return fallback
+            if row["status"] == "MISSING" and row["stability"] != "CONSISTENT_MISSING":
+                return fallback
+            if row["status"] == "CHANGED_METADATA" and row["stability"] != "CHANGED":
+                return fallback
+            if (row["status"] not in {"PRESENT_REGULAR", "CHANGED_METADATA"} and
+                    any(row[k] != "UNKNOWN" for k in
+                        ("owner_class", "mode_class", "size_bucket", "mtime_age_bucket"))):
+                return fallback
+            output.append({key: row[key] for key in fallback["files"][0]})
+        if (data["probe_status"] == "NO_VERIFICADO" and
+                any(row["status"] == "PRESENT_REGULAR" for row in output)):
+            return fallback
+        result = default_observer_metadata()
+        result["probe_status"] = data["probe_status"]
+        result["files"] = output
+        return result
+    except (Rejected, TypeError, ValueError, UnicodeError, KeyError, OverflowError):
+        return fallback
 
 
 def default_family_receipt(reason: str = "NOT_EXECUTED") -> dict[str, object]:
@@ -674,6 +889,23 @@ def main(argv=None) -> int:
         print(json.dumps(inspect_all(), sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True))
         return 0
+    if args == ["observer-host-probe"]:
+        print(json.dumps(inspect_observer_metadata(), sort_keys=True,
+                         separators=(",", ":"), ensure_ascii=True))
+        return 0
+    if args == ["observer-sanitize"]:
+        try:
+            with Path("evidence/.a580_observer_raw.json").open("rb") as source:
+                raw = source.read(8193)
+            code = int(os.environ.get("A580_REMOTE_RC", "2"))
+            result = sanitize_observer_metadata(raw, host_returncode=code)
+        except (OSError, ValueError):
+            result = default_observer_metadata()
+        Path("evidence/a580_observer_metadata.json").write_text(
+            json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8")
+        print("A580_OBSERVER_METADATA=" + result["probe_status"])
+        return 0
     if args == ["family-host-probe"]:
         try:
             _limit_family_probe_memory()
@@ -695,7 +927,7 @@ def main(argv=None) -> int:
             encoding="utf-8")
         print("A551_FAMILY_AGGREGATE=" + result["status"])
         return 0
-    print("Usage: primary source layout host-probe|family-host-probe|family-sanitize",
+    print("Usage: primary source layout host-probe|observer-host-probe|observer-sanitize|family-host-probe|family-sanitize",
           file=sys.stderr)
     return 64
 

@@ -378,6 +378,151 @@ class A420ReadOnlyLayoutTests(unittest.TestCase):
         self.assertEqual(module.main(["host-probe", "/etc/shadow"]), 64)
 
 
+class A580ObserverFileMetadataTests(unittest.TestCase):
+    SECRET = "ACCOUNT_PRIVATE_QUOTE_PPI_TOKEN_SYMBOL_999"
+
+    def sample(self, root: Path, sleeper=lambda _: None):
+        return module.inspect_observer_metadata(parent=root, names=module.A580_NAMES,
+                                                now=NOW, sleeper=sleeper)
+
+    def test_three_exact_roles_no_content_or_db_open_and_no_writer_claim(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            target = root / "observer_v17.db"
+            target.write_text(self.SECRET, encoding="utf-8")
+            target.chmod(0o600)
+            os.utime(target, (NOW.timestamp() - 60, NOW.timestamp() - 60))
+            real_open = os.open
+            opened = []
+
+            def only_directory_open(path, *args, **kwargs):
+                opened.append(str(path))
+                self.assertNotIn("observer_v17.db", str(path))
+                return real_open(path, *args, **kwargs)
+
+            with patch.object(module.os, "open", side_effect=only_directory_open):
+                receipt = self.sample(root)
+            self.assertEqual(receipt["probe_status"], "METADATA_ONLY")
+            self.assertEqual([f["role"] for f in receipt["files"]],
+                             [role for role, _ in module.A580_NAMES])
+            self.assertEqual([f["status"] for f in receipt["files"]],
+                             ["PRESENT_REGULAR", "MISSING", "MISSING"])
+            self.assertEqual(receipt["files"][0]["size_bucket"], "UP_TO_1M")
+            self.assertEqual(receipt["files"][0]["mode_class"], "PRIVATE_0600")
+            self.assertEqual(receipt["files"][0]["stability"], "SAME_TWO_SAMPLES")
+            self.assertFalse(receipt["database_opened"])
+            self.assertFalse(receipt["writer_quiet_verified"])
+            self.assertFalse(receipt["snapshot_consistent_verified"])
+            self.assertFalse(receipt["paper_ready"])
+            self.assertEqual(receipt["provider_calls"], 0)
+            self.assertFalse(receipt["ppi_watch_touched"])
+            self.assertNotIn(self.SECRET, json.dumps(receipt))
+            self.assertNotIn(str(root), json.dumps(receipt))
+            self.assertNotIn("observer_v17.db", json.dumps(receipt))
+            self.assertNotIn("size_bytes", json.dumps(receipt))
+            self.assertTrue(opened)
+            self.assertEqual(module.sanitize_observer_metadata(
+                json.dumps(receipt).encode()), receipt)
+
+    def test_file_and_parent_aliases_never_followed(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            secret = root / "private-target"
+            secret.write_text(self.SECRET, encoding="utf-8")
+            (root / "observer_v17.db").symlink_to(secret)
+            os.link(secret, root / "observer_v17.db-wal")
+            receipt = self.sample(root)
+            self.assertEqual(receipt["files"][0]["status"], "UNSAFE_ALIAS")
+            self.assertEqual(receipt["files"][1]["status"], "UNSAFE_ALIAS")
+            self.assertEqual(receipt["files"][0]["size_bucket"], "UNKNOWN")
+            alias = root / "redirect"
+            alias.symlink_to(root, target_is_directory=True)
+            rejected = self.sample(alias)
+            self.assertEqual(rejected["probe_status"], "NO_VERIFICADO")
+            self.assertTrue(all(x["status"] == "PARENT_UNAVAILABLE"
+                                for x in rejected["files"]))
+
+    def test_metadata_change_is_not_writer_quiet(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            target = root / "observer_v17.db"
+            target.write_bytes(b"first")
+
+            def mutate(_):
+                target.write_bytes(b"second-longer")
+
+            receipt = self.sample(root, sleeper=mutate)
+            self.assertEqual(receipt["files"][0]["status"], "CHANGED_METADATA")
+            self.assertEqual(receipt["files"][0]["stability"], "CHANGED")
+            self.assertFalse(receipt["writer_quiet_verified"])
+            self.assertFalse(receipt["snapshot_consistent_verified"])
+            self.assertEqual(module.sanitize_observer_metadata(
+                json.dumps(receipt).encode()), receipt)
+
+    def test_missing_parent_fails_closed(self):
+        with tempfile.TemporaryDirectory() as work:
+            receipt = self.sample(Path(work) / "missing-parent")
+            self.assertEqual(receipt["probe_status"], "NO_VERIFICADO")
+            self.assertTrue(all(x["status"] == "PARENT_UNAVAILABLE"
+                                for x in receipt["files"]))
+            self.assertEqual(module.sanitize_observer_metadata(
+                json.dumps(receipt).encode()), receipt)
+
+    def test_whitelist_rejects_forged_secrets_and_false_ready(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            (root / "observer_v17.db").write_bytes(b"fixture")
+            receipt = self.sample(root)
+            variants = [
+                lambda x: x.update(paper_ready=True),
+                lambda x: x.update(writer_quiet_verified=True),
+                lambda x: x.update(database_opened=True),
+                lambda x: x["files"][0].update(size_bytes=123456),
+                lambda x: x["files"][0].update(size_bucket=self.SECRET),
+                lambda x: x["files"][0].update(role="ACCOUNT_PRIVATE"),
+                lambda x: x["files"][0].update(stability="QUIET_WRITER"),
+                lambda x: x.update(probe_status="READY"),
+            ]
+            for change in variants:
+                forged = copy.deepcopy(receipt)
+                change(forged)
+                with self.subTest(change=change.__code__.co_firstlineno):
+                    self.assertEqual(module.sanitize_observer_metadata(
+                        json.dumps(forged).encode()), module.default_observer_metadata())
+            self.assertEqual(module.sanitize_observer_metadata(
+                b'{"schema":"a","schema":"b"}'), module.default_observer_metadata())
+            self.assertEqual(module.sanitize_observer_metadata(
+                json.dumps(receipt).encode(), host_returncode=2),
+                module.default_observer_metadata())
+
+    def test_workflow_auto_main_readonly_no_new_job_or_cron(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("'sudo -n timeout 8 python3 -B - observer-host-probe'", workflow)
+        self.assertIn('A580_REMOTE_RC="$remote_rc" python3 scripts/rc6_a420_primary_source_layout_ro.py observer-sanitize', workflow)
+        self.assertIn("rc6-a580-observer-metadata-${{ github.run_id }}", workflow)
+        self.assertIn("github.ref == 'refs/heads/main' && github.event_name != 'pull_request'", workflow)
+        self.assertNotIn("schedule:", workflow)
+        self.assertNotIn("sqlite3", workflow.lower())
+        self.assertEqual(module.main(["observer-host-probe", "/etc/shadow"]), 64)
+
+    def test_runner_cli_sanitizes_only_fixed_public_schema(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            (root / "observer_v17.db").write_bytes(b"private-contents")
+            payload = self.sample(root)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            (evidence / ".a580_observer_raw.json").write_text(
+                json.dumps(payload), encoding="utf-8")
+            run = subprocess.run([sys.executable, str(SCRIPT), "observer-sanitize"],
+                                 cwd=root, env={"A580_REMOTE_RC": "0"},
+                                 capture_output=True, text=True, timeout=4)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            output = json.loads((evidence / "a580_observer_metadata.json").read_text())
+            self.assertEqual(output, payload)
+            self.assertNotIn("private-contents", json.dumps(output))
+
+
 class A551ExistingFamilyAggregateTests(unittest.TestCase):
     NOW = datetime(2026, 11, 3, 16, 50, tzinfo=timezone.utc)
     SECRET = "PRIVATE_PPI_ACCOUNT_SYMBOL_PRICE_TOKEN_8301"
