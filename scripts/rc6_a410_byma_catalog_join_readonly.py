@@ -2,7 +2,7 @@
 """A410: privacy-safe, bounded BYMA/export identity JOIN diagnostic.
 
 No provider calls, database connections, filesystem writes or order routes.
-Only two previously published JSON files are read.  Raw symbols, quotes,
+Only kernel MemAvailable and two published JSON files are read. Raw symbols, quotes,
 timestamps and source paths never leave the host.  This cannot grant PAPER
 readiness, source freshness, PIT, margin or fee authority.
 
@@ -32,6 +32,10 @@ MAX_BYMA_BYTES = 12 * 1024 * 1024
 # RLIMIT_AS caps process virtual address space, and therefore its resident set,
 # before any provider JSON is read. Breaching this cap is a negative diagnosis.
 MAX_ADDRESS_SPACE_BYTES = 256 * 1024 * 1024
+# A fixed 128 MiB host reserve above the process cap prevents diagnostics
+# from starting during low-memory conditions; no host RAM claim if unknown.
+MIN_HOST_MEMAVAILABLE_BYTES = MAX_ADDRESS_SPACE_BYTES + 128 * 1024 * 1024
+MAX_MEMINFO_BYTES = 16 * 1024
 MAX_ROWS = 60_000
 FAMILIES = {
     "ACCION": "ACCIONES", "ACCIONES": "ACCIONES",
@@ -84,6 +88,7 @@ ERROR_CODES = frozenset({
     "CATALOG_SCHEMA_INVALID", "CATALOG_SHAPE_INVALID",
     "BYMA_SHAPE_INVALID", "ROWS_EXCEEDED", "CLOCK_INVALID",
     "PROBE_FAILED", "MEMORY_LIMIT_UNAVAILABLE",
+    "HOST_MEMORY_UNKNOWN", "HOST_MEMORY_BELOW_RESERVE",
 })
 
 
@@ -111,6 +116,31 @@ def _lock_address_space_limit() -> None:
             raise ValueError("address space budget not enforced")
     except (AttributeError, OSError, ValueError, MemoryError) as exc:
         raise DiagnosticRejected("MEMORY_LIMIT_UNAVAILABLE") from exc
+
+
+def _require_host_memory_reserve() -> None:
+    """Fail closed unless kernel MemAvailable leaves 128 MiB over process cap.
+
+    /proc/meminfo is fixed kernel metadata, read with a 16 KiB upper bound;
+    never log memory values, raw text, private paths or exceptions. The reserve
+    is a preflight estimate, not a guarantee against concurrent processes.
+    """
+    try:
+        with open("/proc/meminfo", "r", encoding="ascii") as handle:
+            content = handle.read(MAX_MEMINFO_BYTES + 1)
+        if not content or len(content) > MAX_MEMINFO_BYTES:
+            raise DiagnosticRejected("HOST_MEMORY_UNKNOWN")
+        fields = [line.split() for line in content.splitlines()
+                  if line.startswith("MemAvailable:")]
+        if (len(fields) != 1 or len(fields[0]) != 3 or
+                fields[0][0] != "MemAvailable:" or fields[0][2] != "kB" or
+                not fields[0][1].isdecimal()):
+            raise DiagnosticRejected("HOST_MEMORY_UNKNOWN")
+        available_bytes = int(fields[0][1]) * 1024
+        if available_bytes < MIN_HOST_MEMAVAILABLE_BYTES:
+            raise DiagnosticRejected("HOST_MEMORY_BELOW_RESERVE")
+    except (OSError, UnicodeError, ValueError, MemoryError) as exc:
+        raise DiagnosticRejected("HOST_MEMORY_UNKNOWN") from exc
 
 
 def safe_bytes(path: Path, cap: int) -> tuple[bytes, os.stat_result]:
@@ -392,9 +422,11 @@ def main(argv=None):
         return 64
     try:
         _lock_address_space_limit()
-    except DiagnosticRejected:
+        _require_host_memory_reserve()
+    except DiagnosticRejected as exc:
         result = _new_report()
-        result["reason"] = "MEMORY_LIMIT_UNAVAILABLE"
+        if str(exc) in ERROR_CODES:
+            result["reason"] = str(exc)
     else:
         result = inspect_files()
     print(json.dumps(result, ensure_ascii=True, sort_keys=True, separators=(",", ":")))

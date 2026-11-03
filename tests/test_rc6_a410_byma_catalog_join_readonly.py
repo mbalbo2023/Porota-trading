@@ -337,6 +337,52 @@ class A410JoinContracts(unittest.TestCase):
         self.assertFalse(report["source_contract_ready"])
         self.assertNotIn(PRIVATE, json.dumps(report))
 
+    def test_host_memavailable_preflight_is_strict_and_sanitized(self):
+        self.assertEqual(probe.MIN_HOST_MEMAVAILABLE_BYTES,
+                         probe.MAX_ADDRESS_SPACE_BYTES + 128 * 1024 * 1024)
+        good = "MemTotal: 999999 kB\nMemAvailable: 393216 kB\n"
+        with mock.patch("builtins.open", mock.mock_open(read_data=good)):
+            probe._require_host_memory_reserve()
+        for number, payload, expected in (
+            (0, "MemAvailable: 393215 kB\n", "HOST_MEMORY_BELOW_RESERVE"),
+            (1, "MemAvailable: 0 kB\n", "HOST_MEMORY_BELOW_RESERVE"),
+            (2, "MemAvailable: private kB\n", "HOST_MEMORY_UNKNOWN"),
+            (3, "MemAvailable: -1 kB\n", "HOST_MEMORY_UNKNOWN"),
+            (4, "MemAvailable: 900 mb\n", "HOST_MEMORY_UNKNOWN"),
+            (5, "MemFree: 999999 kB\n", "HOST_MEMORY_UNKNOWN"),
+            (6, "MemAvailable: 999999 kB\nMemAvailable: 123 kB\n",
+             "HOST_MEMORY_UNKNOWN"),
+            (7, "X" * (probe.MAX_MEMINFO_BYTES + 1), "HOST_MEMORY_UNKNOWN"),
+        ):
+            with self.subTest(case=number):
+                with mock.patch("builtins.open", mock.mock_open(read_data=payload)):
+                    with self.assertRaises(probe.DiagnosticRejected) as raised:
+                        probe._require_host_memory_reserve()
+                self.assertEqual(str(raised.exception), expected)
+        with mock.patch("builtins.open", side_effect=OSError("PRIVATE_HOST_PATH")):
+            with self.assertRaises(probe.DiagnosticRejected) as raised:
+                probe._require_host_memory_reserve()
+        self.assertEqual(str(raised.exception), "HOST_MEMORY_UNKNOWN")
+
+    def test_insufficient_host_memory_never_reads_json(self):
+        output = StringIO()
+        with (
+            mock.patch.object(probe, "_lock_address_space_limit"),
+            mock.patch.object(probe, "_require_host_memory_reserve",
+                              side_effect=probe.DiagnosticRejected(
+                                  "HOST_MEMORY_BELOW_RESERVE")),
+            mock.patch.object(probe, "inspect_files",
+                              side_effect=AssertionError("host read forbidden")),
+        ):
+            with redirect_stdout(output):
+                status = probe.main(["host-probe"])
+        report = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(report["diagnostic_status"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "HOST_MEMORY_BELOW_RESERVE")
+        self.assertEqual(report["market_readiness"], "NO_VERIFICADO")
+        self.assertNotIn(PRIVATE, json.dumps(report))
+
     def test_host_action_stays_on_main_and_never_on_pr(self):
         workflow = (PATH.parents[1] / ".github/workflows/rc6-a410-byma-catalog-join-readonly.yml").read_text(
             encoding="utf-8")
