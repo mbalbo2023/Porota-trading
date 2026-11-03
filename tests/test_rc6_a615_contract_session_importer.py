@@ -133,6 +133,8 @@ def test_caucion_unique_ppi_identity_is_partial_not_ars_principal(
             target["currency"], target["settlement"]) == (
                 "CACC1", "CAUCIONES", "BYMA", "ARS", "A-24HS")
     evidence = target["evidence"]
+    assert "quantity" not in evidence
+    assert evidence["provider_quantity_unverified"] == {"quantity": 1}
     assert evidence["book_quantity_unit_status"] == "BOOK_QUANTITY_UNIT_UNVERIFIED"
     assert evidence["readiness_guard"] == "NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"
     for key in ("applied_exchange_rate", "amount_invested_ars",
