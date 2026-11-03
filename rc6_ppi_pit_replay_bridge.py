@@ -22,25 +22,26 @@ from typing import Any
 from rc6_ppi_scanner_provenance import _aware, strictly_future_native_books
 
 
-# These are *audit groups*, not an OPERATIONAL_SCOPE promise. ETF stays HOLD.
+# These are the nine independently enumerated PPI audit families in the A385
+# host inventory, not an OPERATIONAL_SCOPE or readiness promise. ETF stays HOLD;
+# ACCIONES_USA/INDICES are contextual families, not two replacements for
+# separate BONOS, LETRAS and OBLIGACIONES in this nine-family audit denominator.
 NINE_FAMILY_GROUPS = (
-    "ACCIONES", "CEDEARS", "BONOS_LETRAS_ON", "OPCIONES", "FUTUROS",
-    "CAUCIONES", "FCI", "ACCIONES_USA", "INDICES",
+    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 )
 RECEIPT_SCHEMA = "rc6.ppi-native-book-causal-witness.v1"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GROUP_TYPES = {
     "ACCIONES": frozenset({"ACCIONES"}),
     "CEDEARS": frozenset({"CEDEARS"}),
-    "BONOS_LETRAS_ON": frozenset({"BONOS", "LETRAS", "OBLIGACIONES"}),
+    "BONOS": frozenset({"BONOS"}),
+    "LETRAS": frozenset({"LETRAS"}),
+    "OBLIGACIONES": frozenset({"OBLIGACIONES"}),
     "OPCIONES": frozenset({"OPCIONES"}),
     "FUTUROS": frozenset({"FUTUROS"}),
     "CAUCIONES": frozenset({"CAUCIONES"}),
     "FCI": frozenset({"FCI"}),
-    # The current scanner identity enum does NOT prove geographical USA
-    # markets or index semantics from a generic ACCIONES/other label.
-    "ACCIONES_USA": frozenset({"ACCIONES_USA"}),
-    "INDICES": frozenset({"INDICES"}),
 }
 
 
