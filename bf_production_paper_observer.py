@@ -308,16 +308,19 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
 def _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identity=None):
     """Pin the *complete* catalog identity before a three-key PPI GET.
 
-    Current/Book do not accept market or currency. A single READY candidate
-    never removes a conflicting catalog sibling, including a stale or held
-    one: the provider response itself cannot distinguish those currencies.
-    Never consume PPI quota first and resolve its identity afterwards.
+    Current/Book do not accept market or currency. Only PPI-primary catalog
+    identities authorize their provider request; IOL/BYMA complementary
+    discoveries cannot authenticate PPI or veto an otherwise unique PPI
+    identity. A stale or held PPI sibling still blocks: the provider response
+    cannot distinguish those currencies. Never consume PPI quota first
+    and resolve its identity afterwards.
     """
     try:
         with store.connect() as connection:
             rows = connection.execute("""SELECT market,currency
               FROM financial_instrument_catalog
               WHERE ticker=? AND instrument_type=? AND settlement=?
+                AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
               LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
     except (sqlite3.Error, OSError, ValueError, TypeError):
         raise ValueError("PPI_SCANNER_CATALOG_IDENTITY_UNVERIFIED") from None
