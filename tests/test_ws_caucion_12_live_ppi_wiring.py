@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -11,9 +12,11 @@ import bu_instrument_catalog as catalog
 import cr_contract_evidence_v2_mass_hf6 as mass
 import dj_caucion_live_ppi_rc6 as live
 import rc6_contract_bridge as bridge
+from ak_byma_calendar import ANIOS_AUDITADOS, es_dia_habil_operativo
 from be_paper_engine import PaperStore
 from bt_caucion_paper import automatic_liquidity_cap
 from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
+from rc6_cauciones_contract import theoretical_liquidity_date
 
 TZ=ZoneInfo("America/Argentina/Buenos_Aires")
 NOW=datetime(2026,10,2,16,59,57,tzinfo=TZ)
@@ -63,7 +66,7 @@ def test_mass_policy_marks_exact_ars_caucion_static_ready(tmp_path):
     completed=catalog.complete_with_complement(primary,claim)
     assert completed["capability"]=="READY_PAPER_CAUCION_PLACING"
 
-def test_live_book_is_separate_dynamic_state_and_participation_is_conservative(tmp_path,monkeypatch):
+def test_live_book_is_separate_dynamic_state_and_unit_failclosed(tmp_path,monkeypatch):
     store=_store(tmp_path)
     mass.collect(store,run_id="caucion-static")
     for claim in bridge.complements_from_store(store,now=NOW):
@@ -82,21 +85,24 @@ def test_live_book_is_separate_dynamic_state_and_participation_is_conservative(t
                     "bids":[{"price":19.1,"quantity":30000000}],"offers":[]}
     monkeypatch.setattr(live,"collection_window",lambda at:True)
     result=live.refresh(Reader(),store,now=NOW,clock_fn=lambda:NOW)
-    assert result["ready"]==1 and result["real_routes"]==[]
+    assert result["ready"]==0 and result["real_routes"]==[]
+    assert result["states"]=={"PESOS7":"BOOK_QUANTITY_UNIT_UNVERIFIED"}
     with store.connect() as c:
         assert c.execute("select count(*) from paper_caucion_live_book").fetchone()[0]==1
+        row=c.execute("select state,tna_fraction,available_principal from paper_caucion_live_book").fetchone()
+        assert tuple(row)==("BOOK_QUANTITY_UNIT_UNVERIFIED",None,None)
         # Dynamic quote must never enter static Contract Evidence v2.
         payloads=[r[0] for r in c.execute(
             "select evidence_json from contract_evidence_v2_snapshots where family='CAUCIONES'")]
         assert all('"annual_rate_fraction"' not in p for p in payloads)
     offers,errors=offers_from_store(store,now=NOW)
-    assert not errors and len(offers)==1
-    offer=offers[0]
-    assert offer.annual_rate_fraction==Decimal("0.191")
-    assert offer.available_principal==Decimal("30000000")
-    assert automatic_liquidity_cap(offer,Decimal("0.10"))==Decimal("3000000")
-    assert offer.fee_authority
-    assert offer.paper_fill_policy=="LIVE_PPI_BID_PARTICIPATION_CAP"
+    assert offers==[] and errors==["PESOS7:BOOK_QUANTITY_UNIT_UNVERIFIED"]
+    # Retain conservative participation arithmetic with a clearly synthetic
+    # independently-specified principal; do not relabel PPI Book depth as ARS.
+    synthetic=SimpleNamespace(
+        available_principal=Decimal("30000000"),
+        paper_fill_policy="LIVE_PPI_BID_PARTICIPATION_CAP")
+    assert automatic_liquidity_cap(synthetic,Decimal("0.10"))==Decimal("3000000")
 
 def test_no_placing_bid_never_fabricates_rate_or_depth(tmp_path,monkeypatch):
     store=_store(tmp_path)
@@ -130,6 +136,16 @@ def test_live_collector_has_no_client_constructor_or_order_route():
 ])
 def test_theoretical_maturity_never_rolls_to_unverified_settlement(
         tmp_path, monkeypatch, ticker, at, expected):
+    # Contract calendar arithmetic remains testable without manufacturing
+    # principal-unit authority from an unverified Book.quantity field.
+    maturity=theoretical_liquidity_date(at.date(),ticker)
+    calendar_error=("CAUCION_MATURITY_CALENDAR_UNVERIFIED"
+                    if maturity.year not in ANIOS_AUDITADOS else
+                    "CAUCION_MATURITY_NON_SETTLEMENT_DAY"
+                    if not es_dia_habil_operativo(maturity) else None)
+    assert calendar_error==expected
+    if expected is None:
+        assert maturity.isoformat()=="2026-10-30"
     store = _store(tmp_path, ticker=ticker, at=at)
     mass.collect(store, run_id="caucion-maturity")
     for claim in bridge.complements_from_store(store, now=at):
@@ -148,15 +164,9 @@ def test_theoretical_maturity_never_rolls_to_unverified_settlement(
                     "bids": [{"price": 19.1, "quantity": 30_000_000}], "offers": []}
 
     monkeypatch.setattr(live, "collection_window", lambda _at: True)
-    assert live.refresh(Reader(), store, now=at, clock_fn=lambda:at)["ready"] == 1
+    assert live.refresh(Reader(), store, now=at, clock_fn=lambda:at)["ready"] == 0
     offers, errors = offers_from_store(store, now=at)
-    if expected:
-        assert offers == []
-        assert errors == [f"{ticker}:{expected}"]
-    else:
-        assert errors == [] and len(offers) == 1
-        assert offers[0].maturity_at.startswith("2026-10-30T17:00:00")
-        assert "THEORETICAL_MATURITY_BYMA_CALENDAR_CHECKED" in offers[0].metadata_source
+    assert offers == [] and errors == [f"{ticker}:BOOK_QUANTITY_UNIT_UNVERIFIED"]
 
 
 def test_no_bid_does_not_create_theoretical_maturity_offer(tmp_path, monkeypatch):
