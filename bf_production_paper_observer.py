@@ -335,8 +335,9 @@ def _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identi
     return exact
 
 
-def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
-    """Native scanner reads only after exact market/currency disambiguation."""
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY",
+                        identity=None, scanner_primary=None):
+    """Native scanner reads and optional private PIT journal share one Book GET."""
     if priority == "OPENED_CRITICAL" and identity is None:
         # Two opened full keys may project to one PPI request. Never choose
         # a coalesced EXIT/OPENED budget identity by catalog fallback.
@@ -348,7 +349,36 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, prior
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
         market=exact[2], currency=exact[3])
-    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    quote = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    if scanner_primary is not None:
+        # A561 persists the complete *same* native Book (not a reconstructed
+        # top-of-book). This is observational evidence, never PAPER authority.
+        # No additional PPI GET, synthetic clock, inferred contract unit or
+        # change to the existing scanner quote/strategy admissibility path.
+        try:
+            capture = getattr(scanner_primary, "capture_raw_book", None)
+            result = (capture(quote, raw_book=book,
+                              request=(symbol, asset_class, settlement), identity=exact,
+                              observed_at=quote.observed_at)
+                      if callable(capture) else None)
+            if not isinstance(result, dict) or result.get("status") not in {"CAPTURED", "DEDUPLICATED"}:
+                status = result.get("status") if isinstance(result, dict) else None
+                reason = result.get("reason") if isinstance(result, dict) else None
+                if status not in {"CAPTURE_INVALID_HOLD", "CAPTURE_CAPACITY_HOLD",
+                                  "CAPTURE_INTEGRITY_HOLD"}:
+                    status = "CAPTURE_UNVERIFIED_HOLD"
+                if (not isinstance(reason, str) or not 1 <= len(reason) <= 96
+                        or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in reason)):
+                    reason = "PPI_BOOK_CAPTURE_REASON_UNVERIFIED"
+                store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_HOLD", status + ":" + reason)
+        except Exception as origin_error:
+            # Failure to write observational evidence must not become READY,
+            # cause another provider query or alter orders/entry gates.
+            try:
+                store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_ERROR", type(origin_error).__name__)
+            except Exception:
+                pass
+    return quote
 
 
 def _equity_t1_readonly_window(at):
@@ -490,8 +520,14 @@ def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None, scanner_prima
         if not _equity_t1_readonly_window(observed):
             break
         try:
+            source_kwargs = {"priority": "OPENED_CRITICAL" if identity in opened else "WARM",
+                             "identity": identity}
+            if scanner_primary is not None:
+                # Preserve the original signature for source-only legacy
+                # callers when no private recorder is configured.
+                source_kwargs["scanner_primary"] = scanner_primary
             quote = _read_scanner_quote(reader, store, symbol, family, settlement,
-                priority="OPENED_CRITICAL" if identity in opened else "WARM", identity=identity)
+                **source_kwargs)
             received = aware_datetime(clock_fn() if clock_fn else datetime.now(TZ))
             if not _equity_t1_readonly_window(received):
                 break
@@ -2739,7 +2775,8 @@ def run():
                     exact_opened = opened_identities.get(request_key, set())
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
-                        priority=priority, identity=scope_identity)
+                        priority=priority, identity=scope_identity,
+                        scanner_primary=scanner_primary)
                     try:
                         scanner_primary.capture(q, request=request_key)
                     except Exception as origin_error:
