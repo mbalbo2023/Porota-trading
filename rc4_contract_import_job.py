@@ -213,6 +213,7 @@ def import_capture(store,path):
                       settlement=ident['settlement'],source_class='PPI_AUTHENTICATED_XHR',
                       source_ref=url,evidence=evidence)
                     total+=1; changed+=int(bool(r.get('changed')))
+                    notes.append('CAUCIONES_PARTIAL_UNIT_UNVERIFIED')
                 except Exception as exc:
                     notes.append('CAUCIONES_CONTRACT_IMPORT_'+type(exc).__name__)
         elif kind=='SubyacenteOpciones':
