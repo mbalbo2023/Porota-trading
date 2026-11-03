@@ -7,7 +7,7 @@ authenticate to an external source only after this check succeeds.
 from __future__ import annotations
 import json, os, sqlite3
 from datetime import datetime, timezone
-from rc4_contract_schedule import JOB_TO_CADENCE, due
+from rc4_contract_schedule import JOB_TO_CADENCE, SOURCE_UNBOUND_REASONS, due
 
 DB=os.getenv('PAPER_V17_DB_PATH','/app/data/paper_v17/observer_v17.db')
 
@@ -35,7 +35,15 @@ def main():
     except sqlite3.Error:
         return blocked('CONTRACT_DUE_SQLITE_READ_FAILED')
     now=datetime.now(timezone.utc)
-    due_jobs=[key for key,last in result.items() if due(last,key,now)]
-    print(json.dumps({'state':'OK','due_jobs':due_jobs,'last_runs':result,'generated_at':now.isoformat()},sort_keys=True))
+    # Never dispatch fund terms/tariff from a TTL alone: no authenticated
+    # provider/class/account binding or matching collector exists yet.
+    due_jobs=[key for key,last in result.items()
+              if key not in SOURCE_UNBOUND_REASONS and due(last,key,now)]
+    print(json.dumps({'state':'OK','due_jobs':due_jobs,'last_runs':result,
+        'source_authority_complete':not bool(SOURCE_UNBOUND_REASONS),
+        'source_unbound_jobs':dict(sorted(SOURCE_UNBOUND_REASONS.items())),
+        'registered_cadences':len(JOB_TO_CADENCE),
+        'executable_cadences':len(JOB_TO_CADENCE)-len(SOURCE_UNBOUND_REASONS),
+        'generated_at':now.isoformat()},sort_keys=True))
     return 0
 if __name__=='__main__': raise SystemExit(main())
