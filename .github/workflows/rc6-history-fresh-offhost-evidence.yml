@@ -7,6 +7,8 @@ name: RC6 historical source evidence offhost
 # A338 adds a separate manual Book mode with the EXISTING atomic PPI budget
 # lease. Only the global PPI budget sidecar's native acquire/start/finish may
 # write; never trading DB/History v2/PPI Watch, no independent PIT claim.
+# A516 adds an opt-in metadata-only diagnosis of A338's missing budget lease.
+# A516 never attempts provider GET, budget initialization, or trading DB access.
 on:
   pull_request:
     paths:
@@ -15,6 +17,8 @@ on:
       - 'tests/test_rc6_a331_host_ppi_history_readonly.py'
       - 'scripts/rc6_a338_host_ppi_book_atomic.py'
       - 'tests/test_rc6_a338_host_ppi_book_atomic.py'
+      - 'scripts/rc6_a516_host_budget_metadata_ro.py'
+      - 'tests/test_rc6_a516_host_budget_metadata_ro.py'
   workflow_dispatch:
     inputs:
       execution_mode:
@@ -26,6 +30,7 @@ on:
           - DROPLET_EXISTING_CREDENTIALS
           - RUNNER_EXISTING
           - DROPLET_ATOMIC_BOOK
+          - DROPLET_BUDGET_METADATA
       from_day:
         description: History-only first ART day; ignored for Book
         required: true
@@ -87,6 +92,7 @@ jobs:
           set -Eeuo pipefail
           python3 -m unittest discover -s tests -p test_rc6_a331_host_ppi_history_readonly.py -v
           python3 -m unittest discover -s tests -p test_rc6_a338_host_ppi_book_atomic.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a516_host_budget_metadata_ro.py -v
       - uses: actions/checkout@v4
         with:
           ref: bcbd445f94234188a1ae88888f1587eb2eb149d0
@@ -644,5 +650,135 @@ jobs:
           for path in "$HOME/.ssh/rc6_a338_atomic" \
               "$RUNNER_TEMP/rc6-a338-stdout.private" \
               "$RUNNER_TEMP/rc6-a338-stderr.private"; do
+            if test -f "$path"; then shred -u "$path"; fi
+          done
+
+  a516-host-budget-metadata-only:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' && inputs.execution_mode == 'DROPLET_BUDGET_METADATA' }}
+    # Pin the running image exactly as the existing A331/A338 jobs do.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test A516 closed-vocabulary and zero-provider contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B -m unittest discover -s tests -p test_rc6_a516_host_budget_metadata_ro.py -v
+          python3 -B -m py_compile scripts/rc6_a516_host_budget_metadata_ro.py
+          git diff --check
+      - name: Read only budget sidecar metadata from pinned PAPER image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a516_metadata"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a516_metadata" "$HOME/.ssh/known_hosts"
+          set +e
+          timeout --signal=TERM --kill-after=5s 65s ssh \
+            -i "$HOME/.ssh/rc6_a516_metadata" -o BatchMode=yes \
+            -o ConnectTimeout=8 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\n' \"\$image\"; sudo -n timeout 30 docker exec -i -e RC6_A516_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B -" \
+            < scripts/rc6_a516_host_budget_metadata_ro.py \
+            > "$RUNNER_TEMP/rc6-a516-stdout.private" \
+            2> "$RUNNER_TEMP/rc6-a516-stderr.private"
+          host_rc=$?
+          set -e
+          export RC6_A516_HOST_RC="$host_rc"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.rc6_a516_host_budget_metadata_ro import SCHEMA, PRODUCT_SHA, verify_receipt
+          root=Path(os.environ['RUNNER_TEMP'])
+          private=root / 'rc6-a516-stdout.private'
+          raw=(private.read_bytes() if private.is_file() and private.stat().st_size <= 8192 else b'')
+          lines=raw.decode('utf-8',errors='replace').splitlines()
+          image=(lines[0].partition('=')[2] if len(lines)==2 and lines[0].startswith('RUNTIME_IMAGE_ID=') else '')
+          try:
+              result=json.loads(lines[1]) if image==os.environ['RC6_EXPECTED_IMAGE_ID'] else {}
+          except (ValueError,IndexError):
+              result={}
+          valid=(verify_receipt(result) and os.environ['RC6_A516_HOST_RC']=='0'
+                 and result.get('expected_product_sha')==PRODUCT_SHA)
+          if not valid:
+              result={'schema':SCHEMA,'state':'NO_VERIFICADO','diagnosis':'HOST_PROBE_FAILED',
+                  'expected_product_sha':PRODUCT_SHA,'trading_database_opened':False,
+                  'budget_sidecar_written':False,'budget_lease_acquired':False,
+                  'provider_calls':0,'real_orders_sent':0,'ppi_watch_touched':False,
+                  'book_replay_verified':False,'paper_ready':False}
+          manifest={'schema':'rc6.a516.action.sanitized.v1',
+              'run_id':os.environ['GITHUB_RUN_ID'],'workflow_sha':os.environ['GITHUB_SHA'],
+              'expected_product_sha':PRODUCT_SHA,
+              'expected_runtime_image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
+              'host_exit':int(os.environ['RC6_A516_HOST_RC']),
+              'result':result,'metadata_only':True,'book_gets':0,'host_files_written':0,
+              'predeploy_dispatches':0,'deploy_dispatches':0}
+          (root/'rc6-a516-sanitized-only.json').write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n')
+          print('A516_BUDGET_METADATA='+result['state']+'|classification='+result['diagnosis']+
+                '|provider_gets=0|book_replay=NO_GO|real_orders=0')
+          if not valid:
+              raise SystemExit(2)
+          PY
+      - name: Fail-closed A516 receipt if preflight or SSH failed
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.rc6_a516_host_budget_metadata_ro import SCHEMA, PRODUCT_SHA
+          out=Path(os.environ['RUNNER_TEMP'])/'rc6-a516-sanitized-only.json'
+          if not out.is_file():
+              out.write_text(json.dumps({
+                  'schema':'rc6.a516.action.sanitized.v1',
+                  'run_id':os.environ['GITHUB_RUN_ID'],
+                  'workflow_sha':os.environ['GITHUB_SHA'],
+                  'expected_product_sha':PRODUCT_SHA,
+                  'expected_runtime_image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
+                  'result':{'schema':SCHEMA,'state':'NO_VERIFICADO',
+                      'diagnosis':'HOST_PROBE_FAILED','expected_product_sha':PRODUCT_SHA,
+                      'trading_database_opened':False,'budget_sidecar_written':False,
+                      'budget_lease_acquired':False,'provider_calls':0,
+                      'real_orders_sent':0,'ppi_watch_touched':False,
+                      'book_replay_verified':False,'paper_ready':False},
+                  'metadata_only':True,'book_gets':0,'host_files_written':0,
+                  'predeploy_dispatches':0,'deploy_dispatches':0},
+                  sort_keys=True,indent=2)+'\n')
+          PY
+      - name: Preserve only sanitized budget classification, even on failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a516-host-budget-metadata-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-a516-sanitized-only.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy runner-only SSH and private output
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for path in "$HOME/.ssh/rc6_a516_metadata" \
+              "$RUNNER_TEMP/rc6-a516-stdout.private" \
+              "$RUNNER_TEMP/rc6-a516-stderr.private"; do
             if test -f "$path"; then shred -u "$path"; fi
           done
