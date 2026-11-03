@@ -1,5 +1,4 @@
 """A615 synthetic FI causal guards: no provider GET, economic sale or host DB."""
-from copy import deepcopy
 import unittest
 
 from rc6_fixed_income_sale_causal_guard import (
@@ -51,6 +50,7 @@ def sample():
             "identity": IDENTITY[:], "nominal": "70",
             "fee_currency": "ARS", "fee_amount": "0.61",
             "tariff_sha256": "e" * 64,
+            "execution_price": "104.0000", "slippage_fraction": "0",
         },
         "settlement": {
             "identity": IDENTITY[:], "settlement_currency": "ARS",
@@ -133,6 +133,7 @@ class FiNativeExitCausalityGuardTest(unittest.TestCase):
             ("book2", "quote_price_basis", "PER_1_VN", "FI_EXIT_PRICE_PER_VN_MULTIPLIER_CONFLICT"),
             ("fee", "nominal", "100", "FI_EXIT_TARIFF_NOMINAL_OR_CURRENCY_CONFLICT"),
             ("fee", "fee_currency", "USD", "FI_EXIT_TARIFF_NOMINAL_OR_CURRENCY_CONFLICT"),
+            ("fee", "execution_price", "104.50", "FI_EXIT_EXECUTION_PRICE_SLIPPAGE_MISMATCH"),
             ("settlement", "net_proceeds", "7280", "FI_EXIT_SETTLEMENT_CURRENCY_TIME_OR_CASH_CONFLICT"),
         )
         for scope, key, value, reason in mutations:
@@ -140,6 +141,19 @@ class FiNativeExitCausalityGuardTest(unittest.TestCase):
                 data = sample()
                 data[scope][key] = value
                 self.assertIn(reason, assess_causal_paper_sale(**data)["structural_blockers"])
+
+    def test_slippage_execution_price_must_match_paper_fee_and_settlement(self):
+        data = sample()
+        data["fee"]["slippage_fraction"] = "0.01"
+        data["fee"]["execution_price"] = "102.9600"
+        data["settlement"]["net_proceeds"] = "71.4620"
+        self.assertTrue(assess_causal_paper_sale(**data)["structural_witness"])
+        data["fee"]["execution_price"] = "104.0000"
+        self.assertIn("FI_EXIT_EXECUTION_PRICE_SLIPPAGE_MISMATCH",
+                      assess_causal_paper_sale(**data)["structural_blockers"])
+        data["fee"]["slippage_fraction"] = "1"
+        with self.assertRaisesRegex(ValueError,"FI_EXIT_SLIPPAGE_POLICY_INVALID"):
+            assess_causal_paper_sale(**data)
 
     def test_issuer_usd_does_not_infer_fx_for_ars_sale(self):
         result = self.assess()

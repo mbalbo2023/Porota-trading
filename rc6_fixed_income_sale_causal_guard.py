@@ -38,6 +38,7 @@ _CONTRACT_FIELDS = frozenset({
 })
 _FEE_FIELDS = frozenset({
     "identity", "nominal", "fee_currency", "fee_amount", "tariff_sha256",
+    "execution_price", "slippage_fraction",
 })
 _SETTLEMENT_FIELDS = frozenset({
     "identity", "settlement_currency", "settlement_at",
@@ -139,6 +140,11 @@ def assess_causal_paper_sale(*, identity, book1, decision, book2, contract,
     multiplier = _decimal(contract["cash_multiplier"], "PRICE_MULTIPLIER", positive=True)
     price = _decimal(book2["bid"], "BOOK2_BID", positive=True)
     fee_amount = _decimal(fee["fee_amount"], "FEE")
+    slippage = _decimal(fee["slippage_fraction"], "SLIPPAGE")
+    if slippage >= 1:
+        raise ValueError("FI_EXIT_SLIPPAGE_POLICY_INVALID")
+    modeled_execution_price = (price * (1 - slippage)).quantize(Decimal("0.0001"))
+    fee_execution_price = _decimal(fee["execution_price"], "EXECUTION_PRICE", positive=True)
     _sha(book1["journal_event_sha256"], "BOOK1_EVENT")
     _sha(book2["journal_event_sha256"], "BOOK2_EVENT")
     _sha(decision["decision_receipt_sha256"], "DECISION_RECEIPT")
@@ -188,11 +194,16 @@ def assess_causal_paper_sale(*, identity, book1, decision, book2, contract,
     if (_decimal(fee["nominal"], "FEE_NOMINAL") != qty or
             fee["fee_currency"] != expected[3]):
         blockers.append("FI_EXIT_TARIFF_NOMINAL_OR_CURRENCY_CONFLICT")
+    if fee_execution_price != modeled_execution_price:
+        blockers.append("FI_EXIT_EXECUTION_PRICE_SLIPPAGE_MISMATCH")
     if (settlement["settlement_currency"] != expected[3] or
             settled <= executed or
             _decimal(settlement["net_proceeds"], "NET_PROCEEDS") !=
-            price*qty*multiplier-fee_amount):
+            fee_execution_price*qty*multiplier-fee_amount):
         blockers.append("FI_EXIT_SETTLEMENT_CURRENCY_TIME_OR_CASH_CONFLICT")
+    if (not isinstance(contract["payout_currency"],str) or
+            contract["payout_currency"] not in {"ARS", "USD"}):
+        blockers.append("FI_EXIT_ISSUER_PAYOUT_CURRENCY_INVALID")
     # Issuer payment currency (e.g. USD coupons for an ARS bond sale) is
     # distinct from trade/fee settlement. It must never become implicit FX.
     if settlement["fx_receipt_sha256"] is not None:
