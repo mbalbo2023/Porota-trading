@@ -219,7 +219,9 @@ def import_capture(store,path):
             notes.append('OPTION_UNDERLYING_CATALOG_OBSERVED_NOT_CONTRACT')
         elif kind=='SCHEMA_ONLY':
             notes.append('SCHEMA_ONLY_NO_CONTRACT_FIELDS')
-    final='VERDE' if not notes else 'AMARILLO'
+    if total==0:
+        notes.append('AUTHENTICATED_XHR_NO_BOUND_CONTRACT_EVIDENCE')
+    final='VERDE' if total>0 and conflicts==0 and not notes else 'AMARILLO'
     detail=f'records={total}; changed={changed}; notes={",".join(sorted(set(notes)))[:1000]}'
     for job,rid in run_ids.items(): finish_run(store,run_id=rid,state=final,records=total,changed=changed,conflicts=conflicts,detail=detail)
     return {'state':final,'auth_status':auth,'records':total,'changed':changed,'conflicts':conflicts,'notes':sorted(set(notes)),'real_orders_sent':0}
