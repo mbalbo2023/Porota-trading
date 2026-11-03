@@ -3,8 +3,11 @@
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 from scripts.rc6_a516_host_budget_metadata_ro import (
     auxiliary_policy_intent, build_receipt, capacity_mode, sidecar_kind, verify_receipt,
@@ -151,6 +154,33 @@ class A516BudgetMetadataTests(unittest.TestCase):
             self.assertNotIn(hostile_path, json.dumps(receipt))
             self.assertNotIn("PRIVATE_POLICY_FAILURE", json.dumps(receipt))
             self.assertTrue(verify_receipt(receipt))
+
+    def test_a519_native_policy_loader_is_bounded_and_validated(self):
+        # Main/control-plane lacks the product package. Model the same module
+        # seam to catch accidental removal of read_json's byte cap/validator.
+        observed = []
+        package = types.ModuleType("rc6_dynamic_universe")
+        package.__path__ = []
+        promotion = types.ModuleType("rc6_dynamic_universe.promotion")
+        promotion.POLICY_PATH = Path("/product/ops/policy/rc6-dynamic-capacity-v1.json")
+
+        def read_json(selected, *, limit):
+            observed.append(("read", str(selected), limit))
+            return {"mode": "OFF"}
+
+        def validate_policy(value):
+            observed.append(("validated", value["mode"]))
+            return value
+
+        promotion.read_json = read_json
+        promotion.validate_policy = validate_policy
+        with mock.patch.dict(sys.modules, {"rc6_dynamic_universe": package,
+                                           "rc6_dynamic_universe.promotion": promotion}):
+            intent = auxiliary_policy_intent({})
+        self.assertEqual(intent["policy_file_mode"], "OFF")
+        self.assertEqual(intent["auxiliary_requested_mode"], "OFF")
+        self.assertEqual(observed, [
+            ("read", str(promotion.POLICY_PATH), 16 * 1024), ("validated", "OFF")])
 
     def test_a519_unknown_or_injected_policy_context_is_never_certified(self):
         base = build_receipt("REGULAR_SINGLE_LINK", {"status": "OBSERVED"}, "OFF",
