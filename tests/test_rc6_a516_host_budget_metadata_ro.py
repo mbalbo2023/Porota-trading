@@ -88,6 +88,8 @@ class A516BudgetMetadataTests(unittest.TestCase):
             {"trading_database_opened": True}, {"snapshot_scope": "/secret/path"},
             {"book_replay_verified": True}, {"unexpected": "raw token"},
             {"paper_ready": 0}, {"provider_calls": False},
+            {"budget_sidecar_written": 0}, {"budget_lease_acquired": 0},
+            {"ppi_watch_touched": 0}, {"book_replay_verified": 0},
         ):
             with self.subTest(mutation=mutation):
                 wrong = dict(baseline, **mutation)
