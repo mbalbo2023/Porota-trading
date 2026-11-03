@@ -32,6 +32,7 @@ PPI_HOST = "clientapi.portfoliopersonal.com"
 MAX_BODY = 128 * 1024
 MAX_LEVELS = 200
 MAX_AGE_MS = 120_000
+MAX_EXIT_ROUND_AGE_MS = 300_000
 SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 PPI_TYPES = {"ACCIONES": "ACCIONES", "BONOS": "BONOS"}
 # One reviewed target per intraday window. Catalog must prove the FULL 5-key.
@@ -50,6 +51,7 @@ REASONS = frozenset({
     "PPI_BUDGET_SIDECAR_ABSENT", "PPI_BUDGET_SIDECAR_PATH_UNSAFE",
     "PPI_BUDGET_SNAPSHOT_NOT_OBSERVED", "PPI_RETENTION_NOT_READY",
     "PPI_EXIT_LOWER_SUSPENDED", "PPI_EXIT_ROUND_NOT_ATTESTED",
+    "PPI_EXIT_ROUND_STALE_OR_CLOCK_INVALID",
     "PPI_BUDGET_RUNTIME_BACKEND_MISMATCH", "PPI_BUDGET_PROBE_UNAVAILABLE",
     "PROVIDER_GET_SCOPE_OR_COUNT_INVALID", "PPI_PROVIDER_OR_AUTH_FAILED",
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
@@ -188,6 +190,20 @@ def _utc(raw):
     return dt.astimezone(timezone.utc)
 
 
+def _exit_round_fresh(cycle, *, now=None):
+    if not isinstance(cycle, dict):
+        return False
+    try:
+        at = _utc(cycle.get("recorded_at"))
+        current = now or datetime.now(timezone.utc)
+        if not isinstance(current, datetime) or current.tzinfo is None:
+            return False
+        age_ms = (current.astimezone(timezone.utc) - at).total_seconds() * 1000
+        return 0 <= age_ms <= MAX_EXIT_ROUND_AGE_MS
+    except (TypeError, ValueError):
+        return False
+
+
 def _ppi_url_path(method, url, target):
     """Independently pre-check the PreparedRequest before HTTPAdapter.send."""
     try:
@@ -284,6 +300,8 @@ def _existing_shared_budget():
         if (cycle.get("status") != "COMPLETE" or
                 cycle.get("required_scope_verified_current") is not True):
             return None, "PPI_EXIT_ROUND_NOT_ATTESTED"
+        if not _exit_round_fresh(cycle):
+            return None, "PPI_EXIT_ROUND_STALE_OR_CLOCK_INVALID"
         shared = budget_from_environment(database)
         after = sidecar.stat()
         if (type(shared) is not RuntimePPIBudget or Path(shared.path) != sidecar
