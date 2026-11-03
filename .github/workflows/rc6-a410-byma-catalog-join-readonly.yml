@@ -80,7 +80,8 @@ jobs:
           from pathlib import Path
           from scripts.rc6_a410_byma_catalog_join_readonly import (
               SCHEMA, COUNT_KEYS, REJECT_CODES, CANONICAL_FAMILIES,
-              ERROR_CODES, _new_report,
+              PROFILE_FIELDS, VALUE_TYPES, CURRENCY_CLASSES,
+              SETTLEMENT_CLASSES, ERROR_CODES, _new_report,
           )
 
           input_path = Path('evidence/.raw.json')
@@ -112,6 +113,33 @@ jobs:
                   if any(type(value) is not int or not 0 <= value <= 60000
                          for value in field.values()):
                       raise ValueError('untrusted counts')
+              profile = raw.get('normalized_field_profile')
+              if not isinstance(profile, dict) or set(profile) != {
+                      'raw_provider_aliases', 'rows_profiled', 'value_types',
+                      'currency_codes', 'settlement_codes'}:
+                  raise ValueError('untrusted profile shape')
+              if profile['raw_provider_aliases'] != 'NOT_PRESERVED_IN_NORMALIZED_CACHE':
+                  raise ValueError('untrusted provider alias provenance')
+              profiled = profile['rows_profiled']
+              if type(profiled) is not int or not 0 <= profiled <= 60000:
+                  raise ValueError('untrusted profiled count')
+              field_types = profile['value_types']
+              if not isinstance(field_types, dict) or set(field_types) != set(PROFILE_FIELDS):
+                  raise ValueError('untrusted field labels')
+              for labels in field_types.values():
+                  if not isinstance(labels, dict) or set(labels) != set(VALUE_TYPES):
+                      raise ValueError('untrusted value type labels')
+                  if any(type(n) is not int or not 0 <= n <= 60000
+                         for n in labels.values()) or sum(labels.values()) != profiled:
+                      raise ValueError('inconsistent value type histogram')
+              for key, allowed in (('currency_codes', CURRENCY_CLASSES),
+                                   ('settlement_codes', SETTLEMENT_CLASSES)):
+                  histogram = profile[key]
+                  if not isinstance(histogram, dict) or set(histogram) != set(allowed):
+                      raise ValueError('untrusted code bucket labels')
+                  if any(type(n) is not int or not 0 <= n <= 60000
+                         for n in histogram.values()) or sum(histogram.values()) != profiled:
+                      raise ValueError('inconsistent code histogram')
               for age_key in ('catalog_mtime_age_seconds','byma_mtime_age_seconds'):
                   age = raw[age_key]
                   if age is not None and (type(age) is not int or not 0 <= age <= 1_000_000_000):
@@ -124,8 +152,11 @@ jobs:
                           counts['byma_unique_keys'] <= counts['byma_key_valid'] and
                           counts['byma_exact_unique'] <= counts['byma_exact_rows'] and
                           sum(rejects.values()) == counts['byma_key_invalid'] and
-                          sum(families.values()) == counts['byma_exact_rows']):
+                          sum(families.values()) == counts['byma_exact_rows'] and
+                          profiled + rejects['ROW_NOT_OBJECT'] == counts['byma_rows']):
                       raise ValueError('inconsistent counts')
+              elif profiled != 0:
+                  raise ValueError('nonzero histogram on failed diagnostic')
               result = raw
           except (OSError, ValueError, UnicodeError, TypeError):
               result = _new_report()

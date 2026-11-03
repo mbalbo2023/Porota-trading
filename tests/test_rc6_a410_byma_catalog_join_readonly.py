@@ -13,6 +13,7 @@ from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import textwrap
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -64,6 +65,26 @@ class A410JoinContracts(unittest.TestCase):
 
     def inspect(self):
         return probe.inspect_files(self.catalog_path, self.byma_path, now=self.now)
+
+    def sanitize_with_actual_workflow_code(self, untrusted):
+        """Exercise the actual runner sanitizer, never a mock reimplementation."""
+        workflow = (PATH.parents[1] / ".github/workflows/rc6-a410-byma-catalog-join-readonly.yml").read_text(
+            encoding="utf-8")
+        start = '          REMOTE_RC="$remote_rc" python3 - <<\'PY\'\n'
+        end = '\n          PY\n'
+        self.assertEqual(workflow.count(start), 1)
+        snippet = textwrap.dedent(workflow.split(start, 1)[1].split(end, 1)[0])
+        evidence = self.folder / "evidence"
+        evidence.mkdir(exist_ok=True)
+        (evidence / ".raw.json").write_text(json.dumps(untrusted), encoding="utf-8")
+        env = dict(os.environ, REMOTE_RC="0", PYTHONPATH=str(PATH.parents[1]))
+        completed = subprocess.run([sys.executable, "-B", "-c", snippet],
+                                   cwd=self.folder, env=env, capture_output=True,
+                                   text=True, timeout=12, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn(PRIVATE, completed.stdout)
+        return json.loads((evidence / "a410_byma_catalog_join.json").read_text(
+            encoding="utf-8"))
 
     def test_alias_match_is_five_key_and_never_ready(self):
         self.byma["captured_at"] = "PRIVATE_RECEIPT_TIMESTAMP"
@@ -140,6 +161,122 @@ class A410JoinContracts(unittest.TestCase):
         self.assertEqual(reasons["MISSING_SYMBOL"], 2)
         self.assertEqual(result["counts"]["byma_key_valid"], 0)
         self.assertEqual(result["counts"]["byma_nested_quote_rows"], 1)
+
+    def test_a503_sanitized_histograms_never_publish_provider_values(self):
+        # ONLY synthetic normalized records.  Unknown codes must never be
+        # copied into public receipts or guessed into known settlement codes.
+        rows = [
+            byma_record(currency="ARS", term="T1"),
+            byma_record(currency="EXT", term="T1", settlement_code="T+1"),
+            byma_record(currency=" ", term="", settlement_code="03"),
+            byma_record(currency=1234, term=1234),
+            byma_record(currency={"ccy": "PRIVATE_RAW_CURRENCY"},
+                        term=["PRIVATE_RAW_SETTLEMENT"]),
+            byma_record(currency="UNSEENPROVIDERSECRET", term="UNSEENSETTLESECRET"),
+            byma_record(currency=9.3, term="A-24HS"),
+            byma_record(currency=False, term=None, settlement_code="INMEDIATA"),
+            byma_record(currency=None, term="T0"),
+            byma_record(currency="USD_CCL", term="T1", settlement_code="T0"),
+            byma_record(currency="", term=" ", settlement_code=""),
+            byma_record(currency="Z9M", term="A1"),
+        ]
+        rows.append("PRIVATE_RAW_NON_OBJECT")
+        self.byma["sources"][0]["records"] = rows
+        self.write()
+        receipt = self.inspect()
+        self.assertEqual(receipt["schema"], "rc6.a410.byma-catalog-join-readonly.v2")
+        self.assertEqual(receipt["diagnostic_status"], "JOIN_COUNTS_ONLY")
+        self.assertEqual(receipt["counts"]["byma_rows"], 13)
+        self.assertEqual(receipt["reject_counts"]["ROW_NOT_OBJECT"], 1)
+        self.assertEqual(receipt["reject_counts"]["SETTLEMENT_CONFLICT"], 1)
+        profile = receipt["normalized_field_profile"]
+        self.assertEqual(profile["rows_profiled"], 12)
+        self.assertEqual(profile["raw_provider_aliases"],
+                         "NOT_PRESERVED_IN_NORMALIZED_CACHE")
+        self.assertEqual(set(profile["value_types"]), set(probe.PROFILE_FIELDS))
+        for labels in profile["value_types"].values():
+            self.assertEqual(set(labels), set(probe.VALUE_TYPES))
+            self.assertEqual(sum(labels.values()), 12)
+        self.assertEqual(profile["value_types"]["settlement"]["ABSENT"], 12)
+        self.assertEqual(profile["value_types"]["currency"]["OBJECT"], 1)
+        self.assertEqual(profile["value_types"]["currency"]["BOOLEAN"], 1)
+        self.assertEqual(profile["currency_codes"]["ARS"], 1)
+        self.assertEqual(profile["currency_codes"]["EXT_UNMAPPED"], 1)
+        self.assertEqual(profile["currency_codes"]["MISSING"], 3)
+        self.assertEqual(profile["currency_codes"]["NONSTRING"], 4)
+        self.assertEqual(profile["currency_codes"]["OTHER_ALPHA"], 1)
+        self.assertEqual(profile["currency_codes"]["OTHER_TEXT"], 1)
+        self.assertEqual(profile["currency_codes"]["USD_CCL"], 1)
+        self.assertEqual(sum(profile["currency_codes"].values()), 12)
+        self.assertEqual(profile["settlement_codes"]["T1_ALIAS"], 2)
+        self.assertEqual(profile["settlement_codes"]["OTHER_NUMERIC"], 1)
+        self.assertEqual(profile["settlement_codes"]["NONSTRING"], 2)
+        self.assertEqual(profile["settlement_codes"]["OTHER_ALPHA"], 1)
+        self.assertEqual(profile["settlement_codes"]["OTHER_TEXT"], 1)
+        self.assertEqual(profile["settlement_codes"]["A_24HS_CANONICAL"], 1)
+        self.assertEqual(profile["settlement_codes"]["INMEDIATA_CANONICAL"], 1)
+        self.assertEqual(profile["settlement_codes"]["T0_ALIAS"], 1)
+        self.assertEqual(profile["settlement_codes"]["ALIAS_CONFLICT"], 1)
+        self.assertEqual(profile["settlement_codes"]["MISSING"], 1)
+        self.assertEqual(sum(profile["settlement_codes"].values()), 12)
+        serialized = json.dumps(receipt)
+        for sensitive in (PRIVATE, "PRIVATE_PRICE_DO_NOT_EXPORT", "03",
+                          "UNSEENPROVIDERSECRET", "UNSEENSETTLESECRET",
+                          "PRIVATE_RAW_CURRENCY", "PRIVATE_RAW_SETTLEMENT",
+                          "PRIVATE_RAW_NON_OBJECT", "Z9M", "A1"):
+            self.assertNotIn(sensitive, serialized)
+        self.assertEqual(receipt["market_readiness"], "NO_VERIFICADO")
+        self.assertFalse(receipt["source_contract_ready"])
+        self.assertFalse(receipt["causal_pit_verified"])
+
+    def test_a503_failed_probe_has_only_zero_fixed_profile_and_no_leak(self):
+        self.byma["schema"] = "PRIVATE_MALICIOUS_PROVIDER_SCHEMA"
+        self.write()
+        receipt = self.inspect()
+        self.assertEqual(receipt["diagnostic_status"], "NO_VERIFICADO")
+        profile = receipt["normalized_field_profile"]
+        self.assertEqual(profile["rows_profiled"], 0)
+        for field in profile["value_types"].values():
+            self.assertFalse(any(field.values()))
+        self.assertFalse(any(profile["currency_codes"].values()))
+        self.assertFalse(any(profile["settlement_codes"].values()))
+        self.assertNotIn("PRIVATE_MALICIOUS_PROVIDER_SCHEMA", json.dumps(receipt))
+
+    def test_a503_actual_runner_sanitizer_accepts_synthetic_histogram(self):
+        self.write()
+        receipt = self.inspect()
+        sanitized = self.sanitize_with_actual_workflow_code(receipt)
+        self.assertEqual(sanitized, receipt)
+        self.assertEqual(sanitized["normalized_field_profile"]["rows_profiled"], 1)
+        self.assertFalse(sanitized["source_contract_ready"])
+
+    def test_a503_actual_runner_sanitizer_rejects_poisoned_aggregates(self):
+        self.write()
+        clean = self.inspect()
+        from copy import deepcopy
+        for number, mutation in enumerate((
+            lambda item: item["normalized_field_profile"]["currency_codes"].update(
+                {"PRIVATE_PROVIDER_CURRENCY": 1}),
+            lambda item: item["normalized_field_profile"]["settlement_codes"].update(
+                {"T1_ALIAS": False}),
+            lambda item: item["normalized_field_profile"]["currency_codes"].update(
+                {"ARS": 0}),
+            lambda item: item["normalized_field_profile"].update(
+                {"raw_provider_aliases": "PRIVATE_PROVIDER_FIELD"}),
+            lambda item: item["normalized_field_profile"]["value_types"]["term"].update(
+                {"PRIVATE_PROVIDER_TYPE": 1}),
+            lambda item: item["normalized_field_profile"].update(
+                {"rows_profiled": 2}),
+            lambda item: item.update({"source_contract_ready": True}),
+        )):
+            with self.subTest(case=number):
+                hostile = deepcopy(clean)
+                mutation(hostile)
+                sanitized = self.sanitize_with_actual_workflow_code(hostile)
+                self.assertEqual(sanitized["diagnostic_status"], "NO_VERIFICADO")
+                self.assertEqual(sanitized["reason"], "PROBE_FAILED")
+                self.assertEqual(sanitized["normalized_field_profile"]["rows_profiled"], 0)
+                self.assertNotIn("PRIVATE_PROVIDER", json.dumps(sanitized))
 
     def test_blank_nonstring_and_unknown_symbols_fail_closed(self):
         invalid = ("", " ", "\t", "UNKNOWN", " unknown ", 0, 42, True,
