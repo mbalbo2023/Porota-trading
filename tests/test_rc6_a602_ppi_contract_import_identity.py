@@ -124,6 +124,20 @@ def test_contradictory_explicit_xhr_currency_never_overrides_primary(
     assert calls == [] and result["records"] == 0 and result["conflicts"] == 1
 
 
+@pytest.mark.parametrize("description", [
+    "DOLARES DIVISA | CCL", "unrecognized cash denomination"
+])
+def test_native_ppi_xhr_descriptor_cannot_contradict_full_catalog_currency(
+        tmp_path, monkeypatch, description):
+    store = _store(tmp_path, [_row(currency="ARS")])
+    result, calls = _run(monkeypatch, store, _capture(
+        tmp_path, rows=[{"ticker": "GGAL", "instrument_id": 9,
+                         "currency": {"description": description, "provider_id": 4}}]))
+    assert calls == []
+    assert result["records"] == 0 and result["conflicts"] == 1
+    assert "PPI_FULL_IDENTITY_ABSENT_AMBIGUOUS_OR_MISMATCH_GGAL" in result["notes"]
+
+
 def test_duplicate_provider_ticker_cannot_overwrite_contract(tmp_path, monkeypatch):
     store = _store(tmp_path, [_row()])
     result, calls = _run(monkeypatch, store,
