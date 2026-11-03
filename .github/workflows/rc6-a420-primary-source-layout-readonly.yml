@@ -316,6 +316,42 @@ jobs:
           path: evidence/a532-source-stages.json
           if-no-files-found: warn
           retention-days: 14
+      - name: A551 read existing family counts without provider, DB or quotes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Checkout-pinned code reads one fixed root-owned export. This is a
+          # single bounded observation on push/manual, not a new schedule.
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a420_source_layout" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 22 python3 -B - family-host-probe' \
+            < scripts/rc6_a420_primary_source_layout_ro.py \
+            > evidence/.a551_family_raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          A551_REMOTE_RC="$remote_rc" python3 -B scripts/rc6_a420_primary_source_layout_ro.py family-sanitize
+          rm -f evidence/.a551_family_raw.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('evidence/a551_family_aggregate.json').read_text())
+          if result.get('status')!='OBSERVED_AGGREGATE':
+              print('::warning::A551 existing source family counts NO_VERIFICADO; no PAPER GO')
+          else:
+              print('A551_COUNTS=OBSERVED_AGGREGATE|PPI_BOOK_VERIFIED=NO|PAPER_GO=NO')
+          PY
+      - name: Preserve only validated A551 family aggregates (no symbols/quotes)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a551-existing-family-aggregate-${{ github.run_id }}
+          path: evidence/a551_family_aggregate.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Destroy only runner SSH material
         if: always()
         shell: bash

@@ -378,5 +378,176 @@ class A420ReadOnlyLayoutTests(unittest.TestCase):
         self.assertEqual(module.main(["host-probe", "/etc/shadow"]), 64)
 
 
+class A551ExistingFamilyAggregateTests(unittest.TestCase):
+    NOW = datetime(2026, 11, 3, 16, 50, tzinfo=timezone.utc)
+    SECRET = "PRIVATE_PPI_ACCOUNT_SYMBOL_PRICE_TOKEN_8301"
+
+    def fixture(self):
+        zero = {name: 0 for name in module.FAMILY_METRICS}
+        summary = [{"family": name, **dict(zero)} for name in module.FAMILY_NAMES]
+        action = next(row for row in summary if row["family"] == "ACCIONES")
+        for key in ("instrument_count", "paper_shadow_ready", "paper_contract_ready",
+                    "catalog_contract_candidates", "ingestion_attempted", "ppi_fresh"):
+            action[key] = 1
+        counts = {name: 0 for name in module.FAMILY_COUNT_KEYS}
+        for key in ("paper_shadow_ready", "paper_contract_ready", "catalog_contract_candidates",
+                    "ready_paper_partial_source", "ingestion_attempted", "ppi_fresh"):
+            counts[key] = 1
+        row = {"family": "ACCIONES", "symbol": self.SECRET, "status": "READY_PAPER_PARTIAL_SOURCE",
+               "paper_contract_ready": True, "catalog_contract_candidate": True,
+               "paper_auto_enabled": False, "ingestion": {"any_source_attempted": True},
+               "sources": {
+                   "PPI": {"freshness": {"state": "FRESH"}, "selection_eligible": True,
+                           "fields": {"ask": self.SECRET, "account_token": self.SECRET}},
+                   "IOL": {"freshness": {"state": "UNKNOWN"}},
+                   "BYMA": {"freshness": {"state": "UNKNOWN"}}}}
+        return {"schema": module.FAMILY_EXPORT_SCHEMA,
+                "generated_at": self.NOW.isoformat(), "decision_effect": "OBSERVE_ONLY",
+                "real_money_authorized": False, "paper_shadow_only": True,
+                "universe": {"catalog_count": 1, "ledger_count": 1, "ledger_complete": True},
+                "counts": counts, "families": summary, "instruments": [row]}
+
+    def write_fixture(self, path: Path, payload) -> None:
+        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        os.chmod(path, 0o644)
+        os.utime(path, (self.NOW.timestamp(), self.NOW.timestamp()))
+
+    def test_existing_root_owned_export_is_recomputed_and_never_exposes_quotes(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "existing.json"
+            self.write_fixture(path, self.fixture())
+            receipt = module.inspect_family_rollup(now=self.NOW, path=path)
+            self.assertEqual(receipt["status"], "OBSERVED_AGGREGATE")
+            self.assertEqual(receipt["reason"], "AGGREGATE_MATCHED")
+            self.assertEqual(len(receipt["families"]), 10)
+            self.assertEqual(receipt["ledger_count"], 1)
+            action = next(x for x in receipt["families"] if x["family"] == "ACCIONES")
+            self.assertEqual(action["ppi_selection_eligible"], 1)
+            self.assertEqual(action["producer_contract_ready"], 1)
+            self.assertFalse(receipt["ppi_book_verified"])
+            self.assertFalse(receipt["causal_fills_verified"])
+            self.assertFalse(receipt["paper_ready"])
+            raw = json.dumps(receipt).encode()
+            self.assertNotIn(self.SECRET, raw.decode())
+            self.assertEqual(module.sanitize_family_rollup(raw, host_returncode=0), receipt)
+
+    def test_deployed_product_baseline_v1_is_not_misread_as_extended_candidate(self):
+        # Exact actual 7e1e744 producer shape: same schema string but no
+        # candidate's catalog-candidate or specialist-receipt counters, and
+        # no zero-filled family rows. Never invent a positive absent metric.
+        baseline = self.fixture()
+        for name in ("catalog_contract_candidates", "pending_specialized_receipt"):
+            baseline["counts"].pop(name)
+        baseline["families"] = [item for item in baseline["families"]
+                                if item["instrument_count"] > 0]
+        for row in baseline["families"]:
+            for name in ("catalog_contract_candidates", "pending_specialized_receipt"):
+                row.pop(name)
+        baseline["instruments"][0].pop("catalog_contract_candidate")
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "product-v1.json"
+            self.write_fixture(path, baseline)
+            observed = module.inspect_family_rollup(now=self.NOW, path=path)
+        self.assertEqual(observed["status"], "OBSERVED_AGGREGATE")
+        self.assertEqual(observed["source_variant"], "PRODUCT_BASELINE")
+        self.assertFalse(observed["specialized_receipt_guard_present"])
+        self.assertEqual(len(observed["families"]), 10)
+        for row in observed["families"]:
+            self.assertIsNone(row["catalog_contract_candidates"])
+        self.assertEqual(module.sanitize_family_rollup(json.dumps(observed).encode(),
+                                                       host_returncode=0), observed)
+
+        forged = copy.deepcopy(observed)
+        forged["families"][0]["catalog_contract_candidates"] = 1
+        self.assertEqual(module.sanitize_family_rollup(json.dumps(forged).encode(),
+                                                       host_returncode=0)["status"],
+                         "NO_VERIFICADO")
+
+    def test_bad_counts_family_totals_and_identity_fail_closed(self):
+        base = self.fixture()
+        failures = [
+            ("global", lambda d: d["counts"].update(ppi_fresh=999)),
+            ("summary", lambda d: d["families"][0].update(instrument_count=9)),
+            ("catalog", lambda d: d["universe"].update(ledger_count=2)),
+            ("wrong_source", lambda d: d["instruments"][0]["sources"]["PPI"]["freshness"].update(state="UNKNOWN")),
+            ("future_known", lambda d: d.update(generated_at="2026-11-03T17:00:00+00:00")),
+            ("wrong_schema", lambda d: d.update(schema="fake-instrument-evidence")),
+            ("real_money", lambda d: d.update(real_money_authorized=True)),
+        ]
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "rollup.json"
+            for name, mutate in failures:
+                with self.subTest(name=name):
+                    candidate = copy.deepcopy(base)
+                    mutate(candidate)
+                    self.write_fixture(path, candidate)
+                    result = module.inspect_family_rollup(now=self.NOW, path=path)
+                    self.assertEqual(result["status"], "NO_VERIFICADO")
+                    self.assertEqual(result["families"], [])
+
+    def test_missing_alias_stale_and_duplicate_key_never_claim_counts(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            missing = module.inspect_family_rollup(now=self.NOW, path=root / "missing")
+            self.assertEqual(missing["status"], "NO_VERIFICADO")
+            real = root / "real.json"
+            self.write_fixture(real, self.fixture())
+            alias = root / "alias.json"
+            alias.symlink_to(real)
+            self.assertEqual(module.inspect_family_rollup(now=self.NOW, path=alias)["status"],
+                             "NO_VERIFICADO")
+            os.utime(real, (self.NOW.timestamp() - 600, self.NOW.timestamp() - 600))
+            self.assertEqual(module.inspect_family_rollup(now=self.NOW, path=real)["reason"],
+                             "STALE_EXPORT")
+            self.write_fixture(real, self.fixture())
+            real.write_bytes(real.read_bytes()[:-1] + b',"schema":"fake"}')
+            os.utime(real, (self.NOW.timestamp(), self.NOW.timestamp()))
+            self.assertEqual(module.inspect_family_rollup(now=self.NOW, path=real)["status"],
+                             "NO_VERIFICADO")
+
+    def test_untrusted_export_file_mode_fails_closed(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "family.json"
+            self.write_fixture(path, self.fixture())
+            os.chmod(path, 0o666)
+            result = module.inspect_family_rollup(now=self.NOW, path=path)
+            self.assertEqual(result["reason"], "UNTRUSTED_OWNER")
+            self.assertEqual(result["families"], [])
+
+    def test_runner_sanitizer_rejects_forged_green_secrets_and_go(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "rollup.json"
+            self.write_fixture(path, self.fixture())
+            good = module.inspect_family_rollup(now=self.NOW, path=path)
+        wrong = [
+            {**good, "paper_ready": True},
+            {**good, "real_orders_sent_by_action": 1},
+            {**good, "raw_quote": self.SECRET},
+            {**good, "families": [{**good["families"][0], "symbol": self.SECRET}] + good["families"][1:]},
+            {**good, "families": [{**good["families"][0], "ppi_selection_eligible": 999}] + good["families"][1:]},
+            {**good, "source_sha256": self.SECRET},
+        ]
+        for forged in wrong:
+            with self.subTest(keys=list(forged)):
+                result = module.sanitize_family_rollup(json.dumps(forged).encode(),
+                                                       host_returncode=0)
+                self.assertEqual(result["status"], "NO_VERIFICADO")
+                self.assertNotIn(self.SECRET, json.dumps(result))
+        self.assertEqual(module.sanitize_family_rollup(json.dumps(good).encode(),
+                                                       host_returncode=2)["status"],
+                         "NO_VERIFICADO")
+
+    def test_workflow_no_new_schedule_and_fixed_host_family_probe(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("schedule:", workflow)
+        self.assertIn("family-host-probe'", workflow)
+        self.assertIn("A551_REMOTE_RC=", workflow)
+        self.assertIn("a551_family_aggregate.json", workflow)
+        self.assertIn("github.event_name != 'pull_request'", workflow)
+        self.assertEqual(module.FAMILY_EXPORT,
+                         Path("/opt/porota-trading/data/market/rc6_instrument_evidence_latest.json"))
+        self.assertEqual(module.main(["family-host-probe", "/etc/shadow"]), 64)
+
+
 if __name__ == "__main__":
     unittest.main()
