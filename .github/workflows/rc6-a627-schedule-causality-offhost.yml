@@ -1,0 +1,120 @@
+name: RC6 A627 schedule causality OFFHOST READ_ONLY
+
+# Separate from Market Watch and PPI Watch. This workflow NEVER connects to
+# the droplet or any market provider; GitHub Actions metadata is its only API.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a627-schedule-causality-offhost.yml'
+      - 'scripts/rc6_a627_schedule_causality_offhost.py'
+      - 'tests/test_rc6_a627_schedule_causality_offhost.py'
+  workflow_dispatch:
+    inputs:
+      day_art:
+        description: 'Audit day in Argentina, YYYY-MM-DD'
+        type: string
+        required: true
+        default: '2026-11-04'
+      lookback_days:
+        description: 'Bounded UTC schedule history for that ART day'
+        type: choice
+        options: ['1', '2', '3']
+        default: '1'
+        required: true
+  schedule:
+    # One-day 04-Nov observation. UTC = ART + 3 hours.
+    # Staggered after A630 PPI evidence slots to avoid competing for Actions.
+    # Python gate refuses other years; GitHub cron lacks a year field.
+    - cron: '50 13 4 11 *'  # 10:50 ART, preopen boundary
+    - cron: '25 14 4 11 *'  # 11:25 ART, in-market
+    - cron: '35 17 4 11 *'  # 14:35 ART, midpoint
+    - cron: '35 19 4 11 *'  # 16:35 ART, before T+1
+    - cron: '15 20 4 11 *'  # 17:15 ART, T+1 monitoring
+    - cron: '35 21 4 11 *'  # 18:35 ART, 18:07 cron matured
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-a627-offhost-schedule-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and offline adversarial schedule tests
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a627_schedule_causality_offhost.py
+          python3 -m unittest discover -s tests -p test_rc6_a627_schedule_causality_offhost.py -v
+          git diff --check
+
+  audit:
+    needs: contracts
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      DAY_ART: ${{ inputs.day_art || '2026-11-04' }}
+      LOOKBACK_DAYS: ${{ inputs.lookback_days || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate dated cron without extending 04-Nov request
+        id: date_gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          python3 - <<'PY'
+          import os
+          from datetime import datetime,timezone
+          from zoneinfo import ZoneInfo
+          art=datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+          should=(os.environ.get('GITHUB_EVENT_NAME') != 'schedule'
+                  or art == '2026-11-04')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+              f.write('active='+('1' if should else '0')+'\n')
+          print('A627_04NOV_DATE_GATE='+('ACTIVE' if should else 'SKIPPED_OTHER_YEAR'))
+          PY
+      - name: Read GitHub Actions schedule metadata only
+        if: steps.date_gate.outputs.active == '1'
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_a627_schedule_causality_offhost.py \
+            --day-art "$DAY_ART" --lookback-days "$LOOKBACK_DAYS" \
+            --output evidence/a627_schedule_causality.json
+      - name: Summarize event vs host evidence boundaries
+        if: steps.date_gate.outputs.active == '1'
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path('evidence/a627_schedule_causality.json')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          summary=['## A627 OFFHOST schedule causality (GitHub metadata only)',
+            '- Source: '+str(data.get('source_status','NO_VERIFICADO')),
+            '- Due cron slots: '+str(data.get('due_slots','NO_VERIFICADO')),
+            '- Classes: '+json.dumps(data.get('counts',{}),sort_keys=True),
+            '- Finding: '+str(data.get('source_scheduler_finding','NO_VERIFICADO')),
+            '- Host EOD/T+1 InvocationID: NO_VERIFICADO (no host access)',
+            '- PPI GET: 0; order routes: not called; PPI Watch: untouched.',
+            '- Scheduled cron can be delayed/dropped. Run workflow_dispatch as manual fallback.',
+            '- A617 PPI origin/selector has separate manual READ_ONLY action; not automatically dispatched.']
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
+              f.write('\n'.join(summary)+'\n')
+          PY
+      - name: Save bounded per-run classified receipt
+        if: always() && steps.date_gate.outputs.active == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a627-schedule-causality-${{ github.run_id }}
+          path: evidence/a627_schedule_causality.json
+          if-no-files-found: warn
+          retention-days: 90
