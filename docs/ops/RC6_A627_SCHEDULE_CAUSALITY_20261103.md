@@ -52,6 +52,14 @@ schedule; manual explícito de cualquier día). Si el kernel/sudo deniega
 menores, no abre DB, no hace PPI GET. Este recibo es independiente de A627,
 que jamás consume ni altera el host.
 
+**Evidencia host posterior:** [A617 manual run #41722452619](https://github.com/mbalbo2023/Porota-trading/actions/runs/41722452619),
+03-Nov 21:30Z, SUCCESS con montaje RO efectivo y `db_opened=true`;
+`selector`, `snapshots` y `scanner_cycle` observados. `scanner_receipt`
+y `native_book_journal` siguen **ABSENT**, y `provider_gets=0`.
+Esto prueba el camino de lectura de A617 **en esa ejecución**, pero no
+autentica procedencia de PPI, lease/EXIT, operaciones PAPER, EOD o un
+InvocationID de systemd; los crons del 04/11 siguen **no ejecutados**.
+
 **Regresión RCA:** A617 tenía una prueba que exigía literalmente el `if`
 `workflow_dispatch` exclusivo. Tras añadir `schedule` con gate por fecha,
 esa aserción histórica falló aunque el comando privado RO no cambió.
@@ -111,8 +119,8 @@ GitHub.** Cualquier tick omitido se puede reemplazar sin terminal/droplet:
    datos sensibles ni sonda de host.
 2. Si hace falta verificar PPI COLD/procedencia sin GET, abrir por separado
    [A617 PPI origin/selector READ_ONLY](https://github.com/mbalbo2023/Porota-trading/actions/workflows/rc6-a617-ppi-origin-selector-readonly.yml).
-   La autenticidad de `unshare`/mount RO en host todavía requiere evidencia;
-   una falla es `NO_VERIFICADO`, nunca se abandona el RO fail-closed.
+   El montaje RO ya tuvo un recibo manual válido el 03/11; cualquier futuro
+   fallo sigue siendo `NO_VERIFICADO`, sin abandonar el RO fail-closed.
 3. Para la sonda operacional normal del Market Watch, usar su
    [workflow_dispatch](https://github.com/mbalbo2023/Porota-trading/actions/workflows/rc6-market-watch-readonly.yml)
    con **`notification_mode=read_only`**, sin interpretar ese run manual como
