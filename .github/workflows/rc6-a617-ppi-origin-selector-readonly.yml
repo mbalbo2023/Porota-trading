@@ -9,9 +9,10 @@ on:
   schedule:
     # One-day 04-Nov-2026 zero-provider-GET host audit, UTC=ART+3.
     # The dated ART gate below refuses the same cron in later years.
-    - cron: '45 13 4 11 *'  # 10:45 ART preopen/first live boundary
-    - cron: '30 17 4 11 *'  # 14:30 ART in-market
-    - cron: '30 19 4 11 *'  # 16:30 ART before equity T+1
+    # Staggered after A630 Current+Book host slots to avoid exact collisions.
+    - cron: '05 14 4 11 *'  # 11:05 ART, after 10:45 PPI and before 11:20
+    - cron: '50 17 4 11 *'  # 14:50 ART, 20m after 14:30
+    - cron: '50 19 4 11 *'  # 16:50 ART, 20m after 16:30
     - cron: '20 21 4 11 *'  # 18:20 ART postclose reference
   pull_request:
     branches: [main]
@@ -43,6 +44,11 @@ jobs:
   host_provenance:
     needs: contracts
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+    # Shared host safety mutex with A630 Current+Book and canonical Deploy V2.
+    # This serializes host access; it is NOT a Deploy authorization.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
