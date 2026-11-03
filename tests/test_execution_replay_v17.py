@@ -65,9 +65,11 @@ def test_corte_cancela_compra_pendiente_y_permite_salida_aun_si_recupera(setup):
 def test_corte_cancela_compra_aun_durante_su_latencia(setup):
     setup = (*setup[:4],replace(setup[4],latency_seconds=3),setup[5])
     result = run(setup,[order(setup),order(setup,'waiting',5)],
-        [book(setup,4),book(setup,6,bid=D(80),ask=D(81))],
+        # Book at t=4 is exactly decision+latency and MUST NOT fill; t=5
+        # opens risk, then the t=6 drop latches while second order waits.
+        [book(setup,4),book(setup,5),book(setup,6,bid=D(80),ask=D(81))],
         risk_config=ReplayRiskConfig(at(0),D(1)))
-    assert result['fills'][0]['executed_at']==stamp(at(4))
+    assert result['fills'][0]['executed_at']==stamp(at(5))
     assert result['orders'][1]['status']=='CANCELLED_DAILY_RISK_LATCHED'
 
 
