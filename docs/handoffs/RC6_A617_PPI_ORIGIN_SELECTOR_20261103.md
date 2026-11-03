@@ -4,7 +4,7 @@
 
 - **Owner:** A617, #732; branch `audit/rc6-a617-ppi-origin-selector-readonly-20261103` against `main` only.
 - **Change:** one self-contained bounded host READ_ONLY probe, adversarial offline `unittest` and one manual-only main workflow.
-- **Local TEST:** 10/10 GREEN; GitHub CI/runtime must be separately verified by exact SHA and run ID.
+- **Local TEST:** 11/11 GREEN; GitHub CI/runtime must be separately verified by exact SHA and run ID.
 - **Not touched:** product, candidate #778, `bf_production_paper_observer.py`, PPI Watch, A516/#898, Docker/runtime/systemd/DB, deployment control.
 
 ## ERROR → RCA
@@ -34,7 +34,7 @@ Every result sets `provider_gets=0`, `orders_called=false`, `admission_authority
 
 ## TEST → EVIDENCE
 
-Ten synthetic SQL/file tests cover:
+Eleven synthetic SQL/file and workflow static tests cover:
 
 - A385 JSON zero despite one mode row and one eligible SQL candidate;
 - matching scanner receipt and mode snapshot remain **non-authoritative**;
@@ -46,6 +46,7 @@ Ten synthetic SQL/file tests cover:
 - bounded/truncated snapshot sample is explicit.
 - active `-wal/-shm` placeholders on a writable mount **block SQLite open** without touching their bytes or timestamps;
 - wrong v17 `paper_workspace` identity blocks all DB aggregate claims.
+- Action host probe is strictly manual-main with private RO mount and sanitizer output reset on every validation failure.
 
 Before any host execution, verify GitHub PR `contracts=SUCCESS`; `host_provenance=SKIPPED` on PR is intentional. Merge to `main` only with current WRITE_OWNER and governance; then manual A617 READ_ONLY workflow dispatch, inspect exact GitHub artifact JSON. Do not run Predeploy V2, Deploy V2, extra PPI GET or PPI Watch.
 
