@@ -169,6 +169,8 @@ def inventory_native_book_retention(journal_path: Path, *, runner_root: Path,
         "native_clock_basis": "PPI_BOOK_DATE_UTC_ECONOMIC_EVENT",
         "known_at_role": "PIT_AVAILABILITY_NOT_RETENTION_REJUVENATION",
         "cutoff_utc_inclusive": cutoff.isoformat(),
+        # Shared helper already subtracts MAX_DAILY_DATES - 1 ART dates.
+        # Do NOT subtract 365 days before calling it: that doubles the TTL.
         "daily_date_only_cutoff_art_inclusive": daily_start(at).isoformat(),
         "as_of_utc": at.isoformat(),
         "cohorts": {key: counts[key] for key in (
