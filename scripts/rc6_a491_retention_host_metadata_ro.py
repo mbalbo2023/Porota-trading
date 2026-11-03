@@ -189,7 +189,14 @@ def _unit(role: str, name: str, deadline: float) -> dict:
         if outcome.returncode != 0 or len(outcome.stdout) > 2048:
             return record
         lines = outcome.stdout.splitlines()
-        values = dict(line.split("=", 1) for line in lines if "=" in line)
+        # Duplicate or malformed fields cannot be collapsed into a false
+        # inactive/masked positive by Python dict's last-key-wins behavior.
+        if len(lines) != 4 or any(line.count("=") != 1 for line in lines):
+            return record
+        pairs = [line.split("=", 1) for line in lines]
+        if len({key for key, _ in pairs}) != len(pairs):
+            return record
+        values = dict(pairs)
         if len(values) != 4 or set(values) != {
                 "LoadState", "ActiveState", "UnitFileState", "Result"}:
             return record
@@ -205,8 +212,13 @@ def _unit(role: str, name: str, deadline: float) -> dict:
 
 def _timer_gate(units: list[dict]) -> str:
     timers = units[:3]
-    if any(row["load"] != "loaded" or row["active"] == "UNKNOWN"
+    # systemd may represent a genuinely masked unit with LoadState=masked,
+    # not loaded. The safe positive is inactive + UnitFileState=masked.
+    if any(row["load"] not in {"loaded", "masked"} or row["active"] == "UNKNOWN"
            or row["unit_file"] == "UNKNOWN"
+           for row in timers):
+        return "NO_VERIFICADO"
+    if any(row["load"] == "masked" and row["unit_file"] != "masked"
            for row in timers):
         return "NO_VERIFICADO"
     return "PASS" if all(row["active"] == "inactive" and
@@ -214,9 +226,17 @@ def _timer_gate(units: list[dict]) -> str:
 
 
 def _eod_gate(units: list[dict]) -> str:
-    state = units[3]["active"]
-    return "NO_VERIFICADO" if state == "UNKNOWN" or units[3]["load"] != "loaded" else (
-        "PASS" if state in {"inactive", "failed"} else "FAIL")
+    # Both fixed services can write historical state. A PASS for only the
+    # first service would falsely suggest writer quiescence while postclose
+    # is active. This is still only NAMED_UNITS_ONLY, never a global lock GO.
+    writers = units[3:5]
+    if any(row["load"] == "loaded" and row["active"] in {
+            "active", "activating", "deactivating", "reloading"} for row in writers):
+        return "FAIL"
+    if any(row["load"] != "loaded" or row["active"] in {"UNKNOWN", "failed"}
+           for row in writers):
+        return "NO_VERIFICADO"
+    return "PASS" if all(row["active"] == "inactive" for row in writers) else "FAIL"
 
 
 def _receipt() -> dict:
@@ -258,6 +278,34 @@ def _invalid_constant(_: str):
 
 def _integer(value: object, *, nullable: bool = False) -> bool:
     return (nullable and value is None) or (type(value) is int and 0 <= value <= MAX_NUMBER)
+
+
+def _band(value: int | None, levels: tuple[tuple[int, str], ...], final: str) -> str:
+    if value is None:
+        return "UNKNOWN"
+    for limit, label in levels:
+        if value < limit:
+            return label
+    return final
+
+
+def _size_band(value: int | None) -> str:
+    return _band(value, ((256 * 1024**2, "BELOW_256M"),
+                         (512 * 1024**2, "256M_TO_512M"),
+                         (1024**3, "512M_TO_1G"),
+                         (2 * 1024**3, "1G_TO_2G")), "2G_TO_4G")
+
+
+def _memory_band(value: int | None) -> str:
+    return _band(value, ((256 * 1024**2, "BELOW_256M"),
+                         (512 * 1024**2, "256M_TO_512M"),
+                         (1024**3, "512M_TO_1G")), "ABOVE_1G")
+
+
+def _disk_band(value: int | None) -> str:
+    return _band(value, ((2 * 1024**3, "BELOW_2G"),
+                         (4 * 1024**3, "2G_TO_4G"),
+                         (8 * 1024**3, "4G_TO_8G")), "ABOVE_8G")
 
 
 def _validate(raw: bytes) -> dict:
@@ -321,7 +369,17 @@ def _validate(raw: bytes) -> dict:
             or data["eod_writer_gate"] not in GATES
             or data["eod_writer_gate"] != _eod_gate(units)):
         raise MetadataReject("UNIT_GATES")
-    return data
+    # The only public result is reconstructed from fixed enums. Exact bytes
+    # remain in the private runner payload and never reach the artifact.
+    return {**data,
+            "files": [{"role": row["role"], "status": row["status"],
+                       "size_band": _size_band(row["size_bytes"]),
+                       "sidecars": dict(row["sidecars"])} for row in files],
+            "resources": {"memory_band": _memory_band(mem),
+                          "root_disk_band": _disk_band(root_free),
+                          "data_disk_band": _disk_band(data_free),
+                          "memory_gate": resources["memory_gate"],
+                          "disk_gate": resources["disk_gate"]}}
 
 
 def sanitize(raw: bytes, remote_rc: int) -> dict:

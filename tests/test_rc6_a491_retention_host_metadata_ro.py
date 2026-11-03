@@ -134,10 +134,29 @@ class LocalMetadataTests(unittest.TestCase):
         self.assertEqual(row["active"], "UNKNOWN")
         self.assertEqual(probe._timer_gate([row] * 3), "NO_VERIFICADO")
 
+    def test_duplicate_systemctl_key_cannot_override_active_or_masked(self):
+        for duplicate in ("ActiveState=active", "UnitFileState=enabled", "Result=exit-code"):
+            output = ("LoadState=loaded\nActiveState=inactive\nUnitFileState=masked\n"
+                      "Result=success\n" + duplicate + "\n")
+            with mock.patch.object(probe.subprocess, "run", return_value=subprocess.CompletedProcess(
+                    ["systemctl"], 0, output, "")):
+                row = probe._unit("A3_DAILY_TIMER", probe.UNITS[0][1], probe.time.monotonic() + 5)
+            self.assertEqual(row["active"], "UNKNOWN")
+        malformed = "LoadState=loaded\nActiveState=inactive\nUnitFileState=masked\nResult=success\nraw-private-line"
+        with mock.patch.object(probe.subprocess, "run", return_value=subprocess.CompletedProcess(
+                ["systemctl"], 0, malformed, "")):
+            row = probe._unit("A3_DAILY_TIMER", probe.UNITS[0][1], probe.time.monotonic() + 5)
+        self.assertEqual(row["active"], "UNKNOWN")
+
     def test_named_service_active_cannot_claim_writer_idle(self):
         units = sample()["units"]
         units[3]["active"] = "active"
         self.assertEqual(probe._eod_gate(units), "FAIL")
+        units[3]["active"] = "inactive"
+        units[4]["active"] = "active"
+        self.assertEqual(probe._eod_gate(units), "FAIL")
+        units[4]["active"] = "failed"
+        self.assertEqual(probe._eod_gate(units), "NO_VERIFICADO")
         units[0]["unit_file"] = "enabled"
         self.assertEqual(probe._timer_gate(units), "FAIL")
 
@@ -145,8 +164,19 @@ class LocalMetadataTests(unittest.TestCase):
         units = sample()["units"]
         units[0]["load"] = "UNKNOWN"
         self.assertEqual(probe._timer_gate(units), "NO_VERIFICADO")
+        units[0]["load"] = "masked"
+        self.assertEqual(probe._timer_gate(units), "PASS")
+        units[0]["unit_file"] = "enabled"
+        self.assertEqual(probe._timer_gate(units), "NO_VERIFICADO")
+        units[0]["unit_file"] = "masked"
+        units[0]["active"] = "active"
+        self.assertEqual(probe._timer_gate(units), "FAIL")
         units[0]["load"] = "loaded"
+        units[0]["active"] = "inactive"
         units[3]["load"] = "UNKNOWN"
+        self.assertEqual(probe._eod_gate(units), "NO_VERIFICADO")
+        units[3]["load"] = "loaded"
+        units[4]["load"] = "UNKNOWN"
         self.assertEqual(probe._eod_gate(units), "NO_VERIFICADO")
 
     def test_host_metadata_synthetic_roundtrip_without_sqlite(self):
@@ -179,6 +209,14 @@ class SanitizerTests(unittest.TestCase):
     def test_strict_positive_preserves_metadata_and_never_grants_capture(self):
         result = probe.sanitize(raw(sample()), 0)
         self.assertEqual(result["state"], "METADATA_ONLY")
+        self.assertEqual(result["files"][0]["size_band"], "BELOW_256M")
+        self.assertEqual(result["resources"]["memory_band"], "512M_TO_1G")
+        self.assertEqual(result["resources"]["root_disk_band"], "4G_TO_8G")
+        payload = json.dumps(result)
+        for private_key in ("size_bytes", "disk_free_root_bytes", "disk_total_root_bytes",
+                            "disk_free_data_bytes", "disk_total_data_bytes",
+                            "mem_available_bytes"):
+            self.assertNotIn(private_key, payload)
         self.assertFalse(result["database_opened"])
         self.assertFalse(result["a330_capture_certified"])
         self.assertFalse(result["host_purge_allowed"])
@@ -258,7 +296,30 @@ class SanitizerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             receipt = json.loads(output.read_text())
             self.assertEqual(receipt["state"], "METADATA_ONLY")
+            self.assertIn("size_band", receipt["files"][0])
+            self.assertNotIn("size_bytes", output.read_text())
             self.assertNotIn(str(root), output.read_text())
+
+    def test_band_threshold_edges_disclose_no_exact_bytes(self):
+        mib = 1024**2
+        for size, expect in [(256*mib-1, "BELOW_256M"),
+                             (256*mib, "256M_TO_512M"),
+                             (512*mib, "512M_TO_1G"),
+                             (1024*mib, "1G_TO_2G"),
+                             (2*1024*mib, "2G_TO_4G")]:
+            value = sample()
+            value["files"][0]["size_bytes"] = size
+            result = probe.sanitize(raw(value), 0)
+            self.assertEqual(result["state"], "METADATA_ONLY")
+            self.assertEqual(result["files"][0]["size_band"], expect)
+        for count in (probe.MIN_MEMORY-1, probe.MIN_MEMORY):
+            value = sample()
+            value["resources"]["mem_available_bytes"] = count
+            value["resources"]["memory_gate"] = probe._gate(count, probe.MIN_MEMORY)
+            output = probe.sanitize(raw(value), 0)
+            self.assertEqual(output["state"], "METADATA_ONLY")
+            self.assertEqual(output["resources"]["memory_band"],
+                             "256M_TO_512M" if count < probe.MIN_MEMORY else "512M_TO_1G")
 
 
 class WorkflowSafetyTests(unittest.TestCase):
