@@ -6,6 +6,13 @@ anclado en `7e1e744d6ca9ab30c51b5747dd4467af5ece0145` e imagen existente
 `sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b`.
 Ningún Predeploy, Deploy, reinicio, orden real o PPI Watch se invoca.
 
+**Reconciliación del PR:** rama A630 se creó desde `main@d94027f7...`, que
+GitHub continúa exponiendo como `pull_request.base.sha` de #908. El HEAD
+actual de main avanzó de modo serial con #905/#907 hasta
+`a031275c3dbe67af11ed756843e2616e3c0dd1ac`; no se reescribió la rama
+ni se incorporó otro scope. El campo `Base SHA` de la atestación debe tomar
+el **SHA real del objeto PR**, no sustituirlo por una inferencia sobre main.
+
 ## RCA y separación de hechos
 
 1. La Action A331 capturó *History*, no Current ni Book de rueda, y no valida
@@ -72,7 +79,10 @@ Un slot, cuando **todos** los guards efectivamente certifican:
    TLS `verify=False` y cualquier URL no canónica *antes del socket*.
    **Orden de transporte verificado:** instalar strict guard ANTES de construir
    `ProductionMarketReader`; su `ReadOnlyTransportGuard.guarded_send` externo
-   obtiene/inicia el lease nativo y recién delega al strict pre-wire interno.
+   adquiere lease nativo, construye/ENTRA `wire_scope`, recién dentro ejecuta
+   `start(lease)` y delega al strict pre-wire interno. Por eso nuestro
+   `wire_scope` acepta lease adquirido/no finalizado sin exigir `started`
+   prematuramente; el strict adapter sí lo exige antes de tocar el socket.
    Cerrar reader/restaurar guard de producto ANTES de desmontar strict (LIFO).
    Reintentos, endpoint ajeno, lote ambiguo,
    lease nulo, body excesivo o reloj nativo sin zona/antiguo/futuro ⇒ HOLD.
