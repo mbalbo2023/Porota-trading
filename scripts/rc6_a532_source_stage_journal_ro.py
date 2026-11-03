@@ -158,9 +158,13 @@ def _parsed_marker(message: str) -> tuple[str, str, dict[str, str]] | None:
     if state == "COMPLETE" and any(val not in {"OK", "NOT_DUE_TTL"}
                                    for val in stage_data.values()):
         return None
+    if state == "DEGRADED" and all(val in {"OK", "NOT_DUE_TTL"}
+                                   for val in stage_data.values()):
+        return None
     if state in {"BLOCKED", "NOT_DUE"} and stage_data:
         return None
-    if state in {"COMPLETE", "DEGRADED"} and data.get("real_orders_sent") != 0:
+    if (state in {"COMPLETE", "DEGRADED"} and
+            (type(data.get("real_orders_sent")) is not int or data["real_orders_sent"] != 0)):
         return None
     reason = data.get("reason")
     if state == "BLOCKED":

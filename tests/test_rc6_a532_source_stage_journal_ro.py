@@ -106,8 +106,10 @@ class A532OffhostTests(unittest.TestCase):
                 marker("COMPLETE", {"public": "FAILED"}),
                 marker("COMPLETE", {}),
                 marker("DEGRADED", {}),
+                marker("DEGRADED", {"iol": "OK", "public": "NOT_DUE_TTL"}),
                 marker("DEGRADED", {"public": "REALLY_SUCCEEDED"}),
                 marker("COMPLETE", {"public": "OK"}, orders=1),
+                marker("COMPLETE", {"public": "OK"}, orders=False),
                 marker("BLOCKED", {"public": "FAILED"}),
         ):
             with self.subTest(raw=raw[:30]):
