@@ -61,6 +61,14 @@ def _proof_time(source, known, cutoff):
         return False
 
 
+def _same_instant(value, expected):
+    """Preserve approved cashflow instant across UTC/ART ISO representations."""
+    try:
+        return aware_datetime(value) == expected
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def _age(value, at):
     try:
         return (at - aware_datetime(value)).total_seconds()
@@ -188,7 +196,7 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
                 terms.get("maturity_redemption_receipt_contract") !=
                 "EXACT_NOMINAL_EVENT_REDUCER_V1" or
                 terms.get("currency") != scenario.identity[3] or
-                not any(flow[1] == "AMORTIZATION" and flow[2] == exit_at.isoformat()
+                not any(flow[1] == "AMORTIZATION" and _same_instant(flow[2], exit_at)
                         for flow in scenario.projected_obligations)):
             return _hold("FI_NATIVE_MATURITY_LIFECYCLE_MISSING", family)
     else:
@@ -213,7 +221,7 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
                 scenario.exit_mode != "MATURITY_REDEMPTION" or
                 not _proof_time(terms.get("redemption_source_at"),
                                 terms.get("redemption_known_at"), at) or
-                terms.get("maturity_at") != exit_at.isoformat()):
+                not _same_instant(terms.get("maturity_at"), exit_at)):
             return _hold("FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED", family)
     elif family == "OBLIGACIONES":
         credit_stress = _number(terms.get("issuer_credit_stress_bps"))

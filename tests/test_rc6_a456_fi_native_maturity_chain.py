@@ -28,7 +28,9 @@ from rc6_fixed_income_native_redemption import (
 from rc6_fixed_income_portfolio_bridge import cash_effect_checked, position_at
 from rc6_fixed_income_runtime import (
     FixedIncomeEvidenceError, MATURITY_RECEIPT_SCHEMA, contract_economics,
+    fixed_income_strategy_inputs,
 )
+from rc6_fixed_income_paper_strategy import decide_fixed_income_from_inputs
 from tests.test_rc6_fixed_income_paper_strategy import AT, YESTERDAY
 from tests.test_rc6_fixed_income_runtime import reviewed_bundle, repin
 
@@ -88,14 +90,14 @@ def _bill_bundle(tmp_path, monkeypatch):
     return q, root, pin, store, broker
 
 
-def _bill_bundle_art_maturity(tmp_path, monkeypatch):
+def _bill_bundle_art_maturity(tmp_path, monkeypatch, *, flow_utc=False):
     """Same instant in issuer -03:00, later reviewed as canonical UTC."""
     q, root, _, store, broker = _bill_bundle(tmp_path, monkeypatch)
     repin(root, "terms.json", lambda d: d.update(maturity_at=MATURITY_ART))
 
     def offset_receipt(d):
         d["maturity_at"] = MATURITY_ART
-        d["flows"][0]["due_at"] = MATURITY_ART
+        d["flows"][0]["due_at"] = MATURITY if flow_utc else MATURITY_ART
 
     pin = repin(root, "receipt.json", offset_receipt)
     monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
@@ -245,6 +247,48 @@ def test_issuer_art_maturity_and_utc_review_same_instant_closes_paper_no_sell(
                           (paper_id,)).fetchone()[0] == "CLOSED"
         assert db.execute("SELECT count(*) FROM paper_fi_native_maturities").fetchone()[0] == 1
         assert db.execute("SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_art_maturity_utc_amortization_and_z_terms_keep_exact_instant_admissible(
+        tmp_path, monkeypatch):
+    q, _, _, store, broker = _bill_bundle_art_maturity(
+        tmp_path, monkeypatch, flow_utc=True)
+    inputs = fixed_income_strategy_inputs(store, q, AT.isoformat())
+    scenario = inputs["scenario"]
+    terms = inputs["terms"]
+    validation = inputs["validation"]
+    assert scenario.planned_exit_at == MATURITY_ART
+    assert scenario.projected_obligations[0][2] == MATURITY
+
+    def decide(scenario=scenario, terms=terms):
+        return decide_fixed_income_from_inputs(
+            q, decision_at=AT.isoformat(), scenario=scenario,
+            terms=terms, validation=validation)
+
+    assert decide()[0] == "BUY"
+    assert broker._decide_fixed_income(q, AT.isoformat())[0] == "BUY"
+    # Both 'Z' and +00:00 are valid ISO UTC encodings of the very same
+    # reviewed issuer instant. A source's textual precision is not a trade.
+    terms_z = {**terms, "maturity_at": MATURITY.replace("+00:00", "Z")}
+    assert decide(terms=terms_z)[0] == "BUY"
+
+    changed = replace(scenario, projected_obligations=tuple(
+        (ob[0], ob[1], MATURITY_DIFFERENT_INSTANT, ob[3])
+        for ob in scenario.projected_obligations))
+    assert decide(scenario=changed)[3]["reason_code"] == \
+        "FI_NATIVE_MATURITY_LIFECYCLE_MISSING"
+    assert decide(terms={**terms, "maturity_at": MATURITY_DIFFERENT_INSTANT})[
+        3]["reason_code"] == "FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED"
+    malformed = replace(scenario, projected_obligations=tuple(
+        (ob[0], ob[1], "not-a-timestamp", ob[3])
+        for ob in scenario.projected_obligations))
+    assert decide(scenario=malformed)[3]["reason_code"] == \
+        "FI_NATIVE_MATURITY_LIFECYCLE_MISSING"
+    assert decide(terms={**terms, "maturity_at": "not-a-timestamp"})[
+        3]["reason_code"] == "FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED"
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
