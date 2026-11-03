@@ -1688,7 +1688,8 @@ class PaperBroker:
             if family == "LETRAS":
                 plan = features.get("fixed_income_exit_plan")
                 proof = features.get("fixed_income_runtime_evidence")
-                if (not isinstance(proof, dict) or not isinstance(plan, dict)
+                if (q.contract is None or
+                        not isinstance(proof, dict) or not isinstance(plan, dict)
                         or plan.get("release_manifest_sha256") != proof.get("manifest_sha256")
                         or plan.get("release_receipt_sha256") != proof.get("receipt_sha256")
                         or plan.get("quote_sha256") != proof.get("quote_sha256")

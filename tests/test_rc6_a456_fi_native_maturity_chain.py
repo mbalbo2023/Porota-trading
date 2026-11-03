@@ -290,6 +290,17 @@ def test_quote_mutation_and_live_counter_cannot_bypass_locked_fi_buy(tmp_path, m
         assert db.execute("SELECT count(*) FROM paper_fi_lots").fetchone()[0] == 0
 
 
+def test_missing_exact_contract_is_rejected_before_native_buy(tmp_path, monkeypatch):
+    q, _, _, store, broker = _bill_bundle(tmp_path, monkeypatch)
+    action, score, _, features = broker._decide_fixed_income(q, AT.isoformat())
+    assert action == "BUY"
+    with store.connect() as db:
+        assert broker._specialized_decision_error(
+            db, replace(q, contract=None), score, features
+        ) == "FI_NATIVE_MATURITY_RELEASE_OR_OWNER_UNVERIFIED"
+        assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("filename,mutate,blocker", [
     ("receipt.json", lambda d: d.update(schema="rc6.fixed-income-strategy-input.v1"),
      "FI_EVIDENCE_RECEIPT_SCHEMA_INVALID"),
