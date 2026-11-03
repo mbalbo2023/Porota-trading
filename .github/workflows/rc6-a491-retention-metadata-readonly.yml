@@ -1,4 +1,4 @@
-name: RC6 A491 retention metadata READ_ONLY
+name: RC6 A491/A498 retention metadata READ_ONLY
 
 # Only the three owned files can trigger a postmerge host metadata receipt.
 # PRs never access host secrets; no schedule dependency and no DB open/copy.
@@ -79,6 +79,10 @@ jobs:
             --raw "$private/.a491-raw.json" \
             --out "$private/a491-sanitized.json" \
             --remote-rc 255 || true
+          python3 -B scripts/rc6_a491_retention_host_metadata_ro.py sanitize-fd \
+            --raw "$private/.a498-raw.json" \
+            --out "$private/a498-sanitized.json" \
+            --remote-rc 255 || true
       - name: Bounded SSH fixed metadata only (no SQLite file open)
         shell: bash
         run: |
@@ -109,12 +113,47 @@ jobs:
             --raw "$private/.a491-raw.json" \
             --out "$private/a491-sanitized.json" \
             --remote-rc "$remote_rc"
+      - name: A498 exact-two-container fd/inode metadata (no SQLite open)
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="${RC6_A491_DIR:-}"
+          if test -z "$private" || ! test -f "$private/id_key" || ! test -f "$private/known_hosts"; then
+            echo '::warning::A498_HOST_ACCESS_UNAVAILABLE'
+            exit 0
+          fi
+          ulimit -f 16
+          set +e
+          timeout 45 ssh -i "$private/id_key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$private/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 25 python3 -B - host-observer-fd' \
+            < scripts/rc6_a491_retention_host_metadata_ro.py \
+            > "$private/.a498-raw.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          python3 -B scripts/rc6_a491_retention_host_metadata_ro.py sanitize-fd \
+            --raw "$private/.a498-raw.json" \
+            --out "$private/a498-sanitized.json" \
+            --remote-rc "$remote_rc"
       - name: Upload ONLY strict public metadata receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rc6-a491-retention-metadata-${{ github.run_id }}
           path: ${{ env.RC6_A491_DIR }}/a491-sanitized.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload ONLY strict A498 process metadata receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a498-observer-fd-metadata-${{ github.run_id }}
+          path: ${{ env.RC6_A491_DIR }}/a498-sanitized.json
           if-no-files-found: warn
           retention-days: 7
       - name: Destroy fixed private runner files
@@ -127,7 +166,8 @@ jobs:
              test "${private#"$RUNNER_TEMP"/}" != "$private" && \
              test "$(stat -c %a "$private")" = 700; then
             for file in "$private/id_key" "$private/known_hosts" \
-                        "$private/.a491-raw.json" "$private/a491-sanitized.json"; do
+                        "$private/.a491-raw.json" "$private/a491-sanitized.json" \
+                        "$private/.a498-raw.json" "$private/a498-sanitized.json"; do
               if test -f "$file" && ! test -L "$file"; then
                 shred -u -- "$file"
               fi
