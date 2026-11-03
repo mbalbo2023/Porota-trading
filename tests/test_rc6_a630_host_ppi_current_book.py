@@ -177,7 +177,8 @@ class TestA630(unittest.TestCase):
             snapshot = {'status':'OBSERVED','receipt_retention':{'status':'READY'},
                         'exit_service':{'lower_suspended':False,'round':{
                             'status':'COMPLETE','required_scope_verified_current':True,
-                            'recorded_at':datetime.now(timezone.utc).isoformat()}}}
+                            'required_scope_basis':'CURRENT_VERIFIED_PAPER_LEDGER',
+                            'recorded_at':datetime.now(timezone.utc).timestamp()}}}
             module.runtime_budget_snapshot = lambda database: snapshot
             with patch.dict(sys.modules, {'cg_paper_workspace': workspace,
                                           'rc6_ppi_global_budget': module}):
@@ -202,13 +203,17 @@ class TestA630(unittest.TestCase):
 
     def test_exit_round_must_be_recent_tz_aware_and_not_future(self):
         cycle={'status':'COMPLETE','required_scope_verified_current':True,
-               'recorded_at':(NOW-timedelta(seconds=299)).isoformat()}
+               'recorded_at':(NOW-timedelta(seconds=299)).timestamp()}
         self.assertTrue(_exit_round_fresh(cycle,now=NOW))
-        cycle['recorded_at']=(NOW-timedelta(seconds=301)).isoformat()
+        cycle['recorded_at']=(NOW-timedelta(seconds=301)).timestamp()
         self.assertFalse(_exit_round_fresh(cycle,now=NOW))
-        cycle['recorded_at']=(NOW+timedelta(seconds=1)).isoformat()
+        cycle['recorded_at']=(NOW+timedelta(seconds=1)).timestamp()
         self.assertFalse(_exit_round_fresh(cycle,now=NOW))
         cycle['recorded_at']='2026-11-04T14:20:00'
+        self.assertFalse(_exit_round_fresh(cycle,now=NOW))
+        cycle['recorded_at']=float('inf')
+        self.assertFalse(_exit_round_fresh(cycle,now=NOW))
+        cycle['recorded_at']=True
         self.assertFalse(_exit_round_fresh(cycle,now=NOW))
         cycle.pop('recorded_at')
         self.assertFalse(_exit_round_fresh(cycle,now=NOW))
