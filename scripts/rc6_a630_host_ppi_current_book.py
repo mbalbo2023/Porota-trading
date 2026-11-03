@@ -352,10 +352,23 @@ class TwoGetAtomicBudget:
         self.started.add(lease)
 
     def wire_scope(self, lease):
+        """Return a DEFERRED context, matching pinned product guard ordering.
+
+        Product guarded_send obtains ownership = wire_scope(lease), ENTERs it,
+        and only then invokes start(lease) BEFORE delegating to the adapter.
+        An eager started-check here deadlocks every Current GET. The strict
+        HTTPAdapter pre-wire guard checks started immediately before socket.
+        """
         self._check(lease)
-        if lease not in self.started or lease in self.finished:
+        if lease in self.finished:
             raise ValueError("ATOMIC_LEASE_DENIED")
-        return self.shared.wire_scope(lease)
+        @contextmanager
+        def entered():
+            if lease in self.finished:
+                raise ValueError("ATOMIC_LEASE_DENIED")
+            with self.shared.wire_scope(lease):
+                yield
+        return entered()
 
     def finish(self, lease, **outcome):
         self._check(lease)
