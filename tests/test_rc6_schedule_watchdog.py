@@ -1,8 +1,12 @@
 """A358 deterministic tests; no GitHub network and no broker calls."""
+import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import rc6_schedule_watchdog as a358
@@ -73,6 +77,49 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual("ALREADY_REPORTED", state)
         self.assertEqual([], sent)
 
+    def test_dedupe_many_small_pages_recognizes_existing_marker(self):
+        """The current #732 volume overflows one 100-comment response."""
+        receipt = {"date_art": "2026-11-02", "status": "P1_SCHEDULE_SILENT"}
+        marker = "<!--RC6-A358:2026-11-02:P1_SCHEDULE_SILENT-->"
+        pages = []
+
+        def get(url, _token):
+            pages.append(url)
+            self.assertIn("since=2026-11-02T03:00:00Z", url)
+            self.assertIn("per_page=5", url)
+            page = int(url.rsplit("page=", 1)[1])
+            if page < 19:
+                return [{"body": "sanitized fixture " + str(i)} for i in range(5)]
+            return [{"body": marker}]
+
+        result = a358.dedupe_issue("P1_SCHEDULE_SILENT", receipt, "mock",
+                                   get=get, post=lambda *_: self.fail("duplicate"))
+        self.assertEqual("ALREADY_REPORTED", result)
+        self.assertEqual(19, len(pages))
+
+    def test_dedupe_posts_once_only_after_complete_scan(self):
+        receipt = {"date_art": "2026-11-02", "status": "P1_SCHEDULE_SILENT",
+                   "observed_at_utc": "2026-11-02T23:11:54Z",
+                   "workflow_state": "active", "genuine_runs_today": 0,
+                   "overdue_slots_after_last_run": 2}
+        pages, posted = [], []
+
+        def get(url, _token):
+            pages.append(int(url.rsplit("page=", 1)[1]))
+            return ([{"body": "fixture"}] * 5) if len(pages) < 3 else []
+
+        def post(url, data, _token):
+            posted.append((url, data))
+            return 201
+
+        result = a358.dedupe_issue("P1_SCHEDULE_SILENT", receipt, "mock",
+                                   get=get, post=post)
+        self.assertEqual("ISSUE_COMMENT_CREATED", result)
+        self.assertEqual([1, 2, 3], pages)
+        self.assertEqual(1, len(posted))
+        self.assertIn("<!--RC6-A358:2026-11-02:P1_SCHEDULE_SILENT-->",
+                      posted[0][1]["body"])
+
     def test_no_notification_for_non_p1(self):
         self.assertEqual("NOT_REQUIRED", a358.dedupe_issue("NO_VERIFICADO", {}, "mock"))
 
@@ -80,8 +127,55 @@ class ScheduleWatchdogTest(unittest.TestCase):
         receipt = {"date_art": "2026-11-02"}
         with self.assertRaisesRegex(ValueError, "A358_UNBOUNDED_DEDUPE"):
             a358.dedupe_issue("P1_SCHEDULE_SILENT", receipt, "mock",
-                              get=lambda *_: [{"body": "x"}] * 100,
+                              get=lambda *_: [{"body": "x"}] * a358.DEDUPE_PAGE_SIZE,
                               post=lambda *_: self.fail("must not post"))
+
+    def test_dedupe_incomplete_api_scan_never_posts(self):
+        calls = []
+
+        def get(_url, _token):
+            calls.append(1)
+            if len(calls) == 2:
+                raise ValueError("A358_API_RESPONSE_TOO_LARGE")
+            return [{"body": "fixture"}] * a358.DEDUPE_PAGE_SIZE
+
+        with self.assertRaisesRegex(ValueError, "A358_API_RESPONSE_TOO_LARGE"):
+            a358.dedupe_issue("P1_SCHEDULE_SILENT", {"date_art": "2026-11-02"}, "mock",
+                              get=get, post=lambda *_: self.fail("must not post"))
+
+    def test_dedupe_malformed_page_and_art_date_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "A358_DATE_ART_INVALID"):
+            a358.dedupe_issue("P1_SCHEDULE_SILENT", {"date_art": "2026-11-02T00:00:00Z"},
+                              "mock", get=lambda *_: self.fail("bad date not queried"))
+        with self.assertRaisesRegex(ValueError, "A358_COMMENTS_SHAPE_INVALID"):
+            a358.dedupe_issue("P1_SCHEDULE_SILENT", {"date_art": "2026-11-02"},
+                              "mock", get=lambda *_: [{"metadata": "body missing"}],
+                              post=lambda *_: self.fail("must not post"))
+
+    def test_notification_error_class_is_sanitized_preserves_p1_reason(self):
+        p1 = {"schema": "rc6.a358.schedule-watch.v1", "status": "P1_SCHEDULE_SILENT",
+              "reason": "TWO_MATURE_SLOTS_WITHOUT_RUN", "date_art": "2026-11-02"}
+        with tempfile.TemporaryDirectory() as tmp:
+            target = str(Path(tmp) / "receipt.json")
+            with patch.dict(os.environ, {"GH_TOKEN": "mock_token_123456"}):
+                with patch.object(a358, "_get", side_effect=[
+                    {"state": "active"}, {"workflow_runs": []}]):
+                    with patch.object(a358, "classify", return_value=p1):
+                        with patch.object(a358, "dedupe_issue", side_effect=
+                                          a358.A358SafeError("A358_API_RESPONSE_TOO_LARGE")):
+                            code = a358.main(["--output", target, "--notify"])
+            self.assertEqual(3, code)
+            result = json.loads(Path(target).read_text(encoding="utf-8"))
+            self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+            self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+            self.assertEqual("NO_VERIFICADO", result["notification"])
+            self.assertEqual("A358_API_RESPONSE_TOO_LARGE",
+                             result["notification_error_class"])
+            self.assertNotIn("mock_token_123456", json.dumps(result))
+
+    def test_unknown_exception_text_is_never_emitted(self):
+        self.assertEqual("A358_VALUE_ERROR",
+                         a358.safe_error_class(ValueError("private body/token/url")))
 
     def test_unknown_workflow_state_does_not_become_false_disabled(self):
         result = a358.classify([], at(10, 40), workflow_state="NO_VERIFICADO")
@@ -94,3 +188,4 @@ class ScheduleWatchdogTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
