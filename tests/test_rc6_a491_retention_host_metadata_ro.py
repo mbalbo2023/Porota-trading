@@ -3,9 +3,11 @@
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -37,6 +39,18 @@ def sample():
 
 def raw(value):
     return json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def fd_sample():
+    return {"schema": probe.FD_SCHEMA, "state": "PROCESS_METADATA_ONLY",
+            **probe.FD_INVARIANTS,
+            "files": {kind: "PRESENT" for kind in probe.FD_FILES},
+            "activity": {kind: "NO_METADATA_CHANGE_AT_ENDPOINTS"
+                         for kind in probe.FD_FILES},
+            "containers": [
+                {"role": role, "runtime": "RUNNING",
+                 "matches": {kind: "NO_MATCH_IN_TARGET" for kind in probe.FD_FILES}}
+                for role, _ in probe.FD_CONTAINERS]}
 
 
 class LocalMetadataTests(unittest.TestCase):
@@ -360,6 +374,265 @@ class SanitizerTests(unittest.TestCase):
                              "256M_TO_512M" if count < probe.MIN_MEMORY else "512M_TO_1G")
 
 
+class ObserverFdTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.observer = root / "observer_v17.db"
+        self.observer.write_bytes(b"synthetic db" * 512)
+        self.wal = Path(str(self.observer) + "-wal")
+        self.shm = Path(str(self.observer) + "-shm")
+        self.wal.write_bytes(b"synthetic wal")
+        self.shm.write_bytes(b"synthetic shm")
+        self.patch_databases = mock.patch.object(probe, "DATABASES", (
+            ("HISTORY_DB", root / "unused.db", 1024**3),
+            ("PAPER_OBSERVER_DB", self.observer, 4 * 1024**3)))
+        self.patch_databases.start()
+        self.addCleanup(self.patch_databases.stop)
+
+    def test_real_proc_fd_stat_matches_open_synthetic_fixture_only(self):
+        info = self.observer.stat()
+        with self.observer.open("rb") as handle:
+            # A managed sandbox can expose a /proc belonging to a different
+            # PID namespace even when /proc/<our pid> happens to exist.
+            try:
+                entry = os.stat(f"/proc/{os.getpid()}/fd/{handle.fileno()}")
+            except OSError:
+                self.skipTest("procfs PID namespace differs from process")
+            if (entry.st_dev, entry.st_ino) != (info.st_dev, info.st_ino):
+                self.skipTest("procfs PID maps to another process")
+            matches, _ = probe._pid_fd_matches(os.getpid(),
+                {"DB": (info.st_dev, info.st_ino), "WAL": (0, 0),
+                 "SHM": (0, 0)}, time.monotonic() + 5)
+        self.assertIn("DB", matches)
+        self.assertNotIn("WAL", matches)
+        self.assertNotIn("SHM", matches)
+
+    def test_docker_top_exact_pid_only_and_rejects_untrusted_text(self):
+        valid = subprocess.CompletedProcess([], 0, "PID\n321\n322\n", "")
+        with mock.patch.object(probe.subprocess, "run", return_value=valid) as runner:
+            self.assertEqual(probe._docker_pids("porota_production_observer",
+                                                time.monotonic() + 8), [321, 322])
+            self.assertEqual(runner.call_args.args[0],
+                             ["docker", "top", "porota_production_observer", "-eo", "pid"])
+        for bad in ("PID\n321\n321\n", "PID\n321  --privileged\n",
+                    "PID\n9999999999\n", "USER PID\n123\n", "PID\n"):
+            with mock.patch.object(probe.subprocess, "run", return_value=
+                                   subprocess.CompletedProcess([], 0, bad, "")):
+                self.assertIsNone(probe._docker_pids("porota_production_dashboard",
+                                                       time.monotonic() + 8))
+        self.assertIsNone(probe._docker_pids("unknown_app", time.monotonic() + 8))
+
+    def test_docker_inspect_fixed_runtime_state_never_exposes_config(self):
+        for stdout, expected in (("true\n", "RUNNING"),
+                                 ("false\n", "STOPPED"),
+                                 ("/secrets/credentials", "NO_VERIFICADO")):
+            with mock.patch.object(probe.subprocess, "run", return_value=
+                                   subprocess.CompletedProcess([], 0, stdout, "")) as runner:
+                self.assertEqual(probe._docker_runtime("porota_production_observer",
+                                                       time.monotonic() + 5), expected)
+                self.assertEqual(runner.call_args.args[0],
+                                 ["docker", "inspect", "--type", "container",
+                                  "--format", "{{.State.Running}}",
+                                  "porota_production_observer"])
+        with mock.patch.object(probe.subprocess, "run", return_value=
+                               subprocess.CompletedProcess([], 1, "",
+                                   "Error: No such object: porota_production_dashboard\n")):
+            self.assertEqual(probe._docker_runtime("porota_production_dashboard",
+                                                   time.monotonic() + 5), "ABSENT")
+        self.assertEqual(probe._docker_runtime("other_service", time.monotonic() + 5),
+                         "NO_VERIFICADO")
+
+    def test_two_probes_identify_live_holder_only_in_exact_named_container(self):
+        with (mock.patch.object(probe, "_docker_runtime", return_value="RUNNING"),
+              mock.patch.object(probe, "_proc_start_tick", return_value=1234),
+              mock.patch.object(probe, "_docker_pids",
+                                side_effect=lambda name, deadline: [21] if
+                                name == "porota_production_observer" else [22]),
+              mock.patch.object(probe, "_pid_fd_matches",
+                                side_effect=lambda pid, ids, deadline:
+                                ({"DB", "WAL", "SHM"}, True) if pid == 21 else (set(), True))):
+            result = probe._fd_receipt()
+        self.assertEqual(result["state"], "PROCESS_METADATA_ONLY")
+        self.assertEqual(result["containers"][0]["matches"],
+                         {kind: "MATCH_BOTH_SAMPLES" for kind in probe.FD_FILES})
+        self.assertEqual(result["containers"][1]["matches"],
+                         {kind: "NO_MATCH_IN_TARGET" for kind in probe.FD_FILES})
+        self.assertFalse(result["all_processes_covered"])
+        self.assertFalse(result["database_opened"])
+        self.assertFalse(result["host_purge_allowed"])
+        self.assertEqual(probe.sanitize_fd(raw(result), 0), result)
+
+    def test_partial_process_visibility_or_missing_sidecar_is_never_negative(self):
+        self.wal.unlink()
+        with mock.patch.object(probe, "_docker_pids", return_value=None):
+            result = probe._fd_receipt()
+        self.assertEqual(result["files"]["WAL"], "MISSING")
+        for row in result["containers"]:
+            self.assertEqual(row["matches"]["WAL"], "NO_VERIFICADO")
+            self.assertEqual(row["matches"]["DB"], "NO_VERIFICADO")
+        self.assertEqual(probe.sanitize_fd(raw(result), 0)["state"],
+                         "PROCESS_METADATA_ONLY")
+
+    def test_match_in_one_sample_only_does_not_claim_continuity(self):
+        def observations(is_positive):
+            return [{"role": role, "matches": {kind: ("MATCH" if
+                                                 is_positive else "NO_MATCH_IN_TARGET")
+                                               for kind in probe.FD_FILES}}
+                    for role, _ in probe.FD_CONTAINERS]
+
+        with (mock.patch.object(probe, "_docker_runtime", return_value="RUNNING"),
+              mock.patch.object(probe, "_container_fd_sample",
+                                side_effect=[observations(True), observations(False)])):
+            result = probe._fd_receipt()
+        self.assertEqual(result["containers"][0]["matches"]["WAL"],
+                         "MATCH_ONE_SAMPLE")
+        self.assertFalse(result["continuous_ownership_proven"])
+
+    def test_stopped_container_never_uses_a_fd_hit_as_running_attribution(self):
+        observation = [{"role": role, "matches": {kind: "MATCH"
+                                                    for kind in probe.FD_FILES}}
+                       for role, _ in probe.FD_CONTAINERS]
+        with (mock.patch.object(probe, "_docker_runtime", return_value="STOPPED"),
+              mock.patch.object(probe, "_container_fd_sample", return_value=observation)):
+            result = probe._fd_receipt()
+        self.assertEqual(result["containers"][0]["runtime"], "STOPPED")
+        self.assertEqual(result["containers"][0]["matches"]["DB"],
+                         "NO_VERIFICADO")
+
+    def test_pid_reused_during_fd_scan_cannot_produce_match(self):
+        calls = 0
+
+        def moved_start(pid):
+            nonlocal calls
+            calls += 1
+            return calls
+
+        with (mock.patch.object(probe, "_docker_pids", return_value=[17]),
+              mock.patch.object(probe, "_proc_start_tick", side_effect=moved_start),
+              mock.patch.object(probe, "_pid_fd_matches",
+                                return_value=({"DB", "WAL", "SHM"}, True))):
+            sample = probe._container_fd_sample(
+                {kind: (1, 1) for kind in probe.FD_FILES}, time.monotonic() + 5)
+        self.assertTrue(all(value == "NO_VERIFICADO" for row in sample
+                            for value in row["matches"].values()))
+
+    def test_replaced_wal_inode_fails_closed_even_with_earlier_fd_match(self):
+        calls = 0
+
+        def sample_fd(ids, deadline):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                replacement = self.observer.parent / "replacement"
+                replacement.write_bytes(b"replacement WAL")
+                replacement.replace(self.wal)
+            return [{"role": role, "matches": {kind: "MATCH"
+                                                for kind in probe.FD_FILES}}
+                    for role, _ in probe.FD_CONTAINERS]
+
+        with mock.patch.object(probe, "_container_fd_sample", side_effect=sample_fd):
+            result = probe._fd_receipt()
+        self.assertEqual(result["files"]["WAL"], "NO_VERIFICADO")
+        self.assertEqual(result["containers"][0]["matches"]["WAL"],
+                         "NO_VERIFICADO")
+
+    def test_unscanned_fd_caps_and_permission_do_not_claim_absence(self):
+        with mock.patch.object(probe.os, "scandir", side_effect=PermissionError()):
+            matches, complete = probe._pid_fd_matches(
+                os.getpid(), {"DB": (1, 1)}, time.monotonic() + 5)
+        self.assertEqual(matches, set())
+        self.assertFalse(complete)
+        with (mock.patch.object(probe, "_docker_pids", return_value=[17]),
+              mock.patch.object(probe, "_pid_fd_matches", return_value=(set(), False))):
+            results = probe._container_fd_sample({kind: (1, 1)
+                                                  for kind in probe.FD_FILES},
+                                                 time.monotonic() + 5)
+        self.assertTrue(all(value == "NO_VERIFICADO" for row in results
+                            for value in row["matches"].values()))
+
+    def test_fd_limit_and_expired_deadline_fail_closed(self):
+        entry = mock.Mock()
+        entry.stat.return_value = mock.Mock(st_dev=10, st_ino=20,
+                                            st_mode=stat.S_IFREG | 0o600)
+        listing = mock.MagicMock()
+        listing.__enter__.return_value = iter([entry] * (probe.FD_MAX_PER_PID + 1))
+        with mock.patch.object(probe.os, "scandir", return_value=listing):
+            hits, complete = probe._pid_fd_matches(
+                123, {"DB": (10, 20)}, time.monotonic() + 10)
+        self.assertIn("DB", hits)
+        self.assertFalse(complete)
+        listing.__enter__.return_value = iter([entry])
+        with mock.patch.object(probe.os, "scandir", return_value=listing):
+            hits, complete = probe._pid_fd_matches(
+                123, {"DB": (10, 20)}, time.monotonic() - 1)
+        self.assertEqual(hits, set())
+        self.assertFalse(complete)
+
+    def test_docker_pid_membership_race_discards_even_positive_inode_hit(self):
+        # A reused host PID could otherwise make an unrelated service look
+        # like the holder of an observer DB handle.
+        calls = 0
+
+        def unstable_pids(name, deadline):
+            nonlocal calls
+            calls += 1
+            return [17] if calls % 2 else [18]
+
+        with (mock.patch.object(probe, "_proc_start_tick", return_value=1234),
+              mock.patch.object(probe, "_docker_pids", side_effect=unstable_pids),
+              mock.patch.object(probe, "_pid_fd_matches",
+                                return_value=({"DB", "WAL", "SHM"}, True))):
+            result = probe._container_fd_sample(
+                {kind: (1, 1) for kind in probe.FD_FILES}, time.monotonic() + 5)
+        self.assertTrue(all(value == "NO_VERIFICADO" for row in result
+                            for value in row["matches"].values()))
+
+    def test_strict_fd_public_contract_rejects_fake_purge_pid_path_and_conflicts(self):
+        value = fd_sample()
+        self.assertEqual(probe.sanitize_fd(raw(value), 0), value)
+        for key, invalid in (("all_processes_covered", True),
+                             ("host_purge_allowed", True),
+                             ("database_opened", True)):
+            changed = fd_sample()
+            changed[key] = invalid
+            self.assertEqual(probe.sanitize_fd(raw(changed), 0)["state"],
+                             "NO_VERIFICADO")
+        for key, secret in (("pid", 31337), ("path", "/secrets/observer"),
+                            ("command", "docker rm")):
+            changed = fd_sample()
+            changed["containers"][0][key] = secret
+            output = probe.sanitize_fd(raw(changed), 0)
+            self.assertEqual(output["state"], "NO_VERIFICADO")
+            self.assertNotIn(str(secret), json.dumps(output))
+        changed = fd_sample()
+        changed["files"]["WAL"] = "MISSING"
+        self.assertEqual(probe.sanitize_fd(raw(changed), 0)["state"],
+                         "NO_VERIFICADO")
+        changed = fd_sample()
+        changed["containers"][0]["matches"]["SHM"] = "root:password"
+        self.assertEqual(probe.sanitize_fd(raw(changed), 0)["state"],
+                         "NO_VERIFICADO")
+
+    def test_fd_runner_sanitizes_only_fixed_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_path = root / ".a498-raw.json"
+            output = root / "a498-sanitized.json"
+            raw_path.write_bytes(raw(fd_sample()))
+            command = [sys.executable, str(SCRIPT), "sanitize-fd",
+                       "--raw", str(raw_path), "--out", str(output),
+                       "--remote-rc", "0"]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(output.read_text())["state"],
+                             "PROCESS_METADATA_ONLY")
+            self.assertNotIn(str(root), output.read_text())
+            command[command.index(str(output))] = str(root / "wrong.json")
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 2)
+
+
 class WorkflowSafetyTests(unittest.TestCase):
     def test_exact_three_owned_paths_and_no_schedule(self):
         text = WORKFLOW.read_text()
@@ -384,6 +657,19 @@ class WorkflowSafetyTests(unittest.TestCase):
         self.assertIn("/a491-sanitized.json", after)
         self.assertNotIn("path: ${{ env.RC6_A491_DIR }}/.a491-raw.json", after)
         self.assertIn("ulimit -f 16", after)
+
+    def test_a498_is_separate_postmerge_receipt_and_does_not_enable_mutation(self):
+        text = WORKFLOW.read_text()
+        self.assertIn("host-observer-fd", text)
+        self.assertIn("sanitize-fd", text)
+        self.assertIn(".a498-raw.json", text)
+        self.assertIn("a498-sanitized.json", text)
+        self.assertIn("rc6-a498-observer-fd-metadata-", text)
+        self.assertNotIn("path: ${{ env.RC6_A491_DIR }}/.a498-raw.json", text)
+        self.assertIn("if: always()", text)
+        for forbidden in ("docker rm", "docker stop", "sqlite3", "VACUUM ",
+                          "predeploy", "deploy-v2"):
+            self.assertNotIn(forbidden, text)
 
     def test_no_sqlite_open_copy_data_route_or_mutation_api(self):
         source = SCRIPT.read_text()

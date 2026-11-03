@@ -63,6 +63,32 @@ INVARIANTS = {
     "a330_capture_certified": False,
 }
 
+# A498 is deliberately a separate receipt, never an extension of the frozen
+# A491 schema. It measures open *file descriptors*, not SQLite transactions or
+# global writer quiescence. No PID, container ID, command or pathname is output.
+FD_SCHEMA = "rc6.a498.observer-fd-provenance.v1"
+FD_CONTAINERS = (("OBSERVER", "porota_production_observer"),
+                 ("DASHBOARD", "porota_production_dashboard"))
+FD_FILES = ("DB", "WAL", "SHM")
+FD_STATES = frozenset({"MATCH_BOTH_SAMPLES", "MATCH_ONE_SAMPLE",
+                       "NO_MATCH_IN_TARGET", "NO_VERIFICADO"})
+FD_PRESENCE = frozenset({"PRESENT", "MISSING", "NO_VERIFICADO"})
+FD_ACTIVITY = frozenset({"METADATA_CHANGED_BETWEEN_SAMPLES",
+                         "NO_METADATA_CHANGE_AT_ENDPOINTS", "NO_VERIFICADO"})
+FD_RUNTIME = frozenset({"RUNNING", "STOPPED", "ABSENT", "NO_VERIFICADO"})
+FD_INVARIANTS = {
+    "read_only": True, "host_metadata_only": True,
+    "database_opened": False, "database_bytes_read": 0,
+    "host_db_writes": False, "ppi_watch_touched": False,
+    "provider_calls": 0, "order_routes_called": False,
+    "host_purge_allowed": False, "physical_host_delete_count": 0,
+    "a330_capture_certified": False, "all_processes_covered": False,
+    "scope": "EXACT_TWO_NAMED_CONTAINERS_ONLY",
+    "continuous_ownership_proven": False,
+}
+FD_MAX_PIDS = 64
+FD_MAX_PER_PID = 1024
+
 
 class MetadataReject(Exception):
     """Expected local rejection; no exception text is published."""
@@ -265,6 +291,198 @@ def _receipt() -> dict:
             "eod_writer_gate": _eod_gate(units)}
 
 
+def _docker_pids(name: str, deadline: float) -> list[int] | None:
+    """Bounded read-only host-PID enumeration for an exact known container."""
+    if name not in {item[1] for item in FD_CONTAINERS}:
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining < 1:
+        return None
+    try:
+        result = subprocess.run(
+            ["docker", "top", name, "-eo", "pid"],
+            capture_output=True, text=True, check=False,
+            timeout=min(4, remaining))
+    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0 or len(result.stdout) > 8192:
+        return None
+    rows = [line.strip() for line in result.stdout.splitlines()]
+    if (len(rows) < 2 or len(rows) > FD_MAX_PIDS + 1 or rows[0] != "PID"
+            or any(not re.fullmatch(r"[1-9][0-9]{0,8}", row) for row in rows[1:])):
+        return None
+    pids = [int(row) for row in rows[1:]]
+    return pids if len(set(pids)) == len(pids) else None
+
+
+def _docker_runtime(name: str, deadline: float) -> str:
+    """Only a fixed inspect property, never container env/config/command."""
+    if name not in {item[1] for item in FD_CONTAINERS}:
+        return "NO_VERIFICADO"
+    remaining = deadline - time.monotonic()
+    if remaining < 1:
+        return "NO_VERIFICADO"
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "--type", "container", "--format",
+             "{{.State.Running}}", name], capture_output=True, text=True,
+            check=False, timeout=min(2, remaining))
+    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+        return "NO_VERIFICADO"
+    if result.returncode == 0:
+        return {"true": "RUNNING", "false": "STOPPED"}.get(
+            result.stdout.strip(), "NO_VERIFICADO") if len(result.stdout) <= 16 else "NO_VERIFICADO"
+    # Missing object is distinct from daemon/credential failures only when
+    # Docker emits its exact, bounded canonical message for this fixed name.
+    if len(result.stderr) <= 256 and result.stderr.strip() in {
+            f"Error: No such object: {name}", f"Error: No such container: {name}"}:
+        return "ABSENT"
+    return "NO_VERIFICADO"
+
+
+def _proc_start_tick(pid: int) -> int | None:
+    """Read only Linux /proc stat starttime; do not read cmdline or DB bytes.
+
+    Field 22 is the kernel start tick; using the final ') ' handles comm with
+    spaces/parentheses. No raw proc line or process name leaves this function.
+    """
+    if not 1 <= pid <= 999_999_999:
+        return None
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as handle:
+            raw = handle.read(4097)
+    except OSError:
+        return None
+    if len(raw) >= 4097:
+        return None
+    end_comm = raw.rfind(b") ")
+    if end_comm < 3 or raw[:end_comm].split(b" (", 1)[0] != str(pid).encode("ascii"):
+        return None
+    fields = raw[end_comm + 2:].split()
+    if len(fields) < 20 or not fields[19].isdigit():
+        return None
+    tick = int(fields[19])
+    return tick if 0 < tick <= MAX_NUMBER else None
+
+
+def _pid_fd_matches(pid: int, identities: dict[str, tuple[int, int] | None],
+                    deadline: float) -> tuple[set[str], bool]:
+    """stat() proc fd magic links without open(), readlink(), cmdline or DB I/O.
+
+    A negative is complete only after an exhaustive *bounded* enumeration.
+    Any permission error, disappearing process, cap or timeout is unknown.
+    """
+    hits: set[str] = set()
+    complete = True
+    if not 1 <= pid <= 999_999_999:
+        return hits, False
+    try:
+        with os.scandir(f"/proc/{pid}/fd") as entries:
+            for count, entry in enumerate(entries, 1):
+                if count > FD_MAX_PER_PID or time.monotonic() >= deadline:
+                    complete = False
+                    break
+                try:
+                    info = entry.stat(follow_symlinks=True)
+                except OSError:
+                    complete = False
+                    continue
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                identity = (info.st_dev, info.st_ino)
+                for kind, wanted in identities.items():
+                    if wanted is not None and identity == wanted:
+                        hits.add(kind)
+    except (OSError, ValueError):
+        return hits, False
+    return hits, complete
+
+
+def _container_fd_sample(identities: dict[str, tuple[int, int] | None],
+                         deadline: float) -> list[dict]:
+    result = []
+    for role, name in FD_CONTAINERS:
+        pids = _docker_pids(name, deadline)
+        hits: set[str] = set()
+        complete = pids is not None
+        for pid in pids or []:
+            before_tick = _proc_start_tick(pid)
+            seen, scanned = _pid_fd_matches(pid, identities, deadline)
+            after_tick = _proc_start_tick(pid)
+            stable_pid = before_tick is not None and before_tick == after_tick
+            if stable_pid:
+                hits.update(seen)
+            complete = complete and scanned and stable_pid
+        # Recheck Docker membership: a terminated/reused numeric PID must
+        # never assign an unrelated host process to the observer/dashboard.
+        check_pids = _docker_pids(name, deadline) if pids is not None else None
+        if check_pids is None or set(check_pids) != set(pids or []):
+            hits.clear()
+            complete = False
+        result.append({"role": role,
+                       "matches": {kind: ("MATCH" if kind in hits else
+                                           "NO_MATCH_IN_TARGET" if complete and
+                                           identities[kind] is not None else "NO_VERIFICADO")
+                                   for kind in FD_FILES}})
+    return result
+
+
+def _fd_receipt() -> dict:
+    """Two point-in-time samples; neither proves continuous FD ownership."""
+    started = time.monotonic()
+    deadline = started + 22
+    path = DATABASES[1][1]
+    targets = {"DB": path, "WAL": Path(str(path) + "-wal"),
+               "SHM": Path(str(path) + "-shm")}
+    before = {kind: _stat_regular(target, maximum=DATABASES[1][2],
+                                  minimum=4096 if kind == "DB" else 0)
+              for kind, target in targets.items()}
+    identities = {kind: (row[2][0], row[2][1]) if row[0] == "PRESENT_REGULAR"
+                  else None for kind, row in before.items()}
+    runtime_before = [_docker_runtime(name, deadline) for _, name in FD_CONTAINERS]
+    first = _container_fd_sample(identities, deadline)
+    # Distinguish a hit on both samples from a hit seen only once.
+    second = _container_fd_sample(identities, deadline)
+    runtime_after = [_docker_runtime(name, deadline) for _, name in FD_CONTAINERS]
+    after = {kind: _stat_regular(target, maximum=DATABASES[1][2],
+                                 minimum=4096 if kind == "DB" else 0)
+             for kind, target in targets.items()}
+    presence = {}
+    activity = {}
+    for kind in FD_FILES:
+        old, new = before[kind], after[kind]
+        if old[0] == new[0] == "MISSING":
+            presence[kind], activity[kind] = "MISSING", "NO_VERIFICADO"
+        elif (old[0] == new[0] == "PRESENT_REGULAR" and
+              old[2][:2] == new[2][:2]):
+            presence[kind] = "PRESENT"
+            activity[kind] = ("METADATA_CHANGED_BETWEEN_SAMPLES" if old[2] != new[2]
+                              else "NO_METADATA_CHANGE_AT_ENDPOINTS")
+        else:
+            presence[kind], activity[kind] = "NO_VERIFICADO", "NO_VERIFICADO"
+    containers = []
+    for i, (role, _) in enumerate(FD_CONTAINERS):
+        runtime = (runtime_before[i] if runtime_before[i] == runtime_after[i]
+                   else "NO_VERIFICADO")
+        matches = {}
+        for kind in FD_FILES:
+            values = (first[i]["matches"][kind], second[i]["matches"][kind])
+            if presence[kind] != "PRESENT" or runtime != "RUNNING":
+                matches[kind] = "NO_VERIFICADO"
+            elif values == ("MATCH", "MATCH"):
+                matches[kind] = "MATCH_BOTH_SAMPLES"
+            elif "MATCH" in values:
+                matches[kind] = "MATCH_ONE_SAMPLE"
+            elif values == ("NO_MATCH_IN_TARGET", "NO_MATCH_IN_TARGET"):
+                matches[kind] = "NO_MATCH_IN_TARGET"
+            else:
+                matches[kind] = "NO_VERIFICADO"
+        containers.append({"role": role, "runtime": runtime, "matches": matches})
+    return {"schema": FD_SCHEMA, "state": "PROCESS_METADATA_ONLY",
+            **FD_INVARIANTS, "files": presence, "activity": activity,
+            "containers": containers}
+
+
 def _no_duplicates(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for key, value in pairs:
@@ -384,6 +602,50 @@ def _validate(raw: bytes) -> dict:
                           "disk_gate": resources["disk_gate"]}}
 
 
+def _validate_fd(raw: bytes) -> dict:
+    """Never forward host-provided strings: reconstruct exact enum-only JSON."""
+    if len(raw) > MAX_RAW:
+        raise MetadataReject("FD_OVERSIZE")
+    data = json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=_no_duplicates,
+                      parse_constant=_invalid_constant)
+    if (type(data) is not dict or set(data) != {
+            "schema", "state", "files", "activity", "containers", *FD_INVARIANTS}
+            or data["schema"] != FD_SCHEMA or data["state"] != "PROCESS_METADATA_ONLY"
+            or any(type(data[key]) is not type(value) or data[key] != value
+                   for key, value in FD_INVARIANTS.items())):
+        raise MetadataReject("FD_SCHEMA")
+    presence, activity, containers = data["files"], data["activity"], data["containers"]
+    if (type(presence) is not dict or set(presence) != set(FD_FILES)
+            or any(type(value) is not str or value not in FD_PRESENCE
+                   for value in presence.values())
+            or type(activity) is not dict or set(activity) != set(FD_FILES)
+            or any(type(value) is not str or value not in FD_ACTIVITY
+                   for value in activity.values())
+            or any(presence[kind] != "PRESENT" and
+                   activity[kind] != "NO_VERIFICADO" for kind in FD_FILES)
+            or type(containers) is not list or len(containers) != len(FD_CONTAINERS)):
+        raise MetadataReject("FD_FILES")
+    clean = []
+    for row, (role, _) in zip(containers, FD_CONTAINERS):
+        if (type(row) is not dict or set(row) != {"role", "runtime", "matches"}
+                or row["role"] != role or type(row["matches"]) is not dict
+                or type(row["runtime"]) is not str or row["runtime"] not in FD_RUNTIME
+                or set(row["matches"]) != set(FD_FILES)):
+            raise MetadataReject("FD_ROLE")
+        matches = row["matches"]
+        if any(type(matches[kind]) is not str or matches[kind] not in FD_STATES
+               or ((presence[kind] != "PRESENT" or row["runtime"] != "RUNNING") and
+                   matches[kind] != "NO_VERIFICADO") for kind in FD_FILES):
+            raise MetadataReject("FD_MATCH")
+        clean.append({"role": role, "runtime": row["runtime"],
+                      "matches": {kind: matches[kind] for kind in FD_FILES}})
+    return {"schema": FD_SCHEMA, "state": "PROCESS_METADATA_ONLY",
+            **FD_INVARIANTS,
+            "files": {kind: presence[kind] for kind in FD_FILES},
+            "activity": {kind: activity[kind] for kind in FD_FILES},
+            "containers": clean}
+
+
 def sanitize(raw: bytes, remote_rc: int) -> dict:
     """Never echo untrusted raw JSON, stderr, paths, IDs, or exception text."""
     failure = ("EXIT_124_TIMEOUT_OR_REMOTE" if remote_rc == 124 else
@@ -399,18 +661,34 @@ def sanitize(raw: bytes, remote_rc: int) -> dict:
             "a3_timer_gate": "NO_VERIFICADO", "eod_writer_gate": "NO_VERIFICADO"}
 
 
+def sanitize_fd(raw: bytes, remote_rc: int) -> dict:
+    """A498 failure never leaks raw host data and never passes as A491."""
+    failure = ("EXIT_124_TIMEOUT_OR_REMOTE" if remote_rc == 124 else
+               "SSH_255_TRANSPORT_OR_REMOTE" if remote_rc == 255 else
+               "REMOTE_EXIT_NONZERO" if remote_rc != 0 else "RECEIPT_INVALID")
+    try:
+        if remote_rc == 0:
+            return _validate_fd(raw)
+    except (MetadataReject, UnicodeError, ValueError, TypeError, KeyError):
+        pass
+    return {"schema": FD_SCHEMA, "state": "NO_VERIFICADO", **FD_INVARIANTS,
+            "failure_class": failure, "files": {}, "activity": {},
+            "containers": []}
+
+
 def _main() -> int:
     parser = argparse.ArgumentParser(allow_abbrev=False)
-    parser.add_argument("mode", choices=("host-probe", "sanitize"))
+    parser.add_argument("mode", choices=("host-probe", "sanitize",
+                                         "host-observer-fd", "sanitize-fd"))
     parser.add_argument("--raw")
     parser.add_argument("--out")
     parser.add_argument("--remote-rc", type=int)
     args = parser.parse_args()
-    if args.mode == "host-probe":
+    if args.mode in {"host-probe", "host-observer-fd"}:
         if args.raw is not None or args.out is not None or args.remote_rc is not None:
             return 2
         try:
-            result = _receipt()
+            result = _receipt() if args.mode == "host-probe" else _fd_receipt()
         except (OSError, ValueError, MetadataReject, subprocess.TimeoutExpired):
             return 2
         sys.stdout.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
@@ -420,7 +698,10 @@ def _main() -> int:
     # Runner-only files are fixed and private by workflow convention.
     raw_path = Path(args.raw)
     output_path = Path(args.out)
-    if (raw_path.name != ".a491-raw.json" or output_path.name != "a491-sanitized.json"
+    expected_names = ((".a491-raw.json", "a491-sanitized.json") if
+                      args.mode == "sanitize" else
+                      (".a498-raw.json", "a498-sanitized.json"))
+    if ((raw_path.name, output_path.name) != expected_names
             or raw_path.parent != output_path.parent or not output_path.parent.is_dir()
             or output_path.parent.is_symlink()):
         return 2
@@ -431,10 +712,11 @@ def _main() -> int:
             raw = handle.read(MAX_RAW + 1) if stat.S_ISREG(info.st_mode) and info.st_nlink == 1 else b""
     except OSError:
         raw = b""
-    result = sanitize(raw, args.remote_rc)
+    result = (sanitize(raw, args.remote_rc) if args.mode == "sanitize"
+              else sanitize_fd(raw, args.remote_rc))
     output_path.write_text(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n",
                            encoding="utf-8")
-    return 0 if result["state"] == "METADATA_ONLY" else 2
+    return 0 if result["state"] in {"METADATA_ONLY", "PROCESS_METADATA_ONLY"} else 2
 
 
 if __name__ == "__main__":
