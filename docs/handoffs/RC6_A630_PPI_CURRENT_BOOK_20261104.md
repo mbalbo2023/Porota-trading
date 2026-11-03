@@ -58,6 +58,9 @@ Un slot, cuando **todos** los guards efectivamente certifican:
    `receipt_retention=READY`, EXIT no suspendido y ronda EXIT completa con
    `required_scope_verified_current=True`. El adaptador nunca crea sidecar ni
    activa cuotas. `RuntimePPIBudget` concede dos leases distintos reales.
+   Ronda EXIT con `recorded_at` UTC con zona y antigüedad máxima **300s**,
+   no futura; la afirmación `required_scope_verified_current` debe existir y
+   el acquire nativo mantiene su revalidación atómica sobre posiciones actuales.
    Consumidor declarado **`UNSCOPED`** (clase legítima del budget productivo),
    prioridad `DISCOVERY`: nunca se atribuye un consumidor artificial A630 ni
    se imposta cupo EXIT/SCANNER.
@@ -96,7 +99,8 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
 - Distinción de stoppers del presupuesto sin acceder a provider: sidecar
   `PPI_BUDGET_SIDECAR_ABSENT`, integridad de ruta, snapshot no OBSERVED,
   `PPI_RETENTION_NOT_READY`, `PPI_EXIT_LOWER_SUSPENDED`,
-  `PPI_EXIT_ROUND_NOT_ATTESTED`, backend distinto al global real. Estos
+  `PPI_EXIT_ROUND_NOT_ATTESTED`,
+  `PPI_EXIT_ROUND_STALE_OR_CLOCK_INVALID`, backend distinto al global real. Estos
   códigos no autorizan activar cuotas ni sustituyen una prueba de lease.
 - **Conteo transport indeterminado ≠ cero:** si se pierde SSH/stdio después de
   un Current GET parcial, ambos contadores del artifact son `null` y
@@ -116,13 +120,13 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
 
 `python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v`
 
-27 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
+28 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
 dos leases, denial/lease nulo/repetido, replay, POST/GET duplicado, forma
 Book inválida, reloj futuro/naive/stale, alias 3-key divisa, fuente IOL,
 URL host/puerto/query falsificado, Book2 duplicado, hermano IOL permitido,
 hermano PPI denegado y source=PPI_FIELD, mount RO obligatorio,
 recibo falsificado, no-wire adapter ante Search/Estimate/Orders/Book2,
-ausencia real de sidecar sin creación, clasificación
+ausencia real de sidecar sin creación, clasificación y vigencia EXIT
 retención/EXIT, pérdida SSH tras Current parcial sin falso 0, cero órdenes. Compilar script,
 validar workflow YAML, Bash y CI focal.
 
