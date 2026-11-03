@@ -346,6 +346,118 @@ class A504MetadataTests(unittest.TestCase):
         self.assertEqual(a504._typed_timer_wake_system(
             "porota-iol-shadow-collector-rc6", runner=denied), "UNKNOWN")
 
+    def test_a591_oneshot_typed_duration_buckets_with_stable_invocation(self):
+        base = a504.SOURCE_UNIT
+        start = 20_000_000
+        for active, exit_us, elapsed, expected in (
+            ("activating", 15_000_000, 59_000_000, "IN_PROGRESS_LT_60S"),
+            ("activating", 15_000_000, 60_000_000, "IN_PROGRESS_GE_60S_LT_120S"),
+            ("activating", 15_000_000, 120_000_000, "IN_PROGRESS_GE_120S"),
+            ("inactive", start + 59_000_000, 180_000_000, "LT_60S"),
+            ("inactive", start + 60_000_000, 180_000_000, "GE_60S_LT_120S"),
+            ("inactive", start + 120_000_000, 180_000_000, "GE_120S"),
+        ):
+            with self.subTest(active=active, elapsed=elapsed):
+                fields = []
+                def runner(args, **kwargs):
+                    self.assertEqual(args[0:4], ["busctl", "--system", "--no-pager", "get-property"])
+                    self.assertEqual(args[-3].endswith("_2eservice"), True)
+                    self.assertEqual(kwargs["timeout"], 1)
+                    fields.append(args[-1])
+                    values = {"ExecMainStartTimestampMonotonic": f"t {start}\n",
+                              "ExecMainExitTimestampMonotonic": f"t {exit_us}\n",
+                              "ActiveState": f's "{active}"\n'}
+                    return subprocess.CompletedProcess(args, 0, values[args[-1]], "")
+                result = a504._service_duration_state(
+                    base, active, runner=runner, monotonic_us=start + elapsed)
+                self.assertEqual(result, expected)
+                self.assertEqual(fields, ["ExecMainStartTimestampMonotonic",
+                                          "ExecMainExitTimestampMonotonic",
+                                          "ExecMainStartTimestampMonotonic", "ActiveState"])
+
+    def test_a591_races_untyped_data_bad_clock_and_unknown_state_fail_closed(self):
+        base = a504.SOURCE_UNIT
+        def probe(active, responses, monotonic=140_000_000):
+            sequence = iter(responses)
+            def runner(args, **kwargs):
+                self.assertEqual(kwargs["timeout"], 1)
+                return subprocess.CompletedProcess(args, 0, next(sequence), "")
+            return a504._service_duration_state(
+                base, active, runner=runner, monotonic_us=monotonic)
+        good = ["t 20000000\n", "t 10000000\n", "t 20000000\n", 's "activating"\n']
+        for responses, state in (
+            (["t 20000000\n", "t 10000000\n", "t 21000000\n", 's "activating"\n'], "activating"),
+            (["t 20000000\n", "t 10000000\n", "t 20000000\n", 's "inactive"\n'], "activating"),
+            (["s 20000000\n", *good[1:]], "activating"),
+            (["t 20000000\n", "t 21000000\n", *good[2:]], "activating"),
+            (["t 20000000\n", "t 10000000 trailing\n", *good[2:]], "inactive"),
+            (["t 20000000\n", "t 10000000\n", "t 20000000\n", 's "inactive"\n'], "inactive"),
+            (["t 20000000\n", "t 21000000\n", "t 20000000\n", 's "active"\n'], "inactive"),
+            (["t 0\n", "t 0\n", "t 0\n", 's "activating"\n'], "activating"),
+        ):
+            with self.subTest(responses=responses, state=state):
+                self.assertEqual(probe(state, responses), "UNKNOWN")
+        self.assertEqual(probe("activating", good, monotonic=20_000_000), "UNKNOWN")
+        self.assertEqual(probe("activating", good, monotonic=True), "UNKNOWN")
+        self.assertEqual(a504._service_duration_state(base, "active", runner=lambda *_a, **_k: None),
+                         "UNKNOWN")
+        with self.assertRaises(ValueError):
+            a504._service_duration_state("other-service", "activating", runner=lambda *_a, **_k: None)
+        with self.assertRaises(ValueError):
+            a504._service_property(base, "org.freedesktop.systemd1.Service", "Environment",
+                                   runner=lambda *_a, **_k: None)
+        def denied(args, **kwargs):
+            return subprocess.CompletedProcess(args, 1, "t 20000000\n", "denied")
+        self.assertEqual(a504._service_duration_state(base, "activating", runner=denied,
+                                                       monotonic_us=140_000_000), "UNKNOWN")
+
+    def test_a591_metadata_never_promotes_parity_or_source_on_duration(self):
+        now = art(h=14, minute=36)
+        service_host = host()
+        service_host["service_duration_state"] = "IN_PROGRESS_GE_120S"
+        result = a504.classify("SOURCE_CYCLE", now, sample_two(now), service_host,
+                               boot_us=10_000_000_000, source="BOTH_STALE_OR_MISSING")
+        self.assertEqual(result["service_duration_state"], "IN_PROGRESS_GE_120S")
+        self.assertEqual(result["classification"], "NO_SOURCE")
+        self.assertFalse(result["full_day_cadence_certified"])
+        self.assertFalse(result["schedule_parity_verified"])
+        self.assertFalse(result["clock_compatible"])
+        non_source = a504.classify("CANDLE_INTEGRITY", now, (), service_host,
+                                   boot_us=10_000_000_000)
+        self.assertEqual(non_source["service_duration_state"], "NOT_APPLICABLE")
+
+    def test_a591_systemd_inspection_reads_only_source_service_typed_duration(self):
+        base = a504.SOURCE_UNIT
+        seen = []
+        def runner(args, **kwargs):
+            seen.append(args)
+            if args[0] == "systemctl":
+                active = "active" if args[-1].endswith(".timer") else "activating"
+                return subprocess.CompletedProcess(args, 0, (
+                    f"LoadState=loaded\nActiveState={active}\nResult=success\n"
+                    "DropInPaths=\nNeedDaemonReload=no\nExecMainExitTimestampMonotonic=0\n"), "")
+            self.assertEqual(args[0], "busctl")
+            if args[-1] == "LastTriggerUSecMonotonic":
+                return subprocess.CompletedProcess(args, 0, "t 9990000000\n", "")
+            if args[-1] == "WakeSystem":
+                return subprocess.CompletedProcess(args, 0, "b false\n", "")
+            payload = {
+                "ExecMainStartTimestampMonotonic": "t 20000000\n",
+                "ExecMainExitTimestampMonotonic": "t 10000000\n",
+                "ActiveState": 's "activating"\n',
+            }
+            return subprocess.CompletedProcess(args, 0, payload[args[-1]], "")
+        with patch.object(a504.time, "clock_gettime_ns", return_value=140_000_000_000):
+            result = a504.inspect_systemd(base, runner=runner)
+        self.assertEqual(result["query"], "READ_ONLY")
+        self.assertEqual(result["service_duration_state"], "IN_PROGRESS_GE_120S")
+        self.assertEqual([args[-1] for args in seen if args[0] == "busctl"], [
+            "LastTriggerUSecMonotonic", "WakeSystem",
+            "ExecMainStartTimestampMonotonic", "ExecMainExitTimestampMonotonic",
+            "ExecMainStartTimestampMonotonic", "ActiveState"])
+        self.assertFalse(result["schedule_parity_verified"])
+        self.assertFalse(result["clock_compatible"])
+
     def test_a581_probe_one_source_snapshot_and_sanitized_observational_receipt(self):
         now = art(h=14, minute=36)
         mocked_host = host()
@@ -388,6 +500,9 @@ class A504MetadataTests(unittest.TestCase):
             (0, "effective_calendar_parity", True),
             (0, "wake_system_state", "b true"),
             (0, "wake_system_state", True),
+            (0, "service_duration_state", "SILENT_TIMER"),
+            (0, "service_duration_state", "NOT_APPLICABLE"),
+            (1, "service_duration_state", "GE_120S"),
             (0, "public_ttl_state", "STALE_OR_MISSING"),
             (0, "evidence_ttl_state", "2026-11-03T14:35:00Z"),
             (0, "schedule_parity_verified", True),
@@ -630,6 +745,7 @@ class A504MetadataTests(unittest.TestCase):
                                   "matched_slot_buckets_30m":[0,0,0],
                                   "effective_calendar_parity":"UNKNOWN",
                                   "wake_system_state":"UNKNOWN",
+                                  "service_duration_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "public_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "evidence_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "schedule_parity_verified":False,"clock_compatible":False,
@@ -658,6 +774,7 @@ class A504MetadataTests(unittest.TestCase):
                                   "matched_slot_buckets_30m":[0,0,0],
                                   "effective_calendar_parity":"UNKNOWN",
                                   "wake_system_state":"UNKNOWN",
+                                  "service_duration_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "public_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "evidence_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "schedule_parity_verified":False,"clock_compatible":False,
@@ -687,6 +804,7 @@ class A504MetadataTests(unittest.TestCase):
                 "matched_slot_buckets_30m":[0,0,0],
                 "effective_calendar_parity":"UNKNOWN",
                 "wake_system_state":"UNKNOWN",
+                "service_duration_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "public_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "evidence_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "schedule_parity_verified":False, "clock_compatible":False,
@@ -728,6 +846,7 @@ class A504MetadataTests(unittest.TestCase):
                 "matched_slot_buckets_30m":[0,0,0],
                 "effective_calendar_parity":"UNKNOWN",
                 "wake_system_state":"UNKNOWN",
+                "service_duration_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "public_ttl_state":"STALE_OR_MISSING" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "evidence_ttl_state":"FRESH" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "schedule_parity_verified":False, "clock_compatible":False,

@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
-SCHEMA = "rc6.a504.systemd-cadence-readonly.v4"
+SCHEMA = "rc6.a504.systemd-cadence-readonly.v5"
 SOURCE_STATE = Path("/opt/porota-trading/data/market/rc6_source_cycle_dispatch_state.json")
 # Fixed producer contract (rc6_source_cycle_dispatch.py). These two clocks
 # describe PUBLIC and EVIDENCE stages; neither proves authenticated PPI Book,
@@ -52,6 +52,11 @@ LAST_TRIGGER_VALIDATION_STATES = frozenset({
 BOOT_COVERAGE_STATES = frozenset({"FULL_90M", "PARTIAL_90M", "UNKNOWN"})
 WAKE_SYSTEM_STATES = frozenset({"TRUE", "FALSE", "UNKNOWN"})
 STAGE_TTL_STATES = frozenset({"FRESH", "STALE_OR_MISSING", "UNKNOWN", "NOT_APPLICABLE"})
+SOURCE_UNIT = "porota-iol-shadow-collector-rc6"
+SERVICE_DURATION_STATES = frozenset({
+    "UNKNOWN", "NOT_APPLICABLE", "LT_60S", "GE_60S_LT_120S", "GE_120S",
+    "IN_PROGRESS_LT_60S", "IN_PROGRESS_GE_60S_LT_120S", "IN_PROGRESS_GE_120S",
+})
 ROLES = (
     ("SOURCE_CYCLE", "porota-iol-shadow-collector-rc6"),
     ("EOD_LOCAL", "porota-local-eod-history-rc6"),
@@ -223,6 +228,68 @@ def _typed_timer_wake_system(base: str, *, runner=subprocess.run) -> str:
     return "UNKNOWN"
 
 
+def _service_property(base: str, interface: str, field: str, *, runner) -> str | None:
+    """Fixed-unit, short-deadline typed D-Bus metadata; never read unit environment."""
+    if base != SOURCE_UNIT or (interface, field) not in {
+        ("org.freedesktop.systemd1.Service", "ExecMainStartTimestampMonotonic"),
+        ("org.freedesktop.systemd1.Service", "ExecMainExitTimestampMonotonic"),
+        ("org.freedesktop.systemd1.Unit", "ActiveState"),
+    }:
+        raise ValueError("UNTRUSTED_SERVICE_PROPERTY")
+    path = "/org/freedesktop/systemd1/unit/" + base.replace("-", "_2d") + "_2eservice"
+    raw = _run(["busctl", "--system", "--no-pager", "get-property",
+                "org.freedesktop.systemd1", path, interface, field],
+               runner=runner, timeout=1)
+    return raw if raw is not None and len(raw) <= 64 else None
+
+
+def _service_duration_state(base: str, initial_active: object, *, runner=subprocess.run,
+                            monotonic_us: int | None = None) -> str:
+    """One last/in-progress main-process duration bucket, never a cadence proof.
+
+    A start read before and after the exit read, plus an ActiveState re-read,
+    rejects a service invocation that changes while we observe it. An active
+    oneshot is measured against CLOCK_MONOTONIC, not CLOCK_BOOTTIME.
+    """
+    if base != SOURCE_UNIT:
+        raise ValueError("UNTRUSTED_SERVICE_PROPERTY")
+    if initial_active not in {"inactive", "activating"}:
+        return "UNKNOWN"
+    def get_us(field: str) -> int | None:
+        raw = _service_property(base, "org.freedesktop.systemd1.Service", field,
+                                runner=runner)
+        value = re.fullmatch(r"t (0|[1-9][0-9]{0,17})\n?", raw or "")
+        return int(value.group(1)) if value else None
+    start = get_us("ExecMainStartTimestampMonotonic")
+    last_exit = get_us("ExecMainExitTimestampMonotonic")
+    repeated_start = get_us("ExecMainStartTimestampMonotonic")
+    active_raw = _service_property(base, "org.freedesktop.systemd1.Unit",
+                                   "ActiveState", runner=runner)
+    if active_raw != f's "{initial_active}"\n' or start is None or start <= 0 or start != repeated_start:
+        return "UNKNOWN"
+    try:
+        now_us = (time.clock_gettime_ns(time.CLOCK_MONOTONIC) // 1000
+                  if monotonic_us is None else monotonic_us)
+    except (AttributeError, OSError, ValueError):
+        return "UNKNOWN"
+    if type(now_us) is not int or now_us <= start:
+        return "UNKNOWN"
+    if initial_active == "activating":
+        # Exit from this same start would contradict an in-progress oneshot.
+        if last_exit is not None and last_exit >= start:
+            return "UNKNOWN"
+        seconds = (now_us - start) / 1_000_000
+        prefix = "IN_PROGRESS_"
+    else:
+        if last_exit is None or not start <= last_exit <= now_us:
+            return "UNKNOWN"
+        seconds = (last_exit - start) / 1_000_000
+        prefix = ""
+    return (prefix + "LT_60S" if seconds < 60 else
+            prefix + "GE_60S_LT_120S" if seconds < 120 else
+            prefix + "GE_120S")
+
+
 def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
     if base not in {x[1] for x in ROLES}:
         raise ValueError("UNKNOWN_UNIT")
@@ -256,11 +323,15 @@ def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
     # passed the fixed-unit / drop-in / daemon-reload preflight above.
     trigger_us = _typed_timer_last_trigger(base, runner=runner)
     wake_system_state = _typed_timer_wake_system(base, runner=runner)
+    service_duration_state = (_service_duration_state(
+        base, service.get("ActiveState"), runner=runner)
+        if base == SOURCE_UNIT else "NOT_APPLICABLE")
     return {"query": "READ_ONLY", "timer_active": _safe_enum(timer.get("ActiveState"), ACTIVE_CLASSES),
             "service_result": _safe_enum(service.get("Result"), RESULT_CLASSES),
             "last_trigger_us": trigger_us,
             "last_exit_us": _int_field(service, "ExecMainExitTimestampMonotonic"),
             "wake_system_state": wake_system_state,
+            "service_duration_state": service_duration_state,
             # LoadState/NeedDaemonReload/DropInPaths do NOT prove the exact
             # installed OnCalendar or equivalence of CLOCK_BOOTTIME to the
             # systemd property clock. A future version must independently
@@ -410,6 +481,7 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
                                   "last_trigger_validation_state": "MISSING_OR_INVALID",
                                   "effective_calendar_parity": "UNKNOWN",
                                   "wake_system_state": "UNKNOWN",
+                                  "service_duration_state": "UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "public_ttl_state": public_ttl_state,
                                   "evidence_ttl_state": evidence_ttl_state,
                                   "schedule_parity_verified": False,
@@ -431,6 +503,11 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
     result["service"] = host.get("service_result") if host.get("service_result") in RESULT_CLASSES else "UNKNOWN"
     wake = host.get("wake_system_state")
     result["wake_system_state"] = wake if isinstance(wake, str) and wake in WAKE_SYSTEM_STATES else "UNKNOWN"
+    duration = host.get("service_duration_state")
+    result["service_duration_state"] = (
+        duration if role == "SOURCE_CYCLE" and isinstance(duration, str)
+        and duration in SERVICE_DURATION_STATES - {"NOT_APPLICABLE"}
+        else "UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE")
     result["schedule_parity_verified"] = host.get("schedule_parity_verified") is True
     result["clock_compatible"] = host.get("clock_compatible") is True
     last_trigger = host.get("last_trigger_us")
@@ -549,6 +626,7 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                   "full_day_cadence_certified", "journal_metadata_state",
                   "last_trigger_validation_state",
                   "effective_calendar_parity", "wake_system_state",
+                  "service_duration_state",
                   "public_ttl_state", "evidence_ttl_state",
                   *JOURNAL_COUNT_FIELDS}
         for (role, _), item in zip(ROLES, items):
@@ -564,6 +642,7 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                 item["last_trigger_validation_state"] not in LAST_TRIGGER_VALIDATION_STATES or
                 item["effective_calendar_parity"] != "UNKNOWN" or
                 item["wake_system_state"] not in WAKE_SYSTEM_STATES or
+                item["service_duration_state"] not in SERVICE_DURATION_STATES or
                 item["public_ttl_state"] not in STAGE_TTL_STATES or
                 item["evidence_ttl_state"] not in STAGE_TTL_STATES or
                 item["schedule_parity_verified"] is not False or
@@ -586,6 +665,9 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                 return fallback
             if ((item["public_ttl_state"], item["evidence_ttl_state"]) !=
                     stage_ttl_states(item["source"] if role == "SOURCE_CYCLE" else "NOT_APPLICABLE")):
+                return fallback
+            if (role == "SOURCE_CYCLE" and item["service_duration_state"] == "NOT_APPLICABLE") or (
+                    role != "SOURCE_CYCLE" and item["service_duration_state"] != "NOT_APPLICABLE"):
                 return fallback
             counts = tuple(item[field] for field in JOURNAL_COUNT_FIELDS)
             if (any(type(count) is not int for count in counts) or
