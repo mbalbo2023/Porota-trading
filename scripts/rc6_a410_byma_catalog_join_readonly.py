@@ -136,12 +136,19 @@ def _text(value: object) -> str:
 
 
 def _first(row: dict, keys: tuple[str, ...], aliases: dict | None, label: str):
-    present = [_text(row[key]) for key in keys if row.get(key) not in (None, "")]
-    if not present:
+    values = [row[key] for key in keys if row.get(key) not in (None, "")]
+    if not values:
         raise DiagnosticRejected("MISSING_" + label)
+    # Never stringify an ambiguous or untyped symbol into a valid identity.
+    if label == "SYMBOL" and any(
+            not isinstance(value, str) or not value.strip() for value in values):
+        raise DiagnosticRejected("MISSING_SYMBOL")
+    present = [_text(value) for value in values]
     translated = [(aliases or {}).get(value, value) for value in present]
     if len(set(translated)) != 1:
         raise DiagnosticRejected(label + "_CONFLICT")
+    if label == "SYMBOL" and translated[0] == "UNKNOWN":
+        raise DiagnosticRejected("MISSING_SYMBOL")
     return translated[0]
 
 

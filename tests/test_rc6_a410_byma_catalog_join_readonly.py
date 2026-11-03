@@ -134,6 +134,34 @@ class A410JoinContracts(unittest.TestCase):
         self.assertEqual(result["counts"]["byma_key_valid"], 0)
         self.assertEqual(result["counts"]["byma_nested_quote_rows"], 1)
 
+    def test_blank_nonstring_and_unknown_symbols_fail_closed(self):
+        invalid = ("", " ", "\t", "UNKNOWN", " unknown ", 0, 42, True,
+                   [], {"ticker": "PRIVATE_UNTRUSTED_SYMBOL"})
+        for index, value in enumerate(invalid):
+            with self.subTest(case=index, invalid_symbol_type=type(value).__name__):
+                self.byma["sources"][0]["records"] = [byma_record(value)]
+                self.write()
+                receipt = self.inspect()
+                self.assertEqual(receipt["diagnostic_status"], "JOIN_COUNTS_ONLY")
+                self.assertEqual(receipt["counts"]["byma_rows"], 1)
+                self.assertEqual(receipt["counts"]["byma_key_valid"], 0)
+                self.assertEqual(receipt["counts"]["byma_key_invalid"], 1)
+                self.assertEqual(receipt["reject_counts"]["MISSING_SYMBOL"], 1)
+                self.assertEqual(receipt["market_readiness"], "NO_VERIFICADO")
+                self.assertNotIn("PRIVATE_UNTRUSTED_SYMBOL", json.dumps(receipt))
+
+    def test_conflicting_symbol_aliases_remain_fail_closed(self):
+        row = byma_record("PRIVATE_FIRST_SYMBOL")
+        row["symbol"] = "PRIVATE_SECOND_SYMBOL"
+        self.byma["sources"][0]["records"] = [row]
+        self.write()
+        receipt = self.inspect()
+        self.assertEqual(receipt["counts"]["byma_key_valid"], 0)
+        self.assertEqual(receipt["reject_counts"]["SYMBOL_CONFLICT"], 1)
+        self.assertFalse(receipt["source_contract_ready"])
+        self.assertNotIn("PRIVATE_FIRST_SYMBOL", json.dumps(receipt))
+        self.assertNotIn("PRIVATE_SECOND_SYMBOL", json.dumps(receipt))
+
     def test_catalog_duplicate_and_absent_identity_are_counted_without_symbols(self):
         self.catalog["instruments"].extend([
             {"canonical_identity": canonical()},
