@@ -77,6 +77,16 @@ class A504NominalTests(unittest.TestCase):
 
 
 class A504ClassifyTests(unittest.TestCase):
+    def test_a556_valid_journal_without_systemd_gate_is_not_a_missing_nominal_slot(self):
+        now = art(h=11, minute=5)
+        counts = dict(zip(a504.JOURNAL_COUNT_FIELDS, (1, 1, 1, 1)))
+        result = a504.classify(
+            "SOURCE_CYCLE", now, sample_two(now), {"query": "UNAVAILABLE"},
+            boot_us=None, source="FRESH", journal_counts=counts)
+        self.assertEqual(result["classification"], "NO_VERIFICADO")
+        self.assertEqual(result["journal_metadata_state"], "MATCHING_NOT_EVALUATED")
+        self.assertEqual(result["observed_distinct_slots"], 0)
+
     def test_recent_two_distinct_source_invocations_are_observations_only(self):
         now = art(h=11, minute=5)
         r = a504.classify("SOURCE_CYCLE", now, sample_two(now), host(),
@@ -227,6 +237,59 @@ class A504MetadataTests(unittest.TestCase):
         self.assertNotIn("MESSAGE,", joined)
         self.assertNotIn("--follow", joined)
 
+    def test_a556_journal_metadata_identifies_missing_field_without_reading_message(self):
+        now = art(h=11, minute=5)
+        unit = "porota-iol-shadow-collector-rc6.service"
+        outside = art(h=10, minute=20)
+        rows = [
+            {"__REALTIME_TIMESTAMP": str(int(now.timestamp() * 1_000_000)),
+             "_SYSTEMD_UNIT": "other.service", "_SYSTEMD_INVOCATION_ID": "f"*32},
+            {"__REALTIME_TIMESTAMP": str(int(now.timestamp() * 1_000_000)),
+             "_SYSTEMD_UNIT": unit},
+            {"__REALTIME_TIMESTAMP": "invalid", "_SYSTEMD_UNIT": unit,
+             "_SYSTEMD_INVOCATION_ID": "a"*32},
+            {"__REALTIME_TIMESTAMP": str(int(outside.timestamp() * 1_000_000)),
+             "_SYSTEMD_UNIT": unit, "_SYSTEMD_INVOCATION_ID": "b"*32},
+        ]
+        def runner(args, **kwargs):
+            self.assertTrue(any(arg.startswith("--output-fields=") for arg in args))
+            self.assertFalse(any("MESSAGE" in arg for arg in args))
+            return subprocess.CompletedProcess(
+                args, 0, "\n".join(json.dumps(row) for row in rows) + "\n", "")
+        invocations, counts = a504.journal_invocations(
+            unit, now, runner=runner, with_metadata=True)
+        self.assertEqual(counts, {
+            "journal_records": 4, "journal_unit_records": 3,
+            "journal_invocation_records": 2, "journal_timestamp_records": 1})
+        self.assertEqual(invocations, (outside,))  # valid, but outside nominal session slots
+        self.assertEqual(a504.journal_metadata_state(invocations, counts, 0),
+                         "NO_NOMINAL_SLOT_MATCH")
+        self.assertEqual(a504.journal_metadata_state(
+            (), dict.fromkeys(a504.JOURNAL_COUNT_FIELDS, 0), 0),
+            "NO_JOURNAL_ROWS")
+        for counts, reason in (
+                ((1, 0, 0, 0), "UNIT_MISSING_OR_MISMATCH"),
+                ((1, 1, 0, 0), "INVOCATION_ID_MISSING_OR_INVALID"),
+                ((1, 1, 1, 0), "TIMESTAMP_MISSING_OR_INVALID"),
+                ((1, 1, 1, 1), "MATCHED_NOMINAL_SLOTS")):
+            with self.subTest(reason=reason):
+                self.assertEqual(a504.journal_metadata_state(
+                    (), dict(zip(a504.JOURNAL_COUNT_FIELDS, counts)),
+                    1 if reason == "MATCHED_NOMINAL_SLOTS" else 0), reason)
+
+    def test_a556_absent_or_oversized_journal_has_zero_safe_counts(self):
+        unit = "porota-iol-shadow-collector-rc6.service"
+        for output in ("invalid-json\n", "x" * (a504.MAX_JOURNAL_BYTES + 1)):
+            with self.subTest(size=len(output)):
+                def runner(args, **kwargs):
+                    return subprocess.CompletedProcess(args, 0, output, "")
+                invocations, counts = a504.journal_invocations(
+                    unit, art(), runner=runner, with_metadata=True)
+                self.assertIsNone(invocations)
+                self.assertEqual(list(counts.values()), [0, 0, 0, 0])
+                self.assertEqual(a504.journal_metadata_state(invocations, counts, 0),
+                                 "UNAVAILABLE")
+
     def test_oversized_journal_fails_closed(self):
         def runner(args, **kwargs):
             return subprocess.CompletedProcess(args, 0, "x"*(a504.MAX_JOURNAL_BYTES+1), "")
@@ -296,6 +359,9 @@ class A504MetadataTests(unittest.TestCase):
             data["roles"].append({"role":role,"classification":"NO_VERIFICADO",
                                   "nominal_mature_slots":3,"observed_distinct_slots":0,
                                   "last_two_mature_distinct":False,"journal_available":True,
+                                  "journal_metadata_state":"NO_JOURNAL_ROWS",
+                                  "journal_records":0,"journal_unit_records":0,
+                                  "journal_invocation_records":0,"journal_timestamp_records":0,
                                   "schedule_parity_verified":False,"clock_compatible":False,
                                   "source":"UNKNOWN",
                                   "timer":"active","service":"success",
@@ -314,6 +380,9 @@ class A504MetadataTests(unittest.TestCase):
             data["roles"].append({"role":role,"classification":"NO_VERIFICADO",
                                   "nominal_mature_slots":3,"observed_distinct_slots":0,
                                   "last_two_mature_distinct":False,"journal_available":True,
+                                  "journal_metadata_state":"NO_JOURNAL_ROWS",
+                                  "journal_records":0,"journal_unit_records":0,
+                                  "journal_invocation_records":0,"journal_timestamp_records":0,
                                   "schedule_parity_verified":False,"clock_compatible":False,
                                   "source":"UNKNOWN",
                                   "timer":"active","service":"success",
@@ -324,6 +393,40 @@ class A504MetadataTests(unittest.TestCase):
         data["roles"][0]["classification"]="SCHEDULE_SILENT"
         data["roles"][0]["timer"]="inactive"
         self.assertEqual(a504.sanitize_receipt(json.dumps(data).encode())["roles"],[])
+
+    def test_a556_sanitizer_rejects_forged_counts_and_optimistic_metadata(self):
+        data = a504.default_receipt()
+        data["probe_status"] = "METADATA_ONLY"
+        for role, _ in a504.ROLES:
+            data["roles"].append({
+                "role":role, "classification":"NO_VERIFICADO",
+                "nominal_mature_slots":3, "observed_distinct_slots":0,
+                "last_two_mature_distinct":False, "journal_available":True,
+                "journal_metadata_state":"NO_NOMINAL_SLOT_MATCH",
+                "journal_records":4, "journal_unit_records":3,
+                "journal_invocation_records":2, "journal_timestamp_records":1,
+                "schedule_parity_verified":False, "clock_compatible":False,
+                "source":"UNKNOWN", "timer":"active", "service":"success",
+                "full_day_cadence_certified":False})
+        self.assertEqual(a504.sanitize_receipt(json.dumps(data).encode()), data)
+        for key, bad in (
+                ("journal_records", 1500),
+                ("journal_unit_records", 9),
+                ("journal_timestamp_records", 9),
+                ("journal_metadata_state", "MATCHED_NOMINAL_SLOTS"),
+                ("observed_distinct_slots", 2),
+                ("journal_records", True),
+                ("journal_metadata_state", "SHADOW_READER_SECRET")):
+            with self.subTest(key=key,bad=bad):
+                forged = json.loads(json.dumps(data))
+                forged["roles"][0][key] = bad
+                self.assertEqual(
+                    a504.sanitize_receipt(json.dumps(forged).encode())["roles"], [])
+        pending = json.loads(json.dumps(data))
+        pending["roles"][0]["journal_metadata_state"] = "MATCHING_NOT_EVALUATED"
+        self.assertEqual(a504.sanitize_receipt(json.dumps(pending).encode()), pending)
+        pending["roles"][0]["classification"] = "RECENT_INVOCATIONS_OBSERVED"
+        self.assertEqual(a504.sanitize_receipt(json.dumps(pending).encode())["roles"], [])
 
     def test_workflow_uses_existing_nonrecurring_host_job_and_pr_is_offhost(self):
         text = WORKFLOW.read_text(encoding="utf-8")

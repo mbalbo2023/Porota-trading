@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
-SCHEMA = "rc6.a504.systemd-cadence-readonly.v1"
+SCHEMA = "rc6.a504.systemd-cadence-readonly.v2"
 SOURCE_STATE = Path("/opt/porota-trading/data/market/rc6_source_cycle_dispatch_state.json")
 # Fixed producer contract (rc6_source_cycle_dispatch.py). These two clocks
 # describe PUBLIC and EVIDENCE stages; neither proves authenticated PPI Book,
@@ -35,6 +35,17 @@ MATURE_GRACE_SECONDS = 120
 MAX_JOURNAL_BYTES = 128 * 1024
 MAX_JOURNAL_RECORDS = 1500
 INVOCATION = re.compile(r"^[0-9a-f]{32}$")
+JOURNAL_METADATA_STATES = frozenset({
+    "UNAVAILABLE", "NOT_COLLECTED", "NO_JOURNAL_ROWS",
+    "UNIT_MISSING_OR_MISMATCH", "INVOCATION_ID_MISSING_OR_INVALID",
+    "TIMESTAMP_MISSING_OR_INVALID", "MATCHING_NOT_EVALUATED",
+    "NO_NOMINAL_SLOT_MATCH",
+    "MATCHED_NOMINAL_SLOTS",
+})
+JOURNAL_COUNT_FIELDS = (
+    "journal_records", "journal_unit_records",
+    "journal_invocation_records", "journal_timestamp_records",
+)
 ROLES = (
     ("SOURCE_CYCLE", "porota-iol-shadow-collector-rc6"),
     ("EOD_LOCAL", "porota-local-eod-history-rc6"),
@@ -206,9 +217,21 @@ def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
             "schedule_parity_verified": False, "clock_compatible": False}
 
 
-def journal_invocations(unit: str, now: datetime, *, runner=subprocess.run) -> tuple[datetime, ...] | None:
+def journal_invocations(unit: str, now: datetime, *, runner=subprocess.run,
+                        with_metadata: bool = False):
+    """Journal metadata census, bounded and MESSAGE-free.
+
+    Counts describe only entries returned by the exact bounded query. They
+    cannot prove complete systemd cadence or infer a missing provider Book.
+    The legacy tuple-returning API remains for existing callers/tests.
+    """
     if unit not in {base + ".service" for _, base in ROLES}:
         raise ValueError("UNKNOWN_UNIT")
+    counts = dict.fromkeys(JOURNAL_COUNT_FIELDS, 0)
+    def result(ticks):
+        # Partial/malformed/truncated JSON is not a trustworthy census.
+        safe_counts = counts if ticks is not None else dict.fromkeys(JOURNAL_COUNT_FIELDS, 0)
+        return (ticks, safe_counts) if with_metadata else ticks
     start = now - timedelta(minutes=LOOKBACK_MINUTES)
     stdout = _run(["journalctl", "--no-pager", "--quiet", "--output=json",
                    "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,_SYSTEMD_INVOCATION_ID",
@@ -217,37 +240,63 @@ def journal_invocations(unit: str, now: datetime, *, runner=subprocess.run) -> t
                    f"--lines={MAX_JOURNAL_RECORDS}", "--unit", unit],
                   runner=runner, timeout=5)
     if stdout is None:
-        return None
+        return result(None)
     lines = stdout.splitlines()
     if len(lines) >= MAX_JOURNAL_RECORDS:
-        return None  # could be truncated, cannot prove complete coverage
+        return result(None)  # could be truncated, cannot prove complete coverage
+    counts["journal_records"] = len(lines)
     seen: dict[str, datetime] = {}
     try:
         for line in lines:
             if len(line) > 4096:
-                return None
+                return result(None)
             event = json.loads(line)
             if not isinstance(event, dict):
-                return None
+                return result(None)
             if event.get("_SYSTEMD_UNIT") != unit:
                 continue
+            counts["journal_unit_records"] += 1
             ident = event.get("_SYSTEMD_INVOCATION_ID")
             stamp = event.get("__REALTIME_TIMESTAMP")
             if not isinstance(ident, str) or not INVOCATION.fullmatch(ident):
                 continue  # manager messages have no invocation ID
+            counts["journal_invocation_records"] += 1
             if not isinstance(stamp, str) or not stamp.isascii() or not stamp.isdecimal():
                 continue
+            counts["journal_timestamp_records"] += 1
             tick = datetime.fromtimestamp(int(stamp) / 1_000_000, timezone.utc)
             if start <= tick <= now and (ident not in seen or tick < seen[ident]):
                 seen[ident] = tick
     except (ValueError, OverflowError, TypeError):
-        return None
-    return tuple(sorted(seen.values()))
+        return result(None)
+    return result(tuple(sorted(seen.values())))
+
+
+def journal_metadata_state(invocations, counts, observed_distinct_slots: int,
+                           *, matching_evaluated: bool = True) -> str:
+    """Explains the first failed evidence gate; never attributes cause to systemd."""
+    if invocations is None:
+        return "UNAVAILABLE"
+    if counts is None:
+        return "NOT_COLLECTED"
+    total, unit, ident, stamp = (counts[field] for field in JOURNAL_COUNT_FIELDS)
+    if not total:
+        return "NO_JOURNAL_ROWS"
+    if not unit:
+        return "UNIT_MISSING_OR_MISMATCH"
+    if not ident:
+        return "INVOCATION_ID_MISSING_OR_INVALID"
+    if not stamp:
+        return "TIMESTAMP_MISSING_OR_INVALID"
+    if not matching_evaluated:
+        return "MATCHING_NOT_EVALUATED"
+    return "MATCHED_NOMINAL_SLOTS" if observed_distinct_slots else "NO_NOMINAL_SLOT_MATCH"
 
 
 def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
              host: dict[str, object], *, boot_us: int | None,
-             source: str = "NOT_APPLICABLE") -> dict[str, object]:
+             source: str = "NOT_APPLICABLE",
+             journal_counts: dict[str, int] | None = None) -> dict[str, object]:
     if role not in {x[0] for x in ROLES} or now.tzinfo is None:
         raise ValueError("BAD_CLASSIFICATION_INPUT")
     within = [s for s in nominal_slots(role, now.astimezone(ART).date())
@@ -262,7 +311,12 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
                                   "clock_compatible": False,
                                   "source": source if source in SOURCE_CLASSES else "UNKNOWN",
                                   "timer": "UNKNOWN", "service": "UNKNOWN",
-                                  "full_day_cadence_certified": False}
+                                  "full_day_cadence_certified": False,
+                                  "journal_metadata_state": journal_metadata_state(
+                                      invocations, journal_counts, 0,
+                                      matching_evaluated=False),
+                                  **(journal_counts if journal_counts is not None else
+                                     dict.fromkeys(JOURNAL_COUNT_FIELDS, 0))}
     if not mature:
         result["classification"] = "NOT_DUE"
         return result
@@ -303,6 +357,8 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
             matched.append(slot)
             unused.remove(t)
     result["observed_distinct_slots"] = len(matched)
+    result["journal_metadata_state"] = journal_metadata_state(
+        invocations, journal_counts, len(matched))
     result["last_two_mature_distinct"] = len(mature) >= 2 and all(x in matched for x in mature[-2:])
     if not result["last_two_mature_distinct"]:
         return result
@@ -344,9 +400,11 @@ def host_probe(*, now: datetime | None = None, runner=subprocess.run,
     source = _bounded_state_source(now)
     for role, base in ROLES:
         host = inspect_systemd(base, runner=runner)
-        journal = journal_invocations(base + ".service", now, runner=runner)
+        journal, counts = journal_invocations(base + ".service", now, runner=runner,
+                                             with_metadata=True)
         receipt["roles"].append(classify(role, now, journal, host, boot_us=boot_us,
-                                         source=source if role == "SOURCE_CYCLE" else "NOT_APPLICABLE"))
+                                         source=source if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
+                                         journal_counts=counts))
     receipt["probe_status"] = "METADATA_ONLY" if all(
         item["timer"] != "UNKNOWN" for item in receipt["roles"]
         if item["classification"] != "NOT_DUE") else "NO_VERIFICADO"
@@ -373,7 +431,8 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
         fields = {"role", "classification", "nominal_mature_slots", "observed_distinct_slots",
                   "last_two_mature_distinct", "source", "timer", "service",
                   "journal_available", "schedule_parity_verified", "clock_compatible",
-                  "full_day_cadence_certified"}
+                  "full_day_cadence_certified", "journal_metadata_state",
+                  *JOURNAL_COUNT_FIELDS}
         for (role, _), item in zip(ROLES, items):
             if (not isinstance(item, dict) or set(item) != fields or item["role"] != role or
                 item["classification"] not in CLASSIFICATIONS or item["source"] not in SOURCE_CLASSES or
@@ -383,9 +442,28 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                 not 0 <= item["observed_distinct_slots"] <= item["nominal_mature_slots"] <= LOOKBACK_MINUTES + 2 or
                 type(item["last_two_mature_distinct"]) is not bool or
                 type(item["journal_available"]) is not bool or
+                item["journal_metadata_state"] not in JOURNAL_METADATA_STATES or
                 type(item["schedule_parity_verified"]) is not bool or
                 type(item["clock_compatible"]) is not bool or
                 item["full_day_cadence_certified"] is not False):
+                return fallback
+            counts = tuple(item[field] for field in JOURNAL_COUNT_FIELDS)
+            if (any(type(count) is not int for count in counts) or
+                    not 0 <= counts[3] <= counts[2] <= counts[1] <= counts[0] < MAX_JOURNAL_RECORDS):
+                return fallback
+            expected_meta = journal_metadata_state(
+                () if item["journal_available"] else None,
+                dict(zip(JOURNAL_COUNT_FIELDS, counts))
+                if item["journal_metadata_state"] != "NOT_COLLECTED" else None,
+                item["observed_distinct_slots"],
+                matching_evaluated=item["journal_metadata_state"] != "MATCHING_NOT_EVALUATED")
+            if (item["journal_metadata_state"] != expected_meta or
+                    (not item["journal_available"] and any(counts)) or
+                    (item["journal_metadata_state"] == "MATCHING_NOT_EVALUATED"
+                     and (item["classification"] != "NO_VERIFICADO"
+                          or item["observed_distinct_slots"] != 0)) or
+                    (item["journal_metadata_state"] != "NOT_COLLECTED" and
+                     item["observed_distinct_slots"] > counts[3])):
                 return fallback
             if item["classification"] == "RECENT_INVOCATIONS_OBSERVED" and not item["last_two_mature_distinct"]:
                 return fallback
