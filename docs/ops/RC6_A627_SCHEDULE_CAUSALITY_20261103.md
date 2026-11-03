@@ -67,6 +67,7 @@ contra abrir WAL/-shm en FS escribible. No se omite la regresión.
 | `SKIPPED` | Job `watch` o paso de sonda SKIPPED | Falla técnica si gate 10:07–10:27 esperaba skip |
 | `FAILED` | Run/job/paso FAILED según Actions | Estado causal del EOD/DB |
 | `PROBE_STEP_SUCCEEDED` | Paso `Collect bounded read-only host truth` SUCCESS | Runtime GREEN, timer systemd o DBA |
+| `NO_VERIFICADO_RERUN` | `run_attempt > 1`; jobs actuales pertenecen al reintento | Primer probe scheduled fresco o su resultado original |
 | `NO_VERIFICADO` | API, identidad, jobs o cobertura insuficientes | `0` faltantes ni éxito |
 
 El evento de run REST **no contiene el cron slot causal de origen**; el join
