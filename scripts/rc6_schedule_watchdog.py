@@ -23,6 +23,40 @@ ISSUE = 732
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 MAX_REPLY = 512 * 1024
 GRACE_MINUTES = 12
+DEDUPE_PAGE_SIZE = 5
+DEDUPE_MAX_COMMENTS = 500
+SAFE_ERROR_CLASSES = frozenset({
+    "A358_INVALID_ENDPOINT", "A358_API_RESPONSE_TOO_LARGE",
+    "A358_INVALID_POST_TARGET", "A358_DATE_ART_INVALID",
+    "A358_COMMENTS_SHAPE_INVALID", "A358_UNBOUNDED_DEDUPE",
+    "A358_REPORT_TOO_LARGE", "A358_COMMENT_NOT_CREATED",
+})
+
+
+class A358SafeError(ValueError):
+    """Expose a stable code, never a provider error body, URL or token."""
+
+    def __init__(self, code):
+        self.code = code if code in SAFE_ERROR_CLASSES else "A358_UNCLASSIFIED_ERROR"
+        super().__init__(self.code)
+
+
+def safe_error_class(exc):
+    if isinstance(exc, A358SafeError):
+        return exc.code
+    if isinstance(exc, HTTPError):
+        return "A358_HTTP_ERROR"
+    if isinstance(exc, URLError):
+        return "A358_NETWORK_ERROR"
+    if isinstance(exc, json.JSONDecodeError):
+        return "A358_JSON_ERROR"
+    if isinstance(exc, OSError):
+        return "A358_OS_ERROR"
+    if isinstance(exc, KeyError):
+        return "A358_KEY_ERROR"
+    if isinstance(exc, TypeError):
+        return "A358_TYPE_ERROR"
+    return "A358_VALUE_ERROR"
 
 
 def parse_clock(value):
@@ -105,20 +139,20 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES):
 
 def _get(url, token):
     if not url.startswith(f"https://api.github.com/repos/{REPO}/"):
-        raise ValueError("A358_INVALID_ENDPOINT")
+        raise A358SafeError("A358_INVALID_ENDPOINT")
     request = Request(url, headers={
         "Accept": "application/vnd.github+json", "User-Agent": "rc6-a358-readonly",
         "X-GitHub-Api-Version": "2022-11-28", "Authorization": "Bearer " + token})
     with urlopen(request, timeout=18) as response:
         raw = response.read(MAX_REPLY + 1)
     if len(raw) > MAX_REPLY:
-        raise ValueError("A358_API_RESPONSE_TOO_LARGE")
+        raise A358SafeError("A358_API_RESPONSE_TOO_LARGE")
     return json.loads(raw)
 
 
 def _post(url, data, token):
     if url != f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments":
-        raise ValueError("A358_INVALID_POST_TARGET")
+        raise A358SafeError("A358_INVALID_POST_TARGET")
     request = Request(url, data=json.dumps(data).encode(), method="POST", headers={
         "Accept": "application/vnd.github+json", "Content-Type": "application/json",
         "User-Agent": "rc6-a358-readonly", "X-GitHub-Api-Version": "2022-11-28",
@@ -130,22 +164,37 @@ def _post(url, data, token):
 def dedupe_issue(status, receipt, token, *, get=_get, post=_post):
     if status not in {"P1_SCHEDULE_SILENT", "P1_WORKFLOW_DISABLED"}:
         return "NOT_REQUIRED"
-    marker = f"<!--RC6-A358:{receipt['date_art']}:{status}-->"
+    date_art = receipt.get("date_art")
+    try:
+        if not isinstance(date_art, str) or len(date_art) != 10:
+            raise A358SafeError("A358_DATE_ART_INVALID")
+        midnight_art = datetime.fromisoformat(date_art).replace(tzinfo=ART)
+        if midnight_art.date().isoformat() != date_art:
+            raise A358SafeError("A358_DATE_ART_INVALID")
+    except ValueError as exc:
+        raise A358SafeError("A358_DATE_ART_INVALID") from exc
+    # GitHub expects UTC timestamps. 00:00 ART is 03:00 UTC, not 00:00 UTC.
+    since = midnight_art.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    marker = f"<!--RC6-A358:{date_art}:{status}-->"
     api = f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments"
-    since = receipt["date_art"] + "T00:00:00Z"
-    # Bounded scan; ambiguity fails closed, never duplicates P1 comments.
+    # A438: tiny pages keep each GitHub response below MAX_REPLY. A full-page
+    # boundary must not be mistaken for the end; ambiguity fails closed.
     found_end = False
-    for page in range(1, 6):
-        comments = get(api + f"?since={since}&per_page=100&page={page}", token)
-        if not isinstance(comments, list) or len(comments) > 100:
-            raise ValueError("A358_COMMENTS_SHAPE_INVALID")
-        if any(marker in str(c.get("body", "")) for c in comments if isinstance(c, dict)):
+    max_pages = DEDUPE_MAX_COMMENTS // DEDUPE_PAGE_SIZE
+    for page in range(1, max_pages + 1):
+        comments = get(api + f"?since={since}&per_page={DEDUPE_PAGE_SIZE}&page={page}", token)
+        if not isinstance(comments, list) or len(comments) > DEDUPE_PAGE_SIZE:
+            raise A358SafeError("A358_COMMENTS_SHAPE_INVALID")
+        if any(not isinstance(c, dict) or not isinstance(c.get("body"), str)
+               for c in comments):
+            raise A358SafeError("A358_COMMENTS_SHAPE_INVALID")
+        if any(marker in c["body"] for c in comments):
             return "ALREADY_REPORTED"
-        if len(comments) < 100:
+        if len(comments) < DEDUPE_PAGE_SIZE:
             found_end = True
             break
     if not found_end:
-        raise ValueError("A358_UNBOUNDED_DEDUPE")
+        raise A358SafeError("A358_UNBOUNDED_DEDUPE")
     body = (f"{marker}\n## A358 P1 — Market Watch schedule ({receipt['date_art']} ART)\n"
             f"**Estado:** \x60{status}\x60. **RCA del trigger externo:** \x60NO_VERIFICADO\x60. "
             "Un cron declarado no equivale a ejecuciones reales.\n\n"
@@ -159,10 +208,10 @@ def dedupe_issue(status, receipt, token, *, get=_get, post=_post):
             "exigir dos \x60event=schedule\x60 genuinos y recibos de host independientes. "
             "Sin SSH/DB/PPI/broker/órdenes ni Deploy. \x60VALIDADO_RUNTIME=NO_VERIFICADO\x60.\n")
     if len(body) > 2000:
-        raise ValueError("A358_REPORT_TOO_LARGE")
+        raise A358SafeError("A358_REPORT_TOO_LARGE")
     response_code = post(api, {"body": body}, token)
     if response_code != 201:
-        raise ValueError("A358_COMMENT_NOT_CREATED")
+        raise A358SafeError("A358_COMMENT_NOT_CREATED")
     return "ISSUE_COMMENT_CREATED"
 
 
@@ -192,9 +241,10 @@ def main(argv=None):
         if args.notify:
             result["notification"] = dedupe_issue(result["status"], result, token)
         exit_code = 2 if result["status"].startswith("P1_") else 0
-    except (HTTPError, URLError, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (HTTPError, URLError, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         exit_code = 3
         result["notification"] = "NO_VERIFICADO"
+        result["notification_error_class"] = safe_error_class(exc)
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -205,3 +255,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+
