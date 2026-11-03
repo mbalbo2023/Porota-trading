@@ -27,11 +27,26 @@ def _complement(store, currency):
     return record
 
 
+@pytest.mark.parametrize("ppi_source", ["REQUEST_CANDIDATE", "PPI_FIELD"])
 @pytest.mark.parametrize("currency", [None, "USD_CCL"])
 def test_unique_ppi_with_complement_only_sibling_does_not_veto_ppi_get(
-        tmp_path: Path, currency):
+        tmp_path: Path, currency, ppi_source):
     store = _store(tmp_path)
     _catalog(store, "ARS")  # PPI SearchInstrument identity.
+    if ppi_source == "PPI_FIELD":
+        # A native PPI settlement field is an equally genuine PPI authority.
+        ppi = catalog.normalize_record(
+            {"ticker": "GGAL", "type": "ACCIONES", "market": "BYMA",
+             "currency": "ARS", "settlement": "A-24HS"},
+            "A-24HS", NOW, "A595_PPI_NATIVE_SETTLEMENT")
+        assert ppi["settlement_source"] == "PPI_FIELD"
+        with store.connect() as connection:
+            catalog.persist(connection, ppi)
+    with store.connect() as connection:
+        found = connection.execute("""SELECT settlement_source
+          FROM financial_instrument_catalog WHERE ticker='GGAL' AND currency='ARS'
+            AND instrument_type='ACCIONES' AND market='BYMA' AND settlement='A-24HS'""").fetchone()
+    assert found[0] == ppi_source
     complement = _complement(store, currency)
     if currency is None:
         assert complement["status"] == "OBSERVED_SHADOW"
