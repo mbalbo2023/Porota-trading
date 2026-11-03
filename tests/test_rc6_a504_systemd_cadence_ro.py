@@ -278,6 +278,82 @@ class A504MetadataTests(unittest.TestCase):
             with patch.object(a504, "SOURCE_STATE", path):
                 return a504._bounded_state_source(at or art(h=11))
 
+    def test_a570_typed_dbus_timer_property_not_human_systemctl_timespan(self):
+        commands = []
+        timer = "porota-iol-shadow-collector-rc6.timer"
+        service = "porota-iol-shadow-collector-rc6.service"
+        def runner(args, **kwargs):
+            commands.append(args)
+            if args[0] == "systemctl":
+                self.assertNotIn("--property=LastTriggerUSecMonotonic", args)
+                self.assertIn(args[-1], (timer, service))
+                return subprocess.CompletedProcess(args, 0, (
+                    "LoadState=loaded\nActiveState=active\nResult=success\n"
+                    "DropInPaths=\nNeedDaemonReload=no\n"), "")
+            self.assertEqual(args, [
+                "busctl", "--system", "--no-pager", "get-property",
+                "org.freedesktop.systemd1",
+                "/org/freedesktop/systemd1/unit/porota_2diol_2dshadow_2dcollector_2drc6_2etimer",
+                "org.freedesktop.systemd1.Timer", "LastTriggerUSecMonotonic"])
+            self.assertEqual(kwargs["timeout"], 3)
+            return subprocess.CompletedProcess(args, 0, "t 9990000000\n", "")
+        receipt = a504.inspect_systemd("porota-iol-shadow-collector-rc6", runner=runner)
+        self.assertEqual([cmd[0] for cmd in commands], ["systemctl", "systemctl", "busctl"])
+        self.assertEqual(receipt["query"], "READ_ONLY")
+        self.assertEqual(receipt["last_trigger_us"], 9_990_000_000)
+        self.assertEqual(receipt["timer_active"], "active")
+        self.assertFalse(receipt["schedule_parity_verified"])
+        self.assertFalse(receipt["clock_compatible"])
+
+    def test_a570_dbus_uint64_malformed_values_fail_closed(self):
+        base = "porota-candle-integrity-rc6"
+        for raw in (
+            "", "t 18446744073709551615\n", "t -1\n", "t 01\n",
+            "t 1 trailing\n", 's "1"\n', "u 1\n", "t 1\nt 2\n",
+            "t 2\r\n", "t 1.0\n", "t 99999999999999999999\n",
+            "A" * 65,
+        ):
+            with self.subTest(raw=raw[:40]):
+                def runner(args, **kwargs):
+                    self.assertEqual(args[0], "busctl")
+                    self.assertEqual(args[-1], "LastTriggerUSecMonotonic")
+                    return subprocess.CompletedProcess(args, 0, raw, "")
+                self.assertIsNone(a504._typed_timer_last_trigger(base, runner=runner))
+
+    def test_a570_dbus_zero_stays_explicit_zero_not_success(self):
+        def runner(args, **kwargs):
+            return subprocess.CompletedProcess(args, 0, "t 0\n", "")
+        zero = a504._typed_timer_last_trigger("porota-local-eod-history-rc6", runner=runner)
+        self.assertEqual(zero, 0)
+        self.assertEqual(a504.last_trigger_validation_state(zero, 12345), "ZERO")
+
+    def test_a570_dbus_error_and_bad_unit_never_promote_cadence(self):
+        called = []
+        def failed(args, **kwargs):
+            called.append(args)
+            return subprocess.CompletedProcess(args, 1, "", "denied")
+        self.assertIsNone(a504._typed_timer_last_trigger(
+            "porota-iol-shadow-collector-rc6", runner=failed))
+        self.assertEqual(len(called), 1)
+        self.assertEqual(a504.last_trigger_validation_state(None, 12345), "MISSING_OR_INVALID")
+        with self.assertRaises(ValueError):
+            a504._typed_timer_last_trigger("not-on-allowlist", runner=failed)
+        self.assertEqual(len(called), 1)
+
+    def test_a570_systemd_preflight_rejects_dropin_before_dbus_query(self):
+        calls = []
+        def runner(args, **kwargs):
+            calls.append(args)
+            if args[0] == "busctl":
+                self.fail("invalid unit state must not reach busctl")
+            return subprocess.CompletedProcess(args, 0, (
+                "LoadState=loaded\nActiveState=active\nResult=success\n"
+                "DropInPaths=/etc/systemd/system/override.conf\nNeedDaemonReload=no\n"), "")
+        receipt = a504.inspect_systemd("porota-iol-shadow-collector-rc6", runner=runner)
+        self.assertEqual(receipt["query"], "UNAVAILABLE")
+        self.assertIsNone(receipt["last_trigger_us"])
+        self.assertEqual(len(calls), 1)
+
     def test_journal_query_excludes_message_and_bounds_data(self):
         now = art(h=11, minute=5)
         commands = []
