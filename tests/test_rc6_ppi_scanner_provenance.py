@@ -65,6 +65,20 @@ def isolated_ledger(monkeypatch, market_root, current):
     return ledger
 
 
+def legacy_ppi_cache(tmp_path, *, row=None):
+    now = datetime.now(timezone.utc) - timedelta(seconds=3)
+    native = now.isoformat()
+    item = {"symbol": "GGAL", "asset_class": "ACCIONES", "market": "BYMA",
+            "currency": "ARS", "settlement": "A-24HS", "last": "100",
+            "state": "READY", "last_kind": "TRADE", "source_at": native,
+            "trade_at": native, "book_at": native, "received_at": native}
+    item.update(row or {})
+    (tmp_path / "primary_last.json").write_text(json.dumps({
+        "source": "PPI", "market": "BYMA", "captured_at": native,
+        "quotes_by_symbol": {"GGAL": item}}), encoding="utf-8")
+    return item
+
+
 def test_reader_market_root_matches_observer_persistent_data_mount(tmp_path):
     # Docker binds host DATA to container /app/data. Both sides refer to the
     # same market directory; no independent path override may silently drift.
@@ -313,6 +327,92 @@ def test_direct_legacy_ppi_fallback_must_not_bypass_native_quote_gate(invalid):
     key = ledger._exact_key(fallback)
     assert not ledger.source_view(fallback, "PPI", current, expected_identity=key)[
         "selection_eligible"]
+
+
+@pytest.mark.parametrize("invalid", ["book_missing", "book_stale", "book_future",
+                                     "zero_last", "nonfinite_last", "unavailable_state",
+                                     "false_state", "trade_mismatch", "review_conflict",
+                                     "complement_origin", "catalog_origin"])
+def test_iol_cache_fallback_without_scanner_must_fail_closed(tmp_path, monkeypatch, invalid):
+    current = datetime.now(timezone.utc)
+    stale = (current - timedelta(minutes=10)).isoformat()
+    future = (current + timedelta(minutes=5)).isoformat()
+    variants = {
+        "book_missing": {"book_at": ""},
+        "book_stale": {"book_at": stale},
+        "book_future": {"book_at": future},
+        "zero_last": {"last": 0},
+        "nonfinite_last": {"last": "NaN"},
+        "unavailable_state": {"state": "UNAVAILABLE"},
+        "false_state": {"state": False},
+        "trade_mismatch": {"trade_at": stale},
+        "review_conflict": {"review_status": "CONFLICT_REVIEW_REQUIRED"},
+        "complement_origin": {"source": "IOL"},
+        "catalog_origin": {"source": "PPI_CATALOG"},
+    }
+    legacy_ppi_cache(tmp_path, row=variants[invalid])
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {} and meta["state"] == "UNAVAILABLE"
+    assert any(review["reason"] == "PPI_FALLBACK_NATIVE_QUOTE_INELIGIBLE"
+               for review in meta["identity_reviews"])
+
+
+def test_iol_cache_fallback_with_true_native_book_remains_available(tmp_path, monkeypatch):
+    row = legacy_ppi_cache(tmp_path)
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values["GGAL"]["provider_observed_at"] == row["trade_at"]
+    assert meta["state"] == "READY"
+
+
+def test_iol_sqlite_fallback_missing_native_book_does_not_select(tmp_path, monkeypatch):
+    db = tmp_path / "invalid_ppi.sqlite"
+    PaperStore(db).add_quote(quote(book_at=""))
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE market_snapshots SET source='PPI'")
+    values, meta = isolated_iol(monkeypatch, tmp_path, db)._primary_snapshot()
+    assert values == {} and meta["state"] == "UNAVAILABLE"
+    assert any(review["reason"] == "PPI_FALLBACK_NATIVE_QUOTE_INELIGIBLE"
+               for review in meta["identity_reviews"])
+
+
+def test_iol_sqlite_newer_invalid_receipt_suppresses_older_exact_quote(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    old, new = (now - timedelta(seconds=40)).isoformat(), (now - timedelta(seconds=3)).isoformat()
+    db = tmp_path / "invalid_after_valid_ppi.sqlite"
+    store = PaperStore(db)
+    store.add_quote(quote(observed_at=old, trade_at=old, book_at=old))
+    store.add_quote(quote(observed_at=new, trade_at=new, book_at=""))
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE market_snapshots SET source='PPI'")
+    values, meta = isolated_iol(monkeypatch, tmp_path, db)._primary_snapshot()
+    assert values == {} and meta["state"] == "UNAVAILABLE"
+    assert any(row["reason"] == "NEWER_PPI_FALLBACK_UNAVAILABLE_SUPPRESSES_PRIOR"
+               for row in meta["identity_reviews"])
+
+
+@pytest.mark.parametrize("invalid_is_newer", [True, False])
+def test_iol_fallback_scanner_mixed_invalid_receipt_never_wins(tmp_path, monkeypatch,
+                                                                invalid_is_newer):
+    current = datetime.now(timezone.utc)
+    old, new = (current - timedelta(seconds=40)).isoformat(), (current - timedelta(seconds=3)).isoformat()
+    scanner_at, fallback_at = (old, new) if invalid_is_newer else (new, old)
+    emit(tmp_path, quote(observed_at=scanner_at, trade_at=scanner_at, book_at=scanner_at))
+    legacy_ppi_cache(tmp_path, row={"received_at": fallback_at, "trade_at": fallback_at,
+                                    "source_at": fallback_at, "book_at": ""})
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    if invalid_is_newer:
+        assert values == {} and meta["state"] == "UNAVAILABLE"
+    else:
+        assert values["GGAL"]["provider_observed_at"] == scanner_at
+
+
+def test_iol_ambiguous_fallback_identity_does_not_resurrect_scanner(tmp_path, monkeypatch):
+    emit(tmp_path, quote(currency="ARS"))
+    legacy_ppi_cache(tmp_path, row={"currency": "USD", "book_at": ""})
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values == {}
+    assert any(row["reason"] == "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES"
+               for row in meta["identity_reviews"])
 
 
 def test_newer_unavailable_scanner_blocks_older_same_identity_fallback(tmp_path, monkeypatch):
