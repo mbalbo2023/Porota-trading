@@ -180,10 +180,17 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
                 terms.get("native_exit_proof_verified") is not True):
             return _hold("FI_NATIVE_EXIT_LIFECYCLE_MISMATCH", family)
     elif scenario.exit_mode == "MATURITY_REDEMPTION":
-        # Current spot PAPER exit is time/price-based, not a VN amortization
-        # lifecycle. Even an asserted receipt field is not native ledger
-        # support: wait for a separate production-native owner and tests.
-        return _hold("FI_NATIVE_MATURITY_LIFECYCLE_MISSING", family)
+        # Maturity is an issuer cash/VN obligation, not an intraday SELL.
+        # Only fixed-face LETRAS have the native no-SELL terminal path in
+        # this adapter; the broker separately verifies the runtime owner.
+        if (family != "LETRAS" or scenario.stress_loss != scenario.entry_cash or
+                terms.get("native_maturity_redemption_supported") is not True or
+                terms.get("maturity_redemption_receipt_contract") !=
+                "EXACT_NOMINAL_EVENT_REDUCER_V1" or
+                terms.get("currency") != scenario.identity[3] or
+                not any(flow[1] == "AMORTIZATION" and flow[2] == exit_at.isoformat()
+                        for flow in scenario.projected_obligations)):
+            return _hold("FI_NATIVE_MATURITY_LIFECYCLE_MISSING", family)
     else:
         return _hold("FI_EXIT_MODE_UNSUPPORTED", family)
 
@@ -234,15 +241,24 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
                 "scenario_type": scenario.exit_mode,
                 "scenario_is_forecast": False,
                 "external_authentication_required": True,
-                "native_exit_minutes": native_exit_minutes,
+                "native_exit_minutes": native_exit_minutes if scenario.exit_mode == "MARKET_EXIT" else None,
+                "scenario_quantity_vn": str(scenario.quantity_vn),
+                "scenario_entry_cash": str(scenario.entry_cash),
                 "fixed_income_exit_plan": {
-                    "mode": "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT",
+                    "mode": ("FI_NATIVE_MATURITY_EVENT_LEDGER_V1" if scenario.exit_mode == "MATURITY_REDEMPTION"
+                             else "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT"),
                     "verified": True,
                     "strategy_id": STRATEGY_IDS[family],
-                    "max_hold_minutes": native_exit_minutes,
+                    "max_hold_minutes": native_exit_minutes if scenario.exit_mode == "MARKET_EXIT" else None,
                     "exit_at": exit_at.isoformat(),
+                    "quantity_vn": str(scenario.quantity_vn),
+                    "issuer_source_sha256": terms["source_sha256"],
+                    "issuer_source_reference": terms["source_reference"],
+                    "maturity_redemption_receipt_contract": (
+                        terms.get("maturity_redemption_receipt_contract")
+                        if scenario.exit_mode == "MATURITY_REDEMPTION" else None),
                     "coupon_ledger_required": True,
-                    "nominal_rebase_required": False,
+                    "nominal_rebase_required": scenario.exit_mode == "MATURITY_REDEMPTION",
                     "economic_event_policy": "EXACT_NOMINAL_EVENT_REDUCER_V1",
                 },
                 "source_authority": "PPI_EXACT_IDENTITY; OFFICIAL_ISSUER_VERIFIED",
@@ -282,6 +298,17 @@ def decide_fixed_income(quote, engine, at):
             native_exit_minutes=max_minutes)
         if candidate[0] != "BUY":
             return candidate
+        if family == "LETRAS":
+            runtime = inputs.get("runtime_evidence")
+            if (not isinstance(runtime, Mapping) or
+                    not _SHA256.fullmatch(str(runtime.get("manifest_sha256") or "")) or
+                    not _SHA256.fullmatch(str(runtime.get("receipt_sha256") or "")) or
+                    not _SHA256.fullmatch(str(runtime.get("quote_sha256") or "")) or
+                    tuple(runtime.get("identity") or ()) != quote.contract.key):
+                return _hold("FI_NATIVE_MATURITY_RELEASE_PROOF_MISSING", family)
+            candidate[3]["fixed_income_exit_plan"]["release_manifest_sha256"] = runtime["manifest_sha256"]
+            candidate[3]["fixed_income_exit_plan"]["release_receipt_sha256"] = runtime["receipt_sha256"]
+            candidate[3]["fixed_income_exit_plan"]["quote_sha256"] = runtime["quote_sha256"]
         # This is a runtime engine capability, not a source-provided string.
         # Current engine has no fixed-income event-aware exit owner and must
         # hold even when a mock/invalid source asserts native exit support.

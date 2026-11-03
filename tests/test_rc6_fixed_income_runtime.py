@@ -269,7 +269,12 @@ def test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound(tmp_
     assert result[0] == "HOLD"
     assert result[3]["reason_code"] == "FI_NATIVE_EVENT_EXIT_ENGINE_NOT_BOUND"
     assert result[3]["fixed_income_runtime_evidence"]["manifest_sha256"] == pin
-    assert not callable(getattr(broker, "fixed_income_native_exit_authorized", None))
+    # The A456 engine now has a narrowly bound LETRAS maturity callback.
+    # It must still reject this ON MARKET_EXIT plan even with valid issuer/OOS
+    # research inputs: no native market-sale admission is inferred.
+    assert callable(getattr(broker, "fixed_income_native_exit_authorized", None))
+    assert broker.fixed_income_native_exit_authorized(
+        quote, {"mode": "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT"}, AT.isoformat()) is False
     with store.connect() as db:
         assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0

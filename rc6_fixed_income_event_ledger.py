@@ -136,10 +136,67 @@ def _seed(db, paper_id):
     immutable = {key: root[key] for key in ("paper_id", "source", "symbol", "asset_class",
                  "market", "currency", "settlement", "quantity", "entry_price", "entry_cost", "opened_at")}
     immutable.update(contract=asdict(contract), buy=buy)
+    # New A456 native LETRAS BUY permanently binds its release-reviewed exit
+    # plan and source/clock proof into the existing immutable lot seed digest.
+    # An UPDATE to the position's JSON cannot silently replace maturity,
+    # issuer, redemption cash rules or the original max-loss reservation.
+    plan = features.get("fixed_income_exit_plan")
+    if isinstance(plan, dict) and plan.get("mode") == "FI_NATIVE_MATURITY_EVENT_LEDGER_V1":
+        if family != "LETRAS":
+            raise ValueError("FI_LEDGER_NATIVE_PLAN_FAMILY_MISMATCH")
+        immutable.update(
+            native_maturity_plan=plan,
+            release_proof=features.get("fixed_income_runtime_evidence"),
+            scenario_quantity_vn=features.get("scenario_quantity_vn"),
+            scenario_entry_cash=features.get("scenario_entry_cash"),
+            exit_policy=features.get("exit_policy"),
+        )
     digest = _hash(_canonical(immutable).encode())
     seed = PositionSeed(paper_id, root["symbol"], family, root["market"], root["settlement"],
                         root["currency"], str(quantity), "VN", root["opened_at"],
                         "paper-fill:" + str(buy["id"]), digest)
+    return seed
+
+
+def register_native_buy_in_transaction(connection, paper_id):
+    """Bind a native FI lot to its exact simulated BUY *in the BUY transaction*.
+
+    The caller has just written ``paper_positions`` and ``paper_fills`` and
+    owns BEGIN IMMEDIATE. Never create a seed from a later inferred position,
+    a generic seller or a historical gap. A failure aborts the caller's whole
+    atomic BUY; no half-open PAPER position may survive without its FI lot.
+    """
+    if not connection.in_transaction:
+        raise ValueError("FI_NATIVE_BUY_TRANSACTION_REQUIRED")
+    state = connection.execute(
+        "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+    if state is None or state[0] != "PRODUCTION_PAPER" or type(state[1]) is not int or state[1] != 0:
+        raise ValueError("FI_NATIVE_BUY_PAPER_SAFETY_REQUIRED")
+    seed = _seed(connection, paper_id)
+    if seed.family != "LETRAS":
+        raise ValueError("FI_NATIVE_BUY_ONLY_FIXED_FACE_LETTERS")
+    root = connection.execute(
+        "SELECT features_json FROM paper_positions WHERE paper_id=?", (paper_id,)).fetchone()
+    features = _json(root[0])
+    plan = features.get("fixed_income_exit_plan")
+    if (not isinstance(plan, dict) or plan.get("mode") != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
+            or plan.get("strategy_id") != "FI_LETRA_PAPER_V1"
+            or plan.get("quantity_vn") != seed.initial_nominal
+            or not isinstance(plan.get("issuer_source_reference"), str)
+            or not plan["issuer_source_reference"].strip()
+            or plan.get("maturity_redemption_receipt_contract") !=
+               "EXACT_NOMINAL_EVENT_REDUCER_V1"):
+        raise ValueError("FI_NATIVE_BUY_MATURITY_CONTRACT_MISMATCH")
+    for key in ("issuer_source_sha256", "release_manifest_sha256", "release_receipt_sha256",
+                "quote_sha256"):
+        _digest(plan.get(key))
+    existing = connection.execute("SELECT 1 FROM paper_fi_lots WHERE paper_id=?",
+                                  (paper_id,)).fetchone()
+    if existing:
+        raise ValueError("FI_NATIVE_BUY_LOT_ALREADY_REGISTERED")
+    seed_json = _canonical(asdict(seed))
+    connection.execute("INSERT INTO paper_fi_lots VALUES(?,?,?)",
+                       (paper_id, seed_json, seed.position_sha256))
     return seed
 
 
