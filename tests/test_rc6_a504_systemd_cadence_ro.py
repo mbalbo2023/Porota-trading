@@ -268,9 +268,9 @@ class A504MetadataTests(unittest.TestCase):
             (), dict.fromkeys(a504.JOURNAL_COUNT_FIELDS, 0), 0),
             "NO_JOURNAL_ROWS")
         for counts, reason in (
-                ((1, 0, 0, 0), "UNIT_FIELD_UNAVAILABLE"),
-                ((1, 1, 0, 0), "INVOCATION_ID_UNAVAILABLE"),
-                ((1, 1, 1, 0), "REALTIME_TIMESTAMP_UNAVAILABLE"),
+                ((1, 0, 0, 0), "UNIT_MISSING_OR_MISMATCH"),
+                ((1, 1, 0, 0), "INVOCATION_ID_MISSING_OR_INVALID"),
+                ((1, 1, 1, 0), "TIMESTAMP_MISSING_OR_INVALID"),
                 ((1, 1, 1, 1), "MATCHED_NOMINAL_SLOTS")):
             with self.subTest(reason=reason):
                 self.assertEqual(a504.journal_metadata_state(

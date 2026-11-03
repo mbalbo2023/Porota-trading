@@ -37,8 +37,8 @@ MAX_JOURNAL_RECORDS = 1500
 INVOCATION = re.compile(r"^[0-9a-f]{32}$")
 JOURNAL_METADATA_STATES = frozenset({
     "UNAVAILABLE", "NOT_COLLECTED", "NO_JOURNAL_ROWS",
-    "UNIT_FIELD_UNAVAILABLE", "INVOCATION_ID_UNAVAILABLE",
-    "REALTIME_TIMESTAMP_UNAVAILABLE", "MATCHING_NOT_EVALUATED",
+    "UNIT_MISSING_OR_MISMATCH", "INVOCATION_ID_MISSING_OR_INVALID",
+    "TIMESTAMP_MISSING_OR_INVALID", "MATCHING_NOT_EVALUATED",
     "NO_NOMINAL_SLOT_MATCH",
     "MATCHED_NOMINAL_SLOTS",
 })
@@ -283,11 +283,11 @@ def journal_metadata_state(invocations, counts, observed_distinct_slots: int,
     if not total:
         return "NO_JOURNAL_ROWS"
     if not unit:
-        return "UNIT_FIELD_UNAVAILABLE"
+        return "UNIT_MISSING_OR_MISMATCH"
     if not ident:
-        return "INVOCATION_ID_UNAVAILABLE"
+        return "INVOCATION_ID_MISSING_OR_INVALID"
     if not stamp:
-        return "REALTIME_TIMESTAMP_UNAVAILABLE"
+        return "TIMESTAMP_MISSING_OR_INVALID"
     if not matching_evaluated:
         return "MATCHING_NOT_EVALUATED"
     return "MATCHED_NOMINAL_SLOTS" if observed_distinct_slots else "NO_NOMINAL_SLOT_MATCH"
