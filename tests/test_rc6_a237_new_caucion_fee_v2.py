@@ -77,21 +77,22 @@ def test_marginal_positive_legacy_net_is_a_v2_negative_paper_hold(tmp_path, monk
     assert broker._cash(MONDAY, "ARS") == Decimal("2000000")
 
 
-def test_live_monday_positive_fee_v2_and_idempotent_cash(tmp_path, monkeypatch):
+def test_live_monday_positive_fee_v2_still_holds_without_book_quantity_unit(tmp_path, monkeypatch):
     store, broker = _runtime(tmp_path, monkeypatch)
     offer = _live(store)
     monkeypatch.setattr(admission, "admission_status", lambda: (True, ""))
     gross, fees, net = offer.economics(AMOUNT)
     assert gross > fees > 0 and net > 0
     assert fees == conservative_public_modeled_fee(AMOUNT, gross, 3)
-    first = broker.place_caucion(offer, AMOUNT, "A237:V2_POSITIVE", as_of=MONDAY)
-    again = broker.place_caucion(offer, AMOUNT, "A237:V2_POSITIVE", as_of=MONDAY)
-    assert first["paper_id"] == again["paper_id"]
-    assert Decimal(first["total_fees"]) == fees
-    assert broker._cash(MONDAY, "ARS") == Decimal("1900000")
+    # Valid arithmetic / V2 fee authority cannot replace proof that PPI Book
+    # quantity is ARS principal. Legacy fabricated BOOK_READY is not authority.
+    for request in ("A237:V2_POSITIVE", "A237:V2_POSITIVE"):
+        with pytest.raises(ValueError, match="CAUCION_BOOK_QUANTITY_UNIT_UNVERIFIED"):
+            broker.place_caucion(offer, AMOUNT, request, as_of=MONDAY)
+    assert broker._cash(MONDAY, "ARS") == Decimal("2000000")
     with store.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 1
-        assert db.execute("SELECT COUNT(*) FROM paper_events").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM paper_events").fetchone()[0] == 0
 
 
 def test_v2_allocator_receipt_replays_without_repricing_historical_token(

@@ -229,25 +229,26 @@ def test_quote_created_during_read_is_compared_to_receipt_clock(tmp_path, monkey
 
     monkeypatch.setattr(live, "datetime", Clock)
     result = live.refresh(Reader(), store, now=started)
-    assert result["states"] == {"PESOS7": "BOOK_READY"}
+    assert result["states"] == {"PESOS7": "BOOK_QUANTITY_UNIT_UNVERIFIED"}
     assert result["real_routes"] == []
     with store.connect() as connection:
         current = connection.execute("SELECT quoted_at,observed_at,state FROM paper_caucion_live_book").fetchone()
         history = connection.execute("SELECT quoted_at,observed_at,state FROM paper_caucion_live_book_history").fetchone()
-    assert tuple(current) == tuple(history) == (quoted.isoformat(), received.isoformat(), "BOOK_READY")
+    assert tuple(current) == tuple(history) == (
+        quoted.isoformat(), received.isoformat(), "BOOK_QUANTITY_UNIT_UNVERIFIED")
     decision_at = received + timedelta(seconds=1)
     offers, errors = offers_from_store(store, now=decision_at)
-    assert not errors and len(offers) == 1
+    assert offers == [] and errors == ["PESOS7:BOOK_QUANTITY_UNIT_UNVERIFIED"]
     assert quoted <= received <= decision_at
     # Admission retains its separate stricter 90s TTL after collection.
     offers, errors = offers_from_store(store, now=received + timedelta(seconds=91))
-    assert offers == [] and errors == ["PESOS7:CAUCION_LIVE_BOOK_STALE"]
+    assert offers == [] and errors == ["PESOS7:BOOK_QUANTITY_UNIT_UNVERIFIED"]
 
 
 @pytest.mark.parametrize("quote_offset,receipt_offset,expected", [
     (2, 1, "FUTURE_BOOK"),  # genuinely ahead of the response receipt
     (-119, 3, "STALE_BOOK"),  # expires during the read; batch time looked fresh
-    (-118, 2, "BOOK_READY"),  # original 120-second collector boundary is intact
+    (-118, 2, "BOOK_QUANTITY_UNIT_UNVERIFIED"),  # fresh time alone does not attest units
     (0, -1, "READ_ERROR:ValueError"),  # receipt clock regressed before batch
     (None, 2, "READ_ERROR:ValueError"),
     ("naive", 2, "READ_ERROR:ValueError"),
@@ -276,8 +277,7 @@ def test_receipt_clock_preserves_future_stale_and_timestamp_rejections(
         row = connection.execute("SELECT observed_at,state,tna_fraction,available_principal FROM paper_caucion_live_book").fetchone()
     assert row["observed_at"] == received.isoformat()
     assert row["state"] == expected
-    if expected != "BOOK_READY":
-        assert row["tna_fraction"] is row["available_principal"] is None
+    assert row["tna_fraction"] is row["available_principal"] is None
 
 
 def test_each_sequential_response_has_its_own_receipt(tmp_path, monkeypatch):
@@ -297,7 +297,7 @@ def test_each_sequential_response_has_its_own_receipt(tmp_path, monkeypatch):
 
     monkeypatch.setattr(live, "collection_window", lambda _at: True)
     result = live.refresh(Reader(), store, now=NOW, clock_fn=lambda: clock[0])
-    assert result["ready"] == 2 and result["real_routes"] == []
+    assert result["ready"] == 0 and result["real_routes"] == []
     assert len(set(receipts.values())) == 2
     with store.connect() as connection:
         rows = connection.execute("SELECT ticker,quoted_at,observed_at FROM paper_caucion_live_book ORDER BY ticker").fetchall()
