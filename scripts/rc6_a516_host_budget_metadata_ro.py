@@ -1,4 +1,4 @@
-"""A516/A519: classify existing PPI budget and auxiliary policy intent.
+"""A516/A519/A620: classify PPI sidecar, auxiliary and PID1 launch policy.
 
 Streamed through the existing manual A331 GitHub Action to the pinned PAPER
 observer container. This diagnostic reads only the global budget sidecar through
@@ -7,6 +7,8 @@ database, acquires a budget lease, calls PPI, or changes PPI Watch.
 
 An OBSERVED snapshot or APPROVED policy-file mode grants no Book GET or trade.
 The auxiliary docker-exec policy cannot attest the running observer's policy.
+A620 observes only PID1's initial environment and immutable default policy;
+this is not an assertion of effective process memory or live EXIT authority.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import resource
 import stat
 
 
-SCHEMA = "rc6.a516.ppi.budget.metadata-only.v2"
+SCHEMA = "rc6.a516.ppi.budget.metadata-only.v3"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 SIDECAR_KINDS = frozenset({"ABSENT", "REGULAR_SINGLE_LINK", "UNSAFE_OR_ALIAS", "UNAVAILABLE"})
 SNAPSHOT_STATES = frozenset({"ABSENT", "OBSERVED", "DEGRADED", "UNVERIFIED"})
@@ -28,6 +30,9 @@ EXEC_ENV_MODES = frozenset({"APPROVED", "SHADOW", "OFF", "INVALID", "UNSET", "UN
 REQUESTED_MODES = frozenset({"APPROVED", "SHADOW", "OFF", "INVALID", "UNAVAILABLE", "UNINSPECTED"})
 POLICY_SELECTORS = frozenset({"CONTAINER_DEFAULT", "CONTAINER_OVERRIDE", "UNINSPECTED"})
 SUSPENSION_STATES = frozenset({"YES", "NO", "UNKNOWN"})
+PID1_COMMAND_STATES = frozenset({"EXPECTED_BV_RUNTIME", "UNEXPECTED", "UNAVAILABLE", "UNINSPECTED"})
+PID1_ENV_BYTES = 16 * 1024
+PID1_COMMAND_BYTES = 2048
 DIAGNOSES = frozenset({
     "SIDECAR_ABSENT", "SIDECAR_PATH_UNSAFE", "SNAPSHOT_UNAVAILABLE",
     "BUDGET_DEGRADED", "EXIT_SERVICE_SUSPENDED", "BUDGET_OBSERVED_NOT_AUTHORITY",
@@ -92,7 +97,91 @@ def auxiliary_policy_intent(environ=None, *, policy_loader=None) -> dict:
             "auxiliary_requested_mode": requested, "policy_path_selector": source}
 
 
-def build_receipt(kind: str, snapshot: dict, mode: str, *, policy_intent=None) -> dict:
+def _read_procfile_bounded(path: str, limit: int) -> bytes:
+    """One bounded procfs read; no child processes, logs, secrets or mutations."""
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        value = os.read(fd, limit + 1)
+    finally:
+        os.close(fd)
+    if not value or len(value) > limit or not value.endswith(b"\x00"):
+        raise ValueError("A620_PROCFILE_UNAVAILABLE")
+    return value
+
+
+def _selected_pid1_environment(raw: bytes) -> dict:
+    """Drop all unrelated entries in memory; never retain/return credential values."""
+    if not raw or len(raw) > PID1_ENV_BYTES or not raw.endswith(b"\x00"):
+        raise ValueError("A620_PID1_ENV_UNAVAILABLE")
+    selected = {}
+    for entry in raw[:-1].split(b"\x00"):
+        key, sep, value = entry.partition(b"=")
+        if not sep or not key:
+            raise ValueError("A620_PID1_ENV_INVALID")
+        if key not in {b"POROTA_DYNAMIC_CAPACITY_MODE", b"POROTA_CAPACITY_POLICY_PATH"}:
+            continue
+        if len(value) > 512 or key in selected:
+            raise ValueError("A620_PID1_ENV_AMBIGUOUS")
+        selected[key] = value.decode("ascii", errors="strict")
+    return {key.decode("ascii"): value for key, value in selected.items()}
+
+
+def _unknown_pid1(command: str) -> dict:
+    return {"observer_pid1_command": command,
+            "observer_pid1_environment_mode": "UNINSPECTED",
+            "observer_pid1_policy_file_mode": "UNINSPECTED",
+            "observer_pid1_launch_requested_mode": "UNINSPECTED",
+            "observer_pid1_policy_selector": "UNINSPECTED"}
+
+
+def observer_pid1_launch_intent(*, proc_reader=None, policy_loader=None) -> dict:
+    """Attest immutable container PID1 *launch* intent, not the effective runtime.
+
+    Product 7e1e744d starts `python bv_paper_runtime.py` as PID1. Its
+    scanner and EXIT children inherit initial environment, but Python may
+    subsequently modify os.environ; /proc/1/environ is not live Python state.
+    Any failure or unexpected topology is an explicit NO_VERIFICADO.
+
+    Never inspect private env values except two allowlisted capacity selectors.
+    A policy PATH override is not opened, even if supplied by PID1, because an
+    arbitrary path may target a secret. The product's default policy is read
+    through its strict 16 KiB read_json/validate_policy contract only.
+    """
+    reader = _read_procfile_bounded if proc_reader is None else proc_reader
+    try:
+        command = reader("/proc/1/cmdline", PID1_COMMAND_BYTES)
+    except (OSError, ValueError, TypeError):
+        return _unknown_pid1("UNAVAILABLE")
+    if command not in {
+            b"python\x00bv_paper_runtime.py\x00",
+            b"/usr/local/bin/python\x00bv_paper_runtime.py\x00",
+            b"python3\x00bv_paper_runtime.py\x00"}:
+        return _unknown_pid1("UNEXPECTED")
+    try:
+        env = _selected_pid1_environment(reader("/proc/1/environ", PID1_ENV_BYTES))
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return _unknown_pid1("EXPECTED_BV_RUNTIME")
+    if "POROTA_CAPACITY_POLICY_PATH" in env:
+        # Do not dereference arbitrary container/secret paths in a diagnostic.
+        mode = env.get("POROTA_DYNAMIC_CAPACITY_MODE")
+        environment = ("UNSET" if mode is None else mode.upper()
+                       if mode.upper() in {"OFF", "SHADOW", "APPROVED"} else "INVALID")
+        return {"observer_pid1_command": "EXPECTED_BV_RUNTIME",
+                "observer_pid1_environment_mode": environment,
+                "observer_pid1_policy_file_mode": "UNAVAILABLE",
+                "observer_pid1_launch_requested_mode": "UNAVAILABLE",
+                "observer_pid1_policy_selector": "CONTAINER_OVERRIDE"}
+    aux = auxiliary_policy_intent(env, policy_loader=policy_loader)
+    return {"observer_pid1_command": "EXPECTED_BV_RUNTIME",
+            "observer_pid1_environment_mode": aux["exec_environment_mode"],
+            "observer_pid1_policy_file_mode": aux["policy_file_mode"],
+            "observer_pid1_launch_requested_mode": aux["auxiliary_requested_mode"],
+            "observer_pid1_policy_selector": aux["policy_path_selector"]}
+
+
+def build_receipt(kind: str, snapshot: dict, mode: str, *, policy_intent=None,
+                  pid1_launch_intent=None) -> dict:
     """Project trusted fixed enums, never JSON content, paths, or account info."""
     if kind not in SIDECAR_KINDS or mode not in CAPACITY_MODES:
         raise ValueError("A516_INPUT_NOT_ALLOWLISTED")
@@ -108,6 +197,37 @@ def build_receipt(kind: str, snapshot: dict, mode: str, *, policy_intent=None) -
             or policy_intent["auxiliary_requested_mode"] not in REQUESTED_MODES
             or policy_intent["policy_path_selector"] not in POLICY_SELECTORS):
         raise ValueError("A519_POLICY_INTENT_NOT_ALLOWLISTED")
+    if pid1_launch_intent is None:
+        pid1_launch_intent = _unknown_pid1("UNINSPECTED")
+    if (not isinstance(pid1_launch_intent, dict)
+            or set(pid1_launch_intent) != { "observer_pid1_command",
+                "observer_pid1_environment_mode", "observer_pid1_policy_file_mode",
+                "observer_pid1_launch_requested_mode", "observer_pid1_policy_selector" }
+            or pid1_launch_intent["observer_pid1_command"] not in PID1_COMMAND_STATES
+            or pid1_launch_intent["observer_pid1_environment_mode"] not in EXEC_ENV_MODES
+            or pid1_launch_intent["observer_pid1_policy_file_mode"] not in POLICY_FILE_MODES
+            or pid1_launch_intent["observer_pid1_launch_requested_mode"] not in REQUESTED_MODES
+            or pid1_launch_intent["observer_pid1_policy_selector"] not in POLICY_SELECTORS):
+        raise ValueError("A620_PID1_INTENT_NOT_ALLOWLISTED")
+    inspected = pid1_launch_intent["observer_pid1_command"] == "EXPECTED_BV_RUNTIME"
+    selected = pid1_launch_intent["observer_pid1_policy_selector"]
+    unknown = all(pid1_launch_intent[key] == "UNINSPECTED" for key in (
+        "observer_pid1_environment_mode", "observer_pid1_policy_file_mode",
+        "observer_pid1_launch_requested_mode", "observer_pid1_policy_selector"))
+    if ((not inspected and not unknown) or (inspected and not unknown and
+            selected == "CONTAINER_OVERRIDE" and (
+                pid1_launch_intent["observer_pid1_policy_file_mode"] != "UNAVAILABLE" or
+                pid1_launch_intent["observer_pid1_launch_requested_mode"] != "UNAVAILABLE"))):
+        raise ValueError("A620_PID1_CONTEXT_CONFLICT")
+    if inspected and not unknown and selected == "CONTAINER_DEFAULT":
+        file_mode = pid1_launch_intent["observer_pid1_policy_file_mode"]
+        environment = pid1_launch_intent["observer_pid1_environment_mode"]
+        requested = ("UNAVAILABLE" if file_mode == "UNAVAILABLE" else
+                     "INVALID" if environment == "INVALID" else
+                     file_mode if environment == "UNSET" else environment)
+        if (environment == "UNINSPECTED" or file_mode == "UNINSPECTED"
+                or pid1_launch_intent["observer_pid1_launch_requested_mode"] != requested):
+            raise ValueError("A620_PID1_DEFAULT_MODE_CONFLICT")
     if not isinstance(snapshot, dict) or snapshot.get("status") not in SNAPSHOT_STATES:
         raise ValueError("A516_SNAPSHOT_NOT_ALLOWLISTED")
     status = snapshot["status"]
@@ -137,6 +257,8 @@ def build_receipt(kind: str, snapshot: dict, mode: str, *, policy_intent=None) -
         "snapshot_status": status,
         "capacity_environment_mode": mode,
         **policy_intent,
+        **pid1_launch_intent,
+        "observer_launch_scope": "PID1_INITIAL_ENV_NOT_EFFECTIVE_PROCESS_STATE",
         "policy_observation_scope": "AUXILIARY_DOCKER_EXEC_NOT_OBSERVER_PROCESS",
         "runtime_effective_policy": "NO_VERIFICADO",
         "runtime_ledger_and_exit_reserves": "NO_VERIFICADO",
@@ -166,7 +288,11 @@ def verify_receipt(value: object) -> bool:
             value["capacity_environment_mode"],
             policy_intent={field: value[field] for field in (
                 "policy_file_mode", "exec_environment_mode",
-                "auxiliary_requested_mode", "policy_path_selector")})
+                "auxiliary_requested_mode", "policy_path_selector")},
+            pid1_launch_intent={field: value[field] for field in (
+                "observer_pid1_command", "observer_pid1_environment_mode",
+                "observer_pid1_policy_file_mode", "observer_pid1_launch_requested_mode",
+                "observer_pid1_policy_selector")})
         return (value == expected and set(value) == set(expected)
                 and all(type(value[key]) is type(expected[key]) for key in expected)
                 and value["diagnosis"] in DIAGNOSES)
@@ -189,7 +315,8 @@ def main() -> int:
         sidecar = artifact_root(database) / "ppi-budget/global.sqlite"
         receipt = build_receipt(sidecar_kind(sidecar),
             runtime_budget_snapshot(database), capacity_mode(),
-            policy_intent=auxiliary_policy_intent())
+            policy_intent=auxiliary_policy_intent(),
+            pid1_launch_intent=observer_pid1_launch_intent())
         if not verify_receipt(receipt):
             raise ValueError("A516_RECEIPT_GUARD_RED")
     except Exception:
