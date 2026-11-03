@@ -65,8 +65,10 @@ Un slot, cuando **todos** los guards efectivamente certifican:
    `receipt_retention=READY`, EXIT no suspendido y ronda EXIT completa con
    `required_scope_verified_current=True`. El adaptador nunca crea sidecar ni
    activa cuotas. `RuntimePPIBudget` concede dos leases distintos reales.
-   Ronda EXIT con `recorded_at` UTC con zona y antigüedad máxima **300s**,
-   no futura; la afirmación `required_scope_verified_current` debe existir y
+   Ronda EXIT con `recorded_at` **epoch Unix segundos (number finito)** de la
+   proyección real `runtime_budget_snapshot`, antigüedad máxima **300s**,
+   no futura; `required_scope_basis=CURRENT_VERIFIED_PAPER_LEDGER`,
+   `required_scope_verified_current=true`, y
    el acquire nativo mantiene su revalidación atómica sobre posiciones actuales.
    Consumidor declarado **`UNSCOPED`** (clase legítima del budget productivo),
    prioridad `DISCOVERY`: nunca se atribuye un consumidor artificial A630 ni
