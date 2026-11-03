@@ -129,8 +129,6 @@ def assess_causal_paper_sale(*, identity, book1, decision, book2, contract,
     executed = _instant(execution_at, "EXECUTION")
     settled = _instant(settlement["settlement_at"], "SETTLEMENT")
     latency = _decimal(latency_seconds, "LATENCY", positive=True)
-    if latency > Decimal("3600"):
-        raise ValueError("FI_EXIT_LATENCY_BOUND_EXCEEDED")
     latency_us = latency * Decimal(1_000_000)
     if latency_us != latency_us.to_integral_value():
         raise ValueError("FI_EXIT_LATENCY_SUBMICROSECOND_UNSUPPORTED")
@@ -173,7 +171,11 @@ def assess_causal_paper_sale(*, identity, book1, decision, book2, contract,
     # decision was actually known. The next native book must occur strictly
     # after the later instant plus the latency budget, never before it.
     decision_usable_at = max(decided, decision_known)
-    if (b2_at <= decision_usable_at + timedelta(microseconds=int(latency_us)) or
+    try:
+        causal_cutoff = decision_usable_at + timedelta(microseconds=int(latency_us))
+    except OverflowError as exc:
+        raise ValueError("FI_EXIT_LATENCY_NOT_REPRESENTABLE") from exc
+    if (b2_at <= causal_cutoff or
             b2_at > b2_seen or b2_seen > b2_known or b2_known > executed):
         blockers.append("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID")
     if book1["journal_event_sha256"] == book2["journal_event_sha256"]:
@@ -206,7 +208,9 @@ def assess_causal_paper_sale(*, identity, book1, decision, book2, contract,
             fee_execution_price*qty*multiplier-fee_amount):
         blockers.append("FI_EXIT_SETTLEMENT_CURRENCY_TIME_OR_CASH_CONFLICT")
     if (not isinstance(contract["payout_currency"],str) or
-            contract["payout_currency"] not in {"ARS", "USD"}):
+            not contract["payout_currency"] or
+            contract["payout_currency"] != contract["payout_currency"].strip() or
+            len(contract["payout_currency"]) > 24):
         blockers.append("FI_EXIT_ISSUER_PAYOUT_CURRENCY_INVALID")
     # Issuer payment currency (e.g. USD coupons for an ARS bond sale) is
     # distinct from trade/fee settlement. It must never become implicit FX.
