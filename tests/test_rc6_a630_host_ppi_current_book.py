@@ -1,7 +1,7 @@
 """A630 adversarial no-network tests: exact full-key and two true leases."""
 
 from contextlib import contextmanager, nullcontext
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import base64
 import json
@@ -14,7 +14,8 @@ import unittest
 from unittest.mock import patch
 
 from scripts.rc6_a630_host_ppi_current_book import (
-    SLOTS, TwoGetAtomicBudget, _existing_shared_budget, _strict_adapter_send,
+    SLOTS, TwoGetAtomicBudget, _existing_shared_budget, _exit_round_fresh,
+    _strict_adapter_send,
     _http_body_hashes,
     _utc, capture_two,
     decode_target, host_preflight, target_for_slot, unverified_transport_receipt,
@@ -175,7 +176,8 @@ class TestA630(unittest.TestCase):
             module.budget_from_environment = lambda database: RuntimePPIBudget(sidecar)
             snapshot = {'status':'OBSERVED','receipt_retention':{'status':'READY'},
                         'exit_service':{'lower_suspended':False,'round':{
-                            'status':'COMPLETE','required_scope_verified_current':True}}}
+                            'status':'COMPLETE','required_scope_verified_current':True,
+                            'recorded_at':datetime.now(timezone.utc).isoformat()}}}
             module.runtime_budget_snapshot = lambda database: snapshot
             with patch.dict(sys.modules, {'cg_paper_workspace': workspace,
                                           'rc6_ppi_global_budget': module}):
@@ -197,6 +199,19 @@ class TestA630(unittest.TestCase):
                 budget, reason = _existing_shared_budget()
                 self.assertIsNone(budget)
                 self.assertEqual(reason, 'PPI_EXIT_ROUND_NOT_ATTESTED')
+
+    def test_exit_round_must_be_recent_tz_aware_and_not_future(self):
+        cycle={'status':'COMPLETE','required_scope_verified_current':True,
+               'recorded_at':(NOW-timedelta(seconds=299)).isoformat()}
+        self.assertTrue(_exit_round_fresh(cycle,now=NOW))
+        cycle['recorded_at']=(NOW-timedelta(seconds=301)).isoformat()
+        self.assertFalse(_exit_round_fresh(cycle,now=NOW))
+        cycle['recorded_at']=(NOW+timedelta(seconds=1)).isoformat()
+        self.assertFalse(_exit_round_fresh(cycle,now=NOW))
+        cycle['recorded_at']='2026-11-04T14:20:00'
+        self.assertFalse(_exit_round_fresh(cycle,now=NOW))
+        cycle.pop('recorded_at')
+        self.assertFalse(_exit_round_fresh(cycle,now=NOW))
 
     def test_missing_credentials_no_get(self):
         shared = Shared()
