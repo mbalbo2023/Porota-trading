@@ -1,0 +1,136 @@
+name: RC6 A491 retention metadata READ_ONLY
+
+# Only the three owned files can trigger a postmerge host metadata receipt.
+# PRs never access host secrets; no schedule dependency and no DB open/copy.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a491-retention-metadata-readonly.yml'
+      - 'scripts/rc6_a491_retention_host_metadata_ro.py'
+      - 'tests/test_rc6_a491_retention_host_metadata_ro.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a491-retention-metadata-readonly.yml'
+      - 'scripts/rc6_a491_retention_host_metadata_ro.py'
+      - 'tests/test_rc6_a491_retention_host_metadata_ro.py'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Fallback only: bounded metadata with no SQLite open/copy'
+        required: true
+        type: choice
+        options: [METADATA_ONLY]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Same as A330 and A315: no simultaneous retention host I/O.
+  group: rc6-retention-offhost-census
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate bounded read-only probe and public sanitizer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a491_retention_host_metadata_ro.py tests/test_rc6_a491_retention_host_metadata_ro.py
+          python3 -m unittest discover -s tests -p 'test_rc6_a491_retention_host_metadata_ro.py' -v
+          git diff --check
+
+  host_metadata:
+    needs: contracts
+    # pull_request runs only contracts. Host after reviewed merge to main,
+    # or a governed workflow_dispatch fallback, never untrusted PR code.
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.mode == 'METADATA_ONLY'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Allocate runner-only evidence and default fail-closed receipt
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$(mktemp -d -p "$RUNNER_TEMP" rc6-a491-private-XXXXXX)"
+          chmod 700 "$private"
+          echo "RC6_A491_DIR=$private" >> "$GITHUB_ENV"
+          python3 -B scripts/rc6_a491_retention_host_metadata_ro.py sanitize \
+            --raw "$private/.a491-raw.json" \
+            --out "$private/a491-sanitized.json" \
+            --remote-rc 255 || true
+      - name: Bounded SSH fixed metadata only (no SQLite file open)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$RC6_A491_DIR"
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$DO_SSH_KEY" && test -n "$DO_KNOWN_HOSTS" || {
+            echo '::error::A491_HOST_CREDENTIALS_UNAVAILABLE'
+            exit 2
+          }
+          printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$private/known_hosts"
+          chmod 600 "$private/id_key" "$private/known_hosts"
+          # Limit any compromised/unexpected remote stdout on the runner.
+          ulimit -f 16
+          set +e
+          timeout 45 ssh -i "$private/id_key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$private/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 25 python3 -B - host-probe' \
+            < scripts/rc6_a491_retention_host_metadata_ro.py \
+            > "$private/.a491-raw.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          python3 -B scripts/rc6_a491_retention_host_metadata_ro.py sanitize \
+            --raw "$private/.a491-raw.json" \
+            --out "$private/a491-sanitized.json" \
+            --remote-rc "$remote_rc"
+      - name: Upload ONLY strict public metadata receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a491-retention-metadata-${{ github.run_id }}
+          path: ${{ env.RC6_A491_DIR }}/a491-sanitized.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy fixed private runner files
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A491_DIR:-}"
+          if test -n "$private" && test -d "$private" && \
+             test "${private#"$RUNNER_TEMP"/}" != "$private" && \
+             test "$(stat -c %a "$private")" = 700; then
+            for file in "$private/id_key" "$private/known_hosts" \
+                        "$private/.a491-raw.json" "$private/a491-sanitized.json"; do
+              if test -f "$file" && ! test -L "$file"; then
+                shred -u -- "$file"
+              fi
+            done
+            rmdir "$private"
+          fi
