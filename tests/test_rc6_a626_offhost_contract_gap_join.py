@@ -44,13 +44,14 @@ def _db(tmp_path):
 
 
 def _catalog(con, fam, symbol, currency="ARS", settlement="CI",
-             source="PPI_FIELD", capability="NEEDS_CONTRACT"):
+             source="PPI_FIELD", capability="NEEDS_CONTRACT", metadata=None):
+    normalized_metadata = {"_discovery_source":
+                           "PPI_PRIMARY" if source == "PPI_FIELD" else "IOL_COMPLEMENTARY"}
+    normalized_metadata.update(metadata or {})
     con.execute("""INSERT INTO financial_instrument_catalog
        VALUES (?,?,?,?,?,?,?,?,?)""", (
         symbol, fam, "BYMA", currency, settlement, source,
-        "AVAILABLE", capability,
-        json.dumps({"_discovery_source":
-                    "PPI_PRIMARY" if source == "PPI_FIELD" else "IOL_COMPLEMENTARY"})))
+        "AVAILABLE", capability, json.dumps(normalized_metadata)))
 
 
 def _v2(con, sid, fam, symbol, fields, *,
@@ -77,12 +78,14 @@ def _receipt(path):
 
 def _valid_six_families(tmp_path):
     path, con = _db(tmp_path)
-    _catalog(con, "BONOS", "BND-AL30")
+    _catalog(con, "BONOS", "BND-AL30", metadata={
+        "financial_contract_v17": {"cash_multiplier": 0.01}})
     _catalog(con, "ON", "CORP-YMCJO", currency="USD")
     _catalog(con, "OPCIONES", "CALL-GFGC")
     _catalog(con, "FUTUROS", "FUT-A3")
     _catalog(con, "CAUCIONES", "PESOS1")
-    _catalog(con, "FCI", "FUND-A", currency="USD")
+    _catalog(con, "FCI", "FUND-A", currency="USD", metadata={
+        "paper_family_contract_v1": {"cutoff_time": "12:00"}})
     _v2(con, 1, "BONOS", "BND-AL30", {
         "market": "BYMA", "currency": "ARS", "settlement": "CI",
         "evidence_scope": "PARTIAL_AUTHENTICATED_XHR"})
@@ -130,11 +133,13 @@ def test_six_families_exact_five_key_and_aggregate_only(tmp_path):
     assert f["BONOS"]["exact_v2_ppi"] == 1
     assert f["BONOS"]["ppi_partial_or_unverified"] == 1
     assert f["BONOS"]["ppi_missing_required_fields"] == 1
+    assert f["BONOS"]["catalog_financial_contract_v17_declared"] == 1
     assert f["OBLIGACIONES"]["v2_absent"] == 1
     assert f["OPCIONES"]["exact_v2_complement_only"] == 1
     assert f["FUTUROS"]["ppi_field_conflicts"] == 1
     assert f["CAUCIONES"]["ppi_partial_or_unverified"] == 1
     assert f["FCI"]["ticker_only_v2_mismatch"] == 1
+    assert f["FCI"]["catalog_paper_family_contract_v1_declared"] == 1
     dump = json.dumps(report, sort_keys=True)
     for sensitive in ("BND-AL30", "CORP-YMCJO", "CALL-GFGC",
                       "FUT-A3", "PESOS1", "FUND-A", "A3-CONFLICT"):
@@ -268,3 +273,20 @@ def test_dangling_wal_symlink_is_rejected(tmp_path):
     Path(str(path) + "-wal").symlink_to(tmp_path / "missing-sidecar")
     with pytest.raises(gap.Rejected, match="COPY_UNCHECKPOINTED_SIDECAR_PRESENT"):
         gap.inspect(path, receipt)
+
+
+def test_archived_ppi_snapshot_without_current_is_not_active_contract(tmp_path):
+    path, con = _db(tmp_path)
+    _catalog(con, "ON", "CORP-OLD", currency="USD")
+    _v2(con, 1, "ON", "CORP-OLD", {
+        "cash_multiplier": 1.0, "evidence_scope": "ARCHIVED"},
+        currency="USD")
+    con.execute("DELETE FROM contract_evidence_v2_current")
+    con.commit()
+    con.close()
+    report = gap.inspect(path, _receipt(path))
+    row = _families(report)["OBLIGACIONES"]
+    assert row["v2_absent"] == 1
+    assert row["historic_ppi_exact_without_current"] == 1
+    assert row["exact_v2_ppi"] == 0
+    assert report["v2_current_rows"] == 0
