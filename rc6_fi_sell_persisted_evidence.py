@@ -16,13 +16,17 @@ import json
 import sqlite3
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from pathlib import Path
+import stat
+from threading import RLock
 
 from bs_instrument_contracts import aware_datetime, family_name, utc_microseconds
 from cp_contract_evidence_v2_hf6 import evidence_hash
 from cf_sale_settlement import modeled_sale_settlement_date
 from rc6_ppi_scanner_provenance import (
-    DEFAULT_PATH, PIT_JOURNAL_FILENAME, verified_native_book_journal,
+    DEFAULT_PATH, NATIVE_QUOTE_MAX_AGE_SECONDS, PIT_JOURNAL_FILENAME,
+    verified_native_book_journal,
 )
 
 
@@ -41,6 +45,64 @@ _DUE_STATES = frozenset({
     "EXIT_PENDING_NO_LIQUIDITY", "EXIT_PENDING_STALE_QUOTE",
 })
 _MAX_BLOCKERS = 20
+_JOURNAL_INDEX_LOCK = RLock()
+
+
+def _file_fingerprint(path):
+    """Stable file identity; never follow symlinks or trust mtime alone."""
+    try:
+        s = path.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(s.st_mode) or s.st_nlink != 1 or s.st_mode & 0o077:
+        return None
+    return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns,
+            s.st_mode, s.st_nlink, s.st_uid, s.st_gid)
+
+
+def _compact_native_event(event):
+    """Retain only audited best levels, never the bounded full-depth payload."""
+    book = event["book"]
+    return {"canonical_identity": tuple(event["canonical_identity"]),
+            "native_book_at": event["native_book_at"],
+            "known_at": event["known_at"],
+            "event_sha256": event["event_sha256"],
+            "quantity_unit": event["quantity_unit"],
+            "price_unit": event["price_unit"],
+            "book": {"bids": [dict(book["bids"][0])] if book["bids"] else [],
+                     "offers": [dict(book["offers"][0])] if book["offers"] else []}}
+
+
+@lru_cache(maxsize=1)
+def _verified_compact_index(path_text, fingerprint):
+    """One canonical parse per unchanged file; max one compact index in RAM.
+
+    The cache key includes inode, size, mtime, ctime, permission and ownership.
+    A fresh lstat after reading prevents associating new bytes with an old key.
+    The cache is only a diagnostic optimization: provider PIT freshness and
+    decision/units/fee authority are evaluated anew for *every* consumer.
+    """
+    path = Path(path_text)
+    rows, receipt = verified_native_book_journal(path)
+    if _file_fingerprint(path) != fingerprint:
+        return (), {"state": "HOLD", "reason": "FI_EXIT_PPI_JOURNAL_CHANGED_DURING_INDEX"}
+    if receipt.get("state") != "HASH_CHAIN_VERIFIED":
+        return (), receipt
+    return tuple(_compact_native_event(event) for event in rows), receipt
+
+
+def _verified_journal_index(path):
+    """Singleflight cache; absent/unsafe files still use canonical verifier."""
+    with _JOURNAL_INDEX_LOCK:
+        fingerprint = _file_fingerprint(path)
+        if fingerprint is None:
+            return verified_native_book_journal(path)
+        # Recheck even on a cache hit: a changed file must never reuse the
+        # previously indexed journal without a fresh canonical verification.
+        rows, receipt = _verified_compact_index(str(path), fingerprint)
+        if _file_fingerprint(path) != fingerprint:
+            return (), {"state": "HOLD", "reason": "FI_EXIT_PPI_JOURNAL_CHANGED_DURING_LOOKUP"}
+        return rows, receipt
 
 
 def _table(db, name):
@@ -290,7 +352,7 @@ def inspect_persisted_fi_exit(store, paper_id, *, at, journal_path=None,
     if not path.is_absolute():
         hold("FI_EXIT_PPI_BOOK_JOURNAL_PATH_NOT_ABSOLUTE")
         return result()
-    rows, receipt = verified_native_book_journal(path)
+    rows, receipt = _verified_journal_index(path)
     anchors["journal_state"] = receipt.get("state")
     if receipt.get("state") != "HASH_CHAIN_VERIFIED":
         hold("FI_EXIT_PPI_NATIVE_JOURNAL_" + str(receipt.get("reason") or "UNVERIFIED")[:85])
@@ -322,6 +384,9 @@ def inspect_persisted_fi_exit(store, paper_id, *, at, journal_path=None,
                       _us(event["known_at"]) > _us(intent["supervised_at"])]
             if future:
                 anchors["provisional_book2_event_sha256"] = future[0]["event_sha256"]
+                age_us = cutoff - _us(future[0]["native_book_at"])
+                if not 0 <= age_us <= NATIVE_QUOTE_MAX_AGE_SECONDS * 1_000_000:
+                    hold("FI_EXIT_BOOK2_NATIVE_STALE_AT_AUDIT")
                 levels = (future[0].get("book") or {}).get("bids") or []
                 if (not levels or _number(levels[0].get("price"), positive=True) is None or
                         _number(levels[0].get("quantity"), positive=True) is None):

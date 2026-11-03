@@ -12,7 +12,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cp_contract_evidence_v2_hf6 import evidence_hash
-from rc6_fi_sell_persisted_evidence import inspect_persisted_fi_exit
+from rc6_fi_sell_persisted_evidence import (
+    _verified_compact_index, _verified_journal_index, inspect_persisted_fi_exit,
+)
 
 
 AT = "2026-11-03T15:00:04+00:00"
@@ -132,6 +134,15 @@ class PersistedEvidenceTests(unittest.TestCase):
         self.assertNotIn("provisional_book2_event_sha256", result["anchors"])
         self.assertIn("FI_EXIT_BOOK2_AFTER_PROVISIONAL_LATENCY_MISSING",result["blockers"])
 
+    def test_native_book2_stale_at_actual_audit_cannot_be_fresh_via_cache(self):
+        with patch("rc6_fi_sell_persisted_evidence.verified_native_book_journal",
+                   return_value=([native_event(at=BOOK1_AT,known=BOOK1_KNOWN),
+                                  native_event(at=BOOK2_AT,known=BOOK2_KNOWN,seq=2)],
+                                 {"state":"HASH_CHAIN_VERIFIED"})):
+            result=inspect_persisted_fi_exit(self.store,"PAPER-FI-1",
+                at="2026-11-03T15:10:00+00:00",journal_path=self.journal)
+        self.assertIn("FI_EXIT_BOOK2_NATIVE_STALE_AT_AUDIT",result["blockers"])
+
     def test_foreign_five_key_never_relabels_a_book(self):
         foreign = ("AL30","BONOS","BYMA","USD","INMEDIATA")
         result = self.audit([native_event(at=BOOK1_AT,known=BOOK1_KNOWN,identity=foreign)])
@@ -184,6 +195,69 @@ class PersistedEvidenceTests(unittest.TestCase):
                 (2,'PAPER-FI-1','PRODUCTION_PAPER','SELL_SIMULATED','10')""")
         result=self.audit()
         self.assertIn("FI_EXIT_NATIVE_SALE_LEDGER_MISSING_WITH_SELL_FILLS",result["blockers"])
+
+    def test_open_position_with_prior_sell_and_native_receipt_still_needs_review(self):
+        with self.store.connect() as c:
+            c.execute("""CREATE TABLE paper_fi_native_sales(paper_id TEXT)""")
+            c.execute("""INSERT INTO paper_fills VALUES
+                (2,'PAPER-FI-1','PRODUCTION_PAPER','SELL_SIMULATED','10')""")
+            c.execute("INSERT INTO paper_fi_native_sales VALUES('PAPER-FI-1')")
+        result=self.audit()
+        self.assertIn("FI_EXIT_PRIOR_SALES_REQUIRE_INDEPENDENT_LEDGER_RECONCILIATION",result["blockers"])
+        self.assertEqual(result["anchors"]["prior_paper_sell_fill_count"],1)
+        self.assertEqual(result["anchors"]["prior_native_sale_receipt_count"],1)
+        self.assertFalse(result["execution_authorized"])
+
+    def test_index_reuses_same_unchanged_verified_file_without_full_8mb_parse_per_position(self):
+        # Fixture bytes are only for testing the *index* caching boundary; the
+        # mocked verifier does not claim these bytes are an authentic PPI book.
+        self.journal.write_bytes(b"synthetic-fi-cache-v1")
+        self.journal.chmod(0o600)
+        rows=[native_event(at=BOOK1_AT,known=BOOK1_KNOWN),
+              native_event(at=BOOK2_AT,known=BOOK2_KNOWN,seq=2)]
+        with self.store.connect() as c:
+            c.execute("""INSERT INTO paper_positions
+              (paper_id,source,status,symbol,asset_class,market,currency,settlement,
+               opened_at,closed_at,quantity,entry_price,target_price,stop_price,features_json)
+              SELECT 'PAPER-FI-2',source,status,symbol,asset_class,market,currency,
+                     settlement,opened_at,closed_at,quantity,entry_price,target_price,
+                     stop_price,features_json FROM paper_positions WHERE paper_id='PAPER-FI-1'""")
+            c.execute("""INSERT INTO paper_exit_intents
+              SELECT 'PAPER-FI-2',state,cause,due_at,blocked_reason,supervised_at,attempts
+              FROM paper_exit_intents WHERE paper_id='PAPER-FI-1'""")
+            c.execute("""INSERT INTO paper_fills
+              VALUES(2,'PAPER-FI-2','PRODUCTION_PAPER','BUY_SIMULATED','100')""")
+        _verified_compact_index.cache_clear()
+        with patch("rc6_fi_sell_persisted_evidence.verified_native_book_journal",
+                   return_value=(rows,{"state":"HASH_CHAIN_VERIFIED"})) as verified:
+            first=inspect_persisted_fi_exit(self.store,"PAPER-FI-1",at=AT,journal_path=self.journal)
+            second=inspect_persisted_fi_exit(self.store,"PAPER-FI-2",at=AT,journal_path=self.journal)
+            self.assertEqual(verified.call_count,1)
+            self.assertEqual(_verified_compact_index.cache_info().currsize,1)
+            self.assertEqual(first["anchors"]["book1_event_sha256"],"event1")
+            self.assertEqual(second["anchors"]["book1_event_sha256"],"event1")
+            self.assertFalse(second["execution_authorized"])
+            # In-place changed bytes change ctime/mtime/size, forcing a fresh
+            # canonical verifier despite an otherwise identical path.
+            self.journal.write_bytes(b"synthetic-fi-cache-v2-modified")
+            third=inspect_persisted_fi_exit(self.store,"PAPER-FI-1",at=AT,journal_path=self.journal)
+            self.assertEqual(verified.call_count,2)
+            self.assertFalse(third["execution_authorized"])
+
+    def test_cached_projection_cannot_retain_unneeded_full_native_depth(self):
+        self.journal.write_bytes(b"synthetic-dense-book")
+        self.journal.chmod(0o600)
+        event=native_event(at=BOOK1_AT,known=BOOK1_KNOWN)
+        event["book"]["bids"].extend({"position":n,"price":"99", "quantity":"1"}
+                                      for n in range(1,64))
+        _verified_compact_index.cache_clear()
+        with patch("rc6_fi_sell_persisted_evidence.verified_native_book_journal",
+                   return_value=([event],{"state":"HASH_CHAIN_VERIFIED"})):
+            indexed,receipt=_verified_journal_index(self.journal)
+        self.assertEqual(receipt["state"],"HASH_CHAIN_VERIFIED")
+        self.assertEqual(len(indexed),1)
+        self.assertEqual(len(indexed[0]["book"]["bids"]),1)
+        self.assertLessEqual(_verified_compact_index.cache_info().currsize,1)
 
     def test_zero_bid_book2_cannot_be_executable(self):
         future=native_event(at=BOOK2_AT,known=BOOK2_KNOWN,seq=2)
