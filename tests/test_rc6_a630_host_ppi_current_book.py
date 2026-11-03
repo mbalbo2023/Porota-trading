@@ -7,11 +7,14 @@ import base64
 import json
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
+import types
 import unittest
+from unittest.mock import patch
 
 from scripts.rc6_a630_host_ppi_current_book import (
-    SLOTS, TwoGetAtomicBudget, _base_receipt, _utc, capture_two,
+    SLOTS, TwoGetAtomicBudget, _http_body_hashes, _utc, capture_two,
     decode_target, host_preflight, target_for_slot, verify_receipt,
 )
 
@@ -208,6 +211,44 @@ class TestA630(unittest.TestCase):
         result, _ = invoke(Shared(), extra_get=True)
         self.assertEqual(result["reason"], "PROVIDER_GET_SCOPE_OR_COUNT_INVALID")
         self.assertEqual(result["state"], "NO_VERIFICADO")
+
+    def test_http_digest_exact_provider_host_port_query_and_book2(self):
+        class Response:
+            def __init__(self, url):
+                self.url = url
+
+            def iter_content(self, chunk_size=1, decode_unicode=False):
+                return iter([b"{", b'"ok":true', b"}"])
+
+        requests = types.ModuleType("requests")
+        models = types.ModuleType("requests.models")
+        models.Response = Response
+        requests.models = models
+        current = "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Current"
+        valid_query = "?Ticker=AL30&Type=BONOS&Settlement=A-24HS"
+        invalid_urls = [
+            current.replace("clientapi.portfoliopersonal.com", "evil.example") + valid_query,
+            current.replace(".com/", ".com:8443/") + valid_query,
+            current.replace("https://", "http://") + valid_query,
+            current.replace("https://", "https://u:p@") + valid_query,
+            current + "?Ticker=AL30&Type=ACCIONES&Settlement=A-24HS",
+            current + "?Ticker=AL30&Ticker=AL30&Type=BONOS&Settlement=A-24HS",
+            current + "?Ticker=AL30&Type=BONOS&Settlement=A-48HS",
+        ]
+        with patch.dict(sys.modules, {"requests": requests, "requests.models": models}):
+            with _http_body_hashes(TARGET) as seen:
+                self.assertEqual(b"".join(Response(current + valid_query).iter_content()),
+                                 b'{"ok":true}')
+                self.assertEqual(seen[0][1].hexdigest(), sha256(b'{"ok":true}').hexdigest())
+                self.assertEqual(seen[0][2], len(b'{"ok":true}'))
+                for url in invalid_urls:
+                    with self.assertRaises(ValueError, msg=url):
+                        list(Response(url).iter_content())
+                # A second Book body, even same HTTP route, is forbidden.
+                book = current.replace("Current", "Book") + valid_query
+                list(Response(book).iter_content())
+                with self.assertRaises(ValueError):
+                    list(Response(book).iter_content())
 
     def test_forged_evidence_fails_sanitizer(self):
         result, _ = invoke(Shared())
