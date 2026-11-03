@@ -15,13 +15,14 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import pwd
 import stat
 import subprocess
 import sys
 from zoneinfo import ZoneInfo
 
 
-SCHEMA = "rc6.a420.primary-source-layout-readonly.v1"
+SCHEMA = "rc6.a420.primary-source-layout-readonly.v2"
 STATE_SCHEMA = "rc6.source-cycle-dispatch.v1"
 MARKET_ROOT = Path("/opt/porota-trading/data/market")
 FILES = (
@@ -31,6 +32,8 @@ FILES = (
     ("FULL_UNIVERSE_EXPORT", MARKET_ROOT / "rc6_instrument_evidence_latest.json", 48 * 1024 * 1024, False),
     ("SOURCE_CYCLE_SCRIPT", Path("/opt/porota-trading/scripts/rc6_source_cycle_dispatch.py"), 2 * 1024 * 1024, False),
     ("FULL_UNIVERSE_SCRIPT", Path("/opt/porota-trading/scripts/rc6_full_universe_evidence.py"), 2 * 1024 * 1024, False),
+    # The scanner is not deployed yet; MISSING means NO_VERIFICADO, never GREEN.
+    ("PPI_SCANNER_PRIVATE_RECEIPT", MARKET_ROOT / "rc6_ppi_scanner_primary_latest.json", 2 * 1024 * 1024, False),
 )
 UNIT_NAMES = ("porota-iol-shadow-collector-rc6.timer",
               "porota-iol-shadow-collector-rc6.service")
@@ -146,32 +149,155 @@ def inspect_file(role: str, path: Path, maximum: int, is_state: bool,
     return receipt
 
 
+def _verify_sidecar_access(path: Path, maximum: int, effective_user: str,
+                           expected: os.stat_result) -> str:
+    """DAC-only read probe: no bytes read, no shell, no persistent UID change.
+
+    This cannot reproduce arbitrary systemd mount namespace restrictions.
+    A real service-context proof remains NO_VERIFICADO until runtime receipt.
+    """
+    if os.geteuid() != 0 or effective_user not in {"ROOT", "UID1000"}:
+        return "NO_VERIFICADO"
+    if effective_user == "ROOT":
+        # The existing host probe runs with sudo -n; _open_bounded already
+        # succeeded as root and did not consume the private file's content.
+        return "ACCESS_OK"
+    if not hasattr(os, "fork"):
+        return "NO_VERIFICADO"
+    try:
+        pid = os.fork()
+    except OSError:
+        return "NO_VERIFICADO"
+    if pid == 0:
+        # Child only. Never change the controlling host-probe process identity.
+        try:
+            try:
+                gid = pwd.getpwuid(1000).pw_gid
+            except KeyError:
+                gid = 1000
+            os.setgroups([])
+            os.setgid(gid)
+            os.setuid(1000)
+            fd, actual = _open_bounded(path, maximum)
+            os.close(fd)
+            # Fail closed on a swap between the root metadata read and the
+            # unprivileged DAC probe. A different regular file proves nothing.
+            if ((actual.st_dev, actual.st_ino, actual.st_size, actual.st_mtime_ns,
+                 actual.st_ctime_ns,
+                 actual.st_uid, stat.S_IMODE(actual.st_mode)) !=
+                (expected.st_dev, expected.st_ino, expected.st_size, expected.st_mtime_ns,
+                 expected.st_ctime_ns,
+                 expected.st_uid, stat.S_IMODE(expected.st_mode))):
+                os._exit(2)
+            os._exit(0)
+        except Rejected:
+            os._exit(1)
+        except (OSError, ValueError):
+            os._exit(2)
+    try:
+        _, status = os.waitpid(pid, 0)
+    except OSError:
+        return "NO_VERIFICADO"
+    if not os.WIFEXITED(status):
+        return "NO_VERIFICADO"
+    # A non-root open failure could be DAC, a disappearing file or a changed
+    # mount; do not mislabel all of them as a definitive permission denial.
+    return {0: "ACCESS_OK", 1: "READ_FAILED"}.get(os.WEXITSTATUS(status), "NO_VERIFICADO")
+
+
+def inspect_private_receipt(path: Path, maximum: int, *, effective_user: str,
+                            now: datetime | None = None,
+                            expected_owner_uid: int = 1000) -> dict[str, object]:
+    """Fixed-role, privacy-preserving metadata; never read quote bytes."""
+    now = now or datetime.now(timezone.utc)
+    result: dict[str, object] = {
+        "role": "PPI_SCANNER_PRIVATE_RECEIPT", "status": "NO_VERIFICADO",
+        "mtime_age_bucket": "UNKNOWN", "private_mode": "UNKNOWN",
+        "owner_class": "UNKNOWN", "consumer_access": "NO_VERIFICADO",
+        "access_scope": "HOST_DAC_ONLY",
+    }
+    fd = None
+    try:
+        fd, info = _open_bounded(path, maximum)
+        # SECURITY A473: _verify_sidecar_access forks and drops to UID1000.
+        # An inherited root-open descriptor would bypass that DAC check even
+        # after setuid. Close the privileged descriptor before ANY fork.
+        os.close(fd)
+        fd = None
+        result["mtime_age_bucket"] = _age_bucket(info.st_mtime, now)
+        mode_ok = stat.S_IMODE(info.st_mode) == 0o600
+        owner_ok = info.st_uid == expected_owner_uid
+        result["private_mode"] = "PRIVATE_0600" if mode_ok else "OTHER"
+        result["owner_class"] = "UID1000" if owner_ok else "OTHER"
+        if not mode_ok:
+            result["status"] = "UNSAFE_MODE"
+        elif not owner_ok:
+            result["status"] = "OWNER_MISMATCH"
+        else:
+            result["status"] = "PRESENT_REGULAR"
+            result["consumer_access"] = _verify_sidecar_access(path, maximum, effective_user, info)
+    except Rejected as exc:
+        result["status"] = str(exc)
+    finally:
+        if fd is not None:
+            os.close(fd)
+    return result
+
+
 def _safe_label(value: str | None, whitelist: set[str]) -> str:
     return value if value in whitelist else "UNKNOWN"
+
+
+def _effective_user_class(user: str | None, dynamic_user: str | None) -> str:
+    if dynamic_user == "yes":
+        return "DYNAMIC"
+    if dynamic_user != "no" or user is None:
+        return "UNKNOWN"
+    if user in ("", "root", "0"):
+        return "ROOT"
+    if user == "1000":
+        return "UID1000"
+    try:
+        uid = int(user) if user.isascii() and user.isdecimal() else pwd.getpwnam(user).pw_uid
+        return "ROOT" if uid == 0 else "UID1000" if uid == 1000 else "OTHER"
+    except (KeyError, ValueError, OverflowError, OSError):
+        return "UNKNOWN"
 
 
 def inspect_unit(unit: str, *, runner=subprocess.run) -> dict[str, str]:
     """Use systemctl show ONLY. Never start, restart, enable, or inspect env."""
     result = {"unit": "CYCLE_TIMER" if unit.endswith(".timer") else "CYCLE_SERVICE",
               "query": "UNAVAILABLE", "load": "UNKNOWN", "active": "UNKNOWN",
-              "result": "UNKNOWN", "main_exit": "UNKNOWN"}
+              "result": "UNKNOWN", "main_exit": "UNKNOWN",
+              "effective_user": "UNKNOWN", "dynamic_user": "UNKNOWN", "dropins": "UNKNOWN"}
     if unit not in UNIT_NAMES:
         return result
     try:
         completed = runner(["systemctl", "show", "--no-pager", "--property=LoadState",
                             "--property=ActiveState", "--property=Result",
-                            "--property=ExecMainStatus", unit],
+                            "--property=ExecMainStatus", "--property=User",
+                            "--property=DynamicUser", "--property=DropInPaths", unit],
                            capture_output=True, text=True, timeout=4, check=False)
-        if completed.returncode != 0 or len(completed.stdout) > 1024:
+        if completed.returncode != 0 or len(completed.stdout) > 4096:
             return result
         pairs = dict(line.split("=", 1) for line in completed.stdout.splitlines()
-                     if "=" in line and len(line) <= 80)
+                     if "=" in line and len(line) <= 2048)
         result.update(query="READ_ONLY", load=_safe_label(pairs.get("LoadState"), SAFE_LOAD),
                       active=_safe_label(pairs.get("ActiveState"), SAFE_ACTIVE),
                       result=_safe_label(pairs.get("Result"), SAFE_RESULT))
         status = pairs.get("ExecMainStatus", "")
         if status.isascii() and status.isdecimal() and len(status) <= 4:
             result["main_exit"] = "ZERO" if int(status) == 0 else "NONZERO"
+        if unit.endswith(".timer"):
+            result.update(effective_user="NOT_APPLICABLE", dynamic_user="NOT_APPLICABLE",
+                          dropins="NOT_APPLICABLE")
+        else:
+            dynamic = pairs.get("DynamicUser")
+            result["dynamic_user"] = {"yes": "YES", "no": "NO"}.get(dynamic, "UNKNOWN")
+            result["effective_user"] = (_effective_user_class(pairs.get("User"), dynamic)
+                                        if result["load"] == "loaded" else "UNKNOWN")
+            dropins = pairs.get("DropInPaths")
+            result["dropins"] = ("PRESENT" if dropins else "NONE") if dropins is not None else "UNKNOWN"
     except (OSError, ValueError, subprocess.TimeoutExpired):
         pass
     return result
@@ -182,12 +308,17 @@ def inspect_all(*, now: datetime | None = None, files=FILES,
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("aware time required")
+    units = [inspect_unit(unit, runner=runner) for unit in UNIT_NAMES]
+    consumer = units[-1]["effective_user"] if len(units) == len(UNIT_NAMES) else "UNKNOWN"
+    inspected = [inspect_private_receipt(path, maximum, effective_user=consumer, now=now)
+                 if role == "PPI_SCANNER_PRIVATE_RECEIPT"
+                 else inspect_file(role, path, maximum, is_state, now=now)
+                 for role, path, maximum, is_state in files]
     return {"schema": SCHEMA, "read_only": True, "host_metadata_only": True,
             "database_opened": False, "provider_calls": 0,
             "order_routes_called": False, "ppi_watch_touched": False,
             "paper_ready": False, "diagnostic_only": True,
-            "files": [inspect_file(*item, now=now) for item in files],
-            "units": [inspect_unit(unit, runner=runner) for unit in UNIT_NAMES]}
+            "files": inspected, "units": units}
 
 
 def main(argv=None) -> int:
