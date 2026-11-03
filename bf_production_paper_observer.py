@@ -305,14 +305,49 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  **financial_catalog.quote_terms(metadata))
 
 
+def _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identity=None):
+    """Pin the *complete* catalog identity before a three-key PPI GET.
+
+    Current/Book do not accept market or currency. A single READY candidate
+    never removes a conflicting catalog sibling, including a stale or held
+    one: the provider response itself cannot distinguish those currencies.
+    Never consume PPI quota first and resolve its identity afterwards.
+    """
+    try:
+        with store.connect() as connection:
+            rows = connection.execute("""SELECT market,currency
+              FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND settlement=?
+              LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        raise ValueError("PPI_SCANNER_CATALOG_IDENTITY_UNVERIFIED") from None
+    if len(rows) != 1:
+        raise ValueError("PPI_SCANNER_PROVIDER_REQUEST_IDENTITY_AMBIGUOUS")
+    market, currency = (str(value or "").strip().upper() for value in rows[0])
+    if not market or market == "UNKNOWN" or not currency or currency == "UNKNOWN":
+        raise ValueError("PPI_SCANNER_CATALOG_IDENTITY_UNVERIFIED")
+    exact = (symbol, asset_class, market, currency, settlement)
+    if identity is not None:
+        if not isinstance(identity, (tuple, list)) or len(identity) != 5:
+            raise ValueError("PPI_SCANNER_OPENED_IDENTITY_INVALID")
+        if tuple(identity) != exact:
+            raise ValueError("PPI_SCANNER_OPENED_IDENTITY_MISMATCH")
+    return exact
+
+
 def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
-    """Native scanner reads; exact opened identity enables bounded book reuse."""
-    scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
+    """Native scanner reads only after exact market/currency disambiguation."""
+    if priority == "OPENED_CRITICAL" and identity is None:
+        # Two opened full keys may project to one PPI request. Never choose
+        # a coalesced EXIT/OPENED budget identity by catalog fallback.
+        raise ValueError("PPI_SCANNER_OPENED_IDENTITY_UNVERIFIED")
+    exact = _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identity)
+    scope = reader.read_scope(priority=priority, identity=exact) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
         current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
-        market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
+        market=exact[2], currency=exact[3])
     return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
 
 
