@@ -9,12 +9,16 @@ on:
       - '.github/workflows/rc6-a420-primary-source-layout-readonly.yml'
       - 'scripts/rc6_a420_primary_source_layout_ro.py'
       - 'tests/test_rc6_a420_primary_source_layout_ro.py'
+      - 'scripts/rc6_a504_systemd_cadence_ro.py'
+      - 'tests/test_rc6_a504_systemd_cadence_ro.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/rc6-a420-primary-source-layout-readonly.yml'
       - 'scripts/rc6_a420_primary_source_layout_ro.py'
       - 'tests/test_rc6_a420_primary_source_layout_ro.py'
+      - 'scripts/rc6_a504_systemd_cadence_ro.py'
+      - 'tests/test_rc6_a504_systemd_cadence_ro.py'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +40,8 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_a420_primary_source_layout_ro.py tests/test_rc6_a420_primary_source_layout_ro.py
           python3 -m unittest discover -s tests -p test_rc6_a420_primary_source_layout_ro.py -v
+          python3 -m py_compile scripts/rc6_a504_systemd_cadence_ro.py tests/test_rc6_a504_systemd_cadence_ro.py
+          python3 -m unittest discover -s tests -p test_rc6_a504_systemd_cadence_ro.py -v
           git diff --check
 
   host_metadata:
@@ -222,6 +228,47 @@ jobs:
               raise SystemExit('::error::A420 false readiness')
           print('A420_HOST_METADATA=VALID_ONLY|source_readiness=NO_VERIFICADO')
           PY
+      - name: A504 bounded systemd cadence metadata (no journal messages)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Sanitizer failure and command errors must not leave untrusted
+          # host stdout after shell exit. Scope to this A504 raw file only.
+          trap 'rm -f -- evidence/.a504-raw.json' EXIT
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a420_source_layout" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 35 python3 -B - host-probe' \
+            < scripts/rc6_a504_systemd_cadence_ro.py > evidence/.a504-raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          python3 scripts/rc6_a504_systemd_cadence_ro.py sanitize
+          if [ "$remote_rc" -ne 0 ]; then
+            echo '::warning::A504 bounded metadata SSH unavailable; receipt fails closed.'
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('evidence/a504-cadence.json').read_text(encoding='utf-8'))
+          for role in result['roles']:
+              print('A504_ROLE='+role['role']+' class='+role['classification']+
+                    ' nominal_mature='+str(role['nominal_mature_slots'])+
+                    ' observed='+str(role['observed_distinct_slots']))
+          if result['probe_status']!='METADATA_ONLY':
+              raise SystemExit('::error::A504 metadata receipt NO_VERIFICADO')
+          print('A504_FULL_DAY_CADENCE_CERTIFIED=false')
+          PY
+      - name: A504 publish only sanitized bounded cadence classifications
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a504-systemd-cadence-${{ github.run_id }}
+          path: evidence/a504-cadence.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Destroy only runner SSH material
         if: always()
         shell: bash
