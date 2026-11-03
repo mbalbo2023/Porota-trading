@@ -27,9 +27,12 @@ def art(y=2026, m=11, d=3, h=11, minute=0, second=0):
 
 
 def host(*, last_trigger_us=9_990_000_000, last_exit_us=9_995_000_000,
-         service_result="success", active="active"):
+         service_result="success", active="active",
+         schedule_parity_verified=False, clock_compatible=False):
     return {"query": "READ_ONLY", "timer_active": active, "service_result": service_result,
-            "last_trigger_us": last_trigger_us, "last_exit_us": last_exit_us}
+            "last_trigger_us": last_trigger_us, "last_exit_us": last_exit_us,
+            "schedule_parity_verified": schedule_parity_verified,
+            "clock_compatible": clock_compatible}
 
 
 def sample_two(now, role="SOURCE_CYCLE"):
@@ -93,9 +96,36 @@ class A504ClassifyTests(unittest.TestCase):
 
     def test_current_timer_was_silent_after_multiple_due_slots(self):
         now = art(h=11, minute=5)
-        r = a504.classify("SOURCE_CYCLE", now, (), host(last_trigger_us=9_000_000_000),
+        r = a504.classify("SOURCE_CYCLE", now, (),
+                          host(last_trigger_us=9_000_000_000,
+                               schedule_parity_verified=True, clock_compatible=True),
                           boot_us=12_000_000_000, source="UNKNOWN")
         self.assertEqual(r["classification"], "SCHEDULE_SILENT")
+
+    def test_journal_unavailable_never_proves_schedule_silence(self):
+        now = art(h=11, minute=5)
+        r = a504.classify("SOURCE_CYCLE", now, None,
+                          host(last_trigger_us=9_000_000_000,
+                               schedule_parity_verified=True, clock_compatible=True),
+                          boot_us=12_000_000_000, source="UNKNOWN")
+        self.assertEqual(r["classification"], "NO_VERIFICADO")
+        self.assertFalse(r["journal_available"])
+
+    def test_unverified_installed_calendar_never_proves_schedule_silence(self):
+        now = art(h=11, minute=5)
+        r = a504.classify("SOURCE_CYCLE", now, (),
+                          host(last_trigger_us=9_000_000_000,
+                               schedule_parity_verified=False, clock_compatible=True),
+                          boot_us=12_000_000_000, source="UNKNOWN")
+        self.assertEqual(r["classification"], "NO_VERIFICADO")
+
+    def test_unverified_clock_domain_never_proves_schedule_silence(self):
+        now = art(h=11, minute=5)
+        r = a504.classify("SOURCE_CYCLE", now, (),
+                          host(last_trigger_us=9_000_000_000,
+                               schedule_parity_verified=True, clock_compatible=False),
+                          boot_us=12_000_000_000, source="UNKNOWN")
+        self.assertEqual(r["classification"], "NO_VERIFICADO")
 
     def test_recent_invocation_contradicts_stale_lasttrigger_and_fails_closed(self):
         now = art(h=11, minute=5)
@@ -129,6 +159,12 @@ class A504ClassifyTests(unittest.TestCase):
         r = a504.classify("SOURCE_CYCLE", now, sample_two(now), host(),
                           boot_us=10_000_000_000, source="STALE_OR_MISSING")
         self.assertEqual(r["classification"], "NO_SOURCE")
+
+    def test_late_t1_not_due_must_not_be_mislabeled_no_source(self):
+        now = art(h=17, minute=45)
+        r = a504.classify("SOURCE_CYCLE", now, sample_two(now), host(),
+                          boot_us=10_000_000_000, source="STALE_OR_MISSING")
+        self.assertEqual(r["classification"], "NO_VERIFICADO")
 
     def test_eod_result_cannot_certify_source_content(self):
         now = art(h=19)
@@ -186,7 +222,9 @@ class A504MetadataTests(unittest.TestCase):
         for role,_ in a504.ROLES:
             data["roles"].append({"role":role,"classification":"NO_VERIFICADO",
                                   "nominal_mature_slots":3,"observed_distinct_slots":0,
-                                  "last_two_mature_distinct":False,"source":"UNKNOWN",
+                                  "last_two_mature_distinct":False,"journal_available":True,
+                                  "schedule_parity_verified":False,"clock_compatible":False,
+                                  "source":"UNKNOWN",
                                   "timer":"active","service":"success",
                                   "full_day_cadence_certified":False})
         self.assertEqual(a504.sanitize_receipt(json.dumps(data).encode()),data)
@@ -202,7 +240,9 @@ class A504MetadataTests(unittest.TestCase):
         for role,_ in a504.ROLES:
             data["roles"].append({"role":role,"classification":"NO_VERIFICADO",
                                   "nominal_mature_slots":3,"observed_distinct_slots":0,
-                                  "last_two_mature_distinct":False,"source":"UNKNOWN",
+                                  "last_two_mature_distinct":False,"journal_available":True,
+                                  "schedule_parity_verified":False,"clock_compatible":False,
+                                  "source":"UNKNOWN",
                                   "timer":"active","service":"success",
                                   "full_day_cadence_certified":False})
         data["roles"][1]["classification"]="NO_SOURCE"

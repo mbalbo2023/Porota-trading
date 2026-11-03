@@ -151,23 +151,31 @@ def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
                       runner=runner, timeout=3)
         if stdout is None or len(stdout) > 4096:
             return {"query": "UNAVAILABLE", "timer_active": "UNKNOWN", "service_result": "UNKNOWN",
-                    "last_trigger_us": None, "last_exit_us": None}
+                    "last_trigger_us": None, "last_exit_us": None,
+                    "schedule_parity_verified": False, "clock_compatible": False}
         pairs = dict(line.split("=", 1) for line in stdout.splitlines()
                      if "=" in line and len(line) <= 2048)
         # A local override or daemon-reload mismatch means source assumptions
         # may not match the installed timer. Fail closed.
         if pairs.get("NeedDaemonReload") != "no" or pairs.get("DropInPaths", "UNKNOWN") != "":
             return {"query": "UNAVAILABLE", "timer_active": "UNKNOWN", "service_result": "UNKNOWN",
-                    "last_trigger_us": None, "last_exit_us": None}
+                    "last_trigger_us": None, "last_exit_us": None,
+                    "schedule_parity_verified": False, "clock_compatible": False}
         units[suffix] = pairs
     timer, service = units["timer"], units["service"]
     if timer.get("LoadState") != "loaded" or service.get("LoadState") != "loaded":
         return {"query": "UNAVAILABLE", "timer_active": "UNKNOWN", "service_result": "UNKNOWN",
-                "last_trigger_us": None, "last_exit_us": None}
+                "last_trigger_us": None, "last_exit_us": None,
+                "schedule_parity_verified": False, "clock_compatible": False}
     return {"query": "READ_ONLY", "timer_active": _safe_enum(timer.get("ActiveState"), ACTIVE_CLASSES),
             "service_result": _safe_enum(service.get("Result"), RESULT_CLASSES),
             "last_trigger_us": _int_field(timer, "LastTriggerUSecMonotonic"),
-            "last_exit_us": _int_field(service, "ExecMainExitTimestampMonotonic")}
+            "last_exit_us": _int_field(service, "ExecMainExitTimestampMonotonic"),
+            # LoadState/NeedDaemonReload/DropInPaths do NOT prove the exact
+            # installed OnCalendar or equivalence of CLOCK_BOOTTIME to the
+            # systemd property clock. A future version must independently
+            # attest both before it may claim actual schedule silence.
+            "schedule_parity_verified": False, "clock_compatible": False}
 
 
 def journal_invocations(unit: str, now: datetime, *, runner=subprocess.run) -> tuple[datetime, ...] | None:
@@ -221,6 +229,9 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
                                   "nominal_mature_slots": len(mature),
                                   "observed_distinct_slots": 0,
                                   "last_two_mature_distinct": False,
+                                  "journal_available": invocations is not None,
+                                  "schedule_parity_verified": False,
+                                  "clock_compatible": False,
                                   "source": source if source in SOURCE_CLASSES else "UNKNOWN",
                                   "timer": "UNKNOWN", "service": "UNKNOWN",
                                   "full_day_cadence_certified": False}
@@ -231,6 +242,8 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
         return result
     result["timer"] = host.get("timer_active") if host.get("timer_active") in ACTIVE_CLASSES else "UNKNOWN"
     result["service"] = host.get("service_result") if host.get("service_result") in RESULT_CLASSES else "UNKNOWN"
+    result["schedule_parity_verified"] = host.get("schedule_parity_verified") is True
+    result["clock_compatible"] = host.get("clock_compatible") is True
     last_trigger = host.get("last_trigger_us")
     last_exit = host.get("last_exit_us")
     if not isinstance(last_trigger, int) or last_trigger <= 0 or last_trigger > boot_us:
@@ -240,7 +253,9 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
     age_s = (boot_us - last_trigger) / 1_000_000
     fresh_limit = min(600, max(180, (mature[-1] - mature[-2]).total_seconds() + 120)) if len(mature) >= 2 else 180
     if (result["timer"] == "active" and len(mature) >= 2 and
-            age_s > 2 * fresh_limit and boot_us >= LOOKBACK_MINUTES * 60 * 1_000_000):
+            invocations is not None and result["schedule_parity_verified"] and
+            result["clock_compatible"] and age_s > 2 * fresh_limit and
+            boot_us >= LOOKBACK_MINUTES * 60 * 1_000_000):
         # A contradictory recent service invocation warrants investigation;
         # it cannot become a definitive schedule-silence conclusion.
         if invocations is not None and any(t >= mature[-2] for t in invocations):
@@ -268,7 +283,12 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
     if (result["service"] not in {"success", "UNKNOWN"} and isinstance(last_exit, int)
             and last_trigger <= last_exit <= boot_us):
         result["classification"] = "FAILED"
-    elif role == "SOURCE_CYCLE" and source == "STALE_OR_MISSING":
+    elif (role == "SOURCE_CYCLE" and source == "STALE_OR_MISSING" and
+          now.astimezone(ART).time() < wall_time(17, 0)):
+        # After 17:00 COM19031 narrows observation to exact T+1 contracts.
+        # A successful NOT_DUE_LATE_NO_VERIFIED_T1 tick is legitimate; the
+        # generic state JSON has no contract-level reason to distinguish it
+        # from a provider/source failure. Never label it NO_SOURCE here.
         result["classification"] = "NO_SOURCE"
     elif result["service"] == "success" and (role != "SOURCE_CYCLE" or source == "FRESH"):
         result["classification"] = "RECENT_INVOCATIONS_OBSERVED"
@@ -324,6 +344,7 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
             return fallback
         fields = {"role", "classification", "nominal_mature_slots", "observed_distinct_slots",
                   "last_two_mature_distinct", "source", "timer", "service",
+                  "journal_available", "schedule_parity_verified", "clock_compatible",
                   "full_day_cadence_certified"}
         for (role, _), item in zip(ROLES, items):
             if (not isinstance(item, dict) or set(item) != fields or item["role"] != role or
@@ -333,6 +354,9 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                 type(item["observed_distinct_slots"]) is not int or
                 not 0 <= item["observed_distinct_slots"] <= item["nominal_mature_slots"] <= LOOKBACK_MINUTES + 2 or
                 type(item["last_two_mature_distinct"]) is not bool or
+                type(item["journal_available"]) is not bool or
+                type(item["schedule_parity_verified"]) is not bool or
+                type(item["clock_compatible"]) is not bool or
                 item["full_day_cadence_certified"] is not False):
                 return fallback
             if item["classification"] == "RECENT_INVOCATIONS_OBSERVED" and not item["last_two_mature_distinct"]:
@@ -347,7 +371,9 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                     role == "SOURCE_CYCLE" and item["source"] == "STALE_OR_MISSING"):
                 return fallback
             if item["classification"] == "SCHEDULE_SILENT" and not (
-                    item["nominal_mature_slots"] >= 2 and item["timer"] == "active"):
+                    item["nominal_mature_slots"] >= 2 and item["timer"] == "active" and
+                    item["journal_available"] and item["schedule_parity_verified"] and
+                    item["clock_compatible"]):
                 return fallback
             if item["classification"] == "RECENT_INVOCATIONS_OBSERVED" and not (
                     item["service"] == "success" and
