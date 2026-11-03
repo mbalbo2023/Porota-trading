@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -22,9 +23,12 @@ NOW = datetime(2026, 11, 3, 1, 0, tzinfo=timezone.utc)  # 02-Nov 22:00 ART
 
 class A420ReadOnlyLayoutTests(unittest.TestCase):
     def test_fixed_paths_and_units_never_include_db_or_secret_files(self):
-        self.assertEqual(len(module.FILES), 6)
-        self.assertEqual(len({item[0] for item in module.FILES}), 6)
+        self.assertEqual(len(module.FILES), 7)
+        self.assertEqual(len({item[0] for item in module.FILES}), 7)
         self.assertEqual(len(module.UNIT_NAMES), 2)
+        self.assertEqual(module.FILES[-1][0], "PPI_SCANNER_PRIVATE_RECEIPT")
+        self.assertEqual(module.FILES[-1][1],
+                         Path("/opt/porota-trading/data/market/rc6_ppi_scanner_primary_latest.json"))
         all_paths = " ".join(str(item[1]) for item in module.FILES).lower()
         self.assertNotIn(".env", all_paths)
         self.assertNotIn(".db", all_paths)
@@ -121,6 +125,114 @@ class A420ReadOnlyLayoutTests(unittest.TestCase):
         self.assertNotIn(private, json.dumps(row))
         self.assertEqual(row["active"], "UNKNOWN")
         self.assertEqual(row["result"], "UNKNOWN")
+
+    def test_service_identity_and_dropins_are_sanitized_read_only(self):
+        private = "/run/secret/private-dropin.conf"
+
+        def fake_run(args, **kwargs):
+            return subprocess.CompletedProcess(args, 0,
+                    "LoadState=loaded\nActiveState=active\nResult=success\n"
+                    f"ExecMainStatus=0\nUser=1000\nDynamicUser=no\nDropInPaths={private}\n", "")
+
+        row = module.inspect_unit(module.UNIT_NAMES[1], runner=fake_run)
+        self.assertEqual(row["effective_user"], "UID1000")
+        self.assertEqual(row["dynamic_user"], "NO")
+        self.assertEqual(row["dropins"], "PRESENT")
+        self.assertNotIn(private, json.dumps(row))
+
+    def test_service_identity_root_dynamic_override_and_unknown_fail_closed(self):
+        for user, dynamic, expected in (
+            ("", "no", "ROOT"), ("root", "no", "ROOT"),
+            ("1000", "no", "UID1000"), ("5000", "no", "OTHER"),
+            ("1000", "yes", "DYNAMIC"), ("1000", "unknown", "UNKNOWN"),
+        ):
+            with self.subTest(user=user, dynamic=dynamic):
+                self.assertEqual(module._effective_user_class(user, dynamic), expected)
+        self.assertEqual(module._effective_user_class(None, "no"), "UNKNOWN")
+
+        def fake_run(args, **kwargs):
+            return subprocess.CompletedProcess(args, 0,
+                    "LoadState=loaded\nActiveState=inactive\nResult=success\n"
+                    "ExecMainStatus=0\nUser=root\nDynamicUser=no\nDropInPaths=\n", "")
+
+        row = module.inspect_unit(module.UNIT_NAMES[0], runner=fake_run)
+        self.assertEqual(row["effective_user"], "NOT_APPLICABLE")
+        self.assertEqual(row["dynamic_user"], "NOT_APPLICABLE")
+        self.assertEqual(row["dropins"], "NOT_APPLICABLE")
+
+        def missing_run(args, **kwargs):
+            return subprocess.CompletedProcess(args, 0,
+                    "LoadState=not-found\nActiveState=inactive\nResult=success\n"
+                    "ExecMainStatus=0\nUser=root\nDynamicUser=no\nDropInPaths=\n", "")
+
+        missing = module.inspect_unit(module.UNIT_NAMES[1], runner=missing_run)
+        self.assertEqual(missing["effective_user"], "UNKNOWN")
+
+    def test_private_sidecar_0600_expected_owner_and_dac_scope_only(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "rc6_ppi_scanner_primary_latest.json"
+            secret = "PRIVATE_BROKER_ACCOUNT_PPI_MARKET_PRICE_123"
+            path.write_text(secret, encoding="utf-8")
+            path.chmod(0o600)
+            with patch.object(module, "_verify_sidecar_access", return_value="ACCESS_OK") as probe:
+                row = module.inspect_private_receipt(
+                    path, 1024, effective_user="UID1000", now=NOW,
+                    expected_owner_uid=os.getuid())
+            self.assertEqual(row["status"], "PRESENT_REGULAR")
+            self.assertEqual(row["private_mode"], "PRIVATE_0600")
+            self.assertEqual(row["owner_class"], "UID1000")
+            self.assertEqual(row["consumer_access"], "ACCESS_OK")
+            self.assertEqual(row["access_scope"], "HOST_DAC_ONLY")
+            self.assertEqual(probe.call_count, 1)
+            self.assertNotIn(secret, json.dumps(row))
+            self.assertNotIn(str(path), json.dumps(row))
+            self.assertEqual(set(row), {'role', 'status', 'mtime_age_bucket',
+                                        'private_mode', 'owner_class',
+                                        'consumer_access', 'access_scope'})
+
+    def test_private_sidecar_missing_bad_mode_and_owner_never_claim_access(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "receipt.json"
+            absent = module.inspect_private_receipt(
+                path, 1024, effective_user="ROOT", now=NOW)
+            self.assertEqual(absent["status"], "MISSING")
+            self.assertEqual(absent["consumer_access"], "NO_VERIFICADO")
+            path.write_text("private", encoding="utf-8")
+            path.chmod(0o644)
+            with patch.object(module, "_verify_sidecar_access", side_effect=AssertionError("called")):
+                wrong_mode = module.inspect_private_receipt(
+                    path, 1024, effective_user="ROOT", now=NOW,
+                    expected_owner_uid=os.getuid())
+            self.assertEqual(wrong_mode["status"], "UNSAFE_MODE")
+            self.assertEqual(wrong_mode["private_mode"], "OTHER")
+            self.assertEqual(wrong_mode["consumer_access"], "NO_VERIFICADO")
+            path.chmod(0o600)
+            with patch.object(module, "_verify_sidecar_access", side_effect=AssertionError("called")):
+                wrong_owner = module.inspect_private_receipt(
+                    path, 1024, effective_user="ROOT", now=NOW,
+                    expected_owner_uid=os.getuid() + 5)
+            self.assertEqual(wrong_owner["status"], "OWNER_MISMATCH")
+            self.assertEqual(wrong_owner["owner_class"], "OTHER")
+            self.assertEqual(wrong_owner["consumer_access"], "NO_VERIFICADO")
+
+    def test_private_sidecar_alias_size_hardlink_and_unknown_reader_fail_closed(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            path = root / "receipt.json"
+            path.write_bytes(b"secret")
+            path.chmod(0o600)
+            alias = root / "alias.json"
+            alias.symlink_to(path)
+            symlink = module.inspect_private_receipt(alias, 128, effective_user="ROOT", now=NOW)
+            self.assertEqual(symlink["status"], "UNAVAILABLE_OR_ALIAS")
+            oversize = module.inspect_private_receipt(path, 3, effective_user="ROOT", now=NOW)
+            self.assertEqual(oversize["status"], "SIZE_LIMIT")
+            self.assertEqual(module._verify_sidecar_access(path, 128, "UNKNOWN", path.stat()),
+                             "NO_VERIFICADO")
+            hardlink = root / "duplicate.json"
+            os.link(path, hardlink)
+            unsafe = module.inspect_private_receipt(path, 128, effective_user="ROOT", now=NOW)
+            self.assertEqual(unsafe["status"], "UNSAFE_FILE")
 
     def test_unknown_unit_does_not_invoke_command(self):
         with patch.object(module.subprocess, "run", side_effect=AssertionError("called")):

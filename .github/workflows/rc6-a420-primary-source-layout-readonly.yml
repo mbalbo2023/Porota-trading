@@ -81,10 +81,12 @@ jobs:
           import json, os
           from pathlib import Path
           expected_roles=['PRIMARY_MARKET_CACHE','PRIMARY_APP_CACHE','SOURCE_CYCLE_STATE',
-                          'FULL_UNIVERSE_EXPORT','SOURCE_CYCLE_SCRIPT','FULL_UNIVERSE_SCRIPT']
+                          'FULL_UNIVERSE_EXPORT','SOURCE_CYCLE_SCRIPT','FULL_UNIVERSE_SCRIPT',
+                          'PPI_SCANNER_PRIVATE_RECEIPT']
           expected_units=['CYCLE_TIMER','CYCLE_SERVICE']
           allowed_status={'PRESENT_REGULAR','MISSING','UNSAFE_PATH','UNSAFE_FILE',
-                          'SIZE_LIMIT','UNAVAILABLE_OR_ALIAS','CHANGED_DURING_READ'}
+                          'SIZE_LIMIT','UNAVAILABLE_OR_ALIAS','CHANGED_DURING_READ',
+                          'UNSAFE_MODE','OWNER_MISMATCH','NO_VERIFICADO'}
           allowed_age={'UNKNOWN','FUTURE_CLOCK','WITHIN_5M','WITHIN_30M',
                        'WITHIN_2H','WITHIN_DAY','OLDER_THAN_DAY'}
           allowed_load={'UNKNOWN','loaded','not-found','masked','error'}
@@ -92,7 +94,13 @@ jobs:
                           'activating','deactivating','reloading'}
           allowed_result={'UNKNOWN','success','exit-code','timeout','signal',
                           'core-dump','watchdog','start-limit-hit','protocol','resources','dependency'}
-          data={'schema':'rc6.a420.primary-source-layout-readonly.v1',
+          allowed_user={'ROOT','UID1000','OTHER','DYNAMIC','UNKNOWN','NOT_APPLICABLE'}
+          allowed_boolean={'YES','NO','UNKNOWN','NOT_APPLICABLE'}
+          allowed_dropins={'PRESENT','NONE','UNKNOWN','NOT_APPLICABLE'}
+          allowed_private={'PRIVATE_0600','OTHER','UNKNOWN'}
+          allowed_owner={'UID1000','OTHER','UNKNOWN'}
+          allowed_access={'ACCESS_OK','READ_FAILED','NO_VERIFICADO'}
+          data={'schema':'rc6.a420.primary-source-layout-readonly.v2',
                 'read_only':True,'host_metadata_only':True,'database_opened':False,
                 'provider_calls':0,'order_routes_called':False,'ppi_watch_touched':False,
                 'paper_ready':False,'diagnostic_only':True,'files':[],
@@ -109,14 +117,27 @@ jobs:
                   raise ValueError('untrusted invariant')
               files=raw.get('files')
               units=raw.get('units')
-              if not isinstance(files,list) or len(files)!=6 or not isinstance(units,list) or len(units)!=2:
+              if not isinstance(files,list) or len(files)!=7 or not isinstance(units,list) or len(units)!=2:
                   raise ValueError('wrong denominators')
               for role,record in zip(expected_roles,files):
                   if (not isinstance(record,dict) or record.get('role')!=role or
                       record.get('status') not in allowed_status or
                       record.get('mtime_age_bucket') not in allowed_age):
                       raise ValueError('invalid file')
-                  if role=='SOURCE_CYCLE_STATE' and record.get('status')=='PRESENT_REGULAR':
+                  if role=='PPI_SCANNER_PRIVATE_RECEIPT':
+                      fields={'role','status','mtime_age_bucket','private_mode','owner_class',
+                              'consumer_access','access_scope'}
+                      if (set(record)!=fields or record['private_mode'] not in allowed_private or
+                          record['owner_class'] not in allowed_owner or
+                          record['consumer_access'] not in allowed_access or
+                          record['access_scope']!='HOST_DAC_ONLY'):
+                          raise ValueError('invalid private sidecar metadata')
+                      if (record['consumer_access']=='ACCESS_OK' and
+                          (record['status']!='PRESENT_REGULAR' or
+                           record['private_mode']!='PRIVATE_0600' or
+                           record['owner_class']!='UID1000')):
+                          raise ValueError('false positive sidecar access')
+                  elif role=='SOURCE_CYCLE_STATE' and record.get('status')=='PRESENT_REGULAR':
                       fields={'role','status','mtime_age_bucket','state_schema','session',
                               'public_last_success','evidence_last_success'}
                       if (set(record)!=fields or record['state_schema'] not in {'MATCHED','NO_VERIFICADO'} or
@@ -127,12 +148,20 @@ jobs:
                   elif set(record)!={'role','status','mtime_age_bucket'}:
                       raise ValueError('unexpected file field')
               for role,record in zip(expected_units,units):
-                  if (not isinstance(record,dict) or set(record)!={'unit','query','load','active','result','main_exit'} or
+                  if (not isinstance(record,dict) or
+                      set(record)!={'unit','query','load','active','result','main_exit',
+                                    'effective_user','dynamic_user','dropins'} or
                       record['unit']!=role or record['query'] not in {'READ_ONLY','UNAVAILABLE'} or
                       record['load'] not in allowed_load or record['active'] not in allowed_active or
                       record['result'] not in allowed_result or
-                      record['main_exit'] not in {'UNKNOWN','ZERO','NONZERO'}):
+                      record['main_exit'] not in {'UNKNOWN','ZERO','NONZERO'} or
+                      record['effective_user'] not in allowed_user or
+                      record['dynamic_user'] not in allowed_boolean or
+                      record['dropins'] not in allowed_dropins):
                       raise ValueError('invalid systemd state')
+                  if role=='CYCLE_TIMER' and any(record[k]!='NOT_APPLICABLE'
+                                                  for k in ('effective_user','dynamic_user','dropins')) and record['query']=='READ_ONLY':
+                      raise ValueError('unexpected timer identity')
               data['files']=files
               data['units']=units
               data['probe_status']='METADATA_ONLY'
@@ -145,9 +174,16 @@ jobs:
           for record in data['files']:
               print('A420_ROLE='+record['role']+' status='+record['status']+
                     ' age='+record['mtime_age_bucket'])
+              if record['role']=='PPI_SCANNER_PRIVATE_RECEIPT':
+                  print('A466_PRIVATE_SIDECAR mode='+record['private_mode']+
+                        ' owner='+record['owner_class']+' access='+record['consumer_access']+
+                        ' scope='+record['access_scope'])
           for record in data['units']:
               print('A420_UNIT='+record['unit']+' load='+record['load']+
                     ' active='+record['active']+' result='+record['result'])
+              if record['unit']=='CYCLE_SERVICE':
+                  print('A466_SERVICE_IDENTITY user='+record['effective_user']+
+                        ' dynamic='+record['dynamic_user']+' dropins='+record['dropins'])
           PY
           rm -f evidence/.raw.json
       - name: Preserve only validated sanitized receipt, including negatives
