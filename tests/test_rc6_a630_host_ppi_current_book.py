@@ -367,16 +367,22 @@ class TestA630(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
                 grant=budget.acquire('current',consumer='UNSCOPED',priority='DISCOVERY')
-                budget.start(grant['lease'])
-                adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
+                # The product guard enters wire_scope BEFORE budget.start.
+                ownership=budget.wire_scope(grant['lease'])
+                with ownership:
+                    with self.assertRaises(ValueError):
+                        adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
+                    budget.start(grant['lease'])
+                    adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
                 with self.assertRaises(ValueError):
                     adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
                 with self.assertRaises(ValueError):
                     adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
                 budget.finish(grant['lease'])
                 grant=budget.acquire('book',consumer='UNSCOPED',priority='DISCOVERY')
-                budget.start(grant['lease'])
-                adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
+                with budget.wire_scope(grant['lease']):
+                    budget.start(grant['lease'])
+                    adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
                 with self.assertRaises(ValueError):
                     adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
                 self.assertEqual(sends, ['/api/1.0/marketdata/current',
@@ -414,9 +420,14 @@ class TestA630(unittest.TestCase):
                         if not result.get('allowed'):
                             raise ValueError('ATOMIC_LEASE_DENIED')
                         lease=result['lease']
-                        budget.start(lease)
+                        ownership=budget.wire_scope(lease)
                     try:
-                        response=self.previous(adapter,request,*args,**kwargs)
+                        if lease:
+                            with ownership:  # product guard native sequence
+                                budget.start(lease)
+                                response=self.previous(adapter,request,*args,**kwargs)
+                        else:
+                            response=self.previous(adapter,request,*args,**kwargs)
                         self.audit(request.method, '/api/1.0/'+request.url.split('/api/1.0/')[-1].split('?')[0].lower(), 'ALLOWED')
                         return response
                     finally:
