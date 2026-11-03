@@ -106,6 +106,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/rc6_a630_sampling" "$HOME/.ssh/known_hosts"
           remote="sudo -n timeout 20 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-preflight $RC6_A630_SLOT'"
+          mkdir -p evidence
           set +e
           timeout 40 ssh -i "$HOME/.ssh/rc6_a630_sampling" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
@@ -119,12 +120,21 @@ jobs:
           python3 - <<'PY'
           import base64,json,os
           from pathlib import Path
-          from scripts.rc6_a630_host_ppi_current_book import SCHEMA, target_for_slot
+          from scripts.rc6_a630_host_ppi_current_book import SCHEMA, REASONS, target_for_slot
           path=Path(os.environ['RUNNER_TEMP'])/'rc6-a630-host.private'
           raw=path.read_bytes() if path.exists() and path.stat().st_size<=8192 else b''
+          safe={'schema':SCHEMA,'phase':'HOST_PREFLIGHT','state':'NO_VERIFICADO',
+                'reason':'HOST_PREFLIGHT_OR_RUNTIME_HOLD','ppi_gets':0,
+                'db_opened':False,'sqlite_ro_mount_protected':False,
+                'paper_db_identity_verified':False,'ppi_primary_5key_unique':False}
           try:
               doc=json.loads(raw)
               target=target_for_slot(os.environ['RC6_A630_SLOT'])
+              assert isinstance(doc,dict) and doc.get('schema')==SCHEMA
+              assert doc.get('phase')=='HOST_PREFLIGHT' and doc.get('ppi_gets')==0
+              assert doc.get('orders_sent')==0 and doc.get('source_pit_verified') is False
+              if doc.get('state')=='NO_VERIFICADO' and doc.get('reason') in REASONS:
+                  safe['reason']=doc['reason']
               assert os.environ['RC6_A630_PREFLIGHT_RC']=='0'
               assert set(doc)=={'schema','phase','state','reason','ppi_gets','target',
                   'db_opened','sqlite_ro_mount_protected','paper_db_identity_verified',
@@ -136,7 +146,14 @@ jobs:
               assert doc['paper_db_identity_verified'] is doc['ppi_primary_5key_unique'] is True
               assert doc['source_pit_verified'] is False
           except (ValueError,AssertionError,TypeError):
+              Path('evidence/a630_host_preflight.json').write_text(
+                  json.dumps(safe,sort_keys=True)+'\n',encoding='utf-8')
               raise SystemExit('A630_HOST_PPI_CATALOG_HOLD_ZERO_PROVIDER_GET')
+          safe.update(state='IDENTITY_ONLY_NO_GET',reason='PPI_PRIMARY_FIVE_KEY_UNIQUE',
+              db_opened=True,sqlite_ro_mount_protected=True,
+              paper_db_identity_verified=True,ppi_primary_5key_unique=True)
+          Path('evidence/a630_host_preflight.json').write_text(
+              json.dumps(safe,sort_keys=True)+'\n',encoding='utf-8')
           b64=base64.b64encode(json.dumps(list(target),separators=(',',':')).encode()).decode()
           with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f:
               f.write('RC6_A630_TARGET_B64='+b64+'\n')
@@ -161,7 +178,8 @@ jobs:
           python3 - <<'PY'
           import json,os
           from pathlib import Path
-          from scripts.rc6_a630_host_ppi_current_book import (SCHEMA,decode_target,verify_receipt)
+          from scripts.rc6_a630_host_ppi_current_book import (
+              SCHEMA,decode_target,verify_receipt,unverified_transport_receipt)
           path=Path(os.environ['RUNNER_TEMP'])/'rc6-a630-capture.private'
           raw=path.read_bytes() if path.exists() and path.stat().st_size<=65536 else b''
           lines=raw.decode('utf-8',errors='replace').splitlines()
@@ -171,9 +189,7 @@ jobs:
               result=json.loads(lines[1]) if image==os.environ['RC6_EXPECTED_IMAGE_ID'] else {}
               assert verify_receipt(result,target)
           except (ValueError,AssertionError,TypeError):
-              result={"schema":SCHEMA,"state":"NO_VERIFICADO",
-                  "reason":"HOST_PREFLIGHT_OR_RUNTIME_HOLD", "current_gets":None,"book_gets":None,
-                  "orders_sent":0,"execution_allowed":False,"source_pit_verified":False}
+              result=unverified_transport_receipt()
           public={"schema":"rc6.a630.action.sanitized.v1","run_id":os.environ['GITHUB_RUN_ID'],
               "control_plane_sha":os.environ['GITHUB_SHA'],
               "source_sha256":os.environ['RC6_A630_SCRIPT_SHA'],
@@ -201,11 +217,24 @@ jobs:
             python3 - <<'PY'
           import json,os
           from pathlib import Path
-          doc={"schema":"rc6.a630.action.sanitized.v1",
+          from scripts.rc6_a630_host_ppi_current_book import unverified_transport_receipt
+          host=Path('evidence/a630_host_preflight.json')
+          reason='SLOT_OR_DAY_HOLD' if not os.environ.get('RC6_A630_SLOT') else 'HOST_PREFLIGHT_OR_RUNTIME_HOLD'
+          if host.is_file():
+              try:
+                  report=json.loads(host.read_text(encoding='utf-8'))
+                  if (report.get('schema')=='rc6.a630.ppi.current-book.sample.v1'
+                          and report.get('phase')=='HOST_PREFLIGHT'
+                          and report.get('state')=='NO_VERIFICADO'
+                          and report.get('ppi_gets')==0):
+                      reason=report.get('reason',reason)
+              except (OSError,ValueError,TypeError):
+                  pass
+          doc={**unverified_transport_receipt(reason),
+            "schema":"rc6.a630.action.sanitized.v1",
             "run_id":os.environ['GITHUB_RUN_ID'],"control_plane_sha":os.environ['GITHUB_SHA'],
-            "state":"NO_VERIFICADO","reason":"HOST_PREFLIGHT_OR_RUNTIME_HOLD",
-            "current_gets":0,"book_gets":0,"real_orders_sent_by_action":0,
-            "source_pit_verified":False,"predeploy_dispatches":0,"deploy_dispatches":0}
+            "real_orders_sent_by_action":0,
+            "predeploy_dispatches":0,"deploy_dispatches":0}
           Path('evidence/a630_ppi_current_book.json').write_text(json.dumps(doc,sort_keys=True)+'\n')
           PY
           fi
@@ -215,7 +244,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rc6-a630-ppi-current-book-${{ github.run_id }}
-          path: evidence/a630_ppi_current_book.json
+          path: |
+            evidence/a630_ppi_current_book.json
+            evidence/a630_host_preflight.json
           if-no-files-found: error
           retention-days: 90
 
