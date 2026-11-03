@@ -302,12 +302,19 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         family = _row_family(row)
         role, parent = family_role(family)
         comparison = _comparison(row)
-        contract = _effective_contract(comparison)
+        reported_contract = _effective_contract(comparison)
+        # Even unlinked source rows can contradict one another. Show one
+        # explicit conflict rather than the first claimed READY label.
+        unlinked_duplicate = (observed_key is not None and
+                              len(by_identity.get(observed_key, ())) > 1)
+        contract = "BLOCKED_CONFLICT" if unlinked_duplicate else reported_contract
         alias_only = (observed_key is not None and
                       (normalize_family(observed_key[0]), *observed_key[1:]) in catalog_visible_keys)
-        reasons = _reason(row, contract) + ["PPI_CATALOG_IDENTITY_NOT_VERIFIED"]
+        reasons = _reason(row, reported_contract) + ["PPI_CATALOG_IDENTITY_NOT_VERIFIED"]
         if alias_only:
             reasons.append("RAW_FAMILY_ALIAS_ONLY_NO_AUTHORITY")
+        if unlinked_duplicate:
+            reasons.append("DUPLICATE_UNLINKED_OBSERVATION_REVIEW_REQUIRED")
         instruments.append({
             "family": family, "raw_family": _raw_family(row),
             "family_role": role, "parent_paper_family": parent,
