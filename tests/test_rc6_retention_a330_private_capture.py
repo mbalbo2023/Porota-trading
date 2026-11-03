@@ -8,6 +8,7 @@ import json
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, datetime, timezone
 import os
+import subprocess
 from pathlib import Path
 import sqlite3
 import sys
@@ -855,6 +856,42 @@ class SyntheticPrivateCapture(unittest.TestCase):
         self.assertIn("path: ${{ env.RC6_A502_DIR }}/a502-sanitized.json", body)
         self.assertNotIn("path: ${{ env.RC6_A502_DIR }}/a502-private.json", body)
         self.assertNotIn("python3 -B - --host-export'", body)
+
+    def test_a502_all_workflow_shell_blocks_parse_even_when_host_jobs_skip(self):
+        """PR CI must syntax-check manual-only host code without dispatching it.
+
+        The A502 first draft had an unmatched extra 'fi' in host cleanup; PR
+        contracts passed because both host jobs were skipped. This regression
+        checks every literal workflow run block with Bash's parser only.
+        """
+        lines = HISTORY_WORKFLOW.read_text().splitlines()
+        blocks = {}
+        step_name = None
+        for index, line in enumerate(lines):
+            if line.startswith("      - name: "):
+                step_name = line.removeprefix("      - name: ")
+            if line != "        run: |":
+                continue
+            self.assertIsNotNone(step_name)
+            script = []
+            for body_line in lines[index + 1:]:
+                if body_line.strip() and not body_line.startswith("          "):
+                    break
+                script.append(body_line[10:] if body_line.startswith("          ")
+                              else "")
+            self.assertTrue(script, f"Missing shell script for {step_name}")
+            blocks[step_name] = "\n".join(script) + "\n"
+        for required in ("Destroy private runner-only files and credentials",
+                         "Destroy isolated credentials and remote stdout/stderr",
+                         "Single bounded SSH; fixed aggregate counts only, NO DB transfer"):
+            self.assertIn(required, blocks)
+        self.assertGreaterEqual(len(blocks), 8)
+        for name, script in blocks.items():
+            with self.subTest(step=name):
+                check = subprocess.run(["bash", "-n"], input=script, text=True,
+                                       capture_output=True, timeout=5)
+                self.assertEqual(check.returncode, 0,
+                                 f"{name}: bash -n: {check.stderr}")
 
     def test_workflow_is_manual_main_runner_only_without_deploy(self):
         body = WORKFLOW.read_text()

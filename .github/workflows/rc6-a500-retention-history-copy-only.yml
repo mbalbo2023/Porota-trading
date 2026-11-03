@@ -157,6 +157,7 @@ jobs:
             find "$private" -mindepth 1 -maxdepth 1 -type f \
               -exec shred -u -- {} +
             rmdir "$private"
+          fi
 
   private-history-aggregate:
     needs: contracts
@@ -203,7 +204,8 @@ jobs:
             printf '%s\n' "$DO_SSH_KEY" > "$root/id_key"
             printf '%s\n' "$DO_KNOWN_HOSTS" > "$root/known_hosts"
             chmod 600 "$root/id_key" "$root/known_hosts"
-            # Output is less than 8 KiB; reject runaway remote output.
+            # Shell file-size blocks are a secondary cap; runner sanitizer
+            # independently enforces a strict maximum of 8192 bytes.
             ulimit -f 16
             set +e
             timeout 85 ssh -i "$root/id_key" -o BatchMode=yes \
@@ -245,5 +247,4 @@ jobs:
             find "$private" -mindepth 1 -maxdepth 1 -type f \
               -exec shred -u -- {} +
             rmdir "$private"
-          fi
           fi
