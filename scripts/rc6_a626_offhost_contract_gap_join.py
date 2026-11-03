@@ -43,10 +43,20 @@ def _family(value):
 
 
 def _key(row):
-    return (_family(row["family"]), str(row["ticker"] or "").strip().upper(),
+    """Preserve the literal provider/catalog family in the five-key authority.
+
+    ON/OBLIGACIONES and FCI_LOCAL/FCI may share a reporting bucket, but a
+    normalized alias is never evidence of a provider-backed exact identity.
+    """
+    return (str(row["family"] or "").strip().upper(), str(row["ticker"] or "").strip().upper(),
             str(row["market"] or "").strip().upper(),
             str(row["currency"] or "").strip().upper(),
             str(row["settlement"] or "").strip().upper())
+
+
+def _reporting_key(key):
+    """Diagnostic grouping only. Never use this in an evidence/authority join."""
+    return (_family(key[0]), *key[1:])
 
 
 def _complete_key(key):
@@ -186,6 +196,7 @@ def _bucket():
             "catalog_contract_conflicts_declared": 0,
             "catalog_bridge_present_not_accredited": 0,
             "exact_v2_ppi": 0, "exact_v2_complement_only": 0,
+            "alias_current_only_no_authority": 0,
             "ticker_only_v2_mismatch": 0, "v2_absent": 0,
             "historic_ppi_exact_without_current": 0,
             "historic_complement_exact_without_current": 0,
@@ -198,18 +209,13 @@ def _historic_sources(conn, key):
     family, ticker, market, currency, settlement = key
     if not _complete_key(key):
         return set()
-    aliases = (("ON", "OBLIGACIONES") if family == "OBLIGACIONES"
-               else ("FCI", "FCI_LOCAL") if family == "FCI"
-               else (family,))
-    sources = set()
-    for alias in aliases:
-        for row in conn.execute(
-                """SELECT DISTINCT source_class FROM contract_evidence_v2_snapshots
-                   WHERE family=? AND ticker=? AND market=?
-                     AND currency=? AND settlement=? LIMIT 100""",
-                (alias, ticker, market, currency, settlement)):
-            sources.add(str(row[0]))
-    return sources
+    # Historical authority also requires raw family equality. Alias lookups
+    # cannot certify a current contract or an exact historical PPI source.
+    return {str(row[0]) for row in conn.execute(
+        """SELECT DISTINCT source_class FROM contract_evidence_v2_snapshots
+           WHERE family=? AND ticker=? AND market=?
+             AND currency=? AND settlement=? LIMIT 100""",
+        (family, ticker, market, currency, settlement))}
 
 
 def _analyze(conn):
@@ -243,19 +249,21 @@ def _analyze(conn):
         if row["_catalog_primary_claim"]:
             ppi_by_symbol[str(row["ticker"] or "").strip().upper()] += 1
     by_key = defaultdict(list)
+    by_reporting_key = defaultdict(list)  # Diagnostic ONLY; never source authority.
     by_symbol = Counter()
     v2_unkeyed_rows = 0
     for row in current:
         key = _key(row)
         if _complete_key(key):
             by_key[key].append(row)
+            by_reporting_key[_reporting_key(key)].append(row)
         else:
             v2_unkeyed_rows += 1
         by_symbol[key[1]] += 1
     totals = {fam: _bucket() for fam in FAMILIES}
     for row in catalog:
         key = _key(row)
-        fam = key[0]
+        fam = _family(key[0])
         if fam not in totals or str(row["status"] or "").upper() not in ACTIVE:
             continue
         result = totals[fam]
@@ -297,8 +305,13 @@ def _analyze(conn):
         if not _complete_key(key):
             result["catalog_incomplete_five_key"] += 1
             continue
-        candidates = by_key.get(key, [])
+        candidates = by_key.get(key, [])  # RAW exact five-key only.
         primary = [r for r in candidates if str(r["source_class"]).startswith("PPI_")]
+        # Report an alias-only encounter without treating it as an exact V2
+        # match. A different family cannot confer PPI contract authority.
+        if not primary and any(_key(r) != key for r in
+                by_reporting_key.get(_reporting_key(key), ())):
+            result["alias_current_only_no_authority"] += 1
         historic_sources = _historic_sources(conn, key)
         if not primary and any(name.startswith("PPI_") for name in historic_sources):
             result["historic_ppi_exact_without_current"] += 1
