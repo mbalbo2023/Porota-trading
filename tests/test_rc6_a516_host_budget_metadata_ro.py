@@ -10,7 +10,8 @@ import unittest
 from unittest import mock
 
 from scripts.rc6_a516_host_budget_metadata_ro import (
-    auxiliary_policy_intent, build_receipt, capacity_mode, sidecar_kind, verify_receipt,
+    auxiliary_policy_intent, build_receipt, capacity_mode,
+    observer_pid1_launch_intent, sidecar_kind, verify_receipt,
 )
 
 
@@ -197,6 +198,120 @@ class A516BudgetMetadataTests(unittest.TestCase):
         ):
             with self.subTest(changed=changed):
                 self.assertFalse(verify_receipt(dict(base, **changed)))
+
+    def test_a620_pid1_launch_policy_default_off_not_runtime_go(self):
+        sensitive = "MY_SECRET_PPI_TOKEN___NOT_FOR_OUTPUT"
+        paths = []
+
+        def reader(path, limit):
+            paths.append((path, limit))
+            if path == "/proc/1/cmdline":
+                return b"python\x00bv_paper_runtime.py\x00"
+            return ("TELEGRAM_BOT_TOKEN=" + sensitive + "\0").encode("ascii")
+
+        launch = observer_pid1_launch_intent(proc_reader=reader,
+            policy_loader=lambda path: {"mode": "OFF"})
+        self.assertEqual(launch, {
+            "observer_pid1_command": "EXPECTED_BV_RUNTIME",
+            "observer_pid1_environment_mode": "UNSET",
+            "observer_pid1_policy_file_mode": "OFF",
+            "observer_pid1_launch_requested_mode": "OFF",
+            "observer_pid1_policy_selector": "CONTAINER_DEFAULT",
+        })
+        self.assertEqual(paths, [
+            ("/proc/1/cmdline", 2048), ("/proc/1/environ", 16384)])
+        result = build_receipt("ABSENT", {"status": "ABSENT"}, "OTHER_OR_UNSET",
+            pid1_launch_intent=launch)
+        self.assertTrue(verify_receipt(result))
+        self.assertEqual(result["runtime_effective_policy"], "NO_VERIFICADO")
+        self.assertEqual(result["runtime_ledger_and_exit_reserves"], "NO_VERIFICADO")
+        self.assertFalse(result["paper_ready"])
+        self.assertNotIn(sensitive, json.dumps(result))
+
+    def test_a620_pid1_launch_policy_approved_is_still_no_get(self):
+        def reader(path, limit):
+            return (b"python\x00bv_paper_runtime.py\x00" if path.endswith("cmdline") else
+                    b"POROTA_DYNAMIC_CAPACITY_MODE=approved\x00"
+                    b"TELEGRAM_BOT_TOKEN=NO_LOG_SECRET\x00")
+        launch = observer_pid1_launch_intent(proc_reader=reader,
+            policy_loader=lambda _: {"mode": "OFF"})
+        self.assertEqual(launch["observer_pid1_environment_mode"], "APPROVED")
+        self.assertEqual(launch["observer_pid1_launch_requested_mode"], "APPROVED")
+        receipt = build_receipt("ABSENT", {"status": "ABSENT"}, "OTHER_OR_UNSET",
+            pid1_launch_intent=launch)
+        self.assertTrue(verify_receipt(receipt))
+        self.assertEqual(receipt["provider_calls"], 0)
+        self.assertEqual(receipt["runtime_effective_policy"], "NO_VERIFICADO")
+        self.assertNotIn("NO_LOG_SECRET", json.dumps(receipt))
+
+    def test_a620_unexpected_pid1_does_not_open_environment(self):
+        paths = []
+        def reader(path, limit):
+            paths.append(path)
+            return b"python\x00shady_alias.py\x00"
+        launch = observer_pid1_launch_intent(proc_reader=reader)
+        self.assertEqual(launch["observer_pid1_command"], "UNEXPECTED")
+        self.assertEqual(launch["observer_pid1_launch_requested_mode"], "UNINSPECTED")
+        self.assertEqual(paths, ["/proc/1/cmdline"])
+
+    def test_a620_missing_pid1_procfile_fails_closed(self):
+        launch = observer_pid1_launch_intent(proc_reader=lambda *_: (_ for _ in ()).throw(
+            PermissionError("PRIVATE_PROC_FAILURE")))
+        self.assertEqual(launch["observer_pid1_command"], "UNAVAILABLE")
+        self.assertEqual(launch["observer_pid1_policy_file_mode"], "UNINSPECTED")
+        receipt = build_receipt("ABSENT", {"status": "ABSENT"}, "OFF",
+            pid1_launch_intent=launch)
+        self.assertTrue(verify_receipt(receipt))
+        self.assertNotIn("PRIVATE_PROC_FAILURE", json.dumps(receipt))
+
+    def test_a620_duplicate_env_and_oversize_fail_closed(self):
+        for raw in (
+            b"POROTA_DYNAMIC_CAPACITY_MODE=OFF\x00POROTA_DYNAMIC_CAPACITY_MODE=APPROVED\x00",
+            b"POROTA_DYNAMIC_CAPACITY_MODE=" + b"A" * 513 + b"\x00",
+            b"POROTA_DYNAMIC_CAPACITY_MODE=APPROVED",
+            b"NOT_ENVIRONMENT\x00",
+        ):
+            with self.subTest(raw_length=len(raw)):
+                def reader(path, limit):
+                    return (b"python\x00bv_paper_runtime.py\x00" if path.endswith("cmdline") else raw)
+                launch = observer_pid1_launch_intent(proc_reader=reader)
+                self.assertEqual(launch["observer_pid1_command"], "EXPECTED_BV_RUNTIME")
+                self.assertEqual(launch["observer_pid1_launch_requested_mode"], "UNINSPECTED")
+
+    def test_a620_override_never_opens_arbitrary_policy_or_reveals_path(self):
+        sensitive_path = "/run/secrets/private-bank-policy.json"
+        def reader(path, limit):
+            return (b"python\x00bv_paper_runtime.py\x00" if path.endswith("cmdline") else
+                    ("POROTA_CAPACITY_POLICY_PATH=" + sensitive_path + "\0"
+                     "POROTA_DYNAMIC_CAPACITY_MODE=APPROVED\0").encode("ascii"))
+        def prohibited_loader(path):
+            raise AssertionError("A620_MUST_NOT_OPEN_PRIVATE_POLICY_OVERRIDE")
+        launch = observer_pid1_launch_intent(proc_reader=reader, policy_loader=prohibited_loader)
+        self.assertEqual(launch["observer_pid1_policy_selector"], "CONTAINER_OVERRIDE")
+        self.assertEqual(launch["observer_pid1_policy_file_mode"], "UNAVAILABLE")
+        self.assertEqual(launch["observer_pid1_launch_requested_mode"], "UNAVAILABLE")
+        self.assertNotIn(sensitive_path, json.dumps(launch))
+        receipt = build_receipt("ABSENT", {"status": "ABSENT"}, "OFF",
+            pid1_launch_intent=launch)
+        self.assertTrue(verify_receipt(receipt))
+        self.assertFalse(receipt["paper_ready"])
+
+    def test_a620_untrusted_launch_claim_rejected_by_receipt(self):
+        real = observer_pid1_launch_intent(
+            proc_reader=lambda path,limit: (b"python\x00bv_paper_runtime.py\x00"
+                if path.endswith("cmdline") else b"POROTA_DYNAMIC_CAPACITY_MODE=SHADOW\x00"),
+            policy_loader=lambda _: {"mode": "OFF"})
+        receipt = build_receipt("ABSENT", {"status": "ABSENT"}, "OTHER_OR_UNSET",
+            pid1_launch_intent=real)
+        for change in (
+            {"observer_pid1_launch_requested_mode": "APPROVED"},
+            {"observer_pid1_environment_mode": "secret token"},
+            {"observer_pid1_policy_file_mode": "/run/secrets"},
+            {"observer_pid1_command": "UNEXPECTED"},
+            {"observer_launch_scope": "EFFECTIVE_APPROVED"},
+        ):
+            with self.subTest(change=change):
+                self.assertFalse(verify_receipt(dict(receipt, **change)))
 
     def test_existing_action_requires_explicit_main_dispatch_and_immutable_image(self):
         source = (Path(__file__).resolve().parents[1] / ".github" / "workflows"
