@@ -70,6 +70,10 @@ Un slot, cuando **todos** los guards efectivamente certifican:
    **Guard adicional antes de `HTTPAdapter.send`** rechaza Search/Estimate/
    Configuration/Orders, redirect, Book2, GET sin lease *started*, retries,
    TLS `verify=False` y cualquier URL no canónica *antes del socket*.
+   **Orden de transporte verificado:** instalar strict guard ANTES de construir
+   `ProductionMarketReader`; su `ReadOnlyTransportGuard.guarded_send` externo
+   obtiene/inicia el lease nativo y recién delega al strict pre-wire interno.
+   Cerrar reader/restaurar guard de producto ANTES de desmontar strict (LIFO).
    Reintentos, endpoint ajeno, lote ambiguo,
    lease nulo, body excesivo o reloj nativo sin zona/antiguo/futuro ⇒ HOLD.
 5. Dos SHA-256 de los **bytes de respuesta HTTP ya descomprimidos consumidos
@@ -120,14 +124,16 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
 
 `python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v`
 
-28 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
+29 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
 dos leases, denial/lease nulo/repetido, replay, POST/GET duplicado, forma
 Book inválida, reloj futuro/naive/stale, alias 3-key divisa, fuente IOL,
 URL host/puerto/query falsificado, Book2 duplicado, hermano IOL permitido,
 hermano PPI denegado y source=PPI_FIELD, mount RO obligatorio,
 recibo falsificado, no-wire adapter ante Search/Estimate/Orders/Book2,
 ausencia real de sidecar sin creación, clasificación y vigencia EXIT
-retención/EXIT, pérdida SSH tras Current parcial sin falso 0, cero órdenes. Compilar script,
+retención/EXIT, integración sin socket con guard de transporte externo que
+adquiere lease nativo sin preadquirir, cierre LIFO, pérdida SSH tras Current
+parcial sin falso 0, cero órdenes. Compilar script,
 validar workflow YAML, Bash y CI focal.
 
 ## Estado runtime abierto al cierre de PR
