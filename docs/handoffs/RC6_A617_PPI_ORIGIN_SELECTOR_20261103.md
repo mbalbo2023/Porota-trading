@@ -4,7 +4,7 @@
 
 - **Owner:** A617, #732; branch `audit/rc6-a617-ppi-origin-selector-readonly-20261103` against `main` only.
 - **Change:** one self-contained bounded host READ_ONLY probe, adversarial offline `unittest` and one manual-only main workflow.
-- **Local TEST:** 8/8 GREEN; GitHub CI/runtime must be separately verified by exact SHA and run ID.
+- **Local TEST:** 10/10 GREEN; GitHub CI/runtime must be separately verified by exact SHA and run ID.
 - **Not touched:** product, candidate #778, `bf_production_paper_observer.py`, PPI Watch, A516/#898, Docker/runtime/systemd/DB, deployment control.
 
 ## ERROR → RCA
@@ -22,7 +22,9 @@ The candidate code at #778 contains a strict scanner receipt writer, native Book
 
 ## FIX → GUARD
 
-`scripts/rc6_a617_ppi_origin_selector_readonly.py` reads operational SQLite **only** via URI `mode=ro` + `PRAGMA query_only`, no copied or mutated WAL/SHM. It reports bounded samples of up to 4,096 latest `market_snapshots`, aggregate source labels and trade/book-clock presence. It runs the **exact** `_eligible_symbols` SQL grouping on `candidate_identity_v2`, with old `candidate_universe` fallback, and inspects the latest `universe_cycle_metrics` COLD/active-budget plan.
+`scripts/rc6_a617_ppi_origin_selector_readonly.py` reads operational SQLite via URI `mode=ro` + `PRAGMA query_only` **only after verifying an OS read-only mount** for the DB directory. That additional guard is indispensable: SQLite's own WAL documentation confirms that a nominally read-only WAL reader may create/modify `-shm` when the directory is writable; `immutable=1` would be incorrect for a database with live writers. The Action creates a private mount namespace (`unshare --mount --propagation private`) and read-only bind mount of `/opt/porota-trading/data` before starting Python. A missing namespace/remount or non-RO mount returns `NO_VERIFICADO` without opening SQLite. The script never copies a live WAL/SHM. It also checks the `paper_workspace` v17 identity marker before any aggregates; this proves the **default fixed-path DB identity**, not the effective observer process DB override (which remains `NO_VERIFICADO`).
+
+On a verified read-only bind, it reports bounded samples of up to 4,096 latest `market_snapshots`, aggregate source labels and trade/book-clock presence. It runs the **exact** `_eligible_symbols` SQL grouping on `candidate_identity_v2`, with old `candidate_universe` fallback, and inspects the latest `universe_cycle_metrics` COLD/active-budget plan.
 
 Private scanner receipt and Book journal reads use `O_NOFOLLOW`, 0600, size caps (2/8 MiB) and stable stat bounds. A scanner receipt is **an origin assertion**; quote correspondence across exact five-key, native/received clocks, bid/ask/last/sizes is only a correlation diagnostic. The private Book hash chain is checked structurally; hashes are **not** provider signatures, nor evidence of causal Book2/fee/fill.
 
@@ -32,7 +34,7 @@ Every result sets `provider_gets=0`, `orders_called=false`, `admission_authority
 
 ## TEST → EVIDENCE
 
-Eight synthetic SQL/file tests cover:
+Ten synthetic SQL/file tests cover:
 
 - A385 JSON zero despite one mode row and one eligible SQL candidate;
 - matching scanner receipt and mode snapshot remain **non-authoritative**;
@@ -42,6 +44,8 @@ Eight synthetic SQL/file tests cover:
 - missing / zero eligible candidate selector without new GET;
 - absent DB returns `NO_VERIFICADO`;
 - bounded/truncated snapshot sample is explicit.
+- active `-wal/-shm` placeholders on a writable mount **block SQLite open** without touching their bytes or timestamps;
+- wrong v17 `paper_workspace` identity blocks all DB aggregate claims.
 
 Before any host execution, verify GitHub PR `contracts=SUCCESS`; `host_provenance=SKIPPED` on PR is intentional. Merge to `main` only with current WRITE_OWNER and governance; then manual A617 READ_ONLY workflow dispatch, inspect exact GitHub artifact JSON. Do not run Predeploy V2, Deploy V2, extra PPI GET or PPI Watch.
 
