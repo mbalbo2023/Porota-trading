@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +21,26 @@ OUTPUT = Path(os.getenv("RC6_POSTCLOSE_REVIEW_OUTPUT", "data/paper_v17/reports/p
 
 
 def _number(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _count(value):
+    # A boolean, fractional/overflow float or negative count cannot certify
+    # a PAPER ledger; preserve only integer and unambiguous decimal forms.
+    if type(value) is int and value >= 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value.strip()):
+        try:
+            return int(value.strip())
+        except ValueError:
+            pass
+    return None
 
 
 def _today(value):
@@ -36,9 +54,27 @@ def _today(value):
 def build_review(snapshot: dict, now: datetime) -> dict:
     operations = [row for row in (snapshot.get("operations") or []) if isinstance(row, dict)]
     metrics = snapshot.get("metrics") if isinstance(snapshot.get("metrics"), dict) else {}
-    closed = int(metrics.get("closed_operations") or len(operations))
+    raw_closed = metrics.get("closed_operations")
+    raw_decisions = metrics.get("decisions_observed")
+    closed = _count(raw_closed or len(operations))
+    decisions_observed = _count(raw_decisions or snapshot.get("decision_count") or 0)
+    invalid_counts = (
+        (raw_closed is not None and _count(raw_closed) is None)
+        or (raw_decisions is not None and _count(raw_decisions) is None)
+        or closed is None or decisions_observed is None
+    )
+    if closed is None:
+        closed = len(operations)
+    if decisions_observed is None:
+        decisions_observed = 0
     net_pnl = _number(metrics.get("net_pnl_ars"))
     win_rate = _number(metrics.get("win_rate_pct"))
+    invalid_metrics = any(
+        key in metrics and metrics[key] is not None and _number(metrics[key]) is None
+        for key in ("net_pnl_ars", "win_rate_pct")
+    ) or (win_rate is not None and not 0 <= win_rate <= 100)
+    if win_rate is not None and not 0 <= win_rate <= 100:
+        win_rate = None
     snapshot_fresh = (
         snapshot.get("phase") == "postclose"
         and _today(snapshot.get("generated_at")) == now.astimezone(TZ).date().isoformat()
@@ -53,7 +89,8 @@ def build_review(snapshot: dict, now: datetime) -> dict:
     receipt = (snapshot.get("postclose_eod_source")
                if isinstance(snapshot.get("postclose_eod_source"), dict) else {})
     eod_ready = not eod_required or (snapshot_fresh and verified_current_source(receipt, generated))
-    snapshot_current = snapshot_fresh and snapshot.get("status") == "VERIFIED" and eod_ready
+    snapshot_current = (snapshot_fresh and snapshot.get("status") == "VERIFIED"
+                        and eod_ready and not invalid_metrics and not invalid_counts)
     findings, next_actions = [], []
     if not snapshot_fresh or snapshot.get("status") == "INSUFFICIENT_EVIDENCE":
         findings.append("POSTCLOSE_SNAPSHOT_MISSING_OR_STALE")
@@ -61,6 +98,12 @@ def build_review(snapshot: dict, now: datetime) -> dict:
     if snapshot_fresh and eod_required and not eod_ready:
         findings.append("PPI_EOD_CURRENT_SESSION_SOURCE_PENDING")
         next_actions.append("RETRY_READ_ONLY_POSTCLOSE_AFTER_SOURCE_RECEIPT")
+    if invalid_metrics:
+        findings.append("POSTCLOSE_FINANCIAL_METRICS_INVALID")
+        next_actions.append("REGENERATE_READ_ONLY_POSTCLOSE_SNAPSHOT")
+    if invalid_counts:
+        findings.append("POSTCLOSE_COUNTERS_INVALID")
+        next_actions.append("REGENERATE_READ_ONLY_POSTCLOSE_SNAPSHOT")
     if closed == 0:
         findings.append("NO_CLOSED_PAPER_OPERATIONS")
         next_actions.append("REVIEW_DECISION_LOG_AND_CANDIDATE_COVERAGE")
@@ -89,7 +132,7 @@ def build_review(snapshot: dict, now: datetime) -> dict:
         "paper_safety_status": snapshot.get("paper_safety_status"),
         "metrics": {
             "closed_operations": closed, "net_pnl_ars": net_pnl,
-            "win_rate_pct": win_rate, "decisions_observed": int(metrics.get("decisions_observed") or snapshot.get("decision_count") or 0),
+            "win_rate_pct": win_rate, "decisions_observed": decisions_observed,
         },
         "operations": operations,
         "findings": findings,
@@ -104,7 +147,8 @@ def write_review(review: dict, output: Path = OUTPUT) -> None:
     fd, temporary = tempfile.mkstemp(prefix=".postclose-review.", suffix=".json", dir=output.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(review, handle, ensure_ascii=False, sort_keys=True, indent=2)
+            json.dump(review, handle, ensure_ascii=False, sort_keys=True,
+                      indent=2, allow_nan=False)
             handle.write("\n")
         os.replace(temporary, output)
     finally:
