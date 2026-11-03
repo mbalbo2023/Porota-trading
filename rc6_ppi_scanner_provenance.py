@@ -6,8 +6,11 @@ full-universe capture, order gate, or proof of a future provider session.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from contextlib import contextmanager
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -34,6 +37,18 @@ RETENTION_SECONDS = 48 * 3600
 # 300 seconds. Share that stricter bound with the scanner and ledger so a
 # stale book cannot become PAPER-ready through another consumer.
 NATIVE_QUOTE_MAX_AGE_SECONDS = 300
+
+# A556: private, append-preserving, integrity-checked native PPI Book evidence.
+# This is a finite capture budget, *not* retention or authority to delete. Once
+# it is full a separate governed archival decision is required (issue #478).
+PIT_JOURNAL_SCHEMA = "rc6.ppi-native-book-causal-journal.v1"
+PIT_JOURNAL_FILENAME = "rc6_ppi_native_book_causal_private.json"
+PIT_JOURNAL_MAX_RECORDS = 4096
+PIT_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
+PIT_SESSION_MAX_RECORDS = 1024
+PIT_SESSION_MAX_BYTES = 2 * 1024 * 1024
+PIT_EVENT_MAX_BYTES = 32 * 1024
+PIT_BOOK_MAX_DEPTH_PER_SIDE = 64
 
 
 def _aware(value: Any) -> datetime | None:
@@ -180,6 +195,19 @@ class ScannerPrimaryRecorder:
         self.invalid_receipt_clock = 0
         self.capture_count = 0
 
+    def capture_raw_book(self, quote: Any, *, raw_book: dict[str, Any],
+                         request: tuple[str, str, str], identity: tuple[str, ...],
+                         observed_at: str) -> dict[str, Any]:
+        """Persist raw-depth PPI Book already read by the trusted scanner.
+
+        The observer call site is an A550/A556 *separate* integration gate.
+        No provider call, catalog lookup, unit inference, order, or publish log.
+        """
+        return capture_native_book_journal(
+            self.path.with_name(PIT_JOURNAL_FILENAME), quote,
+            raw_book=raw_book, request=request, identity=identity,
+            observed_at=observed_at)
+
     def capture(self, quote: Any, *, request: tuple[str, str, str]) -> None:
         if (quote.symbol, quote.asset_class, quote.settlement) != tuple(request):
             self.invalid_identity += 1
@@ -265,3 +293,331 @@ class ScannerPrimaryRecorder:
         return {"status": "PUBLISHED", "records": len(chosen),
                 "invalid_identity": self.invalid_identity,
                 "invalid_receipt_clock": self.invalid_receipt_clock}
+
+
+def _pit_bytes(value: Any) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True,
+                       separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+
+
+def _pit_hash(value: Any) -> str:
+    return hashlib.sha256(_pit_bytes(value)).hexdigest()
+
+
+def _pit_decimal(value: Any, *, positive: bool) -> str:
+    if isinstance(value, bool):
+        raise ValueError("RAW_BOOK_NUMERIC_INVALID")
+    text = str(value)
+    if len(text) > 80:
+        raise ValueError("RAW_BOOK_NUMERIC_INVALID")
+    try:
+        number = Decimal(text)
+    except (ValueError, TypeError, InvalidOperation):
+        raise ValueError("RAW_BOOK_NUMERIC_INVALID") from None
+    if (not number.is_finite() or number < 0 or (positive and number == 0)
+            or number.adjusted() > 18 or number.as_tuple().exponent < -18):
+        raise ValueError("RAW_BOOK_NUMERIC_INVALID")
+    return format(number, "f")
+
+
+def _pit_depth(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        raise ValueError("RAW_BOOK_DEPTH_INVALID")
+    if len(raw) > PIT_BOOK_MAX_DEPTH_PER_SIDE:
+        raise ValueError("PPI_BOOK_DEPTH_CAPACITY_HOLD")
+    result = []
+    positions = set()
+    for original in raw:
+        if not isinstance(original, dict) or "price" not in original or "quantity" not in original:
+            raise ValueError("RAW_BOOK_LEVEL_CONTRACT_INVALID")
+        position = original.get("position")
+        if position is not None:
+            # PPI REST Book explicitly documents position=0; do not invent
+            # a 1-based index. Accept the provider ordinal verbatim.
+            if (type(position) is not int or not 0 <= position <= PIT_BOOK_MAX_DEPTH_PER_SIDE
+                    or position in positions):
+                raise ValueError("RAW_BOOK_LEVEL_POSITION_INVALID")
+            positions.add(position)
+        # Official PPI example has price=0, quantity=0 at position=0. They
+        # are auditable placeholders but NEVER authorize an executable fill.
+        result.append({"position": position, "price": _pit_decimal(original["price"], positive=False),
+                       "quantity": _pit_decimal(original["quantity"], positive=False)})
+    return result
+
+
+def _pit_quote_matches_native_best(quote: Any, bids: list[dict[str, Any]],
+                                   offers: list[dict[str, Any]]) -> bool:
+    """Bind the raw Book to the *same* normalized quote seen by the engine.
+
+    The normalizer reads the first native level, not a favorable later level.
+    A missing side is only safe when both normalized price and size are zero.
+    This check does not assert that PPI supplied units or a fillable market.
+    """
+    for levels, price_field, quantity_field in (
+        (bids, "bid", "bid_size"), (offers, "ask", "ask_size")
+    ):
+        try:
+            quoted_price = Decimal(str(getattr(quote, price_field)))
+            quoted_quantity = Decimal(str(getattr(quote, quantity_field)))
+        except (InvalidOperation, TypeError, ValueError, AttributeError):
+            return False
+        if not quoted_price.is_finite() or not quoted_quantity.is_finite():
+            return False
+        expected_price = Decimal(levels[0]["price"]) if levels else Decimal(0)
+        expected_quantity = Decimal(levels[0]["quantity"]) if levels else Decimal(0)
+        if quoted_price != expected_price or quoted_quantity != expected_quantity:
+            return False
+    return True
+
+
+def _pit_event(quote: Any, *, raw_book: dict[str, Any], request: tuple[str, str, str],
+               identity: tuple[str, ...], observed_at: str) -> dict[str, Any]:
+    if ((quote.symbol, quote.asset_class, quote.settlement) != tuple(request)
+            or observed_at != quote.observed_at):
+        raise ValueError("PPI_BOOK_REQUEST_OR_RECEIPT_IDENTITY_MISMATCH")
+    try:
+        quote.monetary_identity()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("PPI_BOOK_MONETARY_IDENTITY_INVALID") from exc
+    row = {"symbol": str(quote.symbol), "asset_class": str(quote.asset_class),
+           "market": quote.market, "currency": quote.currency,
+           "settlement": str(quote.settlement)}
+    key = _key(row)
+    if (not key or type(identity) not in (tuple, list) or tuple(identity) != key):
+        raise ValueError("PPI_BOOK_FIVE_KEY_MISMATCH")
+    if (not isinstance(raw_book, dict) or not isinstance(raw_book.get("date"), str)
+            or "bids" not in raw_book or "offers" not in raw_book):
+        raise ValueError("PPI_BOOK_NATIVE_SHAPE_UNVERIFIED")
+    provider_book = _aware(raw_book["date"])
+    native_book = _aware(quote.book_at)
+    native_trade = _aware(quote.trade_at)
+    received = _aware(observed_at)
+    if (not provider_book or not native_book or not native_trade or not received
+            or provider_book != native_book or native_book > received or native_trade > received):
+        raise ValueError("PPI_BOOK_NATIVE_PIT_CLOCK_INVALID")
+    # Preserve every provider depth level. Missing units remain explicitly
+    # UNVERIFIED; the specialized execution engine must never assume nominal.
+    bids = _pit_depth(raw_book["bids"])
+    offers = _pit_depth(raw_book["offers"])
+    if not bids and not offers:
+        raise ValueError("PPI_BOOK_NO_DEPTH")
+    if not _pit_quote_matches_native_best(quote, bids, offers):
+        raise ValueError("PPI_BOOK_NORMALIZED_BEST_LEVEL_MISMATCH")
+    book = {"native_date": raw_book["date"], "bids": bids, "offers": offers}
+    if len(_pit_bytes(book)) > PIT_EVENT_MAX_BYTES:
+        raise ValueError("PPI_BOOK_EVENT_CAPACITY_HOLD")
+    event = {**row, "canonical_identity": list(key), "source": "PPI",
+            "provider_origin": ORIGIN, "native_book_at": quote.book_at,
+            "native_trade_at": quote.trade_at, "observed_at": observed_at,
+            "known_at": observed_at, "session_art": received.astimezone(
+                timezone(timedelta(hours=-3))).date().isoformat(),
+            "book": book, "normalized_book_sha256": _pit_hash(book),
+            "quantity_unit": "NO_VERIFICADO", "price_unit": "NO_VERIFICADO",
+            "depth_levels": {"bids": len(bids), "offers": len(offers)}}
+    if len(_pit_bytes(event)) > PIT_EVENT_MAX_BYTES:
+        raise ValueError("PPI_BOOK_EVENT_CAPACITY_HOLD")
+    return event
+
+
+def _pit_verified_rows(doc: Any) -> list[dict[str, Any]]:
+    if (not isinstance(doc, dict) or doc.get("schema") != PIT_JOURNAL_SCHEMA
+            or doc.get("producer") != PRODUCER or doc.get("provider_origin") != ORIGIN
+            or not isinstance(doc.get("records"), list)
+            or len(doc["records"]) > PIT_JOURNAL_MAX_RECORDS
+            or doc.get("record_count") != len(doc["records"])):
+        raise ValueError("PPI_BOOK_JOURNAL_SCHEMA_HOLD")
+    prior_hash = None
+    seen = set()
+    latest_per_identity: dict[tuple[str, ...], tuple[datetime, datetime]] = {}
+    for sequence, event in enumerate(doc["records"], start=1):
+        if not isinstance(event, dict):
+            raise ValueError("PPI_BOOK_JOURNAL_EVENT_INVALID")
+        if len(_pit_bytes(event)) > PIT_EVENT_MAX_BYTES:
+            raise ValueError("PPI_BOOK_JOURNAL_EVENT_CAPACITY_HOLD")
+        expected = _pit_hash({k: v for k, v in event.items() if k != "event_sha256"})
+        if (event.get("sequence") != sequence or event.get("previous_sha256") != prior_hash
+                or event.get("event_sha256") != expected
+                or event.get("provider_origin") != ORIGIN or event.get("source") != "PPI"
+                or _key(event) != tuple(event.get("canonical_identity") or ())
+                or event.get("known_at") != event.get("observed_at")
+                or not (_aware(event.get("native_book_at")) and _aware(event.get("native_trade_at"))
+                         and _aware(event.get("observed_at")))
+                or _aware(event["native_book_at"]) > _aware(event["observed_at"])
+                or _aware(event["native_trade_at"]) > _aware(event["observed_at"])
+                or not isinstance(event.get("book"), dict)
+                or event.get("normalized_book_sha256") != _pit_hash(event["book"])
+                or event.get("quantity_unit") != "NO_VERIFICADO"
+                or event.get("price_unit") != "NO_VERIFICADO"):
+            raise ValueError("PPI_BOOK_JOURNAL_CHAIN_OR_IDENTITY_HOLD")
+        book = event["book"]
+        try:
+            bids, offers = _pit_depth(book["bids"]), _pit_depth(book["offers"])
+        except (ValueError, TypeError, KeyError):
+            raise ValueError("PPI_BOOK_JOURNAL_DEPTH_INVALID") from None
+        if (not bids and not offers or bids != book["bids"] or offers != book["offers"]
+                or _aware(book.get("native_date")) != _aware(event["native_book_at"])
+                or event.get("depth_levels") != {"bids": len(bids), "offers": len(offers)}):
+            raise ValueError("PPI_BOOK_JOURNAL_DEPTH_INVALID")
+        clock = (tuple(event["canonical_identity"]), _aware(event["native_book_at"]))
+        if clock in seen:
+            raise ValueError("PPI_BOOK_JOURNAL_DUPLICATE_CLOCK_HOLD")
+        seen.add(clock)
+        key = tuple(event["canonical_identity"])
+        book_clock, known_clock = _aware(event["native_book_at"]), _aware(event["known_at"])
+        previous = latest_per_identity.get(key)
+        if ((previous and (book_clock <= previous[0] or known_clock <= previous[1]))
+                or event.get("session_art") != known_clock.astimezone(
+                    timezone(timedelta(hours=-3))).date().isoformat()):
+            raise ValueError("PPI_BOOK_JOURNAL_CAUSAL_ORDER_HOLD")
+        latest_per_identity[key] = (book_clock, known_clock)
+        prior_hash = expected
+    return doc["records"]
+
+
+def _pit_read_private(path: Path) -> dict[str, Any] | None:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return None
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_mode & 0o077 or before.st_size > PIT_JOURNAL_MAX_BYTES):
+            raise ValueError("PPI_BOOK_JOURNAL_PERMISSION_OR_CAPACITY_HOLD")
+        with os.fdopen(os.dup(fd), "rb") as stream:
+            raw = stream.read(PIT_JOURNAL_MAX_BYTES + 1)
+        after = os.fstat(fd)
+        if (len(raw) != before.st_size or len(raw) > PIT_JOURNAL_MAX_BYTES
+                or (before.st_ino, before.st_mtime_ns, before.st_size)
+                != (after.st_ino, after.st_mtime_ns, after.st_size)):
+            raise ValueError("PPI_BOOK_JOURNAL_CHANGED_OR_CAPACITY_HOLD")
+    finally:
+        os.close(fd)
+    try:
+        result = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeError):
+        raise ValueError("PPI_BOOK_JOURNAL_UNREADABLE_HOLD") from None
+    _pit_verified_rows(result)
+    return result
+
+
+@contextmanager
+def _pit_exclusive_lock(path: Path):
+    if not path.is_absolute():
+        raise ValueError("PPI_BOOK_JOURNAL_PATH_NOT_ABSOLUTE")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not stat.S_ISDIR(path.parent.lstat().st_mode):
+        raise ValueError("PPI_BOOK_JOURNAL_DIRECTORY_UNTRUSTED")
+    lock_path = path.with_name(path.name + ".lock")
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o077:
+            raise ValueError("PPI_BOOK_JOURNAL_LOCK_UNTRUSTED")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def capture_native_book_journal(path: Path, quote: Any, *, raw_book: dict[str, Any],
+                                request: tuple[str, str, str], identity: tuple[str, ...],
+                                observed_at: str) -> dict[str, Any]:
+    """Bounded, private, atomic, lock-held PIT evidence; never authorizes fills."""
+    try:
+        event = _pit_event(quote, raw_book=raw_book, request=request,
+                           identity=identity, observed_at=observed_at)
+    except (ValueError, TypeError, AttributeError) as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else "PPI_BOOK_INPUT_INVALID"
+        return {"status": ("CAPTURE_CAPACITY_HOLD" if "CAPACITY_HOLD" in reason
+                            else "CAPTURE_INVALID_HOLD"), "reason": reason}
+    try:
+        with _pit_exclusive_lock(Path(path)):
+            doc = _pit_read_private(Path(path))
+            if doc is None:
+                doc = {"schema": PIT_JOURNAL_SCHEMA, "producer": PRODUCER,
+                       "provider_origin": ORIGIN, "records": [], "record_count": 0}
+            rows = doc["records"]
+            native_at = _aware(event["native_book_at"])
+            key = tuple(event["canonical_identity"])
+            for previous in reversed(rows):
+                if tuple(previous["canonical_identity"]) != key:
+                    continue
+                previous_at = _aware(previous["native_book_at"])
+                if previous_at == native_at:
+                    if previous["normalized_book_sha256"] == event["normalized_book_sha256"]:
+                        return {"status": "DEDUPLICATED", "records": len(rows),
+                                "event_sha256": previous["event_sha256"]}
+                    return {"status": "CAPTURE_INVALID_HOLD", "reason": "PPI_BOOK_NATIVE_CLOCK_CONFLICT"}
+                if native_at < previous_at or _aware(event["known_at"]) <= _aware(previous["known_at"]):
+                    return {"status": "CAPTURE_INVALID_HOLD", "reason": "PPI_BOOK_CLOCK_REGRESSION_OR_AMBIGUOUS_RECEIPT"}
+                break
+            session = event["session_art"]
+            same_session = [row for row in rows if row["session_art"] == session]
+            if (len(rows) >= PIT_JOURNAL_MAX_RECORDS
+                    or len(same_session) >= PIT_SESSION_MAX_RECORDS
+                    or sum(len(_pit_bytes(row)) for row in same_session) + len(_pit_bytes(event)) > PIT_SESSION_MAX_BYTES):
+                return {"status": "CAPTURE_CAPACITY_HOLD", "reason": "PPI_BOOK_ROWS_OR_SESSION_BYTES_BUDGET"}
+            event["sequence"] = len(rows) + 1
+            event["previous_sha256"] = rows[-1]["event_sha256"] if rows else None
+            event["event_sha256"] = _pit_hash(event)
+            if len(_pit_bytes(event)) > PIT_EVENT_MAX_BYTES:
+                return {"status": "CAPTURE_CAPACITY_HOLD", "reason": "PPI_BOOK_EVENT_BYTES_BUDGET"}
+            candidate = {**doc, "records": [*rows, event], "record_count": len(rows) + 1}
+            encoded = _pit_bytes(candidate)
+            if len(encoded) > PIT_JOURNAL_MAX_BYTES:
+                return {"status": "CAPTURE_CAPACITY_HOLD", "reason": "PPI_BOOK_TOTAL_BYTES_BUDGET"}
+            fd, temporary = tempfile.mkstemp(prefix=".ppi-book-pit-", dir=Path(path).parent)
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    os.fchmod(stream.fileno(), 0o600)
+                    stream.write(encoded)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, path)
+                parentfd = os.open(Path(path).parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    os.fsync(parentfd)
+                finally:
+                    os.close(parentfd)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            return {"status": "CAPTURED", "records": len(rows) + 1,
+                    "event_sha256": event["event_sha256"]}
+    except (OSError, ValueError) as exc:
+        # Error codes only; never return confidential levels or provider body.
+        return {"status": "CAPTURE_INTEGRITY_HOLD", "reason": (
+            str(exc) if isinstance(exc, ValueError) else "PPI_BOOK_JOURNAL_IO_HOLD")}
+
+
+def verified_native_book_journal(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Read-only verified chain for OFFHOST audit; no fill or READY assertion."""
+    try:
+        doc = _pit_read_private(Path(path))
+    except (OSError, ValueError) as exc:
+        return [], {"state": "HOLD", "reason": (
+            str(exc) if isinstance(exc, ValueError) else "PPI_BOOK_JOURNAL_IO_HOLD")}
+    if doc is None:
+        return [], {"state": "NO_VERIFICADO", "reason": "PPI_BOOK_JOURNAL_ABSENT"}
+    return doc["records"], {"state": "HASH_CHAIN_VERIFIED", "records": doc["record_count"],
+                            "latest_sha256": doc["records"][-1]["event_sha256"] if doc["records"] else None}
+
+
+def strictly_future_native_books(path: Path, *, identity: tuple[str, ...], decision_at: str,
+                                 latency_seconds: float) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Only nominate post-decision native books, NEVER infer a fill/contract."""
+    decision = _aware(decision_at)
+    if (not decision or isinstance(latency_seconds, bool)
+            or not isinstance(latency_seconds, (int, float))
+            or not 0 <= latency_seconds <= 300):
+        return [], {"state": "HOLD", "reason": "PPI_BOOK_DECISION_OR_LATENCY_INVALID"}
+    rows, receipt = verified_native_book_journal(path)
+    if receipt["state"] != "HASH_CHAIN_VERIFIED":
+        return [], receipt
+    matching = [row for row in rows if tuple(row["canonical_identity"]) == tuple(identity)
+                and _aware(row["native_book_at"]) > decision + timedelta(seconds=latency_seconds)
+                and _aware(row["known_at"]) > decision]
+    return matching, {**receipt, "eligible_future_books": len(matching),
+                      "fill_accredited": False, "quantity_unit": "NO_VERIFICADO"}
