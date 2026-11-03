@@ -21,6 +21,7 @@ from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call
                                       is_operational_market_window,
                                       is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
+from rc6_ppi_scanner_provenance import primary_records as scanner_primary_records
 from rc6_source_consolidation import consolidate
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
@@ -367,6 +368,35 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             values[symbol] = candidates[0]
         return values, reviews[:1000]
 
+    scanner_rows, scanner_meta = scanner_primary_records(DEFAULT_ROOT, current)
+
+    def with_scanner(fallback, meta):
+        # A source-specific scanner receipt cannot claim full-universe scope.
+        # Merge only exact identities; bind() refuses to choose a currency for
+        # any ticker that has multiple distinct five-key observations.
+        if not scanner_rows:
+            return fallback, meta
+        values, scanner_reviews = bind([*fallback.values(), *scanner_rows])
+        # bind() returns no scalar for an ambiguous fallback ticker. Do not
+        # make that ambiguity disappear by overlaying just one scanner quote.
+        # Full source reviews retain precedence over per-symbol convenience.
+        blocked_symbols = {str(review.get("symbol") or "").strip().upper()
+                           for review in (meta.get("identity_reviews") or [])
+                           if review.get("reason") in {
+                               "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES",
+                               "DUPLICATE_SOURCE_EVIDENCE_CONFLICT"}}
+        for symbol in blocked_symbols:
+            values.pop(symbol, None)
+        return values, {**meta,
+            "state": "READY" if values else "UNAVAILABLE",
+            "source": "PPI_PRIMARY_SCANNER_AND_FALLBACK",
+            "source_scope": "SCANNER_ROTATED_SUBSET_PLUS_AVAILABLE_FALLBACK",
+            "scanner_receipt_records": len(scanner_rows),
+            "scanner_receipt_status": scanner_meta.get("state"),
+            "provider_clock_basis": "NATIVE_PER_ROW_NOT_RECEIPT",
+            "identity_reviews": [*(meta.get("identity_reviews") or []), *scanner_reviews][:1000],
+            "reason": "OK" if values else "PRIMARY_SCANNER_AND_FALLBACK_NO_NATIVE_EXACT_EVIDENCE"}
+
     for candidate in (os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(DEFAULT_ROOT / "primary_last.json"), "/app/data/market/primary_last.json"):
         if not candidate:
             continue
@@ -389,13 +419,15 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
                 row.setdefault("market", payload["market"])
             records.append(row)
         values, reviews = bind(records, capture=capture)
-        if source_rank(source) != 0:
-            values = {}
-        return values, {"state": "READY" if values else "UNAVAILABLE", "source": source or "UNKNOWN",
+        if source_rank(source) != 0 or source == "PPI_CATALOG":
+            # Catalog identity provenance is not provider quote provenance.
+            # An untrusted cache must not mask valid scanner/SQLite fallback.
+            continue
+        return with_scanner(values, {"state": "READY" if values else "UNAVAILABLE", "source": source or "UNKNOWN",
             "market": payload.get("market") or "UNKNOWN", "capture_observed_at": capture,
             "capture_clock_basis": "AVAILABILITY_ONLY", "provider_clock_basis": "PER_ROW_NATIVE_EVENT_TIME",
             "identity_binding": "EXACT_FIVE_PART_IDENTITY", "identity_reviews": reviews,
-            "provider_available": None, "reason": "OK" if values else "PRIMARY_CACHE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"}
+            "provider_available": None, "reason": "OK" if values else "PRIMARY_CACHE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"})
 
     # Existing SQLite read-only fallback. LAST requires trade_at; BOOK keeps its
     # independent book_at. observed_at is receipt and never provider time.
@@ -418,7 +450,9 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             records = []
             for raw in rows[:20000]:
                 row = {name: raw[position] for name, position in index.items() if raw[position] is not None}
-                if row.get("source") and source_rank(row["source"]) != 0:
+                if (row.get("source") and
+                        (source_rank(row["source"]) != 0
+                         or str(row["source"]).strip().upper() == "PPI_CATALOG")):
                     continue
                 # Never infer a currency/market/settlement from a ticker or default.
                 row["source_at"] = row.get("trade_at")
@@ -427,17 +461,18 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             values, reviews = bind(records)
             times = [_parse_time(row["provider_observed_at"]) for row in values.values()]
             latest = max(times) if times else None
-            return values, {"state": "READY" if values else "UNAVAILABLE", "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
+            return with_scanner(values, {"state": "READY" if values else "UNAVAILABLE", "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
                 "observed_at": latest.isoformat() if latest else None, "provider_clock_basis": "NATIVE_TRADE_AT",
                 "capture_clock_basis": "OBSERVED_AT_IS_RECEIPT_ONLY", "identity_binding": "EXACT_FIVE_PART_IDENTITY",
                 "identity_reviews": reviews, "provider_available": None, "read_truncated": len(rows) > 20000,
-                "reason": "OK" if values else "PRIMARY_SQLITE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"}
+                "reason": "OK" if values else "PRIMARY_SQLITE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"})
         except (sqlite3.Error, OSError):
             continue
         finally:
             if conn is not None:
                 conn.close()
-    return {}, {"state": "UNAVAILABLE", "provider_available": None, "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"}
+    return with_scanner({}, {"state": "UNAVAILABLE", "provider_available": None,
+                             "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"})
 
 
 def _publish_progress(universe: list[str] | int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:
