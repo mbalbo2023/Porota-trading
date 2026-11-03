@@ -54,6 +54,9 @@ STATE_SCHEMA = "rc6.source-cycle-dispatch.v1"
 DEFAULT_MARKET_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 DEFAULT_DB = Path(os.getenv("PAPER_V17_DB_PATH", "/opt/porota-trading/data/paper_v17/observer_v17.db"))
 DEFAULT_LOCK = Path("/var/lock/porota-rc6-source-cycle.lock")
+# IOL is complementary. Missing OAuth bootstrap must not disable the public
+# reference/evidence stages of the same PAPER-only cycle.
+DEFAULT_IOL_BOOTSTRAP = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
 STAGES = (
     ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
      "iol_shadow_latest.json"),
@@ -257,6 +260,20 @@ def _published_file_identity(path: Path) -> tuple[int, ...] | None:
             metadata.st_mtime_ns, metadata.st_ctime_ns)
 
 
+def _iol_bootstrap_present(path: Path) -> bool:
+    """Admission gate only; never read credentials or request OAuth here.
+
+    An absent, inaccessible, symlinked or non-regular bootstrap is not proof
+    that the complementary IOL collector may be started. Other sources can
+    still publish under the existing PAPER/zero-order preflight and lock.
+    """
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+
+
 def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
     """One canonical output/DB identity for all three already-existing jobs.
 
@@ -280,7 +297,8 @@ def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
 
 def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
               market_root: Path = DEFAULT_MARKET_ROOT, lock: Path = DEFAULT_LOCK,
-              runner=subprocess.run) -> dict:
+              runner=subprocess.run,
+              iol_bootstrap: Path = DEFAULT_IOL_BOOTSTRAP) -> dict:
     now = now or datetime.now(timezone.utc)
     regular, reason = phase_status(now, "open")
     late, _ = phase_status(now, "late_source")
@@ -310,6 +328,12 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         for name, relative, timeout, output in stages:
             if not due[name]:
                 results[name] = "NOT_DUE_TTL"
+                continue
+            if name == "iol" and not _iol_bootstrap_present(iol_bootstrap):
+                # The former systemd ConditionPathExists suppressed *all*
+                # stages. Preserve the IOL-specific guard without treating
+                # an unavailable complement as a blocker for public/evidence.
+                results[name] = "COMPLEMENT_AUTH_UNAVAILABLE"
                 continue
             output_path = market_root / output
             before_publication = _published_file_identity(output_path)

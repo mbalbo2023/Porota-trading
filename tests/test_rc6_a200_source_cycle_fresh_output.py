@@ -50,11 +50,14 @@ class SourceCyclePublicationTest(unittest.TestCase):
         with sqlite3.connect(self.db) as connection:
             connection.execute("CREATE TABLE observer_state(id INTEGER, mode TEXT, real_orders_sent INTEGER)")
             connection.execute("INSERT INTO observer_state VALUES(1, 'PRODUCTION_PAPER', 0)")
+        self.bootstrap = self.root / "iol_bootstrap.json"
+        self.bootstrap.write_text("{}", encoding="utf-8")
 
     def cycle(self, publisher, minute=30):
         return dispatch.run_cycle(now=datetime(2026, 10, 28, 10, minute, tzinfo=ART),
                                   db=self.db, market_root=self.market,
-                                  lock=self.root / "source.lock", runner=publisher)
+                                  lock=self.root / "source.lock", runner=publisher,
+                                  iol_bootstrap=self.bootstrap)
 
     def old_outputs(self):
         for output in OUTPUTS.values():
