@@ -5,9 +5,11 @@ import hashlib
 import importlib.util
 import io
 import json
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
+import sys
 import tarfile
 import tempfile
 import time
@@ -269,6 +271,100 @@ class SyntheticPrivateCapture(unittest.TestCase):
                                         "A330_A3_TIMER_NOT_QUARANTINED"):
                 a330.host_gate(self.source, self.observer)
 
+    def test_ssh_capture_failure_classes_are_bounded_and_not_a_purge_go(self):
+        valid = b"private diagnostic\nA330_REJECTED=A330_SQLITE_SIDECAR_PRESENT\n"
+        scenarios = [
+            (124, valid, 0, "SSH_TIMEOUT_124"),
+            (255, valid, 0, "SSH_EXIT_255_TRANSPORT_OR_REMOTE"),
+            (2, valid, 0, "REMOTE_GUARD_A330_SQLITE_SIDECAR_PRESENT"),
+            (2, b"A330_REJECTED=OSError\n", 0, "REMOTE_EXCEPTION_OSERROR"),
+            (2, b"transient private error\n", 0, "REMOTE_EXIT_UNCLASSIFIED"),
+            (2, None, 0, "REMOTE_LOG_UNAVAILABLE"),
+            (2, valid * 2, 0, "REMOTE_REJECTION_AMBIGUOUS"),
+            (2, b"A330_REJECTED=NOT_A_GUARD\n", 0,
+             "REMOTE_REJECTION_UNALLOWLISTED"),
+            (2, b"prefix A330_REJECTED=A330_SQLITE_SIDECAR_PRESENT\n", 0,
+             "REMOTE_REJECTION_MALFORMED"),
+            (1, valid, 0, "REMOTE_REJECTION_EXIT_MISMATCH"),
+            (2, b"A330_REJECTED=A330_SQLITE_SIDECAR_PRESENT\x00", 0,
+             "REMOTE_LOG_NON_TEXT"),
+            (2, b"\xff", 0, "REMOTE_LOG_NON_UTF8"),
+            (2, b"x" * (a330.PRIVATE_FAILURE_LOG_BUDGET + 1), 0,
+             "REMOTE_LOG_OVERSIZED"),
+            (0, b"", 0, "ARTIFACT_EMPTY"),
+            (0, b"", 1, "CLASSIFIER_NOT_APPLICABLE"),
+        ]
+        for code, private, size, expected in scenarios:
+            with self.subTest(code=code, expected=expected):
+                receipt = a330.sanitized_capture_failure(code, private, size)
+                self.assertEqual(receipt["failure_class"], expected)
+                self.assertEqual(receipt["state"], "NO_VERIFICADO")
+                self.assertFalse(receipt["host_purge_allowed"])
+                self.assertEqual(receipt["physical_host_delete_count"], 0)
+                self.assertEqual(receipt["real_orders_sent_by_action"], 0)
+                self.assertNotIn("private diagnostic", json.dumps(receipt))
+
+    def test_private_failure_log_strict_path_nofollow_and_size_limit(self):
+        log = self.private / "a330-private.log"
+        log.write_bytes(b"A330_REJECTED=A330_HOST_MEMORY_RESERVE\n")
+        self.assertEqual(a330.bounded_private_failure_log(log, self.private),
+                         log.read_bytes())
+        log.unlink()
+        self.assertIsNone(a330.bounded_private_failure_log(log, self.private))
+        outside = self.root / "not-private.log"
+        outside.write_text("not safe")
+        log.symlink_to(outside)
+        self.assertIsNone(a330.bounded_private_failure_log(log, self.private))
+        log.unlink()
+        log.write_bytes(b"S" * (a330.PRIVATE_FAILURE_LOG_BUDGET + 1000))
+        bounded = a330.bounded_private_failure_log(log, self.private)
+        self.assertEqual(len(bounded), a330.PRIVATE_FAILURE_LOG_BUDGET + 1)
+        self.assertEqual(a330.classify_capture_failure(2, bounded, 0),
+                         "REMOTE_LOG_OVERSIZED")
+        with self.assertRaisesRegex(a330.GuardError,
+                                    "A330_CLASSIFIER_PRIVATE_PATH_INVALID"):
+            a330.bounded_private_failure_log(outside, self.private)
+
+    def test_failure_classifier_cli_writes_only_sanitized_enum(self):
+        log = self.private / "a330-private.log"
+        secret = "PRIVATE_HOST_DIAGNOSTIC_SECRET_445"
+        log.write_text(secret + "\nA330_REJECTED=A330_HOST_DISK_RESERVE\n")
+        bundle = self.private / "a330-private.tar"
+        bundle.touch()
+        receipt = self.private / "a330-sanitized.json"
+        stdout, stderr = io.StringIO(), io.StringIO()
+        argv = ["a330", "--classify-capture-failure", "--capture-exit-code", "2",
+                "--bundle", str(bundle), "--capture-log", str(log),
+                "--runner-root", str(self.private),
+                "--sanitized-output", str(receipt)]
+        with patch.object(sys, "argv", argv), redirect_stdout(stdout), redirect_stderr(stderr):
+            a330.main()
+        result = json.loads(receipt.read_text())
+        self.assertEqual(result["failure_class"],
+                         "REMOTE_GUARD_A330_HOST_DISK_RESERVE")
+        combined = stdout.getvalue() + stderr.getvalue() + receipt.read_text()
+        self.assertNotIn(secret, combined)
+        self.assertNotIn(str(log), combined)
+        self.assertFalse(result["host_purge_allowed"])
+        self.assertEqual(result["real_orders_sent_by_action"], 0)
+
+    def test_failure_classifier_cli_empty_archive_and_missing_log(self):
+        bundle = self.private / "a330-private.tar"
+        bundle.touch()
+        receipt = self.private / "a330-sanitized.json"
+        argv = ["a330", "--classify-capture-failure", "--capture-exit-code", "0",
+                "--bundle", str(bundle), "--capture-log",
+                str(self.private / "a330-private.log"),
+                "--runner-root", str(self.private),
+                "--sanitized-output", str(receipt)]
+        with patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+            a330.main()
+        result = json.loads(receipt.read_text())
+        self.assertEqual(result["failure_class"], "ARTIFACT_EMPTY")
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertFalse(result["host_purge_allowed"])
+        self.assertEqual(result["physical_host_delete_count"], 0)
+
     def test_workflow_is_manual_main_runner_only_without_deploy(self):
         body = WORKFLOW.read_text()
         self.assertIn("workflow_dispatch:", body)
@@ -279,6 +375,10 @@ class SyntheticPrivateCapture(unittest.TestCase):
         self.assertIn("scripts/rc6_retention_a319_offhost.py", body)
         self.assertIn("--host-export", body)
         self.assertIn("--runner-rehearsal", body)
+        self.assertIn("--classify-capture-failure", body)
+        self.assertIn("--capture-exit-code \"$capture_rc\"", body)
+        self.assertNotIn('"failure_class":"HOST_CAPTURE_FAILED"', body)
+        self.assertIn('2> "$root/a330-private.log"', body)
         self.assertIn("StrictHostKeyChecking=yes", body)
         self.assertIn("permissions:\n  contents: read", body)
         self.assertIn("if: always()", body)
