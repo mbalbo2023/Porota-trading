@@ -175,7 +175,9 @@ class A369ScalpingWorkerExceptionFlow(unittest.TestCase):
                    if event[0] == "INTRADAY_SCALPING_ERROR"]
         self.assertEqual(1, len(matches))
         detail = matches[0][1]
-        self.assertIn(": PPI_VALUEERROR;phase=" + fail_stage + ";", detail)
+        expected_code = ("PPI_VALUEERROR" if fail_stage == "PPI_READ"
+                         else "SCALPING_LOCAL_VALUEERROR")
+        self.assertIn(": " + expected_code + ";phase=" + fail_stage + ";", detail)
         self.assertNotIn("PRIVATE_", detail)
         self.assertNotIn("SECRET_EXAMPLE", detail)
         self.assertIn("shadow_identity=", detail)

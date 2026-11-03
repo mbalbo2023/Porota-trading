@@ -320,6 +320,26 @@ SCALPING_FAILURE_PHASES = frozenset({
     "CAPABILITY", "READ_SCOPE", "PPI_READ", "NORMALIZE",
     "SOURCE_VALIDATION", "PERSIST", "EVALUATE", "PAPER_GATE",
 })
+SCALPING_LOCAL_ERROR_KINDS = frozenset({
+    "VALUEERROR", "TYPEERROR", "KEYERROR", "INDEXERROR", "OVERFLOWERROR",
+    "RUNTIMEERROR", "ASSERTIONERROR", "OPERATIONALERROR", "DATABASEERROR",
+})
+
+
+def _scalping_error_code(error, read_error_code):
+    """Classify by the failing boundary, never by an exception message.
+
+    A local decoder, ledger or clock error must not impersonate a PPI SDK
+    failure.  The PPI classification is authoritative only when the guarded
+    intraday read itself raised and populated ``read_error_code``.
+    """
+    if read_error_code is not None:
+        return (read_error_code if isinstance(read_error_code, str)
+                and re.fullmatch(r"PPI_[A-Z0-9_]{2,72}", read_error_code)
+                else "PPI_UNCLASSIFIED")
+    kind = type(error).__name__.upper()
+    return ("SCALPING_LOCAL_" + kind
+            if kind in SCALPING_LOCAL_ERROR_KINDS else "SCALPING_LOCAL_EXCEPTION")
 
 
 def _scalping_failure_phase(value):
@@ -334,7 +354,8 @@ def _scalping_failure_detail(record, error_code, phase):
     allowlisted reader must redact symbol + five-key identity before export.
     """
     safe_code = (error_code if isinstance(error_code, str)
-                 and re.fullmatch(r"PPI_[A-Z0-9_]{2,72}", error_code)
+                 and (re.fullmatch(r"PPI_[A-Z0-9_]{2,72}", error_code)
+                      or re.fullmatch(r"SCALPING_LOCAL_[A-Z0-9_]{2,56}", error_code))
                  else "PPI_UNCLASSIFIED")
     return (f"{record['ticker']}: {safe_code};phase={_scalping_failure_phase(phase)};"
             "shadow_identity=" + json.dumps(_identity(record), separators=(",", ":")))
@@ -1339,7 +1360,7 @@ def run_worker(store, stop, *, clock_fn):
                         store.event("INTRADAY_SCALPING_CLOCK_ROLLBACK", record["ticker"])
                         stop.wait(0.75)
                         continue
-                    error_code = read_error_code or "PPI_" + type(exc).__name__.upper()
+                    error_code = _scalping_error_code(exc, read_error_code)
                     if read_error_code == "PPI_INSTRUMENT_NOT_FOUND" and instrument_not_found(exc):
                         negative_at = _stamp(clock_fn())
                         negative = capability_cache.outcome(record, capability, at=negative_at,
