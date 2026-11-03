@@ -52,7 +52,9 @@ Un slot, cuando **todos** los guards efectivamente certifican:
    `required_scope_verified_current=True`. El adaptador nunca crea sidecar ni
    activa cuotas. `RuntimePPIBudget` concede dos leases distintos reales.
 4. Un único `reader.current()` y luego un único `reader.book()`, invocando el
-   guard existente del producto. Reintentos, endpoint ajeno, lote ambiguo,
+   guard existente del producto. URL HTTPS de host exacto puerto 443, sin
+   usuario incrustado y query PPI oficial única Ticker/Type/Settlement.
+   Reintentos, endpoint ajeno, lote ambiguo,
    lease nulo, body excesivo o reloj nativo sin zona/antiguo/futuro ⇒ HOLD.
 5. Dos SHA-256 de los **bytes de respuesta HTTP ya descomprimidos consumidos
    por el SDK** (NO TLS wire ni firma del proveedor), hora nativa de cada
@@ -88,10 +90,11 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
 
 `python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v`
 
-19 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
+20 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
 dos leases, denial/lease nulo/repetido, replay, POST/GET duplicado, forma
 Book inválida, reloj futuro/naive/stale, alias 3-key divisa, fuente IOL,
-mount RO obligatorio, recibo falsificado, cero órdenes. Compilar script,
+URL host/puerto/query falsificado, Book2 duplicado, mount RO obligatorio,
+recibo falsificado, cero órdenes. Compilar script,
 validar workflow YAML, Bash y CI focal.
 
 ## Estado runtime abierto al cierre de PR
