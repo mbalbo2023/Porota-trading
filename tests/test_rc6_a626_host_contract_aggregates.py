@@ -244,7 +244,8 @@ def test_historical_reconciliation_streams_once_not_n_queries(tmp_path):
     con.row_factory = sqlite3.Row
     statements = []
     con.set_trace_callback(statements.append)
-    requested = {("OBLIGACIONES", "CORP-999", "BYMA", "USD", "CI")}
+    # Raw ON matches raw ON. An OBLIGACIONES alias would not be exact.
+    requested = {("ON", "CORP-999", "BYMA", "USD", "CI")}
     found, scanned, consumed = host._historical_ppi_memberships(con, requested)
     con.close()
     assert found == requested
@@ -269,3 +270,61 @@ def test_historical_stream_respects_row_and_byte_budgets(tmp_path):
             host._historical_ppi_memberships(
                 con, {("BONOS", "BND-3", "BYMA", "ARS", "CI")})
     con.close()
+
+
+def test_alias_only_on_current_cannot_be_exact_ppi(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "ON", "CORP-ALIAS", currency="USD")
+    _snap(con, 1, "OBLIGACIONES", "CORP-ALIAS", currency="USD")
+    con.commit()
+    con.close()
+    row = _row(host.probe(data_root=data, db=path, guard=lambda _: True),
+               "OBLIGACIONES")
+    assert row["exact_current_v2_ppi"] == 0
+    assert row["ticker_only_v2_mismatch"] == 1
+
+
+def test_alias_only_fci_local_cannot_be_exact_ppi(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "FCI_LOCAL", "FUND-ALIAS")
+    _snap(con, 1, "FCI", "FUND-ALIAS")
+    con.commit()
+    con.close()
+    row = _row(host.probe(data_root=data, db=path, guard=lambda _: True), "FCI")
+    assert row["exact_current_v2_ppi"] == 0
+    assert row["ticker_only_v2_mismatch"] == 1
+
+
+def test_mixed_family_current_snapshot_fails_integrity(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "ON", "CORP-MIX", currency="USD")
+    _snap(con, 1, "ON", "CORP-MIX", currency="USD")
+    con.execute("UPDATE contract_evidence_v2_current SET family='OBLIGACIONES'")
+    con.commit()
+    con.close()
+    with pytest.raises(host.Blocked, match="HOST_V2_CURRENT_SNAPSHOT_INTEGRITY_INVALID"):
+        host.probe(data_root=data, db=path, guard=lambda _: True)
+
+
+def test_historical_alias_only_does_not_match(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "ON", "CORP-HIST", currency="USD")
+    _snap(con, 1, "OBLIGACIONES", "CORP-HIST", currency="USD",
+          current=False)
+    con.commit()
+    con.close()
+    row = _row(host.probe(data_root=data, db=path, guard=lambda _: True),
+               "OBLIGACIONES")
+    assert row["historic_ppi_exact_without_current"] == 0
+    assert row["v2_current_absent"] == 1
+
+
+def test_literal_fci_local_is_counted_in_fci_bucket(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "FCI_LOCAL", "FUND-EXACT")
+    _snap(con, 1, "FCI_LOCAL", "FUND-EXACT")
+    con.commit()
+    con.close()
+    row = _row(host.probe(data_root=data, db=path, guard=lambda _: True), "FCI")
+    assert row["exact_current_v2_ppi"] == 1
+    assert row["capability_gaps"] == 1
