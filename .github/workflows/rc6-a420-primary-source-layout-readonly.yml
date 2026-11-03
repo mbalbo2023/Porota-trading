@@ -234,6 +234,45 @@ jobs:
               raise SystemExit('::error::A420 false readiness')
           print('A420_HOST_METADATA=VALID_ONLY|source_readiness=NO_VERIFICADO')
           PY
+      - name: A580 observer DB/WAL/SHM metadata only, no SQLite open
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Fixed paths, three two-point lstat observations, zero DB descriptors.
+          # Never log raw SSH output; only the sanitizer emits allowlisted labels.
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a420_source_layout" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 8 python3 -B - observer-host-probe' \
+            < scripts/rc6_a420_primary_source_layout_ro.py > evidence/.a580_observer_raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          A580_REMOTE_RC="$remote_rc" python3 scripts/rc6_a420_primary_source_layout_ro.py observer-sanitize
+          rm -f evidence/.a580_observer_raw.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          receipt=json.loads(Path('evidence/a580_observer_metadata.json').read_text(encoding='utf-8'))
+          if receipt['paper_ready'] is not False or receipt['database_opened'] is not False or receipt['writer_quiet_verified'] is not False or receipt['snapshot_consistent_verified'] is not False:
+              raise SystemExit('::error::A580 false readiness, SQLite or writer quiet')
+          print('A580_OBSERVER_METADATA='+receipt['probe_status']+'|snapshot=NO_VERIFICADO|ambiguities=NO_VERIFICADO')
+          for entry in receipt['files']:
+              print('A580_ROLE='+entry['role']+' status='+entry['status']+
+                    ' owner='+entry['owner_class']+' mode='+entry['mode_class']+
+                    ' size='+entry['size_bucket']+' age='+entry['mtime_age_bucket']+
+                    ' stability='+entry['stability'])
+          PY
+      - name: Preserve only sanitized A580 observer metadata, including negatives
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a580-observer-metadata-${{ github.run_id }}
+          path: evidence/a580_observer_metadata.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: A504 bounded systemd cadence metadata (no journal messages)
         shell: bash
         run: |
