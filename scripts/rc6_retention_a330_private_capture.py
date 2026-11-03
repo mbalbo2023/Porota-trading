@@ -10,12 +10,16 @@ A500 HISTORY_COPY_ONLY is independent of A330: it never opens the live observer
 database and therefore cannot attest runtime PAPER/0 or external PIN coverage.
 It copies only a quiet historical database to a private offhost runner for A319
 HOLD-only census. The original A330 mode and its same-session contract remain.
+
+A502 HISTORY_AGGREGATE_ONLY is a separate opt-in diagnostic of the quiet history
+file. It emits aggregate counts only, never raw dates, rows, symbols or the DB.
+It does not attest provider PIT, external pins, runtime PAPER/0 or purge safety.
 """
 from __future__ import annotations
 
 import argparse
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import io
 import json
@@ -30,11 +34,13 @@ import sys
 import tarfile
 import time
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 
 SCHEMA = "RC6_A330_PRIVATE_SAME_SESSION_V1"
 PIN_SCHEMA = "RC6_A330_PIN_CENSUS_V1"
 HISTORY_SCHEMA = "RC6_A500_HISTORY_COPY_ONLY_V1"
+AGGREGATE_SCHEMA = "RC6_A502_HISTORY_AGGREGATE_ONLY_V1"
 HISTORY_PIN_SCHEMA = "RC6_A500_UNAVAILABLE_PIN_GROUPS_V1"
 MANIFEST_SCHEMA = "RC6_RETENTION_A319_MANIFEST_V1"
 HOST_SOURCE = Path("/opt/porota-trading/data/market_history.db")
@@ -52,6 +58,9 @@ MAX_PIN_IDS = 1_000_000
 MAX_TABLES = 256
 HOST_SECONDS = 125
 RUNNER_SECONDS = 360
+AGGREGATE_HOST_SECONDS = 55
+AGGREGATE_MAX_ROWS = 1_000_000
+AGGREGATE_MAX_RECEIPT_BYTES = 8192
 SIDECARS = ("-wal", "-shm", "-journal")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 # These are literal, reviewed host-export guard codes, never arbitrary stderr.
@@ -78,6 +87,11 @@ HOST_EXPORT_REJECTION_ALLOWLIST = frozenset({
     "A330_HOST_MODE_INPUTS_FORBIDDEN",
     "A500_HISTORY_WRITER_NOT_INACTIVE",
     "A500_SOURCE_CHANGED_SINCE_HISTORY_GATE",
+    "A502_HISTORY_SIDECAR_PRESENT", "A502_SOURCE_CHANGED_SINCE_GATE",
+    "A502_SOURCE_CHANGED_DURING_SCAN", "A502_SOURCE_FD_MISMATCH",
+    "A502_LEGACY_DATE_SCHEMA", "A502_ROW_BUDGET", "A502_TIME_BUDGET",
+    "A502_GATE_CLOCK_INVALID", "A502_SQLITE_UNAVAILABLE", "A502_EMPTY_HISTORY",
+    "A502_HOST_CREDENTIALS_UNAVAILABLE",
 })
 HOST_EXPORT_GENERIC_EXCEPTIONS = frozenset({
     "OSError", "ValueError", "DatabaseError", "TarError",
@@ -143,11 +157,13 @@ def classify_capture_failure(capture_rc: int, private_stderr: bytes | None,
     return "REMOTE_REJECTION_UNALLOWLISTED"
 
 
-def bounded_private_failure_log(path: Path, private_root: Path) -> bytes | None:
+def bounded_private_failure_log(path: Path, private_root: Path, *,
+                                expected_name: str = "a330-private.log") -> bytes | None:
     """Read at most budget+1 bytes from an isolated, non-symlink runner file."""
     require(private_root.is_absolute() and private_root.resolve() == private_root
             and private_root.is_dir() and not private_root.is_symlink()
-            and path.parent == private_root and path.name == "a330-private.log",
+            and path.parent == private_root and path.name == expected_name
+            and expected_name in ("a330-private.log", "a502-private.log"),
             "A330_CLASSIFIER_PRIVATE_PATH_INVALID")
     try:
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -270,9 +286,10 @@ def host_history_gate(source: Path = HOST_SOURCE) -> dict:
             ["systemctl", "show", "porota-a3-history-" + suffix + "-rc6.timer",
              "--property=ActiveState,UnitFileState"],
             capture_output=True, text=True, timeout=3)
-        entries = dict(row.split("=", 1) for row in result.stdout.splitlines()
-                       if "=" in row)
-        require(result.returncode == 0 and
+        rows = [row.split("=", 1) for row in result.stdout.splitlines()]
+        entries = dict(rows) if all(len(row) == 2 for row in rows) else {}
+        require(result.returncode == 0 and len(rows) == 2 and
+                len(entries) == 2 and
                 entries == {"ActiveState": "inactive", "UnitFileState": "masked"},
                 "A330_A3_TIMER_NOT_QUARANTINED")
     for service in ("porota-local-eod-history-rc6.service",
@@ -287,6 +304,188 @@ def host_history_gate(source: Path = HOST_SOURCE) -> dict:
             "gated_at_utc": datetime.now(timezone.utc).isoformat(),
             "paper_runtime_state": "NO_VERIFICADO", "a3_timers_masked": True,
             "both_history_writers_inactive": True}
+
+
+def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
+                      deadline: float | None = None) -> dict:
+    """Read date cells from a quiet *history* inode; publish counts only.
+
+    The pinned /proc/self/fd SQLite URI avoids path-swap redirection. Immutable
+    SQLite cannot replay WAL; therefore any sidecar, even a dangling symlink,
+    blocks this optional mode. Named writer gates do not prove a global lock.
+    """
+    if deadline is None:
+        deadline = time.monotonic() + AGGREGATE_HOST_SECONDS
+    require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+    if gate is None:
+        gate = host_history_gate(source)
+    require(gate.get("both_history_writers_inactive") is True and
+            gate.get("a3_timers_masked") is True,
+            "A500_HISTORY_WRITER_NOT_INACTIVE")
+    expected = gate.get("source_stat")
+    require(isinstance(expected, tuple) and len(expected) == 5,
+            "A502_SOURCE_CHANGED_SINCE_GATE")
+
+    def stable() -> tuple:
+        # lexists also rejects dangling symlinks, unlike Path.exists().
+        for suffix in SIDECARS:
+            require(not os.path.lexists(str(source) + suffix),
+                    "A502_HISTORY_SIDECAR_PRESENT")
+        return check_quiet_file(source, 1024**3, sqlite_file=True)
+
+    require(stable() == expected, "A502_SOURCE_CHANGED_SINCE_GATE")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | \
+        getattr(os, "O_NOATIME", 0) | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(source, flags)
+    counters = {"total_versions": 0, "within_365d": 0,
+                "older_than_365d": 0, "invalid_date": 0, "future_date": 0}
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            current = (info.st_dev, info.st_ino, info.st_size,
+                       info.st_mtime_ns, info.st_ctime_ns)
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
+                    current == expected, "A502_SOURCE_FD_MISMATCH")
+            require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+            uri = "file:" + quote("/proc/self/fd/" + str(stream.fileno()),
+                                  safe="/") + "?mode=ro&immutable=1"
+            try:
+                with sqlite3.connect(uri, uri=True, timeout=.2) as db:
+                    db.execute("PRAGMA query_only=ON")
+                    db.execute("PRAGMA trusted_schema=OFF")
+                    db.set_progress_handler(
+                        lambda: int(time.monotonic() >= deadline), 1000)
+                    kinds = [row[0] for row in db.execute(
+                        "SELECT type FROM sqlite_master WHERE name=?",
+                        ("history_versions_v2",))]
+                    columns = {row[1] for row in db.execute(
+                        'PRAGMA table_info("history_versions_v2")')}
+                    require(kinds == ["table"] and "date" in columns,
+                            "A502_LEGACY_DATE_SCHEMA")
+                    try:
+                        observed = datetime.fromisoformat(
+                            gate["gated_at_utc"].replace("Z", "+00:00"))
+                        require(observed.tzinfo is not None and
+                                observed.utcoffset() is not None,
+                                "A502_GATE_CLOCK_INVALID")
+                    except (KeyError, AttributeError, TypeError, ValueError) as exc:
+                        if isinstance(exc, GuardError):
+                            raise
+                        raise GuardError("A502_GATE_CLOCK_INVALID") from exc
+                    today_art = observed.astimezone(
+                        ZoneInfo("America/Argentina/Buenos_Aires")).date()
+                    cutoff = today_art - timedelta(days=364)
+                    # No ORDER/GROUP BY: avoid SQLite disk-backed temp tables.
+                    # Never materialize unbounded TEXT/BLOB in the Python runner.
+                    cursor = db.execute(
+                        "SELECT CASE WHEN typeof(\"date\")='text' "
+                        "AND length(\"date\")=10 THEN \"date\" ELSE NULL END "
+                        'FROM "history_versions_v2"')
+                    while True:
+                        require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+                        chunk = cursor.fetchmany(1024)
+                        if not chunk:
+                            break
+                        require(counters["total_versions"] + len(chunk) <=
+                                AGGREGATE_MAX_ROWS, "A502_ROW_BUDGET")
+                        for (value,) in chunk:
+                            counters["total_versions"] += 1
+                            if not isinstance(value, str) or len(value) != 10:
+                                counters["invalid_date"] += 1
+                                continue
+                            try:
+                                day = date.fromisoformat(value)
+                            except ValueError:
+                                counters["invalid_date"] += 1
+                                continue
+                            if day.isoformat() != value:
+                                counters["invalid_date"] += 1
+                            elif day > today_art:
+                                counters["future_date"] += 1
+                            elif day >= cutoff:
+                                counters["within_365d"] += 1
+                            else:
+                                counters["older_than_365d"] += 1
+            except sqlite3.Error as exc:
+                raise GuardError("A502_TIME_BUDGET" if
+                                 time.monotonic() >= deadline else
+                                 "A502_SQLITE_UNAVAILABLE") from exc
+            after = os.fstat(stream.fileno())
+            after_id = (after.st_dev, after.st_ino, after.st_size,
+                        after.st_mtime_ns, after.st_ctime_ns)
+            require(after_id == expected, "A502_SOURCE_CHANGED_DURING_SCAN")
+    finally:
+        # os.fdopen normally closes this descriptor. Also cover setup failure.
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+    require(stable() == expected, "A502_SOURCE_CHANGED_DURING_SCAN")
+    require(counters["total_versions"] > 0, "A502_EMPTY_HISTORY")
+    return {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
+            "aggregate_status": "SOURCE_COUNTS_ONLY", **counters,
+            "window_days": 365, "observer_database_opened": False,
+            "provider_pit_authenticated": False,
+            "external_consumer_universe_verified": False,
+            "source_mutated_by_action": False,
+            "host_purge_allowed": False, "physical_host_delete_count": 0,
+            "real_orders_sent_by_action": 0}
+
+
+def sanitize_history_aggregate(raw_path: Path, log_path: Path,
+                               runner_root: Path, capture_rc: int) -> dict:
+    """Never publish remote stdout/stderr: reconstruct from a fixed schema."""
+    root = runner_root.resolve()
+    require(root == runner_root and root.is_dir() and not root.is_symlink()
+            and raw_path.parent == root and raw_path.name == "a502-private.json"
+            and log_path.parent == root and log_path.name == "a502-private.log",
+            "A330_CLASSIFIER_PRIVATE_PATH_INVALID")
+    if capture_rc != 0:
+        private = bounded_private_failure_log(log_path, root,
+                                              expected_name="a502-private.log")
+        return {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
+                "failure_class": classify_capture_failure(capture_rc, private, 0),
+                "host_purge_allowed": False, "physical_host_delete_count": 0,
+                "real_orders_sent_by_action": 0}
+    try:
+        descriptor = os.open(raw_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
+                    0 < info.st_size <= AGGREGATE_MAX_RECEIPT_BYTES,
+                    "A502_RECEIPT_INVALID")
+            body = decode_json(stream.read(AGGREGATE_MAX_RECEIPT_BYTES + 1))
+        fixed = {"schema", "state", "aggregate_status", "total_versions",
+                 "within_365d", "older_than_365d", "invalid_date",
+                 "future_date", "window_days", "observer_database_opened",
+                 "provider_pit_authenticated", "external_consumer_universe_verified",
+                 "source_mutated_by_action", "host_purge_allowed",
+                 "physical_host_delete_count", "real_orders_sent_by_action"}
+        require(type(body) is dict and set(body) == fixed and
+                body["schema"] == AGGREGATE_SCHEMA and
+                body["state"] == "NO_VERIFICADO" and
+                body["aggregate_status"] == "SOURCE_COUNTS_ONLY" and
+                body["window_days"] == 365 and
+                all(type(body[name]) is int and 0 <= body[name] <= AGGREGATE_MAX_ROWS
+                    for name in ("total_versions", "within_365d",
+                                 "older_than_365d", "invalid_date", "future_date")) and
+                0 < body["total_versions"] == sum(body[name] for name in
+                    ("within_365d", "older_than_365d", "invalid_date",
+                     "future_date")) and
+                all(body[name] is False for name in
+                    ("observer_database_opened", "provider_pit_authenticated",
+                     "external_consumer_universe_verified", "source_mutated_by_action",
+                     "host_purge_allowed")) and
+                body["physical_host_delete_count"] == 0 and
+                body["real_orders_sent_by_action"] == 0,
+                "A502_RECEIPT_INVALID")
+        return {name: body[name] for name in sorted(fixed)}
+    except (OSError, ValueError, TypeError, GuardError):
+        return {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
+                "failure_class": "REMOTE_RECEIPT_INVALID",
+                "host_purge_allowed": False, "physical_host_delete_count": 0,
+                "real_orders_sent_by_action": 0}
 
 
 def version_id(value: object) -> int | None:
@@ -785,17 +984,21 @@ def main() -> None:
     group.add_argument("--host-history-export", action="store_true")
     group.add_argument("--runner-history-rehearsal", action="store_true")
     group.add_argument("--classify-history-capture-failure", action="store_true")
+    group.add_argument("--host-history-aggregate", action="store_true")
+    group.add_argument("--sanitize-history-aggregate", action="store_true")
     parser.add_argument("--capture-exit-code", type=int)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--capture-log", type=Path)
     parser.add_argument("--runner-root", type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--sanitized-output", type=Path)
+    parser.add_argument("--raw", type=Path)
     args = parser.parse_args()
     try:
         if args.host_export:
             require(not any((args.bundle, args.capture_log, args.runner_root,
-                             args.sanitized_output)) and args.capture_exit_code is None,
+                             args.sanitized_output, args.raw)) and
+                    args.capture_exit_code is None,
                     "A330_HOST_MODE_INPUTS_FORBIDDEN")
             gate = host_gate()
             receipt = export_bundle(HOST_SOURCE, HOST_OBSERVER, HOST_DATA,
@@ -804,15 +1007,42 @@ def main() -> None:
             print("A330_CAPTURE_RECEIPT=" + encoded(receipt).decode(), file=sys.stderr)
         elif args.host_history_export:
             require(not any((args.bundle, args.capture_log, args.runner_root,
-                             args.sanitized_output)) and args.capture_exit_code is None,
+                             args.sanitized_output, args.raw)) and
+                    args.capture_exit_code is None,
                     "A330_HOST_MODE_INPUTS_FORBIDDEN")
             gate = host_history_gate()
             receipt = export_history_bundle(HOST_SOURCE, sys.stdout.buffer,
                                             time.monotonic() + HOST_SECONDS, gate)
             print("A330_CAPTURE_RECEIPT=" + encoded(receipt).decode(), file=sys.stderr)
+        elif args.host_history_aggregate:
+            require(not any((args.bundle, args.capture_log, args.runner_root,
+                             args.sanitized_output, args.raw)) and
+                    args.capture_exit_code is None,
+                    "A330_HOST_MODE_INPUTS_FORBIDDEN")
+            # Unlike A500 this writes only a fixed, aggregate-only JSON to stdout.
+            receipt = history_aggregate(HOST_SOURCE, deadline=time.monotonic() +
+                                       AGGREGATE_HOST_SECONDS)
+            print(encoded(receipt).decode(), flush=True)
+        elif args.sanitize_history_aggregate:
+            require(args.raw is not None and args.capture_log is not None and
+                    args.runner_root is not None and args.sanitized_output is not None
+                    and args.capture_exit_code is not None and
+                    args.bundle is None and
+                    args.sanitized_output.parent == args.runner_root and
+                    args.sanitized_output.name == "a502-sanitized.json",
+                    "A330_CLASSIFIER_INPUTS_REQUIRED")
+            receipt = sanitize_history_aggregate(args.raw, args.capture_log,
+                                                 args.runner_root,
+                                                 args.capture_exit_code)
+            write_exclusive(args.runner_root, args.sanitized_output.name,
+                            io.BytesIO(encoded(receipt) + b"\n"))
+            print("A502_AGGREGATE_STATUS=" +
+                  ("SOURCE_COUNTS_ONLY" if receipt.get("aggregate_status") ==
+                   "SOURCE_COUNTS_ONLY" else "NO_VERIFICADO"))
         elif args.runner_rehearsal or args.runner_history_rehearsal:
             require(all((args.bundle, args.capture_log, args.runner_root,
-                         args.sanitized_output)) and args.capture_exit_code is None,
+                         args.sanitized_output)) and args.capture_exit_code is None
+                    and args.raw is None,
                     "A330_RUNNER_INPUTS_REQUIRED")
             result = runner_rehearsal(args.bundle, args.capture_log,
                                       args.runner_root, args.repo_root,
@@ -827,7 +1057,7 @@ def main() -> None:
             root = args.runner_root
             require(root is not None and args.capture_log is not None and
                     args.bundle is not None and args.sanitized_output is not None and
-                    args.capture_exit_code is not None,
+                    args.capture_exit_code is not None and args.raw is None,
                     "A330_CLASSIFIER_INPUTS_REQUIRED")
             require(args.capture_exit_code >= 0 and
                     args.bundle.parent == root and

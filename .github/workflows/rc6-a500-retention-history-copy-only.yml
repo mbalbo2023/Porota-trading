@@ -1,6 +1,6 @@
-name: RC6 A500 offhost HISTORY_COPY_ONLY retention diagnosis
+name: RC6 A500/A502 offhost retention diagnostics
 
-# PR events test synthetic contracts only; host capture is manual on main.
+# PR events test synthetic contracts only; both host modes are manual on main.
 # No observer SQLite access, no host writes, checkpoint, purge, deploy or orders.
 on:
   pull_request:
@@ -11,11 +11,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'HISTORY_COPY_ONLY; no observer/paper/PIT authority, all HOLD'
+        description: 'Copy-only or aggregate-only; neither certifies PIT, pins or purge'
         required: true
         type: choice
         options:
           - HISTORY_COPY_ONLY
+          - HISTORY_AGGREGATE_ONLY
 
 permissions:
   contents: read
@@ -31,7 +32,8 @@ jobs:
       (github.event_name == 'pull_request' ||
        (github.event_name == 'workflow_dispatch' &&
         github.ref == 'refs/heads/main' &&
-        inputs.mode == 'HISTORY_COPY_ONLY'))
+        (inputs.mode == 'HISTORY_COPY_ONLY' ||
+         inputs.mode == 'HISTORY_AGGREGATE_ONLY')))
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -39,7 +41,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Compile and test A330 compatibility and A500 synthetic security
+      - name: Compile and test A330/A500/A502 synthetic security contracts
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -47,7 +49,7 @@ jobs:
           python3 -m py_compile scripts/rc6_retention_a319_offhost.py \
             scripts/rc6_retention_a330_private_capture.py
           python3 -m unittest discover -s tests -p 'test_rc6_retention_a330_private_capture.py' -v
-          echo 'A500_CONTRACTS=GREEN|HOST_DB_WRITES=false|OBSERVER_READ=false|PURGE=false'
+          echo 'A500_A502_CONTRACTS=GREEN|NO_HOST_PR|PURGE=false'
 
   private-history-census:
     needs: contracts
@@ -155,4 +157,93 @@ jobs:
             find "$private" -mindepth 1 -maxdepth 1 -type f \
               -exec shred -u -- {} +
             rmdir "$private"
+
+  private-history-aggregate:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.mode == 'HISTORY_AGGREGATE_ONLY'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact main control-plane code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Allocate isolated private runner directory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$(mktemp -d -p "$RUNNER_TEMP" rc6-a502-private-XXXXXX)"
+          chmod 700 "$private"
+          echo "RC6_A502_DIR=$private" >> "$GITHUB_ENV"
+
+      - name: Single bounded SSH; fixed aggregate counts only, NO DB transfer
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          root="$RC6_A502_DIR"
+          capture_rc=0
+          if test -z "$DO_HOST" || test -z "$DO_USER" || \
+             test -z "$DO_SSH_KEY" || test -z "$DO_KNOWN_HOSTS"; then
+            printf '%s\n' 'A330_REJECTED=A502_HOST_CREDENTIALS_UNAVAILABLE' > "$root/a502-private.log"
+            : > "$root/a502-private.json"
+            capture_rc=2
+          else
+            printf '%s\n' "$DO_SSH_KEY" > "$root/id_key"
+            printf '%s\n' "$DO_KNOWN_HOSTS" > "$root/known_hosts"
+            chmod 600 "$root/id_key" "$root/known_hosts"
+            # Output is less than 8 KiB; reject runaway remote output.
+            ulimit -f 16
+            set +e
+            timeout 85 ssh -i "$root/id_key" -o BatchMode=yes \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$root/known_hosts" \
+              -o ConnectTimeout=10 "$DO_USER@$DO_HOST" \
+              'sudo -n nice -n 19 ionice -c 3 timeout 65 python3 -B - --host-history-aggregate' \
+              < scripts/rc6_retention_a330_private_capture.py \
+              > "$root/a502-private.json" 2> "$root/a502-private.log"
+            capture_rc=$?
+            set -e
+          fi
+          python3 -B scripts/rc6_retention_a330_private_capture.py \
+            --sanitize-history-aggregate --capture-exit-code "$capture_rc" \
+            --raw "$root/a502-private.json" \
+            --capture-log "$root/a502-private.log" \
+            --runner-root "$root" --sanitized-output "$root/a502-sanitized.json"
+          test "$capture_rc" -eq 0
+          grep -Fq '"aggregate_status":"SOURCE_COUNTS_ONLY"' "$root/a502-sanitized.json"
+
+      - name: Upload only validated aggregate counts, never raw rows or DB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a502-sanitized-${{ github.run_id }}
+          path: ${{ env.RC6_A502_DIR }}/a502-sanitized.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Destroy isolated credentials and remote stdout/stderr
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A502_DIR:-}"
+          if test -n "$private" && test -d "$private" && \
+             test "${private#"$RUNNER_TEMP"/}" != "$private" && \
+             test "$(stat -c %a "$private")" = 700; then
+            find "$private" -mindepth 1 -maxdepth 1 -type f \
+              -exec shred -u -- {} +
+            rmdir "$private"
+          fi
           fi

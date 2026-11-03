@@ -6,7 +6,8 @@ import importlib.util
 import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -635,6 +636,225 @@ class SyntheticPrivateCapture(unittest.TestCase):
                           "--host-export'", "PPI Watch"):
             if forbidden != "PPI Watch":
                 self.assertNotIn(forbidden, body)
+
+    def test_a502_source_counts_only_with_live_observer_wal(self):
+        observer = sqlite3.connect(self.observer)
+        try:
+            observer.execute("PRAGMA journal_mode=WAL")
+            observer.execute("INSERT INTO external_event VALUES (88)")
+            observer.commit()
+            self.assertTrue(Path(str(self.observer) + "-wal").exists())
+            before = self.source.read_bytes()
+            gate = dict(self.gate, both_history_writers_inactive=True,
+                        a3_timers_masked=True)
+            report = a330.history_aggregate(self.source, gate=gate,
+                                            deadline=time.monotonic() + 30)
+            self.assertEqual(report["schema"], a330.AGGREGATE_SCHEMA)
+            self.assertEqual(report["state"], "NO_VERIFICADO")
+            self.assertEqual(report["total_versions"], 8)
+            self.assertEqual(report["older_than_365d"], 8)
+            self.assertEqual(report["within_365d"], 0)
+            self.assertEqual(report["invalid_date"], 0)
+            self.assertEqual(report["future_date"], 0)
+            self.assertFalse(report["host_purge_allowed"])
+            self.assertFalse(report["observer_database_opened"])
+            self.assertFalse(report["provider_pit_authenticated"])
+            self.assertEqual(report["real_orders_sent_by_action"], 0)
+            self.assertEqual(self.source.read_bytes(), before)
+            self.assertTrue(Path(str(self.observer) + "-wal").exists())
+            public = json.dumps(report)
+            for sensitive in ("ABC", "PPI", "2024-01-01", "observer_v17.db",
+                              "market_history.db"):
+                self.assertNotIn(sensitive, public)
+        finally:
+            observer.close()
+
+    def test_a502_365_art_date_boundary_and_bad_dates(self):
+        values = ("2026-11-03", "2025-11-04", "2025-11-03", "2026-11-04",
+                  "unknown", None, "2020-01-01", "2026-11-02")
+        with sqlite3.connect(self.source) as db:
+            for index, value in enumerate(values, start=1):
+                db.execute("UPDATE history_versions_v2 SET date=? WHERE id=?",
+                           (value, index))
+        gate = {"gated_at_utc": "2026-11-03T12:00:00Z",
+                "source_stat": a330.check_quiet_file(self.source, 1024**3,
+                                                      sqlite_file=True),
+                "both_history_writers_inactive": True,
+                "a3_timers_masked": True}
+        result = a330.history_aggregate(self.source, gate=gate,
+                                        deadline=time.monotonic() + 30)
+        self.assertEqual({k: result[k] for k in
+                          ("within_365d", "older_than_365d", "invalid_date",
+                           "future_date")},
+                         {"within_365d": 3, "older_than_365d": 2,
+                          "invalid_date": 2, "future_date": 1})
+
+    def test_a502_dangling_wal_and_unquiet_source_are_rejected(self):
+        gate = dict(self.gate, both_history_writers_inactive=True,
+                    a3_timers_masked=True)
+        Path(str(self.source) + "-wal").symlink_to(self.root / "absent.db")
+        with self.assertRaisesRegex(a330.GuardError,
+                                    "A502_HISTORY_SIDECAR_PRESENT"):
+            a330.history_aggregate(self.source, gate=gate,
+                                   deadline=time.monotonic() + 5)
+        Path(str(self.source) + "-wal").unlink()
+        self.source.rename(self.root / "original.db")
+        self.source.symlink_to(self.root / "original.db")
+        with self.assertRaisesRegex(a330.GuardError, "A330_SOURCE_ALIAS"):
+            a330.history_aggregate(self.source, gate=gate,
+                                   deadline=time.monotonic() + 5)
+
+    def test_a502_budget_writer_gate_and_source_metadata_change(self):
+        gate = dict(self.gate, both_history_writers_inactive=True,
+                    a3_timers_masked=True)
+        with patch.object(a330, "AGGREGATE_MAX_ROWS", 7):
+            with self.assertRaisesRegex(a330.GuardError, "A502_ROW_BUDGET"):
+                a330.history_aggregate(self.source, gate=gate,
+                                       deadline=time.monotonic() + 20)
+        with self.assertRaisesRegex(a330.GuardError, "A502_TIME_BUDGET"):
+            a330.history_aggregate(self.source, gate=gate,
+                                   deadline=time.monotonic() - 1)
+        with self.assertRaisesRegex(a330.GuardError,
+                                    "A500_HISTORY_WRITER_NOT_INACTIVE"):
+            a330.history_aggregate(self.source,
+                                   gate=dict(gate, both_history_writers_inactive=False),
+                                   deadline=time.monotonic() + 5)
+        with self.assertRaisesRegex(a330.GuardError,
+                                    "A502_GATE_CLOCK_INVALID"):
+            a330.history_aggregate(self.source,
+                                   gate=dict(gate, gated_at_utc="not a time"),
+                                   deadline=time.monotonic() + 5)
+
+        first = True
+        class MetadataChange:
+            @staticmethod
+            def fromisoformat(value):
+                nonlocal first
+                if first:
+                    first = False
+                    info = self.source.stat()
+                    os.utime(self.source, ns=(info.st_atime_ns,
+                                              info.st_mtime_ns + 10_000_000))
+                return date.fromisoformat(value)
+        with patch.object(a330, "date", MetadataChange):
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A502_SOURCE_CHANGED_DURING_SCAN"):
+                a330.history_aggregate(self.source, gate=gate,
+                                       deadline=time.monotonic() + 20)
+
+    def test_a502_history_gate_rejects_duplicate_or_contradictory_systemd(self):
+        def misleading(args, **_):
+            if args[1] == "show":
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout="ActiveState=active\nActiveState=inactive\nUnitFileState=masked\n")
+            return SimpleNamespace(returncode=3, stdout="inactive\n")
+        with (patch.object(a330, "available_memory", return_value=8 * 1024**3),
+              patch.object(a330.shutil, "disk_usage",
+                           return_value=SimpleNamespace(free=8 * 1024**3)),
+              patch.object(a330.subprocess, "run", side_effect=misleading)):
+            with self.assertRaisesRegex(a330.GuardError,
+                                        "A330_A3_TIMER_NOT_QUARANTINED"):
+                a330.host_history_gate(self.source)
+
+    def test_a502_sanitizer_rebuilds_only_counts_and_rejects_tampering(self):
+        gate = dict(self.gate, both_history_writers_inactive=True,
+                    a3_timers_masked=True)
+        receipt = a330.history_aggregate(self.source, gate=gate,
+                                         deadline=time.monotonic() + 30)
+        raw = self.private / "a502-private.json"
+        log = self.private / "a502-private.log"
+        log.write_text("path:/secret/customer\n")
+        raw.write_text(json.dumps(receipt))
+        verified = a330.sanitize_history_aggregate(raw, log, self.private, 0)
+        self.assertEqual(verified["aggregate_status"], "SOURCE_COUNTS_ONLY")
+        self.assertEqual(verified["total_versions"], 8)
+        self.assertNotIn("secret/customer", json.dumps(verified))
+
+        for mutator in (
+                lambda x: {**x, "symbol": "PRIVATE"},
+                lambda x: {**x, "host_purge_allowed": True},
+                lambda x: {**x, "total_versions": 999},
+                lambda x: {**x, "observer_database_opened": True},
+                lambda x: {**x, "older_than_365d": -1},
+                lambda x: {**x, "total_versions": True},
+                lambda x: {**x, "state": "VALIDADO_RUNTIME"}):
+            with self.subTest(mutator=mutator):
+                raw.write_text(json.dumps(mutator(receipt)))
+                rejected = a330.sanitize_history_aggregate(raw, log, self.private, 0)
+                self.assertEqual(rejected["failure_class"], "REMOTE_RECEIPT_INVALID")
+                self.assertNotIn("PRIVATE", json.dumps(rejected))
+        raw.write_text('{"total_versions":1,"total_versions":2}')
+        self.assertEqual(a330.sanitize_history_aggregate(raw, log, self.private, 0)
+                         ["failure_class"], "REMOTE_RECEIPT_INVALID")
+        raw.write_text("PRIVATE" * 3000)
+        self.assertEqual(a330.sanitize_history_aggregate(raw, log, self.private, 0)
+                         ["failure_class"], "REMOTE_RECEIPT_INVALID")
+        raw.unlink()
+        raw.symlink_to(self.source)
+        self.assertEqual(a330.sanitize_history_aggregate(raw, log, self.private, 0)
+                         ["failure_class"], "REMOTE_RECEIPT_INVALID")
+
+    def test_a502_private_rejection_and_cli_isolation(self):
+        raw = self.private / "a502-private.json"
+        raw.touch()
+        log = self.private / "a502-private.log"
+        log.write_text("SECRET\nA330_REJECTED=A502_HISTORY_SIDECAR_PRESENT\n")
+        failed = a330.sanitize_history_aggregate(raw, log, self.private, 2)
+        self.assertEqual(failed["failure_class"],
+                         "REMOTE_GUARD_A502_HISTORY_SIDECAR_PRESENT")
+        self.assertNotIn("SECRET", json.dumps(failed))
+        self.assertEqual(a330.sanitize_history_aggregate(raw, log, self.private, 255)
+                         ["failure_class"], "SSH_EXIT_255_TRANSPORT_OR_REMOTE")
+
+        gate = dict(self.gate, both_history_writers_inactive=True,
+                    a3_timers_masked=True)
+        with (patch.object(a330, "HOST_SOURCE", self.source),
+              patch.object(a330, "host_history_gate", return_value=gate),
+              patch.object(sys, "argv", ["a502", "--host-history-aggregate"]),
+              redirect_stdout(io.StringIO()) as output):
+            a330.main()
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["total_versions"], 8)
+        self.assertFalse(result["observer_database_opened"])
+        self.assertNotIn("A330_CAPTURE_RECEIPT", output.getvalue())
+
+        # Runner CLI must validate and reconstruct the public receipt itself.
+        raw.write_text(json.dumps(result))
+        sanitized = self.private / "a502-sanitized.json"
+        argv = ["a502", "--sanitize-history-aggregate",
+                "--capture-exit-code", "0", "--raw", str(raw),
+                "--capture-log", str(log), "--runner-root", str(self.private),
+                "--sanitized-output", str(sanitized)]
+        with patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()) as status:
+            a330.main()
+        published = json.loads(sanitized.read_text())
+        self.assertEqual(published["total_versions"], 8)
+        self.assertEqual(status.getvalue().strip(),
+                         "A502_AGGREGATE_STATUS=SOURCE_COUNTS_ONLY")
+        self.assertNotIn("SECRET", sanitized.read_text())
+
+        with (patch.object(sys, "argv", ["a502", "--host-history-aggregate",
+                                          "--raw", str(raw)]),
+              redirect_stderr(io.StringIO()) as rejected):
+            with self.assertRaises(SystemExit):
+                a330.main()
+        self.assertIn("A330_HOST_MODE_INPUTS_FORBIDDEN", rejected.getvalue())
+
+    def test_a502_workflow_manual_separate_mode_no_raw_artifact(self):
+        body = HISTORY_WORKFLOW.read_text()
+        self.assertNotIn("\n  push:", body)
+        self.assertNotIn("\n  schedule:", body)
+        self.assertIn("inputs.mode == 'HISTORY_AGGREGATE_ONLY'", body)
+        self.assertIn("inputs.mode == 'HISTORY_COPY_ONLY'", body)
+        self.assertIn("--host-history-aggregate", body)
+        self.assertIn("--sanitize-history-aggregate", body)
+        self.assertIn("private-history-aggregate:", body)
+        self.assertIn("private-history-census:", body)
+        self.assertIn("github.ref == 'refs/heads/main'", body)
+        self.assertIn("path: ${{ env.RC6_A502_DIR }}/a502-sanitized.json", body)
+        self.assertNotIn("path: ${{ env.RC6_A502_DIR }}/a502-private.json", body)
+        self.assertNotIn("python3 -B - --host-export'", body)
 
     def test_workflow_is_manual_main_runner_only_without_deploy(self):
         body = WORKFLOW.read_text()
