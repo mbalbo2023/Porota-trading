@@ -197,6 +197,13 @@ def import_capture(store,path):
                     conflicts+=1
                     continue
                 evidence,unbound=_source_evidence(ev,exclude_fees=True)
+                # A native Book quantity is not a principal-ARS conversion.
+                quantity_hints={}
+                for key in ('quantity','cantidad','principal','monto','amount','book_quantity'):
+                    if key in evidence:
+                        quantity_hints[key]=evidence.pop(key)
+                if quantity_hints:
+                    evidence['provider_quantity_unverified']=quantity_hints
                 evidence['book_quantity_unit_status']='BOOK_QUANTITY_UNIT_UNVERIFIED'
                 if unbound:
                     notes.append('CAUCIONES_XHR_FEE_ESTIMATE_UNBOUND_'+ticker)
