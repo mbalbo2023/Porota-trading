@@ -167,6 +167,17 @@ class A504ClassifyTests(unittest.TestCase):
                           boot_us=10_000_000_000, source="STALE_OR_MISSING")
         self.assertEqual(r["classification"], "NO_SOURCE")
 
+    def test_stage_specific_stale_enums_keep_conservative_no_source_gate(self):
+        now = art(h=11, minute=5)
+        for state in ("PUBLIC_STALE_OR_MISSING", "EVIDENCE_STALE_OR_MISSING",
+                      "BOTH_STALE_OR_MISSING"):
+            with self.subTest(state=state):
+                r = a504.classify("SOURCE_CYCLE", now, sample_two(now), host(),
+                                  boot_us=10_000_000_000, source=state)
+                self.assertEqual(r["classification"], "NO_SOURCE")
+                self.assertIn(state, a504.SOURCE_CLASSES)
+                self.assertFalse(r["full_day_cadence_certified"])
+
     def test_late_t1_not_due_must_not_be_mislabeled_no_source(self):
         now = art(h=17, minute=45)
         r = a504.classify("SOURCE_CYCLE", now, sample_two(now), host(),
@@ -236,22 +247,31 @@ class A504MetadataTests(unittest.TestCase):
         self.assertEqual(receipt["public_last_success"], "WITHIN_5M")
         self.assertEqual(receipt["evidence_last_success"], "WITHIN_5M")
         # No A338 budget sidecar, provider request or Book is read here.
-        self.assertEqual(self._inspect_source_state(state, art(h=12)), "STALE_OR_MISSING")
+        self.assertEqual(self._inspect_source_state(state, art(h=12)), "BOTH_STALE_OR_MISSING")
 
     def test_source_old_fabricated_iol_clock_does_not_override_missing_producer_stages(self):
         state = self._source_state(last_public_success_at=None,
                                    last_evidence_success_at=None,
                                    last_iol_success_at="2026-11-03T13:59:59Z")
-        self.assertEqual(self._inspect_source_state(state), "STALE_OR_MISSING")
+        self.assertEqual(self._inspect_source_state(state), "BOTH_STALE_OR_MISSING")
 
     def test_source_each_real_stage_missing_or_expired_fails_closed(self):
-        for field, expired_stamp in (("last_public_success_at", "2026-11-03T13:59:00Z"),
-                                     ("last_evidence_success_at", "2026-11-03T13:55:00Z")):
+        for field, expired_stamp, reason in (
+                ("last_public_success_at", "2026-11-03T13:59:00Z", "PUBLIC_STALE_OR_MISSING"),
+                ("last_evidence_success_at", "2026-11-03T13:55:00Z", "EVIDENCE_STALE_OR_MISSING")):
             with self.subTest(field=field):
                 self.assertEqual(self._inspect_source_state(self._source_state(**{field: None})),
-                                 "STALE_OR_MISSING")
+                                 reason)
                 self.assertEqual(self._inspect_source_state(self._source_state(**{field: expired_stamp})),
-                                 "STALE_OR_MISSING")
+                                 reason)
+
+    def test_both_stage_expirations_have_one_fixed_reason_without_timestamps(self):
+        state = self._source_state(last_public_success_at="2026-11-03T13:58:00Z",
+                                   last_evidence_success_at="2026-11-03T13:54:00Z")
+        reason = self._inspect_source_state(state)
+        self.assertEqual(reason, "BOTH_STALE_OR_MISSING")
+        self.assertNotIn("2026", reason)
+        self.assertNotIn("13:", reason)
 
     def test_source_rejects_other_session_invalid_or_future_stage_clocks(self):
         self.assertEqual(self._inspect_source_state(self._source_state(session_date="2026-11-02")),

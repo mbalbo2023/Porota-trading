@@ -45,7 +45,9 @@ CLASSIFICATIONS = frozenset({"NOT_DUE", "NO_SOURCE", "SCHEDULE_SILENT", "FAILED"
                              "RECENT_INVOCATIONS_OBSERVED", "NO_VERIFICADO"})
 BUCKETS = frozenset({"NONE", "WITHIN_2M", "WITHIN_10M", "WITHIN_30M",
                      "OLDER", "UNKNOWN"})
-SOURCE_CLASSES = frozenset({"FRESH", "STALE_OR_MISSING", "UNKNOWN", "NOT_APPLICABLE"})
+SOURCE_STALE_CLASSES = frozenset({"STALE_OR_MISSING", "PUBLIC_STALE_OR_MISSING",
+                                  "EVIDENCE_STALE_OR_MISSING", "BOTH_STALE_OR_MISSING"})
+SOURCE_CLASSES = SOURCE_STALE_CLASSES | frozenset({"FRESH", "UNKNOWN", "NOT_APPLICABLE"})
 LOAD_CLASSES = frozenset({"loaded", "masked", "not-found", "error", "UNKNOWN"})
 ACTIVE_CLASSES = frozenset({"active", "inactive", "failed", "UNKNOWN"})
 RESULT_CLASSES = frozenset({"success", "exit-code", "timeout", "signal", "core-dump",
@@ -113,10 +115,12 @@ def _bounded_state_source(now: datetime) -> str:
             return "UNKNOWN"
         if data.get("session_date") != now.astimezone(ART).date().isoformat():
             return "STALE_OR_MISSING"
+        stale_stages: set[str] = set()
         for field, ttl_seconds in SOURCE_STAGE_TTLS:
             stamp = data.get(field)
             if not isinstance(stamp, str):
-                return "STALE_OR_MISSING"
+                stale_stages.add(field)
+                continue
             last = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
             if last.tzinfo is None:
                 return "UNKNOWN"
@@ -124,8 +128,14 @@ def _bounded_state_source(now: datetime) -> str:
             if age < 0:
                 return "UNKNOWN"  # do not certify future clocks as fresh
             if age >= ttl_seconds:
-                return "STALE_OR_MISSING"
-        return "FRESH"
+                stale_stages.add(field)
+        if not stale_stages:
+            return "FRESH"
+        if len(stale_stages) == len(SOURCE_STAGE_TTLS):
+            return "BOTH_STALE_OR_MISSING"
+        if "last_public_success_at" in stale_stages:
+            return "PUBLIC_STALE_OR_MISSING"
+        return "EVIDENCE_STALE_OR_MISSING"
     except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
         return "UNKNOWN"
     finally:
@@ -301,7 +311,7 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
     if (result["service"] not in {"success", "UNKNOWN"} and isinstance(last_exit, int)
             and last_trigger <= last_exit <= boot_us):
         result["classification"] = "FAILED"
-    elif (role == "SOURCE_CYCLE" and source == "STALE_OR_MISSING" and
+    elif (role == "SOURCE_CYCLE" and source in SOURCE_STALE_CLASSES and
           now.astimezone(ART).time() < wall_time(17, 0)):
         # After 17:00 COM19031 narrows observation to exact T+1 contracts.
         # A successful NOT_DUE_LATE_NO_VERIFIED_T1 tick is legitimate; the
@@ -386,7 +396,7 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
             if item["classification"] in {"NO_SOURCE", "FAILED"} and not item["last_two_mature_distinct"]:
                 return fallback
             if item["classification"] == "NO_SOURCE" and not (
-                    role == "SOURCE_CYCLE" and item["source"] == "STALE_OR_MISSING"):
+                    role == "SOURCE_CYCLE" and item["source"] in SOURCE_STALE_CLASSES):
                 return fallback
             if item["classification"] == "SCHEDULE_SILENT" and not (
                     item["nominal_mature_slots"] >= 2 and item["timer"] == "active" and
