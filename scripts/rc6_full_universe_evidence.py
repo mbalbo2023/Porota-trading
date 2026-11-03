@@ -8,6 +8,7 @@ Its READY_PAPER* labels do not imply a signal or automatic PAPER admission.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import json
 import os
 from pathlib import Path
@@ -347,6 +348,101 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
             conn.close()
 
 
+def _mode_snapshot_matches_scanner(row: dict[str, Any], scanner: dict[str, Any],
+                                   current: datetime) -> bool:
+    """Exact PPI receipt correlation, never a PRODUCTION_PAPER origin upgrade.
+
+    Metadata/source mode, matching prices without clocks, and catalog identity
+    alone do not prove provider provenance. Only a separately verified SDK
+    scanner receipt containing ALL of the same quote facts may bind the mode
+    snapshot for diagnostics. The scanner row itself remains the PPI authority.
+    """
+    if (_exact_key(row) is None or _exact_key(row) != _exact_key(scanner)
+            or scanner.get("provider_origin") != ORIGIN
+            or scanner.get("source") != "PPI" or scanner.get("state") != "READY"
+            or not native_trade_book_ready(scanner, current, require_trade_kind=True)
+            or row.get("last_kind") != "TRADE"):
+        return False
+    for field in ("observed_at", "book_at", "trade_at"):
+        left = row.get("observed_at") if field == "observed_at" else row.get(field)
+        right = scanner.get("received_at") if field == "observed_at" else scanner.get(field)
+        if not iso(left) or iso(left) != iso(right):
+            return False
+    for field in ("last", "bid", "ask", "bid_size", "ask_size"):
+        try:
+            left, right = Decimal(str(row.get(field))), Decimal(str(scanner.get(field)))
+        except (TypeError, InvalidOperation, ValueError):
+            return False
+        if not left.is_finite() or not right.is_finite() or left != right:
+            return False
+    return True
+
+
+def ppi_mode_provenance_diagnostics(current: datetime, *, sample_limit: int = 512) -> dict[str, Any]:
+    """Bounded READ_ONLY evidence for the A385 PPI.present=0 source loss.
+
+    A market_snapshots row contains PRODUCTION_PAPER (an execution mode), not
+    the SDK transport origin. No amount of native-looking timestamps or PPI
+    contract metadata proves that transport. This diagnostic never emits a
+    candidate quote, changes source_rank, or changes PAPER admission.
+    """
+    status = {"state": "NO_VERIFICADO", "reason": "PAPER_MODE_NOT_BROKER_PROVENANCE",
+              "mode_only_sampled": 0, "mode_only_with_native_clocks": 0,
+              "scanner_bound_exact_mode_rows": 0, "unbound_mode_rows": 0,
+              "sample_limit": sample_limit, "sample_truncated_or_unknown": True,
+              "source_state": "NO_VERIFICADO", "snapshot_source_role": "EXECUTION_MODE_ONLY",
+              "scanner_authority": "PPI_READONLY_SDK_CURRENT_AND_BOOK_ONLY",
+              "promotes_paper_readiness": False, "causal_fill_verified": False,
+              "provider_gets_this_diagnostic": 0}
+    if type(sample_limit) is not int or not 1 <= sample_limit <= 512 or not iso(current):
+        return {**status, "state": "BLOQUEADO", "reason": "PPI_MODE_DIAGNOSTIC_INPUT_INVALID"}
+    conn = None
+    try:
+        conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
+        conn.execute("PRAGMA query_only=ON")
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(market_snapshots)")}
+        expected = {"source", "symbol", "asset_class", "market", "currency", "settlement",
+                    "last", "bid", "ask", "bid_size", "ask_size", "trade_at", "book_at",
+                    "observed_at", "last_kind"}
+        if not expected <= columns:
+            return {**status, "reason": "PPI_MODE_SNAPSHOT_SCHEMA_UNAVAILABLE"}
+        selected = tuple(sorted(expected))
+        values = conn.execute(
+            "SELECT " + ",".join(selected) + " FROM market_snapshots "
+            "WHERE source=? ORDER BY id DESC LIMIT ?",
+            ("PRODUCTION_PAPER", sample_limit + 1)).fetchall()
+        rows = [dict(zip(selected, row)) for row in values[:sample_limit]]
+    except (sqlite3.Error, OSError):
+        return {**status, "reason": "PPI_MODE_SNAPSHOT_READ_UNAVAILABLE"}
+    finally:
+        if conn is not None:
+            conn.close()
+    # `primary_records` verifies producer/schema, exact-five-key, native Book
+    # and Trade times, and quote capture. Never turn the scanner diagnostic
+    # itself into a strategy signal; this is a relational consistency check.
+    scanner_rows, receipt = scanner_primary_records(ROOT, current)
+    indexed = {}
+    for row in scanner_rows:
+        if (key := _exact_key(row)) is not None:
+            indexed.setdefault(key, []).append(row)
+    bound = 0
+    for row in rows:
+        key = _exact_key(row)
+        if key and any(_mode_snapshot_matches_scanner(row, candidate, current)
+                       for candidate in indexed.get(key, ())):
+            bound += 1
+    mode_clock_pairs = sum(bool(iso(row.get("trade_at")) and iso(row.get("book_at")))
+                           for row in rows)
+    return {**status, "state": "READ_ONLY_OBSERVED", "mode_only_sampled": len(rows),
+            "mode_only_with_native_clocks": mode_clock_pairs,
+            "scanner_bound_exact_mode_rows": bound,
+            "unbound_mode_rows": len(rows) - bound,
+            "sample_truncated_or_unknown": len(values) > sample_limit,
+            "source_state": "PPI_SCANNER_RECEIPT_BOUND" if bound else "NO_VERIFICADO",
+            "scanner_receipt_state": receipt.get("state"),
+            "scanner_eligible_records": receipt.get("eligible_records", 0)}
+
+
 def iol_rows() -> dict[Any, dict[str, Any]]:
     payload = load_json(ROOT / "iol_shadow_latest.json")
     return _indexed_records(payload.get("symbols", []) if isinstance(payload.get("symbols"), list) else [])
@@ -532,6 +628,7 @@ def build() -> dict[str, Any]:
         },
         "cycle": {
             "ppi_scanner_primary_receipt": ppi_scanner_status,
+            "ppi_mode_provenance_gap": ppi_mode_provenance_diagnostics(current),
             "iol_progress": iol_progress,
             "iol_rotation": rotation,
             "byma_capture": byma_meta,
