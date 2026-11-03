@@ -69,6 +69,39 @@ def test_nonfinite_boolean_or_out_of_range_financial_metric_blocks_review(name, 
     json.dumps(review, allow_nan=False)
 
 
+@pytest.mark.parametrize("name,raw", [
+    ("closed_operations", float("nan")),
+    ("closed_operations", float("inf")),
+    ("closed_operations", False),
+    ("closed_operations", True),
+    ("closed_operations", 0.5),
+    ("closed_operations", -1),
+    ("decisions_observed", float("nan")),
+    ("decisions_observed", float("inf")),
+    ("decisions_observed", False),
+    ("decisions_observed", 0.5),
+])
+def test_malformed_counters_never_certify_review_or_crash(name, raw):
+    data = snapshot()
+    data["metrics"][name] = raw
+    review = build_review(data, datetime(2026, 9, 19, 18, 0, tzinfo=TZ))
+    assert review["status"] == "INSUFFICIENT_EVIDENCE"
+    assert "POSTCLOSE_COUNTERS_INVALID" in review["findings"]
+    assert review["automatic_strategy_change"] is False
+    assert review["real_orders_authorized"] is False
+    json.dumps(review, allow_nan=False)
+
+
+def test_decimal_string_counters_preserve_valid_legacy_report():
+    data = snapshot()
+    data["metrics"]["closed_operations"] = "2"
+    data["metrics"]["decisions_observed"] = "7"
+    review = build_review(data, datetime(2026, 9, 19, 18, 0, tzinfo=TZ))
+    assert review["status"] == "VERIFIED"
+    assert review["metrics"]["closed_operations"] == 2
+    assert review["metrics"]["decisions_observed"] == 7
+
+
 def test_write_review_rejects_nonfinite_payload_atomically(tmp_path):
     output = tmp_path / "review.json"
     with pytest.raises(ValueError):
