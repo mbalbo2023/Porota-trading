@@ -1,5 +1,8 @@
 from datetime import datetime
+import json
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from rc6_snapshot import build_snapshot, write_snapshot
 
@@ -70,3 +73,53 @@ def test_snapshot_fails_closed_when_closed_pnl_currency_is_missing():
     assert snap["status"] == "INSUFFICIENT_EVIDENCE"
     assert "CLOSED_OPERATION_CURRENCY_MISSING" in snap["urgent_alerts"]
     assert snap["metrics"]["net_pnl_ars"] == 0.0
+
+
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-Infinity", "1e309", True, False])
+def test_nonfinite_or_boolean_closed_pnl_fails_closed(raw):
+    data = payload()
+    data["closed"][0]["net_pnl"] = raw
+    snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), data)
+    assert snap["status"] == "INSUFFICIENT_EVIDENCE"
+    assert "CLOSED_OPERATION_PNL_INVALID" in snap["urgent_alerts"]
+    assert snap["operations"][0]["net_pnl"] is None
+    assert snap["metrics"]["net_pnl_ars"] == 0.0
+    json.dumps(snap, allow_nan=False)
+
+
+def test_sum_of_finite_pnls_must_not_become_infinite():
+    data = payload()
+    data["closed"][0]["net_pnl"] = "1e308"
+    data["closed"].append({
+        **data["closed"][0], "symbol": "GGAL-DUP",
+        "closed_at": "2026-09-18T15:01:00-03:00",
+    })
+    snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), data)
+    assert snap["status"] == "INSUFFICIENT_EVIDENCE"
+    assert "CLOSED_PNL_AGGREGATE_NONFINITE" in snap["urgent_alerts"]
+    assert snap["metrics"]["net_pnl_ars"] is None
+    json.dumps(snap, allow_nan=False)
+
+
+@pytest.mark.parametrize("raw", [False, True, 0.0, 0.5, "0.0", "NaN"])
+def test_noninteger_real_order_counter_never_certifies_zero(raw):
+    data = payload(real_orders_sent=raw)
+    snap = build_snapshot("preopen", datetime(2026, 9, 18, 10, 10, tzinfo=TZ), data)
+    assert snap["status"] == "INSUFFICIENT_EVIDENCE"
+    assert snap["real_orders_sent"] is None
+    assert "REAL_ORDERS_NOT_ZERO_OR_UNVERIFIED" in snap["urgent_alerts"]
+
+
+def test_string_integer_zero_counter_remains_compatible():
+    data = payload(real_orders_sent="0")
+    snap = build_snapshot("preopen", datetime(2026, 9, 18, 10, 10, tzinfo=TZ), data)
+    assert snap["status"] == "VERIFIED"
+    assert snap["real_orders_sent"] == 0
+
+
+def test_write_snapshot_rejects_nan_and_leaves_no_partial_output(tmp_path):
+    output = tmp_path / "snapshots" / "latest.json"
+    with pytest.raises(ValueError):
+        write_snapshot({"metrics": {"net_pnl_ars": float("nan")}}, output)
+    assert not output.exists()
+    assert not list(output.parent.glob(".latest.*"))
