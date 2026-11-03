@@ -45,6 +45,13 @@ schedule; manual explícito de cualquier día). Si el kernel/sudo deniega
 menores, no abre DB, no hace PPI GET. Este recibo es independiente de A627,
 que jamás consume ni altera el host.
 
+**Regresión RCA:** A617 tenía una prueba que exigía literalmente el `if`
+`workflow_dispatch` exclusivo. Tras añadir `schedule` con gate por fecha,
+esa aserción histórica falló aunque el comando privado RO no cambió.
+La corrección actualiza únicamente la expectativa del test existente para
+exigir ambas rutas y el gate de fecha antes de SSH; mantiene las defensas
+contra abrir WAL/-shm en FS escribible. No se omite la regresión.
+
 | Clasificación | Evidencia necesaria | No implica |
 |---|---|---|
 | `NO_TRIGGER` | Slot vencido 20 min sin `event=schedule` creado en ventana de 10 min, API histórica completa | GitHub nunca disparó después o causa raíz del proveedor |
