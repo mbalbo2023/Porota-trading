@@ -90,11 +90,11 @@ class FiNativeExitCausalityGuardTest(unittest.TestCase):
 
     def test_book2_is_strictly_post_decision_plus_latency(self):
         data = sample()
-        data["book2"]["native_book_at"] = "2026-11-03T15:00:02Z"
+        data["book2"]["native_book_at"] = "2026-11-03T15:00:02.100000Z"
         result = assess_causal_paper_sale(**data)
         self.assertIn("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID",result["structural_blockers"])
         self.assertFalse(result["structural_witness"])
-        data["book2"]["native_book_at"] = "2026-11-03T15:00:02.000001Z"
+        data["book2"]["native_book_at"] = "2026-11-03T15:00:02.100001Z"
         result = assess_causal_paper_sale(**data)
         self.assertNotIn("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID",result["structural_blockers"])
 
@@ -107,6 +107,20 @@ class FiNativeExitCausalityGuardTest(unittest.TestCase):
         data["book2"]["known_at"] = "2026-11-03T15:00:03.000001Z"
         self.assertIn("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID",
                       assess_causal_paper_sale(**data)["structural_blockers"])
+
+    def test_book2_must_be_after_decision_known_at_not_only_decided_at(self):
+        data = sample()
+        data["decision"]["known_at"] = "2026-11-03T15:00:01.900000Z"
+        # Book2 at 15:00:02.2 is later than decided_at+1s but too early
+        # relative to the recorded/signed decision becoming available.
+        result = assess_causal_paper_sale(**data)
+        self.assertIn("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID",result["structural_blockers"])
+        self.assertFalse(result["structural_witness"])
+        data["book2"]["native_book_at"] = "2026-11-03T15:00:02.900001Z"
+        data["book2"]["observed_at"] = "2026-11-03T15:00:02.900002Z"
+        data["book2"]["known_at"] = "2026-11-03T15:00:02.900003Z"
+        self.assertNotIn("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID",
+                         assess_causal_paper_sale(**data)["structural_blockers"])
 
     def test_five_key_rejects_cross_currency_market_settlement_and_series(self):
         for dimension, replacement in ((2,"NYSE"),(3,"USD"),(4,"A-CI"),(0,"AL30D")):

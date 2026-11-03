@@ -169,7 +169,11 @@ def assess_causal_paper_sale(*, identity, book1, decision, book2, contract,
     if (b1_at > b1_seen or b1_seen > b1_known or b1_known > decided or
             decided > decision_known or decision_known > executed):
         blockers.append("FI_EXIT_BOOK1_DECISION_CAUSAL_CLOCK_INVALID")
-    if (b2_at <= decided + timedelta(microseconds=int(latency_us)) or
+    # A decision timestamp alone is not usable until the signed/recorded
+    # decision was actually known. The next native book must occur strictly
+    # after the later instant plus the latency budget, never before it.
+    decision_usable_at = max(decided, decision_known)
+    if (b2_at <= decision_usable_at + timedelta(microseconds=int(latency_us)) or
             b2_at > b2_seen or b2_seen > b2_known or b2_known > executed):
         blockers.append("FI_EXIT_BOOK2_STRICT_FUTURE_CLOCK_INVALID")
     if book1["journal_event_sha256"] == book2["journal_event_sha256"]:
