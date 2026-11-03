@@ -245,6 +245,27 @@ def test_latencia_exige_libro_posterior_al_arribo_modelado(setup):
     assert result['fills'][0]['book_id'] == 'b7'
 
 
+def test_book_exacto_en_limite_de_latencia_no_acredita_fill_causal(setup):
+    """BOOK_AT must be strictly AFTER decision+latency, never equal.
+
+    Fixtures are synthetic and cannot establish genuine PPI PIT or runtime
+    PAPER acceptance. A late arrival of an exact-boundary book is not enough.
+    """
+    setup = (*setup[:4], replace(setup[4], latency_seconds=3), setup[5])
+    decision = order(setup, submitted=1)
+    boundary_book = book(setup, 4)
+    only_boundary = run(setup, [decision], [boundary_book])
+    assert only_boundary['fills'] == []
+    assert only_boundary['orders'][0]['status'] == 'EXPIRED'
+    assert only_boundary['promotion_allowed'] is False
+
+    with_later = run(setup, [decision], [boundary_book, book(setup, 5)])
+    assert len(with_later['fills']) == 1
+    assert with_later['fills'][0]['book_id'] == 'b5'
+    assert with_later['fills'][0]['book_at'] == stamp(at(5))
+    assert with_later['promotion_allowed'] is False
+
+
 @pytest.mark.parametrize('changes', [{'session_open':False}, {'book_at':at(-200)}])
 def test_sin_sesion_o_libro_vigente_no_inventa_fill(setup, changes):
     result = run(setup, [order(setup)], [book(setup, **changes)])
