@@ -290,3 +290,66 @@ def test_archived_ppi_snapshot_without_current_is_not_active_contract(tmp_path):
     assert row["historic_ppi_exact_without_current"] == 1
     assert row["exact_v2_ppi"] == 0
     assert report["v2_current_rows"] == 0
+
+
+@pytest.mark.parametrize("catalog_family,evidence_family", [
+    ("OBLIGACIONES", "ON"),
+    ("ON", "OBLIGACIONES"),
+    ("FCI", "FCI_LOCAL"),
+    ("FCI_LOCAL", "FCI"),
+])
+def test_family_alias_never_confers_exact_ppi_authority(tmp_path, catalog_family, evidence_family):
+    path, con = _db(tmp_path)
+    _catalog(con, catalog_family, "ALIAS-ONLY-1")
+    _v2(con, 1, evidence_family, "ALIAS-ONLY-1", {
+        "market": "BYMA", "currency": "ARS", "settlement": "CI",
+        "evidence_scope": "PARTIAL_PPI_5KEY_ONLY"})
+    con.commit()
+    con.close()
+    row = _families(gap.inspect(path, _receipt(path)))[gap._family(catalog_family)]
+    assert row["capability_gaps"] == 1
+    assert row["exact_v2_ppi"] == 0
+    assert row["alias_current_only_no_authority"] == 1
+    assert row["ticker_only_v2_mismatch"] == 1
+    assert row["ppi_fields_present_not_accredited"] == 0
+
+
+def test_alias_family_difference_between_current_and_snapshot_is_rejected(tmp_path):
+    path, con = _db(tmp_path)
+    _catalog(con, "OBLIGACIONES", "ALIAS-TAMPER-1")
+    _v2(con, 1, "ON", "ALIAS-TAMPER-1", {
+        "market": "BYMA", "currency": "ARS", "settlement": "CI"})
+    con.execute("UPDATE contract_evidence_v2_current SET family='OBLIGACIONES'")
+    con.commit()
+    con.close()
+    with pytest.raises(gap.Rejected, match="V2_CURRENT_SNAPSHOT_IDENTITY_MISMATCH"):
+        gap.inspect(path, _receipt(path))
+
+
+def test_historical_family_alias_cannot_claim_exact_ppi_evidence(tmp_path):
+    path, con = _db(tmp_path)
+    _catalog(con, "FCI", "FUND-HISTORY-1")
+    _v2(con, 1, "FCI_LOCAL", "FUND-HISTORY-1", {
+        "currency": "ARS", "subscription_min": 100})
+    con.execute("DELETE FROM contract_evidence_v2_current")
+    con.commit()
+    con.close()
+    row = _families(gap.inspect(path, _receipt(path)))["FCI"]
+    assert row["capability_gaps"] == 1
+    assert row["historic_ppi_exact_without_current"] == 0
+    assert row["exact_v2_ppi"] == 0
+    assert row["v2_absent"] == 1
+
+
+def test_same_raw_family_on_identity_still_matches_ppi_exactly(tmp_path):
+    path, con = _db(tmp_path)
+    _catalog(con, "ON", "CORP-EXACT-1", currency="USD")
+    _v2(con, 1, "ON", "CORP-EXACT-1", {
+        "market": "BYMA", "currency": "USD", "settlement": "CI",
+        "evidence_scope": "PARTIAL_PPI_5KEY_ONLY"}, currency="USD")
+    con.commit()
+    con.close()
+    row = _families(gap.inspect(path, _receipt(path)))["OBLIGACIONES"]
+    assert row["exact_v2_ppi"] == 1
+    assert row["alias_current_only_no_authority"] == 0
+    assert row["ppi_partial_or_unverified"] == 1
