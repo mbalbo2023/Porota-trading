@@ -2111,7 +2111,20 @@ class RuntimePPIBudget:
     def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
         budget = self._current(priority=priority)
         if budget is None:
-            return {"allowed": True, "lease": None}
+            # An explicit OFF/SHADOW baseline reader historically has no
+            # ledger or lease, even when RuntimePPIBudget was passed directly.
+            # Preserve that exact baseline; never transform failed APPROVED
+            # intent into an unleased provider GET. Re-read the effective
+            # config at the send seam: malformed/unknown states are denials.
+            try:
+                state = self.controller.state(self.clock())
+            except (OSError, ValueError, TypeError, KeyError):
+                state = {}
+            if state.get("status") in {"OFF_BASELINE", "SHADOW_BASELINE"} and (
+                    (state["status"], state.get("mode")) in {
+                        ("OFF_BASELINE", "OFF"), ("SHADOW_BASELINE", "SHADOW")}):
+                return {"allowed": True, "lease": None}
+            return {"allowed": False, "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
         admitted_policy = deepcopy(budget.policy)
         result = budget.acquire(endpoint, consumer=consumer, priority=priority)
         if result["allowed"]:
