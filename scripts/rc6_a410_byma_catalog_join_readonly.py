@@ -17,16 +17,21 @@ import gc
 import json
 import os
 from pathlib import Path
+import resource
 import stat
 import sys
 
 
 SCHEMA = "rc6.a410.byma-catalog-join-readonly.v1"
 CATALOG_SCHEMA = "rc6-full-universe-instrument-evidence-v1"
+BYMA_SCHEMA = "rc6-consolidated-source-evidence-v1"
 CATALOG_PATH = Path("/opt/porota-trading/data/market/rc6_instrument_evidence_latest.json")
 BYMA_PATH = Path("/opt/porota-trading/data/market/rc6_public_sources_latest.json")
 MAX_CATALOG_BYTES = 48 * 1024 * 1024
 MAX_BYMA_BYTES = 12 * 1024 * 1024
+# RLIMIT_AS caps process virtual address space, and therefore its resident set,
+# before any provider JSON is read. Breaching this cap is a negative diagnosis.
+MAX_ADDRESS_SPACE_BYTES = 256 * 1024 * 1024
 MAX_ROWS = 60_000
 FAMILIES = {
     "ACCION": "ACCIONES", "ACCIONES": "ACCIONES",
@@ -78,12 +83,34 @@ ERROR_CODES = frozenset({
     "FILE_SIZE_INVALID", "FILE_CHANGED", "JSON_INVALID",
     "CATALOG_SCHEMA_INVALID", "CATALOG_SHAPE_INVALID",
     "BYMA_SHAPE_INVALID", "ROWS_EXCEEDED", "CLOCK_INVALID",
-    "PROBE_FAILED",
+    "PROBE_FAILED", "MEMORY_LIMIT_UNAVAILABLE",
 })
 
 
 class DiagnosticRejected(Exception):
     """A fixed public code, never an exception with raw content."""
+
+
+def _lock_address_space_limit() -> None:
+    """Enforce <=256 MiB Linux RLIMIT_AS before reading/parsing host JSON.
+
+    Preserve any stricter inherited limit; if OS enforcement cannot be verified,
+    refuse the host diagnostic. No environment overrides or privilege changes.
+    """
+    try:
+        resource_id = resource.RLIMIT_AS
+        inherited = resource.getrlimit(resource_id)
+        bounds = [MAX_ADDRESS_SPACE_BYTES]
+        bounds.extend(value for value in inherited
+                      if value != resource.RLIM_INFINITY)
+        limit = min(bounds)
+        if not 0 < limit <= MAX_ADDRESS_SPACE_BYTES:
+            raise ValueError("invalid inherited address space budget")
+        resource.setrlimit(resource_id, (limit, limit))
+        if resource.getrlimit(resource_id) != (limit, limit):
+            raise ValueError("address space budget not enforced")
+    except (AttributeError, OSError, ValueError, MemoryError) as exc:
+        raise DiagnosticRejected("MEMORY_LIMIT_UNAVAILABLE") from exc
 
 
 def safe_bytes(path: Path, cap: int) -> tuple[bytes, os.stat_result]:
@@ -114,8 +141,10 @@ def safe_bytes(path: Path, cap: int) -> tuple[bytes, os.stat_result]:
         raw = b"".join(parts)
         after = os.fstat(fd)
         if (len(raw) != before.st_size or len(raw) > cap or
-                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
-                (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+                 before.st_ctime_ns) !=
+                (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
+                 after.st_ctime_ns)):
             raise DiagnosticRejected("FILE_CHANGED")
         return raw, before
     except FileNotFoundError as exc:
@@ -236,7 +265,8 @@ def index_catalog(catalog: dict, report: dict) -> tuple[set, dict]:
             continue
         raw = item.get("canonical_identity")
         if not isinstance(raw, list) or len(raw) != 5 or any(
-                not isinstance(part, str) or not part.strip() for part in raw):
+                not isinstance(part, str) or not part.strip() or
+                _text(part) == "UNKNOWN" for part in raw):
             counts["catalog_missing_identity"] += 1
             continue
         key = tuple(_text(part) for part in raw)
@@ -251,17 +281,24 @@ def index_catalog(catalog: dict, report: dict) -> tuple[set, dict]:
 
 def summarize_byma(byma: dict, report: dict, keys: set, by_symbol: dict) -> None:
     counts = report["counts"]
+    # Producer candidate rc6_source_consolidation.py emits this exact schema
+    # and source="BYMA"; A408 selected the same block but never proved schema.
+    # An absent/mislabelled/duplicated source must never become a zero-join RCA.
+    if byma.get("schema") != BYMA_SCHEMA:
+        raise DiagnosticRejected("BYMA_SHAPE_INVALID")
     blocks = byma.get("sources")
     if not isinstance(blocks, list) or len(blocks) > 100:
+        raise DiagnosticRejected("BYMA_SHAPE_INVALID")
+    source_blocks = [block for block in blocks
+                     if isinstance(block, dict) and block.get("source") == "BYMA"]
+    if len(source_blocks) != 1:
         raise DiagnosticRejected("BYMA_SHAPE_INVALID")
     extracted = []
     inherited_receipt = any(byma.get(x) not in (None, "")
                             for x in RECEIPT_CLOCKS)
-    for block in blocks:
-        if not isinstance(block, dict) or _text(block.get("source")) != "BYMA":
-            continue
+    for block in source_blocks:
         rows = block.get("records")
-        if not isinstance(rows, list) or len(rows) > MAX_ROWS:
+        if not isinstance(rows, list) or not rows or len(rows) > MAX_ROWS:
             raise DiagnosticRejected("BYMA_SHAPE_INVALID")
         block_receipt = inherited_receipt or any(
             block.get(x) not in (None, "") for x in RECEIPT_CLOCKS)
@@ -353,7 +390,13 @@ def main(argv=None):
     if argv != ["host-probe"]:
         print("Usage: A410 bounded host-probe", file=sys.stderr)
         return 64
-    result = inspect_files()
+    try:
+        _lock_address_space_limit()
+    except DiagnosticRejected:
+        result = _new_report()
+        result["reason"] = "MEMORY_LIMIT_UNAVAILABLE"
+    else:
+        result = inspect_files()
     print(json.dumps(result, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
     return 0
 

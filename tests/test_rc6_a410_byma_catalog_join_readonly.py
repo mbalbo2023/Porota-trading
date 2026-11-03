@@ -5,7 +5,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
+import sys
+from contextlib import redirect_stdout
+from io import StringIO
+from unittest import mock
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -42,7 +48,8 @@ class A410JoinContracts(unittest.TestCase):
         self.now = datetime.now(timezone.utc)
         self.catalog = {"schema": probe.CATALOG_SCHEMA,
                         "instruments": [{"canonical_identity": canonical()}]}
-        self.byma = {"sources": [{"source": "BYMA", "records": [byma_record()]}]}
+        self.byma = {"schema": probe.BYMA_SCHEMA,
+                     "sources": [{"source": "BYMA", "records": [byma_record()]}]}
 
     def write(self, catalog=None, byma=None, *, age=45):
         if catalog is None:
@@ -176,6 +183,22 @@ class A410JoinContracts(unittest.TestCase):
         self.assertEqual(result["counts"]["catalog_missing_identity"], 1)
         self.assertNotIn("PRIVATE_SECOND_SYMBOL", json.dumps(result))
 
+    def test_catalog_unknown_component_never_counts_as_exact(self):
+        invalid = []
+        for offset in range(5):
+            key = canonical()
+            key[offset] = "UNKNOWN"
+            invalid.append({"canonical_identity": key})
+        self.catalog["instruments"].extend(invalid)
+        self.write()
+        result = self.inspect()
+        self.assertEqual(result["counts"]["catalog_rows"], 6)
+        self.assertEqual(result["counts"]["catalog_exact_keys"], 1)
+        self.assertEqual(result["counts"]["catalog_missing_identity"], 5)
+        self.assertEqual(result["counts"]["byma_exact_rows"], 1)
+        self.assertEqual(result["market_readiness"], "NO_VERIFICADO")
+        self.assertNotIn(PRIVATE, json.dumps(result))
+
     def test_native_timestamp_naive_is_not_provider_aware(self):
         self.byma["sources"][0]["records"][0]["timestamp"] = "2026-11-02T18:00:00"
         self.write()
@@ -200,6 +223,28 @@ class A410JoinContracts(unittest.TestCase):
         result = probe.inspect_files(self.catalog_path, self.byma_path, now=self.now)
         self.assertEqual(result["reason"], "FILE_UNSAFE")
 
+    def test_same_size_mtime_but_changed_ctime_is_rejected(self):
+        self.write()
+        real_fstat = os.fstat
+        calls = [0]
+
+        def changed_ctime(fd):
+            original = real_fstat(fd)
+            calls[0] += 1
+            if calls[0] != 2:
+                return original
+            names = ("st_mode", "st_nlink", "st_size", "st_dev", "st_ino",
+                     "st_mtime_ns", "st_ctime_ns")
+            fields = {name: getattr(original, name) for name in names}
+            fields["st_ctime_ns"] += 1
+            return SimpleNamespace(**fields)
+
+        with mock.patch.object(probe.os, "fstat", side_effect=changed_ctime):
+            with self.assertRaises(probe.DiagnosticRejected) as raised:
+                probe.safe_bytes(self.catalog_path, probe.MAX_CATALOG_BYTES)
+        self.assertEqual(str(raised.exception), "FILE_CHANGED")
+        self.assertEqual(calls[0], 2)
+
     def test_bad_schema_invalid_json_future_clock_and_oversize(self):
         self.catalog["schema"] = "PRIVATE_OTHER_SCHEMA"
         self.write()
@@ -221,6 +266,76 @@ class A410JoinContracts(unittest.TestCase):
         result = probe.inspect_files(self.catalog_path, self.byma_path, now=self.now)
         self.assertEqual(result["diagnostic_status"], "NO_VERIFICADO")
         self.assertEqual(result["reason"], "FILE_MISSING")
+
+    def test_byma_producer_schema_and_exact_single_label_fail_closed(self):
+        good = {"schema": probe.BYMA_SCHEMA,
+                "sources": [{"source": "BYMA", "records": [byma_record()]}]}
+        bad = [
+            dict(good, schema="PRIVATE_OTHER_SCHEMA"),
+            {"schema": probe.BYMA_SCHEMA, "sources": []},
+            {"schema": probe.BYMA_SCHEMA,
+             "sources": [{"source": "BYMA_PUBLIC", "records": [byma_record()]}]},
+            {"schema": probe.BYMA_SCHEMA,
+             "sources": [{"source": "byma", "records": [byma_record()]}]},
+            {"schema": probe.BYMA_SCHEMA,
+             "sources": [{"source": "BYMA", "records": []}]},
+            {"schema": probe.BYMA_SCHEMA,
+             "sources": [good["sources"][0], good["sources"][0]]},
+        ]
+        for number, payload in enumerate(bad):
+            with self.subTest(case=number):
+                self.write(byma=payload)
+                report = self.inspect()
+                self.assertEqual(report["diagnostic_status"], "NO_VERIFICADO")
+                self.assertEqual(report["reason"], "BYMA_SHAPE_INVALID")
+                self.assertEqual(report["counts"]["byma_rows"], 0)
+                self.assertEqual(report["market_readiness"], "NO_VERIFICADO")
+                self.assertNotIn(PRIVATE, json.dumps(report))
+        self.write(byma=good)
+        positive = self.inspect()
+        self.assertEqual(positive["diagnostic_status"], "JOIN_COUNTS_ONLY")
+        self.assertEqual(positive["counts"]["byma_exact_rows"], 1)
+
+    def test_address_space_limit_is_enforced_in_real_offhost_child(self):
+        # An isolated runner process gets both RLIMIT_AS hard and soft caps;
+        # never alter the parent process address space budget.
+        child = "\\n".join([
+            "import importlib.util, resource",
+            f"spec=importlib.util.spec_from_file_location('a410_guard', {str(PATH)!r})",
+            "m=importlib.util.module_from_spec(spec)",
+            "spec.loader.exec_module(m)",
+            "before=resource.getrlimit(resource.RLIMIT_AS)",
+            "m._lock_address_space_limit()",
+            "after=resource.getrlimit(resource.RLIMIT_AS)",
+            "assert 0 < after[0] == after[1] <= m.MAX_ADDRESS_SPACE_BYTES",
+            "assert before[0] == resource.RLIM_INFINITY or after[0] <= before[0]",
+            "assert before[1] == resource.RLIM_INFINITY or after[1] <= before[1]",
+            "print('CAP_ENFORCED')",
+        ])
+        completed = subprocess.run([sys.executable, "-B", "-c", child],
+                                   capture_output=True, text=True, timeout=10,
+                                   check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.strip(), "CAP_ENFORCED")
+
+    def test_memory_enforcement_failure_never_reads_host_json(self):
+        output = StringIO()
+        with (
+            mock.patch.object(probe, "_lock_address_space_limit",
+                              side_effect=probe.DiagnosticRejected(
+                                  "MEMORY_LIMIT_UNAVAILABLE")),
+            mock.patch.object(probe, "inspect_files",
+                              side_effect=AssertionError("host read forbidden")),
+        ):
+            with redirect_stdout(output):
+                status = probe.main(["host-probe"])
+        report = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(report["diagnostic_status"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "MEMORY_LIMIT_UNAVAILABLE")
+        self.assertEqual(report["market_readiness"], "NO_VERIFICADO")
+        self.assertFalse(report["source_contract_ready"])
+        self.assertNotIn(PRIVATE, json.dumps(report))
 
     def test_host_action_stays_on_main_and_never_on_pr(self):
         workflow = (PATH.parents[1] / ".github/workflows/rc6-a410-byma-catalog-join-readonly.yml").read_text(
