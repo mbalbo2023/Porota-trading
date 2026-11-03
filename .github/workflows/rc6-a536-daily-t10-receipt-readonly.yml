@@ -1,0 +1,157 @@
+name: RC6 A536 daily existing T10 PAPER receipt READ_ONLY
+
+# One owner-triggered, parameter-free current ART session observation.
+# Never publishes GO, rearms PAPER, queries a provider/DB, or writes host state.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/rc6-a536-daily-t10-receipt-readonly.yml
+      - scripts/rc6_a536_daily_t10_receipt_ro.py
+      - tests/test_rc6_a536_daily_t10_receipt_ro.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a536-daily-existing-t10-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Unit tests and bytecode checks (no host)
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m unittest discover -s tests -p 'test_rc6_a536_daily_t10_receipt_ro.py' -v
+          python3 -B -m py_compile scripts/rc6_a536_daily_t10_receipt_ro.py
+          git diff --check
+
+  existing-t10-receipt:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == 'mbalbo2023' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialize runner-only fail-closed evidence
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          printf '%s\n' '{"schema":"rc6.a536.daily-t10-existing-receipt-ro.v1","status":"NO_VERIFICADO","reason":"CHECK_NOT_EXECUTED","read_only":true,"entry_authority":false,"host_mutations":0,"provider_calls":0,"database_opened":false,"ppi_watch_touched":false,"real_orders_sent_by_action":0}' > evidence/a536_t10.json
+      - name: Check current ART observation window OFFHOST before SSH
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/rc6_a536_daily_t10_receipt_ro.py --check-window
+      - name: Pin productive GitHub branch SHA and stream-source digest
+        id: request
+        env:
+          REF_NAME: deploy/rc6-pr69-isolated-20260915
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = refs/heads/main
+          RC6_EXPECTED_PRODUCT_SHA="$(python3 - <<'PY'
+          import json,os,re,urllib.request
+          from urllib.parse import quote
+          url=("https://api.github.com/repos/"+os.environ["GITHUB_REPOSITORY"]+
+               "/git/ref/heads/"+quote(os.environ["REF_NAME"],safe="/"))
+          req=urllib.request.Request(url,headers={
+              "Authorization":"Bearer "+os.environ["GH_TOKEN"],
+              "Accept":"application/vnd.github+json"})
+          try:
+              with urllib.request.urlopen(req,timeout=15) as response:
+                  value=json.load(response)["object"]["sha"]
+          except (OSError,KeyError,ValueError):
+              raise SystemExit("A536_PRODUCT_REF=NO_VERIFICADO") from None
+          if not isinstance(value,str) or not re.fullmatch(r"[0-9a-f]{40}",value):
+              raise SystemExit("A536_PRODUCT_REF=NO_VERIFICADO")
+          print(value)
+          PY
+          )"
+          export RC6_EXPECTED_PRODUCT_SHA
+          export RC6_SOURCE_SHA256="$(sha256sum scripts/rc6_a536_daily_t10_receipt_ro.py | cut -d' ' -f1)"
+          REQUEST_B64="$(python3 -B scripts/rc6_a536_daily_t10_receipt_ro.py --encode-request)"
+          [[ "$REQUEST_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "$(printf %s "$REQUEST_B64" | wc -c)" -lt 1200
+          echo "request_b64=$REQUEST_B64" >> "$GITHUB_OUTPUT"
+          echo "product_sha=$RC6_EXPECTED_PRODUCT_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$RC6_SOURCE_SHA256" >> "$GITHUB_OUTPUT"
+          echo "A536_SOURCE=$GITHUB_SHA|product_sha=$RC6_EXPECTED_PRODUCT_SHA|host_writes=0"
+      - name: Strict SSH and pinned DigitalOcean identity
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a536_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a536_ro" "$HOME/.ssh/known_hosts"
+          timeout 20 ssh -i "$HOME/.ssh/rc6_a536_ro" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -B - --verify-droplet' \
+            < scripts/rc6_a536_daily_t10_receipt_ro.py
+      - name: Inspect existing root-owned T10 and product SHA only
+        env:
+          REQUEST_B64: ${{ steps.request.outputs.request_b64 }}
+          EXPECTED_PRODUCT_SHA: ${{ steps.request.outputs.product_sha }}
+          EXPECTED_SOURCE_SHA256: ${{ steps.request.outputs.source_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$REQUEST_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
+          set +e
+          RECEIPT="$(timeout --signal=TERM --kill-after=2s 30s \
+            ssh -i "$HOME/.ssh/rc6_a536_ro" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 RC6_A536_REQUEST_B64='$REQUEST_B64' python3 -B -" \
+            < scripts/rc6_a536_daily_t10_receipt_ro.py 2>/dev/null)"
+          RC=$?
+          set -e
+          # The existing fallback artifact is never overwritten by untrusted raw SSH.
+          if SANITIZED="$(A536_HOST_RECEIPT="$RECEIPT" A536_HOST_RC="$RC" \
+            python3 -B scripts/rc6_a536_daily_t10_receipt_ro.py --sanitize-runner)"; then
+            printf '%s\n' "$SANITIZED" > evidence/a536_t10.json
+            if printf '%s' "$SANITIZED" | python3 -c \
+              'import json,sys; sys.exit(0 if json.load(sys.stdin)["status"]=="OBSERVED_ONLY" else 2)'; then
+              echo "A536_EXISTING_T10=OBSERVED_ONLY|ENTRY_AUTHORITY=NO|HOST_WRITES=0"
+            else
+              echo "A536_EXISTING_T10=NO_VERIFICADO|ENTRY_AUTHORITY=NO|HOST_WRITES=0"
+              exit 2
+            fi
+          else
+            echo "A536_T10=NO_VERIFICADO_SANITIZER_RED"
+            exit 2
+          fi
+      - name: Upload only sanitized receipt (including NO_VERIFICADO)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a536-t10-existing-receipt-${{ github.run_id }}
+          path: evidence/a536_t10.json
+          if-no-files-found: warn
+      - name: Remove runner-only SSH key
+        if: always()
+        run: |
+          if [ -f "$HOME/.ssh/rc6_a536_ro" ]; then
+            shred -u "$HOME/.ssh/rc6_a536_ro"
+          fi
