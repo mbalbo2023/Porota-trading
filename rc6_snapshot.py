@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import re
 import tempfile
 import urllib.request
 from datetime import datetime
@@ -47,10 +49,24 @@ def _local_day(value: object) -> str | None:
         return None
 
 def _number(value: object) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+def _real_order_count(value: object) -> int | None:
+    # bool and fractional float must never become proof of PAPER/zero orders.
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value.strip()):
+        try:
+            return int(value.strip())
+        except ValueError:
+            pass
+    return None
 
 def _operation(row: dict) -> dict:
     currency = str(row.get("currency") or "").strip().upper() or "NO_VERIFICADO"
@@ -75,12 +91,19 @@ def build_snapshot(phase: str, now: datetime, payload: dict,
     closed = payload.get("closed") if isinstance(payload.get("closed"), list) else []
     decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
     today = now.astimezone(TZ).date().isoformat()
-    operations = [_operation(row) for row in closed if isinstance(row, dict) and _local_day(row.get("closed_at")) == today][:MAX_OPERATIONS]
+    closed_today = [
+        row for row in closed if isinstance(row, dict)
+        and _local_day(row.get("closed_at")) == today
+    ][:MAX_OPERATIONS]
+    operations = [_operation(row) for row in closed_today]
+    # An explicitly supplied malformed P&L is not a legitimate zero or a
+    # missing operation. Never silently certify that ledger as VERIFIED.
+    invalid_pnl = any(
+        row.get("net_pnl") is not None and _number(row["net_pnl"]) is None
+        for row in closed_today
+    )
     mode = state.get("mode")
-    try:
-        real_orders_sent = int(state.get("real_orders_sent"))
-    except (TypeError, ValueError):
-        real_orders_sent = None
+    real_orders_sent = _real_order_count(state.get("real_orders_sent"))
     closed_pnl = [item["net_pnl"] for item in operations if item.get("net_pnl") is not None]
     pnl_by_currency = {}
     for item in operations:
@@ -89,8 +112,9 @@ def build_snapshot(phase: str, now: datetime, payload: dict,
             continue
         currency = str(item.get("currency") or "NO_VERIFICADO")
         pnl_by_currency[currency] = pnl_by_currency.get(currency, 0.0) + value
+    invalid_aggregate = any(not math.isfinite(value) for value in pnl_by_currency.values())
     pnl_by_currency = {
-        currency: round(value, 2)
+        currency: round(value, 2) if math.isfinite(value) else None
         for currency, value in sorted(pnl_by_currency.items())
     }
     winners = sum(value > 0 for value in closed_pnl)
@@ -111,6 +135,10 @@ def build_snapshot(phase: str, now: datetime, payload: dict,
         alerts.append("MODE_NOT_PRODUCTION_PAPER")
     if real_orders_sent != 0:
         alerts.append("REAL_ORDERS_NOT_ZERO_OR_UNVERIFIED")
+    if invalid_pnl:
+        alerts.append("CLOSED_OPERATION_PNL_INVALID")
+    if invalid_aggregate:
+        alerts.append("CLOSED_PNL_AGGREGATE_NONFINITE")
     if any(
         item.get("currency") == "NO_VERIFICADO" and item.get("net_pnl") is not None
         for item in operations
@@ -147,7 +175,8 @@ def write_snapshot(snapshot: dict, output: Path = OUTPUT) -> None:
     fd, temporary = tempfile.mkstemp(prefix=".latest.", suffix=".json", dir=output.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(snapshot, handle, ensure_ascii=False, sort_keys=True, indent=2)
+            json.dump(snapshot, handle, ensure_ascii=False, sort_keys=True,
+                      indent=2, allow_nan=False)
             handle.write("\n")
         os.replace(temporary, output)
     finally:
