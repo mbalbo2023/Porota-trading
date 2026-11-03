@@ -22,7 +22,7 @@ SAFE_METHODS={'GET','HEAD','OPTIONS'}
 TARGETS=('InstrumentosOperables','CaucionesOperables','ConfiguracionOperatoriaSimplificada','SubyacenteOpciones','DatosTecnicos')
 PASSIVE_FCI_MAX_BYTES=256_000
 PASSIVE_FCI_MAX_RESPONSES=24
-PASSIVE_FCI_MAX_IDENTITY_ROWS=12
+PASSIVE_FCI_MAX_IDENTITY_ROWS=32  # Cover 21 known FCI gaps plus bounded headroom.
 # An observed field name is useful for locating the real provider contract;
 # never record its value or account-level fields in this browser artifact.
 PASSIVE_FCI_FIELD_NAMES=frozenset({
@@ -165,6 +165,7 @@ def sanitize_passive_fci_xhr(url, *, method, resource_type, status, headers,
     except (ValueError, TypeError, OverflowError, IndexError):
         pass
     observed_fields=set(); identities=[]; shape='UNPARSEABLE_JSON'
+    identity_candidates_truncated=False
     try:
         payload=json.loads(body)
         shape=type(payload).__name__.upper()
@@ -177,6 +178,7 @@ def sanitize_passive_fci_xhr(url, *, method, resource_type, status, headers,
             if key is not None and key not in identities:
                 identities.append(key)
             if len(identities)>=PASSIVE_FCI_MAX_IDENTITY_ROWS:
+                identity_candidates_truncated=True
                 break
     except (UnicodeDecodeError, ValueError, TypeError):
         pass
@@ -194,6 +196,7 @@ def sanitize_passive_fci_xhr(url, *, method, resource_type, status, headers,
         'json_shape':shape,
         'field_names_observed_only':sorted(observed_fields),
         'unverified_ppi_five_key_candidates':identities,
+        'identity_candidates_limit_reached':identity_candidates_truncated,
         'reason_codes':['FCI_EXACT_CLASS_DOCUMENT_VERSION_NOT_BOUND',
                         'FCI_PPI_ACCOUNT_TARIFF_NOT_BOUND',
                         'FCI_PPI_CATALOG_FIVE_KEY_NOT_RECONCILED'],
