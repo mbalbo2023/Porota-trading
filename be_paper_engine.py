@@ -502,6 +502,11 @@ class PaperStore:
         init_risk_schema(self)
         from bl_candle_engine import init_schema as init_candle_schema
         init_candle_schema(self)
+        # A620: migration owner creates the immutable causal decision freeze
+        # and independent post-COMMIT observer tables. Runtime hot paths must
+        # never issue DDL, mint signer keys or claim decision-known-time.
+        from rc6_paper_causal_decision_receipt import init_schema as init_causal_schema
+        init_causal_schema(self)
 
     def audit_http(self, method, path, result):
         with self.connect() as c:
@@ -688,9 +693,23 @@ class PaperStore:
             features["native_quote_sha256"] = digest
         try:
             with self.connect() as c:
+                features_json = json.dumps(features, ensure_ascii=False)
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
                           (SOURCE, STRATEGY_VERSION, key, q.observed_at, q.symbol,
-                           action, str(score), reason, json.dumps(features, ensure_ascii=False)))
+                           action, str(score), reason, features_json))
+                # Only actionable BUY/SELL decisions need a causal execution
+                # freeze. Persisting every COLD/HOLD/VETO observation here
+                # would grow the constrained droplet SQLite without benefit.
+                # The freeze shares this transaction, not a later gate or
+                # simulated fill. The independent Ed25519 observer signs the
+                # real post-COMMIT seen clock in its own process/connection.
+                if action_code in {"BUY", "SELL"}:
+                    from rc6_paper_causal_decision_receipt import freeze_in_decision_transaction
+                    freeze_in_decision_transaction(
+                        c, decision_key=key, quote=q, action=action_code,
+                        score=str(score), reason=reason, features=features,
+                        features_json=features_json, source=SOURCE,
+                        strategy_version=STRATEGY_VERSION)
                 # Entry candidates receive their fuller snapshot in record_gates
                 # after their final gates are known. Every other decision is
                 # captured here with the current IOL cache as a SHADOW input.
