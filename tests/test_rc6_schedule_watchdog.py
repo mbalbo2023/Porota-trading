@@ -141,6 +141,67 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual(2, result["genuine_in_session"])
         self.assertEqual(0, result["missing_mature_run_lower_bound"])
         self.assertEqual(0, result["off_session_runs"])
+        self.assertEqual(2, result["distinct_mature_slot_compatible_count"])
+        self.assertTrue(result["latest_two_mature_slots_compatible"])
+
+    def test_two_early_same_slot_runs_cannot_claim_schedule_cadence(self):
+        # A reviewer found the pre-A499 false GREEN: at 10:55 ART, one
+        # nominal slot is mature, but runs at 10:38/10:39 used to claim two.
+        result = a358.classify([run(10, 38), run(10, 39)], at(10, 55))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(1, result["mature_expected_slots"])
+        self.assertEqual(2, result["genuine_in_session"])
+        self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
+
+    def test_two_burst_runs_near_second_slot_cannot_claim_schedule_cadence(self):
+        # At 11:00 ART, 10:37/10:47 are both mature. These two one-minute-
+        # apart runs are compatible with 10:47 only, NOT two distinct slots.
+        for sample in ((run(10, 47), run(10, 48)),
+                       (run(10, 46), run(10, 47))):
+            with self.subTest(sample=sample):
+                result = a358.classify(list(sample), at(11, 0))
+                self.assertEqual("NO_VERIFICADO", result["status"])
+                self.assertEqual("DISTINCT_MATURE_SLOT_EVIDENCE_INSUFFICIENT",
+                                 result["reason"])
+                self.assertEqual(2, result["mature_expected_slots"])
+                self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+                self.assertFalse(result["latest_two_mature_slots_compatible"])
+
+    def test_two_separate_slot_compatible_arrivals_are_observed(self):
+        result = a358.classify([run(10, 38), run(10, 48)], at(11, 4))
+        self.assertEqual("RECENT_SCHEDULE_OBSERVED", result["status"])
+        self.assertEqual(2, result["distinct_mature_slot_compatible_count"])
+        self.assertTrue(result["latest_two_mature_slots_compatible"])
+
+    def test_second_slot_does_not_accept_creation_after_half_cadence(self):
+        late_first = run(10, 42, created_at=at(10, 42).replace(second=1).isoformat())
+        result = a358.classify([late_first, run(10, 48)], at(11, 4))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+
+    def test_last_two_mature_slots_must_be_consecutive_and_both_compatible(self):
+        # 10:57 is missing, though last pair of raw created_at events was
+        # separated by exactly 20 min and would pass the old gaps[-1] gate.
+        result = a358.classify([run(10, 38), run(10, 48), run(11, 8)], at(11, 24))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(4, result["mature_expected_slots"])
+        self.assertEqual(3, result["distinct_mature_slot_compatible_count"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
+
+    def test_late_prior_art_day_receipt_cannot_masquerade_as_today_cadence(self):
+        # 02-Nov 23:53 ART is 03-Nov 02:53 UTC, but still belongs to
+        # previous ART day: even paired with Tue 10:48 it must not be fresh.
+        old = run(10, 38, id=41568900395,
+                  created_at="2026-11-03T02:53:48Z")
+        fresh = run(10, 48, id=42222333,
+                    created_at="2026-11-03T13:48:00Z")
+        now = datetime(2026, 11, 3, 14, 4, tzinfo=timezone.utc)
+        result = a358.classify([old, fresh], now)
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(1, result["genuine_runs_today"])
+        self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
 
     def test_two_missed_mature_slots_cannot_be_reset_by_late_run(self):
         result = a358.classify([run(10, 37), run(10, 47),

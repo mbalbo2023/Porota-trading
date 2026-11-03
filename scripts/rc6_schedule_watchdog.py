@@ -23,6 +23,7 @@ ISSUE = 732
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 MAX_REPLY = 512 * 1024
 GRACE_MINUTES = 12
+EXPECTED_CADENCE_MINUTES = 10
 DEDUPE_PAGE_SIZE = 5
 DEDUPE_MAX_COMMENTS = 500
 LATE_SURVEILLANCE_START = date(2026, 11, 2)
@@ -131,6 +132,8 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
               "after_last_declared_slot_count": 0,
               "latest_creation_after_last_slot_lower_bound_seconds": 0,
               "multi_hour_delayed_creation_proven": False,
+              "distinct_mature_slot_compatible_count": 0,
+              "latest_two_mature_slots_compatible": False,
               "market_watch_runtime_recovered": "NO_VERIFICADO",
               "missing_mature_run_lower_bound": 0, "api_day_covered": bool(api_day_covered),
               "detection_basis": None,
@@ -181,6 +184,22 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
         result["latest_creation_after_last_slot_lower_bound_seconds"] = seconds
         result["multi_hour_delayed_creation_proven"] = seconds >= 3600
     mature = [s for s in expected if s + timedelta(minutes=grace_minutes) <= now]
+    # GitHub's run created_at has no scheduled-slot identifier. One cron tick
+    # must not be inferred from two jobs that appear in the same minute. The
+    # ten-minute cron cadence admits a conservative, NON-overlapping early
+    # half-interval for each mature nominal slot: a single timestamp cannot
+    # match two slots, and a late burst cannot simulate two on-time slots.
+    # Compatibility is not proof of provider internals or runtime recovery.
+    half_cadence = timedelta(minutes=EXPECTED_CADENCE_MINUTES) / 2
+    eligible_mature = [s for s in mature if allowed_start <= s < allowed_end]
+    compatible_slots = [s for s in eligible_mature if any(
+        s <= stamp < min(s + half_cadence, allowed_end) for stamp in in_session)]
+    result["distinct_mature_slot_compatible_count"] = len(compatible_slots)
+    recent_two_compatible = (
+        len(eligible_mature) >= 2
+        and eligible_mature[-2] in compatible_slots
+        and eligible_mature[-1] in compatible_slots)
+    result["latest_two_mature_slots_compatible"] = recent_two_compatible
     # A delayed run does NOT prove each individual cron slot ran. For alarms,
     # only compare current absence since the last genuine creation timestamp.
     last = valid[-1] if valid else expected[0] - timedelta(minutes=1)
@@ -202,10 +221,10 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
     elif len(in_session) >= 2:
         gaps = [(a - b).total_seconds() for a, b in zip(in_session[1:], in_session[:-1])]
         result["max_observed_gap_seconds"] = int(max(gaps)) if gaps else 0
-        if gaps and gaps[-1] <= 1200 and len(late) == 0:
+        if recent_two_compatible and len(late) == 0:
             result.update(status="RECENT_SCHEDULE_OBSERVED", reason="TWO_GENUINE_FIRST_ATTEMPTS")
         else:
-            result.update(status="NO_VERIFICADO", reason="GAP_OR_INSUFFICIENT_CADENCE")
+            result.update(status="NO_VERIFICADO", reason="DISTINCT_MATURE_SLOT_EVIDENCE_INSUFFICIENT")
     else:
         result.update(status="NO_VERIFICADO", reason="INSUFFICIENT_IN_SESSION_SCHEDULE_EVIDENCE")
     return result
