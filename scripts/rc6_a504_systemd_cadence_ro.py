@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
-SCHEMA = "rc6.a504.systemd-cadence-readonly.v3"
+SCHEMA = "rc6.a504.systemd-cadence-readonly.v4"
 SOURCE_STATE = Path("/opt/porota-trading/data/market/rc6_source_cycle_dispatch_state.json")
 # Fixed producer contract (rc6_source_cycle_dispatch.py). These two clocks
 # describe PUBLIC and EVIDENCE stages; neither proves authenticated PPI Book,
@@ -49,6 +49,9 @@ JOURNAL_COUNT_FIELDS = (
 LAST_TRIGGER_VALIDATION_STATES = frozenset({
     "MISSING_OR_INVALID", "ZERO", "EXCEEDS_BOOT", "VALID",
 })
+BOOT_COVERAGE_STATES = frozenset({"FULL_90M", "PARTIAL_90M", "UNKNOWN"})
+WAKE_SYSTEM_STATES = frozenset({"TRUE", "FALSE", "UNKNOWN"})
+STAGE_TTL_STATES = frozenset({"FRESH", "STALE_OR_MISSING", "UNKNOWN", "NOT_APPLICABLE"})
 ROLES = (
     ("SOURCE_CYCLE", "porota-iol-shadow-collector-rc6"),
     ("EOD_LOCAL", "porota-local-eod-history-rc6"),
@@ -203,6 +206,23 @@ def _typed_timer_last_trigger(base: str, *, runner=subprocess.run) -> int | None
     return int(value.group(1)) if value else None
 
 
+def _typed_timer_wake_system(base: str, *, runner=subprocess.run) -> str:
+    """Bounded D-Bus Timer boolean; never infer an equivalent clock domain."""
+    if base not in {x[1] for x in ROLES}:
+        raise ValueError("UNKNOWN_UNIT")
+    object_path = "/org/freedesktop/systemd1/unit/" + base.replace("-", "_2d") + "_2etimer"
+    stdout = _run([
+        "busctl", "--system", "--no-pager", "get-property",
+        "org.freedesktop.systemd1", object_path,
+        "org.freedesktop.systemd1.Timer", "WakeSystem",
+    ], runner=runner, timeout=3)
+    if stdout == "b true\n":
+        return "TRUE"
+    if stdout == "b false\n":
+        return "FALSE"
+    return "UNKNOWN"
+
+
 def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
     if base not in {x[1] for x in ROLES}:
         raise ValueError("UNKNOWN_UNIT")
@@ -235,10 +255,12 @@ def inspect_systemd(base: str, *, runner=subprocess.run) -> dict[str, object]:
     # This third call only reads a typed uint64 after both systemctl results
     # passed the fixed-unit / drop-in / daemon-reload preflight above.
     trigger_us = _typed_timer_last_trigger(base, runner=runner)
+    wake_system_state = _typed_timer_wake_system(base, runner=runner)
     return {"query": "READ_ONLY", "timer_active": _safe_enum(timer.get("ActiveState"), ACTIVE_CLASSES),
             "service_result": _safe_enum(service.get("Result"), RESULT_CLASSES),
             "last_trigger_us": trigger_us,
             "last_exit_us": _int_field(service, "ExecMainExitTimestampMonotonic"),
+            "wake_system_state": wake_system_state,
             # LoadState/NeedDaemonReload/DropInPaths do NOT prove the exact
             # installed OnCalendar or equivalence of CLOCK_BOOTTIME to the
             # systemd property clock. A future version must independently
@@ -338,6 +360,35 @@ def last_trigger_validation_state(last_trigger_us: object, boot_us: object) -> s
     return "VALID"
 
 
+def boot_lookback_coverage(boot_us: object) -> str:
+    """Only whether the same host had uptime for the entire 90m window."""
+    if type(boot_us) is not int or boot_us <= 0:
+        return "UNKNOWN"
+    return "FULL_90M" if boot_us >= LOOKBACK_MINUTES * 60 * 1_000_000 else "PARTIAL_90M"
+
+
+def slot_buckets_30m(slots: list[datetime], now: datetime) -> list[int]:
+    """Three bounded age counters, no journal rows or raw times in receipts."""
+    bins = [0, 0, 0]
+    for slot in slots:
+        age_seconds = (now - slot).total_seconds()
+        if 0 <= age_seconds <= LOOKBACK_MINUTES * 60:
+            index = min(2, int(age_seconds // (30 * 60)))
+            bins[index] += 1
+    return bins
+
+
+def stage_ttl_states(source: str) -> tuple[str, str]:
+    """Derive both stage flags from ONE existing source-state read/instant."""
+    return {
+        "FRESH": ("FRESH", "FRESH"),
+        "PUBLIC_STALE_OR_MISSING": ("STALE_OR_MISSING", "FRESH"),
+        "EVIDENCE_STALE_OR_MISSING": ("FRESH", "STALE_OR_MISSING"),
+        "BOTH_STALE_OR_MISSING": ("STALE_OR_MISSING", "STALE_OR_MISSING"),
+        "NOT_APPLICABLE": ("NOT_APPLICABLE", "NOT_APPLICABLE"),
+    }.get(source, ("UNKNOWN", "UNKNOWN"))
+
+
 def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
              host: dict[str, object], *, boot_us: int | None,
              source: str = "NOT_APPLICABLE",
@@ -347,12 +398,20 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
     within = [s for s in nominal_slots(role, now.astimezone(ART).date())
               if now - timedelta(minutes=LOOKBACK_MINUTES) <= s <= now]
     mature = [s for s in within if s <= now - timedelta(seconds=MATURE_GRACE_SECONDS)]
+    public_ttl_state, evidence_ttl_state = stage_ttl_states(
+        source if role == "SOURCE_CYCLE" else "NOT_APPLICABLE")
     result: dict[str, object] = {"role": role, "classification": "NO_VERIFICADO",
                                   "nominal_mature_slots": len(mature),
                                   "observed_distinct_slots": 0,
+                                  "expected_slot_buckets_30m": slot_buckets_30m(mature, now),
+                                  "matched_slot_buckets_30m": [0, 0, 0],
                                   "last_two_mature_distinct": False,
                                   "journal_available": invocations is not None,
                                   "last_trigger_validation_state": "MISSING_OR_INVALID",
+                                  "effective_calendar_parity": "UNKNOWN",
+                                  "wake_system_state": "UNKNOWN",
+                                  "public_ttl_state": public_ttl_state,
+                                  "evidence_ttl_state": evidence_ttl_state,
                                   "schedule_parity_verified": False,
                                   "clock_compatible": False,
                                   "source": source if source in SOURCE_CLASSES else "UNKNOWN",
@@ -370,6 +429,8 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
         return result
     result["timer"] = host.get("timer_active") if host.get("timer_active") in ACTIVE_CLASSES else "UNKNOWN"
     result["service"] = host.get("service_result") if host.get("service_result") in RESULT_CLASSES else "UNKNOWN"
+    wake = host.get("wake_system_state")
+    result["wake_system_state"] = wake if isinstance(wake, str) and wake in WAKE_SYSTEM_STATES else "UNKNOWN"
     result["schedule_parity_verified"] = host.get("schedule_parity_verified") is True
     result["clock_compatible"] = host.get("clock_compatible") is True
     last_trigger = host.get("last_trigger_us")
@@ -405,6 +466,7 @@ def classify(role: str, now: datetime, invocations: tuple[datetime, ...] | None,
             matched.append(slot)
             unused.remove(t)
     result["observed_distinct_slots"] = len(matched)
+    result["matched_slot_buckets_30m"] = slot_buckets_30m(matched, now)
     result["journal_metadata_state"] = journal_metadata_state(
         invocations, journal_counts, len(matched))
     result["last_two_mature_distinct"] = len(mature) >= 2 and all(x in matched for x in mature[-2:])
@@ -431,7 +493,8 @@ def default_receipt() -> dict[str, object]:
     return {"schema": SCHEMA, "read_only": True, "host_metadata_only": True,
             "database_opened": False, "provider_calls": 0, "order_routes_called": False,
             "ppi_watch_touched": False, "real_orders_sent_by_action": 0,
-            "full_day_cadence_certified": False, "probe_status": "NO_VERIFICADO", "roles": []}
+            "full_day_cadence_certified": False, "boot_coverage": "UNKNOWN",
+            "probe_status": "NO_VERIFICADO", "roles": []}
 
 
 def host_probe(*, now: datetime | None = None, runner=subprocess.run,
@@ -445,6 +508,7 @@ def host_probe(*, now: datetime | None = None, runner=subprocess.run,
             boot_us = int(time.clock_gettime(time.CLOCK_BOOTTIME) * 1_000_000)
         except (AttributeError, OSError, ValueError):
             boot_us = None
+    receipt["boot_coverage"] = boot_lookback_coverage(boot_us)
     source = _bounded_state_source(now)
     for role, base in ROLES:
         host = inspect_systemd(base, runner=runner)
@@ -468,19 +532,24 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict) or set(data) != set(fallback):
             return fallback
-        for key in set(fallback) - {"roles", "probe_status"}:
+        for key in set(fallback) - {"roles", "probe_status", "boot_coverage"}:
             if type(data[key]) is not type(fallback[key]) or data[key] != fallback[key]:
                 return fallback
         if data["probe_status"] not in {"METADATA_ONLY", "NO_VERIFICADO"}:
+            return fallback
+        if data["boot_coverage"] not in BOOT_COVERAGE_STATES:
             return fallback
         items = data["roles"]
         if not isinstance(items, list) or len(items) != len(ROLES):
             return fallback
         fields = {"role", "classification", "nominal_mature_slots", "observed_distinct_slots",
+                  "expected_slot_buckets_30m", "matched_slot_buckets_30m",
                   "last_two_mature_distinct", "source", "timer", "service",
                   "journal_available", "schedule_parity_verified", "clock_compatible",
                   "full_day_cadence_certified", "journal_metadata_state",
                   "last_trigger_validation_state",
+                  "effective_calendar_parity", "wake_system_state",
+                  "public_ttl_state", "evidence_ttl_state",
                   *JOURNAL_COUNT_FIELDS}
         for (role, _), item in zip(ROLES, items):
             if (not isinstance(item, dict) or set(item) != fields or item["role"] != role or
@@ -493,9 +562,30 @@ def sanitize_receipt(raw: bytes) -> dict[str, object]:
                 type(item["journal_available"]) is not bool or
                 item["journal_metadata_state"] not in JOURNAL_METADATA_STATES or
                 item["last_trigger_validation_state"] not in LAST_TRIGGER_VALIDATION_STATES or
-                type(item["schedule_parity_verified"]) is not bool or
-                type(item["clock_compatible"]) is not bool or
+                item["effective_calendar_parity"] != "UNKNOWN" or
+                item["wake_system_state"] not in WAKE_SYSTEM_STATES or
+                item["public_ttl_state"] not in STAGE_TTL_STATES or
+                item["evidence_ttl_state"] not in STAGE_TTL_STATES or
+                item["schedule_parity_verified"] is not False or
+                item["clock_compatible"] is not False or
                 item["full_day_cadence_certified"] is not False):
+                return fallback
+            expected_bins = item["expected_slot_buckets_30m"]
+            matched_bins = item["matched_slot_buckets_30m"]
+            if (not isinstance(expected_bins, list) or not isinstance(matched_bins, list) or
+                    len(expected_bins) != 3 or len(matched_bins) != 3 or
+                    # The 90m endpoint belongs to the third 30m bucket; a
+                    # per-minute timer can have 31 values there, never 32.
+                    any(type(x) is not int or not 0 <= x <= (31 if i == 2 else 30)
+                        for i, x in enumerate(expected_bins)) or
+                    any(type(x) is not int or not 0 <= x <= (31 if i == 2 else 30)
+                        for i, x in enumerate(matched_bins)) or
+                    any(matched > expected for matched, expected in zip(matched_bins, expected_bins)) or
+                    sum(expected_bins) != item["nominal_mature_slots"] or
+                    sum(matched_bins) != item["observed_distinct_slots"]):
+                return fallback
+            if ((item["public_ttl_state"], item["evidence_ttl_state"]) !=
+                    stage_ttl_states(item["source"] if role == "SOURCE_CYCLE" else "NOT_APPLICABLE")):
                 return fallback
             counts = tuple(item[field] for field in JOURNAL_COUNT_FIELDS)
             if (any(type(count) is not int for count in counts) or

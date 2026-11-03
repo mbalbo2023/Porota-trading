@@ -278,6 +278,131 @@ class A504MetadataTests(unittest.TestCase):
             with patch.object(a504, "SOURCE_STATE", path):
                 return a504._bounded_state_source(at or art(h=11))
 
+    def test_a581_boot_coverage_strict_90m_uptime_not_calendar_or_full_day(self):
+        window = a504.LOOKBACK_MINUTES * 60 * 1_000_000
+        for value, expected in ((None, "UNKNOWN"), (0, "UNKNOWN"),
+                                (-1, "UNKNOWN"), (True, "UNKNOWN"),
+                                (float(window), "UNKNOWN"), ("5400000000", "UNKNOWN"),
+                                (window - 1, "PARTIAL_90M"),
+                                (window, "FULL_90M"), (window + 1, "FULL_90M")):
+            with self.subTest(value=value):
+                self.assertEqual(a504.boot_lookback_coverage(value), expected)
+
+    def test_a581_source_buckets_preserve_90m_boundary_and_do_not_promise_parity(self):
+        now = art(h=14, minute=36)
+        triggered = sample_two(now)
+        source_host = host()
+        source_host["wake_system_state"] = "TRUE"
+        actual = a504.classify("SOURCE_CYCLE", now, triggered, source_host,
+                               boot_us=10_000_000_000, source="FRESH")
+        self.assertEqual(actual["nominal_mature_slots"], 89)
+        self.assertEqual(actual["expected_slot_buckets_30m"], [28, 30, 31])
+        self.assertEqual(actual["matched_slot_buckets_30m"], [2, 0, 0])
+        self.assertEqual(actual["observed_distinct_slots"], 2)
+        self.assertEqual(actual["wake_system_state"], "TRUE")
+        self.assertEqual(actual["effective_calendar_parity"], "UNKNOWN")
+        self.assertEqual(actual["public_ttl_state"], "FRESH")
+        self.assertEqual(actual["evidence_ttl_state"], "FRESH")
+        self.assertFalse(actual["schedule_parity_verified"])
+        self.assertFalse(actual["clock_compatible"])
+        self.assertFalse(actual["full_day_cadence_certified"])
+
+    def test_a581_stage_ttl_flags_derive_from_one_existing_source_class(self):
+        for source, expected in (
+            ("FRESH", ("FRESH", "FRESH")),
+            ("PUBLIC_STALE_OR_MISSING", ("STALE_OR_MISSING", "FRESH")),
+            ("EVIDENCE_STALE_OR_MISSING", ("FRESH", "STALE_OR_MISSING")),
+            ("BOTH_STALE_OR_MISSING", ("STALE_OR_MISSING", "STALE_OR_MISSING")),
+            ("STALE_OR_MISSING", ("UNKNOWN", "UNKNOWN")),
+            ("UNKNOWN", ("UNKNOWN", "UNKNOWN")),
+            ("NOT_APPLICABLE", ("NOT_APPLICABLE", "NOT_APPLICABLE")),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(a504.stage_ttl_states(source), expected)
+                actual = a504.classify("SOURCE_CYCLE", art(h=14, minute=36), (),
+                                       host(), boot_us=10_000_000_000, source=source)
+                self.assertEqual((actual["public_ttl_state"],
+                                  actual["evidence_ttl_state"]), expected)
+
+    def test_a581_typed_wake_system_boolean_only_not_calendar_parity(self):
+        for raw, code in (("b true\n", "TRUE"), ("b false\n", "FALSE"),
+                          ("b 1\n", "UNKNOWN"), ("b TRUE\n", "UNKNOWN"),
+                          ("s true\n", "UNKNOWN"), ("b true trailing\n", "UNKNOWN"),
+                          ("b true\nb false\n", "UNKNOWN"), ("", "UNKNOWN"),
+                          ("b false\r\n", "UNKNOWN")):
+            with self.subTest(raw=raw):
+                def runner(args, **kwargs):
+                    self.assertEqual(args[0:4], ["busctl", "--system", "--no-pager", "get-property"])
+                    self.assertEqual(args[-2:], ["org.freedesktop.systemd1.Timer", "WakeSystem"])
+                    self.assertIn("_2etimer", args[-3])
+                    self.assertEqual(kwargs["timeout"], 3)
+                    return subprocess.CompletedProcess(args, 0, raw, "")
+                self.assertEqual(a504._typed_timer_wake_system(
+                    "porota-iol-shadow-collector-rc6", runner=runner), code)
+        with self.assertRaises(ValueError):
+            a504._typed_timer_wake_system("untrusted.timer", runner=lambda *_a, **_k: None)
+        def denied(args, **kwargs):
+            return subprocess.CompletedProcess(args, 1, "b true\n", "denied")
+        self.assertEqual(a504._typed_timer_wake_system(
+            "porota-iol-shadow-collector-rc6", runner=denied), "UNKNOWN")
+
+    def test_a581_probe_one_source_snapshot_and_sanitized_observational_receipt(self):
+        now = art(h=14, minute=36)
+        mocked_host = host()
+        mocked_host["wake_system_state"] = "FALSE"
+        with (patch.object(a504, "_bounded_state_source", return_value="FRESH") as source,
+              patch.object(a504, "inspect_systemd", return_value=mocked_host) as systemd,
+              patch.object(a504, "journal_invocations", return_value=((), None)) as journal):
+            receipt = a504.host_probe(now=now, boot_us=10_000_000_000)
+        source.assert_called_once_with(now)
+        self.assertEqual(systemd.call_count, len(a504.ROLES))
+        self.assertEqual(journal.call_count, len(a504.ROLES))
+        self.assertEqual(receipt["boot_coverage"], "FULL_90M")
+        self.assertEqual(receipt["roles"][0]["effective_calendar_parity"], "UNKNOWN")
+        self.assertEqual(receipt["roles"][0]["wake_system_state"], "FALSE")
+        self.assertEqual(a504.sanitize_receipt(json.dumps(receipt).encode()), receipt)
+        self.assertNotIn("last_trigger_us", json.dumps(receipt))
+        self.assertNotIn("last_public_success_at", json.dumps(receipt))
+        self.assertNotIn("2026-11-03T", json.dumps(receipt))
+
+    def test_a581_sanitizer_rejects_buckets_calendar_ttl_and_clock_forgery(self):
+        now = art(h=14, minute=36)
+        accepted = a504.default_receipt()
+        accepted["probe_status"] = "METADATA_ONLY"
+        accepted["boot_coverage"] = "FULL_90M"
+        for role, _ in a504.ROLES:
+            accepted["roles"].append(a504.classify(
+                role, now, sample_two(now) if role == "SOURCE_CYCLE" else (), host(),
+                boot_us=10_000_000_000,
+                source="FRESH" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE"))
+        self.assertEqual(a504.sanitize_receipt(json.dumps(accepted).encode()), accepted)
+        changes = (
+            (None, "boot_coverage", "FULL 90m 2026-11-03"),
+            (None, "boot_coverage", 5_400_000_000),
+            (0, "expected_slot_buckets_30m", [28, 30, 32]),
+            (0, "expected_slot_buckets_30m", [28, 30]),
+            (0, "expected_slot_buckets_30m", [True, 30, 31]),
+            (0, "matched_slot_buckets_30m", [3, 0, 0]),
+            (0, "matched_slot_buckets_30m", [0, 0, 3]),
+            (0, "effective_calendar_parity", "MATCH"),
+            (0, "effective_calendar_parity", True),
+            (0, "wake_system_state", "b true"),
+            (0, "wake_system_state", True),
+            (0, "public_ttl_state", "STALE_OR_MISSING"),
+            (0, "evidence_ttl_state", "2026-11-03T14:35:00Z"),
+            (0, "schedule_parity_verified", True),
+            (0, "clock_compatible", True),
+        )
+        for role_index, key, value in changes:
+            with self.subTest(key=key, value=value):
+                forged = json.loads(json.dumps(accepted))
+                target = forged if role_index is None else forged["roles"][role_index]
+                target[key] = value
+                self.assertEqual(a504.sanitize_receipt(json.dumps(forged).encode())["roles"], [])
+        extra = json.loads(json.dumps(accepted))
+        extra["roles"][0]["journal_message"] = "PII-PPI-MARKET"
+        self.assertEqual(a504.sanitize_receipt(json.dumps(extra).encode())["roles"], [])
+
     def test_a570_typed_dbus_timer_property_not_human_systemctl_timespan(self):
         commands = []
         timer = "porota-iol-shadow-collector-rc6.timer"
@@ -290,17 +415,21 @@ class A504MetadataTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, (
                     "LoadState=loaded\nActiveState=active\nResult=success\n"
                     "DropInPaths=\nNeedDaemonReload=no\n"), "")
-            self.assertEqual(args, [
+            self.assertEqual(args[:-1], [
                 "busctl", "--system", "--no-pager", "get-property",
                 "org.freedesktop.systemd1",
                 "/org/freedesktop/systemd1/unit/porota_2diol_2dshadow_2dcollector_2drc6_2etimer",
-                "org.freedesktop.systemd1.Timer", "LastTriggerUSecMonotonic"])
+                "org.freedesktop.systemd1.Timer"])
             self.assertEqual(kwargs["timeout"], 3)
-            return subprocess.CompletedProcess(args, 0, "t 9990000000\n", "")
+            if args[-1] == "LastTriggerUSecMonotonic":
+                return subprocess.CompletedProcess(args, 0, "t 9990000000\n", "")
+            self.assertEqual(args[-1], "WakeSystem")
+            return subprocess.CompletedProcess(args, 0, "b false\n", "")
         receipt = a504.inspect_systemd("porota-iol-shadow-collector-rc6", runner=runner)
-        self.assertEqual([cmd[0] for cmd in commands], ["systemctl", "systemctl", "busctl"])
+        self.assertEqual([cmd[0] for cmd in commands], ["systemctl", "systemctl", "busctl", "busctl"])
         self.assertEqual(receipt["query"], "READ_ONLY")
         self.assertEqual(receipt["last_trigger_us"], 9_990_000_000)
+        self.assertEqual(receipt["wake_system_state"], "FALSE")
         self.assertEqual(receipt["timer_active"], "active")
         self.assertFalse(receipt["schedule_parity_verified"])
         self.assertFalse(receipt["clock_compatible"])
@@ -497,6 +626,12 @@ class A504MetadataTests(unittest.TestCase):
                                   "journal_records":0,"journal_unit_records":0,
                                   "journal_invocation_records":0,"journal_timestamp_records":0,
                                   "last_trigger_validation_state":"VALID",
+                                  "expected_slot_buckets_30m":[3,0,0],
+                                  "matched_slot_buckets_30m":[0,0,0],
+                                  "effective_calendar_parity":"UNKNOWN",
+                                  "wake_system_state":"UNKNOWN",
+                                  "public_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
+                                  "evidence_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "schedule_parity_verified":False,"clock_compatible":False,
                                   "source":"UNKNOWN",
                                   "timer":"active","service":"success",
@@ -519,6 +654,12 @@ class A504MetadataTests(unittest.TestCase):
                                   "journal_records":0,"journal_unit_records":0,
                                   "journal_invocation_records":0,"journal_timestamp_records":0,
                                   "last_trigger_validation_state":"VALID",
+                                  "expected_slot_buckets_30m":[3,0,0],
+                                  "matched_slot_buckets_30m":[0,0,0],
+                                  "effective_calendar_parity":"UNKNOWN",
+                                  "wake_system_state":"UNKNOWN",
+                                  "public_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
+                                  "evidence_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                                   "schedule_parity_verified":False,"clock_compatible":False,
                                   "source":"UNKNOWN",
                                   "timer":"active","service":"success",
@@ -542,6 +683,12 @@ class A504MetadataTests(unittest.TestCase):
                 "journal_records":4, "journal_unit_records":3,
                 "journal_invocation_records":2, "journal_timestamp_records":1,
                 "last_trigger_validation_state":"VALID",
+                "expected_slot_buckets_30m":[3,0,0],
+                "matched_slot_buckets_30m":[0,0,0],
+                "effective_calendar_parity":"UNKNOWN",
+                "wake_system_state":"UNKNOWN",
+                "public_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
+                "evidence_ttl_state":"UNKNOWN" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "schedule_parity_verified":False, "clock_compatible":False,
                 "source":"UNKNOWN", "timer":"active", "service":"success",
                 "full_day_cadence_certified":False})
@@ -577,6 +724,12 @@ class A504MetadataTests(unittest.TestCase):
                 "journal_metadata_state":"MATCHING_NOT_EVALUATED",
                 "journal_records":290, "journal_unit_records":58,
                 "journal_invocation_records":58, "journal_timestamp_records":58,
+                "expected_slot_buckets_30m":[3,0,0],
+                "matched_slot_buckets_30m":[0,0,0],
+                "effective_calendar_parity":"UNKNOWN",
+                "wake_system_state":"UNKNOWN",
+                "public_ttl_state":"STALE_OR_MISSING" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
+                "evidence_ttl_state":"FRESH" if role == "SOURCE_CYCLE" else "NOT_APPLICABLE",
                 "schedule_parity_verified":False, "clock_compatible":False,
                 "source":"PUBLIC_STALE_OR_MISSING", "timer":"active",
                 "service":"success", "full_day_cadence_certified":False})
