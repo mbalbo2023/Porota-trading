@@ -200,8 +200,9 @@ class PositionExitSupervisor:
                                  None, str(exc)[:160]), at)
 
     def supervise(self, p, q, at):
-        # A456 owns only the LETRAS native-maturity callback. Existing BONOS
-        # and ON supervision paths remain unchanged by this scoped patch.
+        # LETRAS maturity is a separate issuer-event/no-SELL lifecycle.
+        # BONOS/ON market exit intentions are kept, but no generic spot SELL
+        # callback can consume FI VN or self-claimed PPI Book evidence.
         if family_name(p.get("asset_class")) == "LETRAS":
             return self._supervise_fixed_income(p, at)
         with self.store.connect() as c:
@@ -298,6 +299,19 @@ class PositionExitSupervisor:
         if size * self.broker.participation <= 0:
             return verdict("EXIT_PENDING_NO_LIQUIDITY", "Sin profundidad de salida")
         verdict("EXIT_DUE", "Salida decidida; pendiente de fill")
+        if family_name(p.get("asset_class")) in {"BONOS", "OBLIGACIONES"}:
+            # A621: join the *persisted* intention, PAPER snapshot, contract
+            # evidence and native journal after EXIT_DUE has committed.  This
+            # diagnostic does not turn an untrusted receipt into SELL authority.
+            # Never fall through to the generic close_fn, even on audit failure.
+            try:
+                from rc6_fi_sell_persisted_evidence import inspect_persisted_fi_exit
+                audit = inspect_persisted_fi_exit(self.store, p["paper_id"], at=at)
+                blocking = ";".join(audit["blockers"][:5]) or "FI_EXIT_AUTHORITY_UNVERIFIED"
+                return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", blocking[:600])
+            except Exception as exc:
+                return verdict("WATCH_FI_NATIVE_EVIDENCE_BLOCKED",
+                               "FI_EXIT_PERSISTED_AUDIT_UNAVAILABLE:" + type(exc).__name__)
         reason = "El ejecutor no confirmó un cierre"
         try:
             self.close_fn(p, q, cause, as_of=at)
