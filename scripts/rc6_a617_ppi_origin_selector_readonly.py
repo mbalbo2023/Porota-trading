@@ -235,11 +235,19 @@ def _selector_report(conn, tables):
     if not table or not {"ticker", "instrument_type", "settlement", "can_simulate", "status"} <= _columns(conn, table):
         return {**result, "state": "SCHEMA_HOLD"}
     marks = ",".join("?" for _ in FAMILIES)
-    sql = f"""SELECT COUNT(*) FROM (
-      SELECT ticker,instrument_type,settlement FROM {table}
-      WHERE can_simulate=1 AND status='AVAILABLE'
-        AND UPPER(instrument_type) IN ({marks})
-      GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1)"""
+    if table == "candidate_identity_v2":
+        sql = f"""SELECT COUNT(*) FROM (
+          SELECT ticker,instrument_type,settlement FROM candidate_identity_v2
+          WHERE can_simulate=1 AND status='AVAILABLE'
+            AND UPPER(instrument_type) IN ({marks})
+          GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1)"""
+    else:
+        # Historical observer fallback does not GROUP BY/HAVING, so report
+        # its real number of candidate_universe rows without inventing a v2
+        # identity uniqueness proof. This still grants no provider GET.
+        sql = f"""SELECT COUNT(*) FROM candidate_universe
+          WHERE can_simulate=1 AND status='AVAILABLE'
+            AND UPPER(instrument_type) IN ({marks})"""
     count = int(conn.execute(sql, FAMILIES).fetchone()[0])
     return {**result, "state": "READ_ONLY_OBSERVED", "table": table,
             "eligible_sql_exact_request": count}
