@@ -250,6 +250,44 @@ class TestA620CausalDecisionFreeze(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_causal_decision_freezes").fetchone()[0], 0)
         self.assertFalse(self.verify("A620:GGAL:HOLD:PAPER")["fill_accredited"])
 
+    def test_post_freeze_paper_decision_row_tamper_denies_signature(self):
+        self.assertTrue(self.record())
+        with self.store.connect() as connection:
+            connection.execute("UPDATE paper_decisions SET reason=? WHERE decision_key=?",
+                               ("FALSIFIED", KEY))
+        result = self.attest()
+        self.assertEqual(result["reason"], "CAUSAL_FREEZE_PAPER_DECISION_LINK_HOLD")
+        self.assertFalse(result["signature_created"])
+        self.assertFalse(self.verify()["decision_known_at_verified"])
+
+    def test_signature_bytes_tamper_fails_pinned_verifier(self):
+        self.assertTrue(self.record())
+        self.attest()
+        with self.store.connect() as connection:
+            # A privileged DB tamperer that removes an immutable trigger
+            # still cannot forge an Ed25519 signature under the release pin.
+            connection.execute("DROP TRIGGER rc6_causal_receipts_no_update")
+            connection.execute("UPDATE paper_causal_decision_receipts SET signature_b64=?",
+                               ("AAAA",))
+        result = self.verify()
+        self.assertEqual(result["state"], "BLOQUEADO")
+        self.assertFalse(result["decision_signature_verified"])
+        self.assertFalse(result["fill_accredited"])
+
+    def test_multiple_decisions_have_sequenced_previous_hash_receipts(self):
+        self.assertTrue(self.record())
+        first = self.attest()
+        self.assertTrue(self.record("A620:GGAL:BUY:SECOND"))
+        second = self.attest("A620:GGAL:BUY:SECOND")
+        self.assertTrue(second["signature_created"])
+        with self.store.connect() as connection:
+            rows = connection.execute("SELECT sequence,previous_receipt_sha256 "
+                                      "FROM paper_causal_decision_receipts ORDER BY sequence").fetchall()
+            self.assertEqual([r[0] for r in rows], [1, 2])
+            self.assertIsNone(rows[0][1])
+            self.assertEqual(rows[1][1], first["receipt_sha256"])
+        self.assertTrue(self.verify("A620:GGAL:BUY:SECOND")["decision_signature_verified"])
+
 
 if __name__ == "__main__":
     unittest.main()
