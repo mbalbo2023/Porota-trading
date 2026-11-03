@@ -1,4 +1,5 @@
 """COM19031 read-only candle-integrity coverage, virtual clocks only."""
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -40,7 +41,10 @@ class CandleLateTimerContracts(unittest.TestCase):
             p = subprocess.run(["systemd-analyze", "calendar",
                                 "--base-time=2026-11-01 00:00 UTC",
                                 "--iterations=60", expression],
-                               capture_output=True, text=True, check=True)
+                               capture_output=True, text=True, check=True,
+                               # Keep the UTC-only parser stable on hosts whose
+                               # local timezone is not UTC.
+                               env={**os.environ, "TZ": "UTC", "LC_ALL": "C"})
             events.extend(datetime.fromisoformat(s + "+00:00")
                           for s in re.findall(
                               r"(?m)^\s+(?:Next elapse|Iteration #\d+): \w{3} "

@@ -424,7 +424,10 @@ class CandleLateCursorTimerContractTests(unittest.TestCase):
             result = subprocess.run(["systemd-analyze", "calendar",
                                      "--base-time=2026-11-01 00:00 UTC",
                                      "--iterations=70", expression],
-                                    capture_output=True, text=True, check=True)
+                                    capture_output=True, text=True, check=True,
+                                    # systemd-analyze renders in the process's
+                                    # local TZ; the receipt parser requires UTC.
+                                    env={**os.environ, "TZ": "UTC", "LC_ALL": "C"})
             events.extend(datetime.fromisoformat(value + "+00:00")
                           for value in re.findall(
                               r"(?m)^\s+(?:Next elapse|Iteration #\d+): \w{3} "
