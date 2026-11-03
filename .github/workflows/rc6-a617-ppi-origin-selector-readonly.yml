@@ -6,6 +6,13 @@ name: RC6 A617 PPI origin selector READ_ONLY
 # bind mount may open the DB; missing unshare/mount authority fails closed.
 on:
   workflow_dispatch:
+  schedule:
+    # One-day 04-Nov-2026 zero-provider-GET host audit, UTC=ART+3.
+    # The dated ART gate below refuses the same cron in later years.
+    - cron: '45 13 4 11 *'  # 10:45 ART preopen/first live boundary
+    - cron: '30 17 4 11 *'  # 14:30 ART in-market
+    - cron: '30 19 4 11 *'  # 16:30 ART before equity T+1
+    - cron: '20 21 4 11 *'  # 18:20 ART postclose reference
   pull_request:
     branches: [main]
     paths:
@@ -35,7 +42,7 @@ jobs:
 
   host_provenance:
     needs: contracts
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
@@ -51,7 +58,24 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Gate scheduled host access to 04-Nov ART only
+        id: day_gate
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os
+          from datetime import datetime,timezone
+          from zoneinfo import ZoneInfo
+          local=datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+          # workflow_dispatch remains the explicit manual read-only fallback.
+          allowed=(os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch'
+                   or local.date().isoformat()=='2026-11-04')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as out:
+              out.write('active='+('1' if allowed else '0')+'\n')
+          print('A617_04NOV_HOST_GATE='+('ACTIVE' if allowed else 'SKIPPED_OTHER_DATE'))
+          PY
       - name: Configure strict runner-only SSH
+        if: steps.day_gate.outputs.active == '1'
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER"
@@ -62,6 +86,7 @@ jobs:
           chmod 600 "$HOME/.ssh/rc6_a617_ppi_ro" "$HOME/.ssh/known_hosts"
           mkdir -p evidence
       - name: Private mount-namespace READ_ONLY host audit — ZERO PPI GET
+        if: steps.day_gate.outputs.active == '1'
         run: |
           set -Eeuo pipefail
           set +e
@@ -173,7 +198,7 @@ jobs:
           PY
           rm -f evidence/.host_raw.json
       - name: Preserve sanitized aggregate evidence
-        if: always()
+        if: always() && steps.day_gate.outputs.active == '1'
         uses: actions/upload-artifact@v4
         with:
           name: rc6-a617-ppi-origin-selector-${{ github.run_id }}
@@ -181,7 +206,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
       - name: Fail closed when host DB not readable
-        if: always()
+        if: always() && steps.day_gate.outputs.active == '1'
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
