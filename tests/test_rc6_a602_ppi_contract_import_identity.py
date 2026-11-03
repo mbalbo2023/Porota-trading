@@ -175,3 +175,24 @@ def test_auth_unchanged_fail_closed(tmp_path, monkeypatch):
         auth="BLOCKED_AUTH_2FA_REQUIRED"))
     assert calls == []
     assert result["state"] == "BLOCKED_AUTH" and result["records"] == 0
+
+
+def test_a615_caucion_partial_unit_never_turns_import_green(
+        tmp_path, monkeypatch):
+    store = _store(tmp_path, [
+        _row(ticker="CACC1", family="CAUCIONES", currency="ARS")])
+    capture = _capture(tmp_path, kind="CaucionesOperables", rows=[{
+        "ticker": "CACC1", "currency": "ARS", "quantity": 1,
+        "applied_exchange_rate": 1, "amount_invested_ars": 835.7,
+    }])
+    result, calls = _run(monkeypatch, store, capture)
+    assert result["state"] == "AMARILLO"
+    assert result["records"] == 1 and result["conflicts"] == 0
+    assert "CAUCIONES_PARTIAL_UNIT_UNVERIFIED" in result["notes"]
+    assert len(calls) == 1
+    evidence = calls[0]["evidence"]
+    assert evidence["book_quantity_unit_status"] == "BOOK_QUANTITY_UNIT_UNVERIFIED"
+    assert evidence["provider_quantity_unverified"] == {"quantity": 1}
+    assert "quantity" not in evidence
+    assert "applied_exchange_rate" not in evidence
+    assert "amount_invested_ars" not in evidence
