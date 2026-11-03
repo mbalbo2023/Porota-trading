@@ -11,6 +11,8 @@ on:
       - 'tests/test_rc6_a420_primary_source_layout_ro.py'
       - 'scripts/rc6_a504_systemd_cadence_ro.py'
       - 'tests/test_rc6_a504_systemd_cadence_ro.py'
+      - 'scripts/rc6_a532_source_stage_journal_ro.py'
+      - 'tests/test_rc6_a532_source_stage_journal_ro.py'
   push:
     branches: [main]
     paths:
@@ -19,6 +21,8 @@ on:
       - 'tests/test_rc6_a420_primary_source_layout_ro.py'
       - 'scripts/rc6_a504_systemd_cadence_ro.py'
       - 'tests/test_rc6_a504_systemd_cadence_ro.py'
+      - 'scripts/rc6_a532_source_stage_journal_ro.py'
+      - 'tests/test_rc6_a532_source_stage_journal_ro.py'
   workflow_dispatch:
 
 permissions:
@@ -42,6 +46,8 @@ jobs:
           python3 -m unittest discover -s tests -p test_rc6_a420_primary_source_layout_ro.py -v
           python3 -m py_compile scripts/rc6_a504_systemd_cadence_ro.py tests/test_rc6_a504_systemd_cadence_ro.py
           python3 -m unittest discover -s tests -p test_rc6_a504_systemd_cadence_ro.py -v
+          python3 -m py_compile scripts/rc6_a532_source_stage_journal_ro.py tests/test_rc6_a532_source_stage_journal_ro.py
+          python3 -m unittest discover -s tests -p test_rc6_a532_source_stage_journal_ro.py -v
           git diff --check
 
   host_metadata:
@@ -267,6 +273,47 @@ jobs:
         with:
           name: rc6-a504-systemd-cadence-${{ github.run_id }}
           path: evidence/a504-cadence.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: A532 host-only bounded stage marker (raw journal never leaves host)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The SSH transcript is fixed-enum JSON, never a journal MESSAGE;
+          # remove it even when the validator or SSH command fails.
+          trap 'rm -f -- evidence/.a532-untrusted.json' EXIT
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a420_source_layout" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 10 python3 -B - host-probe' \
+            < scripts/rc6_a532_source_stage_journal_ro.py \
+            > evidence/.a532-untrusted.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          python3 scripts/rc6_a532_source_stage_journal_ro.py sanitize
+          if [ "$remote_rc" -ne 0 ]; then
+            echo '::warning::A532 stage marker unavailable; no runtime state certified.'
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('evidence/a532-source-stages.json').read_text(encoding='utf-8'))
+          if result['paper_ready'] is not False or result['raw_journal_exported'] is not False:
+              raise SystemExit('::error::A532 unsafe positive output')
+          print('A532_JOURNAL_MARKER='+result['marker']+
+                '|stage_public='+result['stage_public']+
+                '|stage_evidence='+result['stage_evidence']+
+                '|cadence_verified=NO')
+          PY
+      - name: A532 publish only validated source-stage enums
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a532-source-stage-journal-${{ github.run_id }}
+          path: evidence/a532-source-stages.json
           if-no-files-found: warn
           retention-days: 14
       - name: Destroy only runner SSH material
