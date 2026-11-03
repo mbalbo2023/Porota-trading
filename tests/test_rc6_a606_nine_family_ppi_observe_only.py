@@ -296,6 +296,55 @@ class A606Tests(unittest.TestCase):
         self.assertEqual(plan["ppi_observe_only_requests"], [])
         self.assertEqual(plan["ppi_observe_only_family_states"]["FCI"],
                          "NO_COLD_SLOT")
+        diag = plan["ppi_cold_bootstrap_diagnostic"]
+        self.assertEqual(diag["status"], "NO_COLD_BOOTSTRAP_AUTHORITY")
+        self.assertEqual(diag["selector_gate"], "candidate_identity_v2")
+        self.assertEqual((diag["eligible_count"], diag["cold_slots"]), (0, 0))
+        self.assertEqual((diag["bootstrap_authority"], diag["additional_ppi_get"]),
+                         ("NOT_GRANTED", 0))
+
+    def test_a615_one_ready_uses_original_warm_without_new_cold_get(self):
+        with self.store.connect() as c:
+            c.execute("UPDATE candidate_identity_v2 SET can_simulate=0,status='PAUSED_EXPLICIT'")
+            c.execute("""UPDATE candidate_identity_v2
+                      SET can_simulate=1,status='AVAILABLE'
+                      WHERE ticker=?""", (self.ready[0][0],))
+        symbols, total, _, _, plan = self.call_plan()
+        self.assertEqual((total, symbols), (1, (self.ready[0],)))
+        self.assertEqual(plan["cold"], [])
+        self.assertEqual(plan["ppi_observe_only_requests"], [])
+        diag = plan["ppi_cold_bootstrap_diagnostic"]
+        self.assertEqual(diag["status"], "NO_BASELINE_COLD_SLOT")
+        self.assertEqual((diag["eligible_count"], diag["cold_slots"]), (1, 0))
+        self.assertEqual(diag["additional_ppi_get"], 0)
+        self.assertNotIn("PAPER_ORDER", str(self.store.events))
+
+    def test_a615_many_ready_reuses_one_cold_slot_never_two(self):
+        chosen, total, _, _, plan = self.call_plan()
+        self.assertEqual(total, len(self.ready))
+        self.assertEqual(len(chosen), observer.ACTIVE_SYMBOL_LIMIT)
+        self.assertEqual(len(plan["cold"]), 1)
+        self.assertEqual(len(plan["ppi_observe_only_requests"]), 1)
+        diag = plan["ppi_cold_bootstrap_diagnostic"]
+        self.assertEqual(diag["status"], "BASELINE_COLD_SLOT_AVAILABLE")
+        self.assertEqual((diag["eligible_count"], diag["cold_slots"]),
+                         (len(self.ready), 1))
+        self.assertEqual((diag["bootstrap_authority"], diag["additional_ppi_get"]),
+                         ("NOT_GRANTED", 0))
+
+    def test_a615_unreadable_candidate_selector_is_not_reported_as_zero_contracts(self):
+        class Unreadable:
+            def connect(self):
+                raise sqlite3.OperationalError("synthetic read hold")
+
+        evidence = {}
+        self.assertEqual(observer._eligible_symbols(Unreadable(), diagnostic=evidence), ())
+        self.assertEqual(evidence["status"], "READ_HOLD")
+        self.assertEqual(evidence["reason"], "ELIGIBLE_SELECTOR_READ_HOLD")
+        diag = observer._cold_bootstrap_diagnostic(evidence,
+            eligible_count=0, cold_slots=0, capacity_status="OFF_BASELINE")
+        self.assertEqual(diag["status"], "ELIGIBLE_SELECTOR_READ_HOLD")
+        self.assertEqual(diag["additional_ppi_get"], 0)
 
 
 if __name__ == "__main__":
