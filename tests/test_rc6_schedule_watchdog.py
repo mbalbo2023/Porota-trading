@@ -78,6 +78,61 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual(1, result["off_session_runs"])
         self.assertEqual(45, result["missing_mature_run_lower_bound"])
         self.assertEqual(0, result["overdue_slots_after_last_run"])
+        self.assertEqual(1, result["after_last_declared_slot_count"])
+        self.assertEqual(7506, result["latest_creation_after_last_slot_lower_bound_seconds"])
+        self.assertTrue(result["multi_hour_delayed_creation_proven"])
+        self.assertEqual("NO_VERIFICADO", result["market_watch_runtime_recovered"])
+
+    def test_both_actual_nov02_delayed_schedule_events_remain_p1(self):
+        """Actual GitHub created_at, not a synthetic provider delay claim."""
+        created = [
+            dict(id=41543540643, event="schedule", run_attempt=1,
+                 head_branch="main", created_at="2026-11-02T23:12:06Z"),
+            dict(id=41568900395, event="schedule", run_attempt=1,
+                 head_branch="main", created_at="2026-11-03T02:53:48Z"),
+        ]
+        result = a358.classify(created, datetime(2026, 11, 3, 2, 56,
+                                                 tzinfo=timezone.utc),
+                               workflow_state="active")
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
+        self.assertEqual(46, result["mature_expected_slots"])
+        self.assertEqual(2, result["genuine_runs_today"])
+        self.assertEqual(0, result["genuine_in_session"])
+        self.assertEqual(2, result["off_session_runs"])
+        self.assertEqual(44, result["missing_mature_run_lower_bound"])
+        self.assertEqual(2, result["after_last_declared_slot_count"])
+        self.assertEqual(20808, result["latest_creation_after_last_slot_lower_bound_seconds"])
+        self.assertTrue(result["multi_hour_delayed_creation_proven"])
+        self.assertEqual("NO_VERIFICADO", result["market_watch_runtime_recovered"])
+
+    def test_early_or_after_host_gate_runs_never_count_as_in_session_recovery(self):
+        early = a358.classify([run(10, 7), run(10, 17)], at(10, 45))
+        self.assertEqual("NO_VERIFICADO", early["status"])
+        self.assertEqual("INSUFFICIENT_IN_SESSION_SCHEDULE_EVIDENCE", early["reason"])
+        self.assertEqual(0, early["genuine_in_session"])
+        self.assertEqual(2, early["off_session_runs"])
+
+        # Market Watch stops at 18:15. The 18:07 cron's 12m grace does
+        # NOT authorize host evidence from a genuine run created at 18:16.
+        too_late_for_host = a358.classify([run(18, 16)], at(18, 17))
+        self.assertEqual(0, too_late_for_host["genuine_in_session"])
+        self.assertEqual(1, too_late_for_host["off_session_runs"])
+        self.assertEqual(540, too_late_for_host[
+            "latest_creation_after_last_slot_lower_bound_seconds"])
+        self.assertFalse(too_late_for_host["multi_hour_delayed_creation_proven"])
+
+    def test_host_time_gate_matches_existing_bounded_t1_extension(self):
+        for day, expected in (
+            ("2026-10-30", "17:15"),
+            ("2026-11-02", "18:15"),
+            ("2026-12-31", "18:15"),
+            ("2027-01-01", "17:15"),
+        ):
+            with self.subTest(day=day):
+                value = datetime.fromisoformat(day).date()
+                self.assertEqual(expected, a358.host_window_close(value)
+                                 .astimezone(a358.ART).strftime("%H:%M"))
 
     def test_two_healthy_in_session_runs_do_not_create_false_p1(self):
         result = a358.classify([run(10, 37), run(10, 47)], at(11, 4))
@@ -86,6 +141,67 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual(2, result["genuine_in_session"])
         self.assertEqual(0, result["missing_mature_run_lower_bound"])
         self.assertEqual(0, result["off_session_runs"])
+        self.assertEqual(2, result["distinct_mature_slot_compatible_count"])
+        self.assertTrue(result["latest_two_mature_slots_compatible"])
+
+    def test_two_early_same_slot_runs_cannot_claim_schedule_cadence(self):
+        # A reviewer found the pre-A499 false GREEN: at 10:55 ART, one
+        # nominal slot is mature, but runs at 10:38/10:39 used to claim two.
+        result = a358.classify([run(10, 38), run(10, 39)], at(10, 55))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(1, result["mature_expected_slots"])
+        self.assertEqual(2, result["genuine_in_session"])
+        self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
+
+    def test_two_burst_runs_near_second_slot_cannot_claim_schedule_cadence(self):
+        # At 11:00 ART, 10:37/10:47 are both mature. These two one-minute-
+        # apart runs are compatible with 10:47 only, NOT two distinct slots.
+        for sample in ((run(10, 47), run(10, 48)),
+                       (run(10, 46), run(10, 47))):
+            with self.subTest(sample=sample):
+                result = a358.classify(list(sample), at(11, 0))
+                self.assertEqual("NO_VERIFICADO", result["status"])
+                self.assertEqual("DISTINCT_MATURE_SLOT_EVIDENCE_INSUFFICIENT",
+                                 result["reason"])
+                self.assertEqual(2, result["mature_expected_slots"])
+                self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+                self.assertFalse(result["latest_two_mature_slots_compatible"])
+
+    def test_two_separate_slot_compatible_arrivals_are_observed(self):
+        result = a358.classify([run(10, 38), run(10, 48)], at(11, 4))
+        self.assertEqual("RECENT_SCHEDULE_OBSERVED", result["status"])
+        self.assertEqual(2, result["distinct_mature_slot_compatible_count"])
+        self.assertTrue(result["latest_two_mature_slots_compatible"])
+
+    def test_second_slot_does_not_accept_creation_after_half_cadence(self):
+        late_first = run(10, 42, created_at=at(10, 42).replace(second=1).isoformat())
+        result = a358.classify([late_first, run(10, 48)], at(11, 4))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+
+    def test_last_two_mature_slots_must_be_consecutive_and_both_compatible(self):
+        # 10:57 is missing, though last pair of raw created_at events was
+        # separated by exactly 20 min and would pass the old gaps[-1] gate.
+        result = a358.classify([run(10, 38), run(10, 48), run(11, 8)], at(11, 24))
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(4, result["mature_expected_slots"])
+        self.assertEqual(3, result["distinct_mature_slot_compatible_count"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
+
+    def test_late_prior_art_day_receipt_cannot_masquerade_as_today_cadence(self):
+        # 02-Nov 23:53 ART is 03-Nov 02:53 UTC, but still belongs to
+        # previous ART day: even paired with Tue 10:48 it must not be fresh.
+        old = run(10, 38, id=41568900395,
+                  created_at="2026-11-03T02:53:48Z")
+        fresh = run(10, 48, id=42222333,
+                    created_at="2026-11-03T13:48:00Z")
+        now = datetime(2026, 11, 3, 14, 4, tzinfo=timezone.utc)
+        result = a358.classify([old, fresh], now)
+        self.assertEqual("NO_VERIFICADO", result["status"])
+        self.assertEqual(1, result["genuine_runs_today"])
+        self.assertEqual(1, result["distinct_mature_slot_compatible_count"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
 
     def test_two_missed_mature_slots_cannot_be_reset_by_late_run(self):
         result = a358.classify([run(10, 37), run(10, 47),

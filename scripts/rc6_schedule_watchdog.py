@@ -8,7 +8,7 @@ monitor its alerts and absence. Every output is sanitized and bounded.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -23,8 +23,11 @@ ISSUE = 732
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 MAX_REPLY = 512 * 1024
 GRACE_MINUTES = 12
+EXPECTED_CADENCE_MINUTES = 10
 DEDUPE_PAGE_SIZE = 5
 DEDUPE_MAX_COMMENTS = 500
+LATE_SURVEILLANCE_START = date(2026, 11, 2)
+LATE_SURVEILLANCE_END = date(2026, 12, 31)
 SAFE_ERROR_CLASSES = frozenset({
     "A358_INVALID_ENDPOINT", "A358_API_RESPONSE_TOO_LARGE",
     "A358_INVALID_POST_TARGET", "A358_DATE_ART_INVALID",
@@ -81,6 +84,17 @@ def slots(day):
             for h, m in minutes]
 
 
+def host_window_close(day):
+    """Mirror the existing Market Watch gate, without opening the host.
+
+    A genuine scheduled run after this instant may be useful for diagnosing
+    GitHub event delivery, but its workflow intentionally skips host evidence.
+    """
+    late = LATE_SURVEILLANCE_START <= day <= LATE_SURVEILLANCE_END
+    return datetime(day.year, day.month, day.day, 18 if late else 17, 15,
+                    tzinfo=ART).astimezone(timezone.utc)
+
+
 def api_page_covers_art_day(runs, now, *, page_size=100):
     """A full first API page proves coverage only if it crosses ART midnight."""
     if not isinstance(runs, list) or len(runs) > page_size or now.tzinfo is None:
@@ -115,6 +129,12 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
               "real_order_routes_called": 0, "host_access": False,
               "genuine_runs_today": 0, "overdue_slots_after_last_run": 0,
               "genuine_in_session": 0, "off_session_runs": 0,
+              "after_last_declared_slot_count": 0,
+              "latest_creation_after_last_slot_lower_bound_seconds": 0,
+              "multi_hour_delayed_creation_proven": False,
+              "distinct_mature_slot_compatible_count": 0,
+              "latest_two_mature_slots_compatible": False,
+              "market_watch_runtime_recovered": "NO_VERIFICADO",
               "missing_mature_run_lower_bound": 0, "api_day_covered": bool(api_day_covered),
               "detection_basis": None,
               "last_genuine_run_at_utc": None, "reason": None, "status": "NO_VERIFICADO"}
@@ -146,10 +166,40 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
     if valid:
         result["last_genuine_run_at_utc"] = valid[-1].isoformat().replace("+00:00", "Z")
     allowed_start = expected[0]
-    allowed_end = expected[-1] + timedelta(minutes=grace_minutes)
-    result["genuine_in_session"] = sum(allowed_start <= stamp <= allowed_end for stamp in valid)
+    # The workflow's local-time gate stops at 18:15 ART (17:15 outside the
+    # bounded T+1 period). A creation after it cannot prove host observation,
+    # even when the last cron's 12-minute grace has not fully elapsed.
+    allowed_end = min(expected[-1] + timedelta(minutes=grace_minutes),
+                      host_window_close(local.date()))
+    in_session = [stamp for stamp in valid if allowed_start <= stamp < allowed_end]
+    result["genuine_in_session"] = len(in_session)
     result["off_session_runs"] = len(valid) - result["genuine_in_session"]
+    after_final = [stamp for stamp in valid if stamp > expected[-1]]
+    result["after_last_declared_slot_count"] = len(after_final)
+    if after_final:
+        # A GitHub run created after the FINAL declared cron of the same ART
+        # date is incontrovertibly late by at least this much. This cannot
+        # attribute it to a particular slot or explain provider internals.
+        seconds = max(0, int((after_final[-1] - expected[-1]).total_seconds()))
+        result["latest_creation_after_last_slot_lower_bound_seconds"] = seconds
+        result["multi_hour_delayed_creation_proven"] = seconds >= 3600
     mature = [s for s in expected if s + timedelta(minutes=grace_minutes) <= now]
+    # GitHub's run created_at has no scheduled-slot identifier. One cron tick
+    # must not be inferred from two jobs that appear in the same minute. The
+    # ten-minute cron cadence admits a conservative, NON-overlapping early
+    # half-interval for each mature nominal slot: a single timestamp cannot
+    # match two slots, and a late burst cannot simulate two on-time slots.
+    # Compatibility is not proof of provider internals or runtime recovery.
+    half_cadence = timedelta(minutes=EXPECTED_CADENCE_MINUTES) / 2
+    eligible_mature = [s for s in mature if allowed_start <= s < allowed_end]
+    compatible_slots = [s for s in eligible_mature if any(
+        s <= stamp < min(s + half_cadence, allowed_end) for stamp in in_session)]
+    result["distinct_mature_slot_compatible_count"] = len(compatible_slots)
+    recent_two_compatible = (
+        len(eligible_mature) >= 2
+        and eligible_mature[-2] in compatible_slots
+        and eligible_mature[-1] in compatible_slots)
+    result["latest_two_mature_slots_compatible"] = recent_two_compatible
     # A delayed run does NOT prove each individual cron slot ran. For alarms,
     # only compare current absence since the last genuine creation timestamp.
     last = valid[-1] if valid else expected[0] - timedelta(minutes=1)
@@ -168,15 +218,15 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
     elif len(late) >= 2:
         result.update(status="P1_SCHEDULE_SILENT", reason="TWO_MATURE_SLOTS_WITHOUT_RUN",
                       detection_basis="OVERDUE_SINCE_LAST_RUN")
-    elif len(valid) >= 2:
-        gaps = [(a - b).total_seconds() for a, b in zip(valid[1:], valid[:-1])]
+    elif len(in_session) >= 2:
+        gaps = [(a - b).total_seconds() for a, b in zip(in_session[1:], in_session[:-1])]
         result["max_observed_gap_seconds"] = int(max(gaps)) if gaps else 0
-        if gaps and gaps[-1] <= 1200 and len(late) == 0:
+        if recent_two_compatible and len(late) == 0:
             result.update(status="RECENT_SCHEDULE_OBSERVED", reason="TWO_GENUINE_FIRST_ATTEMPTS")
         else:
-            result.update(status="NO_VERIFICADO", reason="GAP_OR_INSUFFICIENT_CADENCE")
+            result.update(status="NO_VERIFICADO", reason="DISTINCT_MATURE_SLOT_EVIDENCE_INSUFFICIENT")
     else:
-        result.update(status="NO_VERIFICADO", reason="INSUFFICIENT_SCHEDULE_EVIDENCE")
+        result.update(status="NO_VERIFICADO", reason="INSUFFICIENT_IN_SESSION_SCHEDULE_EVIDENCE")
     return result
 
 
