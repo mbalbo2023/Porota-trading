@@ -76,6 +76,24 @@ class TestPpiBookOffhostRetention(unittest.TestCase):
         self.assertEqual(report["cohorts"]["OLDER_THAN_365D_PROTECTED_UNKNOWN_PINS"], 1)
         self.assertEqual(report["cohorts"]["WITHIN_365D_NATIVE_BOOK"], 0)
 
+    def test_art_calendar_date_cutoff_changes_at_midnight_not_utc_midnight(self):
+        # The source-native rolling 365*24h cutoff is separate from the ART
+        # 365-calendar-day inclusive bound for date-only histories. In the
+        # 30-minute window spanning local midnight, their boundaries differ.
+        self.record(datetime(2026, 11, 2, 20, 0, tzinfo=timezone.utc))
+        before = retention.inventory_native_book_retention(
+            self.path, runner_root=self.root,
+            as_of_utc="2026-11-03T02:30:00+00:00")
+        after = retention.inventory_native_book_retention(
+            self.path, runner_root=self.root,
+            as_of_utc="2026-11-03T03:01:00+00:00")
+        self.assertEqual(before["daily_date_only_cutoff_art_inclusive"], "2025-11-03")
+        self.assertEqual(after["daily_date_only_cutoff_art_inclusive"], "2025-11-04")
+        self.assertEqual(before["cutoff_utc_inclusive"], "2025-11-03T02:30:00+00:00")
+        self.assertEqual(after["cutoff_utc_inclusive"], "2025-11-03T03:01:00+00:00")
+        self.assertEqual(before["pin_scope"], "PIN_SCOPE_UNKNOWN")
+        self.assertEqual(after["pin_scope"], "PIN_SCOPE_UNKNOWN")
+
     def test_forged_pin_claims_cannot_authorize_purge_or_legacy_backfill(self):
         self.record(NOW - timedelta(minutes=3))
         fake = {"pin_scopes_verified": ["sqlite", "json", "artifact", "replay"],
