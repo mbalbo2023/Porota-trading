@@ -88,6 +88,9 @@ class TestA619OffhostTwoBookGuard(unittest.TestCase):
         self.assertIs(result["family_ready"], False)
         self.assertIs(result["decision_signature_verified"], False)
         self.assertIs(result["source_artifact_independently_verified"], False)
+        self.assertIs(result["decision_receipt_known_at_verified"], False)
+        self.assertIsNone(result["decision_receipt_known_at"])
+        self.assertIs(result["two_book_clock_witness"], False)
         self.assertIs(result["quantity_unit_verified"], False)
         self.assertIs(result["tariff_contract_verified"], False)
         self.assertEqual(result["provider_gets"], 0)
@@ -108,13 +111,14 @@ class TestA619OffhostTwoBookGuard(unittest.TestCase):
         self.capture(2)
         receipt = self.analyze()
         rows, chain = journal.verified_native_book_journal(self.journal)
-        self.assertTrue(receipt["two_book_clock_witness"])
+        self.assertTrue(receipt["market_clock_pair_relative_to_claimed_decision"])
+        self.assertFalse(receipt["two_book_clock_witness"])
         self.assertTrue(receipt["book2_strictly_future"])
         self.assertTrue(receipt["book2_first_top_positive"])
         self.assertEqual(receipt["book1_event_sha256"], rows[0]["event_sha256"])
         self.assertEqual(receipt["book2_event_sha256"], rows[2]["event_sha256"])
         self.assertEqual(receipt["journal_chain_tip_sha256"], chain["latest_sha256"])
-        self.assertEqual(receipt["reason"], "PIT_TWO_BOOK_WITNESS_ONLY_NOT_AN_AUTHENTICATED_FILL")
+        self.assertEqual(receipt["reason"], "PIT_MARKET_CLOCK_PAIR_ONLY_DECISION_RECEIPT_KNOWN_AT_UNVERIFIED")
         self.assertEqual(json.loads(diagnostics_json(self.journal, self.db,
                          decision_key=KEY, family_group="ACCIONES",
                          identity=IDENTITY, latency_seconds=1)), receipt)
@@ -144,6 +148,31 @@ class TestA619OffhostTwoBookGuard(unittest.TestCase):
         corrupt = self.analyze()
         self.assertEqual(corrupt["state"], "BLOQUEADO")
         self.assertEqual(corrupt["reason"], "DECISION_SNAPSHOT_DIGEST_MISMATCH")
+
+    def test_snapshot_written_after_book2_cannot_claim_prebook2_decision_known(self):
+        """Adversarial post-hoc receipt: captured_at is not a trusted known_at."""
+        self.capture(2)
+        frozen = self.payload()
+        frozen["capture_phase"] = "ATOMIC_PAPER_ADMISSION"
+        # The PAPER engine writes this phase only after admission. A self-
+        # described decision_at in the past cannot establish an early receipt.
+        frozen["captured_at"] = (START + timedelta(seconds=12)).isoformat()
+        self.write_decision(frozen)
+        receipt = self.analyze()
+        self.assertTrue(receipt["market_clock_pair_relative_to_claimed_decision"])
+        self.assertFalse(receipt["two_book_clock_witness"])
+        self.assertIsNone(receipt["decision_receipt_known_at"])
+        self.assertFalse(receipt["decision_receipt_known_at_verified"])
+        self.assertFalse(receipt["decision_signature_verified"])
+
+    def test_native_phase_captured_at_is_quote_receipt_not_commit_clock(self):
+        self.capture(2)
+        frozen = self.payload()
+        frozen["captured_at"] = (START + timedelta(seconds=9)).isoformat()
+        self.write_decision(frozen)
+        receipt = self.analyze()
+        self.assertEqual(receipt["reason"], "DECISION_CAPTURE_PHASE_CLOCK_INVALID")
+        self.assertFalse(receipt["market_clock_pair_relative_to_claimed_decision"])
 
     def test_book1_quote_must_exactly_match_predecision_native_event(self):
         self.capture(2)
