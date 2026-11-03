@@ -1,66 +1,60 @@
-# Porota Trading v16.2
+# POROTA TRADING RC6 — PAPER/SHADOW ONLY
 
-Sistema autónomo de trading algorítmico para el mercado argentino (BYMA), con
-ejecución a través de PPI y motor de decisión sobre Google Gemini.
+POROTA TRADING RC6 es un sistema de investigación, observación y simulación de estrategias de mercado. **No está autorizado a enviar órdenes reales.** Las pruebas de contratos, señales, fuentes y motores se realizan bajo política `PRODUCTION_PAPER / SIMULATION` y admisión individual *fail-closed*.
 
-## Control desde Telegram
+> **Estado de esta rama:** código candidato en revisión; `EN_GITHUB` no equivale a `DESPLEGADO` ni `VALIDADO_RUNTIME`. La situación efectiva del droplet, la base de datos y las órdenes simuladas requiere recibos actuales independientes; en ausencia de ellos, `NO_VERIFICADO`.
 
-| Comando | Qué hace |
+## Reglas inviolables
+
+- `PAPER/SHADOW ONLY`; `real_orders_sent=0` como invariante obligatoria, **no** como medición actual inferida del código.
+- Rutas de órdenes reales bloqueadas y nunca llamadas. **Ninguna opción, incluida Telegram o configuración, está autorizada a habilitar órdenes reales; cualquier ruta existente debe permanecer bloqueada.**
+- **PPI Watch NO TOCAR** salvo autorización expresa y acotada; su existencia, unidades y estado se verifican antes de atribuirle cualquier resultado.
+- **FIX-FORWARD ONLY**: sin rollback, sin retroceder silenciosamente el estado productivo y sin purgas inseguras.
+- GitHub y GitHub Actions son el plano de control habitual. No se exige al operador una terminal, SSH ni comandos de contenedores manuales para tareas normales; SSH sólo es excepcional (*break-glass*).
+- Todo cambio debe declarar `READ_ONLY`, `WRITE_OWNER` o `DEPLOY_OWNER`, con ownership por ámbito y una única promoción final coordinada.
+
+## Qué fuente acredita cada afirmación
+
+| Afirmación | Evidencia necesaria |
 |---|---|
-| `ESTADO` | Qué hay abierto y en qué estado está el bot |
-| `PARADA` | Parada de emergencia: ordenada, liquidar todo, o corte seco |
-| `REARRANCAR` | Volver a operar |
-| `AYUDA` | La lista completa |
+| Código disponible | Commit SHA y diff del repositorio/PR correspondiente |
+| Pruebas ejecutadas | GitHub Actions, run/job, SHA exacto y resultado; un job omitido no es GREEN operacional |
+| Paquete liberable | Artefacto inmutable, manifest generado desde el checkout y hashes/digest verificados |
+| Código desplegado | SHA/imagen realmente instalados y recibo de Deploy V2 del droplet |
+| Función operativa o fill PAPER | DB/logs/APIs y trazas causales auténticas, atribuibles a instrumento y sesión |
 
-## Lo primero que hay que saber
+Repositorios y ramas cumplen funciones distintas: `main` contiene controles y diagnósticos independientes; `deploy/rc6-pr69-isolated-20260915` es la rama del producto; [PR #778](https://github.com/mbalbo2023/Porota-trading/pull/778) concentra el **único candidato**. Sus HEAD son móviles: se consultan en GitHub cada vez, nunca se deducen del nombre de la rama ni de este texto.
 
-**El bot no arranca a operar solo.** Al levantar, manda un mensaje a Telegram y
-espera que autorices cómo arrancar: simulación contra el sandbox de PPI, real, o
-quedarse levantado sin operar. Hasta que no respondas, no toca el mercado.
+Para estados, SHA, dependencias, runs, propietarios y bloqueos actuales, consultar el [checkpoint de continuidad #732](https://github.com/mbalbo2023/Porota-trading/issues/732), la [auditoría integral #909](https://github.com/mbalbo2023/Porota-trading/issues/909) y las pruebas originales. Este README no reemplaza sus evidencias.
 
-## Puesta en marcha en Docker
+## Fuentes, instrumentos y decisiones simuladas
 
-```bash
-cp .env.example .env            # 0. crear configuracion local sin credenciales
-docker compose build            # 1. construir el entorno reproducible
-docker compose run --rm bot pytest -q  # 2. ejecutar la suite
-docker compose up -d            # 3. arrancar; requiere credenciales en .env
-docker compose exec bot python ap_api_verifier.py  # 4. verificar APIs
-```
+- **PPI** es la referencia primaria de identidad de instrumentos. IOL, BYMA, A3 y ROFEX complementan según procedencia válida; nunca sobrescriben arbitrariamente la identidad PPI.
+- Se exige identidad exacta de instrumento, mercado, moneda, liquidación y familia, contrato vigente, unidad/nominal/lote, comisiones, presupuesto y capacidad de EXIT cuando corresponda.
+- El embudo de observación y selección COLD/otros estados sólo habilita oportunidades cuando su implementación y los datos lo acreditan. **COLD2 designa un guard de archivo/quiescencia SHADOW asociado al despliegue; no es una etapa del embudo comercial por el mero nombre.**
+- Un PPI Current/Book o un replay constituye evidencia de observación, no automáticamente un fill acreditado. PIT causal, decisión, segundo Book cuando corresponda, precio/unidad/costos, liquidación y ledger deben verificarse de forma independiente.
+- `OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES` no significa que todos los instrumentos estén `READY`. Cada admisión PAPER es por instrumento y se bloquea ante contratos ambiguos, presupuesto/EXIT no acreditados o fuentes insuficientes.
+- Caídas o cotizaciones antiguas de proveedores externos generan alertas acotadas; no se convierten por sí solas en un veto global al Deploy V2. La admisión PAPER afectada sí permanece bloqueada.
 
-Responder **🧪 Simulación** y mirar el panel en `/testing`.
+## Predeploy y Deploy V2
 
-## Documentación
+El único mecanismo normal de promoción es **Deploy V2** con `build once`: compilación única, pruebas, paquete y manifest de checkout, tar/digest inmutables, preflight y validación directa del runtime. El droplet **no recompila** la imagen; sólo recibe y valida el mismo artefacto probado. El mutex es `rc6-unified-paper-deploy`, `cancel-in-progress=false`.
 
-| Archivo | Qué contiene |
-|---|---|
-| `PLAN_DE_TESTING.md` | Plan completo para QA: por dónde empezar, herramientas gratuitas, guía paso a paso para generar tests con IA, guion de aceptación |
-| `.env.example` | Plantilla sin secretos para crear el `.env` local |
+La ejecución de pruebas focalizadas de un PR **DRAFT** puede figurar bajo un workflow llamado «Predeploy V2», pero si `Exact artifact predeploy gate=SKIPPED` no es un Predeploy V2 completo, no genera paquete promovible ni valida runtime.
 
-**El Documento Maestro y la Bitácora se entregan por separado**, fuera de este
-paquete, porque el Anexo A del Documento Maestro contiene credenciales en claro
-y un PDF con claves subido a un repositorio queda en el historial de Git de
-forma permanente.
+**No ejecutar Predeploy V2 completo ni Deploy V2 hasta satisfacer los requisitos previos, congelar SHA/tree, reconciliar todos los frentes, validar el artefacto exacto y obtener el GO específico de promoción.** No hacer promociones independientes por cada PR, compilación o arranque manual de contenedores, borrados generales de Docker, escrituras directas en la rama productiva ni reinicios manuales por rutina.
 
-## Panel de control
+Tras un deploy autorizado deben comprobarse mode/seguridad PAPER, contenedores, servicios, DB, rutas, logs, integridad de imagen y limpieza Docker selectiva con recibo de espacio antes/después. No borrar volúmenes, DB, WAL/SHM vivos, imágenes referenciadas ni activos PPI Watch.
 
-| Ruta | Para qué |
-|---|---|
-| `/` | Resumen de los últimos días |
-| `/vivo` | Qué está haciendo el bot ahora mismo |
-| `/testing` | Estado del arranque y traza paso a paso |
-| `/salud` | Semáforos de todas las APIs y módulos |
-| `/sre` | Propuestas de mejora e historial de cambios |
-| `/historicos` | Qué hay archivado y de qué fuentes |
-| `/aprendizaje` | Descarga del blog de aprendizaje |
-| `/config` | Editor de variables de entorno |
+## Histórico y documentación
 
-## Credenciales
+La retención de históricos se gobierna por **365 fechas ART inclusivas**, procedencia y referencias/pins cruzados. Un conteo de registros antiguos o un archivo WAL/SHM abierto por SQLite **no autoriza** purgar, compactar o ejecutar `VACUUM`. Las propuestas de retención se prueban primero fuera del host y siguen sin autoridad de eliminación.
 
-Para el **entorno de pruebas**, crear `.env` desde `.env.example` y cargar las
-credenciales fuera de Git. Nunca versionar `.env`, `.env.testing` ni respaldos
-del archivo de entorno.
+Referencias de trabajo:
 
-Para **producción** hay que generar credenciales nuevas y moverlas a Secrets.
-Las de prueba quedan en el historial del repositorio de forma permanente, así
-que rotarlas antes del pase no es opcional.
+- [AGENTS.md](AGENTS.md) — gobierno y seguridad del repositorio.
+- [Política RC6](ops/policy/porota-policy.yaml) — fuente normativa de PAPER y Deploy.
+- [Arquitectura Deploy V2](docs/DEPLOY_V2_ARCHITECTURE.md) — control de construcción/promoción.
+- [Issue #732](https://github.com/mbalbo2023/Porota-trading/issues/732) — checkpoints y evidence contract actualizados.
+- [Issue #909](https://github.com/mbalbo2023/Porota-trading/issues/909) — auditoría transversal pendiente antes de Predeploy.
+- [README anterior, versión 16.2 — archivo histórico no operativo](https://github.com/mbalbo2023/Porota-trading/blob/0f1e14735a6fc3423e86b6bc091c58f65537d9f3/README.md). Se conserva por trazabilidad, **no** como guía de ejecución vigente.
