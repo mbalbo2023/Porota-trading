@@ -107,6 +107,8 @@ def test_six_families_aggregate_only_no_mutation_or_tickers(tmp_path):
     assert report["capability_gaps_measured"] == 6
     assert report["catalog_rows"] == 6
     assert report["v2_current_rows"] == 5
+    assert report["v2_history_ppi_rows_scanned"] >= 5
+    assert report["v2_history_identity_bytes_scanned"] > 0
     assert report["historical_819_gap_match"] is False
     assert report["status"] == "DIAGNOSTIC_ONLY"
     assert report["private_ro_mount_verified"]
@@ -230,3 +232,40 @@ def test_workflow_host_never_runs_on_pull_request(tmp_path):
     assert "mount -o remount,bind,ro /opt/porota-trading/data" in text
     assert "exec python3 -B -" in text
     assert "docker exec" not in text
+
+
+def test_historical_reconciliation_streams_once_not_n_queries(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "ON", "CORP-OLD", currency="USD")
+    for n in range(1000):
+        _snap(con, n + 1, "ON", "CORP-" + str(n), current=False,
+              currency="USD")
+    con.commit()
+    con.row_factory = sqlite3.Row
+    statements = []
+    con.set_trace_callback(statements.append)
+    requested = {("OBLIGACIONES", "CORP-999", "BYMA", "USD", "CI")}
+    found, scanned, consumed = host._historical_ppi_memberships(con, requested)
+    con.close()
+    assert found == requested
+    assert scanned == 1000
+    assert consumed > 1000
+    assert len([x for x in statements
+                if "FROM contract_evidence_v2_snapshots" in x]) == 1
+
+
+def test_historical_stream_respects_row_and_byte_budgets(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    for n in range(4):
+        _snap(con, n + 1, "BONOS", "BND-" + str(n), current=False)
+    con.commit()
+    con.row_factory = sqlite3.Row
+    with patch.object(host, "MAX_HISTORY_ROWS", 2):
+        with pytest.raises(host.Blocked, match="HOST_HISTORY_PPI_ROWS_BUDGET"):
+            host._historical_ppi_memberships(
+                con, {("BONOS", "BND-3", "BYMA", "ARS", "CI")})
+    with patch.object(host, "MAX_HISTORY_IDENTITY_BYTES", 5):
+        with pytest.raises(host.Blocked, match="HOST_HISTORY_PPI_IDENTITY_BYTES_BUDGET"):
+            host._historical_ppi_memberships(
+                con, {("BONOS", "BND-3", "BYMA", "ARS", "CI")})
+    con.close()
