@@ -1,7 +1,0 @@
-[Unit]
-Description=Porota RC6 bounded PPI post-close incremental recovery (QUARANTINED)
-
-[Timer]
-OnCalendar=Mon..Fri *-*-* 18:45:00 America/Argentina/Buenos_Aires
-AccuracySec=1min
-Unit=porota-history-postclose-rc6.service

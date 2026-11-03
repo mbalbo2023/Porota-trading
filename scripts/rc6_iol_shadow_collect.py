@@ -391,6 +391,27 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             row = dict(record)
             row, nested_conflict = normalized_nested_quote(row)
             if nested_conflict:
+                # A486: a newer *PPI* native receipt with an invalid quote
+                # invalidates older exact-key PPI evidence (including scanner).
+                # A nested IOL/complement record has no authority to tombstone
+                # PPI, even if its wrapper claims source=PPI.
+                nested = row.get("quote")
+                if isinstance(nested, dict):
+                    nested_source = str(nested.get("source") or "").strip().upper()
+                    outer_source = str(row.get("source") or "").strip().upper()
+                    if (source_rank(nested_source) == 0 and nested_source != "PPI_CATALOG"
+                            and (not outer_source or (source_rank(outer_source) == 0
+                                                      and outer_source != "PPI_CATALOG"))):
+                        try:
+                            key = tuple(_canonical_identity(row))
+                            nested_key = tuple(_canonical_identity(nested))
+                        except (ValueError, TypeError):
+                            key, nested_key = None, None
+                        received = _parse_time(receipt_time(nested))
+                        if key and key == nested_key and received and received <= current:
+                            previous = unavailable_since.get(key)
+                            if previous is None or received > previous:
+                                unavailable_since[key] = received
                 if len(reviews) < 1000:
                     reviews.append({"symbol": row.get("symbol"),
                                     "reason": "PPI_NESTED_QUOTE_AUTHORITY_OR_IDENTITY_CONFLICT",

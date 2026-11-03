@@ -471,6 +471,51 @@ def test_iol_nested_exact_ppi_native_quote_remains_eligible(tmp_path, monkeypatc
     assert meta["state"] == "READY"
 
 
+@pytest.mark.parametrize("nested_source", ["PPI", "IOL"])
+@pytest.mark.parametrize("top_source", [None, "PPI"])
+def test_newer_invalid_nested_quote_only_true_ppi_tombstones_old_scanner(
+        tmp_path, monkeypatch, nested_source, top_source):
+    # A486: an invalid *PPI* quote at t-3 must not resurrect a valid but
+    # older scanner observation at t-40. IOL is not a PPI tombstone.
+    now = datetime.now(timezone.utc)
+    older = (now - timedelta(seconds=40)).isoformat()
+    newer = (now - timedelta(seconds=3)).isoformat()
+    emit(tmp_path, quote(observed_at=older, trade_at=older, book_at=older))
+    outer = legacy_ppi_cache(tmp_path, row={"received_at": newer,
+                                              "trade_at": newer,
+                                              "book_at": newer,
+                                              "source_at": newer})
+    nested = {**outer, "source": nested_source,
+              "book_at": (now - timedelta(minutes=10)).isoformat()}
+    nest_legacy_ppi_cache(tmp_path, nested, top_source=top_source)
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    if nested_source == "PPI":
+        assert values == {} and meta["state"] == "UNAVAILABLE"
+        assert any(review["reason"] == "NEWER_PPI_FALLBACK_UNAVAILABLE_SUPPRESSES_SCANNER"
+                   for review in meta["identity_reviews"])
+    else:
+        assert values["GGAL"]["provider_observed_at"] == older
+        assert meta["state"] == "READY"
+
+
+def test_older_invalid_nested_ppi_cannot_suppress_newer_valid_scanner(tmp_path,
+                                                                      monkeypatch):
+    now = datetime.now(timezone.utc)
+    older = (now - timedelta(seconds=40)).isoformat()
+    newer = (now - timedelta(seconds=3)).isoformat()
+    emit(tmp_path, quote(observed_at=newer, trade_at=newer, book_at=newer))
+    outer = legacy_ppi_cache(tmp_path, row={"received_at": older,
+                                              "trade_at": older,
+                                              "book_at": older,
+                                              "source_at": older})
+    nested = {**outer, "source": "PPI",
+              "book_at": (now - timedelta(minutes=10)).isoformat()}
+    nest_legacy_ppi_cache(tmp_path, nested, top_source="PPI")
+    values, meta = isolated_iol(monkeypatch, tmp_path)._primary_snapshot()
+    assert values["GGAL"]["provider_observed_at"] == newer
+    assert meta["state"] == "READY"
+
+
 def test_newer_unavailable_scanner_blocks_older_same_identity_fallback(tmp_path, monkeypatch):
     now = datetime.now(timezone.utc)
     earlier, later = now - timedelta(seconds=40), now - timedelta(seconds=5)
