@@ -1,0 +1,177 @@
+name: RC6 A410 BYMA/catalog exact join READ_ONLY
+
+# PR: offhost contracts only.  Main: bounded read-only host diagnostic.
+# No scheduled probes; ownership and known cron incident are independent.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a410-byma-catalog-join-readonly.yml'
+      - 'scripts/rc6_a410_byma_catalog_join_readonly.py'
+      - 'tests/test_rc6_a410_byma_catalog_join_readonly.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a410-byma-catalog-join-readonly.yml'
+      - 'scripts/rc6_a410_byma_catalog_join_readonly.py'
+      - 'tests/test_rc6_a410_byma_catalog_join_readonly.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a410-byma-catalog-join-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: A410 bounded alias, collision, clock, privacy and adversarial file contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a410_byma_catalog_join_readonly.py tests/test_rc6_a410_byma_catalog_join_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a410_byma_catalog_join_readonly.py -v
+          git diff --check
+
+  host_join:
+    needs: contracts
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict runner-only SSH for existing host JSON files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a410_byma_join"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a410_byma_join" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Bounded existing BYMA cache to catalog exact five-key join (no host writes)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a410_byma_join" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 24 python3 -B - host-probe' \
+            < scripts/rc6_a410_byma_catalog_join_readonly.py > evidence/.raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          REMOTE_RC="$remote_rc" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.rc6_a410_byma_catalog_join_readonly import (
+              SCHEMA, COUNT_KEYS, REJECT_CODES, CANONICAL_FAMILIES,
+              ERROR_CODES, _new_report,
+          )
+
+          input_path = Path('evidence/.raw.json')
+          result = _new_report()
+          try:
+              if os.environ['REMOTE_RC'] != '0' or not input_path.is_file() or input_path.stat().st_size > 32*1024:
+                  raise ValueError('untrusted remote receipt')
+              raw = json.loads(input_path.read_text(encoding='utf-8'))
+              if not isinstance(raw, dict) or set(raw) != set(result):
+                  raise ValueError('untrusted shape')
+              for name in ('schema','read_only','db_opened','provider_calls',
+                           'order_routes_called','host_writes','runtime_sha_verified',
+                           'market_readiness','causal_pit_verified','source_contract_ready'):
+                  expected = result[name]
+                  if type(raw.get(name)) is not type(expected) or raw[name] != expected:
+                      raise ValueError('untrusted safety invariant')
+              status, reason = raw.get('diagnostic_status'), raw.get('reason')
+              if not (status == 'JOIN_COUNTS_ONLY' and reason == 'EXACT_IDENTITY_DIAGNOSTIC_ONLY' or
+                      status == 'NO_VERIFICADO' and reason in ERROR_CODES):
+                  raise ValueError('untrusted diagnostic status')
+              counts = raw.get('counts')
+              rejects = raw.get('reject_counts')
+              families = raw.get('byma_matched_by_family')
+              if (not isinstance(counts, dict) or set(counts) != set(COUNT_KEYS) or
+                  not isinstance(rejects, dict) or set(rejects) != set(REJECT_CODES) or
+                  not isinstance(families, dict) or set(families) != set(CANONICAL_FAMILIES)):
+                  raise ValueError('untrusted enum labels')
+              for field in (counts, rejects, families):
+                  if any(type(value) is not int or not 0 <= value <= 60000
+                         for value in field.values()):
+                      raise ValueError('untrusted counts')
+              for age_key in ('catalog_mtime_age_seconds','byma_mtime_age_seconds'):
+                  age = raw[age_key]
+                  if age is not None and (type(age) is not int or not 0 <= age <= 1_000_000_000):
+                      raise ValueError('untrusted clock')
+              if status == 'JOIN_COUNTS_ONLY':
+                  if not (counts['catalog_exact_keys'] + counts['catalog_missing_identity'] +
+                          counts['catalog_duplicate_identity'] == counts['catalog_rows'] and
+                          counts['byma_key_valid'] + counts['byma_key_invalid'] == counts['byma_rows'] and
+                          counts['byma_exact_rows'] + counts['byma_unmatched_key'] == counts['byma_key_valid'] and
+                          counts['byma_unique_keys'] <= counts['byma_key_valid'] and
+                          counts['byma_exact_unique'] <= counts['byma_exact_rows'] and
+                          sum(rejects.values()) == counts['byma_key_invalid'] and
+                          sum(families.values()) == counts['byma_exact_rows']):
+                      raise ValueError('inconsistent counts')
+              result = raw
+          except (OSError, ValueError, UnicodeError, TypeError):
+              result = _new_report()
+          Path('evidence/a410_byma_catalog_join.json').write_text(
+              json.dumps(result, ensure_ascii=True, sort_keys=True, separators=(',',':'))+'\n',
+              encoding='utf-8')
+          print('A410_DIAGNOSTIC_STATUS='+result['diagnostic_status'])
+          print('A410_REASON='+result['reason'])
+          print('A410_CATALOG_ROWS='+str(result['counts']['catalog_rows']))
+          print('A410_BYMA_ROWS='+str(result['counts']['byma_rows']))
+          print('A410_EXACT_ROWS='+str(result['counts']['byma_exact_rows']))
+          print('A410_REJECTED_ROWS='+str(result['counts']['byma_key_invalid']))
+          print('A410_MARKET_READINESS=NO_VERIFICADO')
+          PY
+          rm -f evidence/.raw.json
+      - name: Upload sanitized diagnostic (negative results retained)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a410-byma-catalog-join-${{ github.run_id }}
+          path: evidence/a410_byma_catalog_join.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Require counts-only diagnostic; never grant PAPER admission
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('evidence/a410_byma_catalog_join.json')
+          if not path.is_file():
+              raise SystemExit('::error::A410 no sanitized diagnostic receipt')
+          result=json.loads(path.read_text(encoding='utf-8'))
+          if result.get('diagnostic_status') != 'JOIN_COUNTS_ONLY':
+              raise SystemExit('::error::A410 source join probe NO_VERIFICADO')
+          if (result.get('market_readiness') != 'NO_VERIFICADO' or
+              result.get('source_contract_ready') is not False or
+              result.get('causal_pit_verified') is not False):
+              raise SystemExit('::error::A410 false source admission')
+          print('A410_EXACT_JOIN=COUNTS_ONLY')
+          print('A410_CAUSAL_PIT_FEES_RISK_FILLS=NO_VERIFICADO')
+          PY
+      - name: Destroy runner-only SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/rc6_a410_byma_join"
