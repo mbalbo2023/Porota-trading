@@ -42,6 +42,10 @@ GitHub cron es best-effort: más de 30 minutos tarde ⇒ cero GET. Fallback
 del slot correspondiente; sin pedir intervención de shell/SSH al usuario.
 La misión queda inerte automáticamente otros días (guard de ventana temporal
 de esta acción puntual, **no** vencimiento del código RC6).
+**Limpieza de cron:** el 05/11 abrir PR control-plane para quitar las cuatro
+expresiones `on.schedule` una vez publicados los recibos; conservar el workflow
+manual/histórico y no tocar PPI Watch ni ramas productivas. Hasta entonces,
+todo miércoles posterior fallará en guard de fecha previo a SSH.
 
 Un slot, cuando **todos** los guards efectivamente certifican:
 
@@ -54,9 +58,15 @@ Un slot, cuando **todos** los guards efectivamente certifican:
    `receipt_retention=READY`, EXIT no suspendido y ronda EXIT completa con
    `required_scope_verified_current=True`. El adaptador nunca crea sidecar ni
    activa cuotas. `RuntimePPIBudget` concede dos leases distintos reales.
+   Consumidor declarado **`UNSCOPED`** (clase legítima del budget productivo),
+   prioridad `DISCOVERY`: nunca se atribuye un consumidor artificial A630 ni
+   se imposta cupo EXIT/SCANNER.
 4. Un único `reader.current()` y luego un único `reader.book()`, invocando el
    guard existente del producto. URL HTTPS de host exacto puerto 443, sin
    usuario incrustado y query PPI oficial única Ticker/Type/Settlement.
+   **Guard adicional antes de `HTTPAdapter.send`** rechaza Search/Estimate/
+   Configuration/Orders, redirect, Book2, GET sin lease *started*, retries,
+   TLS `verify=False` y cualquier URL no canónica *antes del socket*.
    Reintentos, endpoint ajeno, lote ambiguo,
    lease nulo, body excesivo o reloj nativo sin zona/antiguo/futuro ⇒ HOLD.
 5. Dos SHA-256 de los **bytes de respuesta HTTP ya descomprimidos consumidos
@@ -79,7 +89,20 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
   1 Current + 1 Book reales en allowlist, respuesta con native timestamp
   fresco, hashes presentes, checkout/imagen/secretos verificados.
 - `NO_VERIFICADO` con código fijo (incluido `SHARED_BUDGET_OR_EXIT_RESERVE_NOT_ATTESTED`)
-  si falta algún requisito; no hay atajos `budget=False` ni GET extra.
+  si falta algún requisito; el host preflight conserva **sólo razón fija
+  sanitizada** en `a630_host_preflight.json`, incluso sin abrir la DB, para
+  distinguir ausencia de esquema/fuente/identidad de falta de lease/EXIT.
+  No hay atajos `budget=False` ni GET extra.
+- Distinción de stoppers del presupuesto sin acceder a provider: sidecar
+  `PPI_BUDGET_SIDECAR_ABSENT`, integridad de ruta, snapshot no OBSERVED,
+  `PPI_RETENTION_NOT_READY`, `PPI_EXIT_LOWER_SUSPENDED`,
+  `PPI_EXIT_ROUND_NOT_ATTESTED`, backend distinto al global real. Estos
+  códigos no autorizan activar cuotas ni sustituyen una prueba de lease.
+- **Conteo transport indeterminado ≠ cero:** si se pierde SSH/stdio después de
+  un Current GET parcial, ambos contadores del artifact son `null` y
+  `transport_count_authority=NO_VERIFICADO`. El consumidor jamás deduce
+  `0 GET` de una excepción de transporte; sólo el recibo validado determina
+  consumos reales, y el sidecar nativo es fuente de presupuesto.
 - `source_pit_verified=false`, `independent_provider_signature_verified=false`,
   `paper_sim_verified=false`, `execution_allowed=false` **siempre**. Los hashes
   prueban integridad del dato recibido localmente bajo el SDK/host pin; no
@@ -93,12 +116,14 @@ configurados; retención de 365 días #478 sigue pendiente, NO sustituida).
 
 `python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v`
 
-22 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
+27 tests aislados OFFHOST (sin GET): faltante sidecar o credenciales=0,
 dos leases, denial/lease nulo/repetido, replay, POST/GET duplicado, forma
 Book inválida, reloj futuro/naive/stale, alias 3-key divisa, fuente IOL,
 URL host/puerto/query falsificado, Book2 duplicado, hermano IOL permitido,
 hermano PPI denegado y source=PPI_FIELD, mount RO obligatorio,
-recibo falsificado, cero órdenes. Compilar script,
+recibo falsificado, no-wire adapter ante Search/Estimate/Orders/Book2,
+ausencia real de sidecar sin creación, clasificación
+retención/EXIT, pérdida SSH tras Current parcial sin falso 0, cero órdenes. Compilar script,
 validar workflow YAML, Bash y CI focal.
 
 ## Estado runtime abierto al cierre de PR
