@@ -24,13 +24,13 @@ concurrency:
 
 jobs:
   offhost-focused-ci:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD)" = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
           python -m pip install --disable-pip-version-check pytest==9.2.0
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -o addopts='' \
             tests/test_rc6_a626_host_contract_aggregates.py
