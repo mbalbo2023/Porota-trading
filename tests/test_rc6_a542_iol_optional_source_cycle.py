@@ -92,7 +92,16 @@ class IolOptionalSourceCycleTest(unittest.TestCase):
     def test_optional_iol_failure_never_precedes_public_publication(self):
         bootstrap = self.workspace / "iol_bootstrap.json"
         bootstrap.write_text("{}", encoding="utf-8")
-        writer = FakeWriter(self.workspace / "market", fail={"rc6_iol_shadow_collect.py"})
+        # The real IOL collector consumes rc6_public_sources_latest.json at
+        # consolidation time; this probe rejects reading a previous cycle.
+        class ReadsCurrentPublic(FakeWriter):
+            def __call__(self, command, **kwargs):
+                if Path(command[1]).name == "rc6_iol_shadow_collect.py":
+                    assert (self.market / "rc6_public_sources_latest.json").is_file()
+                return super().__call__(command, **kwargs)
+
+        writer = ReadsCurrentPublic(self.workspace / "market",
+                                    fail={"rc6_iol_shadow_collect.py"})
         result = _run(self.workspace, writer, bootstrap=bootstrap)
         assert result["status"] == "DEGRADED"
         assert result["stages"] == {"public": "OK", "iol": "FAILED", "evidence": "OK"}
