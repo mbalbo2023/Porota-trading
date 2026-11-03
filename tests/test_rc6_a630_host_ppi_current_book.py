@@ -14,8 +14,11 @@ import unittest
 from unittest.mock import patch
 
 from scripts.rc6_a630_host_ppi_current_book import (
-    SLOTS, TwoGetAtomicBudget, _http_body_hashes, _utc, capture_two,
-    decode_target, host_preflight, target_for_slot, verify_receipt,
+    SLOTS, TwoGetAtomicBudget, _existing_shared_budget, _strict_adapter_send,
+    _http_body_hashes,
+    _utc, capture_two,
+    decode_target, host_preflight, target_for_slot, unverified_transport_receipt,
+    verify_receipt,
 )
 
 NOW = datetime(2026, 11, 4, 14, 20, 1, tzinfo=timezone.utc)
@@ -102,6 +105,11 @@ def fake_hashes():
            ["/api/1.0/marketdata/book", sha256(b"book"), 4]]
 
 
+@contextmanager
+def fake_adapter():
+    yield ["/api/1.0/marketdata/current", "/api/1.0/marketdata/book"]
+
+
 def invoke(shared, **reader_options):
     constructed = []
 
@@ -111,7 +119,8 @@ def invoke(shared, **reader_options):
         return obj
 
     result = capture_two(TARGET, ("fake-key", "fake-secret"), shared, factory,
-                         clock=lambda: NOW, http_limiter=fake_hashes)
+                         clock=lambda: NOW, http_limiter=fake_hashes,
+                         adapter_guard=fake_adapter)
     return result, constructed
 
 
@@ -137,6 +146,57 @@ class TestA630(unittest.TestCase):
         self.assertEqual(result["reason"], "SHARED_BUDGET_OR_EXIT_RESERVE_NOT_ATTESTED")
         self.assertEqual(result["current_gets"], 0)
         self.assertEqual(result["book_gets"], 0)
+
+    def test_specific_budget_failure_classification_keeps_zero_get(self):
+        for code in ("PPI_BUDGET_SIDECAR_ABSENT", "PPI_RETENTION_NOT_READY",
+                     "PPI_EXIT_LOWER_SUSPENDED", "PPI_EXIT_ROUND_NOT_ATTESTED"):
+            called = []
+            receipt = capture_two(TARGET, ("key", "secret"), None,
+                                  lambda *a, **kw: called.append(True),
+                                  budget_reason=code)
+            self.assertEqual(receipt["reason"], code)
+            self.assertEqual(receipt["current_gets"], 0)
+            self.assertEqual(called, [])
+
+    def test_real_sidecar_snapshot_required_and_never_created(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            database = root / 'observer.db'
+            budget_dir = root / 'budget-artifact'
+            sidecar = budget_dir / 'ppi-budget' / 'global.sqlite'
+            workspace = types.ModuleType('cg_paper_workspace')
+            workspace.database_path = lambda: database
+            workspace.artifact_root = lambda path: budget_dir
+            module = types.ModuleType('rc6_ppi_global_budget')
+            class RuntimePPIBudget:
+                def __init__(self, path):
+                    self.path = path
+            module.RuntimePPIBudget = RuntimePPIBudget
+            module.budget_from_environment = lambda database: RuntimePPIBudget(sidecar)
+            snapshot = {'status':'OBSERVED','receipt_retention':{'status':'READY'},
+                        'exit_service':{'lower_suspended':False,'round':{
+                            'status':'COMPLETE','required_scope_verified_current':True}}}
+            module.runtime_budget_snapshot = lambda database: snapshot
+            with patch.dict(sys.modules, {'cg_paper_workspace': workspace,
+                                          'rc6_ppi_global_budget': module}):
+                budget, reason = _existing_shared_budget()
+                self.assertIsNone(budget)
+                self.assertEqual(reason, 'PPI_BUDGET_SIDECAR_ABSENT')
+                self.assertFalse(sidecar.exists())  # no writer creates it
+                sidecar.parent.mkdir(parents=True)
+                sidecar.touch()
+                budget, reason = _existing_shared_budget()
+                self.assertIsInstance(budget, RuntimePPIBudget)
+                self.assertIsNone(reason)
+                snapshot['receipt_retention']['status'] = 'NO_VERIFICADO'
+                budget, reason = _existing_shared_budget()
+                self.assertIsNone(budget)
+                self.assertEqual(reason, 'PPI_RETENTION_NOT_READY')
+                snapshot['receipt_retention']['status'] = 'READY'
+                snapshot['exit_service']['round']['required_scope_verified_current'] = False
+                budget, reason = _existing_shared_budget()
+                self.assertIsNone(budget)
+                self.assertEqual(reason, 'PPI_EXIT_ROUND_NOT_ATTESTED')
 
     def test_missing_credentials_no_get(self):
         shared = Shared()
@@ -186,15 +246,15 @@ class TestA630(unittest.TestCase):
     def test_endpoint_replay_and_wrong_priority_cannot_acquire(self):
         shared = Shared()
         budget = TwoGetAtomicBudget(shared)
-        denied = budget.acquire("book", consumer="RC6_A630_PPI_SAMPLE", priority="DISCOVERY")
+        denied = budget.acquire("book", consumer="UNSCOPED", priority="DISCOVERY")
         self.assertFalse(denied["allowed"])
         self.assertEqual(shared.calls, [])
         denied = budget.acquire("current", consumer="SCALPING", priority="DISCOVERY")
         self.assertFalse(denied["allowed"])
         self.assertEqual(shared.calls, [])
-        admitted = budget.acquire("current", consumer="RC6_A630_PPI_SAMPLE", priority="DISCOVERY")
+        admitted = budget.acquire("current", consumer="UNSCOPED", priority="DISCOVERY")
         self.assertTrue(admitted["allowed"])
-        self.assertFalse(budget.acquire("current", consumer="RC6_A630_PPI_SAMPLE", priority="DISCOVERY")["allowed"])
+        self.assertFalse(budget.acquire("current", consumer="UNSCOPED", priority="DISCOVERY")["allowed"])
 
     def test_current_stale_and_future_fails_no_digest(self):
         for clock in ("2026-11-04T14:10:00+00:00", "2026-11-04T14:22:00+00:00"):
@@ -249,6 +309,64 @@ class TestA630(unittest.TestCase):
                 list(Response(book).iter_content())
                 with self.assertRaises(ValueError):
                     list(Response(book).iter_content())
+
+    def test_http_adapter_blocks_search_estimate_order_redirect_and_book2_before_wire(self):
+        wire_calls = []
+        class HTTPAdapter:
+            def send(self, request, *args, **kwargs):
+                wire_calls.append((request.method, request.url))
+                return object()  # no socket, only count would-be sends
+        adapters = types.ModuleType('requests.adapters')
+        adapters.HTTPAdapter = HTTPAdapter
+        requests = types.ModuleType('requests')
+        requests.adapters = adapters
+        class Request:
+            def __init__(self, method, url):
+                self.method, self.url = method, url
+        domain = 'https://clientapi.portfoliopersonal.com/api/1.0/'
+        query = '?Ticker=AL30&Type=BONOS&Settlement=A-24HS'
+        budget = TwoGetAtomicBudget(Shared())
+        with patch.dict(sys.modules, {'requests':requests, 'requests.adapters':adapters}):
+            with _strict_adapter_send(TARGET, budget) as sends:
+                adapter = HTTPAdapter()
+                # Configuration/Search/Estimate/Orders are not budgeted here.
+                bad_routes = ['MarketData/Search', 'MarketData/Estimate',
+                              'Orders/New', 'MarketData/Book']
+                for route in bad_routes:
+                    with self.assertRaises(ValueError, msg=route):
+                        adapter.send(Request('GET', domain+route+query), verify=True)
+                for url in (domain+'MarketData/Current'+query.replace('BONOS','ACCIONES'),
+                            domain.replace('.com/', '.com:8443/')+'MarketData/Current'+query,
+                            'https://evil.example/api/1.0/MarketData/Current'+query):
+                    with self.assertRaises(ValueError):
+                        adapter.send(Request('GET', url), verify=True)
+                self.assertEqual(wire_calls, [])
+                # Auth POST is allowed once but unsafe TLS/cancel order is not.
+                with self.assertRaises(ValueError):
+                    adapter.send(Request('POST', domain+'Account/LoginApi'), verify=False)
+                adapter.send(Request('POST', domain+'Account/LoginApi'), verify=True)
+                with self.assertRaises(ValueError):
+                    adapter.send(Request('POST', domain+'Account/LoginApi'), verify=True)
+                self.assertEqual(len(wire_calls), 1)
+                # A correctly scoped GET must still have native lease started.
+                with self.assertRaises(ValueError):
+                    adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
+                grant=budget.acquire('current',consumer='UNSCOPED',priority='DISCOVERY')
+                budget.start(grant['lease'])
+                adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
+                with self.assertRaises(ValueError):
+                    adapter.send(Request('GET',domain+'MarketData/Current'+query), verify=True)
+                with self.assertRaises(ValueError):
+                    adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
+                budget.finish(grant['lease'])
+                grant=budget.acquire('book',consumer='UNSCOPED',priority='DISCOVERY')
+                budget.start(grant['lease'])
+                adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
+                with self.assertRaises(ValueError):
+                    adapter.send(Request('GET',domain+'MarketData/Book'+query), verify=True)
+                self.assertEqual(sends, ['/api/1.0/marketdata/current',
+                                         '/api/1.0/marketdata/book'])
+        self.assertEqual(len(wire_calls), 3)  # one auth POST, exactly 2 GET
 
     def test_forged_evidence_fails_sanitizer(self):
         result, _ = invoke(Shared())
@@ -340,6 +458,25 @@ class TestA630(unittest.TestCase):
         self.assertFalse(result["paper_sim_verified"])
         self.assertEqual(result["source"], "PPI_SDK_HTTPS_ALLOWLIST_NOT_PROVIDER_SIGNED")
         self.assertFalse(result["raw_provider_payload_persisted"])
+
+    def test_partial_current_then_ssh_timeout_never_reports_zero_quota(self):
+        # The runner cannot know whether Current crossed the wire before
+        # stderr/stdio/SSH was lost. This guard is independent of provider logs.
+        for reason in ("HOST_PREFLIGHT_OR_RUNTIME_HOLD", "PPI_PROVIDER_OR_AUTH_FAILED"):
+            receipt = unverified_transport_receipt(reason)
+            self.assertEqual(receipt["state"], "NO_VERIFICADO")
+            self.assertEqual(receipt["transport_count_authority"], "NO_VERIFICADO")
+            self.assertIsNone(receipt["current_gets"])
+            self.assertIsNone(receipt["book_gets"])
+            self.assertEqual(receipt["orders_sent"], 0)
+
+    def test_workflow_fallback_uses_unknown_transport_count_helper(self):
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/rc6-a630-ppi-current-book-20261104.yml')
+        source = workflow.read_text(encoding='utf-8')
+        self.assertIn('result=unverified_transport_receipt()', source)
+        self.assertIn('doc={**unverified_transport_receipt(reason)', source)
+        self.assertNotIn('"current_gets":0,"book_gets":0', source)
 
 
 if __name__ == "__main__":
