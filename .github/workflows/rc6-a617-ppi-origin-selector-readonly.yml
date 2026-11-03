@@ -1,0 +1,201 @@
+name: RC6 A617 PPI origin selector READ_ONLY
+
+# Only main can execute the host probe; PRs run self-contained tests.
+# No provider endpoint, Docker exec, live SQLite copy, runtime change, or order.
+# WAL may mutate -shm even with SQLite mode=ro. Only a private OS read-only
+# bind mount may open the DB; missing unshare/mount authority fails closed.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a617-ppi-origin-selector-readonly.yml'
+      - 'scripts/rc6_a617_ppi_origin_selector_readonly.py'
+      - 'tests/test_rc6_a617_ppi_origin_selector_readonly.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a617-ppi-origin-selector-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test strict bounded READ_ONLY path
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a617_ppi_origin_selector_readonly.py tests/test_rc6_a617_ppi_origin_selector_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a617_ppi_origin_selector_readonly.py -v
+          git diff --check
+
+  host_provenance:
+    needs: contracts
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify immutable control-plane checkout
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Configure strict runner-only SSH
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a617_ppi_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a617_ppi_ro" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Private mount-namespace READ_ONLY host audit — ZERO PPI GET
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a617_ppi_ro" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 24 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-probe"' \
+            < scripts/rc6_a617_ppi_origin_selector_readonly.py \
+            > evidence/.host_raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          REMOTE_RC="$remote_rc" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path=Path('evidence/.host_raw.json')
+          schema='rc6.a617.ppi-origin-selector-readonly.v1'
+          safe={'schema':schema,'read_only':True,'state':'NO_VERIFICADO',
+                'reason':'HOST_RESPONSE_INVALID_OR_UNAVAILABLE',
+                'db_opened':False,'provider_gets':0,'orders_called':False,
+                'admission_authority':False,'causal_fill_verified':False,
+                'source_provenance_authorized':False,'runtime_sha_verified':False,
+                'runtime_db_binding_verified':False,
+                'db_fixed_path_identity_verified':False,
+                'sqlite_ro_mount_protected':False,
+                'effective_ppi_lease':'NO_VERIFICADO','exit_budget_reserved':'NO_VERIFICADO'}
+          failed_closed=safe.copy()
+          def counter(obj,key,maximum):
+              value=obj.get(key)
+              return value if type(value) is int and 0 <= value <= maximum else None
+          def allowed(obj,key,options):
+              value=obj.get(key)
+              return value if value in options and isinstance(value,str) else 'UNKNOWN'
+          try:
+              if path.stat().st_size > 32768:
+                  raise ValueError('UNBOUNDED_RESPONSE')
+              obj=json.loads(path.read_text(encoding='utf-8'))
+              if (not isinstance(obj,dict) or obj.get('schema')!=schema or
+                  obj.get('read_only') is not True or obj.get('provider_gets')!=0 or
+                  obj.get('orders_called') is not False or
+                  obj.get('admission_authority') is not False or
+                  obj.get('causal_fill_verified') is not False or
+                  obj.get('source_provenance_authorized') is not False or
+                  obj.get('runtime_sha_verified') is not False or
+                  obj.get('effective_ppi_lease')!='NO_VERIFICADO' or
+                  obj.get('exit_budget_reserved')!='NO_VERIFICADO' or
+                  obj.get('runtime_db_binding_verified') is not False or
+                  os.environ['REMOTE_RC']!='0'):
+                  raise ValueError('UNTRUSTED_OR_FAILED_HOST')
+              safe['state']=allowed(obj,'state',{'READ_ONLY_OBSERVED','NO_VERIFICADO'})
+              safe['reason']=allowed(obj,'reason',{
+                'SOURCE_AND_SELECTOR_AGGREGATES_NOT_PAPER_AUTHORITY',
+                'DB_RO_QUERY_UNAVAILABLE'})
+              safe['db_opened']=obj.get('db_opened') is True
+              safe['sqlite_ro_mount_protected']=obj.get('sqlite_ro_mount_protected') is True
+              safe['db_fixed_path_identity_verified']=obj.get('db_fixed_path_identity_verified') is True
+              if safe['state']=='READ_ONLY_OBSERVED' and not (
+                 safe['db_opened'] and safe['sqlite_ro_mount_protected'] and
+                 safe['db_fixed_path_identity_verified']):
+                  raise ValueError('DB_RO_MOUNT_OR_IDENTITY_UNVERIFIED')
+              for name in ('scanner_receipt','native_book_journal','selector',
+                           'snapshots','scanner_cycle'):
+                  section=obj.get(name,{})
+                  if not isinstance(section,dict):
+                      raise ValueError('SECTION_INVALID')
+                  safe[name]={}
+                  safe[name]['state']=allowed(section,'state',{
+                    'READ_ONLY_OBSERVED','SCHEMA_ASSERTED',
+                    'STRUCTURAL_HASH_CHAIN_VALIDATED','SCHEMA_HOLD','ABSENT',
+                    'NO_VERIFICADO'})
+                  for key in ('record_count_asserted','exact_rows_structural',
+                      'fresh_native_trade_book_rows_structural','eligible_sql_exact_request',
+                      'recent_sampled','paper_mode_rows','ppi_source_label_rows',
+                      'other_or_unknown_source_rows','paper_mode_native_clock_pairs',
+                      'paper_mode_exact_receipt_correlations',
+                      'paper_mode_provider_attested_rows',
+                      'ppi_source_label_provider_attested_rows','reported_cold_slots'):
+                      if key in section:
+                          safe[name][key]=counter(section,key,100000)
+                  for key in ('recent_sample_truncated','hash_chain_structurally_valid'):
+                      if type(section.get(key)) is bool:
+                          safe[name][key]=section[key]
+              selectors=safe.get('selector',{})
+              selectors['table']=allowed(obj.get('selector',{}),'table',{
+                'candidate_identity_v2','candidate_universe','NONE'})
+              cycle=safe.get('scanner_cycle',{})
+              for field,values in {
+                  'reported_cold_bootstrap_state':{
+                    'NO_COLD_BOOTSTRAP_AUTHORITY','NO_BASELINE_COLD_SLOT',
+                    'BASELINE_COLD_SLOT_AVAILABLE','ELIGIBLE_SELECTOR_READ_HOLD','UNKNOWN'},
+                  'reported_active_budget_state':{'FEASIBLE','INFEASIBLE','UNKNOWN'},
+                  'reported_selector_state':{'QUERY_OK','READ_HOLD','UNKNOWN'},
+                  'reported_dynamic_capacity_state':{
+                    'OFF_BASELINE','SHADOW_BASELINE','APPROVED_DYNAMIC','UNKNOWN'},
+              }.items():
+                  cycle[field]=allowed(obj.get('scanner_cycle',{}),field,values)
+          except (OSError,ValueError,TypeError,UnicodeError):
+              safe=failed_closed
+          safe['remote_exit_code_class']='ZERO' if os.environ['REMOTE_RC']=='0' else 'NONZERO'
+          Path('evidence/a617_ppi_origin_selector.json').write_text(
+              json.dumps(safe,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          print('A617_SOURCE_DB_STATE='+safe['state'])
+          print('A617_SOURCE_DB_OPENED='+str(safe['db_opened']))
+          print('A617_PPI_PROVIDER_GETS=0')
+          print('A617_PAPER_AUTHORITY=false')
+          for field in ('selector','snapshots','scanner_receipt','native_book_journal','scanner_cycle'):
+              print('A617_'+field.upper()+'_STATE='+safe.get(field,{}).get('state','NO_VERIFICADO'))
+          PY
+          rm -f evidence/.host_raw.json
+      - name: Preserve sanitized aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a617-ppi-origin-selector-${{ github.run_id }}
+          path: evidence/a617_ppi_origin_selector.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Fail closed when host DB not readable
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('evidence/a617_ppi_origin_selector.json')
+          if not path.is_file():
+              raise SystemExit('A617_NO_EVIDENCE_RECEIPT')
+          payload=json.loads(path.read_text(encoding='utf-8'))
+          if payload.get('state')!='READ_ONLY_OBSERVED':
+              raise SystemExit('A617_DB_RO_UNVERIFIED')
+          print('A617_AGGREGATE_OBSERVED_ONLY_NO_PAPER_GO')
+          PY
+      - name: Remove runner-only credential
+        if: always()
+        run: |
+          rm -f "$HOME/.ssh/rc6_a617_ppi_ro"
