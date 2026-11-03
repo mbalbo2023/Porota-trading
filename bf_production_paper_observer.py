@@ -1324,6 +1324,146 @@ def _eligible_symbols(store):
     return tuple(core)
 
 
+# A606: An incomplete but authentic PPI contract is deliberately absent from
+# _eligible_symbols() and must never gain PAPER authority merely because its
+# Book was observed.  These nine families are a diagnostic rotation, not an
+# expansion of the operational universe or its provider-call budget.
+PPI_OBSERVE_ONLY_FAMILIES = (
+    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+)
+PPI_OBSERVE_ONLY_MAX_ROWS_PER_FAMILY = 32
+PPI_OBSERVE_ONLY_COLD_PERIOD = 3
+
+
+def _ppi_observe_only_family_candidates(store, *, as_of, excluded):
+    """Find exact PPI-primary HOLD identities without provider I/O.
+
+    Query at most 32 indexed rows per family.  An unavailable v2 ledger,
+    ambiguous three-key request, stale catalog origin, or incomplete monetary
+    identity fails closed.  Complementary identities cannot be chosen, even
+    when their settlement_source superficially resembles PPI.
+    """
+    result = {family: {"state": "NO_PROVIDER_IDENTITY"}
+              for family in PPI_OBSERVE_ONLY_FAMILIES}
+    try:
+        with store.connect() as connection:
+            if not connection.execute("""SELECT 1 FROM sqlite_master
+              WHERE type='table' AND name='candidate_identity_v2'""").fetchone():
+                return result
+            for family in PPI_OBSERVE_ONLY_FAMILIES:
+                rows = connection.execute("""SELECT f.ticker,f.instrument_type,
+                  f.market,f.currency,f.settlement,f.last_seen_at
+                  FROM financial_instrument_catalog f
+                  LEFT JOIN candidate_identity_v2 v
+                    USING(ticker,instrument_type,market,currency,settlement)
+                  WHERE f.instrument_type=? AND f.status='AVAILABLE'
+                    AND f.settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                    AND (CASE WHEN json_valid(f.metadata_json)
+                        THEN json_extract(f.metadata_json,'$._discovery_source')
+                        ELSE '' END)='PPI_PRIMARY'
+                    AND (v.can_simulate IS NULL OR v.can_simulate!=1
+                         OR v.status!='AVAILABLE')
+                  ORDER BY f.ticker,f.market,f.currency,f.settlement
+                  LIMIT ?""", (family, PPI_OBSERVE_ONLY_MAX_ROWS_PER_FAMILY)).fetchall()
+                saw_ambiguous = False
+                for ticker, kind, market, currency, settlement, last_seen in rows:
+                    identity = tuple(str(value or "").strip().upper()
+                                     for value in (ticker, kind, market, currency, settlement))
+                    request = (identity[0], identity[1], identity[4])
+                    if (request in excluded or any(value in {"", "UNKNOWN", "NO_VERIFICADO"}
+                                                   for value in identity)
+                            or not financial_catalog._candidate_timestamp_is_fresh(
+                                last_seen, as_of, financial_catalog.PAPER_PPI_IDENTITY_LKG_SECONDS)):
+                        continue
+                    # Count all primary request siblings, including STALE and
+                    # HOLD; a provider three-key cannot distinguish them.
+                    siblings = connection.execute("""SELECT market,currency
+                      FROM financial_instrument_catalog
+                      WHERE ticker=? AND instrument_type=? AND settlement=?
+                        AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                      LIMIT 2""", request).fetchall()
+                    if len(siblings) != 1 or tuple(str(x).upper() for x in siblings[0]) != identity[2:4]:
+                        saw_ambiguous = True
+                        continue
+                    result[family] = {"state": "PPI_PRIMARY_EXACT_OBSERVE_ONLY",
+                                      "request": request, "identity": identity}
+                    break
+                if result[family]["state"] == "NO_PROVIDER_IDENTITY" and saw_ambiguous:
+                    result[family] = {"state": "PPI_PROVIDER_REQUEST_AMBIGUOUS"}
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return {family: {"state": "CATALOG_READ_HOLD"}
+                for family in PPI_OBSERVE_ONLY_FAMILIES}
+    return result
+
+
+def _ppi_observe_only_replace_cold(store, symbols, plan, *, at, before, after):
+    """Substitute one existing cold slot once per three cycles, never add GET.
+
+    Two of every three cold cycles remain the original READY discovery.  The
+    diagnostic family cursor travels in the existing durable scanner metrics;
+    a skipped family explicitly retains NO_PROVIDER_IDENTITY, not READY.
+    """
+    plan = dict(plan)
+    previous = plan.pop("_a606_previous", {})
+    try:
+        counter = int(previous.get("ppi_observe_only_cycle", 0))
+        family_cursor = int(previous.get("ppi_observe_only_family_cursor", 0))
+        if counter < 0 or not 0 <= family_cursor < len(PPI_OBSERVE_ONLY_FAMILIES):
+            raise ValueError("INVALID_OBSERVER_CURSOR")
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        # A malformed checkpoint may not schedule any new diagnostic read.
+        # Preserve the original cold slot and its cursor unchanged.
+        plan["ppi_observe_only_requests"] = []
+        plan["ppi_observe_only_family_states"] = {
+            family: "CHECKPOINT_HOLD" for family in PPI_OBSERVE_ONLY_FAMILIES}
+        return symbols, after, plan
+    plan["ppi_observe_only_cycle"] = counter + 1
+    plan["ppi_observe_only_family_cursor"] = family_cursor
+    plan["ppi_observe_only_requests"] = []
+    plan["ppi_observe_only_family_states"] = {
+        family: "NO_COLD_SLOT" for family in PPI_OBSERVE_ONLY_FAMILIES}
+    if not plan.get("cold") or len(plan["cold"]) != 1:
+        return symbols, after, plan
+    if counter % PPI_OBSERVE_ONLY_COLD_PERIOD != 0:
+        plan["ppi_observe_only_family_states"] = {
+            family: "BASELINE_COLD_PRESERVED" for family in PPI_OBSERVE_ONLY_FAMILIES}
+        return symbols, after, plan
+    candidates = _ppi_observe_only_family_candidates(
+        store, as_of=at, excluded=set(map(tuple, symbols)))
+    plan["ppi_observe_only_family_states"] = {
+        family: detail["state"] for family, detail in candidates.items()}
+    for offset in range(len(PPI_OBSERVE_ONLY_FAMILIES)):
+        index = (family_cursor + offset) % len(PPI_OBSERVE_ONLY_FAMILIES)
+        family = PPI_OBSERVE_ONLY_FAMILIES[index]
+        candidate = candidates[family]
+        if candidate["state"] != "PPI_PRIMARY_EXACT_OBSERVE_ONLY":
+            continue
+        original = tuple(plan["cold"][0])
+        request = tuple(candidate["request"])
+        symbols = tuple(request if tuple(item) == original else item
+                        for item in symbols)
+        plan["cold"] = [request]
+        plan["ppi_observe_only_requests"] = [{"request": list(request),
+            "identity": list(candidate["identity"]), "reason": "CONTRACT_HOLD_OBSERVE_ONLY"}]
+        plan["ppi_observe_only_family_cursor"] = (index + 1) % len(PPI_OBSERVE_ONLY_FAMILIES)
+        plan["ppi_observe_only_replaced_cold"] = list(original)
+        # Do not advance the ordinary discovery cursor past a READY identity
+        # that was *not* observed this cycle.
+        return symbols, before, plan
+    return symbols, after, plan
+
+
+def _ppi_observe_only_identity(request, plan):
+    """Return the exact diagnostic five-key, or None for all normal signals."""
+    for row in plan.get("ppi_observe_only_requests", ()):
+        if tuple(row.get("request", ())) == tuple(request):
+            identity = tuple(row.get("identity", ()))
+            if len(identity) == 5 and identity[:2] == tuple(request[:2]) and identity[4] == request[2]:
+                return identity
+    return None
+
+
 def _active_symbols(store):
     """Compatibilidad: devuelve el primer lote, no el universo histórico."""
     return _eligible_symbols(store)[:ACTIVE_SYMBOL_LIMIT]
@@ -1490,12 +1630,19 @@ def _cycle_plan(store, focus_candidates=None):
         now=at, cursor=row[0] if row else 0, previous=previous)
     from rc6_dynamic_universe.promotion import capacity_controller_from_environment
     controller = capacity_controller_from_environment(store.path)
-    if controller.state(at)["status"] == "APPROVED_DYNAMIC":
+    capacity_status = controller.state(at)["status"]
+    if capacity_status == "APPROVED_DYNAMIC":
         full_opened = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
             for p in store.open_positions() if p["asset_class"] in {"ACCIONES", "CEDEARS", "ETFS"}]
         selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
         if selected["dynamic"]:
             symbols, plan = _approved_equity_selection(store, selected, plan)
+    elif capacity_status in {"OFF_BASELINE", "SHADOW_BASELINE"}:
+        # No dynamic lease/extra budget exists in baseline. A606 only takes
+        # an already planned cold pair; an absent slot means zero provider IO.
+        plan["_a606_previous"] = previous or {}
+        symbols, after, plan = _ppi_observe_only_replace_cold(
+            store, symbols, plan, at=at, before=before, after=after)
     return symbols, len(universe), before, after, plan
 
 
@@ -2758,6 +2905,7 @@ def run():
             cycle_started = now_iso()
             cycle_clock = time.perf_counter()
             cycle_ok = 0
+            cycle_observed_only = 0
             cycle_failures = 0
             cycle_session_invalid = False
             latencies = []
@@ -2777,6 +2925,14 @@ def run():
                     priority = "OPENED_CRITICAL" if request_key in opened_identities else dynamic_scope.get("priority", "DISCOVERY")
                     exact_opened = opened_identities.get(request_key, set())
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
+                    diagnostic_identity = _ppi_observe_only_identity(
+                        request_key, feasibility["active_plan"])
+                    if diagnostic_identity is not None:
+                        # This is a HOLD contract, never an OPENED/EXIT order.
+                        # PPI native quote and raw Book are recorded below;
+                        # do not present it to any broker or signal path.
+                        scope_identity = diagnostic_identity
+                        priority = "DISCOVERY"
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
                         priority=priority, identity=scope_identity,
                         scanner_primary=scanner_primary)
@@ -2786,6 +2942,14 @@ def run():
                         # Observational sidecar must never change PAPER gates or
                         # interrupt a genuine scanner current/book observation.
                         store.event("PPI_SCANNER_PRIMARY_CAPTURE_ERROR", type(origin_error).__name__)
+                    if diagnostic_identity is not None:
+                        # Both genuine PPI recorders ran first. Keep the raw
+                        # observation OUT of broker.on_quote, EXIT, signals,
+                        # market_snapshots and PAPER admission permanently.
+                        cycle_observed_only += 1
+                        store.event("PPI_CONTRACT_OBSERVE_ONLY",
+                            f"{symbol}|{asset_class}|{settlement}|NO_PAPER_ADMISSION")
+                        continue
                     # Persistir la observación sirve para trazabilidad, pero un
                     # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)
@@ -2852,7 +3016,8 @@ def run():
             _write_scanner_metrics(store, "UNIVERSE",
                   (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
-                   f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
+                   f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; diagnostico_solo_lectura={cycle_observed_only}; "
+                   f"factibilidad={json.dumps(feasibility,sort_keys=True)}"))
             metrics = reader.metrics
             store.state(process_state="DEGRADED" if cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
