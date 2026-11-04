@@ -23,8 +23,8 @@ import time
 from urllib.parse import quote
 
 
-HOST_SCHEMA = "rc6.a652.watch-budget-scanner-host-ro.v1"
-RECEIPT_SCHEMA = "rc6.a652.watch-budget-micro-sanitized.v1"
+HOST_SCHEMA = "rc6.a652.watch-budget-scanner-host-ro.v2"
+RECEIPT_SCHEMA = "rc6.a652.watch-budget-micro-sanitized.v2"
 DATA_ROOT = Path("/opt/porota-trading/data")
 DB = DATA_ROOT / "paper_v17/observer_v17.db"
 MAX_EVENTS = 512
@@ -32,6 +32,8 @@ ALLOWED_EVENT_TYPES = ("DATA_ERROR", "DATA_REJECTED", "HTTP_BLOCKED", "PPI_SESSI
 ERROR_BUCKETS = ("PPI_BUDGET_BACKPRESSURE", "PPI_SESSION_INVALID",
                  "PPI_INSTRUMENT_NOT_FOUND", "PPI_EMPTY_OR_NON_JSON_AFTER_RETRY",
                  "PPI_HTTP_4XX", "PPI_HTTP_5XX", "PPI_HTTP_OTHER",
+                 "PPI_TIMEOUT_EXCEPTION", "PPI_NETWORK_EXCEPTION",
+                 "PPI_SCHEMA_OR_TYPE_EXCEPTION", "PPI_LOCAL_OS_EXCEPTION",
                  "PPI_OTHER_CLASSIFIED", "OTHER")
 SCANNER_STATES = {"OBSERVED", "NO_VERIFICADO"}
 WATCH_STATES = {"ENUMERATED_NO_MATCH", "ENUMERATED_UNREGISTERED_CANDIDATE",
@@ -44,6 +46,27 @@ _SAFE_UNIT = re.compile(r"^[A-Za-z0-9_.@-]{1,128}\.service$")
 _HTTP_CODE = re.compile(r"^PPI_HTTP_([1-5][0-9]{2})$")
 _SAFE_CLASS = re.compile(r"^PPI_[A-Z0-9_]{1,64}$")
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
+
+# Product bd_ppi_readonly_guard.classify_read_error's last fallback stores
+# "PPI_" + type(error).__name__.upper(). Only EXACT generic class labels are
+# permitted here: no raw class string, symbol, response body or message is
+# returned. A class-family bucket is a diagnostic symptom, not root cause,
+# provider attribution, or a reason to lift PAPER admission.
+_SAFE_EXCEPTION_BUCKETS = {
+    **dict.fromkeys(("PPI_TIMEOUT", "PPI_TIMEOUTERROR", "PPI_READTIMEOUT",
+                     "PPI_CONNECTTIMEOUT", "PPI_CONNECTTIMEOUTERROR",
+                     "PPI_SOCKETTIMEOUT"), "PPI_TIMEOUT_EXCEPTION"),
+    **dict.fromkeys(("PPI_CONNECTIONERROR", "PPI_CONNECTIONRESETERROR",
+                     "PPI_CONNECTIONREFUSEDERROR", "PPI_CONNECTIONABORTEDERROR",
+                     "PPI_BROKENPIPEERROR", "PPI_NEWCONNECTIONERROR",
+                     "PPI_REMOTEDISCONNECTED", "PPI_PROXYERROR",
+                     "PPI_SSLERROR", "PPI_MAXRETRYERROR"), "PPI_NETWORK_EXCEPTION"),
+    **dict.fromkeys(("PPI_KEYERROR", "PPI_TYPEERROR", "PPI_INDEXERROR",
+                     "PPI_ATTRIBUTEERROR"), "PPI_SCHEMA_OR_TYPE_EXCEPTION"),
+    **dict.fromkeys(("PPI_FILENOTFOUNDERROR", "PPI_PERMISSIONERROR",
+                     "PPI_ISADIRECTORYERROR", "PPI_NOTADIRECTORYERROR",
+                     "PPI_FILEEXISTSERROR"), "PPI_LOCAL_OS_EXCEPTION"),
+}
 
 
 def _bounded_int(value, maximum=1_000_000_000):
@@ -178,6 +201,9 @@ def _error_bucket(detail):
     if match:
         return "PPI_HTTP_4XX" if suffix[9] == "4" else (
             "PPI_HTTP_5XX" if suffix[9] == "5" else "PPI_HTTP_OTHER")
+    exact = _SAFE_EXCEPTION_BUCKETS.get(suffix)
+    if exact is not None:
+        return exact
     return "PPI_OTHER_CLASSIFIED" if _SAFE_CLASS.fullmatch(suffix) else "OTHER"
 
 
