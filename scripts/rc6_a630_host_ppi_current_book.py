@@ -27,6 +27,11 @@ from urllib.parse import parse_qsl, quote, urlsplit
 import uuid
 
 SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
+# Additive, success-only evidence fields. Historical v1 receipts remain valid;
+# failed captures retain the original v1 shape and do not expose partial clocks.
+PER_GET_CLOCK_FIELDS = frozenset({
+    "current_received_at_utc", "book_received_at_utc", "pair_completed_at_utc",
+})
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 PPI_HOST = "clientapi.portfoliopersonal.com"
@@ -189,6 +194,15 @@ def _utc(raw):
     if dt.tzinfo is None or dt.utcoffset() is None:
         raise ValueError("PPI_NATIVE_CLOCK_INVALID")
     return dt.astimezone(timezone.utc)
+
+
+def _observed_utc(clock):
+    """Measure *after* an SDK GET; a naive or unavailable clock fails closed."""
+    result = clock()
+    if (not isinstance(result, datetime) or result.tzinfo is None or
+            result.utcoffset() is None):
+        raise ValueError("PPI_NATIVE_CLOCK_INVALID")
+    return result.astimezone(timezone.utc)
 
 
 def _exit_round_fresh(cycle, *, now=None):
@@ -533,6 +547,7 @@ def capture_two(target, credentials, shared_budget, reader_factory,
     limiter = http_limiter or (lambda: _http_body_hashes(target))
     guard = adapter_guard or (lambda: _strict_adapter_send(target, budget))
     observed = clock or (lambda: datetime.now(timezone.utc))
+    current_received = book_received = None
     try:
         def audit(method, path, action):
             if len(events) < 12:
@@ -552,7 +567,9 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                     reader.login_once()
                     with limiter() as body:
                         reads["current"] = reader.current(target[0], PPI_TYPES[target[1]], target[4])
+                        current_received = _observed_utc(observed)
                         reads["book"] = reader.book(target[0], PPI_TYPES[target[1]], target[4])
+                        book_received = _observed_utc(observed)
                 finally:
                     if reader is not None:
                         try:
@@ -560,10 +577,12 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                         except Exception:
                             reader_close_failed = True
                         reader = None
-        now = observed()
-        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        # Keep the historical first_known_at_utc meaning (=pair completion).
+        # Distinct post-GET observations prevent a later Book timestamp from
+        # retroactively making a future/stale Current observation look valid.
+        now = _observed_utc(observed)
+        if not current_received <= book_received <= now:
             raise ValueError("PPI_NATIVE_CLOCK_INVALID")
-        now = now.astimezone(timezone.utc)
         current, book = reads["current"], reads["book"]
         if (not isinstance(current, dict) or not isinstance(book, dict)
                 or not isinstance(book.get("bids"), list)
@@ -571,13 +590,20 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                 or len(book["bids"]) > MAX_LEVELS or len(book["offers"]) > MAX_LEVELS):
             raise ValueError("PROVIDER_RESPONSE_SHAPE_INVALID")
         cp, bp = _utc(current.get("date")), _utc(book.get("date"))
-        if not all(0 <= (now - src).total_seconds() * 1000 <= MAX_AGE_MS for src in (cp, bp)):
+        # Require both freshness at each GET and the historical pair-complete
+        # freshness gate; long Book latency must not relax the original policy.
+        if not all(0 <= (received - provider).total_seconds() * 1000 <= MAX_AGE_MS
+                   for provider, received in ((cp, current_received), (bp, book_received),
+                                              (cp, now), (bp, now))):
             raise ValueError("PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
         expected_paths = ["/api/1.0/marketdata/current", "/api/1.0/marketdata/book"]
         if ([row[0] for row in body] != expected_paths
                 or any(not 0 < row[2] <= MAX_BODY for row in body)):
             raise ValueError("BODY_BUDGET_OR_DIGEST_INVALID")
         receipt.update(first_known_at_utc=now.isoformat(),
+            current_received_at_utc=current_received.isoformat(),
+            book_received_at_utc=book_received.isoformat(),
+            pair_completed_at_utc=now.isoformat(),
             current_provider_at_utc=cp.isoformat(), book_provider_at_utc=bp.isoformat(),
             current_http_body_sha256=body[0][1].hexdigest(),
             book_http_body_sha256=body[1][1].hexdigest(),
@@ -615,6 +641,8 @@ def capture_two(target, credentials, shared_budget, reader_factory,
             receipt["state"] = "EVIDENCE_ONLY_NO_GO"
             receipt["reason"] = "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT"
         else:
+            for field in PER_GET_CLOCK_FIELDS:
+                receipt.pop(field, None)
             receipt.update(first_known_at_utc=None, current_provider_at_utc=None,
                 book_provider_at_utc=None, current_http_body_sha256=None,
                 book_http_body_sha256=None, current_body_bytes=0,
@@ -625,7 +653,11 @@ def capture_two(target, credentials, shared_budget, reader_factory,
 
 
 def verify_receipt(obj, target):
-    if not isinstance(obj, dict) or set(obj) != set(_base_receipt(target)):
+    if not isinstance(obj, dict):
+        return False
+    base_keys = set(_base_receipt(target))
+    extended = set(obj) == base_keys | PER_GET_CLOCK_FIELDS
+    if not (set(obj) == base_keys or extended):
         return False
     fixed = ("schema", "phase", "target", "ppi_type", "source", "expected_product_sha",
         "mode", "real_order_capability", "orders_sent", "trading_db_writes",
@@ -658,10 +690,30 @@ def verify_receipt(obj, target):
             return False
         try:
             known, current, book = map(_utc, dates)
+            if extended:
+                raw_times = [obj[field] for field in (
+                    "current_received_at_utc", "book_received_at_utc", "pair_completed_at_utc")]
+                received_current, received_book, completed = map(_utc, raw_times)
+                # New fields must be canonical UTC instants, not local offsets,
+                # and all causal inequalities must hold independently.
+                if (any(t.isoformat() != raw for t, raw in zip(
+                        (received_current, received_book, completed), raw_times)) or
+                        completed != known or
+                        obj["pair_completed_at_utc"] != obj["first_known_at_utc"] or
+                        not current <= received_current <= received_book <= completed or
+                        not book <= received_book or
+                        not all(0 <= (received - provider).total_seconds() * 1000 <= MAX_AGE_MS
+                                for provider, received in ((current, received_current),
+                                                           (book, received_book),
+                                                           (current, known), (book, known)))):
+                    return False
+                return True
+            # Archived v1 receipts lack per-GET clocks; remain valid evidence,
+            # but must never be promoted to independent causal PIT authority.
             return all(0 <= (known - t).total_seconds() * 1000 <= MAX_AGE_MS for t in (current, book))
         except ValueError:
             return False
-    return all(x is None for x in (*digests, *dates))
+    return not extended and all(x is None for x in (*digests, *dates))
 
 
 def container_main():
