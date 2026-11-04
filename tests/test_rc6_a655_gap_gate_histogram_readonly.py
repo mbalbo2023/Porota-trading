@@ -49,6 +49,11 @@ class A655Histogram(unittest.TestCase):
             self.catalog(c, "XYZ", "OPCIONES", "BYMA", "ARS", "CI", "NEEDS_OPTION_CONTRACT")
             self.catalog(c, "XYZ", "BONOS", "BYMA", "ARS", "CI", "NEEDS_NOMINAL_UNITS")
             self.catalog(c, "OLD", "ON", "BYMA", "USD", "48H", "NEEDS_NOMINAL_UNITS")
+            # Remaining three families exist but are READY in this synthetic
+            # fixture. A655 fails closed when a family denominator vanishes.
+            self.catalog(c, "FUT1", "FUTUROS", "A3", "ARS", "CI", "READY_PAPER_FUTURES")
+            self.catalog(c, "CAU1", "CAUCIONES", "BYMA", "ARS", "CI", "READY_PAPER_CAUCION_PLACING")
+            self.catalog(c, "FCI1", "FCI", "BYMA", "ARS", "CI", "READY_PAPER_FCI_SUBSCRIPTION")
             c.execute("INSERT INTO complementary_contract_retry VALUES(?,?,?,?,?,?,?)",
                       ("XYZ", "OPCIONES", "BYMA", "ARS", "CI", "IOL_COMPLEMENTARY",
                        "COMPLEMENTARY_IDENTITY_AMBIGUOUS:matches=2"))
@@ -141,6 +146,22 @@ class A655Histogram(unittest.TestCase):
         option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
         self.assertEqual(option["bridge"], "BLOCKED")
         self.assertEqual(option["v17"], "V17_ATTACHED")
+
+    def test_nonactive_status_has_explicit_denominator_not_silent_exclusion(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE financial_instrument_catalog SET status='PAUSED_EXPLICIT' WHERE ticker='OLD'")
+        report = self.probe()
+        self.assertEqual(report["catalog_active_gap_total"], 2)
+        self.assertEqual(report["catalog_six_family_total"], 6)
+        self.assertEqual(report["status_coverage"]["OBLIGACIONES"],
+                         {"active": 0, "active_gap": 0, "all": 1, "nonactive": 1, "ready": 0})
+
+    def test_all_nonactive_gap_statuses_are_not_false_zero_success(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE financial_instrument_catalog SET status='PAUSED_EXPLICIT' WHERE capability LIKE 'NEEDS_%'")
+        report = self.probe()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "ACTIVE_GAP_DENOMINATOR_HOLD")
 
     def test_unknown_capability_and_retry_details_never_leave_receipt(self):
         with sqlite3.connect(self.db) as c:

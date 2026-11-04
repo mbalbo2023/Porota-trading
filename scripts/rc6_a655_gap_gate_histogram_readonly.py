@@ -64,7 +64,8 @@ def _base():
             "provider_gets": 0, "orders_called": False, "ppi_watch_touched": False,
             "paper_admission_certified": False, "runtime_sha_verified": False,
             "real_orders_sent": None, "sampled_at_utc": None,
-            "catalog_active_gap_total": None, "by_family": {}, "joint": []}
+            "catalog_active_gap_total": None, "catalog_six_family_total": None,
+            "status_coverage": {}, "by_family": {}, "joint": []}
 
 
 def _mount_is_readonly(path):
@@ -256,6 +257,11 @@ def _aggregate(conn):
     if len(rows) > MAX_ROWS:
         raise Hold("CATALOG_ROWS_LIMIT_HOLD")
     groups = Counter()
+    # Prevent a false zero if the catalog's actual status vocabulary drifts.
+    # Every family row is covered, including paused/nonactive identities that
+    # deliberately do not belong to the A626-like active-gap denominator.
+    coverage = {family: Counter({"all": 0, "active": 0, "ready": 0,
+                                 "active_gap": 0, "nonactive": 0}) for family in FAMILIES}
     keys_seen = set()
     metadata_bytes = 0
     for row in rows:
@@ -263,14 +269,21 @@ def _aggregate(conn):
         if key in keys_seen:
             raise Hold("CATALOG_IDENTITY_DUPLICATE_HOLD")
         keys_seen.add(key)
-        if key[0] not in RAW_FAMILIES or str(row["status"] or "").upper() not in ACTIVE:
+        if key[0] not in RAW_FAMILIES:
             continue
+        family = {"ON": "OBLIGACIONES", "FCI_LOCAL": "FCI"}.get(key[0], key[0])
+        coverage[family]["all"] += 1
+        if str(row["status"] or "").upper() not in ACTIVE:
+            coverage[family]["nonactive"] += 1
+            continue
+        coverage[family]["active"] += 1
         if str(row["capability"] or "").startswith("READY_PAPER_"):
+            coverage[family]["ready"] += 1
             continue
+        coverage[family]["active_gap"] += 1
         metadata_bytes += len(str(row["metadata_json"] or ""))
         if metadata_bytes > MAX_METADATA_BYTES:
             raise Hold("CATALOG_METADATA_SIZE_HOLD")
-        family = {"ON": "OBLIGACIONES", "FCI_LOCAL": "FCI"}.get(key[0], key[0])
         bridge, v17 = _metadata_flags(row["metadata_json"])
         retry_set = retries.get(key, set())
         retry = ("NO_RETRY" if not retry_set else next(iter(retry_set))
@@ -282,8 +295,11 @@ def _aggregate(conn):
         groups[(family, _capability(row["capability"]), bridge, retry, current, v17)] += 1
     if len(groups) > MAX_GROUPS:
         raise Hold("GROUPS_LIMIT_HOLD")
+    if (any(coverage[family]["all"] == 0 for family in FAMILIES)
+            or sum(c["active_gap"] for c in coverage.values()) == 0):
+        raise Hold("ACTIVE_GAP_DENOMINATOR_HOLD")
     joint = [dict(zip(FIELDS, key), count=value) for key, value in sorted(groups.items())]
-    return joint
+    return joint, {family: dict(sorted(row.items())) for family, row in sorted(coverage.items())}
 
 
 def diagnose(db=DB, *, enforce_ro_mount=True):
@@ -304,12 +320,14 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
         conn.execute("BEGIN")
         start = time.monotonic()
         conn.set_progress_handler(lambda: int(time.monotonic() - start > 19), 1000)
-        joint = _aggregate(conn)
+        joint, coverage = _aggregate(conn)
         report["paper_workspace_verified"] = True
         report["real_orders_sent"] = 0
         report["sampled_at_utc"] = datetime.now(timezone.utc).isoformat()
         report["joint"] = joint
         report["catalog_active_gap_total"] = sum(item["count"] for item in joint)
+        report["status_coverage"] = coverage
+        report["catalog_six_family_total"] = sum(row["all"] for row in coverage.values())
         report["state"] = "READ_ONLY_OBSERVED"
         report["reason"] = "CORRELATIVE_DIAGNOSTIC_ONLY"
     except Hold as exc:
@@ -359,12 +377,28 @@ def sanitize(value):
             totals[key[0]] += count
             joint.append(dict(zip(FIELDS, key), count=count))
         total = sum(totals.values())
-        if total != value.get("catalog_active_gap_total") or total > MAX_COUNT:
+        coverage = value.get("status_coverage")
+        if (not isinstance(coverage, dict) or set(coverage) != FAMILIES
+                or any(not isinstance(row, dict)
+                       or set(row) != {"all", "active", "ready", "active_gap", "nonactive"}
+                       or any(type(n) is not int or not 0 <= n <= MAX_COUNT for n in row.values())
+                       or row["all"] != row["active"] + row["nonactive"]
+                       or row["active"] != row["ready"] + row["active_gap"]
+                       or row["active_gap"] != totals.get(family, 0)
+                       or row["all"] == 0
+                       for family, row in coverage.items())):
+            raise Hold("UNTRUSTED_STATUS_COVERAGE")
+        covered_total = sum(row["all"] for row in coverage.values())
+        if (total != value.get("catalog_active_gap_total") or total > MAX_COUNT or total == 0
+                or covered_total != value.get("catalog_six_family_total")
+                or covered_total > MAX_COUNT):
             raise Hold("UNTRUSTED_DENOMINATOR")
         safe.update(state="READ_ONLY_OBSERVED", reason="CORRELATIVE_DIAGNOSTIC_ONLY",
                     private_ro_mount=True, paper_workspace_verified=True,
                     real_orders_sent=0, sampled_at_utc=dt.isoformat(),
                     catalog_active_gap_total=total,
+                    catalog_six_family_total=covered_total,
+                    status_coverage={family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
                     by_family=dict(sorted(totals.items())),
                     joint=sorted(joint, key=lambda x: tuple(x[f] for f in FIELDS)))
     except (Hold, TypeError, ValueError, KeyError):
