@@ -205,6 +205,38 @@ class A655Histogram(unittest.TestCase):
         report["joint"][0]["retry_source"] = "private-identity"
         self.assertEqual(module.sanitize(report)["state"], "NO_VERIFICADO")
 
+    def test_missing_change_table_fails_closed_no_invented_pending_status(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("DROP TABLE contract_evidence_v2_changes")
+        report = self.probe()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "REQUIRED_SCHEMA_HOLD")
+        self.assertEqual(report["joint"], [])
+
+    def test_missing_retry_source_column_fails_closed(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("DROP TABLE complementary_contract_retry")
+            c.execute("CREATE TABLE complementary_contract_retry(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,reason TEXT)")
+        report = self.probe()
+        self.assertEqual(report["reason"], "REQUIRED_SCHEMA_HOLD")
+
+    def test_129_distinct_reason_sets_fail_closed_group_budget(self):
+        patterns = ["CHANGE_REVIEW_REQUIRED", "CONFLICT:private", "IDENTITY_CONFLICT",
+                    "INVALID_PROVENANCE", "EVIDENCE_NOT_CURRENT",
+                    "CONTRACT_V2_CURRENCY_MISMATCH", "INVALID_NUMERIC_TERM:cash_multiplier",
+                    "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED"]
+        with sqlite3.connect(self.db) as c:
+            c.execute("DELETE FROM financial_instrument_catalog WHERE instrument_type='OPCIONES'")
+            for i in range(1, 130):
+                reasons = [pattern for bit, pattern in enumerate(patterns) if i & (1 << bit)]
+                metadata = {"_contract_bridge": {"status": "BLOCKED", "gaps": reasons}}
+                self.catalog(c, "OPTION%03d" % i, "OPCIONES", "BYMA", "ARS", "CI",
+                             "CONTRACT_EVIDENCE_REVIEW_REQUIRED", json.dumps(metadata))
+        report = self.probe()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "GROUPS_LIMIT_HOLD")
+        self.assertEqual(report["joint"], [])
+
     def test_nonactive_status_has_explicit_denominator_not_silent_exclusion(self):
         with sqlite3.connect(self.db) as c:
             c.execute("UPDATE financial_instrument_catalog SET status='PAUSED_EXPLICIT' WHERE ticker='OLD'")
