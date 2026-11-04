@@ -42,6 +42,8 @@ class A655Histogram(unittest.TestCase):
               CREATE TABLE complementary_contract_retry(
                 ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
                 source TEXT,reason TEXT);
+              CREATE TABLE contract_evidence_v2_changes(
+                family TEXT,ticker TEXT,market TEXT,currency TEXT,settlement TEXT,status TEXT);
               INSERT INTO observer_state VALUES(1,0);
             """)
             c.execute("INSERT INTO paper_workspace VALUES(?,?,?,?,?)",
@@ -140,12 +142,100 @@ class A655Histogram(unittest.TestCase):
     def test_metadata_status_and_absence_distinguished(self):
         with sqlite3.connect(self.db) as c:
             c.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
-                      (json.dumps({"_contract_bridge": {"status": "BLOCKED"},
+                      (json.dumps({"_contract_bridge": {"status": "BLOCKED", "gaps": ["MISSING:quantity_step"]},
                                    "financial_contract_v17": {"cash_multiplier": 1}}),))
         report = self.probe()
         option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
         self.assertEqual(option["bridge"], "BLOCKED")
         self.assertEqual(option["v17"], "V17_ATTACHED")
+
+    def test_option_review_gap_and_iol_retry_source_are_joint_and_sanitized(self):
+        with sqlite3.connect(self.db) as c:
+            bridge = {"_contract_bridge": {"status": "BLOCKED", "gaps": [
+                "CHANGE_REVIEW_REQUIRED", "MISSING:underlying"]}}
+            c.execute("UPDATE financial_instrument_catalog SET capability=?,metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
+                      ("CONTRACT_EVIDENCE_REVIEW_REQUIRED", json.dumps(bridge)))
+            c.execute("INSERT INTO contract_evidence_v2_changes VALUES(?,?,?,?,?,?)",
+                      ("OPCIONES", "XYZ", "BYMA", "ARS", "CI", "CHANGED_REVIEW_REQUIRED"))
+        report = self.probe()
+        option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
+        self.assertEqual(option["bridge_reasons"], "CHANGE_REVIEW_REQUIRED+MISSING_FIELDS")
+        self.assertEqual(option["retry_source"], "IOL_ONLY")
+        self.assertEqual(option["change_log"], "REVIEW_LOG_ENTRY_PRESENT")
+        self.assertNotIn("underlying", json.dumps(report))
+        raw = {**report, "private_ro_mount": True}
+        self.assertEqual(module.sanitize(raw)["state"], "READ_ONLY_OBSERVED")
+
+    def test_conflict_and_time_hold_preserve_categories_without_field_values(self):
+        with sqlite3.connect(self.db) as c:
+            bridge = {"_contract_bridge": {"status": "BLOCKED", "gaps": [
+                "EVIDENCE_NOT_CURRENT", "CONFLICT:PRIVATE_ACCOUNT_987", "CONTRACT_INVALID:SECRET"]}}
+            c.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
+                      (json.dumps(bridge),))
+            # A different literal family (ON alias) is never a change-log match.
+            c.execute("INSERT INTO contract_evidence_v2_changes VALUES(?,?,?,?,?,?)",
+                      ("OBLIGACIONES", "OLD", "BYMA", "USD", "48H", "CHANGED_REVIEW_REQUIRED"))
+        report = self.probe()
+        option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
+        self.assertEqual(option["bridge_reasons"], "CONFLICT_TERM+EVIDENCE_TIME_HOLD+INVALID_CONTRACT")
+        aliases = next(x for x in report["joint"] if x["family"] == "OBLIGACIONES")
+        self.assertEqual(aliases["change_log"], "NO_REVIEW_LOG_ENTRY")
+        self.assertNotIn("PRIVATE_ACCOUNT", json.dumps(report))
+        self.assertNotIn("SECRET", json.dumps(report))
+
+    def test_unknown_reason_is_bucketed_and_malformed_gaps_fail_closed(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
+                      (json.dumps({"_contract_bridge": {"status": "BLOCKED", "gaps": ["CONFIDENTIAL:secret_account"]}}),))
+        report = self.probe()
+        option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
+        self.assertEqual(option["bridge_reasons"], "OTHER_BLOCKED_GAP")
+        self.assertNotIn("secret_account", json.dumps(report))
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
+                      (json.dumps({"_contract_bridge": {"status": "BLOCKED", "gaps": "not a list"}}),))
+        self.assertEqual(self.probe()["state"], "NO_VERIFICADO")
+
+    def test_runner_rejects_unallowlisted_bridge_or_source_forgery(self):
+        report = self.probe()
+        report["private_ro_mount"] = True
+        report["joint"][0]["bridge_reasons"] = "ACCOUNTNUMBER"
+        self.assertEqual(module.sanitize(report)["state"], "NO_VERIFICADO")
+        report["joint"][0]["bridge_reasons"] = "NOT_BLOCKED"
+        report["joint"][0]["retry_source"] = "private-identity"
+        self.assertEqual(module.sanitize(report)["state"], "NO_VERIFICADO")
+
+    def test_missing_change_table_fails_closed_no_invented_pending_status(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("DROP TABLE contract_evidence_v2_changes")
+        report = self.probe()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "REQUIRED_SCHEMA_HOLD")
+        self.assertEqual(report["joint"], [])
+
+    def test_missing_retry_source_column_fails_closed(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("DROP TABLE complementary_contract_retry")
+            c.execute("CREATE TABLE complementary_contract_retry(ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,reason TEXT)")
+        report = self.probe()
+        self.assertEqual(report["reason"], "REQUIRED_SCHEMA_HOLD")
+
+    def test_129_distinct_reason_sets_fail_closed_group_budget(self):
+        patterns = ["CHANGE_REVIEW_REQUIRED", "CONFLICT:private", "IDENTITY_CONFLICT",
+                    "INVALID_PROVENANCE", "EVIDENCE_NOT_CURRENT",
+                    "CONTRACT_V2_CURRENCY_MISMATCH", "INVALID_NUMERIC_TERM:cash_multiplier",
+                    "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED"]
+        with sqlite3.connect(self.db) as c:
+            c.execute("DELETE FROM financial_instrument_catalog WHERE instrument_type='OPCIONES'")
+            for i in range(1, 130):
+                reasons = [pattern for bit, pattern in enumerate(patterns) if i & (1 << bit)]
+                metadata = {"_contract_bridge": {"status": "BLOCKED", "gaps": reasons}}
+                self.catalog(c, "OPTION%03d" % i, "OPCIONES", "BYMA", "ARS", "CI",
+                             "CONTRACT_EVIDENCE_REVIEW_REQUIRED", json.dumps(metadata))
+        report = self.probe()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "GROUPS_LIMIT_HOLD")
+        self.assertEqual(report["joint"], [])
 
     def test_nonactive_status_has_explicit_denominator_not_silent_exclusion(self):
         with sqlite3.connect(self.db) as c:

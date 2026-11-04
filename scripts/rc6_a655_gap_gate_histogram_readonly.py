@@ -20,7 +20,7 @@ from urllib.parse import quote
 import uuid
 
 
-SCHEMA = "rc6.a655.gap-gate-histogram-readonly.v1"
+SCHEMA = "rc6.a658.gap-gate-histogram-readonly.v2"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 MAX_RAW = 32768
 MAX_ROWS = 60000
@@ -45,10 +45,21 @@ CAP_CODES = frozenset({
 BRIDGES = frozenset({"NORMALIZED", "BLOCKED", "ABSENT", "OTHER_BRIDGE_STATUS", "INVALID_METADATA"})
 RETRIES = frozenset({"NO_RETRY", "AMBIGUOUS_IDENTITY", "MISSING_FIELDS", "NEEDS_CONTRACT",
                      "OTHER_RETRY", "MULTIPLE_RETRY_REASONS"})
+RETRY_SOURCES = frozenset({"NO_RETRY", "IOL_ONLY", "V2_ONLY", "BYMA_ONLY",
+                           "PPI_ONLY", "OTHER_ONLY", "MIXED_WITH_IOL", "MIXED_NO_IOL"})
+BRIDGE_REASON_LABELS = frozenset({
+    "CHANGE_REVIEW_REQUIRED", "CONFLICT_TERM", "IDENTITY_HOLD",
+    "PROVENANCE_HOLD", "EVIDENCE_TIME_HOLD", "CURRENCY_CONFLICT",
+    "INVALID_CONTRACT", "OPTION_IOL_SERIES_UNVERIFIED", "MISSING_FIELDS",
+    "EXECUTOR_HOLD", "OTHER_BLOCKED_GAP",
+})
+BRIDGE_REASON_STANDALONE = frozenset({"NOT_BLOCKED", "INVALID_METADATA"})
+CHANGE_LOGS = frozenset({"REVIEW_LOG_ENTRY_PRESENT", "NO_REVIEW_LOG_ENTRY"})
 CURRENTS = frozenset({"EXACT_PPI_SOURCE_LABEL", "EXACT_NONPPI_SOURCE_LABEL",
                       "NO_EXACT_CURRENT", "INCOMPLETE_IDENTITY"})
 ATTACHMENTS = frozenset({"V17_ATTACHED", "V17_ABSENT", "V17_INVALID"})
-FIELDS = ("family", "capability", "bridge", "retry", "current", "v17")
+FIELDS = ("family", "capability", "bridge", "retry", "current", "v17",
+          "bridge_reasons", "retry_source", "change_log")
 HEX = re.compile(r"[a-f0-9]{64}\Z")
 
 
@@ -200,13 +211,45 @@ def _retry_reason(reason):
 
 def _retries(conn):
     rows = conn.execute("""SELECT ticker,instrument_type AS family,market,currency,
-      settlement,reason FROM complementary_contract_retry LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
+      settlement,reason,source FROM complementary_contract_retry LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
     if len(rows) > MAX_ROWS:
         raise Hold("RETRY_ROWS_LIMIT_HOLD")
     result = defaultdict(set)
+    sources = defaultdict(set)
     for row in rows:
         result[_key(row)].add(_retry_reason(row["reason"]))
-    return result
+        sources[_key(row)].add(_retry_source(row["source"]))
+    return result, sources
+
+
+def _retry_source(source):
+    # Never export untrusted source strings, even when they resemble a ticker.
+    known = {"IOL_COMPLEMENTARY": "IOL", "CONTRACT_EVIDENCE_V2": "V2",
+             "BYMA_PUBLIC_COMPLEMENTARY": "BYMA", "PPI_PRIMARY": "PPI"}
+    return known.get(source, "OTHER")
+
+
+def _retry_source_label(values):
+    if not values:
+        return "NO_RETRY"
+    if len(values) == 1:
+        return {"IOL": "IOL_ONLY", "V2": "V2_ONLY", "BYMA": "BYMA_ONLY",
+                "PPI": "PPI_ONLY", "OTHER": "OTHER_ONLY"}[next(iter(values))]
+    return "MIXED_WITH_IOL" if "IOL" in values else "MIXED_NO_IOL"
+
+
+def _change_log_entries(conn):
+    """A historical review log entry is NOT an unresolved material change.
+
+    The canonical pending_material_changes() additionally compares prior and
+    current material payloads and permitted review receipts. Do not re-create
+    that authority with a status-only SQL shortcut.
+    """
+    rows = conn.execute("""SELECT family,ticker,market,currency,settlement,status
+      FROM contract_evidence_v2_changes LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
+    if len(rows) > MAX_ROWS:
+        raise Hold("CHANGE_LOG_ROWS_LIMIT_HOLD")
+    return {_key(row) for row in rows if row["status"] == "CHANGED_REVIEW_REQUIRED"}
 
 
 def _capability(raw):
@@ -219,9 +262,9 @@ def _metadata_flags(raw):
     try:
         value = _strict_json(raw or "{}")
     except Hold:
-        return "INVALID_METADATA", "V17_INVALID"
+        return "INVALID_METADATA", "V17_INVALID", "INVALID_METADATA"
     if not isinstance(value, dict):
-        return "INVALID_METADATA", "V17_INVALID"
+        return "INVALID_METADATA", "V17_INVALID", "INVALID_METADATA"
     bridge = value.get("_contract_bridge")
     status = bridge.get("status") if isinstance(bridge, dict) else None
     state = status if status in {"NORMALIZED", "BLOCKED"} else (
@@ -229,7 +272,53 @@ def _metadata_flags(raw):
     attached = value.get("financial_contract_v17")
     v17 = "V17_ABSENT" if attached is None else (
         "V17_ATTACHED" if isinstance(attached, dict) and attached else "V17_INVALID")
-    return state, v17
+    return state, v17, _bridge_reason_set(bridge if isinstance(bridge, dict) else None)
+
+
+def _bridge_reason_set(bridge):
+    if not isinstance(bridge, dict) or bridge.get("status") != "BLOCKED":
+        return "NOT_BLOCKED"
+    gaps = bridge.get("gaps")
+    if not isinstance(gaps, list) or not 0 < len(gaps) <= 64:
+        raise Hold("BRIDGE_GAPS_CONTRACT_HOLD")
+    labels = set()
+    for reason in gaps:
+        if not isinstance(reason, str) or len(reason) > 512:
+            raise Hold("BRIDGE_GAPS_CONTRACT_HOLD")
+        if reason == "CHANGE_REVIEW_REQUIRED":
+            label = "CHANGE_REVIEW_REQUIRED"
+        elif reason.startswith("CONFLICT:"):
+            label = "CONFLICT_TERM"
+        elif reason.startswith("IDENTITY_"):
+            label = "IDENTITY_HOLD"
+        elif reason in {"INVALID_PROVENANCE", "UNVERIFIED_SOURCE"}:
+            label = "PROVENANCE_HOLD"
+        elif reason == "EVIDENCE_NOT_CURRENT":
+            label = "EVIDENCE_TIME_HOLD"
+        elif reason == "CONTRACT_V2_CURRENCY_MISMATCH":
+            label = "CURRENCY_CONFLICT"
+        elif reason.startswith(("INVALID_", "CONTRACT_INVALID:")):
+            label = "INVALID_CONTRACT"
+        elif reason == "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED":
+            label = "OPTION_IOL_SERIES_UNVERIFIED"
+        elif reason.startswith("MISSING:"):
+            label = "MISSING_FIELDS"
+        elif reason.startswith("EXECUTOR_GAP:"):
+            label = "EXECUTOR_HOLD"
+        else:
+            label = "OTHER_BLOCKED_GAP"
+        labels.add(label)
+    return "+".join(sorted(labels))
+
+
+def _safe_bridge_reasons(value):
+    if value in BRIDGE_REASON_STANDALONE:
+        return True
+    if not isinstance(value, str) or len(value) > 256:
+        return False
+    values = value.split("+")
+    return bool(values) and values == sorted(set(values)) and all(
+        item in BRIDGE_REASON_LABELS for item in values)
 
 
 def _aggregate(conn):
@@ -239,7 +328,8 @@ def _aggregate(conn):
         "financial_instrument_catalog": {"ticker", "instrument_type", "market", "currency", "settlement", "status", "capability", "metadata_json"},
         "contract_evidence_v2_current": {"family", "ticker", "market", "currency", "settlement", "snapshot_id", "source_class", "evidence_hash", "observed_at"},
         "contract_evidence_v2_snapshots": {"family", "ticker", "market", "currency", "settlement", "snapshot_id", "source_class", "evidence_hash", "observed_at", "evidence_json"},
-        "complementary_contract_retry": {"ticker", "instrument_type", "market", "currency", "settlement", "reason"},
+        "complementary_contract_retry": {"ticker", "instrument_type", "market", "currency", "settlement", "reason", "source"},
+        "contract_evidence_v2_changes": {"family", "ticker", "market", "currency", "settlement", "status"},
     }
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not required.keys() <= tables or any(not fields <= _columns(conn, name) for name, fields in required.items()):
@@ -250,7 +340,8 @@ def _aggregate(conn):
     if not state or type(state[0]) is not int or state[0] != 0:
         raise Hold("PAPER_ORDER_COUNTER_HOLD")
     labels = _current_labels(conn)
-    retries = _retries(conn)
+    retries, retry_sources = _retries(conn)
+    change_logs = _change_log_entries(conn)
     rows = conn.execute("""SELECT instrument_type AS family,ticker,market,currency,
       settlement,status,capability,metadata_json
       FROM financial_instrument_catalog LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
@@ -284,7 +375,7 @@ def _aggregate(conn):
         metadata_bytes += len(str(row["metadata_json"] or ""))
         if metadata_bytes > MAX_METADATA_BYTES:
             raise Hold("CATALOG_METADATA_SIZE_HOLD")
-        bridge, v17 = _metadata_flags(row["metadata_json"])
+        bridge, v17, bridge_reasons = _metadata_flags(row["metadata_json"])
         retry_set = retries.get(key, set())
         retry = ("NO_RETRY" if not retry_set else next(iter(retry_set))
                  if len(retry_set) == 1 else "MULTIPLE_RETRY_REASONS")
@@ -292,7 +383,9 @@ def _aggregate(conn):
                    else "EXACT_PPI_SOURCE_LABEL" if "PPI" in labels.get(key, ())
                    else "EXACT_NONPPI_SOURCE_LABEL" if labels.get(key)
                    else "NO_EXACT_CURRENT")
-        groups[(family, _capability(row["capability"]), bridge, retry, current, v17)] += 1
+        groups[(family, _capability(row["capability"]), bridge, retry, current, v17,
+                bridge_reasons, _retry_source_label(retry_sources.get(key, set())),
+                "REVIEW_LOG_ENTRY_PRESENT" if key in change_logs else "NO_REVIEW_LOG_ENTRY")] += 1
     if len(groups) > MAX_GROUPS:
         raise Hold("GROUPS_LIMIT_HOLD")
     if (any(coverage[family]["all"] == 0 for family in FAMILIES)
@@ -371,6 +464,8 @@ def sanitize(value):
             if (key in groups or key[0] not in FAMILIES or key[1] not in CAP_CODES
                     or key[2] not in BRIDGES or key[3] not in RETRIES
                     or key[4] not in CURRENTS or key[5] not in ATTACHMENTS
+                    or not _safe_bridge_reasons(key[6]) or key[7] not in RETRY_SOURCES
+                    or key[8] not in CHANGE_LOGS
                     or type(count) is not int or not 0 < count <= MAX_COUNT):
                 raise Hold("UNTRUSTED_GROUPS")
             groups.add(key)
