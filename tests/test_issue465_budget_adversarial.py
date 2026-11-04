@@ -1150,14 +1150,15 @@ def test_expiry_between_admission_and_actual_send_is_fail_closed(tmp_path):
     assert budget.metrics()["global"]["used"] == 0
 
 
-def test_missing_policy_is_rejected_and_fresh_off_budget_is_original_baseline(tmp_path, wire):
+def test_missing_policy_and_fresh_off_without_lease_deny_market_wire(tmp_path, wire):
     with pytest.raises(ValueError, match="POLICY_INVALID"):
         validate_policy(None)
     values = approved(wire)
     values[0]["mode"] = "OFF"
     store = PaperStore(str(tmp_path / "paper.sqlite"))
     runtime = RuntimePPIBudget(store.path, controller(values), clock=wire[0].now)
-    assert runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL") == {"allowed": True, "lease": None}
+    assert runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL") == {
+        "allowed": False, "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
     assert runtime.budget is None and not runtime.path.exists()
 
 
@@ -1448,7 +1449,7 @@ def test_book_error_does_not_cache_or_rescue_previous_response(tmp_path):
     assert budget.coalesced_book(identity, lambda: book_payload(clock), consumer="EXIT_READER", priority="EXIT_CRITICAL")["date"]
 
 
-def test_off_reader_repeats_original_wire_reads_without_coalescing(wire, tmp_path):
+def test_off_reader_denies_unleased_market_get_without_coalescing(wire, tmp_path):
     values = approved(wire)
     values[0]["mode"] = "OFF"
     store = PaperStore(str(tmp_path / "paper.sqlite"))
@@ -1458,9 +1459,11 @@ def test_off_reader_repeats_original_wire_reads_without_coalescing(wire, tmp_pat
     try:
         reader.login_once()
         identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
-        scoped_book(reader, identity, "EXIT_CRITICAL")
-        scoped_book(reader, identity, "EXIT_CRITICAL")
-        assert sum("/Book?" in url for _, url in wire[1][before:]) == 2
+        for _ in range(2):
+            with pytest.raises(BudgetBackpressure, match="PPI_BUDGET_LEASE_UNVERIFIED"):
+                scoped_book(reader, identity, "EXIT_CRITICAL")
+        # Login is permitted; OFF/no-lease cannot spend a single market GET.
+        assert sum("/Book?" in url for _, url in wire[1][before:]) == 0
         assert runtime.budget is None and not runtime.path.exists()
     finally:
         reader.close()
