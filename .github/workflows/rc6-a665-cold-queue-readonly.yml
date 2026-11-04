@@ -1,4 +1,4 @@
-name: RC6 A665 Cold Audit Queue READ_ONLY
+name: RC6 A667 Cold Audit Cause READ_ONLY
 
 # No schedule: one explicit post-review diagnostic only. PRs only run offline
 # contracts; private host data is never accessed on PR/branch executions.
@@ -81,16 +81,20 @@ jobs:
             "$DO_USER@$DO_HOST" \
             'sudo -n timeout 24 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B -"' \
             < scripts/rc6_a665_cold_queue_readonly.py \
-            > evidence/.a665_private_raw.json 2>/dev/null
+            > evidence/.a667_private_raw.json 2>/dev/null
           remote_rc=$?
           set -e
           REMOTE_RC="$remote_rc" python3 - <<'PY'
-          import json,os,re
+          import importlib.util,json,os
           from datetime import datetime,timezone,timedelta
           from pathlib import Path
 
-          schema='rc6.a665.cold-queue-readonly.v1'
-          raw=Path('evidence/.a665_private_raw.json')
+          schema='rc6.a667.cold-failure-cause-readonly.v1'
+          raw=Path('evidence/.a667_private_raw.json')
+          source=Path('scripts/rc6_a665_cold_queue_readonly.py')
+          spec=importlib.util.spec_from_file_location('a667_ro_categories',source)
+          categories=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(categories)
           safe={'schema':schema,'read_only':True,'state':'NO_VERIFICADO',
                 'reason':'HOST_RESPONSE_INVALID_OR_UNAVAILABLE',
                 'provider_gets':0,'orders_called':False,'mutations':0,
@@ -99,6 +103,11 @@ jobs:
                 'observed_deploy_sha':None,'expected_deploy_sha':os.environ['EXPECTED_DEPLOY_SHA'],
                 'receipt_count':None,'failed_receipt_count':None,'folder_entries_checked':None,
                 'queue_state':'NO_VERIFICADO','queue_failed_binding':'NO_VERIFICADO',
+                'failed_error_code':'NO_VERIFICADO',
+                'failed_error_phase':'NO_VERIFICADO',
+                'failed_error_class':'NO_VERIFICADO',
+                'failed_manifest_relation':'NO_VERIFICADO',
+                'current_failed_relation':'NO_VERIFICADO',
                 'envelopes_hash_verified':False,'metadata_snapshot_stable':False,
                 'paper_admission_verified':False,'causal_fix_verified':False,
                 'remote_exit_code_class':'ZERO' if os.environ['REMOTE_RC']=='0' else 'NONZERO'}
@@ -109,7 +118,7 @@ jobs:
               obj=json.loads(raw.read_text(encoding='utf-8'))
               if (type(obj) is not dict or obj.get('schema')!=schema or
                   obj.get('state')!='READ_ONLY_OBSERVED' or
-                  obj.get('reason')!='COUNTS_ONLY_NO_REPAIR' or
+                  obj.get('reason')!='COUNTS_AND_CAUSE_ONLY_NO_REPAIR' or
                   obj.get('read_only') is not True or
                   obj.get('os_readonly_mount_verified') is not True or
                   obj.get('provider_gets')!=0 or obj.get('orders_called') is not False or
@@ -145,6 +154,34 @@ jobs:
                   count==0 and binding=='NO_FAILED_RECEIPT' and queue_state!='FAILED')
               if not valid_binding:
                   raise ValueError('COUNT_BINDING_CONTRADICTS_QUEUE')
+              for key,allowed in (
+                  ('failed_error_code',categories.FAILURE_CODES),
+                  ('failed_error_phase',categories.FAILURE_PHASES),
+                  ('failed_error_class',categories.FAILURE_CLASSES)):
+                  value=obj.get(key)
+                  if (type(value) is not str or
+                      value not in allowed | {'NO_VERIFICADO','OTHER_REDACTED'}):
+                      raise ValueError('FAILED_CATEGORICAL_LABEL_INVALID')
+                  safe[key]=value
+              manifest=obj.get('failed_manifest_relation')
+              current=obj.get('current_failed_relation')
+              if manifest not in ('NO_VERIFICADO','MANIFEST_BINDING_MISMATCH',
+                  'PACK_METADATA_UNVERIFIED','PACK_METADATA_MISMATCH',
+                  'MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED'):
+                  raise ValueError('MANIFEST_RELATION_INVALID')
+              if current not in ('NO_VERIFICADO','CURRENT_POINTER_INVALID',
+                  'CURRENT_CUT_SIZE_UNVERIFIED','CURRENT_REFERENCE_UNVERIFIED',
+                  'CURRENT_POINTER_RACE_HOLD','CURRENT_OTHER_OR_NO_FAILED_REFERENCE',
+                  'CURRENT_FAILED_PENDING_REFERENCE_BOUND',
+                  'CURRENT_FAILED_REFERENCE_UNBOUND'):
+                  raise ValueError('CURRENT_RELATION_INVALID')
+              if count!=1 or binding!='MATCHES_FAILED_RECEIPT':
+                  if (any(safe[k]!='NO_VERIFICADO' for k in
+                          ('failed_error_code','failed_error_phase','failed_error_class')) or
+                      manifest!='NO_VERIFICADO' or current!='NO_VERIFICADO'):
+                      raise ValueError('UNBOUND_FAILED_DETAIL_EXPORTED')
+              safe['failed_manifest_relation']=manifest
+              safe['current_failed_relation']=current
               utc=datetime.fromisoformat(obj['generated_at_utc'])
               art=datetime.fromisoformat(obj['generated_at_art'])
               if (utc.utcoffset()!=timedelta(0) or
@@ -152,7 +189,7 @@ jobs:
                   abs((utc-art).total_seconds())>1 or
                   abs((datetime.now(timezone.utc)-utc).total_seconds())>300):
                   raise ValueError('CLOCK_UNVERIFIED')
-              safe.update(state='READ_ONLY_OBSERVED',reason='COUNTS_ONLY_NO_REPAIR',
+              safe.update(state='READ_ONLY_OBSERVED',reason='COUNTS_AND_CAUSE_ONLY_NO_REPAIR',
                           os_readonly_mount_verified=True,
                           observed_deploy_sha=obj['observed_deploy_sha'],
                           generated_at_utc=utc.isoformat(),generated_at_art=art.isoformat(),
@@ -161,20 +198,21 @@ jobs:
                           envelopes_hash_verified=True,metadata_snapshot_stable=True)
           except (OSError,KeyError,ValueError,TypeError,UnicodeError,OverflowError):
               safe=fallback
-          Path('evidence/a665_cold_queue_readonly.json').write_text(
+          Path('evidence/a667_cold_failure_cause_readonly.json').write_text(
               json.dumps(safe,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
-          print('A665_QUEUE_STATE='+safe['state'])
-          print('A665_QUEUE_BINDING='+safe['queue_failed_binding'])
-          print('A665_FAILED_RECEIPT_COUNT='+str(safe['failed_receipt_count']))
-          print('A665_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
+          print('A667_QUEUE_STATE='+safe['state'])
+          print('A667_FAILURE_CODE='+safe['failed_error_code'])
+          print('A667_FAILURE_PHASE='+safe['failed_error_phase'])
+          print('A667_CURRENT_RELATION='+safe['current_failed_relation'])
+          print('A667_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
           PY
-          rm -f evidence/.a665_private_raw.json
+          rm -f evidence/.a667_private_raw.json
       - name: Preserve only sanitized bounded aggregate receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-a665-cold-queue-readonly-${{ github.run_id }}
-          path: evidence/a665_cold_queue_readonly.json
+          name: rc6-a667-cold-failure-cause-readonly-${{ github.run_id }}
+          path: evidence/a667_cold_failure_cause_readonly.json
           if-no-files-found: warn
           retention-days: 90
       - name: Fail closed if host proof unavailable; no PAPER GO asserted
@@ -184,10 +222,10 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          path=Path('evidence/a665_cold_queue_readonly.json')
+          path=Path('evidence/a667_cold_failure_cause_readonly.json')
           if not path.is_file() or json.loads(path.read_text()).get('state')!='READ_ONLY_OBSERVED':
-              raise SystemExit('A665_RUNTIME_QUEUE_COUNTS_NO_VERIFICADO')
-          print('A665_COUNTS_OBSERVED_ONLY_NO_FIX_NO_PAPER_GO')
+              raise SystemExit('A667_RUNTIME_COLD_CAUSE_NO_VERIFICADO')
+          print('A667_CATEGORICAL_OBSERVED_ONLY_NO_FIX_NO_PAPER_GO')
           PY
       - name: Delete only temporary runner SSH key and known_hosts
         if: always()
