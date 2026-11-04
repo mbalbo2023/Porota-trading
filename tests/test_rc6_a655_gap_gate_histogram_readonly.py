@@ -32,7 +32,7 @@ class A655Histogram(unittest.TestCase):
               CREATE TABLE observer_state(id INTEGER,real_orders_sent INTEGER);
               CREATE TABLE financial_instrument_catalog(
                 ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
-                status TEXT,capability TEXT,metadata_json TEXT);
+                settlement_source TEXT,status TEXT,capability TEXT,metadata_json TEXT);
               CREATE TABLE contract_evidence_v2_current(
                 family TEXT,ticker TEXT,market TEXT,currency TEXT,settlement TEXT,
                 source_class TEXT,snapshot_id INTEGER,evidence_hash TEXT,observed_at TEXT);
@@ -65,8 +65,9 @@ class A655Histogram(unittest.TestCase):
 
     @staticmethod
     def catalog(conn, ticker, family, market, currency, settlement, cap, metadata="{}"):
-        conn.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?)",
-                     (ticker, family, market, currency, settlement, "AVAILABLE", cap, metadata))
+        conn.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?)",
+                     (ticker, family, market, currency, settlement, "PPI_FIELD",
+                      "AVAILABLE", cap, metadata))
 
     @staticmethod
     def snapshot(conn, ident, family, ticker, market="BYMA", currency="ARS", settlement="CI",
@@ -574,6 +575,146 @@ class A655Histogram(unittest.TestCase):
         self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
         forged = json.loads(json.dumps(source))
         forged["option_ppi_material_identity_total"] = 568
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
+
+    @staticmethod
+    def ppi_option_metadata(raw_nominal="1", *, include_settlement=True, discovery="PPI_PRIMARY"):
+        value = dict(_discovery_source=discovery, ticker="XYZ", type="OPCIONES",
+                     market="BYMA", currency="ARS", nominalInPrice=raw_nominal,
+                     _contract_bridge={"status": "BLOCKED", "gaps": ["CHANGE_REVIEW_REQUIRED"]})
+        if include_settlement:
+            value["settlement"] = "CI"
+        return json.dumps(value)
+
+    def option_pair(self, conn, *, current=None, raw_nominal="1", settlement_source="PPI_FIELD",
+                    include_settlement=True, discovery="PPI_PRIMARY"):
+        self.option_review(conn)
+        conn.execute("""UPDATE financial_instrument_catalog SET settlement_source=?, metadata_json=?
+          WHERE ticker='XYZ' AND instrument_type='OPCIONES'""",
+          (settlement_source, self.ppi_option_metadata(
+              raw_nominal, include_settlement=include_settlement, discovery=discovery)))
+        self.v2(conn, previous={"ppi_identity_verified": True},
+                current=current or {"ppi_identity_verified": True,
+                                   "ppi_nominal_in_price": "1", "price_quote_unit": "1"})
+
+    def test_a667_verified_pair_and_literal_ppi_five_key_still_not_paper_ready(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c)
+        raw = self.probe()
+        self.assertEqual(raw["option_ppi_quote_consistency_total"], 1)
+        self.assertEqual(raw["option_ppi_quote_consistency_hist"], [
+            {"pair": "PAIR_POSITIVE_EQUAL", "ppi_key": "PPI_PROVIDER_FIVE_KEY",
+             "raw_nominal": "RAW_NOMINAL_MATCH", "history": "NO_RECORDED_REMOVAL",
+             "count": 1}])
+        safe = module.sanitize({**raw, "private_ro_mount": True})
+        self.assertEqual(safe["state"], "READ_ONLY_OBSERVED")
+        self.assertFalse(safe["paper_admission_certified"])
+        self.assertNotIn("XYZ", json.dumps(safe))
+
+    def test_a667_request_side_or_missing_provider_settlement_is_unattested(self):
+        for kwargs in ({"settlement_source": "REQUEST_CANDIDATE"},
+                       {"include_settlement": False},
+                       {"discovery": "IOL_COMPLEMENTARY"}):
+            with self.subTest(kwargs=kwargs):
+                with sqlite3.connect(self.db) as c:
+                    c.execute("DELETE FROM contract_evidence_v2_changes")
+                    c.execute("DELETE FROM contract_evidence_v2_current")
+                    c.execute("DELETE FROM contract_evidence_v2_snapshots")
+                    self.option_pair(c, **kwargs)
+                raw = self.probe()
+                item = raw["option_ppi_quote_consistency_hist"][0]
+                self.assertEqual(item["pair"], "PAIR_POSITIVE_EQUAL")
+                self.assertEqual(item["ppi_key"], "PPI_FIVE_KEY_UNATTESTED")
+                self.assertEqual(item["raw_nominal"], "RAW_NOMINAL_MATCH")
+
+    def test_a667_mismatched_raw_nominal_or_pair_cannot_be_reported_consistent(self):
+        for current, raw_nominal, pair, raw_expected in (
+            ({"price_quote_unit": "1", "ppi_nominal_in_price": "2"}, "1",
+             "PAIR_UNEQUAL", "RAW_NOMINAL_MISMATCH"),
+            ({"price_quote_unit": "NaN", "ppi_nominal_in_price": "1"}, "1",
+             "PAIR_INVALID", "RAW_NOMINAL_UNVERIFIABLE"),
+            ({"price_quote_unit": "1"}, "1",
+             "PAIR_MISSING", "RAW_NOMINAL_UNVERIFIABLE"),
+            ({"price_quote_unit": "1", "ppi_nominal_in_price": "1"}, "10",
+             "PAIR_POSITIVE_EQUAL", "RAW_NOMINAL_MISMATCH"),
+        ):
+            with self.subTest(pair=pair, raw=raw_expected):
+                with sqlite3.connect(self.db) as c:
+                    c.execute("DELETE FROM contract_evidence_v2_changes")
+                    c.execute("DELETE FROM contract_evidence_v2_current")
+                    c.execute("DELETE FROM contract_evidence_v2_snapshots")
+                    self.option_pair(c, current=current, raw_nominal=raw_nominal)
+                item = self.probe()["option_ppi_quote_consistency_hist"][0]
+                self.assertEqual((item["pair"], item["raw_nominal"]), (pair, raw_expected))
+
+    def test_a667_provider_five_key_collision_or_invalid_basis_remains_unattested(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c, raw_nominal="1")
+            meta = json.loads(c.execute("""SELECT metadata_json FROM financial_instrument_catalog
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""").fetchone()[0])
+            meta["ticker"] = "SENSITIVE_DIFFERENT_SYMBOL"
+            c.execute("""UPDATE financial_instrument_catalog SET metadata_json=?
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""", (json.dumps(meta),))
+        receipt = module.sanitize({**self.probe(), "private_ro_mount": True})
+        self.assertEqual(receipt["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(receipt["option_ppi_quote_consistency_hist"][0]["ppi_key"],
+                         "PPI_FIVE_KEY_UNATTESTED")
+        self.assertNotIn("SENSITIVE_DIFFERENT_SYMBOL", json.dumps(receipt))
+
+    def test_a667_conflicting_ppi_source_current_never_picks_first_arbitrarily(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c)
+            payload = {"ppi_nominal_in_price": "100", "price_quote_unit": "100"}
+            raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            digest = hashlib.sha256(raw.encode()).hexdigest()
+            c.execute("""INSERT INTO contract_evidence_v2_snapshots
+              (snapshot_id,family,ticker,market,currency,settlement,source_class,evidence_hash,
+               observed_at,evidence_json,source_ref) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (60, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_AUTHENTICATED_XHR",
+               digest, STAMP, raw, "synthetic:fixture"))
+            c.execute("INSERT INTO contract_evidence_v2_current VALUES(?,?,?,?,?,?,?,?,?)",
+                      ("OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_AUTHENTICATED_XHR",
+                       60, digest, STAMP))
+        receipt = module.sanitize({**self.probe(), "private_ro_mount": True})
+        self.assertEqual(receipt["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(receipt["option_ppi_quote_consistency_hist"][0]["pair"],
+                         "PPI_CURRENT_NOT_UNIQUE")
+        self.assertFalse(receipt["paper_admission_certified"])
+
+    def test_a667_historical_removal_separate_from_current_pair(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c, current={"ppi_identity_verified": True})
+            # The older transition removed both quote-basis fields.
+            old = {"ppi_identity_verified": True, "price_quote_unit": "1",
+                   "ppi_nominal_in_price": "1"}
+            raw_old = json.dumps(old, sort_keys=True, separators=(",", ":"))
+            digest = hashlib.sha256(raw_old.encode()).hexdigest()
+            c.execute("""INSERT INTO contract_evidence_v2_snapshots
+              (snapshot_id,family,ticker,market,currency,settlement,source_class,
+               evidence_hash,observed_at,evidence_json,source_ref)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (41, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_STRUCTURED_API",
+               digest, STAMP, raw_old, "synthetic:fixture"))
+            c.execute("""INSERT INTO contract_evidence_v2_changes
+              (change_id,family,ticker,market,currency,settlement,source_class,
+               previous_hash,current_hash,detected_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (102, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_STRUCTURED_API",
+               digest, c.execute("SELECT evidence_hash FROM contract_evidence_v2_snapshots WHERE snapshot_id=31").fetchone()[0],
+               STAMP, "CHANGED_REVIEW_REQUIRED"))
+        item = self.probe()["option_ppi_quote_consistency_hist"][0]
+        self.assertEqual(item["history"], "RECORDED_PRIOR_REMOVAL")
+        self.assertEqual(item["pair"], "PAIR_MISSING")
+
+    def test_a667_sanitizer_blocks_unknown_status_and_false_denominator(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c)
+        raw = {**self.probe(), "private_ro_mount": True}
+        self.assertEqual(module.sanitize(raw)["state"], "READ_ONLY_OBSERVED")
+        forged = json.loads(json.dumps(raw))
+        forged["option_ppi_quote_consistency_hist"][0]["ppi_key"] = "secret_ticker"
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
+        forged = json.loads(json.dumps(raw))
+        forged["option_ppi_quote_consistency_total"] = 568
         self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
 
 
