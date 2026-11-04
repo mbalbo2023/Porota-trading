@@ -16,6 +16,9 @@ NOW = "2026-10-03T01:36:06+00:00"
 def row(ticker, family, *, description="", capability="READY_PAPER_SPOT",
         status="AVAILABLE", market="BYMA", currency="ARS",
         settlement="INMEDIATA", discovery="PPI_PRIMARY"):
+    # Explicitly synthetic provider-full-key positive fixture.  The documented
+    # real SearchInstrument response does NOT supply settlement; never copy
+    # this fixture shape into a live PPI response parser or source claim.
     return {
         "ticker": ticker,
         "instrument_type": family,
@@ -31,6 +34,12 @@ def row(ticker, family, *, description="", capability="READY_PAPER_SPOT",
             "_discovery_source": discovery,
             "_provider_instrument_type": family,
             "nominalInPrice": 1,
+            "_fixture_synthetic_full_key": True,
+            "ticker": ticker,
+            "type": family,
+            "market": market,
+            "currency": currency,
+            "settlement": settlement,
         }),
     }
 
@@ -168,14 +177,29 @@ def test_option_itself_requires_provider_settlement_not_request_candidate():
     underlying = {"YPFD": "ACCIONES"}
     inferred = option()
     inferred["settlement_source"] = "REQUEST_CANDIDATE"
+    # Match documented SearchInstrument semantics: no provider settlement.
+    raw = json.loads(inferred["metadata_json"])
+    raw.pop("settlement")
+    inferred["metadata_json"] = json.dumps(raw)
     assert policy.standard_long_option_evidence(inferred, underlying) is None
     records, skipped, identities = mass.planned_records([
         row("YPFD", "ACCIONES"), inferred,
     ])
-    assert identities == {"ACCIONES": 1, "OPCIONES": 1}
-    assert skipped["OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED"] == 1
+    assert identities == {"ACCIONES": 1}
+    assert skipped["PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"] == 1
     assert not any(record["source_class"] == "DERIVED_OFFICIAL_RULE"
                    and record["ticker"] == "YPFC40500O" for record in records)
+
+
+def test_option_mass_never_promotes_contradictory_synthetic_full_key():
+    contradictory = option()
+    raw = json.loads(contradictory["metadata_json"])
+    raw["market"] = "ROFEX"
+    contradictory["metadata_json"] = json.dumps(raw)
+    records, skipped, identities = mass.planned_records([contradictory])
+    assert records == []
+    assert identities == {}
+    assert skipped["PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"] == 1
 
 
 def test_option_itself_requires_aware_observation_clock_without_claiming_pit():
