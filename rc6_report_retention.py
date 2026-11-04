@@ -9,6 +9,7 @@ import gzip
 import hashlib
 import json
 import os
+import stat
 from datetime import date, datetime
 from pathlib import Path
 
@@ -49,15 +50,42 @@ def plan(root, *, today=None):
 
 
 def compress_verified(source, destination):
-    source = Path(source).resolve()
-    destination = Path(destination).resolve()
-    if not source.is_file() or source.is_symlink():
+    # resolve() dereferences symlinks. Reject aliases *before* resolving paths;
+    # otherwise an unrelated file can be read or overwritten as a report.
+    source_arg = Path(source)
+    destination_arg = Path(destination)
+    if source_arg.is_symlink():
+        raise ValueError("REPORT_SOURCE_ALIAS")
+    if destination_arg.is_symlink():
+        raise ValueError("REPORT_DESTINATION_ALIAS")
+    source = source_arg.resolve()
+    destination = destination_arg.resolve()
+    if source == destination:
+        raise ValueError("REPORT_DESTINATION_SOURCE_ALIAS")
+    if not source.is_file():
         raise ValueError("REPORT_SOURCE_NOT_REGULAR")
+    if source.stat().st_nlink != 1:
+        raise ValueError("REPORT_SOURCE_ALIAS")
+    if destination.exists():
+        raise ValueError("REPORT_DESTINATION_EXISTS")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with source.open("rb") as src, gzip.open(destination, "wb", compresslevel=6) as dst:
-        while chunk := src.read(1024 * 1024):
-            dst.write(chunk)
-    source_sha256 = _sha(source)
+    source_hash = hashlib.sha256()
+    # O_NOFOLLOW protects against replacement of the source between validation
+    # and open. gzip 'xb' creates the archive exclusively, never truncating one.
+    with os.fdopen(os.open(source, os.O_RDONLY | os.O_NOFOLLOW), "rb") as src:
+        metadata = os.fstat(src.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("REPORT_SOURCE_NOT_REGULAR")
+        if metadata.st_nlink != 1:
+            raise ValueError("REPORT_SOURCE_ALIAS")
+        try:
+            with gzip.open(destination, "xb", compresslevel=6) as dst:
+                while chunk := src.read(1024 * 1024):
+                    source_hash.update(chunk)
+                    dst.write(chunk)
+        except FileExistsError as exc:
+            raise ValueError("REPORT_DESTINATION_EXISTS") from exc
+    source_sha256 = source_hash.hexdigest()
     # A gzip file necessarily has a different hash. Verify the *restored*
     # stream instead, without loading the whole report into memory.
     restored_hash = hashlib.sha256()
