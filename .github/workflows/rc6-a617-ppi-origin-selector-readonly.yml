@@ -22,6 +22,7 @@ on:
       - '.github/workflows/rc6-a617-ppi-origin-selector-readonly.yml'
       - 'scripts/rc6_a617_ppi_origin_selector_readonly.py'
       - 'tests/test_rc6_a617_ppi_origin_selector_readonly.py'
+      - 'tests/test_rc6_a657_a617_schedule_gate.py'
 
 permissions:
   contents: read
@@ -39,8 +40,9 @@ jobs:
       - name: Compile and test strict bounded READ_ONLY path
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_a617_ppi_origin_selector_readonly.py tests/test_rc6_a617_ppi_origin_selector_readonly.py
+          python3 -m py_compile scripts/rc6_a617_ppi_origin_selector_readonly.py tests/test_rc6_a617_ppi_origin_selector_readonly.py tests/test_rc6_a657_a617_schedule_gate.py
           python3 -m unittest discover -s tests -p test_rc6_a617_ppi_origin_selector_readonly.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a657_a617_schedule_gate.py -v
           git diff --check
 
   host_provenance:
