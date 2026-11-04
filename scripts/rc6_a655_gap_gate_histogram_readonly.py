@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""A655: bounded, opt-in SQLite WAL READ_ONLY gap correlation receipt.
+"""A655/A658/A661: bounded, opt-in SQLite WAL READ_ONLY gate correlation.
 
 Never reconstruct the historical A626 575/172/74 cohort from a later DB.
 No provider, PPI Watch, paper engine, broker, order, WAL copy, or DB mutation.
 Host execution requires a private OS read-only mount in addition to mode=ro.
+A661 adds current V2 review-root categories; it cannot authorize remediation or
+certify whether a persisted bridge gate would be the same after live replay.
 """
 from __future__ import annotations
 
@@ -20,11 +22,12 @@ from urllib.parse import quote
 import uuid
 
 
-SCHEMA = "rc6.a658.gap-gate-histogram-readonly.v2"
+SCHEMA = "rc6.a661.option-review-root-readonly.v3"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 MAX_RAW = 32768
 MAX_ROWS = 60000
 MAX_GROUPS = 128  # Keep even the maximal categorical receipt under MAX_RAW.
+MAX_ROOT_GROUPS = 48
 MAX_EVIDENCE_BYTES = 32 * 1024 * 1024
 MAX_METADATA_BYTES = 128 * 1024 * 1024
 MAX_COUNT = 1000000
@@ -60,6 +63,30 @@ CURRENTS = frozenset({"EXACT_PPI_SOURCE_LABEL", "EXACT_NONPPI_SOURCE_LABEL",
 ATTACHMENTS = frozenset({"V17_ATTACHED", "V17_ABSENT", "V17_INVALID"})
 FIELDS = ("family", "capability", "bridge", "retry", "current", "v17",
           "bridge_reasons", "retry_source", "change_log")
+ROOT_FLAGS = frozenset({"PENDING_MATERIAL", "REVOKED", "ADJUSTED_SERIES_UNVERIFIED",
+                        "EVIDENCE_INTEGRITY_HOLD"})
+ROOT_STANDALONE = "UNEXPLAINED_PERSISTED_BRIDGE"
+ROOT_SOURCES = frozenset({"PPI_ONLY", "IOL_ONLY", "OTHER_ONLY", "MIXED_SOURCES", "NONE"})
+# Exact copy of cp_contract_evidence_v2_hf6.PROVENANCE_ONLY_FIELDS at product
+# 7e1e744d6ca9ab30c51b5747dd4467af5ece0145. Do not silently alter this
+# list: the material-vs-provenance distinction is business logic, not heuristic.
+PROVENANCE_ONLY_FIELDS = frozenset({
+    "provider_timestamp", "capture_timestamp", "freshness_basis",
+    "derivation_rule", "confidence", "evidence_class",
+    "source_job", "source_route", "evidence_scope", "readiness_guard",
+    "semantic_guard", "metadata_source", "quantity_terms_source",
+    "provider_currency", "fund_description", "iol_operable_observed",
+})
+# Same source gate as rc6_contract_bridge.normalize_group(), minus the ignored
+# IOL_STRUCTURED_API option-series inference and legacy evidence.
+USABLE_V2_SOURCES = frozenset({
+    "PPI_STRUCTURED_API", "PPI_AUTHENTICATED_XHR", "PPI_AUTHENTICATED_DOM",
+    "PPI_AUTHENTICATED_WEB", "IOL_AUTHENTICATED_XHR", "MARKET_OFFICIAL",
+    "BYMA_STRUCTURED_API", "BYMA_OFFICIAL_DOCUMENTATION", "A3_PRIMARY_API",
+    "A3_OFFICIAL_DOCUMENTATION", "CLEARING_OFFICIAL", "A3_RISK_POSTTRADE",
+    "FUND_MANAGER_OFFICIAL", "IOL_AUTHENTICATED_DOM", "IOL_AUTHENTICATED_WEB",
+    "DERIVED_OFFICIAL_RULE", "PPI_OFFICIAL_DOCUMENTATION", "PPI_SUPPORT",
+})
 HEX = re.compile(r"[a-f0-9]{64}\Z")
 
 
@@ -76,7 +103,8 @@ def _base():
             "paper_admission_certified": False, "runtime_sha_verified": False,
             "real_orders_sent": None, "sampled_at_utc": None,
             "catalog_active_gap_total": None, "catalog_six_family_total": None,
-            "status_coverage": {}, "by_family": {}, "joint": []}
+            "status_coverage": {}, "by_family": {}, "joint": [],
+            "option_review_root_total": None, "option_review_root_hist": []}
 
 
 def _mount_is_readonly(path):
@@ -252,6 +280,183 @@ def _change_log_entries(conn):
     return {_key(row) for row in rows if row["status"] == "CHANGED_REVIEW_REQUIRED"}
 
 
+def _material_projection(value):
+    """Faithful to cp_contract_evidence_v2_hf6.material_evidence()."""
+    if isinstance(value, dict):
+        return {str(key): _material_projection(nested) for key, nested in value.items()
+                if str(key) not in PROVENANCE_ONLY_FIELDS}
+    if isinstance(value, (tuple, list)):
+        return [_material_projection(item) for item in value]
+    return value
+
+
+def _canonical_hash(value):
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _source_bucket(sources):
+    if not sources:
+        return "NONE"
+    buckets = set()
+    for source in sources:
+        if isinstance(source, str) and source.startswith("PPI_"):
+            buckets.add("PPI")
+        elif isinstance(source, str) and source.startswith("IOL_"):
+            buckets.add("IOL")
+        else:
+            buckets.add("OTHER")
+    if len(buckets) != 1:
+        return "MIXED_SOURCES"
+    return {"PPI": "PPI_ONLY", "IOL": "IOL_ONLY", "OTHER": "OTHER_ONLY"}[
+        next(iter(buckets))]
+
+
+def _option_root_hist(conn, keys):
+    """Reconstruct only the OPCIONES-relevant V2 part of normalize_group().
+
+    The canonical pending_material_changes() marks a five-key identity pending
+    when *any* CHANGED_REVIEW_REQUIRED row has missing/corrupt snapshots or a
+    material semantic difference. Its only review exception is A198 CAUCIONES,
+    never OPCIONES. The append-only change-log flag alone cannot certify this.
+    A V2 current 'revoked' or 'adjusted_series_unverified' truthy flag on a
+    usable non-IOL_STRUCTURED_API option record independently triggers the
+    same persisted bridge reason. This tool reads but never updates evidence.
+    """
+    if not keys:
+        # A later snapshot may genuinely have no A658-like option review gate.
+        # This is a zero *diagnostic target*, never PAPER-admission evidence.
+        return []
+    if len(keys) > MAX_ROWS:
+        raise Hold("A661_TARGET_ROWS_HOLD")
+    flags = {key: set() for key in keys}
+    sources = {key: set() for key in keys}
+    now = datetime.now(timezone.utc)
+    used_bytes = 0
+    changes = conn.execute("""SELECT ch.family,ch.ticker,ch.market,ch.currency,
+      ch.settlement,ch.change_id,ch.source_class,ch.previous_hash,ch.current_hash,
+      ch.detected_at,prev.evidence_json AS previous_json,
+      curr.evidence_json AS current_json,prev.observed_at AS previous_observed_at,
+      curr.observed_at AS current_observed_at
+      FROM contract_evidence_v2_changes ch
+      LEFT JOIN contract_evidence_v2_snapshots prev
+        ON prev.family=ch.family AND prev.ticker=ch.ticker AND prev.market=ch.market
+       AND prev.currency=ch.currency AND prev.settlement=ch.settlement
+       AND prev.source_class=ch.source_class AND prev.evidence_hash=ch.previous_hash
+      LEFT JOIN contract_evidence_v2_snapshots curr
+        ON curr.family=ch.family AND curr.ticker=ch.ticker AND curr.market=ch.market
+       AND curr.currency=ch.currency AND curr.settlement=ch.settlement
+       AND curr.source_class=ch.source_class AND curr.evidence_hash=ch.current_hash
+      WHERE ch.family='OPCIONES' AND ch.status='CHANGED_REVIEW_REQUIRED'
+      LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
+    if len(changes) > MAX_ROWS:
+        raise Hold("A661_CHANGES_ROWS_HOLD")
+    for row in changes:
+        key = _key(row)
+        if key not in keys:
+            continue
+        source = row["source_class"]
+        problems = False
+        try:
+            detected = _utc(row["detected_at"])
+            if detected > now:
+                problems = True
+        except Hold:
+            problems = True
+        previous_raw, current_raw = row["previous_json"], row["current_json"]
+        if previous_raw is None or current_raw is None:
+            # Canonical missing evidence is pending, not automatically safe.
+            flags[key].update(("PENDING_MATERIAL", "EVIDENCE_INTEGRITY_HOLD"))
+            sources[key].add(source)
+            continue
+        if not isinstance(previous_raw, str) or not isinstance(current_raw, str):
+            flags[key].update(("PENDING_MATERIAL", "EVIDENCE_INTEGRITY_HOLD"))
+            sources[key].add(source)
+            continue
+        used_bytes += len(previous_raw) + len(current_raw)
+        if used_bytes > MAX_EVIDENCE_BYTES:
+            raise Hold("A661_EVIDENCE_BYTES_HOLD")
+        try:
+            previous, current = _strict_json(previous_raw), _strict_json(current_raw)
+            # Same material-evidence hash as the actual product module. Full
+            # snapshot hash/clock checks add a conservative integrity alarm.
+            is_material = (_canonical_hash(_material_projection(previous)) !=
+                           _canonical_hash(_material_projection(current)))
+            if (not isinstance(row["previous_hash"], str)
+                    or not isinstance(row["current_hash"], str)
+                    or _canonical_hash(previous) != row["previous_hash"]
+                    or _canonical_hash(current) != row["current_hash"]
+                    or _utc(row["previous_observed_at"]) > now
+                    or _utc(row["current_observed_at"]) > now):
+                problems = True
+        except (Hold, TypeError, ValueError, OverflowError):
+            # Mirrors canonical json.loads failure -> material pending.
+            is_material = True
+            problems = True
+        if is_material:
+            flags[key].add("PENDING_MATERIAL")
+            sources[key].add(source)
+        if problems:
+            flags[key].add("EVIDENCE_INTEGRITY_HOLD")
+            sources[key].add(source)
+
+    current = conn.execute("""SELECT c.family,c.ticker,c.market,c.currency,
+      c.settlement,c.source_class,c.observed_at,s.source_ref,s.effective_at,
+      s.evidence_json,s.evidence_hash
+      FROM contract_evidence_v2_current c JOIN contract_evidence_v2_snapshots s
+        ON s.snapshot_id=c.snapshot_id
+      WHERE c.family='OPCIONES' LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
+    if len(current) > MAX_ROWS:
+        raise Hold("A661_CURRENT_ROWS_HOLD")
+    for row in current:
+        key = _key(row)
+        if key not in keys:
+            continue
+        source = row["source_class"]
+        if source not in USABLE_V2_SOURCES:
+            # normalize_group() ignores inferred IOL_STRUCTURED_API options.
+            # Unknown / legacy sources cannot cause revoked or adjusted flags.
+            continue
+        value = row["evidence_json"]
+        if not isinstance(value, str) or len(value) > 32768:
+            flags[key].add("EVIDENCE_INTEGRITY_HOLD")
+            sources[key].add(source)
+            continue
+        used_bytes += len(value)
+        if used_bytes > MAX_EVIDENCE_BYTES:
+            raise Hold("A661_EVIDENCE_BYTES_HOLD")
+        try:
+            evidence = _strict_json(value)
+            if (not isinstance(evidence, dict) or not row["source_ref"]
+                    or _canonical_hash(evidence) != row["evidence_hash"]):
+                raise Hold("A661_CURRENT_INTEGRITY_HOLD")
+            seen = _utc(row["observed_at"])
+            if seen > now or (row["effective_at"] and _utc(row["effective_at"]) > now):
+                flags[key].add("EVIDENCE_INTEGRITY_HOLD")
+                sources[key].add(source)
+            for literal, label in (("revoked", "REVOKED"),
+                                   ("adjusted_series_unverified", "ADJUSTED_SERIES_UNVERIFIED")):
+                raw = evidence.get(literal)
+                if raw is not None and type(raw) is not bool:
+                    flags[key].add("EVIDENCE_INTEGRITY_HOLD")
+                    sources[key].add(source)
+                if raw:
+                    flags[key].add(label)
+                    sources[key].add(source)
+        except (Hold, TypeError, ValueError, OverflowError):
+            flags[key].add("EVIDENCE_INTEGRITY_HOLD")
+            sources[key].add(source)
+    hist = Counter()
+    for key in keys:
+        root = ("+".join(sorted(flags[key])) if flags[key] else ROOT_STANDALONE)
+        hist[(root, _source_bucket(sources[key]))] += 1
+    if len(hist) > MAX_ROOT_GROUPS:
+        raise Hold("A661_ROOT_GROUPS_HOLD")
+    return [dict(flags=reason, source_class_bucket=bucket, count=count)
+            for (reason, bucket), count in sorted(hist.items())]
+
+
 def _capability(raw):
     return raw if raw in CAP_CODES else "OTHER_CAPABILITY_CODE"
 
@@ -327,9 +532,9 @@ def _aggregate(conn):
         "observer_state": {"id", "real_orders_sent"},
         "financial_instrument_catalog": {"ticker", "instrument_type", "market", "currency", "settlement", "status", "capability", "metadata_json"},
         "contract_evidence_v2_current": {"family", "ticker", "market", "currency", "settlement", "snapshot_id", "source_class", "evidence_hash", "observed_at"},
-        "contract_evidence_v2_snapshots": {"family", "ticker", "market", "currency", "settlement", "snapshot_id", "source_class", "evidence_hash", "observed_at", "evidence_json"},
+        "contract_evidence_v2_snapshots": {"family", "ticker", "market", "currency", "settlement", "snapshot_id", "source_class", "source_ref", "effective_at", "evidence_hash", "observed_at", "evidence_json"},
         "complementary_contract_retry": {"ticker", "instrument_type", "market", "currency", "settlement", "reason", "source"},
-        "contract_evidence_v2_changes": {"family", "ticker", "market", "currency", "settlement", "status"},
+        "contract_evidence_v2_changes": {"family", "ticker", "market", "currency", "settlement", "status", "change_id", "source_class", "previous_hash", "current_hash", "detected_at"},
     }
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not required.keys() <= tables or any(not fields <= _columns(conn, name) for name, fields in required.items()):
@@ -348,6 +553,7 @@ def _aggregate(conn):
     if len(rows) > MAX_ROWS:
         raise Hold("CATALOG_ROWS_LIMIT_HOLD")
     groups = Counter()
+    option_review_keys = set()
     # Prevent a false zero if the catalog's actual status vocabulary drifts.
     # Every family row is covered, including paused/nonactive identities that
     # deliberately do not belong to the A626-like active-gap denominator.
@@ -383,6 +589,11 @@ def _aggregate(conn):
                    else "EXACT_PPI_SOURCE_LABEL" if "PPI" in labels.get(key, ())
                    else "EXACT_NONPPI_SOURCE_LABEL" if labels.get(key)
                    else "NO_EXACT_CURRENT")
+        if (family == "OPCIONES" and bridge == "BLOCKED"
+                and bridge_reasons == "CHANGE_REVIEW_REQUIRED"
+                and row["capability"] == "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
+                and current == "EXACT_PPI_SOURCE_LABEL"):
+            option_review_keys.add(key)
         groups[(family, _capability(row["capability"]), bridge, retry, current, v17,
                 bridge_reasons, _retry_source_label(retry_sources.get(key, set())),
                 "REVIEW_LOG_ENTRY_PRESENT" if key in change_logs else "NO_REVIEW_LOG_ENTRY")] += 1
@@ -392,7 +603,9 @@ def _aggregate(conn):
             or sum(c["active_gap"] for c in coverage.values()) == 0):
         raise Hold("ACTIVE_GAP_DENOMINATOR_HOLD")
     joint = [dict(zip(FIELDS, key), count=value) for key, value in sorted(groups.items())]
-    return joint, {family: dict(sorted(row.items())) for family, row in sorted(coverage.items())}
+    option_roots = _option_root_hist(conn, option_review_keys)
+    return (joint, {family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
+            option_roots, len(option_review_keys))
 
 
 def diagnose(db=DB, *, enforce_ro_mount=True):
@@ -413,11 +626,13 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
         conn.execute("BEGIN")
         start = time.monotonic()
         conn.set_progress_handler(lambda: int(time.monotonic() - start > 19), 1000)
-        joint, coverage = _aggregate(conn)
+        joint, coverage, option_roots, option_root_total = _aggregate(conn)
         report["paper_workspace_verified"] = True
         report["real_orders_sent"] = 0
         report["sampled_at_utc"] = datetime.now(timezone.utc).isoformat()
         report["joint"] = joint
+        report["option_review_root_total"] = option_root_total
+        report["option_review_root_hist"] = option_roots
         report["catalog_active_gap_total"] = sum(item["count"] for item in joint)
         report["status_coverage"] = coverage
         report["catalog_six_family_total"] = sum(row["all"] for row in coverage.values())
@@ -484,6 +699,32 @@ def sanitize(value):
                        for family, row in coverage.items())):
             raise Hold("UNTRUSTED_STATUS_COVERAGE")
         covered_total = sum(row["all"] for row in coverage.values())
+        roots = value.get("option_review_root_hist")
+        root_total = value.get("option_review_root_total")
+        if (not isinstance(roots, list) or len(roots) > MAX_ROOT_GROUPS
+                or type(root_total) is not int or not 0 <= root_total <= MAX_COUNT):
+            raise Hold("UNTRUSTED_ROOT_GROUPS")
+        root_seen = set()
+        source_roots = []
+        for item in roots:
+            if not isinstance(item, dict) or set(item) != {"flags", "source_class_bucket", "count"}:
+                raise Hold("UNTRUSTED_ROOT_GROUPS")
+            flags, bucket, count = item["flags"], item["source_class_bucket"], item["count"]
+            parts = flags.split("+") if isinstance(flags, str) else []
+            if (not ((flags == ROOT_STANDALONE and bucket == "NONE") or
+                     (parts and parts == sorted(set(parts)) and set(parts) <= ROOT_FLAGS))
+                    or bucket not in ROOT_SOURCES or type(count) is not int
+                    or not 0 < count <= MAX_COUNT or (flags, bucket) in root_seen):
+                raise Hold("UNTRUSTED_ROOT_GROUPS")
+            root_seen.add((flags, bucket))
+            source_roots.append({"flags": flags, "source_class_bucket": bucket, "count": count})
+        expected_options = sum(item["count"] for item in joint
+                               if item["family"] == "OPCIONES" and item["bridge"] == "BLOCKED"
+                               and item["bridge_reasons"] == "CHANGE_REVIEW_REQUIRED"
+                               and item["capability"] == "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
+                               and item["current"] == "EXACT_PPI_SOURCE_LABEL")
+        if sum(item["count"] for item in roots) != root_total or root_total != expected_options:
+            raise Hold("UNTRUSTED_ROOT_DENOMINATOR")
         if (total != value.get("catalog_active_gap_total") or total > MAX_COUNT or total == 0
                 or covered_total != value.get("catalog_six_family_total")
                 or covered_total > MAX_COUNT):
@@ -493,6 +734,9 @@ def sanitize(value):
                     real_orders_sent=0, sampled_at_utc=dt.isoformat(),
                     catalog_active_gap_total=total,
                     catalog_six_family_total=covered_total,
+                    option_review_root_total=root_total,
+                    option_review_root_hist=sorted(
+                        source_roots, key=lambda x: (x["flags"], x["source_class_bucket"])),
                     status_coverage={family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
                     by_family=dict(sorted(totals.items())),
                     joint=sorted(joint, key=lambda x: tuple(x[f] for f in FIELDS)))
