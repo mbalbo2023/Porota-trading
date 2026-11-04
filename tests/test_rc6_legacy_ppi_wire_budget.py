@@ -6,7 +6,10 @@ broker, host-sidecar, or PPI Watch mutation is possible in this test module.
 
 import ast
 from contextlib import contextmanager
+import importlib
+from importlib.metadata import version
 import importlib.util
+import os
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -130,6 +133,44 @@ def req(path, *, method="GET"):
 
 
 class LegacyPPIBudgetTest(TestCase):
+    def test_pinned_real_sdk_session_contract_offhost_without_network(self):
+        """Actions installs the pinned SDK; local source-only runs use fakes.
+
+        Merely instantiating the SDK requires no credentials or HTTP. The
+        injected fake adapter rejects the first wire send before networking.
+        """
+        try:
+            sdk_module = importlib.import_module("ppi_client.ppi")
+            import requests
+        except ModuleNotFoundError:
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                self.fail("CI_DEPENDENCY_CLOSURE_PPI_SDK_NOT_INSTALLED")
+            # The separate pure-fake tests still assert fail-closed behavior.
+            return
+        self.assertEqual(version("ppi-client"), "1.3.0")
+        ppi = sdk_module.PPI(sandbox=False)
+        rest = ppi._PPI__apiClient.get_rest_client()
+        session = rest.get_session()
+        self.assertIsInstance(session, requests.Session)
+
+        original_adapter = FakeAdapter()
+        session.mount("https://", original_adapter)
+        rest.get_session = lambda: session
+        module, imports = legacy_module(lambda: None)
+        with patch.dict(sys.modules, imports):
+            module.ResilientPPIClient._install_sdk_wire_budget(object.__new__(
+                module.ResilientPPIClient), ppi)
+            guarded = rest.get_session().get_adapter(CURRENT)
+            self.assertIsInstance(guarded, module._BudgetedPPIAdapter)
+            with self.assertRaisesRegex(Backpressure, "PPI_SHARED_BUDGET_UNAVAILABLE"):
+                guarded.send(req(CURRENT))
+        self.assertEqual(original_adapter.calls, [])
+        unrelated = requests.Session()
+        try:
+            self.assertNotIsInstance(unrelated.get_adapter(CURRENT), module._BudgetedPPIAdapter)
+        finally:
+            unrelated.close()
+
     def test_no_authority_denies_current_and_book_before_physical_send(self):
         module, imports = legacy_module(lambda: None)
         original = FakeAdapter()
