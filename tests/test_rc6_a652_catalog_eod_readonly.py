@@ -88,6 +88,14 @@ class A652CatalogEODReadOnlyTest(unittest.TestCase):
             self.query("UPDATE candidate_refresh_state SET state=?", (state,))
             self.assertEqual(self.read()["state"], "NO_VERIFICADO")
 
+    def test_stale_complete_marker_cannot_attest_today_event(self):
+        self.query("UPDATE candidate_refresh_state SET checked_at='2026-11-03T18:10:00-03:00'")
+        report = self.read()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "PROJECTION_MARKER_NOT_EOD")
+        report["private_ro_mount"] = True
+        self.assertEqual(eod.sanitize(report)["state"], "NO_VERIFICADO")
+
     def test_nonzero_orders_fails_closed(self):
         self.query("UPDATE observer_state SET real_orders_sent=1")
         report = self.read()
