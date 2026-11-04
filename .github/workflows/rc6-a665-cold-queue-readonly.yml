@@ -134,6 +134,17 @@ jobs:
                   'MULTIPLE_FAILED_RECEIPTS','FAILED_QUEUE_WITHOUT_FAILED_RECEIPT',
                   'NO_FAILED_RECEIPT'):
                   raise ValueError('QUEUE_BINDING_INVALID')
+              count=safe['failed_receipt_count']
+              binding=obj['queue_failed_binding']
+              queue_state=obj['queue_state']
+              valid_binding=(
+                  count==1 and binding=='MATCHES_FAILED_RECEIPT' and queue_state=='FAILED' or
+                  count==1 and binding=='FAILED_RECEIPT_QUEUE_NOT_BOUND' or
+                  count>=2 and binding=='MULTIPLE_FAILED_RECEIPTS' or
+                  count==0 and binding=='FAILED_QUEUE_WITHOUT_FAILED_RECEIPT' and queue_state=='FAILED' or
+                  count==0 and binding=='NO_FAILED_RECEIPT' and queue_state!='FAILED')
+              if not valid_binding:
+                  raise ValueError('COUNT_BINDING_CONTRADICTS_QUEUE')
               utc=datetime.fromisoformat(obj['generated_at_utc'])
               art=datetime.fromisoformat(obj['generated_at_art'])
               if (utc.utcoffset()!=timedelta(0) or
