@@ -14,7 +14,22 @@ NOW = "2026-10-03T16:00:00+00:00"
 
 def future_row(ticker="DLR/OCT26", *, capability="NEEDS_FUTURES_MARGIN_AND_CONTRACT",
                status="AVAILABLE", market="A3", currency="ARS",
-               settlement="INMEDIATA", discovery="PPI_PRIMARY"):
+               settlement="INMEDIATA", discovery="PPI_PRIMARY",
+               provider_native=True):
+    metadata = {
+        "_discovery_source": discovery,
+        "_provider_instrument_type": "FUTUROS",
+    }
+    if provider_native:
+        # SearchInstrument's literal native five-key, not the request-side
+        # SQL coordinates or a provenance label, attests this PPI identity.
+        metadata.update({
+            "ticker": ticker,
+            "type": "FUTUROS",
+            "market": market,
+            "currency": currency,
+            "settlement": settlement,
+        })
     return {
         "ticker": ticker,
         "instrument_type": "FUTUROS",
@@ -26,10 +41,7 @@ def future_row(ticker="DLR/OCT26", *, capability="NEEDS_FUTURES_MARGIN_AND_CONTR
         "capability": capability,
         "last_seen_at": NOW,
         "description": ticker,
-        "metadata_json": json.dumps({
-            "_discovery_source": discovery,
-            "_provider_instrument_type": "FUTUROS",
-        }),
+        "metadata_json": json.dumps(metadata),
     }
 
 
@@ -97,6 +109,26 @@ def test_unresolved_future_keeps_explicit_mass_skip_reason():
     assert identities == {"FUTUROS": 1}
     assert len(records) == 1
     assert skipped["FUTURE_STANDARD_DLR_POLICY_UNRESOLVED"] == 1
+
+
+def test_mass_rejects_provenance_label_without_native_provider_five_key():
+    records, skipped, identities = mass.planned_records([
+        future_row(provider_native=False),
+    ])
+    assert records == []
+    assert identities == {}
+    assert skipped == {"PPI_FULL_KEY_NOT_PROVIDER_ATTESTED": 1}
+
+
+def test_mass_rejects_provider_settlement_mismatch_without_future_terms():
+    row = future_row()
+    raw = json.loads(row["metadata_json"])
+    raw["settlement"] = "A-24HS"
+    row["metadata_json"] = json.dumps(raw)
+    records, skipped, identities = mass.planned_records([row])
+    assert records == []
+    assert identities == {}
+    assert skipped == {"PPI_FULL_KEY_NOT_PROVIDER_ATTESTED": 1}
 
 
 def test_future_paper_window_is_a3_specific_and_has_eod_buffers():
