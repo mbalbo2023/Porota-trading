@@ -1,8 +1,9 @@
 # A651-R34 — PPI 5-key settlement authority at PAPER consumer (2026-11-04)
 
 Scope: `bu_instrument_catalog.py`, `cr_contract_evidence_v2_mass_hf6.py`,
-associated adversarial regression fixtures/tests. Owner and scope are declared
-in issue #732 comment 6637288487 (extensions 6637399898/6637448031).
+`rc6_contract_bridge.py`, associated adversarial regression fixtures/tests.
+Owner and scope are declared in issue #732 comment 6637288487 (extensions
+6637399898/6637448031/6637572651/6637616841).
 
 Baseline: candidate PR #778 `63beb5ff3e6dfbcbfe836deed406d15cd212347f`;
 product `7e1e744d6ca9ab30c51b5747dd4467af5ece0145` unchanged.
@@ -39,13 +40,26 @@ the synthetic case during the 04-Nov session.
   existing evidence/contract path.
 - Hard check at final lookup also closes a stale pre-fix candidate ledger
   where `can_simulate=1` until the next scheduler rebuild.
+- The direct PAPER caucion adapter `caucion_offer_from_evidence` does **not**
+  traverse that lookup. It now requires the same native five-key before
+  constructing a synthetic caucion offer; a fully populated offline quote with
+  a request-only primary was demonstrated to pass before this guard. The
+  runtime placement path separately uses `lookup` and still returns
+  `CAUCION_BOOK_QUANTITY_UNIT_UNVERIFIED`, so no actual runtime bypass was
+  observed or claimed.
 
 ## TEST / STATUS
 
 Before fix: 4/5 new adversarial tests failed because request-only or
 contradictory full-key identities were promoted. After fix and correction of
 legacy *positive fixtures* to contain genuinely explicit provider five-keys:
-42/42 focused tests PASS (A651, A600, WS13, WS14, complement catalog),
+44/44 focused tests PASS (A651 seven cases, A600, WS13, WS14, complement catalog),
+plus 57/57 WS09/WS12 tests PASS with a local vendored-requests import shim
+(environment has no installed `requests`; this is **not** a CI substitute).
+One pre-existing WS09 fixture expected BONOS market-sale PAPER admission, but
+the exact #778 baseline reproduced `FI_NATIVE_MARKET_EXIT_NOT_ADMITTED` even
+before this change. Only that stale test expectation was corrected to require
+HOLD/zero fills, without relaxing the real engine or exit policy.
 `compileall` and `git diff --check` PASS. GitHub CI, artifact, deployment and
 runtime validation remain **NO_VERIFICADO** until independent evidence.
 

@@ -294,7 +294,9 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
     """
     from bt_caucion_paper import CaucionOffer
     from bs_instrument_contracts import aware_datetime
-    from bu_instrument_catalog import _candidate_has_ppi_primary, _candidate_timestamp_is_fresh
+    from bu_instrument_catalog import (_candidate_has_ppi_primary,
+                                       _candidate_timestamp_is_fresh,
+                                       ppi_full_key_evidence_reason)
     now = now or datetime.now(timezone.utc)
     normalized = normalize_group(records, now=now)
     errors = {gap for gap in normalized["contract_bridge"]["gaps"]
@@ -303,6 +305,11 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
     pkey = tuple(primary.get(k) for k in ("ticker","instrument_type","market","currency","settlement"))
     if errors or key != pkey or key[1] != "CAUCIONES":
         raise ValueError("CAUCION_EVIDENCE_INVALID:" + ",".join(sorted(errors or {"IDENTITY_MISMATCH"})))
+    # This direct PAPER adapter bypasses quote_terms/lookup/candidate_identity.
+    # REQUEST_CANDIDATE is a scanner hint, never an executable PPI tenor.
+    provider_key_error = ppi_full_key_evidence_reason(primary)
+    if provider_key_error:
+        raise ValueError(provider_key_error)
     if (primary.get("status") != "AVAILABLE"
             or not _candidate_has_ppi_primary(primary.get("settlement_source"),json.dumps(primary.get("raw") or {}))
             or not _candidate_timestamp_is_fresh(primary.get("last_seen_at"),now.isoformat(),86400)):

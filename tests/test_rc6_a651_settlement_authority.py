@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 import pytest
 
 import bu_instrument_catalog as catalog
+import cp_contract_evidence_v2_hf6 as contract_store
 import cr_contract_evidence_v2_mass_hf6 as mass
+import rc6_contract_bridge as bridge
 from be_paper_engine import PaperStore
 
 
@@ -126,3 +128,50 @@ def test_source_or_literal_provider_settlement_mismatch_cannot_attest(
         record, now=NOW)["opening_block_reason"]
     records, skipped, identities = mass.planned_records([_catalog_row(record)])
     assert records == [] and identities == {}
+
+
+def _caucion_claims():
+    """Fully populated synthetic contract/quote; never a real PPI observation."""
+    from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+
+    def claim(source_class, evidence):
+        return {
+            "family": "CAUCIONES", "ticker": "PESOS1", "market": "BYMA",
+            "currency": "ARS", "settlement": "INMEDIATA",
+            "source_class": source_class, "source_ref": "A651_OFFLINE_FIXTURE",
+            "observed_at": NOW.isoformat(), "evidence": evidence,
+            "evidence_hash": contract_store.evidence_hash(evidence),
+        }
+
+    return [
+        claim("DERIVED_OFFICIAL_RULE", {
+            "side": "COLOCADORA", "term_days": "1",
+            "minimum_principal": "100000", "paper_principal_step": "1",
+            "day_count_basis": 365, "fee_payment": "UPFRONT",
+            "paper_fill_policy": "LIVE_PPI_BID_PARTICIPATION_CAP",
+            "fee_authority": CAUCION_PAPER_FEE_AUTHORITY,
+        }),
+        claim("PPI_STRUCTURED_API", {
+            "annual_rate_fraction": "0.25",
+            "start_date": "2026-11-04",
+            "maturity_at": "2026-11-05T12:00:00-03:00",
+            "quoted_at": NOW.isoformat(), "available_principal": "500000",
+            "principal_step": "1", "market_session_state": "OPEN", "operable": True,
+        }),
+    ]
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_direct_caucion_evidence_adapter_requires_native_ppi_five_key(native):
+    """Bridge is callable without catalog projection or quote_terms."""
+    payload = {"ticker": "PESOS1", "type": "CAUCIONES", "market": "BYMA",
+               "currency": "ARS"}
+    if native:
+        payload["settlement"] = "INMEDIATA"
+    primary = catalog.normalize_record(payload, "INMEDIATA", NOW.isoformat(), "A651_CAUCION_FIXTURE")
+    if native:
+        offer = bridge.caucion_offer_from_evidence(_caucion_claims(), primary, now=NOW)
+        assert offer.instrument_id == "PESOS1" and offer.currency == "ARS"
+    else:
+        with pytest.raises(ValueError, match="PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"):
+            bridge.caucion_offer_from_evidence(_caucion_claims(), primary, now=NOW)
