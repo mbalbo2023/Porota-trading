@@ -14,7 +14,7 @@ SPEC = importlib.util.spec_from_file_location("a652_eod_readonly", SCRIPT)
 eod = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(eod)
 EVENT_AT = "2026-11-04T18:08:15-03:00"
-MARKER_AT = "2026-11-04T18:08:16-03:00"
+MARKER_AT = "2026-11-04T18:00:01-03:00"
 DETAIL = ("promoted_this_run=1; inserted_this_run=0; refreshed_this_run=2; "
           "ready_total=1; pending_total=2; pending_contract_retry=2; "
           'ready_by_family={"OPCIONES":1}; sources={"SECRET_UNTRUSTED":2}; '
@@ -64,6 +64,9 @@ class A652CatalogEODReadOnlyTest(unittest.TestCase):
     def test_postclose_complete_aggregate_observed_not_paper_go(self):
         report = self.read()
         self.assertEqual(report["state"], "READ_ONLY_OBSERVED")
+        # Code contract: RUNNING checked_at starts *before* EOD event, and
+        # COMPLETE updates state without overwriting that earlier timestamp.
+        self.assertLess(report["projection"]["local_at"], report["event"]["local_at"])
         self.assertEqual(report["event"]["promoted_this_run"], 1)
         self.assertEqual(report["event"]["ready_by_family"], {"OPCIONES": 1})
         self.assertEqual(report["catalog"]["totals"],
@@ -90,6 +93,20 @@ class A652CatalogEODReadOnlyTest(unittest.TestCase):
 
     def test_stale_complete_marker_cannot_attest_today_event(self):
         self.query("UPDATE candidate_refresh_state SET checked_at='2026-11-03T18:10:00-03:00'")
+        report = self.read()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "PROJECTION_MARKER_NOT_EOD")
+        report["private_ro_mount"] = True
+        self.assertEqual(eod.sanitize(report)["state"], "NO_VERIFICADO")
+
+    def test_preclose_marker_cannot_attest_postclose_event(self):
+        self.query("UPDATE candidate_refresh_state SET checked_at='2026-11-04T17:59:59-03:00'")
+        report = self.read()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "PROJECTION_MARKER_NOT_EOD")
+
+    def test_marker_after_event_is_not_same_publication(self):
+        self.query("UPDATE candidate_refresh_state SET checked_at='2026-11-04T18:08:16-03:00'")
         report = self.read()
         self.assertEqual(report["state"], "NO_VERIFICADO")
         self.assertEqual(report["reason"], "PROJECTION_MARKER_NOT_EOD")
@@ -140,3 +157,4 @@ class A652CatalogEODReadOnlyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

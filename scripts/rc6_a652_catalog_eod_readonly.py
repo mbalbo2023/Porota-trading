@@ -213,8 +213,12 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
             report["reason"] = "EOD_EVENT_NO_VERIFICADO"
         elif report["projection"].get("state") != "COMPLETE":
             report["reason"] = "PROJECTION_NOT_COMPLETE"
+        # `_candidate_publication` persists `checked_at` on RUNNING *before*
+        # reconciling, emits the EOD event after its SQLite commit, and only
+        # then flips state to COMPLETE (without changing `checked_at`).
+        # A newer marker would indicate a different/inconsistent publication.
         elif (not _after_closed(_stamp(report["projection"].get("local_at")))
-              or _stamp(report["projection"]["local_at"]) <
+              or _stamp(report["projection"]["local_at"]) >
                  _stamp(report["event"]["local_at"])):
             report["reason"] = "PROJECTION_MARKER_NOT_EOD"
         elif report["catalog"].get("state") != "READ_ONLY_OBSERVED":
@@ -294,7 +298,7 @@ def sanitize(untrusted):
             and safe["paper_workspace_verified"]
             and safe["event"].get("state") == "READ_ONLY_OBSERVED"
             and safe["projection"].get("state") == "COMPLETE"
-            and _after_closed(marker) and event_time and marker >= event_time
+            and _after_closed(marker) and event_time and marker <= event_time
             and safe["catalog"].get("state") == "READ_ONLY_OBSERVED"):
         safe["state"] = "READ_ONLY_OBSERVED"
         safe["reason"] = "EOD_AGGREGATE_ONLY_NOT_PAPER_GO"
@@ -327,3 +331,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
