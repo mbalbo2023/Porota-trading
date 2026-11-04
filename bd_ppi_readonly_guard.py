@@ -44,6 +44,26 @@ _GET_PATHS = {
     "/api/1.0/marketdata/bonds/estimate",
 }
 
+# A legal read-only URL is not necessarily a budget-authorized provider call.
+# The durable budget V1 has exactly these three GET endpoints. In particular,
+# SearchInstrument, historical Search, Bonds/Estimate and Configuration
+# CANNOT borrow a Current/Book lease: their PPI quota/global-rate contract and
+# external Watch usage are not evidenced. Block them *before wire* until a
+# reviewed authority/schema covers each additional read explicitly.
+_BUDGETED_MARKET_GET_PATHS = frozenset({
+    "/api/1.0/marketdata/current",
+    "/api/1.0/marketdata/book",
+    "/api/1.0/marketdata/intraday",
+})
+
+
+def _unbudgeted_get_reason(method: str, path: str) -> str | None:
+    if method != "GET" or path not in _GET_PATHS or path in _BUDGETED_MARKET_GET_PATHS:
+        return None
+    if path.startswith("/api/1.0/marketdata/"):
+        return "PPI_MARKETDATA_ENDPOINT_BUDGET_UNVERIFIED"
+    return "PPI_CONFIGURATION_ENDPOINT_BUDGET_UNVERIFIED"
+
 # PPI confirmó oficialmente que cauciones se buscan por cantidad de días y
 # ticker MONEDA+días. Estos plazos fueron probados contra producción en modo
 # GET/read-only el 2026-09-07. La lista es configurable para ampliar cobertura
@@ -283,6 +303,14 @@ class ReadOnlyTransportGuard:
                     guard.calls_blocked += 1
                 guard._record(str(method).upper(), _normal_path(url), "BLOCKED")
                 raise
+            reason = _unbudgeted_get_reason(checked_method, checked_path)
+            if reason:
+                from rc6_ppi_global_budget import BudgetBackpressure
+                guard._read_error(reason)
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(checked_method, checked_path, "BACKPRESSURE")
+                raise BudgetBackpressure(reason)
             kwargs["allow_redirects"] = False
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
             guard._record(checked_method, checked_path, "ALLOWED")
@@ -300,6 +328,14 @@ class ReadOnlyTransportGuard:
                     str(request.method).upper(), _normal_path(request.url), "BLOCKED"
                 )
                 raise
+            reason = _unbudgeted_get_reason(checked_method, checked_path)
+            if reason:
+                from rc6_ppi_global_budget import BudgetBackpressure
+                guard._read_error(reason)
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(checked_method, checked_path, "BACKPRESSURE")
+                raise BudgetBackpressure(reason)
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
             budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
             lease = None
