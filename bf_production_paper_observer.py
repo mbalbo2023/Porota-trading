@@ -2714,6 +2714,31 @@ def _write_scanner_metrics(store, stage, values):
 CAUCION_LEDGER_RECHECK_SECONDS = 3600
 
 
+def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at):
+    """Reject non-trade signals without discarding an independently fresh exit Book.
+
+    The scanner requires a fresh trade for a *new* PAPER signal, while the
+    broker's spot/futures exit paths deliberately require only a fresh Book.
+    Never let a quote rejected for entry reach a decision or opening path.
+    An independently invalid Book remains fully rejected, including exits.
+    """
+    data_error = q.time_error(
+        checked_at, require_trade=True,
+        max_age_seconds=broker.quote_max_age_seconds,
+        max_trade_age_seconds=broker.trade_max_age_seconds)
+    if not data_error:
+        return ""
+    if q.time_error(checked_at, max_age_seconds=broker.quote_max_age_seconds):
+        broker.record_observation_rejection(q, data_error)
+    else:
+        broker.on_quote(
+            q, allow_new_openings=False,
+            opening_block_reason=data_error,
+            evaluate_when_blocked=False)
+    store.event("DATA_REJECTED", f"{q.symbol}: {data_error}")
+    return data_error
+
+
 def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
     """Keep an invalid PAPER caucion ledger out of the admission loop.
 
@@ -3000,17 +3025,13 @@ def run():
                         store.event("PPI_CONTRACT_OBSERVE_ONLY",
                             f"{symbol}|{asset_class}|{settlement}|NO_PAPER_ADMISSION")
                         continue
-                    # Persistir la observación sirve para trazabilidad, pero un
-                    # trade/libro stale nunca alcanza al motor ni a sus gates.
+                    # Persistir la observación da trazabilidad; un Book stale no
+                    # llega al broker. Un trade stale con Book fresco sólo
+                    # puede supervisar salidas PAPER, jamás habilitar entrada.
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
-                    data_error = q.time_error(
-                        now_iso(), require_trade=True,
-                        max_age_seconds=broker.quote_max_age_seconds,
-                        max_trade_age_seconds=broker.trade_max_age_seconds)
-                    if data_error:
-                        store.event("DATA_REJECTED", f"{symbol}: {data_error}")
-                        broker.record_observation_rejection(q, data_error)
+                    if _scanner_trade_temporal_rejection(
+                            q, broker, store, checked_at=now_iso()):
                         continue
                     allow_openings, opening_reason = _scanner_opening_capacity(
                         request_key, focus=focus, feasibility=feasibility)
