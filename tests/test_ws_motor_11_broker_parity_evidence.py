@@ -89,6 +89,7 @@ def test_legacy_iol_option_lot_and_contract_never_gain_series_authority():
 def test_iol_option_quarantine_does_not_block_independent_ppi_byma_policy(tmp_path):
     ppi = {"ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BYMA",
            "currency":"ARS","settlement":"INMEDIATA","status":"AVAILABLE",
+           "settlement_source":"PPI_FIELD","last_seen_at":"2026-10-03T01:36:06+00:00",
            "capability":"NEEDS_OPTION_CONTRACT",
            "description":"Opción compra GGAL AR$ 6000 Vto. 16/10/2026",
            "metadata_json":'{"_discovery_source":"PPI_PRIMARY"}'}
