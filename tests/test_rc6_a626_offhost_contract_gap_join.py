@@ -127,7 +127,9 @@ def test_six_families_exact_five_key_and_aggregate_only(tmp_path):
     assert report["status"] == "DIAGNOSTIC_ONLY"
     assert not report["runtime_verified"]
     assert not report["ppi_provenance_authenticity_verified"]
-    assert report["provider_gets"] == report["host_writes"] == report["real_orders_sent"] == 0
+    assert report["provider_gets"] == report["host_writes"] == report["real_orders_sent_by_diagnostic"] == 0
+    assert "real_orders_sent" not in report  # A copy does not attest the runtime counter.
+    assert report["runtime_real_orders_sent"] == "NO_VERIFICADO"
     assert report["paper_auto_enabled"] is False
     f = _families(report)
     assert f["BONOS"]["exact_v2_ppi"] == 1
@@ -220,6 +222,75 @@ def test_tampered_snapshot_payload_hash_is_blocked(tmp_path):
     con.commit()
     con.close()
     with pytest.raises(gap.Rejected, match="V2_EVIDENCE_HASH_MISMATCH"):
+        gap.inspect(path, _receipt(path))
+
+
+def test_same_hash_reobserved_later_is_not_a_snapshot_identity_mismatch(tmp_path):
+    """The immutable snapshot remembers FIRST seen; current is LAST seen."""
+    path, con = _db(tmp_path)
+    _catalog(con, "BONOS", "BND-REPEAT-1")
+    _v2(con, 1, "BONOS", "BND-REPEAT-1", {"cash_multiplier": "0.01"})
+    con.execute("UPDATE contract_evidence_v2_current SET observed_at=?",
+                ("2026-11-04T12:30:00+00:00",))
+    con.commit()
+    con.close()
+    report = gap.inspect(path, _receipt(path))
+    row = _families(report)["BONOS"]
+    assert report["status"] == "DIAGNOSTIC_ONLY"
+    assert report["v2_evidence_hash_integrity_checked"] is True
+    assert row["exact_v2_ppi"] == 1
+    assert row["ppi_missing_required_fields"] == 1
+    assert row["ppi_fields_present_not_accredited"] == 0
+    assert report["runtime_verified"] is False
+
+
+def test_aware_utc_offsets_preserve_chronology(tmp_path):
+    path, con = _db(tmp_path)
+    _catalog(con, "BONOS", "BND-OFFSET-1")
+    _v2(con, 1, "BONOS", "BND-OFFSET-1", {"cash_multiplier": "0.01"})
+    con.execute("UPDATE contract_evidence_v2_snapshots SET observed_at=?",
+                ("2026-11-03T12:00:00-03:00",))
+    con.execute("UPDATE contract_evidence_v2_current SET observed_at=?",
+                ("2026-11-03T15:00:01Z",))
+    con.commit()
+    con.close()
+    assert _families(gap.inspect(path, _receipt(path)))["BONOS"]["exact_v2_ppi"] == 1
+
+
+@pytest.mark.parametrize("current_stamp,snapshot_stamp,reason", [
+    ("2026-11-03T14:59:59Z", "2026-11-03T15:00:00Z", "TIME_REVERSED"),
+    ("2026-11-03T15:00:00", "2026-11-03T15:00:00Z", "TIME_INVALID"),
+    ("2026-11-03T15:00:00Z", "2026-11-03T15:00:00", "TIME_INVALID"),
+    ("bad-clock", "2026-11-03T15:00:00Z", "TIME_INVALID"),
+    ("2026-11-03T15:00:00Z", "bad-clock", "TIME_INVALID"),
+])
+def test_bad_clock_never_accredits_exact_contract(tmp_path, current_stamp, snapshot_stamp, reason):
+    path, con = _db(tmp_path)
+    _catalog(con, "BONOS", "BND-TIME-1")
+    _v2(con, 1, "BONOS", "BND-TIME-1", {"cash_multiplier": "0.01"})
+    con.execute("UPDATE contract_evidence_v2_snapshots SET observed_at=?",
+                (snapshot_stamp,))
+    con.execute("UPDATE contract_evidence_v2_current SET observed_at=?",
+                (current_stamp,))
+    con.commit()
+    con.close()
+    with pytest.raises(gap.Rejected, match=f"V2_CURRENT_SNAPSHOT_{reason}"):
+        gap.inspect(path, _receipt(path))
+
+
+@pytest.mark.parametrize("column,value", [
+    ("source_class", "IOL_STRUCTURED_API"),
+    ("evidence_hash", "f" * 64),
+])
+def test_later_observation_cannot_mask_source_or_hash_conflict(tmp_path, column, value):
+    path, con = _db(tmp_path)
+    _catalog(con, "BONOS", "BND-MISMATCH-1")
+    _v2(con, 1, "BONOS", "BND-MISMATCH-1", {"cash_multiplier": "0.01"})
+    con.execute(f"UPDATE contract_evidence_v2_current SET {column}=?, observed_at=?",
+                (value, "2026-11-04T12:30:00Z"))
+    con.commit()
+    con.close()
+    with pytest.raises(gap.Rejected, match="V2_CURRENT_SNAPSHOT_IDENTITY_MISMATCH"):
         gap.inspect(path, _receipt(path))
 
 

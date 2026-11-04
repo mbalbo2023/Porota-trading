@@ -1,5 +1,6 @@
 """Diagnóstico de contrato público: SDK real con transporte y Docker locales falsos."""
 import base64
+from contextlib import nullcontext
 import hashlib
 import importlib.util
 import json
@@ -12,6 +13,8 @@ import zipfile
 
 import pytest
 import requests
+import bd_ppi_readonly_guard as ppi_guard
+import rc6_ppi_global_budget as global_budget
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
@@ -36,18 +39,76 @@ CONFIG_PATHS=dict(zip(('instrumenttypes','markets','settlements','quantitytypes'
 FIXTURE_KEY='PUBLIC_PROBE_KEY_FIXTURE_ONLY'
 FIXTURE_SECRET='PUBLIC_PROBE_SECRET_FIXTURE_ONLY'
 FIXTURE_TOKEN='PUBLIC_PROBE_TOKEN_FIXTURE_ONLY'
+PRODUCTION_UNBUDGETED_GET_REASON=ppi_guard._unbudgeted_get_reason
+
+
+class FakeBudget:
+    """CI-only physical-send cap, never evidence of PPI provider quota.
+
+    The historical public-probe tests check SDK response parsing through a
+    fake adapter. The production quota gate is independently asserted below
+    and in test_rc6_a651_ppi_unmetered_get_guard.py. This FakeBudget only
+    permits synthetic HTTP sends inside these test fixtures.
+    """
+
+    def __init__(self, maximum=32):
+        self.maximum=maximum
+        self.calls=[]
+        self.next_lease=0
+        self.admitted=set()
+        self.active=set()
+        self.finished=set()
+
+    def may_attempt(self, method, path):
+        return len(self.calls)<self.maximum
+
+    def record_physical_send(self, request, query):
+        if len(self.calls)>=self.maximum:
+            raise AssertionError('FAKE_WIRE_CI_BUDGET_EXHAUSTED')
+        if (request.method=='GET' and urlsplit(request.url).path.lower()
+                in ppi_guard._BUDGETED_MARKET_GET_PATHS):
+            assert self.active, 'FAKE_WIRE_CI_LEASE_MISSING'
+        self.calls.append((request.method,urlsplit(request.url).path,query))
+
+    def acquire(self, endpoint, *, consumer, priority):
+        assert endpoint in ('current','book','intraday')
+        self.next_lease+=1
+        lease=f'CI_ONLY_UNTRUSTED_LEASE_{self.next_lease}'
+        self.admitted.add(lease)
+        return {'allowed':True,'reason':'CI_FAKE_WIRE_ONLY','lease':lease}
+
+    def wire_scope(self, lease):
+        assert lease in self.admitted
+        return nullcontext()
+
+    def start(self, lease):
+        assert lease in self.admitted and lease not in self.active
+        self.active.add(lease)
+
+    def finish(self, lease, **kwargs):
+        assert lease in self.active
+        self.active.remove(lease)
+        self.finished.add(lease)
 
 
 @pytest.fixture
 def transport(tmp_path,monkeypatch):
     secret=tmp_path/'fixture.json'
     secret.write_text(json.dumps({'api_key':FIXTURE_KEY,'api_secret':FIXTURE_SECRET}))
-    calls=[]
+    fake_budget=FakeBudget()
+    calls=fake_budget.calls
     responses={}
+    monkeypatch.setattr(ppi_guard,'_unbudgeted_get_reason',
+        lambda method,path: (
+            None if fake_budget.may_attempt(method,path) else
+            PRODUCTION_UNBUDGETED_GET_REASON(method,path)))
+    # SDK contract tests run against a fake adapter only. Their budget is a
+    # synthetic per-physical-send lease, not a provider quota/Watch receipt.
+    monkeypatch.setattr(global_budget,'budget_from_environment',lambda *a,**k:fake_budget)
     def send(adapter,request,**kwargs):
         path=urlsplit(request.url).path
         query=parse_qs(urlsplit(request.url).query)
-        calls.append((request.method,path,query))
+        fake_budget.record_physical_send(request,query)
         name=path.rsplit('/',1)[-1].lower()
         status=200
         if name=='loginapi':
@@ -88,11 +149,53 @@ def transport(tmp_path,monkeypatch):
     return secret,calls,responses
 
 
+def test_public_probe_without_shared_quota_fails_closed_after_login(transport,monkeypatch):
+    secret,calls,_=transport
+    # Remove the CI-only fake authorization: the actual production guard must
+    # never spend a Configuration GET without a shared, reviewed budget.
+    monkeypatch.setattr(ppi_guard,'_unbudgeted_get_reason',PRODUCTION_UNBUDGETED_GET_REASON)
+    monkeypatch.setattr(global_budget,'budget_from_environment',lambda *a,**k:None)
+    report=probe.live_report(secret)
+    assert report['status']=='STOPPED'
+    assert report['reason']=='PPI_CONFIGURATION_ENDPOINT_BUDGET_UNVERIFIED'
+    assert len(calls)==1 and calls[0][0]=='POST' and calls[0][1].endswith('/LoginApi')
+    assert report['reader_metrics']['http_blocked']==1
+    assert report['reader_metrics']['http_allowed']==1
+
+
+def test_public_probe_marketdata_budget_gap_is_reported_without_live_market_get(
+    transport,monkeypatch,
+):
+    secret,calls,_=transport
+    # CI-only fake allowance keeps configuration parsing covered, but the
+    # production MarketData discovery quota gate remains active.
+    monkeypatch.setattr(ppi_guard,'_unbudgeted_get_reason',
+        lambda method,path: (
+            PRODUCTION_UNBUDGETED_GET_REASON(method,path)
+            if path.startswith('/api/1.0/marketdata/') else None))
+    report=probe.live_report(secret)
+    assert report['status']=='STOPPED'
+    assert report['reason']=='PPI_MARKETDATA_ENDPOINT_BUDGET_UNVERIFIED'
+    assert all('/MarketData/' not in path for _,path,_ in calls)
+    assert report['reader_metrics']['http_blocked']==1
+
+
+def test_public_probe_unknown_budget_exception_text_is_sanitized(transport,monkeypatch):
+    secret,calls,_=transport
+    monkeypatch.setattr(ppi_guard,'_unbudgeted_get_reason',
+        lambda method,path: 'NEVER_LEAK_FAKE_VENDOR_RESPONSE'
+        if method=='GET' else None)
+    report=probe.live_report(secret)
+    assert report['status']=='STOPPED' and report['reason']=='PPI_BUDGET_BACKPRESSURE'
+    assert 'NEVER_LEAK_FAKE_VENDOR_RESPONSE' not in json.dumps(report)
+    assert len(calls)==1 and calls[0][0]=='POST'
+
+
 def test_un_login_config_todas_familias_y_solo_tickers_devueltos(transport,capsys):
     secret,calls,_=transport
     before=requests.sessions.Session.request
     report=probe.live_report(secret)
-    assert report['status']=='COMPLETED_OBSERVATION'
+    assert report['status']=='COMPLETED_OBSERVATION', (report.get('reason'),len(calls))
     assert report['configuration']==CONFIG
     assert len(calls)==27 and sum(p.endswith('LoginApi') for _,p,_ in calls)==1
     assert len(report['quotes'])==4

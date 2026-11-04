@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -161,9 +162,17 @@ def _current_rows(conn):
                 "market": row["snap_market"], "currency": row["snap_currency"],
                 "settlement": row["snap_settlement"]})
                 or row["source_class"] != row["snap_source_class"]
-                or row["observed_at"] != row["snap_observed_at"]
                 or row["evidence_hash"] != row["snap_hash"]):
             raise Rejected("V2_CURRENT_SNAPSHOT_IDENTITY_MISMATCH")
+        # Production Evidence-v2 INSERT OR IGNORE retains the FIRST observation
+        # of one exact identity+hash in the immutable snapshot. Current UPSERT
+        # records the LATEST observation of that identical evidence. Equality
+        # is neither the producer contract nor a valid current/Book freshness
+        # or PIT gate; only a timezone-aware nondecreasing clock is admissible.
+        first = _observed_utc(row["snap_observed_at"])
+        last = _observed_utc(row["observed_at"])
+        if last < first:
+            raise Rejected("V2_CURRENT_SNAPSHOT_TIME_REVERSED")
         try:
             parsed = json.loads(raw)
         except (TypeError, ValueError):
@@ -179,6 +188,19 @@ def _current_rows(conn):
     if len(rows) != expected:
         raise Rejected("V2_CURRENT_SNAPSHOT_ORPHAN")
     return rows
+
+
+def _observed_utc(value):
+    """Accept only an explicit, bounded UTC instant; never infer local time."""
+    if type(value) is not str or not value or len(value) > 64 or value.strip() != value:
+        raise Rejected("V2_CURRENT_SNAPSHOT_TIME_INVALID")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("naive observation")
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError):
+        raise Rejected("V2_CURRENT_SNAPSHOT_TIME_INVALID") from None
 
 
 def _bucket():
@@ -407,7 +429,8 @@ def inspect(copy_path: Path, receipt_path: Path, *, deadline_seconds=20.0):
             "v2_unkeyed_identity_rows": unkeyed_size,
             "capability_gaps_measured": sum(r["capability_gaps"] for r in result),
             "historical_819_gaps_match": sum(r["capability_gaps"] for r in result) == 819,
-            "paper_auto_enabled": False, "real_orders_sent": 0,
+            "paper_auto_enabled": False, "real_orders_sent_by_diagnostic": 0,
+            "runtime_real_orders_sent": "NO_VERIFICADO",
             "provider_gets": 0, "host_writes": 0}
 
 
