@@ -73,6 +73,13 @@ def normalize_group(records, *, now=None):
     fields, provenance, keys, errors = {}, {}, set(), []
     usable=[]
     ignored_iol_options=[]
+    # Report-bucket aliases are not proof that the native five-key identity
+    # was the canonical family. In particular, old Evidence V2 stored
+    # OBLIGACIONES as ON, and re-canonicalizing it here could make an ON-only
+    # snapshot look like an exact PPI OBLIGACIONES contract.
+    if any(str(r.get("family") or "").strip().upper() == "ON"
+           for r in records):
+        errors.append("ALIAS_ONLY_FAMILY_NOT_AUTHORITY")
     for r in sorted(records, key=lambda item: SOURCE_RANK.get(item.get("source_class"), 999)):
         if (canonical_family(r.get("family")) == "OPCIONES"
                 and r.get("source_class") == "IOL_STRUCTURED_API"):
@@ -271,6 +278,12 @@ def complements_from_store(store, *, now=None):
         grouped[(r["family"],r["ticker"],r["market"],r["currency"],r["settlement"])].append(r)
     result = []
     for records in grouped.values():
+        # Retain historical alias snapshots as evidence, never materialize
+        # them as a canonical-family contract or demote unrelated READY rows.
+        # A later exact PPI-primary snapshot can be recorded independently.
+        if any(str(r.get("family") or "").strip().upper() == "ON"
+               for r in records):
+            continue
         normalized = normalize_group(records, now=now)
         if normalized["ticker"]:
             result.append(normalized)
