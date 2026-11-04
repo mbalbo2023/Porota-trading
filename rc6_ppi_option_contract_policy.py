@@ -44,9 +44,26 @@ def _upper(value):
     return str(value or "").strip().upper()
 
 
+def _has_recorded_observation_clock(value):
+    """Require an aware observation clock; this does not certify freshness."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return observed.tzinfo is not None and observed.utcoffset() is not None
+
+
 def underlying_family_index(rows):
-    """Map a ticker only when its current PPI underlying family is unique."""
-    families = defaultdict(set)
+    """Derive one option-eligible PPI identity; reject ticker ambiguity.
+
+    A known PPI family is insufficient: a USD or deferred-settlement record
+    cannot establish the underlying for an ARS/INMEDIATA BYMA option. This is
+    historical contract evidence, not a live quote or provider PIT attestation.
+    """
+    identities = defaultdict(set)
+    invalid = set()
     for row in rows:
         raw = _raw(row)
         family = _upper(row.get("instrument_type"))
@@ -54,14 +71,22 @@ def underlying_family_index(rows):
                 or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
                 or family not in OPTION_LOT_BY_UNDERLYING_FAMILY
                 or _upper(row.get("market")) != "BYMA"
-                or not _upper(row.get("ticker"))
-                or raw.get("_contract_conflicts")):
+                or not _upper(row.get("ticker"))):
             continue
-        families[_upper(row["ticker"])].add(family)
+        ticker = _upper(row["ticker"])
+        identities[ticker].add((
+            family, _upper(row.get("currency")),
+            _upper(row.get("settlement")),
+        ))
+        if (raw.get("_contract_conflicts")
+                or _upper(row.get("settlement_source")) != "PPI_FIELD"
+                or not _has_recorded_observation_clock(row.get("last_seen_at"))):
+            invalid.add(ticker)
     return {
-        ticker: next(iter(values))
-        for ticker, values in families.items()
-        if len(values) == 1
+        ticker: next(iter(values))[0]
+        for ticker, values in identities.items()
+        if len(values) == 1 and ticker not in invalid
+        and next(iter(values))[1:] == ("ARS", "INMEDIATA")
     }
 
 

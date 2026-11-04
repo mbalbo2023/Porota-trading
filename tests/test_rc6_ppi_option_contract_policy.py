@@ -79,6 +79,41 @@ def test_underlying_family_conflict_remains_fail_closed():
     assert "DUP" not in policy.underlying_family_index(rows)
 
 
+def test_only_usd_deferred_ppi_underlying_cannot_derive_ars_option_contract():
+    foreign = row("AAPL", "CEDEARS", currency="USD_MEP", settlement="A-24HS")
+    option_row = option("APLC14000O", "Opción compra AAPL AR$ 14000.00 Vto. 16/10/2026")
+    assert policy.underlying_family_index([foreign]) == {}
+    records, skipped, identities = mass.planned_records([foreign, option_row])
+    assert identities == {"CEDEARS": 1, "OPCIONES": 1}
+    assert skipped["OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED"] == 1
+    assert not any(record["source_class"] == "DERIVED_OFFICIAL_RULE"
+                   and record["ticker"] == "APLC14000O" for record in records)
+
+
+def test_multi_currency_or_different_settlement_underlying_is_ambiguous():
+    ars = row("AAPL", "CEDEARS")
+    usd = row("AAPL", "CEDEARS", currency="USD_MEP", settlement="A-24HS")
+    deferred = row("YPFD", "ACCIONES", settlement="A-24HS")
+    assert policy.underlying_family_index([ars, usd, deferred]) == {}
+    assert policy.underlying_family_index([ars, ars.copy()]) == {"AAPL": "CEDEARS"}
+
+
+def test_underlying_needs_ppi_settlement_and_recorded_observation_clock():
+    valid = row("YPFD", "ACCIONES")
+    request_only = row("REQ", "ACCIONES")
+    request_only["settlement_source"] = "REQUEST_CANDIDATE"
+    unclocked = row("NOCLK", "ACCIONES")
+    unclocked["last_seen_at"] = "2026-10-03T01:36:06"
+    invalid_clock = row("BADCLK", "ACCIONES")
+    invalid_clock["last_seen_at"] = "NOT_A_TIMESTAMP"
+    iol_only = row("IOL", "ACCIONES", discovery="IOL_COMPLEMENTARY")
+    not_available = row("STALE", "ACCIONES", status="STALE")
+    result = policy.underlying_family_index([
+        valid, request_only, unclocked, invalid_clock, iol_only, not_available,
+    ])
+    assert result == {"YPFD": "ACCIONES"}
+
+
 def test_standard_action_option_uses_byma_100_lot_and_paper_one_contract():
     evidence_row = policy.standard_long_option_evidence(
         option(), {"YPFD": "ACCIONES"})
