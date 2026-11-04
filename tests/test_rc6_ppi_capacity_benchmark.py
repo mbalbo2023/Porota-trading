@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit, parse_qs
 
 import pytest
@@ -12,6 +13,7 @@ from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolatio
 from rc6_dynamic_universe.benchmark import run_benchmark
 from rc6_dynamic_universe.capacity import safe_capacity
 from rc6_dynamic_universe.common import digest
+from rc6_ppi_global_budget import GlobalPPIBudget, SCHEMA as BUDGET_SCHEMA
 
 
 class Clock:
@@ -87,13 +89,33 @@ def wire(monkeypatch):
     return clock, calls, behavior
 
 
+def synthetic_shared_budget(clock, path):
+    """Durable fake-wire allowance, explicitly NOT a PPI provider quota."""
+    return GlobalPPIBudget(path, {
+        "schema": BUDGET_SCHEMA, "version": "ci-fake-wire-only-v1",
+        "recommendation_digest": "a" * 64,
+        "configuration_fingerprint": "b" * 64,
+        "window_seconds": 3600,
+        "endpoint_limits": {e: 5000 for e in ("current", "book", "intraday")},
+        "global_limit": 15000, "max_parallel_requests": 1,
+        "safety_reserve": "SYNTHETIC_TEST_ONLY_NOT_PROVIDER_EVIDENCE",
+        "priority_reserves": {},
+        "expires_at": (clock.now() + timedelta(hours=5)).isoformat(),
+        "critical_book_seconds": 5, "lease_seconds": 60,
+        "breaker_seconds": 60, "session_breaker_seconds": 900,
+        "server_error_threshold": 2, "maximum_bytes": 8 * 1024**2,
+    }, clock=clock.now)
+
+
 def measure(wire, **kwargs):
     clock, _, _ = wire
     options = dict(api_key="PRIVATE_KEY", api_secret="PRIVATE_SECRET", batches=(20,),
                    clock=clock.now, monotonic=clock.mono, pause=clock.advance,
                    max_runtime_seconds=1800, cadence_seconds=10)
     options.update(kwargs)
-    return run_benchmark(candidates(), **options)
+    with TemporaryDirectory(prefix="rc6-ppi-ci-budget-") as directory:
+        options["budget"] = synthetic_shared_budget(clock, Path(directory) / "global.sqlite")
+        return run_benchmark(candidates(), **options)
 
 
 def capacity(report, clock, **kwargs):
@@ -155,6 +177,16 @@ def test_credentials_absent_has_no_network(wire):
     report = measure(wire, api_key="", api_secret="")
     assert report["stop_reason"] == "PPI_CREDENTIALS_UNAVAILABLE" and calls == []
     assert capacity(report, clock)["safe_limit"] == 0
+
+
+def test_no_shared_lease_stops_before_login_and_does_not_measure_provider(wire, monkeypatch):
+    clock, calls, _ = wire
+    monkeypatch.setattr("rc6_ppi_global_budget.budget_from_environment", lambda: None)
+    report = run_benchmark(candidates(), api_key="PRIVATE_KEY", api_secret="PRIVATE_SECRET",
+        batches=(20,), clock=clock.now, monotonic=clock.mono, pause=clock.advance)
+    assert report["status"] == "NO_VERIFICADO"
+    assert report["stop_reason"] == "PPI_SHARED_BUDGET_UNAVAILABLE"
+    assert not report["observations"] and not calls
 
 
 def test_three_endpoints_real_sdk_normalization_global_and_identity_counters(wire):
@@ -341,13 +373,14 @@ def test_summary_or_distinct_flags_cannot_fabricate_capacity(wire):
     assert capacity(incomplete, clock)["safe_limit"] == 0
 
 
-def test_ambiguous_full_identity_excluded_before_sdk_read(wire):
+def test_ambiguous_full_identity_excluded_before_sdk_read(wire, tmp_path):
     clock, calls, _ = wire
     values = candidates(21)
     values.append({**values[0], "currency": "USD"})
     report = run_benchmark(values,
         api_key="PRIVATE_KEY", api_secret="PRIVATE_SECRET", batches=(20,), cadence_seconds=10,
-        clock=clock.now, monotonic=clock.mono, pause=clock.advance)
+        clock=clock.now, monotonic=clock.mono, pause=clock.advance,
+        budget=synthetic_shared_budget(clock, tmp_path / "global.sqlite"))
     assert len(report["candidate_exclusions"]) == 2
     assert all("TEST000" not in url for _, url in calls)
 

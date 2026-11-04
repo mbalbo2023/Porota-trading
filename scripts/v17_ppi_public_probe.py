@@ -198,7 +198,17 @@ def live_report(secret_path=SECRET):
     except ProbeStop as exc:
         report.update(status='STOPPED',reason=str(exc))
     except Exception as exc:
-        report.update(status='STOPPED',reason=type(exc).__name__)
+        # A fail-closed quota denial must remain observable, but never leak
+        # arbitrary broker response text, credentials or exception contexts.
+        # This enum comes only from the offline HTTP guard, not PPI payloads.
+        if type(exc).__name__=='BudgetBackpressure':
+            reason=str(exc)
+            if reason not in ('PPI_CONFIGURATION_ENDPOINT_BUDGET_UNVERIFIED',
+                              'PPI_MARKETDATA_ENDPOINT_BUDGET_UNVERIFIED'):
+                reason='PPI_BUDGET_BACKPRESSURE'
+        else:
+            reason=type(exc).__name__
+        report.update(status='STOPPED',reason=reason)
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM,previous_handler)
