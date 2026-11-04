@@ -115,6 +115,69 @@ class TestA652MicroReadOnly(unittest.TestCase):
         self.assertEqual(a652._error_bucket("AA: PPI_ACCESSKEY_SECRETXYZ"), "PPI_OTHER_CLASSIFIED")
         self.assertEqual(a652._error_bucket("AA: x/tokens/here"), "OTHER")
 
+    def test_exact_generic_exception_taxonomy_only_for_future_cycles(self):
+        examples = {
+            "PPI_TIMEOUTERROR": "PPI_TIMEOUT_EXCEPTION",
+            "PPI_READTIMEOUT": "PPI_TIMEOUT_EXCEPTION",
+            "PPI_CONNECTTIMEOUT": "PPI_TIMEOUT_EXCEPTION",
+            "PPI_CONNECTIONERROR": "PPI_NETWORK_EXCEPTION",
+            "PPI_REMOTEDISCONNECTED": "PPI_NETWORK_EXCEPTION",
+            "PPI_PROXYERROR": "PPI_NETWORK_EXCEPTION",
+            "PPI_KEYERROR": "PPI_SCHEMA_OR_TYPE_EXCEPTION",
+            "PPI_ATTRIBUTEERROR": "PPI_SCHEMA_OR_TYPE_EXCEPTION",
+            "PPI_TYPEERROR": "PPI_SCHEMA_OR_TYPE_EXCEPTION",
+            "PPI_FILENOTFOUNDERROR": "PPI_LOCAL_OS_EXCEPTION",
+            "PPI_PERMISSIONERROR": "PPI_LOCAL_OS_EXCEPTION",
+        }
+        for class_label, expected in examples.items():
+            with self.subTest(class_label=class_label):
+                self.assertEqual(a652._error_bucket("private-symbol: " + class_label), expected)
+        self.assertTrue(set(examples.values()) <= set(a652.ERROR_BUCKETS))
+
+    def test_unrecognized_class_is_not_guessed_or_emitted(self):
+        for raw in ("PPI_VALUEERROR", "PPI_OPERATIONALERROR", "PPI_RUNTIMEERROR",
+                    "PPI_SECRET_TIMEOUTERROR", "PPI_TIMEOUTERROR_SECRET",
+                    "PPI_CONNECTIONERROR_PASSWORD", "PPI_UNKNOWN_BROKER_SDK_CLASS"):
+            with self.subTest(raw=raw):
+                bucket = a652._error_bucket("sensitive-ticker: " + raw)
+                self.assertEqual(bucket, "PPI_OTHER_CLASSIFIED")
+                self.assertNotIn(raw, bucket)
+        self.assertEqual(a652._error_bucket("sensitive-ticker: PPI_🔥"), "OTHER")
+
+    def test_v2_schema_never_reinterprets_historical_v1_evidence(self):
+        self.assertTrue(a652.HOST_SCHEMA.endswith(".v2"))
+        self.assertTrue(a652.RECEIPT_SCHEMA.endswith(".v2"))
+        legacy = {"schema": "rc6.a652.watch-budget-scanner-host-ro.v1",
+                  "read_only": True, "provider_gets": 0,
+                  "budget_leases": 0, "orders_called": False,
+                  "ppi_watch_mutations": 0, "host_file_writes": 0,
+                  "scanner": {"state": "OBSERVED"}, "budget": {}, "watch": {}}
+        report = a652.build_receipt(legacy)
+        self.assertEqual(report["state"], "INCOMPLETE_NO_GO")
+        self.assertEqual(report["host"]["state"], "NO_VERIFICADO")
+
+    def test_future_cycle_new_buckets_only_aggregate_no_raw_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                for suffix in ("PPI_TIMEOUTERROR", "PPI_CONNECTIONERROR",
+                               "PPI_KEYERROR", "PPI_FILENOTFOUNDERROR"):
+                    c.execute("INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                              ("2026-11-04T19:31:00+00:00", "DATA_ERROR",
+                               "private-symbol-token: " + suffix))
+                c.commit()
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            counts = raw["scanner"]["events"]["data_error_reasons"]
+            self.assertEqual(tuple(counts[k] for k in (
+                "PPI_TIMEOUT_EXCEPTION", "PPI_NETWORK_EXCEPTION",
+                "PPI_SCHEMA_OR_TYPE_EXCEPTION", "PPI_LOCAL_OS_EXCEPTION")), (1, 1, 1, 1))
+            output = json.dumps(a652.build_receipt(raw))
+            self.assertNotIn("private-symbol", output)
+            self.assertNotIn("PPI_CONNECTIONERROR", output)
+            self.assertLess(len(output.encode("utf-8")), 16384)
+
     def test_host_reports_last_cycle_reasons_only_and_no_identifiers(self):
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / "observer.db"
