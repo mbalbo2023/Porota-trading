@@ -184,7 +184,8 @@ jobs:
               diag = obj['gap_terms_diagnostic']
               expected_diag = {'state','read_only','payload_hash_integrity_checked',
                   'provider_authenticity_checked','causal_pit_or_book_checked',
-                  'paper_auto_enabled','snapshots_checked','payload_bytes_checked','by_family'}
+                  'paper_auto_enabled','snapshots_checked','payload_bytes_checked',
+                  'gap_total','by_family'}
               assert isinstance(diag, dict) and set(diag) == expected_diag
               assert diag['state'] == 'EVIDENCE_ONLY_NO_GO'
               assert diag['read_only'] is True
@@ -194,14 +195,16 @@ jobs:
               assert diag['paper_auto_enabled'] is False
               assert type(diag['snapshots_checked']) is int and 0 <= diag['snapshots_checked'] <= MAX_GAP_SNAPSHOTS
               assert type(diag['payload_bytes_checked']) is int and 0 <= diag['payload_bytes_checked'] <= MAX_GAP_EVIDENCE_BYTES
+              assert type(diag['gap_total']) is int and diag['gap_total'] == obj['capability_gaps_measured']
               assert isinstance(diag['by_family'], dict) and set(diag['by_family']) == set(GAP_TERM_REQUIREMENTS)
               for family, counts in diag['by_family'].items():
-                  assert set(counts) == {'gap_rows','no_exact_current_payload',
+                  assert set(counts) == {'gap_rows','uninspectable_incomplete_five_key','no_exact_current_payload',
                       'exact_current_source_label_only','offline_terms_present_not_admitted',
                       'offline_terms_missing','missing_term_counts'}
                   assert all(type(v) is int and v >= 0 for k, v in counts.items()
                              if k != 'missing_term_counts')
-                  assert counts['gap_rows'] == (counts['no_exact_current_payload']
+                  assert counts['gap_rows'] == (counts['uninspectable_incomplete_five_key']
+                      + counts['no_exact_current_payload']
                       + counts['offline_terms_present_not_admitted']
                       + counts['offline_terms_missing'])
                   assert isinstance(counts['missing_term_counts'], dict)
@@ -269,6 +272,9 @@ jobs:
                          'catalog_contract_conflicts_declared','capability_codes'}
           for row in families:
               assert set(row) == safe_family, 'A626_UNEXPECTED_FAMILY_FIELDS'
+              if present_gap:
+                  gap = diag['by_family'][row['family']]
+                  assert gap['gap_rows'] == row['capability_gaps']
               assert all(type(v) is int and v >= 0 for k,v in row.items()
                          if k not in {'family','capability_codes'})
               assert isinstance(row['capability_codes'], dict)

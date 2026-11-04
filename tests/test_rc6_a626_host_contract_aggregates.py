@@ -193,6 +193,47 @@ def test_opt_in_terms_diag_nan_positive_term_not_accepted(tmp_path):
     assert detail["missing_term_counts"] == {"cash_multiplier": 1}
 
 
+def test_opt_in_fci_minimum_is_not_subscription_policy(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "FCI", "PRIVATE-FCI-CLASS", currency="ARS")
+    _snap(con, 1, "FCI", "PRIVATE-FCI-CLASS", source="PPI_STRUCTURED_API")
+    _enable_gap_payload_schema(con)
+    _set_gap_payload(con, 1, {"subscription_min": "1000", "paper_subscription_min": "1000",
+                              "paper_amount_unit": "0.01", "manager": "PRIVATE_MANAGER"})
+    con.commit()
+    con.close()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True,
+                        inspect_gap_terms=True)
+    fci = report["gap_terms_diagnostic"]["by_family"]["FCI"]
+    assert fci["offline_terms_present_not_admitted"] == 0
+    assert fci["offline_terms_missing"] == 1
+    assert fci["missing_term_counts"] == {"subscription_policy": 1}
+
+
+def test_opt_in_incomplete_five_key_gap_is_counted_not_silently_dropped(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "BONOS", "PRIVATE-MISSING-SETTLEMENT")
+    con.execute("UPDATE financial_instrument_catalog SET settlement='UNKNOWN'")
+    _enable_gap_payload_schema(con)
+    con.commit()
+    con.close()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True,
+                        inspect_gap_terms=True)
+    detail = report["gap_terms_diagnostic"]
+    family = detail["by_family"]["BONOS"]
+    assert report["capability_gaps_measured"] == 1
+    assert detail["gap_total"] == 1
+    assert family["gap_rows"] == 1
+    assert family["uninspectable_incomplete_five_key"] == 1
+    assert (sum(row["gap_rows"]
+                for row in detail["by_family"].values()) == report["capability_gaps_measured"])
+    assert all(row["gap_rows"] == row["uninspectable_incomplete_five_key"]
+               + row["no_exact_current_payload"] + row["offline_terms_missing"]
+               + row["offline_terms_present_not_admitted"]
+               for row in detail["by_family"].values())
+    assert "PRIVATE-MISSING-SETTLEMENT" not in json.dumps(report)
+
+
 def test_workflow_extended_terms_is_manual_opt_in_only():
     from pathlib import Path
     workflow = (ROOT / ".github/workflows/rc6-a626-financial-contract-host-readonly.yml").read_text()

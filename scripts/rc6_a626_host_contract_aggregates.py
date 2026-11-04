@@ -88,7 +88,8 @@ GAP_TERM_REQUIREMENTS = {
         "fee_authority": ("fee_authority",),
     },
     "FCI": {
-        "subscription_policy": ("paper_subscription_policy", "subscription_min"),
+        # A numeric minimum does not authenticate a fund subscription policy.
+        "subscription_policy": ("paper_subscription_policy",),
         "subscription_min": ("paper_subscription_min", "subscription_min"),
         "amount_step": ("paper_amount_unit", "subscription_step"),
     },
@@ -314,7 +315,8 @@ def _gap_term_present(field, value):
     return value.strip() not in {"", "UNKNOWN", "NO_VERIFICADO", "NONE", "NULL"}
 
 
-def _inspect_gap_terms(conn, targets, current_by_key, *, deadline):
+def _inspect_gap_terms(conn, targets, current_by_key, *,
+                       uninspectable, expected_gaps, deadline):
     """Bounded, aggregate-only look at Current V2 payloads of capability gaps.
 
     This is an opt-in extension of the existing host's single RO transaction;
@@ -388,7 +390,9 @@ def _inspect_gap_terms(conn, targets, current_by_key, *, deadline):
     if len(samples) != len(selected):
         raise Blocked("HOST_GAP_TERMS_SNAPSHOT_MISSING")
 
-    stats = {family: {"gap_rows": 0, "no_exact_current_payload": 0,
+    stats = {family: {"gap_rows": uninspectable[family],
+                      "uninspectable_incomplete_five_key": uninspectable[family],
+                      "no_exact_current_payload": 0,
                       "exact_current_source_label_only": 0,
                       "offline_terms_present_not_admitted": 0,
                       "offline_terms_missing": 0,
@@ -417,12 +421,17 @@ def _inspect_gap_terms(conn, targets, current_by_key, *, deadline):
             group["offline_terms_present_not_admitted"] += 1
         if time.monotonic() >= deadline:
             raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
+    gap_total = sum(group["gap_rows"] for group in stats.values())
+    if (gap_total != sum(expected_gaps.values())
+            or any(group["gap_rows"] != expected_gaps[family]
+                   for family, group in stats.items())):
+        raise Blocked("HOST_GAP_TERMS_DENOMINATOR_MISMATCH")
     return {"state": "EVIDENCE_ONLY_NO_GO", "read_only": True,
             "payload_hash_integrity_checked": True,
             "provider_authenticity_checked": False,
             "causal_pit_or_book_checked": False,
             "paper_auto_enabled": False, "snapshots_checked": len(samples),
-            "payload_bytes_checked": total_bytes,
+            "payload_bytes_checked": total_bytes, "gap_total": gap_total,
             "by_family": {family: {name: (dict(sorted(value.items()))
                                     if isinstance(value, Counter) else value)
                                   for name, value in group.items()}
@@ -516,6 +525,7 @@ def _aggregate(conn, *, inspect_gap_terms=False, deadline=None):
     out = {family: _bucket() for family in FAMILIES}
     pending_historical = []
     gap_targets = []
+    uninspectable = Counter()
     for row in rows:
         key = _key(row)
         bucket = _family(row["family"])
@@ -545,6 +555,8 @@ def _aggregate(conn, *, inspect_gap_terms=False, deadline=None):
         item["capability_codes"][code] += 1
         if not _complete(key):
             item["gap_incomplete_five_key"] += 1
+            if inspect_gap_terms:
+                uninspectable[bucket] += 1
             continue
         if inspect_gap_terms:
             gap_targets.append((bucket, key))
@@ -572,7 +584,10 @@ def _aggregate(conn, *, inspect_gap_terms=False, deadline=None):
                          for name, value in {"family": family, **out[family]}.items()})
     if inspect_gap_terms and invalid_current:
         raise Blocked("HOST_GAP_TERMS_CURRENT_INTEGRITY_INVALID")
-    detail = (_inspect_gap_terms(conn, gap_targets, current_by_key, deadline=deadline)
+    detail = (_inspect_gap_terms(
+                conn, gap_targets, current_by_key, uninspectable=uninspectable,
+                expected_gaps={family: out[family]["capability_gaps"]
+                               for family in FAMILIES}, deadline=deadline)
               if inspect_gap_terms else None)
     return (len(rows), len(current), historical_rows, historical_bytes, families,
             valid_current, dict(sorted(invalid_current.items())), detail)
