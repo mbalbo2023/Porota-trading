@@ -109,6 +109,21 @@ def test_fci_weekday_go_and_ready_catalog_still_need_authenticated_class_calenda
             "PRODUCTION_PAPER", 0)
 
 
+def test_fee_aware_offline_change_does_not_authorize_runtime_fci_entry(tmp_path, monkeypatch):
+    store, broker = _runtime(tmp_path, monkeypatch)
+    at = "2026-10-05T13:00:00-03:00"
+    terms = _catalog_fci(store, at)
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    with pytest.raises(ValueError, match="FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED"):
+        broker.family_paper.subscribe_fund(
+            terms, lifecycle_id="FCI:FEE", event_id="FCI:FEE:NEW",
+            amount="10000", subscription_fee="17.25", occurred_at=at,
+            cash_guard=lambda db: Decimal("1000000"), admission_guard=lambda db: "")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("clock", ["09:00:00", "17:00:00"])
 def test_fci_and_caucion_weekday_outside_conservative_session_stay_closed(
         tmp_path, monkeypatch, clock):
@@ -168,25 +183,27 @@ def _live_ppi_fixture(store, at):
     return offers[0]
 
 
-def test_runtime_caucion_monday_requires_reconstructed_live_ppi_book_and_is_idempotent(
+def test_runtime_caucion_monday_rejects_legacy_book_ready_without_quantity_unit(
         tmp_path, monkeypatch):
     store, broker = _runtime(tmp_path, monkeypatch)
     at = "2026-10-05T16:40:00-03:00"
     offer = _live_ppi_fixture(store, at)
     monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
 
-    first = broker.place_caucion(offer, "100000", "A232:MONDAY", as_of=at)
-    second = broker.place_caucion(offer, "100000", "A232:MONDAY", as_of=at)
-    assert first["paper_id"] == second["paper_id"]
-    assert first["status"] == "OPEN" and Decimal(first["total_fees"]) > 0
-    assert broker._cash(at, "ARS") == Decimal("1900000")  # only one principal debit
+    # Even a *legacy* row marked BOOK_READY with matching catalog/current/
+    # history is not an authenticated monetary-unit contract. No PAPER
+    # position or cash debit may be created, including on identical retries.
+    for request in ("A232:MONDAY", "A232:MONDAY"):
+        with pytest.raises(ValueError, match="CAUCION_BOOK_QUANTITY_UNIT_UNVERIFIED"):
+            broker.place_caucion(offer, "100000", request, as_of=at)
+    assert broker._cash(at, "ARS") == Decimal("2000000")
     with store.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
         assert tuple(db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) == (
             "PRODUCTION_PAPER", 0)
 
-    # A forged source label, altered economics, or missing PPI history receipt
-    # cannot open another position even while GO stays permissive.
+    # More-specific identity/history failures still take precedence over the
+    # quantity-unit hold and preserve the same zero-position result.
     fake = replace(offer, metadata_source="PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1;FAKE")
     with pytest.raises(ValueError, match="CAUCION_RUNTIME_PPI_LIVE_BOOK_OR_TERMS_UNVERIFIED"):
         broker.place_caucion(fake, "100000", "A232:FAKE_METADATA", as_of=at)
@@ -195,7 +212,7 @@ def test_runtime_caucion_monday_requires_reconstructed_live_ppi_book_and_is_idem
     with pytest.raises(ValueError, match="CAUCION_RUNTIME_PPI_IDENTITY_OR_RECEIPT_UNVERIFIED"):
         broker.place_caucion(offer, "100000", "A232:MISSING_HISTORY", as_of=at)
     with store.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 0
 
 
 def test_runtime_caucion_fake_v2_metadata_on_monday_is_not_source_authority(

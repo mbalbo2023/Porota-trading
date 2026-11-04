@@ -2,7 +2,8 @@
 Description=Porota RC6 phase-gated IOL/public 1m / universe evidence 5m
 Wants=network-online.target
 After=network-online.target
-ConditionPathExists=/root/.config/porota/iol_mcp_oauth_bootstrap.json
+# IOL bootstrap is gated inside rc6_source_cycle_dispatch.py only for IOL.
+# Public/evidence observations must not depend on complementary OAuth.
 
 [Service]
 Type=oneshot

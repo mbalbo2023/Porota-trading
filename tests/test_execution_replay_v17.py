@@ -65,9 +65,11 @@ def test_corte_cancela_compra_pendiente_y_permite_salida_aun_si_recupera(setup):
 def test_corte_cancela_compra_aun_durante_su_latencia(setup):
     setup = (*setup[:4],replace(setup[4],latency_seconds=3),setup[5])
     result = run(setup,[order(setup),order(setup,'waiting',5)],
-        [book(setup,4),book(setup,6,bid=D(80),ask=D(81))],
+        # Book at t=4 is exactly decision+latency and MUST NOT fill; t=5
+        # opens risk, then the t=6 drop latches while second order waits.
+        [book(setup,4),book(setup,5),book(setup,6,bid=D(80),ask=D(81))],
         risk_config=ReplayRiskConfig(at(0),D(1)))
-    assert result['fills'][0]['executed_at']==stamp(at(4))
+    assert result['fills'][0]['executed_at']==stamp(at(5))
     assert result['orders'][1]['status']=='CANCELLED_DAILY_RISK_LATCHED'
 
 
@@ -243,6 +245,27 @@ def test_latencia_exige_libro_posterior_al_arribo_modelado(setup):
     setup = (*setup[:4], replace(setup[4], latency_seconds=3), setup[5])
     result = run(setup, [order(setup)], [book(setup), book(setup, 5, book_at=at(3)), book(setup, 7)])
     assert result['fills'][0]['book_id'] == 'b7'
+
+
+def test_book_exacto_en_limite_de_latencia_no_acredita_fill_causal(setup):
+    """BOOK_AT must be strictly AFTER decision+latency, never equal.
+
+    Fixtures are synthetic and cannot establish genuine PPI PIT or runtime
+    PAPER acceptance. A late arrival of an exact-boundary book is not enough.
+    """
+    setup = (*setup[:4], replace(setup[4], latency_seconds=3), setup[5])
+    decision = order(setup, submitted=1)
+    boundary_book = book(setup, 4)
+    only_boundary = run(setup, [decision], [boundary_book])
+    assert only_boundary['fills'] == []
+    assert only_boundary['orders'][0]['status'] == 'EXPIRED'
+    assert only_boundary['promotion_allowed'] is False
+
+    with_later = run(setup, [decision], [boundary_book, book(setup, 5)])
+    assert len(with_later['fills']) == 1
+    assert with_later['fills'][0]['book_id'] == 'b5'
+    assert with_later['fills'][0]['book_at'] == stamp(at(5))
+    assert with_later['promotion_allowed'] is False
 
 
 @pytest.mark.parametrize('changes', [{'session_open':False}, {'book_at':at(-200)}])

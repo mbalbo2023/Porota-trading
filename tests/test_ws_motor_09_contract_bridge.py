@@ -134,9 +134,12 @@ def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_
     later=NOW+timedelta(minutes=1)
     broker.clock_fn=lambda:later.isoformat()
     close=replace(q,observed_at=later.isoformat(),book_at=later.isoformat(),trade_at=later.isoformat(),bid=D(88000),ask=D(88100),last=D(88050))
-    assert broker._close(s.open_positions()[0],close,"FIXTURE_CLOSE",as_of=later.isoformat())
+    assert not broker._close(s.open_positions()[0],close,"FIXTURE_CLOSE",as_of=later.isoformat())
     with s.connect() as c:
-        assert [r[0] for r in c.execute("SELECT side FROM paper_fills WHERE paper_id=? ORDER BY id",(paper_id,))]==["BUY_SIMULATED","SELL_SIMULATED"]
+        assert [r[0] for r in c.execute("SELECT side FROM paper_fills WHERE paper_id=? ORDER BY id",(paper_id,))]==["BUY_SIMULATED"]
+        assert c.execute("SELECT status FROM paper_positions WHERE paper_id=?",(paper_id,)).fetchone()[0]=="OPEN"
+        assert c.execute("SELECT COUNT(*) FROM paper_spot_sales WHERE paper_id=?",(paper_id,)).fetchone()[0]==0
+        assert c.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0]==0
         assert c.execute("SELECT COUNT(*) FROM complementary_contract_retry WHERE ticker='GD30'").fetchone()[0]==0
 
 

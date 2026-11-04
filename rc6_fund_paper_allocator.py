@@ -68,10 +68,9 @@ class FundAllocationBudget:
 class FundCashProjection:
     """Pure ARS cash arithmetic, not a subscription or broker authorization.
 
-    ``subscription_net_ars`` is the intended fund amount *before* account
-    fees. The eventual locked lifecycle must debit ``gross_cash_debit_ars``
-    exactly once before a nonzero fee can ever be admitted. At present the
-    executor debits the net amount only, so nonzero fees remain HOLD.
+    ``subscription_net_ars`` is the intended fund amount before account fees.
+    The locked offline lifecycle debits ``gross_cash_debit_ars`` exactly once.
+    This projection does not authenticate a broker fee or authorize runtime.
     """
 
     subscription_net_ars: Decimal
@@ -201,11 +200,6 @@ def assess_fund_cash_parking(evidence: FundAllocationEvidence | None,
     fee = _amount(evidence.subscription_fee_ars)
     if fee is None:
         block("FCI_EXPLICIT_ACCOUNT_FEE_UNKNOWN")
-    elif fee != 0:
-        # The existing durable executor reserves only the subscription amount.
-        # Until a fee-aware atomic debit exists, accepting an extra fee would
-        # pretend that unreserved cash is available for a second strategy.
-        block("FCI_NONZERO_FEE_NOT_MODELED_IN_LEDGER")
 
     local = None
     match = _HHMM.fullmatch(evidence.cutoff_local_hhmm) if isinstance(
@@ -314,7 +308,7 @@ def simulate_fund_subscription(executor: FamilyPaperExecutor, *, evidence,
         # The callback is re-read by FamilyPaperExecutor after BEGIN IMMEDIATE.
         # Use the smaller of the live PAPER balance and the assessed budget;
         # never permit a stale budget or concurrent subscription to consume the
-        # cash reserve. Nonzero fees still remain HOLD upstream.
+        # cash reserve, including an explicit fee.
         live = decimal_value(cash_guard(connection), "FCI_PAPER_LIVE_CASH", nonnegative=True)
         assessed = decimal_value(budget.available_cash_ars, "FCI_PAPER_BUDGET_CASH",
                                  nonnegative=True)
@@ -325,4 +319,5 @@ def simulate_fund_subscription(executor: FamilyPaperExecutor, *, evidence,
     return executor.subscribe_fund(
         evidence.class_evidence.terms, lifecycle_id=lifecycle_id,
         event_id=event_id, amount=decision.amount_ars, occurred_at=occurred_at,
+        subscription_fee=evidence.subscription_fee_ars,
         cash_guard=locked_cash_after_buffer, admission_guard=admission_guard)

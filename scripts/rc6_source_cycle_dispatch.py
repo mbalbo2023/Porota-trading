@@ -41,8 +41,9 @@ MORNING_END = clock_time(9, 0)
 # BYMA COM19031 (28-Oct-2026) explicitly supersedes COM19024 from 02-Nov.
 # Official PDF SHA256: fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0
 # https://www.byma.com.ar/comunicados/com19031-horarios
-# COM19031 changes only PPT/SENEBI intraday operations (17:45 -> 17:30);
-# regular T+1 equities/options and postclose still depend on the 18:00 close.
+# COM19031 moves PPT/SENEBI intraday 17:45 -> 17:30, keeps T+1 variable
+# PPT/options to 18:00 and runs the closing-price segment 18:05–18:15.
+# The price-publication floor never certifies provider EOD availability.
 COM19031_EFFECTIVE = date(2026, 11, 2)
 COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
 # This is a live SHADOW input, not an optional background scraper. A longer
@@ -53,11 +54,18 @@ STATE_SCHEMA = "rc6.source-cycle-dispatch.v1"
 DEFAULT_MARKET_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 DEFAULT_DB = Path(os.getenv("PAPER_V17_DB_PATH", "/opt/porota-trading/data/paper_v17/observer_v17.db"))
 DEFAULT_LOCK = Path("/var/lock/porota-rc6-source-cycle.lock")
+# IOL is complementary. Missing OAuth bootstrap must not disable the public
+# reference/evidence stages of the same PAPER-only cycle.
+DEFAULT_IOL_BOOTSTRAP = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
 STAGES = (
-    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
-     "iol_shadow_latest.json"),
+    # The public SHADOW reference has a strict 60-second TTL.  An optional
+    # IOL child may consume 110 seconds; it must never delay the *start* of
+    # this independent public stage.  The economic source ranking remains
+    # PPI primary, with IOL/public sources complementary only.
     ("public", "scripts/rc6_public_source_capture.py", 50,
      "rc6_public_sources_latest.json"),
+    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
+     "iol_shadow_latest.json"),
     ("evidence", "scripts/rc6_full_universe_evidence.py", 25,
      "rc6_instrument_evidence_latest.json"),
 )
@@ -93,15 +101,31 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
         allowed = clock_time(23, 20) <= local.time() < clock_time(23, 45)
         return allowed, "DB_POSTCLOSE_WINDOW" if allowed else "OUTSIDE_DB_POSTCLOSE"
     if phase == "postclose_snapshot":
-        # COM18782 closes regular PPT at 17 until 01-Nov. COM19031 retains
-        # regular equities/options to 18 starting 02-Nov while caucions remain
-        # 17. The single global snapshot belongs after the LAST verified close.
-        hour = 18 if local.date() >= COM19031_EFFECTIVE else 17
-        allowed = clock_time(hour, 8) <= local.time() < clock_time(hour, 30)
-        return allowed, "VERIFIED_PPT_CLOSE" if allowed else "PPT_STILL_OPEN_OR_TOO_LATE"
+        # Pre-COM19031 paper snapshot remains 17:08. On/after 02-Nov the
+        # 18:08 tick is only an operational PAPER review, not final EOD.
+        # The *existing* timer retries its read-only reports 18:20..22:20;
+        # downstream consumers alone check source-positive same-session data.
+        if local.date() >= COM19031_EFFECTIVE:
+            allowed = clock_time(18, 8) <= local.time() < clock_time(22, 30)
+        else:
+            allowed = clock_time(17, 8) <= local.time() < clock_time(17, 30)
+        return allowed, ("PAPER_POSTCLOSE_REVIEW_WINDOW" if allowed
+                         else "PAPER_POSTCLOSE_NOT_DUE")
     if phase == "open":
         allowed = OPEN <= local.time() < CLOSE
         return allowed, "COLLECTOR_BASELINE_WINDOW" if allowed else "OUTSIDE_COLLECTOR_WINDOW"
+    if phase == "candle_observation":
+        # The existing candle worker can receive source-only T+1 snapshots
+        # after PAPER closes. Its read-only cursor proof must observe that
+        # window without widening PAPER or any provider capture schedule.
+        # Reuse the exact late-source contract rather than reinterpreting
+        # COM19031 as an all-family trading extension.
+        regular = OPEN <= local.time() < CLOSE
+        late, _ = phase_status(instant, "late_source")
+        allowed = regular or late
+        return (allowed, "CANDLE_REGULAR_OBSERVATION" if regular else
+                "CANDLE_T1_READONLY_OBSERVATION" if late else
+                "CANDLE_OBSERVATION_NOT_DUE")
     if phase == "intraday_ppt_senebi":
         # This is a separate audited eligibility check, NOT the IOL T+1
         # observation window and NOT the regular 18:00 equity close.
@@ -240,6 +264,20 @@ def _published_file_identity(path: Path) -> tuple[int, ...] | None:
             metadata.st_mtime_ns, metadata.st_ctime_ns)
 
 
+def _iol_bootstrap_present(path: Path) -> bool:
+    """Admission gate only; never read credentials or request OAuth here.
+
+    An absent, inaccessible, symlinked or non-regular bootstrap is not proof
+    that the complementary IOL collector may be started. Other sources can
+    still publish under the existing PAPER/zero-order preflight and lock.
+    """
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+
+
 def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
     """One canonical output/DB identity for all three already-existing jobs.
 
@@ -263,7 +301,8 @@ def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
 
 def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
               market_root: Path = DEFAULT_MARKET_ROOT, lock: Path = DEFAULT_LOCK,
-              runner=subprocess.run) -> dict:
+              runner=subprocess.run,
+              iol_bootstrap: Path = DEFAULT_IOL_BOOTSTRAP) -> dict:
     now = now or datetime.now(timezone.utc)
     regular, reason = phase_status(now, "open")
     late, _ = phase_status(now, "late_source")
@@ -289,13 +328,31 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         # After 17:00 only the exact T+1/regular-options BYMA IOL subset may
         # be observed. Public-source sweeping and global projections keep the
         # established baseline and are not silently extended by this timer.
-        stages = STAGES[:1] if late else STAGES
+        # Late COM19031 is IOL exact-T+1 only.  Do not select by tuple
+        # position: the regular session intentionally prioritizes PUBLIC.
+        stages = tuple(row for row in STAGES if row[0] == "iol") if late else STAGES
+        # Preflight *every* due output before the first child.  A malicious
+        # later-stage alias must not be detected only after PUBLIC published.
+        # Absent IOL OAuth never blocks the independent public/evidence path.
+        iol_admitted = _iol_bootstrap_present(iol_bootstrap)
+        permitted = {name: due[name] and (name != "iol" or iol_admitted)
+                     for name, _, _, _ in stages}
+        original_outputs = {
+            name: _published_file_identity(market_root / output)
+            for name, _, _, output in stages if permitted[name]
+        }
         for name, relative, timeout, output in stages:
             if not due[name]:
                 results[name] = "NOT_DUE_TTL"
                 continue
+            if name == "iol" and not iol_admitted:
+                # The former systemd ConditionPathExists suppressed *all*
+                # stages. Preserve the IOL-specific guard without treating
+                # an unavailable complement as a blocker for public/evidence.
+                results[name] = "COMPLEMENT_AUTH_UNAVAILABLE"
+                continue
             output_path = market_root / output
-            before_publication = _published_file_identity(output_path)
+            before_publication = original_outputs[name]
             try:
                 result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
                                 env=child_env, capture_output=True, text=True,
@@ -347,7 +404,7 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "intraday_ppt_senebi", "business_day", "db_postclose", "postclose_snapshot"))
+    parser.add_argument("--check-phase", choices=("morning", "open", "late_source", "candle_observation", "intraday_ppt_senebi", "business_day", "db_postclose", "postclose_snapshot"))
     args = parser.parse_args(argv)
     now = datetime.now(timezone.utc)
     if args.check_phase:

@@ -58,6 +58,54 @@ def test_local_eod_independent_idempotent_and_monetary(source,tmp_path):
         assert c.execute("SELECT count(*) FROM sqlite_master WHERE name='local_eod_cursor_v1'").fetchone()[0]==0
 
 
+def test_com19031_local_eod_waits_for_true_postclose_and_preserves_exact_settlement(source,tmp_path):
+    """02-Nov T+1 samples after 17:00 survive; CI/older bars cannot borrow it."""
+    start = datetime.fromisoformat('2026-11-02T20:30:00+00:00')  # 17:30 ART
+    published = datetime.fromisoformat('2026-11-02T21:20:00+00:00')  # 18:20 ART
+    prior = datetime.fromisoformat('2026-10-30T20:30:00+00:00')  # before effective date
+    archive = CandleArchive(source)
+    bar = lambda dt: Bar(dt.isoformat(),*[Decimal('100')]*4,samples=1,quality='SAMPLED')
+    exact = lambda family,settlement: Series('GGAL',family,'BYMA','ARS',settlement,
+        '1m','PRODUCTION_PAPER_SNAPSHOTS','RAW','OBSERVED_NOMINAL_PRICE',
+        'TRADE_SAMPLES','UNKNOWN')
+    archive.put(exact('ACCIONES','A-24HS'),bar(start),known_at='2026-11-02T20:32:00+00:00')
+    archive.put(exact('ACCIONES','CI'),bar(start),known_at='2026-11-02T20:32:00+00:00')
+    archive.put(exact('BONOS','A-24HS'),bar(start),known_at='2026-11-02T20:32:00+00:00')
+    archive.put(exact('ACCIONES','A-24HS'),bar(prior),known_at='2026-10-30T20:32:00+00:00')
+    with source.connect() as c:
+        c.execute('UPDATE observer_state SET heartbeat_at=?,session_state=?',
+                  (published.isoformat(),'MARKET_CLOSED'))
+    cold=tmp_path/'com19031-cold.db'
+    for local in ('2026-11-02T17:45:00-03:00','2026-11-02T18:14:00-03:00'):
+        result=consolidate(source.path,cold,as_of=local,free_bytes=RESERVE)
+        assert result['state']=='NOT_DUE' and result['reason']=='POSTCLOSE_WINDOW_REQUIRED'
+        assert not cold.exists()
+    result=consolidate(source.path,cold,as_of=published,free_bytes=RESERVE)
+    assert result['state']=='LOCAL_EOD_READY'
+    assert result['imported']==1 and result['rejected']==3
+    assert result['real_routes']=='NOT_CALLED' and result['history_v2_writes'] is False
+    with sqlite3.connect(cold) as c:
+        rows=c.execute('SELECT identity_json,body_json FROM history_local_daily_v1').fetchall()
+    assert len(rows)==1 and json.loads(rows[0][0])['settlement']=='A-24HS'
+    body=json.loads(rows[0][1])
+    assert body['expected_minutes']==450 and body['captured_minutes']==1
+    assert body['missing_minutes']==449 and body['coverage_state']=='PARTIAL'
+
+
+def test_com19031_shadow_coverage_uses_exact_settlement_and_eod_floor():
+    at=datetime.fromisoformat('2026-11-02T17:30:00-03:00')
+    q=lambda settlement: SimpleNamespace(market='BYMA',asset_class='ACCIONES',
+                                        settlement=settlement)
+    assert features.history_session_quality([],q('A-24HS'),at)['expected_last_session']=='2026-10-30'
+    assert features.history_session_quality([],q('CI'),at)['expected_last_session']=='2026-11-02'
+    still_closing=datetime.fromisoformat('2026-11-02T18:14:00-03:00')
+    after_close=datetime.fromisoformat('2026-11-02T18:15:00-03:00')
+    assert features.history_session_quality([],q('A-24HS'),still_closing)['expected_last_session']=='2026-10-30'
+    assert features.history_session_quality([],q('A-24HS'),after_close)['expected_last_session']=='2026-11-02'
+    pre_change=datetime.fromisoformat('2026-10-30T17:30:00-03:00')
+    assert features.history_session_quality([],q('A-24HS'),pre_change)['expected_last_session']=='2026-10-30'
+
+
 def test_crash_does_not_publish_cursor_or_daily(source,tmp_path):
     sample(source)
     def crash(): raise RuntimeError('fixture crash')

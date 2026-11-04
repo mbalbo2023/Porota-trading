@@ -67,6 +67,53 @@ def test_one_family_does_not_block_another():
     assert states["BONOS"] == "PENDING"
 
 
+def test_one_conflicted_instrument_does_not_block_ready_sibling_family_summary():
+    catalog = [
+        {"family": "ACCIONES", "symbol": symbol, "market": "BYMA",
+         "currency": "ARS", "settlement": "A-24HS"}
+        for symbol in ("YPFD", "GGAL")
+    ]
+    good = {"symbol": "YPFD", "asset_type": "ACCIONES", "market": "BYMA",
+            "currency": "ARS", "term": "A-24HS",
+            "primary_comparison": _verified_comparison()}
+    duplicate = {"symbol": "GGAL", "asset_type": "ACCIONES", "market": "BYMA",
+                 "currency": "ARS", "term": "A-24HS",
+                 "primary_comparison": _verified_comparison()}
+    result = readiness.evaluate(catalog, [good, duplicate, duplicate])
+    members = {item["symbol"]: item for item in result["instruments"]}
+    summary = next(item for item in result["families"] if item["family"] == "ACCIONES")
+    assert summary["state"] == "PARTIAL"
+    assert summary["instrument_count"] == 2
+    assert summary["paper_contract_ready"] == 1
+    assert summary["blocked"] == 1
+    assert summary["pending"] == 0
+    assert "mantener HOLD" in summary["next_action"]
+    assert members["YPFD"]["paper_contract_ready"] is True
+    assert members["GGAL"]["contract_state"] == "BLOCKED_CONFLICT"
+    assert members["GGAL"]["paper_contract_ready"] is False
+    assert all(not item["paper_auto_enabled"] and not item["entry_authority"]
+               and not item["real_money_authorized"] for item in members.values())
+    assert summary["paper_auto_enabled"] == 0
+    assert summary["entry_authority"] is False
+
+
+def test_pending_sibling_is_hold_without_erasing_ready_contract():
+    catalog = [
+        {"family": "FCI", "symbol": symbol, "market": "BYMA",
+         "currency": "ARS", "settlement": "A-24HS"}
+        for symbol in ("FCI-READY", "FCI-NO-DATA")
+    ]
+    observed = [{"symbol": "FCI-READY", "asset_type": "FCI", "market": "BYMA",
+                 "currency": "ARS", "term": "A-24HS",
+                 "primary_comparison": _verified_comparison()}]
+    report = readiness.evaluate(catalog, observed)
+    summary = next(item for item in report["families"] if item["family"] == "FCI")
+    assert (summary["state"], summary["paper_contract_ready"], summary["pending"],
+            summary["blocked"]) == ("PARTIAL", 1, 1, 0)
+    assert all(not item["entry_authority"] and not item["paper_auto_enabled"]
+               for item in report["instruments"])
+
+
 def test_only_explicit_paper_states_are_simulatable():
     assert "READY_PAPER" in readiness.PAPER_SIMULATABLE_STATES
     assert "READY_PAPER_SHADOW" in readiness.PAPER_SIMULATABLE_STATES
@@ -158,7 +205,9 @@ def test_ticker_only_or_cross_family_observation_never_promotes_paper_contract()
 
 def test_duplicate_exact_identity_requires_review():
     catalog = [{"family": "ON", "symbol": "SAME", "market": "BYMA", "currency": "ARS", "settlement": "A-24HS"}]
-    row = {"symbol": "SAME", "asset_type": "OBLIGACIONES", "market": "BYMA", "currency": "ARS",
+    # A650: truly duplicate raw ON rows. The old ON-vs-OBL case is alias-only
+    # and cannot count as even one exact match.
+    row = {"symbol": "SAME", "asset_type": "ON", "market": "BYMA", "currency": "ARS",
            "term": "A-24HS", "primary_comparison": _verified_comparison()}
     result = readiness.evaluate(catalog, [row, row])
     instrument = result["instruments"][0]
@@ -298,3 +347,101 @@ def test_same_ticker_different_exact_currency_identity_is_not_a_duplicate():
     assert all(item["paper_contract_ready"] for item in result["instruments"])
     assert all("DUPLICATE_CATALOG_EXACT_IDENTITY_REVIEW_REQUIRED" not in item["reasons"]
                for item in result["instruments"])
+
+
+# A650 cross-plane RCA: a normalized *display* family must not join a
+# different raw PPI/catalog family, even with a claimed positive comparison.
+@pytest.mark.parametrize("catalog_family,observed_family", [
+    ("ON", "OBLIGACIONES"),
+    ("OBLIGACIONES", "ON"),
+    ("ETF", "ETFS"),
+])
+def test_a650_alias_only_family_never_promotes_contract(catalog_family, observed_family):
+    catalog = [{"family": catalog_family, "symbol": "SAME",
+                "market": "BYMA", "currency": "ARS", "settlement": "A-24HS"}]
+    observation = [{"symbol": "SAME", "asset_type": observed_family,
+                    "market": "BYMA", "currency": "ARS", "term": "A-24HS",
+                    "primary_comparison": _verified_comparison()}]
+    result = readiness.evaluate(catalog, observation)
+    rows = result["instruments"]
+    assert len(rows) == 2
+    catalog_row = next(row for row in rows if row["raw_family"] == catalog_family)
+    observed_row = next(row for row in rows if row["raw_family"] == observed_family)
+    assert catalog_row["contract_state"] == "INSUFFICIENT_EVIDENCE"
+    assert catalog_row["paper_contract_ready"] is False
+    assert "PPI_IOL_COMPARISON_NOT_PUBLISHED" in catalog_row["reasons"]
+    assert observed_row["paper_contract_ready"] is False
+    assert "RAW_FAMILY_ALIAS_ONLY_NO_AUTHORITY" in observed_row["reasons"]
+    assert "PPI_CATALOG_IDENTITY_NOT_VERIFIED" in observed_row["reasons"]
+    assert all(row["entry_authority"] is False and row["paper_auto_enabled"] is False
+               for row in rows)
+
+
+def test_a650_exact_raw_on_still_ready_for_contract_only():
+    catalog = [{"family": "ON", "symbol": "SAME", "market": "BYMA",
+                "currency": "ARS", "settlement": "A-24HS"}]
+    observed = [{"symbol": "SAME", "asset_type": "ON", "market": "BYMA",
+                 "currency": "ARS", "term": "A-24HS",
+                 "primary_comparison": _verified_comparison()}]
+    rows = readiness.evaluate(catalog, observed)["instruments"]
+    assert len(rows) == 1
+    assert rows[0]["family"] == "OBLIGACIONES"
+    assert rows[0]["raw_family"] == "ON"
+    assert rows[0]["paper_contract_ready"] is True
+    assert rows[0]["entry_authority"] is False
+    assert rows[0]["paper_auto_enabled"] is False
+
+
+def test_a650_fci_local_and_fci_remain_distinct_source_contexts():
+    catalog = [{"family": "FCI", "symbol": "FUND", "market": "BYMA",
+                "currency": "ARS", "settlement": "CI"}]
+    observed = [{"symbol": "FUND", "asset_type": "FCI_LOCAL", "market": "BYMA",
+                 "currency": "ARS", "term": "CI",
+                 "primary_comparison": _verified_comparison()}]
+    rows = readiness.evaluate(catalog, observed)["instruments"]
+    assert {row["raw_family"] for row in rows} == {"FCI", "FCI_LOCAL"}
+    assert all(row["paper_contract_ready"] is False for row in rows)
+    assert all(row["paper_auto_enabled"] is False for row in rows)
+
+
+def test_a650_catalog_on_and_obligaciones_visual_collision_is_blocked():
+    catalog = [{"family": family, "symbol": "SAME", "market": "BYMA",
+                "currency": "ARS", "settlement": "A-24HS"}
+               for family in ("ON", "OBLIGACIONES")]
+    observed = [{"symbol": "SAME", "asset_type": "ON", "market": "BYMA",
+                 "currency": "ARS", "term": "A-24HS",
+                 "primary_comparison": _verified_comparison()}]
+    rows = readiness.evaluate(catalog, observed)["instruments"]
+    assert len(rows) == 1  # one visible conflict, never two apparent READYs
+    assert rows[0]["contract_state"] == "BLOCKED_CONFLICT"
+    assert "DUPLICATE_CATALOG_EXACT_IDENTITY_REVIEW_REQUIRED" in rows[0]["reasons"]
+    assert rows[0]["paper_contract_ready"] is False
+
+
+def test_a650_duplicate_observed_raw_on_remains_conflict():
+    catalog = [{"family": "ON", "symbol": "SAME", "market": "BYMA",
+                "currency": "ARS", "settlement": "A-24HS"}]
+    row = {"symbol": "SAME", "asset_type": "ON", "market": "BYMA",
+           "currency": "ARS", "term": "A-24HS",
+           "primary_comparison": _verified_comparison()}
+    rows = readiness.evaluate(catalog, [row, dict(row)])["instruments"]
+    assert len(rows) == 1
+    assert rows[0]["contract_state"] == "BLOCKED_CONFLICT"
+    assert "DUPLICATE_EXACT_IDENTITY_REVIEW_REQUIRED" in rows[0]["reasons"]
+    assert rows[0]["paper_contract_ready"] is False
+
+
+def test_a650_unlinked_alias_duplicates_not_promoted_or_overcounted():
+    catalog = [{"family": "ON", "symbol": "SAME", "market": "BYMA",
+                "currency": "ARS", "settlement": "A-24HS"}]
+    row = {"symbol": "SAME", "asset_type": "OBLIGACIONES", "market": "BYMA",
+           "currency": "ARS", "term": "A-24HS",
+           "primary_comparison": _verified_comparison()}
+    rows = readiness.evaluate(catalog, [row, dict(row)])["instruments"]
+    assert len(rows) == 2  # catalog pending + one raw observed-only diagnostic
+    assert sum(x["raw_family"] == "OBLIGACIONES" for x in rows) == 1
+    unlinked = next(x for x in rows if x["raw_family"] == "OBLIGACIONES")
+    assert unlinked["contract_state"] == "BLOCKED_CONFLICT"
+    assert "DUPLICATE_UNLINKED_OBSERVATION_REVIEW_REQUIRED" in unlinked["reasons"]
+    assert all(not x["paper_contract_ready"] and not x["paper_auto_enabled"]
+               for x in rows)

@@ -325,9 +325,10 @@ class ExecutionReplay:
                     consumed.add(order.order_id)
                     continue
                 eligible = aware_datetime(order.submitted_at) + timedelta(seconds=float(self.assumptions.latency_seconds))
-                # El timestamp del libro también debe ser posterior a la orden;
-                # recibir tarde un libro anterior no crea una ejecución nueva.
-                if at < eligible or aware_datetime(book.book_at) <= aware_datetime(order.submitted_at) or aware_datetime(book.book_at) < eligible:
+                # El timestamp del libro debe ser ESTRICTAMENTE posterior a la
+                # decisión + latencia; la igualdad no acredita un nuevo fill.
+                # Recibir tarde un libro anterior tampoco crea ejecución.
+                if at < eligible or aware_datetime(book.book_at) <= aware_datetime(order.submitted_at) or aware_datetime(book.book_at) <= eligible:
                     continue
                 if stale or older or not book.session_open:
                     continue

@@ -108,8 +108,35 @@ def open_exposure_rows(c):
     columns = {row['name'] for row in c.execute('PRAGMA table_info("paper_family_lifecycle")')}
     if not {'lifecycle_id', 'family', 'state'} <= columns:
         raise UnsafeBook('BOOK_SCHEMA_MISSING_FUND_LIFECYCLE')
+    # A terminal FCI row is not, by itself, a redemption receipt. A direct
+    # state UPDATE (or a broken imported lifecycle) could otherwise change an
+    # outstanding fund into FLAT_GREEN without a cash/NAV event. The final
+    # transition must have exactly one matching immutable event in the SAME
+    # read-only SQLite snapshot. This is a necessary receipt guard, not proof
+    # that an external fund NAV or its proceeds were independently verified.
+    terminal_without_receipt = c.execute('''SELECT 1
+        FROM paper_family_lifecycle AS fund
+        WHERE fund.family='FCI' AND fund.state='REDEEMED'
+          AND ( (SELECT COUNT(*) FROM paper_family_lifecycle_events AS event
+                 WHERE event.lifecycle_id=fund.lifecycle_id
+                   AND event.to_state='REDEEMED') != 1
+                OR NOT EXISTS (
+                  SELECT 1 FROM paper_family_lifecycle_events AS event
+                  WHERE event.lifecycle_id=fund.lifecycle_id
+                    AND event.family='FCI'
+                    AND event.from_state='REDEEM_REQUESTED'
+                    AND event.to_state='REDEEMED'
+                    AND event.occurred_at=fund.updated_at) )
+        LIMIT 1''').fetchone()
+    if terminal_without_receipt:
+        raise UnsafeBook('BOOK_FCI_TERMINAL_REDEMPTION_RECEIPT_UNVERIFIED')
+    # Runtime currently has no authenticated NAV/redemption writer. Even a
+    # structurally valid REDEEMED transition therefore cannot establish that
+    # units and proceeds reconciled. Retain terminal rows as unresolved FCI
+    # liabilities in the bounded snapshot until independent source evidence
+    # and a future dedicated verifier exist; never silently call them FLAT.
     fund_rows = [dict(row) for row in c.execute('''SELECT * FROM paper_family_lifecycle
-        WHERE family='FCI' AND state!='REDEEMED' ORDER BY rowid LIMIT ?''',
+        WHERE family='FCI' ORDER BY rowid LIMIT ?''',
         (MAX_OPEN_PER_FAMILY + 1,))]
     if len(fund_rows) > MAX_OPEN_PER_FAMILY:
         raise UnsafeBook('BOOK_EXPOSURE_BOUND_FUND')
@@ -237,9 +264,14 @@ def inspect_book(path=DB, *, as_of=None, barrier=None):
                         reasons.append('FUTURE_MARK_AND_MARGIN_RECONCILIATION_REQUIRED')
                 plans[name] = {'admin_void_unsettled': admin_void,
                                'requires_reconciliation': count - admin_void}
-        plans['fund'] = {'admin_void': 0, 'requires_fund_nav_reconciliation': counts['fund']}
+        unverified_redemptions = sum(row['state'] == 'REDEEMED' for row in data['fund'])
+        plans['fund'] = {'admin_void': 0,
+                         'requires_fund_nav_reconciliation': counts['fund'],
+                         'terminal_redemption_source_unverified': unverified_redemptions}
         if counts['fund']:
             reasons.append('FCI_SUBSCRIPTION_REDEMPTION_OR_NAV_OUTSTANDING')
+        if unverified_redemptions:
+            reasons.append('FCI_TERMINAL_REDEMPTION_SOURCE_UNVERIFIED')
         c.rollback()  # close the read-only snapshot; no journal change
     if barrier is not None:
         if not isinstance(barrier, dict) or barrier.get('status') not in {

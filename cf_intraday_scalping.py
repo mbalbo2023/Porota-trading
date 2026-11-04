@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -313,6 +314,51 @@ def _capability_event(store, kind, record, capability):
         kind = "INTRADAY_SCALPING_CAPABILITY_NEGATIVE"
     store.event(kind, json.dumps(capability, sort_keys=True,
         separators=(",", ":"), allow_nan=False))
+
+
+SCALPING_FAILURE_PHASES = frozenset({
+    "CAPABILITY", "READ_SCOPE", "PPI_READ", "NORMALIZE",
+    "SOURCE_VALIDATION", "PERSIST", "EVALUATE", "PAPER_GATE",
+})
+SCALPING_LOCAL_ERROR_KINDS = frozenset({
+    "VALUEERROR", "TYPEERROR", "KEYERROR", "INDEXERROR", "OVERFLOWERROR",
+    "RUNTIMEERROR", "ASSERTIONERROR", "OPERATIONALERROR", "DATABASEERROR",
+})
+
+
+def _scalping_error_code(error, read_error_code):
+    """Classify by the failing boundary, never by an exception message.
+
+    A local decoder, ledger or clock error must not impersonate a PPI SDK
+    failure.  The PPI classification is authoritative only when the guarded
+    intraday read itself raised and populated ``read_error_code``.
+    """
+    if read_error_code is not None:
+        return (read_error_code if isinstance(read_error_code, str)
+                and re.fullmatch(r"PPI_[A-Z0-9_]{2,72}", read_error_code)
+                else "PPI_UNCLASSIFIED")
+    kind = type(error).__name__.upper()
+    return ("SCALPING_LOCAL_" + kind
+            if kind in SCALPING_LOCAL_ERROR_KINDS else "SCALPING_LOCAL_EXCEPTION")
+
+
+def _scalping_failure_phase(value):
+    """Machine-safe phase only. An exception message is never evidence."""
+    return value if isinstance(value, str) and value in SCALPING_FAILURE_PHASES else "UNKNOWN"
+
+
+def _scalping_failure_detail(record, error_code, phase):
+    """Keep native identity only inside the private PAPER ledger, not Action logs.
+
+    Never include exception text or raw provider payload. The monitor's own
+    allowlisted reader must redact symbol + five-key identity before export.
+    """
+    safe_code = (error_code if isinstance(error_code, str)
+                 and (re.fullmatch(r"PPI_[A-Z0-9_]{2,72}", error_code)
+                      or re.fullmatch(r"SCALPING_LOCAL_[A-Z0-9_]{2,56}", error_code))
+                 else "PPI_UNCLASSIFIED")
+    return (f"{record['ticker']}: {safe_code};phase={_scalping_failure_phase(phase)};"
+            "shadow_identity=" + json.dumps(_identity(record), separators=(",", ":")))
 
 
 def _intraday_read_error_code(reader, error, classify_read_error):
@@ -1234,6 +1280,7 @@ def run_worker(store, stop, *, clock_fn):
                 reprobe = False
                 fingerprint = ""
                 read_error_code = None
+                failure_phase = "CAPABILITY"
                 try:
                     key = _identity(record)
                     capability = capability_cache.restore(record, _request_capability_state(store, record))
@@ -1255,9 +1302,11 @@ def run_worker(store, stop, *, clock_fn):
                         priority = "OPENED_CRITICAL" if key in dynamic_selection["opened_priority"] else {"HOT": "SCALPING_HOT", "WARM": "WARM"}.get(state, "DISCOVERY")
                     else:
                         priority = "OPENED_CRITICAL" if key in opened_keys else "DISCOVERY"
+                    failure_phase = "READ_SCOPE"
                     scope = (reader.read_scope(priority=priority, identity=key)
                         if getattr(reader, "budget_enabled", False) is True and hasattr(reader, "read_scope") else nullcontext())
                     with scope:
+                        failure_phase = "PPI_READ"
                         try:
                             payload = retry_read(lambda: reader.intraday(
                                 record["ticker"],record["instrument_type"],record["settlement"]),
@@ -1269,26 +1318,32 @@ def run_worker(store, stop, *, clock_fn):
                             # malformed stored text into a new login attempt.
                             read_error_code = _intraday_read_error_code(reader, read_error, classify_read_error)
                             raise
+                    failure_phase = "NORMALIZE"
                     received = _stamp(clock_fn())
                     if aware_datetime(received) < at:
                         raise ValueError("INTRADAY_CAPABILITY_CLOCK_ROLLBACK")
                     points = normalize_payload(payload,received_at=received)
                     if reprobe:
+                        failure_phase = "SOURCE_VALIDATION"
                         if not points or not 0 <= (aware_datetime(received) - aware_datetime(points[-1][0])).total_seconds() <= INTRADAY_SOURCE_MAX_AGE_SECONDS:
                             raise ValueError("INTRADAY_REPROBE_NO_FRESH_SOURCE")
                         recovery = capability_cache.outcome(record, capability, at=received,
                             fingerprint=fingerprint, result="READ_ONLY_RECOVERED", recovered=True,
                             probe_reason=decision["reason"], attempt_started=True)
+                        failure_phase = "PERSIST"
                         result = persist_payload(store, record, points, received_at=received,
                             capability_recovery=recovery)
                         _capability_event(store, "INTRADAY_SCALPING_CAPABILITY_RECOVERED", record, recovery)
                         recovered += 1
                     else:
+                        failure_phase = "PERSIST"
                         result = persist_payload(store,record,points,received_at=received)
                     inserted += result["inserted"]
                     confirmed += int(result["state"] == "CONFIRMED_INTERVAL_VOLUME")
+                    failure_phase = "EVALUATE"
                     candidate_action = "HOLD" if reprobe else evaluate_candidate(store,record,at=received)
                     if candidate_action == "BUY_CANDIDATE":
+                        failure_phase = "PAPER_GATE"
                         candidates += 1
                         result_action = ("DISCOVERY_OR_WARMUP_NO_ENTRY_AUTHORITY" if dynamic_selection["dynamic"]
                             and key not in dynamic_selection["entry_identities"] else
@@ -1305,7 +1360,7 @@ def run_worker(store, stop, *, clock_fn):
                         store.event("INTRADAY_SCALPING_CLOCK_ROLLBACK", record["ticker"])
                         stop.wait(0.75)
                         continue
-                    error_code = read_error_code or "PPI_" + type(exc).__name__.upper()
+                    error_code = _scalping_error_code(exc, read_error_code)
                     if read_error_code == "PPI_INSTRUMENT_NOT_FOUND" and instrument_not_found(exc):
                         negative_at = _stamp(clock_fn())
                         negative = capability_cache.outcome(record, capability, at=negative_at,
@@ -1324,8 +1379,7 @@ def run_worker(store, stop, *, clock_fn):
                             _capability_event(store, "INTRADAY_SCALPING_CAPABILITY_REPROBE_FAILED", record, negative)
                         failed += 1
                         store.event("INTRADAY_SCALPING_ERROR",
-                                    f"{record['ticker']}: {error_code};shadow_identity=" +
-                                    json.dumps(_identity(record), separators=(",", ":")))
+                                    _scalping_failure_detail(record, error_code, failure_phase))
                         if error_code == "PPI_SESSION_INVALID":
                             invalid_session = True
                             break

@@ -31,6 +31,9 @@ def sqlite_error(code):
 def postclose(monkeypatch, tmp_path):
     store = Store(tmp_path / "paper.db")
     services.init_schema(store)
+    # These tests isolate postclose report/SQLite failure handling; a separate
+    # A316 suite tests the new positive PPI EOD source gate and its negatives.
+    monkeypatch.setattr(services, "_postclose_history_source_ready", lambda *_: True)
     original_due = services._job_due
     monkeypatch.setattr(services, "_job_due", lambda s, key, seconds:
                         False if key in {"SRE_SNAPSHOT", "FINANCIAL_REFRESH", "NEWS_REFRESH"}

@@ -50,11 +50,14 @@ class SourceCyclePublicationTest(unittest.TestCase):
         with sqlite3.connect(self.db) as connection:
             connection.execute("CREATE TABLE observer_state(id INTEGER, mode TEXT, real_orders_sent INTEGER)")
             connection.execute("INSERT INTO observer_state VALUES(1, 'PRODUCTION_PAPER', 0)")
+        self.bootstrap = self.root / "iol_bootstrap.json"
+        self.bootstrap.write_text("{}", encoding="utf-8")
 
     def cycle(self, publisher, minute=30):
         return dispatch.run_cycle(now=datetime(2026, 10, 28, 10, minute, tzinfo=ART),
                                   db=self.db, market_root=self.market,
-                                  lock=self.root / "source.lock", runner=publisher)
+                                  lock=self.root / "source.lock", runner=publisher,
+                                  iol_bootstrap=self.bootstrap)
 
     def old_outputs(self):
         for output in OUTPUTS.values():
@@ -116,6 +119,17 @@ class SourceCyclePublicationTest(unittest.TestCase):
         with self.assertRaisesRegex(dispatch.SourceCycleBlocked, "SOURCE_CYCLE_OUTPUT_UNSAFE"):
             self.cycle(collector)
         self.assertEqual(collector.calls, [])
+
+    def test_unsafe_later_evidence_output_blocks_before_public_child(self):
+        target = self.root / "foreign.json"
+        target.write_text('{"protected":true}', encoding="utf-8")
+        (self.market / "rc6_instrument_evidence_latest.json").symlink_to(target)
+        collector = Collector(self.market, publishing=OUTPUTS)
+        with self.assertRaisesRegex(dispatch.SourceCycleBlocked, "SOURCE_CYCLE_OUTPUT_UNSAFE"):
+            self.cycle(collector)
+        self.assertEqual(collector.calls, [])
+        self.assertFalse((self.market / "rc6_public_sources_latest.json").exists())
+        self.assertEqual(target.read_text(encoding="utf-8"), '{"protected":true}')
 
 
 if __name__ == "__main__":

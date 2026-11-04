@@ -288,6 +288,25 @@ def paper_session_state(at, contract=None):
                 or utc_microseconds(getattr(contract, "expires_at", None))
                    != utc_microseconds(terms["expires_at"])):
             return "FUTURE_SERIES_CONTRACT_NOT_REVIEWED"
+        # InstrumentContract.execution_price_terms() accepts an explicitly
+        # supplied price_tick before its narrow DLR fallback.  A caller could
+        # otherwise install a claimed $0.01 futures grid (the A3 *option*
+        # grid) and still pass this session check.  Bind either legacy fallback
+        # or an explicit grid to the exact documented A3 DLR futures rule.
+        # The source retrieval instant also prevents historical lookahead.
+        try:
+            grid = contract.execution_price_terms()
+            if decimal_value(grid.get("price_tick"), "DLR futures price tick", positive=True) != Decimal(terms["price_tick"]):
+                return "FUTURE_PRICE_TICK_CONTRACT_MISMATCH"
+            if (grid.get("source") != terms["price_tick_source"]
+                    or utc_microseconds(grid.get("known_at")) !=
+                       utc_microseconds(terms["price_tick_known_at"])
+                    or grid.get("effective_at") != terms["price_tick_effective_at"]):
+                return "FUTURE_PRICE_TICK_PROVENANCE_UNVERIFIED"
+            if utc_microseconds(grid["known_at"]) > utc_microseconds(value):
+                return "FUTURES_EXECUTION_GRID_NOT_KNOWN_AT_PIT"
+        except (ValueError, TypeError, OverflowError):
+            return "FUTURE_PRICE_TICK_PROVENANCE_UNVERIFIED"
         expiry = datetime.fromisoformat(str(contract.expires_at).replace("Z", "+00:00"))
         if local >= expiry.astimezone(A3_TZ):
             return "FUTURE_EXPIRED"

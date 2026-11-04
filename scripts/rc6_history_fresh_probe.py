@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import date, datetime, timezone
 from pathlib import Path
 
-from scripts.rc6_history_fresh_sidecar import capture, preflight, preflight_destination
+from scripts.rc6_history_fresh_sidecar import (capture, preflight,
+                                              preflight_destination, request_window)
 
 
 def _fetcher(source):
@@ -80,6 +82,10 @@ def main(argv=None):
     parser.add_argument("--targets", required=True, type=Path)
     parser.add_argument("--sidecar", required=True, type=Path)
     parser.add_argument("--receipt", required=True, type=Path)
+    parser.add_argument("--from-day", type=date.fromisoformat,
+                        help="First ART date for a bounded evidence-only request")
+    parser.add_argument("--to-day", type=date.fromisoformat,
+                        help="Last ART date for a bounded evidence-only request")
     args = parser.parse_args(argv)
     if args.targets.stat().st_size > 100_000:
         raise SystemExit("FRESH_TARGET_MANIFEST_TOO_LARGE")
@@ -91,16 +97,26 @@ def main(argv=None):
         raise SystemExit("FRESH_RECEIPT_PARENT_MISSING")
     preflight_destination(args.receipt, protected_paths=(args.targets, args.sidecar))
     preflight_destination(args.sidecar, protected_paths=(args.targets, args.receipt))
+    clock = datetime.now(timezone.utc)
+    from_day, to_day, cutoff = request_window(clock, args.from_day, args.to_day)
     fetch, close = _fetcher(args.source)
     if fetch is None:
         result = {"state": "NO_VERIFICADO", "reason": "FRESH_READONLY_CREDENTIALS_ABSENT",
-                  "source": args.source, "provider_requests": 0,
+                  "source": args.source, "fetch_invocations": 0,
+                  "provider_requests": 0,
+                  "requested_from": from_day.isoformat(),
+                  "requested_to": to_day.isoformat(), "cutoff_day": cutoff.isoformat(),
                   "history_v2_writes": 0, "execution_allowed": False}
     else:
         try:
             result = capture(args.sidecar, targets, args.source, fetch,
-                             protected_paths=(args.targets, args.receipt))
-            result['provider_requests'] = result.pop('fetch_invocations')
+                             now=clock, protected_paths=(args.targets, args.receipt),
+                             requested_from=args.from_day, requested_to=args.to_day)
+            # A fetch callback invocation is not an observed HTTP request: the
+            # adapter may use a cache, retry, or fail before sending anything.
+            # Until the transport reports a verified wire count, keep this
+            # metric unknown even when rows were returned.
+            result['provider_requests'] = None
         finally:
             close()
     result.pop("generation_path", None)
@@ -108,6 +124,7 @@ def main(argv=None):
                             encoding="utf-8")
     args.receipt.chmod(0o600)
     print(json.dumps({"state": result["state"], "source": args.source,
+                      "fetch_invocations": result["fetch_invocations"],
                       "provider_requests": result["provider_requests"],
                       "history_v2_writes": 0, "execution_allowed": False}))
     return 0

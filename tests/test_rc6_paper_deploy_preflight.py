@@ -2,12 +2,14 @@
 
 from datetime import datetime, timedelta
 from pathlib import Path
+import hashlib
 import sqlite3
 
 import pytest
 
 from scripts.rc6_paper_deploy_preflight import inspect_book, UnsafeBook
 from scripts import rc6_paper_admin_cancel as admin
+from be_paper_engine import PaperBroker, PaperStore
 import cd_spot_ledger as spot
 from test_production_paper_v1634 import partial_spot
 from test_rc6_paper_admin_cancel import _receipt
@@ -111,7 +113,69 @@ def test_outstanding_fci_commitment_never_masquerades_as_flat(partial_spot, stat
     assert 'FCI_SUBSCRIPTION_REDEMPTION_OR_NAV_OUTSTANDING' in report['reasons']
     with broker.store.connect() as c:
         c.execute("UPDATE paper_family_lifecycle SET state='REDEEMED' WHERE family='FCI'")
-    assert inspect_book(broker.store.path, as_of=now)['status'] == 'ADMIN_CLOSE_REQUIRED'
+    # A row-status UPDATE without a redemption event is not a fund exit.
+    with pytest.raises(UnsafeBook, match='BOOK_FCI_TERMINAL_REDEMPTION_RECEIPT_UNVERIFIED'):
+        inspect_book(broker.store.path, as_of=now)
+
+
+def _terminal_fci_synthetic_store(tmp_path):
+    store = PaperStore(str(tmp_path / 'fci-terminal-preflight.db'))
+    PaperBroker(store, initial_cash='10000')
+    now = '2026-11-01T20:00:00+00:00'
+    store.state(mode='PRODUCTION_PAPER', process_state='WAITING_MARKET',
+                session_state='MARKET_CLOSED')
+    with store.connect() as c:
+        c.execute('''INSERT INTO paper_family_lifecycle
+            (lifecycle_id,family,instrument,currency,state,updated_at,ledger_total,metadata_json)
+            VALUES(?,?,?,?,?,?,?,?)''',
+            ('FCI-SYNTHETIC-TERMINAL', 'FCI', 'FUND-SYNTH', 'ARS',
+             'REDEEMED', now, '0', '{}'))
+    return store, now
+
+
+@pytest.mark.parametrize('variant', ['absent', 'wrong_family', 'wrong_from_state',
+                                     'wrong_clock', 'duplicate_event'])
+def test_fci_terminal_receipt_cannot_be_forged_by_row_state(tmp_path, variant):
+    store, now = _terminal_fci_synthetic_store(tmp_path)
+    with store.connect() as c:
+        if variant != 'absent':
+            c.execute('''INSERT INTO paper_family_lifecycle_events
+                (event_id,lifecycle_id,family,from_state,to_state,amount,occurred_at,detail_json)
+                VALUES(?,?,?,?,?,?,?,?)''',
+                ('FCI-SYNTHETIC-EVENT', 'FCI-SYNTHETIC-TERMINAL',
+                 'FUTUROS' if variant == 'wrong_family' else 'FCI',
+                 'SETTLED' if variant == 'wrong_from_state' else 'REDEEM_REQUESTED',
+                 'REDEEMED', '100',
+                 '2026-11-01T19:59:59+00:00' if variant == 'wrong_clock' else now, '{}'))
+        if variant == 'duplicate_event':
+            c.execute('''INSERT INTO paper_family_lifecycle_events
+                (event_id,lifecycle_id,family,from_state,to_state,amount,occurred_at,detail_json)
+                VALUES(?,?,?,?,?,?,?,?)''',
+                ('FCI-SYNTHETIC-EVENT-2', 'FCI-SYNTHETIC-TERMINAL', 'FCI',
+                 'REDEEM_REQUESTED', 'REDEEMED', '0', now, '{}'))
+    before = hashlib.sha256(Path(store.path).read_bytes()).hexdigest()
+    with pytest.raises(UnsafeBook, match='BOOK_FCI_TERMINAL_REDEMPTION_RECEIPT_UNVERIFIED'):
+        inspect_book(store.path, as_of=now, barrier={'status': 'ABSENT'})
+    assert hashlib.sha256(Path(store.path).read_bytes()).hexdigest() == before
+
+
+def test_fci_terminal_structural_receipt_is_a_necessary_not_sufficient_gate(tmp_path):
+    store, now = _terminal_fci_synthetic_store(tmp_path)
+    # This is deliberately a syntactic fixture, NOT source-authenticated NAV
+    # or evidence that a genuine FCI redemption settled on an exchange.
+    with store.connect() as c:
+        c.execute('''INSERT INTO paper_family_lifecycle_events
+            (event_id,lifecycle_id,family,from_state,to_state,amount,occurred_at,detail_json)
+            VALUES(?,?,?,?,?,?,?,?)''',
+            ('FCI-SYNTHETIC-EVENT', 'FCI-SYNTHETIC-TERMINAL', 'FCI',
+             'REDEEM_REQUESTED', 'REDEEMED', '100', now, '{}'))
+    result = inspect_book(store.path, as_of=now, barrier={'status': 'ABSENT'})
+    assert result['status'] == 'BLOCKED_RECONCILIATION'
+    assert result['exposures']['fund'] == 1
+    assert result['plans']['fund']['terminal_redemption_source_unverified'] == 1
+    assert 'FCI_TERMINAL_REDEMPTION_SOURCE_UNVERIFIED' in result['reasons']
+    assert result['read_only'] is True and result['host_mutations'] == 0
+    assert result['real_orders_sent'] == 0
 
 
 def test_missing_family_table_and_real_orders_are_red(partial_spot):

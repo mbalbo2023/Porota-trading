@@ -146,7 +146,8 @@ def _instant(value, field):
     return result
 
 
-def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as_of) -> LedgerSnapshot:
+def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *,
+                  as_of, entitlement_records=None) -> LedgerSnapshot:
     """Fold a complete ordered event history; exact replays do not pay twice.
 
     Distinct receipt IDs for the same contractual obligation fail closed. New
@@ -180,6 +181,8 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
     seen_ids: dict[str, tuple] = {}
     seen_obligations: set[tuple[str, str]] = set()
     seen_fixing_keys: set[tuple[str, int]] = set()
+    previous_sales = []
+    previous_amortizations = []
     last_new_us = opened_us
     for event in events:
         if not isinstance(event, EconomicEvent):
@@ -189,7 +192,7 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
         if event.paper_id != position.paper_id:
             raise ValueError("FIXED_INCOME_POSITION_MISMATCH")
         kind = event.kind
-        if kind not in {"COUPON", "AMORTIZATION", "FIXING"}:
+        if kind not in {"COUPON", "AMORTIZATION", "FIXING", "MARKET_SALE"}:
             raise ValueError("FIXED_INCOME_EVENT_KIND_UNSUPPORTED")
         effective_us = _instant(event.effective_at, "EFFECTIVE_AT")
         recorded_us = _instant(event.recorded_at, "RECORDED_AT")
@@ -213,6 +216,16 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
             fingerprint = (event.paper_id, obligation_id, kind, effective_us, recorded_us, source_us,
                            event.source_kind, source_reference, source_sha, code,
                            fixing_value, unit)
+        elif kind == "MARKET_SALE":
+            if event.source_kind != "PPI_LIVE_BOOK":
+                raise ValueError("FIXED_INCOME_PAPER_SALE_SOURCE_REQUIRED")
+            _absent(event, "payment_currency", "cash_amount", "fixing_code",
+                    "fixing_value", "fixing_unit")
+            nominal_base = _amount(event.nominal_base, "NOMINAL_BASE", positive=True)
+            redeemed = _amount(event.nominal_redeemed, "SOLD_NOMINAL", positive=True)
+            fingerprint = (event.paper_id, obligation_id, kind, effective_us, recorded_us,
+                           source_us, event.source_kind, source_reference, source_sha,
+                           nominal_base, redeemed)
         else:
             if effective_us < opened_us:
                 raise ValueError("FIXED_INCOME_PAYMENT_BEFORE_POSITION")
@@ -241,13 +254,31 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
         if recorded_us < last_new_us:
             raise ValueError("FIXED_INCOME_EVENT_CLOCK_ROLLBACK")
         if kind != "FIXING":
-            if nominal_base != residual:
+            expected_base = residual
+            if kind == "COUPON" and entitlement_records and event_id in entitlement_records:
+                record_us = _instant(entitlement_records[event_id], "RECORD_AT")
+                # A late-arriving coupon can remain payable on VN held at
+                # record date even if it was subsequently sold or amortized.
+                # Cash is still booked only on its approved issuer receipt.
+                expected_base += sum((amount for when,amount in previous_sales
+                                      if when > record_us), Decimal(0))
+                expected_base += sum((amount for when,amount in previous_amortizations
+                                      if when > record_us), Decimal(0))
+            if nominal_base != expected_base:
                 raise ValueError("FIXED_INCOME_NOMINAL_BASE_MISMATCH")
-            if kind == "AMORTIZATION":
+            if kind in {"AMORTIZATION", "MARKET_SALE"}:
                 if redeemed > residual:
-                    raise ValueError("FIXED_INCOME_OVER_AMORTIZATION")
+                    raise ValueError("FIXED_INCOME_OVER_AMORTIZATION_OR_SALE")
                 residual -= redeemed
+            if kind == "MARKET_SALE":
+                previous_sales.append((recorded_us,redeemed))
+                seen_ids[event_id] = fingerprint
+                seen_obligations.add(economic_key)
+                last_new_us = recorded_us
+                continue
             cash[currency] = cash.get(currency, Decimal(0)) + amount
+            if kind == "AMORTIZATION":
+                previous_amortizations.append((effective_us,redeemed))
             cash_entries.append(CashEntry(event_id, obligation_id, kind, currency,
                                           amount, residual, aware_datetime(event.effective_at).isoformat(),
                                           aware_datetime(event.recorded_at).isoformat(),

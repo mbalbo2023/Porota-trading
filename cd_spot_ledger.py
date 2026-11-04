@@ -7,7 +7,7 @@ Lecturas históricas reconstruyen cantidades/costos al instante solicitado.
 from decimal import Decimal, ROUND_HALF_UP
 import json
 
-from bs_instrument_contracts import aware_datetime, decimal_value, cash_currency
+from bs_instrument_contracts import aware_datetime, decimal_value, cash_currency, family_name
 from cf_sale_settlement import validated_sale_settlement
 
 ZERO = Decimal(0)
@@ -265,6 +265,68 @@ def partition(c, p, at=None):
     at = aware_datetime(at) if at is not None else None
     if p['status'] == 'CANCELLED_ADMIN':
         return _admin_cancel_partition(c, p, at)
+    if p['status'] == 'CLOSED' and p['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+        # A settled issuer maturity is not a spot sale. Reconcile its
+        # independent FI receipt rather than pretending a SELL_SIMULATED
+        # occurred and unlocking principal twice.
+        from rc6_fixed_income_native_exit import terminal_at
+        terminal = terminal_at(c, p['paper_id'])
+        if terminal is None or p['exit_price'] is not None:
+            raise ValueError('FI_TERMINAL_RECEIPT_REQUIRED')
+        if (str(p['exit_cost']) != '0' or p['net_pnl'] != terminal['realized_pnl']
+                or sales(c, p['paper_id'])):
+            raise ValueError('FI_TERMINAL_HAS_SPOT_SETTLEMENT_OR_PNL_CONFLICT')
+        from rc6_fixed_income_paper_market_sale import sale_rows_checked, REASON as SALE_REASON
+        native_sales = sale_rows_checked(c,p['paper_id'])
+        if {r['fill_id'] for r in native_sales} != {r['id'] for r in c.execute(
+                "SELECT id FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                (p['paper_id'],))}:
+            raise ValueError('FI_TERMINAL_UNALLOCATED_SELL_FILL')
+        visible_sales = [r for r in native_sales if at is None or
+                         aware_datetime(r['applied_at']) <= at]
+        realized = [dict(p,status='CLOSED',quantity=r['nominal'],
+                    entry_cost=r['allocated_entry_cost'],closed_at=r['applied_at'],
+                    exit_price=r['price'],exit_cost=r['exit_fee'],
+                    gross_pnl=r['gross_pnl'],net_pnl=r['net_pnl'],
+                    close_reason=SALE_REASON,sale_fill_id=r['fill_id'])
+                    for r in visible_sales]
+        opened, closed = aware_datetime(p['opened_at']), aware_datetime(terminal['closed_at'])
+        if closed < opened:
+            raise ValueError('FI_TERMINAL_CLOCK_INVALID')
+        if at is not None and at < opened:
+            return None, []
+        if at is not None and at < closed:
+            original = decimal_value(p['quantity'],'FI initial VN',positive=True)
+            sold = sum((decimal_value(r['nominal'],'FI sale VN',positive=True)
+                        for r in visible_sales),ZERO)
+            if sold >= original:
+                raise ValueError('FI_TERMINAL_HISTORICAL_VN_OVERALLOCATED')
+            before = dict(p, status='OPEN', closed_at=None, exit_price=None,
+                          exit_cost=None, gross_pnl=None, net_pnl=None,
+                          close_reason=None, quantity=str(original-sold),
+                          entry_cost=str(decimal_value(p['entry_cost'],'FI entry fee',
+                              nonnegative=True)*(original-sold)/original))
+            return before, realized
+        return None, realized+[p]
+    # A321 hypothetical FI book sale has its own immutable nominal/event,
+    # depth and receivable journal. Its SELL_SIMULATED fill is never passed to
+    # the generic spot allocator or mislabeled as an issuer redemption.
+    has_native_sale_table = c.execute("""SELECT 1 FROM sqlite_master
+        WHERE type='table' AND name='paper_fi_native_sales'""").fetchone()
+    native_sale = (c.execute("""SELECT 1 FROM paper_fi_native_sales
+        WHERE paper_id=? LIMIT 1""",(p['paper_id'],)).fetchone()
+        if has_native_sale_table else None)
+    if p['close_reason'] == 'FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT' or native_sale:
+        from rc6_fixed_income_paper_market_sale import native_partition
+        return native_partition(c,p,at)
+    if family_name(p['asset_class']) in {'BONOS','LETRAS','OBLIGACIONES'} and (
+            sales(c,p['paper_id']) or c.execute("""SELECT 1 FROM paper_fills
+            WHERE paper_id=? AND side='SELL_SIMULATED' LIMIT 1""",
+            (p['paper_id'],)).fetchone()):
+        # A direct/legacy generic spot sell has no authority to retire FI VN
+        # or book principal cash.  Neither an economic lot nor a paper status
+        # transition may make that unreviewed SELL appear reconciled.
+        raise ValueError('FI_GENERIC_SELL_NATIVE_RECEIPT_REQUIRED')
     start = aware_datetime(p['opened_at'])
     end = aware_datetime(p['closed_at']) if p['closed_at'] else None
     if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)

@@ -64,12 +64,20 @@ def history_session_quality(days, q, at):
     """Only audited quote-market sessions; CEDEAR quotes use BYMA, not US."""
     import ak_byma_calendar as calendar
     from co_market_sessions_hf6 import session_for, TZ
-    session = session_for(q.market, q.asset_class)
+    # Expected daily history must follow the quoted BYMA instrument's exact
+    # settlement (T+1 equities extend to 18:00 from COM19031), not a global
+    # 17:00 market clock. Unknown settlement retains the conservative session.
+    session = session_for(q.market, q.asset_class,
+                          getattr(q, 'settlement', None), as_of=at)
     local = at.astimezone(TZ)
     if q.market != "BYMA" or session is None or local.year not in calendar.ANIOS_AUDITADOS:
         return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
     expected = local.date()
-    if local.time().replace(tzinfo=None) < session.regular_close:
+    # The last tradable minute is not a published/known EOD record. Allow a
+    # conservative 15-minute publication floor (COM19031 close-price session
+    # for equity T+1 ends 18:15) before expecting today's daily history.
+    close_with_publication_floor = session.regular_close.hour * 60 + session.regular_close.minute + 15
+    if local.hour * 60 + local.minute < close_with_publication_floor:
         expected -= timedelta(days=1)
     required = []
     for _ in range(90):

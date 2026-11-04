@@ -18,7 +18,7 @@ import time
 
 import ak_byma_calendar as calendar
 from bl_candle_engine import Bar, CandleArchive, Series, canonical, fingerprint, init_schema, stamp
-from co_market_sessions_hf6 import TZ, session_for
+from co_market_sessions_hf6 import BYMA_HOURS_EFFECTIVE_DATE, TZ, session_for
 from cv_history_store_adapter_hf6 import HistoricalStore
 
 HEADROOM = 64 * 1024**2
@@ -146,7 +146,15 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
         raise ValueError("LOCAL_EOD_BATCH_LIMIT")
     if local.year not in calendar.ANIOS_AUDITADOS:
         return base | {"state": "BLOCKED", "reason": "CALENDAR_UNVERIFIED"}
-    if not calendar.es_dia_habil_operativo(local.date()) or local.hour*60+local.minute < 17*60+15:
+    # COM19031 (effective 02-Nov-2026) keeps equity T+1 trading until 18:00
+    # and its closing-price session runs 18:05-18:15 ART. Archiving at the old
+    # 17:15 cutoff would publish an incomplete intraday source as local EOD.
+    # This is an earliest local eligibility clock, NOT proof that a broker EOD
+    # payload has been published or is PIT-safe.
+    postclose_floor = (18*60+15 if local.date() >= BYMA_HOURS_EFFECTIVE_DATE
+                       else 17*60+15)
+    if (not calendar.es_dia_habil_operativo(local.date()) or
+            local.hour*60+local.minute < postclose_floor):
         return base | {"state": "NOT_DUE", "reason": "POSTCLOSE_WINDOW_REQUIRED"}
     source = Path(source_path).absolute()
     target = Path(history_path).absolute()
@@ -271,9 +279,13 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     if (series.key != row['series_id'] or fingerprint(body) != row['body_hash'] or
                             body.get('start') != row['bar_start'] or body.get('end') != row['bar_end']):
                         raise ValueError('LOCAL_EOD_SOURCE_DIGEST_MISMATCH')
-                    session = session_for(series.market,series.asset_class)
                     start = datetime.fromisoformat(stamp(row['bar_start'])).astimezone(TZ)
                     end = datetime.fromisoformat(stamp(row['bar_end'])).astimezone(TZ)
+                    # The COM19031 17:00/18:00 boundary depends on the exact
+                    # instrument settlement and date of this sampled bar.
+                    # Missing/unverified settlement remains conservative.
+                    session = session_for(series.market, series.asset_class,
+                                          series.settlement, as_of=start)
                     valid = (session is not None and series.market=='BYMA' and
                         series.price_kind=='TRADE_SAMPLES' and series.resolution in {'1m','5m'} and
                         series.adjustment=='RAW' and series.adjustment_basis!='UNKNOWN' and
@@ -298,12 +310,20 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                         (source_id,row['id'],row['body_hash'],stamp(at),row['known_at'],
                          row['identity_json'],row['body_json']))
                     cursor=row['id']
-                # At most 500 dirty groups, each at most the 390 sampled minutes
-                # in the audited quote session. Late revisions append at NOW.
+                # At most 500 dirty groups; the audited quote session may
+                # span 390 (legacy/CI/fixed income) or 450 (COM19031 equity
+                # T+1) minutes. Never assume one global expected denominator.
+                # Late revisions append at NOW.
                 for series_id,day in sorted(dirty):
                     write_guard()
                     identity=json.loads(write.execute('SELECT identity_json FROM candle_series WHERE series_id=?',(series_id,)).fetchone()[0])
                     day_start=datetime.fromisoformat(day).replace(tzinfo=TZ)
+                    session=session_for(identity['market'],identity['asset_class'],
+                                        identity['settlement'],as_of=day_start)
+                    if session is None:
+                        raise ValueError('LOCAL_EOD_SESSION_IDENTITY_UNVERIFIED')
+                    expected_minutes=(session.regular_close.hour*60+session.regular_close.minute-
+                                      session.regular_open.hour*60-session.regular_open.minute)
                     versions=write.execute('''SELECT * FROM candle_versions WHERE series_id=? AND bar_start>=?
                         AND bar_start<? ORDER BY bar_start,known_at,id LIMIT 5001''',
                         (series_id,stamp(day_start),stamp(day_start+timedelta(days=1)))).fetchall()
@@ -314,8 +334,8 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     if not bars:
                         continue
                     body={'session':day,'quality':'CONFLICT' if any(b['quality']=='CONFLICT' for b in bars) else 'SAMPLED',
-                        'price_kind':'TRADE_SAMPLES','coverage_state':'PARTIAL','expected_minutes':390,
-                        'captured_minutes':len(bars),'missing_minutes':390-len(bars),
+                        'price_kind':'TRADE_SAMPLES','coverage_state':'PARTIAL','expected_minutes':expected_minutes,
+                        'captured_minutes':len(bars),'missing_minutes':expected_minutes-len(bars),
                         'samples':sum(b['samples'] for b in bars),'open':bars[0]['open'],'close':bars[-1]['close'],
                         'high':str(max(Decimal(b['high']) for b in bars)),
                         'low':str(min(Decimal(b['low']) for b in bars)),

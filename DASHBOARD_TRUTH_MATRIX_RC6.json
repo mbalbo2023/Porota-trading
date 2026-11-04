@@ -1,6 +1,6 @@
 {
-  "registered_paths": 103,
-  "route_count": 105,
+  "registered_paths": 104,
+  "route_count": 106,
   "routes": [
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
@@ -767,6 +767,35 @@
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "reporte action4",
       "write_route": true
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "NOT_APPLICABLE",
+      "datasets": [
+        "bounded paper_positions + paper_decisions"
+      ],
+      "endpoint": "bg_paper_dashboard.action4_weekly_source",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "legacy_compatible_alias": false,
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/reports/action4/source",
+      "presentation_endpoint": "NOT_APPLICABLE",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "fuente semanal action4 PAPER",
+      "write_route": false
     },
     {
       "accessibility": "JSON/HTTP",

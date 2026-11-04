@@ -899,6 +899,7 @@ def test_local_invalid_clock_text_cannot_impersonate_authentication_or_repeat_lo
     assert len(h.calls) == 1
     errors = [event for event in h.cuts[-1]["events"] if event["event_type"] == "INTRADAY_SCALPING_ERROR"]
     assert len(errors) == 3
-    assert all("PPI_VALUEERROR;shadow_identity=" in event["detail"] for event in errors)
+    assert all("SCALPING_LOCAL_VALUEERROR;phase=CAPABILITY;shadow_identity=" in event["detail"]
+               for event in errors)
     assert all(cut["heartbeat"]["state"] == "ERROR" and cut["heartbeat"]["failed"] == 1 and cut["fills"] == 0
         for cut in h.cuts[-3:])

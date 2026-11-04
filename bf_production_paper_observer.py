@@ -31,7 +31,13 @@ from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
+from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
+from co_market_sessions_hf6 import (byma_eod_publication_floor,
+                                    byma_paper_instrument_open,
+                                    byma_paper_spot_open,
+                                    phase_for,
+                                    verified_byma_segment_session)
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -55,6 +61,11 @@ LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "9
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
 )
+# A not-yet-published PPI EOD is an expected source state after 18:15. Retry
+# on the existing observer tick, never more than once/30m by default, without
+# creating a timer or interpreting the BYMA close as a provider receipt.
+HISTORY_SOURCE_PENDING_RETRY_SECONDS = max(900, min(3600, int(os.getenv(
+    "PPI_HISTORY_SOURCE_PENDING_RETRY_SECONDS", "1800"))))
 READINESS_CHECK_SECONDS = max(
     60, int(os.getenv("PAPER_READINESS_CHECK_SECONDS", "300"))
 )
@@ -69,6 +80,10 @@ OFFHOURS_RECONCILE_SECONDS = max(
     int(os.getenv("PAPER_OFFHOURS_RECONCILE_SECONDS", "3600")),
 )
 CAUCION_LIVE_REFRESH_SECONDS = max(30, int(os.getenv("PAPER_CAUCION_LIVE_REFRESH_SECONDS", "60")))
+EQUITY_T1_READONLY_REFRESH_SECONDS = max(60, int(os.getenv(
+    "PAPER_EQUITY_T1_READONLY_REFRESH_SECONDS", "60")))
+EQUITY_T1_READONLY_BATCH_LIMIT = max(1, min(12, int(os.getenv(
+    "PAPER_EQUITY_T1_READONLY_BATCH_LIMIT", "8"))))
 COMPLEMENTARY_CONTRACT_TTL_SECONDS = max(
     300, int(os.getenv("PAPER_COMPLEMENTARY_CONTRACT_TTL_SECONDS", "86400"))
 )
@@ -188,6 +203,8 @@ def _market_phase(now=None):
         return "PREOPEN"
     if opening <= minute < closing:
         return "OPEN"
+    if now.tzinfo is not None and now.utcoffset() is not None and _equity_t1_readonly_window(now):
+        return "EQUITY_T1_READONLY"
     return "CLOSED"
 
 
@@ -204,7 +221,7 @@ def _cooldown_session_state(phase, now=None):
     produce MARKET_CLOSED here; an unknown year or calendar error stays boot.
     """
     local = (now or datetime.now(TZ)).astimezone(TZ)
-    if phase != "CLOSED" or local.hour * 60 + local.minute < 17 * 60 + 15:
+    if phase != "CLOSED" or local < byma_eod_publication_floor(local):
         return "BOOT_CALENDAR"
     try:
         import ak_byma_calendar as calendar
@@ -288,15 +305,260 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  **financial_catalog.quote_terms(metadata))
 
 
-def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
-    """Native scanner reads; exact opened identity enables bounded book reuse."""
-    scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
+def _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identity=None):
+    """Pin the *complete* catalog identity before a three-key PPI GET.
+
+    Current/Book do not accept market or currency. Only PPI-primary catalog
+    identities authorize their provider request; IOL/BYMA complementary
+    discoveries cannot authenticate PPI or veto an otherwise unique PPI
+    identity. A stale or held PPI sibling still blocks: the provider response
+    cannot distinguish those currencies. Never consume PPI quota first
+    and resolve its identity afterwards.
+    """
+    try:
+        with store.connect() as connection:
+            rows = connection.execute("""SELECT market,currency
+              FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND settlement=?
+                AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+              LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        raise ValueError("PPI_SCANNER_CATALOG_IDENTITY_UNVERIFIED") from None
+    if len(rows) != 1:
+        raise ValueError("PPI_SCANNER_PROVIDER_REQUEST_IDENTITY_AMBIGUOUS")
+    market, currency = (str(value or "").strip().upper() for value in rows[0])
+    if not market or market == "UNKNOWN" or not currency or currency == "UNKNOWN":
+        raise ValueError("PPI_SCANNER_CATALOG_IDENTITY_UNVERIFIED")
+    exact = (symbol, asset_class, market, currency, settlement)
+    if identity is not None:
+        if not isinstance(identity, (tuple, list)) or len(identity) != 5:
+            raise ValueError("PPI_SCANNER_OPENED_IDENTITY_INVALID")
+        if tuple(identity) != exact:
+            raise ValueError("PPI_SCANNER_OPENED_IDENTITY_MISMATCH")
+    return exact
+
+
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY",
+                        identity=None, scanner_primary=None):
+    """Native scanner reads and optional private PIT journal share one Book GET."""
+    if priority == "OPENED_CRITICAL" and identity is None:
+        # Two opened full keys may project to one PPI request. Never choose
+        # a coalesced EXIT/OPENED budget identity by catalog fallback.
+        raise ValueError("PPI_SCANNER_OPENED_IDENTITY_UNVERIFIED")
+    exact = _ppi_scanner_request_identity(store, symbol, asset_class, settlement, identity)
+    scope = reader.read_scope(priority=priority, identity=exact) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
         current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
-        market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
-    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+        market=exact[2], currency=exact[3])
+    quote = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    if scanner_primary is not None:
+        # A561 persists the complete *same* native Book (not a reconstructed
+        # top-of-book). This is observational evidence, never PAPER authority.
+        # No additional PPI GET, synthetic clock, inferred contract unit or
+        # change to the existing scanner quote/strategy admissibility path.
+        try:
+            capture = getattr(scanner_primary, "capture_raw_book", None)
+            result = (capture(quote, raw_book=book,
+                              request=(symbol, asset_class, settlement), identity=exact,
+                              observed_at=quote.observed_at)
+                      if callable(capture) else None)
+            if not isinstance(result, dict) or result.get("status") not in {"CAPTURED", "DEDUPLICATED"}:
+                status = result.get("status") if isinstance(result, dict) else None
+                reason = result.get("reason") if isinstance(result, dict) else None
+                if status not in {"CAPTURE_INVALID_HOLD", "CAPTURE_CAPACITY_HOLD",
+                                  "CAPTURE_INTEGRITY_HOLD"}:
+                    status = "CAPTURE_UNVERIFIED_HOLD"
+                if (not isinstance(reason, str) or not 1 <= len(reason) <= 96
+                        or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in reason)):
+                    reason = "PPI_BOOK_CAPTURE_REASON_UNVERIFIED"
+                store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_HOLD", status + ":" + reason)
+        except Exception as origin_error:
+            # Failure to write observational evidence must not become READY,
+            # cause another provider query or alter orders/entry gates.
+            try:
+                store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_ERROR", type(origin_error).__name__)
+            except Exception:
+                pass
+    return quote
+
+
+def _equity_t1_readonly_window(at):
+    """Only COM19031 BYMA equity T+1 17:00-18:00, no PAPER authority."""
+    return (byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS", at)
+            and not byma_paper_spot_open(at))
+
+
+def _equity_t1_readonly_identities(store, *, limit=EQUITY_T1_READONLY_BATCH_LIMIT):
+    """Exact full-key PPI identities; exclude ambiguous currency siblings."""
+    with store.connect() as conn:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"financial_instrument_catalog", "candidate_identity_v2"} <= tables:
+            return []
+        rows = [dict(row) for row in conn.execute("""SELECT
+            c.ticker,c.instrument_type,c.market,c.currency,c.settlement
+          FROM financial_instrument_catalog c
+          JOIN candidate_identity_v2 r
+            ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type
+           AND r.market=c.market AND r.currency=c.currency
+           AND r.settlement=c.settlement
+          WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+            AND c.market='BYMA' AND c.currency NOT IN ('', 'UNKNOWN')
+            AND c.settlement='A-24HS'
+            AND c.instrument_type IN ('ACCIONES','CEDEARS','ETFS','ETF')
+            AND c.capability LIKE 'READY_PAPER_%'
+          ORDER BY c.instrument_type,c.ticker,c.currency""")]
+    requests = {}
+    for row in rows:
+        request = (row["ticker"], row["instrument_type"], row["settlement"])
+        identity = (row["ticker"], row["instrument_type"], row["market"],
+                    row["currency"], row["settlement"])
+        requests.setdefault(request, []).append(identity)
+    unique = [values[0] for values in requests.values() if len(values) == 1]
+    opened = {(p["symbol"], p["asset_class"], p["market"],
+               p["currency"], p["settlement"]) for p in store.open_positions()}
+    focus = {ticker for ticker, _family, _term in DEFAULT_FOCUS_SYMBOLS}
+    unique.sort(key=lambda identity: (0 if identity in opened else
+                                      1 if identity[0] in focus else 2, identity))
+    return unique[:max(1, min(12, int(limit)))]
+
+
+def _option_t0_late_readonly_identities(store, at, *, limit=2):
+    """Source-only BYMA option premium T+0; no entry/session authority.
+
+    BYMA Clearing 24-Apr-2026: option premium settles immediate T+0; on
+    expiry day trading ends 15:30. An IOL late T+1 request cannot substitute
+    for a PPI option contract. Require exact PPI-field identity and a future
+    aware expiry from a validated option contract before spending PPI calls.
+    """
+    from bs_instrument_contracts import aware_datetime
+    if limit <= 0 or not _equity_t1_readonly_window(at):
+        return []
+    segment = verified_byma_segment_session("OPCIONES_PLAZOS")
+    if phase_for(segment, at) != "OPEN":
+        return []
+    with store.connect() as conn:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"financial_instrument_catalog", "candidate_identity_v2"} <= tables:
+            return []
+        # PPI Current/Book request has ticker/type/settlement but NO currency
+        # or market argument. Even a non-admitted available sibling makes
+        # the entire provider request ambiguous; never choose one by guess.
+        sibling_count = dict(conn.execute("""SELECT ticker,COUNT(*)
+          FROM financial_instrument_catalog
+          WHERE status='AVAILABLE' AND instrument_type='OPCIONES'
+            AND settlement='INMEDIATA'
+          GROUP BY ticker""").fetchall())
+        rows = [dict(row) for row in conn.execute("""SELECT
+            c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+            c.settlement_source,c.capability,c.metadata_json
+          FROM financial_instrument_catalog c
+          JOIN candidate_identity_v2 r
+            ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type
+           AND r.market=c.market AND r.currency=c.currency
+           AND r.settlement=c.settlement
+          WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+            AND c.instrument_type='OPCIONES' AND c.market='BYMA'
+            AND c.currency NOT IN ('', 'UNKNOWN')
+            AND c.settlement='INMEDIATA' AND c.settlement_source='PPI_FIELD'
+            AND c.capability='READY_PAPER_OPTION_LONG'
+          ORDER BY c.ticker,c.currency""")]
+    requests = {}
+    for row in rows:
+        if sibling_count.get(row["ticker"]) != 1:
+            continue
+        try:
+            raw = json.loads(row["metadata_json"])
+            if not isinstance(raw, dict) or raw.get("_discovery_source") != "PPI_PRIMARY":
+                continue
+            contract = financial_catalog.contract_for({**row, "raw": raw})
+            expiry = aware_datetime(contract.expires_at, "option_expires_at").astimezone(TZ)
+            # For this 17–18 source window, a same-day expiry has already
+            # reached BYMA's official 15:30 negotiation cutoff.
+            if expiry.date() <= at.astimezone(TZ).date():
+                continue
+        except (TypeError, ValueError, KeyError):
+            continue
+        identity = (row["ticker"], row["instrument_type"],row["market"],
+                    row["currency"],row["settlement"])
+        requests.setdefault((identity[0],identity[1],identity[4]), []).append(identity)
+    unique = sorted(values[0] for values in requests.values() if len(values) == 1)
+    opened = {(p["symbol"],p["asset_class"],p["market"],
+               p["currency"],p["settlement"]) for p in store.open_positions()}
+    opened_options = [identity for identity in unique if identity in opened]
+    queued = [identity for identity in unique if identity not in opened]
+    # Rotating fixed quota prevents an alphabetic option subset from becoming
+    # the only observed series. The whole late reader still uses at most its
+    # existing configured total budget (default eight full-key identities).
+    if queued:
+        offset = (at.astimezone(TZ).minute * max(1,int(limit))) % len(queued)
+        queued = queued[offset:] + queued[:offset]
+    return (opened_options + queued)[:max(0, min(2,int(limit)))]
+
+
+def _equity_t1_readonly_tick(reader, store, *, now, clock_fn=None, scanner_primary=None):
+    """Bounded PPI Current+Book source capture; NEVER broker.on_quote."""
+    from bs_instrument_contracts import aware_datetime
+    at = aware_datetime(now)
+    if not _equity_t1_readonly_window(at):
+        return {"state": "OUTSIDE_EQUITY_T1_READONLY_WINDOW", "read": 0,
+                "failed": 0, "real_routes": []}
+    if reader is None or not all(hasattr(reader, name) for name in ("current", "book")):
+        raise ValueError("EQUITY_T1_READONLY_READER_REQUIRED")
+    options = _option_t0_late_readonly_identities(store, at,
+        limit=min(2,EQUITY_T1_READONLY_BATCH_LIMIT))
+    equities = _equity_t1_readonly_identities(store)
+    identities = (options + [identity for identity in equities if identity not in options])[
+        :EQUITY_T1_READONLY_BATCH_LIMIT]
+    opened = {(p["symbol"], p["asset_class"], p["market"],
+               p["currency"], p["settlement"]) for p in store.open_positions()}
+    read = failed = 0
+    errors = {}
+    for identity in identities:
+        symbol, family, market, currency, settlement = identity
+        observed = aware_datetime(clock_fn() if clock_fn else datetime.now(TZ))
+        if not _equity_t1_readonly_window(observed):
+            break
+        try:
+            source_kwargs = {"priority": "OPENED_CRITICAL" if identity in opened else "WARM",
+                             "identity": identity}
+            if scanner_primary is not None:
+                # Preserve the original signature for source-only legacy
+                # callers when no private recorder is configured.
+                source_kwargs["scanner_primary"] = scanner_primary
+            quote = _read_scanner_quote(reader, store, symbol, family, settlement,
+                **source_kwargs)
+            received = aware_datetime(clock_fn() if clock_fn else datetime.now(TZ))
+            if not _equity_t1_readonly_window(received):
+                break
+            if (quote.symbol, quote.asset_class, quote.market, quote.currency,
+                    quote.settlement) != identity:
+                raise ValueError("EQUITY_T1_EXACT_SOURCE_IDENTITY_MISMATCH")
+            reason = quote.time_error(received.isoformat(), max_age_seconds=120)
+            if reason:
+                raise ValueError("EQUITY_T1_SOURCE_" + reason)
+            store.add_quote(quote)
+            if scanner_primary is not None:
+                try:
+                    scanner_primary.capture(quote, request=(symbol, family, settlement))
+                except Exception as origin_error:
+                    store.event("PPI_SCANNER_PRIMARY_CAPTURE_ERROR", type(origin_error).__name__)
+            read += 1
+        except Exception as exc:
+            failed += 1
+            errors[symbol] = str(exc)[:100] if isinstance(exc, ValueError) else type(exc).__name__
+    if scanner_primary is not None:
+        try:
+            primary_receipt = scanner_primary.publish()
+            store.event("PPI_SCANNER_PRIMARY_RECEIPT", json.dumps(primary_receipt, sort_keys=True))
+        except Exception as origin_error:
+            store.event("PPI_SCANNER_PRIMARY_PUBLISH_ERROR", type(origin_error).__name__)
+    return {"state": "READONLY_T1", "read": read, "failed": failed,
+            "identity_count": len(identities), "option_t0_source_only": len(options),
+            "errors": errors, "real_routes": []}
 
 
 def _support_schema(store):
@@ -967,7 +1229,7 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     """
     interval = (OFFHOURS_RECONCILE_SECONDS if phase == "CLOSED"
                 else COMPLEMENTARY_RECONCILE_SECONDS)
-    if phase == "OPEN" or time.time() - last_completed < interval:
+    if phase in {"OPEN", "EQUITY_T1_READONLY"} or time.time() - last_completed < interval:
         return last_completed
     _reconcile_complementary_catalog(store)
     if phase == "CLOSED":
@@ -1009,7 +1271,7 @@ def _release_idle_catalog_heap():
             "allocator_trim_available": available}
 
 
-def _eligible_symbols(store):
+def _eligible_symbols(store, *, diagnostic=None):
     """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
 
     El catálogo puede contener más familias que el lote activo. La selección
@@ -1017,6 +1279,8 @@ def _eligible_symbols(store):
     se descartan familias por pertenecer a renta fija, cauciones o derivados.
     """
     core = []
+    evidence = diagnostic if isinstance(diagnostic, dict) else None
+    gate = "UNKNOWN"
     family_order = (
         "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
         "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
@@ -1041,6 +1305,9 @@ def _eligible_symbols(store):
                     AND UPPER(instrument_type) IN ({allowed_sql})
                   ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
                            instrument_type,ticker,settlement""").fetchall()
+        if evidence is not None:
+            evidence.update(status="QUERY_OK", gate=gate,
+                            request_rows_after_sql=len(rows))
         seen = set(core)
         groups = {kind: [] for kind in family_order}
         for ticker, kind, settlement in rows:
@@ -1058,8 +1325,187 @@ def _eligible_symbols(store):
                         core.append(value)
                         seen.add(value)
     except Exception:
-        pass
+        # An unreadable selector is not evidence that every contract is HOLD.
+        # Keep the historical fail-closed selector behavior. If the existing
+        # metrics writer remains healthy, its receipt can expose this cause;
+        # an unreadable SQLite database cannot promise a persisted receipt.
+        if evidence is not None:
+            evidence.update(status="READ_HOLD", gate=gate,
+                            reason="ELIGIBLE_SELECTOR_READ_HOLD")
+    if evidence is not None:
+        evidence["eligible_count"] = len(core)
+        if not core and evidence.get("status") == "QUERY_OK":
+            evidence["reason"] = "ELIGIBLE_SELECTOR_EMPTY"
     return tuple(core)
+
+
+def _cold_bootstrap_diagnostic(selector, *, eligible_count, cold_slots, capacity_status):
+    """Explain zero-source loops without inventing a bootstrap PPI allowance.
+
+    This is *not* a new scanner, quota grant, lease or provider call. A606 can
+    only substitute a cold slot already selected by the READY-only sampler.
+    When it does not exist, a separate genuinely authorized provider budget
+    and EXIT reserve (or an authenticated contract importer creating a READY
+    identity) are required before any additional network discovery is designed.
+    """
+    if selector.get("status") != "QUERY_OK":
+        status = "ELIGIBLE_SELECTOR_READ_HOLD"
+    elif eligible_count == 0:
+        status = "NO_COLD_BOOTSTRAP_AUTHORITY"
+    elif cold_slots == 0:
+        status = "NO_BASELINE_COLD_SLOT"
+    else:
+        status = "BASELINE_COLD_SLOT_AVAILABLE"
+    return {"schema": "rc6.ppi-cold-bootstrap-diagnostic.v1",
+            "status": status, "selector_status": selector.get("status", "NOT_RECORDED"),
+            "selector_gate": selector.get("gate", "UNKNOWN"),
+            "selector_reason": selector.get("reason"),
+            "request_rows_after_sql": selector.get("request_rows_after_sql"),
+            "eligible_count": eligible_count, "cold_slots": cold_slots,
+            "capacity_status": capacity_status,
+            "bootstrap_authority": "NOT_GRANTED",
+            "additional_ppi_get": 0,
+            "paper_admission": "NOT_GRANTED"}
+
+
+# A606: An incomplete but authentic PPI contract is deliberately absent from
+# _eligible_symbols() and must never gain PAPER authority merely because its
+# Book was observed.  These nine families are a diagnostic rotation, not an
+# expansion of the operational universe or its provider-call budget.
+PPI_OBSERVE_ONLY_FAMILIES = (
+    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+)
+PPI_OBSERVE_ONLY_MAX_ROWS_PER_FAMILY = 32
+PPI_OBSERVE_ONLY_COLD_PERIOD = 3
+
+
+def _ppi_observe_only_family_candidates(store, *, as_of, excluded):
+    """Find exact PPI-primary HOLD identities without provider I/O.
+
+    Query at most 32 indexed rows per family.  An unavailable v2 ledger,
+    ambiguous three-key request, stale catalog origin, or incomplete monetary
+    identity fails closed.  Complementary identities cannot be chosen, even
+    when their settlement_source superficially resembles PPI.
+    """
+    result = {family: {"state": "NO_PROVIDER_IDENTITY"}
+              for family in PPI_OBSERVE_ONLY_FAMILIES}
+    try:
+        with store.connect() as connection:
+            if not connection.execute("""SELECT 1 FROM sqlite_master
+              WHERE type='table' AND name='candidate_identity_v2'""").fetchone():
+                return result
+            for family in PPI_OBSERVE_ONLY_FAMILIES:
+                rows = connection.execute("""SELECT f.ticker,f.instrument_type,
+                  f.market,f.currency,f.settlement,f.last_seen_at
+                  FROM financial_instrument_catalog f
+                  LEFT JOIN candidate_identity_v2 v
+                    USING(ticker,instrument_type,market,currency,settlement)
+                  WHERE f.instrument_type=? AND f.status='AVAILABLE'
+                    AND f.settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                    AND (CASE WHEN json_valid(f.metadata_json)
+                        THEN json_extract(f.metadata_json,'$._discovery_source')
+                        ELSE '' END)='PPI_PRIMARY'
+                    AND (v.can_simulate IS NULL OR v.can_simulate!=1
+                         OR v.status!='AVAILABLE')
+                  ORDER BY f.ticker,f.market,f.currency,f.settlement
+                  LIMIT ?""", (family, PPI_OBSERVE_ONLY_MAX_ROWS_PER_FAMILY)).fetchall()
+                saw_ambiguous = False
+                for ticker, kind, market, currency, settlement, last_seen in rows:
+                    identity = tuple(str(value or "").strip().upper()
+                                     for value in (ticker, kind, market, currency, settlement))
+                    request = (identity[0], identity[1], identity[4])
+                    if (request in excluded or any(value in {"", "UNKNOWN", "NO_VERIFICADO"}
+                                                   for value in identity)
+                            or not financial_catalog._candidate_timestamp_is_fresh(
+                                last_seen, as_of, financial_catalog.PAPER_PPI_IDENTITY_LKG_SECONDS)):
+                        continue
+                    # Count all primary request siblings, including STALE and
+                    # HOLD; a provider three-key cannot distinguish them.
+                    siblings = connection.execute("""SELECT market,currency
+                      FROM financial_instrument_catalog
+                      WHERE ticker=? AND instrument_type=? AND settlement=?
+                        AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                      LIMIT 2""", request).fetchall()
+                    if len(siblings) != 1 or tuple(str(x).upper() for x in siblings[0]) != identity[2:4]:
+                        saw_ambiguous = True
+                        continue
+                    result[family] = {"state": "PPI_PRIMARY_EXACT_OBSERVE_ONLY",
+                                      "request": request, "identity": identity}
+                    break
+                if result[family]["state"] == "NO_PROVIDER_IDENTITY" and saw_ambiguous:
+                    result[family] = {"state": "PPI_PROVIDER_REQUEST_AMBIGUOUS"}
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return {family: {"state": "CATALOG_READ_HOLD"}
+                for family in PPI_OBSERVE_ONLY_FAMILIES}
+    return result
+
+
+def _ppi_observe_only_replace_cold(store, symbols, plan, *, at, before, after):
+    """Substitute one existing cold slot once per three cycles, never add GET.
+
+    Two of every three cold cycles remain the original READY discovery.  The
+    diagnostic family cursor travels in the existing durable scanner metrics;
+    a skipped family explicitly retains NO_PROVIDER_IDENTITY, not READY.
+    """
+    plan = dict(plan)
+    previous = plan.pop("_a606_previous", {})
+    try:
+        counter = int(previous.get("ppi_observe_only_cycle", 0))
+        family_cursor = int(previous.get("ppi_observe_only_family_cursor", 0))
+        if counter < 0 or not 0 <= family_cursor < len(PPI_OBSERVE_ONLY_FAMILIES):
+            raise ValueError("INVALID_OBSERVER_CURSOR")
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        # A malformed checkpoint may not schedule any new diagnostic read.
+        # Preserve the original cold slot and its cursor unchanged.
+        plan["ppi_observe_only_requests"] = []
+        plan["ppi_observe_only_family_states"] = {
+            family: "CHECKPOINT_HOLD" for family in PPI_OBSERVE_ONLY_FAMILIES}
+        return symbols, after, plan
+    plan["ppi_observe_only_cycle"] = counter + 1
+    plan["ppi_observe_only_family_cursor"] = family_cursor
+    plan["ppi_observe_only_requests"] = []
+    plan["ppi_observe_only_family_states"] = {
+        family: "NO_COLD_SLOT" for family in PPI_OBSERVE_ONLY_FAMILIES}
+    if not plan.get("cold") or len(plan["cold"]) != 1:
+        return symbols, after, plan
+    if counter % PPI_OBSERVE_ONLY_COLD_PERIOD != 0:
+        plan["ppi_observe_only_family_states"] = {
+            family: "BASELINE_COLD_PRESERVED" for family in PPI_OBSERVE_ONLY_FAMILIES}
+        return symbols, after, plan
+    candidates = _ppi_observe_only_family_candidates(
+        store, as_of=at, excluded=set(map(tuple, symbols)))
+    plan["ppi_observe_only_family_states"] = {
+        family: detail["state"] for family, detail in candidates.items()}
+    for offset in range(len(PPI_OBSERVE_ONLY_FAMILIES)):
+        index = (family_cursor + offset) % len(PPI_OBSERVE_ONLY_FAMILIES)
+        family = PPI_OBSERVE_ONLY_FAMILIES[index]
+        candidate = candidates[family]
+        if candidate["state"] != "PPI_PRIMARY_EXACT_OBSERVE_ONLY":
+            continue
+        original = tuple(plan["cold"][0])
+        request = tuple(candidate["request"])
+        symbols = tuple(request if tuple(item) == original else item
+                        for item in symbols)
+        plan["cold"] = [request]
+        plan["ppi_observe_only_requests"] = [{"request": list(request),
+            "identity": list(candidate["identity"]), "reason": "CONTRACT_HOLD_OBSERVE_ONLY"}]
+        plan["ppi_observe_only_family_cursor"] = (index + 1) % len(PPI_OBSERVE_ONLY_FAMILIES)
+        plan["ppi_observe_only_replaced_cold"] = list(original)
+        # Do not advance the ordinary discovery cursor past a READY identity
+        # that was *not* observed this cycle.
+        return symbols, before, plan
+    return symbols, after, plan
+
+
+def _ppi_observe_only_identity(request, plan):
+    """Return the exact diagnostic five-key, or None for all normal signals."""
+    for row in plan.get("ppi_observe_only_requests", ()):
+        if tuple(row.get("request", ())) == tuple(request):
+            identity = tuple(row.get("identity", ()))
+            if len(identity) == 5 and identity[:2] == tuple(request[:2]) and identity[4] == request[2]:
+                return identity
+    return None
 
 
 def _active_symbols(store):
@@ -1207,7 +1653,8 @@ def _publish_focus_health(store, coverage):
 def _cycle_plan(store, focus_candidates=None):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
-    universe = list(_eligible_symbols(store))
+    selector_evidence = {}
+    universe = list(_eligible_symbols(store, diagnostic=selector_evidence))
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
     with store.connect() as c:
@@ -1228,12 +1675,24 @@ def _cycle_plan(store, focus_candidates=None):
         now=at, cursor=row[0] if row else 0, previous=previous)
     from rc6_dynamic_universe.promotion import capacity_controller_from_environment
     controller = capacity_controller_from_environment(store.path)
-    if controller.state(at)["status"] == "APPROVED_DYNAMIC":
+    capacity_status = controller.state(at)["status"]
+    if capacity_status == "APPROVED_DYNAMIC":
         full_opened = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
             for p in store.open_positions() if p["asset_class"] in {"ACCIONES", "CEDEARS", "ETFS"}]
         selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
         if selected["dynamic"]:
             symbols, plan = _approved_equity_selection(store, selected, plan)
+    elif capacity_status in {"OFF_BASELINE", "SHADOW_BASELINE"}:
+        # No dynamic lease/extra budget exists in baseline. A606 only takes
+        # an already planned cold pair; an absent slot means zero provider IO.
+        plan["_a606_previous"] = previous or {}
+        symbols, after, plan = _ppi_observe_only_replace_cold(
+            store, symbols, plan, at=at, before=before, after=after)
+    cold_plan = plan.get("cold")
+    cold_slots = len(cold_plan) if isinstance(cold_plan, (list, tuple)) else 0
+    plan["ppi_cold_bootstrap_diagnostic"] = _cold_bootstrap_diagnostic(
+        selector_evidence, eligible_count=len(universe),
+        cold_slots=cold_slots, capacity_status=capacity_status)
     return symbols, len(universe), before, after, plan
 
 
@@ -1542,6 +2001,42 @@ def _history_batch_semantics(statuses):
     }
 
 
+def _verified_ppi_eod_keys(history_store, exact_keys, session, at):
+    """Count genuine same-session PPI RAW bars, never requested dates.
+
+    Full-key canonical rows must be PPI-sourced and first known after BYMA's
+    closing-price floor. A successful REST response carrying only a prior
+    session must not certify the requested EOD or produce a final report.
+    """
+    if at.tzinfo is None or at.utcoffset() is None:
+        return 0
+    now = at.astimezone(TZ)
+    if now.date() != session:
+        return 0
+    floor = byma_eod_publication_floor(now)
+    if now < floor:
+        return 0
+    verified = 0
+    with history_store.connect() as conn:
+        for identity in dict.fromkeys(exact_keys):
+            if len(identity) != 5:
+                continue
+            row = conn.execute("""SELECT source,version_known_at
+              FROM history_canonical_v2 WHERE symbol=? AND instrument_type=?
+                AND market=? AND currency=? AND settlement=? AND date=?
+                AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
+                (*identity,session.isoformat())).fetchone()
+            if not row or row[0] != 'PPI_PRODUCTION_HISTORY':
+                continue
+            try:
+                known = datetime.fromisoformat(str(row[1]).replace('Z','+00:00'))
+                if known.tzinfo and known.utcoffset() is not None and floor <= known <= now:
+                    verified += 1
+            except (TypeError, ValueError):
+                continue
+    return verified
+
+
 def _historical_targets(store):
     """The whole exact-key PPI catalog, ordered by its own durable attempt.
 
@@ -1620,8 +2115,10 @@ def _history_cutoff_repair_complete() -> bool:
 
 def _history_end_date(now=None):
     now = now or datetime.now(TZ)
-    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
-    if now.hour * 60 + now.minute < close_minute:
+    if now.tzinfo is None or now.utcoffset() is None:
+        return None
+    now = now.astimezone(TZ)
+    if now < byma_eod_publication_floor(now):
         return None
     day = now.date()
     while day.year == BYMA_CALENDAR_AUDITED_YEAR and not _business_day(day):
@@ -1832,19 +2329,30 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
     with history_store.connect() as c:
         coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
             consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
+    # Only the bounded batch actually requested in this cycle can attest a
+    # source receipt. Global catalog counts or session=requested_end cannot.
+    batch_keys=[identity for identity,_,_,_ in requests[:HISTORY_BATCH_LIMIT]]
+    observed_now=datetime.now(TZ)
+    exact_eod=_verified_ppi_eod_keys(history_store,batch_keys,end,observed_now)
+    exact_required=len(batch_keys)
+    current_session_verified=bool(exact_required and exact_eod==exact_required)
     semantics=_history_batch_semantics(batch_statuses)
     state=semantics['state']
     if not batch_statuses:
-        state='VERDE' if coverage['denominator'] and coverage['covered']==coverage['denominator'] else 'AMARILLO'
-    detail=(f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
+        state='AMARILLO'
+    if state=='VERDE' and not current_session_verified:
+        state='AMARILLO'
+    detail=(f"session={end.isoformat()}; "
+        f"source_session_verified={end.isoformat()}:{exact_eod}/{exact_required}; "
+        f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
         f"parciales={semantics['partial_with_valid_evidence']}; errores={semantics['hard_failures']}; "
         f"cobertura exacta {coverage['covered']}/{coverage['denominator']}; "
         f"suficientes30={coverage['sufficient']}; faltantes={coverage['missing']}; "
         f"cohort={coverage['cohort_sha256']}; consumer={coverage['consumer']}; "
-        f"cut={coverage['as_of']}; session={coverage['session']}; "
+        f"cut={coverage['as_of']}; session_requested={coverage['session']}; "
         f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; readiness=NONE; "
         f"{total} filas FULL_OHLC válidas hasta {end.isoformat()}.")
-    usable=bool(semantics['usable'])
+    usable=bool(semantics['usable'] and current_session_verified and state=='VERDE')
     _sync_state(store,'PPI_PRODUCTION_HISTORY',state,total,detail,success=usable)
     _health(store,'PPI_PRODUCTION_HISTORY',state,detail,'PPI Producción',success=usable)
     return total
@@ -1893,11 +2401,88 @@ def _history_daily_sync_due(store, now=None):
     stale history metadata must not force another full PPI catalog download.
     """
     now = now or datetime.now(TZ)
-    if _history_end_date(now) is None:
+    return _history_source_retry_due(store, now)
+
+
+def _history_source_retry_due(store, now=None):
+    """Bounded retry after missing EOD; exact source receipt stops all retries."""
+    now = now or datetime.now(TZ)
+    if now.tzinfo is None or now.utcoffset() is None:
+        return False
+    local = now.astimezone(TZ)
+    if not _business_day(local.date()) or _history_end_date(local) is None:
         return False
     if not _history_cutoff_repair_complete():
         return False
-    return _source_sync_due(store, "PPI_PRODUCTION_HISTORY", now)
+    if operations._postclose_history_source_ready(store, local):
+        return False
+    try:
+        with store.connect() as conn:
+            row = conn.execute("""SELECT last_attempt_at FROM source_sync
+              WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+            health = conn.execute("""SELECT checked_at FROM api_health
+              WHERE component='PPI_BACKGROUND_INGEST'""").fetchone()
+    except sqlite3.Error:
+        return False
+    attempts = []
+    for receipt in (row, health):
+        if not receipt or not receipt[0]:
+            continue
+        try:
+            raw = str(receipt[0]).strip()
+            if len(raw) == 10:
+                # Old source receipts contain an ART session day only, never
+                # an intraday retry clock. Permit the next business day, but
+                # not a source storm within the same date.
+                prior = date.fromisoformat(raw)
+                if prior == local.date() or prior > local.date():
+                    return False
+                attempts.append(datetime.combine(prior, datetime.min.time(), tzinfo=TZ))
+                continue
+            stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if stamp.tzinfo is None or stamp.utcoffset() is None:
+                return False
+            attempts.append(stamp.astimezone(TZ))
+        except (TypeError, ValueError):
+            return False
+    if not attempts:
+        return True
+    latest = max(attempts)
+    if latest > local:
+        return False
+    return (latest.date() != local.date() or
+            (local - latest).total_seconds() >= HISTORY_SOURCE_PENDING_RETRY_SECONDS)
+
+
+def _history_source_attempt_marker(store):
+    with store.connect() as conn:
+        row = conn.execute("""SELECT last_attempt_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+    return row[0] if row else None
+
+
+def _record_unreported_history_attempt(store, now, marker):
+    """Fence failed/lock-skipped attempts before the next observer tick.
+
+    The PPI history writer normally records its own source receipt; an early
+    exception or held repair lock does not. Neither case permits hammering the
+    provider or claiming a source success before a later verified response.
+    """
+    attempt = now.astimezone(TZ).isoformat()
+    with store.connect() as conn:
+        row = conn.execute("""SELECT last_attempt_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        if (row[0] if row else None) != marker:
+            return
+        old = conn.execute("""SELECT last_success_at FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        conn.execute("""INSERT INTO source_sync VALUES(?,?,?,?,?,?)
+          ON CONFLICT(source) DO UPDATE SET status=excluded.status,
+          last_attempt_at=excluded.last_attempt_at,items=0,detail=excluded.detail""",
+          ('PPI_PRODUCTION_HISTORY','AMARILLO',attempt,
+           old[0] if old else None,0,
+           f'session={now.date().isoformat()}; SOURCE_PENDING_AFTER_ATTEMPT; '
+           'readiness=NONE'))
 
 
 def _daily_sync_needed(store, now=None):
@@ -1930,7 +2515,13 @@ def _daily_sync(reader, store, now=None):
         return
     try:
         catalog = _download_catalog(reader, store) if catalog_due else 0
-        histories = _download_histories(reader, store) if history_due else 0
+        histories = 0
+        if history_due:
+            marker = _history_source_attempt_marker(store)
+            try:
+                histories = _download_histories(reader, store)
+            finally:
+                _record_unreported_history_attempt(store, now, marker)
         store.event(
             "DAILY_READONLY_SYNC",
             f"{catalog} instrumentos; {histories} filas históricas; "
@@ -1944,35 +2535,7 @@ def _daily_sync(reader, store, now=None):
 
 def _background_ingest_due(store, now=None):
     """Como máximo un intento histórico por rueda, después del cierre."""
-    now = now or datetime.now(TZ)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=TZ)
-    local_now = now.astimezone(TZ)
-    if not _business_day(local_now.date()):
-        return False
-    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
-    if local_now.hour * 60 + local_now.minute < close_minute:
-        return False
-    with store.connect() as connection:
-        source = connection.execute("""SELECT last_attempt_at FROM source_sync
-          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
-        background = connection.execute("""SELECT checked_at FROM api_health
-          WHERE component='PPI_BACKGROUND_INGEST'""").fetchone()
-    # A blocked history migration cannot advance source_sync. Its own health
-    # timestamp still records the attempt, including a failed one, so CLOSED
-    # does not retry and write another event every scanner poll (~5 seconds).
-    for row in (source, background):
-        if not row or not row[0]:
-            continue
-        try:
-            last = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=TZ)
-            if last.astimezone(TZ).date() >= local_now.date():
-                return False
-        except (TypeError, ValueError):
-            continue
-    return True
+    return _history_source_retry_due(store, now)
 
 def _background_ingest(reader, store, *, force=False):
     """Completa históricos una vez por rueda después del cierre; force no salta el límite."""
@@ -2077,8 +2640,10 @@ def _announce_phase(store, previous, current):
                     "Login e ingesta activos. Cero evaluaciones y cero operaciones."),
         "OPEN": ("🟢 POROTA — RUEDA ABIERTA",
                  "Motor Python evaluando. Operaciones 100% simuladas. Órdenes reales: NINGUNA."),
+        "EQUITY_T1_READONLY": ("🟡 POROTA — BYMA T+1 / OPCIONES T+0",
+                  "PAPER cerrado; sólo lectura PPI exacta hasta 18:00, sin órdenes ni EOD."),
         "CLOSED": ("🌙 POROTA — RUEDA CERRADA",
-                   "Estrategia detenida. Ingesta histórica y dashboard continúan activos."),
+                   "Estrategia detenida; EOD sólo tras publicación efectiva de fuente."),
     }
     if current not in messages:
         return
@@ -2203,15 +2768,23 @@ def run():
     reader = None
     login_interlock = ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
     quotes = {}
+    # Only this observer receives PPI current/book through the read-only SDK.
+    # Keep the fact of provider origin outside market_snapshots.source, whose
+    # PRODUCTION_PAPER meaning is an existing Options invariant. Persist once
+    # per scanner cycle, never once per symbol on the hot path.
+    scanner_primary = ScannerPrimaryRecorder(
+        Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
     last_caucion_live_refresh = 0.0
+    last_equity_t1_readonly_refresh = 0.0
     caucion_ledger_blocked = False
     next_caucion_ledger_recheck = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
+    previous_source_open = False
     startup_watchdog_armed = True
     try:
         while not STOP:
@@ -2315,6 +2888,15 @@ def run():
                     continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             operations.service_tick(store, phase)
+            if (phase == "EQUITY_T1_READONLY" and
+                    time.time() - last_equity_t1_readonly_refresh >= EQUITY_T1_READONLY_REFRESH_SECONDS):
+                try:
+                    result = _equity_t1_readonly_tick(reader, store, now=datetime.now(TZ),
+                                                      scanner_primary=scanner_primary)
+                    store.event("EQUITY_T1_READONLY_BOOK_REFRESH", json.dumps(result, sort_keys=True))
+                    last_equity_t1_readonly_refresh = time.time()
+                except Exception as exc:
+                    store.event("EQUITY_T1_READONLY_BOOK_ERROR", type(exc).__name__)
             if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
                 try:
                     import dj_caucion_live_ppi_rc6 as caucion_live
@@ -2327,14 +2909,16 @@ def run():
             if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
                 _public_probe(store)
                 last_public_check = time.time()
-            should_capture = phase == "OPEN" and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
-            closing_snapshot = previous_phase == "OPEN" and phase == "CLOSED"
+            source_open = phase in {"OPEN", "EQUITY_T1_READONLY"}
+            should_capture = source_open and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
+            closing_snapshot = previous_source_open and not source_open
+            previous_source_open = source_open
             if should_capture or closing_snapshot:
                 _public_probe(store, structured=True)
                 last_structured_capture = time.time()
             last_complementary_reconcile = _periodic_complementary_reconcile(
                 store, phase, last_complementary_reconcile)
-            if phase == "CLOSED":
+            if phase in {"CLOSED", "EQUITY_T1_READONLY"}:
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
                 _daily_sync(reader, store)
@@ -2343,10 +2927,16 @@ def run():
                     _runtime_readiness(store)
                     _publish_economic_shadow_health(store)
                     last_readiness_check = time.time()
-                store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
-                            heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="PPI de solo lectura activo; ingesta histórica disponible. "
-                                   "Estrategia y market data vivo detenidos por mercado cerrado.")
+                if phase == "EQUITY_T1_READONLY":
+                    store.state(process_state="WAITING_MARKET", session_state="EQUITY_T1_READONLY",
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="PAPER entrada/salida cerrado; BYMA T+1 y opciones T+0 17:00-18:00 "
+                                       "PPI read-only/full-key, sin EOD ni órdenes.")
+                else:
+                    store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
+                                heartbeat_at=now_iso(), real_orders_sent=0,
+                                detail="EOD sólo tras piso COM19031 y recibo de origen; "
+                                       "sin ruta de órdenes reales.")
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
             if phase == "PREOPEN":
@@ -2365,6 +2955,7 @@ def run():
             cycle_started = now_iso()
             cycle_clock = time.perf_counter()
             cycle_ok = 0
+            cycle_observed_only = 0
             cycle_failures = 0
             cycle_session_invalid = False
             latencies = []
@@ -2384,8 +2975,31 @@ def run():
                     priority = "OPENED_CRITICAL" if request_key in opened_identities else dynamic_scope.get("priority", "DISCOVERY")
                     exact_opened = opened_identities.get(request_key, set())
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
+                    diagnostic_identity = _ppi_observe_only_identity(
+                        request_key, feasibility["active_plan"])
+                    if diagnostic_identity is not None:
+                        # This is a HOLD contract, never an OPENED/EXIT order.
+                        # PPI native quote and raw Book are recorded below;
+                        # do not present it to any broker or signal path.
+                        scope_identity = diagnostic_identity
+                        priority = "DISCOVERY"
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
-                        priority=priority, identity=scope_identity)
+                        priority=priority, identity=scope_identity,
+                        scanner_primary=scanner_primary)
+                    try:
+                        scanner_primary.capture(q, request=request_key)
+                    except Exception as origin_error:
+                        # Observational sidecar must never change PAPER gates or
+                        # interrupt a genuine scanner current/book observation.
+                        store.event("PPI_SCANNER_PRIMARY_CAPTURE_ERROR", type(origin_error).__name__)
+                    if diagnostic_identity is not None:
+                        # Both genuine PPI recorders ran first. Keep the raw
+                        # observation OUT of broker.on_quote, EXIT, signals,
+                        # market_snapshots and PAPER admission permanently.
+                        cycle_observed_only += 1
+                        store.event("PPI_CONTRACT_OBSERVE_ONLY",
+                            f"{symbol}|{asset_class}|{settlement}|NO_PAPER_ADMISSION")
+                        continue
                     # Persistir la observación sirve para trazabilidad, pero un
                     # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)
@@ -2435,6 +3049,13 @@ def run():
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
                            "current + book; PPI Producción solo lectura"))
                     last_cycle_pulse = _pulse_observed_progress(store, last_cycle_pulse)
+            try:
+                primary_receipt = scanner_primary.publish()
+                store.event("PPI_SCANNER_PRIMARY_RECEIPT", json.dumps(primary_receipt, sort_keys=True))
+            except Exception as origin_error:
+                # The legacy PAPER quote and Options provenance are unchanged;
+                # publish failures are observable but cannot enable entries.
+                store.event("PPI_SCANNER_PRIMARY_PUBLISH_ERROR", type(origin_error).__name__)
             broker.mark_equity(quotes)
             duration = round(time.perf_counter() - cycle_clock, 3)
             avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL
@@ -2445,7 +3066,8 @@ def run():
             _write_scanner_metrics(store, "UNIVERSE",
                   (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
-                   f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
+                   f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; diagnostico_solo_lectura={cycle_observed_only}; "
+                   f"factibilidad={json.dumps(feasibility,sort_keys=True)}"))
             metrics = reader.metrics
             store.state(process_state="DEGRADED" if cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),

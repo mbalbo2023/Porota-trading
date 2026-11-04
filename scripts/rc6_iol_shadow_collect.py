@@ -7,6 +7,7 @@ by arbitrary rows accumulated in cache across older cycles.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 import os
@@ -21,13 +22,17 @@ from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call
                                       is_operational_market_window,
                                       is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
+from rc6_ppi_scanner_provenance import (
+    NATIVE_QUOTE_MAX_AGE_SECONDS, ORIGIN, native_trade_book_ready,
+    primary_records as scanner_primary_records,
+)
 from rc6_source_consolidation import consolidate
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
 DEFAULT_DB = os.getenv("POROTA_IOL_OPERATIONAL_DB", "/opt/porota-trading/data/paper_v17/observer_v17.db")
 BATCH_SIZE = 12
-PRIMARY_MAX_AGE_SECONDS = 300
+PRIMARY_MAX_AGE_SECONDS = NATIVE_QUOTE_MAX_AGE_SECONDS
 LATE_CATALOG_MAX_ROWS = 20000
 
 
@@ -331,10 +336,87 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
 
     current = datetime.now(timezone.utc)
 
+    def normalized_nested_quote(row):
+        """A nested provider quote may not borrow a wrapper's PPI identity/clocks.
+
+        The nested record must independently prove source, exact contract,
+        native trade/book and positive last before any field reaches bind().
+        """
+        if "quote" not in row:
+            return row, False
+        nested = row["quote"]
+        if not isinstance(nested, dict):
+            return row, True
+        nested_source = str(nested.get("source") or "").strip().upper()
+        outer_source = str(row.get("source") or "").strip().upper()
+        if (not nested_source or source_rank(nested_source) != 0
+                or nested_source == "PPI_CATALOG"
+                or (outer_source and (source_rank(outer_source) != 0
+                                      or outer_source == "PPI_CATALOG"))):
+            return row, True
+        try:
+            if tuple(_canonical_identity(nested)) != tuple(_canonical_identity(row)):
+                return row, True
+        except (TypeError, ValueError):
+            return row, True
+        # A contradictory wrapper is review evidence, never a way to pick
+        # whichever clock/price happens to make a stale quote look current.
+        for field in ("last", "bid", "ask", "trade_at", "book_at", "source_at",
+                      "last_kind", "state", "review_status"):
+            outer, inner = row.get(field), nested.get(field)
+            if outer in (None, "") or inner in (None, ""):
+                continue
+            if field in {"trade_at", "book_at", "source_at"}:
+                same = bool(_parse_time(outer) and _parse_time(outer) == _parse_time(inner))
+            elif field in {"last", "bid", "ask"}:
+                try:
+                    left, right = Decimal(str(outer)), Decimal(str(inner))
+                    same = left.is_finite() and right.is_finite() and left == right
+                except (InvalidOperation, TypeError, ValueError):
+                    same = False
+            else:
+                same = str(outer).strip().upper() == str(inner).strip().upper()
+            if not same:
+                return row, True
+        if not native_trade_book_ready(nested, current, receipt=receipt_time(nested),
+                                       require_trade_kind=bool(nested.get("provider_origin") == ORIGIN)):
+            return row, True
+        normalized = {**row, **nested, "source": nested_source}
+        normalized.pop("quote", None)
+        return normalized, False
+
     def bind(records, *, capture=None):
-        by_symbol, reviews = {}, []
+        by_symbol, reviews, observed_identities, unavailable_since = {}, [], {}, {}
         for record in records:
             row = dict(record)
+            row, nested_conflict = normalized_nested_quote(row)
+            if nested_conflict:
+                # A486: a newer *PPI* native receipt with an invalid quote
+                # invalidates older exact-key PPI evidence (including scanner).
+                # A nested IOL/complement record has no authority to tombstone
+                # PPI, even if its wrapper claims source=PPI.
+                nested = row.get("quote")
+                if isinstance(nested, dict):
+                    nested_source = str(nested.get("source") or "").strip().upper()
+                    outer_source = str(row.get("source") or "").strip().upper()
+                    if (source_rank(nested_source) == 0 and nested_source != "PPI_CATALOG"
+                            and (not outer_source or (source_rank(outer_source) == 0
+                                                      and outer_source != "PPI_CATALOG"))):
+                        try:
+                            key = tuple(_canonical_identity(row))
+                            nested_key = tuple(_canonical_identity(nested))
+                        except (ValueError, TypeError):
+                            key, nested_key = None, None
+                        received = _parse_time(receipt_time(nested))
+                        if key and key == nested_key and received and received <= current:
+                            previous = unavailable_since.get(key)
+                            if previous is None or received > previous:
+                                unavailable_since[key] = received
+                if len(reviews) < 1000:
+                    reviews.append({"symbol": row.get("symbol"),
+                                    "reason": "PPI_NESTED_QUOTE_AUTHORITY_OR_IDENTITY_CONFLICT",
+                                    "identity_assigned": False})
+                continue
             native = _parse_time(native_time(row))
             received = _parse_time(receipt_time(row) or capture)
             try:
@@ -343,21 +425,58 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
                 if len(reviews) < 1000:
                     reviews.append({"symbol": row.get("symbol"), "reason": "EXACT_IDENTITY_REQUIRED", "identity_assigned": False})
                 continue
-            if not native or not received or not native <= received <= current or not 0 <= (current-native).total_seconds() <= PRIMARY_MAX_AGE_SECONDS:
+            observed_identities.setdefault(key[0], set()).add(key)
+            # Absent state is tolerated only for the historical SQLite/cache
+            # format; an explicitly false, empty, or unknown state is not.
+            declared_state = (row["state"] if "state" in row else
+                              row["source_state"] if "source_state" in row else "READY")
+            valid_state = (isinstance(declared_state, str) and
+                           declared_state.strip().upper() in {
+                               "READY", "LIVE_FRESH", "FRESH", "AVAILABLE"})
+            row_source = str(row.get("source") or "").strip().upper()
+            valid_origin = (not row_source or
+                            (source_rank(row_source) == 0 and row_source != "PPI_CATALOG"))
+            valid_native = native_trade_book_ready(
+                row, current, receipt=receipt_time(row) or capture,
+                require_trade_kind=bool(row.get("provider_origin") == ORIGIN))
+            if not valid_state or not valid_origin or not valid_native or not native:
+                # Keep a bounded diagnostic plus the newest *exact-identity*
+                # invalidation. An older usable quote cannot defeat a newer
+                # UNAVAILABLE/missing-BOOK receipt in the same source stream.
+                if received and received <= current:
+                    previous = unavailable_since.get(key)
+                    if previous is None or received > previous:
+                        unavailable_since[key] = received
                 if len(reviews) < 1000:
-                    reviews.append({"symbol": key[0], "identity": list(key), "reason": "NATIVE_QUOTE_CLOCK_MISSING_STALE_OR_UNAVAILABLE", "identity_assigned": False})
+                    # Expose bounded native clocks for diagnosis without
+                    # replaying an invalid quote or any monetary fields.
+                    trade_clock = _parse_time(row.get("trade_at"))
+                    book_clock = _parse_time(row.get("book_at"))
+                    reviews.append({"symbol": key[0], "identity": list(key),
+                                    "received_at": received.isoformat() if received else None,
+                                    "native_trade_at": trade_clock.isoformat() if trade_clock else None,
+                                    "native_book_at": book_clock.isoformat() if book_clock else None,
+                                    "reason": "PPI_FALLBACK_NATIVE_QUOTE_INELIGIBLE",
+                                    "identity_assigned": False})
                 continue
             row.update(provider_observed_at=native.isoformat(), captured_at=received.isoformat(),
                        canonical_identity=list(key), provider_clock_basis="NATIVE_EVENT_TIME")
             by_symbol.setdefault(key[0], {}).setdefault(key, []).append(row)
         values = {}
         for symbol, identities in by_symbol.items():
-            if len(identities) != 1:
-                reviews.append({"symbol": symbol, "identities": [list(key) for key in sorted(identities)],
+            if len(observed_identities[symbol]) != 1:
+                reviews.append({"symbol": symbol,
+                                "identities": [list(key) for key in sorted(observed_identities[symbol])],
                                 "reason": "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES", "identity_assigned": False})
                 continue
             candidates = next(iter(identities.values()))
             latest = max(_parse_time(row["captured_at"]) for row in candidates)
+            key = next(iter(identities))
+            if unavailable_since.get(key) is not None and unavailable_since[key] >= latest:
+                reviews.append({"symbol": symbol, "identity": list(key),
+                                "reason": "NEWER_PPI_FALLBACK_UNAVAILABLE_SUPPRESSES_PRIOR",
+                                "identity_assigned": False})
+                continue
             candidates = [row for row in candidates if _parse_time(row["captured_at"]) == latest]
             # Same receipt with incompatible observations cannot select a scalar.
             signatures = {json.dumps({name: row.get(name) for name in ("last", "bid", "ask", "bid_size", "ask_size", "provider_observed_at", "book_at")}, sort_keys=True) for row in candidates}
@@ -365,7 +484,92 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
                 reviews.append({"symbol": symbol, "reason": "DUPLICATE_SOURCE_EVIDENCE_CONFLICT", "identity_assigned": False})
                 continue
             values[symbol] = candidates[0]
-        return values, reviews[:1000]
+        return values, reviews[:1000], observed_identities, unavailable_since
+
+    scanner_rows, scanner_meta = scanner_primary_records(DEFAULT_ROOT, current)
+
+    def with_scanner(fallback, meta, *, fallback_identities=None, fallback_unavailable_since=None):
+        # A source-specific scanner receipt cannot claim full-universe scope.
+        # Merge only exact identities; bind() refuses to choose a currency for
+        # any ticker that has multiple distinct five-key observations.
+        if not scanner_rows:
+            return fallback, meta
+        scanner_selectable, unavailable_since = [], {}
+        fallback_unavailable_since = fallback_unavailable_since or {}
+        identities_by_symbol = {symbol: set(keys)
+                                for symbol, keys in (fallback_identities or {}).items()}
+        scanner_invalidated_by_fallback, scanner_fallback_reviews = 0, []
+        for row in [*fallback.values(), *scanner_rows]:
+            try:
+                key = tuple(_canonical_identity(row))
+            except (TypeError, ValueError):
+                continue
+            identities_by_symbol.setdefault(key[0], set()).add(key)
+        for row in scanner_rows:
+            key = tuple(row["canonical_identity"])  # verified by primary_records()
+            received = _parse_time(row.get("received_at"))
+            # A diagnostic UNAVAILABLE receipt can never become a primary
+            # quote merely because its native trade clock is still fresh.
+            eligible = bool(row.get("state") == "READY"
+                            and native_trade_book_ready(row, current, require_trade_kind=True))
+            invalid_fallback_at = fallback_unavailable_since.get(key)
+            if eligible and invalid_fallback_at is not None and received and received <= invalid_fallback_at:
+                scanner_invalidated_by_fallback += 1
+                scanner_fallback_reviews.append({"symbol": key[0], "identity": list(key),
+                                                 "reason": "NEWER_PPI_FALLBACK_UNAVAILABLE_SUPPRESSES_SCANNER",
+                                                 "identity_assigned": False})
+            elif eligible:
+                scanner_selectable.append(row)
+            elif received:
+                previous = unavailable_since.get(key)
+                if previous is None or received > previous:
+                    unavailable_since[key] = received
+        safe_fallback, suppressed = [], 0
+        for row in fallback.values():
+            try:
+                key = tuple(_canonical_identity(row))
+            except (TypeError, ValueError):
+                continue
+            latest_unavailable = unavailable_since.get(key)
+            fallback_received = _parse_time(receipt_time(row))
+            if latest_unavailable is not None and (fallback_received is None
+                                                   or fallback_received <= latest_unavailable):
+                # A newer invalid scanner observation for this EXACT contract
+                # must not silently resurrect an older primary fallback.
+                suppressed += 1
+                continue
+            safe_fallback.append(row)
+        values, scanner_reviews, _, _ = bind([*safe_fallback, *scanner_selectable])
+        # bind() returns no scalar for an ambiguous fallback ticker. Do not
+        # make that ambiguity disappear by overlaying just one scanner quote.
+        # Full source reviews retain precedence over per-symbol convenience.
+        blocked_symbols = {str(review.get("symbol") or "").strip().upper()
+                           for review in (meta.get("identity_reviews") or [])
+                           if review.get("reason") in {
+                               "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES",
+                               "DUPLICATE_SOURCE_EVIDENCE_CONFLICT"}}
+        for symbol, identities in identities_by_symbol.items():
+            if len(identities) > 1:
+                blocked_symbols.add(symbol)
+                scanner_reviews.append({"symbol": symbol,
+                                        "reason": "MULTIPLE_CURRENCY_MARKET_SETTLEMENT_IDENTITIES",
+                                        "identity_assigned": False})
+        for symbol in blocked_symbols:
+            values.pop(symbol, None)
+        return values, {**meta,
+            "state": "READY" if values else "UNAVAILABLE",
+            "source": "PPI_PRIMARY_SCANNER_AND_FALLBACK",
+            "source_scope": "SCANNER_ROTATED_SUBSET_PLUS_AVAILABLE_FALLBACK",
+            "scanner_receipt_records": len(scanner_rows),
+            "scanner_receipt_status": scanner_meta.get("state"),
+            "scanner_selectable_records": len(scanner_selectable),
+            "scanner_unavailable_records": len(scanner_rows) - len(scanner_selectable),
+            "scanner_older_fallbacks_suppressed": suppressed,
+            "scanner_invalidated_by_newer_fallback": scanner_invalidated_by_fallback,
+            "provider_clock_basis": "NATIVE_PER_ROW_NOT_RECEIPT",
+            "identity_reviews": [*(meta.get("identity_reviews") or []), *scanner_reviews,
+                                 *scanner_fallback_reviews][:1000],
+            "reason": "OK" if values else "PRIMARY_SCANNER_AND_FALLBACK_NO_NATIVE_EXACT_EVIDENCE"}
 
     for candidate in (os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(DEFAULT_ROOT / "primary_last.json"), "/app/data/market/primary_last.json"):
         if not candidate:
@@ -388,14 +592,17 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             if payload.get("market"):
                 row.setdefault("market", payload["market"])
             records.append(row)
-        values, reviews = bind(records, capture=capture)
-        if source_rank(source) != 0:
-            values = {}
-        return values, {"state": "READY" if values else "UNAVAILABLE", "source": source or "UNKNOWN",
+        values, reviews, seen_identities, invalid_since = bind(records, capture=capture)
+        if source_rank(source) != 0 or source == "PPI_CATALOG":
+            # Catalog identity provenance is not provider quote provenance.
+            # An untrusted cache must not mask valid scanner/SQLite fallback.
+            continue
+        return with_scanner(values, {"state": "READY" if values else "UNAVAILABLE", "source": source or "UNKNOWN",
             "market": payload.get("market") or "UNKNOWN", "capture_observed_at": capture,
             "capture_clock_basis": "AVAILABILITY_ONLY", "provider_clock_basis": "PER_ROW_NATIVE_EVENT_TIME",
             "identity_binding": "EXACT_FIVE_PART_IDENTITY", "identity_reviews": reviews,
-            "provider_available": None, "reason": "OK" if values else "PRIMARY_CACHE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"}
+            "provider_available": None, "reason": "OK" if values else "PRIMARY_CACHE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"},
+            fallback_identities=seen_identities, fallback_unavailable_since=invalid_since)
 
     # Existing SQLite read-only fallback. LAST requires trade_at; BOOK keeps its
     # independent book_at. observed_at is receipt and never provider time.
@@ -418,26 +625,30 @@ def _primary_snapshot() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             records = []
             for raw in rows[:20000]:
                 row = {name: raw[position] for name, position in index.items() if raw[position] is not None}
-                if row.get("source") and source_rank(row["source"]) != 0:
+                if (row.get("source") and
+                        (source_rank(row["source"]) != 0
+                         or str(row["source"]).strip().upper() == "PPI_CATALOG")):
                     continue
                 # Never infer a currency/market/settlement from a ticker or default.
                 row["source_at"] = row.get("trade_at")
                 row["received_at"] = row.get("observed_at")
                 records.append(row)
-            values, reviews = bind(records)
+            values, reviews, seen_identities, invalid_since = bind(records)
             times = [_parse_time(row["provider_observed_at"]) for row in values.values()]
             latest = max(times) if times else None
-            return values, {"state": "READY" if values else "UNAVAILABLE", "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
+            return with_scanner(values, {"state": "READY" if values else "UNAVAILABLE", "source": "PPI_SQLITE_MARKET_SNAPSHOTS", "market": "MULTI_MARKET",
                 "observed_at": latest.isoformat() if latest else None, "provider_clock_basis": "NATIVE_TRADE_AT",
                 "capture_clock_basis": "OBSERVED_AT_IS_RECEIPT_ONLY", "identity_binding": "EXACT_FIVE_PART_IDENTITY",
                 "identity_reviews": reviews, "provider_available": None, "read_truncated": len(rows) > 20000,
-                "reason": "OK" if values else "PRIMARY_SQLITE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"}
+                "reason": "OK" if values else "PRIMARY_SQLITE_NATIVE_CLOCK_OR_IDENTITY_NO_VERIFICADO"},
+                fallback_identities=seen_identities, fallback_unavailable_since=invalid_since)
         except (sqlite3.Error, OSError):
             continue
         finally:
             if conn is not None:
                 conn.close()
-    return {}, {"state": "UNAVAILABLE", "provider_available": None, "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"}
+    return with_scanner({}, {"state": "UNAVAILABLE", "provider_available": None,
+                             "reason": "PRIMARY_CACHE_AND_SQLITE_NOT_FOUND"})
 
 
 def _publish_progress(universe: list[str] | int, batch: list[str], source: str, fingerprint: str, cycle: dict[str, Any], primary_contract: dict[str, Any]) -> dict[str, Any]:

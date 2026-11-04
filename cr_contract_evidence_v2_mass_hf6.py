@@ -13,7 +13,6 @@ from collections import Counter
 from decimal import Decimal, InvalidOperation
 
 import cp_contract_evidence_v2_hf6 as evidence_v2
-from bu_instrument_catalog import _candidate_has_ppi_primary
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 import rc6_ppi_option_contract_policy as option_policy
 import rc6_ppi_future_contract_policy as future_policy
@@ -68,6 +67,20 @@ def _full_identity(row):
     }
 
 
+def _has_explicit_ppi_primary_provenance(row, raw):
+    """Require primary-provider provenance before attributing v2 evidence to PPI.
+
+    ``_candidate_has_ppi_primary`` is a deliberately broad legacy-universe
+    compatibility predicate. Its ``LEGACY_CATALOG`` and settlement-source
+    fallbacks are not proof that this particular contract record came from PPI.
+    A REQUEST_CANDIDATE settlement is still only a request-side value; later
+    readiness checks must prove the complete identity and live market data.
+    """
+    return (str(raw.get("_discovery_source") or "").strip().upper() == "PPI_PRIMARY"
+            and str(row.get("settlement_source") or "").strip().upper()
+            in {"PPI_FIELD", "REQUEST_CANDIDATE"})
+
+
 def planned_records(rows):
     """Return stable source records and explicit skip reasons."""
     records = []
@@ -75,9 +88,11 @@ def planned_records(rows):
     identities = Counter()
     option_underlyings = option_policy.underlying_family_index(rows)
     for row in rows:
+        if str(row.get("status") or "").strip().upper() != "AVAILABLE":
+            skipped["NOT_AVAILABLE"] += 1
+            continue
         raw = _raw(row)
-        if not _candidate_has_ppi_primary(row.get("settlement_source"),
-                                          json.dumps(raw, ensure_ascii=False)):
+        if not _has_explicit_ppi_primary_provenance(row, raw):
             skipped["NOT_PPI_PRIMARY"] += 1
             continue
         identity = _full_identity(row)

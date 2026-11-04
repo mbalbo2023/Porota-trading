@@ -42,6 +42,10 @@ LEGACY_CORE_GET_PATHS = (
 # checks and exercise every published canonical subview before acceptance.
 CORE_GET_PATHS = tuple(dict.fromkeys((*sorted(CANONICAL_PATHS), *LEGACY_CORE_GET_PATHS)))
 ALLOWED_IOL_STATES = {"LIVE", "CACHE_FRESH", "CACHE_STALE", "SOURCE_UNAVAILABLE"}
+BYMA_EQUITY_T1_READONLY_DETAIL = (
+    "PAPER entrada/salida cerrado; BYMA T+1 17:00-18:00 "
+    "PPI read-only/full-key, sin EOD ni órdenes."
+)
 IOL_FALLBACK_ORDER = [
     "IOL_LIVE_BOUNDED_RETRY", "IOL_LAST_KNOWN_GOOD",
     "PPI_PRIMARY", "BYMA_PUBLIC_COMPLEMENTARY",
@@ -380,6 +384,137 @@ def _on_alias_readiness_projection(connection, grouped_rows):
     }
 
 
+def _etf_raw_presence_projection(connection, grouped_rows):
+    """Diagnose ETF/ETFS *raw* identity and candidate presence, no admission.
+
+    ``by_family`` intentionally includes only rows actually grouped in
+    candidate_identity_v2. An absent ETF key therefore cannot be flattened to
+    a numeric zero, nor prove the PPI catalogue lacks ETF instruments.
+    Compare catalog and candidate using the exact FIVE stored fields; never
+    alias ETF to ETFS or join by ticker alone to fabricate readiness.
+    """
+    names = ("ETF", "ETFS")
+    candidates = {str(row["family"]): row for row in grouped_rows
+                  if str(row["family"]) in names}
+    receipt = {
+        "schema": "rc6.etf-raw-presence.v1",
+        "candidate_source": "candidate_identity_v2",
+        "catalog_source": "financial_instrument_catalog",
+        "identity_key": "ticker+raw_family+market+currency+settlement",
+        "aliases_inferred": False,
+        "ready_or_admission_modified": False,
+        "report_only": True,
+        "families": {},
+    }
+    exists = connection.execute("""SELECT 1 FROM sqlite_master
+      WHERE type='table' AND name='financial_instrument_catalog'""").fetchone()
+    required = {"ticker", "instrument_type", "market", "currency", "settlement",
+                "status", "capability"}
+    columns = ({row[1] for row in connection.execute(
+        "PRAGMA table_info(financial_instrument_catalog)")} if exists else set())
+    catalog_verified = required <= columns
+    receipt["catalog_schema_verified"] = catalog_verified
+    receipt["catalog_missing_columns"] = sorted(required - columns)
+    catalog = matched_catalog = matched_candidate = {}
+    if catalog_verified:
+        catalog = {row["family"]: row for row in connection.execute("""
+          SELECT upper(instrument_type) family,COUNT(*) total,
+                 SUM(CASE WHEN status='AVAILABLE' AND capability GLOB 'READY_PAPER_*'
+                          THEN 1 ELSE 0 END) annotated_ready
+          FROM financial_instrument_catalog
+          WHERE upper(instrument_type) IN ('ETF','ETFS')
+          GROUP BY upper(instrument_type)""")}
+        matched_catalog = {row["family"]: int(row["matched"]) for row in
+            connection.execute("""SELECT upper(f.instrument_type) family,
+              COUNT(*) matched FROM financial_instrument_catalog f
+              WHERE upper(f.instrument_type) IN ('ETF','ETFS')
+                AND EXISTS(SELECT 1 FROM candidate_identity_v2 c
+                   WHERE c.ticker=f.ticker
+                     AND c.instrument_type=f.instrument_type
+                     AND c.market=f.market AND c.currency=f.currency
+                     AND c.settlement=f.settlement)
+              GROUP BY upper(f.instrument_type)""")}
+        matched_candidate = {row["family"]: int(row["matched"]) for row in
+            connection.execute("""SELECT upper(c.instrument_type) family,
+              COUNT(*) matched FROM candidate_identity_v2 c
+              WHERE upper(c.instrument_type) IN ('ETF','ETFS')
+                AND EXISTS(SELECT 1 FROM financial_instrument_catalog f
+                   WHERE f.ticker=c.ticker
+                     AND f.instrument_type=c.instrument_type
+                     AND f.market=c.market AND f.currency=c.currency
+                     AND f.settlement=c.settlement)
+              GROUP BY upper(c.instrument_type)""")}
+    for name in names:
+        candidate = candidates.get(name)
+        catalogue = catalog.get(name)
+        candidate_total = int(candidate["total"]) if candidate is not None else None
+        ready = int(candidate["ready"] or 0) if candidate is not None else None
+        catalog_total = int(catalogue["total"]) if catalogue is not None else None
+        if not catalog_verified:
+            state = "CATALOG_TABLE_OR_SCHEMA_UNVERIFIED"
+        elif candidate is None and catalogue is None:
+            state = "BOTH_RAW_FAMILY_GROUPS_ABSENT"
+        elif candidate is None:
+            state = "CATALOG_PRESENT_CANDIDATE_GROUP_ABSENT"
+        elif catalogue is None:
+            state = "CANDIDATE_PRESENT_CATALOG_GROUP_ABSENT"
+        elif ready == 0:
+            state = "CANDIDATE_GROUP_PRESENT_ZERO_READY"
+        else:
+            state = "CANDIDATE_GROUP_PRESENT_WITH_READY"
+        receipt["families"][name] = {
+            "presence_state": state,
+            "candidate_group_present": candidate is not None,
+            "candidate_total": candidate_total,
+            "candidate_ready": ready,
+            "catalog_group_present": catalogue is not None if catalog_verified else None,
+            "catalog_total": catalog_total,
+            "catalog_annotated_ready": (int(catalogue["annotated_ready"] or 0)
+                                        if catalogue is not None else None),
+            "exact_matched_catalog_rows": (matched_catalog.get(name, 0)
+                                           if catalogue is not None else None),
+            "exact_matched_candidate_rows": (matched_candidate.get(name, 0)
+                                             if candidate is not None and catalog_verified else None),
+            "catalog_without_exact_candidate": (catalog_total - matched_catalog.get(name, 0)
+                                                if catalog_total is not None else None),
+            "candidate_without_exact_catalog": (candidate_total - matched_candidate.get(name, 0)
+                                                if candidate_total is not None and catalog_verified else None),
+        }
+    return receipt
+
+
+def _verified_equity_t1_readonly_phase(observer, *, now=None):
+    """Only the COM19031 BYMA source-only hour, never a PAPER OPEN phase.
+
+    Fail closed without the segmented calendar from A316. A free-text detail
+    by itself is not sufficient: exact process/session, 17-18 ART, a valid
+    market business day and an authenticated 24h equity session are required.
+    The audit clock must ALSO be inside the window: a fresh 17:59 heartbeat
+    must not certify the obsolete phase after 18:00.
+    Order counters and dashboard simulation remain asserted separately.
+    """
+    if (observer.get("process_state") != "WAITING_MARKET"
+            or observer.get("session_state") != "EQUITY_T1_READONLY"
+            or observer.get("verified_late_readonly_detail") is not True):
+        return False
+    try:
+        from co_market_sessions_hf6 import (byma_paper_instrument_open,
+                                            byma_paper_spot_open)
+        at = _stamp(observer.get("heartbeat_at"))
+        clock = now or datetime.now(timezone.utc)
+        return (byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS", at)
+                and not byma_paper_spot_open(at)
+                and byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS", clock)
+                and not byma_paper_spot_open(clock))
+    except (ImportError, AttributeError, ValueError, TypeError):
+        return False
+
+
+def _verified_late_observer_detail(detail):
+    """Accept precisely the observer's source-only declaration, not a prefix."""
+    return detail == BYMA_EQUITY_T1_READONLY_DETAIL
+
+
 def _database_snapshot():
     path = database_path()
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
@@ -398,10 +533,12 @@ def _database_snapshot():
     ).fetchone() or {})
     # The free-form provider error detail can contain private request context.
     # Persist only its allowlisted provenance classifier in audit artifacts.
-    observer["ppi_auth_provider_failure"] = str(observer.pop("detail", "") or "").startswith((
+    detail = str(observer.pop("detail", "") or "")
+    observer["ppi_auth_provider_failure"] = detail.startswith((
         "Login fallo:", "PPI en espera de reintento;",
         "Login local bloqueado por interlock",
     ))
+    observer["verified_late_readonly_detail"] = _verified_late_observer_detail(detail)
     rows = [dict(row) for row in connection.execute("""
         SELECT upper(instrument_type) family,
                SUM(CASE WHEN can_simulate=1 AND upper(status)='AVAILABLE' THEN 1 ELSE 0 END) ready,
@@ -414,6 +551,7 @@ def _database_snapshot():
     ready = sum(by_family.values())
     canonical_by_family, on_alias_guard = _on_alias_readiness_projection(
         connection, rows)
+    etf_raw_presence = _etf_raw_presence_projection(connection, rows)
     refresh = None
     if connection.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
                            AND name='candidate_refresh_state'""").fetchone():
@@ -457,7 +595,8 @@ def _database_snapshot():
         "readiness": {"source": "candidate_identity_v2", "ready": ready,
                       "by_family": by_family, "rows": rows, "refresh": refresh,
                       "by_family_on_alias_deduplicated": canonical_by_family,
-                      "on_alias_guard": on_alias_guard},
+                      "on_alias_guard": on_alias_guard,
+                      "etf_raw_presence_guard": etf_raw_presence},
         "invalid_candidate_states": invalid,
         "residual_candidate_state_violations": residual_violations,
         "generic_pending_residuals": generic_pending,
@@ -486,7 +625,9 @@ def _assert_snapshot(snapshot, baseline=None, *, deploy_only=False):
         ("WAITING_MARKET", "MARKET_CLOSED"),
         ("READY_PREOPEN", "PREOPEN"),
     }
-    if (process, session) not in valid_phases and not external_ppi_alert:
+    if ((process, session) not in valid_phases
+            and not _verified_equity_t1_readonly_phase(observer)
+            and not external_ppi_alert):
         raise RuntimeError(
             f"OBSERVER_PHASE_UNHEALTHY|process_state={process}|session_state={session}"
         )
@@ -631,6 +772,7 @@ def consistent_snapshot(label, baseline=None, attempts=8, retry_seconds=5,
             "database_by_family": snapshot["database"]["readiness"]["by_family"],
             "database_by_family_on_alias_deduplicated": snapshot["database"]["readiness"]["by_family_on_alias_deduplicated"],
             "database_on_alias_guard": snapshot["database"]["readiness"]["on_alias_guard"],
+            "database_etf_raw_presence_guard": snapshot["database"]["readiness"].get("etf_raw_presence_guard"),
             "dashboard_ready": snapshot["dashboard_truth"]["readiness"].get("ready"),
             "dashboard_total": snapshot["dashboard_truth"]["readiness"].get("total"),
             "dashboard_as_of": snapshot["dashboard_truth"]["readiness"].get("as_of"),

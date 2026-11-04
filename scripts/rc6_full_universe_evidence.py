@@ -8,6 +8,7 @@ Its READY_PAPER* labels do not imply a signal or automatic PAPER admission.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import json
 import os
 from pathlib import Path
@@ -15,8 +16,12 @@ import sqlite3
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from rc6_family_readiness import normalize_family
+from rc6_family_readiness import CANONICAL_PAPER_FAMILIES, normalize_family
 from rc6_dynamic_universe.sources import _canonical_identity
+from rc6_ppi_scanner_provenance import (
+    NATIVE_QUOTE_MAX_AGE_SECONDS, ORIGIN, native_trade_book_ready,
+    primary_records as scanner_primary_records,
+)
 from rc6_shadow_runtime.source_authority import native_time, receipt_time, source_rank
 from rc6_source_consolidation import consolidate, _fold_source
 
@@ -26,6 +31,61 @@ OUT = Path(os.getenv("POROTA_FULL_EVIDENCE_PATH", str(ROOT / "rc6_instrument_evi
 SCHEMA = "rc6-full-universe-instrument-evidence-v1"
 FRESH_SECONDS = int(os.getenv("POROTA_EVIDENCE_MAX_AGE_SECONDS", "3600"))
 PPI_FRESH_SECONDS = int(os.getenv("POROTA_PPI_EVIDENCE_MAX_AGE_SECONDS", "900"))
+
+# Source/contract readiness is NOT the same as an authenticated economic
+# valuation or a PAPER admission.  The public crawler currently publishes
+# BYMA structured rows and reference pages for CNV/A3/ROFEX; none of those
+# reference pages is an executable FCI NAV or futures clearing receipt.
+# Keep the specialized authority requirements visible instead of allowing a
+# fresh PPI last alone to masquerade as a complete financial contract.
+SPECIALIZED_VALUATION_REQUIREMENTS = {
+    "FUTUROS": {
+        "sources": ("PPI", "A3", "A3_CEM"),
+        "fields": ("expiry_day", "contract_multiplier", "margin_per_contract",
+                   "variation_mark_verified", "clearing_event_at_utc"),
+    },
+    "CAUCIONES": {
+        "sources": ("PPI", "BYMA", "A3"),
+        "fields": ("term_days", "maturity_day", "day_count_basis", "principal_unit",
+                   "tna_bid", "depth_cash", "fee_vat"),
+    },
+    "FCI": {
+        "sources": ("PPI", "CAFCI", "CNV"),
+        "fields": ("fund_id", "fund_class_id", "fund_cutoff_at_utc",
+                   "redemption_days", "nav_publication_contract", "nav_asof",
+                   "terminal_redemption_cash_receipt"),
+    },
+}
+
+
+def valuation_boundary(family: str, identity: Any, sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Separate PPI identity from unverified family-specific economic terms.
+
+    Existing PPI/IOL/BYMA observations have no authenticated independent
+    A320 fee, margin, NAV, or terminal cash receipts.  They can establish a
+    source/contract *candidate*, never a specialized economic positive.
+    """
+    ppi = sources["PPI"]
+    ppi_bound = bool(identity and ppi["selection_eligible"]
+                     and ppi["identity_binding"] == "EXACT_FIVE_PART_IDENTITY"
+                     and ppi["identity"] == list(identity)
+                     and ppi["source_authority"] == "PPI_PRIMARY")
+    requirement = SPECIALIZED_VALUATION_REQUIREMENTS.get(family)
+    return {
+        "identity_authority_policy": "PPI_PRIMARY",
+        "identity_authority": "PPI_PRIMARY" if ppi_bound else "NO_VERIFICADO",
+        "identity_status": "PPI_EXACT_FRESH_SOURCE_OBSERVED" if ppi_bound else "NO_VERIFICADO",
+        "catalog_identity": list(identity) if identity else None,
+        "economic_source_role": "SPECIALIZED_VALUATION" if requirement else "PPI_SPOT_SOURCE_VIEW",
+        "economic_source_candidates": list(requirement["sources"]) if requirement else ["PPI"],
+        "required_economic_fields": list(requirement["fields"]) if requirement else [],
+        "specialized_receipt_status": "NO_VERIFICADO" if requirement else "NOT_APPLICABLE",
+        "specialized_receipt_reason": (
+            "A320_AUTHENTICATED_EXACT_CONTRACT_AND_CAUSAL_PIT_NOT_INGESTED"
+            if requirement else "SPOT_PIT_AND_FEES_REQUIRE_SEPARATE_EVIDENCE"),
+        "causal_pit_verified": False,
+        "paper_admission_authorized": False,
+    }
 
 
 def now() -> datetime:
@@ -180,7 +240,51 @@ def _indexed_records(records):
     return result
 
 
+def _overlay_scanner_primary(fallback, scanned):
+    """Combine five-key evidence without losing other primary source coverage.
+
+    A newer observation supersedes an older one *for the same exact key*.
+    Same-receipt conflicting facts are left together for _indexed_records to
+    mark as a review conflict. A stale scanner tombstone cannot resurrect an
+    older PAPER candidate from the SQLite fallback.
+    """
+    if not scanned:
+        return fallback
+    if not fallback:
+        return scanned
+    selected, references = {}, []
+    for index in (fallback, scanned):
+        for key, row in index.items():
+            if not isinstance(row, dict):
+                continue
+            if isinstance(key, tuple):
+                current = selected.get(key)
+                if not current:
+                    selected[key] = [row]
+                    continue
+                old = current[0]
+                old_at = iso(receipt_time(old))
+                new_at = iso(receipt_time(row))
+                if (new_at or "") > (old_at or ""):
+                    selected[key] = [row]
+                elif (new_at or "") == (old_at or ""):
+                    fields = ("last", "bid", "ask", "source_at", "trade_at", "book_at", "state")
+                    if any(old.get(field) != row.get(field) for field in fields):
+                        selected[key].append(row)
+                    elif row.get("provider_origin") == "PPI_READONLY_SDK_CURRENT_AND_BOOK":
+                        selected[key] = [row]
+            elif (isinstance(key, str) and row.get("canonical_identity") is None
+                  and row.get("identity_binding") == "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED"):
+                references.append(row)
+    return _indexed_records([*references, *(row for group in selected.values() for row in group)])
+
+
 def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
+    # This receipt is emitted only after scanner SDK current+book reads. The
+    # source column of market_snapshots is an execution-mode marker, not a PPI
+    # provider label; upgrading it in the reader would break Options safety.
+    scanner_rows, _ = scanner_primary_records(ROOT, current)
+    scanned = _indexed_records(scanner_rows)
     candidates = [os.getenv("POROTA_PRIMARY_LAST_CACHE_PATH", "").strip(), str(ROOT / "primary_last.json"), "/app/data/market/primary_last.json"]
     for name in candidates:
         if not name:
@@ -188,6 +292,12 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
         payload = load_json(Path(name))
         values = payload.get("quotes_by_symbol") or payload.get("last_by_symbol")
         if isinstance(values, dict) and values:
+            # Static identity in the PPI catalog is not a quote transport.
+            # An empty/untrusted source must not mask an actual scanner or
+            # SQLite PPI observation merely by being a non-empty JSON cache.
+            label = str(payload.get("source") or "").upper()
+            if source_rank(label) != 0 or label == "PPI_CATALOG":
+                continue
             records = []
             captured = receipt_time(payload)
             for symbol, value in values.items():
@@ -200,14 +310,14 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
                 if payload.get("market"):
                     row.setdefault("market", payload["market"])
                 records.append(row)
-            return _indexed_records(records)
+            return _overlay_scanner_primary(_indexed_records(records), scanned)
     conn = None
     try:
         conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=15)
         conn.execute("PRAGMA query_only=ON")
         columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(market_snapshots)")}
         if not {"symbol", "last"}.issubset(columns):
-            return {}
+            return scanned
         selected = [name for name in ("id", "source", "symbol", "asset_class", "market", "settlement", "currency",
                                       "bid", "ask", "last", "observed_at", "trade_at", "book_at") if name in columns]
         rows = conn.execute(f"SELECT {', '.join(selected)} FROM market_snapshots ORDER BY {'id' if 'id' in columns else 'rowid'} DESC LIMIT 20000").fetchall()
@@ -215,7 +325,9 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
         records, latest = [], {}
         for raw in rows:
             row = {name: raw[positions[name]] for name in selected if name != "id" and raw[positions[name]] is not None}
-            if row.get("source") and source_rank(row["source"]) != 0:
+            if (row.get("source") and
+                    (source_rank(row["source"]) != 0
+                     or str(row["source"]).strip().upper() == "PPI_CATALOG")):
                 continue
             # Quotes retain their native event and their separate receipt clocks.
             row["source_at"] = row.get("trade_at")
@@ -228,12 +340,107 @@ def primary_rows(current: datetime) -> dict[Any, dict[str, Any]]:
             if key:
                 latest[key] = received
             records.append(row)
-        return _indexed_records(records)
+        return _overlay_scanner_primary(_indexed_records(records), scanned)
     except (sqlite3.Error, OSError):
-        return {}
+        return scanned
     finally:
         if conn is not None:
             conn.close()
+
+
+def _mode_snapshot_matches_scanner(row: dict[str, Any], scanner: dict[str, Any],
+                                   current: datetime) -> bool:
+    """Exact PPI receipt correlation, never a PRODUCTION_PAPER origin upgrade.
+
+    Metadata/source mode, matching prices without clocks, and catalog identity
+    alone do not prove provider provenance. Only a separately verified SDK
+    scanner receipt containing ALL of the same quote facts may bind the mode
+    snapshot for diagnostics. The scanner row itself remains the PPI authority.
+    """
+    if (_exact_key(row) is None or _exact_key(row) != _exact_key(scanner)
+            or scanner.get("provider_origin") != ORIGIN
+            or scanner.get("source") != "PPI" or scanner.get("state") != "READY"
+            or not native_trade_book_ready(scanner, current, require_trade_kind=True)
+            or row.get("last_kind") != "TRADE"):
+        return False
+    for field in ("observed_at", "book_at", "trade_at"):
+        left = row.get("observed_at") if field == "observed_at" else row.get(field)
+        right = scanner.get("received_at") if field == "observed_at" else scanner.get(field)
+        if not iso(left) or iso(left) != iso(right):
+            return False
+    for field in ("last", "bid", "ask", "bid_size", "ask_size"):
+        try:
+            left, right = Decimal(str(row.get(field))), Decimal(str(scanner.get(field)))
+        except (TypeError, InvalidOperation, ValueError):
+            return False
+        if not left.is_finite() or not right.is_finite() or left != right:
+            return False
+    return True
+
+
+def ppi_mode_provenance_diagnostics(current: datetime, *, sample_limit: int = 512) -> dict[str, Any]:
+    """Bounded READ_ONLY evidence for the A385 PPI.present=0 source loss.
+
+    A market_snapshots row contains PRODUCTION_PAPER (an execution mode), not
+    the SDK transport origin. No amount of native-looking timestamps or PPI
+    contract metadata proves that transport. This diagnostic never emits a
+    candidate quote, changes source_rank, or changes PAPER admission.
+    """
+    status = {"state": "NO_VERIFICADO", "reason": "PAPER_MODE_NOT_BROKER_PROVENANCE",
+              "mode_only_sampled": 0, "mode_only_with_native_clocks": 0,
+              "scanner_bound_exact_mode_rows": 0, "unbound_mode_rows": 0,
+              "sample_limit": sample_limit, "sample_truncated_or_unknown": True,
+              "source_state": "NO_VERIFICADO", "snapshot_source_role": "EXECUTION_MODE_ONLY",
+              "scanner_authority": "PPI_READONLY_SDK_CURRENT_AND_BOOK_ONLY",
+              "promotes_paper_readiness": False, "causal_fill_verified": False,
+              "provider_gets_this_diagnostic": 0}
+    if type(sample_limit) is not int or not 1 <= sample_limit <= 512 or not iso(current):
+        return {**status, "state": "BLOQUEADO", "reason": "PPI_MODE_DIAGNOSTIC_INPUT_INVALID"}
+    conn = None
+    try:
+        conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
+        conn.execute("PRAGMA query_only=ON")
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(market_snapshots)")}
+        expected = {"source", "symbol", "asset_class", "market", "currency", "settlement",
+                    "last", "bid", "ask", "bid_size", "ask_size", "trade_at", "book_at",
+                    "observed_at", "last_kind"}
+        if not expected <= columns:
+            return {**status, "reason": "PPI_MODE_SNAPSHOT_SCHEMA_UNAVAILABLE"}
+        selected = tuple(sorted(expected))
+        values = conn.execute(
+            "SELECT " + ",".join(selected) + " FROM market_snapshots "
+            "WHERE source=? ORDER BY id DESC LIMIT ?",
+            ("PRODUCTION_PAPER", sample_limit + 1)).fetchall()
+        rows = [dict(zip(selected, row)) for row in values[:sample_limit]]
+    except (sqlite3.Error, OSError):
+        return {**status, "reason": "PPI_MODE_SNAPSHOT_READ_UNAVAILABLE"}
+    finally:
+        if conn is not None:
+            conn.close()
+    # `primary_records` verifies producer/schema, exact-five-key, native Book
+    # and Trade times, and quote capture. Never turn the scanner diagnostic
+    # itself into a strategy signal; this is a relational consistency check.
+    scanner_rows, receipt = scanner_primary_records(ROOT, current)
+    indexed = {}
+    for row in scanner_rows:
+        if (key := _exact_key(row)) is not None:
+            indexed.setdefault(key, []).append(row)
+    bound = 0
+    for row in rows:
+        key = _exact_key(row)
+        if key and any(_mode_snapshot_matches_scanner(row, candidate, current)
+                       for candidate in indexed.get(key, ())):
+            bound += 1
+    mode_clock_pairs = sum(bool(iso(row.get("trade_at")) and iso(row.get("book_at")))
+                           for row in rows)
+    return {**status, "state": "READ_ONLY_OBSERVED", "mode_only_sampled": len(rows),
+            "mode_only_with_native_clocks": mode_clock_pairs,
+            "scanner_bound_exact_mode_rows": bound,
+            "unbound_mode_rows": len(rows) - bound,
+            "sample_truncated_or_unknown": len(values) > sample_limit,
+            "source_state": "PPI_SCANNER_RECEIPT_BOUND" if bound else "NO_VERIFICADO",
+            "scanner_receipt_state": receipt.get("state"),
+            "scanner_eligible_records": receipt.get("eligible_records", 0)}
 
 
 def iol_rows() -> dict[Any, dict[str, Any]]:
@@ -269,8 +476,10 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
     row = row or {}
     quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
     evidence = {**row, **quote}
-    observed = native_time(evidence)
-    limit = PPI_FRESH_SECONDS if source == "PPI" else FRESH_SECONDS
+    # For PPI, a separate book clock and an actual native trade are required;
+    # source/capture-at alone cannot establish quote selection freshness.
+    observed = evidence.get("trade_at") if source == "PPI" else native_time(evidence)
+    limit = min(PPI_FRESH_SECONDS, NATIVE_QUOTE_MAX_AGE_SECONDS) if source == "PPI" else FRESH_SECONDS
     freshness = age_state(observed, limit, current)
     received = iso(receipt_time(evidence))
     key = _exact_key(evidence)
@@ -281,7 +490,11 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
     source_available = source_state in {"READY", "LIVE_FRESH", "FRESH", "AVAILABLE", "OBSERVE_ONLY"}
     primary_authority = source != "PPI" or source_rank(evidence.get("source")) == 0
     available = bool(received and datetime.fromisoformat(received) <= current and freshness["observed_at"] and datetime.fromisoformat(freshness["observed_at"]) <= datetime.fromisoformat(received))
-    eligible = bool(identity_match and not review and available and source_available and primary_authority and freshness["state"] == "FRESH" and numeric_present(evidence))
+    ppi_native_ready = (source != "PPI" or native_trade_book_ready(
+        evidence, current, receipt=receipt_time(evidence),
+        require_trade_kind=bool(evidence.get("provider_origin") == ORIGIN)))
+    eligible = bool(identity_match and not review and available and source_available and primary_authority
+                    and freshness["state"] == "FRESH" and numeric_present(evidence) and ppi_native_ready)
     return {"present": bool(row), "structured": numeric_present(evidence), "freshness": freshness,
         "capture_observed_at": received, "capture_is_provider_time": False, "identity": list(key) if key else None,
         "identity_binding": "EXACT_FIVE_PART_IDENTITY" if identity_match else "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED",
@@ -293,7 +506,12 @@ def source_view(row: dict[str, Any] | None, source: str, current: datetime, *, e
 
 
 def family_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
+    # Every contract family remains visible even if the catalog has zero rows.
+    # Lack of a single instrument must not make a family disappear, and a bad
+    # sibling must not overwrite verified per-instrument counts.
+    grouped: dict[str, list[dict[str, Any]]] = {
+        name: [] for name in CANONICAL_PAPER_FAMILIES
+    }
     for row in rows:
         grouped.setdefault(row["family"], []).append(row)
     result = []
@@ -304,8 +522,11 @@ def family_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "instrument_count": len(members),
             "paper_shadow_ready": sum(bool(row["paper_contract_ready"]) for row in members),
             "paper_contract_ready": sum(bool(row["paper_contract_ready"]) for row in members),
+            "catalog_contract_candidates": sum(bool(row["catalog_contract_candidate"]) for row in members),
             "paper_auto_enabled": 0,
             "pending": sum(row["status"] == "PENDING_EVIDENCE" for row in members),
+            "pending_specialized_receipt": sum(
+                row["status"] == "PENDING_SPECIALIZED_VALUATION_RECEIPT" for row in members),
             "blocked": sum(row["status"].startswith("BLOCKED") for row in members),
             "ingestion_attempted": sum(bool(row["ingestion"]["any_source_attempted"]) for row in members),
             "ppi_fresh": sum(row["sources"]["PPI"]["freshness"]["state"] == "FRESH" for row in members),
@@ -319,6 +540,9 @@ def build() -> dict[str, Any]:
     current = now()
     catalog = catalog_rows()
     ppi = primary_rows(current)
+    # Sanitized producer receipt diagnostics survive even when the file is
+    # absent. They distinguish source transport from the catalog population.
+    _, ppi_scanner_status = scanner_primary_records(ROOT, current)
     iol = iol_rows()
     byma, byma_meta = byma_rows()
     rotation = load_json(ROOT / "iol_shadow_rotation.json")
@@ -339,11 +563,21 @@ def build() -> dict[str, Any]:
                  if detail["selection_eligible"]]
         attempted = bool(available or any(detail["present"] for detail in sources.values()))
         capability = str(item.get("capability") or "UNKNOWN")
-        contract_ready = capability.startswith("READY_PAPER_") and key is not None
+        contract_candidate = capability.startswith("READY_PAPER_") and key is not None
+        contract_ready = contract_candidate
+        boundary = valuation_boundary(item["family"], key, sources)
         if source_conflict or item.get("review_status"):
             status, contract_ready = "BLOCKED_SOURCE_REVIEW", False
             reason = "SOURCE_OR_CATALOG_CONFLICT_REVIEW_REQUIRED"
-        elif contract_ready and "PPI" in fresh and len(available) >= 2:
+        elif (item["family"] in SPECIALIZED_VALUATION_REQUIREMENTS
+              and contract_ready and "PPI" in fresh):
+            # Missing a specialist receipt must neither grant PAPER nor veto
+            # other independently verified identities or families.  PPI can
+            # authenticate the contract key without proving margin, TNA,
+            # or fund-class NAV economics.
+            status, contract_ready = "PENDING_SPECIALIZED_VALUATION_RECEIPT", False
+            reason = "SPECIALIZED_ECONOMIC_SOURCE_AND_CAUSAL_PIT_NOT_ATTESTED"
+        elif contract_ready and "PPI" in fresh and len(fresh) >= 2:
             status, contract_ready = "READY_PAPER_SHADOW", True
             reason = "CONTRACT_READY_PPI_PRIMARY_PLUS_COMPLEMENTARY_SOURCE"
         elif contract_ready and "PPI" in fresh:
@@ -364,8 +598,10 @@ def build() -> dict[str, Any]:
             "entry_authority": False,
             "settlement": item.get("settlement") or item.get("term") or "",
             "status": status, "paper_contract_ready": contract_ready,
+            "catalog_contract_candidate": contract_candidate,
             "paper_auto_enabled": False,
             "signal_authorized": False,
+            "identity_valuation_boundary": boundary,
             "contract_capability": capability,
             "real_money_authorized": False,
             "sources": sources,
@@ -391,6 +627,8 @@ def build() -> dict[str, Any]:
             "ledger_complete": bool(catalog) and len(catalog) == len(rows),
         },
         "cycle": {
+            "ppi_scanner_primary_receipt": ppi_scanner_status,
+            "ppi_mode_provenance_gap": ppi_mode_provenance_diagnostics(current),
             "iol_progress": iol_progress,
             "iol_rotation": rotation,
             "byma_capture": byma_meta,
@@ -398,11 +636,14 @@ def build() -> dict[str, Any]:
         "counts": {
             "paper_shadow_ready": sum(row["paper_contract_ready"] for row in rows),
             "paper_contract_ready": sum(row["paper_contract_ready"] for row in rows),
+            "catalog_contract_candidates": sum(row["catalog_contract_candidate"] for row in rows),
             "paper_auto_enabled": 0,
             "ready_paper_shadow": sum(row["status"] == "READY_PAPER_SHADOW" for row in rows),
             "ready_shadow_partial": sum(row["status"] == "READY_SHADOW_PARTIAL" for row in rows),
             "ready_paper_partial_source": sum(row["status"] == "READY_PAPER_PARTIAL_SOURCE" for row in rows),
             "pending_evidence": sum(row["status"] == "PENDING_EVIDENCE" for row in rows),
+            "pending_specialized_receipt": sum(
+                row["status"] == "PENDING_SPECIALIZED_VALUATION_RECEIPT" for row in rows),
             "blocked": sum(row["status"].startswith("BLOCKED") for row in rows),
             "ingestion_attempted": sum(row["ingestion"]["any_source_attempted"] for row in rows),
             "ppi_fresh": sum(row["sources"]["PPI"]["freshness"]["state"] == "FRESH" for row in rows),

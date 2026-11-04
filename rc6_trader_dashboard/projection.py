@@ -928,11 +928,18 @@ class Projection:
             try:
                 import ak_byma_calendar as cal
                 from co_market_sessions_hf6 import session_for
-                session=session_for(row.get('market'),row.get('instrument_type') or row.get('family'))
+                # Distinguish equity T+1 from CI/fixed income and pre-COM19031
+                # dates before labeling historical coverage as stale/future.
+                session=session_for(row.get('market'),
+                                    row.get('instrument_type') or row.get('family'),
+                                    row.get('settlement'), as_of=self.now)
                 local=self.now.astimezone(TZ)
                 if row.get('market')=='BYMA' and session and local.year in cal.ANIOS_AUDITADOS:
                     day=local.date()
-                    if local.time().replace(tzinfo=None)<session.regular_close: day-=timedelta(days=1)
+                    close_with_publication_floor = (session.regular_close.hour * 60 +
+                                                    session.regular_close.minute + 15)
+                    if local.hour*60+local.minute < close_with_publication_floor:
+                        day-=timedelta(days=1)
                     for _ in range(14):
                         if day.year not in cal.ANIOS_AUDITADOS: break
                         if cal.es_dia_habil_operativo(day): expected=day.isoformat();break

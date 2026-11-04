@@ -14,6 +14,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import v17_ledger_preflight as probe
+from scripts import build_v17_ledger_preflight as builder
+from ledger_nonroot_fixture import isolated_source, real_direct_and_copy
 from test_ledger_preflight_v17 import position, host
 from test_production_paper_v1634 import partial_spot
 
@@ -69,16 +71,23 @@ def test_copy_audits_current_ledger_and_keeps_original_bytes_permissions(source,
     assert not Path(str(path)+'-wal').exists() and not Path(str(path)+'-shm').exists()
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason='Reproducción real con usuario no-root del CI, sin cambiar identidad')
 def test_wal_copy_succeeds_where_readonly_original_cannot_open(source):
-    path, scratch = source
+    path, _ = source
     before = path.read_bytes()
-    direct = probe.collect(path)
-    assert direct['reason'] == 'SQLITE_ERROR' and direct['stage'] == 'READ_SCHEMA'
-    assert direct['sqlite_error']['primary_code'] in {8,14}
-    result = probe.collect_copy(path, scratch)
-    assert result['status'] == 'OBSERVED_NO_DETECTED_INCONSISTENCIES'
-    assert result['temporary_copy_removed'] and path.read_bytes() == before
+    with isolated_source(path, builder) as (database, scratch, archive, cloned):
+        assert cloned == before
+        direct, result = real_direct_and_copy(archive, database, scratch)
+        assert direct['reason'] == 'SQLITE_ERROR' and direct['stage'] == 'READ_SCHEMA'
+        assert direct['sqlite_error']['primary_code'] in {8,14}
+        assert result['status'] == 'OBSERVED_NO_DETECTED_INCONSISTENCIES'
+        assert result['temporary_copy_removed']
+        assert database.read_bytes() == before
+        assert database.stat().st_mode & 0o777 == 0o444
+        assert database.parent.stat().st_mode & 0o777 == 0o555
+        assert list(scratch.iterdir()) == []
+        assert not any(Path(str(database) + suffix).exists()
+                       for suffix in ('-wal', '-shm', '-journal'))
+    assert path.read_bytes() == before
 
 
 @pytest.mark.parametrize('suffix', ['-wal','-shm','-journal'])

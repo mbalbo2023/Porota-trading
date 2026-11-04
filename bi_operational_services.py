@@ -155,22 +155,24 @@ def _postclose_daily_due(store, key):
         # SQLite capacity is recoverable after cleanup: retain the bounded
         # retry contract, including after a transient outage during postclose.
         return _job_due(store, key, REPORT_SQLITE_RETRY_SECONDS)
+    if row and row[0] == "AMARILLO" and row[1] == "PROVISIONAL_POSTCLOSE_SOURCE_PENDING":
+        return _job_due(store, key, REPORT_SQLITE_RETRY_SECONDS)
     if row and row[2]:
         try:
             # A report or summary (including a quarantined invalid PAPER
             # ledger) needs at most one routine POSTCLOSE attempt per local
             # trading day. A morning/noon report is not today's closing
             # report and MUST be rebuilt once the wheel actually closes.
-            # COM18782 closes the regular PPT at 17:00 through 01-Nov-2026;
-            # COM19024 extends it to 18:00 beginning 02-Nov-2026.
-            # Forced operator rechecks remain available.
+            # COM19031 effective 02-Nov: T+1 equity 18:00, closing-price
+            # segment 18:05-18:15; early attempts do not complete EOD.
             attempted = datetime.fromisoformat(row[2])
             if attempted.tzinfo is None:
                 raise ValueError("POSTCLOSE_REPORT_CLOCK_NAIVE")
             current = datetime.now(TZ)
             previous = attempted.astimezone(TZ)
-            cutoff_hour = 18 if current.date() >= date(2026, 11, 2) else 17
-            if previous.date() == current.date() and previous.hour >= cutoff_hour:
+            from co_market_sessions_hf6 import byma_eod_publication_floor
+            if (previous.date() == current.date()
+                    and previous >= byma_eod_publication_floor(current)):
                 return False
         except (TypeError, ValueError):
             pass
@@ -179,6 +181,51 @@ def _postclose_daily_due(store, key):
 
 def _reports_due(store):
     return _postclose_daily_due(store, "REPORTS")
+
+
+def _postclose_report_admissible(phase, at, *, business_day):
+    from co_market_sessions_hf6 import byma_eod_publication_floor
+    if phase != "CLOSED" or not business_day or at.tzinfo is None or at.utcoffset() is None:
+        return False
+    return at.astimezone(TZ) >= byma_eod_publication_floor(at)
+
+
+def _postclose_history_source_ready(store, at):
+    """Positive current-day, postclose PPI history receipt; no wall clock inference.
+
+    This does not authenticate an FCI NAV or guarantee every ticker's EOD.
+    Report remains provisional unless the existing full-key history pipeline
+    published a verified batch after the last BYMA close. In particular,
+    ``session=`` is only the requested range end and is never authority:
+    source_session_verified is emitted only after checking canonical PPI RAW
+    full-key rows with a first-known clock after the official EOD floor.
+    """
+    from co_market_sessions_hf6 import byma_eod_publication_floor
+    try:
+        with store.connect() as conn:
+            row = conn.execute("""SELECT status,last_success_at,detail
+              FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        if not row or row[0] != "VERDE" or not row[1] or not row[2]:
+            return False
+        seen = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
+        if seen.tzinfo is None or seen.utcoffset() is None:
+            return False
+        if at.tzinfo is None or at.utcoffset() is None:
+            return False
+        local = at.astimezone(TZ)
+        prefix = "source_session_verified=" + local.date().isoformat() + ":"
+        attested = [part.strip()[len(prefix):]
+                    for part in str(row[2]).split(";")
+                    if part.strip().startswith(prefix)]
+        if len(attested) != 1:
+            return False
+        verified, required = (int(item) for item in attested[0].split("/"))
+        return (seen.astimezone(TZ).date() == local.date()
+                and seen >= byma_eod_publication_floor(local)
+                and seen <= at
+                and verified > 0 and verified == required)
+    except (ValueError, TypeError, sqlite3.Error):
+        return False
 
 
 def collect_sre(store):
@@ -785,7 +832,6 @@ def service_tick(store, phase, force=False):
         _job(store, "NEWS_REFRESH", "NO_APLICA",
              "Ingesta deshabilitada por HF5; evidencia histórica preservada", success=False)
     now = datetime.now(TZ)
-    hour = now.hour
     # Routine close summaries only belong to an actual BYMA business day.
     # Critical infrastructure alerts use their own paths and are never suppressed here.
     try:
@@ -793,7 +839,12 @@ def service_tick(store, phase, force=False):
         business_day = bool(byma_calendar.es_dia_habil_operativo(now.date()))
     except Exception:
         business_day = False  # fail closed for routine weekend/holiday messaging
-    if phase == "CLOSED" and business_day and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
+    if _postclose_report_admissible(phase, now, business_day=business_day):
+        if not _postclose_history_source_ready(store, now):
+            if _job_due(store, "REPORTS", REPORT_SQLITE_RETRY_SECONDS):
+                _job(store, "REPORTS", "AMARILLO",
+                     "PROVISIONAL_POSTCLOSE_SOURCE_PENDING", success=False)
+            return "PROVISIONAL_POSTCLOSE_SOURCE_PENDING"
         # These jobs are ancillary to PAPER admission. SQLITE_FULL caused by a
         # report query must not restart the scanner on every tick. Persist a
         # separate RED receipt and throttle the retry across process restarts;

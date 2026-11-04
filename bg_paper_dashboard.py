@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import html
+import fcntl
 from collections import Counter
 import json
 import os
 import re
 import sqlite3
+import stat
 import statistics
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -24,7 +27,8 @@ from cb_caucion_audit import allocation_history
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
 import rc6_counterfactual_learning as counterfactual_learning
-from rc6_action4_audit import published_audit_is_safe, validate_weekly_payload
+from rc6_action4_audit import (build_weekly_source, published_audit_is_safe,
+                               validate_weekly_payload, weekly_publication_decision)
 import rc6_decision_evidence_view as decision_evidence_view
 import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
@@ -2103,12 +2107,22 @@ def _action4_contains_sensitive_key(value) -> bool:
 def _action4_report_card() -> str:
     payload = _read_action4()
     if not published_audit_is_safe(payload):
+        if isinstance(payload,dict) and payload.get("status")=="SUCCESS" and payload.get("source")=="/api/observer/state":
+            return ("<div class='paper-card'><h2>Auditoría Action 4</h2>"
+                    "<p class='paper-muted'>NO_VERIFICADO: recibo semanal legado con fuente incompleta; "
+                    "conservado sólo para trazabilidad.</p></div>")
         return ("<div class='paper-card'><h2>Auditoría Action 4</h2>"
                 "<p class='paper-muted'>NO_VERIFICADO: auditoría PAPER ausente o sin certificado de seguridad.</p></div>")
     window = payload.get("window") or {}
     origin = payload.get("origin") or {}
     separation = payload.get("separation") or {}
     daily = payload.get("dashboard_daily_report") or {}
+    source_scope = payload.get("scope_evidence") or {}
+    actions = payload.get("decisions_by_action") or {}
+    pnl = payload.get("pnl_by_currency") or {}
+    if not isinstance(pnl,dict): pnl = {}
+    pnl_html = " · ".join(f"{_e(currency)}: {_e(entry.get('total') if entry.get('state')=='COMPLETE' else 'NO_VERIFICADO')}"
+                          for currency,entry in sorted(pnl.items()) if isinstance(entry,dict)) or "sin cierres en posiciones PAPER"
     lessons = daily.get("lessons") if isinstance(daily.get("lessons"), list) else []
     lessons_html = "".join(f"<li>{_e(item)}</li>" for item in lessons) or "<li>Sin lecciones publicadas.</li>"
     return (
@@ -2120,7 +2134,9 @@ def _action4_report_card() -> str:
         f"<p><b>Cerradas:</b> {_e(separation.get('executed_closed'))} · "
         f"<b>Abiertas simuladas:</b> {_e(separation.get('opened_simulated'))} · "
         f"<b>HOLD:</b> {_e(separation.get('hold'))} · "
-        f"<b>BUY:</b> {_e(separation.get('buy'))}</p>"
+        f"<b>BUY:</b> {_e(actions.get('BUY',separation.get('buy',0)))} · "
+        f"<b>Bloqueadas/rechazadas:</b> {_e(separation.get('rejected_blocked',0))}</p>"
+        f"<p><b>PnL por moneda:</b> {pnl_html}</p>"
         f"<p><b>Reporte diario asociado:</b> {_e(daily.get('periodo') or 'no disponible')} · "
         f"gates: {_e(daily.get('gate_final_counts') or 'no disponible')} · "
         f"eventos: {_e(daily.get('event_counts') or 'no disponible')}</p>"
@@ -2128,7 +2144,11 @@ def _action4_report_card() -> str:
         f"{_e((daily.get('scope_evidence') or {}).get('positions') or 'sin evidencia de alcance')}</p>"
         f"<p><b>Lecciones verificables:</b></p><ul>{lessons_html}</ul>"
         f"<p class='paper-muted'>Origen: run {_e(origin.get('run_number') or origin.get('run_id'))} · "
-        f"commit {_e(origin.get('commit'))}</p>"
+        f"workflow {_e(origin.get('workflow_commit') or origin.get('commit'))} · "
+        f"imagen {_e(origin.get('image_label_commit') or 'NO_VERIFICADO')}</p>"
+        f"<p class='paper-muted'>Alcance semanal: {_e(source_scope.get('positions') or 'NO_VERIFICADO')} · "
+        f"decisiones {_e(source_scope.get('decisions') or 'NO_VERIFICADO')} · "
+        f"otras familias {_e(source_scope.get('specialized_family_ledgers') or 'NO_VERIFICADO')}</p>"
         "<div class='report-card-actions'>"
         "<a class='paper-action' href='/api/reports/action4'>Descargar auditoría JSON</a>"
         "</div></article>"
@@ -3381,6 +3401,19 @@ def install(app,check_auth):
         auth(request,token,authorization)
         data = allocation_history(DB_PATH,limit=limit,offset=offset,require_workspace=True)
         return JSONResponse(data,status_code=503 if data['state']=='READ_ERROR' else 200)
+    @app.get("/api/reports/action4/source")
+    def action4_weekly_source(request:Request,token:str=Query(default=""),
+                              authorization:str|None=Header(default=None)):
+        """Exact bounded PAPER source; the GitHub consumer never opens SQLite."""
+        auth(request,token,authorization)
+        try:
+            source=build_weekly_source(checked_path(DB_PATH))
+        except ValueError as exc:
+            raise HTTPException(409,str(exc)) from exc
+        except (OSError,sqlite3.Error) as exc:
+            raise HTTPException(503,"ACTION4_WEEKLY_SOURCE_UNAVAILABLE") from exc
+        return JSONResponse(source,status_code=200 if source["status"]=="COMPLETE" else 206)
+
     @app.post("/api/reports/action4")
     async def action4_publish(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
@@ -3406,9 +3439,39 @@ def install(app,check_auth):
             raise HTTPException(400,"La auditoría contiene una clave sensible")
         path=_action4_path()
         path.parent.mkdir(parents=True,exist_ok=True)
-        temporary=path.with_name(path.name+".tmp")
-        temporary.write_text(json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-        os.replace(temporary,path)
+        lock_path=path.with_name(path.name+".lock")
+        try:
+            fd=os.open(lock_path,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+            try:
+                st=os.fstat(fd)
+                if not stat.S_ISREG(st.st_mode) or st.st_nlink!=1:
+                    raise HTTPException(409,"ACTION4_WEEKLY_LOCK_UNTRUSTED")
+                try:
+                    fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise HTTPException(409,"ACTION4_WEEKLY_PUBLISH_BUSY") from None
+                decision=weekly_publication_decision(_read_action4(),payload)
+                if decision=="ALREADY_STORED":
+                    return JSONResponse({"status":decision,"scope":"RC6","filename":path.name})
+                if decision!="STORE":
+                    raise HTTPException(409,"ACTION4_WEEKLY_"+decision)
+                temporary=None
+                try:
+                    with NamedTemporaryFile("w",encoding="utf-8",dir=path.parent,
+                                            prefix=".action4-weekly-",delete=False) as stream:
+                        temporary=Path(stream.name)
+                        json.dump(payload,stream,ensure_ascii=False,sort_keys=True,indent=2)
+                        stream.write("\n")
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temporary,path)
+                finally:
+                    if temporary is not None and temporary.exists():
+                        temporary.unlink()
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            raise HTTPException(503,"ACTION4_WEEKLY_PUBLISH_UNAVAILABLE") from exc
         return JSONResponse({"status":"STORED","scope":"RC6","filename":path.name})
 
     @app.get("/api/reports/action4")

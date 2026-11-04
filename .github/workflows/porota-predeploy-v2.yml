@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - deploy/rc6-pr69-isolated-20260915
+      - candidate/rc6-a279-a280-20261101
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -14,17 +15,164 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  candidate-focused-offhost:
+    name: Candidate sub-PR focused tests (offhost)
+    # A sub-PR may be Draft or Ready; it never builds an artifact or contacts
+    # the runtime. The artifact-gate below is product-base-only.
+    if: ${{ github.event.pull_request.base.ref == 'candidate/rc6-a279-a280-20261101' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pin candidate sub-PR and derive test files from changed paths
+        shell: bash
+        env:
+          RC6_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RC6_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_HEAD_SHA"
+          git cat-file -e "$RC6_BASE_SHA^{commit}"
+          git diff --name-only -z "$RC6_BASE_SHA" "$RC6_HEAD_SHA" > "${RUNNER_TEMP}/rc6-candidate-changed.bin"
+          python - <<'PY'
+          import os
+          from pathlib import Path, PurePosixPath
+          changed = [raw.decode('utf-8') for raw in
+                     (Path(os.environ['RUNNER_TEMP']) / 'rc6-candidate-changed.bin').read_bytes().split(b'\0')
+                     if raw]
+          assert 0 < len(changed) <= 120, 'RC6_CANDIDATE_DIFF_SIZE_INVALID'
+          assert all('\n' not in name and '\r' not in name and
+                     '..' not in PurePosixPath(name).parts for name in changed)
+          selected = sorted(set(
+              name for name in changed
+              if name.startswith('tests/test_') and name.endswith('.py')
+              and len(PurePosixPath(name).parts) == 2 and Path(name).is_file()
+          ))
+          assert selected, 'RC6_CANDIDATE_TEST_TARGET_MISSING'
+          (Path(os.environ['RUNNER_TEMP']) / 'rc6-candidate-tests.txt').write_text(
+              '\n'.join(selected) + '\n', encoding='utf-8')
+          print(f'RC6_CANDIDATE_SCOPE=GREEN|changed={len(changed)}|selected={len(selected)}')
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run all changed test modules in exact candidate PR
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(id -u)" -ne 0
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          mapfile -t focused_tests < "${RUNNER_TEMP}/rc6-candidate-tests.txt"
+          test "${#focused_tests[@]}" -gt 0
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -o addopts='' \
+            "${focused_tests[@]}" --junitxml="${RUNNER_TEMP}/rc6-candidate-focused.xml"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          root = ET.parse(Path(os.environ['RUNNER_TEMP']) / 'rc6-candidate-focused.xml').getroot()
+          suites = [root] if root.tag == 'testsuite' else root.findall('testsuite')
+          assert suites, 'RC6_CANDIDATE_JUNIT_NO_SUITE'
+          cases = [case for suite in suites for case in suite.findall('testcase')]
+          assert cases, 'RC6_CANDIDATE_JUNIT_NO_CASE'
+          assert all(int(suite.get(k, -1)) == 0 for suite in suites
+                     for k in ("failures", "errors", "skipped")), 'RC6_CANDIDATE_JUNIT_RED'
+          assert not any(case.find(k) is not None for case in cases
+                         for k in ('failure', 'error', 'skipped')), 'RC6_CANDIDATE_CASE_RED'
+          print(f'RC6_CANDIDATE_FOCUSED_TESTS=GREEN|cases={len(cases)}|'
+                'failures=0|errors=0|skipped=0|host_mutations=0')
+          PY
+
+  draft-ledger-permissions:
+    name: Draft ledger permission regression (offhost)
+    # Only Draft PRs targeting the exact product branch need this A309 proof.
+    # Candidate sub-PRs based on pre-A309 c76 must not see reverse-diff ledger
+    # paths as in-scope or rerun a fixture absent from their source HEAD.
+    if: ${{ github.event.pull_request.draft && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restrict focused run to changed ledger permission paths
+        id: scope
+        shell: bash
+        env:
+          RC6_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RC6_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_HEAD_SHA"
+          git cat-file -e "$RC6_BASE_SHA^{commit}"
+          git diff --name-only "$RC6_BASE_SHA" "$RC6_HEAD_SHA" > /tmp/rc6-ledger-permission-paths.txt
+          if grep -Eq '^tests/(test_ledger_(preflight_errors|copy_preflight|preflight_copy)_v17|ledger_nonroot_fixture)\.py$' \
+               /tmp/rc6-ledger-permission-paths.txt; then
+            echo 'run_tests=true' >> "$GITHUB_OUTPUT"
+            echo 'RC6_DRAFT_LEDGER_PERMISSION_SCOPE=IN_SCOPE'
+          else
+            echo 'run_tests=false' >> "$GITHUB_OUTPUT"
+            echo 'RC6_DRAFT_LEDGER_PERMISSION_SCOPE=NOT_APPLICABLE'
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.scope.outputs.run_tests == 'true'
+        with:
+          python-version: '3.12'
+      - name: Four real kernel permission cases and existing ledger negatives
+        if: steps.scope.outputs.run_tests == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(id -u)" -ne 0
+          python -m pip install --disable-pip-version-check 'pytest==9.2.0' 'requests==2.34.2'
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -o addopts='' \
+            tests/test_ledger_preflight_errors_v17.py \
+            tests/test_ledger_copy_preflight_v17.py \
+            tests/test_ledger_preflight_copy_v17.py \
+            --junitxml=/tmp/rc6-draft-ledger-permissions.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('/tmp/rc6-draft-ledger-permissions.xml').getroot()
+          suite = root if root.tag == 'testsuite' else root.find('testsuite')
+          assert suite is not None
+          assert int(suite.get('tests', 0)) >= 5
+          assert all(int(suite.get(key, -1)) == 0 for key in
+                     ('failures', 'errors', 'skipped'))
+          names = [test.get('name') for test in suite.findall('testcase')]
+          required = {
+              'test_actual_nonprivileged_sqlite_on_readonly_fixture[DELETE]',
+              'test_actual_nonprivileged_sqlite_on_readonly_fixture[WAL]',
+              'test_direct_wal_blocked_but_authorized_copy_succeeds_nonroot',
+              'test_wal_copy_succeeds_where_readonly_original_cannot_open',
+              'test_permission_fixture_rejects_accidentally_writable_source',
+          }
+          assert required <= set(names) and len(names) == len(set(names))
+          print(f'RC6_LEDGER_PERMISSION_REGRESSION=GREEN|tests={len(names)}|'
+                'required=5|skipped=0|host_mutations=0')
+          PY
+
   artifact-gate:
     name: Exact artifact predeploy gate
     # Draft PRs cannot be promoted. Certify their final SHA once they become
     # ready_for_review instead of spending a full native cycle while drafting.
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
     runs-on: ubuntu-24.04
     # Existing35min gates + two12*120+60s physical stages + cleanup5min.
     timeout-minutes: 90
     env:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
       IMAGE: porota-predeploy-v2:${{ github.event.pull_request.head.sha }}
+    outputs:
+      candidate_sha: ${{ steps.rc6_artifact_identity.outputs.candidate_sha }}
+      artifact_name: ${{ steps.rc6_artifact_identity.outputs.artifact_name }}
+      artifact_id: ${{ steps.rc6_predeploy_upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.rc6_predeploy_upload.outputs.artifact-digest }}
 
     steps:
       - name: Checkout exact candidate
@@ -661,7 +809,17 @@ jobs:
           print('POROTA_REQUIRED_EVIDENCE=GREEN')
           PY
 
+      - name: Bind frozen artifact to exact candidate SHA
+        id: rc6_artifact_identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          printf 'candidate_sha=%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=porota-predeploy-v2-%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Upload predeploy evidence
+        id: rc6_predeploy_upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -751,3 +909,51 @@ jobs:
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
           rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
+
+  release-evidence-required:
+    name: RC6 required release evidence (offhost)
+    # GitHub treats SKIPPED jobs as successful required checks. This product
+    # check MUST run even if artifact-gate was skipped, failed or cancelled.
+    # Candidate sub-PRs have a separate, exclusively OFFHOST focused job.
+    needs: artifact-gate
+    if: ${{ always() && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout untrusted PR head for exact SHA inspection only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .rc6-release-head-inspect
+          persist-credentials: false
+
+      - name: Checkout immutable reviewed release evidence guard
+        # Bootstrap pin: neither old product nor main contains this A651
+        # validator yet. Never execute a script from the untrusted PR HEAD.
+        uses: actions/checkout@v4
+        with:
+          ref: 7c1c60a7e050f2dc0bfa215f38e6e98dafac556e
+          path: .rc6-release-guard-trusted
+          persist-credentials: false
+
+      - name: Reject skipped or unbound frozen artifact evidence
+        shell: bash
+        env:
+          RC6_RELEASE_REPO: ${{ github.repository }}
+          RC6_RELEASE_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          RC6_RELEASE_PR_DRAFT: ${{ github.event.pull_request.draft }}
+          RC6_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RC6_RELEASE_GATE_RESULT: ${{ needs.artifact-gate.result }}
+          RC6_RELEASE_ARTIFACT_SHA: ${{ needs.artifact-gate.outputs.candidate_sha }}
+          RC6_RELEASE_ARTIFACT_NAME: ${{ needs.artifact-gate.outputs.artifact_name }}
+          RC6_RELEASE_ARTIFACT_ID: ${{ needs.artifact-gate.outputs.artifact_id }}
+          RC6_RELEASE_ARTIFACT_DIGEST: ${{ needs.artifact-gate.outputs.artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = \
+            "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e"
+          export RC6_RELEASE_CHECKOUT_SHA
+          RC6_RELEASE_CHECKOUT_SHA="$(git -C .rc6-release-head-inspect rev-parse HEAD)"
+          python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py

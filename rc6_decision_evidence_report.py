@@ -16,6 +16,9 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 from rc6_shadow_profiles import evaluate_profiles
+from rc6_postclose_source_contract import (ART, PENDING as EOD_PENDING,
+                                          postclose_eod_receipt,
+                                          verified_current_source)
 
 DEFAULT_DB = os.getenv("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
 DEFAULT_ROOT = Path(os.getenv("RC6_DECISION_EVIDENCE_ROOT", "data/paper_v17/reports"))
@@ -23,6 +26,7 @@ OUTPUT_NAME = "decision_evidence_latest.json"
 COUNTERFACTUAL_NAME = "decision_evidence_counterfactual_latest.json"
 MAX_ROWS = 500
 COUNTERFACTUAL_MAX_BYTES = 1024 * 1024
+POSTCLOSE_SNAPSHOT = Path(os.getenv("RC6_SNAPSHOT_OUTPUT", "data/paper_v17/snapshots/latest.json"))
 
 
 def output_path(root: Path | str | None = None) -> Path:
@@ -149,6 +153,8 @@ def write_counterfactual(payload: dict[str, Any], *, root: Path | str | None = N
     compact = {"schema_version": 1, "compact_projection": True,
                "generated_at": payload.get("generated_at"),
                "source": "decision_evidence_snapshots/read-only",
+               "postclose_report_status": payload.get("postclose_report_status", "NOT_APPLICABLE"),
+               "postclose_eod_source": payload.get("postclose_eod_source", {"state": "NOT_APPLICABLE"}),
                "decisions": decisions, "read_only": True, "real_orders_authorized": False}
     raw = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
     while len(raw) > COUNTERFACTUAL_MAX_BYTES and decisions:
@@ -167,7 +173,34 @@ def write_counterfactual(payload: dict[str, Any], *, root: Path | str | None = N
 
 def publish(**kwargs) -> dict[str, Any]:
     root = kwargs.pop("root", None)
+    postclose = bool(kwargs.pop("postclose", False))
+    source_at = kwargs.pop("source_at", None)
+    snapshot_path = Path(kwargs.pop("snapshot_path", POSTCLOSE_SNAPSHOT))
     payload = build(**kwargs)
+    if postclose:
+        at = source_at or datetime.now(timezone.utc)
+        source = postclose_eod_receipt(at, db_path=kwargs.get("db_path"))
+        # This third report must agree with the snapshot generated earlier in
+        # the same service transaction. A late source arriving between steps
+        # cannot retroactively make an earlier provisional PAPER snapshot final.
+        snapshot_ready = False
+        try:
+            if snapshot_path.is_symlink() or not snapshot_path.is_file():
+                raise ValueError("POSTCLOSE_SNAPSHOT_UNVERIFIED")
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            seen = datetime.fromisoformat(str(snapshot.get("generated_at")).replace("Z", "+00:00"))
+            snapshot_ready = (snapshot.get("phase") == "postclose"
+                and snapshot.get("status") == "VERIFIED"
+                and isinstance(snapshot.get("postclose_eod_source"),dict)
+                and seen.tzinfo is not None and seen.utcoffset() is not None
+                and seen.astimezone(ART).date() == at.astimezone(ART).date()
+                and seen <= at
+                and verified_current_source(snapshot["postclose_eod_source"], seen))
+        except (OSError, ValueError, TypeError, AttributeError):
+            snapshot_ready = False
+        payload["postclose_eod_source"] = source
+        payload["postclose_report_status"] = ("VERIFIED" if snapshot_ready
+            and verified_current_source(source, at) else EOD_PENDING)
     write(payload, root=root)
     write_counterfactual(payload, root=root)
     return payload
@@ -175,8 +208,9 @@ def publish(**kwargs) -> dict[str, Any]:
 
 if __name__ == "__main__":
     try:
-        result = publish()
-        print(json.dumps({"status": "OK", "decisions": len(result["decisions"]), "read_only": True}, sort_keys=True))
+        result = publish(postclose=True)
+        print(json.dumps({"status": result.get("postclose_report_status", "OK"),
+                          "decisions": len(result["decisions"]), "read_only": True}, sort_keys=True))
     except Exception as exc:
         print(json.dumps({"status": "ERROR", "error": type(exc).__name__, "read_only": True}, sort_keys=True))
         raise

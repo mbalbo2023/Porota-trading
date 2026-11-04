@@ -2,6 +2,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 import co_market_sessions_hf6 as sessions
 import rc4_contract_schedule as ce_schedule
 from bq_exit_policy import PaperSessionPolicy
@@ -13,16 +15,21 @@ def at(value):
     return datetime.fromisoformat(value).astimezone(TZ)
 
 
-def test_byma_rc5_source_and_scope_are_explicit():
+def test_byma_com19031_source_and_scope_are_explicit():
     status = sessions.byma_schedule_status()
-    assert status["communication"] == "19024"
-    assert status["source_date"] == "2026-09-22"
+    assert status["communication"] == "19031"
+    assert status["source_date"] == "2026-10-28"
+    assert status["effective_date"] == "2026-11-02"
+    assert status["official_pdf_sha256"] == "fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0"
     assert status["paper_spot_regular_open"] == "10:30"
     assert status["paper_spot_regular_close"] == "17:00"
+    assert status["equity_t1_regular_close"] == "18:00"
+    assert status["caucion_regular_close"] == "17:00"
+    assert status["option_regular_close"] == "18:00"
     assert status["interval"] == "[10:30,17:00)"
     assert status["extended_sessions_enabled"] is False
     assert status["unverified_special_sessions"] == "FAIL_CLOSED"
-    assert status["public_attachment_status"].startswith("MISLINKED_")
+    assert status["public_attachment_status"].startswith("OFFICIAL_COM19031_")
 
 
 def test_byma_regular_boundaries_are_half_open_and_business_day_only():
@@ -39,6 +46,43 @@ def test_unknown_byma_family_does_not_inherit_spot_clock():
     assert sessions.session_for("BYMA", "OPCIONES") is None
     assert sessions.session_for("BYMA", "FUTUROS") is None
     assert sessions.session_for("BYMA", "CAUCIONES") is None
+
+
+def test_com19031_exact_t1_equity_only_extends_after_effective_date():
+    before = at("2026-10-30T17:30:00-03:00")
+    later = at("2026-11-02T17:30:00-03:00")
+    assert not sessions.byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS", before)
+    assert sessions.byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS", later)
+    assert sessions.byma_paper_instrument_open("BYMA", "CEDEARS", "T1", later)
+    assert sessions.byma_paper_instrument_open("BYMA", "ETFS", "24HS", later)
+    for settlement in ("INMEDIATA", "T0", "CI", "A-48HS", "", "UNKNOWN"):
+        assert not sessions.byma_paper_instrument_open("BYMA", "ACCIONES", settlement, later)
+    for family in ("BONOS", "LETRAS", "OBLIGACIONES", "FUTUROS"):
+        assert not sessions.byma_paper_instrument_open("BYMA", family, "A-24HS", later)
+    assert not sessions.byma_paper_instrument_open("A3", "ACCIONES", "A-24HS", later)
+    assert not sessions.byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS",
+        at("2026-11-02T18:00:00-03:00"))
+    assert not sessions.byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS",
+        at("2026-11-07T17:30:00-03:00"))
+    assert not sessions.byma_paper_instrument_open("BYMA", "ACCIONES", "A-24HS",
+        datetime(2026, 11, 2, 17, 30))
+
+
+def test_byma_verified_segments_are_informative_not_entry_authority():
+    for segment, hour in (("CAUCIONES",17), ("OPCIONES_PLAZOS",18),
+        ("FUTUROS_INDICE_RENTA_VARIABLE",18), ("FUTUROS_TITULOS_PUBLICOS",17),
+        ("FUTUROS_FX",15)):
+        assert sessions.verified_byma_segment_session(segment).regular_close.hour == hour
+    assert sessions.verified_byma_segment_session("MISSING") is None
+    assert sessions.session_for("BYMA", "OPCIONES") is None
+    assert sessions.session_for("BYMA", "CAUCIONES") is None
+
+
+def test_eod_publication_floor_is_only_a_time_floor():
+    assert sessions.byma_eod_publication_floor(at("2026-10-30T17:30:00-03:00")) == at("2026-10-30T17:15:00-03:00")
+    assert sessions.byma_eod_publication_floor(at("2026-11-02T17:30:00-03:00")) == at("2026-11-02T18:15:00-03:00")
+    with pytest.raises(ValueError, match="BYMA_EOD_TIMEZONE_REQUIRED"):
+        sessions.byma_eod_publication_floor(datetime(2026,11,2,17,30))
 
 
 def test_exit_policy_uses_same_regular_session():

@@ -78,6 +78,7 @@ API_CONCEPTS: dict[str, tuple[list[str], list[str], str]] = {
     "/api/reports/weekly/download": (["history", "learning_history"], ["weekly reports"], "reporte semanal"),
     "/api/reports/{report_id}/{kind}": (["history", "learning_history"], ["reports"], "reporte versionado"),
     "/api/reports/action4": (["history"], ["action4 reports"], "reporte action4"),
+    "/api/reports/action4/source": (["history", "learning_history"], ["bounded paper_positions + paper_decisions"], "fuente semanal action4 PAPER"),
     "/reports/monthly": (["history", "learning_history"], ["monthly reports"], "reporte mensual"),
     "/restart-request": (["runtime", "safety"], ["restart request ledger"], "solicitud controlada"),
     "/api/testing/autorizar": (["runtime", "safety"], ["testing authorization ledger"], "autorización testing"),

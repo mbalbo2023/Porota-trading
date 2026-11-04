@@ -257,7 +257,10 @@ def apply_verified_redemption_review(store, *, receipt_bytes, approved_sha256,
         if not rows or any(aware_datetime(row["booked_at"]) > at for row in rows):
             raise ValueError("FI_REDEMPTION_EVENT_NOT_BOOKED_AT_REVIEW")
         events = [EconomicEvent(**json.loads(row["event_json"])) for row in rows]
-        economic = [e for e in events if e.kind != "FIXING"]
+        # Native PAPER sales consume owned VN but are not issuer obligations.
+        # Their modeled proceeds live in the independent sale ledger; only
+        # settled COUPON/AMORTIZATION receipts satisfy issuer schedule rows.
+        economic = [e for e in events if e.kind in {"COUPON", "AMORTIZATION"}]
         if sorted(obligations) != sorted(e.obligation_id for e in economic):
             raise ValueError("FI_REDEMPTION_OBLIGATION_COVERAGE_MISMATCH")
         if set(expected) != set(obligations):

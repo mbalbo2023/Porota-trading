@@ -1,14 +1,15 @@
 
-"""Bounded dynamic PPI caucion book collector for PAPER EOD.
+"""Bounded dynamic PPI caucion book collector during verified BYMA rueda.
 
 Uses an already-authenticated read-only ProductionMarketReader supplied by
 the observer. Dynamic rate/depth are deliberately NOT written to Contract
 Evidence v2: normal market movement must never become contract-change review.
+The market-data collection clock is NOT the EOD cash-sweep window; neither
+authorizes real orders or bypasses original PPI source and receipt gates.
 """
 from __future__ import annotations
 import json
 from datetime import datetime, timedelta
-from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from bd_ppi_readonly_guard import caucion_discovery_days, retry_read
@@ -40,7 +41,8 @@ def init_schema(store):
           observed_at TEXT NOT NULL);
         """)
 
-def collection_window(at):
+def cash_sweep_window(at):
+    """Conservative EOD cash sweep, not a market data collection bound."""
     from di_caucion_cash_sweep_runtime_hf6 import paper_schedule
     local=aware_datetime(at).astimezone(TZ)
     schedule=paper_schedule(local)
@@ -48,6 +50,11 @@ def collection_window(at):
         return False
     warmup=schedule["sweep_start_at"]-timedelta(minutes=5)
     return warmup <= local <= schedule["order_cutoff_at"]
+
+
+def collection_window(at):
+    from co_market_sessions_hf6 import byma_caucion_collection_open
+    return byma_caucion_collection_open(aware_datetime(at))
 
 def _catalog(store):
     # Use the exact bounded PPI read-only discovery policy. A separately
@@ -91,9 +98,14 @@ def _book_row(reader,item,observed_at,now,clock_fn):
             elif age > 120: state="STALE_BOOK"
             elif quote.tna_percent <= 0 or quote.quantity <= 0: state="EMPTY_PLACED_BID"
             else:
-                state="BOOK_READY"
-                rate=str((quote.tna_percent/Decimal("100")).normalize())
-                principal=str(quote.quantity.normalize())
+                # PPI Book documents a numeric quantity, not the economic
+                # unit of that quantity for this caucion contract. A price
+                # and a positive quantity cannot attest available ARS
+                # principal. Until an independent, exact PPI/ALyC unit
+                # contract is verified, do not publish BOOK_READY or turn
+                # Book.quantity into money. Preserve its clocks and lineage
+                # in the current/history receipt for later reconciliation.
+                state="BOOK_QUANTITY_UNIT_UNVERIFIED"
     except Exception as exc:
         state="READ_ERROR:"+type(exc).__name__
     return {**item,"quoted_at":quoted_at,"tna_fraction":rate,

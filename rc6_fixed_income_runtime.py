@@ -7,9 +7,9 @@ No unpinned JSON, IOL analytics flag, or quote can attest its own authority.
 
 This module verifies that exact reviewed bytes and clocks are still present,
 then computes the scenario using the existing immutable model. It neither
-imports receipts into SQLite nor implements the native event/cash exit. The
-strategy must still HOLD at that capability gate until that separate lifecycle
-is implemented and tested. No orders, network calls, fills or DB writes.
+imports receipts into SQLite nor creates a PAPER fill. The separate FI event
+ledger and maturity reviewer own actual cash and terminal transitions, never
+the projected flow amounts in this release-pinned research receipt.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ PAPER_ONLY = True
 REAL_ROUTES_USED = ()
 MANIFEST_SCHEMA = "rc6.fixed-income-reviewed-manifest.v1"
 RECEIPT_SCHEMA = "rc6.fixed-income-strategy-input.v1"
+MATURITY_RECEIPT_SCHEMA = "rc6.fixed-income-strategy-input-maturity.v2"
 MAX_JSON_BYTES = 1024 * 1024
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_RECEIPTS = 4096
@@ -137,7 +138,8 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
     that exact quote for the decision receipt. It needs no per-tick release.
     """
     from rc6_fixed_income_strategy_shadow import (
-        ContractProof, ProjectedFlow, RiskLimits, evaluate_shadow,
+        ContractProof, NextEconomicEventProof, ProjectedFlow, RiskLimits,
+        evaluate_shadow,
     )
 
     pin = (manifest_sha256 if manifest_sha256 is not None else
@@ -188,8 +190,12 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
             _fail("FI_EVIDENCE_EXACT_IDENTITY_MISSING")
         entry = found[0]
         receipt = _proof(root, entry.get("proof"), json_document=True)
-        if (receipt.get("schema") != RECEIPT_SCHEMA
-                or tuple(receipt.get("identity") or ()) != key):
+        expected_receipt_schema = (MATURITY_RECEIPT_SCHEMA if
+            receipt.get("exit_mode", "MARKET_EXIT") == "MATURITY_REDEMPTION"
+            else RECEIPT_SCHEMA)
+        if receipt.get("schema") != expected_receipt_schema:
+            _fail("FI_EVIDENCE_RECEIPT_SCHEMA_INVALID")
+        if tuple(receipt.get("identity") or ()) != key:
             _fail("FI_EVIDENCE_RECEIPT_IDENTITY_MISMATCH")
         _window(receipt, at)
         if aware_datetime(receipt["known_at"]) > aware_datetime(manifest["known_at"]):
@@ -221,12 +227,41 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
         proof = ContractProof(quote.contract, terms["source_reference"],
                               terms["source_sha256"], terms["source_at"], terms["known_at"])
         rows = receipt.get("flows")
-        if not isinstance(rows, list) or not 0 < len(rows) <= MAX_FLOWS:
+        if not isinstance(rows, list) or len(rows) > MAX_FLOWS:
             _fail("FI_EVIDENCE_FLOW_SET_INVALID")
-        minutes = receipt.get("market_exit_horizon_minutes")
-        if type(minutes) is not int or not 0 < minutes <= 360:
-            _fail("FI_EVIDENCE_EXIT_HORIZON_INVALID")
-        exit_at = at + timedelta(minutes=minutes)
+        if rows and "next_event" in receipt:
+            _fail("FI_EVIDENCE_NEXT_EVENT_CONFLICT")
+        exit_mode = receipt.get("exit_mode", "MARKET_EXIT")
+        if exit_mode == "MARKET_EXIT":
+            minutes = receipt.get("market_exit_horizon_minutes")
+            if type(minutes) is not int or not 0 < minutes <= 360:
+                _fail("FI_EVIDENCE_EXIT_HORIZON_INVALID")
+            exit_at = at + timedelta(minutes=minutes)
+        elif exit_mode == "MATURITY_REDEMPTION":
+            # A bill's maturity is an immutable issuer-contract instant, not
+            # an arbitrary number of minutes after today's decision. Distinct
+            # from a MARKET_EXIT receipt, which cannot be reinterpreted.
+            if (key[1] != "LETRAS" or "market_exit_horizon_minutes" in receipt
+                    or "next_event" in receipt
+                    or terms.get("native_maturity_redemption_supported") is not True
+                    or terms.get("redemption_basis") != "FIXED_KNOWN_FACE"
+                    or terms.get("redemption_face_official") is not True
+                    or terms.get("indexation") != "NONE"
+                    or terms.get("maturity_redemption_receipt_contract") !=
+                    "EXACT_NOMINAL_EVENT_REDUCER_V1"
+                    or receipt.get("maturity_at") != terms.get("maturity_at")
+                    or terms.get("maturity_at") is None):
+                _fail("FI_EVIDENCE_MATURITY_CONTRACT_UNVERIFIED")
+            if (aware_datetime(terms["redemption_source_at"]) !=
+                    aware_datetime(terms["source_at"]) or
+                    aware_datetime(terms["redemption_known_at"]) !=
+                    aware_datetime(terms["known_at"])):
+                _fail("FI_EVIDENCE_MATURITY_PROVENANCE_MISMATCH")
+            exit_at = aware_datetime(terms["maturity_at"])
+            if exit_at <= at or not rows:
+                _fail("FI_EVIDENCE_MATURITY_HORIZON_OR_FLOWS_MISSING")
+        else:
+            _fail("FI_EVIDENCE_EXIT_MODE_UNSUPPORTED")
         flows, obligation_ids = [], set()
         for row in rows:
             flow = ProjectedFlow(**row)
@@ -242,15 +277,63 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
             obligation_ids.add(flow.obligation_id)
             if at < aware_datetime(flow.due_at) <= exit_at:
                 flows.append(flow)
+            elif exit_mode == "MATURITY_REDEMPTION":
+                # Never silently omit an issuer obligation from a redemption
+                # scenario, including an event dated after stated maturity.
+                _fail("FI_EVIDENCE_MATURITY_FLOW_OUT_OF_HORIZON")
+        if exit_mode == "MATURITY_REDEMPTION" and (
+                len([flow for flow in flows if flow.kind == "AMORTIZATION"]) != 1 or
+                any(aware_datetime(flow.due_at) != exit_at
+                    for flow in flows if flow.kind == "AMORTIZATION")):
+            _fail("FI_EVIDENCE_MATURITY_FINAL_REDEMPTION_MISSING")
+        next_event = None
         if not flows:
-            _fail("FI_EVIDENCE_NO_FLOWS_IN_HOLDING_HORIZON")
+            # Do not ignore a projected flow outside this window: the issuer
+            # calendar must be reviewed explicitly without invented payment
+            # timestamps or future amounts. Existing nonempty flow receipts
+            # retain their original fail-closed behavior. The release reviewer
+            # must check the issuer schedule and subsequent event/call notices;
+            # a matching hash alone cannot prove the claim of "next" event.
+            if rows:
+                _fail("FI_EVIDENCE_NO_FLOWS_IN_HOLDING_HORIZON")
+            reviewed = receipt.get("next_event")
+            fields = {"identity", "obligation_id", "kind", "due_on",
+                      "payment_currency", "source_reference", "source_sha256",
+                      "source_at", "known_at", "review_authority"}
+            if reviewed is None:
+                _fail("FI_EVIDENCE_FLOW_SET_INVALID")
+            if (not isinstance(reviewed, dict) or set(reviewed) != fields or
+                    reviewed.get("review_authority") !=
+                    "RELEASE_REVIEWED_ISSUER_NEXT_EVENT" or
+                    not isinstance(reviewed.get("identity"), list) or
+                    tuple(reviewed["identity"]) != key):
+                _fail("FI_EVIDENCE_NEXT_EVENT_REVIEW_INVALID")
+            if (exit_at >= aware_datetime(receipt["valid_until"]) or
+                    exit_at >= aware_datetime(manifest["valid_until"])):
+                _fail("FI_EVIDENCE_NEXT_EVENT_REVIEW_WINDOW_EXPIRED")
+            if aware_datetime(reviewed["known_at"]) > aware_datetime(receipt["known_at"]):
+                _fail("FI_EVIDENCE_NEXT_EVENT_REVIEW_CLOCK_INVALID")
+            if (reviewed["source_sha256"] != issuer["sha256"] or
+                    reviewed["source_reference"] != terms["source_reference"] or
+                    aware_datetime(reviewed["source_at"]) !=
+                    aware_datetime(terms["source_at"]) or
+                    aware_datetime(reviewed["known_at"]) !=
+                    aware_datetime(terms["known_at"])):
+                _fail("FI_EVIDENCE_NEXT_EVENT_PROVENANCE_MISMATCH")
+            next_event = NextEconomicEventProof(**{
+                field: tuple(reviewed[field]) if field == "identity" else reviewed[field]
+                for field in fields - {"review_authority"}
+            })
         live_quote_sha = quote_sha256(quote)
         scenario = evaluate_shadow(
             quote, proof, flows, RiskLimits(**receipt["risk_limits"]),
             quantity_vn=receipt["quantity_vn"], decision_at=decision_at,
-            planned_exit_at=exit_at.isoformat(), exit_mode="MARKET_EXIT",
+            planned_exit_at=exit_at.isoformat(), exit_mode=exit_mode,
             book_reference="native-ppi-quote:" + live_quote_sha,
-            book_sha256=live_quote_sha, book_source_kind="PPI_PRIMARY")
+            book_sha256=live_quote_sha, book_source_kind="PPI_PRIMARY",
+            next_event=next_event)
+        if scenario.reason == "FI_SHADOW_DUE_EVENT_WITHIN_EXIT_WINDOW":
+            _fail("FI_EVIDENCE_DUE_EVENT_OMITTED")
         return {"scenario": scenario, "terms": terms, "validation": validation,
                 "upstream_authenticated": True, "receipt_attested_by_release": True,
                 "source_kind": "PPI_PRIMARY",

@@ -81,7 +81,7 @@ def test_research_candidate_never_authorizes_runtime_or_broker():
     (lambda e, b, p, r: (e, b, p, replace(r, max_source_age_seconds=90000)),
      "FCI_STRATEGY_SOURCE_AGE_POLICY_INVALID"),
     (lambda e, b, p, r: (replace(e, subscription_fee_ars=Decimal("5")), b, p, r),
-     "FCI_NONZERO_FEE_NOT_MODELED_IN_LEDGER"),
+     "FCI_STRATEGY_RECEIPT_IDENTITY_OR_PAYLOAD_MISMATCH"),
     (lambda e, b, p, r: (replace(e, cutoff_local_hhmm="09:00"), b, p, r),
      "FCI_CLASS_CUTOFF_PASSED"),
     (lambda e, b, p, r: (replace(e, last_nav=None), b, p, r),
@@ -89,11 +89,21 @@ def test_research_candidate_never_authorizes_runtime_or_broker():
     (lambda e, b, p, r: (e, b, p, replace(r, max_fund_exposure_fraction=Decimal("1.1"))),
      "FCI_STRATEGY_RISK_LIMITS_INVALID"),
 ])
-def test_missing_stale_nonzero_fee_forged_receipt_and_risk_hold(change, code):
+def test_missing_stale_fee_drift_forged_receipt_and_risk_hold(change, code):
     result = assess_paper_fund_strategy(*change(*inputs()), as_of=STAMP)
     assert result.status == "HOLD"
     assert result.amount_ars is None and result.entry_authority is False
     assert code in result.reasons
+
+
+def test_fee_aware_strategy_recomputed_receipt_is_candidate_without_entry_authority():
+    e, b, proof, risk = inputs()
+    e = replace(e, subscription_fee_ars=Decimal("5"))
+    proof = replace(proof, binding_sha256=evidence_binding_sha256(e))
+    result = assess_paper_fund_strategy(e, b, proof, risk, as_of=STAMP)
+    assert result.status == "PAPER_STRATEGY_CANDIDATE"
+    assert result.amount_ars == Decimal("1000")
+    assert result.entry_authority is RUNTIME_ENTRY_AUTHORITY is False
 
 
 def test_synthetic_fixture_not_misclassified_as_live_even_with_self_digest():

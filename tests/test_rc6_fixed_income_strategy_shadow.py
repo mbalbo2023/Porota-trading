@@ -14,7 +14,8 @@ from be_paper_engine import Quote
 from bs_instrument_contracts import InstrumentContract
 from rc6_fixed_income_event_reducer import EconomicEvent, PositionSeed
 from rc6_fixed_income_strategy_shadow import (
-    ContractProof, ProjectedFlow, RiskLimits, evaluate_shadow, replay_shadow_exit,
+    ContractProof, NextEconomicEventProof, ProjectedFlow, RiskLimits,
+    evaluate_shadow, replay_shadow_exit,
 )
 
 
@@ -53,11 +54,77 @@ def flow(kind="COUPON", *, amount="0.05", currency="ARS", due=None):
 
 
 def assess(quote, proof, limits, flows, *, mode="MARKET_EXIT", at=AT,
-           source="SYNTHETIC_TEST"):
+           source="SYNTHETIC_TEST", next_event=None):
     return evaluate_shadow(quote, proof, flows, limits, quantity_vn=100,
                            decision_at=at.isoformat(), planned_exit_at=EXIT.isoformat(),
                            exit_mode=mode, book_reference="fixture:synthetic-book",
-                           book_sha256=SHA, book_source_kind=source)
+                           book_sha256=SHA, book_source_kind=source,
+                           next_event=next_event)
+
+
+def next_coupon(**changes):
+    # Explicit technical fixture modeled on an issuer's future calendar, not
+    # authentication of a live YMCJO quote or a source-backed trading signal.
+    proof = NextEconomicEventProof(
+        identity=("YMCJO", "OBLIGACIONES", "BYMA", "ARS", "A-24HS"),
+        obligation_id="COUPON-2027-03-30", kind="COUPON",
+        due_on="2027-03-30", payment_currency="USD",
+        source_reference="fixture:issuer-next-economic-event", source_sha256=SHA,
+        source_at=PUB.isoformat(), known_at=PUB.isoformat())
+    return replace(proof, **changes)
+
+
+def test_market_exit_without_due_event_requires_pit_next_event_proof_and_replays_only_observed_book():
+    quote, contract, limits = setup("OBLIGACIONES", "YMCJO")
+    assert assess(quote, contract, limits, []).reason == "FI_SHADOW_CASHFLOW_SCHEDULE_REQUIRED"
+    plan = assess(quote, contract, limits, [], next_event=next_coupon())
+    assert plan.status == "SHADOW_HYPOTHESIS"
+    assert plan.signal == "NONPOSITIVE_SCENARIO"
+    assert plan.entry_authority is False and plan.real_routes_used == ()
+    assert plan.projected_flows == plan.projected_obligations == ()
+    assert plan.next_economic_event == ("COUPON-2027-03-30", "COUPON",
+                                        "2027-03-30", "USD", SHA)
+    # Independent Decimal oracle: 100 VN * .01 price multiplier, 0.6% PAPER
+    # commission + .01% rights, one combined cent-rounded fee on each leg.
+    assert plan.entry_cash == Decimal("80.1") * Decimal("1.001") + Decimal("0.49")
+    assert plan.exit_cash_scenario == Decimal("79.9") * Decimal("0.999") - Decimal("0.49")
+    assert plan.scenario_net == Decimal("-1.3400")
+    seed = PositionSeed("SHADOW-ON-NO-EVENT", quote.symbol, "OBLIGACIONES",
+                        "BYMA", "A-24HS", "ARS", "100", "VN", AT.isoformat(),
+                        "fixture:unbooked", SHA)
+    later = replace(quote, last=Decimal("85"), bid=Decimal("85"),
+                    ask=Decimal("85.1"), observed_at=EXIT.isoformat(),
+                    book_at=EXIT.isoformat(), trade_at=EXIT.isoformat())
+    replay = replay_shadow_exit(plan, seed, [], as_of=EXIT.isoformat(),
+                                exit_book=later, exit_book_reference="fixture:later-book",
+                                exit_book_sha256=SHA, exit_book_source_kind="SYNTHETIC_TEST")
+    assert replay.receipt_cash_by_currency == ()
+    assert replay.scenario_net_by_currency == (("ARS", Decimal("85") -
+                                                Decimal("0.52") - plan.entry_cash),)
+    assert replay.scenario_net_by_currency == (("ARS", Decimal("3.8099")),)
+    assert replay.status == "INDICATIVE_BOOK_REPLAY_NOT_LEDGER_REALIZATION"
+
+
+def test_no_event_proof_fails_closed_on_omitted_due_coupon_future_source_identity_or_currency():
+    quote, contract, limits = setup("OBLIGACIONES", "YMCJO")
+    for due in (AT.date().isoformat(), EXIT.date().isoformat()):
+        assert assess(quote, contract, limits, [],
+                      next_event=next_coupon(due_on=due)).reason == (
+                          "FI_SHADOW_DUE_EVENT_WITHIN_EXIT_WINDOW")
+    with pytest.raises(ValueError, match="FI_SHADOW_FUTURE_OR_REVISED_SOURCE"):
+        assess(quote, contract, limits, [],
+               next_event=next_coupon(known_at=(AT + timedelta(seconds=1)).isoformat()))
+    for bad in (next_coupon(identity=("OTHER", "OBLIGACIONES", "BYMA", "ARS", "A-24HS")),
+                next_coupon(payment_currency="INVALID")):
+        with pytest.raises(ValueError, match="FI_SHADOW_NEXT_EVENT_PROOF_INVALID"):
+            assess(quote, contract, limits, [], next_event=bad)
+    usd_coupon = flow(amount="1", currency="USD")
+    assert assess(quote, contract, limits, [usd_coupon]).reason == (
+        "FI_SHADOW_CROSS_CURRENCY_NO_VERIFIED_FX")
+    usd_letter, usd_contract, usd_limits = setup("LETRAS", "D30N6", currency="USD")
+    assert assess(usd_letter, usd_contract, usd_limits,
+                  [flow("AMORTIZATION", amount="1", currency="USD")],
+                  mode="MATURITY_REDEMPTION").reason == "FI_SHADOW_COST_COMPONENT_UNKNOWN:rights"
 
 
 @pytest.mark.parametrize("family,symbol", [

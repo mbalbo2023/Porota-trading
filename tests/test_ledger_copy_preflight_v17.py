@@ -11,6 +11,9 @@ import sqlite3
 import pytest
 
 from scripts import v17_ledger_preflight as probe
+from scripts import build_v17_ledger_preflight as builder
+from ledger_nonroot_fixture import (isolated_source, permission_subprocess_options,
+                                    real_direct_and_copy)
 from test_ledger_preflight_v17 import position, host
 from test_production_paper_v1634 import partial_spot
 
@@ -74,16 +77,35 @@ def test_copy_wal_audits_and_removes_only_copy(source, monkeypatch):
     assert_preserved(source)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason='Reproducción requiere usuario no-root habitual; sin cambio de identidad')
 def test_direct_wal_blocked_but_authorized_copy_succeeds_nonroot(source):
-    path, scratch, _ = source
-    direct = probe.collect(path)
-    assert direct['reason'] == 'SQLITE_ERROR' and direct['stage'] == 'READ_SCHEMA'
-    assert direct['sqlite_error']['primary_code'] in {8,14}
-    report = probe.collect_copy(path, scratch)
-    assert report['status'] == 'OBSERVED_NO_DETECTED_INCONSISTENCIES'
-    assert report['temporary_copy_removed']
+    path, _, before = source
+    with isolated_source(path, builder) as (database, scratch, archive, cloned):
+        assert cloned == before
+        direct, report = real_direct_and_copy(archive, database, scratch)
+        assert direct['reason'] == 'SQLITE_ERROR' and direct['stage'] == 'READ_SCHEMA'
+        assert direct['sqlite_error']['primary_code'] in {8,14}
+        assert report['status'] == 'OBSERVED_NO_DETECTED_INCONSISTENCIES'
+        assert report['temporary_copy_removed']
+        assert database.read_bytes() == before
+        assert database.stat().st_mode & 0o777 == 0o444
+        assert database.parent.stat().st_mode & 0o777 == 0o555
+        assert list(scratch.iterdir()) == []
+        assert not any(Path(str(database) + suffix).exists()
+                       for suffix in ('-wal', '-shm', '-journal'))
     assert_preserved(source)
+
+
+def test_permission_fixture_rejects_accidentally_writable_source(source):
+    path, _, _ = source
+    with isolated_source(path, builder) as (database, scratch, archive, _):
+        # Negative control: make only this disposable fixture writable by the
+        # identity that runs SQLite. The proof must then fail, not go green.
+        identity = permission_subprocess_options()
+        if identity:
+            os.chown(database.parent, identity['user'], identity['group'])
+        database.parent.chmod(0o755)
+        with pytest.raises(AssertionError, match='write_denied'):
+            real_direct_and_copy(archive, database, scratch)
 
 
 @pytest.mark.parametrize('suffix', ['-wal','-shm','-journal'])

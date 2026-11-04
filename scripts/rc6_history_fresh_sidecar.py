@@ -27,6 +27,7 @@ MAX_TARGETS = 40
 MAX_ROWS = 1000
 MAX_PAYLOAD_BYTES = 10_000_000
 MAX_CLOCK_SKEW_SECONDS = 300
+MAX_EXPLICIT_WINDOW_DAYS = 31
 
 DDL = """
 CREATE TABLE fresh_generation_rc6(
@@ -187,7 +188,27 @@ def preflight_destination(destination, protected_paths=()):
     return path
 
 
-def capture(destination, targets, source, fetch, *, now=None, protected_paths=()):
+def request_window(now, requested_from=None, requested_to=None):
+    """Bound an optional exact ART date range before any provider request.
+
+    The default preserves the existing 365-day evidence capture. A caller
+    requesting a narrower range must provide both dates; neither the source
+    clock nor the retained 365-day cutoff is rewritten to fit that request.
+    """
+    clock = instant(now)
+    cutoff = daily_start(clock)
+    today = clock.astimezone(ART).date()
+    if requested_from is None and requested_to is None:
+        return cutoff, today, cutoff
+    if (type(requested_from) is not date or type(requested_to) is not date
+            or not cutoff <= requested_from <= requested_to <= today
+            or (requested_to - requested_from).days + 1 > MAX_EXPLICIT_WINDOW_DAYS):
+        raise ValueError("FRESH_REQUEST_WINDOW_UNVERIFIED")
+    return requested_from, requested_to, cutoff
+
+
+def capture(destination, targets, source, fetch, *, now=None, protected_paths=(),
+            requested_from=None, requested_to=None):
     """Fetch at most 40 exact targets into an isolated, newly created DB.
 
     ``fetch(target, from_day, to_day)`` is a read-only source adapter. Missing
@@ -200,7 +221,8 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
     captured_at = instant(now or system_now)
     if abs((captured_at - system_now).total_seconds()) > MAX_CLOCK_SKEW_SECONDS:
         raise ValueError("FRESH_CLOCK_UNVERIFIED")
-    from_day, to_day = daily_start(captured_at), captured_at.astimezone(ART).date()
+    from_day, to_day, retention_cutoff = request_window(
+        captured_at, requested_from, requested_to)
     resolved = preflight(targets, source)
     path = preflight_destination(destination, protected_paths)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,7 +236,8 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
         connection.execute('PRAGMA foreign_keys=ON')
         connection.executescript(DDL)
         connection.execute("INSERT INTO fresh_generation_rc6 VALUES(1,?,?,?)",
-                           (captured_at.isoformat(), from_day.isoformat(), "EVIDENCE_ONLY_365_ART_V1"))
+                           (captured_at.isoformat(), retention_cutoff.isoformat(),
+                            "EVIDENCE_ONLY_365_ART_V1"))
         for target in resolved:
             observed = None
             status, reason, rows, expired, invalid = "QUARANTINED", "", [], 0, 0
@@ -304,7 +327,8 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
                             "provider_currency_status": currency_status,
                             "price_basis_status": "UNVERIFIED"})
     return {"state": "EVIDENCE_ONLY_NO_GO", "source": source,
-            "generation_path": str(path), "cutoff_day": from_day.isoformat(),
+            "generation_path": str(path), "cutoff_day": retention_cutoff.isoformat(),
+            "requested_from": from_day.isoformat(), "requested_to": to_day.isoformat(),
             "selected": len(resolved), "fetch_invocations": len(resolved),
             "history_v2_writes": 0, "execution_allowed": False,
             "ready_paper_implication": "NONE", "results": results}

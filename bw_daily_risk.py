@@ -164,6 +164,13 @@ class DailyRisk:
                     if opened < start and (not closed or closed >= start):
                         carry = True
                     if closed:
+                        if (p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED'
+                                and p.get('net_pnl') is None):
+                            # A payout in a different denomination cannot be
+                            # treated as zero ARS profit or converted without
+                            # a separately reviewed FX identity and timestamp.
+                            stale = True
+                            continue
                         net = decimal_value(p['net_pnl'],'PnL cerrado')
                         realized += net
                         if closed < start:
@@ -217,6 +224,29 @@ class DailyRisk:
                     unrealized += ((exit_price-Decimal(p['entry_price']))*qty*factor -
                         Decimal(p['entry_cost']) - self.broker._cost(
                             exit_price*factor, qty, p['asset_class'], currency=p['currency']))
+                # Native FI market SELLs realize their own sale basis above.
+                # Once the last remaining VN is sold, a separate issuer
+                # coupon/principal PnL leg must still be counted exactly once.
+                sold_ledger_ids = {p['paper_id'] for p in closed_rows
+                    if p['currency'] == currency and p.get('close_reason') ==
+                    'FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT'}
+                open_ids = {p['paper_id'] for p in opened_rows}
+                for paper_id in sold_ledger_ids-open_ids:
+                    from rc6_fixed_income_portfolio_bridge import valuation_at
+                    root = c.execute('SELECT opened_at,entry_price,close_reason FROM paper_positions WHERE paper_id=?',
+                                     (paper_id,)).fetchone()
+                    if root['close_reason'] != 'FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT':
+                        continue  # maturity row already carries issuer PnL
+                    current = valuation_at(c,paper_id,at,root['entry_price'])
+                    prior = (valuation_at(c,paper_id,start,root['entry_price'])
+                             if aware_datetime(root['opened_at']) < start else None)
+                    if current.realized_pnl is None or (prior and prior.realized_pnl is None):
+                        stale = True
+                        continue
+                    old = prior.realized_pnl if prior else ZERO
+                    before += old
+                    realized += current.realized_pnl
+                    today_realized += current.realized_pnl-old
                 before += future_before["realized"]
                 realized += future_now["realized"]
                 today_realized += future_now["realized"] - future_before["realized"]

@@ -104,6 +104,60 @@ class TestPredeployTwentyFourSeven(unittest.TestCase):
                         names.index("Sanitized RCA phase learning (diagnostic only)"))
         self.assertNotIn("deploy", diagnostic["run"].lower())
 
+    def test_product_release_required_check_cannot_skip_with_artifact_gate(self):
+        workflow = yaml.safe_load((REPO / ".github/workflows/porota-predeploy-v2.yml").read_text())
+        jobs = workflow["jobs"]
+        artifact = jobs["artifact-gate"]
+        self.assertEqual(artifact["name"], "Exact artifact predeploy gate")
+        self.assertIn("!github.event.pull_request.draft", artifact["if"])
+        self.assertEqual(artifact["outputs"], {
+            "candidate_sha": "${{ steps.rc6_artifact_identity.outputs.candidate_sha }}",
+            "artifact_name": "${{ steps.rc6_artifact_identity.outputs.artifact_name }}",
+            "artifact_id": "${{ steps.rc6_predeploy_upload.outputs.artifact-id }}",
+            "artifact_digest": "${{ steps.rc6_predeploy_upload.outputs.artifact-digest }}",
+        })
+        steps = artifact["steps"]
+        bound = next(step for step in steps if step.get("id") == "rc6_artifact_identity")
+        uploaded = next(step for step in steps if step.get("id") == "rc6_predeploy_upload")
+        self.assertLess(steps.index(bound), steps.index(uploaded))
+        self.assertIn("git rev-parse HEAD", bound["run"])
+        self.assertEqual(uploaded["if"], "always()")
+        self.assertEqual(uploaded["uses"], "actions/upload-artifact@v4")
+        self.assertEqual(uploaded["with"]["retention-days"], 7)
+
+        required = jobs["release-evidence-required"]
+        self.assertEqual(required["name"], "RC6 required release evidence (offhost)")
+        self.assertEqual(required["needs"], "artifact-gate")
+        self.assertEqual(required["if"],
+                         "${{ always() && github.event.pull_request.base.ref == "
+                         "'deploy/rc6-pr69-isolated-20260915' }}")
+        self.assertNotIn("continue-on-error", required)
+        self.assertEqual(required["permissions"], {"contents": "read"})
+        head_inspection, trusted_guard, check = required["steps"]
+        self.assertEqual(head_inspection["with"]["ref"],
+                         "${{ github.event.pull_request.head.sha }}")
+        self.assertEqual(head_inspection["with"]["path"], ".rc6-release-head-inspect")
+        self.assertEqual(head_inspection["with"]["persist-credentials"], False)
+        # This commit is an immutable reviewed bootstrap guard. Neither old
+        # product nor main has the new script, so checkout of PR HEAD must be
+        # introspection-only; never execute a candidate-supplied sys.exit(0).
+        self.assertEqual(trusted_guard["with"]["ref"],
+                         "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e")
+        self.assertEqual(trusted_guard["with"]["path"], ".rc6-release-guard-trusted")
+        self.assertEqual(trusted_guard["with"]["persist-credentials"], False)
+        self.assertIn("python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py",
+                      check["run"])
+        self.assertIn('git -C .rc6-release-guard-trusted rev-parse HEAD', check["run"])
+        self.assertNotIn("python -m scripts.rc6_ci_release_required_guard", check["run"])
+        self.assertIn("RC6_RELEASE_CHECKOUT_SHA=\"$(git -C .rc6-release-head-inspect rev-parse HEAD)\"",
+                      check["run"])
+        self.assertEqual(check["env"]["RC6_RELEASE_GATE_RESULT"],
+                         "${{ needs.artifact-gate.result }}")
+        self.assertEqual(check["env"]["RC6_RELEASE_ARTIFACT_ID"],
+                         "${{ needs.artifact-gate.outputs.artifact_id }}")
+        self.assertEqual(check["env"]["RC6_RELEASE_ARTIFACT_DIGEST"],
+                         "${{ needs.artifact-gate.outputs.artifact_digest }}")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,8 @@ class BymaLateSourceTest(unittest.TestCase):
                     currency TEXT, settlement TEXT, settlement_source TEXT,
                     status TEXT);
             """)
+        self.bootstrap = self.root / "iol_bootstrap.json"
+        self.bootstrap.write_text("{}", encoding="utf-8")
 
     def insert(self, ticker, family, settlement="A-24HS", *, market="BYMA",
                currency="ARS", source="PPI_FIELD", status="AVAILABLE"):
@@ -193,7 +195,8 @@ class BymaLateSourceTest(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout="IOL_SHADOW_COLLECTION=COMPLETE READY=1\n")
 
         result = dispatch.run_cycle(now=local(2, 17), db=self.db,
-                                    market_root=self.market, lock=self.root / "lock", runner=runner)
+                                    market_root=self.market, lock=self.root / "lock", runner=runner,
+                                    iol_bootstrap=self.bootstrap)
         self.assertEqual(result["status"], "COMPLETE")
         self.assertEqual(result["stages"], {"iol": "OK"})
         self.assertEqual(calls, ["rc6_iol_shadow_collect.py"])
@@ -209,11 +212,13 @@ class BymaLateSourceTest(unittest.TestCase):
                 stdout="IOL_SHADOW_COLLECTION=NOT_DUE_LATE_NO_VERIFIED_T1 SOURCE=EMPTY\n")
 
         before = dispatch.run_cycle(now=local(30, 17, month=10), db=self.db,
-                                    market_root=self.market, lock=self.root / "lock", runner=not_due)
+                                    market_root=self.market, lock=self.root / "lock", runner=not_due,
+                                    iol_bootstrap=self.bootstrap)
         self.assertEqual(before["status"], "NOT_DUE")
         self.assertEqual(calls, [])
         after = dispatch.run_cycle(now=local(2, 17), db=self.db,
-                                   market_root=self.market, lock=self.root / "lock", runner=not_due)
+                                   market_root=self.market, lock=self.root / "lock", runner=not_due,
+                                   iol_bootstrap=self.bootstrap)
         self.assertEqual(after["status"], "NOT_DUE")
         self.assertEqual(after["stages"], {"iol": "NOT_DUE_LATE_EXACT_CONTRACT"})
         self.assertEqual(calls, ["rc6_iol_shadow_collect.py"])

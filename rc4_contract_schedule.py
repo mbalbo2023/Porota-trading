@@ -23,6 +23,17 @@ JOB_TO_CADENCE = {
     "CONTRACT_EVIDENCE_DERIVATIVES": "DERIVATIVE_SERIES",
     "CONTRACT_EVIDENCE_STATIC": "STATIC_CONTRACT",
     "CONTRACT_EVIDENCE_FULL_BROWSER": "FULL_BROWSER_AUDIT",
+    "CONTRACT_EVIDENCE_FUND_TERMS": "FUND_TERMS",
+    "CONTRACT_EVIDENCE_TARIFF": "TARIFF",
+}
+
+# Both cadences have policy/TTL but no authenticated source binding or collector
+# route verified as of A614. They are recorded so omissions are observable;
+# neither may wake the browser until a separate, receipt-backed source adapter
+# and complete identity/account tariff contract are integrated.
+SOURCE_UNBOUND_REASONS = {
+    "CONTRACT_EVIDENCE_FUND_TERMS": "FUND_TERMS_EXACT_CLASS_AUTHORITY_UNVERIFIED",
+    "CONTRACT_EVIDENCE_TARIFF": "TARIFF_OFFICIAL_ACCOUNT_AUTHORITY_UNVERIFIED",
 }
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -50,6 +61,9 @@ def window_allows(job_key: str, now=None) -> bool:
     """
     ref = now or datetime.now(timezone.utc)
     local = _local(ref)
+    if str(job_key) in SOURCE_UNBOUND_REASONS:
+        # Due time must never turn an unbound policy into provider authority.
+        return False
     cadence_name = JOB_TO_CADENCE[str(job_key)]
     cadence = CADENCES[cadence_name]
     clock = local.time().replace(tzinfo=None)

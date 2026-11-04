@@ -130,7 +130,24 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
         LEFT JOIN paper_sale_receivables r USING(paper_id) WHERE p.currency=? AND p.status='CLOSED'""",
         (cash_currency(currency),)).fetchall()
     pending = spot_ledger.pending(connection,at,currency)
+    from rc6_fixed_income_paper_market_sale import sale_cash_effect
+    pending += sale_cash_effect(connection,currency,at,pending=True)
     for row in rows:
+        if row['close_reason'] == 'FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT':
+            # Native PAPER sale receivables are reconciled above, separate
+            # from issuer cash and generic spot settlement.
+            if not connection.execute("""SELECT 1 FROM paper_fi_native_sales
+                WHERE paper_id=?""", (row['paper_id'],)).fetchone():
+                raise ValueError('FI_NATIVE_SALE_TERMINAL_RECEIPT_REQUIRED')
+            continue
+        if row['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+            # An issuer payout is booked by the FI event ledger, not as a
+            # receivable from a SELL. Reject a torn/tampered terminal instead
+            # of fabricating a sale receipt or blocking valid cash.
+            from rc6_fixed_income_native_exit import terminal_at
+            if terminal_at(connection, row['paper_id']) is None:
+                raise ValueError('FI_NATIVE_MATURITY_RECEIPT_MISSING')
+            continue
         if spot_ledger.sales(connection,row['paper_id']):
             continue
         if aware_datetime(row['closed_at']) > at:
@@ -351,7 +368,14 @@ def _runtime_caucion_book_error(store, connection, offer, at):
                     or contract.get("capability") != "READY_PAPER_CAUCION_PLACING"):
                 continue
             valid.append(row)
-        return "" if len(valid) == 1 else "CAUCION_RUNTIME_PPI_IDENTITY_OR_RECEIPT_UNVERIFIED"
+        if len(valid) != 1:
+            return "CAUCION_RUNTIME_PPI_IDENTITY_OR_RECEIPT_UNVERIFIED"
+        # Historical BOOK_READY rows predate the verified Book.quantity unit
+        # contract. Matching identity/current/history does not establish
+        # that Book.quantity is ARS principal. Do not allow legacy rows to
+        # open a new PAPER placement until that independent authority is
+        # proven and bound at this exact transaction boundary.
+        return "CAUCION_BOOK_QUANTITY_UNIT_UNVERIFIED"
     except (ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
         return "CAUCION_RUNTIME_PPI_LIVE_BOOK_OR_TERMS_UNVERIFIED"
 

@@ -1,0 +1,49 @@
+name: RC6 A382 performance legacy regression OFFHOST
+
+# Independent from Predeploy V2. No SSH, credentials, order routes, DB or host.
+on:
+  pull_request:
+    branches: [candidate/rc6-a279-a280-20261101]
+    paths:
+      - 'rc6_performance/**'
+      - 'tests/test_rc6_performance_*.py'
+      - '.github/workflows/rc6-a382-performance-regression-offhost.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a382-performance-regression-offhost-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  legacy_and_segments:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONPATH: '.'
+      OPERATIONAL_MODE: PRODUCTION_PAPER
+      RC6_REAL_ORDERS_SENT: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact repository test dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Run existing performance legacy suites and new segment regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$OPERATIONAL_MODE" = PRODUCTION_PAPER
+          test "$RC6_REAL_ORDERS_SENT" = 0
+          python3 -m pytest -q -o addopts='' -p no:cacheprovider \
+            tests/test_rc6_performance_capture.py \
+            tests/test_rc6_performance_costs.py \
+            tests/test_rc6_performance_report.py \
+            tests/test_rc6_performance_runtime.py \
+            tests/test_rc6_performance_shadow.py \
+            tests/test_rc6_performance_segments.py
+          git diff --check

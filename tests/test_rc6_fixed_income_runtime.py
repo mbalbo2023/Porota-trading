@@ -83,6 +83,91 @@ def load(quote, root, pin, *, at=AT):
                                         manifest_sha256=pin)
 
 
+def no_event_bundle(tmp_path):
+    quote, root, _ = reviewed_bundle(tmp_path)
+    terms = json.loads((root / "terms.json").read_text())
+    issuer_sha = hashlib.sha256((root / "issuer.bin").read_bytes()).hexdigest()
+    next_event = {
+        "identity": list(quote.contract.key), "obligation_id": "NEXT-COUPON",
+        "kind": "COUPON", "due_on": "2027-03-30", "payment_currency": "USD",
+        "source_reference": terms["source_reference"], "source_sha256": issuer_sha,
+        "source_at": terms["source_at"], "known_at": terms["known_at"],
+        "review_authority": "RELEASE_REVIEWED_ISSUER_NEXT_EVENT",
+    }
+    pin = repin(root, "receipt.json",
+                lambda d: d.update(flows=[], next_event=next_event))
+    return quote, root, pin
+
+
+def test_release_pinned_next_event_wires_empty_window_without_cashflow_or_buy(tmp_path, monkeypatch):
+    quote, root, pin = no_event_bundle(tmp_path)
+    result = load(quote, root, pin)
+    scenario = result["scenario"]
+    assert scenario.status == "SHADOW_HYPOTHESIS"
+    assert scenario.signal == "NONPOSITIVE_SCENARIO"
+    assert scenario.projected_flows == scenario.projected_obligations == ()
+    assert scenario.next_economic_event[:4] == (
+        "NEXT-COUPON", "COUPON", "2027-03-30", "USD")
+    assert scenario.scenario_net < 0
+    assert scenario.entry_authority is False and scenario.real_routes_used == ()
+    assert result["runtime_evidence"]["native_event_cash_lifecycle"] == "NO_VERIFICADO"
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    broker = PaperBroker(store, daily_loss_pct=None)
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_DIRECTORY", str(root))
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
+    decision = broker._decide_fixed_income(quote, AT.isoformat())
+    assert decision[0] == "HOLD"
+    assert decision[3]["reason_code"] == "FI_SCENARIO_NOT_INDEPENDENT_ENTRY_PROOF"
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("mutation,error", [
+    (lambda d: d.pop("next_event"), "FLOW_SET_INVALID"),
+    (lambda d: d["next_event"].update(review_authority="SELF_ASSERTED"),
+     "NEXT_EVENT_REVIEW_INVALID"),
+    (lambda d: d["next_event"].update(source_sha256="a"*64),
+     "NEXT_EVENT_PROVENANCE_MISMATCH"),
+    (lambda d: d["next_event"].update(source_reference="BROKER_ANALYTICS"),
+     "NEXT_EVENT_PROVENANCE_MISMATCH"),
+    (lambda d: d["next_event"].update(identity=["OTHER", "OBLIGACIONES", "BYMA", "ARS", "A-24HS"]),
+     "NEXT_EVENT_REVIEW_INVALID"),
+    (lambda d: d["next_event"].update(known_at=(AT+timedelta(seconds=1)).isoformat()),
+     "NEXT_EVENT_REVIEW_CLOCK_INVALID"),
+    (lambda d: d.update(valid_until=(AT+timedelta(hours=1)).isoformat()),
+     "NEXT_EVENT_REVIEW_WINDOW_EXPIRED"),
+    (lambda d: d["next_event"].update(due_on=AT.date().isoformat()),
+     "DUE_EVENT_OMITTED"),
+    (lambda d: d["next_event"].update(due_on=(AT+timedelta(hours=2)).date().isoformat()),
+     "DUE_EVENT_OMITTED"),
+    (lambda d: d["next_event"].update(payment_currency="INVALID"),
+     "INPUT_INVALID"),
+    (lambda d: d.update(flows=[{"obligation_id": "DUP", "kind": "COUPON",
+                                "due_at": (AT+timedelta(hours=1)).isoformat(),
+                                "cash_per_vn": "0.05", "payment_currency": "ARS",
+                                "source_reference": "fixture:independent-issuer-terms",
+                                "source_sha256": "a"*64, "source_at": YESTERDAY.isoformat(),
+                                "known_at": YESTERDAY.isoformat()}]),
+     "NEXT_EVENT_CONFLICT"),
+])
+def test_next_event_cannot_hide_due_cash_or_bypass_source_release_and_identity(
+        tmp_path, mutation, error):
+    quote, root, _ = no_event_bundle(tmp_path)
+    pin = repin(root, "receipt.json", mutation)
+    with pytest.raises(FixedIncomeEvidenceError, match="^FI_EVIDENCE_" + error + "$"):
+        load(quote, root, pin)
+
+
+def test_unrepinned_next_event_byte_mutation_is_rejected(tmp_path):
+    quote, root, pin = no_event_bundle(tmp_path)
+    receipt = root / "receipt.json"
+    receipt.write_bytes(receipt.read_bytes() + b" ")
+    with pytest.raises(FixedIncomeEvidenceError, match="FI_EVIDENCE_HASH_MISMATCH"):
+        load(quote, root, pin)
+
+
 def test_missing_release_pin_never_reads_or_creates_evidence(tmp_path, monkeypatch):
     quote, *_ = fixture()
     monkeypatch.delenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", raising=False)
@@ -184,7 +269,12 @@ def test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound(tmp_
     assert result[0] == "HOLD"
     assert result[3]["reason_code"] == "FI_NATIVE_EVENT_EXIT_ENGINE_NOT_BOUND"
     assert result[3]["fixed_income_runtime_evidence"]["manifest_sha256"] == pin
-    assert not callable(getattr(broker, "fixed_income_native_exit_authorized", None))
+    # The A456 engine now has a narrowly bound LETRAS maturity callback.
+    # It must still reject this ON MARKET_EXIT plan even with valid issuer/OOS
+    # research inputs: no native market-sale admission is inferred.
+    assert callable(getattr(broker, "fixed_income_native_exit_authorized", None))
+    assert broker.fixed_income_native_exit_authorized(
+        quote, {"mode": "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT"}, AT.isoformat()) is False
     with store.connect() as db:
         assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0

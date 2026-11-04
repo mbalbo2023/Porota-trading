@@ -4,11 +4,15 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from decimal import Decimal
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
 import scripts.rc6_history_fresh_sidecar as fresh_module
+import scripts.rc6_history_fresh_probe as probe_module
 import scripts.rc6_history_fresh_verify as verify_module
 from scripts.rc6_history_fresh_sidecar import capture, preflight
 from scripts.rc6_history_fresh_verify import verify
@@ -59,6 +63,19 @@ def test_ppi_unknown_currency_basis_pit_stays_in_evidence_only_sidecar(tmp_path)
     assert row['retained_rows'] == 1 and json.loads(row['retained_rows_json']) == payload
     with sqlite3.connect(sidecar) as db:
         assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='history_canonical_v2'").fetchone()
+
+
+def test_decoded_payload_hash_cannot_certify_transport_bytes(tmp_path):
+    compact = b'[{"date":"2026-10-23","price":100}]'
+    spaced = b'[ { "price": 100, "date": "2026-10-23" } ]'
+    assert sha256(compact).hexdigest() != sha256(spaced).hexdigest()
+    digests = []
+    for name, wire in [('compact', compact), ('spaced', spaced)]:
+        path = tmp_path / f'{name}.sqlite'
+        capture(path, [TARGET], 'PPI', lambda *_: json.loads(wire), now=NOW)
+        digests.append(_records(path)[0]['canonical_payload_sha256'])
+        assert verify(path)['transport_raw_hash_verified'] is False
+    assert digests[0] == digests[1]
 
 
 def test_expired_and_unknown_dates_are_physically_absent_from_sidecar(tmp_path):
@@ -226,3 +243,171 @@ def test_verifier_rejects_duplicate_provider_request_key(tmp_path):
         db.execute("UPDATE fresh_captures_rc6 SET symbol='GGAL' WHERE symbol='PAMP'")
     with pytest.raises(ValueError, match='FRESH_VERIFY_REQUEST_AMBIGUOUS'):
         verify(path)
+
+
+def test_exact_one_day_request_keeps_original_retention_cutoff_and_pit(tmp_path):
+    requested = date(2026, 10, 23)
+    calls = []
+    rows = [dict(date='2026-10-22', price=99),
+            dict(date='2026-10-23', price=100),
+            dict(date='2026-10-24', price=101)]
+
+    def fetch(target, start, end):
+        calls.append((target, start, end))
+        return rows
+
+    path = tmp_path / 'one-day.sqlite'
+    receipt = capture(path, [TARGET], 'PPI', fetch, now=NOW,
+                      requested_from=requested, requested_to=requested)
+    assert calls == [(TARGET, requested, requested)]
+    assert receipt['state'] == 'EVIDENCE_ONLY_NO_GO'
+    assert receipt['requested_from'] == receipt['requested_to'] == '2026-10-23'
+    assert receipt['cutoff_day'] == '2025-10-27'
+    assert receipt['history_v2_writes'] == 0 and not receipt['execution_allowed']
+    row = _records(path)[0]
+    assert (row['requested_from'], row['requested_to']) == ('2026-10-23', '2026-10-23')
+    assert row['retained_rows'] == row['dropped_expired'] == row['dropped_invalid'] == 1
+    assert json.loads(row['retained_rows_json']) == [rows[1]]
+    with sqlite3.connect(path) as db:
+        assert db.execute('SELECT cutoff_day FROM fresh_generation_rc6').fetchone()[0] == '2025-10-27'
+    assert verify(path)['state'] == 'EVIDENCE_ONLY_NO_GO'
+
+
+@pytest.mark.parametrize('start,end', [
+    (date(2026, 10, 23), None),
+    (None, date(2026, 10, 23)),
+    (date(2026, 10, 24), date(2026, 10, 23)),
+    (date(2025, 10, 26), date(2026, 10, 23)),
+    (date(2026, 10, 23), date(2026, 10, 27)),
+    (date(2026, 9, 22), date(2026, 10, 23)),
+    ('2026-10-23', '2026-10-23'),
+])
+def test_invalid_exact_window_fails_before_source_and_sidecar(tmp_path, start, end):
+    path = tmp_path / 'fresh.sqlite'
+    with pytest.raises(ValueError, match='FRESH_REQUEST_WINDOW_UNVERIFIED'):
+        capture(path, [TARGET], 'PPI', lambda *_: pytest.fail('source called'),
+                now=NOW, requested_from=start, requested_to=end)
+    assert not path.exists()
+
+
+def test_probe_cli_rejects_bad_window_before_login(tmp_path, monkeypatch):
+    targets = tmp_path / 'targets.json'
+    targets.write_text(json.dumps([TARGET]))
+    monkeypatch.setattr(probe_module, '_fetcher', lambda *_: pytest.fail('source login called'))
+    with pytest.raises(ValueError, match='FRESH_REQUEST_WINDOW_UNVERIFIED'):
+        probe_module.main(['--source', 'PPI', '--targets', str(targets),
+                           '--sidecar', str(tmp_path / 'fresh.sqlite'),
+                           '--receipt', str(tmp_path / 'receipt.json'),
+                           '--from-day', '2026-10-30'])
+    assert not (tmp_path / 'fresh.sqlite').exists()
+
+
+def test_probe_cli_passes_exact_range_without_trading_or_inventing_wire_count(tmp_path, monkeypatch):
+    class ProbeClock:
+        @classmethod
+        def now(cls, tz=None):
+            return (NOW + timedelta(minutes=1)).astimezone(tz)
+
+    monkeypatch.setattr(probe_module, 'datetime', ProbeClock)
+    calls = []
+
+    def fetch(target, start, end):
+        calls.append((target, start, end))
+        return [dict(date='2026-10-23', price=100)]
+
+    monkeypatch.setattr(probe_module, '_fetcher', lambda *_: (fetch, lambda: None))
+    targets = tmp_path / 'targets.json'
+    targets.write_text(json.dumps([TARGET]))
+    sidecar = tmp_path / 'fresh.sqlite'
+    receipt = tmp_path / 'receipt.json'
+    assert probe_module.main(['--source', 'PPI', '--targets', str(targets),
+                              '--sidecar', str(sidecar), '--receipt', str(receipt),
+                              '--from-day', '2026-10-23', '--to-day', '2026-10-23']) == 0
+    assert calls == [(TARGET, date(2026, 10, 23), date(2026, 10, 23))]
+    output = json.loads(receipt.read_text())
+    assert output['requested_from'] == output['requested_to'] == '2026-10-23'
+    # This stub returned a row but the autouse fixture forbids all sockets.
+    # One adapter invocation is not evidence of a provider HTTP request.
+    assert output['fetch_invocations'] == 1
+    assert output['provider_requests'] is None
+    assert output['history_v2_writes'] == 0 and output['ready_paper_implication'] == 'NONE'
+    assert verify(sidecar)['state'] == 'EVIDENCE_ONLY_NO_GO'
+
+
+def test_probe_without_credentials_reports_requested_day_as_unverified(tmp_path, monkeypatch):
+    class ProbeClock:
+        @classmethod
+        def now(cls, tz=None):
+            return (NOW + timedelta(minutes=1)).astimezone(tz)
+
+    monkeypatch.setattr(probe_module, 'datetime', ProbeClock)
+    monkeypatch.setattr(probe_module, '_fetcher', lambda *_: (None, None))
+    targets = tmp_path / 'targets.json'
+    targets.write_text(json.dumps([TARGET]))
+    sidecar = tmp_path / 'fresh.sqlite'
+    receipt = tmp_path / 'receipt.json'
+    assert probe_module.main(['--source', 'PPI', '--targets', str(targets),
+                              '--sidecar', str(sidecar), '--receipt', str(receipt),
+                              '--from-day', '2026-10-23', '--to-day', '2026-10-23']) == 0
+    output = json.loads(receipt.read_text())
+    assert output['state'] == 'NO_VERIFICADO' and output['provider_requests'] == 0
+    assert output['fetch_invocations'] == 0
+    assert output['requested_from'] == output['requested_to'] == '2026-10-23'
+    assert not sidecar.exists()
+
+
+def test_verifier_rejects_out_of_requested_window_even_within_retention(tmp_path):
+    path = tmp_path / 'fresh.sqlite'
+    capture(path, [TARGET], 'PPI', lambda *_: [dict(date='2026-10-23', price=100)],
+            now=NOW, requested_from=date(2026, 10, 23),
+            requested_to=date(2026, 10, 23))
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE fresh_captures_rc6 SET requested_to='2026-10-22'")
+    with pytest.raises(ValueError, match='FRESH_VERIFY_REQUEST_OUTSIDE_RETENTION'):
+        verify(path)
+
+
+def test_verifier_rejects_relabelled_retention_cutoff(tmp_path):
+    path = tmp_path / 'fresh.sqlite'
+    capture(path, [TARGET], 'PPI', lambda *_: [dict(date='2026-10-23', price=100)],
+            now=NOW, requested_from=date(2026, 10, 23),
+            requested_to=date(2026, 10, 23))
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE fresh_generation_rc6 SET cutoff_day='2026-10-23'")
+    with pytest.raises(ValueError, match='FRESH_VERIFY_RETENTION_OVERDUE'):
+        verify(path)
+
+
+def test_d30n6_real_eod_disagreement_stays_evidence_only(tmp_path, monkeypatch):
+    test_clock = datetime(2026, 11, 1, 4, 1, tzinfo=timezone.utc)
+
+    class FixtureClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return test_clock.astimezone(tz) if tz else test_clock.replace(tzinfo=None)
+
+    monkeypatch.setattr(fresh_module, 'datetime', FixtureClock)
+    monkeypatch.setattr(verify_module, 'datetime', FixtureClock)
+    fixture = json.loads((Path(__file__).parent / 'fixtures' /
+                          'rc6_d30n6_20261030_eod_disagreement.json').read_text())
+    iol = fixture['iol_capture']
+    bar, trade = iol['bar'], iol['last_trade']
+    independent = fixture['external_references']
+    assert datetime.fromtimestamp(bar['time'], timezone.utc).date() == date(2026, 10, 30)
+    assert bar['time'] == trade['time']
+    assert Decimal(bar['close']) - Decimal(trade['price']) == Decimal('60')
+    assert {Decimal(x['close']) for x in independent} == {Decimal(trade['price'])}
+    assert independent[0]['volume'] == bar['volume']
+    assert Decimal(independent[1]['volume']) - Decimal(bar['volume']) == Decimal('500000')
+
+    # The source-specific evidence store records IOL's actual bar without
+    # silently preferring it or either external last-trade/close reference.
+    target = ('D30N6', 'LETRAS', 'BYMA', 'ARS', 'A-24HS')
+    path = tmp_path / 'd30n6-evidence.sqlite'
+    receipt = capture(path, [target], 'IOL_CONNECTOR', lambda *_: [bar], now=test_clock,
+                      requested_from=date(2026, 10, 30),
+                      requested_to=date(2026, 10, 30))
+    assert receipt['state'] == 'EVIDENCE_ONLY_NO_GO'
+    assert receipt['ready_paper_implication'] == 'NONE'
+    assert fixture['canonical_selection'] is None and not fixture['paper_entry_authority']
+    assert verify(path)['state'] == 'EVIDENCE_ONLY_NO_GO'

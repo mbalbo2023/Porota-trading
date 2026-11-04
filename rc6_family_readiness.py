@@ -86,6 +86,12 @@ def _row_family(row: Mapping[str, Any], catalog_family: Any = None) -> str:
     value = catalog_family or row.get("family") or row.get("asset_type") or row.get("instrument_type")
     return normalize_family(value)
 
+
+def _raw_family(row: Mapping[str, Any]) -> str:
+    """Source-side physical family token; no display aliases confer identity."""
+    return _text(row.get("family") or row.get("asset_type") or
+                 row.get("instrument_type")).upper()
+
 def _comparison(row: Mapping[str, Any]) -> dict[str, Any]:
     value = row.get("primary_comparison")
     return dict(value) if isinstance(value, Mapping) else {}
@@ -179,17 +185,18 @@ def _effective_contract(comparison: Mapping[str, Any]) -> str:
 
 def _key(family: str, symbol: Any, market: Any = "", currency: Any = "",
          settlement: Any = "") -> tuple[str, str, str, str, str]:
-    # Normalize only supplied aliases. The helper's family default for an
-    # absent settlement must never fabricate a missing identity field.
+    # Exact source/catalog identity uses the physical family token. Only the
+    # output grouping may normalize ON/OBLIGACIONES or ETF/ETFS display aliases.
+    # Keep the established explicit market/settlement vocabulary normalization.
     term = _text(settlement)
-    return (normalize_family(family), _text(symbol).upper(),
+    return (_text(family).upper(), _text(symbol).upper(),
             canonical_market(market) if _text(market) else "",
             _text(currency).upper(), canonical_settlement(term) if term else "")
 
 
 def _observed_key(row: Mapping[str, Any]) -> tuple[str, str, str, str, str] | None:
     """Never promote a ticker-only complementary row to a catalog identity."""
-    key = _key(_row_family(row), row.get("symbol"), row.get("market"), row.get("currency"),
+    key = _key(_raw_family(row), row.get("symbol"), row.get("market"), row.get("currency"),
                row.get("settlement") or row.get("term"))
     return key if all(key) else None
 
@@ -208,25 +215,32 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         if key:
             by_identity[key].append(row)
 
+    # Keep visual duplicate/alias collisions fail-closed while matching data
+    # *only* by original source family, never by a display family alias.
     catalog_identity_counts: dict[tuple[str, str, str, str, str], int] = defaultdict(int)
+    catalog_raw_keys: set[tuple[str, str, str, str, str]] = set()
     for item in catalog_rows:
         symbol = _text(item.get("symbol")).upper()
         if symbol:
-            key = _key(item.get("family") or item.get("instrument_type"), symbol,
-                       item.get("market"), item.get("currency"), item.get("settlement"))
-            catalog_identity_counts[key] += 1
+            raw_key = _key(item.get("family") or item.get("instrument_type"), symbol,
+                           item.get("market"), item.get("currency"), item.get("settlement"))
+            catalog_raw_keys.add(raw_key)
+            visual_key = (normalize_family(raw_key[0]), *raw_key[1:])
+            catalog_identity_counts[visual_key] += 1
 
     instruments: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str, str]] = set()
     for item in catalog_rows:
-        family = normalize_family(item.get("family") or item.get("instrument_type"))
+        raw_family = item.get("family") or item.get("instrument_type")
+        family = normalize_family(raw_family)
         symbol = _text(item.get("symbol")).upper()
         if not symbol:
             continue
-        key = _key(family, symbol, item.get("market"), item.get("currency"), item.get("settlement"))
-        if key in seen:
+        key = _key(raw_family, symbol, item.get("market"), item.get("currency"), item.get("settlement"))
+        visual_key = (family, *key[1:])
+        if visual_key in seen:
             continue
-        seen.add(key)
+        seen.add(visual_key)
         matches = by_identity.get(key, []) if all(key) else []
         # Duplicate exact identities are review evidence, not a first-row
         # authority. The caller can reconcile them before a future evaluation.
@@ -239,7 +253,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
             source_row = row
             comparison = _comparison(row)
             contract = _effective_contract(comparison)
-        duplicate_catalog = catalog_identity_counts[key] > 1
+        duplicate_catalog = catalog_identity_counts[visual_key] > 1
         if duplicate_catalog:
             contract = "BLOCKED_CONFLICT"
         contract_ready = (contract in PAPER_SIMULATABLE_STATES and
@@ -255,7 +269,7 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
                 reasons.append("NO_INDEPENDENT_PAPER_ENGINE_FOR_NAMESPACE")
         role, parent = family_role(family)
         instruments.append({
-            "family": family,
+            "family": family, "raw_family": _text(raw_family).upper(),
             "family_role": role, "parent_paper_family": parent,
             "symbol": symbol,
             "market": _text(item.get("market") or (source_row.get("market") if source_row else "")),
@@ -272,24 +286,44 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
 
     # Include observed symbols that are not in the historical catalog so they
     # remain visible rather than silently disappearing.
-    catalog_keys = {_key(item["family"], item["symbol"], item["market"], item["currency"], item["settlement"])
-                    for item in instruments}
+    # Do not hide a physically unmatched observation because its *display*
+    # family collides with a catalog alias; it must stay explicitly unlinked.
+    catalog_visible_keys = {(normalize_family(k[0]), *k[1:]) for k in catalog_raw_keys}
+    observed_only_seen: set[tuple[str, str, str, str, str]] = set()
     for row in observed:
         symbol = _text(row.get("symbol")).upper()
-        if not symbol or (_observed_key(row) in catalog_keys):
+        observed_key = _observed_key(row)
+        if not symbol or observed_key in catalog_raw_keys:
             continue
+        if observed_key is not None:
+            if observed_key in observed_only_seen:
+                continue
+            observed_only_seen.add(observed_key)
         family = _row_family(row)
         role, parent = family_role(family)
         comparison = _comparison(row)
-        contract = _effective_contract(comparison)
+        reported_contract = _effective_contract(comparison)
+        # Even unlinked source rows can contradict one another. Show one
+        # explicit conflict rather than the first claimed READY label.
+        unlinked_duplicate = (observed_key is not None and
+                              len(by_identity.get(observed_key, ())) > 1)
+        contract = "BLOCKED_CONFLICT" if unlinked_duplicate else reported_contract
+        alias_only = (observed_key is not None and
+                      (normalize_family(observed_key[0]), *observed_key[1:]) in catalog_visible_keys)
+        reasons = _reason(row, reported_contract) + ["PPI_CATALOG_IDENTITY_NOT_VERIFIED"]
+        if alias_only:
+            reasons.append("RAW_FAMILY_ALIAS_ONLY_NO_AUTHORITY")
+        if unlinked_duplicate:
+            reasons.append("DUPLICATE_UNLINKED_OBSERVATION_REVIEW_REQUIRED")
         instruments.append({
-            "family": family, "family_role": role, "parent_paper_family": parent,
+            "family": family, "raw_family": _raw_family(row),
+            "family_role": role, "parent_paper_family": parent,
             "symbol": symbol, "market": _text(row.get("market")),
             "currency": _text(row.get("currency")),
             "settlement": _text(row.get("term") or row.get("settlement")),
             "contract_state": contract, "paper_contract_ready": False,
             "paper_auto_enabled": False, "entry_authority": False,
-            "real_money_authorized": False, "reasons": _reason(row, contract) + ["PPI_CATALOG_IDENTITY_NOT_VERIFIED"],
+            "real_money_authorized": False, "reasons": reasons,
             "comparison": comparison,
         })
 
@@ -309,10 +343,12 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
         pending = len(rows) - ready - blocked
         if ready == len(rows) and rows:
             state = "READY_CONTRACT_ONLY"
+        elif ready:
+            # Family summaries must not veto independently verified identities.
+            # A blocked sibling is still counted and held at instrument level.
+            state = "PARTIAL"
         elif blocked:
             state = "BLOCKED"
-        elif ready:
-            state = "PARTIAL"
         else:
             state = "PENDING"
         gaps: list[str] = []
@@ -328,6 +364,9 @@ def evaluate(catalog: Iterable[Mapping[str, Any]] = (), iol_rows: Iterable[Mappi
             "real_money_authorized": False, "gaps": gaps[:8],
             "next_action": ("Evaluar señal, costos, riesgo y admisión PAPER por instrumento."
                             if state == "READY_CONTRACT_ONLY" else
+                            "Evaluar los contratos READY por instrumento; mantener HOLD para los demás. "
+                            + ("Resolver: " + ", ".join(gaps[:3]) if gaps else "")
+                            if state == "PARTIAL" else
                             "Resolver: " + ", ".join(gaps[:3]) if gaps else
                             "Publicar capturas PPI/IOL comparables."),
         })

@@ -9,37 +9,344 @@ import json
 import os
 import re
 import sqlite3
+import hashlib
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from zoneinfo import ZoneInfo
 
-from cg_paper_workspace import artifact_root, database_path
+from cg_paper_workspace import artifact_root, database_path, identity_from_connection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 FILENAME = "rc6_action4_auditoria_latest.json"
+WEEKLY_SOURCE_PATH = "/api/reports/action4/source"
+WEEKLY_SOURCE_LIMIT = 500
+
+
+def _weekly_label(value):
+    """Preserve exact bounded category labels or fail the source closed."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_. :/-]{1,80}", value):
+        raise ValueError("ACTION4_WEEKLY_LABEL_UNVERIFIED")
+    return value
+
+
+def _weekly_clock(value):
+    stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        raise ValueError("ACTION4_WEEKLY_SOURCE_CLOCK_UNVERIFIED")
+    return stamp
+
+
+def _build_weekly_source(db_path, *, now=None, max_rows=WEEKLY_SOURCE_LIMIT,
+                         seconds=3):
+    """Bounded, consistent seven-day PAPER snapshot for the authenticated API.
+
+    The GitHub Action consumes this API, never SQLite.  A cap or query timeout
+    produces PARTIAL/RED rather than manufacturing a weekly zero or total.
+    """
+    now = now or datetime.now(TZ)
+    if (now.tzinfo is None or now.utcoffset() is None or
+            type(max_rows) is not int or not 0 < max_rows <= WEEKLY_SOURCE_LIMIT or
+            not isinstance(seconds, (int, float)) or not 0 < seconds <= 5):
+        raise ValueError("ACTION4_WEEKLY_SOURCE_BUDGET_INVALID")
+    end = now.astimezone(TZ)
+    start = end - timedelta(days=7)
+    deadline = time.monotonic() + seconds
+    path = Path(db_path).resolve()
+    with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.25) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only=ON")
+        identity_from_connection(connection)
+        connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+        connection.execute("BEGIN")
+        state = connection.execute(
+            "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        if (state is None or state["mode"] != "PRODUCTION_PAPER" or
+                type(state["real_orders_sent"]) is not int or state["real_orders_sent"] != 0):
+            raise ValueError("ACTION4_WEEKLY_PAPER_SAFETY_UNVERIFIED")
+        columns = {
+            table: {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            for table in ("paper_positions", "paper_decisions")
+        }
+        if (not {"paper_id", "symbol", "asset_class", "currency", "settlement", "status",
+                 "opened_at", "closed_at", "close_reason", "net_pnl"} <= columns["paper_positions"] or
+                not {"id", "decided_at", "action"} <= columns["paper_decisions"]):
+            raise ValueError("ACTION4_WEEKLY_SOURCE_SCHEMA_UNVERIFIED")
+        window = (start.isoformat(), end.isoformat(), max_rows + 1)
+        closed = [dict(row) for row in connection.execute("""
+            SELECT paper_id,symbol,asset_class,currency,settlement,opened_at,
+                   closed_at,close_reason,net_pnl
+            FROM paper_positions WHERE status='CLOSED'
+              AND julianday(closed_at)>=julianday(?)
+              AND julianday(closed_at)<julianday(?)
+            ORDER BY julianday(closed_at),paper_id LIMIT ?""", window)]
+        opened = [dict(row) for row in connection.execute("""
+            SELECT paper_id,opened_at FROM paper_positions
+            WHERE julianday(opened_at)>=julianday(?)
+              AND julianday(opened_at)<julianday(?)
+            ORDER BY julianday(opened_at),paper_id LIMIT ?""", window)]
+        decisions = [dict(row) for row in connection.execute("""
+            SELECT id,decided_at,action FROM paper_decisions
+            WHERE julianday(decided_at)>=julianday(?)
+              AND julianday(decided_at)<julianday(?)
+            ORDER BY julianday(decided_at),id LIMIT ?""", window)]
+    complete = all(len(items) <= max_rows for items in (closed, opened, decisions))
+    if not complete:
+        return {"schema": "RC6_ACTION4_WEEKLY_SOURCE_V1", "status": "PARTIAL",
+                "reason": "WINDOW_ROW_BUDGET_EXCEEDED", "max_rows_per_set": max_rows,
+                "lower_bound_rows": {"closed": len(closed), "opened": len(opened),
+                                     "decisions": len(decisions)},
+                "window": {"from_local": start.isoformat(), "to_local": end.isoformat()},
+                "mode": state["mode"], "real_orders_sent": state["real_orders_sent"]}
+    operations = []
+    pnl = {}
+    for row in closed:
+        _weekly_clock(row["opened_at"])
+        _weekly_clock(row["closed_at"])
+        currency = str(row["currency"] or "")
+        if currency not in {"ARS", "USD", "USD_MEP", "USD_CCL"}:
+            return {"schema": "RC6_ACTION4_WEEKLY_SOURCE_V1", "status": "PARTIAL",
+                    "reason": "CLOSED_POSITION_CURRENCY_UNVERIFIED",
+                    "window": {"from_local": start.isoformat(), "to_local": end.isoformat()},
+                    "mode": state["mode"], "real_orders_sent": state["real_orders_sent"]}
+        account = pnl.setdefault(currency, {"total": Decimal("0"), "unknown_rows": 0})
+        try:
+            amount = Decimal(str(row["net_pnl"])) if row["net_pnl"] is not None else None
+            if amount is None or not amount.is_finite():
+                raise InvalidOperation
+        except (InvalidOperation, ValueError, TypeError):
+            amount = None
+            account["unknown_rows"] += 1
+        if amount is not None:
+            account["total"] += amount
+        operations.append({"paper_id": _weekly_label(row["paper_id"]),
+                           "symbol": _weekly_label(row["symbol"]),
+                           "asset_class": _weekly_label(row["asset_class"]),
+                           "currency": currency,
+                           "settlement": _weekly_label(row["settlement"]),
+                           "opened_at": row["opened_at"], "closed_at": row["closed_at"],
+                           "close_reason": _weekly_label(row["close_reason"]),
+                           "net_pnl": str(amount) if amount is not None else None})
+    for row in opened:
+        _weekly_clock(row["opened_at"])
+    actions = Counter()
+    for row in decisions:
+        _weekly_clock(row["decided_at"])
+        actions[_weekly_label(row["action"])] += 1
+    return {"schema": "RC6_ACTION4_WEEKLY_SOURCE_V1", "status": "COMPLETE",
+            "source": WEEKLY_SOURCE_PATH,
+            "generated_at_utc": now.astimezone(timezone.utc).isoformat(),
+            "window": {"from_local": start.isoformat(), "to_local": end.isoformat()},
+            "mode": state["mode"], "real_orders_sent": state["real_orders_sent"],
+            "max_rows_per_set": max_rows,
+            "counts": {"closed": len(closed), "opened": len(opened),
+                       "decisions": len(decisions)},
+            "operations": operations,
+            "decisions_by_action": dict(sorted(actions.items())),
+            "pnl_by_currency": {
+                key: {"state": "NO_VERIFICADO" if entry["unknown_rows"] else "COMPLETE",
+                      "total": None if entry["unknown_rows"] else str(entry["total"]),
+                      "unknown_rows": entry["unknown_rows"]}
+                for key, entry in sorted(pnl.items())}}
+
+
+def build_weekly_source(db_path, *, now=None, max_rows=WEEKLY_SOURCE_LIMIT,
+                        seconds=3):
+    now = now or datetime.now(TZ)
+    try:
+        return _build_weekly_source(db_path, now=now, max_rows=max_rows,
+                                    seconds=seconds)
+    except ValueError as exc:
+        if str(exc) not in {"ACTION4_WEEKLY_LABEL_UNVERIFIED",
+                            "ACTION4_WEEKLY_SOURCE_CLOCK_UNVERIFIED"}:
+            raise
+        end = now.astimezone(TZ)
+        return {"schema": "RC6_ACTION4_WEEKLY_SOURCE_V1", "status": "PARTIAL",
+                "reason": str(exc),
+                "window": {"from_local": (end - timedelta(days=7)).isoformat(),
+                           "to_local": end.isoformat()}}
+    except sqlite3.OperationalError as exc:
+        if "interrupted" not in str(exc).lower():
+            raise
+        end = now.astimezone(TZ)
+        return {"schema": "RC6_ACTION4_WEEKLY_SOURCE_V1", "status": "PARTIAL",
+                "reason": "SQLITE_TIME_BUDGET_EXHAUSTED",
+                "window": {"from_local": (end - timedelta(days=7)).isoformat(),
+                           "to_local": end.isoformat()}}
+
+
+def weekly_payload_from_source(source, *, run_id, run_number, workflow_commit,
+                               image_label_commit, container_id, image_id):
+    """Pure Action consumer: only a complete API receipt may be published."""
+    if (not isinstance(source, dict) or source.get("schema") != "RC6_ACTION4_WEEKLY_SOURCE_V1"
+            or source.get("status") != "COMPLETE" or source.get("source") != WEEKLY_SOURCE_PATH
+            or source.get("mode") != "PRODUCTION_PAPER" or
+            type(source.get("real_orders_sent")) is not int or source["real_orders_sent"] != 0):
+        raise ValueError("ACTION4_WEEKLY_SOURCE_INCOMPLETE")
+    counts = source.get("counts") or {}
+    operations = source.get("operations")
+    actions = source.get("decisions_by_action")
+    if (not isinstance(counts, dict) or not isinstance(operations, list) or
+            not isinstance(actions, dict) or counts.get("closed") != len(operations)
+            or type(counts.get("opened")) is not int or type(counts.get("decisions")) is not int
+            or type(source.get("max_rows_per_set")) is not int or
+            not 0 < source["max_rows_per_set"] <= WEEKLY_SOURCE_LIMIT or
+            any(type(counts.get(k)) is not int or not 0 <= counts[k] <= source["max_rows_per_set"]
+                for k in ("closed", "opened", "decisions"))
+            or any(type(v) is not int or v < 0 for v in actions.values())
+            or sum(actions.values()) != counts["decisions"]):
+        raise ValueError("ACTION4_WEEKLY_SOURCE_COUNTS_INVALID")
+    pnl = {}
+    try:
+        for row in operations:
+            if not isinstance(row, dict):
+                raise ValueError
+            for key in ("paper_id", "symbol", "asset_class", "settlement", "close_reason"):
+                _weekly_label(row.get(key))
+            currency = row.get("currency")
+            if currency not in {"ARS", "USD", "USD_MEP", "USD_CCL"}:
+                raise ValueError
+            _weekly_clock(row.get("opened_at"))
+            _weekly_clock(row.get("closed_at"))
+            entry = pnl.setdefault(currency, {"total": Decimal("0"), "unknown_rows": 0})
+            if row.get("net_pnl") is None:
+                entry["unknown_rows"] += 1
+            else:
+                amount = Decimal(str(row["net_pnl"]))
+                if not amount.is_finite():
+                    raise ValueError
+                entry["total"] += amount
+        expected_pnl = {
+            key: {"state": "NO_VERIFICADO" if entry["unknown_rows"] else "COMPLETE",
+                  "total": None if entry["unknown_rows"] else str(entry["total"]),
+                  "unknown_rows": entry["unknown_rows"]}
+            for key, entry in sorted(pnl.items())}
+        if expected_pnl != source.get("pnl_by_currency"):
+            raise ValueError
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("ACTION4_WEEKLY_SOURCE_PNL_UNVERIFIED") from exc
+    encoded = json.dumps(source, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return {"scope": "RC6", "status": "SUCCESS", "source": WEEKLY_SOURCE_PATH,
+            "database_access_from_action": "NO", "generated_at_utc": source["generated_at_utc"],
+            "window": source["window"], "mode": source["mode"],
+            "real_orders_sent": source["real_orders_sent"],
+            "decision_snapshot_scope": "COMPLETE_PAPER_DECISIONS_TABLE_WINDOW_ONLY",
+            "origin": {"workflow": "RC6 Action4 weekly PAPER", "run_id": str(run_id),
+                       "run_number": str(run_number),
+                       "workflow_commit": str(workflow_commit),
+                       "image_label_commit": str(image_label_commit),
+                       "container_id": str(container_id), "image_id": str(image_id)},
+            "source_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+            "source_receipt": source,
+            "source_counts": counts,
+            "scope_evidence": {"positions": "PAPER_POSITIONS_TABLE_ONLY",
+                               "decisions": "PAPER_DECISIONS_TABLE_ONLY",
+                               "specialized_family_ledgers": "NO_VERIFICADO"},
+            "operations": operations,
+            "separation": {"executed_closed": counts["closed"],
+                           "opened_simulated": counts["opened"],
+                           "hold": actions.get("HOLD", 0),
+                           "rejected_blocked": sum(value for key, value in actions.items()
+                                                   if key.startswith(("BLOCKED", "REJECTED"))),
+                           "decision_count": counts["decisions"]},
+            "decisions_by_action": actions,
+            "pnl_by_currency": source["pnl_by_currency"]}
+
+
+def weekly_publication_decision(previous, candidate):
+    """Monotonic artifact rule; a retry may not replace its own evidence."""
+    if not isinstance(previous, dict) or previous.get("status") != "SUCCESS":
+        return "STORE"
+    old_origin = previous.get("origin") or {}
+    new_origin = candidate.get("origin") or {}
+    if old_origin.get("run_id") == new_origin.get("run_id"):
+        return ("ALREADY_STORED" if previous == candidate
+                else "SAME_RUN_EVIDENCE_CHANGED")
+    try:
+        old_end = _weekly_clock(previous["window"]["to_local"])
+        new_end = _weekly_clock(candidate["window"]["to_local"])
+    except (KeyError, TypeError, ValueError):
+        return "PRIOR_WINDOW_UNVERIFIED"
+    return "STALE_WINDOW" if old_end >= new_end else "STORE"
 
 
 def validate_weekly_payload(payload, now=None):
     """Reject stale or non-PAPER Action 4 receipts before replacing the artifact."""
     now = now or datetime.now(timezone.utc)
     if (not isinstance(payload, dict) or payload.get("scope") != "RC6" or
-            payload.get("source") != "/api/observer/state" or
+            payload.get("source") != WEEKLY_SOURCE_PATH or
             payload.get("database_access_from_action") != "NO" or
             payload.get("status") != "SUCCESS" or
             payload.get("mode") != "PRODUCTION_PAPER" or
             type(payload.get("real_orders_sent")) is not int or
             payload["real_orders_sent"] != 0 or
-            payload.get("decision_snapshot_scope") != "LATEST_100_ONLY; INCOMPLETE_FOR_WEEKLY_TOTAL" or
+            payload.get("decision_snapshot_scope") != "COMPLETE_PAPER_DECISIONS_TABLE_WINDOW_ONLY" or
             not isinstance(payload.get("operations"), list) or
             not isinstance(payload.get("separation"), dict)):
         raise ValueError("ACTION4_WEEKLY_PAPER_SCOPE_UNVERIFIED")
+    evidence = payload.get("scope_evidence") or {}
+    if (not isinstance(evidence, dict) or
+            evidence.get("positions") != "PAPER_POSITIONS_TABLE_ONLY" or
+            evidence.get("decisions") != "PAPER_DECISIONS_TABLE_ONLY" or
+            evidence.get("specialized_family_ledgers") != "NO_VERIFICADO"):
+        raise ValueError("ACTION4_WEEKLY_SCOPE_EVIDENCE_INVALID")
+    counts = payload.get("source_counts") or {}
+    separation = payload["separation"]
+    actions = payload.get("decisions_by_action") or {}
+    if (not re.fullmatch(r"[0-9a-f]{64}", str(payload.get("source_sha256") or "")) or
+            not isinstance(counts, dict) or not isinstance(actions, dict) or
+            any(type(counts.get(k)) is not int or counts[k] < 0
+                for k in ("closed", "opened", "decisions")) or
+            len(payload["operations"]) != counts["closed"] or
+            any(type(v) is not int or v < 0 for v in actions.values()) or
+            sum(actions.values()) != counts["decisions"] or
+            any(type(separation.get(k)) is not int for k in
+                ("executed_closed", "opened_simulated", "hold", "rejected_blocked", "decision_count")) or
+            separation["executed_closed"] != counts["closed"] or
+            separation["opened_simulated"] != counts["opened"] or
+            separation["decision_count"] != counts["decisions"] or
+            separation["hold"] != actions.get("HOLD", 0) or
+            separation["rejected_blocked"] != sum(v for k, v in actions.items()
+                                                  if k.startswith(("BLOCKED", "REJECTED")))):
+        raise ValueError("ACTION4_WEEKLY_COUNTS_UNVERIFIED")
+    pnl = payload.get("pnl_by_currency")
+    if not isinstance(pnl, dict):
+        raise ValueError("ACTION4_WEEKLY_PNL_UNVERIFIED")
+    for entry in pnl.values():
+        if not isinstance(entry, dict) or type(entry.get("unknown_rows")) is not int:
+            raise ValueError("ACTION4_WEEKLY_PNL_UNVERIFIED")
+        unknown = entry["unknown_rows"]
+        if unknown:
+            if entry.get("state") != "NO_VERIFICADO" or entry.get("total") is not None:
+                raise ValueError("ACTION4_WEEKLY_PNL_UNVERIFIED")
+        else:
+            try:
+                amount = Decimal(str(entry["total"]))
+            except (InvalidOperation, ValueError, TypeError, KeyError):
+                raise ValueError("ACTION4_WEEKLY_PNL_UNVERIFIED") from None
+            if entry.get("state") != "COMPLETE" or not amount.is_finite():
+                raise ValueError("ACTION4_WEEKLY_PNL_UNVERIFIED")
     origin = payload.get("origin") or {}
     if (not isinstance(origin, dict) or
             not str(origin.get("run_id") or "").isdigit() or
-            not re.fullmatch(r"[0-9a-f]{40}", str(origin.get("commit") or ""))):
+            not re.fullmatch(r"[0-9a-f]{40}", str(origin.get("workflow_commit") or "")) or
+            not re.fullmatch(r"[0-9a-f]{40}", str(origin.get("image_label_commit") or "")) or
+            not re.fullmatch(r"[0-9a-f]{64}", str(origin.get("container_id") or "")) or
+            not re.fullmatch(r"sha256:[0-9a-f]{64}", str(origin.get("image_id") or ""))):
         raise ValueError("ACTION4_WEEKLY_ORIGIN_UNVERIFIED")
+    try:
+        derived = weekly_payload_from_source(
+            payload["source_receipt"], run_id=origin["run_id"],
+            run_number=origin["run_number"], workflow_commit=origin["workflow_commit"],
+            image_label_commit=origin["image_label_commit"],
+            container_id=origin["container_id"], image_id=origin["image_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("ACTION4_WEEKLY_SOURCE_RECEIPT_UNVERIFIED") from exc
+    if derived != payload:
+        raise ValueError("ACTION4_WEEKLY_SOURCE_RECEIPT_UNVERIFIED")
     window = payload.get("window") or {}
     try:
         start = datetime.fromisoformat(window["from_local"])
