@@ -92,6 +92,19 @@ def _row(report, family):
     return next(r for r in report["families"] if r["family"] == family)
 
 
+def _assert_partial_no_go(report, reasons):
+    assert report["status"] == "DIAGNOSTIC_PARTIAL_NO_GO"
+    assert report["v2_current_integrity_verified"] is False
+    assert report["v2_current_invalid_reason_counts"] == reasons
+    assert (report["v2_current_valid_rows"] + sum(reasons.values())
+            == report["v2_current_rows"])
+    assert report["ppi_identity_authority_verified"] is False
+    assert report["source_contract_terms_fresh_verified"] is False
+    assert report["causal_pit_verified"] is False
+    assert report["paper_auto_enabled"] is False
+    assert report["host_db_writes"] == report["provider_gets"] == 0
+
+
 def test_host_guard_fails_before_open_when_no_private_ro_mount(tmp_path):
     data, path, _ = _fixture(tmp_path)
     assert not host.private_ro_mount_verified(data)
@@ -107,6 +120,9 @@ def test_six_families_aggregate_only_no_mutation_or_tickers(tmp_path):
     assert report["capability_gaps_measured"] == 6
     assert report["catalog_rows"] == 6
     assert report["v2_current_rows"] == 5
+    assert report["v2_current_valid_rows"] == 5
+    assert report["v2_current_integrity_verified"] is True
+    assert report["v2_current_invalid_reason_counts"] == {}
     assert report["v2_history_ppi_rows_scanned"] >= 5
     assert report["v2_history_identity_bytes_scanned"] > 0
     assert report["historical_819_gap_match"] is False
@@ -159,8 +175,11 @@ def test_orphan_v2_does_not_reduce_missing_contract_count(tmp_path):
        999,'f','2026-11-03T15:00:00+00:00')""")
     con.commit()
     con.close()
-    with pytest.raises(host.Blocked, match="HOST_V2_SNAPSHOT_REFERENCE_MISSING"):
-        host.probe(data_root=data, db=path, guard=lambda _: True)
+    report = host.probe(data_root=data, db=path, guard=lambda _: True)
+    _assert_partial_no_go(report, {"HOST_V2_SNAPSHOT_REFERENCE_MISSING": 1})
+    assert report["capability_gaps_measured"] == 1
+    assert _row(report, "BONOS")["exact_current_v2_ppi"] == 0
+    assert _row(report, "BONOS")["v2_current_absent"] == 1
 
 
 def test_cross_currency_never_matches_ppi_current(tmp_path):
@@ -231,7 +250,14 @@ def test_workflow_host_never_runs_on_pull_request(tmp_path):
     assert "sudo -n timeout 25 unshare --mount --propagation private" in text
     assert "mount -o remount,bind,ro /opt/porota-trading/data" in text
     assert "exec python3 -B -" in text
-    assert "docker exec" not in text
+    # The SQL census, and not unrelated bounded metadata diagnostics in this
+    # workflow, must stay inside the private read-only mount namespace.
+    # In particular A516 may query pre-existing container metadata with a
+    # separately pinned, non-provider Docker command under its own guards.
+    sql_step = text.split(
+        "      - name: Remote private mount namespace RO bounded SQL aggregates\n", 1
+    )[1].split("\n      - name:", 1)[0]
+    assert "docker exec" not in sql_step
 
 
 def test_historical_reconciliation_streams_once_not_n_queries(tmp_path):
@@ -302,8 +328,9 @@ def test_mixed_family_current_snapshot_fails_integrity(tmp_path):
     con.execute("UPDATE contract_evidence_v2_current SET family='OBLIGACIONES'")
     con.commit()
     con.close()
-    with pytest.raises(host.Blocked, match="HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH"):
-        host.probe(data_root=data, db=path, guard=lambda _: True)
+    report = host.probe(data_root=data, db=path, guard=lambda _: True)
+    _assert_partial_no_go(report, {"HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH": 1})
+    assert _row(report, "OBLIGACIONES")["exact_current_v2_ppi"] == 0
 
 
 @pytest.mark.parametrize("table,column,value,reason", [
@@ -317,9 +344,6 @@ def test_mixed_family_current_snapshot_fails_integrity(tmp_path):
      "HOST_V2_SNAPSHOT_SOURCE_CLASS_MISMATCH"),
     ("contract_evidence_v2_current", "evidence_hash", "0" * 64,
      "HOST_V2_SNAPSHOT_EVIDENCE_HASH_MISMATCH"),
-    ("contract_evidence_v2_current", "observed_at",
-     "2026-11-03T15:00:01+00:00",
-     "HOST_V2_SNAPSHOT_OBSERVED_AT_MISMATCH"),
 ])
 def test_current_snapshot_integrity_reasons_are_specific_and_private(
         tmp_path, table, column, value, reason):
@@ -330,11 +354,93 @@ def test_current_snapshot_integrity_reasons_are_specific_and_private(
     con.commit()
     con.close()
     before = hashlib.sha256(path.read_bytes()).hexdigest()
-    with pytest.raises(host.Blocked) as failure:
-        host.probe(data_root=data, db=path, guard=lambda _: True)
-    assert str(failure.value) == reason
-    assert "AL30" not in str(failure.value)
-    assert "BYMA" not in str(failure.value)
+    report = host.probe(data_root=data, db=path, guard=lambda _: True)
+    _assert_partial_no_go(report, {reason: 1})
+    assert report["catalog_rows"] == 6
+    assert report["capability_gaps_measured"] == 6
+    assert _row(report, "BONOS")["exact_current_v2_ppi"] == 0
+    payload = json.dumps(report, sort_keys=True)
+    assert "AL30" not in payload
+    assert "BYMA" not in payload
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize("current_timestamp", [
+    "2026-11-03T15:00:00Z",
+    "2026-11-03T16:00:00+01:00",  # Equal UTC instant, different syntax.
+    "2026-11-03T15:00:01+00:00",  # Same immutable hash, latest observation.
+    "2026-11-03T12:00:01-03:00",  # Later observation in ART.
+])
+def test_reobserved_identical_hash_preserves_snapshot_first_seen_timestamp(
+        tmp_path, current_timestamp):
+    data, path = _get(tmp_path)
+    con = sqlite3.connect(path)
+    con.execute("UPDATE contract_evidence_v2_current SET observed_at=? WHERE ticker='AL30'",
+                (current_timestamp,))
+    con.commit()
+    con.close()
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    result = host.probe(data_root=data, db=path, guard=lambda _: True)
+    assert result["status"] == "DIAGNOSTIC_ONLY"
+    assert result["v2_current_integrity_verified"] is True
+    assert result["v2_current_invalid_reason_counts"] == {}
+    assert _row(result, "BONOS")["exact_current_v2_ppi"] == 1
+    assert result["ppi_identity_authority_verified"] is False
+    assert result["causal_pit_verified"] is False
+    assert result["host_db_writes"] == result["provider_gets"] == 0
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize("table,timestamp,expected_reason", [
+    ("contract_evidence_v2_current", "2026-11-03T14:59:59+00:00",
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_REVERSED"),
+    ("contract_evidence_v2_current", "2026-11-03T14:00:00-00:30",
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_REVERSED"),
+    ("contract_evidence_v2_current", "2026-11-03T15:00:01",
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_INVALID"),
+    ("contract_evidence_v2_snapshots", "2026-11-03T15:00:01",
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_INVALID"),
+    ("contract_evidence_v2_current", "2026-11-03Tbad",
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_INVALID"),
+    ("contract_evidence_v2_current", None,
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_INVALID"),
+])
+def test_timestamp_reversal_or_untrusted_clock_remains_failclosed(
+        tmp_path, table, timestamp, expected_reason):
+    data, path = _get(tmp_path)
+    con = sqlite3.connect(path)
+    con.execute(f"UPDATE {table} SET observed_at=? WHERE ticker='AL30'", (timestamp,))
+    con.commit()
+    con.close()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True)
+    _assert_partial_no_go(report, {expected_reason: 1})
+    assert _row(report, "BONOS")["exact_current_v2_ppi"] == 0
+    assert report["capability_gaps_measured"] == 6
+
+
+def test_multiple_invalid_current_rows_do_not_contaminate_819_denominator(tmp_path):
+    data, path = _get(tmp_path)
+    con = sqlite3.connect(path)
+    con.execute("""UPDATE contract_evidence_v2_current SET observed_at=?
+                   WHERE family='BONOS'""", ("2026-11-03T14:59:59Z",))
+    con.execute("""UPDATE contract_evidence_v2_current SET evidence_hash=?
+                   WHERE family='OPCIONES'""", ("0" * 64,))
+    con.commit()
+    con.close()
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True)
+    _assert_partial_no_go(report, {
+        "HOST_V2_SNAPSHOT_OBSERVED_AT_REVERSED": 1,
+        "HOST_V2_SNAPSHOT_EVIDENCE_HASH_MISMATCH": 1,
+    })
+    assert report["v2_current_rows"] == 5
+    assert report["v2_current_valid_rows"] == 3
+    assert report["catalog_rows"] == 6
+    assert report["capability_gaps_measured"] == 6
+    assert report["historical_819_gap_match"] is False
+    assert _row(report, "BONOS")["exact_current_v2_ppi"] == 0
+    assert _row(report, "OPCIONES")["exact_current_v2_complement_only"] == 0
+    assert _row(report, "FUTUROS")["exact_current_v2_ppi"] == 1
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
 
 

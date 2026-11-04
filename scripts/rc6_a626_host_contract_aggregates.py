@@ -26,6 +26,14 @@ SCHEMA = "rc6.a626.host-contract-aggregates-ro.v1"
 FAMILIES = ("BONOS", "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI")
 ACTIVE = frozenset({"AVAILABLE", "ACTIVE", "READY"})
 PPI_CATALOG = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE"})
+CURRENT_INTEGRITY_REASONS = frozenset({
+    "HOST_V2_SNAPSHOT_REFERENCE_MISSING",
+    "HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH",
+    "HOST_V2_SNAPSHOT_SOURCE_CLASS_MISMATCH",
+    "HOST_V2_SNAPSHOT_EVIDENCE_HASH_MISMATCH",
+    "HOST_V2_SNAPSHOT_OBSERVED_AT_INVALID",
+    "HOST_V2_SNAPSHOT_OBSERVED_AT_REVERSED",
+})
 MAX_CATALOG_ROWS = 60_000
 MAX_CURRENT_ROWS = 60_000
 MAX_METADATA_BYTES = 128 * 1024 * 1024
@@ -188,11 +196,25 @@ def _bucket():
             "capability_codes": Counter()}
 
 
+def _observed_utc(value):
+    """Decode only bounded timezone-aware observations; never infer a clock."""
+    if type(value) is not str or not value or len(value) > 64 or value.strip() != value:
+        return None
+    try:
+        instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            return None
+        return instant.astimezone(timezone.utc)
+    except (ValueError, OverflowError, TypeError):
+        return None
+
+
 def _current_snapshot_integrity_reason(item):
     """Classify a bad current pointer without emitting market or identity data.
 
-    This is a diagnostic refinement only: every mismatch still stops the entire
-    host census before any capability, source, or readiness can be accredited.
+    The producer preserves the first observed_at for a reused snapshot hash,
+    while current records the latest observation. Equality of strings is not
+    a valid integrity guard; a timezone-aware chronological reversal is.
     """
     if item["joined_snapshot_id"] is None:
         return "HOST_V2_SNAPSHOT_REFERENCE_MISSING"
@@ -207,8 +229,12 @@ def _current_snapshot_integrity_reason(item):
         return "HOST_V2_SNAPSHOT_SOURCE_CLASS_MISMATCH"
     if item["evidence_hash"] != item["sh"]:
         return "HOST_V2_SNAPSHOT_EVIDENCE_HASH_MISMATCH"
-    if item["observed_at"] != item["sa"]:
-        return "HOST_V2_SNAPSHOT_OBSERVED_AT_MISMATCH"
+    current_at = _observed_utc(item["observed_at"])
+    snapshot_at = _observed_utc(item["sa"])
+    if current_at is None or snapshot_at is None:
+        return "HOST_V2_SNAPSHOT_OBSERVED_AT_INVALID"
+    if current_at < snapshot_at:
+        return "HOST_V2_SNAPSHOT_OBSERVED_AT_REVERSED"
     return None
 
 
@@ -269,10 +295,19 @@ def _aggregate(conn):
         raise Blocked("HOST_V2_ORPHAN_OR_BOUND")
     by_key = defaultdict(set)
     by_ticker = Counter()
+    invalid_current = Counter()
+    valid_current = 0
     for item in current:
         integrity_reason = _current_snapshot_integrity_reason(item)
         if integrity_reason:
-            raise Blocked(integrity_reason)
+            # The catalog denominator remains physically measurable even if
+            # some v2 pointers are corrupt. Quarantine instead of accrediting
+            # their identity, source or ticker, and surface an explicit NO_GO.
+            if integrity_reason not in CURRENT_INTEGRITY_REASONS:
+                raise Blocked("HOST_V2_INTEGRITY_REASON_UNVERIFIED")
+            invalid_current[integrity_reason] += 1
+            continue
+        valid_current += 1
         key = _key(item)
         by_ticker[key[1]] += 1
         if _complete(key):
@@ -338,7 +373,8 @@ def _aggregate(conn):
         families.append({name: (dict(sorted(value.items())) if isinstance(value, Counter)
                                 else value)
                          for name, value in {"family": family, **out[family]}.items()})
-    return len(rows), len(current), historical_rows, historical_bytes, families
+    return (len(rows), len(current), historical_rows, historical_bytes, families,
+            valid_current, dict(sorted(invalid_current.items())))
 
 
 def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
@@ -354,14 +390,17 @@ def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
         start = time.monotonic()
         conn.set_progress_handler(lambda: int(time.monotonic() - start > MAX_SECONDS), 1000)
         conn.execute("BEGIN")
-        catalog_rows, current_rows, historical_rows, historical_bytes, families = _aggregate(conn)
+        (catalog_rows, current_rows, historical_rows, historical_bytes, families,
+         valid_current, invalid_current) = _aggregate(conn)
         conn.execute("ROLLBACK")
     except sqlite3.Error:
         raise Blocked("HOST_SQLITE_READ_FAILED_OR_WAL_PERMISSION") from None
     finally:
         if conn is not None:
             conn.close()
-    return {"schema": SCHEMA, "status": "DIAGNOSTIC_ONLY",
+    return {"schema": SCHEMA,
+            "status": ("DIAGNOSTIC_PARTIAL_NO_GO" if invalid_current
+                       else "DIAGNOSTIC_ONLY"),
             "runtime_path": "PAPER_V17_CANONICAL_RO", "private_ro_mount_verified": True,
             "paper_workspace_identity_verified": True,
             "ppi_identity_authority_verified": False,
@@ -370,6 +409,9 @@ def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
             "host_db_writes": 0, "provider_gets": 0, "real_orders_sent_by_probe": 0,
             "paper_auto_enabled": False, "host_runtime_order_count": "NO_VERIFICADO",
             "catalog_rows": catalog_rows, "v2_current_rows": current_rows,
+            "v2_current_valid_rows": valid_current,
+            "v2_current_integrity_verified": not bool(invalid_current),
+            "v2_current_invalid_reason_counts": invalid_current,
             "v2_history_ppi_rows_scanned": historical_rows,
             "v2_history_identity_bytes_scanned": historical_bytes,
             "historical_819_gap_match": sum(x["capability_gaps"] for x in families) == 819,
