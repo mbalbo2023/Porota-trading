@@ -13,6 +13,7 @@ from collections import Counter
 from decimal import Decimal, InvalidOperation
 
 import cp_contract_evidence_v2_hf6 as evidence_v2
+from bu_instrument_catalog import ppi_full_key_evidence_reason
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 import rc6_ppi_option_contract_policy as option_policy
 import rc6_ppi_future_contract_policy as future_policy
@@ -72,13 +73,12 @@ def _has_explicit_ppi_primary_provenance(row, raw):
 
     ``_candidate_has_ppi_primary`` is a deliberately broad legacy-universe
     compatibility predicate. Its ``LEGACY_CATALOG`` and settlement-source
-    fallbacks are not proof that this particular contract record came from PPI.
-    A REQUEST_CANDIDATE settlement is still only a request-side value; later
-    readiness checks must prove the complete identity and live market data.
+    fallbacks are not proof that this particular five-key came from PPI.
+    A REQUEST_CANDIDATE settlement is request-side only; preserve the catalog
+    discovery record, but never emit a full-key PPI contract-evidence claim.
     """
     return (str(raw.get("_discovery_source") or "").strip().upper() == "PPI_PRIMARY"
-            and str(row.get("settlement_source") or "").strip().upper()
-            in {"PPI_FIELD", "REQUEST_CANDIDATE"})
+            and not ppi_full_key_evidence_reason({**row, "raw": raw}))
 
 
 def planned_records(rows):
@@ -93,7 +93,15 @@ def planned_records(rows):
             continue
         raw = _raw(row)
         if not _has_explicit_ppi_primary_provenance(row, raw):
-            skipped["NOT_PPI_PRIMARY"] += 1
+            # Distinguish an actual missing provider settlement from a source
+            # mismatch. Neither condition may accrue PPI_* five-key evidence.
+            source = str(raw.get("_discovery_source") or "").upper()
+            settlement_source = str(row.get("settlement_source") or "").upper()
+            reason = ppi_full_key_evidence_reason({**row, "raw": raw})
+            if source != "PPI_PRIMARY" or settlement_source not in {"PPI_FIELD", "REQUEST_CANDIDATE"}:
+                skipped["NOT_PPI_PRIMARY"] += 1
+            else:
+                skipped[reason or "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"] += 1
             continue
         identity = _full_identity(row)
         if any(value in UNKNOWN for value in identity.values()):
