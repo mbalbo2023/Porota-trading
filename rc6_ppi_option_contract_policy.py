@@ -62,6 +62,8 @@ def underlying_family_index(rows):
     cannot establish the underlying for an ARS/INMEDIATA BYMA option. This is
     historical contract evidence, not a live quote or provider PIT attestation.
     """
+    from bu_instrument_catalog import ppi_full_key_evidence_reason
+
     identities = defaultdict(set)
     invalid = set()
     for row in rows:
@@ -79,6 +81,7 @@ def underlying_family_index(rows):
             _upper(row.get("settlement")),
         ))
         if (raw.get("_contract_conflicts")
+                or ppi_full_key_evidence_reason({**row, "raw": raw})
                 or _upper(row.get("settlement_source")) != "PPI_FIELD"
                 or not _has_recorded_observation_clock(row.get("last_seen_at"))):
             invalid.add(ticker)
@@ -116,16 +119,26 @@ def parse_ppi_option_description(description):
 
 
 def standard_long_option_evidence(row, underlying_families):
-    """Build exchange-backed terms for the long-premium PAPER path only."""
+    """Build option *evidence* without resolving a pending contract review.
+
+    A reviewed option may acquire exact, official-derived static terms again,
+    but that cannot turn a material change, revocation or unverified adjusted
+    series into executable PAPER.  Contract-v2's bridge must still evaluate
+    those independent fail-closed gates before any admission.
+    """
+    from bu_instrument_catalog import ppi_full_key_evidence_reason
+
     raw = _raw(row)
     if (row.get("status") != "AVAILABLE"
             or _upper(row.get("instrument_type")) != "OPCIONES"
-            or str(row.get("capability") or "") != "NEEDS_OPTION_CONTRACT"
+            or str(row.get("capability") or "") not in {
+                "NEEDS_OPTION_CONTRACT", "CONTRACT_EVIDENCE_REVIEW_REQUIRED"}
             or _upper(row.get("market")) != "BYMA"
             or _upper(row.get("currency")) != "ARS"
             or _upper(row.get("settlement")) != "INMEDIATA"
             or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
             or _upper(row.get("settlement_source")) != "PPI_FIELD"
+            or ppi_full_key_evidence_reason({**row, "raw": raw})
             or not _has_recorded_observation_clock(row.get("last_seen_at"))
             or raw.get("_contract_conflicts")):
         return None
