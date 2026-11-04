@@ -250,6 +250,7 @@ def hard_blocked_bridge(bridge):
         "IDENTITY_", "EVIDENCE_NOT_CURRENT", "CHANGE_REVIEW_REQUIRED",
         "CONTRACT_V2_CURRENCY_MISMATCH", "CONTRACT_INVALID:",
         "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED",
+        "ALIAS_ONLY_FAMILY_NOT_AUTHORITY",
     )
     return any(str(gap).startswith(hard_prefixes)
                for gap in bridge.get("gaps", []))
