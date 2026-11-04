@@ -51,6 +51,7 @@ def test_legacy_on_only_cannot_appear_as_exact_obligaciones_contract(tmp_path):
     denied = bridge.normalize_group(records, now=NOW)
     assert denied["contract_bridge"]["status"] == "BLOCKED"
     assert "ALIAS_ONLY_FAMILY_NOT_AUTHORITY" in denied["contract_bridge"]["gaps"]
+    assert bridge.hard_blocked_bridge(denied["contract_bridge"]) is True
     assert denied["financial_contract_v17"] is None
     # The reconcile path drops the false-positive claim rather than pausing a
     # separate canonical READY row whose historical ON alias cannot prove it.
