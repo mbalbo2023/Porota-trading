@@ -596,8 +596,8 @@ def test_previously_active_budget_falls_back_and_exit_reader_remains_live(wire, 
     assert "NO_VERIFICADO" in runtime.budget.metrics()["policy_authority"]
 
 
-def test_off_baseline_without_ledger_keeps_legacy_scope_but_retained_exit_uses_lease(wire, tmp_path):
-    """A586 keeps issue #465 OFF semantics without dropping a committed EXIT reservation."""
+def test_off_baseline_without_ledger_denies_wire_but_retained_exit_uses_lease(wire, tmp_path):
+    """A651 closes unleased OFF while preserving committed EXIT reservation."""
     from be_paper_engine import PaperStore
 
     values = approved(wire)
@@ -618,7 +618,7 @@ def test_off_baseline_without_ledger_keeps_legacy_scope_but_retained_exit_uses_l
 
     fresh = RuntimePPIBudget(tmp_path / "fresh-paper.sqlite", ctl, clock=clock.now)
     assert fresh.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL") == {
-        "allowed": True, "lease": None}
+        "allowed": False, "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
     assert fresh.budget is None and not fresh.path.exists()
 
 
