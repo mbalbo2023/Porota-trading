@@ -78,6 +78,9 @@ def _utc_stamp(value):
 
 def _a617():
     """Use existing A617 helpers: no copy of its RO mount/PAPER identity rules."""
+    qualified = sys.modules.get("scripts.rc6_a617_ppi_origin_selector_readonly")
+    if qualified is not None:
+        return qualified
     if "rc6_a617_ppi_origin_selector_readonly" in sys.modules:
         return sys.modules["rc6_a617_ppi_origin_selector_readonly"]
     from scripts import rc6_a617_ppi_origin_selector_readonly as module
@@ -85,6 +88,9 @@ def _a617():
 
 
 def _a516():
+    qualified = sys.modules.get("scripts.rc6_a516_host_budget_metadata_ro")
+    if qualified is not None:
+        return qualified
     if "rc6_a516_host_budget_metadata_ro" in sys.modules:
         return sys.modules["rc6_a516_host_budget_metadata_ro"]
     from scripts import rc6_a516_host_budget_metadata_ro as module
