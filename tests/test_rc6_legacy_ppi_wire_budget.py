@@ -156,19 +156,31 @@ class LegacyPPIBudgetTest(TestCase):
         module, imports = legacy_module(lambda: None)
         module.ResilientPPIClient._install_sdk_wire_budget(object.__new__(
             module.ResilientPPIClient), ppi)
-        guarded = session.get_adapter(CURRENT)
-        self.assertIsInstance(guarded, module._BudgetedPPIAdapter)
         observed = []
-        original_guarded_send = guarded.send
+        guarded_get_session = rest.get_session
 
-        def observe_send(request, **kwargs):
-            try:
-                return original_guarded_send(request, **kwargs)
-            except Backpressure as exc:
-                observed.append((request.method, request.url, str(exc)))
-                raise
+        def observed_get_session():
+            # The SDK is entitled to allocate a NEW requests.Session for
+            # each call. Spying only on our earlier local session would miss
+            # the actual adapter used by Current/Book.
+            sdk_session = guarded_get_session()
+            guarded_adapter = sdk_session.get_adapter(CURRENT)
+            self.assertIsInstance(guarded_adapter, module._BudgetedPPIAdapter)
+            if not getattr(guarded_adapter, "_test_spied", False):
+                send = guarded_adapter.send
 
-        guarded.send = observe_send
+                def observe_send(request, **kwargs):
+                    try:
+                        return send(request, **kwargs)
+                    except Backpressure as exc:
+                        observed.append((request.method, request.url, str(exc)))
+                        raise
+
+                guarded_adapter.send = observe_send
+                guarded_adapter._test_spied = True
+            return sdk_session
+
+        rest.get_session = observed_get_session
         attempted_network = []
 
         def block_network(*_args, **_kwargs):
