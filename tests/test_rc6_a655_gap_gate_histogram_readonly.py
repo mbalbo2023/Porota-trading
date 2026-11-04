@@ -38,12 +38,15 @@ class A655Histogram(unittest.TestCase):
                 source_class TEXT,snapshot_id INTEGER,evidence_hash TEXT,observed_at TEXT);
               CREATE TABLE contract_evidence_v2_snapshots(
                 snapshot_id INTEGER PRIMARY KEY,family TEXT,ticker TEXT,market TEXT,currency TEXT,
-                settlement TEXT,source_class TEXT,evidence_hash TEXT,observed_at TEXT,evidence_json TEXT);
+                settlement TEXT,source_class TEXT,evidence_hash TEXT,observed_at TEXT,evidence_json TEXT,
+                source_ref TEXT NOT NULL DEFAULT 'synthetic:fixture',effective_at TEXT);
               CREATE TABLE complementary_contract_retry(
                 ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
                 source TEXT,reason TEXT);
               CREATE TABLE contract_evidence_v2_changes(
-                family TEXT,ticker TEXT,market TEXT,currency TEXT,settlement TEXT,status TEXT);
+                change_id INTEGER PRIMARY KEY,family TEXT,ticker TEXT,market TEXT,currency TEXT,
+                settlement TEXT,source_class TEXT,previous_hash TEXT,current_hash TEXT,
+                detected_at TEXT,status TEXT);
               INSERT INTO observer_state VALUES(1,0);
             """)
             c.execute("INSERT INTO paper_workspace VALUES(?,?,?,?,?)",
@@ -73,10 +76,48 @@ class A655Histogram(unittest.TestCase):
         digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
         copied = (family, ticker, market, currency, settlement)
         other = override_snapshot or copied
-        conn.execute("INSERT INTO contract_evidence_v2_snapshots VALUES(?,?,?,?,?,?,?,?,?,?)",
-                     (ident, *other, source, digest, STAMP, raw))
+        conn.execute("""INSERT INTO contract_evidence_v2_snapshots
+            (snapshot_id,family,ticker,market,currency,settlement,source_class,
+             evidence_hash,observed_at,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (ident, *other, source, digest, STAMP, raw))
         conn.execute("INSERT INTO contract_evidence_v2_current VALUES(?,?,?,?,?,?,?,?,?)",
                      (*copied, source, ident, digest_override or digest, STAMP))
+
+    @staticmethod
+    def option_review(conn):
+        conn.execute("""UPDATE financial_instrument_catalog SET capability=?,metadata_json=?
+          WHERE ticker='XYZ' AND instrument_type='OPCIONES'""",
+          ("CONTRACT_EVIDENCE_REVIEW_REQUIRED", json.dumps({"_contract_bridge": {
+              "status": "BLOCKED", "gaps": ["CHANGE_REVIEW_REQUIRED"]}})))
+
+    @staticmethod
+    def v2(conn, *, source="PPI_STRUCTURED_API", previous=None, current=None,
+           prev_id=30, current_id=31, change_id=99, event=STAMP, market="BYMA"):
+        """Real canonical key+source hash join, no PPI/host calls."""
+        key = ("OPCIONES", "XYZ", market, "ARS", "CI")
+        def snapshot(ident, payload):
+            raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+            conn.execute("""INSERT INTO contract_evidence_v2_snapshots
+              (snapshot_id,family,ticker,market,currency,settlement,source_class,evidence_hash,
+               observed_at,evidence_json,source_ref) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (ident, *key, source, digest, STAMP, raw, "synthetic:fixture"))
+            return digest
+        before = snapshot(prev_id, previous) if previous is not None else None
+        after = snapshot(current_id, current or {"lot": 100})
+        conn.execute("INSERT INTO contract_evidence_v2_current VALUES(?,?,?,?,?,?,?,?,?)",
+                     (*key, source, current_id, after, STAMP))
+        if previous is not None:
+            conn.execute("""INSERT INTO contract_evidence_v2_changes
+              (change_id,family,ticker,market,currency,settlement,source_class,
+               previous_hash,current_hash,detected_at,status)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (change_id, *key, source, before, after, event, "CHANGED_REVIEW_REQUIRED"))
+
+    @staticmethod
+    def roots(report):
+        return {(row["flags"], row["source_class_bucket"]): row["count"]
+                for row in report["option_review_root_hist"]}
 
     def probe(self):
         raw = module.diagnose(self.db, enforce_ro_mount=False)
@@ -155,8 +196,11 @@ class A655Histogram(unittest.TestCase):
                 "CHANGE_REVIEW_REQUIRED", "MISSING:underlying"]}}
             c.execute("UPDATE financial_instrument_catalog SET capability=?,metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
                       ("CONTRACT_EVIDENCE_REVIEW_REQUIRED", json.dumps(bridge)))
-            c.execute("INSERT INTO contract_evidence_v2_changes VALUES(?,?,?,?,?,?)",
-                      ("OPCIONES", "XYZ", "BYMA", "ARS", "CI", "CHANGED_REVIEW_REQUIRED"))
+            c.execute("""INSERT INTO contract_evidence_v2_changes
+              (change_id,family,ticker,market,currency,settlement,source_class,
+               current_hash,detected_at,status) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+              (11, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_STRUCTURED_API",
+               "0" * 64, STAMP, "CHANGED_REVIEW_REQUIRED"))
         report = self.probe()
         option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
         self.assertEqual(option["bridge_reasons"], "CHANGE_REVIEW_REQUIRED+MISSING_FIELDS")
@@ -173,8 +217,11 @@ class A655Histogram(unittest.TestCase):
             c.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='XYZ' AND instrument_type='OPCIONES'",
                       (json.dumps(bridge),))
             # A different literal family (ON alias) is never a change-log match.
-            c.execute("INSERT INTO contract_evidence_v2_changes VALUES(?,?,?,?,?,?)",
-                      ("OBLIGACIONES", "OLD", "BYMA", "USD", "48H", "CHANGED_REVIEW_REQUIRED"))
+            c.execute("""INSERT INTO contract_evidence_v2_changes
+              (change_id,family,ticker,market,currency,settlement,source_class,
+               current_hash,detected_at,status) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+              (12, "OBLIGACIONES", "OLD", "BYMA", "USD", "48H", "PPI_STRUCTURED_API",
+               "0" * 64, STAMP, "CHANGED_REVIEW_REQUIRED"))
         report = self.probe()
         option = next(x for x in report["joint"] if x["family"] == "OPCIONES")
         self.assertEqual(option["bridge_reasons"], "CONFLICT_TERM+EVIDENCE_TIME_HOLD+INVALID_CONTRACT")
@@ -303,6 +350,124 @@ class A655Histogram(unittest.TestCase):
         raw["paper_admission_certified"] = False
         raw["real_orders_sent"] = 1
         self.assertEqual(module.sanitize(raw)["state"], "NO_VERIFICADO")
+
+    def test_a661_genuine_material_difference_is_pending_not_log_guess(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"lot": 100}, current={"lot": 200})
+        result = self.probe()
+        self.assertEqual(result["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(result["option_review_root_total"], 1)
+        self.assertEqual(self.roots(result), {("PENDING_MATERIAL", "PPI_ONLY"): 1})
+        self.assertEqual(module.sanitize({**result, "private_ro_mount": True})["state"],
+                         "READ_ONLY_OBSERVED")
+        self.assertNotIn("XYZ", json.dumps(result))
+
+    def test_a661_historical_provenance_only_log_is_not_material_pending(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"lot": 100, "provider_timestamp": "2026-11-04T18:00:00Z"},
+                    current={"lot": 100, "provider_timestamp": "2026-11-04T19:00:00Z"})
+        result = self.probe()
+        self.assertEqual(result["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(self.roots(result), {("UNEXPLAINED_PERSISTED_BRIDGE", "NONE"): 1})
+        self.assertEqual(next(item for item in result["joint"] if item["family"] == "OPCIONES")
+                         ["change_log"], "REVIEW_LOG_ENTRY_PRESENT")
+
+    def test_a661_future_clock_is_integrity_not_clean_review_or_autoapproval(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"lot": 100, "provider_timestamp": "yesterday"},
+                    current={"lot": 100, "provider_timestamp": "today"},
+                    event="2039-01-01T00:00:00+00:00")
+        result = self.probe()
+        self.assertEqual(self.roots(result), {("EVIDENCE_INTEGRITY_HOLD", "PPI_ONLY"): 1})
+        self.assertNotIn("PENDING_MATERIAL", json.dumps(result["option_review_root_hist"]))
+
+    def test_a661_revoked_and_adjusted_independent_of_append_only_log(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100, "revoked": True,
+                                "adjusted_series_unverified": True})
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("ADJUSTED_SERIES_UNVERIFIED+REVOKED", "PPI_ONLY"): 1})
+
+    def test_a661_pending_iol_material_with_primary_ppi_and_revoked_ppi_is_mixed(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100, "revoked": True})
+            self.v2(c, source="IOL_STRUCTURED_API", previous={"lot": 10}, current={"lot": 20},
+                    prev_id=40, current_id=41, change_id=101)
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("PENDING_MATERIAL+REVOKED", "MIXED_SOURCES"): 1})
+
+    def test_a661_iol_only_pending_material_can_block_exact_ppi_identity(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="IOL_STRUCTURED_API", previous={"lot": 10}, current={"lot": 20},
+                    prev_id=40, current_id=41, change_id=101)
+        result = self.probe()
+        option = next(item for item in result["joint"] if item["family"] == "OPCIONES")
+        self.assertEqual(option["current"], "EXACT_PPI_SOURCE_LABEL")
+        self.assertEqual(self.roots(result), {("PENDING_MATERIAL", "IOL_ONLY"): 1})
+
+    def test_a661_ignored_iol_current_revoked_flag_alone_does_not_block_ppi(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="IOL_STRUCTURED_API", current={"lot": 20, "revoked": True},
+                    current_id=41)
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("UNEXPLAINED_PERSISTED_BRIDGE", "NONE"): 1})
+
+    def test_a661_derived_official_pending_is_distinct_from_iol_and_ppi(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="DERIVED_OFFICIAL_RULE", previous={"lot": 10},
+                    current={"lot": 20}, prev_id=40, current_id=41, change_id=101)
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("PENDING_MATERIAL", "DERIVED_OFFICIAL_ONLY"): 1})
+
+    def test_a661_cross_market_change_never_marks_primary_option_key(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="IOL_STRUCTURED_API", previous={"lot": 10}, current={"lot": 20},
+                    prev_id=40, current_id=41, change_id=101, market="A3")
+        result = self.probe()
+        self.assertEqual(self.roots(result), {("UNEXPLAINED_PERSISTED_BRIDGE", "NONE"): 1})
+
+    def test_a661_missing_snapshot_is_pending_and_evidence_integrity_hold(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            c.execute("""INSERT INTO contract_evidence_v2_changes
+              (change_id,family,ticker,market,currency,settlement,source_class,
+               previous_hash,current_hash,detected_at,status)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (111, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_STRUCTURED_API",
+               "a" * 64, "b" * 64, STAMP, "CHANGED_REVIEW_REQUIRED"))
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("EVIDENCE_INTEGRITY_HOLD+PENDING_MATERIAL", "PPI_ONLY"): 1})
+
+    def test_a661_runner_rejects_forged_private_reason_and_denominator(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"lot": 100}, current={"lot": 200})
+        result = {**self.probe(), "private_ro_mount": True}
+        self.assertEqual(module.sanitize(result)["state"], "READ_ONLY_OBSERVED")
+        result["option_review_root_hist"][0]["flags"] = "PRIVATE_ACCOUNT_NUMBER"
+        self.assertEqual(module.sanitize(result)["state"], "NO_VERIFICADO")
+        result["option_review_root_hist"][0]["flags"] = "PENDING_MATERIAL"
+        result["option_review_root_total"] = 999
+        self.assertEqual(module.sanitize(result)["state"], "NO_VERIFICADO")
 
 
 if __name__ == "__main__":
