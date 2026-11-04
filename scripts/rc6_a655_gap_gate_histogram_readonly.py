@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A655/A658/A661: bounded, opt-in SQLite WAL READ_ONLY gate correlation.
+"""A655/A658/A661/A666: bounded, opt-in SQLite WAL READ_ONLY gate correlation.
 
 Never reconstruct the historical A626 575/172/74 cohort from a later DB.
 No provider, PPI Watch, paper engine, broker, order, WAL copy, or DB mutation.
@@ -22,12 +22,13 @@ from urllib.parse import quote
 import uuid
 
 
-SCHEMA = "rc6.a661.option-review-root-readonly.v3"
+SCHEMA = "rc6.a666.option-ppi-material-fields-readonly.v4"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 MAX_RAW = 32768
 MAX_ROWS = 60000
 MAX_GROUPS = 128  # Keep even the maximal categorical receipt under MAX_RAW.
 MAX_ROOT_GROUPS = 48
+MAX_PPI_FIELD_GROUPS = 32
 MAX_EVIDENCE_BYTES = 32 * 1024 * 1024
 MAX_METADATA_BYTES = 128 * 1024 * 1024
 MAX_COUNT = 1000000
@@ -68,6 +69,24 @@ ROOT_FLAGS = frozenset({"PENDING_MATERIAL", "REVOKED", "ADJUSTED_SERIES_UNVERIFI
 ROOT_STANDALONE = "UNEXPLAINED_PERSISTED_BRIDGE"
 ROOT_SOURCES = frozenset({"PPI_ONLY", "IOL_ONLY", "DERIVED_OFFICIAL_ONLY",
                           "OTHER_ONLY", "MIXED_SOURCES", "NONE"})
+# Only fixed, audited keys may leave this private RO read as field names.
+# An arbitrary JSON member, including secret/ticker/account-like input, is
+# always bucketed without exporting its name or associated value.
+PPI_MATERIAL_FIELD_LABELS = {
+    "market": "MARKET", "currency": "CURRENCY", "settlement": "SETTLEMENT",
+    "ppi_identity_verified": "PPI_IDENTITY_VERIFIED",
+    "provider_instrument_type": "PROVIDER_INSTRUMENT_TYPE",
+    "provider_catalog_status": "PROVIDER_CATALOG_STATUS",
+    "price_quote_unit": "PRICE_QUOTE_UNIT",
+    "ppi_nominal_in_price": "PPI_NOMINAL_IN_PRICE",
+}
+PPI_MATERIAL_FIELDS = frozenset(PPI_MATERIAL_FIELD_LABELS.values()) | {"UNKNOWN_FIELD"}
+PPI_MATERIAL_OPERATIONS = frozenset({"ADDED", "REMOVED", "CHANGED"})
+PPI_CURRENT_CATEGORIES = frozenset({"LATEST_CURRENT", "HISTORICAL_NOT_LATEST",
+                                    "CURRENT_SOURCE_ABSENT"})
+PPI_REF_CATEGORIES = frozenset({"SEARCHINSTRUMENT_STABLE", "STABLE_OTHER_PPI_REF",
+                                "CHANGED_PPI_REF", "MISSING_PPI_REF"})
+PPI_SEARCH_INSTRUMENT_REF = "PPI_API:/api/1.0/marketdata/searchinstrument"
 # Exact copy of cp_contract_evidence_v2_hf6.PROVENANCE_ONLY_FIELDS at product
 # 7e1e744d6ca9ab30c51b5747dd4467af5ece0145. Do not silently alter this
 # list: the material-vs-provenance distinction is business logic, not heuristic.
@@ -105,7 +124,12 @@ def _base():
             "real_orders_sent": None, "sampled_at_utc": None,
             "catalog_active_gap_total": None, "catalog_six_family_total": None,
             "status_coverage": {}, "by_family": {}, "joint": [],
-            "option_review_root_total": None, "option_review_root_hist": []}
+            "option_review_root_total": None, "option_review_root_hist": [],
+            "option_ppi_material_identity_total": None,
+            "option_ppi_material_change_total": None,
+            "option_ppi_material_field_hist": [],
+            "option_ppi_material_current_hist": [],
+            "option_ppi_material_source_ref_hist": []}
 
 
 def _mount_is_readonly(path):
@@ -317,6 +341,52 @@ def _source_bucket(sources):
         next(iter(buckets))]
 
 
+def _ppi_source_ref_category(previous, current):
+    """Categorize provenance with fixed labels; never export its raw text."""
+    if not isinstance(previous, str) or not previous or not isinstance(current, str) or not current:
+        return "MISSING_PPI_REF"
+    if previous != current:
+        return "CHANGED_PPI_REF"
+    if previous == PPI_SEARCH_INSTRUMENT_REF:
+        return "SEARCHINSTRUMENT_STABLE"
+    return "STABLE_OTHER_PPI_REF"
+
+
+def _material_fields(previous, current):
+    """Project exact semantic JSON; return only allowlisted key labels."""
+    before, after = _material_projection(previous), _material_projection(current)
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        raise Hold("A666_PPI_MATERIAL_SHAPE_HOLD")
+    changes = []
+    for name in sorted(set(before) | set(after)):
+        if name in before and name in after and before[name] == after[name]:
+            continue
+        operation = "ADDED" if name not in before else "REMOVED" if name not in after else "CHANGED"
+        changes.append((PPI_MATERIAL_FIELD_LABELS.get(name, "UNKNOWN_FIELD"), operation))
+    if not changes:
+        raise Hold("A666_PPI_MATERIAL_EMPTY_HOLD")
+    return changes
+
+
+def _material_field_receipt(identities, events, field_events, field_ids, current_hist, source_hist):
+    """Keep unknown names, values, hashes and full keys entirely in memory."""
+    if len(field_events) > MAX_PPI_FIELD_GROUPS:
+        raise Hold("A666_PPI_FIELD_GROUPS_HOLD")
+    return {
+        "option_ppi_material_identity_total": len(identities),
+        "option_ppi_material_change_total": events,
+        "option_ppi_material_field_hist": [
+            {"field": name, "operation": operation,
+             "identities": len(field_ids[(name, operation)]), "events": count}
+            for (name, operation), count in sorted(field_events.items())
+        ],
+        "option_ppi_material_current_hist": [
+            {"category": cat, "count": count} for cat, count in sorted(current_hist.items())],
+        "option_ppi_material_source_ref_hist": [
+            {"category": cat, "count": count} for cat, count in sorted(source_hist.items())],
+    }
+
+
 def _option_root_hist(conn, keys):
     """Reconstruct only the OPCIONES-relevant V2 part of normalize_group().
 
@@ -331,18 +401,26 @@ def _option_root_hist(conn, keys):
     if not keys:
         # A later snapshot may genuinely have no A658-like option review gate.
         # This is a zero *diagnostic target*, never PAPER-admission evidence.
-        return []
+        return [], _material_field_receipt(set(), 0, Counter(), {}, Counter(), Counter())
     if len(keys) > MAX_ROWS:
         raise Hold("A661_TARGET_ROWS_HOLD")
     flags = {key: set() for key in keys}
     sources = {key: set() for key in keys}
+    ppi_changed_identities = set()
+    ppi_changed_events = 0
+    field_events = Counter()
+    field_ids = defaultdict(set)
+    ppi_current_hist = Counter()
+    ppi_source_hist = Counter()
     now = datetime.now(timezone.utc)
     used_bytes = 0
     changes = conn.execute("""SELECT ch.family,ch.ticker,ch.market,ch.currency,
       ch.settlement,ch.change_id,ch.source_class,ch.previous_hash,ch.current_hash,
       ch.detected_at,prev.evidence_json AS previous_json,
       curr.evidence_json AS current_json,prev.observed_at AS previous_observed_at,
-      curr.observed_at AS current_observed_at
+      curr.observed_at AS current_observed_at,
+      prev.source_ref AS previous_source_ref,curr.source_ref AS current_source_ref,
+      latest.evidence_hash AS latest_hash
       FROM contract_evidence_v2_changes ch
       LEFT JOIN contract_evidence_v2_snapshots prev
         ON prev.family=ch.family AND prev.ticker=ch.ticker AND prev.market=ch.market
@@ -352,6 +430,10 @@ def _option_root_hist(conn, keys):
         ON curr.family=ch.family AND curr.ticker=ch.ticker AND curr.market=ch.market
        AND curr.currency=ch.currency AND curr.settlement=ch.settlement
        AND curr.source_class=ch.source_class AND curr.evidence_hash=ch.current_hash
+      LEFT JOIN contract_evidence_v2_current latest
+        ON latest.family=ch.family AND latest.ticker=ch.ticker
+       AND latest.market=ch.market AND latest.currency=ch.currency
+       AND latest.settlement=ch.settlement AND latest.source_class=ch.source_class
       WHERE ch.family='OPCIONES' AND ch.status='CHANGED_REVIEW_REQUIRED'
       LIMIT ?""", (MAX_ROWS + 1,)).fetchall()
     if len(changes) > MAX_ROWS:
@@ -371,10 +453,14 @@ def _option_root_hist(conn, keys):
         previous_raw, current_raw = row["previous_json"], row["current_json"]
         if previous_raw is None or current_raw is None:
             # Canonical missing evidence is pending, not automatically safe.
+            if isinstance(source, str) and source.startswith("PPI_"):
+                raise Hold("A666_PPI_MATERIAL_INTEGRITY_HOLD")
             flags[key].update(("PENDING_MATERIAL", "EVIDENCE_INTEGRITY_HOLD"))
             sources[key].add(source)
             continue
         if not isinstance(previous_raw, str) or not isinstance(current_raw, str):
+            if isinstance(source, str) and source.startswith("PPI_"):
+                raise Hold("A666_PPI_MATERIAL_INTEGRITY_HOLD")
             flags[key].update(("PENDING_MATERIAL", "EVIDENCE_INTEGRITY_HOLD"))
             sources[key].add(source)
             continue
@@ -401,6 +487,24 @@ def _option_root_hist(conn, keys):
         if is_material:
             flags[key].add("PENDING_MATERIAL")
             sources[key].add(source)
+            if isinstance(source, str) and source.startswith("PPI_"):
+                # Corrupt PPI snapshots may not become a misleading clean
+                # field histogram; fail the diagnostic rather than waive HOLD.
+                if problems:
+                    raise Hold("A666_PPI_MATERIAL_INTEGRITY_HOLD")
+                changed_fields = _material_fields(previous, current)
+                ppi_changed_identities.add(key)
+                ppi_changed_events += 1
+                for field, operation in changed_fields:
+                    field_events[(field, operation)] += 1
+                    field_ids[(field, operation)].add(key)
+                latest = row["latest_hash"]
+                current_category = ("CURRENT_SOURCE_ABSENT" if latest is None
+                                    else "LATEST_CURRENT" if latest == row["current_hash"]
+                                    else "HISTORICAL_NOT_LATEST")
+                ppi_current_hist[current_category] += 1
+                ppi_source_hist[_ppi_source_ref_category(
+                    row["previous_source_ref"], row["current_source_ref"])] += 1
         if problems:
             flags[key].add("EVIDENCE_INTEGRITY_HOLD")
             sources[key].add(source)
@@ -457,8 +561,10 @@ def _option_root_hist(conn, keys):
         hist[(root, _source_bucket(sources[key]))] += 1
     if len(hist) > MAX_ROOT_GROUPS:
         raise Hold("A661_ROOT_GROUPS_HOLD")
-    return [dict(flags=reason, source_class_bucket=bucket, count=count)
-            for (reason, bucket), count in sorted(hist.items())]
+    return ([dict(flags=reason, source_class_bucket=bucket, count=count)
+             for (reason, bucket), count in sorted(hist.items())],
+            _material_field_receipt(ppi_changed_identities, ppi_changed_events,
+                                    field_events, field_ids, ppi_current_hist, ppi_source_hist))
 
 
 def _capability(raw):
@@ -607,9 +713,9 @@ def _aggregate(conn):
             or sum(c["active_gap"] for c in coverage.values()) == 0):
         raise Hold("ACTIVE_GAP_DENOMINATOR_HOLD")
     joint = [dict(zip(FIELDS, key), count=value) for key, value in sorted(groups.items())]
-    option_roots = _option_root_hist(conn, option_review_keys)
+    option_roots, ppi_material = _option_root_hist(conn, option_review_keys)
     return (joint, {family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
-            option_roots, len(option_review_keys))
+            option_roots, len(option_review_keys), ppi_material)
 
 
 def diagnose(db=DB, *, enforce_ro_mount=True):
@@ -630,13 +736,14 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
         conn.execute("BEGIN")
         start = time.monotonic()
         conn.set_progress_handler(lambda: int(time.monotonic() - start > 19), 1000)
-        joint, coverage, option_roots, option_root_total = _aggregate(conn)
+        joint, coverage, option_roots, option_root_total, ppi_material = _aggregate(conn)
         report["paper_workspace_verified"] = True
         report["real_orders_sent"] = 0
         report["sampled_at_utc"] = datetime.now(timezone.utc).isoformat()
         report["joint"] = joint
         report["option_review_root_total"] = option_root_total
         report["option_review_root_hist"] = option_roots
+        report.update(ppi_material)
         report["catalog_active_gap_total"] = sum(item["count"] for item in joint)
         report["status_coverage"] = coverage
         report["catalog_six_family_total"] = sum(row["all"] for row in coverage.values())
@@ -729,6 +836,56 @@ def sanitize(value):
                                and item["current"] == "EXACT_PPI_SOURCE_LABEL")
         if sum(item["count"] for item in roots) != root_total or root_total != expected_options:
             raise Hold("UNTRUSTED_ROOT_DENOMINATOR")
+        ppi_identities = value.get("option_ppi_material_identity_total")
+        ppi_changes = value.get("option_ppi_material_change_total")
+        field_hist = value.get("option_ppi_material_field_hist")
+        current_hist = value.get("option_ppi_material_current_hist")
+        ref_hist = value.get("option_ppi_material_source_ref_hist")
+        if (type(ppi_identities) is not int or type(ppi_changes) is not int
+                or not 0 <= ppi_identities <= root_total
+                or not ppi_identities <= ppi_changes <= MAX_ROWS
+                or not isinstance(field_hist, list) or len(field_hist) > MAX_PPI_FIELD_GROUPS
+                or not isinstance(current_hist, list) or len(current_hist) > len(PPI_CURRENT_CATEGORIES)
+                or not isinstance(ref_hist, list) or len(ref_hist) > len(PPI_REF_CATEGORIES)):
+            raise Hold("UNTRUSTED_PPI_MATERIAL_HISTOGRAM")
+        seen_fields = set()
+        field_events_total = 0
+        for item in field_hist:
+            if not isinstance(item, dict) or set(item) != {"field", "operation", "identities", "events"}:
+                raise Hold("UNTRUSTED_PPI_MATERIAL_HISTOGRAM")
+            key = (item["field"], item["operation"])
+            if (key in seen_fields or key[0] not in PPI_MATERIAL_FIELDS
+                    or key[1] not in PPI_MATERIAL_OPERATIONS
+                    or type(item["identities"]) is not int or type(item["events"]) is not int
+                    or not 0 < item["identities"] <= ppi_identities
+                    or not item["identities"] <= item["events"] <= ppi_changes):
+                raise Hold("UNTRUSTED_PPI_MATERIAL_HISTOGRAM")
+            seen_fields.add(key)
+            field_events_total += item["events"]
+        if ((ppi_changes > 0 and field_events_total < ppi_changes)
+                or (ppi_changes == 0 and (field_hist or ppi_identities))):
+            raise Hold("UNTRUSTED_PPI_MATERIAL_HISTOGRAM")
+
+        def safe_categories(items, allowed):
+            seen = set()
+            total = 0
+            for item in items:
+                if (not isinstance(item, dict) or set(item) != {"category", "count"}
+                        or item["category"] not in allowed or item["category"] in seen
+                        or type(item["count"]) is not int or not 0 < item["count"] <= MAX_ROWS):
+                    raise Hold("UNTRUSTED_PPI_MATERIAL_HISTOGRAM")
+                seen.add(item["category"])
+                total += item["count"]
+            if total != ppi_changes:
+                raise Hold("UNTRUSTED_PPI_MATERIAL_HISTOGRAM")
+
+        safe_categories(current_hist, PPI_CURRENT_CATEGORIES)
+        safe_categories(ref_hist, PPI_REF_CATEGORIES)
+        expected_ppi_material = sum(item["count"] for item in source_roots
+                                    if item["source_class_bucket"] == "PPI_ONLY"
+                                    and "PENDING_MATERIAL" in item["flags"].split("+"))
+        if ppi_identities < expected_ppi_material:
+            raise Hold("UNTRUSTED_PPI_MATERIAL_DENOMINATOR")
         if (total != value.get("catalog_active_gap_total") or total > MAX_COUNT or total == 0
                 or covered_total != value.get("catalog_six_family_total")
                 or covered_total > MAX_COUNT):
@@ -741,6 +898,14 @@ def sanitize(value):
                     option_review_root_total=root_total,
                     option_review_root_hist=sorted(
                         source_roots, key=lambda x: (x["flags"], x["source_class_bucket"])),
+                    option_ppi_material_identity_total=ppi_identities,
+                    option_ppi_material_change_total=ppi_changes,
+                    option_ppi_material_field_hist=sorted(
+                        field_hist, key=lambda x: (x["field"], x["operation"])),
+                    option_ppi_material_current_hist=sorted(
+                        current_hist, key=lambda x: x["category"]),
+                    option_ppi_material_source_ref_hist=sorted(
+                        ref_hist, key=lambda x: x["category"]),
                     status_coverage={family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
                     by_family=dict(sorted(totals.items())),
                     joint=sorted(joint, key=lambda x: tuple(x[f] for f in FIELDS)))
