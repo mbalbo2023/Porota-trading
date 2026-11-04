@@ -150,6 +150,23 @@ def test_missing_physical_trust_pin_is_no_verificado(monkeypatch):
     assert verdict["can_simulate"] is False
 
 
+@pytest.mark.parametrize("identity", [
+    ("SPY", "ETF", "BYMA", "ARS", "A-24HS"),
+    ("FUND", "FCI", "BYMA", "ARS", "INMEDIATA"),
+    ("AL30", "BONOS", "BYMA", "ARS", "T+1"),
+    ("al30", "BONOS", "BYMA", "ARS", "A-24HS"),
+])
+def test_unsupported_or_aliased_identity_never_gets_generic_book_authority(monkeypatch, identity):
+    bundle, bodies, _, pub = _fixture(monkeypatch)
+    verdict = guard.inspect_native_request_bundle(
+        bundle, bodies, expected_identity=identity,
+        trusted_capture_public_key_raw=pub,
+    )
+    assert verdict["state"] == "BLOQUEADO"
+    assert verdict["reason"] == "PPI_EXPECTED_FIVE_KEY_INVALID"
+    assert verdict["can_simulate"] is False
+
+
 @pytest.mark.parametrize("mutation, expected_reason", [
     (lambda b, p: b.update(producer_git_sha="a" * 64), "PPI_CAPTURE_SCHEMA_OR_FIVE_KEY_INVALID"),
     (lambda b, p: b.update(artifact_digest_sha256_claim="b" * 40), "PPI_CAPTURE_SCHEMA_OR_FIVE_KEY_INVALID"),
