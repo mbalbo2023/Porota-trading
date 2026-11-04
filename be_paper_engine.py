@@ -614,12 +614,39 @@ class PaperStore:
                              (*params, limit)).fetchall()
         return [D(r[0]) for r in reversed(rows)]
 
-    def open_position(self, symbol: str):
+    def open_position(self, symbol: str, *, asset_class=None,
+                      settlement=None, currency=None, market=None):
+        """Resolve the exact PAPER position; never choose an ambiguous ticker.
+
+        A symbol-only lookup remains available for legacy single-position
+        readers, but it fails closed when more than one OPEN identity exists.
+        Execution and exit callers must supply all four other PPI identity axes.
+        """
+        axes = (asset_class, settlement, currency, market)
+        if any(axis is not None for axis in axes) and not all(
+                isinstance(axis, str) and axis.strip() for axis in axes):
+            raise ValueError("PAPER_POSITION_FIVE_KEY_REQUIRED")
+        exact = all(isinstance(axis, str) and axis.strip() for axis in axes)
+        query = "SELECT * FROM paper_positions WHERE symbol=? AND status='OPEN'"
+        params = (symbol,)
+        if exact:
+            query += " AND asset_class=? AND settlement=? AND currency=? AND market=?"
+            params += axes
         with self.connect() as c:
             c.execute('BEGIN')
-            row = c.execute("SELECT * FROM paper_positions WHERE symbol=? AND status='OPEN'",
-                            (symbol,)).fetchone()
-            return spot_ledger.partition(c,row)[0] if row else None
+            rows = c.execute(query + " LIMIT 2", params).fetchall()
+            if len(rows) > 1:
+                raise ValueError("PAPER_POSITION_DUPLICATE_EXACT_IDENTITY" if exact
+                                 else "PAPER_POSITION_AMBIGUOUS_SYMBOL")
+            return spot_ledger.partition(c, rows[0])[0] if rows else None
+
+    def has_open_symbol(self, symbol: str):
+        """Preserve the independent one-open-per-ticker entry policy."""
+        with self.connect() as c:
+            c.execute('BEGIN')
+            return c.execute("""SELECT 1 FROM paper_positions
+                WHERE symbol=? AND status='OPEN' LIMIT 1""",
+                (symbol,)).fetchone() is not None
 
     def open_positions(self):
         with self.connect() as c:
@@ -1830,7 +1857,7 @@ class PaperBroker:
                 evaluate_when_blocked=evaluate_when_blocked)
         if self._maybe_close(q):
             return
-        if self.store.open_position(q.symbol):
+        if self.store.has_open_symbol(q.symbol):
             return
         if not allow_new_openings and not evaluate_when_blocked:
             self.record_observation_rejection(q, opening_block_reason or "OPENING_NOT_AUTHORIZED")
@@ -2586,7 +2613,7 @@ class PaperBroker:
             return False, "Falta confirmar factor de precio/VN y lote del instrumento de renta fija", None
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return False, "Puntas o profundidad invalidas para una compra simulada", None
-        if self.store.open_position(q.symbol):
+        if self.store.has_open_symbol(q.symbol):
             return False, "Ya existe una posicion abierta del simbolo", None
         from de_concurrent_risk_capacity_hf6 import derive_emergency_position_cap, emergency_position_guard
         from dh_paper_dynamic_risk_gate_hf6 import (
@@ -2895,7 +2922,15 @@ class PaperBroker:
         return min(initial, equity), "LATEST_EQUITY_CAPPED_AT_INITIAL"
 
     def _maybe_close(self, q: Quote):
-        p = self.store.open_position(q.symbol)
+        try:
+            currency, market = q.monetary_identity()
+            p = self.store.open_position(
+                q.symbol, asset_class=q.asset_class, settlement=q.settlement,
+                currency=currency, market=market)
+        except (ValueError, TypeError):
+            # Ambiguous/invalid identity must never select a different ledger
+            # row; on_quote still enforces the independent symbol entry veto.
+            return False
         if not p:
             return False
         from bm_exit_supervisor import PositionExitSupervisor
