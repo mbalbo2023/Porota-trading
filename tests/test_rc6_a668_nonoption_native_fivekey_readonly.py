@@ -94,6 +94,19 @@ class NativeFiveKeyReadonly(unittest.TestCase):
         self.assertEqual(self.classes(value, "OBLIGACIONES"),
                          {("SETTLEMENT_NOT_PROVIDER_ATTESTED", "PPI_PRIMARY"): 1})
 
+    def test_mixed_case_spoofed_provider_labels_never_attest_five_native_literals(self):
+        with sqlite3.connect(self.path) as c:
+            c.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='B1'",
+                      (json.dumps({"_discovery_source": "ppi_primary", "ticker": "B1",
+                                   "type": "BONOS", "market": "BYMA", "currency": "ARS",
+                                   "settlement": "A-24HS"}),))
+            c.execute("UPDATE financial_instrument_catalog SET settlement_source='ppi_field' WHERE ticker='O1'")
+        value = self.probe()
+        self.assertEqual(self.classes(value, "BONOS"),
+                         {("NOT_PPI_PRIMARY", "OTHER_OR_ABSENT"): 1})
+        self.assertEqual(self.classes(value, "OBLIGACIONES"),
+                         {("SETTLEMENT_NOT_PROVIDER_ATTESTED", "PPI_PRIMARY"): 1})
+
     def test_missing_literal_and_native_mismatch_stay_distinct(self):
         with sqlite3.connect(self.path) as c:
             self.row(c, "O2", "OBLIGACIONES", raw_update={"ticker": "O2", "type": "ON",
