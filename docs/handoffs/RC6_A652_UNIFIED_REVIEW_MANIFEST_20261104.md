@@ -1,7 +1,7 @@
 # A652 — Consolidated OFFHOST review manifest (single DRAFT, not a release)
 
 Date: 04-Nov-2026 ART. Role: `WRITE_OWNER` exclusive to `integration/a652-unified-review-20261104`.
-**State: `DESARROLLADO_LOCAL` until GitHub branch/PR is verified; never `DESPLEGADO` or `VALIDADO_RUNTIME`.**
+**State: `EN_GITHUB` DRAFT #940 with OFFHOST tests only; never `DESPLEGADO` or `VALIDADO_RUNTIME`.**
 
 ## Exact base and input graph
 
@@ -11,7 +11,7 @@ Date: 04-Nov-2026 ART. Role: `WRITE_OWNER` exclusive to `integration/a652-unifie
 - Integration DRAFT #929: `94c634f295089e066cec7d0c138e72e38af511f9`; **target PR base**.
 - Integration DRAFT #931: `9cd1ab00dd5de151db338bdfb281f9fe50c1add2`; **exact commit used to initialize this review**, already carries upstream scoped work.
 
-Additional original DRAFT inputs were copied by *eight individually reviewed `cherry-pick -x` commits*, never by blind merge:
+The first four original DRAFT inputs were copied via *eight individually reviewed `cherry-pick -x` commits*. A fifth input #939 was incorporated later via two additional reviewed `-x` commits, starting on the **exact published remote #940 HEAD** `9485f2bdef436a2140426bf6134b8588b8b41705`. No blind merge:
 
 | PR | Exact original head | Scoped delta carried by this review |
 | --- | --- | --- |
@@ -19,10 +19,11 @@ Additional original DRAFT inputs were copied by *eight individually reviewed `ch
 | #936 | `58849d0dbab5ae9476c763128a93639bf368b9df` | Search4 + realtime3 proof-of-concept plus offline tests/docs; original `2e8d7fd2`, `1a3a5171`, `58849d0d` |
 | #935 | `50d7b05115cefc0bc83315ef7a257a0c529ca1d2` | PAPER observer's env-budget bridge with narrow allowlist and failure-close tests; original `afbb0ba7`, `50d7b051` |
 | #938 | `5cc19f5f085694f47bc82e22325d16610555fdf2` | Book-only scanner PAPER *exit*-supervision guard plus regressions; original `5cc19f5f` |
+| #939 | `e6a817ffe5391db9c2f4fdbbcb770ec288a21c50` | CLOSED-only catalog reconciliation under globally blocked PAPER caucion admission; original `12cfbee9`, `e6a817ff`; includes focused `SQLITE_INTERRUPT` guard/regression |
 
 ## Integration guard and exact content
 
-New original input deltas are precisely these 10 paths; **zero deleted files**:
+New original input deltas are precisely these 11 paths; **zero deleted files**:
 
 ```text
 M bf_production_paper_observer.py
@@ -33,13 +34,14 @@ M porota_mode_manager.py
 A rc6_ppi_realtime_settlement_join_offhost.py
 A tests/test_rc6_a652_ppi_budget_boot_wiring.py
 A tests/test_rc6_a652_ppi_realtime_settlement_join_offhost.py
+A tests/test_rc6_a652_caucion_eod_catalog_isolation.py
 A tests/test_rc6_a652_scanner_exit_only_fresh_book.py
 A tests/test_rc6_a652_v2_projection_phase_regression.py
 ```
 
-Each subset was independently verified byte-identical to its corresponding original PR HEAD. `git diff --check` passed and the isolated checkout is clean after commit. This manifest is an eleventh, documentation-only file belonging to this review; it does not change business code or provider contracts.
+The first four subsets were independently verified byte-identical to corresponding original PR HEADs **before** #939; #939 changes a disjoint function/caller hunk in the same observer file as #938, so the combined observer file necessarily differs from each isolated PR. Both original patches applied cleanly on the same tree and combined targeted regressions pass. `git diff --check` passed; the isolated checkout is clean after commit. This manifest is the twelfth, documentation-only file belonging to this review; it does not change business code or provider contracts.
 
-The first temporary `--no-checkout` *new clone* showed about 1,534 local `D` index entries because its worktree had never been populated. That clone was **never committed or pushed**, and no existing worktree or user files were removed. A separate clean, fully checked-out worktree was used instead; all diffs were constrained to the above 10 scoped paths plus this manifest.
+The first temporary `--no-checkout` *new clone* showed about 1,534 local `D` index entries because its worktree had never been populated. That clone was **never committed or pushed**, and no existing worktree or user files were removed. Separate clean, fully checked-out worktrees were used instead; all diffs were constrained to the above 11 scoped paths plus this manifest.
 
 ## Combined verification — no external activity
 
@@ -52,16 +54,17 @@ python3 -B -m pytest -q -o addopts='' --disable-warnings \
   tests/test_rc6_a652_v2_projection_phase_regression.py \
   tests/test_rc6_a652_ppi_realtime_settlement_join_offhost.py \
   tests/test_rc6_a652_ppi_budget_boot_wiring.py \
-  tests/test_rc6_a652_scanner_exit_only_fresh_book.py
+  tests/test_rc6_a652_scanner_exit_only_fresh_book.py \
+  tests/test_rc6_a652_caucion_eod_catalog_isolation.py
 ```
 
-Result: **64 passed in 2.74s, 0 failed** (04-Nov-2026 OFFHOST). This is a combined source/unit regression, not CI, artifact validation, provider attestation or runtime approval. No provider GET, PPI Watch action, realtime subscription, GitHub Actions dispatch, Predeploy V2, Deploy V2, Docker operation or real order was executed by this review.
+Result: **70 passed in 3.41s, 0 failed** (04-Nov-2026 OFFHOST; previous review checkpoint 64/64 before #939). This is a combined source/unit regression, not CI, artifact validation, provider attestation or runtime approval. No provider GET, PPI Watch action, realtime subscription, GitHub Actions dispatch, Predeploy V2, Deploy V2, Docker operation or real order was executed by this review.
 
 ## Deliberately unresolved release gates
 
 1. `SIDECAR_ABSENT`; budget authority/signature and Watch quota isolation remain `BLOQUEADO`/`NO_VERIFICADO`. Carrying a budget-selector env to the observer **does not grant budget**. Existing PPI Watch unit, lease, provider access and competing subscription capacity are not touched.
 2. The 8,821 active, ~8,000 preliminary catalog READY and 821 contract gaps are aggregate A626 evidence, not executable 8,000 PAPER READY. Actual itemized economic contracts, current/Book, full provider-attested PPI five-key identity, signatures/clock, Book1→decision→Book2 PIT and real selection remain unverified.
-3. A626 V2→catalog gaps (575 primitive terms present, 172 missing and 74 no exact Current) require per-item and EOD writer evidence; OPEN skip is protective against SQLite contention. A separate owner is investigating the `caucion_ledger_blocked` short-circuit in the writer. **Not included here**; do not preempt that owner or assume fixed.
+3. A626 V2→catalog gaps (575 primitive terms present, 172 missing and 74 no exact Current) require per-item and EOD writer evidence; OPEN skip is protective against SQLite contention. #939 now **implements an OFFHOST-tested CLOSED-only local catalog tick** beneath the `caucion_ledger_blocked` global admission hold; OPEN and T+1 remain excluded. This prevents one statically proven starvation path; **whether the ledger was actually blocked on host, whether CLOSED ran and whether any of the 821 gaps would become admissible are all `NO_VERIFICADO`**. Do not assert this fixes all 821.
 4. #936 is a **pure offline synthetic identity PoC**; response `Settlement` may echo a requested subscription tenor. It cannot authorize paper instrument readiness. #938 allows only existing PAPER position exits on fresh Book without trade, never entries.
 5. Full 10-family PAPER replay, real market-source captures, family contracts and ETF HOLD, workers/timers/retention, EOD receipts, 52 dashboard routes and host runtime gates remain separately tracked. In particular no true order-routing authority or production readiness is inferred from these tests.
 
