@@ -53,7 +53,7 @@ LEDGER_SNAPSHOT_SECONDS = .15
 # here, and its hash is stable across future release-specific signed quota
 # documents. Pinning a document hash that embeds this release's SHA creates a
 # circular hash dependency; an external trusted signer avoids that deadlock.
-STATIC_SHARED_SCHEMA = "RC6_PPI_STATIC_SHARED_AUTHORITY_V1"
+STATIC_SHARED_SCHEMA = "RC6_PPI_STATIC_SHARED_AUTHORITY_V2"
 STATIC_SHARED_AUTHORITY_ENV = "POROTA_PPI_STATIC_SHARED_AUTHORITY_PATH"
 PINNED_STATIC_SHARED_SIGNER_KEY_SHA256 = None
 STATIC_SHARED_AUTHORITY = "STATIC_SHARED_EXTERNAL_WATCH_RESERVED_V1"
@@ -2050,10 +2050,18 @@ def static_shared_capacity_state(database, environ, *, as_of):
                 or authority.get("mode_safety") != "PAPER_SHADOW_ONLY"
                 or type(authority.get("max_parallel_requests")) is not int
                 or authority.get("max_parallel_requests") != 1
-                # Dockerfile bakes POROTA_BUILD_SHA into the immutable image;
-                # Deploy V2 must independently attest that env/build identity.
-                or authority.get("release_sha256") != environ.get("POROTA_BUILD_SHA")
-                or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("release_sha256", "")))
+                # Build-once passes the Git commit SHA (40 hex) to Docker's
+                # POROTA_BUILD_SHA, not a SHA256 (64 hex). V1 required both
+                # lengths simultaneously, making runtime activation impossible.
+                # Artifact/image SHA256 needs independent manifest attestation
+                # and is NOT accepted as an unverified field in schema V2.
+                or type(authority.get("release_git_sha")) is not str
+                or not re.fullmatch(r"[0-9a-f]{40}", authority["release_git_sha"])
+                or type(environ.get("POROTA_BUILD_SHA")) is not str
+                or not re.fullmatch(r"[0-9a-f]{40}", environ["POROTA_BUILD_SHA"])
+                or authority["release_git_sha"] != environ["POROTA_BUILD_SHA"]
+                or "release_sha256" in authority
+                or "release_artifact_sha256" in authority
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("provider_evidence_sha256", "")))
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("watch_evidence_sha256", "")))):
             raise ValueError("STATIC_SHARED_AUTHORITY_CONTRACT_INVALID")
