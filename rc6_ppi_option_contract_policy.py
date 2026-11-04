@@ -125,6 +125,8 @@ def standard_long_option_evidence(row, underlying_families):
             or _upper(row.get("currency")) != "ARS"
             or _upper(row.get("settlement")) != "INMEDIATA"
             or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
+            or _upper(row.get("settlement_source")) != "PPI_FIELD"
+            or not _has_recorded_observation_clock(row.get("last_seen_at"))
             or raw.get("_contract_conflicts")):
         return None
     terms = parse_ppi_option_description(row.get("description"))

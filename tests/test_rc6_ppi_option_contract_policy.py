@@ -164,6 +164,29 @@ def test_wrong_identity_dimensions_stay_fail_closed():
     assert policy.standard_long_option_evidence(not_ppi, underlying) is None
 
 
+def test_option_itself_requires_provider_settlement_not_request_candidate():
+    underlying = {"YPFD": "ACCIONES"}
+    inferred = option()
+    inferred["settlement_source"] = "REQUEST_CANDIDATE"
+    assert policy.standard_long_option_evidence(inferred, underlying) is None
+    records, skipped, identities = mass.planned_records([
+        row("YPFD", "ACCIONES"), inferred,
+    ])
+    assert identities == {"ACCIONES": 1, "OPCIONES": 1}
+    assert skipped["OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED"] == 1
+    assert not any(record["source_class"] == "DERIVED_OFFICIAL_RULE"
+                   and record["ticker"] == "YPFC40500O" for record in records)
+
+
+def test_option_itself_requires_aware_observation_clock_without_claiming_pit():
+    underlying = {"YPFD": "ACCIONES"}
+    for known_at in (None, "2026-10-03T01:36:06", "INVALID_TIMESTAMP"):
+        unclocked = option()
+        unclocked["last_seen_at"] = known_at
+        assert policy.standard_long_option_evidence(unclocked, underlying) is None
+    assert policy.standard_long_option_evidence(option(), underlying) is not None
+
+
 def test_mass_evidence_normalizes_to_existing_long_option_contract_path():
     primary_underlying = row("YPFD", "ACCIONES")
     primary_option = option()
