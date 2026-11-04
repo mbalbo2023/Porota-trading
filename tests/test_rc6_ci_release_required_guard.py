@@ -3,6 +3,10 @@
 import contextlib
 import io
 import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -115,6 +119,26 @@ class TestRequiredReleaseEvidence(unittest.TestCase):
         self.assertIn("RC6_REQUIRED_RELEASE_EVIDENCE=RED", error.getvalue())
         self.assertNotIn("SECRET-CANNOT-ECHO", error.getvalue())
         self.assertEqual(output.getvalue(), "")
+
+    def test_malicious_pr_head_sys_exit_zero_cannot_replace_trusted_guard(self):
+        """A poisoned PR checkout must never be executable release authority."""
+        with tempfile.TemporaryDirectory() as directory:
+            poisoned = Path(directory) / "pr-head" / "scripts" / guard.__name__.split(".")[-1]
+            poisoned = poisoned.with_suffix(".py")
+            poisoned.parent.mkdir(parents=True)
+            poisoned.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+            env = {**os.environ, **evidence(RC6_RELEASE_GATE_RESULT="skipped")}
+            forged = subprocess.run([sys.executable, "-I", str(poisoned)],
+                                    env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(forged.returncode, 0)
+            # The current local guard is byte-for-byte what was pinned at the
+            # reviewed 7c1c60a commit; the YAML structural test enforces that
+            # checkout path and forbids executing the PR HEAD's guard file.
+            trusted = subprocess.run([sys.executable, "-I", str(Path(guard.__file__).resolve())],
+                                     env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(trusted.returncode, 2)
+            self.assertIn("RC6_REQUIRED_RELEASE_EVIDENCE=RED", trusted.stderr)
+            self.assertIn("automatic_go=NO", trusted.stderr)
 
 
 if __name__ == "__main__":

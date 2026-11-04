@@ -133,12 +133,24 @@ class TestPredeployTwentyFourSeven(unittest.TestCase):
                          "'deploy/rc6-pr69-isolated-20260915' }}")
         self.assertNotIn("continue-on-error", required)
         self.assertEqual(required["permissions"], {"contents": "read"})
-        checkout, check = required["steps"]
-        self.assertEqual(checkout["with"]["ref"],
+        head_inspection, trusted_guard, check = required["steps"]
+        self.assertEqual(head_inspection["with"]["ref"],
                          "${{ github.event.pull_request.head.sha }}")
-        self.assertEqual(checkout["with"]["persist-credentials"], False)
-        self.assertIn("python -m scripts.rc6_ci_release_required_guard", check["run"])
-        self.assertIn("RC6_RELEASE_CHECKOUT_SHA=\"$(git rev-parse HEAD)\"", check["run"])
+        self.assertEqual(head_inspection["with"]["path"], ".rc6-release-head-inspect")
+        self.assertEqual(head_inspection["with"]["persist-credentials"], False)
+        # This commit is an immutable reviewed bootstrap guard. Neither old
+        # product nor main has the new script, so checkout of PR HEAD must be
+        # introspection-only; never execute a candidate-supplied sys.exit(0).
+        self.assertEqual(trusted_guard["with"]["ref"],
+                         "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e")
+        self.assertEqual(trusted_guard["with"]["path"], ".rc6-release-guard-trusted")
+        self.assertEqual(trusted_guard["with"]["persist-credentials"], False)
+        self.assertIn("python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py",
+                      check["run"])
+        self.assertIn('git -C .rc6-release-guard-trusted rev-parse HEAD', check["run"])
+        self.assertNotIn("python -m scripts.rc6_ci_release_required_guard", check["run"])
+        self.assertIn("RC6_RELEASE_CHECKOUT_SHA=\"$(git -C .rc6-release-head-inspect rev-parse HEAD)\"",
+                      check["run"])
         self.assertEqual(check["env"]["RC6_RELEASE_GATE_RESULT"],
                          "${{ needs.artifact-gate.result }}")
         self.assertEqual(check["env"]["RC6_RELEASE_ARTIFACT_ID"],

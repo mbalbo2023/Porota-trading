@@ -922,10 +922,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout exact PR head for release evidence guard
+      - name: Checkout untrusted PR head for exact SHA inspection only
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: .rc6-release-head-inspect
+          persist-credentials: false
+
+      - name: Checkout immutable reviewed release evidence guard
+        # Bootstrap pin: neither old product nor main contains this A651
+        # validator yet. Never execute a script from the untrusted PR HEAD.
+        uses: actions/checkout@v4
+        with:
+          ref: 7c1c60a7e050f2dc0bfa215f38e6e98dafac556e
+          path: .rc6-release-guard-trusted
           persist-credentials: false
 
       - name: Reject skipped or unbound frozen artifact evidence
@@ -942,6 +952,8 @@ jobs:
           RC6_RELEASE_ARTIFACT_DIGEST: ${{ needs.artifact-gate.outputs.artifact_digest }}
         run: |
           set -Eeuo pipefail
+          test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = \
+            "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e"
           export RC6_RELEASE_CHECKOUT_SHA
-          RC6_RELEASE_CHECKOUT_SHA="$(git rev-parse HEAD)"
-          python -m scripts.rc6_ci_release_required_guard
+          RC6_RELEASE_CHECKOUT_SHA="$(git -C .rc6-release-head-inspect rev-parse HEAD)"
+          python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py
