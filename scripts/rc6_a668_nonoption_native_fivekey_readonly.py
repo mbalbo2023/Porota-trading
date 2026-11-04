@@ -180,11 +180,13 @@ def _literals(raw):
 def _classify(row, raw, *, now):
     if raw is None:
         return "MALFORMED_METADATA", "OTHER_OR_ABSENT", set(NATIVE_FIELDS)
-    claim = ("PPI_PRIMARY" if str(raw.get("_discovery_source") or "").upper() == "PPI_PRIMARY"
+    # Match the production ppi_full_key_evidence_reason byte-exactly: case
+    # folding would credit a spoofed label that production explicitly rejects.
+    claim = ("PPI_PRIMARY" if raw.get("_discovery_source") == "PPI_PRIMARY"
              else "OTHER_OR_ABSENT")
     values = _literals(raw)
     missing = {name for name, value in values.items() if value in (None, "")}
-    if str(row["settlement_source"] or "").upper() != "PPI_FIELD":
+    if row["settlement_source"] != "PPI_FIELD":
         return "SETTLEMENT_NOT_PROVIDER_ATTESTED", claim, missing
     if claim != "PPI_PRIMARY":
         return "NOT_PPI_PRIMARY", claim, missing
