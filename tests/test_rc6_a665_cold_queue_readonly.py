@@ -203,6 +203,14 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertNotIn("docker exec", content)
         self.assertNotIn("rm -rf", content)
 
+    def test_runner_sanitizer_cross_checks_count_and_queue_binding(self):
+        content = WORKFLOW.read_text()
+        self.assertIn("if not (safe['failed_receipt_count']<=safe['receipt_count']", content)
+        self.assertIn("valid_binding=(", content)
+        self.assertIn("COUNT_BINDING_CONTRADICTS_QUEUE", content)
+        self.assertIn("A665_RUNTIME_QUEUE_COUNTS_NO_VERIFICADO", content)
+        self.assertIn("safe=fallback", content)
+
 
 if __name__ == "__main__":
     unittest.main()
