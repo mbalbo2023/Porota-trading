@@ -403,6 +403,27 @@ class A655Histogram(unittest.TestCase):
         self.assertEqual(self.roots(result),
                          {("PENDING_MATERIAL+REVOKED", "MIXED_SOURCES"): 1})
 
+    def test_a661_iol_only_pending_material_can_block_exact_ppi_identity(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="IOL_STRUCTURED_API", previous={"lot": 10}, current={"lot": 20},
+                    prev_id=40, current_id=41, change_id=101)
+        result = self.probe()
+        option = next(item for item in result["joint"] if item["family"] == "OPCIONES")
+        self.assertEqual(option["current"], "EXACT_PPI_SOURCE_LABEL")
+        self.assertEqual(self.roots(result), {("PENDING_MATERIAL", "IOL_ONLY"): 1})
+
+    def test_a661_ignored_iol_current_revoked_flag_alone_does_not_block_ppi(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="IOL_STRUCTURED_API", current={"lot": 20, "revoked": True},
+                    current_id=41)
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("UNEXPLAINED_PERSISTED_BRIDGE", "NONE"): 1})
+
     def test_a661_derived_official_pending_is_distinct_from_iol_and_ppi(self):
         with sqlite3.connect(self.db) as c:
             self.option_review(c)
