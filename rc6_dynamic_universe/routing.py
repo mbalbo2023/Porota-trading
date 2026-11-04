@@ -1,5 +1,6 @@
 """Explicit family strategy routing, independent of contract READY status."""
 from bs_instrument_contracts import family_name
+from rc6_operator_family_hold import paper_entry_hold_reason
 from .common import identity, stamp, number
 
 EQUITY_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
@@ -25,6 +26,7 @@ def _policy(family, engine, strategy, *, scalping=False):
     exit lifecycles keep their owners; no observer policy grants PAPER authority.
     """
     equity = family in EQUITY_FAMILIES
+    operator_hold = paper_entry_hold_reason(family) if equity else ""
     owner = {
         "ACCIONES": "EQUITY_SPOT_EXISTING_RUNTIME",
         "CEDEARS": "EQUITY_SPOT_CEDEAR_FEATURES_EXISTING_RUNTIME",
@@ -53,14 +55,16 @@ def _policy(family, engine, strategy, *, scalping=False):
         "FCI": "NAV_SUBSCRIPTION_REDEMPTION_HORIZON_EVENT",
     }.get(family, "NOT_APPLICABLE"))
     return {"policy_version": FAMILY_POLICY_VERSION, "strategy_owner": owner,
-            "lifecycle_owner": owner, "strategy_status": "SHADOW" if equity else "STRATEGY_NOT_VALIDATED",
+            "lifecycle_owner": owner, "strategy_status": (
+                "OPERATOR_HOLD" if operator_hold else "SHADOW" if equity else "STRATEGY_NOT_VALIDATED"),
             "observation_policy": selection, "discovery_policy": (
                 "ADAPTIVE_DISCOVERY_SEPARATE_FROM_DEEP_ANALYSIS" if equity else selection),
             "cadence_class": cadence, "source_authority": SOURCE_AUTHORITY,
             "tradeability_selection_policy": selection,
             "deep_analysis_eligibility": "SHADOW_TRADEABILITY_CAPACITY_GATED" if equity else "SPECIALIZED_OBSERVATION_ONLY",
             "equity_scanner_eligible": equity, "scalping_scanner_eligible": equity,
-            "entry_authority": False, "financial_family_quotas": False}
+            "entry_authority": False, "financial_family_quotas": False,
+            **({"operator_entry_hold_reason": operator_hold} if operator_hold else {})}
 
 
 def strategy_route(family, *, scalping=False):
@@ -72,10 +76,12 @@ def strategy_route(family, *, scalping=False):
                 "reason_codes": ["STRATEGY_NOT_VALIDATED"],
                 **_policy(str(family), "UNSUPPORTED", None)}
     if family in EQUITY_FAMILIES:
+        operator_hold = paper_entry_hold_reason(family)
         return {"family": family, "engine": "SCALPING" if scalping else "EQUITY_SPOT",
                 "strategy": "INTRADAY_SCALPING_HF5" if scalping else "EQUITY_SPOT_BASELINE",
-                "generic_equity": True, "status": "SHADOW",
-                "cadence_seconds": 30 if scalping else 120, "reason_codes": [],
+                "generic_equity": True, "status": "OPERATOR_HOLD" if operator_hold else "SHADOW",
+                "cadence_seconds": 30 if scalping else 120,
+                "reason_codes": [operator_hold] if operator_hold else [],
                 **_policy(family, "SCALPING" if scalping else "EQUITY_SPOT", None, scalping=scalping)}
     engine, strategy, cadence = LIFECYCLES[family]
     return {"family": family, "engine": engine, "strategy": strategy,
