@@ -188,6 +188,30 @@ def _bucket():
             "capability_codes": Counter()}
 
 
+def _current_snapshot_integrity_reason(item):
+    """Classify a bad current pointer without emitting market or identity data.
+
+    This is a diagnostic refinement only: every mismatch still stops the entire
+    host census before any capability, source, or readiness can be accredited.
+    """
+    if item["joined_snapshot_id"] is None:
+        return "HOST_V2_SNAPSHOT_REFERENCE_MISSING"
+    snapshot_key = _key({
+        "family": item["sf"], "ticker": item["st"],
+        "market": item["sm"], "currency": item["sc"],
+        "settlement": item["ss"],
+    })
+    if _key(item) != snapshot_key:
+        return "HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH"
+    if item["source_class"] != item["so"]:
+        return "HOST_V2_SNAPSHOT_SOURCE_CLASS_MISMATCH"
+    if item["evidence_hash"] != item["sh"]:
+        return "HOST_V2_SNAPSHOT_EVIDENCE_HASH_MISMATCH"
+    if item["observed_at"] != item["sa"]:
+        return "HOST_V2_SNAPSHOT_OBSERVED_AT_MISMATCH"
+    return None
+
+
 def _aggregate(conn):
     names = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -236,7 +260,8 @@ def _aggregate(conn):
           c.evidence_hash,c.observed_at,c.snapshot_id,
           s.family AS sf,s.ticker AS st,s.market AS sm,s.currency AS sc,
           s.settlement AS ss,s.source_class AS so,
-          s.evidence_hash AS sh,s.observed_at AS sa
+          s.evidence_hash AS sh,s.observed_at AS sa,
+          s.snapshot_id AS joined_snapshot_id
         FROM contract_evidence_v2_current c
         LEFT JOIN contract_evidence_v2_snapshots s
           ON s.snapshot_id=c.snapshot_id LIMIT ?""", (MAX_CURRENT_ROWS + 1,))]
@@ -245,14 +270,9 @@ def _aggregate(conn):
     by_key = defaultdict(set)
     by_ticker = Counter()
     for item in current:
-        if (item["sf"] is None or _key(item) != _key({
-                "family": item["sf"], "ticker": item["st"],
-                "market": item["sm"], "currency": item["sc"],
-                "settlement": item["ss"]})
-                or item["source_class"] != item["so"]
-                or item["evidence_hash"] != item["sh"]
-                or item["observed_at"] != item["sa"]):
-            raise Blocked("HOST_V2_CURRENT_SNAPSHOT_INTEGRITY_INVALID")
+        integrity_reason = _current_snapshot_integrity_reason(item)
+        if integrity_reason:
+            raise Blocked(integrity_reason)
         key = _key(item)
         by_ticker[key[1]] += 1
         if _complete(key):

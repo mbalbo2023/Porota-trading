@@ -159,7 +159,7 @@ def test_orphan_v2_does_not_reduce_missing_contract_count(tmp_path):
        999,'f','2026-11-03T15:00:00+00:00')""")
     con.commit()
     con.close()
-    with pytest.raises(host.Blocked, match="HOST_V2_CURRENT_SNAPSHOT_INTEGRITY_INVALID"):
+    with pytest.raises(host.Blocked, match="HOST_V2_SNAPSHOT_REFERENCE_MISSING"):
         host.probe(data_root=data, db=path, guard=lambda _: True)
 
 
@@ -302,8 +302,40 @@ def test_mixed_family_current_snapshot_fails_integrity(tmp_path):
     con.execute("UPDATE contract_evidence_v2_current SET family='OBLIGACIONES'")
     con.commit()
     con.close()
-    with pytest.raises(host.Blocked, match="HOST_V2_CURRENT_SNAPSHOT_INTEGRITY_INVALID"):
+    with pytest.raises(host.Blocked, match="HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH"):
         host.probe(data_root=data, db=path, guard=lambda _: True)
+
+
+@pytest.mark.parametrize("table,column,value,reason", [
+    ("contract_evidence_v2_current", "snapshot_id", 999,
+     "HOST_V2_SNAPSHOT_REFERENCE_MISSING"),
+    ("contract_evidence_v2_current", "family", "OBLIGACIONES",
+     "HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH"),
+    ("contract_evidence_v2_snapshots", "family", None,
+     "HOST_V2_SNAPSHOT_FIVE_KEY_MISMATCH"),
+    ("contract_evidence_v2_current", "source_class", "IOL_STRUCTURED_API",
+     "HOST_V2_SNAPSHOT_SOURCE_CLASS_MISMATCH"),
+    ("contract_evidence_v2_current", "evidence_hash", "0" * 64,
+     "HOST_V2_SNAPSHOT_EVIDENCE_HASH_MISMATCH"),
+    ("contract_evidence_v2_current", "observed_at",
+     "2026-11-03T15:00:01+00:00",
+     "HOST_V2_SNAPSHOT_OBSERVED_AT_MISMATCH"),
+])
+def test_current_snapshot_integrity_reasons_are_specific_and_private(
+        tmp_path, table, column, value, reason):
+    data, path = _get(tmp_path)
+    con = sqlite3.connect(path)
+    # Identifiers are fixed literals above, never runtime/user input.
+    con.execute(f"UPDATE {table} SET {column}=? WHERE ticker='AL30'", (value,))
+    con.commit()
+    con.close()
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(host.Blocked) as failure:
+        host.probe(data_root=data, db=path, guard=lambda _: True)
+    assert str(failure.value) == reason
+    assert "AL30" not in str(failure.value)
+    assert "BYMA" not in str(failure.value)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
 
 
 def test_historical_alias_only_does_not_match(tmp_path):
