@@ -47,6 +47,15 @@ EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSIT
 # conservative total bound; an inherited earlier absolute deadline wins.
 LEDGER_SNAPSHOT_SECONDS = .15
 
+# Review pin is deliberately unset in source until independently audited PPI
+# provider capacity, PPI Watch external consumption, and the exact release are
+# accepted together. A caller-supplied digest/environment value is NOT a pin.
+STATIC_SHARED_SCHEMA = "RC6_PPI_STATIC_SHARED_AUTHORITY_V1"
+STATIC_SHARED_AUTHORITY_ENV = "POROTA_PPI_STATIC_SHARED_AUTHORITY_PATH"
+PINNED_STATIC_SHARED_AUTHORITY_SHA256 = None
+STATIC_SHARED_AUTHORITY = "STATIC_SHARED_EXTERNAL_WATCH_RESERVED_V1"
+STATIC_SHARED_MAX_BYTES = 16384
+
 
 # Observation only: bounded in-process transaction edges, never admission authority.
 # The private lexical-path SHA never leaves this module and is not an inode claim.
@@ -363,7 +372,7 @@ def exit_capacity_contract(state, *, opened_count=0):
 
 def budget_policy(state, *, opened_count=0, planned_reservations=None):
     """Reserve actual critical demand, then planned high-priority deep tasks."""
-    if state.get("status") != "APPROVED_DYNAMIC":
+    if state.get("status") not in {"APPROVED_DYNAMIC", "APPROVED_STATIC_SHARED"}:
         raise ValueError("PPI_BUDGET_APPROVED_CAPACITY_REQUIRED")
     envelope = state["global_budget"]
     settings = state["budget_settings"]
@@ -382,6 +391,8 @@ def budget_policy(state, *, opened_count=0, planned_reservations=None):
         demand = (planned_reservations or {}).get(priority, {})
         reserves[priority] = {e: min(limits[e], _int(demand.get(e, 0))) for e in ENDPOINTS}
     return {"schema": SCHEMA, "version": "rc6-global-ppi-v1",
+        **({"authority": STATIC_SHARED_AUTHORITY}
+           if state["status"] == "APPROVED_STATIC_SHARED" else {}),
         "recommendation_digest": state["recommendation_digest"],
         "configuration_fingerprint": state["configuration_fingerprint"],
         "window_seconds": envelope["window_seconds"], "endpoint_limits": dict(limits),
@@ -1976,6 +1987,107 @@ def baseline_budget_policy(previous, *, opened_count, as_of, environ=None):
         safety_reserve="BASELINE_AUTHORITY_ONLY; dynamic expansion disabled")
 
 
+def static_shared_capacity_state(database, environ, *, as_of):
+    """Explicit *pinned* PAPER authority, net of independent PPI Watch demand.
+
+    This preflight is read-only. It never guesses provider quota, creates the
+    sidecar, changes Watch, or treats a digest supplied by a caller as trust.
+    Returning None means no static authority was configured. A configured but
+    unverifiable authority is an off-wire denial, never an OFF baseline.
+    """
+    name = environ.get(STATIC_SHARED_AUTHORITY_ENV)
+    if not name:
+        return None
+    if (not isinstance(name, str) or not Path(name).is_absolute()
+            or not isinstance(PINNED_STATIC_SHARED_AUTHORITY_SHA256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", PINNED_STATIC_SHARED_AUTHORITY_SHA256)):
+        raise BudgetBackpressure("PPI_STATIC_SHARED_AUTHORITY_UNPINNED")
+    path = Path(name)
+    try:
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise ValueError("STATIC_SHARED_AUTHORITY_ALIAS")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                    or before.st_mode & 0o022 or not 2 <= before.st_size <= STATIC_SHARED_MAX_BYTES):
+                raise ValueError("STATIC_SHARED_AUTHORITY_FILE_UNTRUSTED")
+            raw = os.read(fd, STATIC_SHARED_MAX_BYTES + 1)
+            after = os.fstat(fd)
+            if (len(raw) != before.st_size or
+                    (before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_ino, after.st_size, after.st_mtime_ns)):
+                raise ValueError("STATIC_SHARED_AUTHORITY_CHANGED")
+        finally:
+            os.close(fd)
+        if hashlib.sha256(raw).hexdigest() != PINNED_STATIC_SHARED_AUTHORITY_SHA256:
+            raise ValueError("STATIC_SHARED_AUTHORITY_DIGEST_MISMATCH")
+        authority = json.loads(raw)
+        if (not isinstance(authority, dict) or authority.get("schema") != STATIC_SHARED_SCHEMA
+                or authority.get("approved") is not True
+                or authority.get("mode_safety") != "PAPER_SHADOW_ONLY"
+                or type(authority.get("max_parallel_requests")) is not int
+                or authority.get("max_parallel_requests") != 1
+                or authority.get("release_sha256") != environ.get("POROTA_RUNTIME_RELEASE_SHA256")
+                or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("release_sha256", "")))
+                or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("provider_evidence_sha256", "")))
+                or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("watch_evidence_sha256", "")))):
+            raise ValueError("STATIC_SHARED_AUTHORITY_CONTRACT_INVALID")
+        now = stamp(as_of)
+        issued = stamp(authority["issued_at"])
+        expires = stamp(authority["expires_at"])
+        if (issued > now or now >= expires or expires - issued > timedelta(hours=18)
+                or issued < now - timedelta(hours=18)):
+            raise ValueError("STATIC_SHARED_AUTHORITY_STALE")
+        window = _int(authority["window_seconds"], 1)
+        if not 15 <= window <= 3600:
+            raise ValueError("STATIC_SHARED_AUTHORITY_WINDOW_INVALID")
+        provider = authority["provider_endpoint_limits"]
+        external = authority["watch_external_endpoint_reserve"]
+        shared = authority["paper_shared_endpoint_limits"]
+        if any(type(value) is not dict or set(value) != set(ENDPOINTS)
+               for value in (provider, external, shared)):
+            raise ValueError("STATIC_SHARED_AUTHORITY_ENDPOINT_INVALID")
+        for endpoint in ENDPOINTS:
+            total = _int(provider[endpoint])
+            watch = _int(external[endpoint])
+            paper = _int(shared[endpoint], 1)
+            if watch + paper > total:
+                raise ValueError("STATIC_SHARED_WATCH_RESERVE_INSUFFICIENT")
+        ppi_global = _int(authority["provider_global_limit"], 1)
+        watch_global = _int(authority["watch_external_global_reserve"])
+        paper_global = _int(authority["paper_shared_global_limit"], 1)
+        if (watch_global + paper_global > ppi_global
+                or paper_global > sum(shared.values())):
+            raise ValueError("STATIC_SHARED_WATCH_GLOBAL_RESERVE_INSUFFICIENT")
+        opened = supervisable_position_count(database, None)
+        if opened is None:
+            raise ValueError("STATIC_SHARED_PAPER_LEDGER_UNVERIFIED")
+        # Fixed 20/40 *scanner* baseline is an upper bound, not a license to
+        # spend unknown provider capacity. EXIT receives its separate floor.
+        exit_book = (opened * window + 4) // 5
+        if (shared["current"] > 20 or shared["intraday"] > 40
+                or shared["book"] > 20 + exit_book):
+            raise ValueError("STATIC_SHARED_BASELINE_ENVELOPE_EXCEEDED")
+        from rc6_dynamic_universe.promotion import DEFAULT_POLICY
+        settings = deepcopy(DEFAULT_POLICY["budget"])
+        state = {"status": "APPROVED_STATIC_SHARED",
+            "global_budget": {"window_seconds": window,
+                "endpoint_limits": dict(shared), "global_limit": paper_global,
+                "safety_reserve": "PPI_WATCH_EXTERNAL_RESERVE_WITHHELD_BY_REVIEWED_PIN"},
+            "budget_settings": settings, "expires_at": expires.isoformat(),
+            "recommendation_digest": hashlib.sha256(raw).hexdigest(),
+            "configuration_fingerprint": digest({"authority": authority,
+                "verified_paper_open_positions_count": opened}),
+            "static_open_positions_count": opened,
+            "static_authority_path": path}
+        if exit_capacity_contract(state, opened_count=opened)["status"] != "READY":
+            raise ValueError("STATIC_SHARED_EXIT_RESERVE_INSUFFICIENT")
+        return state
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, OverflowError) as error:
+        raise BudgetBackpressure("PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED") from error
+
+
 class RuntimePPIBudget:
     """Revalidates approval at actual sends, with local SHADOW demand reserves."""
     def __init__(self, database, controller, *, clock=None):
@@ -2040,6 +2152,28 @@ class RuntimePPIBudget:
 
     def _current(self, *, priority="DISCOVERY", deadline=None):
         state = self.controller.state(self.clock(), **({"deadline": deadline} if deadline is not None else {}))
+        if self.controller.environ.get(STATIC_SHARED_AUTHORITY_ENV):
+            if state.get("status") != "OFF_BASELINE" or state.get("mode") != "OFF":
+                raise BudgetBackpressure("PPI_STATIC_SHARED_DYNAMIC_MODE_CONFLICT")
+            static = static_shared_capacity_state(
+                self.database, self.controller.environ, as_of=self.clock())
+            opened = self._opened(None, deadline=deadline)
+            if opened is None or opened != static["static_open_positions_count"]:
+                raise BudgetBackpressure("PPI_STATIC_SHARED_OPENED_LEDGER_CHANGED")
+            contract = exit_capacity_contract(static, opened_count=opened)
+            retention = exit_retention_preflight(self.database, static,
+                opened_count=opened, as_of=self.clock())
+            if contract["status"] != "READY" or retention["status"] != "READY":
+                raise BudgetBackpressure("PPI_STATIC_SHARED_EXIT_RETENTION_UNVERIFIED")
+            self.activation_contract = {**contract, "receipt_retention_runtime": retention}
+            approved_policy = budget_policy(static, opened_count=opened)
+            if self.budget is None:
+                self.budget = GlobalPPIBudget(self.path, approved_policy, clock=self.clock,
+                    protected=[self.database, static["static_authority_path"],
+                               *self.controller.input_paths])
+            else:
+                self.budget.policy = validate_policy(approved_policy)
+            return self.budget
         if state["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY":
             retention_reasons = state.get("exit_receipt_capacity", {}).get("reason_codes", [])
             return self._blocked_activation(state,
@@ -2051,9 +2185,13 @@ class RuntimePPIBudget:
                 saved = self._previous()
                 if saved is None:
                     return None
+                if saved.get("authority") == STATIC_SHARED_AUTHORITY:
+                    raise BudgetBackpressure("PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED")
                 self.budget = GlobalPPIBudget(self.path, saved, clock=self.clock,
                     protected=[self.database, *self.controller.input_paths])
             previous = self.budget.policy
+            if previous.get("authority") == STATIC_SHARED_AUTHORITY:
+                raise BudgetBackpressure("PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED")
             opened = self._opened(max(20, _native_integer(self.controller.environ, "PAPER_MAX_OPEN_POSITIONS", 5)),
                 deadline=deadline)
             self.budget.policy = validate_policy(baseline_budget_policy(previous,
@@ -2111,19 +2249,8 @@ class RuntimePPIBudget:
     def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
         budget = self._current(priority=priority)
         if budget is None:
-            # An explicit OFF/SHADOW baseline reader historically has no
-            # ledger or lease, even when RuntimePPIBudget was passed directly.
-            # Preserve that exact baseline; never transform failed APPROVED
-            # intent into an unleased provider GET. Re-read the effective
-            # config at the send seam: malformed/unknown states are denials.
-            try:
-                state = self.controller.state(self.clock())
-            except (OSError, ValueError, TypeError, KeyError):
-                state = {}
-            if state.get("status") in {"OFF_BASELINE", "SHADOW_BASELINE"} and (
-                    (state["status"], state.get("mode")) in {
-                        ("OFF_BASELINE", "OFF"), ("SHADOW_BASELINE", "SHADOW")}):
-                return {"allowed": True, "lease": None}
+            # Neither OFF/SHADOW nor an uninitialized budget grants wire
+            # authority. The old baseline path used to return a null lease.
             return {"allowed": False, "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
         admitted_policy = deepcopy(budget.policy)
         result = budget.acquire(endpoint, consumer=consumer, priority=priority)
@@ -2131,7 +2258,8 @@ class RuntimePPIBudget:
             with self._scope_lock:
                 self._admission_scopes[result["lease"]] = {
                     "priority": priority, "expires_at": admitted_policy["expires_at"],
-                    "approved_dynamic": not admitted_policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"),
+                    "approved_dynamic": (not admitted_policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE")
+                                         and admitted_policy.get("authority") != STATIC_SHARED_AUTHORITY),
                 }
                 # Only one durable lease can be live. Older abandoned scopes
                 # cannot regain authority through a subsequent token.
@@ -2200,7 +2328,9 @@ class RuntimePPIBudget:
                 self._freeze_exit_admission(scope, budget)
             # Invalid/missing/expired approval uses the original factual path.
             # It never continues a dynamic cache or changes baseline cadence.
-            if budget is None or budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"):
+            if budget is None:
+                raise BudgetBackpressure("PPI_BUDGET_LEASE_UNVERIFIED")
+            if budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"):
                 return fetch()
             return budget.coalesced_book(identity, fetch, consumer=consumer, priority=priority)
 
@@ -2277,7 +2407,9 @@ class RuntimePPIBudget:
                 return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
             identities = _supervisable_identity_digests(self.database, deadline=deadline)
             state = self.controller.state(self.clock(), deadline=deadline)
-            if (concurrent or state.get("status") != "APPROVED_DYNAMIC"
+            static_approved = bool(budget.policy.get("authority") == STATIC_SHARED_AUTHORITY
+                and self.controller.environ.get(STATIC_SHARED_AUTHORITY_ENV))
+            if (concurrent or (state.get("status") != "APPROVED_DYNAMIC" and not static_approved)
                     or (self.activation_contract or {}).get("status") != "READY"):
                 identities = None
             observed_elapsed = elapsed_seconds + (time.monotonic() - entered) if measured else elapsed_seconds
@@ -2304,7 +2436,8 @@ def budget_from_environment(database=None, *, clock=None):
         controller.database = Path(database)
     if state.get("mode") != "APPROVED" and controller.environ.get("POROTA_DYNAMIC_CAPACITY_MODE", "").upper() != "APPROVED":
         from cg_paper_workspace import artifact_root
-        if not (artifact_root(database) / "ppi-budget/global.sqlite").exists():
+        if not (artifact_root(database) / "ppi-budget/global.sqlite").exists() \
+                and not controller.environ.get(STATIC_SHARED_AUTHORITY_ENV):
             return None
     return RuntimePPIBudget(database, controller, clock=clock)
 

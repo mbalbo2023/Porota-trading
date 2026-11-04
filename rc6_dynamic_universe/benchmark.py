@@ -17,6 +17,7 @@ import requests
 
 from bd_ppi_readonly_guard import (ProductionMarketReader, instrument_not_found,
                                    session_invalid, ReadOnlyPolicyViolation)
+from rc6_ppi_global_budget import BudgetBackpressure
 from co_market_sessions_hf6 import byma_paper_spot_phase, byma_schedule_status
 from .common import digest, identity, number, percentile, stamp
 
@@ -36,6 +37,8 @@ def error_code(error):
     """Never persist arbitrary exception text, SDK payloads or credentials."""
     if isinstance(error, BenchmarkReadError):
         return error.code
+    if isinstance(error, BudgetBackpressure):
+        return "PPI_SHARED_BUDGET_UNVERIFIED"
     if session_invalid(error):
         return "PPI_SESSION_INVALID"
     if instrument_not_found(error):
@@ -207,7 +210,7 @@ def _summary(rows, elapsed_seconds):
 def run_benchmark(candidates, *, api_key="", api_secret="", batches=BATCHES,
                   endpoints=ENDPOINTS, cycles=3, cadence_seconds=60, freshness_seconds=120,
                   max_requests=2701, max_runtime_seconds=1800, repeated_server_errors=2,
-                  reader_factory=ProductionMarketReader,
+                  reader_factory=ProductionMarketReader, budget=None,
                   clock=lambda: datetime.now(timezone.utc), monotonic=time.monotonic,
                   pause=time.sleep):
     configuration = _config(batches=batches, endpoints=endpoints, cycles=cycles,
@@ -242,7 +245,17 @@ def run_benchmark(candidates, *, api_key="", api_secret="", batches=BATCHES,
                 [list(identity(record)) for record in records])
             deadline = start_mono + configuration["max_runtime_seconds"]
             try:
-                reader = reader_factory(api_key, api_secret)
+                if budget is None:
+                    # Do not login or try a speculative Current/Book just to
+                    # discover that the OFF baseline has no shared lease.
+                    from rc6_ppi_global_budget import budget_from_environment
+                    budget = budget_from_environment()
+                if budget is None:
+                    report["stop_reason"] = "PPI_SHARED_BUDGET_UNAVAILABLE"
+                else:
+                    reader = reader_factory(api_key, api_secret, budget=budget)
+                if reader is None:
+                    raise BenchmarkReadError("PPI_SHARED_BUDGET_UNAVAILABLE")
                 with _wire_gate(max_requests=max_requests, deadline=deadline, monotonic=monotonic) as wire:
                     try:
                         reader.login_once()
@@ -314,6 +327,7 @@ def run_benchmark(candidates, *, api_key="", api_secret="", batches=BATCHES,
                                     report["observations"].append(result)
                                     code = result["error_code"]
                                     if code in {"PPI_HTTP_429", "PPI_SESSION_INVALID", "PPI_READONLY_POLICY_BLOCKED",
+                                                "PPI_SHARED_BUDGET_UNVERIFIED",
                                                 "REQUEST_BUDGET_EXHAUSTED", "TIME_BUDGET_EXHAUSTED"}:
                                         report["stop_reason"] = code
                                     if code and (code == "PPI_HTTP_408" or code.startswith("PPI_HTTP_5")):
