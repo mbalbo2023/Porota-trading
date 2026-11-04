@@ -250,7 +250,14 @@ def test_workflow_host_never_runs_on_pull_request(tmp_path):
     assert "sudo -n timeout 25 unshare --mount --propagation private" in text
     assert "mount -o remount,bind,ro /opt/porota-trading/data" in text
     assert "exec python3 -B -" in text
-    assert "docker exec" not in text
+    # The SQL census, and not unrelated bounded metadata diagnostics in this
+    # workflow, must stay inside the private read-only mount namespace.
+    # In particular A516 may query pre-existing container metadata with a
+    # separately pinned, non-provider Docker command under its own guards.
+    sql_step = text.split(
+        "      - name: Remote private mount namespace RO bounded SQL aggregates\n", 1
+    )[1].split("\n      - name:", 1)[0]
+    assert "docker exec" not in sql_step
 
 
 def test_historical_reconciliation_streams_once_not_n_queries(tmp_path):
