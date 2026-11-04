@@ -1238,6 +1238,35 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     return time.time()
 
 
+def _caucion_blocked_closed_catalog_tick(store, phase, last_attempt):
+    """Keep OFFHOURS catalog reconciliation independent of PAPER caucion fees.
+
+    An invalid caucion fee ledger must still block *every* new PAPER admission.
+    However, independent catalog/evidence publication is a local SQLite task:
+    no PPI reader, provider GET, orders or broker is passed to this function.
+    During OPEN and T+1 the writer remains forbidden. A failed CLOSED attempt
+    is throttled for the normal off-hours interval, including SQLITE_INTERRUPT,
+    and the ledger gate in the caller remains unchanged.
+    """
+    if phase != "CLOSED":
+        return last_attempt
+    try:
+        return _periodic_complementary_reconcile(store, phase, last_attempt)
+    except Exception as exc:
+        # Do not start a second SQLite write storm if the DB is locked/broken.
+        # Keep evidence best-effort; the host remains fail-closed for admission.
+        reason = ("SQLITE_OPERATIONAL_ERROR" if isinstance(exc, sqlite3.OperationalError)
+                  else "CATALOG_RECONCILE_ERROR")
+        try:
+            store.event("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR", reason)
+        except Exception:
+            # DB error events may themselves fail: leave a bounded sentinel in
+            # service logs without exposing exception text, paths or symbols.
+            print("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR:" + reason,
+                  file=sys.stderr, flush=True)
+        return time.time()
+
+
 def _release_idle_catalog_heap():
     """Return free catalog allocations to Linux after the closed-session pass.
 
@@ -2823,6 +2852,11 @@ def run():
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
                                    "cost evidence requires reconciliation.")
+                # A caucion fee discrepancy blocks admission globally but must
+                # not starve other families' OFFHOURS local contract publication.
+                # No PPI reader, book, order route or user wallet is touched.
+                last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
+                    store, phase, last_complementary_reconcile)
                 time.sleep(max(30, COMMAND_POLL_SECONDS))
                 continue
             # Autenticación, catálogo e históricos son útiles también durante
