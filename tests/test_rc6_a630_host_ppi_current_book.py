@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.rc6_a630_host_ppi_current_book import (
-    SLOTS, TwoGetAtomicBudget, _existing_shared_budget, _exit_round_fresh,
+    SLOTS, PER_GET_CLOCK_FIELDS, TwoGetAtomicBudget, _existing_shared_budget, _exit_round_fresh,
     _strict_adapter_send,
     _http_body_hashes,
     _utc, capture_two,
@@ -56,14 +56,17 @@ class Shared:
 
 class Reader:
     def __init__(self, key, secret, *, budget, consumer, priority, audit,
-                 clock=PROVIDER, extra_get=False, bad_shape=False):
+                 clock=PROVIDER, book_clock=None, extra_get=False, bad_shape=False,
+                 close_error=False):
         self.budget = budget
         self.consumer = consumer
         self.priority = priority
         self.audit = audit
         self.clock = clock
+        self.book_clock = book_clock or clock
         self.extra_get = extra_get
         self.bad_shape = bad_shape
+        self.close_error = close_error
         self.actual = []
 
     def login_once(self):
@@ -92,10 +95,12 @@ class Reader:
         self._request("book")
         if self.bad_shape:
             return {"date": self.clock, "bid": []}
-        return {"date": self.clock, "bids": [{"price": 748, "quantity": 7}],
+        return {"date": self.book_clock, "bids": [{"price": 748, "quantity": 7}],
                 "offers": [{"price": 750, "quantity": 5}]}
 
     def close(self):
+        if self.close_error:
+            raise RuntimeError("synthetic close failed")
         return None
 
 
@@ -111,7 +116,7 @@ def fake_adapter():
     yield ["/api/1.0/marketdata/current", "/api/1.0/marketdata/book"]
 
 
-def invoke(shared, **reader_options):
+def invoke(shared, *, observations=None, **reader_options):
     constructed = []
 
     def factory(*args, **kwargs):
@@ -119,8 +124,9 @@ def invoke(shared, **reader_options):
         constructed.append(obj)
         return obj
 
+    observed = iter(observations).__next__ if observations is not None else lambda: NOW
     result = capture_two(TARGET, ("fake-key", "fake-secret"), shared, factory,
-                         clock=lambda: NOW, http_limiter=fake_hashes,
+                         clock=observed, http_limiter=fake_hashes,
                          adapter_guard=fake_adapter)
     return result, constructed
 
@@ -237,6 +243,136 @@ class TestA630(unittest.TestCase):
         self.assertFalse(result["source_pit_verified"])
         self.assertFalse(result["independent_provider_signature_verified"])
         self.assertEqual(result["orders_sent"], 0)
+
+    def test_three_utc_clocks_observed_individually_and_v1_archive_accepted(self):
+        observations = [NOW, NOW + timedelta(milliseconds=100),
+                        NOW + timedelta(milliseconds=300)]
+        result, readers = invoke(Shared(), observations=observations)
+        self.assertEqual(readers[0].actual, ["current", "book"])
+        self.assertEqual(result["current_received_at_utc"], observations[0].isoformat())
+        self.assertEqual(result["book_received_at_utc"], observations[1].isoformat())
+        self.assertEqual(result["pair_completed_at_utc"], observations[2].isoformat())
+        self.assertEqual(result["first_known_at_utc"], result["pair_completed_at_utc"])
+        self.assertTrue(verify_receipt(result, TARGET))
+        self.assertEqual(result["schema"], "rc6.a630.ppi.current-book.sample.v1")
+        # Previously exported success artifacts have the same v1 SCHEMA but
+        # lacked per-GET evidence. They remain readable, never causal PIT.
+        archived = {key: val for key, val in result.items()
+                    if key not in PER_GET_CLOCK_FIELDS}
+        self.assertTrue(verify_receipt(archived, TARGET))
+        self.assertFalse(archived["source_pit_verified"])
+
+    def test_clock_callbacks_are_after_each_get_and_pair_close(self):
+        trace = []
+
+        class TracedReader(Reader):
+            def current(self, *args):
+                result = super().current(*args)
+                trace.append("current-returned")
+                return result
+
+            def book(self, *args):
+                result = super().book(*args)
+                trace.append("book-returned")
+                return result
+
+            def close(self):
+                trace.append("reader-closed")
+                return super().close()
+
+        def traced_clock():
+            trace.append("timestamp")
+            return NOW
+
+        result = capture_two(TARGET, ("fake-key", "fake-secret"), Shared(),
+                             TracedReader, clock=traced_clock,
+                             http_limiter=fake_hashes, adapter_guard=fake_adapter)
+        self.assertEqual(trace, ["current-returned", "timestamp", "book-returned",
+                                 "timestamp", "reader-closed", "timestamp"])
+        self.assertTrue(verify_receipt(result, TARGET))
+
+    def test_current_native_future_relative_to_get1_is_not_hidden_by_book2(self):
+        observations = [NOW, NOW + timedelta(seconds=3),
+                        NOW + timedelta(seconds=4)]
+        result, readers = invoke(Shared(), observations=observations,
+                                 clock="2026-11-04T14:20:02+00:00")
+        # Legacy pair-only clock would accept provider 14:20:02 by 14:20:05.
+        # It was actually *in the future* when Current returned at 14:20:01.
+        self.assertEqual(readers[0].actual, ["current", "book"])
+        self.assertEqual(result["reason"], "PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertTrue(verify_receipt(result, TARGET))
+        self.assertTrue(PER_GET_CLOCK_FIELDS.isdisjoint(result))
+        self.assertIsNone(result["current_http_body_sha256"])
+
+    def test_book_native_future_relative_to_get2_fails_closed(self):
+        observations = [NOW, NOW + timedelta(seconds=1),
+                        NOW + timedelta(seconds=3)]
+        result, _ = invoke(Shared(), observations=observations,
+                           book_clock="2026-11-04T14:20:03+00:00")
+        self.assertEqual(result["reason"], "PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertTrue(PER_GET_CLOCK_FIELDS.isdisjoint(result))
+
+    def test_long_book_latency_must_not_relax_legacy_pair_freshness(self):
+        observations = [NOW, NOW + timedelta(seconds=125),
+                        NOW + timedelta(seconds=126)]
+        result, _ = invoke(Shared(), observations=observations,
+                           book_clock="2026-11-04T14:22:05+00:00")
+        # Current was only 1 s old at GET1 but 127 s old by pair completion.
+        # It remains ineligible under the pre-existing age budget.
+        self.assertEqual(result["reason"], "PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertTrue(PER_GET_CLOCK_FIELDS.isdisjoint(result))
+
+    def test_backwards_naive_or_missing_observation_fails_closed(self):
+        cases = [
+            [NOW, NOW - timedelta(milliseconds=1), NOW],
+            [NOW, NOW + timedelta(milliseconds=1), NOW - timedelta(milliseconds=1)],
+            [NOW.replace(tzinfo=None), NOW, NOW],
+            [NOW, NOW.replace(tzinfo=None), NOW],
+            [NOW, NOW, None],
+        ]
+        for observations in cases:
+            with self.subTest(observations=observations):
+                result, _ = invoke(Shared(), observations=observations)
+                self.assertEqual(result["reason"], "PPI_NATIVE_CLOCK_INVALID")
+                self.assertEqual(result["state"], "NO_VERIFICADO")
+                self.assertTrue(PER_GET_CLOCK_FIELDS.isdisjoint(result))
+                self.assertIsNone(result["current_http_body_sha256"])
+                self.assertTrue(verify_receipt(result, TARGET))
+
+    def test_partial_get_or_close_failure_cannot_emit_observation_or_digest(self):
+        cases = (dict(shared=Shared(deny_at=2), reader={}),
+                 dict(shared=Shared(), reader={"close_error": True}))
+        for case in cases:
+            result, _ = invoke(case["shared"], **case["reader"])
+            self.assertEqual(result["state"], "NO_VERIFICADO")
+            self.assertTrue(PER_GET_CLOCK_FIELDS.isdisjoint(result))
+            self.assertIsNone(result["first_known_at_utc"])
+            self.assertIsNone(result["current_http_body_sha256"])
+            self.assertTrue(verify_receipt(result, TARGET))
+
+    def test_receipt_rejects_partial_forged_or_reordered_clocks(self):
+        valid, _ = invoke(Shared(), observations=[
+            NOW, NOW + timedelta(milliseconds=100), NOW + timedelta(milliseconds=300)])
+        self.assertTrue(verify_receipt(valid, TARGET))
+        edits = (
+            {"current_received_at_utc": "2026-11-04T14:20:02+00:00"},
+            {"book_received_at_utc": "2026-11-04T14:20:00+00:00"},
+            {"pair_completed_at_utc": "2026-11-04T14:20:04+00:00"},
+            {"current_received_at_utc": "2026-11-04T14:20:01"},
+            {"book_received_at_utc": "2026-11-04T11:20:01.100-03:00"},
+        )
+        for edit in edits:
+            with self.subTest(edit=edit):
+                self.assertFalse(verify_receipt({**valid, **edit}, TARGET))
+        missing_one = {key: val for key, val in valid.items()
+                       if key != "current_received_at_utc"}
+        self.assertFalse(verify_receipt(missing_one, TARGET))
+        invalid = {**valid, "state": "NO_VERIFICADO",
+                   "reason": "PPI_NATIVE_CLOCK_INVALID"}
+        self.assertFalse(verify_receipt(invalid, TARGET))
 
     def test_first_lease_denied_no_get(self):
         result, readers = invoke(Shared(deny_at=1))
