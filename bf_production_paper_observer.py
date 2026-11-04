@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from contextlib import closing, contextmanager, nullcontext
+from dataclasses import replace
 
 import faulthandler
 import fcntl
@@ -364,6 +365,18 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, prior
                               request=(symbol, asset_class, settlement), identity=exact,
                               observed_at=quote.observed_at)
                       if callable(capture) else None)
+            # A653: carry only the freshly appended native Book event digest
+            # into the immutable Quote used by this exact PAPER decision.
+            # A DEDUPLICATED event keeps its ORIGINAL known_at; rebinding it to
+            # a later observed_at would manufacture an incorrect causal edge.
+            # These bytes are a diagnostic *claim*, never provider attestation,
+            # READY, execution, or a reason to make another PPI GET.
+            if isinstance(result, dict) and result.get("status") == "CAPTURED":
+                native_sha = result.get("event_sha256")
+                if (isinstance(native_sha, str) and len(native_sha) == 64
+                        and all(char in "0123456789abcdef" for char in native_sha)
+                        and not quote.time_error(now_iso(), require_trade=False)):
+                    quote = replace(quote, ppi_book1_event_sha256=native_sha)
             if not isinstance(result, dict) or result.get("status") not in {"CAPTURED", "DEDUPLICATED"}:
                 status = result.get("status") if isinstance(result, dict) else None
                 reason = result.get("reason") if isinstance(result, dict) else None

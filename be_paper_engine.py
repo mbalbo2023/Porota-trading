@@ -101,6 +101,9 @@ class Quote:
     book_at: Optional[str] = None
     trade_at: Optional[str] = None
     last_kind: str = "UNKNOWN"
+    # Hash of the exact newly CAPTURED native PPI Book, bound by the observer.
+    # Not PPI-signed, economic authority, or an admission gate.
+    ppi_book1_event_sha256: Optional[str] = None
 
     def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
                    max_trade_age_seconds=None):
@@ -706,6 +709,21 @@ class PaperStore:
     def record_decision(self, key: str, q: Quote, action: str, score: Decimal,
                         reason: str, features: dict) -> bool:
         action_code = str(action or "").upper()
+        # A653: preserve the scanner's immutable Book1 event claim BEFORE the
+        # paper_decisions INSERT and its in-transaction causal freeze. A
+        # conflicting strategy-supplied feature must never override the Book
+        # bound to the actual Quote. Discard only the disputed evidence; leave
+        # PAPER decisions and their existing admission policy untouched.
+        native_book1_sha = q.ppi_book1_event_sha256
+        if native_book1_sha is not None:
+            previous_claim = features.get("ppi_book1_event_sha256")
+            if (not isinstance(native_book1_sha, str) or len(native_book1_sha) != 64
+                    or any(char not in "0123456789abcdef" for char in native_book1_sha)
+                    or previous_claim not in (None, native_book1_sha)):
+                features.pop("ppi_book1_event_sha256", None)
+                features["ppi_book1_provenance_state"] = "CLAIM_CONFLICT_HOLD"
+            else:
+                features["ppi_book1_event_sha256"] = native_book1_sha
         try:
             native_family = family_name(q.asset_class)
         except ValueError:

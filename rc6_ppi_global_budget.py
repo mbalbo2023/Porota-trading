@@ -2135,6 +2135,18 @@ class RuntimePPIBudget:
         self._exit_round_scope = None
         self._exit_round_reads = 0
 
+    @staticmethod
+    def _unapproved_baseline_claim(budget, *, consumer, priority):
+        """Historic caps preserve genuine EXIT; they are no new GET authority.
+
+        OFF/SHADOW/expired approval may preserve a previously committed EXIT
+        reader. Baseline 20/40 selector limits are not evidence of current
+        provider capacity for new SCANNER/SCALPING/WARM/DISCOVERY requests.
+        """
+        return (budget is not None
+            and budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE")
+            and (priority != "EXIT_CRITICAL" or consumer != "EXIT_READER"))
+
     def _opened(self, unverified, *, deadline=None):
         return supervisable_position_count(self.database, unverified, deadline=deadline)
 
@@ -2284,6 +2296,10 @@ class RuntimePPIBudget:
             # Neither OFF/SHADOW nor an uninitialized budget grants wire
             # authority. The old baseline path used to return a null lease.
             return {"allowed": False, "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
+        if self._unapproved_baseline_claim(budget, consumer=consumer, priority=priority):
+            # A retained sidecar is debt/EXIT continuity, not renewed approval
+            # of speculative market-data traffic. Deny before any SQL lease.
+            return {"allowed": False, "reason": "PPI_CAPACITY_LOWER_UNAPPROVED", "lease": None}
         admitted_policy = deepcopy(budget.policy)
         result = budget.acquire(endpoint, consumer=consumer, priority=priority)
         if result["allowed"]:
@@ -2362,6 +2378,10 @@ class RuntimePPIBudget:
             # It never continues a dynamic cache or changes baseline cadence.
             if budget is None:
                 raise BudgetBackpressure("PPI_BUDGET_LEASE_UNVERIFIED")
+            if self._unapproved_baseline_claim(budget, consumer=consumer, priority=priority):
+                # The legacy fallback invokes fetch() directly; without this
+                # gate a non-EXIT caller could bypass both lease and budget.
+                raise BudgetBackpressure("PPI_CAPACITY_LOWER_UNAPPROVED")
             if budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"):
                 return fetch()
             return budget.coalesced_book(identity, fetch, consumer=consumer, priority=priority)
