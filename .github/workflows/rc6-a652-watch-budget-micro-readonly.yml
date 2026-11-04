@@ -1,0 +1,135 @@
+name: RC6 A652 Watch Budget Scanner Micro READ_ONLY
+
+# One opt-in sanitized evidence receipt; no recurring schedule, no provider GET.
+# PR checks never access the host. Host SSH is restricted to main after CI green.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a652-watch-budget-micro-readonly.yml'
+      - 'scripts/rc6_a652_watch_budget_micro_readonly.py'
+      - 'tests/test_rc6_a652_watch_budget_micro_readonly.py'
+  workflow_dispatch:
+    inputs:
+      permit_single_readonly_host_probe:
+        description: 'Una microcaptura host sólo READ_ONLY, sin PPI GET ni PPI Watch mutation'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a652-watch-budget-micro-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  no-host-contracts:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify strictly offline A652/A617/A516 contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          python3 -B -m unittest discover -s tests -p test_rc6_a652_watch_budget_micro_readonly.py -v
+          python3 -B -m unittest discover -s tests -p test_rc6_a617_ppi_origin_selector_readonly.py -q
+          python3 -B -m unittest discover -s tests -p test_rc6_a516_host_budget_metadata_ro.py -q
+          git diff --check
+          echo 'A652_OFFHOST=GREEN|host_access=0|ppi_gets=0|real_orders=0'
+
+  one_host_micro_read:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref_name == 'main' && inputs.permit_single_readonly_host_probe == true }}
+    needs: no-host-contracts
+    # Shared safety mutex: serializes against Deploy V2 and host market reads.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare protected runner-only SSH and in-memory probe
+        id: preflight
+        shell: bash
+        env:
+          RC6_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          RC6_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$RC6_SSH_KEY" && test -n "$RC6_KNOWN_HOSTS"
+          test -s scripts/rc6_a652_watch_budget_micro_readonly.py
+          test -s scripts/rc6_a617_ppi_origin_selector_readonly.py
+          test -s scripts/rc6_a516_host_budget_metadata_ro.py
+          umask 077
+          mkdir -p "$RUNNER_TEMP/a652-ssh"
+          printf '%s\n' "$RC6_SSH_KEY" > "$RUNNER_TEMP/a652-ssh/key"
+          printf '%s\n' "$RC6_KNOWN_HOSTS" > "$RUNNER_TEMP/a652-ssh/known_hosts"
+          python3 -B scripts/rc6_a652_watch_budget_micro_readonly.py \
+            --prepare-transport > "$RUNNER_TEMP/a652-transport.private.py"
+          python3 -B -m py_compile scripts/rc6_a652_watch_budget_micro_readonly.py
+      - name: One isolated private read-only mount host capture — ZERO PPI GET
+        id: host_capture
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          set +e
+          timeout --signal=TERM --kill-after=4s 60s ssh \
+            -i "$RUNNER_TEMP/a652-ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/a652-ssh/known_hosts" \
+            -o ConnectTimeout=8 -o ServerAliveInterval=6 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 30 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-probe"' \
+            < "$RUNNER_TEMP/a652-transport.private.py" \
+            > "$RUNNER_TEMP/a652-raw.private.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          test "$remote_rc" -eq 0
+          test -s "$RUNNER_TEMP/a652-raw.private.json"
+          test "$(wc -c < "$RUNNER_TEMP/a652-raw.private.json")" -lt 16384
+          echo 'A652_HOST_CAPTURE=STDOUT_RECEIVED|private_read_only_namespace=true|ppi_gets=0'
+      - name: Produce only a strict sanitized receipt; fail closed on missing host
+        if: always()
+        id: sanitize
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/rc6_a652_watch_budget_micro_readonly.py --sanitize \
+            "$RUNNER_TEMP/a652-raw.private.json" \
+            "$RUNNER_TEMP/a652-micro-sanitized.json"
+          test "$(wc -c < "$RUNNER_TEMP/a652-micro-sanitized.json")" -lt 16384
+      - name: Preserve only micro allowlist, no raw host output or SSH material
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a652-watch-budget-micro-${{ github.run_id }}
+          path: ${{ runner.temp }}/a652-micro-sanitized.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Destroy ephemeral runner secrets and untrusted raw capture
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for path in "$RUNNER_TEMP/a652-ssh/key" \
+            "$RUNNER_TEMP/a652-ssh/known_hosts" \
+            "$RUNNER_TEMP/a652-transport.private.py" \
+            "$RUNNER_TEMP/a652-raw.private.json"; do
+            if test -f "$path"; then shred -u "$path"; fi
+          done
