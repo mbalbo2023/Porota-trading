@@ -209,6 +209,35 @@ class MonitorContracts(unittest.TestCase):
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
         self.assertNotIn("error_module", self.capture()["shadow"])
 
+    def test_shadow_cold_audit_site_is_visible_without_failure_secret(self):
+        """A662: keep the one bounded category needed for failed-backlog RCA."""
+        payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
+                   "real_orders_sent": 0, "real_routes": "NOT_CALLED",
+                   "error_class": "ValueError", "error_module": "cold_audit",
+                   "error_line": 595,
+                   "error_message": "SHADOW_COLD_FAILED_BACKLOG_REQUIRES_FIX_FORWARD / private",
+                   "traceback": "/private/observer/account-secret"}
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        record = self.capture()
+        self.assertEqual(record["shadow"]["error_module"], "cold_audit")
+        self.assertEqual(record["shadow"]["error_line"], 595)
+        self.assertEqual(record["shadow"]["error_class"], "ValueError")
+        self.assertEqual(record["expected_deploy_sha"], SHA)
+        self.assertIn("DYNAMIC_SHADOW_FAIL_CLOSED", self.codes(record, "P1"))
+        self.assertNotIn("private", json.dumps(record).lower())
+        self.assertNotIn("error_message", json.dumps(record))
+        self.assertNotIn("traceback", json.dumps(record))
+
+        for unsafe in ("cold_audit/private", "SHADOW_COLD_FAILED_BACKLOG_REQUIRES_FIX_FORWARD",
+                       "Cold_Audit", {"path": "/private"}):
+            payload["error_module"] = unsafe
+            self.shadow_path.write_text(json.dumps({
+                "payload": payload, "digest": monitor.canonical_digest(payload)}))
+            redacted = self.capture()["shadow"]
+            self.assertNotIn("error_module", redacted)
+            self.assertEqual(redacted["error_line"], 595)
+
     def test_shadow_payload_context_is_strictly_allowlisted(self):
         payload = {"as_of": NOW.isoformat(), "status": "FAIL_CLOSED",
                    "real_orders_sent": 0, "real_routes": "NOT_CALLED",
