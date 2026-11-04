@@ -1,0 +1,111 @@
+name: RC6 A655 current gap gates SQL READ_ONLY
+
+# Diagnostic control-plane only. No host work from PR or automatic schedules.
+# Private OS RO bind is required: SQLite mode=ro alone may modify WAL sidecars.
+on:
+  workflow_dispatch:
+    inputs:
+      run_host:
+        description: "Opt in to one bounded current-DB read only; no provider/Watch/orders"
+        required: true
+        type: boolean
+        default: false
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a655-gap-gate-histogram-readonly.yml'
+      - 'scripts/rc6_a655_gap_gate_histogram_readonly.py'
+      - 'tests/test_rc6_a655_gap_gate_histogram_readonly.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pure synthetic SQLite fixtures and scope check
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a655_gap_gate_histogram_readonly.py tests/test_rc6_a655_gap_gate_histogram_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a655_gap_gate_histogram_readonly.py -v
+          git diff --check
+
+  host_readonly:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_host == true
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify immutable checkout and prepare runner-only SSH identity
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a655_gap_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a655_gap_ro" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: One bounded private-namespace SQLite snapshot, no provider GET
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a655_gap_ro" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 28 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-probe"' \
+            < scripts/rc6_a655_gap_gate_histogram_readonly.py \
+            > evidence/.host_raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          if [ "$remote_rc" -ne 0 ]; then
+            : > evidence/.host_raw.json
+          fi
+          set +e
+          python3 scripts/rc6_a655_gap_gate_histogram_readonly.py sanitize \
+            evidence/.host_raw.json evidence/a655_gap_gate_histogram_readonly.json
+          sanitized_rc=$?
+          set -e
+          rm -f evidence/.host_raw.json
+          if [ "$remote_rc" -ne 0 ]; then
+            echo 'A655_RO_TRANSPORT=NONZERO'
+            exit 1
+          fi
+          if [ "$sanitized_rc" -ne 0 ]; then
+            echo 'A655_RO_REPORT=NO_VERIFICADO'
+            exit 2
+          fi
+          echo 'A655_CORRELATIVE_DIAGNOSTIC_ONLY_NOT_PAPER_GO'
+      - name: Preserve only sanitized categorical counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a655-gap-hist-ro-${{ github.run_id }}
+          path: evidence/a655_gap_gate_histogram_readonly.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Remove runner temporary identity only
+        if: always()
+        run: |
+          rm -f "$HOME/.ssh/rc6_a655_gap_ro"
