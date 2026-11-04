@@ -213,9 +213,21 @@ def classify_cadence(runs, jobs_by_run, *, as_of, day_art, lookback_days=1,
     mature_active = [r for r in records if r['gate']=='WATCH_EXPECTED'
                      and now >= clock(r['slot_utc']) + GRACE]
     last_two = mature_active[-2:]
-    silent = (len(last_two)==2 and all(r['classification'] in
-              {'NO_TRIGGER','FAILED','SKIPPED'} for r in last_two)
-              and coverage_complete)
+    # The latest two slots describe the *current window*, not whether a P1
+    # gap occurred earlier today. A very late native schedule arrival may
+    # make the latest window non-silent while dozens of earlier mature slots
+    # remain unobserved. Preserve both facts; neither proves GitHub dropped
+    # a trigger or identifies the upstream scheduler root cause.
+    silent_classes = {'NO_TRIGGER', 'FAILED', 'SKIPPED'}
+    latest_silent = (len(last_two) == 2 and all(
+        r['classification'] in silent_classes for r in last_two))
+    historical_silent = any(
+        previous['classification'] in silent_classes and
+        current['classification'] in silent_classes
+        for previous, current in zip(mature_active, mature_active[1:]))
+    # Null (unknown), not false (healthy), if API coverage was incomplete.
+    historical_result = historical_silent if coverage_complete else None
+    latest_result = latest_silent if coverage_complete else None
     counts = {}
     for record in records:
         state = record['classification']
@@ -228,7 +240,9 @@ def classify_cadence(runs, jobs_by_run, *, as_of, day_art, lookback_days=1,
         'day_art':day_art.isoformat(), 'lookback_days':lookback_days,
         'due_slots':len(records), 'counts':counts, 'slots':records,
         'unattributed_genuine_schedule_runs':extras,
-        'source_scheduler_finding':'P1_SCHEDULE_SILENT' if silent else
+        'historical_mature_two_slot_silence_observed':historical_result,
+        'latest_mature_two_slot_silence_now':latest_result,
+        'source_scheduler_finding':'P1_SCHEDULE_SILENT' if historical_result else
             'NO_VERIFICADO' if not coverage_complete else 'NO_CONFIRMED_TWO_SLOT_SILENCE',
         'host_eod_t1':{'state':'NO_VERIFICADO','dbus_invocation_id':'NO_VERIFICADO',
              'timer_service_result':'NO_VERIFICADO',
