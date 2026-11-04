@@ -172,6 +172,10 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
         connection = sqlite3.connect("file:" + quote(str(db), safe="/") + "?mode=ro",
                                      uri=True, timeout=0.35, isolation_level=None)
         connection.execute("PRAGMA query_only=ON")
+        # One explicit read transaction pins a single WAL generation across
+        # workspace, event, publication marker and catalog aggregate queries.
+        # Without BEGIN (autocommit mode), concurrent writers can mix receipts.
+        connection.execute("BEGIN")
         report["db_opened"] = True
         tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required = {"paper_workspace", "observer_state", "paper_events",

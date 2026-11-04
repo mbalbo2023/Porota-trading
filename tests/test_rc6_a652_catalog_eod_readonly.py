@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 
 
@@ -112,6 +113,49 @@ class A652CatalogEODReadOnlyTest(unittest.TestCase):
         self.assertEqual(report["reason"], "PROJECTION_MARKER_NOT_EOD")
         report["private_ro_mount"] = True
         self.assertEqual(eod.sanitize(report)["state"], "NO_VERIFICADO")
+
+    def test_single_wal_snapshot_survives_concurrent_catalog_writer(self):
+        # A writer commits after the reader has opened its snapshot but before
+        # the EOD event query. All report fields must retain one generation.
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0], "wal")
+        connect = sqlite3.connect
+        triggered = []
+        writer_errors = []
+
+        def intercept(*args, **kwargs):
+            reader = connect(*args, **kwargs)
+
+            def on_statement(statement):
+                if "FROM PAPER_EVENTS" not in statement.upper() or triggered:
+                    return
+                triggered.append(True)
+                try:
+                    with connect(self.db) as writer:
+                        writer.execute("UPDATE financial_instrument_catalog "
+                                       "SET capability='NEEDS_CONTRACT' WHERE status='AVAILABLE'")
+                except sqlite3.Error as exc:
+                    writer_errors.append(type(exc).__name__)
+
+            reader.set_trace_callback(on_statement)
+            return reader
+
+        with mock.patch.object(eod.sqlite3, "connect", side_effect=intercept):
+            report = self.read()
+        self.assertTrue(triggered)
+        self.assertEqual(writer_errors, [])
+        self.assertEqual(report["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(report["catalog"]["totals"]["ready"], 1)
+        with connect(self.db) as after:
+            self.assertEqual(after.execute("SELECT COUNT(*) FROM financial_instrument_catalog "
+                                           "WHERE capability LIKE 'READY_PAPER_%'").fetchone()[0], 0)
+
+    def test_interrupted_database_open_fails_closed(self):
+        with mock.patch.object(eod.sqlite3, "connect",
+                               side_effect=sqlite3.OperationalError("interrupted")):
+            report = self.read()
+        self.assertEqual(report["state"], "NO_VERIFICADO")
+        self.assertEqual(report["reason"], "DB_RO_QUERY_UNAVAILABLE")
 
     def test_nonzero_orders_fails_closed(self):
         self.query("UPDATE observer_state SET real_orders_sent=1")
