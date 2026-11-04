@@ -345,6 +345,7 @@ def verify_signed_receipt(db_path: Path, *, decision_key: str,
                     or receipt.get("freeze_sha256") != freeze_sha
                     or receipt.get("identity") != frozen.get("identity")
                     or receipt.get("action") != frozen.get("action")
+                    or receipt.get("book1_event_sha256_claim") != frozen.get("book1_event_sha256_claim")
                     or receipt.get("release_sha256") != trusted_release_sha256
                     or frozen.get("release_sha256_claim") != trusted_release_sha256
                     or receipt.get("signer_key_id") != trusted_public_key_sha256
