@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 import uuid
@@ -65,6 +66,25 @@ def fixture_db(path):
 
 
 class TestA652MicroReadOnly(unittest.TestCase):
+    def test_pytest_suite_short_alias_collision_keeps_namespaced_guards(self):
+        """RCA CI: unrelated tests may load a second A617 short module alias."""
+        shadow_a617 = types.ModuleType("rc6_a617_ppi_origin_selector_readonly")
+        shadow_a617._mount_is_readonly = lambda _: False
+        shadow_a516 = types.ModuleType("rc6_a516_host_budget_metadata_ro")
+        shadow_a516.sidecar_kind = lambda _: "UNSAFE_OR_ALIAS"
+        with patch.dict(sys.modules, {
+                "rc6_a617_ppi_origin_selector_readonly": shadow_a617,
+                "rc6_a516_host_budget_metadata_ro": shadow_a516}):
+            self.assertIs(a652._a617(), a617)
+            self.assertIs(a652._a516(), a516)
+            with tempfile.TemporaryDirectory() as directory:
+                db = Path(directory) / "observer.db"
+                fixture_db(db)
+                with patch.object(a617, "_mount_is_readonly", return_value=True):
+                    result = a652.host_probe(db=db, runner=fake_systemctl)
+                self.assertEqual(result["scanner"]["state"], "OBSERVED")
+                self.assertEqual(result["budget"]["sidecar_kind"], "ABSENT")
+
     def test_watch_enumeration_is_unregistered_even_if_active(self):
         report = a652._watch_probe(fake_systemctl)
         self.assertEqual(report["state"], "ENUMERATED_UNREGISTERED_CANDIDATE")
