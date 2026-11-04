@@ -213,6 +213,10 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
             report["reason"] = "EOD_EVENT_NO_VERIFICADO"
         elif report["projection"].get("state") != "COMPLETE":
             report["reason"] = "PROJECTION_NOT_COMPLETE"
+        elif (not _after_closed(_stamp(report["projection"].get("local_at")))
+              or _stamp(report["projection"]["local_at"]) <
+                 _stamp(report["event"]["local_at"])):
+            report["reason"] = "PROJECTION_MARKER_NOT_EOD"
         elif report["catalog"].get("state") != "READ_ONLY_OBSERVED":
             report["reason"] = "CATALOG_COUNTS_NO_VERIFICADO"
         else:
@@ -284,10 +288,13 @@ def sanitize(untrusted):
     if isinstance(errors, dict):
         for field in safe["errors"]:
             safe["errors"][field] = _bounded(errors.get(field))
+    marker = _stamp(safe["projection"].get("local_at"))
+    event_time = _stamp(safe["event"].get("local_at"))
     if (orders == 0 and safe["db_opened"] and safe["private_ro_mount"]
             and safe["paper_workspace_verified"]
             and safe["event"].get("state") == "READ_ONLY_OBSERVED"
             and safe["projection"].get("state") == "COMPLETE"
+            and _after_closed(marker) and event_time and marker >= event_time
             and safe["catalog"].get("state") == "READ_ONLY_OBSERVED"):
         safe["state"] = "READ_ONLY_OBSERVED"
         safe["reason"] = "EOD_AGGREGATE_ONLY_NOT_PAPER_GO"
