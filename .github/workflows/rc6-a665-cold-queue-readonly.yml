@@ -1,0 +1,184 @@
+name: RC6 A665 Cold Audit Queue READ_ONLY
+
+# No schedule: one explicit post-review diagnostic only. PRs only run offline
+# contracts; private host data is never accessed on PR/branch executions.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_deploy_sha:
+        description: 'Exact deployed product SHA from the current runtime checkpoint'
+        required: true
+        type: string
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a665-cold-queue-readonly.yml'
+      - 'scripts/rc6_a665_cold_queue_readonly.py'
+      - 'tests/test_rc6_a665_cold_queue_readonly.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a665-cold-queue-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and exercise bounded private receipt reader OFFHOST
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a665_cold_queue_readonly.py tests/test_rc6_a665_cold_queue_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a665_cold_queue_readonly.py -v
+          git diff --check
+
+  host_readonly:
+    needs: contracts
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    # Exclusive global host safety mutex, NOT a deploy authorization.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      EXPECTED_DEPLOY_SHA: ${{ inputs.expected_deploy_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Exact SHA and manual gate before host permissions
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$EXPECTED_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          mkdir -p evidence
+      - name: Configure runner-only SSH credentials
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$RUNNER_TEMP/rc6_a665_ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_a665_ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_a665_ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_a665_ssh/key" "$RUNNER_TEMP/rc6_a665_ssh/known_hosts"
+      - name: READ_ONLY mount namespace, open private queue/receipts; no SQLite, provider, or mutation
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$RUNNER_TEMP/rc6_a665_ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a665_ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 24 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B -"' \
+            < scripts/rc6_a665_cold_queue_readonly.py \
+            > evidence/.a665_private_raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          REMOTE_RC="$remote_rc" python3 - <<'PY'
+          import json,os,re
+          from datetime import datetime,timezone,timedelta
+          from pathlib import Path
+
+          schema='rc6.a665.cold-queue-readonly.v1'
+          raw=Path('evidence/.a665_private_raw.json')
+          safe={'schema':schema,'read_only':True,'state':'NO_VERIFICADO',
+                'reason':'HOST_RESPONSE_INVALID_OR_UNAVAILABLE',
+                'provider_gets':0,'orders_called':False,'mutations':0,
+                'cold_audit_runtime_called':False,'os_readonly_mount_verified':False,
+                'generated_at_utc':None,'generated_at_art':None,
+                'observed_deploy_sha':None,'expected_deploy_sha':os.environ['EXPECTED_DEPLOY_SHA'],
+                'receipt_count':None,'failed_receipt_count':None,'folder_entries_checked':None,
+                'queue_state':'NO_VERIFICADO','queue_failed_binding':'NO_VERIFICADO',
+                'envelopes_hash_verified':False,'metadata_snapshot_stable':False,
+                'paper_admission_verified':False,'causal_fix_verified':False,
+                'remote_exit_code_class':'ZERO' if os.environ['REMOTE_RC']=='0' else 'NONZERO'}
+          fallback=safe.copy()
+          try:
+              if raw.stat().st_size>4096 or os.environ['REMOTE_RC']!='0':
+                  raise ValueError('NO_BOUNDED_HOST_RECEIPT')
+              obj=json.loads(raw.read_text(encoding='utf-8'))
+              if (type(obj) is not dict or obj.get('schema')!=schema or
+                  obj.get('state')!='READ_ONLY_OBSERVED' or
+                  obj.get('reason')!='COUNTS_ONLY_NO_REPAIR' or
+                  obj.get('read_only') is not True or
+                  obj.get('os_readonly_mount_verified') is not True or
+                  obj.get('provider_gets')!=0 or obj.get('orders_called') is not False or
+                  obj.get('mutations')!=0 or obj.get('cold_audit_runtime_called') is not False or
+                  obj.get('envelopes_hash_verified') is not True or
+                  obj.get('metadata_snapshot_stable') is not True or
+                  obj.get('paper_admission_verified') is not False or
+                  obj.get('causal_fix_verified') is not False or
+                  obj.get('observed_deploy_sha')!=os.environ['EXPECTED_DEPLOY_SHA']):
+                  raise ValueError('INVALID_HOST_INVARIANT')
+              for key in ('receipt_count','failed_receipt_count','folder_entries_checked'):
+                  value=obj.get(key)
+                  if type(value) is not int or not 0<=value<=512:
+                      raise ValueError('COUNTER_INVALID')
+                  safe[key]=value
+              if not (safe['failed_receipt_count']<=safe['receipt_count']<=safe['folder_entries_checked']):
+                  raise ValueError('COUNT_ORDER_INVALID')
+              if obj.get('queue_state') not in ('ABSENT','FAILED','PENDING','COMPLETE'):
+                  raise ValueError('QUEUE_STATE_INVALID')
+              if obj.get('queue_failed_binding') not in (
+                  'MATCHES_FAILED_RECEIPT','FAILED_RECEIPT_QUEUE_NOT_BOUND',
+                  'MULTIPLE_FAILED_RECEIPTS','FAILED_QUEUE_WITHOUT_FAILED_RECEIPT',
+                  'NO_FAILED_RECEIPT'):
+                  raise ValueError('QUEUE_BINDING_INVALID')
+              utc=datetime.fromisoformat(obj['generated_at_utc'])
+              art=datetime.fromisoformat(obj['generated_at_art'])
+              if (utc.utcoffset()!=timedelta(0) or
+                  art.utcoffset()!=timedelta(hours=-3) or
+                  abs((utc-art).total_seconds())>1 or
+                  abs((datetime.now(timezone.utc)-utc).total_seconds())>300):
+                  raise ValueError('CLOCK_UNVERIFIED')
+              safe.update(state='READ_ONLY_OBSERVED',reason='COUNTS_ONLY_NO_REPAIR',
+                          os_readonly_mount_verified=True,
+                          observed_deploy_sha=obj['observed_deploy_sha'],
+                          generated_at_utc=utc.isoformat(),generated_at_art=art.isoformat(),
+                          queue_state=obj['queue_state'],
+                          queue_failed_binding=obj['queue_failed_binding'],
+                          envelopes_hash_verified=True,metadata_snapshot_stable=True)
+          except (OSError,KeyError,ValueError,TypeError,UnicodeError,OverflowError):
+              safe=fallback
+          Path('evidence/a665_cold_queue_readonly.json').write_text(
+              json.dumps(safe,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          print('A665_QUEUE_STATE='+safe['state'])
+          print('A665_QUEUE_BINDING='+safe['queue_failed_binding'])
+          print('A665_FAILED_RECEIPT_COUNT='+str(safe['failed_receipt_count']))
+          print('A665_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
+          PY
+          rm -f evidence/.a665_private_raw.json
+      - name: Preserve only sanitized bounded aggregate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a665-cold-queue-readonly-${{ github.run_id }}
+          path: evidence/a665_cold_queue_readonly.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Fail closed if host proof unavailable; no PAPER GO asserted
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path('evidence/a665_cold_queue_readonly.json')
+          if not path.is_file() or json.loads(path.read_text()).get('state')!='READ_ONLY_OBSERVED':
+              raise SystemExit('A665_RUNTIME_QUEUE_COUNTS_NO_VERIFICADO')
+          print('A665_COUNTS_OBSERVED_ONLY_NO_FIX_NO_PAPER_GO')
+          PY
+      - name: Delete only temporary runner SSH key and known_hosts
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/rc6_a665_ssh/key" "$RUNNER_TEMP/rc6_a665_ssh/known_hosts"
