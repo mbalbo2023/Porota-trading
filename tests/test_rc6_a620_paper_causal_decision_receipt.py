@@ -1,4 +1,5 @@
 """A620 PAPER decision producer: synthetic keys/quotes, no broker/provider calls."""
+import base64
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -273,6 +274,37 @@ class TestA620CausalDecisionFreeze(unittest.TestCase):
                                ("AAAA",))
         result = self.verify()
         self.assertEqual(result["state"], "BLOQUEADO")
+        self.assertFalse(result["decision_signature_verified"])
+        self.assertFalse(result["fill_accredited"])
+
+    def test_validly_signed_receipt_cannot_rebind_book1_claim_from_freeze(self):
+        """Even a valid test-key signature cannot contradict the COMMIT freeze."""
+        self.assertTrue(self.record())
+        self.assertTrue(self.attest()["signature_created"])
+        frozen, _, _ = self.freeze()
+        self.assertEqual(frozen["book1_event_sha256_claim"], BOOK1)
+        with self.store.connect() as connection:
+            # Privileged synthetic signer/key compromise, deliberately stronger
+            # than an invalid signature or a broken local SHA digest.
+            connection.execute("DROP TRIGGER rc6_causal_receipts_no_update")
+            original = connection.execute(
+                "SELECT payload_json FROM paper_causal_decision_receipts "
+                "WHERE decision_key=?", (KEY,)).fetchone()[0]
+            forged = json.loads(original)
+            forged["book1_event_sha256_claim"] = "c" * 64
+            raw = json.dumps(forged, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":"), allow_nan=False)
+            signature = base64.b64encode(self.signer.sign(raw.encode("utf-8"))).decode("ascii")
+            self.signer.public_key().verify(base64.b64decode(signature), raw.encode("utf-8"))
+            connection.execute(
+                "UPDATE paper_causal_decision_receipts "
+                "SET payload_json=?,payload_sha256=?,signature_b64=? "
+                "WHERE decision_key=?",
+                (raw, hashlib.sha256(raw.encode("utf-8")).hexdigest(), signature, KEY))
+        result = self.verify()
+        self.assertEqual(result["state"], "BLOQUEADO")
+        self.assertEqual(result["reason"], "CAUSAL_RECEIPT_BINDING_OR_CLOCK_HOLD")
+        self.assertFalse(result["decision_known_at_verified"])
         self.assertFalse(result["decision_signature_verified"])
         self.assertFalse(result["fill_accredited"])
 
