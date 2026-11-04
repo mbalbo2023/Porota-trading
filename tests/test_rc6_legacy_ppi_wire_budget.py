@@ -10,6 +10,7 @@ import importlib
 from importlib.metadata import version
 import importlib.util
 import os
+import socket
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -133,6 +134,66 @@ def req(path, *, method="GET"):
 
 
 class LegacyPPIBudgetTest(TestCase):
+    def test_pinned_real_sdk_marketdata_current_book_reach_denied_adapter_no_network(self):
+        """Assert the actual 1.3.0 Current/Book methods traverse RestClient.
+
+        CI has the pinned SDK; local pure-source runs do not. A fake requests
+        adapter plus a socket veto ensure this test can NEVER reach PPI.
+        """
+        try:
+            sdk_module = importlib.import_module("ppi_client.ppi")
+        except ModuleNotFoundError:
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                self.fail("CI_DEPENDENCY_CLOSURE_PPI_SDK_NOT_INSTALLED")
+            return
+        self.assertEqual(version("ppi-client"), "1.3.0")
+        ppi = sdk_module.PPI(sandbox=False)
+        rest = ppi._PPI__apiClient.get_rest_client()
+        session = rest.get_session()
+        original_adapter = FakeAdapter()
+        session.mount("https://", original_adapter)
+        rest.get_session = lambda: session
+        module, imports = legacy_module(lambda: None)
+        module.ResilientPPIClient._install_sdk_wire_budget(object.__new__(
+            module.ResilientPPIClient), ppi)
+        guarded = session.get_adapter(CURRENT)
+        self.assertIsInstance(guarded, module._BudgetedPPIAdapter)
+        observed = []
+        original_guarded_send = guarded.send
+
+        def observe_send(request, **kwargs):
+            try:
+                return original_guarded_send(request, **kwargs)
+            except Backpressure as exc:
+                observed.append((request.method, request.url, str(exc)))
+                raise
+
+        guarded.send = observe_send
+        attempted_network = []
+
+        def block_network(*_args, **_kwargs):
+            attempted_network.append(1)
+            raise AssertionError("PPI_REAL_NETWORK_FORBIDDEN_IN_SDK_CONTRACT_TEST")
+
+        with patch.dict(sys.modules, {"rc6_ppi_global_budget": imports["rc6_ppi_global_budget"]}), \
+             patch.object(socket.socket, "connect", block_network), \
+             patch.object(socket.socket, "connect_ex", block_network):
+            for method in (ppi.marketdata.current, ppi.marketdata.book):
+                try:
+                    method("AL30", "BONOS", "INMEDIATA")
+                except Backpressure as exc:
+                    self.assertEqual(str(exc), "PPI_SHARED_BUDGET_UNAVAILABLE")
+                except Exception as exc:
+                    self.fail("PPI_SDK_MARKETDATA_PATH_NOT_ATTESTED:" + type(exc).__name__)
+
+        self.assertEqual(len(observed), 2, "PPI_SDK_CURRENT_BOOK_MUST_REACH_GUARDED_SEND")
+        self.assertTrue(all(reason == "PPI_SHARED_BUDGET_UNAVAILABLE"
+                            for _method, _url, reason in observed))
+        self.assertTrue(observed[0][1].lower().startswith(CURRENT.lower()))
+        self.assertTrue(observed[1][1].lower().startswith(BOOK.lower()))
+        self.assertEqual(original_adapter.calls, [])
+        self.assertEqual(attempted_network, [])
+
     def test_pinned_real_sdk_session_contract_offhost_without_network(self):
         """Actions installs the pinned SDK; local source-only runs use fakes.
 
