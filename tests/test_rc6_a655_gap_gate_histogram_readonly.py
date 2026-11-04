@@ -403,6 +403,16 @@ class A655Histogram(unittest.TestCase):
         self.assertEqual(self.roots(result),
                          {("PENDING_MATERIAL+REVOKED", "MIXED_SOURCES"): 1})
 
+    def test_a661_derived_official_pending_is_distinct_from_iol_and_ppi(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, current={"lot": 100})
+            self.v2(c, source="DERIVED_OFFICIAL_RULE", previous={"lot": 10},
+                    current={"lot": 20}, prev_id=40, current_id=41, change_id=101)
+        result = self.probe()
+        self.assertEqual(self.roots(result),
+                         {("PENDING_MATERIAL", "DERIVED_OFFICIAL_ONLY"): 1})
+
     def test_a661_cross_market_change_never_marks_primary_option_key(self):
         with sqlite3.connect(self.db) as c:
             self.option_review(c)
