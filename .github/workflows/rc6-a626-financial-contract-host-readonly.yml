@@ -15,6 +15,11 @@ on:
         required: true
         type: boolean
         default: false
+      permit_gap_terms_diagnostic:
+        description: 'Opt-in: inspeccionar sólo los payloads V2 de brechas; no concede READY'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -107,10 +112,12 @@ jobs:
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
+          RC6_A626_GAP_TERMS_ARG: ${{ inputs.permit_gap_terms_diagnostic && '--inspect-gap-terms' || '' }}
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST"
           test -n "$DO_USER"
+          case "$RC6_A626_GAP_TERMS_ARG" in ''|'--inspect-gap-terms') ;; *) exit 3 ;; esac
           set +e
           ssh -i "$RUNNER_TEMP/a626-ssh/key" \
             -o BatchMode=yes -o IdentitiesOnly=yes \
@@ -118,7 +125,7 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/a626-ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 25 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B -'" \
+            "sudo -n timeout 25 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - $RC6_A626_GAP_TERMS_ARG'" \
             < scripts/rc6_a626_host_contract_aggregates.py \
             > "$RUNNER_TEMP/a626-contract-aggregate.json" 2>/dev/null
           remote_rc=$?
@@ -168,6 +175,42 @@ jobs:
           assert type(obj.get('provider_gets')) is int and obj['provider_gets'] == 0
           assert type(obj.get('real_orders_sent_by_probe')) is int and obj['real_orders_sent_by_probe'] == 0
           assert obj.get('host_runtime_order_count') == 'NO_VERIFICADO'
+          from scripts.rc6_a626_host_contract_aggregates import (
+              GAP_TERM_REQUIREMENTS, MAX_GAP_SNAPSHOTS, MAX_GAP_EVIDENCE_BYTES)
+          requested_gap = os.environ.get('RC6_A626_GAP_TERMS_ARG', '') == '--inspect-gap-terms'
+          present_gap = 'gap_terms_diagnostic' in obj
+          assert present_gap is requested_gap, 'A626_GAP_TERMS_OPT_IN_SCHEMA_MISMATCH'
+          if present_gap:
+              diag = obj['gap_terms_diagnostic']
+              expected_diag = {'state','read_only','payload_hash_integrity_checked',
+                  'provider_authenticity_checked','causal_pit_or_book_checked',
+                  'paper_auto_enabled','snapshots_checked','payload_bytes_checked',
+                  'gap_total','by_family'}
+              assert isinstance(diag, dict) and set(diag) == expected_diag
+              assert diag['state'] == 'EVIDENCE_ONLY_NO_GO'
+              assert diag['read_only'] is True
+              assert diag['payload_hash_integrity_checked'] is True
+              assert diag['provider_authenticity_checked'] is False
+              assert diag['causal_pit_or_book_checked'] is False
+              assert diag['paper_auto_enabled'] is False
+              assert type(diag['snapshots_checked']) is int and 0 <= diag['snapshots_checked'] <= MAX_GAP_SNAPSHOTS
+              assert type(diag['payload_bytes_checked']) is int and 0 <= diag['payload_bytes_checked'] <= MAX_GAP_EVIDENCE_BYTES
+              assert type(diag['gap_total']) is int and diag['gap_total'] == obj['capability_gaps_measured']
+              assert isinstance(diag['by_family'], dict) and set(diag['by_family']) == set(GAP_TERM_REQUIREMENTS)
+              for family, counts in diag['by_family'].items():
+                  assert set(counts) == {'gap_rows','uninspectable_incomplete_five_key','no_exact_current_payload',
+                      'exact_current_source_label_only','offline_terms_present_not_admitted',
+                      'offline_terms_missing','missing_term_counts'}
+                  assert all(type(v) is int and v >= 0 for k, v in counts.items()
+                             if k != 'missing_term_counts')
+                  assert counts['gap_rows'] == (counts['uninspectable_incomplete_five_key']
+                      + counts['no_exact_current_payload']
+                      + counts['offline_terms_present_not_admitted']
+                      + counts['offline_terms_missing'])
+                  assert isinstance(counts['missing_term_counts'], dict)
+                  assert set(counts['missing_term_counts']) <= set(GAP_TERM_REQUIREMENTS[family])
+                  assert all(type(v) is int and 0 < v <= counts['gap_rows']
+                             for v in counts['missing_term_counts'].values())
           expected = {'BONOS','OBLIGACIONES','OPCIONES','FUTUROS','CAUCIONES','FCI'}
           families = obj.get('families')
           assert isinstance(families, list) and len(families) == 6
@@ -195,7 +238,10 @@ jobs:
           assert present in (set(), new_fields), 'A626_MIXED_INTEGRITY_SCHEMA'
           legacy_full = not present
           assert not legacy_full or status == 'DIAGNOSTIC_ONLY', 'A626_LEGACY_PARTIAL_DENIED'
-          assert set(obj) == (allowed-new_fields if legacy_full else allowed), 'A626_EXACT_SCHEMA_REQUIRED'
+          allowed_actual = (allowed-new_fields if legacy_full else allowed)
+          if present_gap:
+              allowed_actual = allowed_actual | {'gap_terms_diagnostic'}
+          assert set(obj) == allowed_actual, 'A626_EXACT_SCHEMA_REQUIRED'
           reasons = obj.get('v2_current_invalid_reason_counts')
           reason_codes = {
               'HOST_V2_SNAPSHOT_REFERENCE_MISSING',
@@ -226,6 +272,9 @@ jobs:
                          'catalog_contract_conflicts_declared','capability_codes'}
           for row in families:
               assert set(row) == safe_family, 'A626_UNEXPECTED_FAMILY_FIELDS'
+              if present_gap:
+                  gap = diag['by_family'][row['family']]
+                  assert gap['gap_rows'] == row['capability_gaps']
               assert all(type(v) is int and v >= 0 for k,v in row.items()
                          if k not in {'family','capability_codes'})
               assert isinstance(row['capability_codes'], dict)

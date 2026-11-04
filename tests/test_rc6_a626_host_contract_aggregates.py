@@ -92,6 +92,178 @@ def _row(report, family):
     return next(r for r in report["families"] if r["family"] == family)
 
 
+def _enable_gap_payload_schema(con):
+    con.execute("ALTER TABLE contract_evidence_v2_snapshots ADD COLUMN source_ref TEXT")
+    con.execute("ALTER TABLE contract_evidence_v2_snapshots ADD COLUMN effective_at TEXT")
+    con.execute("ALTER TABLE contract_evidence_v2_snapshots ADD COLUMN evidence_json TEXT")
+
+
+def _set_gap_payload(con, sid, evidence, *, ref="PPI_API:searchinstrument", effective=None):
+    serialized = json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digest = hashlib.sha256(serialized.encode()).hexdigest()
+    con.execute("UPDATE contract_evidence_v2_snapshots SET source_ref=?, effective_at=?, evidence_json=?, evidence_hash=? WHERE snapshot_id=?",
+                (ref, effective, serialized, digest, sid))
+    con.execute("UPDATE contract_evidence_v2_current SET evidence_hash=? WHERE snapshot_id=?",
+                (digest, sid))
+
+
+def _gap_fixture(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "BONOS", "SECRET-BONOS", metadata={"secret_canary": "NEVER_LEAK_PRIVATE_TICKER"})
+    _snap(con, 1, "BONOS", "SECRET-BONOS", source="PPI_STRUCTURED_API")
+    _enable_gap_payload_schema(con)
+    _set_gap_payload(con, 1, {"market": "BYMA", "currency": "ARS", "settlement": "CI",
+                              "paper_cash_multiplier": "0.01", "paper_quantity_min": "1",
+                              "paper_quantity_step": "1", "secret": "NEVER_LEAK_PAYLOAD"})
+    con.commit()
+    con.close()
+    return data, path
+
+
+def test_opt_in_terms_diag_is_default_off_and_legacy_output_exact(tmp_path):
+    data, path = _get(tmp_path)  # Legacy snapshot schema intentionally has no evidence_json.
+    default = host.probe(data_root=data, db=path, guard=lambda _: True)
+    explicit = host.probe(data_root=data, db=path, guard=lambda _: True,
+                          inspect_gap_terms=False)
+    assert default == explicit
+    assert "gap_terms_diagnostic" not in default
+
+
+def test_opt_in_terms_diag_hash_bound_aggregate_only(tmp_path):
+    data, path = _gap_fixture(tmp_path)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True,
+                        inspect_gap_terms=True)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+    detail = report["gap_terms_diagnostic"]
+    assert detail["state"] == "EVIDENCE_ONLY_NO_GO"
+    assert detail["snapshots_checked"] == 1
+    assert detail["payload_hash_integrity_checked"] is True
+    assert detail["provider_authenticity_checked"] is False
+    assert detail["paper_auto_enabled"] is False
+    assert detail["by_family"]["BONOS"]["offline_terms_present_not_admitted"] == 1
+    serialized = json.dumps(report, sort_keys=True)
+    for token in ("SECRET-BONOS", "NEVER_LEAK_PRIVATE_TICKER", "NEVER_LEAK_PAYLOAD", "searchinstrument"):
+        assert token not in serialized
+
+
+def test_opt_in_terms_diag_missing_payload_schema_fails_closed(tmp_path):
+    data, path = _get(tmp_path)
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_SCHEMA_MISSING"):
+        host.probe(data_root=data, db=path, guard=lambda _: True,
+                   inspect_gap_terms=True)
+
+
+def test_opt_in_terms_diag_rejects_bad_sha(tmp_path):
+    data, path = _gap_fixture(tmp_path)
+    with sqlite3.connect(path) as con:
+        con.execute("UPDATE contract_evidence_v2_snapshots SET evidence_json=? WHERE snapshot_id=1",
+                    ('{"paper_cash_multiplier":"999","secret":"NEVER_LEAK_PAYLOAD"}',))
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_PAYLOAD_HASH_MISMATCH"):
+        host.probe(data_root=data, db=path, guard=lambda _: True, inspect_gap_terms=True)
+
+
+def test_opt_in_terms_diag_rejects_invalid_provider_clock(tmp_path):
+    data, path = _gap_fixture(tmp_path)
+    with sqlite3.connect(path) as con:
+        con.execute("UPDATE contract_evidence_v2_snapshots SET effective_at=? WHERE snapshot_id=1",
+                    ("2032-01-01T00:00:00+00:00",))
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_EFFECTIVITY_UNVERIFIED"):
+        host.probe(data_root=data, db=path, guard=lambda _: True, inspect_gap_terms=True)
+
+
+def test_opt_in_terms_diag_rejects_missing_source_reference(tmp_path):
+    data, path = _gap_fixture(tmp_path)
+    with sqlite3.connect(path) as con:
+        con.execute("UPDATE contract_evidence_v2_snapshots SET source_ref='' WHERE snapshot_id=1")
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_SOURCE_REF_UNVERIFIED"):
+        host.probe(data_root=data, db=path, guard=lambda _: True, inspect_gap_terms=True)
+
+
+def test_opt_in_terms_diag_nan_positive_term_not_accepted(tmp_path):
+    data, path = _gap_fixture(tmp_path)
+    with sqlite3.connect(path) as con:
+        _set_gap_payload(con, 1, {"market": "BYMA", "currency": "ARS",
+                              "settlement": "CI", "paper_cash_multiplier": "NaN",
+                              "paper_quantity_min": "1", "paper_quantity_step": "1"})
+    detail = host.probe(data_root=data, db=path, guard=lambda _: True,
+                        inspect_gap_terms=True)["gap_terms_diagnostic"]["by_family"]["BONOS"]
+    assert detail["offline_terms_present_not_admitted"] == 0
+    assert detail["offline_terms_missing"] == 1
+    assert detail["missing_term_counts"] == {"cash_multiplier": 1}
+
+
+def test_opt_in_fci_minimum_is_not_subscription_policy(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "FCI", "PRIVATE-FCI-CLASS", currency="ARS")
+    _snap(con, 1, "FCI", "PRIVATE-FCI-CLASS", source="PPI_STRUCTURED_API")
+    _enable_gap_payload_schema(con)
+    _set_gap_payload(con, 1, {"subscription_min": "1000", "paper_subscription_min": "1000",
+                              "paper_amount_unit": "0.01", "manager": "PRIVATE_MANAGER"})
+    con.commit()
+    con.close()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True,
+                        inspect_gap_terms=True)
+    fci = report["gap_terms_diagnostic"]["by_family"]["FCI"]
+    assert fci["offline_terms_present_not_admitted"] == 0
+    assert fci["offline_terms_missing"] == 1
+    assert fci["missing_term_counts"] == {"subscription_policy": 1}
+
+
+def test_opt_in_incomplete_five_key_gap_is_counted_not_silently_dropped(tmp_path):
+    data, path, con = _fixture(tmp_path)
+    _cat(con, "BONOS", "PRIVATE-MISSING-SETTLEMENT")
+    con.execute("UPDATE financial_instrument_catalog SET settlement='UNKNOWN'")
+    _enable_gap_payload_schema(con)
+    con.commit()
+    con.close()
+    report = host.probe(data_root=data, db=path, guard=lambda _: True,
+                        inspect_gap_terms=True)
+    detail = report["gap_terms_diagnostic"]
+    family = detail["by_family"]["BONOS"]
+    assert report["capability_gaps_measured"] == 1
+    assert detail["gap_total"] == 1
+    assert family["gap_rows"] == 1
+    assert family["uninspectable_incomplete_five_key"] == 1
+    assert (sum(row["gap_rows"]
+                for row in detail["by_family"].values()) == report["capability_gaps_measured"])
+    assert all(row["gap_rows"] == row["uninspectable_incomplete_five_key"]
+               + row["no_exact_current_payload"] + row["offline_terms_missing"]
+               + row["offline_terms_present_not_admitted"]
+               for row in detail["by_family"].values())
+    assert "PRIVATE-MISSING-SETTLEMENT" not in json.dumps(report)
+
+
+def test_workflow_extended_terms_is_manual_opt_in_only():
+    from pathlib import Path
+    workflow = (ROOT / ".github/workflows/rc6-a626-financial-contract-host-readonly.yml").read_text()
+    assert "permit_gap_terms_diagnostic:" in workflow
+    assert "default: false" in workflow.split("permit_gap_terms_diagnostic:", 1)[1].split("permissions:", 1)[0]
+    assert "inputs.permit_readonly_host_probe == true" in workflow
+    assert "inputs.permit_gap_terms_diagnostic && '--inspect-gap-terms' || ''" in workflow
+    assert "case \"$RC6_A626_GAP_TERMS_ARG\"" in workflow
+    assert workflow.count("unshare --mount --propagation private") == 1
+    assert "group: rc6-unified-paper-deploy" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "timeout 25 unshare" in workflow
+    assert "MAX_GAP_EVIDENCE_BYTES = 8 * 1024 * 1024" in (ROOT / "scripts/rc6_a626_host_contract_aggregates.py").read_text()
+
+
+def test_opt_in_terms_diag_snapshot_bytes_and_deadline_limits(tmp_path, monkeypatch):
+    data, path = _gap_fixture(tmp_path)
+    monkeypatch.setattr(host, "MAX_GAP_EVIDENCE_BYTES", 1)
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_BYTES_BUDGET"):
+        host.probe(data_root=data, db=path, guard=lambda _: True, inspect_gap_terms=True)
+    monkeypatch.setattr(host, "MAX_GAP_EVIDENCE_BYTES", 8 * 1024 * 1024)
+    monkeypatch.setattr(host, "MAX_GAP_SNAPSHOTS", 0)
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_SNAPSHOT_BUDGET"):
+        host.probe(data_root=data, db=path, guard=lambda _: True, inspect_gap_terms=True)
+    monkeypatch.setattr(host, "MAX_GAP_SNAPSHOTS", 3000)
+    monkeypatch.setattr(host, "MAX_SECONDS", -1)
+    with pytest.raises(host.Blocked, match="HOST_GAP_TERMS_TIME_BUDGET"):
+        host.probe(data_root=data, db=path, guard=lambda _: True, inspect_gap_terms=True)
+
+
 def _assert_partial_no_go(report, reasons):
     assert report["status"] == "DIAGNOSTIC_PARTIAL_NO_GO"
     assert report["v2_current_integrity_verified"] is False

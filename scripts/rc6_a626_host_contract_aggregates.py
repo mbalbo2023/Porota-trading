@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import sqlite3
 import stat
+import sys
 import time
 import uuid
 
@@ -40,6 +43,65 @@ MAX_METADATA_BYTES = 128 * 1024 * 1024
 MAX_HISTORY_ROWS = 200_000
 MAX_HISTORY_IDENTITY_BYTES = 24 * 1024 * 1024
 MAX_SECONDS = 14.0
+MAX_GAP_SNAPSHOTS = 3000
+MAX_GAP_EVIDENCE_BYTES = 8 * 1024 * 1024
+MAX_GAP_FIELD_BYTES = 32 * 1024
+MAX_GAP_TARGETS = 3000
+GAP_IN_BATCH = 64
+# These are only static PAPER contract questions. Passing this diagnostic
+# never certifies provider provenance, market/PIT/Book or runtime admission.
+GAP_TERM_REQUIREMENTS = {
+    "BONOS": {
+        "cash_multiplier": ("cash_multiplier", "paper_cash_multiplier"),
+        "quantity_step": ("quantity_step", "paper_quantity_step"),
+        "minimum_quantity": ("quantity_min", "minimum_quantity", "paper_quantity_min"),
+    },
+    "OBLIGACIONES": {
+        "cash_multiplier": ("cash_multiplier", "paper_cash_multiplier"),
+        "quantity_step": ("quantity_step", "paper_quantity_step"),
+        "minimum_quantity": ("quantity_min", "minimum_quantity", "paper_quantity_min"),
+    },
+    "OPCIONES": {
+        "cash_multiplier": ("cash_multiplier",),
+        "quantity_step": ("quantity_step", "paper_quantity_step"),
+        "minimum_quantity": ("quantity_min", "minimum_quantity", "paper_quantity_min"),
+        "expires_at": ("expires_at", "expiry_at"),
+        "underlying": ("underlying",),
+        "strike": ("strike",),
+        "option_right": ("option_right", "put_call"),
+    },
+    "FUTUROS": {
+        "cash_multiplier": ("cash_multiplier",),
+        "quantity_step": ("quantity_step", "paper_quantity_step"),
+        "minimum_quantity": ("quantity_min", "minimum_quantity", "paper_quantity_min"),
+        "expires_at": ("expires_at", "expiry_at"),
+        "underlying": ("underlying",),
+        "margin_rule": ("initial_margin", "paper_margin_rate"),
+    },
+    "CAUCIONES": {
+        "side": ("side",), "term_days": ("term_days",),
+        "minimum_principal": ("minimum_principal",),
+        "paper_principal_step": ("paper_principal_step", "principal_step"),
+        "day_count_basis": ("day_count_basis",),
+        "fee_payment": ("fee_payment",),
+        "paper_fill_policy": ("paper_fill_policy",),
+        "fee_authority": ("fee_authority",),
+    },
+    "FCI": {
+        # A numeric minimum does not authenticate a fund subscription policy.
+        "subscription_policy": ("paper_subscription_policy",),
+        "subscription_min": ("paper_subscription_min", "subscription_min"),
+        "amount_step": ("paper_amount_unit", "subscription_step"),
+    },
+}
+GAP_POSITIVE_NUMERIC = frozenset({
+    "cash_multiplier", "paper_cash_multiplier", "quantity_step",
+    "paper_quantity_step", "quantity_min", "minimum_quantity",
+    "paper_quantity_min", "strike", "initial_margin", "paper_margin_rate",
+    "term_days", "minimum_principal", "paper_principal_step",
+    "principal_step", "day_count_basis", "paper_subscription_min",
+    "subscription_min", "paper_amount_unit", "subscription_step",
+})
 
 
 class Blocked(Exception):
@@ -238,7 +300,145 @@ def _current_snapshot_integrity_reason(item):
     return None
 
 
-def _aggregate(conn):
+def _gap_term_present(field, value):
+    """No guessed numbers/clock/structured terms; diagnostic only."""
+    if isinstance(value, bool) or value is None or isinstance(value, (dict, list)):
+        return False
+    if field in GAP_POSITIVE_NUMERIC:
+        try:
+            parsed = Decimal(str(value))
+            return parsed.is_finite() and parsed > 0
+        except (InvalidOperation, ValueError, TypeError):
+            return False
+    if not isinstance(value, str) or not 0 < len(value) <= 512:
+        return False
+    return value.strip() not in {"", "UNKNOWN", "NO_VERIFICADO", "NONE", "NULL"}
+
+
+def _inspect_gap_terms(conn, targets, current_by_key, *,
+                       uninspectable, expected_gaps, deadline):
+    """Bounded, aggregate-only look at Current V2 payloads of capability gaps.
+
+    This is an opt-in extension of the existing host's single RO transaction;
+    it never inspects names/positions/orders or writes temporary tables/files.
+    SHA validity is not provider authenticity or even a trading contract.
+    """
+    if time.monotonic() >= deadline:
+        raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
+    try:
+        _columns(conn, "contract_evidence_v2_snapshots", {
+            "snapshot_id", "source_ref", "effective_at", "evidence_json"})
+    except Blocked:
+        raise Blocked("HOST_GAP_TERMS_SCHEMA_MISSING") from None
+    if len(targets) > MAX_GAP_TARGETS:
+        raise Blocked("HOST_GAP_TERMS_TARGET_BUDGET")
+    selected = {}
+    for family, key in targets:
+        for item in current_by_key.get(key, ()):
+            sid = item["snapshot_id"]
+            if type(sid) is not int or sid <= 0:
+                raise Blocked("HOST_GAP_TERMS_SNAPSHOT_ID_INVALID")
+            selected[sid] = item
+        if time.monotonic() >= deadline:
+            raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
+    if len(selected) > MAX_GAP_SNAPSHOTS:
+        raise Blocked("HOST_GAP_TERMS_SNAPSHOT_BUDGET")
+
+    samples = {}
+    total_bytes = 0
+    snapshot_ids = sorted(selected)
+    for start in range(0, len(snapshot_ids), GAP_IN_BATCH):
+        if time.monotonic() >= deadline:
+            raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
+        batch = snapshot_ids[start:start + GAP_IN_BATCH]
+        params = ",".join("?" for _ in batch)
+        for row in conn.execute(
+                "SELECT snapshot_id,source_ref,effective_at,evidence_json "
+                "FROM contract_evidence_v2_snapshots WHERE snapshot_id IN ("+params+")", batch):
+            sid = row["snapshot_id"]
+            raw = row["evidence_json"]
+            if not isinstance(raw, str):
+                raise Blocked("HOST_GAP_TERMS_PAYLOAD_MISSING")
+            encoded = raw.encode("utf-8")
+            if not 0 < len(encoded) <= MAX_GAP_FIELD_BYTES:
+                raise Blocked("HOST_GAP_TERMS_FIELD_BUDGET")
+            total_bytes += len(encoded)
+            if total_bytes > MAX_GAP_EVIDENCE_BYTES:
+                raise Blocked("HOST_GAP_TERMS_BYTES_BUDGET")
+            ref = row["source_ref"]
+            if not isinstance(ref, str) or not 0 < len(ref.strip()) <= 1024:
+                raise Blocked("HOST_GAP_TERMS_SOURCE_REF_UNVERIFIED")
+            effective = row["effective_at"]
+            if effective:
+                at = _observed_utc(effective)
+                if at is None or at > datetime.now(timezone.utc):
+                    raise Blocked("HOST_GAP_TERMS_EFFECTIVITY_UNVERIFIED")
+            try:
+                parsed = json.loads(raw)
+            except (ValueError, TypeError):
+                raise Blocked("HOST_GAP_TERMS_PAYLOAD_JSON_INVALID") from None
+            if not isinstance(parsed, dict):
+                raise Blocked("HOST_GAP_TERMS_PAYLOAD_JSON_INVALID")
+            # Mirrors cp_contract_evidence_v2_hf6.canonical_json exactly.
+            canonical = json.dumps(parsed, ensure_ascii=False, sort_keys=True,
+                                   separators=(",", ":"), default=str)
+            if hashlib.sha256(canonical.encode("utf-8")).hexdigest() != selected[sid]["evidence_hash"]:
+                raise Blocked("HOST_GAP_TERMS_PAYLOAD_HASH_MISMATCH")
+            samples[sid] = parsed
+            if time.monotonic() >= deadline:
+                raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
+    if len(samples) != len(selected):
+        raise Blocked("HOST_GAP_TERMS_SNAPSHOT_MISSING")
+
+    stats = {family: {"gap_rows": uninspectable[family],
+                      "uninspectable_incomplete_five_key": uninspectable[family],
+                      "no_exact_current_payload": 0,
+                      "exact_current_source_label_only": 0,
+                      "offline_terms_present_not_admitted": 0,
+                      "offline_terms_missing": 0,
+                      "missing_term_counts": Counter()}
+             for family in FAMILIES}
+    for family, key in targets:
+        group = stats[family]
+        group["gap_rows"] += 1
+        records = current_by_key.get(key, ())
+        if not records:
+            group["no_exact_current_payload"] += 1
+            continue
+        group["exact_current_source_label_only"] += 1
+        visible = []
+        for item in records:
+            if family == "OPCIONES" and item["source_class"] == "IOL_STRUCTURED_API":
+                continue  # IOL option series/lot sidecar intentionally not authority.
+            visible.append(samples[item["snapshot_id"]])
+        missing = [name for name, aliases in GAP_TERM_REQUIREMENTS[family].items()
+                   if not any(_gap_term_present(alias, evidence.get(alias))
+                              for alias in aliases for evidence in visible)]
+        if missing:
+            group["offline_terms_missing"] += 1
+            group["missing_term_counts"].update(missing)
+        else:
+            group["offline_terms_present_not_admitted"] += 1
+        if time.monotonic() >= deadline:
+            raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
+    gap_total = sum(group["gap_rows"] for group in stats.values())
+    if (gap_total != sum(expected_gaps.values())
+            or any(group["gap_rows"] != expected_gaps[family]
+                   for family, group in stats.items())):
+        raise Blocked("HOST_GAP_TERMS_DENOMINATOR_MISMATCH")
+    return {"state": "EVIDENCE_ONLY_NO_GO", "read_only": True,
+            "payload_hash_integrity_checked": True,
+            "provider_authenticity_checked": False,
+            "causal_pit_or_book_checked": False,
+            "paper_auto_enabled": False, "snapshots_checked": len(samples),
+            "payload_bytes_checked": total_bytes, "gap_total": gap_total,
+            "by_family": {family: {name: (dict(sorted(value.items()))
+                                    if isinstance(value, Counter) else value)
+                                  for name, value in group.items()}
+                          for family, group in stats.items()}}
+
+
+def _aggregate(conn, *, inspect_gap_terms=False, deadline=None):
     names = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
     required = {"paper_workspace", "financial_instrument_catalog",
@@ -294,6 +494,7 @@ def _aggregate(conn):
     if len(current) != declared_current:
         raise Blocked("HOST_V2_ORPHAN_OR_BOUND")
     by_key = defaultdict(set)
+    current_by_key = defaultdict(list) if inspect_gap_terms else None
     by_ticker = Counter()
     invalid_current = Counter()
     valid_current = 0
@@ -312,6 +513,8 @@ def _aggregate(conn):
         by_ticker[key[1]] += 1
         if _complete(key):
             by_key[key].add(str(item["source_class"]))
+            if inspect_gap_terms:
+                current_by_key[key].append(item)
     ppi_symbol = Counter()
     for row in rows:
         meta = _metadata(row["metadata_json"])
@@ -321,6 +524,8 @@ def _aggregate(conn):
             ppi_symbol[str(row["ticker"] or "").strip().upper()] += 1
     out = {family: _bucket() for family in FAMILIES}
     pending_historical = []
+    gap_targets = []
+    uninspectable = Counter()
     for row in rows:
         key = _key(row)
         bucket = _family(row["family"])
@@ -350,7 +555,11 @@ def _aggregate(conn):
         item["capability_codes"][code] += 1
         if not _complete(key):
             item["gap_incomplete_five_key"] += 1
+            if inspect_gap_terms:
+                uninspectable[bucket] += 1
             continue
+        if inspect_gap_terms:
+            gap_targets.append((bucket, key))
         classes = by_key.get(key, set())
         primary = any(x.startswith("PPI_") for x in classes)
         if primary:
@@ -373,11 +582,19 @@ def _aggregate(conn):
         families.append({name: (dict(sorted(value.items())) if isinstance(value, Counter)
                                 else value)
                          for name, value in {"family": family, **out[family]}.items()})
+    if inspect_gap_terms and invalid_current:
+        raise Blocked("HOST_GAP_TERMS_CURRENT_INTEGRITY_INVALID")
+    detail = (_inspect_gap_terms(
+                conn, gap_targets, current_by_key, uninspectable=uninspectable,
+                expected_gaps={family: out[family]["capability_gaps"]
+                               for family in FAMILIES}, deadline=deadline)
+              if inspect_gap_terms else None)
     return (len(rows), len(current), historical_rows, historical_bytes, families,
-            valid_current, dict(sorted(invalid_current.items())))
+            valid_current, dict(sorted(invalid_current.items())), detail)
 
 
-def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
+def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified,
+          inspect_gap_terms=False):
     if not guard(data_root):
         raise Blocked("HOST_PRIVATE_RO_MOUNT_UNVERIFIED")
     sidecars = _safe_files(data_root, db)
@@ -388,17 +605,21 @@ def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
         conn.execute("PRAGMA query_only=ON")
         conn.execute("PRAGMA trusted_schema=OFF")
         start = time.monotonic()
+        if inspect_gap_terms and MAX_SECONDS <= 0:
+            raise Blocked("HOST_GAP_TERMS_TIME_BUDGET")
         conn.set_progress_handler(lambda: int(time.monotonic() - start > MAX_SECONDS), 1000)
         conn.execute("BEGIN")
         (catalog_rows, current_rows, historical_rows, historical_bytes, families,
-         valid_current, invalid_current) = _aggregate(conn)
+         valid_current, invalid_current, detail) = _aggregate(
+             conn, inspect_gap_terms=inspect_gap_terms,
+             deadline=start + MAX_SECONDS)
         conn.execute("ROLLBACK")
     except sqlite3.Error:
         raise Blocked("HOST_SQLITE_READ_FAILED_OR_WAL_PERMISSION") from None
     finally:
         if conn is not None:
             conn.close()
-    return {"schema": SCHEMA,
+    result = {"schema": SCHEMA,
             "status": ("DIAGNOSTIC_PARTIAL_NO_GO" if invalid_current
                        else "DIAGNOSTIC_ONLY"),
             "runtime_path": "PAPER_V17_CANONICAL_RO", "private_ro_mount_verified": True,
@@ -418,11 +639,16 @@ def probe(*, data_root=DATA_ROOT, db=DB, guard=private_ro_mount_verified):
             "capability_gaps_measured": sum(x["capability_gaps"] for x in families),
             "families": families, **sidecars,
             "measured_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    if inspect_gap_terms:
+        result["gap_terms_diagnostic"] = detail
+    return result
 
 
 def main():
     try:
-        result = probe()
+        if sys.argv[1:] not in ([], ["--inspect-gap-terms"]):
+            raise Blocked("HOST_GAP_TERMS_ARG_INVALID")
+        result = probe(inspect_gap_terms=sys.argv[1:] == ["--inspect-gap-terms"])
         print(json.dumps(result, ensure_ascii=True, sort_keys=True,
                          separators=(",", ":")))
         return 0
