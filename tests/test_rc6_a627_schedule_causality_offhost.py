@@ -160,6 +160,8 @@ class ScheduleCausalityTest(unittest.TestCase):
         result=audit([],coverage=False)
         self.assertEqual('NO_VERIFICADO',slot_record(result,SLOTS[3])['classification'])
         self.assertEqual('NO_VERIFICADO',result['source_scheduler_finding'])
+        self.assertIsNone(result['historical_mature_two_slot_silence_observed'])
+        self.assertIsNone(result['latest_mature_two_slot_silence_now'])
 
     def test_manual_and_push_never_certify_schedule(self):
         target=SLOTS[3]
@@ -184,6 +186,34 @@ class ScheduleCausalityTest(unittest.TestCase):
         as_of=SLOTS[5]+timedelta(minutes=22)
         result=audit([],as_of=as_of)
         self.assertEqual('P1_SCHEDULE_SILENT',result['source_scheduler_finding'])
+        self.assertIs(result['historical_mature_two_slot_silence_observed'],True)
+        self.assertIs(result['latest_mature_two_slot_silence_now'],True)
+
+    def test_late_schedule_burst_does_not_erase_42_prior_mature_gaps(self):
+        # Reduced, deterministic reproduction of the genuine Nov-04 17:33 ART
+        # A627 classification: 42 NO_TRIGGER, 1 ambiguous neighbor,
+        # 1 delayed native tick and 1 grace slot. This is NOT runtime evidence.
+        target=next(slot for slot in SLOTS if slot.hour == 20 and slot.minute == 17)
+        result=audit([run(target,lag=400,run_id=41906177811)],
+                     {'41906177811':jobs()},
+                     as_of=target+timedelta(minutes=16,seconds=45))
+        self.assertEqual({'NO_TRIGGER':42, 'NO_TRIGGER_OR_LATE_AMBIGUOUS':1,
+                          'DELAYED':1, 'PENDING_GRACE':1},result['counts'])
+        self.assertIs(result['historical_mature_two_slot_silence_observed'],True)
+        self.assertIs(result['latest_mature_two_slot_silence_now'],False)
+        self.assertEqual('P1_SCHEDULE_SILENT',result['source_scheduler_finding'])
+        self.assertEqual('NO_VERIFICADO',result['host_eod_t1']['state'])
+        self.assertEqual(0,result['provider_gets'])
+
+    def test_latest_and_historical_windows_both_clean_with_two_native_ticks(self):
+        first,second=SLOTS[3:5]
+        result=audit([run(first,run_id=101),run(second,run_id=102)],
+                     {'101':jobs(),'102':jobs()},
+                     as_of=second+timedelta(minutes=21))
+        self.assertIs(result['historical_mature_two_slot_silence_observed'],False)
+        self.assertIs(result['latest_mature_two_slot_silence_now'],False)
+        self.assertEqual('NO_CONFIRMED_TWO_SLOT_SILENCE',
+                         result['source_scheduler_finding'])
 
     def test_missing_jobs_or_rerun_never_prove_host(self):
         target=SLOTS[3]
