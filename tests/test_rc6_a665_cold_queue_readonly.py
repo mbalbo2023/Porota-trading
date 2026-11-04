@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+from datetime import datetime, timedelta
 import os
 from pathlib import Path
 import stat
@@ -67,6 +68,15 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertEqual(record["observed_deploy_sha"], PRODUCT)
         self.assertFalse(record["paper_admission_verified"])
         self.assertFalse(record["causal_fix_verified"])
+
+    def test_receipt_clock_is_utc_and_art_without_disclosing_private_root(self):
+        record = self.read()
+        utc = datetime.fromisoformat(record["generated_at_utc"])
+        art = datetime.fromisoformat(record["generated_at_art"])
+        self.assertEqual(utc.utcoffset(), timedelta(0))
+        self.assertEqual(art.utcoffset(), timedelta(hours=-3))
+        self.assertLessEqual(abs((utc - art).total_seconds()), 1)
+        self.assertNotIn(str(self.data), json.dumps(record))
 
     def test_one_failed_receipt_and_bound_queue_are_structurally_observed(self):
         self.write_private("receipt-" + IDENT + ".json", {
