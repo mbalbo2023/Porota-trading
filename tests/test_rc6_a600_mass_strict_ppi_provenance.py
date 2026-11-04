@@ -34,6 +34,9 @@ def row(source, *, ticker="TEST", settlement_source="PPI_FIELD", status="AVAILAB
         "metadata_json": json.dumps({
             "_discovery_source": source,
             "_provider_instrument_type": "ACCIONES",
+            "ticker": ticker, "type": "ACCIONES", "market": "BYMA",
+            "currency": "ARS",
+            **({"settlement": "A-24HS"} if settlement_source == "PPI_FIELD" else {}),
         }),
     }
 
@@ -49,19 +52,24 @@ class Store:
 
 
 class MassContractProvenanceA600Tests(unittest.TestCase):
-    def test_ppi_source_with_explicit_or_requested_settlement_keeps_existing_policy(self):
+    def test_ppi_source_uses_only_native_settlement_for_full_key_evidence(self):
         for settlement_source in ("PPI_FIELD", "REQUEST_CANDIDATE"):
             with self.subTest(settlement_source=settlement_source):
                 records, skipped, identities = mass.planned_records([
                     row("PPI_PRIMARY", settlement_source=settlement_source)
                 ])
-                self.assertEqual(skipped, {})
-                self.assertEqual(identities, {"ACCIONES": 1})
-                self.assertEqual([item["source_class"] for item in records], [
-                    "PPI_STRUCTURED_API", "DERIVED_OFFICIAL_RULE"
-                ])
-                self.assertEqual(records[0]["evidence"]["provider_catalog_status"],
-                                 "AVAILABLE")
+                if settlement_source == "REQUEST_CANDIDATE":
+                    self.assertEqual(records, [])
+                    self.assertEqual(identities, {})
+                    self.assertEqual(skipped, {"PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1})
+                else:
+                    self.assertEqual(skipped, {})
+                    self.assertEqual(identities, {"ACCIONES": 1})
+                    self.assertEqual([item["source_class"] for item in records], [
+                        "PPI_STRUCTURED_API", "DERIVED_OFFICIAL_RULE"
+                    ])
+                    self.assertEqual(records[0]["evidence"]["provider_catalog_status"],
+                                     "AVAILABLE")
 
     def test_iol_and_legacy_with_ppi_looking_settlement_never_become_ppi(self):
         for source in ("IOL_COMPLEMENTARY", "LEGACY_CATALOG"):
