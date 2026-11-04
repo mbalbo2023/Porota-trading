@@ -443,7 +443,7 @@ class A655Histogram(unittest.TestCase):
         result = self.probe()
         self.assertEqual(self.roots(result), {("UNEXPLAINED_PERSISTED_BRIDGE", "NONE"): 1})
 
-    def test_a661_missing_snapshot_is_pending_and_evidence_integrity_hold(self):
+    def test_a666_missing_ppi_snapshot_fails_closed_without_field_histogram(self):
         with sqlite3.connect(self.db) as c:
             self.option_review(c)
             self.v2(c, current={"lot": 100})
@@ -454,8 +454,12 @@ class A655Histogram(unittest.TestCase):
               (111, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_STRUCTURED_API",
                "a" * 64, "b" * 64, STAMP, "CHANGED_REVIEW_REQUIRED"))
         result = self.probe()
-        self.assertEqual(self.roots(result),
-                         {("EVIDENCE_INTEGRITY_HOLD+PENDING_MATERIAL", "PPI_ONLY"): 1})
+        # A661 correctly diagnosed an integrity hold. A666 cannot safely
+        # attribute field-level changes with missing prior/current snapshots,
+        # and therefore refuses to publish a partial field histogram.
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertEqual(result["reason"], "A666_PPI_MATERIAL_INTEGRITY_HOLD")
+        self.assertEqual(result["option_ppi_material_field_hist"], [])
 
     def test_a661_runner_rejects_forged_private_reason_and_denominator(self):
         with sqlite3.connect(self.db) as c:
@@ -468,6 +472,109 @@ class A655Histogram(unittest.TestCase):
         result["option_review_root_hist"][0]["flags"] = "PENDING_MATERIAL"
         result["option_review_root_total"] = 999
         self.assertEqual(module.sanitize(result)["state"], "NO_VERIFICADO")
+
+    def test_a666_exact_ppi_material_field_operations_are_aggregate_only(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={
+                "ppi_identity_verified": False,
+                "price_quote_unit": "100",
+                "provider_catalog_status": "AVAILABLE",
+                "provider_timestamp": "SECRET_OLD_CLOCK",
+            }, current={
+                "ppi_identity_verified": True,
+                "ppi_nominal_in_price": "1",
+                "provider_catalog_status": "AVAILABLE",
+                "provider_timestamp": "SECRET_NEW_CLOCK",
+            })
+        raw = self.probe()
+        self.assertEqual(raw["option_review_root_hist"], [
+            {"flags": "PENDING_MATERIAL", "source_class_bucket": "PPI_ONLY", "count": 1}])
+        self.assertEqual(raw["option_ppi_material_identity_total"], 1)
+        self.assertEqual(raw["option_ppi_material_change_total"], 1)
+        hist = {(r["field"], r["operation"]): (r["identities"], r["events"])
+                for r in raw["option_ppi_material_field_hist"]}
+        self.assertEqual(hist, {
+            ("PPI_IDENTITY_VERIFIED", "CHANGED"): (1, 1),
+            ("PRICE_QUOTE_UNIT", "REMOVED"): (1, 1),
+            ("PPI_NOMINAL_IN_PRICE", "ADDED"): (1, 1),
+        })
+        self.assertEqual(raw["option_ppi_material_current_hist"],
+                         [{"category": "LATEST_CURRENT", "count": 1}])
+        self.assertEqual(raw["option_ppi_material_source_ref_hist"],
+                         [{"category": "STABLE_OTHER_PPI_REF", "count": 1}])
+        published = module.sanitize({**raw, "private_ro_mount": True})
+        self.assertEqual(published["state"], "READ_ONLY_OBSERVED")
+        receipt = json.dumps(published)
+        for forbidden in ("XYZ", "SECRET_OLD_CLOCK", "SECRET_NEW_CLOCK", "100", "AVAILABLE"):
+            # Neither private payload VALUES nor raw option identifiers may
+            # appear in these explicit categorical diagnostics.
+            self.assertNotIn('"' + forbidden + '"', receipt)
+
+    def test_a666_private_or_unknown_json_field_name_is_never_exported(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={
+                "price_quote_unit": "10", "secret_api_key_private_ticker": "BEFORE_PRIVATE"
+            }, current={
+                "price_quote_unit": "20", "secret_api_key_private_ticker": "AFTER_PRIVATE"
+            })
+        receipt = module.sanitize({**self.probe(), "private_ro_mount": True})
+        self.assertEqual(receipt["state"], "READ_ONLY_OBSERVED")
+        field_hist = receipt["option_ppi_material_field_hist"]
+        self.assertIn({"field": "UNKNOWN_FIELD", "operation": "CHANGED",
+                       "identities": 1, "events": 1}, field_hist)
+        printable = json.dumps(receipt)
+        for secret in ("secret_api_key_private_ticker", "BEFORE_PRIVATE", "AFTER_PRIVATE"):
+            self.assertNotIn(secret, printable)
+
+    def test_a666_history_not_latest_is_not_silent_current_attestation(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"price_quote_unit": "100"},
+                    current={"price_quote_unit": "10"})
+            latest = {"price_quote_unit": "1"}
+            encoded = json.dumps(latest, sort_keys=True, separators=(",", ":"))
+            digest = hashlib.sha256(encoded.encode()).hexdigest()
+            c.execute("""INSERT INTO contract_evidence_v2_snapshots
+              (snapshot_id,family,ticker,market,currency,settlement,source_class,
+               evidence_hash,observed_at,evidence_json,source_ref)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+              (50, "OPCIONES", "XYZ", "BYMA", "ARS", "CI", "PPI_STRUCTURED_API",
+               digest, STAMP, encoded, "synthetic:fixture"))
+            c.execute("""UPDATE contract_evidence_v2_current SET snapshot_id=?,evidence_hash=?
+              WHERE family='OPCIONES' AND ticker='XYZ' AND source_class='PPI_STRUCTURED_API'""",
+              (50, digest))
+        raw = self.probe()
+        self.assertEqual(raw["option_ppi_material_current_hist"],
+                         [{"category": "HISTORICAL_NOT_LATEST", "count": 1}])
+        self.assertEqual(raw["option_ppi_material_identity_total"], 1)
+
+    def test_a666_corrupt_historical_previous_payload_fails_closed(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"price_quote_unit": "100"},
+                    current={"price_quote_unit": "10"})
+            c.execute("UPDATE contract_evidence_v2_snapshots SET evidence_json=? WHERE snapshot_id=30",
+                      ('{"private":"TAMPERED"}',))
+        raw = self.probe()
+        self.assertEqual(raw["state"], "NO_VERIFICADO")
+        self.assertIn("A666", raw["reason"])
+        self.assertEqual(raw["option_ppi_material_field_hist"], [])
+
+    def test_a666_sanitizer_rejects_forged_field_name_or_histogram_denominator(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_review(c)
+            self.v2(c, previous={"price_quote_unit": "100"},
+                    current={"price_quote_unit": "10"})
+        source = {**self.probe(), "private_ro_mount": True}
+        self.assertEqual(module.sanitize(source)["state"], "READ_ONLY_OBSERVED")
+        forged = json.loads(json.dumps(source))
+        forged["option_ppi_material_field_hist"][0]["field"] = "SECRET_TICKER_KEY"
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
+        forged = json.loads(json.dumps(source))
+        forged["option_ppi_material_identity_total"] = 568
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
 
 
 if __name__ == "__main__":
