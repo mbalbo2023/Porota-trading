@@ -1,0 +1,134 @@
+# A654 — Control-plane only. Deliberately NOT part of the product deploy pipeline.
+# This file must be reviewed and merged into main before a manual run is possible.
+name: RC6 A654 OFFHOST immutable-union tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'Full, exact 40-character commit SHA of DRAFT #945 (no branch or tag)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-a654-offhost-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-sha-offhost:
+    name: Exact SHA, isolated offline synthetic regressions
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      REQUESTED_SHA: ${{ inputs.target_sha }}
+      EXPECTED_SHA: cc0edf5e3c213b0fb6eccbe1818ca6f4f7fc0ff9
+      EXPECTED_TREE: 2b83ac38f605d52b0181af01ff30232e075ee0ff
+      REVIEW_BASE_SHA: 975f31c6374dd628d507850e0786201bc4ce779e
+      GIT_TERMINAL_PROMPT: '0'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+
+    steps:
+      - name: Fail closed on arbitrary SHA, malformed input or noncanonical ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$REQUESTED_SHA" != "$EXPECTED_SHA" ]]; then
+            echo '::error::A654 only accepts the immutable, reviewed DRAFT #945 SHA.'
+            exit 41
+          fi
+          if [[ "${GITHUB_REF}" != 'refs/heads/main' ]]; then
+            echo '::error::A654 dispatch must use the reviewed main control-plane workflow.'
+            exit 42
+          fi
+          echo "Pinned source SHA: $EXPECTED_SHA"
+          echo "Pinned source tree: $EXPECTED_TREE"
+
+      # Public-repository GitHub source retrieval is the ONLY intentional external
+      # network operation in workflow steps. No GitHub token, SSH, provider or
+      # droplet credentials are passed to the checkout or the test process.
+      - name: Fetch exact public Git SHA without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin https://github.com/mbalbo2023/Porota-trading.git
+          git -c credential.helper= -c core.askPass=/usr/bin/false \
+            fetch --no-tags --depth=1 origin "$REQUESTED_SHA"
+          git -c advice.detachedHead=false checkout -q --detach FETCH_HEAD
+
+      - name: Verify immutable SHA/tree and bounded test inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse --verify HEAD^{commit})"
+          actual_tree="$(git rev-parse --verify HEAD^{tree})"
+          if [[ "$actual_sha" != "$EXPECTED_SHA" || "$actual_tree" != "$EXPECTED_TREE" ]]; then
+            echo "::error::Source identity mismatch SHA=$actual_sha TREE=$actual_tree"
+            exit 43
+          fi
+          git ls-files --error-unmatch -- \
+            tests/test_rc6_a653_budget_fallback_lower_denied.py \
+            tests/test_rc6_a653_book1_provenance_wiring.py \
+            tests/test_rc6_a222_spot_scalping_guarded_release.py \
+            tests/test_rc6_a321_fi_native_paper_market_sale.py \
+            tests/test_rc6_a456_fi_native_maturity_chain.py \
+            tests/test_rc6_fi_sell_persisted_evidence.py \
+            tests/test_rc6_fi_sell_supervisor_wiring.py \
+            tests/test_rc6_fi_sell_ro_snapshot_audit.py >/dev/null
+          if ! command -v unshare >/dev/null || ! command -v ip >/dev/null || \
+             ! command -v runuser >/dev/null || ! python3 -m pytest --version; then
+            echo '::error::Offline dependencies/network isolation tools unavailable; fail closed. No pip/apt/network install permitted.'
+            exit 44
+          fi
+
+      # Linux network namespace has no external interfaces/routes. All imported
+      # product code and test collection run as unprivileged nobody with a blank
+      # environment (no runner/docker groups or ambient tokens). If namespace
+      # setup is denied, this job FAILS before executing tests.
+      - name: Run bounded PAPER-only tests with network namespace isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n unshare --net -- /bin/bash -c '
+            set -euo pipefail
+            if [[ -n "$(ip -4 route show default)" || -n "$(ip -6 route show default)" ]]; then
+              echo "::error::Network namespace still has a default route; refuse tests."
+              exit 45
+            fi
+            echo "Network namespace isolated: no IPv4/IPv6 default route."
+            exec runuser -u nobody -- env -i \
+              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              HOME=/tmp LANG=C.UTF-8 \
+              PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+              python3 -m pytest -q -p no:cacheprovider \
+                tests/test_rc6_a653_budget_fallback_lower_denied.py \
+                tests/test_rc6_a653_book1_provenance_wiring.py \
+                tests/test_rc6_a222_spot_scalping_guarded_release.py \
+                tests/test_rc6_a321_fi_native_paper_market_sale.py \
+                tests/test_rc6_a456_fi_native_maturity_chain.py \
+                tests/test_rc6_fi_sell_persisted_evidence.py \
+                tests/test_rc6_fi_sell_supervisor_wiring.py \
+                tests/test_rc6_fi_sell_ro_snapshot_audit.py
+          '
+          git diff --exit-code HEAD --
+
+      - name: Record precise evidence scope (never runtime readiness)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### A654 immutable OFFHOST union test receipt'
+            echo '- Mode: synthetic isolated test only; **NOT** Predeploy, Deploy, runtime or PPI authentication.'
+            echo "- Required source commit: \`$EXPECTED_SHA\`"
+            echo "- Required source tree: \`$EXPECTED_TREE\`"
+            echo "- Review base #940: \`$REVIEW_BASE_SHA\`"
+            echo "- GitHub Actions job state: **${{ job.status }}**"
+            echo '- Credential and host/API access: none injected; tests attempted only inside empty network namespace.'
+            echo '- No artifact build/upload, no production host mutation, no real orders.'
+            echo '- PAPER readiness, ten-family admission, real PPI PIT and Book2 signer: **NO_VERIFICADO**.'
+          } >> "$GITHUB_STEP_SUMMARY"
