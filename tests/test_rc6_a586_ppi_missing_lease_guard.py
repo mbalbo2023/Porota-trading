@@ -9,6 +9,7 @@ from datetime import timedelta
 import base64
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 import requests
@@ -41,7 +42,8 @@ def sign_synthetic_authority(payload, signer):
 def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
                           shared_book=2, watch_book=1, release_match=True):
     """Synthetic approval for fake-wire only; no real provider quota claim."""
-    release = "c" * 64
+    # Predeploy passes a 40-hex Git commit in POROTA_BUILD_SHA, never 64-hex SHA256.
+    release = "c" * 40
     paper = {"current": 2, "book": shared_book, "intraday": 1}
     watch = {"current": 1, "book": watch_book, "intraday": 1}
     provider = {name: paper[name] + watch[name] for name in paper}
@@ -50,7 +52,7 @@ def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
         "approved": True, "mode_safety": "PAPER_SHADOW_ONLY",
         "max_parallel_requests": 1, "issued_at": clock.now().isoformat(),
         "expires_at": (clock.now() + timedelta(hours=1)).isoformat(),
-        "release_sha256": release,
+        "release_git_sha": release,
         "provider_evidence_sha256": "a" * 64,
         "watch_evidence_sha256": "b" * 64,
         "window_seconds": 15 if opened else 30,
@@ -70,7 +72,7 @@ def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
     monkeypatch.setattr(budget_module, "PINNED_STATIC_SHARED_SIGNER_KEY_SHA256",
         hashlib.sha256(public).hexdigest())
     return ({budget_module.STATIC_SHARED_AUTHORITY_ENV: str(path),
-        "POROTA_BUILD_SHA": release if release_match else "d" * 64}, signer)
+        "POROTA_BUILD_SHA": release if release_match else "d" * 40}, signer)
 
 
 @pytest.mark.parametrize("priority", ["DISCOVERY", "EXIT_CRITICAL"])
@@ -197,7 +199,7 @@ def test_static_contract_unpinned_or_wrong_release_never_bootstraps_or_gets(wire
     finally:
         guard.restore()
 
-    environ["POROTA_BUILD_SHA"] = "d" * 64
+    environ["POROTA_BUILD_SHA"] = "d" * 40
     assert not runtime.budget
     public = signer.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw)
@@ -206,6 +208,65 @@ def test_static_contract_unpinned_or_wrong_release_never_bootstraps_or_gets(wire
     with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
         runtime.acquire("book")
     assert not sidecar.exists()
+
+
+def test_static_signed_release_identity_matches_build_once_workflow():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/porota-predeploy-v2.yml").read_text()
+    dockerfile = (root / "Dockerfile").read_text()
+    assert "CANDIDATE_SHA: " + "$" + "{{ github.event.pull_request.head.sha }}" in workflow
+    assert "POROTA_BUILD_SHA=" + "$" + "{{ env.CANDIDATE_SHA }}" in workflow
+    assert "ARG POROTA_BUILD_SHA=" in dockerfile
+    assert "ENV POROTA_BUILD_SHA=" + "$" + "{POROTA_BUILD_SHA}" in dockerfile
+    assert budget_module.STATIC_SHARED_SCHEMA.endswith("_V2")
+
+
+@pytest.mark.parametrize("mutation", [
+    "old_64_field", "git_sha_64", "build_env_64", "artifact_digest_unattested",
+    "git_sha_uppercase", "git_sha_short", "wrong_git_sha", "legacy_schema",
+])
+def test_signed_release_identity_incompatible_forms_fail_without_provider_wire(
+    wire, tmp_path, monkeypatch, mutation,
+):
+    from be_paper_engine import PaperStore
+    clock, provider_calls, _ = wire
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    environ, signer = static_authority_file(tmp_path, monkeypatch, clock)
+    authority_path = tmp_path / "static-approved-synthetic.json"
+    authority = json.loads(authority_path.read_text())
+    payload = {key: value for key, value in authority.items()
+               if key not in {"signer_public_key_b64", "signature_b64"}}
+    if mutation == "old_64_field":
+        payload.pop("release_git_sha")
+        payload["release_sha256"] = "c" * 64
+    elif mutation == "git_sha_64":
+        payload["release_git_sha"] = "c" * 64
+        environ["POROTA_BUILD_SHA"] = "c" * 64
+    elif mutation == "build_env_64":
+        environ["POROTA_BUILD_SHA"] = "c" * 64
+    elif mutation == "artifact_digest_unattested":
+        payload["release_artifact_sha256"] = "e" * 64
+    elif mutation == "git_sha_uppercase":
+        payload["release_git_sha"] = "A" * 40
+        environ["POROTA_BUILD_SHA"] = "A" * 40
+    elif mutation == "git_sha_short":
+        payload["release_git_sha"] = "c" * 39
+        environ["POROTA_BUILD_SHA"] = "c" * 39
+    elif mutation == "wrong_git_sha":
+        environ["POROTA_BUILD_SHA"] = "d" * 40
+    elif mutation == "legacy_schema":
+        payload["schema"] = "RC6_PPI_STATIC_SHARED_AUTHORITY_V1"
+    authority_path.write_text(
+        json.dumps(sign_synthetic_authority(payload, signer), sort_keys=True),
+        encoding="utf-8",
+    )
+    runtime = RuntimePPIBudget(store.path,
+        RuntimeCapacityController(environ=environ, policy=deepcopy(DEFAULT_POLICY)),
+        clock=clock.now)
+    with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
+        runtime.acquire("current")
+    assert not runtime.path.exists() and not provider_calls
 
 
 def test_two_static_off_readers_share_real_lease_and_watch_deduction(wire, tmp_path, monkeypatch):
