@@ -58,6 +58,7 @@ jobs:
       DO_USER: ${{ secrets.DO_USER }}
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      SCHEDULE_CRON: ${{ github.event.schedule }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,21 +67,68 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - name: Gate scheduled host access to 04-Nov ART only
+      - name: Gate exact 04-Nov ART schedule slot, or explicit manual fallback
         id: day_gate
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import os
+          import json,os
           from datetime import datetime,timezone
+          from pathlib import Path
           from zoneinfo import ZoneInfo
-          local=datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
-          # workflow_dispatch remains the explicit manual read-only fallback.
-          allowed=(os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch'
-                   or local.date().isoformat()=='2026-11-04')
+
+          def classify_a617_gate(event_name, schedule_cron, now_utc):
+              local=now_utc.astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+              # Dated observational samples, not an expiration of production code.
+              day_ok=local.date().isoformat()=='2026-11-04'
+              slots={'05 14 4 11 *':(11,5), '50 17 4 11 *':(14,50),
+                     '50 19 4 11 *':(16,50)}
+              result={'active':False,'gate':'UNEXPECTED_EVENT_SKIP',
+                      'scheduled_slot_art':None,'delay_seconds':None,
+                      'observed_at_art':local.isoformat()}
+              if event_name=='workflow_dispatch':
+                  result.update(active=True,gate='MANUAL_READ_ONLY_FALLBACK')
+                  return result
+              if event_name!='schedule':
+                  return result
+              if not day_ok:
+                  result['gate']='SCHEDULE_WRONG_DAY_SKIP'
+                  return result
+              target=slots.get(schedule_cron)
+              if target is None:
+                  result['gate']='SCHEDULE_UNKNOWN_CRON_SKIP'
+                  return result
+              planned=local.replace(hour=target[0],minute=target[1],
+                                    second=0,microsecond=0)
+              lag=int((local-planned).total_seconds())
+              result.update(scheduled_slot_art=planned.isoformat(),delay_seconds=lag)
+              # Native GitHub cron may arrive hours late. Preserve PIT sampling
+              # semantics; an out-of-window run must NOT probe the host.
+              if 0<=lag<=20*60:
+                  result.update(active=True,gate='SCHEDULE_IN_WINDOW')
+              else:
+                  result['gate']='SCHEDULE_STALE_SKIP'
+              return result
+
+          decision=classify_a617_gate(os.environ.get('GITHUB_EVENT_NAME'),
+              os.environ.get('SCHEDULE_CRON'),datetime.now(timezone.utc))
+          Path('evidence').mkdir(exist_ok=True)
+          receipt={'schema':'rc6.a657.a617-schedule-gate.v1','read_only':True,
+                   'gate':decision['gate'],'active':decision['active'],
+                   'scheduled_slot_art':decision['scheduled_slot_art'],
+                   'delay_seconds':decision['delay_seconds'],
+                   'observed_at_art':decision['observed_at_art'],
+                   'host_probe_state':'NOT_ATTESTED_BY_GATE',
+                   'provider_gets_by_gate':0,'order_routes_called_by_gate':False,
+                   'ppi_watch_touched_by_gate':False}
+          Path('evidence/a617_schedule_gate.json').write_text(
+              json.dumps(receipt,sort_keys=True,separators=(',',':'))+'\n',
+              encoding='utf-8')
           with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as out:
-              out.write('active='+('1' if allowed else '0')+'\n')
-          print('A617_04NOV_HOST_GATE='+('ACTIVE' if allowed else 'SKIPPED_OTHER_DATE'))
+              out.write('active='+('1' if decision['active'] else '0')+'\n')
+          print('A617_04NOV_HOST_GATE='+decision['gate'])
+          if not decision['active']:
+              print('::warning::A617 host read-only probe skipped: '+decision['gate'])
           PY
       - name: Configure strict runner-only SSH
         if: steps.day_gate.outputs.active == '1'
@@ -206,11 +254,13 @@ jobs:
           PY
           rm -f evidence/.host_raw.json
       - name: Preserve sanitized aggregate evidence
-        if: always() && steps.day_gate.outputs.active == '1'
+        if: always() && steps.day_gate.outcome == 'success' && (steps.day_gate.outputs.active == '1' || steps.day_gate.outputs.active == '0')
         uses: actions/upload-artifact@v4
         with:
           name: rc6-a617-ppi-origin-selector-${{ github.run_id }}
-          path: evidence/a617_ppi_origin_selector.json
+          path: |
+            evidence/a617_schedule_gate.json
+            evidence/a617_ppi_origin_selector.json
           if-no-files-found: warn
           retention-days: 90
       - name: Fail closed when host DB not readable
