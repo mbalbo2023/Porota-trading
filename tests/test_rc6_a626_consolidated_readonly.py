@@ -64,9 +64,13 @@ def _run(script: str, tmp_path: Path, **variables):
 def _sql_report():
     return {
         "schema": "rc6.a626.host-contract-aggregates-ro.v1",
+        "runtime_path": "PAPER_V17_CANONICAL_RO",
         "status": "DIAGNOSTIC_ONLY", "private_ro_mount_verified": True,
         "paper_workspace_identity_verified": True, "paper_auto_enabled": False,
-        "ppi_identity_authority_verified": False, "host_db_writes": 0,
+        "ppi_identity_authority_verified": False,
+        "source_contract_terms_fresh_verified": False,
+        "causal_pit_verified": False, "v2_payload_hash_checked": False,
+        "host_db_writes": 0,
         "provider_gets": 0, "real_orders_sent_by_probe": 0,
         "host_runtime_order_count": "NO_VERIFICADO", "catalog_rows": 6,
         "v2_current_rows": 2, "v2_current_valid_rows": 2,
@@ -74,7 +78,10 @@ def _sql_report():
         "v2_current_integrity_verified": True,
         "v2_history_ppi_rows_scanned": 2,
         "v2_history_identity_bytes_scanned": 64,
+        "historical_819_gap_match": False,
         "capability_gaps_measured": 0, "db_bytes": 12345,
+        "wal_present": False, "shm_present": False,
+        "journal_present": False, "measured_at_utc": "2026-11-04T12:00:00+00:00",
         "families": [dict(family=f, capability_codes={},
                           **{k: 0 for k in FAMILY_FIELDS}) for f in FAMILIES],
     }
@@ -109,6 +116,7 @@ def test_single_existing_workflow_pins_host_probes_and_never_requests_get():
     assert "inputs.permit_readonly_host_probe == true" in WORKFLOW
     assert "group: rc6-a626-financial-contract-host-readonly" in WORKFLOW
     assert "group: rc6-unified-paper-deploy" in WORKFLOW
+    assert "needs: offhost-focused-ci" in WORKFLOW
     assert WORKFLOW.count("cancel-in-progress: false") == 2
     assert "RC6_EXPECTED_PRODUCT_SHA: " + PRODUCT_SHA in WORKFLOW
     assert "RC6_EXPECTED_IMAGE_ID: " + IMAGE_ID in WORKFLOW
@@ -122,6 +130,8 @@ def test_single_existing_workflow_pins_host_probes_and_never_requests_get():
         "- name: Build single sanitized", 1)[0]
     assert "uses: actions/upload-artifact@v4" in WORKFLOW
     assert "if: always()" in WORKFLOW
+    assert "a626-sanitized-only.json" in WORKFLOW
+    assert "REDACTED_COUNT" in WORKFLOW
     for forbidden in ("ProductionMarketReader", "budget_from_environment",
                       "PPI_GET_SCOPE", "docker restart", "docker compose up",
                       "GetBook", "GetCurrent", "docker system prune"):
@@ -144,7 +154,9 @@ def test_previous_main_legacy_full_schema_still_collects_without_new_attestation
     p = _put_sql(tmp_path, report)
     assert p.returncode == 0, p.stdout + p.stderr
     assert "NO_VERIFICADO_LEGACY_FIELDS_ABSENT" in p.stdout
-    assert json.loads((tmp_path / "a626-sanitized-only.json").read_text()) == report
+    saved = json.loads((tmp_path / "a626-sanitized-only.json").read_text())
+    assert saved["status"] == "DIAGNOSTIC_ONLY"
+    assert "v2_current_integrity_verified" not in saved
     assert _put_budget(tmp_path, _budget_receipt()).returncode == 0
     manifest_run = _run(CONSOLIDATED_VALIDATOR, tmp_path)
     assert manifest_run.returncode == 0
@@ -162,7 +174,9 @@ def test_sql_partial_preserves_counts_and_explicitly_fails_action(tmp_path):
                        "HOST_V2_SNAPSHOT_OBSERVED_AT_REVERSED": 1})
     p = _put_sql(tmp_path, receipt)
     assert p.returncode == 4, p.stdout + p.stderr
-    assert json.loads((tmp_path / "a626-sanitized-only.json").read_text()) == receipt
+    saved = json.loads((tmp_path / "a626-sanitized-only.json").read_text())
+    assert saved["v2_current_invalid_reason_counts"] == receipt["v2_current_invalid_reason_counts"]
+    assert saved["families"][0]["capability_codes"] == {"REDACTED_COUNT": 0}
     assert "DIAGNOSTIC_PARTIAL_NO_GO" in p.stdout
 
 
@@ -174,6 +188,8 @@ def test_sql_partial_preserves_counts_and_explicitly_fails_action(tmp_path):
     {"host_runtime_order_count": 0},
     {"instrument_ticker": "AL30"},
     {"v2_current_integrity_verified": None},
+    {"measured_at_utc": "2026-11-04T12:00:00"},
+    {"wal_present": "NO"},
 ))
 def test_sql_rejects_forged_leaky_or_ambiguous_census(tmp_path, change):
     receipt = _sql_report()
@@ -181,6 +197,31 @@ def test_sql_rejects_forged_leaky_or_ambiguous_census(tmp_path, change):
     p = _put_sql(tmp_path, receipt)
     assert p.returncode != 0
     assert not (tmp_path / "a626-sanitized-only.json").exists()
+
+
+@pytest.mark.parametrize("missing", ("wal_present", "shm_present", "journal_present",
+                                      "measured_at_utc", "historical_819_gap_match"))
+def test_sql_requires_all_factual_fields_even_when_status_full(tmp_path, missing):
+    receipt = _sql_report()
+    receipt.pop(missing)
+    assert _put_sql(tmp_path, receipt).returncode != 0
+    assert not (tmp_path / "a626-sanitized-only.json").exists()
+
+
+def test_sql_never_publishes_database_derived_capability_keys(tmp_path):
+    receipt = _sql_report()
+    row = receipt["families"][0]
+    row["capability_gaps"] = 1
+    row["catalog_active"] = 1
+    row["capability_codes"] = {"PRIVATE_ACCOUNT_PASSWORD_KEY": 1}
+    receipt["capability_gaps_measured"] = 1
+    p = _put_sql(tmp_path, receipt)
+    assert p.returncode == 0, p.stdout + p.stderr
+    saved = (tmp_path / "a626-sanitized-only.json").read_text()
+    assert "PRIVATE_ACCOUNT_PASSWORD_KEY" not in saved
+    assert "PRIVATE_ACCOUNT_PASSWORD_KEY" not in p.stdout
+    assert json.loads(saved)["families"][0]["capability_codes"] == {
+        "REDACTED_COUNT": 1}
 
 
 @pytest.mark.parametrize("missing", (

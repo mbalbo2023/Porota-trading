@@ -50,6 +50,8 @@ jobs:
 
   aggregate:
     if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref_name == 'main' && inputs.permit_readonly_host_probe == true }}
+    # Never contact the PAPER host until all A626/A516 offhost contracts pass.
+    needs: offhost-focused-ci
     # Serialize image/observer inspection against Deploy V2. The workflow-level
     # A626 mutex also keeps two censuses from executing simultaneously.
     concurrency:
@@ -152,6 +154,16 @@ jobs:
           assert obj.get('paper_workspace_identity_verified') is True
           assert obj.get('paper_auto_enabled') is False
           assert obj.get('ppi_identity_authority_verified') is False
+          assert obj.get('source_contract_terms_fresh_verified') is False
+          assert obj.get('causal_pit_verified') is False
+          assert obj.get('v2_payload_hash_checked') is False
+          assert obj.get('runtime_path') == 'PAPER_V17_CANONICAL_RO'
+          assert type(obj.get('historical_819_gap_match')) is bool
+          assert all(type(obj.get(k)) is bool for k in
+                     ('wal_present','shm_present','journal_present'))
+          from datetime import datetime, timezone
+          observed = datetime.fromisoformat(obj.get('measured_at_utc', ''))
+          assert observed.tzinfo is not None and observed.utcoffset().total_seconds() == 0
           assert type(obj.get('host_db_writes')) is int and obj['host_db_writes'] == 0
           assert type(obj.get('provider_gets')) is int and obj['provider_gets'] == 0
           assert type(obj.get('real_orders_sent_by_probe')) is int and obj['real_orders_sent_by_probe'] == 0
@@ -172,7 +184,6 @@ jobs:
                      'v2_history_identity_bytes_scanned','historical_819_gap_match',
                      'capability_gaps_measured','families','wal_present','shm_present',
                      'journal_present','db_bytes','measured_at_utc'}
-          assert set(obj) <= allowed, 'A626_UNEXPECTED_OUTPUT_FIELDS'
           total, valid = obj.get('v2_current_rows'), obj.get('v2_current_valid_rows')
           assert type(total) is int and total >= 0
           new_fields = {'v2_current_integrity_verified', 'v2_current_valid_rows',
@@ -184,6 +195,7 @@ jobs:
           assert present in (set(), new_fields), 'A626_MIXED_INTEGRITY_SCHEMA'
           legacy_full = not present
           assert not legacy_full or status == 'DIAGNOSTIC_ONLY', 'A626_LEGACY_PARTIAL_DENIED'
+          assert set(obj) == (allowed-new_fields if legacy_full else allowed), 'A626_EXACT_SCHEMA_REQUIRED'
           reasons = obj.get('v2_current_invalid_reason_counts')
           reason_codes = {
               'HOST_V2_SNAPSHOT_REFERENCE_MISSING',
@@ -217,9 +229,18 @@ jobs:
               assert all(type(v) is int and v >= 0 for k,v in row.items()
                          if k not in {'family','capability_codes'})
               assert isinstance(row['capability_codes'], dict)
-              assert all(isinstance(k,str) and k.isupper() and type(v) is int and v>=0
+              assert all(isinstance(k,str) and re.fullmatch(r'[A-Z_]{2,65}',k)
+                         and type(v) is int and v>=0
                          for k,v in row['capability_codes'].items())
-          sanitized_file.write_text(json.dumps(obj,sort_keys=True,separators=(',',':'))+'\n')
+              assert sum(row['capability_codes'].values()) == row['capability_gaps']
+          # DB-origin capability keys are not a safe public vocabulary; their
+          # per-family counts are included above, but never publish raw keys.
+          sanitized = dict(obj)
+          sanitized['families'] = [
+              {**row, 'capability_codes': {
+                  'REDACTED_COUNT': sum(row['capability_codes'].values())}}
+              for row in families]
+          sanitized_file.write_text(json.dumps(sanitized,sort_keys=True,separators=(',',':'))+'\n')
           print('A626_HOST_READONLY_AGGREGATES=' + status +
                 '|provider_gets=0|host_db_writes=0|real_orders_by_probe=0' +
                 '|catalog_rows=' + str(obj['catalog_rows']) +
