@@ -66,7 +66,8 @@ FIELDS = ("family", "capability", "bridge", "retry", "current", "v17",
 ROOT_FLAGS = frozenset({"PENDING_MATERIAL", "REVOKED", "ADJUSTED_SERIES_UNVERIFIED",
                         "EVIDENCE_INTEGRITY_HOLD"})
 ROOT_STANDALONE = "UNEXPLAINED_PERSISTED_BRIDGE"
-ROOT_SOURCES = frozenset({"PPI_ONLY", "IOL_ONLY", "OTHER_ONLY", "MIXED_SOURCES", "NONE"})
+ROOT_SOURCES = frozenset({"PPI_ONLY", "IOL_ONLY", "DERIVED_OFFICIAL_ONLY",
+                          "OTHER_ONLY", "MIXED_SOURCES", "NONE"})
 # Exact copy of cp_contract_evidence_v2_hf6.PROVENANCE_ONLY_FIELDS at product
 # 7e1e744d6ca9ab30c51b5747dd4467af5ece0145. Do not silently alter this
 # list: the material-vs-provenance distinction is business logic, not heuristic.
@@ -305,11 +306,14 @@ def _source_bucket(sources):
             buckets.add("PPI")
         elif isinstance(source, str) and source.startswith("IOL_"):
             buckets.add("IOL")
+        elif source == "DERIVED_OFFICIAL_RULE":
+            buckets.add("DERIVED_OFFICIAL")
         else:
             buckets.add("OTHER")
     if len(buckets) != 1:
         return "MIXED_SOURCES"
-    return {"PPI": "PPI_ONLY", "IOL": "IOL_ONLY", "OTHER": "OTHER_ONLY"}[
+    return {"PPI": "PPI_ONLY", "IOL": "IOL_ONLY",
+            "DERIVED_OFFICIAL": "DERIVED_OFFICIAL_ONLY", "OTHER": "OTHER_ONLY"}[
         next(iter(buckets))]
 
 
