@@ -25,6 +25,7 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
+from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_performance.lineage import trace_spot_signal, mark as mark_lineage, native_clock
 
 # PAPER/SHADOW scope covers every known family. Specialized families
@@ -1524,6 +1525,13 @@ class PaperBroker:
             family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
+        # A658: an operator HOLD is independent of scope, available capital,
+        # source capability and strategy.  Observe/EXIT without emitting BUY.
+        operator_hold = paper_entry_hold_reason(family)
+        if operator_hold:
+            return "HOLD", ZERO, operator_hold, {
+                "samples": 0, "family": family,
+                "entry_authority": False, "operator_hold": True}
         if family == "FUTUROS":
             return "HOLD", ZERO, "FUTURES_SPECIALIZED_SIGNAL_REQUIRED", {"samples": 0, "family": family}
         if family not in PAPER_SIGNAL_FAMILIES:
@@ -2547,6 +2555,11 @@ class PaperBroker:
             currency, market = q.monetary_identity()
         except ValueError as exc:
             return False, str(exc), None
+        # Direct broker callers (including scalping) cannot bypass this
+        # independent operator veto even with an already READY contract.
+        operator_hold = paper_entry_hold_reason(family)
+        if operator_hold:
+            return False, operator_hold, None
         # Contract completeness is an identity prerequisite. Check it before
         # session admission so a missing option contract cannot masquerade as
         # an expiry/session problem.
