@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from contextlib import closing, contextmanager, nullcontext
 from bisect import bisect_left
+import base64
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from copy import deepcopy
@@ -47,12 +48,14 @@ EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSIT
 # conservative total bound; an inherited earlier absolute deadline wins.
 LEDGER_SNAPSHOT_SECONDS = .15
 
-# Review pin is deliberately unset in source until independently audited PPI
-# provider capacity, PPI Watch external consumption, and the exact release are
-# accepted together. A caller-supplied digest/environment value is NOT a pin.
+# Review pin is deliberately unset until an independent Ed25519 *reviewer*
+# public key is approved. The signer key is not a runtime secret, never made
+# here, and its hash is stable across future release-specific signed quota
+# documents. Pinning a document hash that embeds this release's SHA creates a
+# circular hash dependency; an external trusted signer avoids that deadlock.
 STATIC_SHARED_SCHEMA = "RC6_PPI_STATIC_SHARED_AUTHORITY_V1"
 STATIC_SHARED_AUTHORITY_ENV = "POROTA_PPI_STATIC_SHARED_AUTHORITY_PATH"
-PINNED_STATIC_SHARED_AUTHORITY_SHA256 = None
+PINNED_STATIC_SHARED_SIGNER_KEY_SHA256 = None
 STATIC_SHARED_AUTHORITY = "STATIC_SHARED_EXTERNAL_WATCH_RESERVED_V1"
 STATIC_SHARED_MAX_BYTES = 16384
 
@@ -1999,9 +2002,9 @@ def static_shared_capacity_state(database, environ, *, as_of):
     if not name:
         return None
     if (not isinstance(name, str) or not Path(name).is_absolute()
-            or not isinstance(PINNED_STATIC_SHARED_AUTHORITY_SHA256, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", PINNED_STATIC_SHARED_AUTHORITY_SHA256)):
-        raise BudgetBackpressure("PPI_STATIC_SHARED_AUTHORITY_UNPINNED")
+            or not isinstance(PINNED_STATIC_SHARED_SIGNER_KEY_SHA256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", PINNED_STATIC_SHARED_SIGNER_KEY_SHA256)):
+        raise BudgetBackpressure("PPI_STATIC_SHARED_SIGNER_UNPINNED")
     path = Path(name)
     try:
         if any(part.is_symlink() for part in (path, *path.parents)):
@@ -2020,15 +2023,36 @@ def static_shared_capacity_state(database, environ, *, as_of):
                 raise ValueError("STATIC_SHARED_AUTHORITY_CHANGED")
         finally:
             os.close(fd)
-        if hashlib.sha256(raw).hexdigest() != PINNED_STATIC_SHARED_AUTHORITY_SHA256:
-            raise ValueError("STATIC_SHARED_AUTHORITY_DIGEST_MISMATCH")
         authority = json.loads(raw)
+        if not isinstance(authority, dict):
+            raise ValueError("STATIC_SHARED_AUTHORITY_CONTRACT_INVALID")
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.exceptions import InvalidSignature
+        public_b64 = authority.get("signer_public_key_b64")
+        signature_b64 = authority.get("signature_b64")
+        if not isinstance(public_b64, str) or not isinstance(signature_b64, str):
+            raise ValueError("STATIC_SHARED_SIGNER_SIGNATURE_INVALID")
+        public = base64.b64decode(public_b64, validate=True)
+        signature = base64.b64decode(signature_b64, validate=True)
+        if (len(public) != 32 or len(signature) != 64
+                or hashlib.sha256(public).hexdigest() != PINNED_STATIC_SHARED_SIGNER_KEY_SHA256):
+            raise ValueError("STATIC_SHARED_SIGNER_KEY_UNTRUSTED")
+        signed = {key: value for key, value in authority.items()
+                  if key not in {"signer_public_key_b64", "signature_b64"}}
+        try:
+            Ed25519PublicKey.from_public_bytes(public).verify(signature,
+                json.dumps(signed, sort_keys=True, ensure_ascii=False,
+                           separators=(",", ":"), allow_nan=False).encode("utf-8"))
+        except (InvalidSignature, ValueError, TypeError) as error:
+            raise ValueError("STATIC_SHARED_SIGNED_AUTHORITY_INVALID") from error
         if (not isinstance(authority, dict) or authority.get("schema") != STATIC_SHARED_SCHEMA
                 or authority.get("approved") is not True
                 or authority.get("mode_safety") != "PAPER_SHADOW_ONLY"
                 or type(authority.get("max_parallel_requests")) is not int
                 or authority.get("max_parallel_requests") != 1
-                or authority.get("release_sha256") != environ.get("POROTA_RUNTIME_RELEASE_SHA256")
+                # Dockerfile bakes POROTA_BUILD_SHA into the immutable image;
+                # Deploy V2 must independently attest that env/build identity.
+                or authority.get("release_sha256") != environ.get("POROTA_BUILD_SHA")
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("release_sha256", "")))
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("provider_evidence_sha256", "")))
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("watch_evidence_sha256", "")))):
@@ -2084,7 +2108,7 @@ def static_shared_capacity_state(database, environ, *, as_of):
         if exit_capacity_contract(state, opened_count=opened)["status"] != "READY":
             raise ValueError("STATIC_SHARED_EXIT_RESERVE_INSUFFICIENT")
         return state
-    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, OverflowError) as error:
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, ImportError) as error:
         raise BudgetBackpressure("PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED") from error
 
 

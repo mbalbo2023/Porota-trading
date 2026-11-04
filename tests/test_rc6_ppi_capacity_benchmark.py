@@ -189,7 +189,7 @@ def test_no_shared_lease_stops_before_login_and_does_not_measure_provider(wire, 
     assert not report["observations"] and not calls
 
 
-def test_three_endpoints_real_sdk_normalization_global_and_identity_counters(wire, tmp_path):
+def test_three_endpoints_real_sdk_normalization_global_and_identity_counters(wire):
     clock, calls, _ = wire
     before_request = requests.sessions.Session.request
     before_send = requests.sessions.Session.send
@@ -373,7 +373,7 @@ def test_summary_or_distinct_flags_cannot_fabricate_capacity(wire):
     assert capacity(incomplete, clock)["safe_limit"] == 0
 
 
-def test_ambiguous_full_identity_excluded_before_sdk_read(wire):
+def test_ambiguous_full_identity_excluded_before_sdk_read(wire, tmp_path):
     clock, calls, _ = wire
     values = candidates(21)
     values.append({**values[0], "currency": "USD"})
