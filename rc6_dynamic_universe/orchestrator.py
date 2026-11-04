@@ -10,6 +10,7 @@ from math import ceil, floor
 import re
 from .common import stamp, digest, identity, percentile, number
 from .routing import strategy_route, PIPELINE, EQUITY_FAMILIES
+from rc6_operator_family_hold import paper_entry_hold_reason
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,10 @@ class UniverseOrchestrator:
             request_aliases.setdefault((k[0], k[1], k[4]), []).append(k)
         ambiguous = {k for siblings in request_aliases.values() if len(siblings) > 1 for k in siblings}
         eligible -= ambiguous
+        # Retain catalog/telemetry for held families, but never allocate new
+        # live deep-read slots to an operator HOLD. Open positions below keep
+        # their independent EXIT priority even when the family is on HOLD.
+        lower_read_eligible = {k for k in eligible if not paper_entry_hold_reason(k[1])}
         opened = list(dict.fromkeys(map(tuple, opened)))
         if any(len(k) != 5 or any(not x for x in k) for k in opened):
             raise ValueError("OPEN_POSITION_EXACT_IDENTITY_REQUIRED")
@@ -196,8 +201,10 @@ class UniverseOrchestrator:
         def priority(s):
             row = ranks.get(tuple(s["identity"]), {})
             return (not bool(s["event_at"]), -float(row.get("tradeability_score") or 0), s["identity"])
-        tradeable = {k for k in eligible if ranks.get(k, {}).get("tradeable")}
-        prospects = sorted([s for s in current.values() if tuple(s["identity"]) in tradeable or s["event_at"]], key=priority)
+        tradeable = {k for k in lower_read_eligible if ranks.get(k, {}).get("tradeable")}
+        prospects = sorted([s for s in current.values()
+                            if tuple(s["identity"]) in lower_read_eligible
+                            and (tuple(s["identity"]) in tradeable or s["event_at"])], key=priority)
         free = max(0, safe_limit-len(opened))
         discovery_slots = 1 if free else 0
         hot_slots = min(max(0, free-discovery_slots), floor(free*self.policy.hot_share))
@@ -221,9 +228,11 @@ class UniverseOrchestrator:
                 s["warmup_complete_at"] = at.isoformat()
         def due(s, seconds):
             return not s["selected_at"] or (at-stamp(s["selected_at"])).total_seconds() >= seconds
-        warm_due = sorted([s for s in current.values() if s["state"] == "WARM" and due(s, self.policy.warm_seconds)],
+        warm_due = sorted([s for s in current.values() if tuple(s["identity"]) in lower_read_eligible
+                           and s["state"] == "WARM" and due(s, self.policy.warm_seconds)],
                           key=lambda s: (s["selected_at"] or "", priority(s)))[:warm_slots]
-        discovery_due = sorted([s for s in current.values() if s["state"] == "DISCOVERY" and due(s, self.policy.discovery_seconds)],
+        discovery_due = sorted([s for s in current.values() if tuple(s["identity"]) in lower_read_eligible
+                                and s["state"] == "DISCOVERY" and due(s, self.policy.discovery_seconds)],
                                key=lambda s: (s["selected_at"] or "", s["last_touched_at"] or "", priority(s)))[:discovery_slots]
         selected = opened + [k for k in sorted(hot) if due(current[digest(k)], self.policy.hot_seconds)]
         selected += [tuple(s["identity"]) for s in warm_due + discovery_due if tuple(s["identity"]) not in selected]
@@ -241,8 +250,8 @@ class UniverseOrchestrator:
             s = current.get(digest(k), {})
             row = ranks.get(k, {})
             state = s.get("state", "EXCLUDED")
-            age = (at-stamp(s["last_touched_at"] or opening)).total_seconds() if k in eligible else None
-            if k in eligible:
+            age = (at-stamp(s["last_touched_at"] or opening)).total_seconds() if k in lower_read_eligible else None
+            if k in lower_read_eligible:
                 ages.append(max(0, age)); touched += int(bool(s.get("last_touched_at"))); useful_count += int(bool(fresh(s)))
             attempts = s.get("attempts", [])
             useful_fraction = sum(bool(v[2]) for v in attempts)/len(attempts) if attempts else None
@@ -263,7 +272,7 @@ class UniverseOrchestrator:
                 reasons.append("WARMUP_INCOMPLETE")
             if k in eligible and not row.get("tradeable") and not s.get("event_at"):
                 reasons.extend(row.get("reason_codes", ["NO_RECENT_TRADES"]))
-            signal_ready = bool(state == "HOT" and warmed(s) and valid_capacity)
+            signal_ready = bool(k in lower_read_eligible and state == "HOT" and warmed(s) and valid_capacity)
             telemetry.append({"identity": k, "family": k[1], "engine": route["engine"], "strategy": route["strategy"],
                 "state": state, "rank": row.get("rank"), "rank_components": row.get("components", {}),
                 "tradeability_score": row.get("tradeability_score"), "opportunity_score": "NO_VERIFICADO",
@@ -286,11 +295,12 @@ class UniverseOrchestrator:
                 "latency_ms": s.get("latency_ms"), "freshness_seconds": (at-stamp(s["source_at"])).total_seconds() if s.get("source_at") else None,
                 "strategy_source_at": s["samples"][-1] if s.get("samples") else None,
                 "book_at": s.get("book_at"),
-                "pipeline": {"CATALOG_READY": k in ready, "STRATEGY_ELIGIBLE": k in eligible,
+                "pipeline": {"CATALOG_READY": k in ready, "STRATEGY_ELIGIBLE": k in lower_read_eligible,
                     "TRADEABLE": k in tradeable, "OBSERVABLE": bool(fresh(s)), "SIGNAL_READY": signal_ready,
                     "ECONOMICS": "NO_VERIFICADO", "RISK": "NOT_CALLED", "PAPER": "NOT_CALLED"},
                 "entry_authority": False})
-        discovery_count = sum(s["state"] == "DISCOVERY" for s in current.values())
+        discovery_count = sum(s["state"] == "DISCOVERY" and tuple(s["identity"]) in lower_read_eligible
+                              for s in current.values())
         groups = {}
         for row in telemetry:
             if not row["pipeline"]["STRATEGY_ELIGIBLE"]:
@@ -312,15 +322,15 @@ class UniverseOrchestrator:
             "selected": selected, "opened_priority": opened, "capacity": capacity,
             "specialized_opened_priority": [{"identity": k, "route": strategy_route(k[1]),
                 "reason": "SPECIALIZED_LIFECYCLE"} for k in specialized_opened],
-            "catalog_ready_count": len(ready), "catalog_effect": "NONE", "strategy_eligible_count": len(eligible),
+            "catalog_ready_count": len(ready), "catalog_effect": "NONE", "strategy_eligible_count": len(lower_read_eligible),
             "hot_count": len(hot), "warm_count": len(warm), "discovery_count": discovery_count,
             "discovery": {"p50_age_seconds": percentile(ages, .5), "p95_age_seconds": percentile(ages, .95),
                 "max_discovery_age": max(ages) if ages else None,
-                "touched_fraction_since_open": touched/len(eligible) if eligible else None,
+                "touched_fraction_since_open": touched/len(lower_read_eligible) if lower_read_eligible else None,
                 "window_seconds": self.policy.window_seconds,
                 "touched_fraction_in_window": sum(bool(s["attempts"]) for s in current.values()
-                    if tuple(s["identity"]) in eligible)/len(eligible) if eligible else None,
-                "fresh_useful_fraction": useful_count/len(eligible) if eligible else None,
+                    if tuple(s["identity"]) in lower_read_eligible)/len(lower_read_eligible) if lower_read_eligible else None,
+                "fresh_useful_fraction": useful_count/len(lower_read_eligible) if lower_read_eligible else None,
                 "by_family_source": groups,
                 "rotation_lower_bound_seconds": worst_bound, "bound_assumption": "one completed serial task per base tick; no errors",
                 "missed_late_discovery": "NO_VERIFICADO", "all_movements_detected": False},
