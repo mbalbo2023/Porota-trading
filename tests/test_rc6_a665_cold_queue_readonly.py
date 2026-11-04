@@ -1,5 +1,6 @@
 """Offline adversarial contracts for A665 private queue diagnostic; no host access."""
 import hashlib
+import gzip
 import importlib.util
 import json
 from datetime import datetime, timedelta
@@ -61,7 +62,7 @@ class ColdQueueReadOnly(unittest.TestCase):
     def test_zero_is_only_reported_from_existing_verified_empty_folder(self):
         record = self.read()
         self.assertEqual(record["state"], "READ_ONLY_OBSERVED")
-        self.assertEqual(record["reason"], "COUNTS_ONLY_NO_REPAIR")
+        self.assertEqual(record["reason"], "COUNTS_AND_CAUSE_ONLY_NO_REPAIR")
         self.assertEqual(record["receipt_count"], 0)
         self.assertEqual(record["failed_receipt_count"], 0)
         self.assertEqual(record["queue_state"], "ABSENT")
@@ -96,6 +97,115 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertNotIn(IDENT, json.dumps(record))
         self.assertNotIn(MANIFEST, json.dumps(record))
         self.assertNotIn("secret-ticker-account", json.dumps(record))
+
+    def write_failure_with_current(self, *, code="SHADOW_EVIDENCE_CAPACITY_REACHED",
+                                   phase="REPORT_WRITE", current_ident=IDENT):
+        pack = self.cold / (IDENT + ".pack")
+        pack.write_bytes(b"safe-synthetic-original-commit")
+        pack.chmod(0o600)
+        info = pack.stat()
+        manifest = {"epoch": "rc6.audit-actual-values.v1",
+                    "snapshot_id": IDENT, "pack": pack.name,
+                    "pack_bytes": info.st_size,
+                    "pack_identity": [info.st_dev, info.st_ino, info.st_size,
+                                      info.st_mtime_ns, info.st_ctime_ns]}
+        sha = hashlib.sha256(json.dumps(manifest, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        self.write_private("manifest-" + IDENT + ".json", manifest)
+        self.write_private("receipt-" + IDENT + ".json", {
+            "state": "FAILED", "snapshot_id": IDENT, "manifest_sha256": sha,
+            "error_class": "ValueError", "error_code": code, "error_phase": phase,
+            "sensitive_login": "PRIVATE-ACCOUNT-TICKER"})
+        self.write_private("queue.json", {
+            "state": "FAILED", "snapshot_id": IDENT, "manifest_sha256": sha})
+        generation = "c" * 64
+        pointer = {"generation_id": generation,
+                   "file": "cut-" + generation + ".json.gz"}
+        shadow = self.cold.parent
+        pointer_bytes = json.dumps({"payload": pointer, "digest": hashlib.sha256(
+            json.dumps(pointer, sort_keys=True, separators=(",", ":")).encode()).hexdigest()})
+        (shadow / "CURRENT.json").write_text(pointer_bytes)
+        (shadow / "CURRENT.json").chmod(0o600)
+        cut = {"report": {"computed_report": {
+            "schema": "rc6.computed-audit-reference.v2", "state": "PENDING",
+            "snapshot_id": current_ident, "manifest_sha256": sha}}}
+        wrapper = json.dumps({"payload": cut, "digest": hashlib.sha256(
+            json.dumps(cut, sort_keys=True, separators=(",", ":")).encode()).hexdigest()})
+        (shadow / pointer["file"]).write_bytes(gzip.compress(wrapper.encode()))
+        (shadow / pointer["file"]).chmod(0o600)
+        return pack
+
+    def test_runtime_failure_category_and_current_failed_cut_are_bounded(self):
+        self.write_failure_with_current()
+        record = self.read()
+        self.assertEqual(record["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(record["failed_error_code"], "SHADOW_EVIDENCE_CAPACITY_REACHED")
+        self.assertEqual(record["failed_error_phase"], "REPORT_WRITE")
+        self.assertEqual(record["failed_error_class"], "ValueError")
+        self.assertEqual(record["failed_manifest_relation"],
+                         "MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED")
+        self.assertEqual(record["current_failed_relation"],
+                         "CURRENT_FAILED_PENDING_REFERENCE_BOUND")
+        self.assertNotIn(IDENT, json.dumps(record))
+        self.assertNotIn("PRIVATE-ACCOUNT-TICKER", json.dumps(record))
+
+    def test_current_pointer_to_other_cut_is_distinguished_not_rehabilitated(self):
+        self.write_failure_with_current(current_ident="d" * 32)
+        record = self.read()
+        self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertEqual(record["current_failed_relation"],
+                         "CURRENT_OTHER_OR_NO_FAILED_REFERENCE")
+        self.assertFalse(record["causal_fix_verified"])
+
+    def test_invalid_failure_labels_are_redacted_and_keep_backlog_visible(self):
+        self.write_failure_with_current(code="SHADOW_PRIVATE_TICKER_ACCOUNT",
+                                        phase="/private/source.py")
+        record = self.read()
+        self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertEqual(record["failed_error_code"], "OTHER_REDACTED")
+        self.assertEqual(record["failed_error_phase"], "OTHER_REDACTED")
+        self.assertNotIn("PRIVATE_TICKER", json.dumps(record))
+
+    def test_modified_pack_and_current_digest_downgrade_only_their_evidence(self):
+        pack = self.write_failure_with_current()
+        pack.write_bytes(b"modified-pack")
+        record = self.read()
+        self.assertEqual(record["failed_manifest_relation"], "PACK_METADATA_MISMATCH")
+        self.assertEqual(record["failed_receipt_count"], 1)
+        current = self.cold.parent / "CURRENT.json"
+        current.write_text(current.read_text().replace("digest", "danger", 1))
+        record = self.read()
+        self.assertEqual(record["current_failed_relation"], "NO_VERIFICADO")
+        self.assertEqual(record["failed_receipt_count"], 1)
+
+    def test_missing_manifest_never_erases_failed_receipt_or_exposes_private_id(self):
+        self.write_failure_with_current()
+        (self.cold / ("manifest-" + IDENT + ".json")).unlink()
+        record = self.read()
+        self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertEqual(record["failed_manifest_relation"], "NO_VERIFICADO")
+        self.assertEqual(record["current_failed_relation"],
+                         "CURRENT_FAILED_PENDING_REFERENCE_BOUND")
+        self.assertNotIn(IDENT, json.dumps(record))
+
+    def test_gzip_bomb_is_bounded_and_does_not_hide_failed_queue(self):
+        self.write_failure_with_current()
+        cut = self.cold.parent / ("cut-" + "c" * 64 + ".json.gz")
+        cut.write_bytes(gzip.compress(b"Z" * (probe.MAX_DECOMPRESSED_CUT_BYTES + 1)))
+        record = self.read()
+        self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertEqual(record["current_failed_relation"],
+                         "CURRENT_CUT_SIZE_UNVERIFIED")
+
+    def test_current_symlink_is_never_followed_and_not_reported_as_verified(self):
+        self.write_failure_with_current()
+        current = self.cold.parent / "CURRENT.json"
+        current.unlink()
+        current.symlink_to(self.ledger)
+        record = self.read()
+        self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertEqual(record["current_failed_relation"], "NO_VERIFICADO")
+        self.assertNotIn("SHOULD_NOT_ESCAPE", json.dumps(record))
 
     def test_failed_receipt_not_bound_to_queue_is_not_hidden(self):
         self.write_private("receipt-" + IDENT + ".json", {
@@ -218,8 +328,19 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertIn("if not (safe['failed_receipt_count']<=safe['receipt_count']", content)
         self.assertIn("valid_binding=(", content)
         self.assertIn("COUNT_BINDING_CONTRADICTS_QUEUE", content)
-        self.assertIn("A665_RUNTIME_QUEUE_COUNTS_NO_VERIFICADO", content)
+        self.assertIn("A667_RUNTIME_COLD_CAUSE_NO_VERIFICADO", content)
         self.assertIn("safe=fallback", content)
+
+    def test_runner_has_exact_static_error_labels_and_never_exposes_raw_receipt(self):
+        content = WORKFLOW.read_text()
+        self.assertIn("categories.FAILURE_CODES", content)
+        self.assertIn("categories.FAILURE_PHASES", content)
+        self.assertIn("categories.FAILURE_CLASSES", content)
+        self.assertIn("CURRENT_RELATION_INVALID", content)
+        self.assertIn("UNBOUND_FAILED_DETAIL_EXPORTED", content)
+        self.assertIn("HOST_RESPONSE_INVALID_OR_UNAVAILABLE", content)
+        self.assertNotIn("print(obj)", content)
+        self.assertNotIn("print(raw)", content)
 
 
 if __name__ == "__main__":
