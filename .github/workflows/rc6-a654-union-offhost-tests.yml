@@ -10,8 +10,8 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
+# No API privileges: the public, SHA-pinned Git fetch below is anonymous.
+permissions: {}
 
 concurrency:
   group: rc6-a654-offhost-${{ github.ref }}
