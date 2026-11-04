@@ -168,6 +168,11 @@ jobs:
     env:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
       IMAGE: porota-predeploy-v2:${{ github.event.pull_request.head.sha }}
+    outputs:
+      candidate_sha: ${{ steps.rc6_artifact_identity.outputs.candidate_sha }}
+      artifact_name: ${{ steps.rc6_artifact_identity.outputs.artifact_name }}
+      artifact_id: ${{ steps.rc6_predeploy_upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.rc6_predeploy_upload.outputs.artifact-digest }}
 
     steps:
       - name: Checkout exact candidate
@@ -804,7 +809,17 @@ jobs:
           print('POROTA_REQUIRED_EVIDENCE=GREEN')
           PY
 
+      - name: Bind frozen artifact to exact candidate SHA
+        id: rc6_artifact_identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          printf 'candidate_sha=%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=porota-predeploy-v2-%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Upload predeploy evidence
+        id: rc6_predeploy_upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -894,3 +909,51 @@ jobs:
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
           rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
+
+  release-evidence-required:
+    name: RC6 required release evidence (offhost)
+    # GitHub treats SKIPPED jobs as successful required checks. This product
+    # check MUST run even if artifact-gate was skipped, failed or cancelled.
+    # Candidate sub-PRs have a separate, exclusively OFFHOST focused job.
+    needs: artifact-gate
+    if: ${{ always() && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout untrusted PR head for exact SHA inspection only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .rc6-release-head-inspect
+          persist-credentials: false
+
+      - name: Checkout immutable reviewed release evidence guard
+        # Bootstrap pin: neither old product nor main contains this A651
+        # validator yet. Never execute a script from the untrusted PR HEAD.
+        uses: actions/checkout@v4
+        with:
+          ref: 7c1c60a7e050f2dc0bfa215f38e6e98dafac556e
+          path: .rc6-release-guard-trusted
+          persist-credentials: false
+
+      - name: Reject skipped or unbound frozen artifact evidence
+        shell: bash
+        env:
+          RC6_RELEASE_REPO: ${{ github.repository }}
+          RC6_RELEASE_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          RC6_RELEASE_PR_DRAFT: ${{ github.event.pull_request.draft }}
+          RC6_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RC6_RELEASE_GATE_RESULT: ${{ needs.artifact-gate.result }}
+          RC6_RELEASE_ARTIFACT_SHA: ${{ needs.artifact-gate.outputs.candidate_sha }}
+          RC6_RELEASE_ARTIFACT_NAME: ${{ needs.artifact-gate.outputs.artifact_name }}
+          RC6_RELEASE_ARTIFACT_ID: ${{ needs.artifact-gate.outputs.artifact_id }}
+          RC6_RELEASE_ARTIFACT_DIGEST: ${{ needs.artifact-gate.outputs.artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = \
+            "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e"
+          export RC6_RELEASE_CHECKOUT_SHA
+          RC6_RELEASE_CHECKOUT_SHA="$(git -C .rc6-release-head-inspect rev-parse HEAD)"
+          python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py
