@@ -49,14 +49,19 @@ def plan(root, *, today=None):
     }
 
 
+def _has_symlink_parent(path):
+    """Reject aliases in ancestors before resolve() erases their identity."""
+    return any(parent.is_symlink() for parent in path.parents)
+
+
 def compress_verified(source, destination):
     # resolve() dereferences symlinks. Reject aliases *before* resolving paths;
     # otherwise an unrelated file can be read or overwritten as a report.
     source_arg = Path(source)
     destination_arg = Path(destination)
-    if source_arg.is_symlink():
+    if source_arg.is_symlink() or _has_symlink_parent(source_arg):
         raise ValueError("REPORT_SOURCE_ALIAS")
-    if destination_arg.is_symlink():
+    if destination_arg.is_symlink() or _has_symlink_parent(destination_arg):
         raise ValueError("REPORT_DESTINATION_ALIAS")
     source = source_arg.resolve()
     destination = destination_arg.resolve()

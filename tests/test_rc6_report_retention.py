@@ -71,3 +71,30 @@ def test_compression_rejects_same_inode_and_hardlink_source(tmp_path):
         retention.compress_verified(hardlink, destination)
     assert original.read_bytes() == b"source report must survive"
     assert not destination.exists()
+
+
+def test_compression_rejects_source_parent_symlink(tmp_path):
+    # A report path under an aliased directory is *not* confined by checking
+    # only its final component for is_symlink().
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "daily.html").write_bytes(b"outside reports root")
+    (reports / "shortcut").symlink_to(external, target_is_directory=True)
+    destination = reports / "daily.gz"
+    with pytest.raises(ValueError, match="REPORT_SOURCE_ALIAS"):
+        retention.compress_verified(reports / "shortcut" / "daily.html", destination)
+    assert not destination.exists()
+
+
+def test_compression_rejects_destination_parent_symlink(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (reports / "daily.html").write_bytes(b"report")
+    (reports / "shortcut").symlink_to(external, target_is_directory=True)
+    with pytest.raises(ValueError, match="REPORT_DESTINATION_ALIAS"):
+        retention.compress_verified(reports / "daily.html", reports / "shortcut" / "archive.gz")
+    assert not (external / "archive.gz").exists()
