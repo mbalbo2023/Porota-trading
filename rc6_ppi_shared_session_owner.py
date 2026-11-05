@@ -208,10 +208,14 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_ACCOUNT_WATCH_CAPACITY_UNVERIFIED")
             if not self._permits_catalog():
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
-            with type(self)._registry_lock:
-                if type(self)._active_owner is not None:
+            # Bind the process-wide slot to the base class itself.  Assigning
+            # through type(self) would create a subclass-local _active_owner:
+            # opening a subclass first could then let a base instance install
+            # a second global HTTP guard and authenticated SDK reader.
+            with PPISharedSessionOwner._registry_lock:
+                if PPISharedSessionOwner._active_owner is not None:
                     raise SessionOwnerBlocked("PPI_PROCESS_ALREADY_HAS_MARKET_OWNER")
-                type(self)._active_owner = self
+                PPISharedSessionOwner._active_owner = self
             source = None
             try:
                 source = self._reader_factory()
@@ -251,9 +255,9 @@ class PPISharedSessionOwner:
                         self._state = "GUARD_RESTORE_UNVERIFIED"
                         raise
                 self._state = "NOT_OPEN"
-                with type(self)._registry_lock:
-                    if type(self)._active_owner is self:
-                        type(self)._active_owner = None
+                with PPISharedSessionOwner._registry_lock:
+                    if PPISharedSessionOwner._active_owner is self:
+                        PPISharedSessionOwner._active_owner = None
                 raise
 
     def _require_open(self):
@@ -341,9 +345,9 @@ class PPISharedSessionOwner:
             self._stream = None
             self._local_generation = None
             self._state = "CLOSED"
-            with type(self)._registry_lock:
-                if type(self)._active_owner is self:
-                    type(self)._active_owner = None
+            with PPISharedSessionOwner._registry_lock:
+                if PPISharedSessionOwner._active_owner is self:
+                    PPISharedSessionOwner._active_owner = None
 
 
 __all__ = ["PPISharedSessionOwner", "SessionOwnerBlocked", "SCHEMA"]
