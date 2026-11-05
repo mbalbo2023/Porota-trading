@@ -1,0 +1,111 @@
+name: RC6 A668 nonoption PPI five-key SQL READ_ONLY
+
+# Diagnostic control-plane only: no host work on PRs, pushes, or schedules.
+# An OS-enforced private read-only bind protects the runtime SQLite WAL/DB.
+on:
+  workflow_dispatch:
+    inputs:
+      run_host:
+        description: "Explicit one-shot local catalog SQL read; no provider GET/Watch/orders"
+        type: boolean
+        required: true
+        default: false
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a668-nonoption-native-fivekey-readonly.yml'
+      - 'scripts/rc6_a668_nonoption_native_fivekey_readonly.py'
+      - 'tests/test_rc6_a668_nonoption_native_fivekey_readonly.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test synthetic SQLite, literal identities and scope
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a668_nonoption_native_fivekey_readonly.py tests/test_rc6_a668_nonoption_native_fivekey_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_a668_nonoption_native_fivekey_readonly.py -v
+          git diff --check
+
+  host_readonly:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_host == true
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Check immutable commit and prepare runner-only identity
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a668_native_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a668_native_ro" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: One private read-only catalog snapshot (no PPI GET)
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_a668_native_ro" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 28 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-probe"' \
+            < scripts/rc6_a668_nonoption_native_fivekey_readonly.py \
+            > evidence/.host_raw.json 2>/dev/null
+          remote_rc=$?
+          set -e
+          if [ "$remote_rc" -ne 0 ]; then
+            : > evidence/.host_raw.json
+          fi
+          set +e
+          python3 scripts/rc6_a668_nonoption_native_fivekey_readonly.py sanitize \
+            evidence/.host_raw.json evidence/a668_nonoption_native_fivekey_readonly.json
+          sanitized_rc=$?
+          set -e
+          rm -f evidence/.host_raw.json
+          if [ "$remote_rc" -ne 0 ]; then
+            echo 'A668_RO_TRANSPORT=NONZERO'
+            exit 1
+          fi
+          if [ "$sanitized_rc" -ne 0 ]; then
+            echo 'A668_RO_REPORT=NO_VERIFICADO'
+            exit 2
+          fi
+          echo 'A668_STRUCTURAL_LITERAL_COUNTS_ONLY_NOT_PAPER_GO'
+      - name: Preserve only sanitized aggregate categories
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a668-nonoption-fivekey-ro-${{ github.run_id }}
+          path: evidence/a668_nonoption_native_fivekey_readonly.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Remove runner-only temporary identity
+        if: always()
+        run: |
+          rm -f "$HOME/.ssh/rc6_a668_native_ro"
