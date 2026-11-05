@@ -224,9 +224,9 @@ def test_a690_deferred_cleanup_failure_gate_is_after_recovery_decision():
     assert ': >> "$GITHUB_OUTPUT"' in promotion_run
     assert "printf 'cleanup_status=UNKNOWN\\ncleanup_parser_status=UNKNOWN\\n' >> \"$GITHUB_OUTPUT\"" in promotion_run
     assert promotion_run.index("cleanup_parser_status=UNKNOWN") < promotion_run.index('ssh -i')
-    assert promotion_run.index("set +e\\nssh -i") != -1
+    assert promotion_run.index("set +e\nssh -i") != -1
     assert 'RC6_PROMOTION_PIPESTATUS=( "${PIPESTATUS[@]}" )' in promotion_run
-    assert promotion_run.index("RC6_PROMOTION_PIPESTATUS=") > promotion_run.index("\\nREMOTE\\n")
+    assert promotion_run.index("RC6_PROMOTION_PIPESTATUS=") > promotion_run.index("\nREMOTE\n")
     assert "RC6_PROMOTION_AWK_RC" in promotion_run
     assert "RC6_PROMOTION_OUTPUT_CONFIRMATION_UNVERIFIED" in promotion_run
     failure_if = next(step['if'] for step in steps if step.get('id') == 'failure_cleanup')
