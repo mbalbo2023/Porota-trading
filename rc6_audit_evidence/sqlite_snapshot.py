@@ -31,6 +31,14 @@ def _metadata(info):
             info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _private_metadata(info, suffix):
+    # SQLite can update ctime of the *scratch WAL only* when a read-only
+    # connection opens. Keep ctime on the private main and the entire original
+    # Source; for the WAL pin dev/inode/mode/size/mtime and sha256 contents.
+    result = _metadata(info)
+    return result[:-1] if suffix == "-wal" else result
+
+
 def _inventory(path):
     result = {}
     for suffix in ("", "-wal", "-shm", "-journal"):
@@ -89,6 +97,11 @@ def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
 
 
 _ACTIVE_CAPTURE = ContextVar("rc6_verified_source_capture", default=None)
+
+
+def source_capture_active():
+    """Whether this thread has a verified per-tick Source owner."""
+    return _ACTIVE_CAPTURE.get() is not None
 
 
 def _bounded_deadline(deadline):
@@ -253,7 +266,7 @@ class CapturedSource:
             if suffix not in self._digests and (suffix != "-wal" or info.st_size):
                 raise SnapshotError("PRIVATE_IMAGE_CHANGED")
             os.chmod(member, 0o400)
-            self._image_inventory[suffix] = _metadata(member.lstat())
+            self._image_inventory[suffix] = _private_metadata(member.lstat(), suffix)
             self._image_digests[suffix] = self._digests.get(suffix, hashlib.sha256(b"").hexdigest())
         self.receipt["private_image_sha256"] = dict(self._image_digests)
         _check(deadline)
@@ -273,12 +286,14 @@ class CapturedSource:
                 if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
                         or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o400):
                     raise SnapshotError("PRIVATE_IMAGE_CHANGED")
-                result[suffix] = _metadata(info)
+                result[suffix] = _private_metadata(info, suffix)
             return result
         if inventory() != self._image_inventory:
             raise SnapshotError("PRIVATE_IMAGE_CHANGED")
         for suffix, info in self._image_inventory.items():
-            if _read(Path(str(self._copy)+suffix), info, deadline=deadline) != self._image_digests[suffix]:
+            member = Path(str(self._copy)+suffix)
+            if (_private_metadata(member.lstat(), suffix) != info or
+                    _read(member, _metadata(member.lstat()), deadline=deadline) != self._image_digests[suffix]):
                 raise SnapshotError("PRIVATE_IMAGE_CHANGED")
         if inventory() != self._image_inventory:
             raise SnapshotError("PRIVATE_IMAGE_CHANGED")

@@ -24,6 +24,7 @@ import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import BYMA_PAPER_SPOT_CLOSE, BYMA_PAPER_SPOT_OPEN
 from cu_history_store_v2_hf6 import source_rank
 from rc6_dynamic_universe.common import identity, stamp
+from .source_reads import tick_reader_connection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 IDENTITY_FIELDS = ("ticker", "instrument_type", "market", "currency", "settlement")
@@ -36,16 +37,12 @@ INTRADAY_SESSIONS = 5
 @contextmanager
 def _source(database, deadline):
     path = Path(database).resolve(strict=True)
-    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)
-    try:
-        connection.row_factory = sqlite3.Row
+    with tick_reader_connection(path, deadline=deadline + 2.0, consumer="preopen") as (connection, _):
         connection.execute("PRAGMA query_only=ON")
         connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
         # One coherent read snapshot, never BEGIN IMMEDIATE or journal negotiation.
         connection.execute("BEGIN")
         yield connection
-    finally:
-        connection.close()
 
 
 def _tables(connection):
