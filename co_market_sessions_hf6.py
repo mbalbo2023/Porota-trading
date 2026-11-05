@@ -208,6 +208,30 @@ def byma_caucion_collection_open(now: datetime | None = None) -> bool:
     return _byma_business_day(local) and phase_for(BYMA_CAUCION_MARKET, local) == "OPEN"
 
 
+def byma_source_only_limited_phase(market: str, family: str, settlement: str,
+                                   now: datetime | None = None) -> str:
+    """06-Nov limited BYMA T+1 *observation* only; never a PAPER gate.
+
+    A negotiated-without-settlement session must not inherit the ordinary
+    `es_dia_habil_operativo` admission state, and cannot extend the
+    generic 17:00 market clock. This routine performs no provider I/O.
+    """
+    if now is None or now.tzinfo is None or now.utcoffset() is None:
+        return "CLOSED"
+    local = now.astimezone(TZ)
+    try:
+        import ak_byma_calendar as calendar
+        state = calendar.estado_negociacion_fuente_byma(
+            local.date(), market=market, family=family, settlement=settlement)
+    except (AttributeError, KeyError, TypeError, ValueError, OSError):
+        return "CLOSED"
+    if state != "LIMITED_T1_SOURCE_ONLY":
+        return "CLOSED"
+    segment = session_for(market, family, settlement, as_of=local)
+    return ("SOURCE_ONLY_OPEN" if phase_for(segment, local) == "OPEN"
+            else "CLOSED")
+
+
 def byma_eod_publication_floor(at: datetime | date) -> datetime:
     """Hora mínima de intento EOD; no representa recibo de PPI/CAFCI."""
     if isinstance(at, datetime):
