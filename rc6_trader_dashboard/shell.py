@@ -59,11 +59,11 @@ def render(destination, tab, projection, content):
         ("Último dato de mercado", f"{clock(state.get('last_market_data_at'))} · age {number(state.get('market_age'), 1)} s · {state['market_freshness']}"),
         ("Reloj operativo", clock(projection.now.isoformat())),
     )
-    strip = "".join(
-        f"<div class='strip-item'{' role=\'status\' aria-live=\'polite\'' if label == 'Órdenes reales observadas' else ''}>"
-        f"<b>{e(label)}</b><span>{e(value)}</span></div>"
-        for label, value in values
-    )
+    strip_parts = []
+    for label, value in values:
+        aria = " role='status' aria-live='polite'" if label == "Órdenes reales observadas" else ""
+        strip_parts.append(f"<div class='strip-item'{aria}><b>{e(label)}</b><span>{e(value)}</span></div>")
+    strip = "".join(strip_parts)
     warning = (f"<div class='notice critical' role='alert'>{e(real_order_alert)}</div>"
                if real_order_alert else "")
     title = dict(destination.tabs)[tab]
