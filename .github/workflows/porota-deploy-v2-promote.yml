@@ -995,11 +995,15 @@ jobs:
           RC6_PRECLEAN_SCRATCH="$(mktemp -d -- /tmp/rc6-porota-preclean.XXXXXXXXXX)"
           TMP_POLICY="$RC6_PRECLEAN_SCRATCH/policy.json"
           TMP_HOUSEKEEPING="$RC6_PRECLEAN_SCRATCH/housekeeping.json"
+          # Include the exact device:inode, UID and mode of the just-created
+          # directory; a same-UID/mode replacement must NEVER be unlinked.
+          RC6_PRECLEAN_SCRATCH_ID="$(stat -c '%d:%i:%u:%a' -- "$RC6_PRECLEAN_SCRATCH")"
           cleanup_preclean_scratch() {
             local original_rc=$?
             trap - EXIT
             if [ -d "$RC6_PRECLEAN_SCRATCH" ] && [ ! -L "$RC6_PRECLEAN_SCRATCH" ] &&
-               [ "$(stat -c '%a:%u' "$RC6_PRECLEAN_SCRATCH")" = "700:$(id -u)" ]; then
+               [ "$(stat -c '%a:%u' "$RC6_PRECLEAN_SCRATCH")" = "700:$(id -u)" ] &&
+               [ "$(stat -c '%d:%i:%u:%a' -- "$RC6_PRECLEAN_SCRATCH")" = "$RC6_PRECLEAN_SCRATCH_ID" ]; then
               rm -f -- "$TMP_POLICY" "$TMP_HOUSEKEEPING" || original_rc=65
               rmdir -- "$RC6_PRECLEAN_SCRATCH" || original_rc=65
             else
