@@ -222,13 +222,28 @@ class PPISharedMarketFeed:
             return [list(key) for key in sorted(self._subscriptions,
                     key=lambda key: (_PRIORITY[self._subscriptions[key]], key))]
 
-    def _identity(self, raw: dict) -> tuple[str, str, str, str, str]:
+    def _identity(self, raw: dict) -> tuple[tuple[str, str, str, str, str], str]:
         try:
             ticker = _value(raw.get("Ticker"), "TICKER")
-            family = _value(raw.get("Type"), "TYPE")
             settlement = _value(raw.get("Settlement"), "SETTLEMENT")
         except CatalogIdentityError as exc:
             raise CatalogIdentityError("PPI_STREAM_IDENTITY_INCOMPLETE") from exc
+        if "Type" in raw:
+            family = _value(raw.get("Type"), "TYPE")
+            type_provenance = "NATIVE_EVENT"
+        else:
+            # The official SDK example can omit Type in an event, even though
+            # subscriptions are typed.  Resolve ONLY when exactly ONE active
+            # five-key subscription matches the two native context fields.
+            # This is not native PPI proof and never authorizes PAPER.
+            with self._lock:
+                matching = [key for key in self._subscriptions
+                            if key[0] == ticker and key[4] == settlement]
+            if len(matching) != 1:
+                raise CatalogIdentityError(
+                    "PPI_STREAM_TYPE_SUBSCRIPTION_CONTEXT_NOT_UNIQUE")
+            family = matching[0][1]
+            type_provenance = "UNIQUE_ACTIVE_SUBSCRIPTION_NOT_NATIVE"
         four = self._catalog.get((ticker, family))
         if not four:
             raise CatalogIdentityError("PPI_STREAM_IDENTITY_NOT_IN_PPI_CATALOG")
@@ -236,12 +251,23 @@ class PPISharedMarketFeed:
             raise CatalogIdentityError("PPI_CATALOG_IDENTITY_AMBIGUOUS_MARKET_CURRENCY")
         market, currency = next(iter(four))
         five = (ticker, family, market, currency, settlement)
-        if five not in self._subscriptions:
-            raise CatalogIdentityError("PPI_STREAM_IDENTITY_NOT_SUBSCRIBED")
-        return five
+        with self._lock:
+            if type_provenance != "NATIVE_EVENT":
+                active = [key for key in self._subscriptions
+                          if key[0] == ticker and key[4] == settlement]
+                if active != [five]:
+                    raise CatalogIdentityError(
+                        "PPI_STREAM_TYPE_SUBSCRIPTION_CONTEXT_NOT_UNIQUE")
+            if five not in self._subscriptions:
+                raise CatalogIdentityError("PPI_STREAM_IDENTITY_NOT_SUBSCRIBED")
+        for native_name, selected in (("Market", market), ("Currency", currency)):
+            if native_name in raw and _value(raw[native_name], native_name) != selected:
+                raise CatalogIdentityError(f"PPI_STREAM_NATIVE_{native_name.upper()}_CONFLICT")
+        return five, type_provenance
 
     def publish_native_market_event(self, raw: dict, *, received_at,
-                                    received_monotonic_ns: int) -> dict:
+                                    received_monotonic_ns: int,
+                                    session_fingerprint: str | None = None) -> dict:
         """Publish *one* PPI-shaped Book or trade after strict sanitization.
 
         Input material can be synthetic; this method never treats a local hash
@@ -249,7 +275,7 @@ class PPISharedMarketFeed:
         """
         if not isinstance(raw, dict) or raw.get("Trade") not in (True, False) or not isinstance(raw.get("Trade"), bool):
             raise EventRejected("PPI_NATIVE_MARKET_EVENT_SCHEMA_INVALID")
-        identity = self._identity(raw)
+        identity, type_provenance = self._identity(raw)
         event_at = _time(raw.get("Date"), reason="EVENT_TIME")
         arrival = _time(received_at, reason="RECEIVE_TIME")
         lag = (arrival - event_at).total_seconds()
@@ -257,6 +283,9 @@ class PPISharedMarketFeed:
             raise EventRejected("PPI_EVENT_STALE_FUTURE_OR_INVERTED")
         if isinstance(received_monotonic_ns, bool) or not isinstance(received_monotonic_ns, int) or received_monotonic_ns <= 0:
             raise EventRejected("PPI_RECEIVE_MONOTONIC_INVALID")
+        if (session_fingerprint is not None
+            and not _SHA256.fullmatch(str(session_fingerprint))):
+            raise EventRejected("PPI_SESSION_FINGERPRINT_INVALID")
         kind = "TRADE" if raw["Trade"] else "BOOK"
         if kind == "BOOK":
             payload = {
@@ -271,6 +300,8 @@ class PPISharedMarketFeed:
         normalized_source = {
             "identity": list(identity), "native_event_time_utc": event_at.isoformat(),
             "kind": kind, "market_payload": payload,
+            "type_provenance": type_provenance,
+            "session_fingerprint": session_fingerprint,
         }
         source_sha = _sha(normalized_source)
         scope = (identity, kind)
@@ -294,9 +325,11 @@ class PPISharedMarketFeed:
                 "schema": SCHEMA, "sequence": sequence,
                 "ppi_five_key": list(identity), "ppi_catalog_source_digest": self.catalog_source_digest,
                 "ppi_catalog_authority": "NO_VERIFICADO",  # local hash != PPI signature
+                "type_provenance": type_provenance,
                 "native_event_time_utc": event_at.isoformat(),
                 "receive_time_utc": arrival.isoformat(),
                 "receive_monotonic_ns": received_monotonic_ns,
+                "session_fingerprint": session_fingerprint,
                 "kind": kind, "market_payload": payload,
                 "source_normalized_sha256": source_sha,
                 "paper_ready": False, "order_route": "NOT_PRESENT",
@@ -373,6 +406,8 @@ class PPISharedMarketFeed:
                     candidates.append(event)
             if book1 is None:
                 raise EventRejected("PPI_PIT_POST_COMMIT_BOOK1_NOT_RETAINED")
+            if not _SHA256.fullmatch(str(book1.get("session_fingerprint"))):
+                raise EventRejected("PPI_PIT_SESSION_NOT_PROVEN")
             if (_time(book1["native_event_time_utc"], reason="EVENT_TIME") > committed
                 or book1["receive_monotonic_ns"] >= commit_monotonic_ns):
                 raise EventRejected("PPI_PIT_BOOK1_NOT_PRE_COMMIT")
@@ -381,6 +416,8 @@ class PPISharedMarketFeed:
                 raise EventRejected("PPI_PIT_POST_COMMIT_BOOK2_NOT_OBSERVED")
             # FIRST eligible Book2.  Returning the last update would let the
             # paper decision cherry-pick a later market outcome (lookahead).
+            if candidates[0].get("session_fingerprint") != book1["session_fingerprint"]:
+                raise EventRejected("PPI_PIT_BOOK2_SESSION_CHANGED")
             return candidates[0]
 
     def stats(self) -> dict:

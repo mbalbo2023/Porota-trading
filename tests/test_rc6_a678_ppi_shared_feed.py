@@ -25,6 +25,7 @@ from rc6_ppi_shared_feed import (
 UTC = timezone.utc
 T0 = datetime(2026, 11, 4, 15, 0, tzinfo=UTC)
 FIVE = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-48HS")
+SESSION = "7" * 64  # synthetic fixture only; NOT provider attestation
 
 
 def catalog(market="BYMA", currency="ARS"):
@@ -95,9 +96,30 @@ class PPISharedFeedTests(unittest.TestCase):
                                             received_at=T0, received_monotonic_ns=1)
         incomplete = ppi_book()
         incomplete.pop("Type")
-        with self.assertRaisesRegex(CatalogIdentityError, "IDENTITY"):
+        resolved = bus.publish_native_market_event(incomplete, received_at=T0,
+                                                   received_monotonic_ns=2)
+        self.assertEqual(resolved["ppi_five_key"], list(FIVE))
+        self.assertEqual(resolved["type_provenance"],
+                         "UNIQUE_ACTIVE_SUBSCRIPTION_NOT_NATIVE")
+        self.assertEqual(resolved["ppi_catalog_authority"], "NO_VERIFICADO")
+        self.assertFalse(resolved["paper_ready"])
+
+    def test_missing_native_type_requires_unique_active_subscription_context(self):
+        bon = {"ticker": "GGAL", "type": "BONOS", "market": "BYMA",
+               "currency": "ARS"}
+        bus = feed(rows=catalog() + [bon])
+        bus.plan_subscription(("GGAL", "BONOS", "BYMA", "ARS", "A-48HS"),
+                              priority="WARM")
+        incomplete = ppi_book()
+        incomplete.pop("Type")
+        with self.assertRaisesRegex(CatalogIdentityError, "CONTEXT_NOT_UNIQUE"):
             bus.publish_native_market_event(incomplete, received_at=T0,
-                                            received_monotonic_ns=2)
+                                            received_monotonic_ns=100)
+        self.assertEqual(bus.stats()["published"], 0)
+        with self.assertRaisesRegex(CatalogIdentityError, "MARKET_CONFLICT"):
+            bus.publish_native_market_event({**ppi_book(), "Market": "A3"},
+                                            received_at=T0,
+                                            received_monotonic_ns=101)
 
     def test_rejects_future_stale_nonfinite_or_unbounded_book(self):
         for event, arrival in (
@@ -131,7 +153,8 @@ class PPISharedFeedTests(unittest.TestCase):
     def test_book2_requires_strictly_post_commit_native_event_and_new_sha(self):
         bus = feed()
         first = bus.publish_native_market_event(ppi_book(), received_at=T0,
-                                                received_monotonic_ns=1_000)
+                                                received_monotonic_ns=1_000,
+                                                session_fingerprint=SESSION)
         with self.assertRaisesRegex(EventRejected, "BOOK1_NOT_PRE_COMMIT"):
             bus.get_post_commit_book(FIVE, book1_receipt_sha256=first["event_sha256"],
                                      commit_at=T0, commit_monotonic_ns=1_000)
@@ -139,6 +162,7 @@ class PPISharedFeedTests(unittest.TestCase):
             ppi_book(T0 + timedelta(milliseconds=300), bid=100.1),
             received_at=T0 + timedelta(milliseconds=400),
             received_monotonic_ns=1_500,
+            session_fingerprint=SESSION,
         )
         self.assertEqual(later["event_sha256"], bus.get_post_commit_book(
             FIVE, book1_receipt_sha256=first["event_sha256"],
@@ -148,6 +172,7 @@ class PPISharedFeedTests(unittest.TestCase):
             ppi_book(T0 + timedelta(milliseconds=600), bid=100.2),
             received_at=T0 + timedelta(milliseconds=650),
             received_monotonic_ns=1_800,
+            session_fingerprint=SESSION,
         )
         self.assertNotEqual(even_later["event_sha256"], later["event_sha256"])
         # Causal PIT cannot choose the most advantageous *later* market Book.
@@ -163,6 +188,33 @@ class PPISharedFeedTests(unittest.TestCase):
             bus.get_post_commit_book(FIVE, book1_receipt_sha256=first["event_sha256"],
                                      commit_at=T0 - timedelta(seconds=1),
                                      commit_monotonic_ns=500)
+
+    def test_book2_rejects_unattested_or_changed_acquisition_session(self):
+        unknown_bus = feed()
+        first_unknown = unknown_bus.publish_native_market_event(
+            ppi_book(), received_at=T0, received_monotonic_ns=1000)
+        unknown_bus.publish_native_market_event(
+            ppi_book(T0 + timedelta(milliseconds=400), bid=100.2),
+            received_at=T0 + timedelta(milliseconds=450),
+            received_monotonic_ns=1400)
+        with self.assertRaisesRegex(EventRejected, "SESSION_NOT_PROVEN"):
+            unknown_bus.get_post_commit_book(
+                FIVE, book1_receipt_sha256=first_unknown["event_sha256"],
+                commit_at=T0 + timedelta(milliseconds=100),
+                commit_monotonic_ns=1200)
+        bus = feed()
+        first = bus.publish_native_market_event(
+            ppi_book(), received_at=T0, received_monotonic_ns=1000,
+            session_fingerprint=SESSION)
+        bus.publish_native_market_event(
+            ppi_book(T0 + timedelta(milliseconds=400), bid=100.2),
+            received_at=T0 + timedelta(milliseconds=450),
+            received_monotonic_ns=1400, session_fingerprint="8" * 64)
+        with self.assertRaisesRegex(EventRejected, "BOOK2_SESSION_CHANGED"):
+            bus.get_post_commit_book(
+                FIVE, book1_receipt_sha256=first["event_sha256"],
+                commit_at=T0 + timedelta(milliseconds=100),
+                commit_monotonic_ns=1200)
 
     def test_memory_bound_last_event_idempotence_and_receive_clock(self):
         bus = feed(capacity=3)
