@@ -22,6 +22,7 @@ from be_paper_engine import PaperStore, Quote
 import rc6_paper_causal_decision_receipt as decision_signatures
 from rc6_ppi_scanner_provenance import PIT_JOURNAL_FILENAME, capture_native_book_journal
 from rc6_ppi_signed_postcommit_pit import inspect_pinned_signed_two_book
+from scripts import rc6_paper_postcommit_signer as signer_module
 from scripts.rc6_paper_postcommit_signer import attest_one_pinned
 
 
@@ -87,14 +88,49 @@ class TestPinnedPostcommitPIT(unittest.TestCase):
             self.assertTrue(self.store.record_decision(
                 KEY, q, "BUY", Decimal("0.75"), "SYNTHETIC_ONLY", features))
 
-    def signed(self, *, known_at=KNOWN_AT, release=RELEASE, signer_path=None):
+    def signed(self, *, known_at=KNOWN_AT, release=RELEASE, signer_path=None,
+               db_path=None, db_pin=None):
         with patch.object(decision_signatures, "PINNED_DECISION_SIGNER_KEY_SHA256", self.pin), \
              patch.object(decision_signatures, "PINNED_RELEASE_SHA256", RELEASE), \
-             patch.object(decision_signatures, "_now", return_value=known_at.isoformat()):
+             patch.object(decision_signatures, "_now", return_value=known_at.isoformat()), \
+             patch.object(signer_module, "PINNED_DECISION_DB_ABSPATH",
+                          self.db if db_pin is None else db_pin, create=True):
             return attest_one_pinned(
-                self.db, decision_key=KEY,
+                db_path or self.db, decision_key=KEY,
                 signing_key_path=signer_path or self.signer_path,
                 expected_release_sha256=release)
+
+    def test_pinned_signer_refuses_alternate_forged_sqlite_path(self):
+        # The CLI's --db-path is caller-controlled. A release/key pin alone
+        # must not allow it to sign a copied/fabricated PAPER database.
+        alien = self.db.parent / "untrusted-paper.db"
+        with sqlite3.connect(self.db) as source, sqlite3.connect(alien) as target:
+            source.backup(target)
+        result = self.signed(db_path=alien)
+        self.assertEqual(result["reason"], "CAUSAL_SIGNER_DB_PATH_UNTRUSTED")
+        self.assertFalse(result["signature_created"])
+        with sqlite3.connect(alien) as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM paper_causal_decision_receipts").fetchone()[0], 0)
+
+    def test_pinned_signer_must_have_independent_db_anchor(self):
+        result = self.signed(db_pin=False)
+        self.assertEqual(result["reason"], "CAUSAL_SIGNER_DB_TRUST_UNAVAILABLE")
+        self.assertFalse(result["signature_created"])
+
+    def test_pinned_signer_refuses_symlinked_db_alias(self):
+        alias = self.db.parent / "paper-alias.db"
+        alias.symlink_to(self.db)
+        result = self.signed(db_path=alias, db_pin=alias)
+        self.assertEqual(result["reason"], "CAUSAL_SIGNER_DB_ALIAS_HOLD")
+        self.assertFalse(result["signature_created"])
+
+    def test_pinned_signer_refuses_hardlinked_db_alias(self):
+        alias = self.db.parent / "paper-hardlink.db"
+        os.link(self.db, alias)
+        result = self.signed(db_path=alias, db_pin=alias)
+        self.assertEqual(result["reason"], "CAUSAL_SIGNER_DB_FILE_UNTRUSTED")
+        self.assertFalse(result["signature_created"])
 
     def inspect(self, *, trusted=True, **kwargs):
         args = {"decision_key": KEY, "family_group": "ACCIONES",
@@ -183,10 +219,12 @@ class TestPinnedPostcommitPIT(unittest.TestCase):
         child = "\n".join((
             "import json, os, sys",
             "import rc6_paper_causal_decision_receipt as c",
+            "from scripts import rc6_paper_postcommit_signer as signer",
             "from scripts.rc6_paper_postcommit_signer import attest_one_pinned",
             "from pathlib import Path",
             "c.PINNED_DECISION_SIGNER_KEY_SHA256 = sys.argv[4]",
             "c.PINNED_RELEASE_SHA256 = sys.argv[5]",
+            "signer.PINNED_DECISION_DB_ABSPATH = Path(sys.argv[1])",
             "c._now = lambda: sys.argv[6]",
             "r = attest_one_pinned(Path(sys.argv[1]), decision_key=sys.argv[2],"
             " signing_key_path=Path(sys.argv[3]), expected_release_sha256=sys.argv[5])",

@@ -16,11 +16,18 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import stat
 
 import rc6_paper_causal_decision_receipt as causal
 
 
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
+
+# Independent release/host trust configuration, NEVER derived from --db-path,
+# a PAPER decision receipt, or the runtime environment. Deliberately unpinned
+# in this DRAFT: no signing authority until a separately reviewed deployment
+# binds exactly one trusted PAPER database path and key/release pins.
+PINNED_DECISION_DB_ABSPATH: Path | None = None
 
 
 def _denied(reason: str) -> dict[str, object]:
@@ -44,6 +51,20 @@ def attest_one_pinned(db_path: Path, *, decision_key: str,
     if (not isinstance(release_pin, str) or not _SHA.fullmatch(release_pin)
             or not isinstance(signer_pin, str) or not _SHA.fullmatch(signer_pin)):
         return _denied("CAUSAL_SIGNER_OR_RELEASE_TRUST_UNAVAILABLE")
+    pinned_db = PINNED_DECISION_DB_ABSPATH
+    if not isinstance(pinned_db, Path) or not pinned_db.is_absolute():
+        return _denied("CAUSAL_SIGNER_DB_TRUST_UNAVAILABLE")
+    if not isinstance(db_path, Path) or not db_path.is_absolute() or db_path != pinned_db:
+        return _denied("CAUSAL_SIGNER_DB_PATH_UNTRUSTED")
+    try:
+        # No symlink or hardlink aliases may substitute a caller-controlled DB.
+        if any(part.is_symlink() for part in (db_path, *db_path.parents)):
+            return _denied("CAUSAL_SIGNER_DB_ALIAS_HOLD")
+        info = db_path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            return _denied("CAUSAL_SIGNER_DB_FILE_UNTRUSTED")
+    except OSError:
+        return _denied("CAUSAL_SIGNER_DB_FILE_UNAVAILABLE")
     if (not isinstance(expected_release_sha256, str)
             or expected_release_sha256 != release_pin):
         return _denied("CAUSAL_SIGNER_RELEASE_UNPINNED")
