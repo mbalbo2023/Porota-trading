@@ -47,14 +47,45 @@ def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
     paper = {"current": 2, "book": shared_book, "intraday": 1}
     watch = {"current": 1, "book": watch_book, "intraday": 1}
     provider = {name: paper[name] + watch[name] for name in paper}
+    # A667: the fixture mimics independent, bounded provider/Watch material;
+    # these are invented COUNTS FOR TESTS ONLY, never production PPI quotas.
+    account_scope = "e" * 64  # opaque synthetic quota-scope pseudonym
+    material = {
+        "a586-provider-synthetic.json": {
+            "schema": budget_module.STATIC_PROVIDER_EVIDENCE_SCHEMA,
+            "quota_scope_sha256": account_scope,
+            "reviewed_at": clock.now().isoformat(),
+            "window_seconds": 15 if opened else 30,
+            "endpoint_limits": provider, "global_limit": sum(provider.values()),
+        },
+        "a586-watch-synthetic.json": {
+            "schema": budget_module.STATIC_WATCH_EVIDENCE_SCHEMA,
+            "quota_scope_sha256": account_scope,
+            "reviewed_at": clock.now().isoformat(),
+            "window_seconds": 15 if opened else 30,
+            "endpoint_reserve": watch, "global_reserve": sum(watch.values()),
+            "retries_included": True,
+        },
+    }
+    material_digests = {}
+    for name, item in material.items():
+        content = json.dumps(item, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False).encode("utf-8")
+        path = tmp_path / name
+        path.write_bytes(content)
+        path.chmod(0o600)
+        material_digests[name] = hashlib.sha256(content).hexdigest()
     content = {
         "schema": budget_module.STATIC_SHARED_SCHEMA,
         "approved": True, "mode_safety": "PAPER_SHADOW_ONLY",
         "max_parallel_requests": 1, "issued_at": clock.now().isoformat(),
         "expires_at": (clock.now() + timedelta(hours=1)).isoformat(),
         "release_git_sha": release,
-        "provider_evidence_sha256": "a" * 64,
-        "watch_evidence_sha256": "b" * 64,
+        "quota_scope_sha256": account_scope,
+        "provider_evidence_file": "a586-provider-synthetic.json",
+        "watch_evidence_file": "a586-watch-synthetic.json",
+        "provider_evidence_sha256": material_digests["a586-provider-synthetic.json"],
+        "watch_evidence_sha256": material_digests["a586-watch-synthetic.json"],
         "window_seconds": 15 if opened else 30,
         "provider_endpoint_limits": provider,
         "watch_external_endpoint_reserve": watch,

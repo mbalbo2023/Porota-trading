@@ -58,6 +58,8 @@ STATIC_SHARED_AUTHORITY_ENV = "POROTA_PPI_STATIC_SHARED_AUTHORITY_PATH"
 PINNED_STATIC_SHARED_SIGNER_KEY_SHA256 = None
 STATIC_SHARED_AUTHORITY = "STATIC_SHARED_EXTERNAL_WATCH_RESERVED_V1"
 STATIC_SHARED_MAX_BYTES = 16384
+STATIC_PROVIDER_EVIDENCE_SCHEMA = "RC6_PPI_PROVIDER_QUOTA_EVIDENCE_V1"
+STATIC_WATCH_EVIDENCE_SCHEMA = "RC6_PPI_EXTERNAL_WATCH_USAGE_EVIDENCE_V1"
 
 
 # Observation only: bounded in-process transaction edges, never admission authority.
@@ -1990,6 +1992,80 @@ def baseline_budget_policy(previous, *, opened_count, as_of, environ=None):
         safety_reserve="BASELINE_AUTHORITY_ONLY; dynamic expansion disabled")
 
 
+def _static_shared_evidence_material(authority_path, authority, *, as_of):
+    """Verify the *material* behind reviewer-signed quota evidence digests.
+
+    Source truth remains an external reviewer duty: this code proves the two
+    exact bounded, same-directory receipts exist, are current, match the
+    signed account-scope pseudonym and cannot be switched after signing. It
+    does not probe, identify or modify the external Watch or PPI provider.
+    """
+    scope = authority.get("quota_scope_sha256")
+    if type(scope) is not str or not re.fullmatch(r"[0-9a-f]{64}", scope):
+        raise ValueError("STATIC_SHARED_QUOTA_SCOPE_UNVERIFIED")
+    at = stamp(as_of)
+
+    def no_duplicates(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("STATIC_SHARED_EVIDENCE_DUPLICATE_KEY")
+            result[key] = value
+        return result
+
+    def read(name_field, digest_field):
+        name = authority.get(name_field)
+        if (type(name) is not str or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}\.json", name)
+                or name.startswith(".") or ".." in name):
+            raise ValueError("STATIC_SHARED_EVIDENCE_FILE_UNVERIFIED")
+        target = authority_path.parent / name
+        if target.is_symlink():
+            raise ValueError("STATIC_SHARED_EVIDENCE_ALIAS")
+        # Do not request O_NOATIME: a non-owner runtime can lawfully read a
+        # reviewer-owned 0444 receipt, but Linux may reject O_NOATIME with EPERM.
+        fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or
+                    before.st_mode & 0o022 or not 2 <= before.st_size <= STATIC_SHARED_MAX_BYTES):
+                raise ValueError("STATIC_SHARED_EVIDENCE_FILE_UNTRUSTED")
+            raw = os.read(fd, STATIC_SHARED_MAX_BYTES + 1)
+            after = os.fstat(fd)
+            if (len(raw) != before.st_size or
+                    (before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_ino, after.st_size, after.st_mtime_ns) or
+                    hashlib.sha256(raw).hexdigest() != authority[digest_field]):
+                raise ValueError("STATIC_SHARED_EVIDENCE_DIGEST_MISMATCH")
+        finally:
+            os.close(fd)
+        value = json.loads(raw, object_pairs_hook=no_duplicates)
+        if not isinstance(value, dict):
+            raise ValueError("STATIC_SHARED_EVIDENCE_NOT_OBJECT")
+        reviewed = stamp(value["reviewed_at"])
+        if reviewed > at or at - reviewed > timedelta(hours=18):
+            raise ValueError("STATIC_SHARED_EVIDENCE_STALE")
+        if (value.get("quota_scope_sha256") != scope or
+                type(value.get("window_seconds")) is not int or
+                value["window_seconds"] != authority["window_seconds"]):
+            raise ValueError("STATIC_SHARED_EVIDENCE_SCOPE_MISMATCH")
+        return value
+
+    provider = read("provider_evidence_file", "provider_evidence_sha256")
+    watch = read("watch_evidence_file", "watch_evidence_sha256")
+    if (set(provider) != {"schema", "quota_scope_sha256", "reviewed_at",
+            "window_seconds", "endpoint_limits", "global_limit"}
+            or provider["schema"] != STATIC_PROVIDER_EVIDENCE_SCHEMA
+            or provider["endpoint_limits"] != authority["provider_endpoint_limits"]
+            or provider["global_limit"] != authority["provider_global_limit"]
+            or set(watch) != {"schema", "quota_scope_sha256", "reviewed_at",
+                "window_seconds", "endpoint_reserve", "global_reserve", "retries_included"}
+            or watch["schema"] != STATIC_WATCH_EVIDENCE_SCHEMA
+            or watch["endpoint_reserve"] != authority["watch_external_endpoint_reserve"]
+            or watch["global_reserve"] != authority["watch_external_global_reserve"]
+            or watch["retries_included"] is not True):
+        raise ValueError("STATIC_SHARED_EVIDENCE_CONTRACT_MISMATCH")
+
+
 def static_shared_capacity_state(database, environ, *, as_of):
     """Explicit *pinned* PAPER authority, net of independent PPI Watch demand.
 
@@ -2065,6 +2141,10 @@ def static_shared_capacity_state(database, environ, *, as_of):
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("provider_evidence_sha256", "")))
                 or not re.fullmatch(r"[0-9a-f]{64}", str(authority.get("watch_evidence_sha256", "")))):
             raise ValueError("STATIC_SHARED_AUTHORITY_CONTRACT_INVALID")
+        # A signature over two arbitrary 64-hex labels is not independent
+        # provider/Watch evidence. Require matching actual, bounded material
+        # before admitting any new lower or critical wire budget.
+        _static_shared_evidence_material(path, authority, as_of=as_of)
         now = stamp(as_of)
         issued = stamp(authority["issued_at"])
         expires = stamp(authority["expires_at"])
