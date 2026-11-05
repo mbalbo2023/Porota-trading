@@ -188,6 +188,14 @@ def one_case(family, *, day=DAY):
         "provider_at_utc": day + "T13:59:50Z",
         "valid_from": day, "valid_through": "2026-11-30",
         "raw_catalog_identity": identity,
+        # Synthetic structural contract ONLY. The live PPI SearchInstrument
+        # documentation does NOT prove that Settlement is provider-returned;
+        # this fake raw body cannot establish real source authority.
+        "settlement_literal_witness": {
+            "origin": "PPI_RAW_CATALOG_BODY_LITERAL",
+            "json_field": "settlement",
+            "literal_value": identity["settlement"],
+        },
         "raw_catalog_body_sha256": pit.sha256(wire).hexdigest(),
         "raw_catalog_body_base64": base64.b64encode(wire).decode("ascii"),
         "orders_sent": 0, "history_v2_writes": 0}, "primary")
@@ -226,7 +234,46 @@ class TestA320PITPaperVerifier(unittest.TestCase):
         self.assertIn("A320_PPI_FIVE_KEY_IDENTITY_RECEIPT_REQUIRED",
                       row["rejection_reasons"])
 
-    def test_ppi_five_key_receipt_wrong_market_currency_or_raw_fails(self):
+    def test_ppi_settlement_request_candidate_is_not_literal(self):
+        # Five matching normalized keys do not turn a request-side
+        # Settlement into a PPI-supplied raw literal. Never source-READY.
+        case = one_case("OPCIONES")
+        original = case["ppi_identity_receipt"]
+        witness = dict(original["settlement_literal_witness"])
+        witness["origin"] = "REQUEST_CANDIDATE"
+        case["ppi_identity_receipt"] = resign(
+            original, "primary", settlement_literal_witness=witness)
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["OPCIONES"]
+        self.assertEqual(0, row["synthetic_source_contract_candidates"])
+        self.assertEqual(0, row["source_pit_rows_verified"])
+        self.assertIn("A320_PPI_SETTLEMENT_LITERAL_ORIGIN_UNVERIFIED",
+                      row["rejection_reasons"])
+
+    def test_ppi_settlement_literal_claim_must_be_bound_to_raw_body(self):
+        for mode in ("MISSING_WITNESS", "REQUEST_SOURCE_IN_RAW"):
+            with self.subTest(mode=mode):
+                case = one_case("OPCIONES")
+                original = case["ppi_identity_receipt"]
+                if mode == "MISSING_WITNESS":
+                    payload = {key: value for key, value in original.items()
+                               if key not in {"attestation", "settlement_literal_witness"}}
+                    case["ppi_identity_receipt"] = signed(payload, "primary")
+                else:
+                    # Matching value and new valid HMAC cannot erase the
+                    # explicit provenance of request-only data in the raw.
+                    raw = {**original["raw_catalog_identity"],
+                           "settlement_source": "REQUEST_CANDIDATE"}
+                    wire = pit._canonical(raw)
+                    case["ppi_identity_receipt"] = resign(
+                        original, "primary", raw_catalog_identity=raw,
+                        raw_catalog_body_sha256=pit.sha256(wire).hexdigest(),
+                        raw_catalog_body_base64=base64.b64encode(wire).decode("ascii"))
+                row = pit.review_bundle(bundle(case), KEYS)["families"]["OPCIONES"]
+                self.assertEqual(0, row["synthetic_source_contract_candidates"])
+                self.assertEqual(0, row["source_pit_rows_verified"])
+                self.assertIn("A320_PPI_SETTLEMENT_LITERAL_ORIGIN_UNVERIFIED",
+                              row["rejection_reasons"])
+
         for field, wrong in (("market", "BYMA"), ("currency", "USD"),
                              ("symbol", "ANOTHER")):
             with self.subTest(field=field):
