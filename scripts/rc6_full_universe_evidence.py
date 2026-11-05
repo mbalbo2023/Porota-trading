@@ -207,14 +207,22 @@ def _overlay_scanner_primary(fallback, scanned):
                     continue
                 previous = earlier[0]
                 old_at, new_at = iso(receipt_time(previous)), iso(receipt_time(row))
-                if (new_at or "") > (old_at or ""):
-                    groups[key] = [row]
-                elif (new_at or "") == (old_at or ""):
+                if (new_at or "") == (old_at or ""):
                     fields = ("last", "bid", "ask", "trade_at", "book_at", "state")
                     if any(previous.get(field) != row.get(field) for field in fields):
                         earlier.append(row)
                     elif row.get("provider_origin") == PPI_SCANNER_ORIGIN:
                         groups[key] = [row]
+                elif (row.get("provider_origin") == PPI_SCANNER_ORIGIN
+                      and row.get("state") == "READY"):
+                    # A validated scanner observation must not be displaced by
+                    # a newer PPI-labelled cache lacking native Book evidence.
+                    groups[key] = [row]
+                elif (previous.get("provider_origin") == PPI_SCANNER_ORIGIN
+                      and previous.get("state") == "READY"):
+                    continue
+                elif (new_at or "") > (old_at or ""):
+                    groups[key] = [row]
             elif (isinstance(key, str) and row.get("canonical_identity") is None
                   and row.get("identity_binding") == "REFERENCE_ONLY_EXACT_IDENTITY_REQUIRED"):
                 references.append(row)

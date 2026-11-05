@@ -139,7 +139,8 @@ def primary_records(root: Path, current: datetime) -> tuple[list[dict[str, Any]]
         if key in seen:
             return [], {**unavailable, "reason": "SCANNER_PRIMARY_RECEIPT_DUPLICATE_IDENTITY"}
         seen.add(key)
-        ready = bool(raw.get("state") == "READY" and native_trade_book_ready(raw, now))
+        ready = bool(raw.get("catalog_identity_confirmed") is True
+                     and raw.get("state") == "READY" and native_trade_book_ready(raw, now))
         row = dict(raw)
         row["source"] = "PPI"  # Call-site assertion, not a wire-level signature.
         row["state"] = "READY" if ready else "UNAVAILABLE"
@@ -183,6 +184,13 @@ class ScannerPrimaryRecorder:
                "source_at": quote.trade_at, "received_at": quote.observed_at,
                "last_kind": quote.last_kind, "provider_origin": ORIGIN,
                "source_path": "PPI:SCANNER_CURRENT_AND_BOOK"}
+        # Current+Book attests transport for a 3-part SDK request. Market and
+        # currency come from the catalog, not from the wire response. A PAPER
+        # opening hold (including unverified PPI identity) must never turn
+        # that locally enriched 5-part key into eligible source evidence.
+        catalog_bound = str(getattr(quote, "metadata_source", "") or "").startswith("PPI_CATALOG:")
+        opening_hold = bool(str(getattr(quote, "opening_block_reason", "") or "").strip())
+        row["catalog_identity_confirmed"] = bool(catalog_bound and not opening_hold)
         key, received = _key(row), _aware(quote.observed_at)
         if not key:
             self.invalid_identity += 1
@@ -191,7 +199,8 @@ class ScannerPrimaryRecorder:
             self.invalid_receipt_clock += 1
             return
         row["canonical_identity"] = list(key)
-        row["state"] = ("READY" if native_trade_book_ready(row, received)
+        row["state"] = ("READY" if row["catalog_identity_confirmed"]
+                        and native_trade_book_ready(row, received)
                         else "UNAVAILABLE")
         previous = self.records.get(key)
         if previous:

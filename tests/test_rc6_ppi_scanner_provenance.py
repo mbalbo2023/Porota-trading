@@ -34,13 +34,15 @@ class ReceiptFixture:
 
     def quote(self, *, symbol="GGAL", market="BYMA", currency="ARS",
               settlement="A-24HS", last="5000", trade_age=2, book_age=1,
-              received_age=0, last_kind="TRADE"):
+              received_age=0, last_kind="TRADE", metadata_source="PPI_CATALOG:fixture",
+              opening_block_reason=""):
         def when(age):
             return (self.clock - timedelta(seconds=age)).isoformat() if age is not None else None
         return Quote(symbol, "ACCIONES", settlement, Decimal(last), Decimal("4990"),
                      Decimal("5010"), Decimal("10"), Decimal("15"), when(received_age),
                      market=market, currency=currency, trade_at=when(trade_age),
-                     book_at=when(book_age), last_kind=last_kind)
+                     book_at=when(book_age), last_kind=last_kind,
+                     metadata_source=metadata_source, opening_block_reason=opening_block_reason)
 
     def emit(self, quote=None):
         quote = quote or self.quote()
@@ -135,6 +137,46 @@ class ScannerReceiptTests(ReceiptFixture, unittest.TestCase):
         self.assertEqual(rows[0]["state"], "UNAVAILABLE")
         self.assertFalse(native_trade_book_ready(rows[0], self.clock))
 
+    def test_catalog_identity_hold_is_observed_but_never_ppi_eligible(self):
+        for overrides in (
+            {"opening_block_reason": "PPI_PRIMARY_IDENTITY_NOT_VERIFIED"},
+            {"opening_block_reason": "PPI_FRESHNESS_STALE"},
+            {"opening_block_reason": "CAPABILITY_HOLD"},
+            {"metadata_source": None},
+        ):
+            with self.subTest(overrides=overrides):
+                self.recorder = ScannerPrimaryRecorder(self.path)
+                rows, status = self.emit(self.quote(**overrides))
+                self.assertEqual(len(rows), 1)  # Actual SDK result is retained.
+                self.assertFalse(rows[0]["catalog_identity_confirmed"])
+                self.assertEqual(rows[0]["state"], "UNAVAILABLE")
+                self.assertEqual(status["eligible_records"], 0)
+                key = tuple(rows[0]["canonical_identity"])
+                self.assertFalse(evidence.source_view(rows[0], "PPI", self.clock,
+                                                      expected_identity=key)["selection_eligible"])
+
+    def test_consumer_rechecks_catalog_proof_in_private_receipt(self):
+        self.emit()
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        payload["records"][0]["catalog_identity_confirmed"] = False
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+        rows, status = primary_records(self.root, self.clock)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["state"], "UNAVAILABLE")
+        self.assertEqual(status["eligible_records"], 0)
+
+    def test_scanner_evidence_ttl_is_not_broker_paper_ttl(self):
+        quote = self.quote(trade_age=200, book_age=200)
+        rows, status = self.emit(quote)
+        self.assertEqual(status["eligible_records"], 1)  # 300s evidence-only.
+        self.assertEqual(quote.time_error(self.clock.isoformat(), require_trade=True,
+                                          max_age_seconds=120, max_trade_age_seconds=900),
+                         "BOOK_STALE")
+        key = tuple(rows[0]["canonical_identity"])
+        view = evidence.source_view(rows[0], "PPI", self.clock, expected_identity=key)
+        self.assertTrue(view["selection_eligible"])
+        self.assertFalse(view["entry_authority"])
+
     def test_conflict_same_receipt_clock_stays_blocked(self):
         first = self.quote(last="5000")
         second = self.quote(last="5001")
@@ -208,6 +250,27 @@ class ScannerReceiptTests(ReceiptFixture, unittest.TestCase):
 
 
 class ExportAndObserverTests(ReceiptFixture, unittest.TestCase):
+    def test_scanner_ready_supersedes_later_cache_without_native_book(self):
+        scanner_rows, status = self.emit(self.quote(received_age=3, trade_age=3, book_age=3))
+        self.assertEqual(status["eligible_records"], 1)
+        key = tuple(scanner_rows[0]["canonical_identity"])
+        fallback = {"source": "PPI", "symbol": "GGAL", "asset_class": "ACCIONES",
+                    "market": "BYMA", "currency": "ARS", "settlement": "A-24HS",
+                    "last": "5001", "received_at": (self.clock-timedelta(seconds=1)).isoformat(),
+                    "trade_at": (self.clock-timedelta(seconds=1)).isoformat(),
+                    "book_at": None, "state": "READY"}
+        chosen = evidence._overlay_scanner_primary({key: fallback},
+                                                   evidence._indexed_records(scanner_rows))[key]
+        self.assertEqual(chosen["provider_origin"], ORIGIN)
+        self.assertTrue(evidence.source_view(chosen, "PPI", self.clock,
+                                             expected_identity=key)["selection_eligible"])
+        same_clock = dict(fallback, received_at=scanner_rows[0]["received_at"])
+        conflicting = evidence._overlay_scanner_primary({key: same_clock},
+                                                        evidence._indexed_records(scanner_rows))[key]
+        self.assertEqual(conflicting["review_status"], "CONFLICT_REVIEW_REQUIRED")
+        self.assertFalse(evidence.source_view(conflicting, "PPI", self.clock,
+                                              expected_identity=key)["selection_eligible"])
+
     def test_overlay_only_exact_key_and_no_paper_execution(self):
         self.emit()
         with mock.patch.object(evidence, "ROOT", self.root), mock.patch.object(
@@ -268,7 +331,9 @@ class ExportAndObserverTests(ReceiptFixture, unittest.TestCase):
         with mock.patch("bf_production_paper_observer.financial_catalog.lookup",
                         return_value=None), mock.patch(
                             "bf_production_paper_observer.financial_catalog.quote_terms",
-                            return_value={"market": "BYMA", "currency": "ARS"}):
+                            return_value={"market": "BYMA", "currency": "ARS",
+                                          "metadata_source": "PPI_CATALOG:fixture",
+                                          "opening_block_reason": ""}):
             quote = _read_scanner_quote(reader, object(), "GGAL", "ACCIONES", "A-24HS")
         self.assertEqual(reader.current.call_count, 1)
         self.assertEqual(reader.book.call_count, 1)
