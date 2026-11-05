@@ -274,6 +274,7 @@ class TestA320PITPaperVerifier(unittest.TestCase):
                 self.assertIn("A320_PPI_SETTLEMENT_LITERAL_ORIGIN_UNVERIFIED",
                               row["rejection_reasons"])
 
+    def test_ppi_five_key_receipt_wrong_market_currency_or_raw_fails(self):
         for field, wrong in (("market", "BYMA"), ("currency", "USD"),
                              ("symbol", "ANOTHER")):
             with self.subTest(field=field):
