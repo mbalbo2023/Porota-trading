@@ -1290,6 +1290,11 @@ jobs:
           test -d "$(dirname "$GITHUB_OUTPUT")" && test -w "$(dirname "$GITHUB_OUTPUT")"
           : >> "$GITHUB_OUTPUT"
           test -f "$GITHUB_OUTPUT" && test -w "$GITHUB_OUTPUT"
+          # Durable runner-side fail-closed defaults, before touching host.
+          # An AWK/output write failure after cutover must not mark promotion
+          # FAILED and accidentally invoke cleanup_recover.
+          printf 'cleanup_status=UNKNOWN\ncleanup_parser_status=UNKNOWN\n' >> "$GITHUB_OUTPUT"
+          set +e
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
             "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE' | awk -v status_file="$GITHUB_OUTPUT" '
@@ -2592,6 +2597,31 @@ jobs:
             echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           fi
           REMOTE
+          # Capture PIPESTATUS IMMEDIATELY after ssh|awk. set -e/pipefail must
+          # never classify parser I/O failure as a failed remote cutover.
+          RC6_PROMOTION_PIPESTATUS=( "${PIPESTATUS[@]}" )
+          set -e
+          RC6_PROMOTION_SSH_RC="${RC6_PROMOTION_PIPESTATUS[0]:-99}"
+          RC6_PROMOTION_AWK_RC="${RC6_PROMOTION_PIPESTATUS[1]:-99}"
+          if [ "$RC6_PROMOTION_SSH_RC" -ne 0 ]; then
+            echo "::error::RC6_PROMOTION_SSH_ERROR|rc=$RC6_PROMOTION_SSH_RC|runtime_state=NO_VERIFICADO" >&2
+            # Genuine SSH failure after cutover is a separate P0 cutover-RCA,
+            # NOT covered by the cleanup-only deferred-success boundary.
+            exit "$RC6_PROMOTION_SSH_RC"
+          fi
+          if [ "$RC6_PROMOTION_AWK_RC" -ne 0 ]; then
+            echo "::warning::RC6_PROMOTION_CLEANUP_PARSER_UNVERIFIED|awk_rc=$RC6_PROMOTION_AWK_RC|NO_RECOVERY_FROM_PARSER"
+          else
+            # Parser has completed. Persist this second validation flag only
+            # after both subprocesses succeeded; missing flag remains UNKNOWN.
+            set +e
+            printf 'cleanup_parser_status=VERIFIED\n' >> "$GITHUB_OUTPUT"
+            RC6_PROMOTION_OUTPUT_RC=$?
+            set -e
+            if [ "$RC6_PROMOTION_OUTPUT_RC" -ne 0 ]; then
+              echo "::warning::RC6_PROMOTION_OUTPUT_CONFIRMATION_UNVERIFIED|NO_RECOVERY_FROM_PARSER"
+            fi
+          fi
           # A207 is a pre-install administrative state only. Once the staged
           # atomic reversal and entire promotion succeeded, downstream runtime
           # checks must use the ordinary OPEN/CLOSED contract, not a bypass.
@@ -3279,7 +3309,7 @@ jobs:
       # cannot trigger cleanup_recover or timer rearming by itself.
       - name: Mark deferred post-promotion cleanup as failed after validation
         id: cleanup_deferred_gate
-        if: ${{ always() && steps.promotion.outcome == 'success' && steps.promotion.outputs.cleanup_status != 'GREEN' }}
+        if: ${{ always() && steps.promotion.outcome == 'success' && (steps.promotion.outputs.cleanup_status != 'GREEN' || steps.promotion.outputs.cleanup_parser_status != 'VERIFIED') }}
         timeout-minutes: 1
         shell: bash
         run: |
