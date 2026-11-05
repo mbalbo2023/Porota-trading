@@ -222,11 +222,17 @@ class PPISharedSessionOwner:
             self._require_open()
             if self._stream_invoked:
                 raise SessionOwnerBlocked("PPI_STREAM_DOUBLE_START_BLOCKED")
-            if not self._feed.active_subscriptions():
+            planned = self._feed.active_subscriptions()
+            if not planned:
                 raise SessionOwnerBlocked("PPI_STREAM_EMPTY_FOCUS_BLOCKED")
             if (not self._permits_capacity("STREAM_CONNECT") or
                     not self._permits_stream_connect()):
                 raise SessionOwnerBlocked("PPI_STREAM_EXTERNAL_AUTHORITY_NOT_VERIFIED")
+            # Even a previously admitted HOT/EXIT focus can lose external
+            # capacity or catalog provenance before the socket starts.
+            if any(not self._permits_capacity("STREAM_SUBSCRIPTION", key)
+                   or not self._permits_catalog(key) for key in planned):
+                raise SessionOwnerBlocked("PPI_STREAM_SUBSCRIPTION_CAPACITY_REVOKED")
             self._stream_invoked = True
         self._stream.run_market_only()
 
