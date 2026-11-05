@@ -39,7 +39,9 @@ PPI Watch, SQLite, logs, artefactos de evidencia, backups y ordenes reales=0.
   `shared_host` explícita obligatoria; no hay barrido global de `/tmp`, apt,
   journal ni backups. Las candidatas no verificadas se conservan y se informa
   capacidad residual real. Política niega ámbitos globales incluso cuando
-  existe espacio insuficiente; no disfraza `RED` de `GREEN`.
+  existe espacio insuficiente; no disfraza `RED` de `GREEN`. Los tres helpers
+  antiguos que borraban archivos/apt/journal ahora lanzan excepción de
+  prohibición **incluso llamados directamente**, para impedir regresiones.
 - Candidate Docker: helper único para precarga y postpromoción; inspección de
   **todos** los contenedores (incl. detenidos), tags, digests y labels OCI
   `porota.predeploy=v2` y `porota.commit=SHA exacto` con consistencia entre

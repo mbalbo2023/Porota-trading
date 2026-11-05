@@ -272,44 +272,17 @@ def _candidate_open_references(candidates: list[FileCandidate]) -> list[str]:
 
 
 def _delete_candidate(row: FileCandidate) -> None:
-    p = Path(row.path)
-    if not p.exists() and not p.is_symlink():
-        return
-    if p.is_dir() and not p.is_symlink():
-        shutil.rmtree(p)
-    else:
-        p.unlink()
+    # Permanent A681 guard: even a future caller bypassing execute() must not
+    # restore deletion of generic prefix-matched host files or backups.
+    raise RuntimeError("SHARED_HOST_GLOBAL_RECLAIM_FORBIDDEN")
 
 
 def _clean_apt(policy: dict) -> list[str]:
-    actions: list[str] = []
-    if policy["apt"].get("clean_cache"):
-        _run(["apt-get", "clean"], timeout=120)
-        actions.append("APT_CACHE_CLEAN")
-    if policy["apt"].get("clean_lists"):
-        root = Path("/var/lib/apt/lists")
-        if root.exists():
-            for p in root.iterdir():
-                if p.name in {"lock", "partial", "auxfiles"}:
-                    continue
-                if p.is_dir() and not p.is_symlink():
-                    shutil.rmtree(p)
-                else:
-                    p.unlink(missing_ok=True)
-        actions.append("APT_LISTS_CLEAN")
-    return actions
+    raise RuntimeError("SHARED_HOST_GLOBAL_RECLAIM_FORBIDDEN")
 
 
 def _vacuum_journal(policy: dict) -> str:
-    target = int(policy["journal"]["max_bytes"])
-    cp = _run(
-        ["journalctl", f"--vacuum-size={target}"],
-        timeout=120,
-        check=False,
-    )
-    if cp.returncode != 0:
-        raise RuntimeError(f"journal vacuum failed: {cp.stdout.strip()}")
-    return cp.stdout.strip()
+    raise RuntimeError("SHARED_HOST_GLOBAL_RECLAIM_FORBIDDEN")
 
 
 def _docker_observation() -> str:

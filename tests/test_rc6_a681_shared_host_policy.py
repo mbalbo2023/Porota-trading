@@ -59,6 +59,16 @@ def test_missing_or_relaxed_shared_host_policy_fails_closed(host):
         assert calls == []
 
 
+def test_direct_global_housekeeping_helpers_fail_closed_even_if_called_out_of_band():
+    policy = json.loads(POLICY.read_text())
+    row = housekeeping.FileCandidate('/tmp/rc6-boca-data', 1, 0, 'UNTRUSTED')
+    for action in (lambda: housekeeping._delete_candidate(row),
+                   lambda: housekeeping._clean_apt(policy),
+                   lambda: housekeeping._vacuum_journal(policy)):
+        with pytest.raises(RuntimeError, match='SHARED_HOST_GLOBAL_RECLAIM_FORBIDDEN'):
+            action()
+
+
 def test_audit_mode_remains_non_mutating_even_if_global_policy_unknown(host):
     policy, calls = host
     changed = {**policy, 'shared_host': {}}
