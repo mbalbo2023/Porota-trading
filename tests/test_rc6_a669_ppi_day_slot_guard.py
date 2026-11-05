@@ -216,6 +216,13 @@ class A669GuardTests(unittest.TestCase):
         self.assertRegex(guard.CALENDAR_GIT_BLOB, r"^[0-9a-f]{40}$")
         self.assertRegex(guard.SESSIONS_GIT_BLOB, r"^[0-9a-f]{40}$")
 
+    def test_a689_transmitted_engine_is_pinned_to_actual_checkout_blob(self):
+        checkout_engine = Path(__file__).resolve().parents[1] / (
+            "scripts/rc6_a630_host_ppi_current_book.py")
+        self.assertTrue(guard.pinned_engine_ok(checkout_engine),
+                        "A689 A630 edit must refresh exact engine Git blob pin")
+
 
 if __name__ == "__main__":
     unittest.main()
+
