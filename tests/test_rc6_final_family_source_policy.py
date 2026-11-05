@@ -420,7 +420,7 @@ def test_full_evidence_public_capture_is_not_freshness_or_paper_authority(tmp_pa
     assert not row["sources"]["BYMA"]["entry_authority"]
 
 
-def test_full_evidence_ready_contract_does_not_claim_automatic_paper_entry(tmp_path, monkeypatch):
+def test_full_evidence_missing_native_book_stays_pending_without_paper_entry(tmp_path, monkeypatch):
     import scripts.rc6_full_universe_evidence as evidence
     record = instrument("GGAL", "ACCIONES") | {"symbol": "GGAL", "family": "ACCIONES",
                                                 "capability": "READY_PAPER_SPOT"}
@@ -436,11 +436,13 @@ def test_full_evidence_ready_contract_does_not_claim_automatic_paper_entry(tmp_p
     monkeypatch.setattr(evidence, "ROOT", tmp_path)
     result = evidence.build()
     row = result["instruments"][0]
-    assert row["status"] == "READY_PAPER_PARTIAL_SOURCE"
-    assert row["paper_contract_ready"] is True
+    # R1: a PPI-labelled last/received clock without a provider Book clock
+    # cannot be promoted to native scanner evidence or PAPER source readiness.
+    assert row["status"] == "PENDING_EVIDENCE"
+    assert row["paper_contract_ready"] is False
     assert row["paper_auto_enabled"] is False and row["signal_authorized"] is False
     assert row["entry_authority"] is False
-    assert result["counts"]["paper_shadow_ready"] == 1
+    assert result["counts"]["paper_shadow_ready"] == 0
     assert result["counts"]["paper_auto_enabled"] == 0
 
 

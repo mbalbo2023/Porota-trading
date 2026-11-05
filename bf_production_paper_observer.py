@@ -32,6 +32,7 @@ from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, c
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
+from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -2203,6 +2204,10 @@ def run():
     reader = None
     login_interlock = ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
     quotes = {}
+    # Diagnostic evidence only: reuse the scanner's existing current+book
+    # result. PRODUCTION_PAPER remains an execution mode, not PPI provenance.
+    scanner_primary = ScannerPrimaryRecorder(
+        Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
@@ -2386,6 +2391,13 @@ def run():
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
                         priority=priority, identity=scope_identity)
+                    try:
+                        scanner_primary.capture(q, request=request_key)
+                    except Exception as origin_error:
+                        # A receipt failure cannot interrupt PAPER quote/EXIT
+                        # processing or create an additional provider request.
+                        print("PPI_SCANNER_PRIMARY_CAPTURE_ERROR=" + type(origin_error).__name__,
+                              file=sys.stderr, flush=True)
                     # Persistir la observación sirve para trazabilidad, pero un
                     # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)
@@ -2435,6 +2447,13 @@ def run():
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
                            "current + book; PPI Producción solo lectura"))
                     last_cycle_pulse = _pulse_observed_progress(store, last_cycle_pulse)
+            try:
+                primary_receipt = scanner_primary.publish()
+                print("PPI_SCANNER_PRIMARY_RECEIPT=" + json.dumps(primary_receipt, sort_keys=True),
+                      file=sys.stderr, flush=True)
+            except Exception as origin_error:
+                print("PPI_SCANNER_PRIMARY_PUBLISH_ERROR=" + type(origin_error).__name__,
+                      file=sys.stderr, flush=True)
             broker.mark_equity(quotes)
             duration = round(time.perf_counter() - cycle_clock, 3)
             avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL
