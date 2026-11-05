@@ -492,6 +492,160 @@ def _scalping_recent_error_codes(db, tables):
     return receipt
 
 
+def _ppi_marketdata_incident(db, tables):
+    """Sanitized PPI incident evidence from an ALREADY OPEN, query-only DB.
+
+    Does not open a database, read PPI, change PRAGMAs, write files or export
+    instrument identities, free-form details, token values or Telegram bodies.
+    All evidence is best-effort and must never be interpreted as trading GO.
+    The caller remains responsible for a WAL-safe host snapshot (#478/A302).
+    """
+    unavailable = lambda: {"status": "NO_VERIFICADO"}
+    result = {
+        "schema": "rc6.ppi-marketdata-incident.v1",
+        "read_only": True, "provider_requests": 0,
+        "marketdata": unavailable(), "auth": unavailable(),
+        "cycle": unavailable(), "rejections": {
+            "status": "NO_VERIFICADO", "event_counts": {},
+            "events_scanned": 0, "possibly_truncated": False,
+            "identity_or_detail_exported": False},
+        "telegram": unavailable(),
+        "exit": {"reader": unavailable(), "supervisor": unavailable()},
+    }
+
+    def utc(value):
+        parsed = timestamp(value)
+        return parsed.isoformat() if parsed is not None else None
+
+    def query_one(table, statement, parameters=()):
+        if table not in tables:
+            return None
+        try:
+            return db.execute(statement, parameters).fetchone()
+        except sqlite3.Error:
+            return None
+
+    def health(component):
+        row = query_one("api_health", """
+            SELECT state,checked_at,last_success_at FROM api_health
+            WHERE component=?""", (component,))
+        if row is None:
+            return unavailable()
+        checked = utc(row["checked_at"])
+        last_success = utc(row["last_success_at"])
+        state = (str(row["state"]).upper()
+                 if row["state"] in {"ROJO", "VERDE", "AMARILLO", "ERROR",
+                                    "COOLDOWN", "RATE_LIMIT", "OK", "READY"}
+                 else "NO_VERIFICADO")
+        return {"status": "RECORDED" if checked and state != "NO_VERIFICADO"
+                else "NO_VERIFICADO", "state": state,
+                "checked_at_utc": checked, "last_success_at_utc": last_success}
+
+    result["marketdata"] = health("PPI_PRODUCTION_MARKETDATA")
+    result["auth"] = health("PPI_PRODUCTION_AUTH")
+    checked = timestamp(result["marketdata"].get("checked_at_utc"))
+
+    alert = query_one("paper_notification_outbox", """
+        SELECT created_at,sent_at,state,attempts FROM paper_notification_outbox
+        WHERE event_key LIKE 'operational-health:PPI_PRODUCTION_MARKETDATA:BAD:%'
+        ORDER BY id DESC LIMIT 1""")
+    if alert is not None:
+        created, sent = timestamp(alert["created_at"]), timestamp(alert["sent_at"])
+        state = (str(alert["state"]).upper()
+                 if alert["state"] in {"PENDING", "SENDING", "SENT", "DEAD"}
+                 else "NO_VERIFICADO")
+        delta = (sent-created).total_seconds() if sent and created else None
+        attempts = alert["attempts"]
+        result["telegram"] = {
+            "status": "RECORDED" if created and state != "NO_VERIFICADO"
+                      else "NO_VERIFICADO",
+            "state": state, "created_at_utc": utc(alert["created_at"]),
+            "sent_at_utc": utc(alert["sent_at"]),
+            "delivery_delay_seconds": round(delta, 3) if delta is not None
+               and 0 <= delta <= 30*86400 else None,
+            "attempts": attempts if type(attempts) is int and 0 <= attempts <= 1000
+                        else None,
+        }
+
+    for table, label, allowed in (
+        ("paper_exit_reader_state", "reader",
+         {"READY", "RUNNING", "WAITING", "DEGRADED", "ERROR", "STOPPED"}),
+        ("paper_supervisor_state", "supervisor",
+         {"RUNNING", "WAITING", "DEGRADED", "ERROR", "STOPPED"})):
+        row = query_one(table, "SELECT state,heartbeat_at FROM "+table+" WHERE id=1")
+        if row is None:
+            continue
+        state = str(row["state"]).upper() if row["state"] in allowed else "NO_VERIFICADO"
+        heartbeat = utc(row["heartbeat_at"])
+        result["exit"][label] = {
+            "status": "RECORDED" if state != "NO_VERIFICADO" and heartbeat
+                      else "NO_VERIFICADO",
+            "state": state, "heartbeat_at_utc": heartbeat}
+
+    cycle = query_one("universe_cycle_metrics", """
+        SELECT started_at,finished_at,selected_count,successful_count,failed_count
+        FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1""")
+    if cycle is None:
+        return result
+    start, finish = timestamp(cycle["started_at"]), timestamp(cycle["finished_at"])
+    counts = [cycle[key] for key in ("selected_count", "successful_count",
+                                    "failed_count")]
+    if (not checked or not start or not finish or not all(
+            type(value) is int and 0 <= value <= 10000 for value in counts)
+            or finish < start):
+        return result
+    delta = (checked-finish).total_seconds()
+    result["cycle"] = {
+        "status": "MATCHED" if 0 <= delta <= 180 else "CLOCK_MISMATCH",
+        "started_at_utc": start.isoformat(), "finished_at_utc": finish.isoformat(),
+        "health_lag_seconds": round(delta, 3),
+        "selected_count": counts[0], "successful_count": counts[1],
+        "failed_count": counts[2],
+    }
+    if result["cycle"]["status"] != "MATCHED" or "paper_events" not in tables:
+        return result
+    # Event-type totals are NOT instrument counts: a single exception can
+    # emit both DATA_ERROR and PPI_SESSION_INVALID. Never claim 20 GET failures.
+    try:
+        rows = db.execute("""
+            SELECT event_at,event_type,detail FROM paper_events
+            WHERE event_at>=? AND event_at<=?
+              AND event_type IN ('DATA_REJECTED','DATA_ERROR','HTTP_BLOCKED',
+                                 'PPI_SESSION_INVALID','EXIT_BOOK_ERROR')
+            ORDER BY id DESC LIMIT 161""",
+            (start.isoformat(), finish.isoformat())).fetchall()
+    except sqlite3.Error:
+        return result
+    counts_by_reason = {}
+    for row in rows[:160]:
+        observed = timestamp(row["event_at"])
+        if observed is None or not start <= observed <= finish:
+            continue
+        kind = row["event_type"]
+        if kind == "DATA_REJECTED":
+            # Observed format is "symbol: REASON". Free-form symbol/detail
+            # never escapes this function, even in malformed rows.
+            detail = str(row["detail"] or "").partition(":")[2].upper()
+            reason = next((code for code in ("TRADE_STALE",
+                "LAST_IS_NOT_A_TRADE", "BOOK_STALE") if code in detail),
+                "DATA_REJECTED_OTHER")
+        elif kind in {"DATA_ERROR", "HTTP_BLOCKED", "PPI_SESSION_INVALID",
+                      "EXIT_BOOK_ERROR"}:
+            reason = kind
+        else:
+            continue
+        counts_by_reason[reason] = counts_by_reason.get(reason, 0)+1
+    result["rejections"] = {
+        "status": ("PARTIAL_SAMPLE" if len(rows)>160 else
+                   "RECORDED" if counts_by_reason else "NO_VERIFICADO"),
+        "event_counts": counts_by_reason,
+        "events_scanned": min(len(rows), 160),
+        "possibly_truncated": len(rows)>160,
+        "identity_or_detail_exported": False,
+    }
+    return result
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -586,6 +740,7 @@ def _db_snapshot(path):
         return {"observer": observer, "workers": workers,
                 "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops,
                 "scalping_recent_error_codes": scalping_codes,
+                "ppi_marketdata_incident": _ppi_marketdata_incident(db, tables),
                 'paper_open_contracts':activity}
 
 
@@ -1548,4 +1703,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
