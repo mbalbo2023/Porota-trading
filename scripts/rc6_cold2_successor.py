@@ -117,6 +117,10 @@ def inspect(root, *, hash_pack=True):
                 ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_WRITE'),
                 ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_VERIFY'),
                 ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'PACK_HASH'),
+                # A667 observed this exact first-failure receipt at REPORT_VERIFY.
+                # The report must still pass _failed_report's unique immutable
+                # evidence binding below. This admits inspection, NOT recovery.
+                ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'REPORT_VERIFY'),
             } or
             type(receipt.get('failed_at')) not in (float, int) or
             not manifest['sealed_at'] <= receipt['failed_at'] <= manifest['deadline_at']+5 or
