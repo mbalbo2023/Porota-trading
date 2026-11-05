@@ -8,13 +8,18 @@ rechaza antes de que requests entregue el paquete al adaptador de red.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
+import re
+import secrets
 import threading
 import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from json import JSONDecodeError
 from typing import Callable, Optional
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 import requests
 
@@ -55,6 +60,61 @@ _BUDGETED_MARKET_GET_PATHS = frozenset({
     "/api/1.0/marketdata/book",
     "/api/1.0/marketdata/intraday",
 })
+
+_NATIVE_WIRE_RECEIPT_SCHEMA = "RC6_PPI_NATIVE_WIRE_RECEIPT_V1"
+_NATIVE_WIRE_BODY_MAX_BYTES = 1_048_576
+_NATIVE_WIRE_RECEIPT_MAX_ATTEMPTS = 8
+_NATIVE_WIRE_MAX_JSON_NODES = 20_000
+_NATIVE_WIRE_MAX_JSON_DEPTH = 32
+_NATIVE_IDENTITY_PART = re.compile(r"[A-Z0-9][A-Z0-9./_-]{0,63}\Z")
+_NATIVE_RECEIPT_KEYS = frozenset({
+    "schema", "endpoint", "http_method", "consumer", "priority",
+    "request_identity_3key", "claimed_five_key", "identity_source",
+    "adapter_send_invoked", "adapter_response_completed", "http_status_code",
+    "raw_body_sha256", "parsed_body_sha256", "received_at_utc",
+    "receive_monotonic_ns", "budget_lease_sha256", "wire_attempt_id",
+    "guard_budget_receipt_sha256",
+})
+
+
+def _native_receipt_json(value) -> bytes:
+    """Canonical local digest; never represents a broker signature."""
+    seen = 0
+    todo = [(value, 0)]
+    while todo:
+        node, depth = todo.pop()
+        seen += 1
+        if seen > _NATIVE_WIRE_MAX_JSON_NODES or depth > _NATIVE_WIRE_MAX_JSON_DEPTH:
+            raise ValueError("PPI_NATIVE_WIRE_JSON_COMPLEXITY_UNBOUNDED")
+        if isinstance(node, dict):
+            todo.extend((item, depth + 1) for item in node.values())
+        elif isinstance(node, (tuple, list)):
+            todo.extend((item, depth + 1) for item in node)
+    encoded = json.dumps(value, ensure_ascii=True, sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(encoded) > _NATIVE_WIRE_BODY_MAX_BYTES:
+        raise ValueError("PPI_NATIVE_WIRE_JSON_BYTES_UNBOUNDED")
+    return encoded
+
+
+def _native_wire_request_identity(url: str):
+    """Extract only the three URL-encoded PPI fields, never persist the URL."""
+    fields = {}
+    try:
+        for key, value in parse_qsl(urlsplit(url).query, keep_blank_values=True):
+            key = key.casefold()
+            if key in {"ticker", "type", "settlement"}:
+                if key in fields or not isinstance(value, str):
+                    return None
+                normalized = value.strip().upper()
+                if not _NATIVE_IDENTITY_PART.fullmatch(normalized):
+                    return None
+                fields[key] = normalized
+    except (TypeError, ValueError):
+        return None
+    if set(fields) != {"ticker", "type", "settlement"}:
+        return None
+    return [fields["ticker"], fields["type"], fields["settlement"]]
 
 
 def _unbudgeted_get_reason(method: str, path: str) -> str | None:
@@ -243,6 +303,24 @@ class ReadOnlyTransportGuard:
             self._scope.priority = previous
             self._scope.identity = previous_identity
 
+    @contextmanager
+    def native_wire_receipt_scope(self):
+        """Opt-in thread-local witness of *adapter responses*, not SEND quota.
+
+        This hook never changes the default transport, performs no market GET
+        itself and is intentionally unavailable to nested or overlapping
+        captures on the same thread. Each HTTPAdapter.send retains exactly
+        the budget acquire/start/wire_scope/finish sequence it had before.
+        """
+        if getattr(self._scope, "native_wire_receipts", None) is not None:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_NESTED")
+        attempts = []
+        self._scope.native_wire_receipts = attempts
+        try:
+            yield attempts
+        finally:
+            self._scope.native_wire_receipts = None
+
     def _record(self, method: str, path: str, result: str) -> None:
         if self.audit:
             self.audit(method, path, result)
@@ -339,6 +417,8 @@ class ReadOnlyTransportGuard:
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
             budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
             lease = None
+            observed = getattr(guard._scope, "native_wire_receipts", None)
+            attempt_id = secrets.token_hex(16) if observed is not None else None
             if checked_method != "POST" or checked_path != "/api/1.0/account/loginapi":
                 # Never attribute a later SDK JSON parse failure to an older
                 # login response from the same thread.
@@ -381,6 +461,11 @@ class ReadOnlyTransportGuard:
                     if response.status_code >= 400:
                         guard._read_error(f"PPI_HTTP_{response.status_code}")
                     body = response.content
+                    # Capture the body-completion clock BEFORE accounting
+                    # finalization. A slow finish() must not shift a PIT
+                    # receive timestamp across a subsequent COMMIT.
+                    body_received_at_utc = datetime.now(timezone.utc).isoformat() if observed is not None else None
+                    body_received_monotonic_ns = time.monotonic_ns() if observed is not None else None
                     if checked_method == "POST" and checked_path == "/api/1.0/account/loginapi":
                         guard._scope.login_http_metadata = _login_response_metadata(response, body)
                 except Exception as error:
@@ -397,6 +482,46 @@ class ReadOnlyTransportGuard:
                     raise
                 if budget is not None:
                     budget.finish(lease, status_code=response.status_code)
+                # A652's http_allowed counts an adapter *attempt*, not an
+                # observed HTTP response. This optional witness is recorded
+                # only after the actual adapter returned, the full body was
+                # consumed and the EXISTING single budget lease finished.
+                # No URL/query/headers/body or secret lease is persisted.
+                if observed is not None:
+                    if len(observed) >= _NATIVE_WIRE_RECEIPT_MAX_ATTEMPTS:
+                        observed[:] = [{"state": "OVERFLOW"}]
+                    elif endpoint in {"current", "book", "intraday"} and checked_method == "GET":
+                        body_sha = None
+                        parsed_sha = None
+                        if isinstance(body, (bytes, bytearray)) and len(body) <= _NATIVE_WIRE_BODY_MAX_BYTES:
+                            body_sha = hashlib.sha256(body).hexdigest()
+                            try:
+                                parsed_sha = hashlib.sha256(_native_receipt_json(
+                                    json.loads(body))).hexdigest()
+                            except (ValueError, TypeError, UnicodeError, OverflowError, RecursionError):
+                                pass
+                        receipt = {
+                            "schema": _NATIVE_WIRE_RECEIPT_SCHEMA,
+                            "endpoint": endpoint,
+                            "http_method": "GET",
+                            "consumer": guard.consumer,
+                            "priority": getattr(guard._scope, "priority", None) or guard.priority,
+                            "request_identity_3key": _native_wire_request_identity(request.url),
+                            "claimed_five_key": list(getattr(guard._scope, "identity", ()) or ()),
+                            "identity_source": "CALLER_ONLY_UNVERIFIED",
+                            "adapter_send_invoked": True,
+                            "adapter_response_completed": True,
+                            "http_status_code": response.status_code if type(response.status_code) is int else None,
+                            "raw_body_sha256": body_sha,
+                            "parsed_body_sha256": parsed_sha,
+                            "received_at_utc": body_received_at_utc,
+                            "receive_monotonic_ns": body_received_monotonic_ns,
+                            "budget_lease_sha256": hashlib.sha256(lease.encode("utf-8")).hexdigest() if isinstance(lease, str) else None,
+                            "wire_attempt_id": attempt_id,
+                        }
+                        receipt["guard_budget_receipt_sha256"] = hashlib.sha256(
+                            _native_receipt_json(receipt)).hexdigest()
+                        observed.append(receipt)
                 return response
 
         requests.sessions.Session.request = guarded_request
@@ -508,6 +633,75 @@ class ProductionMarketReader:
 
     def read_scope(self, *, priority=None, identity=None):
         return self.__guard.read_scope(priority=priority, identity=identity)
+
+    def capture_guarded_native(self, endpoint: str, five_key, *, priority="HOT"):
+        """Return one SDK-native market result bound to ONE observed GET body.
+
+        This is an optional source-witness hook for a future *single* market
+        acquisition owner. It never creates a new budget lease on its own:
+        `_read` still goes through guarded HTTPAdapter.send once per actual
+        attempt. An SDK-fabricated/cached result or ambiguous retries cannot
+        impersonate a native HTTP Book/Current/Intraday response.
+
+        It is NOT PPI catalog identity authority, broker-signed evidence,
+        realtime session provenance, an order authorization or PAPER_READY.
+        """
+        if endpoint not in {"current", "book", "intraday"} or type(endpoint) is not str:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_ENDPOINT_DENIED")
+        if (not isinstance(five_key, (tuple, list)) or len(five_key) != 5
+            or any(not isinstance(item, str) or
+                   not _NATIVE_IDENTITY_PART.fullmatch(item.strip().upper())
+                   for item in five_key)):
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_IDENTITY_INVALID")
+        identity = tuple(item.strip().upper() for item in five_key)
+        if not isinstance(priority, str) or not priority or len(priority) > 32:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_PRIORITY_INVALID")
+
+        with self.__guard.read_scope(priority=priority, identity=identity):
+            with self.__guard.native_wire_receipt_scope() as attempts:
+                result = self._read(endpoint, identity[0], identity[1], identity[4])
+        if len(attempts) != 1:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_COUNT_UNVERIFIED")
+        receipt = attempts[0]
+        if (set(receipt) != _NATIVE_RECEIPT_KEYS
+            or receipt.get("schema") != _NATIVE_WIRE_RECEIPT_SCHEMA
+            or receipt.get("endpoint") != endpoint
+            or receipt.get("http_method") != "GET"
+            or receipt.get("consumer") != self.__guard.consumer
+            or receipt.get("priority") != priority
+            or receipt.get("identity_source") != "CALLER_ONLY_UNVERIFIED"
+            or receipt.get("http_status_code") != 200
+            or receipt.get("adapter_send_invoked") is not True
+            or receipt.get("adapter_response_completed") is not True
+            or receipt.get("claimed_five_key") != list(identity)
+            or receipt.get("request_identity_3key") != [identity[0], identity[1], identity[4]]
+            or not isinstance(receipt.get("raw_body_sha256"), str)
+            or not isinstance(receipt.get("budget_lease_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", receipt["raw_body_sha256"])
+            or not re.fullmatch(r"[0-9a-f]{64}", receipt["budget_lease_sha256"])
+            or not isinstance(receipt.get("wire_attempt_id"), str)
+            or not re.fullmatch(r"[0-9a-f]{32}", receipt["wire_attempt_id"])
+            or not isinstance(receipt.get("receive_monotonic_ns"), int)
+            or receipt["receive_monotonic_ns"] <= 0):
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_SOURCE_UNVERIFIED")
+        try:
+            stamp = datetime.fromisoformat(receipt["received_at_utc"].replace("Z", "+00:00"))
+            expected_digest = hashlib.sha256(_native_receipt_json({
+                key: value for key, value in receipt.items()
+                if key != "guard_budget_receipt_sha256"})).hexdigest()
+        except (AttributeError, ValueError, TypeError, OverflowError) as error:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_SOURCE_UNVERIFIED") from error
+        if (stamp.tzinfo is None or stamp.utcoffset() is None
+            or stamp.utcoffset().total_seconds() != 0
+            or receipt.get("guard_budget_receipt_sha256") != expected_digest):
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_INTEGRITY_INVALID")
+        try:
+            sdk_digest = hashlib.sha256(_native_receipt_json(result)).hexdigest()
+        except (ValueError, TypeError, OverflowError, RecursionError) as error:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_SDK_PAYLOAD_INVALID") from error
+        if receipt.get("parsed_body_sha256") != sdk_digest:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_PAYLOAD_MISMATCH")
+        return {"native_payload": result, "guard_wire_receipt": receipt}
 
     def _read(self, endpoint, *args):
         self.__guard._scope.read_error_code = None
