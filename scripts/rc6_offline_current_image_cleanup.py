@@ -273,18 +273,33 @@ def cleanup(required_free_bytes=None):
         repos={tag.split(':',1)[0] for tag in tags}
         stale_shas={tag.rsplit(':',1)[-1].removeprefix('17.0.0-rc6-candidate-')
                     for tag in candidate_tags}
+        current_record=image(current)
         if (STABLE not in tags or not candidate_tags or
                 any(CANDIDATE_TAG.fullmatch(tag) is None for tag in candidate_tags) or
                 len(stale_shas)!=1 or before['candidate_sha'] in stale_shas or
                 any(re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',d) is None
                     or d.split('@',1)[0] not in repos for d in digests) or
                 stale_id in references() or current not in references() or
-                image(current)['Id']!=current):
+                current_record['Id']!=current):
             raise ValueError('OFFLINE_CURRENT_STALE_NOT_EXCLUSIVE')
-        # Stale STABLE is being overwritten and its candidate tags removed.
-        # Verify OCI ownership *before* the first docker tag mutation.
+        # Both images are affected by the STABLE pointer transfer: stale loses
+        # its alias, current acquires it. Verify each independent OCI identity
+        # before any Docker mutation, including the running image.
         stale_sha=next(iter(stale_shas))
         _require_candidate_oci(stale, stale_sha)
+        _require_candidate_oci(current_record, before['candidate_sha'])
+        current_tags=current_record.get('RepoTags')
+        current_digests=current_record.get('RepoDigests') or []
+        current_repos={tag.split(':',1)[0] for tag in current_tags or []}
+        if (type(current_tags) is not list or not current_tags or
+                any(type(tag) is not str or CANDIDATE_TAG.fullmatch(tag) is None
+                    or tag[-40:]!=before['candidate_sha'] for tag in current_tags) or
+                type(current_digests) is not list or
+                any(type(digest) is not str or
+                    re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',digest) is None
+                    or digest.split('@',1)[0] not in current_repos
+                    for digest in current_digests)):
+            raise ValueError('OFFLINE_CURRENT_RUNTIME_IMAGE_ALIAS_UNVERIFIED')
         free_before=shutil.disk_usage('/').free
         if admission()!=before or stale_id in references():
             raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
