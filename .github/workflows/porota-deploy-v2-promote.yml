@@ -990,7 +990,31 @@ jobs:
               "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase preclean env POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' HOUSEKEEPING_B64='$HOUSEKEEPING_B64' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
-          TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
+          # A690: /tmp is shared; atomically reserve a private 0700 directory.
+          # Never truncate/remove fixed-name host files or follow a symlink.
+          RC6_PRECLEAN_SCRATCH="$(mktemp -d -- /tmp/rc6-porota-preclean.XXXXXXXXXX)"
+          TMP_POLICY="$RC6_PRECLEAN_SCRATCH/policy.json"
+          TMP_HOUSEKEEPING="$RC6_PRECLEAN_SCRATCH/housekeeping.json"
+          cleanup_preclean_scratch() {
+            local original_rc=$?
+            trap - EXIT
+            if [ -d "$RC6_PRECLEAN_SCRATCH" ] && [ ! -L "$RC6_PRECLEAN_SCRATCH" ] &&
+               [ "$(stat -c '%a:%u' "$RC6_PRECLEAN_SCRATCH")" = "700:$(id -u)" ]; then
+              rm -f -- "$TMP_POLICY" "$TMP_HOUSEKEEPING" || original_rc=65
+              rmdir -- "$RC6_PRECLEAN_SCRATCH" || original_rc=65
+            else
+              original_rc=65
+            fi
+            if [ "$original_rc" -eq 0 ]; then
+              echo 'RC6_DISK_PRECLEAN_REMOTE=GREEN'
+            else
+              echo '::error::RC6_DISK_PRECLEAN_REMOTE=DEFERRED_UNVERIFIED'
+            fi
+            exit "$original_rc"
+          }
+          trap cleanup_preclean_scratch EXIT
+          test ! -L "$RC6_PRECLEAN_SCRATCH"
+          test "$(stat -c '%a:%u' "$RC6_PRECLEAN_SCRATCH")" = "700:$(id -u)"
           printf '%s' "$POLICY_B64" | base64 -d > "$TMP_POLICY"
           test -f "$REPO/scripts/rc6_disk_housekeeping.py"
 
@@ -1003,10 +1027,9 @@ jobs:
           # Host-wide housekeeping is inventory only: /tmp, apt, journal, and
           # backups may have other owners, including PPI Watch. Reclaim only
           # proven-unreferenced RC6 images below, then fail closed on space.
-          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
           printf '%s' "$HOUSEKEEPING_B64" | base64 -d | sudo -n python3 - \
             --policy "$TMP_POLICY" --mode audit --preserve-backups \
-            --json-out /tmp/porota-predeploy-housekeeping.json
+            --json-out "$TMP_HOUSEKEEPING"
           echo 'RC6_PRECLEAN_HOSTWIDE_MUTATION=SKIPPED'
           # Shared Docker images and build caches have no RC6 ownership proof.
           # The measured reserve below fails closed if owned cleanup is insufficient.
@@ -1100,8 +1123,7 @@ jobs:
             done
           )"
           test "$PPI_AFTER" = "$PPI_BEFORE"
-          rm -f "$TMP_POLICY"
-          echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
+          echo 'RC6_DISK_PRECLEAN_VALIDATION=GREEN_PENDING_PRIVATE_SCRATCH_RELEASE'
           PRECLEAN_REMOTE
 
             mapfile -t METRICS < <(probe_disk)
@@ -2530,6 +2552,15 @@ jobs:
             done
           )"
           test "$PPI_WATCH_FINAL" = "$PPI_WATCH_BEFORE"
+          # A690: a successful disk reserve does NOT certify candidate/staging
+          # cleanup. Failed or unverified cleanup is a blocking FIX-FORWARD
+          # state, never a false successful release or a broad Docker prune.
+          if [ "$RC6_CLEANUP_RC" -ne 0 ] || [ "$RC6_STAGE_CLEANUP_RC" -ne 0 ]; then
+            echo "::error::RC6_SHARED_HOST_CLEANUP_DEFERRED_UNVERIFIED; no destructive fallback"
+            echo "RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|candidate_rc=$RC6_CLEANUP_RC|staging_rc=$RC6_STAGE_CLEANUP_RC|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
+            echo "RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID"
+            exit 79
+          fi
           echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
