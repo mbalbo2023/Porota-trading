@@ -22,7 +22,7 @@ import zlib
 from zoneinfo import ZoneInfo
 
 
-SCHEMA = "rc6.a667.cold-failure-cause-readonly.v2"
+SCHEMA = "rc6.a667.cold-failure-cause-readonly.v3"
 DATA = Path("/opt/porota-trading/data")
 COLD_PARTS = ("paper_v17", "artifacts", "observer_v17.db", "dynamic-shadow", "cold-audit")
 # Already-public source identities; none of their literal values leave the host.
@@ -408,7 +408,8 @@ def _counts(data: Path, *, readonly: bool):
                       "historical_cold2_cut_presence": "NO_VERIFICADO",
                       "current_cut_manifest_binding": "NO_VERIFICADO",
                       "current_cut_paper_zero_routes_blocked": None,
-                      "known_successor_manifest_exact": None}
+                      "known_successor_manifest_exact": None,
+                      "unrecognized_failed_id_bound": None}
         if len(failed) == 1 and binding == "MATCHES_FAILED_RECEIPT":
             ident, manifest_sha, labels, receipt_raw = failed[0]
             diagnostic.update(labels)
@@ -432,6 +433,13 @@ def _counts(data: Path, *, readonly: bool):
                     hmac.compare_digest(manifest_sha, KNOWN_SUCCESSOR_MANIFEST) and
                     diagnostic["failed_manifest_relation"] ==
                     "MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED")
+            if diagnostic["current_failed_relation"] == "CURRENT_FAILED_PENDING_REFERENCE_BOUND":
+                diagnostic["unrecognized_failed_id_bound"] = (
+                    diagnostic["current_snapshot_class"] == "OTHER" and
+                    diagnostic["current_generation_class"] == "OTHER" and
+                    diagnostic["current_cut_manifest_binding"] == "BOUND" and
+                    diagnostic["failed_manifest_relation"] ==
+                    "MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED")
         return {"receipt_count": len(receipts),
                 "failed_receipt_count": len(failed),
                 "queue_state": queue_state, "queue_failed_binding": binding,
@@ -447,6 +455,7 @@ def _live_diagnostic(data: Path, *, readonly: bool):
     """Read only the bounded status envelope; never export its raw contents."""
     result = {"live_status_class": "NO_VERIFICADO",
               "live_cancel_site_class": "NO_VERIFICADO",
+               "live_error_origin_class": "NO_VERIFICADO",
               "live_paper_zero_routes_blocked": None}
     fds = []
     try:
@@ -476,8 +485,16 @@ def _live_diagnostic(data: Path, *, readonly: bool):
                 "STAGE_360" if type(line) is int and line == 360 else
                 "SEAL_386_NOT_WHITELISTED" if type(line) is int and line == 386
                 else "OTHER")
+            # Line sites checked against the exact 7e1e... product cold_audit.py.
+            # These are provenance labels, NEVER proof of clean stop/quiescence.
+            result["live_error_origin_class"] = (
+                "MEMORY_RESERVE_GUARD_55" if type(line) is int and line == 55 else
+                "FAILED_BACKLOG_GUARD" if type(line) is int and line in (595, 628, 665) else
+                "CANCEL_SITE_265_360_386" if type(line) is int and line in (265, 360, 386) else
+                "OTHER_COLD_AUDIT_LINE")
         else:
             result["live_cancel_site_class"] = "NOT_COLD_AUDIT_VALUE_ERROR"
+            result["live_error_origin_class"] = "NOT_COLD_AUDIT_VALUE_ERROR"
     except (Hold, OSError, ValueError, TypeError, KeyError):
         pass
     finally:
@@ -487,7 +504,8 @@ def _live_diagnostic(data: Path, *, readonly: bool):
 
 
 def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
-                          expected_manifest: str, historical: bool):
+                          expected_manifest: str, historical: bool,
+                          detail: dict | None = None):
     """Never open or hash the large .pack; verify only metadata and small receipts."""
     try:
         archive_fd = os.open("rc6-failed-cold-"+ident, DIRECTORY_FLAGS, dir_fd=fd)
@@ -540,13 +558,21 @@ def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
         # lstat: a symlink/hardlink cannot inherit a valid historical label.
         pack = os.stat(ident+".pack", dir_fd=archive_fd, follow_symlinks=False)
         original_identity = manifest.get("pack_identity")
-        if (not stat.S_ISREG(pack.st_mode) or pack.st_nlink != 1 or
-                pack.st_uid != uid or stat.S_IMODE(pack.st_mode)&0o077 or
-                type(manifest.get("pack_bytes")) is not int or
-                manifest["pack_bytes"] != pack.st_size or
-                type(original_identity) is not list or len(original_identity) != 5 or
-                original_identity[:4] != [pack.st_dev,pack.st_ino,pack.st_size,
-                                          pack.st_mtime_ns]):
+        cause = (
+            "PACK_TYPE_LINK_MODE" if not stat.S_ISREG(pack.st_mode) or
+                pack.st_nlink != 1 or stat.S_IMODE(pack.st_mode)&0o077 else
+            "PACK_OWNER" if pack.st_uid != uid else
+            "PACK_BYTES" if type(manifest.get("pack_bytes")) is not int or
+                manifest["pack_bytes"] != pack.st_size else
+            "IDENTITY_SHAPE" if type(original_identity) is not list or
+                len(original_identity) != 5 or
+                any(type(value) is not int for value in original_identity) else
+            "PACK_DEV_INO" if original_identity[:2] != [pack.st_dev, pack.st_ino] else
+            "PACK_IDENTITY_SIZE" if original_identity[2] != pack.st_size else
+            "PACK_MTIME" if original_identity[3] != pack.st_mtime_ns else None)
+        if cause is not None:
+            if detail is not None:
+                detail["cause"] = cause
             return "PACK_METADATA_UNVERIFIED"
         final = os.fstat(archive_fd)
         if (set(os.listdir(archive_fd)) != set(names) or
@@ -555,6 +581,8 @@ def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
                 (final.st_dev, final.st_ino, final.st_mtime_ns,
                  final.st_ctime_ns)):
             return "NO_VERIFICADO"
+        if detail is not None:
+            detail["cause"] = "NONE"
         return "METADATA_BOUND_PACK_NOT_HASHED"
     except (Hold, OSError, ValueError, TypeError, KeyError):
         return "NO_VERIFICADO"
@@ -564,7 +592,8 @@ def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
 
 def _archive_diagnostic(data: Path, *, readonly: bool):
     result = {"original_archive_class": "NO_VERIFICADO",
-              "historical_cold2_archive_class": "NO_VERIFICADO"}
+              "historical_cold2_archive_class": "NO_VERIFICADO",
+              "historical_cold2_pack_metadata_cause": "NO_VERIFICADO"}
     fds = []
     try:
         fds = _open_tree(data, ("deploy",), readonly=readonly)
@@ -572,9 +601,12 @@ def _archive_diagnostic(data: Path, *, readonly: bool):
         result["original_archive_class"] = _one_archive_metadata(
             fd, readonly=readonly, ident=ORIGINAL_ID,
             expected_manifest=ORIGINAL_MANIFEST, historical=False)
+        cause = {"cause": "NOT_APPLICABLE"}
         result["historical_cold2_archive_class"] = _one_archive_metadata(
             fd, readonly=readonly, ident=HISTORICAL_COLD2_ID,
-            expected_manifest=HISTORICAL_COLD2_MANIFEST, historical=True)
+            expected_manifest=HISTORICAL_COLD2_MANIFEST, historical=True,
+            detail=cause)
+        result["historical_cold2_pack_metadata_cause"] = cause["cause"]
     except (Hold, OSError, ValueError, TypeError):
         pass
     finally:
@@ -606,11 +638,14 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
         "current_cut_manifest_binding": "NO_VERIFICADO",
         "current_cut_paper_zero_routes_blocked": None,
         "known_successor_manifest_exact": None,
+        "unrecognized_failed_id_bound": None,
         "live_status_class": "NO_VERIFICADO",
         "live_cancel_site_class": "NO_VERIFICADO",
+        "live_error_origin_class": "NO_VERIFICADO",
         "live_paper_zero_routes_blocked": None,
         "original_archive_class": "NO_VERIFICADO",
         "historical_cold2_archive_class": "NO_VERIFICADO",
+        "historical_cold2_pack_metadata_cause": "NO_VERIFICADO",
         # Explicit scope exclusions: no stop receipt/report or pack content read.
         "quiescence_verified": False, "computed_report_hash_verified": False,
         "pack_content_hash_verified": False, "runtime_running_verified": False,

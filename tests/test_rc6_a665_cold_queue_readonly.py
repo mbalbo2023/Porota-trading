@@ -154,6 +154,7 @@ class ColdQueueReadOnly(unittest.TestCase):
                          "MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED")
         self.assertEqual(record["current_failed_relation"],
                          "CURRENT_FAILED_PENDING_REFERENCE_BOUND")
+        self.assertTrue(record["unrecognized_failed_id_bound"])
         self.assertNotIn(IDENT, json.dumps(record))
         self.assertNotIn("PRIVATE-ACCOUNT-TICKER", json.dumps(record))
 
@@ -180,10 +181,12 @@ class ColdQueueReadOnly(unittest.TestCase):
         record = self.read()
         self.assertEqual(record["failed_manifest_relation"], "PACK_METADATA_MISMATCH")
         self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertFalse(record["unrecognized_failed_id_bound"])
         current = self.cold.parent / "CURRENT.json"
         current.write_text(current.read_text().replace("digest", "danger", 1))
         record = self.read()
         self.assertEqual(record["current_failed_relation"], "NO_VERIFICADO")
+        self.assertIsNone(record["unrecognized_failed_id_bound"])
         self.assertEqual(record["failed_receipt_count"], 1)
 
     def test_missing_manifest_never_erases_failed_receipt_or_exposes_private_id(self):
@@ -424,6 +427,8 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertEqual(record["live_status_class"], "FAIL_CLOSED")
         self.assertEqual(record["live_cancel_site_class"],
                          "SEAL_386_NOT_WHITELISTED")
+        self.assertEqual(record["live_error_origin_class"],
+                         "CANCEL_SITE_265_360_386")
         self.assertTrue(record["live_paper_zero_routes_blocked"])
         self.assertFalse(record["quiescence_verified"])
         self.assertNotIn("CANNOT_EXPORT_PRIVATE_SECRET", json.dumps(record))
@@ -433,6 +438,54 @@ class ColdQueueReadOnly(unittest.TestCase):
                    "digest": hashlib.sha256(canonical).hexdigest()}
         path.write_text(json.dumps(wrapper))
         self.assertFalse(self.read()["live_paper_zero_routes_blocked"])
+
+    def test_v3_exact_memory_site_is_not_mislabelled_as_clean_stop(self):
+        self.write_failure_with_current(code="SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED",
+                                        phase="REPORT_VERIFY")
+        status = {"status":"FAIL_CLOSED","real_orders_sent":0,
+                  "real_routes":"NOT_CALLED","error_class":"ValueError",
+                  "error_module":"cold_audit","error_line":55,
+                  "private_account":"never-export"}
+        canonical = json.dumps(status,sort_keys=True,
+                               separators=(",", ":")).encode()
+        path = self.cold.parent / "status.json"
+        path.write_text(json.dumps({"payload":status,"digest":
+            hashlib.sha256(canonical).hexdigest()}))
+        path.chmod(0o600)
+        result = self.read()
+        self.assertEqual(result["live_status_class"],"FAIL_CLOSED")
+        self.assertEqual(result["live_cancel_site_class"],"OTHER")
+        self.assertEqual(result["live_error_origin_class"],"MEMORY_RESERVE_GUARD_55")
+        self.assertFalse(result["quiescence_verified"])
+        self.assertFalse(result["causal_fix_verified"])
+        self.assertTrue(result["unrecognized_failed_id_bound"])
+        self.assertNotIn("never-export",json.dumps(result))
+
+    def test_v3_backlog_and_cancel_sites_remain_distinct(self):
+        self.write_failure_with_current()
+        status = {"status":"FAIL_CLOSED","real_orders_sent":0,
+                  "real_routes":"NOT_CALLED","error_class":"ValueError",
+                  "error_module":"cold_audit","error_line":595}
+        path = self.cold.parent / "status.json"
+        for line,cause,site in ((595,"FAILED_BACKLOG_GUARD","OTHER"),
+                                (628,"FAILED_BACKLOG_GUARD","OTHER"),
+                                (665,"FAILED_BACKLOG_GUARD","OTHER"),
+                                (265,"CANCEL_SITE_265_360_386","FRAME_265"),
+                                (360,"CANCEL_SITE_265_360_386","STAGE_360"),
+                                (386,"CANCEL_SITE_265_360_386",
+                                 "SEAL_386_NOT_WHITELISTED"),
+                                (123,"OTHER_COLD_AUDIT_LINE","OTHER")):
+            with self.subTest(error_line=line):
+                status["error_line"] = line
+                canonical = json.dumps(status,sort_keys=True,
+                                       separators=(",", ":")).encode()
+                path.write_text(json.dumps({"payload":status,"digest":
+                    hashlib.sha256(canonical).hexdigest()}))
+                path.chmod(0o600)
+                result = self.read()
+                self.assertEqual(result["live_error_origin_class"],cause)
+                self.assertEqual(result["live_cancel_site_class"],site)
+                self.assertFalse(result["quiescence_verified"])
 
     def _synthetic_archive(self, *, historical):
         ident = probe.HISTORICAL_COLD2_ID if historical else probe.ORIGINAL_ID
@@ -500,6 +553,30 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertEqual(record["historical_cold2_archive_class"],
                          "INCOMPLETE_OR_EXTRA")
 
+    def test_v3_historical_cold2_pack_reason_is_categorical_and_bounded(self):
+        archive,manifest_sha = self._synthetic_archive(historical=True)
+        pack = archive / (probe.HISTORICAL_COLD2_ID + ".pack")
+        with patch.object(probe,"HISTORICAL_COLD2_MANIFEST",manifest_sha):
+            record = self.read()
+            self.assertEqual(record["historical_cold2_archive_class"],
+                             "METADATA_BOUND_PACK_NOT_HASHED")
+            self.assertEqual(record["historical_cold2_pack_metadata_cause"],"NONE")
+            pack.chmod(0o640)
+            record = self.read()
+            self.assertEqual(record["historical_cold2_archive_class"],
+                             "PACK_METADATA_UNVERIFIED")
+            self.assertEqual(record["historical_cold2_pack_metadata_cause"],
+                             "PACK_TYPE_LINK_MODE")
+            pack.chmod(0o600)
+            old_mtime = pack.stat().st_mtime_ns
+            os.utime(pack,ns=(old_mtime+1_000_000_000,
+                              old_mtime+1_000_000_000))
+            record = self.read()
+            self.assertEqual(record["historical_cold2_pack_metadata_cause"],
+                             "PACK_MTIME")
+            self.assertFalse(record["pack_content_hash_verified"])
+            self.assertNotIn(str(archive),json.dumps(record))
+
     def test_v2_archive_proof_never_reads_pack_contents(self):
         _,manifest_sha = self._synthetic_archive(historical=False)
         actual_open,actual_read = os.open,os.read
@@ -521,9 +598,12 @@ class ColdQueueReadOnly(unittest.TestCase):
 
     def test_v2_workflow_schema_sanitizes_only_fixed_categories(self):
         content = WORKFLOW.read_text()
-        self.assertIn("rc6.a667.cold-failure-cause-readonly.v2",content)
+        self.assertIn("rc6.a667.cold-failure-cause-readonly.v3",content)
         self.assertIn("CURRENT_CATEGORY_WITHOUT_FAILED_BINDING",content)
         self.assertIn("SUCCESSOR_METADATA_WITHOUT_IDENTITY",content)
+        self.assertIn("UNKNOWN_FAILED_ID_NOT_BOUND",content)
+        self.assertIn("HISTORICAL_PACK_CAUSE_CONTRADICTION",content)
+        self.assertIn("LIVE_SITE_CAUSE_CONTRADICTION",content)
         self.assertIn("LIVE_STATUS_UNBOUND",content)
         self.assertIn("raw.stat().st_size>4096",content)
         self.assertNotIn("pack_content_hash_verified':True",content)

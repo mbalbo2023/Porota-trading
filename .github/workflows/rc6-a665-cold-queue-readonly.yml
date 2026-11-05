@@ -90,7 +90,7 @@ jobs:
           from datetime import datetime,timezone,timedelta
           from pathlib import Path
 
-          schema='rc6.a667.cold-failure-cause-readonly.v2'
+          schema='rc6.a667.cold-failure-cause-readonly.v3'
           raw=Path('evidence/.a667_private_raw.json')
           source=Path('scripts/rc6_a665_cold_queue_readonly.py')
           spec=importlib.util.spec_from_file_location('a667_ro_categories',source)
@@ -116,11 +116,14 @@ jobs:
                 'current_cut_manifest_binding':'NO_VERIFICADO',
                 'current_cut_paper_zero_routes_blocked':None,
                 'known_successor_manifest_exact':None,
+                'unrecognized_failed_id_bound':None,
                 'live_status_class':'NO_VERIFICADO',
                 'live_cancel_site_class':'NO_VERIFICADO',
+                'live_error_origin_class':'NO_VERIFICADO',
                 'live_paper_zero_routes_blocked':None,
                 'original_archive_class':'NO_VERIFICADO',
                 'historical_cold2_archive_class':'NO_VERIFICADO',
+                'historical_cold2_pack_metadata_cause':'NO_VERIFICADO',
                 'quiescence_verified':False,
                 'computed_report_hash_verified':False,
                 'pack_content_hash_verified':False,
@@ -219,17 +222,26 @@ jobs:
                   ('live_cancel_site_class',{'NO_VERIFICADO','FRAME_265',
                       'STAGE_360','SEAL_386_NOT_WHITELISTED','OTHER',
                       'NOT_COLD_AUDIT_VALUE_ERROR'}),
+                   ('live_error_origin_class',{'NO_VERIFICADO',
+                       'MEMORY_RESERVE_GUARD_55','FAILED_BACKLOG_GUARD',
+                       'CANCEL_SITE_265_360_386','OTHER_COLD_AUDIT_LINE',
+                       'NOT_COLD_AUDIT_VALUE_ERROR'}),
                   ('original_archive_class',{'NO_VERIFICADO','ABSENT',
                       'INCOMPLETE_OR_EXTRA','SMALL_RECEIPT_MISMATCH',
                       'PACK_METADATA_UNVERIFIED','METADATA_BOUND_PACK_NOT_HASHED'}),
                   ('historical_cold2_archive_class',{'NO_VERIFICADO','ABSENT',
                       'INCOMPLETE_OR_EXTRA','SMALL_RECEIPT_MISMATCH',
-                      'PACK_METADATA_UNVERIFIED','METADATA_BOUND_PACK_NOT_HASHED'})):
+                       'PACK_METADATA_UNVERIFIED','METADATA_BOUND_PACK_NOT_HASHED'}),
+                   ('historical_cold2_pack_metadata_cause',{'NO_VERIFICADO',
+                       'NOT_APPLICABLE','NONE','PACK_TYPE_LINK_MODE','PACK_OWNER',
+                       'PACK_BYTES','IDENTITY_SHAPE','PACK_DEV_INO',
+                       'PACK_IDENTITY_SIZE','PACK_MTIME'})):
                   value=obj.get(key)
                   if type(value) is not str or value not in allowed:
                       raise ValueError('HOST_CATEGORY_INVALID_'+key)
                   safe[key]=value
               for key in ('known_successor_manifest_exact',
+                           'unrecognized_failed_id_bound',
                           'current_cut_paper_zero_routes_blocked',
                           'live_paper_zero_routes_blocked'):
                   value=obj.get(key)
@@ -243,11 +255,19 @@ jobs:
                       safe['historical_cold2_cut_presence']=='NO_VERIFICADO' or
                       safe['current_cut_manifest_binding']=='NO_VERIFICADO'):
                       raise ValueError('CURRENT_CATEGORY_NOT_BOUND')
+                  expected_unrecognized=(
+                      safe['current_snapshot_class']=='OTHER' and
+                      safe['current_generation_class']=='OTHER' and
+                      safe['current_cut_manifest_binding']=='BOUND' and
+                      manifest=='MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED')
+                  if safe['unrecognized_failed_id_bound'] is not expected_unrecognized:
+                      raise ValueError('UNKNOWN_FAILED_ID_NOT_BOUND')
               elif (any(safe[key]!='NO_VERIFICADO' for key in (
                       'current_snapshot_class','current_generation_class',
                       'original_old_cut_presence','historical_cold2_cut_presence',
                       'current_cut_manifest_binding')) or
-                      safe['known_successor_manifest_exact'] is not None):
+                       safe['known_successor_manifest_exact'] is not None or
+                       safe['unrecognized_failed_id_bound'] is not None):
                   raise ValueError('CURRENT_CATEGORY_WITHOUT_FAILED_BINDING')
               if current in ('NO_VERIFICADO','CURRENT_POINTER_INVALID',
                       'CURRENT_CUT_SIZE_UNVERIFIED','CURRENT_REFERENCE_UNVERIFIED',
@@ -259,11 +279,29 @@ jobs:
                   raise ValueError('SUCCESSOR_METADATA_WITHOUT_IDENTITY')
               if safe['live_status_class']=='NO_VERIFICADO' and (
                       safe['live_cancel_site_class']!='NO_VERIFICADO' or
+                       safe['live_error_origin_class']!='NO_VERIFICADO' or
                       safe['live_paper_zero_routes_blocked'] is not None):
                   raise ValueError('LIVE_STATUS_UNBOUND')
               if safe['live_cancel_site_class'] in ('FRAME_265','STAGE_360',
                       'SEAL_386_NOT_WHITELISTED') and safe['live_status_class']!='FAIL_CLOSED':
                   raise ValueError('COLD_CANCEL_WITHOUT_FAIL_CLOSED')
+              if (safe['live_error_origin_class']=='CANCEL_SITE_265_360_386') != (
+                      safe['live_cancel_site_class'] in (
+                          'FRAME_265','STAGE_360','SEAL_386_NOT_WHITELISTED')):
+                  raise ValueError('LIVE_SITE_CAUSE_CONTRADICTION')
+              if ((safe['live_error_origin_class']=='NOT_COLD_AUDIT_VALUE_ERROR') !=
+                      (safe['live_cancel_site_class']=='NOT_COLD_AUDIT_VALUE_ERROR')):
+                  raise ValueError('LIVE_CAUSE_MODULE_CONTRADICTION')
+              archive=safe['historical_cold2_archive_class']
+              cause=safe['historical_cold2_pack_metadata_cause']
+              if (archive=='PACK_METADATA_UNVERIFIED' and cause not in (
+                      'PACK_TYPE_LINK_MODE','PACK_OWNER','PACK_BYTES',
+                      'IDENTITY_SHAPE','PACK_DEV_INO','PACK_IDENTITY_SIZE',
+                      'PACK_MTIME') or archive=='METADATA_BOUND_PACK_NOT_HASHED' and
+                      cause!='NONE' or archive not in (
+                      'PACK_METADATA_UNVERIFIED','METADATA_BOUND_PACK_NOT_HASHED') and
+                      cause not in ('NOT_APPLICABLE','NO_VERIFICADO')):
+                  raise ValueError('HISTORICAL_PACK_CAUSE_CONTRADICTION')
               utc=datetime.fromisoformat(obj['generated_at_utc'])
               art=datetime.fromisoformat(obj['generated_at_art'])
               if (utc.utcoffset()!=timedelta(0) or
@@ -288,6 +326,8 @@ jobs:
           print('A667_CURRENT_RELATION='+safe['current_failed_relation'])
           print('A667_CURRENT_CLASS='+safe['current_snapshot_class'])
           print('A667_LIVE_STATUS='+safe['live_status_class'])
+          print('A667_LIVE_CAUSE='+safe['live_error_origin_class'])
+          print('A667_COLD2_PACK_CAUSE='+safe['historical_cold2_pack_metadata_cause'])
           print('A667_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
           PY
           rm -f evidence/.a667_private_raw.json
