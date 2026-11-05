@@ -616,6 +616,24 @@ class ProductionMarketReader:
             raise RuntimeError("El lector no esta autenticado.")
         return self.__client.marketdata
 
+    def market_only_sdk_transport(self, *, instrument_factory):
+        """Bind the documented MARKET realtime methods to this logged-in PPI.
+
+        This is the *same* private PPI object used for REST marketdata, not a
+        separate SDK constructor/login. Return only the narrow three-method
+        MarketOnlySDKTransport, never expose the full SDK or raw .realtime facet
+        with its potential account stream methods. Python facades are not a
+        security sandbox; run the owner in an isolated PAPER-only process.
+        No connection or subscription is started by this accessor.
+        """
+        self._market()  # requires successful login_once on this exact object
+        if not callable(instrument_factory):
+            raise ReadOnlyPolicyViolation("PPI_MARKET_ONLY_INSTRUMENT_FACTORY_MISSING")
+        from rc6_ppi_shared_producer import MarketOnlySDKTransport
+        realtime = getattr(self.__client, "realtime", None)
+        return MarketOnlySDKTransport(
+            realtime=realtime, instrument_factory=instrument_factory)
+
     def current(self, ticker: str, instrument_type: str, settlement: str):
         return self._read("current", ticker, instrument_type, settlement)
 
