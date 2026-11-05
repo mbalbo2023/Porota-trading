@@ -4,11 +4,6 @@ name: RC6 A630 PPI Current Book bounded sampling 04-Nov READ_ONLY
 # The day/time preflight always runs BEFORE SSH or provider access.
 # GitHub schedule is best-effort and may be late; a late slot fails closed.
 on:
-  schedule:
-    - cron: '45 13 * * 3'  # 10:45 ART
-    - cron: '20 14 * * 3'  # 11:20 ART
-    - cron: '30 17 * * 3'  # 14:30 ART
-    - cron: '30 19 * * 3'  # 16:30 ART
   workflow_dispatch:
     inputs:
       slot:
