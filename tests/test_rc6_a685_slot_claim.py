@@ -23,10 +23,10 @@ NOW = datetime(2026, 11, 5, 14, 0, tzinfo=timezone.utc)
 
 
 def run(run_id, number, *, event="schedule", status="completed",
-        timestamp="2026-11-05T13:45:00Z"):
+        timestamp="2026-11-05T13:45:00Z", path=WORKFLOW_PATH):
     return {"id": run_id, "run_number": number, "event": event,
             "created_at": timestamp, "head_branch": "main",
-            "path": WORKFLOW_PATH + "@main", "status": status}
+            "path": path, "status": status}
 
 
 def artifact(name, *, expired=False):
@@ -130,6 +130,11 @@ class SlotClaimTests(unittest.TestCase):
         env = self._env()
         env["GITHUB_SHA"] = "SPOOFED"
         self.assertHold("A670_CLAIM_SOURCE_SHA_INVALID", lambda: prepare_claim(env, NOW))
+
+    def test_spoofed_workflow_path_suffix_fails_closed(self):
+        fetch, _ = dataset([run(100, 20, path=WORKFLOW_PATH + "@main")])
+        self.assertHold("A670_CLAIM_RUN_HISTORY_AMBIGUOUS",
+                        lambda: no_prior_attempt(self.claim, fetch))
 
     def test_strict_art_date_clock_gate_and_midnight_window(self):
         env = self._env()
