@@ -26,6 +26,7 @@ class Docker:
             STALE: [clean.STABLE, PREDEPLOY, CANDIDATE],
         }
         self.refs = {CURRENT}
+        self.labels = {}  # Override OCI labels for adversarial foreign-image tests.
         self.calls = []
         self.before_remove = None
 
@@ -40,9 +41,18 @@ class Docker:
             identity = next((ident for ident, tags in self.images.items()
                              if args[2] == ident or args[2] in tags), None)
             if identity is None: raise ValueError('IMAGE_ABSENT')
-            return json.dumps([{'Id':identity,'RepoTags':self.images[identity],
+            aliases = self.images[identity]
+            commit = (NEW_SHA if identity == CURRENT else
+                      next((tag[-40:] for tag in aliases
+                            if clean.CANDIDATE_TAG.fullmatch(tag)), None))
+            # Positive fixtures prove the exact OCI label contract. Missing
+            # labels are tested explicitly below and must HOLD before deletion.
+            valid_labels = ({'porota.predeploy': 'v2', 'porota.commit': commit}
+                            if commit is not None else {})
+            return json.dumps([{'Id':identity,'RepoTags':aliases,
                                 'RepoDigests':['porota-trading-bot@sha256:'+'f'*64]
-                                if identity == STALE else []}])
+                                if identity == STALE else [],
+                                'Config': {'Labels': self.labels.get(identity, valid_labels)}}])
         if args[0] == 'tag':
             assert args == ('tag', CURRENT, clean.STABLE)
             self.images[STALE].remove(clean.STABLE)
@@ -117,6 +127,59 @@ def test_container_reference_rejects_before_pointer_change(host):
     with pytest.raises(ValueError, match='STALE_NOT_EXCLUSIVE'):
         clean.cleanup()
     assert not any(args[0] == 'tag' for args in host.calls)
+
+
+def test_missing_or_contradictory_oci_ownership_blocks_before_any_mutation(host):
+    # The former helper would delete the alias even though label provenance
+    # was absent or contradicted the candidate SHA encoded in its tags.
+    originals = [
+        None,
+        {},
+        {'porota.predeploy': 'v1', 'porota.commit': OLD_SHA},
+        {'porota.predeploy': 'v2', 'porota.commit': 'f' * 40},
+        {'porota.predeploy': 'v2', 'porota.commit': OLD_SHA,
+         'foreign': True},
+    ]
+    for labels in originals:
+        host.labels[STALE] = labels
+        before_mutations = [args for args in host.calls
+                            if args[0] == 'tag' or args[:2] == ('image', 'rm')]
+        with pytest.raises(ValueError, match='OCI_OWNERSHIP_UNVERIFIED'):
+            clean.cleanup()
+        assert [args for args in host.calls
+                if args[0] == 'tag' or args[:2] == ('image', 'rm')] == before_mutations
+        assert clean.STABLE in host.images[STALE]
+        assert PREDEPLOY in host.images[STALE]
+
+
+def test_historical_missing_or_foreign_oci_label_never_removed(host, monkeypatch):
+    historical_tag = clean.HISTORICAL_PREDEPLOY_TAGS[0]
+    host.images[HISTORICAL] = [historical_tag]
+    host.labels[HISTORICAL] = {'porota.predeploy': 'v2',
+                              'porota.commit': 'f' * 40}
+    monkeypatch.setattr(clean.shutil, 'disk_usage',
+                        lambda _: SimpleNamespace(free=1024 ** 3))
+    with pytest.raises(ValueError, match='OCI_OWNERSHIP_UNVERIFIED'):
+        clean.cleanup(2 * 1024 ** 3)
+    assert historical_tag in host.images[HISTORICAL]
+    assert ('image', 'rm', historical_tag) not in host.calls
+
+
+def test_candidate_alias_retargeted_to_foreign_image_never_removed(host, monkeypatch):
+    old_image = clean.image
+    foreign_image = 'sha256:' + 'f' * 64
+
+    def image_with_race(name):
+        if name == PREDEPLOY and clean.STABLE not in host.images[STALE]:
+            return {'Id': foreign_image, 'RepoTags': [PREDEPLOY],
+                    'RepoDigests': [], 'Config': {'Labels': {}}}
+        return old_image(name)
+
+    monkeypatch.setattr(clean, 'image', image_with_race)
+    with pytest.raises(ValueError, match='IMAGE_OWNERSHIP_CHANGED'):
+        clean.cleanup()
+    assert not any(args[:2] == ('image', 'rm') for args in host.calls)
+    assert PREDEPLOY in host.images[STALE]
 
 
 def test_changed_admission_rejects_before_pointer_change(host, monkeypatch):
