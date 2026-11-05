@@ -12,12 +12,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation
-from rc6_ppi_shared_feed import PPIReadOnlyNativeReceiptStore, PPISharedMarketFeed
-from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer, RESTProducerBlocked
 from test_rc6_a680_ppi_guard_wire_receipt import (
     FakeBudget, SDKMarket, FIVE, requests,
 )
+from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation
+from rc6_ppi_shared_feed import PPIReadOnlyNativeReceiptStore, PPISharedMarketFeed
+from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer, RESTProducerBlocked
 
 
 @pytest.fixture
