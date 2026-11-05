@@ -38,7 +38,7 @@ PPI_HOST = "clientapi.portfoliopersonal.com"
 # A689 is supplied in-memory from the same immutable Actions checkout as this
 # streamed engine. No source file is installed on the current product image.
 # Fail closed on missing, corrupted or substituted helper bytes.
-A689_HELPER_SHA256 = "f9fc89f6ae437411458b07eb96defd990529cabb16c2886cddbd1c5676120727"
+A689_HELPER_SHA256 = "89b3a3c686e5754566f1945033edb1ace5fe34954b1ebf20b19b0790d3744aac"
 MAX_BODY = 128 * 1024
 MAX_LEVELS = 200
 MAX_AGE_MS = 120_000
