@@ -36,6 +36,16 @@ CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
 SESSIONS_GIT_BLOB = "bfcaf3909b5afde2a3e0e2f56b3aeaefc047d422"
 BYMA_OFFICIAL_CALENDAR_SOURCE = "https://www.byma.com.ar/mercado/calendario-bursatil"
 CALENDAR_AUDIT_MAX_AGE_DAYS = 60  # same bounded freshness policy as RC6 Market Watch
+# Exact historical product calendar reasons corresponding to BYMA footnote (3):
+# negotiated session, but NO settlement. Only diagnostic PPI Current/Book GET
+# under signed native budget is eligible; never PAPER entry or settlement.
+LIMITED_NO_SETTLEMENT_REASONS = frozenset({
+    "Día del Bancario; jornada especial sin liquidación",
+    "Día no laborable con fines turísticos",
+    "Nochebuena; jornada especial sin liquidación",
+})
+SESSION_REGULAR = "BYMA_AUDITED_OPEN"
+SESSION_LIMITED = "BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY"
 SCHEDULE_TO_SLOT = {
     "45 10 * * 1-5": "1045",
     "20 11 * * 1-5": "1120",
@@ -96,12 +106,19 @@ def audited_market_session(now_utc: datetime, calendar, sessions):
                 or not isinstance(sessions.BYMA_PAPER_SPOT_OPEN, time)
                 or not isinstance(sessions.BYMA_PAPER_SPOT_CLOSE, time)):
             return False, "MARKET_CALENDAR_NOT_VERIFIED"
-        if calendar.es_dia_habil_operativo(art.date()) is not True:
-            return False, "AUDITED_BYMA_CLOSED_OR_HOLIDAY"
         current = art.time().replace(tzinfo=None)
         if not sessions.BYMA_PAPER_SPOT_OPEN <= current < sessions.BYMA_PAPER_SPOT_CLOSE:
             return False, "OUTSIDE_AUDITED_BYMA_SPOT_WINDOW"
-        return True, "BYMA_AUDITED_OPEN"
+        if calendar.es_dia_habil_operativo(art.date()) is True:
+            return True, SESSION_REGULAR
+        # The audited product calendar conservatively marks every non-normal
+        # session non-operational. BYMA's distinct footnote (3) nevertheless
+        # permits NEGOTIATION without SETTLEMENT. This PPI diagnostic is
+        # READ_ONLY evidence, not a settlement/entry-capability decision.
+        reason = calendar.motivo_no_operativo(art.date())
+        if type(reason) is str and reason in LIMITED_NO_SETTLEMENT_REASONS:
+            return True, SESSION_LIMITED
+        return False, "BYMA_NO_NEGOTIATION_OR_SPECIAL_SESSION_HOLD"
     except (AttributeError, TypeError, ValueError, OverflowError, OSError):
         return False, "MARKET_CALENDAR_NOT_VERIFIED"
 
@@ -187,9 +204,12 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
     return slot, "PASS_WEEKDAY_SLOT_AND_ENGINE_ONLY"
 
 
-def _append_verified_env(path: Path, slot: str, now_utc: datetime) -> bool:
+def _append_verified_env(path: Path, slot: str, now_utc: datetime,
+                         market_session: str = SESSION_REGULAR) -> bool:
     """Append only bounded constant-shape values after the immutable gate."""
     try:
+        if market_session not in (SESSION_REGULAR, SESSION_LIMITED):
+            return False
         if path.is_symlink() or not path.is_file():
             return False
         flags = os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW
@@ -199,7 +219,8 @@ def _append_verified_env(path: Path, slot: str, now_utc: datetime) -> bool:
                 return False
             payload = (f"RC6_A669_SLOT={slot}\n"
                        f"RC6_A669_ENGINE_BLOB={ENGINE_GIT_BLOB}\n"
-                       f"RC6_A670_ART_DATE={now_utc.astimezone(ZONE).date().isoformat()}\n").encode("ascii")
+                       f"RC6_A670_ART_DATE={now_utc.astimezone(ZONE).date().isoformat()}\n"
+                       f"RC6_A670_MARKET_SESSION={market_session}\n").encode("ascii")
             return os.write(fd, payload) == len(payload)
         finally:
             os.close(fd)
@@ -246,20 +267,23 @@ def main() -> int:
         checkout_sha=current_sha,
         source_sha=os.environ.get("GITHUB_SHA", ""),
         engine_path=ENGINE_PATH)
+    market_session = ""
     if slot:
         allowed, calendar_reason = _official_session_check(now_utc, PRODUCT_CALENDAR_ROOT)
         if not allowed:
             slot, reason = "", calendar_reason
+        else:
+            market_session = calendar_reason
     env_path = Path(os.environ.get("GITHUB_ENV", ""))
     if not slot:
         _append_hold_env(env_path, reason, now_utc)
         print(f"::warning title=A670 PPI offline gate HOLD::{reason}; zero provider GET; check audited market calendar or slot before bounded fallback")
         print(f"A670_GUARD=HOLD|REASON={reason}|PPI_GETS_BY_GUARD=0")
         return 2
-    if not _append_verified_env(env_path, slot, now_utc):
+    if not _append_verified_env(env_path, slot, now_utc, market_session):
         print("A670_GUARD=HOLD|REASON=ENV_WRITE_DENIED|PPI_GETS_BY_GUARD=0")
         return 2
-    print(f"A670_GUARD=PASS|SLOT={slot}|ART_DATE={now_utc.astimezone(ZONE).date()}|AUDITED_BYMA_SESSION=YES|PPI_GETS_BY_GUARD=0")
+    print(f"A670_GUARD=PASS|SLOT={slot}|ART_DATE={now_utc.astimezone(ZONE).date()}|SESSION={market_session}|PAPER_ENTRY=NO|PPI_GETS_BY_GUARD=0")
     return 0
 
 
