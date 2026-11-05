@@ -1,0 +1,231 @@
+name: RC6 R1 Docker Capacity READ_ONLY
+
+# Manual, bounded host inventory. Never touches PPI, runtime, Docker objects,
+# data, locks or cleanup. The global deploy mutex prevents an inventory race.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_deployed_sha:
+        description: Exact last observed physical product SHA
+        required: true
+        type: string
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/rc6-r1-docker-capacity-readonly.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check bounded read-only source and untouched worktree
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git diff --check
+          test -f .github/workflows/rc6-r1-docker-capacity-readonly.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('.github/workflows/rc6-r1-docker-capacity-readonly.yml').read_text()
+          for required in ('workflow_dispatch:', 'rc6-unified-paper-deploy',
+                           'docker', 'statvfs', 'expected_deployed_sha'):
+              assert required in source, required
+          host=source.rsplit('\n      - name: Read filesystem and Docker metadata only (max 35 seconds)\n',1)[1]
+          for forbidden in ('docker prune', 'docker image rm', 'docker system prune',
+                            'docker rm ', 'docker rmi ', 'docker exec', 'PPI_GET'):
+              assert forbidden not in host, forbidden
+          print('RC6_R1_DOCKER_RO_OFFHOST=GREEN')
+          PY
+
+  host_readonly:
+    needs: contracts
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      EXPECTED_DEPLOY_SHA: ${{ inputs.expected_deployed_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bound SHA and runner-only SSH credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/rc6_r1_capacity"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_r1_capacity/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_r1_capacity/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts"
+      - name: Read filesystem and Docker metadata only (max 35 seconds)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/rc6_r1_capacity/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_r1_capacity/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 35 env RC6_EXPECTED_DEPLOY_SHA=$EXPECTED_DEPLOY_SHA python3 -B -" \
+            > "$RUNNER_TEMP/rc6_r1_capacity/raw.json" <<'PY'
+          import datetime, json, os, re, shutil, subprocess, sys
+
+          def docker(*args):
+              command=subprocess.run(('docker',)+args, capture_output=True,
+                                     text=True, timeout=9, check=True)
+              if len(command.stdout)>131072:
+                  raise ValueError('DOCKER_RESPONSE_BOUND')
+              return command.stdout.strip()
+
+          try:
+              expected=os.environ['RC6_EXPECTED_DEPLOY_SHA']
+              if re.fullmatch(r'[a-f0-9]{40}',expected) is None:
+                  raise ValueError('EXPECTED_SHA_INVALID')
+              disk=shutil.disk_usage('/')
+              stat=os.statvfs('/')
+              inodes_free=(100*stat.f_favail/stat.f_files) if stat.f_files else 0
+              docker_root=docker('info','--format','{{.DockerRootDir}}')
+              if (not docker_root.startswith('/') or len(docker_root)>256
+                      or not os.path.isdir(docker_root)):
+                  raise ValueError('DOCKER_ROOT_UNSAFE')
+              docker_disk=shutil.disk_usage(docker_root)
+              docker_stat=os.statvfs(docker_root)
+              docker_inodes_free=(100*docker_stat.f_favail/docker_stat.f_files) if docker_stat.f_files else 0
+              all_containers=docker('ps','-aq','--no-trunc').splitlines()
+              all_images=sorted(set(docker('image','ls','-aq','--no-trunc').splitlines()))
+              if len(all_containers)>128 or len(all_images)>128:
+                  raise ValueError('DOCKER_INVENTORY_BOUND')
+              sha=re.compile(r'sha256:[a-f0-9]{64}')
+              container=re.compile(r'[a-f0-9]{12,64}')
+              if any(container.fullmatch(x) is None for x in all_containers):
+                  raise ValueError('CONTAINER_ID_UNSAFE')
+              if any(sha.fullmatch(x) is None for x in all_images):
+                  raise ValueError('IMAGE_ID_UNSAFE')
+              referenced=set()
+              for cid in all_containers:
+                  value=docker('inspect','--format','{{.Image}}',cid)
+                  if sha.fullmatch(value) is None:
+                      raise ValueError('REFERENCED_IMAGE_UNSAFE')
+                  referenced.add(value)
+              owned_names=('porota_production_observer',
+                           'porota_production_dashboard','porota_critical_approval_rc6')
+              owned=[]
+              for name in owned_names:
+                  try:
+                      value=docker('inspect','--format',
+                                   '{{json .State.Running}}|{{json .Image}}',name)
+                      running,image_raw=value.split('|',1)
+                      image=json.loads(image_raw)
+                      if running not in ('true','false') or sha.fullmatch(image) is None:
+                          raise ValueError('OWNED_CONTAINER_UNSAFE')
+                      owned.append({'name':name,'running':running=='true',
+                                    'image_referenced':image in referenced})
+                  except subprocess.CalledProcessError:
+                      owned.append({'name':name,'state':'ABSENT'})
+              candidate=re.compile(r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)[a-f0-9]{40}')
+              eligible=0
+              eligible_bytes_upper_bound=0
+              candidate_ref=0
+              protected=0
+              for iid in all_images:
+                  fields=docker('image','inspect','--format',
+                     '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Size}}',iid).split('|')
+                  if len(fields)!=4:
+                      raise ValueError('IMAGE_FIELDS_UNSAFE')
+                  identity,tags,digests,size=map(json.loads,fields)
+                  if (identity!=iid or tags is not None and not isinstance(tags,list)
+                          or digests is not None and not isinstance(digests,list)
+                          or type(size) is not int or size<0):
+                      raise ValueError('IMAGE_DETAILS_UNSAFE')
+                  tags=tags or []
+                  digests=digests or []
+                  if (any(type(t) is not str for t in tags+digests)):
+                      raise ValueError('IMAGE_TAGS_UNSAFE')
+                  if iid in referenced:
+                      candidate_ref+=int(bool(tags) and all(candidate.fullmatch(t) for t in tags))
+                      continue
+                  repos={tag.split(':',1)[0] for tag in tags}
+                  matched=(bool(tags) and all(candidate.fullmatch(t) for t in tags) and
+                    all((m:=re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',d))
+                        is not None and m.group(1) in repos for d in digests))
+                  if matched:
+                      eligible+=1
+                      eligible_bytes_upper_bound+=size
+                  else:
+                      protected+=1
+              summary=[]
+              for line in docker('system','df','--format','{{json .}}').splitlines():
+                  entry=json.loads(line)
+                  if not isinstance(entry,dict) or entry.get('Type') not in (
+                         'Images','Containers','Local Volumes','Build Cache'):
+                      raise ValueError('SYSTEM_DF_UNSAFE')
+                  summary.append({k:entry.get(k) for k in
+                                 ('Type','TotalCount','Active','Size','Reclaimable')})
+              if {entry['Type'] for entry in summary} != {
+                    'Images','Containers','Local Volumes','Build Cache'}:
+                  raise ValueError('SYSTEM_DF_INCOMPLETE')
+              observed=subprocess.run(['git','-C','/opt/porota-trading','rev-parse','HEAD'],
+                                      capture_output=True,text=True,timeout=3,check=True).stdout.strip()
+              if re.fullmatch(r'[a-f0-9]{40}',observed) is None:
+                  raise ValueError('HOST_CODE_ID_INVALID')
+              at=datetime.datetime.now(datetime.timezone.utc)
+              payload={'schema':'rc6.r1.docker-capacity-readonly.v1',
+                  'state':'READ_ONLY_OBSERVED','mutations':0,'provider_gets':0,
+                  'generated_at_utc':at.isoformat(),
+                  'generated_at_art':at.astimezone(datetime.timezone(datetime.timedelta(hours=-3))).isoformat(),
+                  'expected_deployed_sha':expected,'observed_code_sha':observed,
+                  'code_identity_matches':observed==expected,
+                  'disk_total_bytes':disk.total,'disk_free_bytes':disk.free,
+                  'disk_used_bytes':disk.used,'inode_free_percent':round(inodes_free,3),
+                  'docker_root_same_filesystem':os.stat(docker_root).st_dev==os.stat('/').st_dev,
+                  'docker_root_disk_total_bytes':docker_disk.total,
+                  'docker_root_disk_free_bytes':docker_disk.free,
+                  'docker_root_inode_free_percent':round(docker_inodes_free,3),
+                  'containers_total':len(all_containers),'images_total':len(all_images),
+                  'referenced_images':len(referenced),'owned_containers':owned,
+                  'unreferenced_candidate_only_images':eligible,
+                  'unreferenced_candidate_estimated_upper_bytes':eligible_bytes_upper_bound,
+                  'referenced_candidate_only_images':candidate_ref,
+                  'other_or_ambiguous_unreferenced_images':protected,
+                  'docker_system_df':summary}
+              print(json.dumps(payload,sort_keys=True,separators=(',',':')))
+          except (Exception,) as exc:
+              print(json.dumps({'schema':'rc6.r1.docker-capacity-readonly.v1',
+                 'state':'NO_VERIFICADO','mutations':0,'provider_gets':0,
+                 'reason':type(exc).__name__},sort_keys=True))
+              sys.exit(2)
+          PY
+          python3 - <<'PY'
+          import json,os,re
+          from pathlib import Path
+          raw=Path(os.environ['RUNNER_TEMP'])/'rc6_r1_capacity/raw.json'
+          if raw.stat().st_size>8192:
+              raise SystemExit('RC6_R1_DOCKER_RO=RED|RECEIPT_BOUND')
+          data=json.loads(raw.read_text())
+          if (data.get('schema')!='rc6.r1.docker-capacity-readonly.v1' or
+                  data.get('state')!='READ_ONLY_OBSERVED' or
+                  data.get('mutations')!=0 or data.get('provider_gets')!=0 or
+                  data.get('expected_deployed_sha')!=os.environ['EXPECTED_DEPLOY_SHA']):
+              raise SystemExit('RC6_R1_DOCKER_RO=RED|RECEIPT_UNVERIFIED')
+          print(json.dumps(data,sort_keys=True))
+          print('RC6_R1_DOCKER_RO=GREEN')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
+              out.write('### RC6 R1 Docker capacity — READ_ONLY\n\n')
+              out.write('```json\n'+json.dumps(data,sort_keys=True,indent=2)+'\n```\n')
+          PY
+      - name: Runner-only SSH cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts" "$RUNNER_TEMP/rc6_r1_capacity/raw.json"
