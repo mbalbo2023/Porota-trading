@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from scripts import rc6_a630_host_ppi_current_book as engine
+from scripts import rc6_a689_slot_cas as durable
 from scripts.rc6_a689_slot_cas import (
     CLAIM_FILE, CLAIM_SUBDIR, REPOSITORY, CONTROL_REF,
     SlotClaimHold, claim_once,
@@ -179,7 +180,11 @@ class DurableCAS(unittest.TestCase):
 
     def test_refuse_world_writable_data_root(self):
         self.root.chmod(0o777)
-        self.expect_hold("DATA_ROOT_WORLD_WRITABLE")
+        self.expect_hold("DATA_ROOT_GROUP_OR_WORLD_WRITABLE")
+
+    def test_refuse_group_writable_data_root(self):
+        self.root.chmod(0o775)
+        self.expect_hold("DATA_ROOT_GROUP_OR_WORLD_WRITABLE")
 
     def test_refuse_corrupt_db_without_reissuing_claim(self):
         folder = self.root / CLAIM_SUBDIR
@@ -187,6 +192,33 @@ class DurableCAS(unittest.TestCase):
         self.claim_path.write_bytes(b"not a sqlite database")
         self.claim_path.chmod(0o600)
         self.expect_hold("CLAIM_STORAGE_OR_LOCK_HOLD")
+
+    def test_new_directory_parent_is_fsynced_before_cas_returns(self):
+        parent_ino = os.stat(self.root).st_ino
+        observed = []
+        real_fsync = os.fsync
+
+        def logged_fsync(fd):
+            observed.append("parent" if os.fstat(fd).st_ino == parent_ino else "other")
+            return real_fsync(fd)
+
+        with patch.object(durable.os, "fsync", side_effect=logged_fsync):
+            claim_once(**args(self.root))
+        self.assertIn("parent", observed, observed)
+        self.assertEqual(observed[0], "parent", observed)
+
+    def test_parent_fsync_failure_denies_before_any_slot_claim(self):
+        parent_ino = os.stat(self.root).st_ino
+        real_fsync = os.fsync
+
+        def failed_parent(fd):
+            if os.fstat(fd).st_ino == parent_ino:
+                raise OSError("disk error while persisting newly created directory")
+            return real_fsync(fd)
+
+        with patch.object(durable.os, "fsync", side_effect=failed_parent):
+            self.expect_hold("CLAIM_STORAGE_OR_LOCK_HOLD")
+        self.assertFalse(self.claim_path.exists())
 
     def test_refuse_preexisting_db_without_unique_key(self):
         folder = self.root / CLAIM_SUBDIR
@@ -198,6 +230,27 @@ class DurableCAS(unittest.TestCase):
         self.expect_hold("CLAIM_SCHEMA_INVALID")
         with sqlite3.connect(self.claim_path) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM slot_claims").fetchone()[0], 0)
+
+    def test_refuse_trigger_that_silently_discards_insert(self):
+        folder = self.root / CLAIM_SUBDIR
+        folder.mkdir(mode=0o700)
+        with sqlite3.connect(self.claim_path) as db:
+            db.execute(durable.SCHEMA_DDL)
+            db.execute("CREATE TRIGGER skip_claim BEFORE INSERT ON slot_claims "
+                       "BEGIN SELECT RAISE(IGNORE); END")
+        self.claim_path.chmod(0o600)
+        self.expect_hold("CLAIM_SCHEMA_INVALID")
+        with sqlite3.connect(self.claim_path) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM slot_claims").fetchone()[0], 0)
+
+    def test_refuse_unexpected_schema_object_even_if_claim_table_valid(self):
+        folder = self.root / CLAIM_SUBDIR
+        folder.mkdir(mode=0o700)
+        with sqlite3.connect(self.claim_path) as db:
+            db.execute(durable.SCHEMA_DDL)
+            db.execute("CREATE VIEW extra AS SELECT 1")
+        self.claim_path.chmod(0o600)
+        self.expect_hold("CLAIM_SCHEMA_INVALID")
 
 
 class ProviderIntegrationNoGet(unittest.TestCase):
