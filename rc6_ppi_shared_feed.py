@@ -489,8 +489,17 @@ class PPIReadOnlyNativeReceiptStore:
         return identity
 
     @staticmethod
-    def _native_raw(raw_payload: Any, *, method: str) -> dict:
-        if not isinstance(raw_payload, dict):
+    def _native_raw(raw_payload: Any, *, method: str):
+        # REST marketdata shapes are NOT the uppercase realtime callback
+        # shapes. PPI's official Python examples document:
+        #   current:  {date,price,volume,openingPrice,max,min}
+        #   book:     {date,bids:[{position,price,quantity}],offers:[...]}
+        #   intraday: [{date,price,volume},...]
+        # Never convert or relabel these as stream events or a candle close.
+        if (method == "intraday" and
+                (not isinstance(raw_payload, list) or not 1 <= len(raw_payload) <= 512)):
+            raise EventRejected("PPI_NATIVE_PAYLOAD_INVALID")
+        if method != "intraday" and not isinstance(raw_payload, dict):
             raise EventRejected("PPI_NATIVE_PAYLOAD_INVALID")
         # This is market-data ONLY.  Refuse anything resembling account,
         # order, balance or credential data even when upstream makes a mistake.
@@ -499,7 +508,9 @@ class PPIReadOnlyNativeReceiptStore:
         while pending:
             node, depth = pending.pop()
             count += 1
-            if count > 1024 or depth > 6:
+            # Up to 512 intraday rows with three scalar fields each still
+            # have fewer than 4096 bounded nodes; 64KiB is a second cap.
+            if count > 4096 or depth > 6:
                 raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
             if isinstance(node, dict):
                 for key, value in node.items():
@@ -510,7 +521,7 @@ class PPIReadOnlyNativeReceiptStore:
                         raise EventRejected("PPI_NATIVE_PAYLOAD_UNSAFE")
                     pending.append((value, depth + 1))
             elif isinstance(node, list):
-                if len(node) > 256:
+                if len(node) > (512 if method == "intraday" and node is raw_payload else 256):
                     raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
                 pending.extend((value, depth + 1) for value in node)
             elif node is not None and type(node) not in (str, bool, int, float):
@@ -524,10 +535,47 @@ class PPIReadOnlyNativeReceiptStore:
         if len(encoded) > 65536:
             raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
         if method == "book":
-            # No synthesized Book from trade or normalized best bid/ask.
-            _levels(raw_payload.get("Bids"), side="BID")
-            _levels(raw_payload.get("Offers"), side="OFFER")
+            for side in ("bids", "offers"):
+                levels = raw_payload.get(side)
+                if not isinstance(levels, list) or len(levels) > _MAX_LEVELS:
+                    raise EventRejected("PPI_NATIVE_REST_BOOK_LEVELS_INVALID")
+                for level in levels:
+                    if not isinstance(level, dict):
+                        raise EventRejected("PPI_NATIVE_REST_BOOK_LEVEL_INVALID")
+                    if (type(level.get("position")) is not int
+                            or level["position"] < 0):
+                        raise EventRejected("PPI_NATIVE_REST_BOOK_POSITION_INVALID")
+                    # Official documentation renders zero-valued placeholders.
+                    # Preserve native evidence; PAPER tradability still needs
+                    # separate strictly positive executable-book validation.
+                    _number(level.get("price"), name="REST_BOOK_PRICE", positive=False)
+                    _number(level.get("quantity"), name="REST_BOOK_QTY", positive=False)
+        elif method == "current":
+            # Mandatory fields from official Current REST example, not a
+            # permissive Book/Trade object masquerading as Current.
+            if not set(("date", "price", "volume", "openingPrice", "max", "min")).issubset(raw_payload):
+                raise EventRejected("PPI_NATIVE_REST_CURRENT_FIELDS_MISSING")
+            for name in ("price", "openingPrice", "max", "min"):
+                _number(raw_payload[name], name=f"REST_CURRENT_{name}", positive=False)
+            _number(raw_payload["volume"], name="REST_CURRENT_VOLUME", positive=False)
+        elif method == "intraday":
+            for row in raw_payload:
+                if not isinstance(row, dict) or not set(("date", "price", "volume")).issubset(row):
+                    raise EventRejected("PPI_NATIVE_REST_INTRADAY_ROW_INVALID")
+                _number(row["price"], name="REST_INTRADAY_PRICE", positive=False)
+                _number(row["volume"], name="REST_INTRADAY_VOLUME", positive=False)
         return json.loads(encoded)
+
+    @staticmethod
+    def _raw_native_time(raw, *, method: str) -> tuple[datetime, str]:
+        # Intraday may contain many historic rows in its native sequence;
+        # the receipt time is the maximum native row date, NOT a claim that
+        # any bar is closed or that the provider sorted those rows.
+        if method == "intraday":
+            times = [_time(row.get("date"), reason="REST_INTRADAY_DATE")
+                     for row in raw]
+            return max(times), "MAX_NATIVE_ROW_DATE"
+        return _time(raw.get("date"), reason="REST_NATIVE_DATE"), "REST_NATIVE_DATE"
 
     def publish_native_rest_receipt(self, *, method, five_key, raw_payload,
                                     native_at, received_at,
@@ -554,17 +602,24 @@ class PPIReadOnlyNativeReceiptStore:
                 or recv_time > now_time):
             raise EventRejected("PPI_NATIVE_RECEIPT_CLOCK_INVALID")
         raw = self._native_raw(raw_payload, method=method)
-        # Source Date must be native material, not a caller-created clock
-        # substituted after inspecting the decision or latest market move.
-        if "Date" not in raw or _time(raw["Date"], reason="RAW_NATIVE_TIME") != native_time:
+        # Source date must be from the exact REST raw body, never a caller-
+        # manufactured stream Date or a postdecision/current clock.
+        raw_time, time_basis = self._raw_native_time(raw, method=method)
+        if raw_time != native_time:
             raise EventRejected("PPI_NATIVE_CLOCK_NOT_IN_RAW_RECEIPT")
-        for field, part in (("Ticker", 0), ("Type", 1), ("Market", 2),
-                            ("Currency", 3), ("Settlement", 4)):
-            if field in raw and _value(raw[field], field) != identity[part]:
-                raise CatalogIdentityError(f"PPI_NATIVE_{field.upper()}_CONFLICT")
+        # The REST response examples do not contain instrument identity:
+        # five-key is bound to the guarded SDK request and PPI catalog, NOT
+        # fabricated as fields supposedly signed inside the native payload.
+        if isinstance(raw, dict):
+            for field, part in (("ticker", 0), ("type", 1), ("market", 2),
+                                ("currency", 3), ("settlement", 4)):
+                if field in raw and _value(raw[field], field) != identity[part]:
+                    raise CatalogIdentityError(f"PPI_NATIVE_{field.upper()}_CONFLICT")
         receipt = {
             "schema": NATIVE_READ_SCHEMA, "method": method,
             "capture_type": capture_type, "source": "PPI",
+            "identity_provenance": "GUARDED_REQUEST_CONTEXT_NOT_NATIVE_PAYLOAD",
+            "native_time_basis": time_basis,
             "ppi_five_key": list(identity),
             "ppi_catalog_source_digest": self.feed.catalog_source_digest,
             "ppi_catalog_authority": "NO_VERIFICADO",

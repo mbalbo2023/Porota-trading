@@ -64,10 +64,9 @@ class NativeRPCTests(unittest.TestCase):
         at = self.clock.utcnow()
         return self.store.publish_native_rest_receipt(
             method=method, five_key=identity,
-            raw_payload={"Date": at.isoformat(), "Ticker": identity[0],
-                         "Type": identity[1], "Settlement": identity[4],
-                         "Bids": [{"Position": 0, "Price": price, "Quantity": 4}],
-                         "Offers": [{"Position": 0, "Price": price + 1, "Quantity": 5}]},
+            raw_payload={"date": at.isoformat(),
+                         "bids": [{"position": 0, "price": price, "quantity": 4}],
+                         "offers": [{"position": 0, "price": price + 1, "quantity": 5}]},
             native_at=at, received_at=at,
             received_monotonic_ns=self.clock.mono_ns(),
             session_fingerprint=session,
@@ -85,11 +84,98 @@ class NativeRPCTests(unittest.TestCase):
         res = self.store.read_native(consumer="exit_reader", method="book", five_key=FIVE)
         self.assertEqual(res["state"], "OK")
         self.assertEqual(res["receipt"], recorded)
-        self.assertEqual(res["receipt"]["raw_payload"]["Bids"][0]["Price"], 100)
+        self.assertEqual(res["receipt"]["raw_payload"]["bids"][0]["price"], 100)
         self.assertEqual(res["receipt"]["ppi_catalog_authority"], "NO_VERIFICADO")
         self.assertIs(res["receipt"]["paper_ready"], False)
         self.assertEqual(res["receipt"]["order_route"], "NOT_PRESENT")
         self.assertEqual(res["provider_calls_by_rpc"], 0)
+
+    def test_official_ppi_rest_lowercase_book_shape_not_stream_event(self):
+        """Official PPI Python docs Response Current Book: date/bids/offers."""
+        native = {
+            "date": T0.isoformat(),
+            "offers": [{"position": 0, "price": 101, "quantity": 3}],
+            "bids": [{"position": 0, "price": 100, "quantity": 4}],
+        }
+        receipt = self.store.publish_native_rest_receipt(
+            method="book", five_key=FIVE, raw_payload=native,
+            native_at=T0, received_at=T0,
+            received_monotonic_ns=self.clock.mono_ns(),
+            session_fingerprint="a" * 64,
+            guard_budget_receipt_sha256="b" * 64,
+            capture_type="REST_BOOK",
+        )
+        self.assertEqual(receipt["raw_payload"], native)
+        self.assertEqual(receipt["identity_provenance"],
+                         "GUARDED_REQUEST_CONTEXT_NOT_NATIVE_PAYLOAD")
+        self.assertEqual(self.store.read_native(
+            consumer="exit_reader", method="book", five_key=FIVE)["state"], "OK")
+
+    def test_official_example_zero_quote_is_evidence_not_executable_price(self):
+        native = {"date": T0.isoformat(),
+                  "offers": [{"position": 0, "price": 0, "quantity": 0}],
+                  "bids": [{"position": 0, "price": 0, "quantity": 0}]}
+        receipt = self.store.publish_native_rest_receipt(
+            method="book", five_key=FIVE, raw_payload=native,
+            native_at=T0, received_at=T0,
+            received_monotonic_ns=self.clock.mono_ns(),
+            session_fingerprint="a" * 64,
+            guard_budget_receipt_sha256="b" * 64,
+            capture_type="REST_BOOK",
+        )
+        self.assertEqual(receipt["raw_payload"], native)
+        self.assertIs(receipt["paper_ready"], False)
+
+    def test_official_ppi_rest_current_lowercase_market_fields(self):
+        """Official PPI Python docs Response Current Market Data."""
+        native = {"date": T0.isoformat(), "price": 100.5, "volume": 32,
+                  "openingPrice": 99.5, "max": 101, "min": 98}
+        receipt = self.store.publish_native_rest_receipt(
+            method="current", five_key=FIVE, raw_payload=native,
+            native_at=T0, received_at=T0,
+            received_monotonic_ns=self.clock.mono_ns(),
+            session_fingerprint="a" * 64,
+            guard_budget_receipt_sha256="b" * 64,
+            capture_type="REST_CURRENT",
+        )
+        self.assertEqual(receipt["raw_payload"], native)
+        self.assertEqual(self.store.read_native(
+            consumer="scanner", method="current", five_key=FIVE)["state"], "OK")
+
+    def test_official_ppi_rest_intraday_is_native_list_of_rows(self):
+        """Official PPI Python docs Response Intraday Market Data: list."""
+        earlier = (T0 - timedelta(minutes=1)).isoformat()
+        native = [{"date": earlier, "price": 99, "volume": 10},
+                  {"date": T0.isoformat(), "price": 100, "volume": 12}]
+        receipt = self.store.publish_native_rest_receipt(
+            method="intraday", five_key=FIVE, raw_payload=native,
+            native_at=T0, received_at=T0,
+            received_monotonic_ns=self.clock.mono_ns(),
+            session_fingerprint="a" * 64,
+            guard_budget_receipt_sha256="b" * 64,
+            capture_type="REST_INTRADAY",
+        )
+        self.assertEqual(receipt["raw_payload"], native)
+        self.assertEqual(receipt["native_time_basis"], "MAX_NATIVE_ROW_DATE")
+        self.assertEqual(self.store.read_native(
+            consumer="scalping", method="intraday", five_key=FIVE)["state"], "OK")
+
+    def test_bounded_native_intraday_preserves_300_real_shaped_rows_without_truncation(self):
+        native = [
+            {"date": (T0 - timedelta(seconds=299 - i)).isoformat(),
+             "price": 100 + i / 100, "volume": i}
+            for i in range(300)
+        ]
+        receipt = self.store.publish_native_rest_receipt(
+            method="intraday", five_key=FIVE, raw_payload=native,
+            native_at=T0, received_at=T0,
+            received_monotonic_ns=self.clock.mono_ns(),
+            session_fingerprint="a" * 64,
+            guard_budget_receipt_sha256="b" * 64,
+            capture_type="REST_INTRADAY",
+        )
+        self.assertEqual(len(receipt["raw_payload"]), 300)
+        self.assertIs(receipt["paper_ready"], False)
 
     def test_five_key_scope_and_consumer_methods_do_not_escalate(self):
         self.publish()
@@ -150,7 +236,7 @@ class NativeRPCTests(unittest.TestCase):
     def test_unapproved_or_forged_rest_capture_fails_before_cache(self):
         with self.assertRaisesRegex(EventRejected, "PPI_NATIVE_CAPTURE_TYPE_INVALID"):
             self.store.publish_native_rest_receipt(
-                method="book", five_key=FIVE, raw_payload={"Date": T0.isoformat()},
+                method="book", five_key=FIVE, raw_payload={"date": T0.isoformat()},
                 native_at=T0, received_at=T0, received_monotonic_ns=self.clock.mono_ns(),
                 session_fingerprint="a" * 64, guard_budget_receipt_sha256="b" * 64,
                 capture_type="SDK_STREAM_BOOK",
@@ -167,8 +253,8 @@ class NativeRPCTests(unittest.TestCase):
         with self.assertRaisesRegex(EventRejected, "PPI_NATIVE_CLOCK_NOT_IN_RAW_RECEIPT"):
             self.store.publish_native_rest_receipt(
                 method="book", five_key=FIVE,
-                raw_payload={"Date": (T0 - timedelta(seconds=1)).isoformat(),
-                             "Bids": [], "Offers": []},
+                raw_payload={"date": (T0 - timedelta(seconds=1)).isoformat(),
+                             "bids": [], "offers": []},
                 native_at=T0, received_at=T0,
                 received_monotonic_ns=self.clock.mono_ns(),
                 session_fingerprint="a" * 64, guard_budget_receipt_sha256="b" * 64,
@@ -210,7 +296,7 @@ class NativeRPCTests(unittest.TestCase):
                 (json.dumps(packet) + "\n").encode()]
             self.assertEqual(client.read_native(
                 "exit_reader", method="book", five_key=FIVE)["state"], "OK")
-        packet["receipt"]["raw_payload"]["Bids"][0]["Price"] = 1
+        packet["receipt"]["raw_payload"]["bids"][0]["price"] = 1
         with patch("rc6_ppi_shared_feed.socket.socket") as mocked:
             mocked.return_value.__enter__.return_value.recv.side_effect = [
                 (json.dumps(packet) + "\n").encode()]
