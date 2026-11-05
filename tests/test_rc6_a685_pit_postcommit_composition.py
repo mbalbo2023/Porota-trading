@@ -83,15 +83,16 @@ class TestA685Book1SignerComposition(unittest.TestCase):
                 self.assertEqual(receipt["status"], "CAPTURED")
                 return receipt
 
-            capture(AT)
+            book1_receipt = capture(AT)
             q = quote(AT)
             self.assertIsNone(q.ppi_book1_event_sha256)
             features = {
                 "performance_lineage": {"decision_at": DECISION_AT.isoformat()},
                 "entry_authority": False,
                 "real_routes_used": [],
-                # Only a caller-supplied digest, NOT a hash bound by scanner.
-                "ppi_book1_event_sha256": "f" * 64,
+                # A real journal event SHA is still caller-only until the scanner
+                # binds it to the exact Quote used by this decision.
+                "ppi_book1_event_sha256": book1_receipt["event_sha256"],
             }
             with patch.dict(os.environ, {"POROTA_RC6_RELEASE_SHA256": RELEASE}):
                 self.assertTrue(store.record_decision(
