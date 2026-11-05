@@ -321,6 +321,8 @@ def _current_relation(data: Path, *, readonly: bool, ident: str, manifest_sha: s
             categories["current_cut_manifest_binding"] = (
                 "BOUND" if type(source_manifest) is dict and
                 type(expected_manifest) is str and HEX64.fullmatch(expected_manifest) and
+                source_manifest.get("generation_id") == generation and
+                source_manifest.get("sequence") == pointer.get("sequence") and
                 hmac.compare_digest(hashlib.sha256(json.dumps(source_manifest,
                     sort_keys=True,separators=(",", ":"),allow_nan=False,
                     default=str).encode()).hexdigest(),expected_manifest)
@@ -495,6 +497,7 @@ def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
         return "NO_VERIFICADO"
     try:
         info = _check_directory(archive_fd, readonly=readonly, private=True)
+        initial = os.fstat(archive_fd)
         names = os.listdir(archive_fd)
         expected = {ident+".pack", "manifest-"+ident+".json",
                     "receipt-"+ident+".json", "queue.json"}
@@ -526,6 +529,11 @@ def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
             if (quarantine.get("state") != "QUARANTINED_FAILED" or
                     quarantine.get("snapshot_id") != ident or
                     quarantine.get("manifest_sha256") != expected_manifest or
+                    type(manifest.get("pack_sha256")) is not str or
+                    HEX64.fullmatch(manifest["pack_sha256"]) is None or
+                    quarantine.get("pack_sha256") != manifest.get("pack_sha256") or
+                    type(quarantine.get("real_orders_sent")) is not int or
+                    quarantine.get("real_orders_sent") != 0 or
                     quarantine.get("old_cut_revoked") is not True or
                     quarantine.get("revoked_cut") != HISTORICAL_COLD2_CUT):
                 return "SMALL_RECEIPT_MISMATCH"
@@ -537,8 +545,16 @@ def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
                 type(manifest.get("pack_bytes")) is not int or
                 manifest["pack_bytes"] != pack.st_size or
                 type(original_identity) is not list or len(original_identity) != 5 or
-                original_identity[:3] != [pack.st_dev,pack.st_ino,pack.st_size]):
+                original_identity[:4] != [pack.st_dev,pack.st_ino,pack.st_size,
+                                          pack.st_mtime_ns]):
             return "PACK_METADATA_UNVERIFIED"
+        final = os.fstat(archive_fd)
+        if (set(os.listdir(archive_fd)) != set(names) or
+                (initial.st_dev, initial.st_ino, initial.st_mtime_ns,
+                 initial.st_ctime_ns) !=
+                (final.st_dev, final.st_ino, final.st_mtime_ns,
+                 final.st_ctime_ns)):
+            return "NO_VERIFICADO"
         return "METADATA_BOUND_PACK_NOT_HASHED"
     except (Hold, OSError, ValueError, TypeError, KeyError):
         return "NO_VERIFICADO"
@@ -597,7 +613,7 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
         "historical_cold2_archive_class": "NO_VERIFICADO",
         # Explicit scope exclusions: no stop receipt/report or pack content read.
         "quiescence_verified": False, "computed_report_hash_verified": False,
-        "pack_content_hash_verified": False,
+        "pack_content_hash_verified": False, "runtime_running_verified": False,
         "envelopes_hash_verified": False, "metadata_snapshot_stable": False,
         "paper_admission_verified": False, "causal_fix_verified": False,
     }
