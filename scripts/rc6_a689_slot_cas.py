@@ -114,15 +114,31 @@ def claim_once(*, art_date, slot, run_id, run_attempt, control_sha,
         _require(root_stat.st_uid == os.geteuid(), "DATA_ROOT_WRONG_UID")
         _require(os.path.ismount(data_root) if require_mount else True,
                  "POROTA_MOUNT_NOT_PROVEN")
-        # /app/data may be group-readable for PAPER work; only claim subtree
-        # must be private. Prevent anonymous writes into the parent.
-        _require(not root_stat.st_mode & 0o002, "DATA_ROOT_WORLD_WRITABLE")
+        # Group write on the parent permits another process in the same group
+        # to rename/delete a 0700 child and lose claims. Reading is okay;
+        # group/world write is not (unless a future attestable layout exists).
+        _require(not root_stat.st_mode & 0o022,
+                 "DATA_ROOT_GROUP_OR_WORLD_WRITABLE")
         folder = data_root / CLAIM_SUBDIR
+        parent_flags = (os.O_RDONLY | os.O_DIRECTORY |
+                        getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+        parent_fd = os.open(data_root, parent_flags)
         try:
-            os.mkdir(folder, 0o700)
-            newly_created = True
-        except FileExistsError:
-            newly_created = False
+            parent_stat = os.fstat(parent_fd)
+            _require((parent_stat.st_dev, parent_stat.st_ino) ==
+                     (root_stat.st_dev, root_stat.st_ino), "DATA_ROOT_REPLACED")
+            try:
+                os.mkdir(CLAIM_SUBDIR, 0o700, dir_fd=parent_fd)
+                newly_created = True
+            except FileExistsError:
+                newly_created = False
+            # A new directory name is an entry in the PARENT.  Fsyncing only
+            # the child loses that name on power loss even if SQLite COMMIT
+            # was synchronous, which could permit a second GET after reboot.
+            # Fsync parent also when preexisting to attest the name now.
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
         _private_dir_stat(folder)
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         directory_fd = os.open(folder, flags | os.O_DIRECTORY)
@@ -158,18 +174,34 @@ def claim_once(*, art_date, slot, run_id, run_attempt, control_sha,
                     con.execute("PRAGMA busy_timeout=2000")
                     con.execute("BEGIN IMMEDIATE")
                     con.execute(SCHEMA_DDL)
+                    # Reject rogue triggers/views/indexes/extra tables. A
+                    # BEFORE INSERT RAISE(IGNORE) trigger can make SQLite
+                    # return success without actually persisting a claim.
                     actual_schema = con.execute(
-                        "SELECT sql FROM sqlite_master "
-                        "WHERE type='table' AND name='slot_claims'").fetchone()
-                    _require(actual_schema is not None and
-                             actual_schema[0] == SCHEMA_DDL.replace("IF NOT EXISTS ", ""),
+                        "SELECT type,name,sql FROM sqlite_master ORDER BY name").fetchall()
+                    _require(actual_schema == [(
+                        "table", "slot_claims",
+                        SCHEMA_DDL.replace("IF NOT EXISTS ", ""))],
                              "CLAIM_SCHEMA_INVALID")
-                    con.execute("INSERT INTO slot_claims "
-                                "(art_date,slot,run_id,control_sha,claimed_at_utc) "
-                                "VALUES (?,?,?,?,?)",
-                                (art_date, slot, run_id, control_sha,
-                                 clock.astimezone(timezone.utc).isoformat()))
+                    claimed_at = clock.astimezone(timezone.utc).isoformat()
+                    inserted = con.execute(
+                        "INSERT INTO slot_claims "
+                        "(art_date,slot,run_id,control_sha,claimed_at_utc) "
+                        "VALUES (?,?,?,?,?)",
+                        (art_date, slot, run_id, control_sha, claimed_at))
+                    _require(inserted.rowcount == 1, "CLAIM_INSERT_UNCONFIRMED")
+                    expected = (art_date, slot, run_id, control_sha, claimed_at)
+                    selected = con.execute(
+                        "SELECT art_date,slot,run_id,control_sha,claimed_at_utc "
+                        "FROM slot_claims WHERE art_date=? AND slot=?",
+                        (art_date,slot)).fetchone()
+                    _require(selected == expected, "CLAIM_INSERT_UNCONFIRMED")
                     con.commit()
+                    selected = con.execute(
+                        "SELECT art_date,slot,run_id,control_sha,claimed_at_utc "
+                        "FROM slot_claims WHERE art_date=? AND slot=?",
+                        (art_date,slot)).fetchone()
+                    _require(selected == expected, "CLAIM_COMMIT_UNCONFIRMED")
                     # SQLite FULL sync + fsync directory retain the claim even
                     # across process crashes after commit and before PPI GET.
                     os.fsync(db_fd)
