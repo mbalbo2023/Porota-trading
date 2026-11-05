@@ -34,23 +34,42 @@ print('COLD_ENTRYPOINT_IMPORT_PATH=GREEN')
 
 def test_distinct_failed_successor_requires_exact_bound_current(monkeypatch, tmp_path):
     archive=tmp_path/'data/deploy/rc6-failed-cold-original'
-    evidence={'snapshot_id':recovery.CURRENT_FAILED_SUCCESSOR,
-              'manifest_sha256':recovery.CURRENT_FAILED_MANIFEST,
-              'pack_bytes':219680584,
-              'failed_computed_report':{'sha256':recovery.CURRENT_FAILED_REPORT_SHA},
-              'cut':'a'*64,'queue_failed':True}
-    monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root:evidence)
-    assert recovery.proven_distinct_failed_successor(archive,'a'*64,
-                                                      recovery.CURRENT_FAILED_SUCCESSOR)
-    assert not recovery.proven_distinct_failed_successor(archive,'b'*64,
-                                                          recovery.CURRENT_FAILED_SUCCESSOR)
+    # A newer CURRENT can legitimately point to a fourth FAILED snapshot;
+    # historical identity constants are not sufficient evidence of currentness.
+    current='d'*32
+    report={'name':'computed-'+'9'*64+'.json.gz','sha256':'8'*64,'bytes':400}
+    evidence={'snapshot_id':current,'manifest_sha256':'7'*64,
+              'pack_sha256':'6'*64,'pack_bytes':219680584,
+              'failed_computed_report':report,'cut':'a'*64,
+              'queue_failed':True,'archive_complete':False}
+    monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root,hash_pack=True:evidence)
+    assert recovery.proven_distinct_failed_successor(archive,'a'*64,current)
+    assert not recovery.proven_distinct_failed_successor(archive,'b'*64,current)
+    assert not recovery.proven_distinct_failed_successor(archive,'a'*64,'b'*32)
+    assert not recovery.proven_distinct_failed_successor(archive,'a'*64,recovery.IDENT)
+    assert not recovery.proven_distinct_failed_successor(archive,'a'*64,
+        rc6_cold2_successor.old.IDENT)
+    assert not recovery.proven_distinct_failed_successor(archive,
+        rc6_cold2_successor.old.CUT,current)
     assert not recovery.proven_distinct_failed_successor(archive,'a'*64,'other')
-    for key,value in [('manifest_sha256','0'*64),('queue_failed',False),
-                      ('failed_computed_report',{'sha256':'0'*64})]:
+    assert not recovery.proven_distinct_failed_successor(archive,'0',current)
+    # Once the successor quarantine receipt and all bytes are durable, its
+    # FAILED queue is intentionally unlinked. This must remain restartable.
+    archived={**evidence,'queue_failed':False,'archive_complete':True}
+    monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root,hash_pack=True:archived)
+    assert recovery.proven_distinct_failed_successor(archive,'a'*64,current)
+    for key,value in [('manifest_sha256','not-a-sha'),('pack_sha256','bad'),
+                      ('pack_bytes',0),('queue_failed',False),
+                      ('failed_computed_report',None),
+                      ('failed_computed_report',{**report,'sha256':'bad'}),
+                      ('failed_computed_report',{**report,'bytes':0}),
+                      ('failed_computed_report',{**report,'name':'other'})]:
         changed={**evidence,key:value}
-        monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root, v=changed:v)
-        assert not recovery.proven_distinct_failed_successor(archive,'a'*64,
-                                                              recovery.CURRENT_FAILED_SUCCESSOR)
+        monkeypatch.setattr(rc6_cold2_successor,'inspect',
+            lambda root,hash_pack=True,v=changed:v)
+        assert not recovery.proven_distinct_failed_successor(archive,'a'*64,current)
+    monkeypatch.setattr(rc6_cold2_successor,'inspect',lambda root,hash_pack=True:None)
+    assert not recovery.proven_distinct_failed_successor(archive,'a'*64,current)
 
 
 def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():

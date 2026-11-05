@@ -36,25 +36,52 @@ CLOSED_FLAT_STAGE_STOP_FINISHED='2026-10-23T22:18:23.266737528Z'
 def proven_distinct_failed_successor(directory, generation, current_snapshot):
     """Keep the original archived cut revoked while a later exact FAILED cut waits.
 
-    The successor is inspected read-only with its own manifest, receipt, pack,
-    CURRENT and PAPER guards. Its separate fix-forward must still run later.
+    A successor's identity cannot be pinned to a past host observation: another
+    FAILED generation may replace it before Deploy V2. Read the CURRENT-bound
+    successor with its own manifest, receipt, hashed pack, unique failed report
+    and PAPER/0 guards. Partial quarantine is permitted only if its FAILED
+    queue remains durable and the successor inspector proves every byte.
     """
-    if current_snapshot != CURRENT_FAILED_SUCCESSOR:
+    if (not isinstance(current_snapshot, str) or
+            re.fullmatch(r'[a-f0-9]{32}', current_snapshot) is None or
+            current_snapshot == IDENT or
+            not isinstance(generation, str) or
+            re.fullmatch(r'[a-f0-9]{64}', generation) is None):
         return False
     # Deploy V2 invokes this file by absolute path on the host. In that mode
     # Python places scripts/ rather than its parent on sys.path.
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     from scripts import rc6_cold2_successor as successor
+    if current_snapshot == successor.old.IDENT or generation == successor.old.CUT:
+        return False  # Historical COLD2 was revoked before this successor.
     try:
-        evidence=successor.inspect(directory.parents[2])
+        evidence=successor.inspect(directory.parents[2], hash_pack=True)
     except (OSError,ValueError,KeyError,TypeError):
         return False
-    return (evidence.get('snapshot_id')==CURRENT_FAILED_SUCCESSOR and
-            evidence.get('manifest_sha256')==CURRENT_FAILED_MANIFEST and
-            evidence.get('pack_bytes')==219680584 and
-            evidence.get('failed_computed_report',{}).get('sha256')==CURRENT_FAILED_REPORT_SHA and
-            evidence.get('cut')==generation and evidence.get('queue_failed') is True)
+    if not isinstance(evidence, dict):
+        return False
+    report = evidence.get('failed_computed_report')
+    pack_bytes = evidence.get('pack_bytes')
+    if (not isinstance(report, dict) or
+            not isinstance(report.get('sha256'), str) or
+            re.fullmatch(r'[a-f0-9]{64}', report['sha256']) is None or
+            not isinstance(report.get('name'), str) or
+            re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', report['name']) is None or
+            type(report.get('bytes')) is not int or
+            not 0 < report['bytes'] <= successor.MAX_COMPUTED or
+            type(pack_bytes) is not int or
+            not 0 < pack_bytes <= successor.MAX_PACK):
+        return False
+    return (evidence.get('snapshot_id') == current_snapshot and
+            evidence.get('cut') == generation and
+            isinstance(evidence.get('manifest_sha256'), str) and
+            re.fullmatch(r'[a-f0-9]{64}', evidence['manifest_sha256']) is not None and
+            isinstance(evidence.get('pack_sha256'), str) and
+            re.fullmatch(r'[a-f0-9]{64}', evidence['pack_sha256']) is not None and
+            (evidence.get('queue_failed') is True or
+             evidence.get('archive_complete') is True and
+             evidence.get('queue_failed') is False))
 
 
 def digest(value):
