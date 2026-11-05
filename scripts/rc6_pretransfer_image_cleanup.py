@@ -90,24 +90,37 @@ def references():
 
 def inspect_image(image):
     values = docker('image', 'inspect', '--format',
-                   '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}', image).split('|')
-    if len(values) != 3:
+                   '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Config.Labels}}', image).split('|')
+    if len(values) != 4:
         raise Rejected('IMAGE_INVENTORY_INVALID')
-    identity, tags, digests = map(json.loads, values)
+    identity, tags, digests, labels = map(json.loads, values)
     if identity != image or not isinstance(tags, (list, type(None))) or not isinstance(digests, (list, type(None))):
         raise Rejected('IMAGE_INVENTORY_INVALID')
     if any(not isinstance(tag, str) for tag in (tags or []) + (digests or [])):
         raise Rejected('IMAGE_TAGS_INVALID')
-    return tags or [], digests or []
+    if labels is not None and (not isinstance(labels, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in labels.items())):
+        raise Rejected('IMAGE_LABELS_INVALID')
+    return tags or [], digests or [], labels or {}
 
 
 def eligibility(image):
-    tags, digests = inspect_image(image)
+    tags, digests, labels = inspect_image(image)
     refs = references()  # includes stopped containers, not just running ones
     if image in refs:
         return tags, 'CONTAINER_REFERENCED'
     if not tags or any(CANDIDATE.fullmatch(tag) is None for tag in tags):
         return tags, 'PROTECTED_OR_NONCANDIDATE_ALIAS'
+    # Image repo names are not a proof of ownership on a shared Docker host.
+    # The immutable Predeploy V2 artifact embeds these two OCI labels, and
+    # *every* candidate alias must encode exactly that one commit. Legacy or
+    # unlabeled images remain untouched until provenance can be established.
+    commits = {tag.rsplit(':', 1)[-1][-40:] for tag in tags}
+    if (len(commits) != 1
+            or labels.get('porota.predeploy') != 'v2'
+            or labels.get('porota.commit') not in commits):
+        return tags, 'OWNERSHIP_LABELS_UNVERIFIED'
     # Docker load on the target engine retains a canonical RepoDigest alongside
     # its candidate tag. That immutable spelling is the same repository owner,
     # not an external alias. Unknown or unpaired repositories remain protected.
@@ -132,6 +145,11 @@ def cleanup(report=None):
     inventory = [{'image_id': image, 'tags': tags, 'reason': reason}
                  for image in ids for tags, reason in [eligibility(image)]]
     report['inventory'] = inventory
+    report['warnings'] = [
+        {'image_id': item['image_id'], 'reason': item['reason']}
+        for item in inventory
+        if item['reason'] == 'OWNERSHIP_LABELS_UNVERIFIED'
+    ]
     removed = report['removed_tags']
     deadline = time.monotonic() + 90
     for entry in inventory:

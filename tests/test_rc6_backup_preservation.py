@@ -23,12 +23,14 @@ def fixture(tmp_path,monkeypatch):
     monkeypatch.setattr(housekeeping,'_docker_observation',lambda:'fixture')
     return policy
 
-def test_legacy_retention_would_delete_nine_fixture_backups(tmp_path,monkeypatch):
+def test_shared_host_retains_backup_candidates_even_if_suspension_lifted(tmp_path,monkeypatch):
     p=fixture(tmp_path,monkeypatch)
     p['backups']['suspended']=False
     result,code=housekeeping.execute('cleanup',p)
-    assert code==0 and len(result['deleted'])==9
-    assert sum(len(list((tmp_path/name).iterdir())) for name in ('paper','history','general'))==9
+    assert code==0 and result['deleted']==[]
+    assert len(result['retained_unverified_candidates'])==9
+    assert result['actions']==['SHARED_HOST_GLOBAL_RECLAIM_DISABLED']
+    assert sum(len(list((tmp_path/name).iterdir())) for name in ('paper','history','general'))==18
 
 def test_suspension_preserves_all_backups_even_without_invocation_flag(tmp_path,monkeypatch):
     p=fixture(tmp_path,monkeypatch)

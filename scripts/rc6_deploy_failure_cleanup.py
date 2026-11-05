@@ -69,36 +69,33 @@ def image_id(tag):
     return value
 
 
-def image_present(identity):
-    ids = docker('image', 'ls', '-aq', '--no-trunc').splitlines()
-    if len(ids) > 128 or any(IMAGE_ID.fullmatch(value) is None for value in ids):
-        raise CleanupRejected('IMAGE_INVENTORY_INVALID')
-    return identity in ids
-
-
-def image_aliases(image, candidate_sha, *, allow_untagged=False):
+def image_aliases(image, candidate_sha):
     """Prove the entire image has only this candidate's aliases.
 
     A Docker tag may point to an image owned by another repository. Removing
     that tag would free no space and obscures the other owner's identity.
     """
     raw = docker('image', 'inspect', '--format',
-                 '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}', image)
+                 '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Config.Labels}}', image)
     fields = raw.split('|')
-    if len(fields) != 3:
+    if len(fields) != 4:
         raise CleanupRejected('IMAGE_ALIASES_INVALID')
     try:
-        identity, tags, digests = (json.loads(field) for field in fields)
+        identity, tags, digests, labels = (json.loads(field) for field in fields)
     except (ValueError, TypeError) as exc:
         raise CleanupRejected('IMAGE_ALIASES_INVALID') from exc
     if (identity != image or not isinstance(tags, (list, type(None))) or
             not isinstance(digests, (list, type(None)))):
         raise CleanupRejected('IMAGE_ALIASES_INVALID')
     tags, digests = tags or [], digests or []
-    if any(not isinstance(value, str) for value in tags + digests):
+    if (any(not isinstance(value, str) for value in tags + digests)
+            or not isinstance(labels, dict)
+            or any(not isinstance(key, str) or not isinstance(value, str)
+                   for key, value in labels.items())):
         raise CleanupRejected('IMAGE_ALIASES_INVALID')
-    if ((not tags and not allow_untagged) or
-            any(tag not in owned_tags(candidate_sha) for tag in tags)):
+    if (not tags or any(tag not in owned_tags(candidate_sha) for tag in tags)
+            or labels.get('porota.commit') != candidate_sha
+            or labels.get('porota.predeploy') != 'v2'):
         return False
     # A RepoDigest names a repository, not this candidate/run/attempt. Even a
     # porota-trading-bot digest may belong to a different deploy's registry
@@ -187,8 +184,6 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
         raise CleanupRejected('STAGING_PATH_INVALID')
     disk_before = shutil.disk_usage('/').free
     removed, retained, errors = [], [], []
-    removed_images = []
-    candidate_images = set()
     retained_reasons = {}
     # Inspection failure is blocking: an unknown Docker owner is not "unused".
     container_inventory()
@@ -208,7 +203,6 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
                 retained.append(tag)
                 retained_reasons[tag] = 'NONCANDIDATE_ALIAS_OR_DIGEST'
                 continue
-            candidate_images.add(current_id)
             # No force: Docker refuses deletion if a new owner references the
             # image between inspection and removal. Never remove a stable tag.
             referenced, _ = container_inventory()
@@ -218,22 +212,9 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
             removed.append(tag)
         except (CleanupRejected, subprocess.TimeoutExpired):
             errors.append('IMAGE_CLEANUP_FAILED')
-    # A digest-only or dangling image may remain after removing both tags.
-    # Reclaim only the ID obtained from this exact attempt's proven aliases.
-    for candidate_image in sorted(candidate_images):
-        try:
-            if not image_present(candidate_image):
-                continue
-            referenced, _ = container_inventory()
-            if (candidate_image in referenced or
-                    candidate_image == image_id(STABLE_IMAGE) or
-                    not image_aliases(candidate_image, candidate_sha,
-                                      allow_untagged=True)):
-                raise CleanupRejected('IMAGE_OWNERSHIP_CHANGED')
-            docker('image', 'rm', candidate_image)
-            removed_images.append(candidate_image)
-        except (CleanupRejected, subprocess.TimeoutExpired):
-            errors.append('IMAGE_ID_CLEANUP_FAILED')
+    # On a shared host an image ID can have untracked foreign owners through
+    # cached layers or a reused digest. Never `docker image rm` by ID; if the
+    # last exact candidate tag was removed, Docker reclaims only what is safe.
     try:
         _, mounts = container_inventory()
         # A non-Docker mount nested in staging could make rmtree traverse
@@ -255,7 +236,7 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
         'candidate_sha': candidate_sha,
         'status': 'RED' if errors else 'GREEN',
         'removed_tags': removed, 'retained_tags': retained,
-        'removed_image_ids': removed_images,
+        'removed_image_ids': [],
         'retained_reasons': retained_reasons,
         'staging_removed': not staging.exists(),
         'disk_before': disk_before, 'disk_after': disk_after,

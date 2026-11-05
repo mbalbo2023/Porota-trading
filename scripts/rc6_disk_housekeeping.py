@@ -78,6 +78,13 @@ def _path_size(path: Path) -> int:
 
 
 def tmp_candidates(policy: dict, now: float | None = None) -> list[FileCandidate]:
+    # The droplet is multi-tenant. A "porota"/"rc6" filename prefix, mtime,
+    # and lsof scan never prove ownership of a directory under shared /tmp:
+    # it may be another app's bind mount, symlink or preserved evidence.
+    # Exact manifest-bound staging cleanup is performed by the deploy-failure
+    # cleanup helper; disk housekeeping must not enumerate deletion targets.
+    if policy.get("shared_host", {}).get("enabled") is True:
+        return []
     cfg = policy["tmp"]
     root = Path(cfg["root"])
     prefixes = tuple(str(x) for x in cfg["prefixes"])
@@ -315,6 +322,15 @@ def _docker_observation() -> str:
 def execute(mode: str, policy: dict, *, preserve_backups: bool = False) -> tuple[dict, int]:
     if type(preserve_backups) is not bool:
         raise ValueError("preserve_backups must be boolean")
+    shared = policy.get("shared_host", {})
+    if mode in ("cleanup", "auto") and (
+        shared.get("enabled") is not True
+        or shared.get("policy") != "POROTA_ONLY_EXACT_MANIFEST"
+        or shared.get("disk_housekeeping_destructive_cleanup_enabled") is not False
+        or shared.get("hostwide_apt_cleanup_allowed") is not False
+        or shared.get("hostwide_journal_vacuum_allowed") is not False
+    ):
+        raise RuntimeError("SHARED_HOST_CLEANUP_POLICY_NOT_PROVEN")
     # Suspension leaves retirement to the exact inode manifest under
     # DEPLOY_OWNER. Scheduled housekeeping may still clean other targets.
     preserve_backups = preserve_backups or policy.get("backups", {}).get("suspended") is True
@@ -360,6 +376,8 @@ def execute(mode: str, policy: dict, *, preserve_backups: bool = False) -> tuple
             "band": before_band,
         },
         "policy": {
+            "shared_host": bool(shared.get("enabled")),
+            "cleanup_scope": shared.get("policy", "UNVERIFIED"),
             "paper_keep_newest": policy["backups"]["paper"]["keep_newest"],
             "history_keep_newest": policy["backups"]["history"]["keep_newest"],
             "general_keep_newest": policy["backups"]["general"]["keep_newest"],
@@ -384,25 +402,16 @@ def execute(mode: str, policy: dict, *, preserve_backups: bool = False) -> tuple
     }
 
     if effective_mode == "cleanup":
-        all_candidates = tmp + backup_delete
-        open_refs = _candidate_open_references(all_candidates)
-        if open_refs:
-            result["open_references"] = open_refs
-            raise RuntimeError("cleanup candidates have open file references")
-
-        protected = [Path(x).resolve() for x in policy["backups"]["protected_paths"]]
-        for row in backup_delete:
-            rp = Path(row.path).resolve()
-            if any(parent == rp or parent in rp.parents for parent in protected):
-                raise RuntimeError(f"protected backup path selected: {rp}")
-
-        for row in tmp + backup_delete:
-            _delete_candidate(row)
-            result["deleted"].append(asdict(row))
-
-        result["actions"].extend(_clean_apt(policy))
-        result["actions"].append("JOURNAL_VACUUM")
-        result["journal_vacuum_output"] = _vacuum_journal(policy)
+        # No generic disk-space reclamation can establish exclusive Porota
+        # ownership on a shared Docker host. In particular NEVER mutate
+        # hostwide apt indexes/journal, arbitrary /tmp prefixes, or backups
+        # here. Candidate-image cleanup has its own exact OCI provenance,
+        # stopped-container and alias checks; deploy failure staging cleanup
+        # requires an exact SHA/run/attempt manifest.
+        result["retained_unverified_candidates"] = [
+            asdict(row) for row in tmp + backup_delete
+        ]
+        result["actions"].append("SHARED_HOST_GLOBAL_RECLAIM_DISABLED")
 
     after_free = disk_free_bytes("/")
     after_inodes = inode_free_percent("/")

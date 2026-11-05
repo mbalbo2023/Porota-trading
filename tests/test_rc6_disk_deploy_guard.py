@@ -104,7 +104,7 @@ def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> N
     assert "REQUIRED_LOAD_FREE" in preinstall
 
 
-def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candidates() -> None:
+def test_final_cleanup_reconciles_critical_approval_and_uses_provenance_guard() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
     native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
@@ -115,11 +115,14 @@ def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candi
     assert "CRITICAL_APPROVAL_IMAGE_RECONCILED=GREEN" in tail
     assert "ISSUES_CAPABILITY_BROKER=GREEN" in tail
 
-    assert "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED" in tail
-    assert "OLD_IMAGE_USERS" in tail
-    assert "IMAGE_IN_USE" in tail
-    assert "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE" in tail
-    assert "porota-trading-bot:17.0.0-rc6-candidate-*" in tail
+    assert "RC6_OLD_CRITICAL_IMAGE_DEFERRED_TO_PROVENANCE_CLEANUP" in tail
+    assert 'python3 "$REPO/scripts/rc6_pretransfer_image_cleanup.py"' in tail
+    assert "last-deploy-candidate-cleanup.json" in tail
+    assert "RC6_SHARED_HOST_CANDIDATE_CLEANUP_RC" in tail
+    assert "RC6_FROZEN_IMAGE_TAG=RETAIN_UNLESS_EXACT_OWNERSHIP_RELEASED" in tail
+    assert 'docker image rm "$CRIT_IMAGE_BEFORE"' not in tail
+    assert 'docker image rm "$FROZEN_IMAGE"' not in tail
+    assert "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE" not in tail
 
     # Cleanup only proven-unreferenced RC6 candidates; no host-wide prune.
     assert "docker image prune -af" not in tail
