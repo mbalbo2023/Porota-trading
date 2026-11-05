@@ -717,6 +717,88 @@ class A655Histogram(unittest.TestCase):
         forged["option_ppi_quote_consistency_total"] = 568
         self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
 
+    def test_a668_request_settlement_and_stored_absence_not_provider_absence(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c, settlement_source="REQUEST_CANDIDATE",
+                             include_settlement=False)
+        raw = self.probe()
+        self.assertEqual(raw["option_ppi_key_root_total"], 1)
+        self.assertEqual(raw["option_ppi_key_root_hist"], [
+            {"category": "REQUEST_SIDE_SETTLEMENT", "count": 1}])
+        self.assertEqual(raw["option_ppi_key_source_hist"], [
+            {"settlement_source": "REQUEST_CANDIDATE", "discovery": "PPI_PRIMARY",
+             "metadata_shape": "FLAT_ONLY", "count": 1}])
+        self.assertIn({"field": "SETTLEMENT", "status": "STORED_LITERAL_MISSING", "count": 1},
+                      raw["option_ppi_key_field_hist"])
+        self.assertNotIn("PROVIDER_MISSING", json.dumps(raw))
+        safe = module.sanitize({**raw, "private_ro_mount": True})
+        self.assertEqual(safe["state"], "READ_ONLY_OBSERVED")
+        self.assertFalse(safe["paper_admission_certified"])
+
+    def test_a668_raw_alias_is_distinguished_from_missing_or_mismatch(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c)
+            raw = json.loads(c.execute("""SELECT metadata_json FROM financial_instrument_catalog
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""").fetchone()[0])
+            raw.update(type="OPCION", market="BCBA", currency="PESOS", settlement="T0")
+            c.execute("""UPDATE financial_instrument_catalog SET metadata_json=?
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""", (json.dumps(raw),))
+        result = self.probe()
+        self.assertEqual(result["option_ppi_key_root_hist"], [
+            {"category": "ATTESTED_PROVIDER_FIVE_KEY_IN_METADATA", "count": 1}])
+        self.assertEqual(result["option_ppi_quote_consistency_hist"][0]["ppi_key"],
+                         "PPI_PROVIDER_FIVE_KEY")
+        aliases = {row["field"] for row in result["option_ppi_key_field_hist"]
+                   if row["status"] == "STORED_ALIAS_EQUIVALENT"}
+        self.assertEqual(aliases, {"TYPE", "MARKET", "CURRENCY", "SETTLEMENT"})
+
+    def test_a668_stored_mismatched_fields_no_private_raw_leak(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c)
+            raw = json.loads(c.execute("""SELECT metadata_json FROM financial_instrument_catalog
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""").fetchone()[0])
+            raw.update(ticker="PRIVATE_ACCOUNT_XYZ42", market="A3")
+            c.execute("""UPDATE financial_instrument_catalog SET metadata_json=?
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""", (json.dumps(raw),))
+        receipt = module.sanitize({**self.probe(), "private_ro_mount": True})
+        self.assertEqual(receipt["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(receipt["option_ppi_key_root_hist"], [
+            {"category": "STORED_FIELD_MISMATCH", "count": 1}])
+        for field in ("TICKER", "MARKET"):
+            self.assertIn({"field": field, "status": "STORED_LITERAL_MISMATCH", "count": 1},
+                          receipt["option_ppi_key_field_hist"])
+        self.assertNotIn("PRIVATE_ACCOUNT_XYZ42", json.dumps(receipt))
+
+    def test_a668_nested_metadata_is_not_automatically_provider_attested(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c)
+            value = {"_discovery_source": "PPI_PRIMARY", "nominalInPrice": "1",
+                     "_contract_bridge": {"status": "BLOCKED", "gaps": ["CHANGE_REVIEW_REQUIRED"]},
+                     "raw": json.loads(self.ppi_option_metadata())}
+            c.execute("""UPDATE financial_instrument_catalog SET metadata_json=?
+              WHERE instrument_type='OPCIONES' AND ticker='XYZ'""", (json.dumps(value),))
+        raw = self.probe()
+        self.assertEqual(raw["option_ppi_key_source_hist"][0]["metadata_shape"], "NESTED_ONLY")
+        self.assertEqual(raw["option_ppi_key_root_hist"], [
+            {"category": "STORED_FIELD_MISSING", "count": 1}])
+        self.assertEqual(raw["option_ppi_quote_consistency_hist"][0]["ppi_key"],
+                         "PPI_FIVE_KEY_UNATTESTED")
+
+    def test_a668_sanitizer_rejects_forged_key_root_and_field_denominator(self):
+        with sqlite3.connect(self.db) as c:
+            self.option_pair(c, settlement_source="REQUEST_CANDIDATE")
+        raw = {**self.probe(), "private_ro_mount": True}
+        self.assertEqual(module.sanitize(raw)["state"], "READ_ONLY_OBSERVED")
+        forged = json.loads(json.dumps(raw))
+        forged["option_ppi_key_root_hist"][0]["category"] = "PRIVATE_TICKER"
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
+        forged = json.loads(json.dumps(raw))
+        forged["option_ppi_key_field_hist"][0]["count"] = 568
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
+        forged = json.loads(json.dumps(raw))
+        forged["option_ppi_key_root_total"] = 568
+        self.assertEqual(module.sanitize(forged)["state"], "NO_VERIFICADO")
+
 
 if __name__ == "__main__":
     unittest.main()
