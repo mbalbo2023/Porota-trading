@@ -9,9 +9,12 @@ has no provider/client/host access and no trading authority.
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
+import pytest
 
 from rc6_dynamic_universe.runtime import read_runtime
+from rc6_audit_evidence.sqlite_snapshot import SnapshotError
 from rc6_shadow_runtime.stages import enrich_pipeline
+from rc6_shadow_runtime.source_reads import source_tick
 
 
 def test_all_native_consumers_must_share_first_wal_commit(tmp_path: Path):
@@ -31,21 +34,25 @@ def test_all_native_consumers_must_share_first_wal_commit(tmp_path: Path):
         db.execute("CREATE TABLE market_snapshots(id INTEGER PRIMARY KEY,symbol TEXT,asset_class TEXT,market TEXT,currency TEXT,settlement TEXT,last REAL,trade_at TEXT,book_at TEXT,observed_at TEXT,bid REAL,ask REAL,bid_size REAL,ask_size REAL,last_kind TEXT)")
 
     at = as_of.isoformat()
-    first = read_runtime(path, as_of=at, row_limit=5, query_budget_seconds=2)
-    assert len(first["full_catalog"]) == 1
-    assert first["safety"] == {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
-                                "real_routes": "NOT_CALLED"}
+    # The verified private Source capture exists already, but productive
+    # consumers currently ignore its active context. The fixed path must
+    # neither mix commits *nor* publish if the original WAL changed.
+    with pytest.raises(SnapshotError, match="SOURCE_SNAPSHOT_BUSY"):
+        with source_tick(path):
+            first = read_runtime(path, as_of=at, row_limit=5, query_budget_seconds=2)
+            assert len(first["full_catalog"]) == 1
+            assert first["safety"] == {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
+                                        "real_routes": "NOT_CALLED"}
 
-    # A native writer COMMITs after the first SHADOW consumer has finished,
-    # but with an event timestamp ten seconds BEFORE the shared as_of value.
-    # A common read snapshot would be unable to see this later commit.
-    with sqlite3.connect(path) as db:
-        db.execute("INSERT INTO scalping_candidates(symbol,asset_class,market,currency,settlement,evaluated_at,action,score,reason,points) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                   (*instrument, (as_of - timedelta(seconds=10)).isoformat(),
-                    "BUY", 0.9, "synthetic candidate", 3))
+            # Native writer COMMITs after the first SHADOW consumer ends,
+            # but with event timestamp 10s BEFORE the shared as_of value.
+            with sqlite3.connect(path) as db:
+                db.execute("INSERT INTO scalping_candidates(symbol,asset_class,market,currency,settlement,evaluated_at,action,score,reason,points) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                           (*instrument, (as_of - timedelta(seconds=10)).isoformat(),
+                            "BUY", 0.9, "synthetic candidate", 3))
 
-    second = enrich_pipeline(path, {"engines": {"SCALPING": {"telemetry": [
-        {"identity": instrument, "pipeline": {"SIGNAL_READY": True},
-         "entry_authority": False}]}}}, as_of=at)
-    label = second["engines"]["SCALPING"]["telemetry"][0]["signal_shadow"]["status"]
-    assert label != "OBSERVED_NATIVE_SIGNAL", "PIT_INTERLEAVING_CROSS_CONSUMER_READER_GAP"
+            second = enrich_pipeline(path, {"engines": {"SCALPING": {"telemetry": [
+                {"identity": instrument, "pipeline": {"SIGNAL_READY": True},
+                 "entry_authority": False}]}}}, as_of=at)
+            label = second["engines"]["SCALPING"]["telemetry"][0]["signal_shadow"]["status"]
+            assert label != "OBSERVED_NATIVE_SIGNAL", "PIT_INTERLEAVING_CROSS_CONSUMER_READER_GAP"
