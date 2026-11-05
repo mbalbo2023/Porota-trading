@@ -53,7 +53,8 @@ class TestA689OffhostScopedControlPlane(unittest.TestCase):
 
     def test_only_fixed_suites_and_binary_pinned_dependency_wheels(self):
         text = self.source
-        for name in ("ux_browser", "ppi_rest_wire", "pit_postcommit"):
+        for name in ("ux_browser", "ppi_rest_wire", "pit_postcommit",
+                     "ppi_sdk_singleton"):
             self.assertIn(name, text)
         for path in (
             "tests/ci_trader_terminal_browser.py",
@@ -61,6 +62,8 @@ class TestA689OffhostScopedControlPlane(unittest.TestCase):
             "tests/test_rc6_a685_ppi_gateway_composition.py",
             "tests/test_rc6_a680_ppi_guard_wire_receipt.py",
             "tests/test_rc6_a685_pit_postcommit_composition.py",
+            "tests/test_rc6_a696_ppi_registry_subclass.py",
+            "tests/test_rc6_a708_ppi_sdk_registry_offhost.py",
         ):
             self.assertIn(path, text)
         self.assertIn("--no-deps --only-binary=:all:", text)
@@ -71,6 +74,17 @@ class TestA689OffhostScopedControlPlane(unittest.TestCase):
         self.assertIn("python3 -m venv", text)
         self.assertNotIn("-r requirements.txt", text)
         self.assertNotRegex(text, r"(?m)^\s+run:\s*pytest\s")
+
+    def test_sdk_only_exact_head_tests_no_provider_fallback(self):
+        text = self.source
+        self.assertIn("ppi_sdk_singleton)", text)
+        self.assertIn("rc6_ppi_shared_session_owner.py", text)
+        self.assertIn("tests/test_rc6_a696_ppi_registry_subclass.py", text)
+        self.assertIn("tests/test_rc6_a708_ppi_sdk_registry_offhost.py", text)
+        self.assertIn("extra=()", text)
+        self.assertIn("git ls-files --error-unmatch", text)
+        self.assertIn("tests+=(tests/test_rc6_a708_ppi_sdk_registry_offhost.py)", text)
+        self.assertIn('"ppi_sdk_singleton"} else "INVALID"', text)
 
     def test_source_import_and_chromium_run_after_network_cut(self):
         text = self.source
