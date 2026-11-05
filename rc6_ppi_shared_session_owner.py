@@ -35,6 +35,79 @@ class SessionOwnerBlocked(RuntimeError):
     """A missing independent authority or unsafe lifecycle denies operation."""
 
 
+class _CompositeStreamAuthority:
+    """Recheck all three independent gates at every async SDK callback.
+
+    The SDK connect callback may happen after the original capacity decision.
+    This wraps the unchanged A678 producer's permits(action, five_key) API.
+    It creates no SDK/client/login/order/provider request.
+    """
+
+    def __init__(self, *, stream, capacity, catalog):
+        self._stream = stream
+        self._capacity = capacity
+        self._catalog = catalog
+
+    @staticmethod
+    def _allow(authority, action, identity=None) -> bool:
+        try:
+            return authority.permits(action, five_key=identity) is True
+        except Exception:
+            return False
+
+    def permits(self, action, *, five_key=None) -> bool:
+        if not self._allow(self._stream, action, five_key):
+            return False
+        if action == "SUBSCRIBE_MARKET_DATA":
+            return (five_key is not None
+                    and self._allow(self._capacity, "STREAM_SUBSCRIPTION", five_key)
+                    and self._allow(self._catalog, "PPI_FIVE_KEY_CATALOG_ATTESTED", five_key))
+        if action in {"CONNECT_MARKET_DATA", "RECEIVE_MARKET_DATA"}:
+            return (self._allow(self._capacity, "STREAM_CONNECT")
+                    and self._allow(self._catalog, "PPI_FIVE_KEY_CATALOG_ATTESTED"))
+        return False
+
+
+class _CapacityCheckedStreamFeed:
+    """Reject an already-wired symbol if its independent gate was revoked.
+
+    The immutable A678 producer checks an unscoped RECEIVE authority BEFORE
+    extracting a native five-key. This additional per-event gate re-resolves
+    the bounded active plan (at most the local cap) before publication. The
+    A678 producer separately requires an actually wired subscription, and
+    the underlying G1 feed separately verifies native PPI catalog identity.
+    """
+
+    def __init__(self, *, feed, authority):
+        self._feed = feed
+        self._authority = authority
+
+    def plan_subscription(self, five_key, *, priority):
+        return self._feed.plan_subscription(five_key, priority=priority)
+
+    def active_subscriptions(self):
+        return self._feed.active_subscriptions()
+
+    def publish_native_market_event(self, raw, **kwargs):
+        if not isinstance(raw, dict):
+            raise SessionOwnerBlocked("PPI_STREAM_EVENT_IDENTITY_UNVERIFIED")
+        ticker, settlement, family = (raw.get("Ticker"), raw.get("Settlement"),
+                                      raw.get("Type"))
+        if (type(ticker) is not str or type(settlement) is not str
+                or (family is not None and type(family) is not str)):
+            raise SessionOwnerBlocked("PPI_STREAM_EVENT_IDENTITY_UNVERIFIED")
+        t, s = ticker.strip().upper(), settlement.strip().upper()
+        f = family.strip().upper() if family is not None else None
+        matches = [key for key in self._feed.active_subscriptions()
+                   if key[0] == t and key[4] == s
+                   and (f is None or key[1] == f)]
+        if len(matches) != 1:
+            raise SessionOwnerBlocked("PPI_STREAM_EVENT_IDENTITY_AMBIGUOUS")
+        if not self._authority.permits("SUBSCRIBE_MARKET_DATA", five_key=matches[0]):
+            raise SessionOwnerBlocked("PPI_STREAM_EVENT_CAPACITY_REVOKED")
+        return self._feed.publish_native_market_event(raw, **kwargs)
+
+
 class PPISharedSessionOwner:
     """Process-local owner; does not claim account-wide/Watch uniqueness.
 
@@ -73,11 +146,16 @@ class PPISharedSessionOwner:
         self._stream_authority = stream_authority
         self._capacity = external_capacity_authority
         self._catalog_authority = catalog_authority
+        self._composite_stream_authority = _CompositeStreamAuthority(
+            stream=stream_authority, capacity=external_capacity_authority,
+            catalog=catalog_authority)
         self._feed = PPISharedMarketFeed(
             ppi_catalog_rows=ppi_catalog_rows,
             catalog_source_digest=catalog_source_digest,
             max_subscriptions=max_subscriptions,
         )
+        self._stream_feed = _CapacityCheckedStreamFeed(
+            feed=self._feed, authority=self._composite_stream_authority)
         self._native = PPIReadOnlyNativeReceiptStore(self._feed)
         for consumer, keys in consumer_five_keys.items():
             self._feed.register_consumer(consumer, watched_five_keys=keys)
@@ -110,7 +188,7 @@ class PPISharedSessionOwner:
 
     def _permits_stream_connect(self) -> bool:
         try:
-            return self._stream_authority.permits("CONNECT_MARKET_DATA") is True
+            return self._composite_stream_authority.permits("CONNECT_MARKET_DATA") is True
         except Exception:
             return False
 
@@ -147,8 +225,8 @@ class PPISharedSessionOwner:
                 transport = source.market_only_sdk_transport(
                     instrument_factory=self._instrument_factory)
                 stream = PPISharedSDKProducer(
-                    feed=self._feed, transport=transport,
-                    stream_authority=self._stream_authority,
+                    feed=self._stream_feed, transport=transport,
+                    stream_authority=self._composite_stream_authority,
                 )
                 local_generation = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
                 rest = MarketOnlyRESTProducer(
