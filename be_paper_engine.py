@@ -724,6 +724,12 @@ class PaperStore:
                 features["ppi_book1_provenance_state"] = "CLAIM_CONFLICT_HOLD"
             else:
                 features["ppi_book1_event_sha256"] = native_book1_sha
+        elif "ppi_book1_event_sha256" in features:
+            # A caller cannot invent Book1 provenance when the scanner did
+            # not bind a freshly CAPTURED native Book to this exact Quote.
+            # Retain the PAPER decision but keep its causal freeze unbound.
+            features.pop("ppi_book1_event_sha256", None)
+            features["ppi_book1_provenance_state"] = "CLAIM_UNBOUND_HOLD"
         try:
             native_family = family_name(q.asset_class)
         except ValueError:
