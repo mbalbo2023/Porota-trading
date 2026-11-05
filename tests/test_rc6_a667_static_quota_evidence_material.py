@@ -11,7 +11,9 @@ import json
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
 
+import rc6_ppi_global_budget as budget_module
 from be_paper_engine import PaperStore
 from rc6_dynamic_universe.promotion import DEFAULT_POLICY, RuntimeCapacityController
 from rc6_ppi_global_budget import (
@@ -19,7 +21,8 @@ from rc6_ppi_global_budget import (
     static_shared_capacity_state,
 )
 from tests.test_rc6_a586_ppi_missing_lease_guard import (
-    sign_synthetic_authority, static_authority_file,
+    sign_synthetic_authority, sign_synthetic_external_owner,
+    static_authority_file,
 )
 from tests.test_rc6_ppi_capacity_benchmark import wire
 
@@ -34,8 +37,15 @@ def _write_material(path, value):
 
 def _signed_with_material(tmp_path, monkeypatch, clock, *, provider_scope=None,
                           watch_scope=None, watch_retries=True, watch_age_seconds=0,
-                          provider_age_seconds=0, provider_current_delta=0):
-    environ, signer = static_authority_file(tmp_path, monkeypatch, clock)
+                          provider_age_seconds=0, provider_current_delta=0,
+                          legacy_watch_v1=False, watch_current_over_max=0,
+                          watch_global_over_max=0, watch_valid_from_late=0,
+                          watch_valid_until_short=0, watch_window_basis=None,
+                          watch_callers_covered=None, watch_hard_cap_kind=None,
+                          watch_owner_signature_tamper=False,
+                          watch_owner_is_reviewer=False):
+    environ, signer, external_owner = static_authority_file(
+        tmp_path, monkeypatch, clock, return_external_owner=True)
     authority_path = Path(environ["POROTA_PPI_STATIC_SHARED_AUTHORITY_PATH"])
     authority = json.loads(authority_path.read_text(encoding="utf-8"))
     for field in ("signer_public_key_b64", "signature_b64"):
@@ -51,7 +61,7 @@ def _signed_with_material(tmp_path, monkeypatch, clock, *, provider_scope=None,
         "global_limit": authority["provider_global_limit"],
     }
     watch = {
-        "schema": "RC6_PPI_EXTERNAL_WATCH_USAGE_EVIDENCE_V1",
+        "schema": budget_module.STATIC_WATCH_EVIDENCE_SCHEMA,
         "quota_scope_sha256": watch_scope or account_scope,
         "reviewed_at": (clock.now() - timedelta(seconds=watch_age_seconds)).isoformat(),
         "window_seconds": authority["window_seconds"],
@@ -59,6 +69,43 @@ def _signed_with_material(tmp_path, monkeypatch, clock, *, provider_scope=None,
         "global_reserve": authority["watch_external_global_reserve"],
         "retries_included": watch_retries,
     }
+    if legacy_watch_v1:
+        watch["schema"] = "RC6_PPI_EXTERNAL_WATCH_USAGE_EVIDENCE_V1"
+    else:
+        watch.update({
+            "window_basis": watch_window_basis or budget_module.STATIC_WATCH_WINDOW_BASIS,
+            "external_callers_covered": (
+                watch_callers_covered or budget_module.STATIC_WATCH_COVERAGE),
+            "max_endpoint_wire_attempts": {
+                **authority["watch_external_endpoint_reserve"],
+                "current": authority["watch_external_endpoint_reserve"]["current"] +
+                    watch_current_over_max,
+            },
+            "max_global_wire_attempts": (
+                authority["watch_external_global_reserve"] + watch_global_over_max),
+            "hard_cap_kind": watch_hard_cap_kind or budget_module.STATIC_WATCH_HARD_CAP_KIND,
+            "guarantee_valid_from": (
+                clock.now() - timedelta(seconds=(
+                    authority["window_seconds"] - watch_valid_from_late))
+            ).isoformat(),
+            "guarantee_valid_until": (
+                clock.now() + timedelta(hours=1, seconds=(
+                    authority["window_seconds"] - watch_valid_until_short))
+            ).isoformat(),
+        })
+        watch = sign_synthetic_external_owner(
+            watch, signer if watch_owner_is_reviewer else external_owner)
+        if watch_owner_is_reviewer:
+            reviewer_public = signer.public_key().public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+            monkeypatch.setattr(
+                budget_module, "PINNED_EXTERNAL_PPI_CONSUMPTION_OWNER_KEY_SHA256",
+                hashlib.sha256(reviewer_public).hexdigest())
+        if watch_owner_signature_tamper:
+            signature = watch["owner_signature_b64"]
+            watch["owner_signature_b64"] = (
+                signature[:10] + ("A" if signature[10] != "A" else "B") +
+                signature[11:])
     provider_name = "a667-provider-synthetic.json"
     watch_name = "a667-watch-synthetic.json"
     authority.update({

@@ -59,7 +59,14 @@ PINNED_STATIC_SHARED_SIGNER_KEY_SHA256 = None
 STATIC_SHARED_AUTHORITY = "STATIC_SHARED_EXTERNAL_WATCH_RESERVED_V1"
 STATIC_SHARED_MAX_BYTES = 16384
 STATIC_PROVIDER_EVIDENCE_SCHEMA = "RC6_PPI_PROVIDER_QUOTA_EVIDENCE_V1"
-STATIC_WATCH_EVIDENCE_SCHEMA = "RC6_PPI_EXTERNAL_WATCH_USAGE_EVIDENCE_V1"
+STATIC_WATCH_EVIDENCE_SCHEMA = "RC6_PPI_EXTERNAL_WATCH_MAXIMUM_GUARANTEE_V2"
+# Independent external-account custodian: NOT the RC6 reviewer key. A signed
+# promise without a known, verified custodian and actual hard-stop evidence is
+# not capacity authority. No production pin is known at this code revision.
+PINNED_EXTERNAL_PPI_CONSUMPTION_OWNER_KEY_SHA256 = None
+STATIC_WATCH_COVERAGE = "ALL_EXTERNAL_SHARED_ACCOUNT_MARKETDATA_ATTEMPTS_INCLUDING_RETRIES"
+STATIC_WATCH_WINDOW_BASIS = "ANY_ROLLING_WINDOW"
+STATIC_WATCH_HARD_CAP_KIND = "EXCLUSIVE_CUSTODIAN_ATTESTED_WIRE_HARD_STOP"
 
 
 # Observation only: bounded in-process transaction edges, never admission authority.
@@ -2058,12 +2065,64 @@ def _static_shared_evidence_material(authority_path, authority, *, as_of):
             or provider["endpoint_limits"] != authority["provider_endpoint_limits"]
             or provider["global_limit"] != authority["provider_global_limit"]
             or set(watch) != {"schema", "quota_scope_sha256", "reviewed_at",
-                "window_seconds", "endpoint_reserve", "global_reserve", "retries_included"}
+                "window_seconds", "endpoint_reserve", "global_reserve",
+                "retries_included", "window_basis", "external_callers_covered",
+                "max_endpoint_wire_attempts", "max_global_wire_attempts",
+                "hard_cap_kind", "guarantee_valid_from", "guarantee_valid_until",
+                "owner_signer_public_key_b64", "owner_signature_b64"}
             or watch["schema"] != STATIC_WATCH_EVIDENCE_SCHEMA
             or watch["endpoint_reserve"] != authority["watch_external_endpoint_reserve"]
             or watch["global_reserve"] != authority["watch_external_global_reserve"]
-            or watch["retries_included"] is not True):
+            or watch["retries_included"] is not True
+            or watch["window_basis"] != STATIC_WATCH_WINDOW_BASIS
+            or watch["external_callers_covered"] != STATIC_WATCH_COVERAGE
+            or watch["hard_cap_kind"] != STATIC_WATCH_HARD_CAP_KIND):
         raise ValueError("STATIC_SHARED_EVIDENCE_CONTRACT_MISMATCH")
+    # Unlike V1's arbitrary reviewer-signed reserve, V2 is independently
+    # countersigned by the custodian who owns *all* external usage of the
+    # shared PPI account (Watch + retries + any non-RC6 client). This verifies
+    # attestation provenance, NOT the actual external enforcement mechanism:
+    # real hard-stop/usage/quotas still need separate source/runtime evidence.
+    pinned = PINNED_EXTERNAL_PPI_CONSUMPTION_OWNER_KEY_SHA256
+    if (type(pinned) is not str or not re.fullmatch(r"[0-9a-f]{64}", pinned)
+            or pinned == PINNED_STATIC_SHARED_SIGNER_KEY_SHA256):
+        raise ValueError("STATIC_SHARED_EXTERNAL_OWNER_UNPINNED")
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.exceptions import InvalidSignature
+    try:
+        public = base64.b64decode(watch["owner_signer_public_key_b64"], validate=True)
+        signature = base64.b64decode(watch["owner_signature_b64"], validate=True)
+        if (len(public) != 32 or len(signature) != 64
+                or hashlib.sha256(public).hexdigest() != pinned):
+            raise ValueError("STATIC_SHARED_EXTERNAL_OWNER_UNTRUSTED")
+        signed = {key: value for key, value in watch.items()
+                  if key not in {"owner_signer_public_key_b64", "owner_signature_b64"}}
+        Ed25519PublicKey.from_public_bytes(public).verify(signature,
+            json.dumps(signed, sort_keys=True, ensure_ascii=False,
+                       separators=(",", ":"), allow_nan=False).encode("utf-8"))
+    except (InvalidSignature, ValueError, TypeError, KeyError, OverflowError) as error:
+        raise ValueError("STATIC_SHARED_EXTERNAL_OWNER_ATTESTATION_INVALID") from error
+    bound = watch["max_endpoint_wire_attempts"]
+    if type(bound) is not dict or set(bound) != set(ENDPOINTS):
+        raise ValueError("STATIC_SHARED_EXTERNAL_MAXIMUM_INVALID")
+    for endpoint in ENDPOINTS:
+        if _int(bound[endpoint]) > _int(watch["endpoint_reserve"][endpoint]):
+            raise ValueError("STATIC_SHARED_EXTERNAL_MAXIMUM_EXCEEDS_RESERVE")
+    if (_int(watch["max_global_wire_attempts"]) >
+            _int(watch["global_reserve"])):
+        raise ValueError("STATIC_SHARED_EXTERNAL_GLOBAL_MAXIMUM_EXCEEDS_RESERVE")
+    # The previous rolling window can contain external calls made *before*
+    # this approval. The independent cap must cover that entire trailing
+    # window and remain active until one whole window *after* the final RC6
+    # authority expires; otherwise external Watch could resume unbounded
+    # immediately after expiry while the last RC6 requests still count.
+    started = stamp(watch["guarantee_valid_from"])
+    ends = stamp(watch["guarantee_valid_until"])
+    if (started > at - timedelta(seconds=authority["window_seconds"])
+            or ends < (stamp(authority["expires_at"]) +
+                       timedelta(seconds=authority["window_seconds"]))
+            or ends <= at):
+        raise ValueError("STATIC_SHARED_EXTERNAL_WINDOW_COVERAGE_INVALID")
 
 
 def static_shared_capacity_state(database, environ, *, as_of):
