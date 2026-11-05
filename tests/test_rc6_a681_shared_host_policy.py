@@ -132,7 +132,7 @@ def test_a690_preclean_uses_private_owned_scratch_not_shared_fixed_paths():
     assert "stat -c '%a:%u'" in src
     assert '--json-out "$TMP_HOUSEKEEPING"' in src
     assert 'rmdir -- "$RC6_PRECLEAN_SCRATCH"' in src
-    assert 'rm -rf' not in src.split('RC6_PRECLEAN_SCRATCH="$(mktemp', 1)[1].split('PRECLEAN_REMOTE', 1)[0]
+    assert 'rm -rf' not in src.split('RC6_PRECLEAN_SCRATCH="$(mktemp', 1)[1].split('\n          PRECLEAN_REMOTE\n', 1)[0]
     assert "RC6_DISK_PRECLEAN_VALIDATION=GREEN_PENDING_PRIVATE_SCRATCH_RELEASE" in src
 
 
