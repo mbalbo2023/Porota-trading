@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
@@ -48,6 +49,9 @@ SOURCES = frozenset({"PPI", "IOL", "IOL_CONNECTOR", "BYMA", "A3", "A3_CEM",
                      "CAFCI", "CNV"})
 PRIMARY_FOR_FAMILY = {
     **{name: frozenset({"PPI"}) for name in FAMILIES},
+    # These are possible ECONOMIC quote sources, not identity authorities.
+    # _verify_ppi_identity binds EVERY quote, including PPI Book (which
+    # carries only three request keys), to a PPI five-key catalog witness.
     "FUTUROS": frozenset({"A3", "A3_CEM", "PPI"}),
     "ETFS": frozenset({"BYMA", "PPI"}),
     "FCI": frozenset({"CAFCI", "CNV", "PPI"}),
@@ -479,6 +483,70 @@ def _verify_primary(record, family, identity, key_pair, decision_at):
     return source, _normalized_quote(raw.get("quote"), family)
 
 
+def _verify_ppi_identity(case, family, identity, keys, quote_source,
+                         quote_role, reference_role, decision_at):
+    """Bind supplementary economic data to PPI's five-key identity.
+
+    A PPI Book request alone carries only Ticker/Type/Settlement, so its
+    caller-supplied market/currency must not be mistaken for a PPI catalog
+    witness. A separate signed raw five-key receipt is necessary even when
+    the book source is PPI. Current A320 cannot promote authentic evidence
+    without its separately reviewed public-sensor verifier (still HOLD).
+    """
+    receipt = case.get("ppi_identity_receipt")
+    if not isinstance(receipt, dict):
+        raise ValueError("A320_PPI_FIVE_KEY_IDENTITY_RECEIPT_REQUIRED")
+    role = (keys.get("providers") or {}).get("PPI")
+    if (not role or role[0] == reference_role[0]
+            or role[1] == reference_role[1]
+            or (quote_source != "PPI" and (role[0] == quote_role[0]
+                                            or role[1] == quote_role[1]))):
+        raise ValueError("A320_PPI_IDENTITY_TRUST_ROOT_NOT_INDEPENDENT")
+    body = _authenticated(receipt, role, "PPI_IDENTITY")
+    if (body.get("schema") != "rc6.a320.ppi.identity.receipt.v1"
+            or body.get("source") != "PPI"
+            or body.get("capture_kind") != "PPI_DIRECT_READONLY_CATALOG_IDENTITY"
+            or body.get("provenance") != "AUTHENTIC_READONLY_CAPTURE"
+            or body.get("orders_sent") != 0
+            or body.get("history_v2_writes") != 0):
+        raise ValueError("A320_PPI_IDENTITY_ORIGIN_UNVERIFIED")
+    if _identity(body.get("identity"), family) != identity:
+        raise ValueError("A320_PPI_FIVE_KEY_IDENTITY_MISMATCH")
+    from urllib.parse import urlsplit
+    try:
+        source_url = urlsplit(body["source_url"])
+        if (source_url.scheme != "https" or source_url.hostname !=
+                "clientapi.portfoliopersonal.com" or source_url.username
+                or source_url.password or source_url.fragment):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("A320_PPI_IDENTITY_ORIGIN_UNVERIFIED") from None
+    started = _utc(body.get("started_at_utc"), "PPI_IDENTITY_STARTED")
+    known = _utc(body.get("first_known_at_utc"), "PPI_IDENTITY_KNOWN")
+    published = _utc(body.get("provider_at_utc"), "PPI_IDENTITY_PROVIDER")
+    if (published > known or started > known or known > decision_at
+            or (known - started).total_seconds() * 1000 > MAX_CAPTURE_CLOCK_SKEW_MS):
+        raise ValueError("A320_PPI_IDENTITY_LOOKAHEAD_OR_CLOCK")
+    if not (_date(body.get("valid_from"), "PPI_IDENTITY_FROM") <=
+            decision_at.date() <= _date(body.get("valid_through"),
+                                        "PPI_IDENTITY_THROUGH")):
+        raise ValueError("A320_PPI_IDENTITY_NOT_EFFECTIVE_AT_DECISION")
+    raw = body.get("raw_catalog_identity")
+    if not isinstance(raw, dict) or _identity(raw, family) != identity:
+        raise ValueError("A320_PPI_RAW_FIVE_KEY_IDENTITY_MISMATCH")
+    try:
+        wire = base64.b64decode(body.get("raw_catalog_body_base64"),
+                                validate=True)
+        if (len(wire) > MAX_CAPTURE_BYTES
+                or sha256(wire).hexdigest() != _hash_string(
+                    body.get("raw_catalog_body_sha256"), "PPI_IDENTITY_WIRE")
+                or json.loads(wire) != raw):
+            raise ValueError()
+    except (ValueError, TypeError, binascii.Error):
+        raise ValueError("A320_PPI_IDENTITY_WIRE_RAW_MISMATCH") from None
+    return _sha(receipt)
+
+
 def _verify_reference(record, family, identity, primary_source, primary_record,
                       key_pair, decision_at):
     body = _authenticated(record, key_pair, "REFERENCE")
@@ -712,6 +780,8 @@ def _one_case(case, keys):
     source, p_quote = _verify_primary(primary, family, identity, p_role, evaluated_at)
     independent, r_quote, contract = _verify_reference(
         reference, family, identity, source, p_body, r_role, evaluated_at)
+    ppi_identity_receipt_sha = _verify_ppi_identity(
+        case, family, identity, keys, source, p_role, r_role, evaluated_at)
     day = evaluated_at.date()
     _contract(contract, family, identity, day)
     _calendar(contract, evaluated_at, _utc(p_body["provider_at_utc"], "QUOTE_PROVIDER"), family)
@@ -719,6 +789,7 @@ def _one_case(case, keys):
     source_result = {"family": family, "identity": list(identity),
                      "status": "SOURCE_PIT_CANDIDATE", "source": source,
                      "independent_source": independent,
+                     "ppi_identity_receipt_sha256": ppi_identity_receipt_sha,
                      "first_known_at_utc": evaluated_at.isoformat(),
                      "primary_receipt_sha256": _sha(primary),
                      "independent_receipt_sha256": _sha(reference),
@@ -1053,3 +1124,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

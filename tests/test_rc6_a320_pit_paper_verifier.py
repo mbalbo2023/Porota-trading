@@ -172,6 +172,25 @@ def one_case(family, *, day=DAY):
     case = {"family": family, "identity": identity,
             "primary_capture": primary, "independent_capture": reference,
             "paper_decision": decision, "fee_receipt": fee}
+    # Synthetic only. A real identity receipt must originate from an
+    # independently governed PPI catalog capture and preserve its raw bytes.
+    # A PPI Book alone does NOT contain Market and Currency (five-key gap).
+    wire = pit._canonical(identity)
+    case["ppi_identity_receipt"] = signed({
+        "schema": "rc6.a320.ppi.identity.receipt.v1",
+        "evidence_origin": "OFFHOST_SYNTHETIC",
+        "source": "PPI", "source_url": "https://clientapi.portfoliopersonal.com/api/1.0/MarketData",
+        "capture_kind": "PPI_DIRECT_READONLY_CATALOG_IDENTITY",
+        "provenance": "AUTHENTIC_READONLY_CAPTURE",
+        "identity": identity,
+        "started_at_utc": day + "T13:59:55Z",
+        "first_known_at_utc": day + "T13:59:56Z",
+        "provider_at_utc": day + "T13:59:50Z",
+        "valid_from": day, "valid_through": "2026-11-30",
+        "raw_catalog_identity": identity,
+        "raw_catalog_body_sha256": pit.sha256(wire).hexdigest(),
+        "raw_catalog_body_base64": base64.b64encode(wire).decode("ascii"),
+        "orders_sent": 0, "history_v2_writes": 0}, "primary")
     if family == "FCI":
         allocation_raw = {"identity": identity, "fund_class_id": "CLASS_A",
                           "nav": "105"}
@@ -199,6 +218,117 @@ def resign(record, role, **changes):
 
 
 class TestA320PITPaperVerifier(unittest.TestCase):
+    def test_ppi_book_three_request_keys_do_not_prove_five_key_identity(self):
+        case = one_case("ACCIONES")
+        case.pop("ppi_identity_receipt")
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["ACCIONES"]
+        self.assertEqual(0, row["synthetic_source_contract_candidates"])
+        self.assertIn("A320_PPI_FIVE_KEY_IDENTITY_RECEIPT_REQUIRED",
+                      row["rejection_reasons"])
+
+    def test_ppi_five_key_receipt_wrong_market_currency_or_raw_fails(self):
+        for field, wrong in (("market", "BYMA"), ("currency", "USD"),
+                             ("symbol", "ANOTHER")):
+            with self.subTest(field=field):
+                case = one_case("FUTUROS")
+                original = case["ppi_identity_receipt"]
+                raw = {**original["raw_catalog_identity"], field: wrong}
+                wire = pit._canonical(raw)
+                case["ppi_identity_receipt"] = resign(
+                    original, "primary", raw_catalog_identity=raw,
+                    raw_catalog_body_sha256=pit.sha256(wire).hexdigest(),
+                    raw_catalog_body_base64=base64.b64encode(wire).decode("ascii"))
+                row = pit.review_bundle(bundle(case), KEYS)["families"]["FUTUROS"]
+                self.assertEqual(0, row["synthetic_source_contract_candidates"])
+                self.assertIn("A320_PPI_RAW_FIVE_KEY_IDENTITY_MISMATCH",
+                              row["rejection_reasons"])
+
+    def test_ppi_identity_receipt_cannot_be_post_decision_or_spoofed(self):
+        case = one_case("FCI")
+        original = case["ppi_identity_receipt"]
+        case["ppi_identity_receipt"] = resign(
+            original, "primary", first_known_at_utc=DAY + "T14:01:10Z")
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["FCI"]
+        self.assertIn("A320_PPI_IDENTITY_LOOKAHEAD_OR_CLOCK",
+                      row["rejection_reasons"])
+        case = one_case("FUTUROS")
+        original = case["ppi_identity_receipt"]
+        unsigned = {key: value for key, value in original.items()
+                    if key != "attestation"}
+        case["ppi_identity_receipt"] = pit._sign(
+            unsigned, *KEYS["providers"]["A3"])
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["FUTUROS"]
+        self.assertIn("A320_ATTESTATION_SIGNER_MISMATCH",
+                      row["rejection_reasons"])
+
+    def test_broken_signed_ppi_catalog_wire_rejected_per_family_not_crash(self):
+        case = one_case("FUTUROS")
+        original = case["ppi_identity_receipt"]
+        case["ppi_identity_receipt"] = resign(
+            original, "primary", raw_catalog_body_base64="^invalid-base64^")
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["FUTUROS"]
+        self.assertEqual(1, row["invalid_case_count"])
+        self.assertEqual(0, row["synthetic_source_contract_candidates"])
+        self.assertIn("A320_PPI_IDENTITY_WIRE_RAW_MISMATCH",
+                      row["rejection_reasons"])
+
+    def test_ppi_catalog_attestation_hash_preserved_in_synthetic_receipt(self):
+        case = one_case("FCI")
+        row = pit.review_bundle(bundle(case), KEYS)["families"]["FCI"]
+        self.assertEqual(1, row["synthetic_source_contract_candidates"])
+        self.assertEqual(0, row["source_pit_rows_verified"])
+        self.assertEqual(0, row["paper_sim_rows_verified"])
+        self.assertEqual(pit._sha(case["ppi_identity_receipt"]), row[
+            "receipt_evaluations"][0]["source"]["ppi_identity_receipt_sha256"])
+
+    def test_unbound_non_ppi_primary_never_qualifies_as_ppi_identity(self):
+        # A3/CAFCI+IOL/CNV agreement cannot independently establish the
+        # five-key PPI identity, even for a synthetic source candidate.
+        for family in ("FUTUROS", "FCI"):
+            with self.subTest(family=family):
+                case = one_case(family)
+                case.pop("ppi_identity_receipt")
+                row = pit.review_bundle(bundle(case), KEYS)["families"][family]
+                self.assertEqual(0, row["synthetic_source_contract_candidates"])
+                self.assertEqual(0, row["synthetic_paper_contract_candidates"])
+                self.assertIn("A320_PPI_FIVE_KEY_IDENTITY_RECEIPT_REQUIRED",
+                              row["rejection_reasons"])
+
+    def test_byma_etf_and_caucion_quotes_need_separate_ppi_identity(self):
+        # Existing synthetic PPI books are replaced by independently signed
+        # BYMA economic quotes; the PPI identity witness must remain separate.
+        for family in ("ETFS", "CAUCIONES"):
+            with self.subTest(family=family):
+                case = one_case(family)
+                book_quote = pit._book_quote(case["primary_capture"]["raw_book"])
+                raw = {"identity": case["identity"],
+                       "quote": {key: str(value) for key, value in book_quote.items()}}
+                case["primary_capture"] = signed({
+                    "schema": "rc6.a320.provider.capture.v1",
+                    "identity": case["identity"], "source": "BYMA",
+                    "source_url": "https://www.byma.com.ar",
+                    "capture_kind": "OFFICIAL_READONLY_CAPTURE",
+                    "provenance": "AUTHENTIC_READONLY_CAPTURE",
+                    "upstream_method": "GET", "license_state": "AUTHORIZED",
+                    "sensor_id": "BYMA_PRIMARY_SYNTHETIC_SENSOR",
+                    "started_at_utc": DAY + "T14:00:02Z",
+                    "first_known_at_utc": DAY + "T14:00:05Z",
+                    "provider_at_utc": DAY + "T14:00:00Z",
+                    "raw_payload": raw, "raw_payload_sha256": pit._sha(raw),
+                    "orders_sent": 0, "history_v2_writes": 0}, "primary")
+                case["paper_decision"] = resign(
+                    case["paper_decision"], "decision",
+                    inputs_sha256={"primary": pit._sha(case["primary_capture"]),
+                                    "reference": pit._sha(case["independent_capture"])})
+                row = pit.review_bundle(bundle(case), KEYS)["families"][family]
+                self.assertEqual(1, row["synthetic_source_contract_candidates"], row)
+                self.assertEqual(0, row["source_pit_rows_verified"])
+                case.pop("ppi_identity_receipt")
+                blocked = pit.review_bundle(bundle(case), KEYS)["families"][family]
+                self.assertEqual(0, blocked["synthetic_source_contract_candidates"])
+                self.assertIn("A320_PPI_FIVE_KEY_IDENTITY_RECEIPT_REQUIRED",
+                              blocked["rejection_reasons"])
+
     def test_ten_family_contract_paths_but_zero_real_approvals(self):
         report = pit.review_bundle(bundle(*(one_case(f) for f in pit.FAMILIES)), KEYS)
         self.assertEqual(10, len(report["families"]))
@@ -443,6 +573,11 @@ class TestA320PITPaperVerifier(unittest.TestCase):
 
     def test_hmac_authentic_looking_sources_still_zero_without_external_public_signatures(self):
         case = one_case("ACCIONES")
+        # Adversarial fixture strips the explicit synthetic marker to reach
+        # the distinct public-sensor gate; HMAC alone must still be rejected.
+        case["ppi_identity_receipt"] = resign(
+            case["ppi_identity_receipt"], "primary",
+            evidence_origin="UNVERIFIED_HMAC_ONLY")
         raw = case["independent_capture"]["raw_payload"]
         raw["official_contract_document"]["publisher"] = "UNVERIFIED_HMAC_ONLY"
         raw["official_calendar_document"]["publisher"] = "UNVERIFIED_HMAC_ONLY"
@@ -553,3 +688,4 @@ class TestA320PITPaperVerifier(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
