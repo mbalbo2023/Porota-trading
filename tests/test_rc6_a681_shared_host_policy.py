@@ -121,3 +121,46 @@ def test_legacy_build_cache_and_dated_manual_workflows_disabled():
     assert re.search(r'^\s*sudo -n docker (?:builder|image|buildx|system) prune', legacy, re.M) is None
     assert re.search(r'^\s*find /tmp .* -exec rm', legacy, re.M) is None
     assert materialize['jobs']['materialize']['if'] == '${{ false }}'
+
+def test_a690_preclean_uses_private_owned_scratch_not_shared_fixed_paths():
+    """Host-wide /tmp fixed names must never be redirected to or deleted."""
+    src = PROMOTE.read_text(encoding='utf-8')
+    assert '/tmp/porota-dynamic-deploy-disk-policy.json' not in src
+    assert '/tmp/porota-predeploy-housekeeping.json' not in src
+    assert 'mktemp -d -- /tmp/rc6-porota-preclean.XXXXXXXXXX' in src
+    assert "trap cleanup_preclean_scratch EXIT" in src
+    assert "stat -c '%a:%u'" in src
+    assert '--json-out "$TMP_HOUSEKEEPING"' in src
+    assert 'rmdir -- "$RC6_PRECLEAN_SCRATCH"' in src
+    assert 'rm -rf' not in src.split('RC6_PRECLEAN_SCRATCH="$(mktemp', 1)[1].split('PRECLEAN_REMOTE', 1)[0]
+    assert "RC6_DISK_PRECLEAN_VALIDATION=GREEN_PENDING_PRIVATE_SCRATCH_RELEASE" in src
+
+
+@pytest.mark.parametrize('candidate_rc,stage_rc,expected_ok', [
+    (0, 0, True), (2, 0, False), (0, 2, False), (2, 2, False),
+])
+def test_a690_failed_cleanup_must_never_emit_false_green(candidate_rc, stage_rc, expected_ok):
+    """Execute only the pure bash gate tail; never touch Docker or the droplet."""
+    import os
+    src = PROMOTE.read_text(encoding='utf-8')
+    start = src.index('          # A690: a successful disk reserve')
+    end = src.index('          REMOTE', start)
+    script = src[start:end]
+    env = {**os.environ,
+        'RC6_CLEANUP_RC': str(candidate_rc),
+        'RC6_STAGE_CLEANUP_RC': str(stage_rc),
+        'DISK_AFTER': '9000000000', 'FINAL_INODE_FREE_PERCENT': '90.0',
+        'CANDIDATE_SHA': 'a' * 40, 'DEPLOY_SHA': 'b' * 40,
+        'RUNTIME_IMAGE_ID': 'sha256:' + 'c' * 64,
+        'EXPECTED_IMAGE_ID': 'sha256:' + 'c' * 64}
+    out = subprocess.run(['bash', '-eu', '-o', 'pipefail'],
+        input=script, capture_output=True, text=True, env=env)
+    assert ('RC6_DEPLOY_V2=GREEN|' in out.stdout) is expected_ok
+    assert ('RC6_FINAL_HOUSEKEEPING=GREEN|' in out.stdout) is expected_ok
+    if expected_ok:
+        assert out.returncode == 0
+    else:
+        assert out.returncode == 79
+        assert 'RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|' in out.stdout
+        assert 'RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|' in out.stdout
+        assert 'RC6_SHARED_HOST_CLEANUP_DEFERRED_UNVERIFIED' in out.stdout
