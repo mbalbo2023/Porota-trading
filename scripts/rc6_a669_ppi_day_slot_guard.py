@@ -1,37 +1,46 @@
 #!/usr/bin/env python3
-"""A669 one-day control-plane gate for Thursday PPI Current/Book evidence.
+"""A670 evergreen control-plane gate for audited BYMA PPI Current/Book evidence.
 
-Only validates a pinned, existing A630 OFFHOST-tested capture engine and the
-2026-11-05 ART time slot.  It never imports the provider SDK, accesses secrets,
-opens the production host, or acquires a PPI lease.  All provider permissions
-remain in the independently reviewed existing capture engine at the expected
-Git blob, with fail-closed shared-budget/EXIT checks.
+Validates the immutable existing A630 OFFHOST-tested capture engine, exact
+weekday ART slot, and product-pinned official BYMA operational-day calendar.
+The source code and scheduler have NO fixed expiry day; unknown years, stale
+audits, holidays and closed sessions are evidence HOLD. This script never
+imports a broker SDK, accesses secrets, opens production host or acquires a
+PPI lease. Provider permissions remain exclusively in the existing audited
+capture engine, subject to its live shared-budget/EXIT/lease checks.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 from zoneinfo import ZoneInfo
 
 
-WORKSTREAM = "A669"
-TARGET_DAY = date(2026, 11, 5)
+WORKSTREAM = "A670"
 ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
 ENGINE_GIT_BLOB = "6aeefcd76f34fd23c5fbe118dc440c14357c623c"
+PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
+PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
+CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
+SESSIONS_GIT_BLOB = "bfcaf3909b5afde2a3e0e2f56b3aeaefc047d422"
+BYMA_OFFICIAL_CALENDAR_SOURCE = "https://www.byma.com.ar/mercado/calendario-bursatil"
+CALENDAR_AUDIT_MAX_AGE_DAYS = 60  # same bounded freshness policy as RC6 Market Watch
 SCHEDULE_TO_SLOT = {
-    "45 13 * * 4": "1045",
-    "20 14 * * 4": "1120",
-    "30 17 * * 4": "1430",
-    "30 19 * * 4": "1630",
+    "45 10 * * 1-5": "1045",
+    "20 11 * * 1-5": "1120",
+    "30 14 * * 1-5": "1430",
+    "30 16 * * 1-5": "1630",
 }
 SLOT_MINUTES = {"1045": 10 * 60 + 45, "1120": 11 * 60 + 20,
                 "1430": 14 * 60 + 30, "1630": 16 * 60 + 30}
@@ -58,6 +67,82 @@ def pinned_engine_ok(path: Path, expected_blob: str = ENGINE_GIT_BLOB) -> bool:
         return False
 
 
+def pinned_product_calendar_files(root: Path,
+                                  calendar_blob: str = CALENDAR_GIT_BLOB,
+                                  sessions_blob: str = SESSIONS_GIT_BLOB) -> bool:
+    """Independent exact object pins; a future calendar update requires review."""
+    return (pinned_engine_ok(root / "ak_byma_calendar.py", calendar_blob)
+            and pinned_engine_ok(root / "co_market_sessions_hf6.py", sessions_blob))
+
+
+def audited_market_session(now_utc: datetime, calendar, sessions):
+    """Conservative source, audited year/age, holiday and spot-hours gate.
+
+    This is a DAY/SESSION test only. It does NOT authorize a provider GET or
+    certify PPI identity/PIT, and intentionally has no permanent expiry day.
+    """
+    try:
+        if not isinstance(now_utc, datetime) or now_utc.tzinfo is None:
+            return False, "MARKET_CALENDAR_NOT_VERIFIED"
+        art = now_utc.astimezone(ZONE)
+        audit = calendar.CALENDARIO_ACTUALIZADO_EL
+        years = calendar.ANIOS_AUDITADOS
+        if (calendar.FUENTE_OFICIAL != BYMA_OFFICIAL_CALENDAR_SOURCE
+                or not isinstance(audit, date) or isinstance(audit, datetime)
+                or not isinstance(years, (set, frozenset))
+                or art.year not in years
+                or not 0 <= (art.date() - audit).days <= CALENDAR_AUDIT_MAX_AGE_DAYS
+                or sessions.TZ != ZONE
+                or not isinstance(sessions.BYMA_PAPER_SPOT_OPEN, time)
+                or not isinstance(sessions.BYMA_PAPER_SPOT_CLOSE, time)):
+            return False, "MARKET_CALENDAR_NOT_VERIFIED"
+        if calendar.es_dia_habil_operativo(art.date()) is not True:
+            return False, "AUDITED_BYMA_CLOSED_OR_HOLIDAY"
+        current = art.time().replace(tzinfo=None)
+        if not sessions.BYMA_PAPER_SPOT_OPEN <= current < sessions.BYMA_PAPER_SPOT_CLOSE:
+            return False, "OUTSIDE_AUDITED_BYMA_SPOT_WINDOW"
+        return True, "BYMA_AUDITED_OPEN"
+    except (AttributeError, TypeError, ValueError, OverflowError, OSError):
+        return False, "MARKET_CALENDAR_NOT_VERIFIED"
+
+
+def _verified_product_checkout(root: Path) -> bool:
+    """No source from a moving product branch is accepted into the day gate."""
+    try:
+        sha = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--verify", "HEAD^{commit}"],
+            text=True, stderr=subprocess.DEVNULL, timeout=3).strip()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return sha == PRODUCT_SHA and pinned_product_calendar_files(root)
+
+
+def _load_product_module(root: Path, file_name: str, tag: str):
+    """Execute ONLY a separately exact-blob-pinned, audited product module."""
+    path = root / file_name
+    spec = importlib.util.spec_from_file_location("_rc6_a670_" + tag, path)
+    if spec is None or spec.loader is None:
+        raise ValueError("PINNED_CALENDAR_IMPORT_UNAVAILABLE")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.modules.pop(spec.name, None)
+
+
+def _official_session_check(now_utc: datetime, root: Path):
+    if not _verified_product_checkout(root):
+        return False, "PINNED_PRODUCT_CALENDAR_UNAVAILABLE"
+    try:
+        calendar = _load_product_module(root, "ak_byma_calendar.py", "byma_calendar")
+        sessions = _load_product_module(root, "co_market_sessions_hf6.py", "market_sessions")
+        return audited_market_session(now_utc, calendar, sessions)
+    except (OSError, ValueError, ImportError, TypeError, RuntimeError):
+        return False, "MARKET_CALENDAR_NOT_VERIFIED"
+
+
 def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
                   manual_slot: str, repository: str, ref: str,
                   checkout_sha: str, source_sha: str,
@@ -65,7 +150,7 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
     """Return (slot, reason); a nonempty slot is the ONLY permission to proceed.
 
     The caller must run this *before* reaching SSH or any provider/Watch route.
-    Passing this day gate is never a PPI GET authorization: that additionally
+    Passing this time gate is never a PPI GET authorization: that additionally
     requires the existing shared RuntimePPIBudget's live signed leases.
     """
     if repository != REPOSITORY or ref != CONTROL_REF:
@@ -82,8 +167,8 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
         art = observed.astimezone(ZONE)
     except (TypeError, ValueError, OverflowError):
         return "", "AWARE_UTC_CLOCK_REQUIRED"
-    if art.date() != TARGET_DAY or art.weekday() != 3:
-        return "", "ART_THURSDAY_05_NOV_REQUIRED"
+    if art.weekday() >= 5:
+        return "", "ART_BUSINESS_WEEKDAY_REQUIRED"
     if event == "schedule":
         slot = SCHEDULE_TO_SLOT.get(schedule, "")
         lag_minutes = 30
@@ -99,11 +184,11 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
         return "", "OUTSIDE_ART_SLOT_WINDOW"
     if not pinned_engine_ok(engine_path, expected_engine_blob):
         return "", "AUDITED_ENGINE_BLOB_MISMATCH"
-    return slot, "PASS_DAY_SLOT_AND_ENGINE_ONLY"
+    return slot, "PASS_WEEKDAY_SLOT_AND_ENGINE_ONLY"
 
 
-def _append_verified_env(path: Path, slot: str) -> bool:
-    """Append only two constant-shape fields after a successful immutable gate."""
+def _append_verified_env(path: Path, slot: str, now_utc: datetime) -> bool:
+    """Append only bounded constant-shape values after the immutable gate."""
     try:
         if path.is_symlink() or not path.is_file():
             return False
@@ -113,7 +198,28 @@ def _append_verified_env(path: Path, slot: str) -> bool:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 return False
             payload = (f"RC6_A669_SLOT={slot}\n"
-                       f"RC6_A669_ENGINE_BLOB={ENGINE_GIT_BLOB}\n").encode("ascii")
+                       f"RC6_A669_ENGINE_BLOB={ENGINE_GIT_BLOB}\n"
+                       f"RC6_A670_ART_DATE={now_utc.astimezone(ZONE).date().isoformat()}\n").encode("ascii")
+            return os.write(fd, payload) == len(payload)
+        finally:
+            os.close(fd)
+    except (OSError, ValueError):
+        return False
+
+
+def _append_hold_env(path: Path, reason: str, now_utc: datetime) -> bool:
+    """Expose only a static-shaped HOLD label, never tokens, payload or URLs."""
+    try:
+        if not isinstance(reason, str) or re.fullmatch(r"[A-Z0-9_]{5,64}", reason) is None:
+            return False
+        if path.is_symlink() or not path.is_file():
+            return False
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return False
+            payload = (f"RC6_A670_HOLD_REASON={reason}\n"
+                       f"RC6_A670_ART_DATE={now_utc.astimezone(ZONE).date().isoformat()}\n").encode("ascii")
             return os.write(fd, payload) == len(payload)
         finally:
             os.close(fd)
@@ -122,15 +228,16 @@ def _append_verified_env(path: Path, slot: str) -> bool:
 
 
 def main() -> int:
-    """CI-only entry point: no user input or host/provider network operations."""
+    """CI-only entry point: time+calendar guard, no host/provider operation."""
     try:
         current_sha = subprocess.check_output(
             ["git", "rev-parse", "--verify", "HEAD^{commit}"],
             text=True, timeout=3, stderr=subprocess.DEVNULL).strip()
     except (OSError, ValueError, subprocess.SubprocessError):
         current_sha = ""
+    now_utc = datetime.now(timezone.utc)
     slot, reason = eligible_slot(
-        now_utc=datetime.now(timezone.utc),
+        now_utc=now_utc,
         event=os.environ.get("GITHUB_EVENT_NAME", ""),
         schedule=os.environ.get("RC6_A669_SCHEDULE", ""),
         manual_slot=os.environ.get("RC6_A669_MANUAL_SLOT", ""),
@@ -139,10 +246,20 @@ def main() -> int:
         checkout_sha=current_sha,
         source_sha=os.environ.get("GITHUB_SHA", ""),
         engine_path=ENGINE_PATH)
-    if not slot or not _append_verified_env(Path(os.environ.get("GITHUB_ENV", "")), slot):
-        print(f"A669_GUARD=HOLD|REASON={reason if not slot else 'ENV_WRITE_DENIED'}|PPI_GETS_BY_GUARD=0")
+    if slot:
+        allowed, calendar_reason = _official_session_check(now_utc, PRODUCT_CALENDAR_ROOT)
+        if not allowed:
+            slot, reason = "", calendar_reason
+    env_path = Path(os.environ.get("GITHUB_ENV", ""))
+    if not slot:
+        _append_hold_env(env_path, reason, now_utc)
+        print(f"::warning title=A670 PPI offline gate HOLD::{reason}; zero provider GET; check audited market calendar or slot before bounded fallback")
+        print(f"A670_GUARD=HOLD|REASON={reason}|PPI_GETS_BY_GUARD=0")
         return 2
-    print(f"A669_GUARD=PASS|SLOT={slot}|ART_DATE={TARGET_DAY}|PPI_GETS_BY_GUARD=0")
+    if not _append_verified_env(env_path, slot, now_utc):
+        print("A670_GUARD=HOLD|REASON=ENV_WRITE_DENIED|PPI_GETS_BY_GUARD=0")
+        return 2
+    print(f"A670_GUARD=PASS|SLOT={slot}|ART_DATE={now_utc.astimezone(ZONE).date()}|AUDITED_BYMA_SESSION=YES|PPI_GETS_BY_GUARD=0")
     return 0
 
 
