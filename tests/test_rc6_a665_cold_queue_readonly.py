@@ -1,4 +1,5 @@
 """Offline adversarial contracts for A665 private queue diagnostic; no host access."""
+import ast
 import hashlib
 import gzip
 import importlib.util
@@ -6,8 +7,10 @@ import json
 from datetime import datetime, timedelta
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -121,14 +124,17 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.write_private("queue.json", {
             "state": "FAILED", "snapshot_id": ident, "manifest_sha256": sha})
         generation = "c" * 64
-        pointer = {"generation_id": generation,
+        cut_manifest = {"generation_id": generation, "sequence": 1}
+        pointer = {"generation_id": generation, "sequence": 1,
+                   "manifest_sha256": hashlib.sha256(json.dumps(cut_manifest,
+                       sort_keys=True,separators=(",", ":")).encode()).hexdigest(),
                    "file": "cut-" + generation + ".json.gz"}
         shadow = self.cold.parent
         pointer_bytes = json.dumps({"payload": pointer, "digest": hashlib.sha256(
             json.dumps(pointer, sort_keys=True, separators=(",", ":")).encode()).hexdigest()})
         (shadow / "CURRENT.json").write_text(pointer_bytes)
         (shadow / "CURRENT.json").chmod(0o600)
-        cut = {"report": {"computed_report": {
+        cut = {"manifest": cut_manifest, "report": {"computed_report": {
             "schema": "rc6.computed-audit-reference.v2", "state": "PENDING",
             "snapshot_id": current_ident, "manifest_sha256": sha}}}
         wrapper = json.dumps({"payload": cut, "digest": hashlib.sha256(
@@ -374,6 +380,34 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertEqual(record["original_old_cut_presence"], "UNSAFE_FILE")
         self.assertFalse(record["causal_fix_verified"])
 
+    def test_v2_current_manifest_must_bind_generation_and_sequence(self):
+        self.write_failure_with_current(ident=probe.KNOWN_SUCCESSOR_ID)
+        pointer_path = self.cold.parent / "CURRENT.json"
+        wrapper = json.loads(pointer_path.read_text())
+        pointer = wrapper["payload"]
+        self.assertEqual(self.read()["current_cut_manifest_binding"], "BOUND")
+        pointer["sequence"] = 2
+        canonical = json.dumps(pointer,sort_keys=True,separators=(",", ":")).encode()
+        pointer_path.write_text(json.dumps({"payload":pointer,
+            "digest":hashlib.sha256(canonical).hexdigest()}))
+        self.assertEqual(self.read()["current_cut_manifest_binding"], "UNBOUND")
+        pointer["sequence"] = 1
+        cut_path = self.cold.parent / pointer["file"]
+        cut_wrapper = json.loads(gzip.decompress(cut_path.read_bytes()))
+        cut_payload = cut_wrapper["payload"]
+        cut_payload["manifest"]["generation_id"] = "f" * 64
+        pointer["manifest_sha256"] = hashlib.sha256(json.dumps(
+            cut_payload["manifest"],sort_keys=True,separators=(",", ":")).encode()).hexdigest()
+        cut_canonical = json.dumps(cut_payload,sort_keys=True,
+                                   separators=(",", ":")).encode()
+        cut_path.write_bytes(gzip.compress(json.dumps({"payload":cut_payload,
+            "digest":hashlib.sha256(cut_canonical).hexdigest()}).encode()))
+        pointer_canonical = json.dumps(pointer,sort_keys=True,
+                                       separators=(",", ":")).encode()
+        pointer_path.write_text(json.dumps({"payload":pointer,
+            "digest":hashlib.sha256(pointer_canonical).hexdigest()}))
+        self.assertEqual(self.read()["current_cut_manifest_binding"], "UNBOUND")
+
     def test_v2_live_status_differentiates_386_without_proving_stop(self):
         self.write_failure_with_current(ident=probe.KNOWN_SUCCESSOR_ID)
         status = {"status": "FAIL_CLOSED", "real_orders_sent": 0,
@@ -410,6 +444,7 @@ class ColdQueueReadOnly(unittest.TestCase):
         info = pack.stat()
         manifest = {"snapshot_id": ident, "pack": pack.name,
                     "pack_bytes": info.st_size,
+                    "pack_sha256": hashlib.sha256(pack.read_bytes()).hexdigest(),
                     "pack_identity": [info.st_dev,info.st_ino,info.st_size,
                                       info.st_mtime_ns,info.st_ctime_ns]}
         manifest_sha = hashlib.sha256(json.dumps(manifest,
@@ -426,7 +461,9 @@ class ColdQueueReadOnly(unittest.TestCase):
         if historical:
             quarantine = {"state":"QUARANTINED_FAILED","snapshot_id":ident,
                           "manifest_sha256":manifest_sha,"old_cut_revoked":True,
-                          "revoked_cut":probe.HISTORICAL_COLD2_CUT}
+                          "revoked_cut":probe.HISTORICAL_COLD2_CUT,
+                          "pack_sha256":manifest.get("pack_sha256"),
+                          "real_orders_sent":0}
             canonical = json.dumps(quarantine,sort_keys=True,
                                    separators=(",", ":")).encode()
             path = archive / "quarantine.json"
@@ -443,6 +480,14 @@ class ColdQueueReadOnly(unittest.TestCase):
                          "METADATA_BOUND_PACK_NOT_HASHED")
         self.assertFalse(record["pack_content_hash_verified"])
         self.assertNotIn(str(archive),json.dumps(record))
+        pack = archive / (probe.ORIGINAL_ID + ".pack")
+        stat_before = pack.stat()
+        pack.write_bytes(b"X" * stat_before.st_size)
+        os.utime(pack,ns=(stat_before.st_mtime_ns + 2_000_000_000,
+                          stat_before.st_mtime_ns + 2_000_000_000))
+        with patch.object(probe,"ORIGINAL_MANIFEST",manifest_sha):
+            self.assertEqual(self.read()["original_archive_class"],
+                             "PACK_METADATA_UNVERIFIED")
 
     def test_v2_historical_archive_distinct_and_missing_quarantine_fails_closed(self):
         archive,manifest_sha = self._synthetic_archive(historical=True)
@@ -482,6 +527,14 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertIn("LIVE_STATUS_UNBOUND",content)
         self.assertIn("raw.stat().st_size>4096",content)
         self.assertNotIn("pack_content_hash_verified':True",content)
+
+    def test_v2_all_inline_workflow_python_heredocs_compile_offhost(self):
+        content = WORKFLOW.read_text()
+        scripts = re.findall(r"(?ms)^          [^\n]*python3 - <<'PY'\n(.*?)^          PY$", content)
+        self.assertGreaterEqual(len(scripts), 2)
+        for number, source in enumerate(scripts, 1):
+            with self.subTest(inline_python_number=number):
+                ast.parse(textwrap.dedent(source), filename=f"workflow-inline-{number}")
 
 
 if __name__ == "__main__":
