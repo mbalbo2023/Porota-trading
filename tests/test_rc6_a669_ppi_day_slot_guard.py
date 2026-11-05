@@ -87,20 +87,25 @@ class A669GuardTests(unittest.TestCase):
         self.assertEqual(self.gate(event="pull_request")[0], "")
         self.assertEqual(self.gate(schedule="45 13 * * 3")[0], "")
 
-    def test_official_market_calendar_holidays_and_stale_fail_closed(self):
-        closed = {date(2026,11,6), date(2026,11,9), date(2026,11,10),
-                  date(2026,11,23)}
+    def test_official_market_calendar_limited_negotiation_no_settlement_and_stale(self):
+        reasons = {date(2026,11,6):"Día del Bancario; jornada especial sin liquidación",
+                   date(2026,11,9):"Visita de Su Santidad el Papa León XIV",
+                   date(2026,11,10):"Visita de Su Santidad el Papa León XIV",
+                   date(2026,11,23):"Día de la Soberanía Nacional"}
         calendar = SimpleNamespace(
             FUENTE_OFICIAL="https://www.byma.com.ar/mercado/calendario-bursatil",
             CALENDARIO_ACTUALIZADO_EL=date(2026,10,14),
             ANIOS_AUDITADOS=frozenset({2026}),
-            es_dia_habil_operativo=lambda day: day.weekday()<5 and day not in closed)
+            es_dia_habil_operativo=lambda day: day.weekday()<5 and day not in reasons,
+            motivo_no_operativo=lambda day: reasons.get(day))
         session = SimpleNamespace(TZ=ZoneInfo("America/Argentina/Buenos_Aires"),
             BYMA_PAPER_SPOT_OPEN=time(10,30),BYMA_PAPER_SPOT_CLOSE=time(17))
         for day in (5,12):
             self.assertEqual(guard.audited_market_session(utc(13,45,day), calendar,session),
                              (True,"BYMA_AUDITED_OPEN"))
-        for day in (6,9,10,23):
+        self.assertEqual(guard.audited_market_session(utc(13,45,6),calendar,session),
+                         (True,"BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY"))
+        for day in (9,10,23):
             self.assertEqual(guard.audited_market_session(utc(13,45,day), calendar,session)[0],False)
         self.assertEqual(guard.audited_market_session(utc(13,45,14,month=12), calendar,session)[1],
                          "MARKET_CALENDAR_NOT_VERIFIED")
@@ -154,7 +159,10 @@ class A669GuardTests(unittest.TestCase):
         self.assertEqual(destination.read_text(),
                          "RC6_A669_SLOT=1045\n"
                          f"RC6_A669_ENGINE_BLOB={guard.ENGINE_GIT_BLOB}\n"
-                         "RC6_A670_ART_DATE=2026-11-05\n")
+                         "RC6_A670_ART_DATE=2026-11-05\n"
+                         "RC6_A670_MARKET_SESSION=BYMA_AUDITED_OPEN\n")
+        self.assertFalse(guard._append_verified_env(destination,"1045",utc(13,45),
+                         market_session="ARBITRARY_OPEN"))
         destination.unlink()
         destination.symlink_to(self.root / "missing.env")
         self.assertFalse(guard._append_verified_env(destination, "1045",utc(13,45)))
@@ -193,7 +201,8 @@ class A669GuardTests(unittest.TestCase):
         self.assertIn("source_pit_verified':False", code)
         self.assertIn("paper_admission_certified':False", code)
         self.assertIn("RC6_A670_HOLD_REASON", code)
-        self.assertIn("BYMA_AUDITED_OPEN", code)
+        self.assertIn("RC6_A670_MARKET_SESSION", code)
+        self.assertIn("BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY", code)
         self.assertNotIn("pull_request_target:", code)
         self.assertNotIn("porota-predeploy-v2", code)
         self.assertNotIn("porota-deploy-v2", code)
