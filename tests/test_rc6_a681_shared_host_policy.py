@@ -331,3 +331,48 @@ def test_a690_mock_ssh_success_parser_failure_never_triggers_promotion_recovery(
     else:
         assert states == {'cleanup_status': 'GREEN', 'cleanup_parser_status': 'VERIFIED'}
         assert 'RC6_PROMOTION_CLEANUP_PARSER_UNVERIFIED' not in proc.stdout
+
+
+@pytest.mark.parametrize('promotion_outcome,expected_rc', [
+    ('failure', 82),
+    ('cancelled', 82),
+    ('success', 0),
+])
+def test_a690_promotion_ambiguous_failure_handler_holds_before_ssh_or_recovery(
+        promotion_outcome, expected_rc):
+    """Mock SSH255, cancellation, or GITHUB_ENV failure after cutover as promotion failure.
+
+    No SSH/Docker invoked. The literal guard must stop the failure handler
+    before its first host read/write; orphan cleanup must not run if its
+    predecessor failed. Nonfailed promotion still reaches A180 finalizer logic.
+    """
+    src = PROMOTE.read_text(encoding='utf-8')
+    steps = yaml.safe_load(src)['jobs']['promote']['steps']
+    failure = next(step for step in steps if step.get('id') == 'failure_cleanup')
+    orphan = next(step for step in steps if step.get('id') == 'failure_orphan_cleanup')
+    run = failure['run']
+    begin = run.index('# A690 P0: promotion failure or cancellation')
+    end = run.index('# A180: an SSH/runner failure', begin)
+    guard = run[begin:end]
+    assert begin < run.index('timeout 90 ssh') < run.index('cleanup_payload()')
+    assert 'RC6_AMBIGUOUS_PROMOTION=NO_GO' in guard
+    assert 'FIX_FORWARD_READONLY_RECONCILIATION_REQUIRED' in guard
+    assert 'exit 82' in guard
+    assert "steps.promotion.outcome == 'failure'" in failure['if']
+    assert "steps.promotion.outcome == 'cancelled'" in failure['if']
+    assert "steps.failure_cleanup.outcome == 'success'" in orphan['if']
+    assert '# A180: an SSH/runner failure' in run[end:]
+    assert 'RC6_FINALIZER_MARKER_CLASS' in run[end:]
+    simulation = (
+        'set -Eeuo pipefail\n'
+        + guard.replace('${{ steps.promotion.outcome }}', promotion_outcome)
+        + '\necho RC6_MOCK_CLASSIFIER_REACHED=YES\n')
+    proc = subprocess.run(['bash'], input=simulation,
+                          capture_output=True, text=True, timeout=10)
+    assert proc.returncode == expected_rc, proc.stderr
+    if expected_rc:
+        assert 'RC6_AMBIGUOUS_PROMOTION=NO_GO|NO_HOST_RECOVERY' in proc.stderr
+        assert 'RC6_MOCK_CLASSIFIER_REACHED' not in proc.stdout
+    else:
+        assert 'RC6_AMBIGUOUS_PROMOTION' not in proc.stderr
+        assert 'RC6_MOCK_CLASSIFIER_REACHED=YES' in proc.stdout
