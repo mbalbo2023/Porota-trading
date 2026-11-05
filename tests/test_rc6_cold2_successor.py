@@ -9,6 +9,7 @@ from unittest.mock import patch
 from scripts import rc6_cold2_quarantine as old
 from scripts import rc6_cold2_successor as new
 from scripts import rc6_cold2_apply_guard as guard
+from scripts import rc6_failed_cold_fix_forward as recovery
 from tests.test_rc6_cold2_quarantine import state, admitted, EXPECTED, put
 from tests.test_rc6_cold2_apply_guard import receipt as deploy_receipt, CANDIDATE
 
@@ -161,6 +162,90 @@ def _report_verify_failure(source, *, add_report=True):
     sealed=old.envelope(source/('manifest-'+ID+'.json'),cold=True)['sealed_at']
     os.utime(report,(sealed+29,sealed+29))
     return report
+
+
+def _memory_report_verify_failure(source):
+    report=_report_verify_failure(source)
+    path=source/('receipt-'+ID+'.json')
+    receipt=old.envelope(path,cold=True)
+    receipt['error_code']='SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED'
+    receipt['error_phase']='REPORT_VERIFY'
+    put(path,receipt,cold=True)
+    return report
+
+
+def _original_archive(root):
+    return root/'data/deploy'/('rc6-failed-cold-'+recovery.IDENT)
+
+
+def test_current_memory_report_verify_successor_proves_distinct_reentry(successor):
+    root,source,archive,_=successor
+    report=_memory_report_verify_failure(source)
+    before=new.inspect(root)
+    assert before['snapshot_id']==ID and before['failed_computed_report']['name']==report.name
+    assert recovery.proven_distinct_failed_successor(_original_archive(root),CUT,ID)
+    assert not recovery.proven_distinct_failed_successor(_original_archive(root),'f'*64,ID)
+    assert not recovery.proven_distinct_failed_successor(_original_archive(root),CUT,'f'*32)
+    new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    after=new.inspect(root)
+    assert after['archive_complete'] and not after['queue_failed']
+    assert old.envelope(archive/'quarantine.json')['failed_computed_report']==before['failed_computed_report']
+    assert recovery.proven_distinct_failed_successor(_original_archive(root),CUT,ID)
+    assert new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)['state']=='ALREADY_QUARANTINED'
+
+
+@pytest.mark.parametrize('stage',['report_copied','archive_manifest-'+ID+'.json',
+    'archive_receipt-'+ID+'.json','archive_queue.json','pack_moved',
+    'source_manifest-'+ID+'.json_removed','source_receipt-'+ID+'.json_removed',
+    'receipt_durable','queue_removed'])
+def test_memory_report_verify_crash_retry_keeps_original_guard_bound(successor,stage):
+    root,source,archive,_=successor
+    _memory_report_verify_failure(source)
+    def crash(at):
+        if at==stage:raise RuntimeError('crash')
+    with pytest.raises(RuntimeError,match='crash'):
+        new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED,checkpoint=crash)
+    # A partially staged archive is proved by the verified FAILED queue;
+    # after queue unlink, the durable quarantine receipt takes over.
+    intermediate=new.inspect(root)
+    assert intermediate['queue_failed'] or intermediate['archive_complete']
+    assert recovery.proven_distinct_failed_successor(_original_archive(root),CUT,ID)
+    new.quarantine(root,admission=admitted,expected_owned_ids=EXPECTED)
+    assert recovery.proven_distinct_failed_successor(_original_archive(root),CUT,ID)
+    assert new.inspect(root)['archive_complete']
+
+
+@pytest.mark.parametrize('corruption',['pack','queue','current','manifest',
+    'missing_report','duplicate_report','status','orders','partial_without_queue'])
+def test_memory_report_verify_guard_denies_divergence(successor,corruption):
+    root,source,archive,_=successor
+    report=_memory_report_verify_failure(source)
+    if corruption=='pack':
+        (source/(ID+'.pack')).write_bytes(b'tampered input')
+    elif corruption=='queue':
+        put(source/'queue.json',{'snapshot_id':ID,'manifest_sha256':'0'*64,'state':'FAILED'},cold=True)
+    elif corruption=='current':
+        put(source.parent/'CURRENT.json',{'generation_id':'0'*64,'file':'cut-'+'0'*64+'.json.gz'})
+    elif corruption=='manifest':
+        path=source/('manifest-'+ID+'.json')
+        value=old.envelope(path,cold=True)
+        value['pack_sha256']='0'*64
+        put(path,value,cold=True)
+    elif corruption=='missing_report':
+        report.unlink()
+    elif corruption=='duplicate_report':
+        other=source.parent/('computed-'+'f'*64+'.json.gz')
+        other.write_bytes(b'duplicate');other.chmod(0o600)
+        os.utime(other,(1792485219.2664664,1792485219.2664664))
+    elif corruption=='status':
+        put(source.parent/'status.json',{'status':'SHADOW_OBSERVING',
+            'real_orders_sent':0,'real_routes':'NOT_CALLED'})
+    elif corruption=='orders':
+        put(source.parent/'status.json',{'status':'FAIL_CLOSED',
+            'real_orders_sent':1,'real_routes':'NOT_CALLED'})
+    elif corruption=='partial_without_queue':
+        (source/'queue.json').unlink()
+    assert not recovery.proven_distinct_failed_successor(_original_archive(root),CUT,ID)
 
 
 def test_report_verify_failure_preserves_computed_bytes_without_promoting(successor):
