@@ -222,6 +222,13 @@ def test_a690_deferred_cleanup_failure_gate_is_after_recovery_decision():
     assert promotion_run.index('command -v awk') < promotion_run.index('ssh -i')
     assert 'RC6_GITHUB_OUTPUT_MISSING' in promotion_run
     assert ': >> "$GITHUB_OUTPUT"' in promotion_run
+    assert "printf 'cleanup_status=UNKNOWN\\ncleanup_parser_status=UNKNOWN\\n' >> \"$GITHUB_OUTPUT\"" in promotion_run
+    assert promotion_run.index("cleanup_parser_status=UNKNOWN") < promotion_run.index('ssh -i')
+    assert promotion_run.index("set +e\\nssh -i") != -1
+    assert 'RC6_PROMOTION_PIPESTATUS=( "${PIPESTATUS[@]}" )' in promotion_run
+    assert promotion_run.index("RC6_PROMOTION_PIPESTATUS=") > promotion_run.index("\\nREMOTE\\n")
+    assert "RC6_PROMOTION_AWK_RC" in promotion_run
+    assert "RC6_PROMOTION_OUTPUT_CONFIRMATION_UNVERIFIED" in promotion_run
     failure_if = next(step['if'] for step in steps if step.get('id') == 'failure_cleanup')
     orphan_if = next(step['if'] for step in steps if step.get('id') == 'failure_orphan_cleanup')
     gate = next(step for step in steps if step.get('id') == 'cleanup_deferred_gate')
@@ -230,6 +237,7 @@ def test_a690_deferred_cleanup_failure_gate_is_after_recovery_decision():
     assert 'always()' in gate['if']
     assert "steps.promotion.outcome == 'success'" in gate['if']
     assert "steps.promotion.outputs.cleanup_status != 'GREEN'" in gate['if']
+    assert "steps.promotion.outputs.cleanup_parser_status != 'VERIFIED'" in gate['if']
     assert 'exit 79' in gate['run']
     remote = source.split("<<'REMOTE' | awk", 1)[1].split('\n          REMOTE\n', 1)[0]
     assert 'RC6_PROMOTION_OUTCOME=IMAGE_POSSIBLY_PROMOTED_CLEANUP_DEFERRED' in remote
@@ -274,3 +282,52 @@ def test_a690_terminal_gate_marks_job_red_without_recovery(status):
     assert result.returncode == 79
     assert 'RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|cleanup_status=' + status in result.stdout
     assert 'NO scheduler recovery or rollback' in result.stdout or 'no scheduler recovery or rollback' in result.stdout
+
+
+@pytest.mark.parametrize('parser_write_fails', [False, True])
+def test_a690_mock_ssh_success_parser_failure_never_triggers_promotion_recovery(tmp_path, parser_write_fails):
+    """Use literal AWK and post-SSH Bash from YAML: post-cutover parser I/O failures stay local.
+
+    ssh is mocked to return 0. /dev/full forces a reproducible AWK EIO/ENOSPC,
+    without touching a Docker host or production. The job-level gate handles
+    UNKNOWN after downstream validation; the promotion step itself returns 0.
+    """
+    import shlex
+    src = PROMOTE.read_text(encoding='utf-8')
+    start_token = "<<'REMOTE' | awk -v status_file=\"$GITHUB_OUTPUT\" '"
+    begin = src.index(start_token) + len(start_token)
+    awk_end = src.index("\n          '\n          set -Eeuo pipefail", begin)
+    awk_program = '\n'.join(
+        line[10:] if line.startswith('          ') else line
+        for line in src[begin:awk_end].splitlines())
+    post_start = src.index('          # Capture PIPESTATUS IMMEDIATELY after ssh|awk.')
+    post_end = src.index('          # A207 is a pre-install administrative', post_start)
+    post_ssh = '\n'.join(
+        line[10:] if line.startswith('          ') else line
+        for line in src[post_start:post_end].splitlines())
+    status_file = tmp_path / 'github_output'
+    status_file.write_text('cleanup_status=UNKNOWN\ncleanup_parser_status=UNKNOWN\n')
+    parser_destination = '/dev/full' if parser_write_fails else str(status_file)
+    command = '\n'.join([
+        'set -Eeuo pipefail',
+        'GITHUB_OUTPUT=' + shlex.quote(str(status_file)),
+        'mock_ssh() { printf \'RC6_FINAL_HOUSEKEEPING=GREEN|free=9000000000\\n\'; return 0; }',
+        'set +e',
+        'mock_ssh | awk -v status_file=' + shlex.quote(parser_destination)
+        + ' ' + shlex.quote(awk_program),
+        post_ssh,
+        'printf \'MOCK_PROMOTION_STEP_REACHED=YES\\n\'',
+    ])
+    proc = subprocess.run(['bash'], input=command,
+                          capture_output=True, text=True, timeout=15)
+    assert proc.returncode == 0, proc.stderr
+    assert 'MOCK_PROMOTION_STEP_REACHED=YES' in proc.stdout
+    assert 'RC6_PROMOTION_SSH_ERROR' not in proc.stderr
+    assert 'cleanup_recover' not in proc.stdout + proc.stderr
+    states = dict(line.split('=', 1) for line in status_file.read_text().splitlines())
+    if parser_write_fails:
+        assert states == {'cleanup_status': 'UNKNOWN', 'cleanup_parser_status': 'UNKNOWN'}
+        assert 'RC6_PROMOTION_CLEANUP_PARSER_UNVERIFIED' in proc.stdout
+    else:
+        assert states == {'cleanup_status': 'GREEN', 'cleanup_parser_status': 'VERIFIED'}
+        assert 'RC6_PROMOTION_CLEANUP_PARSER_UNVERIFIED' not in proc.stdout
