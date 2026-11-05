@@ -324,9 +324,65 @@ def test_revoked_per_instrument_quota_or_catalog_before_connect_denies_socket(ha
             else:
                 catalog.allowed.remove("PPI_FIVE_KEY_CATALOG_ATTESTED")
             with pytest.raises(SessionOwnerBlocked,
-                               match="PPI_STREAM_SUBSCRIPTION_CAPACITY_REVOKED"):
+                               match="PPI_STREAM_(EXTERNAL_AUTHORITY_NOT_VERIFIED|SUBSCRIPTION_CAPACITY_REVOKED)"):
                 owner.run_market_stream()
             assert owner.status()["stream_invoked"] is False
             assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
         finally:
             owner.close()
+
+
+def test_delayed_sdk_connect_callback_revalidates_per_symbol_capacity(harness):
+    """TOCTOU: revoke AFTER connect() binding but BEFORE on_connect callback."""
+    cap = FakeExternalCapacity({"OWNER_AUTHENTICATE", "STREAM_CONNECT",
+                                "STREAM_SUBSCRIPTION"})
+    catalog = FakeExternalCapacity({"PPI_FIVE_KEY_CATALOG_ATTESTED"})
+    owner = harness.make_owner(capacity=cap, catalog_authority=catalog,
+                               stream_authority=FakeStreamAuthority(True))
+    try:
+        owner.open_once()
+        assert owner.plan_focus(FIVE, priority="EXIT_CRITICAL") == "ADMITTED"
+        raw = owner._reader._ProductionMarketReader__client.realtime
+        # Fake SDK start only binds callbacks; no socket or live PPI is started.
+        raw.start_connections = lambda: None
+        owner.run_market_stream()
+        assert raw.connections == 1
+        cap.allowed.remove("STREAM_SUBSCRIPTION")  # during fake handshake
+        raw._on_connect()  # SDK's deferred callback
+        assert raw.subscription_calls == []
+        assert owner._stream.status()["wire_subscriptions_count"] == 0
+        assert owner._stream.status()["subscription_failures"] == 1
+        assert owner._stream.status()["state"] == "DEGRADED"
+        assert harness.counts["clients"] == harness.counts["logins"] == 1
+        assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
+    finally:
+        owner._stream_invoked = False  # synthetic no-socket teardown ONLY
+        owner.close()
+
+
+def test_revocation_after_wire_subscription_denies_event_fanout(harness):
+    """An earlier wire subscription is NOT perpetual permission to publish."""
+    cap = FakeExternalCapacity({"OWNER_AUTHENTICATE", "STREAM_CONNECT",
+                                "STREAM_SUBSCRIPTION"})
+    owner = harness.make_owner(capacity=cap,
+                               stream_authority=FakeStreamAuthority(True))
+    try:
+        owner.open_once()
+        assert owner.plan_focus(FIVE, priority="EXIT_CRITICAL") == "ADMITTED"
+        realtime = owner._reader._ProductionMarketReader__client.realtime
+        owner.run_market_stream()  # in-memory fake, no socket
+        assert len(realtime.subscription_calls) == 1
+        cap.allowed.remove("STREAM_SUBSCRIPTION")
+        realtime._on_data(json.dumps({
+            "Ticker": FIVE[0], "Type": FIVE[1], "Settlement": FIVE[4],
+            "Date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "Trade": True, "Price": 100, "VolumeAmount": 1,
+        }))
+        assert owner._stream.status()["rejected"] == 1
+        cached = owner.dispatch_read_only({"op": "pull", "consumer": "scanner",
+                                           "after_sequence": 0, "limit": 10})
+        assert cached["state"] == "OK" and cached["events"] == []
+        assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
+    finally:
+        owner._stream_invoked = False  # fake-only no actual WS can remain open
+        owner.close()
