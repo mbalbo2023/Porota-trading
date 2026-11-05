@@ -178,7 +178,11 @@ def no_prior_attempt(claim: Claim,
         seen_ids.add(rid)
         if (_run_date(run.get("created_at")) != claim.art_date
                 or run.get("head_branch") != "main"
-                or not str(run.get("path", "")).startswith(WORKFLOW_PATH + "@")):
+                # GitHub Actions REST `workflow_runs[].path` is the bare
+                # workflow file path, NOT `workflow@refs/heads/main`.
+                # The `GITHUB_WORKFLOW_REF` checked by prepare_claim has the
+                # ref suffix, but it is a different data contract.
+                or run.get("path") != WORKFLOW_PATH):
             raise Hold("A670_CLAIM_RUN_HISTORY_AMBIGUOUS")
         if rid == claim.run_id:
             if (number != claim.run_number
