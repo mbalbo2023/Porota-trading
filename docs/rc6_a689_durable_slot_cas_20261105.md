@@ -93,13 +93,20 @@ legacy PAPER databases, and no direct trading effects.
 1. Independent review of exact HEAD in PR #994, all seven scope paths and
    reproducible OFFHOST CI with attested product source.
 2. READ_ONLY production preflight of **named Porota container only**: exact
-   image, bind type/source/destination/RW, user, UID, owner/modes, inode,
-   fsync persistence capability. Never assume sibling apps' mounts are Porota.
-3. Resolve incompatible root ownership with a scoped design and additional
+   image, bind type/source/destination/RW, user, UID, owner/modes, inode and
+   underlying filesystem type. This only proves metadata and **cannot**
+   demonstrate actual crash durability or fsync persistence. Never assume
+   sibling apps' mounts are Porota.
+3. A separately approved, governed Porota-only test transaction is needed
+   to establish first-claim/retry rejection and sync behavior on the real
+   bind, with **zero provider GETs and zero PPI Watch/legacy DB changes**.
+   It must not impersonate an A670 trading diagnostic or consume its live
+   slot without a safe isolated test identity.
+4. Resolve incompatible root ownership with a scoped design and additional
    approval, not a blind `chmod`, global `prune`, host migration, or hidden bypass.
-4. Validate first claim/second rejection after the approved single governed
+5. Validate first claim/second rejection after the approved single governed
    candidate/deploy using a safe test that does **not** issue real PPI GETs.
-5. Preserve A685 witness, A669 holiday/slot gate, source pin, PPI shared
+6. Preserve A685 witness, A669 holiday/slot gate, source pin, PPI shared
    budget and exit reserve unchanged; verify only an immutable artifact that
    passed Predeploy V2, one controlled deploy and runtime PAPER evidence.
 
