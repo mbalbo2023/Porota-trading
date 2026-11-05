@@ -544,6 +544,22 @@ def _verify_ppi_identity(case, family, identity, keys, quote_source,
             raise ValueError()
     except (ValueError, TypeError, binascii.Error):
         raise ValueError("A320_PPI_IDENTITY_WIRE_RAW_MISMATCH") from None
+    # A five-key normalized identity is not proof that the source supplied
+    # Settlement. In A668 the option Settlement was marked REQUEST_CANDIDATE,
+    # i.e. an input to PPI Book, not an authenticated PPI response literal.
+    # Require a signed field witness tied to the actual decoded raw body.
+    # This enforces only the synthetic *shape*; HMAC cannot attest the PPI
+    # origin independently and the global public-sensor gate remains CLOSED.
+    witness = body.get("settlement_literal_witness")
+    expected = {"origin": "PPI_RAW_CATALOG_BODY_LITERAL",
+                "json_field": "settlement", "literal_value": identity[4]}
+    if (type(witness) is not dict or witness != expected
+            or raw.get("settlement") != witness["literal_value"]
+            or any((holder.get(name) is not None
+                    and holder[name] != "PPI_RAW_CATALOG_BODY_LITERAL")
+                   for holder in (body, raw)
+                   for name in ("settlement_source", "settlement_origin"))):
+        raise ValueError("A320_PPI_SETTLEMENT_LITERAL_ORIGIN_UNVERIFIED")
     return _sha(receipt)
 
 
