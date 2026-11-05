@@ -356,7 +356,8 @@ class ScheduleWatchdogTest(unittest.TestCase):
             target = str(Path(tmp) / "receipt.json")
             with patch.dict(os.environ, {"GH_TOKEN": "mock_token_123456"}):
                 with patch.object(a358, "_get", side_effect=[
-                    {"state": "active"}, {"workflow_runs": []}]):
+                    {"state": "active"}, {"workflow_runs": []},
+                    {"state": "active"}, {"workflow_runs": [], "total_count": 0}]):
                     with patch.object(a358, "classify", return_value=p1):
                         with patch.object(a358, "dedupe_issue", side_effect=
                                           a358.A358SafeError("A358_API_RESPONSE_TOO_LARGE")):
@@ -383,7 +384,135 @@ class ScheduleWatchdogTest(unittest.TestCase):
             a358._post("https://example.org/", {}, "mock")
 
 
+def at5(hour, minute):
+    return datetime(2026, 11, 5, hour + 3, minute, tzinfo=timezone.utc)
+
+
+def a670_run(hour, minute, *, event="schedule", run_id=670001, **kw):
+    item = dict(id=run_id, event=event, run_attempt=1, head_branch="main",
+                workflow_id=a358.A670_WORKFLOW_ID,
+                path=a358.A670_WORKFLOW_PATH,
+                status="completed", created_at=at5(hour, minute).isoformat())
+    item.update(kw)
+    return item
+
+
+class A670ScheduleDeliveryTest(unittest.TestCase):
+    """Fake GitHub timestamps and artifacts; never exercises broker or host."""
+
+    def classify(self, runs, hour, minute, **kwargs):
+        return a358.classify_a670(runs, at5(hour, minute), **kwargs)
+
+    def test_before_slot_and_before_deadline_are_not_false_missing(self):
+        early = self.classify([], 10, 44)
+        self.assertEqual("NOT_DUE", early["slots"][0]["status"])
+        self.assertEqual("NO_P1_MATURE_MISSING", early["schedule_alert"])
+        due = self.classify([], 11, 15)
+        self.assertEqual("AWAITING_SCHEDULE", due["slots"][0]["status"])
+        self.assertEqual("NO_P1_MATURE_MISSING", due["schedule_alert"])
+
+    def test_genuine_no_trigger_after_exact_30min_deadline(self):
+        result = self.classify([], 11, 16)
+        self.assertEqual("NO_TRIGGER", result["slots"][0]["status"])
+        self.assertEqual("P1_A670_SCHEDULE_DELIVERY", result["schedule_alert"])
+        self.assertEqual("NOT_DUE", result["slots"][1]["status"])
+        self.assertEqual(False, result["host_access"])
+        self.assertEqual(0, result["provider_requests_by_watchdog"])
+
+    def test_schedule_late_within_30_minutes_not_a_provider_receipt(self):
+        result = self.classify([a670_run(10, 52)], 11, 16)
+        self.assertEqual("LATE_WITHIN_30M", result["slots"][0]["status"])
+        self.assertEqual(7 * 60, result["slots"][0]["delivery_lag_seconds"])
+        self.assertFalse(result["slots"][0]["artifact_present"])
+
+    def test_exact_artifact_presence_is_metadata_only(self):
+        run_id = 670002
+        artifact = {"name": f"rc6-a669-ppi-current-book-{run_id}", "expired": False}
+        result = self.classify([a670_run(10, 55, run_id=run_id)], 11, 16,
+                               artifacts_by_run={run_id: [artifact]})
+        self.assertEqual("RECEIPT_PRESENT", result["slots"][0]["status"])
+        self.assertTrue(result["slots"][0]["artifact_present"])
+        self.assertFalse(result["slots"][0]["artifact_content_verified"])
+        self.assertEqual("NO_VERIFICADO", result["paper_readiness"])
+
+    def test_post_deadline_schedule_is_too_late_not_a_good_capture(self):
+        run_id = 670003
+        result = self.classify([a670_run(11, 18, run_id=run_id)], 11, 19,
+                               artifacts_by_run={run_id: [
+                                   {"name": f"rc6-a669-ppi-current-book-{run_id}",
+                                    "expired": False}]})
+        first = result["slots"][0]
+        self.assertEqual("TOO_LATE", first["status"])
+        self.assertEqual(33 * 60, first["delivery_lag_seconds"])
+        self.assertTrue(first["artifact_present"])
+        self.assertEqual("TIMESTAMP_COMPATIBLE_NOT_CAUSAL", first["cron_attribution"])
+        self.assertEqual("P1_A670_SCHEDULE_DELIVERY", result["schedule_alert"])
+
+    def test_manual_with_artifact_never_fills_missed_schedule(self):
+        run_id = 42043657835
+        manual = a670_run(11, 18, event="workflow_dispatch", run_id=run_id)
+        result = self.classify([manual], 11, 19, artifacts_by_run={run_id: [
+            {"name": f"rc6-a669-ppi-current-book-{run_id}", "expired": False}]})
+        self.assertEqual(1, result["manual_runs_today"])
+        self.assertEqual(1, result["manual_artifact_count"])
+        self.assertEqual("NO_TRIGGER", result["slots"][0]["status"])
+        self.assertEqual("P1_A670_SCHEDULE_DELIVERY", result["schedule_alert"])
+
+    def test_pr_and_second_slot_do_not_rewrite_first_slot(self):
+        pr = a670_run(10, 45, event="pull_request", run_id=670007,
+                      head_branch="feature/sample")
+        second = a670_run(11, 21, run_id=670008)
+        result = self.classify([pr, second], 11, 51)
+        self.assertEqual(1, result["pull_request_runs_today"])
+        self.assertEqual("NO_TRIGGER", result["slots"][0]["status"])
+        self.assertEqual("LATE_WITHIN_30M", result["slots"][1]["status"])
+
+    def test_wrong_or_expired_artifact_cannot_claim_receipt(self):
+        rid = 670009
+        artifacts = [{"name": "other-family", "expired": False},
+                     {"name": f"rc6-a669-ppi-current-book-{rid}", "expired": True}]
+        result = self.classify([a670_run(10, 48, run_id=rid)], 11, 16,
+                               artifacts_by_run={rid: artifacts})
+        self.assertEqual("LATE_WITHIN_30M", result["slots"][0]["status"])
+        self.assertFalse(result["slots"][0]["artifact_present"])
+
+    def test_incomplete_api_must_not_certify_missing_or_provider_failure(self):
+        result = self.classify([], 11, 16, api_day_covered=False)
+        self.assertEqual("NO_VERIFICADO", result["slots"][0]["status"])
+        self.assertEqual("NO_VERIFICADO", result["schedule_alert"])
+
+    def test_duplicate_run_id_fails_closed(self):
+        duplicate = [a670_run(10, 46), a670_run(10, 48)]
+        result = self.classify(duplicate, 11, 16)
+        self.assertEqual("NO_VERIFICADO", result["schedule_alert"])
+        self.assertEqual("A670_RUN_ID_INVALID_OR_DUPLICATE", result["reason"])
+
+    def test_fetch_uses_only_github_readonly_metadata(self):
+        observed = at5(11, 19)
+        calls = []
+
+        def get(url, token):
+            calls.append(url)
+            self.assertEqual("fixture", token)
+            if url.endswith("/workflows/407536423"):
+                return {"state": "active"}
+            if "/runs?created=" in url:
+                return {"workflow_runs": [a670_run(11, 18, event="workflow_dispatch")],
+                        "total_count": 1}
+            if "/artifacts?per_page=" in url:
+                return {"artifacts": [], "total_count": 0}
+            self.fail("Unexpected endpoint")
+
+        with patch.object(a358, "_get", side_effect=get):
+            result = a358.fetch_a670_delivery("fixture", observed)
+        self.assertEqual("P1_A670_SCHEDULE_DELIVERY", result["schedule_alert"])
+        self.assertEqual(3, len(calls))
+        self.assertTrue(all("api.github.com/repos/mbalbo2023/Porota-trading/actions/" in x
+                            for x in calls))
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
