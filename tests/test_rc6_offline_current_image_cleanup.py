@@ -152,6 +152,39 @@ def test_missing_or_contradictory_oci_ownership_blocks_before_any_mutation(host)
         assert PREDEPLOY in host.images[STALE]
 
 
+def test_current_image_oci_provenance_required_before_retag(host):
+    # The existing runtime manifest remains necessary but is not sufficient
+    # to retag an unlabelled/foreign current image on a shared Docker host.
+    for labels in (None, {}, {'porota.predeploy': 'v2',
+                               'porota.commit': 'f' * 40}):
+        host.labels[CURRENT] = labels
+        with pytest.raises(ValueError, match='OCI_OWNERSHIP_UNVERIFIED'):
+            clean.cleanup()
+        assert not any(args[0] == 'tag' for args in host.calls)
+        assert clean.STABLE in host.images[STALE]
+
+
+def test_current_image_foreign_alias_or_digest_blocks_retag(host, monkeypatch):
+    host.images[CURRENT].append('boca:latest')
+    with pytest.raises(ValueError, match='RUNTIME_IMAGE_ALIAS_UNVERIFIED'):
+        clean.cleanup()
+    assert not any(args[0] == 'tag' for args in host.calls)
+
+    host.images[CURRENT].remove('boca:latest')
+    original_image = clean.image
+
+    def image_with_foreign_digest(key):
+        doc = original_image(key)
+        if doc['Id'] == CURRENT:
+            return dict(doc, RepoDigests=['boca@sha256:' + 'f' * 64])
+        return doc
+
+    monkeypatch.setattr(clean, 'image', image_with_foreign_digest)
+    with pytest.raises(ValueError, match='RUNTIME_IMAGE_ALIAS_UNVERIFIED'):
+        clean.cleanup()
+    assert not any(args[0] == 'tag' for args in host.calls)
+
+
 def test_historical_missing_or_foreign_oci_label_never_removed(host, monkeypatch):
     historical_tag = clean.HISTORICAL_PREDEPLOY_TAGS[0]
     host.images[HISTORICAL] = [historical_tag]
