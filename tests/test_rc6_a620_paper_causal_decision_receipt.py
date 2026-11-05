@@ -54,7 +54,8 @@ class TestA620CausalDecisionFreeze(unittest.TestCase):
         return Quote("GGAL", "ACCIONES", "A-24HS", Decimal("100"),
                      Decimal("100"), Decimal("100.20"), Decimal("14"), Decimal("21"),
                      at, currency="ARS", market="BYMA", book_at=at,
-                     trade_at=at, last_kind="TRADE")
+                     trade_at=at, last_kind="TRADE",
+                     ppi_book1_event_sha256=BOOK1)
 
     def features(self, *, seconds=1):
         return {"performance_lineage": {
