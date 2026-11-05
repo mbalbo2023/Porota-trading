@@ -22,9 +22,19 @@ import zlib
 from zoneinfo import ZoneInfo
 
 
-SCHEMA = "rc6.a667.cold-failure-cause-readonly.v1"
+SCHEMA = "rc6.a667.cold-failure-cause-readonly.v2"
 DATA = Path("/opt/porota-trading/data")
 COLD_PARTS = ("paper_v17", "artifacts", "observer_v17.db", "dynamic-shadow", "cold-audit")
+# Already-public source identities; none of their literal values leave the host.
+# These are distinct historical generations, NOT interchangeable candidates.
+ORIGINAL_ID = "89e7f81dbc9b4a628bdc30edf86a17b0"
+ORIGINAL_CUT = "b6687dbca06ab97bc9c93d3f7940c61bba577f68d4ff4b9f887332638c0b7cb8"
+ORIGINAL_MANIFEST = "4d8e93f529e4c7385710dbcff58c52bea764762eafc0190907b63b1b214f1c6d"
+HISTORICAL_COLD2_ID = "7dc99ccd8f7c47849ca3705ae1cb2c49"
+HISTORICAL_COLD2_CUT = "af86116a3a64a9214cfde7ccfc1e04d3165270cf6d6f6ae2b4f4ce6e13c89ad9"
+HISTORICAL_COLD2_MANIFEST = "7657b124c222993f9b34471626d0c740508ee783e7fcd8ce07c85ad9495f23f3"
+KNOWN_SUCCESSOR_ID = "3bfbfd6996a849f6b395f6c4a27ff15a"
+KNOWN_SUCCESSOR_MANIFEST = "9893c071a5c88cada7cda6ace0f534e1424c69623eaf0eda84f0af758280f8dc"
 MAX_ENTRIES = 512
 MAX_FILE_BYTES = 256 * 1024
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
@@ -229,7 +239,22 @@ def _manifest_relation(fd, *, readonly, uid, ident, expected_sha):
         return "NO_VERIFICADO"
 
 
-def _current_relation(data: Path, *, readonly: bool, ident: str, manifest_sha: str):
+def _cut_presence(fd: int, cut: str):
+    """lstat only: even a dangling symlink must not masquerade as ABSENT."""
+    try:
+        info = os.stat("cut-"+cut+".json.gz", dir_fd=fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return "ABSENT"
+    except OSError:
+        return "NO_VERIFICADO"
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+            stat.S_IMODE(info.st_mode) & 0o077):
+        return "UNSAFE_FILE"
+    return "PRESENT"
+
+
+def _current_relation(data: Path, *, readonly: bool, ident: str, manifest_sha: str,
+                      categories: dict):
     """Independent bounded CURRENT/cut structural binding; never republish."""
     fds = []
     try:
@@ -253,6 +278,14 @@ def _current_relation(data: Path, *, readonly: bool, ident: str, manifest_sha: s
         if len(expanded) > MAX_DECOMPRESSED_CUT_BYTES:
             return "CURRENT_CUT_SIZE_UNVERIFIED"
         cut = _payload(expanded, checksum_key="digest")
+        cut_status = cut.get("status")
+        cut_paper_zero = None
+        if (type(cut_status) is dict and
+                type(cut_status.get("real_orders_sent")) is int and
+                type(cut_status.get("real_routes")) is str):
+            cut_paper_zero = (
+                cut_status["real_orders_sent"] == 0 and
+                cut_status["real_routes"] == "NOT_CALLED")
         report = cut.get("report", {})
         reference = report.get("computed_report", {}) if type(report) is dict else None
         if not isinstance(reference, dict):
@@ -260,14 +293,40 @@ def _current_relation(data: Path, *, readonly: bool, ident: str, manifest_sha: s
         final = os.fstat(fd)
         if (raw != _read_file(fd, "CURRENT.json", private=True,
                              readonly=readonly, owner_uid=uid) or
+                raw_cut != _read_file(fd, cut_name, private=True,
+                             readonly=readonly, owner_uid=uid,
+                             maximum=MAX_COMPRESSED_CUT_BYTES) or
                 (initial.st_ino, initial.st_mtime_ns, initial.st_ctime_ns) !=
                 (final.st_ino, final.st_mtime_ns, final.st_ctime_ns)):
             return "CURRENT_POINTER_RACE_HOLD"
+        categories["current_cut_paper_zero_routes_blocked"] = cut_paper_zero
         if reference.get("snapshot_id") != ident:
             return "CURRENT_OTHER_OR_NO_FAILED_REFERENCE"
         if (reference.get("state") == "PENDING" and
                 reference.get("manifest_sha256") == manifest_sha and
                 reference.get("schema") == "rc6.computed-audit-reference.v2"):
+            categories["current_snapshot_class"] = (
+                "KNOWN_SUCCESSOR" if ident == KNOWN_SUCCESSOR_ID else
+                "HISTORICAL_COLD2" if ident == HISTORICAL_COLD2_ID else
+                "ORIGINAL_FAILED" if ident == ORIGINAL_ID else "OTHER")
+            categories["current_generation_class"] = (
+                "ORIGINAL_CUT" if generation == ORIGINAL_CUT else
+                "HISTORICAL_COLD2_CUT" if generation == HISTORICAL_COLD2_CUT else
+                "OTHER")
+            categories["original_old_cut_presence"] = _cut_presence(fd, ORIGINAL_CUT)
+            categories["historical_cold2_cut_presence"] = _cut_presence(
+                fd, HISTORICAL_COLD2_CUT)
+            source_manifest = cut.get("manifest")
+            expected_manifest = pointer.get("manifest_sha256")
+            categories["current_cut_manifest_binding"] = (
+                "BOUND" if type(source_manifest) is dict and
+                type(expected_manifest) is str and HEX64.fullmatch(expected_manifest) and
+                source_manifest.get("generation_id") == generation and
+                source_manifest.get("sequence") == pointer.get("sequence") and
+                hmac.compare_digest(hashlib.sha256(json.dumps(source_manifest,
+                    sort_keys=True,separators=(",", ":"),allow_nan=False,
+                    default=str).encode()).hexdigest(),expected_manifest)
+                else "UNBOUND")
             return "CURRENT_FAILED_PENDING_REFERENCE_BOUND"
         return "CURRENT_FAILED_REFERENCE_UNBOUND"
     except (Hold, OSError, ValueError, EOFError, TypeError, KeyError, zlib.error):
@@ -309,7 +368,7 @@ def _counts(data: Path, *, readonly: bool):
                         not isinstance(manifest_sha, str) or
                         not HEX64.fullmatch(manifest_sha)):
                     raise Hold("FAILED_RECEIPT_BINDING_HOLD")
-                failed.append((ident, manifest_sha, _failure_labels(receipt)))
+                failed.append((ident, manifest_sha, _failure_labels(receipt), raw))
         queue_raw = _read_file(fd, "queue.json", private=True, readonly=readonly,
                                owner_uid=private_uid, absent_ok=True)
         if queue_raw is not None:
@@ -342,16 +401,37 @@ def _counts(data: Path, *, readonly: bool):
                       "failed_error_phase": "NO_VERIFICADO",
                       "failed_error_class": "NO_VERIFICADO",
                       "failed_manifest_relation": "NO_VERIFICADO",
-                      "current_failed_relation": "NO_VERIFICADO"}
+                      "current_failed_relation": "NO_VERIFICADO",
+                      "current_snapshot_class": "NO_VERIFICADO",
+                      "current_generation_class": "NO_VERIFICADO",
+                      "original_old_cut_presence": "NO_VERIFICADO",
+                      "historical_cold2_cut_presence": "NO_VERIFICADO",
+                      "current_cut_manifest_binding": "NO_VERIFICADO",
+                      "current_cut_paper_zero_routes_blocked": None,
+                      "known_successor_manifest_exact": None}
         if len(failed) == 1 and binding == "MATCHES_FAILED_RECEIPT":
-            ident, manifest_sha, labels = failed[0]
+            ident, manifest_sha, labels, receipt_raw = failed[0]
             diagnostic.update(labels)
             diagnostic["failed_manifest_relation"] = _manifest_relation(
                 fd, readonly=readonly, uid=private_uid,
                 ident=ident, expected_sha=manifest_sha)
             # This reader does not alter CURRENT or rescue failed evidence.
             diagnostic["current_failed_relation"] = _current_relation(
-                data, readonly=readonly, ident=ident, manifest_sha=manifest_sha)
+                data, readonly=readonly, ident=ident, manifest_sha=manifest_sha,
+                categories=diagnostic)
+            # CURRENT and the queue are separate files; catch changes across
+            # their bounded reads. This remains evidence, not a host lock.
+            if (os.fstat(fd).st_mtime_ns != final.st_mtime_ns or
+                    _read_file(fd, "queue.json", private=True, readonly=readonly,
+                               owner_uid=private_uid) != queue_raw or
+                    _read_file(fd, "receipt-"+ident+".json", private=True,
+                               readonly=readonly, owner_uid=private_uid) != receipt_raw):
+                raise Hold("DIRECTORY_RACE_HOLD")
+            if diagnostic["current_snapshot_class"] == "KNOWN_SUCCESSOR":
+                diagnostic["known_successor_manifest_exact"] = (
+                    hmac.compare_digest(manifest_sha, KNOWN_SUCCESSOR_MANIFEST) and
+                    diagnostic["failed_manifest_relation"] ==
+                    "MANIFEST_AND_PACK_METADATA_BOUND_NOT_HASHED")
         return {"receipt_count": len(receipts),
                 "failed_receipt_count": len(failed),
                 "queue_state": queue_state, "queue_failed_binding": binding,
@@ -361,6 +441,146 @@ def _counts(data: Path, *, readonly: bool):
     finally:
         for fd in reversed(fds):
             os.close(fd)
+
+
+def _live_diagnostic(data: Path, *, readonly: bool):
+    """Read only the bounded status envelope; never export its raw contents."""
+    result = {"live_status_class": "NO_VERIFICADO",
+              "live_cancel_site_class": "NO_VERIFICADO",
+              "live_paper_zero_routes_blocked": None}
+    fds = []
+    try:
+        fds = _open_tree(data, COLD_PARTS[:-1], readonly=readonly)
+        fd = fds[-1]
+        uid = os.fstat(fd).st_uid
+        raw = _read_file(fd, "status.json", private=True, readonly=readonly,
+                         owner_uid=uid)
+        status = _payload(raw, checksum_key="digest")
+        if raw != _read_file(fd, "status.json", private=True,
+                             readonly=readonly, owner_uid=uid):
+            return result
+        state = status.get("status")
+        result["live_status_class"] = (
+            "SHADOW_OBSERVING" if state == "SHADOW_OBSERVING" else
+            "FAIL_CLOSED" if state == "FAIL_CLOSED" else "OTHER")
+        orders = status.get("real_orders_sent")
+        routes = status.get("real_routes")
+        if type(orders) is int and type(routes) is str:
+            result["live_paper_zero_routes_blocked"] = (
+                orders == 0 and routes == "NOT_CALLED")
+        if (state == "FAIL_CLOSED" and status.get("error_class") == "ValueError"
+                and status.get("error_module") == "cold_audit"):
+            line = status.get("error_line")
+            result["live_cancel_site_class"] = (
+                "FRAME_265" if type(line) is int and line == 265 else
+                "STAGE_360" if type(line) is int and line == 360 else
+                "SEAL_386_NOT_WHITELISTED" if type(line) is int and line == 386
+                else "OTHER")
+        else:
+            result["live_cancel_site_class"] = "NOT_COLD_AUDIT_VALUE_ERROR"
+    except (Hold, OSError, ValueError, TypeError, KeyError):
+        pass
+    finally:
+        for fd in reversed(fds):
+            os.close(fd)
+    return result
+
+
+def _one_archive_metadata(fd: int, *, readonly: bool, ident: str,
+                          expected_manifest: str, historical: bool):
+    """Never open or hash the large .pack; verify only metadata and small receipts."""
+    try:
+        archive_fd = os.open("rc6-failed-cold-"+ident, DIRECTORY_FLAGS, dir_fd=fd)
+    except FileNotFoundError:
+        return "ABSENT"
+    except OSError:
+        return "NO_VERIFICADO"
+    try:
+        info = _check_directory(archive_fd, readonly=readonly, private=True)
+        initial = os.fstat(archive_fd)
+        names = os.listdir(archive_fd)
+        expected = {ident+".pack", "manifest-"+ident+".json",
+                    "receipt-"+ident+".json", "queue.json"}
+        if historical:
+            expected.add("quarantine.json")
+        if len(names) > 8 or set(names) != expected:
+            return "INCOMPLETE_OR_EXTRA"
+        uid = info.st_uid
+        manifest = _payload(_read_file(archive_fd, "manifest-"+ident+".json",
+                private=True, readonly=readonly, owner_uid=uid))
+        receipt = _payload(_read_file(archive_fd, "receipt-"+ident+".json",
+                private=True, readonly=readonly, owner_uid=uid))
+        queue = _payload(_read_file(archive_fd, "queue.json", private=True,
+                readonly=readonly, owner_uid=uid))
+        digest = hashlib.sha256(json.dumps(manifest,sort_keys=True,
+                separators=(",", ":"),allow_nan=False,default=str).encode()).hexdigest()
+        if (not hmac.compare_digest(digest, expected_manifest) or
+                manifest.get("snapshot_id") != ident or
+                manifest.get("pack") != ident+".pack" or
+                receipt.get("snapshot_id") != ident or receipt.get("state") != "FAILED" or
+                receipt.get("manifest_sha256") != expected_manifest or
+                queue.get("snapshot_id") != ident or queue.get("state") != "FAILED" or
+                queue.get("manifest_sha256") != expected_manifest):
+            return "SMALL_RECEIPT_MISMATCH"
+        if historical:
+            quarantine = _payload(_read_file(archive_fd, "quarantine.json",
+                        private=True, readonly=readonly, owner_uid=uid),
+                        checksum_key="digest")
+            if (quarantine.get("state") != "QUARANTINED_FAILED" or
+                    quarantine.get("snapshot_id") != ident or
+                    quarantine.get("manifest_sha256") != expected_manifest or
+                    type(manifest.get("pack_sha256")) is not str or
+                    HEX64.fullmatch(manifest["pack_sha256"]) is None or
+                    quarantine.get("pack_sha256") != manifest.get("pack_sha256") or
+                    type(quarantine.get("real_orders_sent")) is not int or
+                    quarantine.get("real_orders_sent") != 0 or
+                    quarantine.get("old_cut_revoked") is not True or
+                    quarantine.get("revoked_cut") != HISTORICAL_COLD2_CUT):
+                return "SMALL_RECEIPT_MISMATCH"
+        # lstat: a symlink/hardlink cannot inherit a valid historical label.
+        pack = os.stat(ident+".pack", dir_fd=archive_fd, follow_symlinks=False)
+        original_identity = manifest.get("pack_identity")
+        if (not stat.S_ISREG(pack.st_mode) or pack.st_nlink != 1 or
+                pack.st_uid != uid or stat.S_IMODE(pack.st_mode)&0o077 or
+                type(manifest.get("pack_bytes")) is not int or
+                manifest["pack_bytes"] != pack.st_size or
+                type(original_identity) is not list or len(original_identity) != 5 or
+                original_identity[:4] != [pack.st_dev,pack.st_ino,pack.st_size,
+                                          pack.st_mtime_ns]):
+            return "PACK_METADATA_UNVERIFIED"
+        final = os.fstat(archive_fd)
+        if (set(os.listdir(archive_fd)) != set(names) or
+                (initial.st_dev, initial.st_ino, initial.st_mtime_ns,
+                 initial.st_ctime_ns) !=
+                (final.st_dev, final.st_ino, final.st_mtime_ns,
+                 final.st_ctime_ns)):
+            return "NO_VERIFICADO"
+        return "METADATA_BOUND_PACK_NOT_HASHED"
+    except (Hold, OSError, ValueError, TypeError, KeyError):
+        return "NO_VERIFICADO"
+    finally:
+        os.close(archive_fd)
+
+
+def _archive_diagnostic(data: Path, *, readonly: bool):
+    result = {"original_archive_class": "NO_VERIFICADO",
+              "historical_cold2_archive_class": "NO_VERIFICADO"}
+    fds = []
+    try:
+        fds = _open_tree(data, ("deploy",), readonly=readonly)
+        fd = fds[-1]
+        result["original_archive_class"] = _one_archive_metadata(
+            fd, readonly=readonly, ident=ORIGINAL_ID,
+            expected_manifest=ORIGINAL_MANIFEST, historical=False)
+        result["historical_cold2_archive_class"] = _one_archive_metadata(
+            fd, readonly=readonly, ident=HISTORICAL_COLD2_ID,
+            expected_manifest=HISTORICAL_COLD2_MANIFEST, historical=True)
+    except (Hold, OSError, ValueError, TypeError):
+        pass
+    finally:
+        for fd in reversed(fds):
+            os.close(fd)
+    return result
 
 
 def inspect(data: Path = DATA, *, readonly: bool = True):
@@ -379,6 +599,21 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
         "failed_error_class": "NO_VERIFICADO",
         "failed_manifest_relation": "NO_VERIFICADO",
         "current_failed_relation": "NO_VERIFICADO",
+        "current_snapshot_class": "NO_VERIFICADO",
+        "current_generation_class": "NO_VERIFICADO",
+        "original_old_cut_presence": "NO_VERIFICADO",
+        "historical_cold2_cut_presence": "NO_VERIFICADO",
+        "current_cut_manifest_binding": "NO_VERIFICADO",
+        "current_cut_paper_zero_routes_blocked": None,
+        "known_successor_manifest_exact": None,
+        "live_status_class": "NO_VERIFICADO",
+        "live_cancel_site_class": "NO_VERIFICADO",
+        "live_paper_zero_routes_blocked": None,
+        "original_archive_class": "NO_VERIFICADO",
+        "historical_cold2_archive_class": "NO_VERIFICADO",
+        # Explicit scope exclusions: no stop receipt/report or pack content read.
+        "quiescence_verified": False, "computed_report_hash_verified": False,
+        "pack_content_hash_verified": False, "runtime_running_verified": False,
         "envelopes_hash_verified": False, "metadata_snapshot_stable": False,
         "paper_admission_verified": False, "causal_fix_verified": False,
     }
@@ -386,6 +621,8 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
         observed = _provenance(data, readonly=readonly)
         counts = _counts(data, readonly=readonly)
         result.update(counts)
+        result.update(_live_diagnostic(data, readonly=readonly))
+        result.update(_archive_diagnostic(data, readonly=readonly))
         result.update(state="READ_ONLY_OBSERVED", reason="COUNTS_AND_CAUSE_ONLY_NO_REPAIR",
                       os_readonly_mount_verified=readonly,
                       observed_deploy_sha=observed)

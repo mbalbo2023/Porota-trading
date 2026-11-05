@@ -73,6 +73,7 @@ jobs:
       - name: READ_ONLY mount namespace, open private queue/receipts; no SQLite, provider, or mutation
         run: |
           set -Eeuo pipefail
+          trap 'rm -f evidence/.a667_private_raw.json' EXIT
           set +e
           ssh -i "$RUNNER_TEMP/rc6_a665_ssh/key" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
@@ -89,7 +90,7 @@ jobs:
           from datetime import datetime,timezone,timedelta
           from pathlib import Path
 
-          schema='rc6.a667.cold-failure-cause-readonly.v1'
+          schema='rc6.a667.cold-failure-cause-readonly.v2'
           raw=Path('evidence/.a667_private_raw.json')
           source=Path('scripts/rc6_a665_cold_queue_readonly.py')
           spec=importlib.util.spec_from_file_location('a667_ro_categories',source)
@@ -108,6 +109,22 @@ jobs:
                 'failed_error_class':'NO_VERIFICADO',
                 'failed_manifest_relation':'NO_VERIFICADO',
                 'current_failed_relation':'NO_VERIFICADO',
+                'current_snapshot_class':'NO_VERIFICADO',
+                'current_generation_class':'NO_VERIFICADO',
+                'original_old_cut_presence':'NO_VERIFICADO',
+                'historical_cold2_cut_presence':'NO_VERIFICADO',
+                'current_cut_manifest_binding':'NO_VERIFICADO',
+                'current_cut_paper_zero_routes_blocked':None,
+                'known_successor_manifest_exact':None,
+                'live_status_class':'NO_VERIFICADO',
+                'live_cancel_site_class':'NO_VERIFICADO',
+                'live_paper_zero_routes_blocked':None,
+                'original_archive_class':'NO_VERIFICADO',
+                'historical_cold2_archive_class':'NO_VERIFICADO',
+                'quiescence_verified':False,
+                'computed_report_hash_verified':False,
+                'pack_content_hash_verified':False,
+                'runtime_running_verified':False,
                 'envelopes_hash_verified':False,'metadata_snapshot_stable':False,
                 'paper_admission_verified':False,'causal_fix_verified':False,
                 'remote_exit_code_class':'ZERO' if os.environ['REMOTE_RC']=='0' else 'NONZERO'}
@@ -127,6 +144,10 @@ jobs:
                   obj.get('metadata_snapshot_stable') is not True or
                   obj.get('paper_admission_verified') is not False or
                   obj.get('causal_fix_verified') is not False or
+                  obj.get('quiescence_verified') is not False or
+                  obj.get('computed_report_hash_verified') is not False or
+                  obj.get('pack_content_hash_verified') is not False or
+                  obj.get('runtime_running_verified') is not False or
                   obj.get('observed_deploy_sha')!=os.environ['EXPECTED_DEPLOY_SHA']):
                   raise ValueError('INVALID_HOST_INVARIANT')
               for key in ('receipt_count','failed_receipt_count','folder_entries_checked'):
@@ -182,6 +203,67 @@ jobs:
                       raise ValueError('UNBOUND_FAILED_DETAIL_EXPORTED')
               safe['failed_manifest_relation']=manifest
               safe['current_failed_relation']=current
+              for key,allowed in (
+                  ('current_snapshot_class',{'NO_VERIFICADO','KNOWN_SUCCESSOR',
+                      'HISTORICAL_COLD2','ORIGINAL_FAILED','OTHER'}),
+                  ('current_generation_class',{'NO_VERIFICADO','ORIGINAL_CUT',
+                      'HISTORICAL_COLD2_CUT','OTHER'}),
+                  ('original_old_cut_presence',{'NO_VERIFICADO','ABSENT',
+                      'PRESENT','UNSAFE_FILE'}),
+                  ('historical_cold2_cut_presence',{'NO_VERIFICADO','ABSENT',
+                      'PRESENT','UNSAFE_FILE'}),
+                  ('current_cut_manifest_binding',{'NO_VERIFICADO','BOUND',
+                      'UNBOUND'}),
+                  ('live_status_class',{'NO_VERIFICADO','SHADOW_OBSERVING',
+                      'FAIL_CLOSED','OTHER'}),
+                  ('live_cancel_site_class',{'NO_VERIFICADO','FRAME_265',
+                      'STAGE_360','SEAL_386_NOT_WHITELISTED','OTHER',
+                      'NOT_COLD_AUDIT_VALUE_ERROR'}),
+                  ('original_archive_class',{'NO_VERIFICADO','ABSENT',
+                      'INCOMPLETE_OR_EXTRA','SMALL_RECEIPT_MISMATCH',
+                      'PACK_METADATA_UNVERIFIED','METADATA_BOUND_PACK_NOT_HASHED'}),
+                  ('historical_cold2_archive_class',{'NO_VERIFICADO','ABSENT',
+                      'INCOMPLETE_OR_EXTRA','SMALL_RECEIPT_MISMATCH',
+                      'PACK_METADATA_UNVERIFIED','METADATA_BOUND_PACK_NOT_HASHED'})):
+                  value=obj.get(key)
+                  if type(value) is not str or value not in allowed:
+                      raise ValueError('HOST_CATEGORY_INVALID_'+key)
+                  safe[key]=value
+              for key in ('known_successor_manifest_exact',
+                          'current_cut_paper_zero_routes_blocked',
+                          'live_paper_zero_routes_blocked'):
+                  value=obj.get(key)
+                  if value is not None and type(value) is not bool:
+                      raise ValueError('HOST_BOOLEAN_INVALID_'+key)
+                  safe[key]=value
+              if current == 'CURRENT_FAILED_PENDING_REFERENCE_BOUND':
+                  if (safe['current_snapshot_class']=='NO_VERIFICADO' or
+                      safe['current_generation_class']=='NO_VERIFICADO' or
+                      safe['original_old_cut_presence']=='NO_VERIFICADO' or
+                      safe['historical_cold2_cut_presence']=='NO_VERIFICADO' or
+                      safe['current_cut_manifest_binding']=='NO_VERIFICADO'):
+                      raise ValueError('CURRENT_CATEGORY_NOT_BOUND')
+              elif (any(safe[key]!='NO_VERIFICADO' for key in (
+                      'current_snapshot_class','current_generation_class',
+                      'original_old_cut_presence','historical_cold2_cut_presence',
+                      'current_cut_manifest_binding')) or
+                      safe['known_successor_manifest_exact'] is not None):
+                  raise ValueError('CURRENT_CATEGORY_WITHOUT_FAILED_BINDING')
+              if current in ('NO_VERIFICADO','CURRENT_POINTER_INVALID',
+                      'CURRENT_CUT_SIZE_UNVERIFIED','CURRENT_REFERENCE_UNVERIFIED',
+                      'CURRENT_POINTER_RACE_HOLD') and (
+                      safe['current_cut_paper_zero_routes_blocked'] is not None):
+                  raise ValueError('CURRENT_PAPER_WITHOUT_VALIDATED_CUT')
+              if (safe['current_snapshot_class']=='KNOWN_SUCCESSOR') != (
+                      safe['known_successor_manifest_exact'] is not None):
+                  raise ValueError('SUCCESSOR_METADATA_WITHOUT_IDENTITY')
+              if safe['live_status_class']=='NO_VERIFICADO' and (
+                      safe['live_cancel_site_class']!='NO_VERIFICADO' or
+                      safe['live_paper_zero_routes_blocked'] is not None):
+                  raise ValueError('LIVE_STATUS_UNBOUND')
+              if safe['live_cancel_site_class'] in ('FRAME_265','STAGE_360',
+                      'SEAL_386_NOT_WHITELISTED') and safe['live_status_class']!='FAIL_CLOSED':
+                  raise ValueError('COLD_CANCEL_WITHOUT_FAIL_CLOSED')
               utc=datetime.fromisoformat(obj['generated_at_utc'])
               art=datetime.fromisoformat(obj['generated_at_art'])
               if (utc.utcoffset()!=timedelta(0) or
@@ -204,6 +286,8 @@ jobs:
           print('A667_FAILURE_CODE='+safe['failed_error_code'])
           print('A667_FAILURE_PHASE='+safe['failed_error_phase'])
           print('A667_CURRENT_RELATION='+safe['current_failed_relation'])
+          print('A667_CURRENT_CLASS='+safe['current_snapshot_class'])
+          print('A667_LIVE_STATUS='+safe['live_status_class'])
           print('A667_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
           PY
           rm -f evidence/.a667_private_raw.json
