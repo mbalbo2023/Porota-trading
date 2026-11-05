@@ -307,3 +307,26 @@ def test_stream_capacity_false_raising_or_nonbool_never_connects(harness):
             assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
         finally:
             owner.close()
+
+
+def test_revoked_per_instrument_quota_or_catalog_before_connect_denies_socket(harness):
+    for revoked in ("quota", "catalog"):
+        cap = FakeExternalCapacity({"OWNER_AUTHENTICATE", "STREAM_CONNECT",
+                                    "STREAM_SUBSCRIPTION"})
+        catalog = FakeExternalCapacity({"PPI_FIVE_KEY_CATALOG_ATTESTED"})
+        owner = harness.make_owner(capacity=cap, catalog_authority=catalog,
+                                   stream_authority=FakeStreamAuthority(True))
+        try:
+            owner.open_once()
+            assert owner.plan_focus(FIVE, priority="EXIT_CRITICAL") == "ADMITTED"
+            if revoked == "quota":
+                cap.allowed.remove("STREAM_SUBSCRIPTION")
+            else:
+                catalog.allowed.remove("PPI_FIVE_KEY_CATALOG_ATTESTED")
+            with pytest.raises(SessionOwnerBlocked,
+                               match="PPI_STREAM_SUBSCRIPTION_CAPACITY_REVOKED"):
+                owner.run_market_stream()
+            assert owner.status()["stream_invoked"] is False
+            assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
+        finally:
+            owner.close()
