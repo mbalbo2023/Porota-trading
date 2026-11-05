@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A655/A658/A661/A666/A667: bounded, opt-in SQLite WAL READ_ONLY correlation.
+"""A655/A658/A661/A666/A667/A668: bounded SQLite WAL READ_ONLY correlation.
 
 Never reconstruct the historical A626 575/172/74 cohort from a later DB.
 No provider, PPI Watch, paper engine, broker, order, WAL copy, or DB mutation.
@@ -23,7 +23,7 @@ from urllib.parse import quote
 import uuid
 
 
-SCHEMA = "rc6.a667.option-ppi-quote-pair-readonly.v5"
+SCHEMA = "rc6.a668.option-ppi-key-root-readonly.v6"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 MAX_RAW = 32768
 MAX_ROWS = 60000
@@ -31,6 +31,7 @@ MAX_GROUPS = 128  # Keep even the maximal categorical receipt under MAX_RAW.
 MAX_ROOT_GROUPS = 48
 MAX_PPI_FIELD_GROUPS = 32
 MAX_QUOTE_GROUPS = 96
+MAX_KEY_SOURCE_GROUPS = 96
 MAX_EVIDENCE_BYTES = 32 * 1024 * 1024
 MAX_METADATA_BYTES = 128 * 1024 * 1024
 MAX_COUNT = 1000000
@@ -98,6 +99,28 @@ QUOTE_RAW_NOMINAL = frozenset({"RAW_NOMINAL_MATCH", "RAW_NOMINAL_MISMATCH",
                                "RAW_NOMINAL_UNVERIFIABLE"})
 QUOTE_HISTORY = frozenset({"NO_RECORDED_REMOVAL", "RECORDED_PRIOR_REMOVAL"})
 QUOTE_FIELDS = ("pair", "ppi_key", "raw_nominal", "history")
+KEY_FIELDS = ("TICKER", "TYPE", "MARKET", "CURRENCY", "SETTLEMENT")
+KEY_ROOTS = frozenset({"ATTESTED_PROVIDER_FIVE_KEY_IN_METADATA",
+                       "STORED_METADATA_INVALID", "REQUEST_SIDE_SETTLEMENT",
+                       "SETTLEMENT_SOURCE_UNATTESTED", "DISCOVERY_NOT_EXPLICIT_PPI",
+                       "STORED_FIELD_MISSING", "STORED_FIELD_INVALID",
+                       "STORED_FIELD_MISMATCH", "UNSUPPORTED_CANONICAL_ENUM_OR_POLICY"})
+KEY_SETTLEMENT_SOURCES = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE", "OTHER_OR_MISSING"})
+KEY_DISCOVERY = frozenset({"PPI_PRIMARY", "IOL_COMPLEMENTARY", "BYMA_COMPLEMENTARY",
+                           "NOT_EXPLICIT_PPI"})
+KEY_METADATA_SHAPES = frozenset({"FLAT_ONLY", "FLAT_AND_NESTED", "NESTED_ONLY",
+                                "NO_LITERAL_FIELDS", "INVALID_METADATA"})
+KEY_LITERAL_STATES = frozenset({"STORED_LITERAL_EXACT", "STORED_ALIAS_EQUIVALENT",
+                                "STORED_LITERAL_MISSING", "STORED_LITERAL_INVALID",
+                                "STORED_LITERAL_MISMATCH"})
+# Explicit, exact aliases from rc6_multisource_discovery and
+# bs_instrument_contracts; these distinguish provider label normalization from
+# an actual missing field. Never infer an absent literal from a SQL/default key.
+_MARKET_ALIAS = {"BCBA": "BYMA", "BYMA": "BYMA", "ROFEX": "A3", "A3": "A3"}
+_SETTLEMENT_ALIAS = {"CI": "INMEDIATA", "T0": "INMEDIATA", "INMEDIATA": "INMEDIATA",
+                     "T1": "A-24HS", "24HS": "A-24HS", "A-24HS": "A-24HS"}
+_CURRENCY_ALIAS = {"PESOS": "ARS", "PESO ARGENTINO": "ARS"}
+_OPTION_FAMILY_ALIAS = {"OPCIONES": "OPCIONES", "OPCION": "OPCIONES", "OPTIONS": "OPCIONES"}
 # Exact copy of cp_contract_evidence_v2_hf6.PROVENANCE_ONLY_FIELDS at product
 # 7e1e744d6ca9ab30c51b5747dd4467af5ece0145. Do not silently alter this
 # list: the material-vs-provenance distinction is business logic, not heuristic.
@@ -142,7 +165,11 @@ def _base():
             "option_ppi_material_current_hist": [],
             "option_ppi_material_source_ref_hist": [],
             "option_ppi_quote_consistency_total": None,
-            "option_ppi_quote_consistency_hist": []}
+            "option_ppi_quote_consistency_hist": [],
+            "option_ppi_key_root_total": None,
+            "option_ppi_key_root_hist": [],
+            "option_ppi_key_source_hist": [],
+            "option_ppi_key_field_hist": []}
 
 
 def _mount_is_readonly(path):
@@ -432,21 +459,101 @@ def _ppi_literal_option_key(key, settlement_source, metadata):
         return "PPI_FIVE_KEY_UNATTESTED"
     def upper(item):
         return str(item).strip().upper()
-    market_alias = {"BCBA": "BYMA", "BYMA": "BYMA", "ROFEX": "A3", "A3": "A3"}
-    settlement_alias = {"CI": "INMEDIATA", "T0": "INMEDIATA", "INMEDIATA": "INMEDIATA",
-                        "T1": "A-24HS", "24HS": "A-24HS", "A-24HS": "A-24HS"}
-    currency_alias = {"PESOS": "ARS", "PESO ARGENTINO": "ARS"}
-    provider_market = market_alias.get(upper(raw[2]), upper(raw[2]))
-    provider_currency = currency_alias.get(upper(raw[3]), upper(raw[3]))
+    provider_market = _MARKET_ALIAS.get(upper(raw[2]), upper(raw[2]))
+    provider_currency = _CURRENCY_ALIAS.get(upper(raw[3]), upper(raw[3]))
     return ("PPI_PROVIDER_FIVE_KEY" if (
         upper(ticker) == key[1]
         and upper(family) in {"OPCIONES", "OPCION", "OPTIONS"}
         and provider_market in {"BYMA", "A3"}
-        and provider_market == market_alias.get(key[2], key[2])
+        and provider_market == _MARKET_ALIAS.get(key[2], key[2])
         and provider_currency in {"ARS", "USD", "USD_MEP", "USD_CCL"}
         and provider_currency == key[3]
-        and settlement_alias.get(upper(raw[4]), upper(raw[4])) == settlement_alias.get(key[4], key[4])
+        and _SETTLEMENT_ALIAS.get(upper(raw[4]), upper(raw[4])) == _SETTLEMENT_ALIAS.get(key[4], key[4])
     ) else "PPI_FIVE_KEY_UNATTESTED")
+
+
+def _key_field_state(raw, field, expected):
+    """Classify *stored metadata*, never assert what the provider returned."""
+    if field == "TICKER":
+        literal = raw.get("ticker") or raw.get("symbol")
+        mapper = {}
+    elif field == "TYPE":
+        literal = raw.get("type") or raw.get("instrumentType")
+        mapper = _OPTION_FAMILY_ALIAS
+    elif field == "MARKET":
+        literal = raw.get("market")
+        mapper = _MARKET_ALIAS
+    elif field == "CURRENCY":
+        literal = raw.get("currency")
+        mapper = _CURRENCY_ALIAS
+    else:
+        literal = raw.get("settlement")
+        mapper = _SETTLEMENT_ALIAS
+    if literal is None or literal == "" or literal == " ":
+        return "STORED_LITERAL_MISSING"
+    if not isinstance(literal, str) or not literal.strip() or len(literal) > 512:
+        return "STORED_LITERAL_INVALID"
+    normalized = literal.strip().upper()
+    canonical = mapper.get(normalized, normalized)
+    target = mapper.get(expected, expected)
+    if canonical != target:
+        return "STORED_LITERAL_MISMATCH"
+    return "STORED_LITERAL_EXACT" if normalized == expected else "STORED_ALIAS_EQUIVALENT"
+
+
+def _option_key_diagnostic(key, metadata_raw, settlement_source):
+    """One primary gate failure and bounded marginal fields; no raw export.
+
+    Missing *stored* literal evidence is deliberately not evidence that a
+    provider omitted it. The only authoritative provider-sourced label is
+    the existing PPI_FIELD + flat raw five-key check, never nested fallback.
+    """
+    try:
+        raw = _strict_json(metadata_raw)
+    except Hold:
+        raw = None
+    if not isinstance(raw, dict):
+        raw = None
+        shape = "INVALID_METADATA"
+    else:
+        flat = any(raw.get(f) not in (None, "") for f in
+                   ("ticker", "symbol", "type", "instrumentType", "market", "currency", "settlement"))
+        nested = (isinstance(raw.get("raw"), dict)
+                  and any(raw["raw"].get(f) not in (None, "") for f in
+                          ("ticker", "symbol", "type", "instrumentType", "market", "currency", "settlement")))
+        shape = ("FLAT_AND_NESTED" if flat and nested else "FLAT_ONLY" if flat else
+                 "NESTED_ONLY" if nested else "NO_LITERAL_FIELDS")
+    settlement = (settlement_source if settlement_source in {"PPI_FIELD", "REQUEST_CANDIDATE"}
+                  else "OTHER_OR_MISSING")
+    discovery_value = raw.get("_discovery_source") if raw is not None else None
+    discovery = (discovery_value if isinstance(discovery_value, str)
+                 and discovery_value in {"PPI_PRIMARY", "IOL_COMPLEMENTARY",
+                                         "BYMA_COMPLEMENTARY"}
+                 else "NOT_EXPLICIT_PPI")
+    fields = {}
+    expected = (key[1], key[0], key[2], key[3], key[4])
+    for name, target in zip(KEY_FIELDS, expected):
+        fields[name] = (_key_field_state(raw, name, target) if raw is not None
+                        else "STORED_LITERAL_MISSING")
+    if raw is None:
+        reason = "STORED_METADATA_INVALID"
+    elif settlement == "REQUEST_CANDIDATE":
+        reason = "REQUEST_SIDE_SETTLEMENT"
+    elif settlement != "PPI_FIELD":
+        reason = "SETTLEMENT_SOURCE_UNATTESTED"
+    elif discovery != "PPI_PRIMARY":
+        reason = "DISCOVERY_NOT_EXPLICIT_PPI"
+    elif "STORED_LITERAL_MISSING" in fields.values():
+        reason = "STORED_FIELD_MISSING"
+    elif "STORED_LITERAL_INVALID" in fields.values():
+        reason = "STORED_FIELD_INVALID"
+    elif "STORED_LITERAL_MISMATCH" in fields.values():
+        reason = "STORED_FIELD_MISMATCH"
+    elif _ppi_literal_option_key(key, settlement_source, raw) == "PPI_PROVIDER_FIVE_KEY":
+        reason = "ATTESTED_PROVIDER_FIVE_KEY_IN_METADATA"
+    else:
+        reason = "UNSUPPORTED_CANONICAL_ENUM_OR_POLICY"
+    return reason, (settlement, discovery, shape), fields
 
 
 def _ppi_option_quote_pair(current_values, metadata_raw, settlement_source, key, prior_removals):
@@ -497,7 +604,9 @@ def _option_root_hist(conn, keys, option_catalog):
     if not keys:
         # A later snapshot may genuinely have no A658-like option review gate.
         # This is a zero *diagnostic target*, never PAPER-admission evidence.
-        return [], _material_field_receipt(set(), 0, Counter(), {}, Counter(), Counter()), []
+        return [], _material_field_receipt(set(), 0, Counter(), {}, Counter(), Counter()), [], {
+            "option_ppi_key_root_total": 0, "option_ppi_key_root_hist": [],
+            "option_ppi_key_source_hist": [], "option_ppi_key_field_hist": []}
     if len(keys) > MAX_ROWS:
         raise Hold("A661_TARGET_ROWS_HOLD")
     flags = {key: set() for key in keys}
@@ -673,18 +782,38 @@ def _option_root_hist(conn, keys, option_catalog):
     if len(hist) > MAX_ROOT_GROUPS:
         raise Hold("A661_ROOT_GROUPS_HOLD")
     quote_hist = Counter()
+    key_root_hist = Counter()
+    key_source_hist = Counter()
+    key_field_hist = Counter()
     for key in keys:
         settlement_source, metadata_raw = option_catalog[key]
         label = _ppi_option_quote_pair(
             ppi_current_values.get(key, []), metadata_raw, settlement_source, key, prior_removals)
         quote_hist[label] += 1
+        key_root, source, fields = _option_key_diagnostic(key, metadata_raw, settlement_source)
+        key_root_hist[key_root] += 1
+        key_source_hist[source] += 1
+        for field, state in fields.items():
+            key_field_hist[(field, state)] += 1
     if len(quote_hist) > MAX_QUOTE_GROUPS:
         raise Hold("A667_PPI_QUOTE_GROUPS_HOLD")
+    if len(key_source_hist) > MAX_KEY_SOURCE_GROUPS:
+        raise Hold("A668_PPI_KEY_GROUPS_HOLD")
     return ([dict(flags=reason, source_class_bucket=bucket, count=count)
              for (reason, bucket), count in sorted(hist.items())],
             _material_field_receipt(ppi_changed_identities, ppi_changed_events,
                                     field_events, field_ids, ppi_current_hist, ppi_source_hist),
-            [dict(zip(QUOTE_FIELDS, label), count=count) for label, count in sorted(quote_hist.items())])
+            [dict(zip(QUOTE_FIELDS, label), count=count) for label, count in sorted(quote_hist.items())],
+            {"option_ppi_key_root_total": len(keys),
+             "option_ppi_key_root_hist": [
+                 {"category": name, "count": count} for name, count in sorted(key_root_hist.items())],
+             "option_ppi_key_source_hist": [
+                 {"settlement_source": source[0], "discovery": source[1],
+                  "metadata_shape": source[2], "count": count}
+                 for source, count in sorted(key_source_hist.items())],
+             "option_ppi_key_field_hist": [
+                 {"field": field, "status": state, "count": count}
+                 for (field, state), count in sorted(key_field_hist.items())]})
 
 
 def _capability(raw):
@@ -835,9 +964,11 @@ def _aggregate(conn):
             or sum(c["active_gap"] for c in coverage.values()) == 0):
         raise Hold("ACTIVE_GAP_DENOMINATOR_HOLD")
     joint = [dict(zip(FIELDS, key), count=value) for key, value in sorted(groups.items())]
-    option_roots, ppi_material, option_quote_hist = _option_root_hist(conn, option_review_keys, option_catalog)
+    option_roots, ppi_material, option_quote_hist, option_key_diagnostic = _option_root_hist(
+        conn, option_review_keys, option_catalog)
     return (joint, {family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
-            option_roots, len(option_review_keys), ppi_material, option_quote_hist)
+            option_roots, len(option_review_keys), ppi_material, option_quote_hist,
+            option_key_diagnostic)
 
 
 def diagnose(db=DB, *, enforce_ro_mount=True):
@@ -858,7 +989,8 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
         conn.execute("BEGIN")
         start = time.monotonic()
         conn.set_progress_handler(lambda: int(time.monotonic() - start > 19), 1000)
-        joint, coverage, option_roots, option_root_total, ppi_material, option_quote_hist = _aggregate(conn)
+        (joint, coverage, option_roots, option_root_total, ppi_material, option_quote_hist,
+         option_key_diagnostic) = _aggregate(conn)
         report["paper_workspace_verified"] = True
         report["real_orders_sent"] = 0
         report["sampled_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -867,6 +999,7 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
         report["option_review_root_hist"] = option_roots
         report["option_ppi_quote_consistency_total"] = option_root_total
         report["option_ppi_quote_consistency_hist"] = option_quote_hist
+        report.update(option_key_diagnostic)
         report.update(ppi_material)
         report["catalog_active_gap_total"] = sum(item["count"] for item in joint)
         report["status_coverage"] = coverage
@@ -1032,6 +1165,62 @@ def sanitize(value):
             quoted.append(dict(zip(QUOTE_FIELDS, category), count=count))
         if sum(item["count"] for item in quoted) != quote_total:
             raise Hold("UNTRUSTED_PPI_QUOTE_DENOMINATOR")
+        key_total = value.get("option_ppi_key_root_total")
+        key_roots = value.get("option_ppi_key_root_hist")
+        key_sources = value.get("option_ppi_key_source_hist")
+        key_fields = value.get("option_ppi_key_field_hist")
+        if (type(key_total) is not int or key_total != quote_total
+                or not isinstance(key_roots, list) or len(key_roots) > len(KEY_ROOTS)
+                or not isinstance(key_sources, list) or len(key_sources) > MAX_KEY_SOURCE_GROUPS
+                or not isinstance(key_fields, list)
+                or len(key_fields) > len(KEY_FIELDS) * len(KEY_LITERAL_STATES)):
+            raise Hold("UNTRUSTED_PPI_KEY_ROOT_DENOMINATOR")
+        verified_roots = []
+        seen_roots = set()
+        for item in key_roots:
+            if (not isinstance(item, dict) or set(item) != {"category", "count"}
+                    or item["category"] not in KEY_ROOTS or item["category"] in seen_roots
+                    or type(item["count"]) is not int or not 0 < item["count"] <= MAX_COUNT):
+                raise Hold("UNTRUSTED_PPI_KEY_ROOT_HISTOGRAM")
+            seen_roots.add(item["category"])
+            verified_roots.append(item)
+        if sum(row["count"] for row in verified_roots) != key_total:
+            raise Hold("UNTRUSTED_PPI_KEY_ROOT_DENOMINATOR")
+        expected_attested = sum(item["count"] for item in quoted
+                                if item["ppi_key"] == "PPI_PROVIDER_FIVE_KEY")
+        if sum(row["count"] for row in verified_roots if
+               row["category"] == "ATTESTED_PROVIDER_FIVE_KEY_IN_METADATA") != expected_attested:
+            raise Hold("UNTRUSTED_PPI_KEY_ROOT_ATTESTATION")
+        verified_sources = []
+        seen_sources = set()
+        for item in key_sources:
+            if not isinstance(item, dict) or set(item) != {"settlement_source", "discovery", "metadata_shape", "count"}:
+                raise Hold("UNTRUSTED_PPI_KEY_SOURCE_HISTOGRAM")
+            cats = (item["settlement_source"], item["discovery"], item["metadata_shape"])
+            if (cats in seen_sources or cats[0] not in KEY_SETTLEMENT_SOURCES
+                    or cats[1] not in KEY_DISCOVERY or cats[2] not in KEY_METADATA_SHAPES
+                    or type(item["count"]) is not int or not 0 < item["count"] <= MAX_COUNT):
+                raise Hold("UNTRUSTED_PPI_KEY_SOURCE_HISTOGRAM")
+            seen_sources.add(cats)
+            verified_sources.append(item)
+        if sum(item["count"] for item in verified_sources) != key_total:
+            raise Hold("UNTRUSTED_PPI_KEY_SOURCE_DENOMINATOR")
+        verified_fields = []
+        field_counts = Counter()
+        seen_key_fields = set()
+        for item in key_fields:
+            if not isinstance(item, dict) or set(item) != {"field", "status", "count"}:
+                raise Hold("UNTRUSTED_PPI_KEY_FIELD_HISTOGRAM")
+            field_key = (item["field"], item["status"])
+            if (field_key in seen_key_fields or field_key[0] not in KEY_FIELDS
+                    or field_key[1] not in KEY_LITERAL_STATES
+                    or type(item["count"]) is not int or not 0 < item["count"] <= MAX_COUNT):
+                raise Hold("UNTRUSTED_PPI_KEY_FIELD_HISTOGRAM")
+            seen_key_fields.add(field_key)
+            field_counts[field_key[0]] += item["count"]
+            verified_fields.append(item)
+        if any(field_counts[field] != key_total for field in KEY_FIELDS):
+            raise Hold("UNTRUSTED_PPI_KEY_FIELD_DENOMINATOR")
         if (total != value.get("catalog_active_gap_total") or total > MAX_COUNT or total == 0
                 or covered_total != value.get("catalog_six_family_total")
                 or covered_total > MAX_COUNT):
@@ -1055,6 +1244,13 @@ def sanitize(value):
                     option_ppi_quote_consistency_total=quote_total,
                     option_ppi_quote_consistency_hist=sorted(
                         quoted, key=lambda x: tuple(x[k] for k in QUOTE_FIELDS)),
+                    option_ppi_key_root_total=key_total,
+                    option_ppi_key_root_hist=sorted(verified_roots, key=lambda x: x["category"]),
+                    option_ppi_key_source_hist=sorted(
+                        verified_sources, key=lambda x: (x["settlement_source"],
+                                                         x["discovery"], x["metadata_shape"])),
+                    option_ppi_key_field_hist=sorted(
+                        verified_fields, key=lambda x: (x["field"], x["status"])),
                     status_coverage={family: dict(sorted(row.items())) for family, row in sorted(coverage.items())},
                     by_family=dict(sorted(totals.items())),
                     joint=sorted(joint, key=lambda x: tuple(x[f] for f in FIELDS)))
