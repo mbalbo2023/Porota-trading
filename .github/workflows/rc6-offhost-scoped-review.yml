@@ -280,7 +280,9 @@ jobs:
           OUTCOME: ${{ job.status }}
         shell: bash
         run: |
-          cd "$OFFHOST_DATA"
+          # Also works when preflight failed before OFFHOST_DATA was created.
+          # -I and /tmp prevent target-checkout sitecustomize shadowing.
+          cd /tmp
           python3 -I - <<'PY'
           import json
           import os
