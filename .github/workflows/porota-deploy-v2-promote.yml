@@ -2940,6 +2940,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          # A690 P0: promotion failure or cancellation has an UNKNOWN cutover
+          # phase. SSH may have returned nonzero AFTER the new image restarted
+          # but BEFORE a durable receipt. Never mutate runtime/schedulers or
+          # delete images on an unclassified promotion failure. This includes
+          # a failure BEFORE cutover: availability is HOLD until explicit
+          # READ_ONLY reconciliation and fix-forward, not optimistic recovery.
+          # exit 82 also prevents the later failure_orphan_cleanup (which
+          # requires failure_cleanup success).
+          if [ '${{ steps.promotion.outcome }}' = failure ] || \
+             [ '${{ steps.promotion.outcome }}' = cancelled ]; then
+            echo 'RC6_AMBIGUOUS_PROMOTION=NO_GO|NO_HOST_RECOVERY|NO_IMAGE_DELETE|FIX_FORWARD_READONLY_RECONCILIATION_REQUIRED' >&2
+            exit 82
+          fi
           # A180: an SSH/runner failure can occur AFTER the host atomically
           # writes VALIDATED_RUNTIME. Never run pending-state recovery against
           # that finalized image. Acquire the existing deploy flock directly
