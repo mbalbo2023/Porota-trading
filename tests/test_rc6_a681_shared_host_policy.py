@@ -130,6 +130,8 @@ def test_a690_preclean_uses_private_owned_scratch_not_shared_fixed_paths():
     assert 'mktemp -d -- /tmp/rc6-porota-preclean.XXXXXXXXXX' in src
     assert "trap cleanup_preclean_scratch EXIT" in src
     assert "stat -c '%a:%u'" in src
+    assert "RC6_PRECLEAN_SCRATCH_ID=\"$(stat -c '%d:%i:%u:%a' -- \"$RC6_PRECLEAN_SCRATCH\")\"" in src
+    assert "[ \"$(stat -c '%d:%i:%u:%a' -- \"$RC6_PRECLEAN_SCRATCH\")\" = \"$RC6_PRECLEAN_SCRATCH_ID\" ]" in src
     assert '--json-out "$TMP_HOUSEKEEPING"' in src
     assert 'rmdir -- "$RC6_PRECLEAN_SCRATCH"' in src
     assert 'rm -rf' not in src.split('RC6_PRECLEAN_SCRATCH="$(mktemp', 1)[1].split('\n          PRECLEAN_REMOTE\n', 1)[0]
@@ -164,3 +166,37 @@ def test_a690_failed_cleanup_must_never_emit_false_green(candidate_rc, stage_rc,
         assert 'RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|' in out.stdout
         assert 'RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|' in out.stdout
         assert 'RC6_SHARED_HOST_CLEANUP_DEFERRED_UNVERIFIED' in out.stdout
+
+
+@pytest.mark.parametrize('invalidate_id,expected_rc', [(False, 0), (True, 65)])
+def test_a690_preclean_trap_checks_original_inode_before_any_deletion(invalidate_id, expected_rc):
+    """Real private tmp fixture: simulate same-mode path replacement via stale inode ID.
+
+    On mismatch the trap must leave the directory untouched and report RED,
+    not delete another app's possible same-UID replacement. No host/Docker.
+    """
+    import os
+    src = PROMOTE.read_text(encoding='utf-8')
+    start = src.index('          # A690: /tmp is shared')
+    end = src.index('          printf \'%s\' "$POLICY_B64" | base64 -d > "$TMP_POLICY"', start)
+    block = '\n'.join(line[10:] if line.startswith('          ') else line
+                      for line in src[start:end].splitlines())
+    if invalidate_id:
+        block += '\nRC6_PRECLEAN_SCRATCH_ID=invalid\n'
+    block += '\necho "SCRATCH_PATH=$RC6_PRECLEAN_SCRATCH"\nexit 0\n'
+    result = subprocess.run(['bash', '-eu', '-o', 'pipefail'],
+                            input=block, capture_output=True, text=True)
+    assert result.returncode == expected_rc, result.stderr
+    match = re.search(r'^SCRATCH_PATH=(/tmp/rc6-porota-preclean\.[A-Za-z0-9]{10})$',
+                      result.stdout, re.M)
+    assert match is not None
+    directory = Path(match.group(1))
+    if invalidate_id:
+        assert 'RC6_DISK_PRECLEAN_REMOTE=DEFERRED_UNVERIFIED' in result.stdout
+        assert directory.is_dir() and not directory.is_symlink()
+        assert directory.stat().st_uid == os.getuid()
+        # Test-specific orphan, created by THIS subprocess only; no broad rm.
+        directory.rmdir()
+    else:
+        assert 'RC6_DISK_PRECLEAN_REMOTE=GREEN' in result.stdout
+        assert not directory.exists()
