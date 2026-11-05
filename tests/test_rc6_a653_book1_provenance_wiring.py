@@ -144,6 +144,20 @@ class Book1DecisionWiring(unittest.TestCase):
         self.assertEqual(features["ppi_book1_provenance_state"], "CLAIM_CONFLICT_HOLD")
         self.assertEqual(receipts, 0)
 
+    def test_unbound_feature_cannot_invent_book1_claim(self):
+        # A stale native Book is observed, but the scanner intentionally
+        # refuses to bind it to the Quote. A caller-provided 64-hex digest
+        # must not bypass the absent capture witness in the atomic freeze.
+        quote, _ = self._read(Reader("2026-11-03T10:00:00-03:00"))
+        self.assertIsNone(quote.ppi_book1_event_sha256)
+        committed, frozen, features, receipts = self._record(
+            quote, supplied_hash="f" * 64)
+        self.assertTrue(committed)
+        self.assertIsNone(frozen["book1_event_sha256_claim"])
+        self.assertNotIn("ppi_book1_event_sha256", features)
+        self.assertEqual(features["ppi_book1_provenance_state"], "CLAIM_UNBOUND_HOLD")
+        self.assertEqual(receipts, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
