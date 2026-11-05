@@ -22,6 +22,7 @@ on:
           - ux_browser
           - ppi_rest_wire
           - pit_postcommit
+          - ppi_sdk_singleton
 
 permissions:
   contents: read
@@ -57,7 +58,7 @@ jobs:
             exit 41
           fi
           case "$REQUESTED_SUITE" in
-            ux_browser|ppi_rest_wire|pit_postcommit) ;;
+            ux_browser|ppi_rest_wire|pit_postcommit|ppi_sdk_singleton) ;;
             *) echo '::error::Suite is not in the fixed allowlist.'; exit 42 ;;
           esac
           if [[ "$GITHUB_REF" != 'refs/heads/main' ||
@@ -112,6 +113,9 @@ jobs:
                 tests/test_rc6_a680_ppi_guard_wire_receipt.py >/dev/null ;;
             pit_postcommit)
               git ls-files --error-unmatch -- tests/test_rc6_a685_pit_postcommit_composition.py >/dev/null ;;
+            ppi_sdk_singleton)
+              git ls-files --error-unmatch -- rc6_ppi_shared_session_owner.py \
+                tests/test_rc6_a696_ppi_registry_subclass.py >/dev/null ;;
           esac
           python3 -I - <<'PY'
           import sys
@@ -153,6 +157,9 @@ jobs:
                 'cryptography==50.0.2' 'cffi==2.0.0'
                 'pycparser==2.23'
               ) ;;
+            ppi_sdk_singleton)
+              # Only stdlib fakes + fixed pytest runner; NO real SDK import.
+              extra=() ;;
             ux_browser)
               extra=(
                 'fastapi==0.121.0' 'starlette==0.49.3'
@@ -240,6 +247,16 @@ jobs:
                      tests/test_rc6_a680_ppi_guard_wire_receipt.py) ;;
             pit_postcommit)
               tests=(tests/test_rc6_a685_pit_postcommit_composition.py) ;;
+            ppi_sdk_singleton)
+              tests=(tests/test_rc6_a696_ppi_registry_subclass.py)
+              # Additional A708 synthetic regressions run only when the exact
+              # immutable PR HEAD contains the separately reviewed test file.
+              # The original #997 SHA can still be assessed truthfully as 3/3,
+              # never mislabeled as the 9/9 extended test-head.
+              if git ls-files --error-unmatch -- \
+                   tests/test_rc6_a708_ppi_sdk_registry_offhost.py >/dev/null 2>&1; then
+                tests+=(tests/test_rc6_a708_ppi_sdk_registry_offhost.py)
+              fi ;;
             *) exit 50 ;;
           esac
           if ! timeout 780 "$py" -m pytest -q -p no:cacheprovider \
@@ -295,7 +312,7 @@ jobs:
           tree = os.getenv("REVIEW_TREE_SHA", "")
           base = os.getenv("REVIEW_BASE_SHA", "")
           safe_sha = lambda v: v if re.fullmatch("[0-9a-f]{40}", v) else "NO_VERIFICADO"
-          safe_suite = suite if suite in {"ux_browser", "ppi_rest_wire", "pit_postcommit"} else "INVALID"
+          safe_suite = suite if suite in {"ux_browser", "ppi_rest_wire", "pit_postcommit", "ppi_sdk_singleton"} else "INVALID"
           receipt = {
               "schema": "rc6.offhost.scoped-exact-head.v1",
               "pr": os.getenv("REQUESTED_PR", "") if re.fullmatch(r"[1-9][0-9]{0,5}", os.getenv("REQUESTED_PR", "")) else "INVALID",
