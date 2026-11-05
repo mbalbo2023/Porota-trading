@@ -73,6 +73,7 @@ jobs:
       - name: READ_ONLY mount namespace, open private queue/receipts; no SQLite, provider, or mutation
         run: |
           set -Eeuo pipefail
+          trap 'rm -f evidence/.a667_private_raw.json' EXIT
           set +e
           ssh -i "$RUNNER_TEMP/rc6_a665_ssh/key" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
@@ -123,6 +124,7 @@ jobs:
                 'quiescence_verified':False,
                 'computed_report_hash_verified':False,
                 'pack_content_hash_verified':False,
+                'runtime_running_verified':False,
                 'envelopes_hash_verified':False,'metadata_snapshot_stable':False,
                 'paper_admission_verified':False,'causal_fix_verified':False,
                 'remote_exit_code_class':'ZERO' if os.environ['REMOTE_RC']=='0' else 'NONZERO'}
@@ -145,6 +147,7 @@ jobs:
                   obj.get('quiescence_verified') is not False or
                   obj.get('computed_report_hash_verified') is not False or
                   obj.get('pack_content_hash_verified') is not False or
+                  obj.get('runtime_running_verified') is not False or
                   obj.get('observed_deploy_sha')!=os.environ['EXPECTED_DEPLOY_SHA']):
                   raise ValueError('INVALID_HOST_INVARIANT')
               for key in ('receipt_count','failed_receipt_count','folder_entries_checked'):
@@ -283,8 +286,8 @@ jobs:
           print('A667_FAILURE_CODE='+safe['failed_error_code'])
           print('A667_FAILURE_PHASE='+safe['failed_error_phase'])
           print('A667_CURRENT_RELATION='+safe['current_failed_relation'])
-              print('A667_CURRENT_CLASS='+safe['current_snapshot_class'])
-              print('A667_LIVE_STATUS='+safe['live_status_class'])
+          print('A667_CURRENT_CLASS='+safe['current_snapshot_class'])
+          print('A667_LIVE_STATUS='+safe['live_status_class'])
           print('A667_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
           PY
           rm -f evidence/.a667_private_raw.json
