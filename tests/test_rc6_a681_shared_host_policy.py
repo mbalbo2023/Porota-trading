@@ -159,13 +159,18 @@ def test_a690_failed_cleanup_must_never_emit_false_green(candidate_rc, stage_rc,
         input=script, capture_output=True, text=True, env=env)
     assert ('RC6_DEPLOY_V2=GREEN|' in out.stdout) is expected_ok
     assert ('RC6_FINAL_HOUSEKEEPING=GREEN|' in out.stdout) is expected_ok
+    # Cleanup-only HOLD must NOT make the promotion step fail, because
+    # promotion may already have restarted the candidate. The terminal
+    # release gate FAILS only after runtime postchecks and failure recovery
+    # branches have been evaluated.
+    assert out.returncode == 0
     if expected_ok:
-        assert out.returncode == 0
+        assert 'RC6_PROMOTION_OUTCOME=IMAGE_POSSIBLY_PROMOTED' not in out.stdout
     else:
-        assert out.returncode == 79
         assert 'RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|' in out.stdout
         assert 'RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|' in out.stdout
         assert 'RC6_SHARED_HOST_CLEANUP_DEFERRED_UNVERIFIED' in out.stdout
+        assert 'IMAGE_POSSIBLY_PROMOTED_CLEANUP_DEFERRED' in out.stdout
 
 
 @pytest.mark.parametrize('invalidate_id,expected_rc', [(False, 0), (True, 65)])
@@ -200,3 +205,72 @@ def test_a690_preclean_trap_checks_original_inode_before_any_deletion(invalidate
     else:
         assert 'RC6_DISK_PRECLEAN_REMOTE=GREEN' in result.stdout
         assert not directory.exists()
+
+
+def test_a690_deferred_cleanup_failure_gate_is_after_recovery_decision():
+    """A cleanup-only HOLD cannot enter recovery of an already restarted runtime."""
+    source = PROMOTE.read_text(encoding='utf-8')
+    steps = yaml.safe_load(source)['jobs']['promote']['steps']
+    index = {step['id']: i for i, step in enumerate(steps) if step.get('id')}
+    assert (index['promotion'] < index['flat_book']
+            < index['finalize_runtime'] < index['postfinal_unstaged']
+            < index['failure_cleanup'] < index['failure_orphan_cleanup']
+            < index['cleanup_deferred_gate'])
+    assert index['cleanup_deferred_gate'] < next(
+        i for i, step in enumerate(steps) if step.get('name') == 'Deployment summary')
+    promotion_run = next(step['run'] for step in steps if step.get('id') == 'promotion')
+    assert promotion_run.index('command -v awk') < promotion_run.index('ssh -i')
+    assert 'RC6_GITHUB_OUTPUT_MISSING' in promotion_run
+    assert ': >> "$GITHUB_OUTPUT"' in promotion_run
+    failure_if = next(step['if'] for step in steps if step.get('id') == 'failure_cleanup')
+    orphan_if = next(step['if'] for step in steps if step.get('id') == 'failure_orphan_cleanup')
+    gate = next(step for step in steps if step.get('id') == 'cleanup_deferred_gate')
+    assert "steps.promotion.outcome == 'failure'" in failure_if
+    assert 'cleanup_deferred_gate' not in failure_if + orphan_if
+    assert 'always()' in gate['if']
+    assert "steps.promotion.outcome == 'success'" in gate['if']
+    assert "steps.promotion.outputs.cleanup_status != 'GREEN'" in gate['if']
+    assert 'exit 79' in gate['run']
+    remote = source.split("<<'REMOTE' | awk", 1)[1].split('\n          REMOTE\n', 1)[0]
+    assert 'RC6_PROMOTION_OUTCOME=IMAGE_POSSIBLY_PROMOTED_CLEANUP_DEFERRED' in remote
+    assert 'RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|' in remote
+    assert 'exit 79' not in remote
+    assert 'RC6_DEPLOY_V2=GREEN|' in remote
+
+
+@pytest.mark.parametrize('receipt_lines,status', [
+    ('RC6_FINAL_HOUSEKEEPING=GREEN|free=100\n', 'GREEN'),
+    ('RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|candidate_rc=2\n', 'DEFERRED_UNVERIFIED'),
+    ('NO_MARKER\n', 'UNKNOWN'),
+    ('RC6_FINAL_HOUSEKEEPING=GREEN|free=100\nRC6_FINAL_HOUSEKEEPING=GREEN|free=101\n', 'UNKNOWN'),
+    ('RC6_FINAL_HOUSEKEEPING=GREEN|free=100\nRC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|candidate_rc=2\n', 'UNKNOWN'),
+])
+def test_a690_promotion_output_marker_classification_fails_closed(receipt_lines, status):
+    """No GitHub token/host; exercise the literal AWK classifier in isolation."""
+    source = PROMOTE.read_text(encoding='utf-8')
+    start_token = '<<\'REMOTE\' | awk -v status_file="$GITHUB_OUTPUT" \''
+    start = source.index(start_token) + len(start_token)
+    end = source.index("\n          '\n          set -Eeuo pipefail", start)
+    awk_source = '\n'.join(line[10:] if line.startswith('          ') else line
+                           for line in source[start:end].splitlines())
+    result = subprocess.run(
+        ['awk', '-v', 'status_file=/dev/stdout', awk_source],
+        input=receipt_lines, text=True, capture_output=True)
+    assert result.returncode == 0
+    assert 'cleanup_status=' + status in result.stdout
+    assert result.stdout.count('cleanup_status=') == 1
+    if status == 'UNKNOWN':
+        assert 'RC6_CLEANUP_STATUS_UNKNOWN' in result.stdout
+
+
+@pytest.mark.parametrize('status', ['DEFERRED_UNVERIFIED', 'UNKNOWN'])
+def test_a690_terminal_gate_marks_job_red_without_recovery(status):
+    """Execute ONLY the terminal release gate, which has no SSH/host commands."""
+    steps = yaml.safe_load(PROMOTE.read_text(encoding='utf-8'))['jobs']['promote']['steps']
+    gate = next(step for step in steps if step.get('id') == 'cleanup_deferred_gate')
+    run = gate['run'].replace('${{ steps.promotion.outputs.cleanup_status }}', status)
+    result = subprocess.run(['bash', '-eu', '-o', 'pipefail'],
+                            input=run, text=True, capture_output=True)
+    assert result.returncode == 79
+    assert 'RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|cleanup_status=' + status in result.stdout
+    assert 'NO scheduler recovery or rollback' in result.stdout or 'no scheduler recovery or rollback' in result.stdout
