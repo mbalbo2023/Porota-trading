@@ -1,0 +1,338 @@
+# A689: manual control-plane OFFHOST review only. NOT a release, Predeploy,
+# deploy, runtime/PPI readiness or a merge-base-equivalence certification.
+# This workflow must land on main before workflow_dispatch is available.
+name: RC6 OFFHOST scoped exact-head review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Open same-repository PR number (decimal, no leading zero)'
+        required: true
+        type: string
+      expected_head_sha:
+        description: 'Exact 40-character lowercase commit SHA of its current HEAD'
+        required: true
+        type: string
+      suite:
+        description: 'Fixed, synthetic-only test selection'
+        required: true
+        type: choice
+        options:
+          - ux_browser
+          - ppi_rest_wire
+          - pit_postcommit
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: rc6-offhost-scoped-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  exact-head:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      REQUESTED_PR: ${{ inputs.pr_number }}
+      REQUESTED_SHA: ${{ inputs.expected_head_sha }}
+      REQUESTED_SUITE: ${{ inputs.suite }}
+      OFFHOST_DATA: /tmp/rc6-offhost-${{ github.run_id }}-${{ github.run_attempt }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      GIT_TERMINAL_PROMPT: '0'
+
+    steps:
+      - name: Confirm immutable open PR head with read-only GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_PR" =~ ^[1-9][0-9]{0,5}$ ]] ||
+             [[ ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Expected exact decimal PR and lowercase SHA40.'
+            exit 41
+          fi
+          case "$REQUESTED_SUITE" in
+            ux_browser|ppi_rest_wire|pit_postcommit) ;;
+            *) echo '::error::Suite is not in the fixed allowlist.'; exit 42 ;;
+          esac
+          if [[ "$GITHUB_REF" != 'refs/heads/main' ||
+                "$GITHUB_REPOSITORY" != 'mbalbo2023/Porota-trading' ]]; then
+            echo '::error::Only the reviewed default-branch control plane may dispatch.'
+            exit 43
+          fi
+          pr_json="$(gh api -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/pulls/$REQUESTED_PR")"
+          if ! jq -e --arg sha "$REQUESTED_SHA" --arg repo "$GITHUB_REPOSITORY" \
+            '(.state == "open")
+             and (.head.sha == $sha)
+             and (.head.repo.full_name == $repo)
+             and (.base.repo.full_name == $repo)
+             and (.base.sha | test("^[0-9a-f]{40}$"))' \
+            <<< "$pr_json" >/dev/null; then
+            echo '::error::PR is closed, a fork, or its exact HEAD has changed.'
+            exit 44
+          fi
+          base_sha="$(jq -er '.base.sha' <<< "$pr_json")"
+          echo "REVIEW_BASE_SHA=$base_sha" >> "$GITHUB_ENV"
+          echo "PR=$REQUESTED_PR SHA=$REQUESTED_SHA SUITE=$REQUESTED_SUITE"
+          echo 'The unmerged PR head is tested; no implicit merge or deployment.'
+
+      - name: Checkout exact immutable PR HEAD (no persisted token)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: mbalbo2023/Porota-trading
+          ref: ${{ inputs.expected_head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Verify source identity, inventory, runner and offline controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse --verify HEAD^{commit})"
+          actual_tree="$(git rev-parse --verify HEAD^{tree})"
+          if [[ "$actual_sha" != "$REQUESTED_SHA" ||
+                ! "$actual_tree" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Checkout identity mismatch; no tests.'
+            exit 45
+          fi
+          case "$REQUESTED_SUITE" in
+            ux_browser)
+              git ls-files --error-unmatch -- tests/ci_trader_terminal_browser.py \
+                tests/test_ws_dash_trader_terminal_08.py >/dev/null ;;
+            ppi_rest_wire)
+              git ls-files --error-unmatch -- tests/test_rc6_a685_ppi_gateway_composition.py \
+                tests/test_rc6_a680_ppi_guard_wire_receipt.py >/dev/null ;;
+            pit_postcommit)
+              git ls-files --error-unmatch -- tests/test_rc6_a685_pit_postcommit_composition.py >/dev/null ;;
+          esac
+          python3 -I - <<'PY'
+          import sys
+          if sys.version_info[:2] != (3, 12):
+              raise SystemExit('Python 3.12 expected; fail closed on runner drift')
+          PY
+          for cmd in sudo unshare ip runuser python3 jq gh timeout; do
+            command -v "$cmd" >/dev/null || {
+              echo "::error::Offline prerequisite missing: $cmd"; exit 46;
+            }
+          done
+          echo "REVIEW_TREE_SHA=$actual_tree" >> "$GITHUB_ENV"
+          echo "Verified immutable source: $actual_sha tree=$actual_tree"
+
+      # Only reviewed, exact-version binary wheel DATA downloads with egress.
+      # Never install requirements.txt, run source setup.py, import repository
+      # modules, or execute tests while the runner can reach the internet.
+      - name: Acquire fixed binary dependencies and Chromium data before isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OFFHOST_DATA/wheels" "$OFFHOST_DATA/browsers"
+          # Critical: never let a candidate PR's sitecustomize/pip/venv shadow
+          # Python tooling while outbound network access still exists.
+          cd "$OFFHOST_DATA"
+          common=(
+            'pytest==9.1.1' 'pluggy==1.6.0' 'iniconfig==2.3.0'
+            'pygments==2.21.0' 'packaging==25.0'
+          )
+          case "$REQUESTED_SUITE" in
+            ppi_rest_wire)
+              extra=(
+                'requests==2.34.2' 'urllib3==2.8.0'
+                'certifi==2026.7.22' 'charset-normalizer==3.5.1'
+                'idna==3.20'
+              ) ;;
+            pit_postcommit)
+              extra=(
+                'cryptography==50.0.2' 'cffi==2.0.0'
+                'pycparser==2.23'
+              ) ;;
+            ux_browser)
+              extra=(
+                'fastapi==0.121.0' 'starlette==0.49.3'
+                'pydantic==2.12.4' 'pydantic-core==2.41.5'
+                'annotated-types==0.7.0' 'annotated-doc==0.0.4'
+                'typing-extensions==4.15.0' 'typing-inspection==0.4.2'
+                'anyio==4.11.0' 'sniffio==1.3.1'
+                'beautifulsoup4==4.14.2' 'soupsieve==2.8.1'
+                'httpx==0.28.1' 'httpcore==1.0.9' 'h11==0.16.0'
+                'idna==3.20' 'certifi==2026.7.22'
+                'playwright==1.56.0' 'pyee==13.0.0'
+                'greenlet==3.2.4'
+              ) ;;
+            *) exit 47 ;;
+          esac
+          printf '%s\n' "${common[@]}" "${extra[@]}" > "$OFFHOST_DATA/pins.txt"
+          python3 -I -m pip --isolated download --no-deps --only-binary=:all: \
+            --index-url https://pypi.org/simple \
+            --dest "$OFFHOST_DATA/wheels" "${common[@]}" "${extra[@]}"
+          if [[ "$REQUESTED_SUITE" == ux_browser ]]; then
+            # Only trusted pinned Playwright executes to download Chromium;
+            # source-tree code is not loaded until the offline namespace.
+            python3 -I -m venv "$OFFHOST_DATA/installer"
+            "$OFFHOST_DATA/installer/bin/python" -I -m pip install --no-index \
+              --no-deps --find-links="$OFFHOST_DATA/wheels" -r "$OFFHOST_DATA/pins.txt"
+            "$OFFHOST_DATA/installer/bin/python" -I -m pip check
+            sudo -n "$OFFHOST_DATA/installer/bin/python" -I -m playwright install-deps chromium
+            PLAYWRIGHT_BROWSERS_PATH="$OFFHOST_DATA/browsers" \
+              "$OFFHOST_DATA/installer/bin/python" -I -m playwright install chromium
+            chmod -R a+rX "$OFFHOST_DATA/browsers"
+          fi
+          sudo -n install -d -o nobody -g nogroup -m 0700 "$OFFHOST_DATA/work"
+
+      - name: Run allowlisted tests as nobody in a route-free network namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No Docker daemon, provider HTTP, GitHub credential, SSH or droplet.
+          # If unshare cannot create a network namespace, this FAILS CLOSED.
+          sudo -n unshare --net -- /bin/bash -s -- \
+            "$OFFHOST_DATA" "$GITHUB_WORKSPACE" "$REQUESTED_SUITE" <<'ISOLATED_ROOT'
+          set -euo pipefail
+          data="$1"
+          source_dir="$2"
+          suite="$3"
+          devices="$(find /sys/class/net -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)"
+          if [[ "$devices" != 'lo' ||
+                -n "$(ip -4 route show)" || -n "$(ip -6 route show)" ]]; then
+            echo '::error::Namespace has external interface/route; no tests.'
+            exit 48
+          fi
+          # Chromium's intercepted HTTP paths may require local loopback.
+          # Enabling ONLY lo inside this private namespace cannot reach a
+          # provider; no non-loopback interfaces or default routes are allowed.
+          ip link set lo up
+          if [[ -n "$(ip -4 route show default)" ||
+                -n "$(ip -6 route show default)" ]]; then
+            echo '::error::Unexpected external default route after loopback setup.'
+            exit 48
+          fi
+          echo 'Isolated namespace: loopback only, no external/default routes.'
+          cd "$source_dir"
+          exec runuser -u nobody -- env -i \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            HOME="$data/work" TMPDIR="$data/work" LANG=C.UTF-8 \
+            OFFHOST_DATA="$data" REQUESTED_SUITE="$suite" \
+            PLAYWRIGHT_BROWSERS_PATH="$data/browsers" \
+            PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            /bin/bash -s <<'ISOLATED_NOBODY'
+          set -euo pipefail
+          python3 -m venv "$OFFHOST_DATA/work/venv"
+          py="$OFFHOST_DATA/work/venv/bin/python"
+          "$py" -m pip install --no-index --no-deps \
+            --find-links="$OFFHOST_DATA/wheels" -r "$OFFHOST_DATA/pins.txt" \
+            > "$OFFHOST_DATA/work/install.log" 2>&1
+          "$py" -m pip check > "$OFFHOST_DATA/work/check.log" 2>&1 || {
+            echo '::error::Pinned offline wheel dependency graph failed pip check.'
+            exit 49
+          }
+          case "$REQUESTED_SUITE" in
+            ux_browser)
+              tests=(tests/test_ws_dash_trader_terminal_08.py) ;;
+            ppi_rest_wire)
+              tests=(tests/test_rc6_a685_ppi_gateway_composition.py
+                     tests/test_rc6_a680_ppi_guard_wire_receipt.py) ;;
+            pit_postcommit)
+              tests=(tests/test_rc6_a685_pit_postcommit_composition.py) ;;
+            *) exit 50 ;;
+          esac
+          if ! timeout 780 "$py" -m pytest -q -p no:cacheprovider \
+            --junitxml="$OFFHOST_DATA/work/junit.xml" "${tests[@]}" \
+            > "$OFFHOST_DATA/work/pytest-private.log" 2>&1; then
+            echo '::error::OFFHOST bounded pytest failed (private log not uploaded).'
+            exit 51
+          fi
+          if [[ "$REQUESTED_SUITE" == ux_browser ]]; then
+            mkdir -p "$OFFHOST_DATA/work/browser"
+            if ! timeout 300 "$py" tests/ci_trader_terminal_browser.py \
+              --output "$OFFHOST_DATA/work/browser" \
+              > "$OFFHOST_DATA/work/chromium-private.log" 2>&1; then
+              echo '::error::OFFHOST Chromium synthetic gate failed.'
+              exit 52
+            fi
+            "$py" - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+          path = Path(os.environ["OFFHOST_DATA"]) / "work/browser/browser-gate.json"
+          result = json.loads(path.read_text())
+          if result.get("status") != "GREEN" or result.get("findings"):
+              raise SystemExit("Chromium gate reported findings")
+          PY
+          fi
+          echo 'OFFHOST bounded synthetic suite completed. Not runtime readiness.'
+          ISOLATED_NOBODY
+          ISOLATED_ROOT
+
+      # Only counters, immutable IDs and job outcome leave the runner. Never
+      # upload pytest logs, browser screenshots, HTML, payloads, credentials,
+      # provider responses or local synthetic SQLite databases.
+      - name: Emit minimal redacted receipt
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        shell: bash
+        run: |
+          cd "$OFFHOST_DATA"
+          python3 -I - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          data = Path(os.environ["OFFHOST_DATA"])
+          sha = os.getenv("REQUESTED_SHA", "")
+          suite = os.getenv("REQUESTED_SUITE", "")
+          tree = os.getenv("REVIEW_TREE_SHA", "")
+          base = os.getenv("REVIEW_BASE_SHA", "")
+          safe_sha = lambda v: v if re.fullmatch("[0-9a-f]{40}", v) else "NO_VERIFICADO"
+          safe_suite = suite if suite in {"ux_browser", "ppi_rest_wire", "pit_postcommit"} else "INVALID"
+          receipt = {
+              "schema": "rc6.offhost.scoped-exact-head.v1",
+              "pr": os.getenv("REQUESTED_PR", "") if re.fullmatch(r"[1-9][0-9]{0,5}", os.getenv("REQUESTED_PR", "")) else "INVALID",
+              "head_sha": safe_sha(sha),
+              "head_tree": safe_sha(tree),
+              "review_base_sha": safe_sha(base),
+              "suite": safe_suite,
+              "job_outcome": os.getenv("OUTCOME", "NO_VERIFICADO"),
+              "scope": "UNMERGED_HEAD_SYNTHETIC_ONLY",
+              "provider_gets": "NOT_EXERCISED",
+              "runtime_readiness": "NO_VERIFICADO",
+          }
+          junit = data / "work/junit.xml"
+          if junit.is_file():
+              try:
+                  root = ET.parse(junit).getroot()
+                  suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+                  receipt["pytest_counts"] = {
+                      field: sum(int(s.get(field, 0)) for s in suites)
+                      for field in ("tests", "failures", "errors", "skipped")
+                  }
+              except (ValueError, ET.ParseError, OSError):
+                  receipt["pytest_counts"] = "NO_VERIFICADO"
+          target = Path(os.environ["GITHUB_WORKSPACE"]) / "rc6-offhost-redacted-receipt.json"
+          target.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### RC6 exact-head OFFHOST review\n")
+              summary.write(f"- PR: {receipt['pr']} — suite: {safe_suite}\n")
+              summary.write(f"- Head: \`{receipt['head_sha']}\`; tree: \`{receipt['head_tree']}\`\n")
+              summary.write(f"- Outcome: **{receipt['job_outcome']}**; only synthetic unmerged head tested.\n")
+              summary.write("- No merge-base equivalence, broker, Predeploy, Deploy or runtime certification.\n")
+          PY
+
+      - name: Upload only the sanitized synthetic receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rc6-offhost-scoped-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rc6-offhost-redacted-receipt.json
+          if-no-files-found: error
+          retention-days: 7
