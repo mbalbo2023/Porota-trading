@@ -28,6 +28,8 @@ on:
       - '.github/workflows/rc6-a669-ppi-current-book-20261105.yml'
       - 'scripts/rc6_a669_ppi_day_slot_guard.py'
       - 'tests/test_rc6_a669_ppi_day_slot_guard.py'
+      - 'scripts/rc6_a708_budget_sidecar_mount_preflight.py'
+      - 'tests/test_rc6_a708_budget_sidecar_mount_preflight.py'
 
 permissions:
   contents: read
@@ -53,7 +55,10 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_a669_ppi_day_slot_guard.py \
             scripts/rc6_a630_host_ppi_current_book.py \
+            scripts/rc6_a708_budget_sidecar_mount_preflight.py \
+            tests/test_rc6_a708_budget_sidecar_mount_preflight.py \
             tests/test_rc6_a669_ppi_day_slot_guard.py
+          python3 -m unittest discover -s tests -p test_rc6_a708_budget_sidecar_mount_preflight.py -v
           python3 -m unittest discover -s tests -p test_rc6_a669_ppi_day_slot_guard.py -v
           python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v
           python3 -B - <<'PY'
@@ -180,6 +185,55 @@ jobs:
           print('A669_HOST_RO_IDENTITY=UNIQUE_REQUEST|NATIVE_5KEY_ATTESTED=NO|GETS=0')
           PY
 
+      - name: A708 existing budget bind identity preflight (metadata-only, zero GET)
+        # Read-only lstat on both sides of the already-existing data bind.
+        # Absence or inode mismatch HOLDs BEFORE the PPI capture job. Presence
+        # is not a lease, quota, EXIT reserve, PIT, or readiness certificate.
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          host_raw="$RUNNER_TEMP/rc6-a708-budget-host.private"
+          container_raw="$RUNNER_TEMP/rc6-a708-budget-container.private"
+          # Mount operations exist only in the private unshare namespace;
+          # NEVER remount the actual host data, create a ledger, or open WAL.
+          remote="sudo -n timeout 20 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - observe-host'"
+          set +e
+          timeout 40 ssh -i "$HOME/.ssh/rc6_a669_readonly" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=9 \
+            "$DO_USER@$DO_HOST" "$remote" \
+            < scripts/rc6_a708_budget_sidecar_mount_preflight.py \
+            > "$host_raw" 2>/dev/null
+          host_rc=$?
+          container_rc=2
+          if test "$host_rc" -eq 0; then
+            # Recheck exact running image before inspecting process namespace.
+            # Do not override PAPER_V17_DB_PATH: observe container's real env.
+            timeout 40 ssh -i "$HOME/.ssh/rc6_a669_readonly" \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=9 \
+              "$DO_USER@$DO_HOST" \
+              "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; sudo -n timeout 20 docker exec -i -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B - observe-container" \
+              < scripts/rc6_a708_budget_sidecar_mount_preflight.py \
+              > "$container_raw" 2>/dev/null
+            container_rc=$?
+          fi
+          python3 -B scripts/rc6_a708_budget_sidecar_mount_preflight.py \
+            compare "$host_raw" "$container_raw" \
+            > evidence/a708_budget_sidecar_preflight.json
+          compare_rc=$?
+          set -e
+          if test "$host_rc" -ne 0 || test "$container_rc" -ne 0 || test "$compare_rc" -ne 0; then
+            echo 'A708_BUDGET_BIND=HOLD|BEFORE_PROVIDER|GETS=0|LEDGER_NOT_OPENED'
+            exit 2
+          fi
+          echo 'A708_BUDGET_BIND=PATH_MATCHED_NOT_READY|GETS=0|LEASE=0'
+
       - name: At most one Current then one Book via existing signed shared PPI budget
         shell: bash
         env:
@@ -245,6 +299,16 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p evidence
+          if ! test -s evidence/a708_budget_sidecar_preflight.json; then
+            python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.rc6_a708_budget_sidecar_mount_preflight import public
+          Path('evidence/a708_budget_sidecar_preflight.json').write_text(
+              json.dumps(public('PPI_BUDGET_SIDECAR_PREFLIGHT_UNAVAILABLE'),
+                         sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          fi
           if ! test -s evidence/a669_ppi_current_book.json; then
             python3 - <<'PY'
           import json,os
@@ -279,6 +343,7 @@ jobs:
           path: |
             evidence/a669_ppi_current_book.json
             evidence/a669_host_preflight.json
+            evidence/a708_budget_sidecar_preflight.json
           if-no-files-found: error
           retention-days: 90
 
@@ -289,4 +354,6 @@ jobs:
           set -Eeuo pipefail
           rm -f "$HOME/.ssh/rc6_a669_readonly" \
             "$RUNNER_TEMP/rc6-a669-host.private" \
+            "$RUNNER_TEMP/rc6-a708-budget-host.private" \
+            "$RUNNER_TEMP/rc6-a708-budget-container.private" \
             "$RUNNER_TEMP/rc6-a669-capture.private"
