@@ -99,25 +99,27 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertNotIn("secret-ticker-account", json.dumps(record))
 
     def write_failure_with_current(self, *, code="SHADOW_EVIDENCE_CAPACITY_REACHED",
-                                   phase="REPORT_WRITE", current_ident=IDENT):
-        pack = self.cold / (IDENT + ".pack")
+                                   phase="REPORT_WRITE", current_ident=None, ident=IDENT):
+        if current_ident is None:
+            current_ident = ident
+        pack = self.cold / (ident + ".pack")
         pack.write_bytes(b"safe-synthetic-original-commit")
         pack.chmod(0o600)
         info = pack.stat()
         manifest = {"epoch": "rc6.audit-actual-values.v1",
-                    "snapshot_id": IDENT, "pack": pack.name,
+                    "snapshot_id": ident, "pack": pack.name,
                     "pack_bytes": info.st_size,
                     "pack_identity": [info.st_dev, info.st_ino, info.st_size,
                                       info.st_mtime_ns, info.st_ctime_ns]}
         sha = hashlib.sha256(json.dumps(manifest, sort_keys=True,
             separators=(",", ":"), allow_nan=False).encode()).hexdigest()
-        self.write_private("manifest-" + IDENT + ".json", manifest)
-        self.write_private("receipt-" + IDENT + ".json", {
-            "state": "FAILED", "snapshot_id": IDENT, "manifest_sha256": sha,
+        self.write_private("manifest-" + ident + ".json", manifest)
+        self.write_private("receipt-" + ident + ".json", {
+            "state": "FAILED", "snapshot_id": ident, "manifest_sha256": sha,
             "error_class": "ValueError", "error_code": code, "error_phase": phase,
             "sensitive_login": "PRIVATE-ACCOUNT-TICKER"})
         self.write_private("queue.json", {
-            "state": "FAILED", "snapshot_id": IDENT, "manifest_sha256": sha})
+            "state": "FAILED", "snapshot_id": ident, "manifest_sha256": sha})
         generation = "c" * 64
         pointer = {"generation_id": generation,
                    "file": "cut-" + generation + ".json.gz"}
@@ -341,6 +343,145 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertIn("HOST_RESPONSE_INVALID_OR_UNAVAILABLE", content)
         self.assertNotIn("print(obj)", content)
         self.assertNotIn("print(raw)", content)
+
+    def test_v2_later_successor_is_not_mistaken_for_first_cold2(self):
+        self.write_failure_with_current(ident=probe.KNOWN_SUCCESSOR_ID)
+        record = self.read()
+        self.assertEqual(record["current_snapshot_class"], "KNOWN_SUCCESSOR")
+        self.assertEqual(record["current_generation_class"], "OTHER")
+        self.assertFalse(record["known_successor_manifest_exact"])
+        self.assertEqual(record["original_old_cut_presence"], "ABSENT")
+        self.assertNotIn(probe.KNOWN_SUCCESSOR_ID, json.dumps(record))
+
+    def test_v2_first_failed_cold2_is_distinct_historical_generation(self):
+        self.write_failure_with_current(ident=probe.HISTORICAL_COLD2_ID)
+        record = self.read()
+        self.assertEqual(record["current_snapshot_class"], "HISTORICAL_COLD2")
+        self.assertIsNone(record["known_successor_manifest_exact"])
+        self.assertNotIn(probe.HISTORICAL_COLD2_ID, json.dumps(record))
+
+    def test_v2_original_failed_id_is_not_a_later_successor(self):
+        self.write_failure_with_current(ident=probe.ORIGINAL_ID)
+        record = self.read()
+        self.assertEqual(record["current_snapshot_class"], "ORIGINAL_FAILED")
+        self.assertNotIn(probe.ORIGINAL_ID, json.dumps(record))
+
+    def test_v2_original_cut_dangling_alias_cannot_masquerade_as_absent(self):
+        self.write_failure_with_current(ident=probe.KNOWN_SUCCESSOR_ID)
+        (self.cold.parent / ("cut-" + probe.ORIGINAL_CUT + ".json.gz")).symlink_to(
+            self.data / "nonexistent-private")
+        record = self.read()
+        self.assertEqual(record["original_old_cut_presence"], "UNSAFE_FILE")
+        self.assertFalse(record["causal_fix_verified"])
+
+    def test_v2_live_status_differentiates_386_without_proving_stop(self):
+        self.write_failure_with_current(ident=probe.KNOWN_SUCCESSOR_ID)
+        status = {"status": "FAIL_CLOSED", "real_orders_sent": 0,
+                  "real_routes": "NOT_CALLED", "error_class": "ValueError",
+                  "error_module": "cold_audit", "error_line": 386,
+                  "secret_account": "CANNOT_EXPORT_PRIVATE_SECRET"}
+        canonical = json.dumps(status,sort_keys=True,separators=(",", ":")).encode()
+        wrapper = {"payload": status,
+                   "digest": hashlib.sha256(canonical).hexdigest()}
+        path = self.cold.parent / "status.json"
+        path.write_text(json.dumps(wrapper))
+        path.chmod(0o600)
+        record = self.read()
+        self.assertEqual(record["live_status_class"], "FAIL_CLOSED")
+        self.assertEqual(record["live_cancel_site_class"],
+                         "SEAL_386_NOT_WHITELISTED")
+        self.assertTrue(record["live_paper_zero_routes_blocked"])
+        self.assertFalse(record["quiescence_verified"])
+        self.assertNotIn("CANNOT_EXPORT_PRIVATE_SECRET", json.dumps(record))
+        status["real_routes"] = "CALLED"
+        canonical = json.dumps(status,sort_keys=True,separators=(",", ":")).encode()
+        wrapper = {"payload": status,
+                   "digest": hashlib.sha256(canonical).hexdigest()}
+        path.write_text(json.dumps(wrapper))
+        self.assertFalse(self.read()["live_paper_zero_routes_blocked"])
+
+    def _synthetic_archive(self, *, historical):
+        ident = probe.HISTORICAL_COLD2_ID if historical else probe.ORIGINAL_ID
+        archive = self.data / "deploy" / ("rc6-failed-cold-" + ident)
+        archive.mkdir(mode=0o700)
+        pack = archive / (ident + ".pack")
+        pack.write_bytes(b"synthetic sealed pack only")
+        pack.chmod(0o600)
+        info = pack.stat()
+        manifest = {"snapshot_id": ident, "pack": pack.name,
+                    "pack_bytes": info.st_size,
+                    "pack_identity": [info.st_dev,info.st_ino,info.st_size,
+                                      info.st_mtime_ns,info.st_ctime_ns]}
+        manifest_sha = hashlib.sha256(json.dumps(manifest,
+            sort_keys=True,separators=(",", ":")).encode()).hexdigest()
+        for name, payload in (
+            ("manifest-"+ident+".json", manifest),
+            ("receipt-"+ident+".json", {"snapshot_id":ident,"state":"FAILED",
+                                            "manifest_sha256":manifest_sha}),
+            ("queue.json", {"snapshot_id":ident,"state":"FAILED",
+                            "manifest_sha256":manifest_sha})):
+            path = archive / name
+            path.write_text(envelope(payload))
+            path.chmod(0o600)
+        if historical:
+            quarantine = {"state":"QUARANTINED_FAILED","snapshot_id":ident,
+                          "manifest_sha256":manifest_sha,"old_cut_revoked":True,
+                          "revoked_cut":probe.HISTORICAL_COLD2_CUT}
+            canonical = json.dumps(quarantine,sort_keys=True,
+                                   separators=(",", ":")).encode()
+            path = archive / "quarantine.json"
+            path.write_text(json.dumps({"payload":quarantine,
+                "digest":hashlib.sha256(canonical).hexdigest()}))
+            path.chmod(0o600)
+        return archive,manifest_sha
+
+    def test_v2_original_archive_small_receipts_metadata_without_pack_hash(self):
+        archive,manifest_sha = self._synthetic_archive(historical=False)
+        with patch.object(probe,"ORIGINAL_MANIFEST",manifest_sha):
+            record = self.read()
+        self.assertEqual(record["original_archive_class"],
+                         "METADATA_BOUND_PACK_NOT_HASHED")
+        self.assertFalse(record["pack_content_hash_verified"])
+        self.assertNotIn(str(archive),json.dumps(record))
+
+    def test_v2_historical_archive_distinct_and_missing_quarantine_fails_closed(self):
+        archive,manifest_sha = self._synthetic_archive(historical=True)
+        with patch.object(probe,"HISTORICAL_COLD2_MANIFEST",manifest_sha):
+            record = self.read()
+            self.assertEqual(record["historical_cold2_archive_class"],
+                             "METADATA_BOUND_PACK_NOT_HASHED")
+            (archive / "quarantine.json").unlink()
+            record = self.read()
+        self.assertEqual(record["historical_cold2_archive_class"],
+                         "INCOMPLETE_OR_EXTRA")
+
+    def test_v2_archive_proof_never_reads_pack_contents(self):
+        _,manifest_sha = self._synthetic_archive(historical=False)
+        actual_open,actual_read = os.open,os.read
+        pack_fds = set()
+        def tracked_open(path,flags,*args,**kwargs):
+            fd = actual_open(path,flags,*args,**kwargs)
+            if str(path).endswith(".pack"):
+                pack_fds.add(fd)
+            return fd
+        def tracked_read(fd,count):
+            self.assertNotIn(fd,pack_fds)
+            return actual_read(fd,count)
+        with patch.object(probe,"ORIGINAL_MANIFEST",manifest_sha), \
+             patch.object(probe.os,"open",side_effect=tracked_open), \
+             patch.object(probe.os,"read",side_effect=tracked_read):
+            record = self.read()
+        self.assertEqual(record["original_archive_class"],
+                         "METADATA_BOUND_PACK_NOT_HASHED")
+
+    def test_v2_workflow_schema_sanitizes_only_fixed_categories(self):
+        content = WORKFLOW.read_text()
+        self.assertIn("rc6.a667.cold-failure-cause-readonly.v2",content)
+        self.assertIn("CURRENT_CATEGORY_WITHOUT_FAILED_BINDING",content)
+        self.assertIn("SUCCESSOR_METADATA_WITHOUT_IDENTITY",content)
+        self.assertIn("LIVE_STATUS_UNBOUND",content)
+        self.assertIn("raw.stat().st_size>4096",content)
+        self.assertNotIn("pack_content_hash_verified':True",content)
 
 
 if __name__ == "__main__":
