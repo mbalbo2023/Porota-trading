@@ -25,8 +25,14 @@ class TestA689OffhostScopedControlPlane(unittest.TestCase):
         self.assertRegex(text, r"(?m)^permissions:\n  contents: read\n  pull-requests: read\n")
         self.assertNotIn("id-token: write", text)
         self.assertNotIn("secrets.", text)
-        self.assertIn("github.ref == 'refs/heads/main'", text)
-        self.assertIn("github.repository == 'mbalbo2023/Porota-trading'", text)
+        # A wrong dispatch ref must FAIL a real step, never SKIP a job that
+        # GitHub could report as an overall successful empty workflow.
+        self.assertNotRegex(text, r"(?m)^\s+if:\s*github\.repository\s*==")
+        self.assertIn("GITHUB_REF", text)
+        self.assertIn("'refs/heads/main'", text)
+        self.assertIn("GITHUB_REPOSITORY", text)
+        self.assertIn("'mbalbo2023/Porota-trading'", text)
+        self.assertIn("exit 43", text)
         self.assertNotIn("rc6-unified-paper-deploy", text)
 
     def test_exact_same_repo_head_not_unverified_merge(self):
