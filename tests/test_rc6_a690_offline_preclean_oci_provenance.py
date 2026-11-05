@@ -50,6 +50,17 @@ class TestA690OfflineOCIProvenance(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'OCI_OWNERSHIP_UNVERIFIED'):
                     _require_candidate_oci(sample(valid), invalid)
 
+    def test_malformed_alias_or_digest_inventory_rejected(self):
+        valid = {'porota.predeploy': 'v2', 'porota.commit': COMMIT}
+        for patch in ({'RepoTags': 'porota-predeploy-v2:' + COMMIT},
+                      {'RepoTags': []}, {'RepoDigests': ''},
+                      {'RepoDigests': False},
+                      {'RepoDigests': ['boca:unknown', True]}):
+            with self.subTest(patch=patch):
+                doc = {**sample(valid), **patch}
+                with self.assertRaisesRegex(ValueError, 'OCI_OWNERSHIP_UNVERIFIED'):
+                    _require_candidate_oci(doc, COMMIT)
+
     def test_malformed_docker_inventory_rejected(self):
         for doc in (None, [], 'fake', {'Config': None},
                     {'Config': ['foreign']},
