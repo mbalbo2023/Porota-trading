@@ -60,6 +60,23 @@ def image(id_or_tag):
         raise ValueError('OFFLINE_CURRENT_IMAGE_SHAPE')
     return rows[0]
 
+def _require_candidate_oci(record, commit_sha):
+    """Deny mutation unless this exact *image* carries immutable Porota OCI proof.
+
+    Repository names and candidate tags alone are untrusted on a shared Docker
+    host.  The owner labels must agree with the SHA encoded in every candidate
+    alias; unlabeled legacy images remain untouched until provenance is proven.
+    """
+    config = record.get('Config') if type(record) is dict else None
+    labels = config.get('Labels') if type(config) is dict else None
+    if (type(commit_sha) is not str or re.fullmatch('[0-9a-f]{40}', commit_sha) is None
+            or type(labels) is not dict or
+            any(type(key) is not str or type(value) is not str
+                for key, value in labels.items()) or
+            labels.get('porota.predeploy') != 'v2' or
+            labels.get('porota.commit') != commit_sha):
+        raise ValueError('OFFLINE_CURRENT_OCI_OWNERSHIP_UNVERIFIED')
+
 
 def ppi_units():
     lines=command('systemctl','list-unit-files','--no-legend').splitlines()
@@ -264,6 +281,10 @@ def cleanup(required_free_bytes=None):
                 stale_id in references() or current not in references() or
                 image(current)['Id']!=current):
             raise ValueError('OFFLINE_CURRENT_STALE_NOT_EXCLUSIVE')
+        # Stale STABLE is being overwritten and its candidate tags removed.
+        # Verify OCI ownership *before* the first docker tag mutation.
+        stale_sha=next(iter(stale_shas))
+        _require_candidate_oci(stale, stale_sha)
         free_before=shutil.disk_usage('/').free
         if admission()!=before or stale_id in references():
             raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
@@ -274,9 +295,16 @@ def cleanup(required_free_bytes=None):
             raise ValueError('OFFLINE_CURRENT_TAG_NOT_RECONCILED')
         removed=[]
         for tag in candidate_tags:
+            # Recheck the actual tag target, not only whether the old image
+            # still advertises that spelling. A retargeted foreign tag is HOLD.
+            latest_stale=image(stale_id)
+            tag_target=image(tag)
             if (admission()!=before or stale_id in references() or
-                    tag not in (image(stale_id).get('RepoTags') or [])):
+                    tag not in (latest_stale.get('RepoTags') or []) or
+                    tag_target['Id']!=stale_id):
                 raise ValueError('OFFLINE_CURRENT_IMAGE_OWNERSHIP_CHANGED')
+            _require_candidate_oci(latest_stale, stale_sha)
+            _require_candidate_oci(tag_target, stale_sha)
             docker('image','rm',tag)
             removed.append(tag)
         if admission()!=before or image(STABLE)['Id']!=current:
@@ -291,8 +319,13 @@ def cleanup(required_free_bytes=None):
             if (old['Id'] in {current,stale_id} or old['Id'] in references() or
                     old.get('RepoTags') != [tag] or old.get('RepoDigests')):
                 raise ValueError('OFFLINE_CURRENT_HISTORICAL_IMAGE_UNSAFE')
+            _require_candidate_oci(old, tag.rsplit(':', 1)[1])
             if admission()!=before or image(STABLE)['Id']!=current:
                 raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
+            latest_old=image(tag)
+            if latest_old['Id']!=old['Id']:
+                raise ValueError('OFFLINE_CURRENT_HISTORICAL_TAG_RETARGETED')
+            _require_candidate_oci(latest_old, tag.rsplit(':', 1)[1])
             docker('image','rm',tag)
             removed.append(tag)
             if admission()!=before or image(STABLE)['Id']!=current:
