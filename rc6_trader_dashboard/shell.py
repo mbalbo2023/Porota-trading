@@ -6,6 +6,33 @@ from .projection import UNKNOWN
 from urllib.parse import urlencode
 
 
+def _real_order_receipt(state):
+    """Never turn a persisted zero into a current safety assertion without liveness."""
+    value = state.get("real_orders_sent")
+    if type(value) is not int or value < 0:
+        # SQLite can expose malformed or unavailable facts. False and "0"
+        # must not silently pass as a verified integer counter.
+        return ("real_orders_sent=NO_VERIFICADO · estado actual NO_VERIFICADO",
+                "Alerta de integridad: contador de órdenes reales no verificable." if value is not None else "")
+    if value > 0:
+        return (f"real_orders_sent={value} · ALERTA: valor registrado",
+                "Alerta de seguridad: contador de órdenes reales distinto de cero.")
+    heartbeat_age = state.get("heartbeat_age")
+    heartbeat_budget = state.get("heartbeat_budget_seconds")
+    observer_fresh = (
+        state.get("heartbeat_freshness") == "FRESH"
+        and bool(state.get("heartbeat_at"))
+        and type(heartbeat_age) in (int, float)
+        and type(heartbeat_budget) in (int, float)
+        and 0 <= heartbeat_age <= heartbeat_budget
+    )
+    if observer_fresh:
+        return (f"real_orders_sent=0 · órdenes reales: NINGUNA observada"
+                f" (heartbeat {clock(state.get('heartbeat_at'))})", "")
+    return (f"real_orders_sent=0 (último valor almacenado) · observación histórica"
+            f" ({clock(state.get('heartbeat_at'))}) · estado actual NO_VERIFICADO", "")
+
+
 def render(destination, tab, projection, content):
     state = projection.runtime
     policy = projection.shadow["report"].get("capacity_policy", {})
@@ -23,19 +50,22 @@ def render(destination, tab, projection, content):
     links = "".join(f"<a href='{item.path}' {current(item.key == destination.key)}><span class='nav-icon' aria-hidden='true'>{item.icon}</span>{item.label}</a>" for item in DESTINATIONS)
     retained = urlencode({k: v for k, v in projection.filters.items() if v and k != "offset"})
     tabs = "".join(f"<a href='{view_path(destination, key)}{e('?' + retained) if retained else ''}' {current(key == tab)}>{label}</a>" for key, label in destination.tabs)
+    real_order_status, real_order_alert = _real_order_receipt(state)
     values = (
         ("Modo runtime", state.get("mode", UNKNOWN)), ("Sesión", state.get("session_state", UNKNOWN)),
         ("Selector / capacidad", selector), ("PPI · autoridad primaria", state.get("ppi_auth", UNKNOWN)),
-        ("Órdenes reales observadas", "real_orders_sent=" + str(state.get("real_orders_sent", UNKNOWN)) +
-         (" · órdenes reales: NINGUNA" if state.get("real_orders_sent") == 0 else "")),
+        ("Órdenes reales observadas", real_order_status),
         ("Heartbeat", f"{clock(state.get('heartbeat_at'))} · age {number(state.get('heartbeat_age'), 1)} s · {state['heartbeat_freshness']}"),
         ("Último dato de mercado", f"{clock(state.get('last_market_data_at'))} · age {number(state.get('market_age'), 1)} s · {state['market_freshness']}"),
         ("Reloj operativo", clock(projection.now.isoformat())),
     )
-    strip = "".join(f"<div class='strip-item'><b>{e(label)}</b><span>{e(value)}</span></div>" for label, value in values)
-    warning = ""
-    if state.get("real_orders_sent") not in (None, 0):
-        warning = "<div class='notice critical' role='alert'>Alerta de seguridad: contador de órdenes reales distinto de cero.</div>"
+    strip = "".join(
+        f"<div class='strip-item'{' role=\'status\' aria-live=\'polite\'' if label == 'Órdenes reales observadas' else ''}>"
+        f"<b>{e(label)}</b><span>{e(value)}</span></div>"
+        for label, value in values
+    )
+    warning = (f"<div class='notice critical' role='alert'>{e(real_order_alert)}</div>"
+               if real_order_alert else "")
     title = dict(destination.tabs)[tab]
     mode_label = "MODO SIMULACIÓN PRODUCTIVA" if state.get("mode") == "PRODUCTION_PAPER" else "Modo runtime: " + str(state.get("mode") or UNKNOWN)
     return ("<!doctype html><html lang='es-AR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
