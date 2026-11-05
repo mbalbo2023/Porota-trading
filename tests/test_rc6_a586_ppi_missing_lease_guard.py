@@ -39,8 +39,17 @@ def sign_synthetic_authority(payload, signer):
             "signature_b64": base64.b64encode(signer.sign(raw)).decode()}
 
 
+def sign_synthetic_external_owner(payload, signer):
+    """Independent CI-only owner attestation, NOT an actual Watch hard cap."""
+    signed = sign_synthetic_authority(payload, signer)
+    signed["owner_signer_public_key_b64"] = signed.pop("signer_public_key_b64")
+    signed["owner_signature_b64"] = signed.pop("signature_b64")
+    return signed
+
+
 def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
-                          shared_book=2, watch_book=1, release_match=True):
+                          shared_book=2, watch_book=1, release_match=True,
+                          return_external_owner=False):
     """Synthetic approval for fake-wire only; no real provider quota claim."""
     # Predeploy passes a 40-hex Git commit in POROTA_BUILD_SHA, never 64-hex SHA256.
     release = "c" * 40
@@ -50,22 +59,39 @@ def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
     # A667: the fixture mimics independent, bounded provider/Watch material;
     # these are invented COUNTS FOR TESTS ONLY, never production PPI quotas.
     account_scope = "e" * 64  # opaque synthetic quota-scope pseudonym
+    window = 15 if opened else 30
+    # The external owner is *not* the quota reviewer; both keys are ephemeral
+    # and are deliberately unrelated to PPI or a real Watch installation.
+    external_owner = Ed25519PrivateKey.generate()
+    external_public = external_owner.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    monkeypatch.setattr(budget_module,
+        "PINNED_EXTERNAL_PPI_CONSUMPTION_OWNER_KEY_SHA256",
+        hashlib.sha256(external_public).hexdigest())
     material = {
         "a586-provider-synthetic.json": {
             "schema": budget_module.STATIC_PROVIDER_EVIDENCE_SCHEMA,
             "quota_scope_sha256": account_scope,
             "reviewed_at": clock.now().isoformat(),
-            "window_seconds": 15 if opened else 30,
+            "window_seconds": window,
             "endpoint_limits": provider, "global_limit": sum(provider.values()),
         },
-        "a586-watch-synthetic.json": {
+        "a586-watch-synthetic.json": sign_synthetic_external_owner({
             "schema": budget_module.STATIC_WATCH_EVIDENCE_SCHEMA,
             "quota_scope_sha256": account_scope,
             "reviewed_at": clock.now().isoformat(),
-            "window_seconds": 15 if opened else 30,
+            "window_seconds": window,
             "endpoint_reserve": watch, "global_reserve": sum(watch.values()),
             "retries_included": True,
-        },
+            "window_basis": budget_module.STATIC_WATCH_WINDOW_BASIS,
+            "external_callers_covered": budget_module.STATIC_WATCH_COVERAGE,
+            "max_endpoint_wire_attempts": dict(watch),
+            "max_global_wire_attempts": sum(watch.values()),
+            "hard_cap_kind": budget_module.STATIC_WATCH_HARD_CAP_KIND,
+            "guarantee_valid_from": (clock.now() - timedelta(seconds=window)).isoformat(),
+            "guarantee_valid_until": (
+                clock.now() + timedelta(hours=1, seconds=window)).isoformat(),
+        }, external_owner),
     }
     material_digests = {}
     for name, item in material.items():
@@ -102,8 +128,11 @@ def static_authority_file(tmp_path, monkeypatch, clock, *, opened=False,
         serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     monkeypatch.setattr(budget_module, "PINNED_STATIC_SHARED_SIGNER_KEY_SHA256",
         hashlib.sha256(public).hexdigest())
-    return ({budget_module.STATIC_SHARED_AUTHORITY_ENV: str(path),
-        "POROTA_BUILD_SHA": release if release_match else "d" * 40}, signer)
+    environ = {budget_module.STATIC_SHARED_AUTHORITY_ENV: str(path),
+        "POROTA_BUILD_SHA": release if release_match else "d" * 40}
+    if return_external_owner:
+        return environ, signer, external_owner
+    return environ, signer
 
 
 @pytest.mark.parametrize("priority", ["DISCOVERY", "EXIT_CRITICAL"])
