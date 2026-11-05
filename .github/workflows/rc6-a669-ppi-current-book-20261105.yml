@@ -30,6 +30,9 @@ on:
       - 'tests/test_rc6_a669_ppi_day_slot_guard.py'
       - 'scripts/rc6_a685_slot_claim.py'
       - 'tests/test_rc6_a685_slot_claim.py'
+      - 'scripts/rc6_a689_slot_cas.py'
+      - 'tests/test_rc6_a689_slot_cas.py'
+      - 'scripts/rc6_a630_host_ppi_current_book.py'
 
 permissions:
   contents: read
@@ -55,12 +58,23 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_a669_ppi_day_slot_guard.py \
             scripts/rc6_a685_slot_claim.py \
+            scripts/rc6_a689_slot_cas.py \
             scripts/rc6_a630_host_ppi_current_book.py \
             tests/test_rc6_a669_ppi_day_slot_guard.py \
-            tests/test_rc6_a685_slot_claim.py
+            tests/test_rc6_a685_slot_claim.py \
+            tests/test_rc6_a689_slot_cas.py
           python3 -m unittest discover -s tests -p test_rc6_a669_ppi_day_slot_guard.py -v
           python3 -m unittest discover -s tests -p test_rc6_a685_slot_claim.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a689_slot_cas.py -v
           python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v
+          python3 -B - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import A689_HELPER_SHA256
+          raw=Path('scripts/rc6_a689_slot_cas.py').read_bytes()
+          assert sha256(raw).hexdigest()==A689_HELPER_SHA256,'A689_PINNED_HELPER_MISMATCH'
+          print('A689_HELPER_SOURCE_SHA256_PIN=PASS')
+          PY
           python3 -B - <<'PY'
           from datetime import datetime,timezone
           from scripts.rc6_a669_ppi_day_slot_guard import (
@@ -214,12 +228,33 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
+          # Bytes are attested against the GitHub-controlled A630 literal pin;
+          # loaded IN MEMORY in container, so no product-image module or host
+          # copy can be silently substituted between checkout and PPI GET.
+          RC6_A689_SOURCE_B64="$(base64 -w0 scripts/rc6_a689_slot_cas.py)"
+          test "${#RC6_A689_SOURCE_B64}" -le 48000
+          python3 -B - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import A689_HELPER_SHA256
+          assert sha256(Path('scripts/rc6_a689_slot_cas.py').read_bytes()).hexdigest()==A689_HELPER_SHA256
+          PY
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" == '1' ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_REF" == 'refs/heads/main' ]]
+          [[ "$GITHUB_REPOSITORY" == 'mbalbo2023/Porota-trading' ]]
+          [[ "$GITHUB_EVENT_NAME" == 'schedule' || "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]
+          [[ "$RC6_A670_ART_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          [[ "$RC6_A669_SLOT" =~ ^(1045|1120|1430|1630)$ ]]
+          # This check is a *precondition*, not certification of the real
+          # data mount owner/UID/SQLite persistence. A689 repeats those inside.
           set +e
           timeout --signal=TERM --kill-after=5s 100 ssh \
             -i "$HOME/.ssh/rc6_a669_readonly" -o BatchMode=yes \
             -o ConnectTimeout=8 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\n' \"\$image\"; sudo -n timeout 55 docker exec -i -e RC6_A630_TARGET_B64=$RC6_A630_TARGET_B64 -e RC6_A630_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B - container-capture" \
+            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; mount=\$(sudo -n docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/app/data\"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}' porota_production_observer); test \"\$mount\" = 'bind|/opt/porota-trading/data|true'; runtime_user=\$(sudo -n docker inspect -f '{{.Config.User}}' porota_production_observer); test \"\$runtime_user\" = botuser; printf 'RUNTIME_IMAGE_ID=%s\n' \"\$image\"; sudo -n timeout 55 docker exec -i -e RC6_A630_TARGET_B64=$RC6_A630_TARGET_B64 -e RC6_A630_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e RC6_A689_SOURCE_B64=$RC6_A689_SOURCE_B64 -e RC6_A689_SLOT=$RC6_A669_SLOT -e RC6_A689_ART_DATE=$RC6_A670_ART_DATE -e RC6_A689_RUN_ID=$GITHUB_RUN_ID -e RC6_A689_RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT -e RC6_A689_CONTROL_SHA=$GITHUB_SHA -e RC6_A689_REPOSITORY=$GITHUB_REPOSITORY -e RC6_A689_CONTROL_REF=$GITHUB_REF -e RC6_A689_EVENT_NAME=$GITHUB_EVENT_NAME -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B - container-capture" \
             < scripts/rc6_a630_host_ppi_current_book.py \
             > "$RUNNER_TEMP/rc6-a669-capture.private" 2>/dev/null
           rc=$?
@@ -317,4 +352,3 @@ jobs:
           rm -f "$HOME/.ssh/rc6_a669_readonly" \
             "$RUNNER_TEMP/rc6-a669-host.private" \
             "$RUNNER_TEMP/rc6-a669-capture.private"
-
