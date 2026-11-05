@@ -69,7 +69,13 @@ def _require_candidate_oci(record, commit_sha):
     """
     config = record.get('Config') if type(record) is dict else None
     labels = config.get('Labels') if type(config) is dict else None
-    if (type(commit_sha) is not str or re.fullmatch('[0-9a-f]{40}', commit_sha) is None
+    tags = record.get('RepoTags') if type(record) is dict else None
+    digests = record.get('RepoDigests') if type(record) is dict else None
+    if (type(tags) is not list or not tags or
+            any(type(tag) is not str for tag in tags) or
+            (digests is not None and (type(digests) is not list or
+                                      any(type(digest) is not str for digest in digests))) or
+            type(commit_sha) is not str or re.fullmatch('[0-9a-f]{40}', commit_sha) is None
             or type(labels) is not dict or
             any(type(key) is not str or type(value) is not str
                 for key, value in labels.items()) or
