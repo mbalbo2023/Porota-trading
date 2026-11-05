@@ -1282,9 +1282,31 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # A690: verify the runner's output channel BEFORE any remote cutover.
+          # A missing AWK/output file must not become a post-promotion failure.
+          command -v awk >/dev/null
+          : "${GITHUB_OUTPUT:?RC6_GITHUB_OUTPUT_MISSING}"
+          test ! -L "$GITHUB_OUTPUT"
+          test -d "$(dirname "$GITHUB_OUTPUT")" && test -w "$(dirname "$GITHUB_OUTPUT")"
+          : >> "$GITHUB_OUTPUT"
+          test -f "$GITHUB_OUTPUT" && test -w "$GITHUB_OUTPUT"
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE' | awk -v status_file="$GITHUB_OUTPUT" '
+          # A690: preserve output unchanged; capture exactly one terminal
+          # cleanup marker for the later job-level NO_GO gate. Missing or
+          # duplicated lines are UNKNOWN, never implicit GREEN.
+          { print }
+          /^RC6_FINAL_HOUSEKEEPING=GREEN\|/ { green++ }
+          /^RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED\|/ { deferred++ }
+          END {
+            state = "UNKNOWN"
+            if (green == 1 && deferred == 0) state = "GREEN"
+            else if (green == 0 && deferred == 1) state = "DEFERRED_UNVERIFIED"
+            print "cleanup_status=" state >> status_file
+            if (state == "UNKNOWN") print "::error::RC6_CLEANUP_STATUS_UNKNOWN; no release claim"
+          }
+          '
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -2563,11 +2585,12 @@ jobs:
             echo "::error::RC6_SHARED_HOST_CLEANUP_DEFERRED_UNVERIFIED; no destructive fallback"
             echo "RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|candidate_rc=$RC6_CLEANUP_RC|staging_rc=$RC6_STAGE_CLEANUP_RC|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
             echo "RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID"
-            exit 79
+            echo 'RC6_PROMOTION_OUTCOME=IMAGE_POSSIBLY_PROMOTED_CLEANUP_DEFERRED|NO_ROLLBACK|CONTINUE_RUNTIME_VALIDATION'
+          else
+            echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
+            echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+            echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           fi
-          echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
-          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
-          echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
           # A207 is a pre-install administrative state only. Once the staged
           # atomic reversal and entire promotion succeeded, downstream runtime
@@ -3249,6 +3272,21 @@ jobs:
           print('RC6_FAILED_DEPLOY_POSTCLEAN=GREEN|removed_tags='+
                 str(len(proof['removed_tags']))+'|free_bytes='+str(proof['disk_after']))
           PY
+
+      # A690: cleanup-only HOLD is not a promotion/cutover failure. Let the
+      # real runtime/PAPER/worker postchecks run, then turn the job RED only
+      # AFTER failure-recovery conditions have already been evaluated. This
+      # cannot trigger cleanup_recover or timer rearming by itself.
+      - name: Mark deferred post-promotion cleanup as failed after validation
+        id: cleanup_deferred_gate
+        if: ${{ always() && steps.promotion.outcome == 'success' && steps.promotion.outputs.cleanup_status != 'GREEN' }}
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo '::error::RC6_POSTPROMOTION_CLEANUP_DEFERRED_OR_UNVERIFIED; runtime may already be promoted, no scheduler recovery or rollback'
+          echo "RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|cleanup_status=${{ steps.promotion.outputs.cleanup_status }}|runtime_observed_state=NO_VERIFICADO"
+          exit 79
 
       - name: Deployment summary
         if: success()
