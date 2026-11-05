@@ -100,7 +100,7 @@ class TestA685Book1SignerComposition(unittest.TestCase):
 
             with sqlite3.connect(database) as connection:
                 frozen, _, error = causal._read_verified_freeze(connection, KEY)
-            self.assertIsNone(error)
+            self.assertEqual(error, "")
             self.assertIsNotNone(frozen)
             self.assertIsNone(frozen["book1_event_sha256_claim"])
 
