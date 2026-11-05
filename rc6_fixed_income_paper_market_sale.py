@@ -254,16 +254,20 @@ def sale_cash_effect(db, currency, as_of, *, pending=False):
     paper_ids = [r[0] for r in db.execute(
         "SELECT DISTINCT paper_id FROM paper_fi_native_sales ORDER BY paper_id")]
     for paper_id in paper_ids:
-        root = db.execute("SELECT currency,settlement FROM paper_positions WHERE paper_id=?",
+        root = db.execute("SELECT * FROM paper_positions WHERE paper_id=?",
                           (paper_id,)).fetchone()
         if root is None:
             raise ValueError("FI_NATIVE_SALE_ORPHAN_POSITION")
         for row in sale_rows_checked(db, paper_id):
             if root["currency"] != currency or aware_datetime(row["applied_at"]) > at:
                 continue
+            fields = set(root.keys())
             release = validated_sale_settlement(
                 root["settlement"],row["applied_at"],
-                row["available_at"],row["settlement_basis"])
+                row["available_at"],row["settlement_basis"],
+                family=root["asset_class"] if "asset_class" in fields else None,
+                market=root["market"] if "market" in fields else None,
+                currency=root["currency"] if "currency" in fields else None)
             waiting = release is None or release > at
             if waiting is pending:
                 total += Decimal(row["net_proceeds"])
