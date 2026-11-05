@@ -1,17 +1,24 @@
-name: RC6 A669 PPI Current Book bounded sampling 05-Nov READ_ONLY
+name: RC6 A670 evergreen BYMA PPI Current Book bounded READ_ONLY
 
-# Thursday 2026-11-05 ART only. A late or future Thursday always fails closed
-# BEFORE SSH, PPI SDK, or access to any existing shared budget ledger.
+# Evergreen on audited BYMA business sessions; retained A669 workflow filename
+# avoids a second live scheduler. Each UTC clock, ART slot and audited holiday
+# gate runs BEFORE SSH, PPI SDK or any shared budget ledger access.
+# GitHub schedule is best-effort and may be delayed/dropped: manual fallback
+# uses the same exact-day session, 60-minute slot and signed quota gates.
 on:
   schedule:
-    - cron: '45 13 * * 4'  # 10:45 ART
-    - cron: '20 14 * * 4'  # 11:20 ART
-    - cron: '30 17 * * 4'  # 14:30 ART
-    - cron: '30 19 * * 4'  # 16:30 ART
+    - cron: '45 10 * * 1-5'
+      timezone: 'America/Argentina/Buenos_Aires'
+    - cron: '20 11 * * 1-5'
+      timezone: 'America/Argentina/Buenos_Aires'
+    - cron: '30 14 * * 1-5'
+      timezone: 'America/Argentina/Buenos_Aires'
+    - cron: '30 16 * * 1-5'
+      timezone: 'America/Argentina/Buenos_Aires'
   workflow_dispatch:
     inputs:
       slot:
-        description: 'Fallback 05-Nov ART slot (only within 60 min)'
+        description: 'Fallback same-day audited BYMA ART slot (within 60 min)'
         type: choice
         required: true
         options: ['1045', '1120', '1430', '1630']
@@ -31,7 +38,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Pure OFFHOST day-slot and audited-engine tests
+      - name: Checkout immutable product 2026 BYMA holiday/spot calendar for OFFHOST regressions
+        uses: actions/checkout@v4
+        with:
+          ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          path: _audited_product_calendar
+          sparse-checkout: |
+            ak_byma_calendar.py
+            co_market_sessions_hf6.py
+          persist-credentials: false
+      - name: Pure OFFHOST evergreen session, day-slot and audited-engine tests
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -40,6 +56,17 @@ jobs:
             tests/test_rc6_a669_ppi_day_slot_guard.py
           python3 -m unittest discover -s tests -p test_rc6_a669_ppi_day_slot_guard.py -v
           python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v
+          python3 -B - <<'PY'
+          from datetime import datetime,timezone
+          from scripts.rc6_a669_ppi_day_slot_guard import (
+              PRODUCT_CALENDAR_ROOT,_verified_product_checkout,_official_session_check)
+          assert _verified_product_checkout(PRODUCT_CALENDAR_ROOT)
+          for day,expected in ((5,True),(6,False),(9,False),(10,False),(11,True)):
+              at=datetime(2026,11,day,13,45,tzinfo=timezone.utc)
+              open_,reason=_official_session_check(at,PRODUCT_CALENDAR_ROOT)
+              assert open_ is expected,(day,reason)
+          print('A670_AUDITED_PRODUCT_CALENDAR_PINNED=PASS|NOV5_OPEN|NOV6_9_10_HOLIDAYS_DENIED')
+          PY
           git diff --check
 
   sample_main_only:
@@ -59,25 +86,36 @@ jobs:
       RC6_A669_MANUAL_SLOT: ${{ inputs.slot }}
       RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
       RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Thursday ART day, UTC cron, exact SHA and immutable engine BEFORE SSH
+      - name: Checkout product-pinned OFFHOST audited BYMA calendar; never moving ref
+        uses: actions/checkout@v4
+        with:
+          ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          path: _audited_product_calendar
+          sparse-checkout: |
+            ak_byma_calendar.py
+            co_market_sessions_hf6.py
+          persist-credentials: false
+
+      - name: Evergreen ART weekday, BYMA audited holiday, source and engine pins BEFORE SSH
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 scripts/rc6_a669_ppi_day_slot_guard.py
-          echo 'A669_PROVIDER_GETS_BY_DAY_GATE=0'
+          python3 -B scripts/rc6_a669_ppi_day_slot_guard.py
+          echo 'A670_PROVIDER_GETS_BY_CALENDAR_GATE=0'
 
       - name: Private RO host preflight; PPI native five-key request selection; ZERO GET
         shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
@@ -142,6 +180,9 @@ jobs:
 
       - name: At most one Current then one Book via existing signed shared PPI budget
         shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
           set +e
@@ -177,7 +218,9 @@ jobs:
                   'engine_git_blob':os.environ['RC6_A669_ENGINE_BLOB'],
                   'product_sha':os.environ['RC6_EXPECTED_PRODUCT_SHA'],
                   'image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
-                  'art_date':'2026-11-05','slot':os.environ['RC6_A669_SLOT'],
+                  'art_date':os.environ['RC6_A670_ART_DATE'],'slot':os.environ['RC6_A669_SLOT'],
+                  'market_calendar_gate':'BYMA_AUDITED_OPEN',
+                  'provider_get_lease_gate':'A630_SIGNED_NATIVE_ONLY',
                   'receipt':payload,'ppi_watch_mutations_by_action':0,
                   'real_orders_sent_by_action':0,'predeploy_dispatches':0,
                   'deploy_dispatches':0,'provider_payload_uploaded':False,
@@ -206,8 +249,11 @@ jobs:
           from scripts.rc6_a630_host_ppi_current_book import SCHEMA,unverified_transport_receipt
           doc={'schema':'rc6.a669.action.sanitized.v1',
                'engine_schema':SCHEMA,'run_id':os.environ['GITHUB_RUN_ID'],
-               'control_plane_sha':os.environ['GITHUB_SHA'],'art_date':'2026-11-05',
+               'control_plane_sha':os.environ['GITHUB_SHA'],
+               'art_date':os.environ.get('RC6_A670_ART_DATE',''),
                'slot':os.environ.get('RC6_A669_SLOT',''),
+               'market_calendar_gate':os.environ.get('RC6_A670_HOLD_REASON','NO_VERIFICADO'),
+               'provider_get_lease_gate':'A630_SIGNED_NATIVE_ONLY',
                'receipt':unverified_transport_receipt(
                    'SLOT_OR_DAY_HOLD' if not os.environ.get('RC6_A669_SLOT')
                    else 'HOST_PREFLIGHT_OR_RUNTIME_HOLD'),
