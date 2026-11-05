@@ -61,11 +61,13 @@ jobs:
           from scripts.rc6_a669_ppi_day_slot_guard import (
               PRODUCT_CALENDAR_ROOT,_verified_product_checkout,_official_session_check)
           assert _verified_product_checkout(PRODUCT_CALENDAR_ROOT)
-          for day,expected in ((5,True),(6,False),(9,False),(10,False),(11,True)):
+          for day,expected in ((5,True),(6,True),(9,False),(10,False),(11,True)):
               at=datetime(2026,11,day,13,45,tzinfo=timezone.utc)
               open_,reason=_official_session_check(at,PRODUCT_CALENDAR_ROOT)
               assert open_ is expected,(day,reason)
-          print('A670_AUDITED_PRODUCT_CALENDAR_PINNED=PASS|NOV5_OPEN|NOV6_9_10_HOLIDAYS_DENIED')
+              if day==6: assert reason=='BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY'
+              if day in (9,10): assert reason=='BYMA_NO_NEGOTIATION_OR_SPECIAL_SESSION_HOLD'
+          print('A670_PINNED_CALENDAR=PASS|NOV5_REGULAR|NOV6_LIMITED_NO_SETTLEMENT_EVIDENCE_ONLY|NOV9_10_NO_NEGOTIATION')
           PY
           git diff --check
 
@@ -219,8 +221,9 @@ jobs:
                   'product_sha':os.environ['RC6_EXPECTED_PRODUCT_SHA'],
                   'image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
                   'art_date':os.environ['RC6_A670_ART_DATE'],'slot':os.environ['RC6_A669_SLOT'],
-                  'market_calendar_gate':'BYMA_AUDITED_OPEN',
+                  'market_calendar_gate':os.environ['RC6_A670_MARKET_SESSION'],
                   'provider_get_lease_gate':'A630_SIGNED_NATIVE_ONLY',
+                  'settlement_verified':False,'paper_entry_allowed':False,
                   'receipt':payload,'ppi_watch_mutations_by_action':0,
                   'real_orders_sent_by_action':0,'predeploy_dispatches':0,
                   'deploy_dispatches':0,'provider_payload_uploaded':False,
@@ -254,6 +257,7 @@ jobs:
                'slot':os.environ.get('RC6_A669_SLOT',''),
                'market_calendar_gate':os.environ.get('RC6_A670_HOLD_REASON','NO_VERIFICADO'),
                'provider_get_lease_gate':'A630_SIGNED_NATIVE_ONLY',
+               'settlement_verified':False,'paper_entry_allowed':False,
                'receipt':unverified_transport_receipt(
                    'SLOT_OR_DAY_HOLD' if not os.environ.get('RC6_A669_SLOT')
                    else 'HOST_PREFLIGHT_OR_RUNTIME_HOLD'),
