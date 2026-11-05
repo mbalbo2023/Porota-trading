@@ -32,6 +32,7 @@ import socket
 import socketserver
 import stat
 import threading
+import time
 from typing import Any
 
 
@@ -48,6 +49,20 @@ _PRIORITY = {
     "DISCOVERY": 4,
 }
 _MAX_LEVELS = 40
+NATIVE_READ_SCHEMA = "rc6.ppi.native-read-receipts.offhost.v1"
+_NATIVE_REST_METHODS = frozenset(("current", "book", "intraday"))
+_NATIVE_UNBUDGETED_METHODS = frozenset(
+    ("history", "search_instruments", "market_configuration"))
+_NATIVE_CONSUMER_METHODS = {
+    "scanner": frozenset(("current", "book")),
+    "exit_reader": frozenset(("book",)),
+    "scalping": frozenset(("intraday",)),
+}
+_UNSAFE_NATIVE_FIELD_PARTS = frozenset((
+    "account", "order", "portfolio", "password", "secret", "token",
+    "authorization", "credential", "balance", "holdings", "person",
+    "private", "api_key", "api_secret", "client_id", "user_id",
+))
 
 
 class CatalogIdentityError(ValueError):
@@ -432,6 +447,260 @@ class PPISharedMarketFeed:
                     "paper_authority": "NO_VERIFICADO"}
 
 
+class PPIReadOnlyNativeReceiptStore:
+    """Bounded native REST evidence cache, not an alternative PPI GET path.
+
+    An upstream single, guarded acquisition owner must first obtain a genuine
+    REST response and publish its original JSON payload with the independent
+    native/receive clocks, five-key catalog context, and send-budget receipt.
+    This class neither imports PPI nor calls the provider or SQLite.  A caller
+    may never cause provider I/O by requesting an old or missing receipt.
+
+    Provider origin, budget receipt signature and catalog authority are NOT
+    verified by constructing a local digest; every returned receipt remains
+    OBSERVE_ONLY / paper_ready=False until independent signed evidence exists.
+    """
+
+    def __init__(self, feed: PPISharedMarketFeed, *,
+                 max_receipts: int = 64, max_age_seconds: float = 5,
+                 clock=None, monotonic_ns=None):
+        if not isinstance(feed, PPISharedMarketFeed):
+            raise TypeError("PPI_NATIVE_FEED_REQUIRED")
+        if (type(max_receipts) is not int or not 1 <= max_receipts <= 256
+                or type(max_age_seconds) not in (int, float)
+                or not 0 < max_age_seconds <= 120):
+            raise ValueError("PPI_NATIVE_CACHE_LIMIT_INVALID")
+        self.feed = feed
+        self.max_receipts = max_receipts
+        self.max_age_seconds = max_age_seconds
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.monotonic_ns = monotonic_ns or time.monotonic_ns
+        self._receipts: deque[dict] = deque(maxlen=max_receipts)
+        self._latest_native: dict[tuple[tuple[str, ...], str], datetime] = {}
+        self._lock = threading.RLock()
+        self._dropped = 0
+
+    def _registered_identity(self, five_key) -> tuple[str, ...]:
+        identity = _five(five_key)
+        with self.feed._lock:
+            source = self.feed._catalog.get((identity[0], identity[1]))
+            if source is None or len(source) != 1 or next(iter(source)) != (identity[2], identity[3]):
+                raise CatalogIdentityError("PPI_NATIVE_CATALOG_FIVE_KEY_NOT_UNIQUE")
+        return identity
+
+    @staticmethod
+    def _native_raw(raw_payload: Any, *, method: str) -> dict:
+        if not isinstance(raw_payload, dict):
+            raise EventRejected("PPI_NATIVE_PAYLOAD_INVALID")
+        # This is market-data ONLY.  Refuse anything resembling account,
+        # order, balance or credential data even when upstream makes a mistake.
+        pending = [(raw_payload, 0)]
+        count = 0
+        while pending:
+            node, depth = pending.pop()
+            count += 1
+            if count > 1024 or depth > 6:
+                raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if type(key) is not str or not 1 <= len(key) <= 64:
+                        raise EventRejected("PPI_NATIVE_PAYLOAD_UNSAFE")
+                    name = key.strip().lower()
+                    if any(part in name for part in _UNSAFE_NATIVE_FIELD_PARTS):
+                        raise EventRejected("PPI_NATIVE_PAYLOAD_UNSAFE")
+                    pending.append((value, depth + 1))
+            elif isinstance(node, list):
+                if len(node) > 256:
+                    raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
+                pending.extend((value, depth + 1) for value in node)
+            elif node is not None and type(node) not in (str, bool, int, float):
+                raise EventRejected("PPI_NATIVE_PAYLOAD_UNSAFE")
+            elif type(node) is str and len(node) > 2048:
+                raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
+        try:
+            encoded = _canonical_bytes(raw_payload)
+        except (TypeError, ValueError, OverflowError, RecursionError) as error:
+            raise EventRejected("PPI_NATIVE_PAYLOAD_UNSAFE") from error
+        if len(encoded) > 65536:
+            raise EventRejected("PPI_NATIVE_PAYLOAD_UNBOUNDED")
+        if method == "book":
+            # No synthesized Book from trade or normalized best bid/ask.
+            _levels(raw_payload.get("Bids"), side="BID")
+            _levels(raw_payload.get("Offers"), side="OFFER")
+        return json.loads(encoded)
+
+    def publish_native_rest_receipt(self, *, method, five_key, raw_payload,
+                                    native_at, received_at,
+                                    received_monotonic_ns,
+                                    session_fingerprint,
+                                    guard_budget_receipt_sha256,
+                                    capture_type):
+        """Internal producer seam; no socket operation can invoke this."""
+        if method not in _NATIVE_REST_METHODS or capture_type != "REST_" + str(method).upper():
+            raise EventRejected("PPI_NATIVE_CAPTURE_TYPE_INVALID")
+        identity = self._registered_identity(five_key)
+        if (not _SHA256.fullmatch(str(session_fingerprint))
+                or not _SHA256.fullmatch(str(guard_budget_receipt_sha256))):
+            raise EventRejected("PPI_NATIVE_BUDGET_RECEIPT_INVALID")
+        if (type(received_monotonic_ns) is not int
+                or received_monotonic_ns <= 0
+                or received_monotonic_ns > self.monotonic_ns()):
+            raise EventRejected("PPI_NATIVE_RECEIVE_MONOTONIC_INVALID")
+        native_time = _time(native_at, reason="NATIVE_TIME")
+        recv_time = _time(received_at, reason="NATIVE_RECEIVE_TIME")
+        now_time = _time(self.clock(), reason="NATIVE_CLOCK")
+        lag = (recv_time - native_time).total_seconds()
+        if (not 0 <= lag <= self.max_age_seconds
+                or recv_time > now_time):
+            raise EventRejected("PPI_NATIVE_RECEIPT_CLOCK_INVALID")
+        raw = self._native_raw(raw_payload, method=method)
+        # Source Date must be native material, not a caller-created clock
+        # substituted after inspecting the decision or latest market move.
+        if "Date" not in raw or _time(raw["Date"], reason="RAW_NATIVE_TIME") != native_time:
+            raise EventRejected("PPI_NATIVE_CLOCK_NOT_IN_RAW_RECEIPT")
+        for field, part in (("Ticker", 0), ("Type", 1), ("Market", 2),
+                            ("Currency", 3), ("Settlement", 4)):
+            if field in raw and _value(raw[field], field) != identity[part]:
+                raise CatalogIdentityError(f"PPI_NATIVE_{field.upper()}_CONFLICT")
+        receipt = {
+            "schema": NATIVE_READ_SCHEMA, "method": method,
+            "capture_type": capture_type, "source": "PPI",
+            "ppi_five_key": list(identity),
+            "ppi_catalog_source_digest": self.feed.catalog_source_digest,
+            "ppi_catalog_authority": "NO_VERIFICADO",
+            "native_at_utc": native_time.isoformat(),
+            "received_at_utc": recv_time.isoformat(),
+            "receive_monotonic_ns": received_monotonic_ns,
+            "session_fingerprint": session_fingerprint,
+            "guard_budget_receipt_sha256": guard_budget_receipt_sha256,
+            # The read-only HTTP guard's per-SEND budget receipt has NOT been
+            # independently exposed to this G2 cache. A 64-hex string is
+            # structural input only, never proof of a budgeted provider call.
+            "guard_budget_receipt_authority": "NO_VERIFICADO",
+            "raw_payload": raw, "raw_sha256": _sha(raw),
+            "paper_ready": False, "order_route": "NOT_PRESENT",
+        }
+        receipt["receipt_sha256"] = _sha(receipt)
+        with self._lock:
+            scope = (identity, method)
+            previous = self._latest_native.get(scope)
+            if previous is not None and native_time <= previous:
+                raise EventRejected("PPI_NATIVE_RECEIPT_NOT_NEWER")
+            if len(self._receipts) == self.max_receipts:
+                self._dropped += 1
+                evicted = self._receipts[0]
+                evicted_scope = (tuple(evicted["ppi_five_key"]), evicted["method"])
+                if (self._latest_native.get(evicted_scope) ==
+                    _time(evicted["native_at_utc"], reason="NATIVE_TIME")):
+                    self._latest_native.pop(evicted_scope, None)
+            self._receipts.append(json.loads(_canonical_bytes(receipt)))
+            self._latest_native[scope] = native_time
+        return json.loads(_canonical_bytes(receipt))
+
+    @staticmethod
+    def _state(reason):
+        return {"schema": NATIVE_READ_SCHEMA, "state": reason,
+                "provider_calls_by_rpc": 0}
+
+    def read_native(self, *, consumer, method, five_key,
+                    book1_receipt_sha256=None, commit_at=None,
+                    commit_monotonic_ns=None):
+        """Return existing native RAW only; never request from a provider."""
+        if type(method) is not str or type(consumer) is not str:
+            return self._state("DENIED_READ_ONLY")
+        if consumer not in _NATIVE_CONSUMER_METHODS:
+            return self._state("DENIED_READ_ONLY")
+        if method in _NATIVE_UNBUDGETED_METHODS:
+            return self._state("NO_BUDGET_AUTHORITY")
+        if method not in _NATIVE_REST_METHODS or method not in _NATIVE_CONSUMER_METHODS[consumer]:
+            return self._state("DENIED_READ_ONLY")
+        try:
+            identity = self._registered_identity(five_key)
+        except (CatalogIdentityError, ValueError, TypeError):
+            return self._state("DENIED_READ_ONLY")
+        with self.feed._lock:
+            allowed = self.feed._consumers.get(consumer, False)
+            if allowed is False or (allowed is not None and identity not in allowed):
+                return self._state("DENIED_READ_ONLY")
+        causal_args = (book1_receipt_sha256, commit_at, commit_monotonic_ns)
+        causal = any(x is not None for x in causal_args)
+        if causal and (method != "book" or any(x is None for x in causal_args)):
+            return self._state("PPI_PIT_POST_COMMIT_CONTRACT_INCOMPLETE")
+        if causal:
+            if not _SHA256.fullmatch(str(book1_receipt_sha256)):
+                return self._state("PPI_PIT_BOOK1_RECEIPT_INVALID")
+            try:
+                committed = _time(commit_at, reason="COMMIT_TIME")
+            except EventRejected:
+                return self._state("PPI_PIT_COMMIT_TIME_INVALID")
+            if type(commit_monotonic_ns) is not int or commit_monotonic_ns <= 0:
+                return self._state("PPI_PIT_COMMIT_MONOTONIC_INVALID")
+        now_time = _time(self.clock(), reason="NATIVE_CLOCK")
+        now_mono = self.monotonic_ns()
+        with self._lock:
+            entries = [item for item in self._receipts if
+                       tuple(item["ppi_five_key"]) == identity and
+                       item["method"] == method]
+            if not entries:
+                return self._state("NO_AUTHENTIC_NATIVE_RECEIPT")
+            if causal:
+                book1 = next((item for item in entries
+                              if item["receipt_sha256"] == book1_receipt_sha256), None)
+                if book1 is None:
+                    return self._state("PPI_PIT_BOOK1_NOT_RETAINED")
+                if (_time(book1["native_at_utc"], reason="NATIVE_TIME") > committed
+                    or book1["receive_monotonic_ns"] >= commit_monotonic_ns):
+                    return self._state("PPI_PIT_BOOK1_NOT_PRE_COMMIT")
+                # Choose FIRST post-COMMIT native book; never latest/cherry-picked.
+                eligible = [item for item in entries if
+                    _time(item["native_at_utc"], reason="NATIVE_TIME") > committed
+                    and item["receive_monotonic_ns"] > commit_monotonic_ns]
+                if not eligible:
+                    return self._state("NO_AUTHENTIC_NATIVE_RECEIPT")
+                receipt = eligible[0]
+                if receipt["session_fingerprint"] != book1["session_fingerprint"]:
+                    return self._state("PPI_PIT_BOOK2_SESSION_CHANGED")
+            else:
+                receipt = entries[-1]
+            native = _time(receipt["native_at_utc"], reason="NATIVE_TIME")
+            received = _time(receipt["received_at_utc"], reason="NATIVE_RECEIVE_TIME")
+            age = (now_time - received).total_seconds()
+            if (age < 0 or age > self.max_age_seconds or
+                    not 0 <= (now_mono - receipt["receive_monotonic_ns"]) / 1e9 <= self.max_age_seconds
+                    or (now_time - native).total_seconds() > self.max_age_seconds):
+                return self._state("PPI_NATIVE_RECEIPT_STALE")
+            return {"schema": NATIVE_READ_SCHEMA, "state": "OK",
+                    "provider_calls_by_rpc": 0,
+                    "receipt": json.loads(_canonical_bytes(receipt))}
+
+    def dispatch(self, request):
+        if not (isinstance(request, dict)
+                and set(request) <= {"op", "consumer", "method", "ppi_five_key",
+                                     "book1_receipt_sha256", "commit_at", "commit_monotonic_ns"}
+                and request.get("op") == "native_read"):
+            return self._state("DENIED_READ_ONLY")
+        try:
+            return self.read_native(
+                consumer=request.get("consumer"),
+                method=request.get("method"),
+                five_key=request.get("ppi_five_key"),
+                book1_receipt_sha256=request.get("book1_receipt_sha256"),
+                commit_at=request.get("commit_at"),
+                commit_monotonic_ns=request.get("commit_monotonic_ns"),
+            )
+        except (ValueError, TypeError, KeyError):
+            return self._state("DENIED_READ_ONLY")
+
+    def stats(self):
+        with self._lock:
+            return {"schema": NATIVE_READ_SCHEMA,
+                    "retained_raw_receipts": len(self._receipts),
+                    "dropped_raw_receipts": self._dropped,
+                    "retained_latest_native_sources": len(self._latest_native),
+                    "provider_calls_by_rpc": 0,
+                    "paper_authority": "NO_VERIFICADO"}
+
+
 class ReadOnlyUnixFeedServer:
     """Optional same-host read-only AF_UNIX cursor transport.
 
@@ -441,14 +710,23 @@ class ReadOnlyUnixFeedServer:
     verified before any real integration.
     """
 
-    def __init__(self, bus: PPISharedMarketFeed, *, socket_path: Path):
+    def __init__(self, bus: PPISharedMarketFeed, *, socket_path: Path,
+                 native_receipts: PPIReadOnlyNativeReceiptStore | None = None):
         self.bus = bus
+        if native_receipts is not None and native_receipts.feed is not bus:
+            raise ValueError("PPI_NATIVE_RECEIPT_WRONG_FEED")
+        self.native_receipts = native_receipts
         self.socket_path = Path(socket_path)
         self._server = None
         self._owned_socket_dev_inode = None
 
     def dispatch(self, request: Any) -> dict:
         """Pure read-only request protocol, testable without opening sockets."""
+        if isinstance(request, dict) and request.get("op") == "native_read":
+            if self.native_receipts is None:
+                return PPIReadOnlyNativeReceiptStore._state(
+                    "NO_AUTHENTIC_NATIVE_RECEIPT")
+            return self.native_receipts.dispatch(request)
         if not (isinstance(request, dict)
                 and set(request) <= {"op", "consumer", "after_sequence", "limit"}
                 and request.get("op") == "pull"):
@@ -539,15 +817,11 @@ class ReadOnlyUnixFeedClient:
         self.socket_path = Path(socket_path)
         self.timeout_seconds = timeout_seconds
 
-    def pull(self, consumer: str, *, after_sequence: int, limit: int = 32) -> dict:
-        if not isinstance(consumer, str) or not _CONSUMER.fullmatch(consumer):
-            raise ValueError("PPI_CONSUMER_ID_INVALID")
-        if (isinstance(after_sequence, bool) or not isinstance(after_sequence, int)
-            or after_sequence < 0 or isinstance(limit, bool)
-            or not isinstance(limit, int) or not 1 <= limit <= 128):
-            raise ValueError("PPI_CONSUMER_CURSOR_OR_BATCH_INVALID")
-        request = _canonical_bytes({"op": "pull", "consumer": consumer,
-                                    "after_sequence": after_sequence, "limit": limit}) + b"\n"
+    def _request(self, packet: dict) -> dict:
+        """One bounded AF_UNIX request, never broker/provider I/O."""
+        request = _canonical_bytes(packet) + b"\n"
+        if len(request) > 4096:
+            raise ValueError("PPI_SHARED_CLIENT_REQUEST_UNBOUNDED")
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(self.timeout_seconds)
@@ -567,9 +841,22 @@ class ReadOnlyUnixFeedClient:
             or b"\n" in response_bytes[:-1]):
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID")
         try:
-            response = json.loads(response_bytes)
+            result = json.loads(response_bytes)
         except (ValueError, UnicodeError) as exc:
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID") from exc
+        if not isinstance(result, dict):
+            raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID")
+        return result
+
+    def pull(self, consumer: str, *, after_sequence: int, limit: int = 32) -> dict:
+        if not isinstance(consumer, str) or not _CONSUMER.fullmatch(consumer):
+            raise ValueError("PPI_CONSUMER_ID_INVALID")
+        if (isinstance(after_sequence, bool) or not isinstance(after_sequence, int)
+            or after_sequence < 0 or isinstance(limit, bool)
+            or not isinstance(limit, int) or not 1 <= limit <= 128):
+            raise ValueError("PPI_CONSUMER_CURSOR_OR_BATCH_INVALID")
+        response = self._request({"op": "pull", "consumer": consumer,
+                                  "after_sequence": after_sequence, "limit": limit})
         if not isinstance(response, dict) or response.get("schema") != SCHEMA:
             raise SharedFeedUnavailable("PPI_GATEWAY_RESPONSE_DENIED_OR_INVALID")
         if response.get("state") not in ("OK", "GAP"):
@@ -595,3 +882,50 @@ class ReadOnlyUnixFeedClient:
         if response["state"] == "GAP" and response["events"]:
             raise SharedFeedUnavailable("PPI_GATEWAY_GAP_CONTAINS_EVENTS")
         return response
+
+    def read_native(self, consumer: str, *, method: str, five_key,
+                    book1_receipt_sha256=None, commit_at=None,
+                    commit_monotonic_ns=None) -> dict:
+        """Read a previously acquired PPI REST RAW receipt; no implicit GET.
+
+        Any non-OK state is a HARD HOLD for PAPER consumers. The returned
+        local digest never independently certifies provider origin or READY.
+        """
+        if not isinstance(consumer, str) or not _CONSUMER.fullmatch(consumer):
+            raise ValueError("PPI_NATIVE_CONSUMER_INVALID")
+        if type(method) is not str or method not in _NATIVE_REST_METHODS | _NATIVE_UNBUDGETED_METHODS:
+            raise ValueError("PPI_NATIVE_METHOD_NOT_READ_ONLY")
+        identity = _five(five_key)
+        req = {"op": "native_read", "consumer": consumer, "method": method,
+               "ppi_five_key": list(identity)}
+        if any(value is not None for value in
+               (book1_receipt_sha256, commit_at, commit_monotonic_ns)):
+            req.update({"book1_receipt_sha256": book1_receipt_sha256,
+                        "commit_at": (commit_at.isoformat() if isinstance(commit_at, datetime)
+                                      else commit_at),
+                        "commit_monotonic_ns": commit_monotonic_ns})
+        result = self._request(req)
+        if (result.get("schema") != NATIVE_READ_SCHEMA
+            or type(result.get("state")) is not str
+            or result.get("provider_calls_by_rpc") != 0):
+            raise SharedFeedUnavailable("PPI_NATIVE_RPC_ENVELOPE_INVALID")
+        if result["state"] != "OK":
+            if "receipt" in result:
+                raise SharedFeedUnavailable("PPI_NATIVE_RPC_DENIAL_WITH_DATA")
+            return result
+        receipt = result.get("receipt")
+        if not isinstance(receipt, dict):
+            raise SharedFeedUnavailable("PPI_NATIVE_RPC_RECEIPT_INVALID")
+        unsigned = {key: value for key, value in receipt.items()
+                    if key != "receipt_sha256"}
+        if (receipt.get("schema") != NATIVE_READ_SCHEMA
+            or receipt.get("method") != method
+            or receipt.get("ppi_five_key") != list(identity)
+            or receipt.get("paper_ready") is not False
+            or receipt.get("order_route") != "NOT_PRESENT"
+            or receipt.get("ppi_catalog_authority") != "NO_VERIFICADO"
+            or receipt.get("guard_budget_receipt_authority") != "NO_VERIFICADO"
+            or receipt.get("receipt_sha256") != _sha(unsigned)
+            or receipt.get("raw_sha256") != _sha(receipt.get("raw_payload"))):
+            raise SharedFeedUnavailable("PPI_NATIVE_RPC_RECEIPT_INVALID")
+        return result
