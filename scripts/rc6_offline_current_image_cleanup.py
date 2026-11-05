@@ -301,7 +301,8 @@ def cleanup(required_free_bytes=None):
                     for digest in current_digests)):
             raise ValueError('OFFLINE_CURRENT_RUNTIME_IMAGE_ALIAS_UNVERIFIED')
         free_before=shutil.disk_usage('/').free
-        if admission()!=before or stale_id in references():
+        if (admission()!=before or stale_id in references() or
+                image(STABLE)['Id']!=stale_id):
             raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
         # Retagging is an atomic pointer change in Docker metadata. The exact
         # already-owned current image exists; no image build or service restart.
@@ -315,6 +316,7 @@ def cleanup(required_free_bytes=None):
             latest_stale=image(stale_id)
             tag_target=image(tag)
             if (admission()!=before or stale_id in references() or
+                    image(STABLE)['Id']!=current or
                     tag not in (latest_stale.get('RepoTags') or []) or
                     tag_target['Id']!=stale_id):
                 raise ValueError('OFFLINE_CURRENT_IMAGE_OWNERSHIP_CHANGED')
