@@ -36,7 +36,7 @@ UTC_STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00
 FILE_STATES = {"ABSENT", "REGULAR_SINGLE_LINK", "UNSAFE_OR_ALIAS", "UNAVAILABLE"}
 ENV_MODES = {"APPROVED", "SHADOW", "OFF", "INVALID", "UNSET"}
 MOUNT_STATES = {"EXPECTED_BIND", "ABSENT", "OTHER", "UNAVAILABLE"}
-SECRET_MOUNTS = {"MOUNT_PRESENT", "NO_MOUNT", "UNAVAILABLE"}
+SECRET_MOUNTS = {"EXACT_FILE_MOUNT", "GENERIC_DIRECTORY_MOUNT", "NO_MOUNT", "UNAVAILABLE"}
 LOG_STATES = {"OBSERVED", "NO_VERIFICADO"}
 AGE_STATES = {"LT_5M", "LT_1H", "OLDER_1H", "UNKNOWN"}
 REASONS = {"OBSERVED_ONLY_NOT_PAPER_GO", "IMAGE_PIN_MISMATCH", "DOCKER_METADATA_UNAVAILABLE",
@@ -106,7 +106,8 @@ def safe_mounts(raw: str) -> dict:
     mounts = json.loads(raw)
     if not isinstance(mounts, list) or len(mounts) > 100:
         raise ValueError("MOUNTS_SHAPE")
-    data = "ABSENT"
+    has_expected_root = False
+    data_alias_or_conflict = False
     secret = "NO_MOUNT"
     for mount in mounts:
         if not isinstance(mount, dict):
@@ -118,13 +119,21 @@ def safe_mounts(raw: str) -> dict:
             raise ValueError("MOUNT_FIELDS")
         if len(dest) > 1024 or len(source) > 1024:
             raise ValueError("MOUNT_BOUND")
-        if dest in ("/app/data", "/app/data/market"):
+        if dest == "/app/data":
             # The exact root is an ownership hint, never permission to mutate it.
-            data = "EXPECTED_BIND" if kind == "bind" and (source ==
-                "/opt/porota-trading/data" or source.startswith(
-                "/opt/porota-trading/data/")) else "OTHER"
-        if dest == "/run/secrets" or dest == "/run/secrets/ppi_production.json":
-            secret = "MOUNT_PRESENT"
+            # Duplicate/misordered mounts must not override a conflicting role.
+            if kind == "bind" and source == "/opt/porota-trading/data":
+                has_expected_root = True
+            else:
+                data_alias_or_conflict = True
+        elif dest == "/app/data/market":
+            if kind != "bind" or source != "/opt/porota-trading/data/market":
+                data_alias_or_conflict = True
+        if dest == "/run/secrets/ppi_production.json":
+            secret = "EXACT_FILE_MOUNT"
+        elif dest == "/run/secrets" and secret != "EXACT_FILE_MOUNT":
+            secret = "GENERIC_DIRECTORY_MOUNT"
+    data = "OTHER" if data_alias_or_conflict else "EXPECTED_BIND" if has_expected_root else "ABSENT"
     return {"runtime_data_mount": data, "ppi_secret_mount": secret}
 
 
