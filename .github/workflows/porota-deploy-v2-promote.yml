@@ -251,8 +251,10 @@ jobs:
               if not 0<len(packed)<30000:
                   raise SystemExit('RC6_A151_OPERATOR_PACKED_BOUNDS_RED')
               inflater=zlib.decompressobj(16+zlib.MAX_WBITS)
-              source=inflater.decompress(packed,110000)
-              if (not 0<len(source)<110000 or not inflater.eof or
+              # Same bounded 128 KiB source contract as quiescence loader.
+              # Do not confuse with Linux's separate 110 KB argv limit.
+              source=inflater.decompress(packed,131072)
+              if (not 0<len(source)<131072 or not inflater.eof or
                       inflater.unconsumed_tail or inflater.unused_data or
                       hashlib.sha256(source).hexdigest()!=sys.argv[2]):
                   raise SystemExit('RC6_A151_OPERATOR_SOURCE_HASH_RED')
