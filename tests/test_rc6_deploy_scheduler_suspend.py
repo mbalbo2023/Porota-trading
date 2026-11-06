@@ -1,5 +1,8 @@
 import base64
+import gzip
+import hashlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +14,27 @@ from scripts import rc6_deploy_quiescence as quiescence
 
 
 class SuspendTests(unittest.TestCase):
+    def test_a667_staged_operator_bounded_source_capacity(self):
+        """A667 guard must fit both A151 staging loaders without a zip bomb."""
+        source=Path(suspend.__file__).read_bytes()
+        self.assertGreater(len(source),110000)
+        self.assertLess(len(source),131072)
+        staged=base64.b64encode(gzip.compress(source,compresslevel=9,mtime=0)).decode()
+        env={'RC6_A125_CANDIDATE_SOURCE_GZIP_B64':staged,
+             'RC6_A125_CANDIDATE_SOURCE_SHA256':hashlib.sha256(source).hexdigest()}
+        with patch.dict(os.environ,env),patch.dict(os.environ,
+                {'RC6_A125_CANDIDATE_SOURCE_B64':''}):
+            module=quiescence.candidate_operator_module(require_staged=True)
+            self.assertTrue(callable(module.adopt_prior_closed_flat_hold))
+        oversized=b'#'*(128*1024)
+        env['RC6_A125_CANDIDATE_SOURCE_GZIP_B64']=base64.b64encode(
+            gzip.compress(oversized,compresslevel=9,mtime=0)).decode()
+        env['RC6_A125_CANDIDATE_SOURCE_SHA256']=hashlib.sha256(oversized).hexdigest()
+        with patch.dict(os.environ,env),patch.dict(os.environ,
+                {'RC6_A125_CANDIDATE_SOURCE_B64':''}):
+            with self.assertRaisesRegex(ValueError,'QUIESCENCE_OPERATOR_SOURCE_INVALID'):
+                quiescence.candidate_operator_module(require_staged=True)
+
     def test_open_hold_requires_exact_stopped_paper_receipt(self):
         originals = {name: {'State': {'Status': 'exited'}} for name in quiescence.OWNED}
         receipt = {'status': 'DRAINED', 'real_orders_sent': 0,
