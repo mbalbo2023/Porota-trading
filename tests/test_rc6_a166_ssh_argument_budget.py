@@ -116,7 +116,8 @@ def test_scheduler_compressed_policy_wire_preserves_original_bytes(monkeypatch):
 
 
 def test_bomb_and_corrupt_gzip_cannot_execute():
-    source = b'Z = 1\n' * 20000
+    # A667 permits a bounded 128 KiB operator source, not a larger gzip bomb.
+    source = b'Z = 1\n' * 22000
     encoded = base64.b64encode(gzip.compress(source, mtime=0)).decode('ascii')
     variables = {'RC6_A125_CANDIDATE_SOURCE_GZIP_B64': encoded,
                  'RC6_A125_CANDIDATE_SOURCE_SHA256': hashlib.sha256(source).hexdigest()}
@@ -133,6 +134,8 @@ def test_bomb_and_corrupt_gzip_cannot_execute():
 
 def test_workflow_bounds_both_preinstall_and_drain_routes():
     workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+    assert 'source=inflater.decompress(packed,131072)' in workflow
+    assert '0<len(source)<131072' in workflow
     assert 'Bound source-bearing SSH arguments before host contact' in workflow
     assert 'RC6_CLASSIFY_REMOTE_ARGUMENT=RED' in workflow
     assert 'RC6_DRAIN_REMOTE_ARGUMENT=RED' in workflow
