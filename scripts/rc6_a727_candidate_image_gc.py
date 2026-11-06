@@ -36,6 +36,12 @@ DB = ROOT / "data/paper_v17/observer_v17.db"
 DEPLOY = ROOT / "data/deploy"
 OWNED = ("porota_production_observer", "porota_production_dashboard",
          "porota_critical_approval_rc6")
+# Bounded diagnostics only. These names are the existing A727 allowlist;
+# neither this map nor its output grants deletion rights to any container.
+OWNED_ROLE = dict(zip(OWNED, ("OBSERVER", "DASHBOARD", "APPROVAL")))
+OWNED_FAILURES = ("TIMEOUT", "CLI", "COUNT", "JSON", "SEMANTICS", "OTHER")
+OWNED_HOLDS = frozenset(f"OWNED_{role}_{kind}_UNVERIFIED"
+                        for role in OWNED_ROLE.values() for kind in OWNED_FAILURES)
 STABLE = "porota-trading-bot:17.0.0-rc6"
 HEX40 = re.compile(r"[0-9a-f]{40}")
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -219,6 +225,28 @@ def _stage_read(code: str, reader, *args, **kwargs):
         raise Hold(code) from exc
 
 
+def _owned_container(name: str) -> dict:
+    """Identify only allowlisted role and bounded failure category, never host output.
+
+    Retains the existing single Docker inspect per container and the original
+    fail-closed admission predicates. Unknown failures cannot escape verbatim.
+    """
+    role = OWNED_ROLE[name]
+    try:
+        return _container(name)
+    except subprocess.TimeoutExpired:
+        kind = "TIMEOUT"
+    except json.JSONDecodeError:
+        kind = "JSON"
+    except Hold as exc:
+        kind = {"DOCKER_OPERATION_FAILED": "CLI",
+                "CONTAINER_FIELDS_INVALID": "COUNT",
+                "CONTAINER_FIELDS_UNPROVEN": "SEMANTICS"}.get(str(exc), "OTHER")
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        kind = "OTHER"
+    raise Hold(f"OWNED_{role}_{kind}_UNVERIFIED") from None
+
+
 def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
     barrier, barrier_hash = _stage_read("BARRIER_FILE_UNVERIFIED", _file_json,
                                         BARRIER, owner_root=True)
@@ -240,8 +268,7 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
                          "image", "ls", "-q", "--no-trunc", STABLE).splitlines()
     if stable != [marker["image_id"]]:
         raise Hold("STABLE_IMAGE_MARKER_MISMATCH")
-    containers = {name: _stage_read("OWNED_DOCKER_UNVERIFIED", _container, name)
-                  for name in OWNED}
+    containers = {name: _owned_container(name) for name in OWNED}
     for name in OWNED:
         row = containers[name]
         if row["image"] != marker["image_id"] or row["oom"] or row["restarts"] != 0:
@@ -319,7 +346,7 @@ APPLY_HOLDS = frozenset({"NONE", "BOOK_UNVERIFIED", "MARKER_UNVERIFIED",
                          "STABLE_DOCKER_UNVERIFIED", "OWNED_DOCKER_UNVERIFIED",
                          "QUIESCENCE_FILE_UNVERIFIED", "WATCH_READ_UNVERIFIED",
                          "FILE_UNVERIFIED", "DOCKER_UNVERIFIED",
-                         "OTHER_UNVERIFIED"})
+                         "OTHER_UNVERIFIED"}) | OWNED_HOLDS
 
 
 def _classify_apply_hold(exc: Exception) -> str:
