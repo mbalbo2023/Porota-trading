@@ -152,6 +152,41 @@ RC6_FROZEN_PAPER_SETTINGS = {
 }
 
 
+# Only explicit non-secret selector keys cross the host environment into the
+# PAPER observer. Forwarding a path never approves capacity or creates a ledger.
+PPI_BUDGET_OBSERVER_SELECTORS = (
+    "POROTA_DYNAMIC_CAPACITY_MODE",
+    "POROTA_CAPACITY_POLICY_PATH",
+    "POROTA_CAPACITY_REPORT_PATH",
+    "POROTA_CAPACITY_RECOMMENDATION_PATH",
+    "POROTA_CAPACITY_APPROVAL_PATH",
+    "POROTA_CAPACITY_SHADOW_PATH",
+    "POROTA_PPI_STATIC_SHARED_AUTHORITY_PATH",
+)
+
+
+def ppi_budget_observer_selectors(env):
+    """Forward explicit, validated selectors only; never broker credentials."""
+    values = {}
+    for key in PPI_BUDGET_OBSERVER_SELECTORS:
+        raw = env.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, str) or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+            raise RuntimeError("RC6_PPI_BUDGET_SELECTOR_INVALID")
+        value = raw.strip()
+        if not value:
+            continue
+        if key == "POROTA_DYNAMIC_CAPACITY_MODE":
+            value = value.upper()
+            if value not in {"OFF", "SHADOW", "APPROVED"}:
+                raise RuntimeError("RC6_PPI_BUDGET_MODE_INVALID")
+        elif not Path(value).is_absolute():
+            raise RuntimeError("RC6_PPI_BUDGET_PATH_NOT_ABSOLUTE")
+        values[key] = value
+    return values
+
+
 def paper_settings(env):
     values = {key: env.get(key, "").strip() or default for key, default in PAPER_DEFAULTS.items()}
     values.update(RC6_FROZEN_PAPER_SETTINGS)
@@ -278,7 +313,8 @@ def dashboard_env(mode):
             continue
         key = line.split("=", 1)[0].strip()
         if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV,
-                "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA", *PAPER_DEFAULTS}:
+                "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA", *PAPER_DEFAULTS,
+                *PPI_BUDGET_OBSERVER_SELECTORS}:
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
              f"{DB_ENV}={CONTAINER_DB}",
@@ -293,12 +329,14 @@ def dashboard_env(mode):
 def observer_runtime_env():
     """Archivo 0600 del observador sin IA intradiaria."""
     env = env_file()
+    budget_selectors = ppi_budget_observer_selectors(env)
     target = DATA / "diagnosticos" / "observer_runtime_v17.env"
     values = {
         "TELEGRAM_BOT_TOKEN": env.get("TELEGRAM_BOT_TOKEN", "").strip(),
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
     values.update(paper_settings(env))
+    values.update(budget_selectors)
     # Contract Evidence recolecta PPI read-only para todas las familias auditables.\n    # Nunca habilita decisiones ni órdenes; las familias fuera de alcance siguen fail-closed.\n    values["POROTA_CONTRACT_EVIDENCE_MODE"] = env.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").strip().upper() or "ENABLED"\n    # RC6 settlement hotfix: autoridad explícita sólo en el observer PAPER.
     # El módulo de settlement permanece fail-closed fuera de este runtime.
     values["PAPER_T1_FULL_DATE_RELEASE"] = "true"
@@ -357,6 +395,8 @@ def start_dashboard(mode, image=IMAGE):
 
 def simulation():
     image = simulation_image()
+    # Reject malformed budget selectors before stopping any healthy runtime.
+    runtime_env = observer_runtime_env()
     stop_engines()
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
@@ -365,7 +405,6 @@ def simulation():
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
-    runtime_env = observer_runtime_env()
     # RC6 worker provenance: the candidate image is verified by the deploy
     # workflow before this manager is invoked. Remove any previous observer and
     # run only that immutable image; then fail closed if PID 1 exits immediately.
