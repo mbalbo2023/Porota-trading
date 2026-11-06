@@ -44,11 +44,22 @@ class R1ScannerMetadataTest(unittest.TestCase):
             {"Destination": "/run/secrets/ppi_production.json", "Type": "bind", "Source": "/private/mount", "RW": False},
         ])
         result = m.safe_mounts(raw)
-        self.assertEqual(result, {"runtime_data_mount": "EXPECTED_BIND", "ppi_secret_mount": "MOUNT_PRESENT"})
+        self.assertEqual(result, {"runtime_data_mount": "EXPECTED_BIND", "ppi_secret_mount": "EXACT_FILE_MOUNT"})
         self.assertNotIn("/private", json.dumps(result))
+        self.assertEqual(m.safe_mounts(json.dumps([{
+            "Destination": "/run/secrets", "Type": "bind", "Source": "/unrelated-secrets",
+        }]))["ppi_secret_mount"], "GENERIC_DIRECTORY_MOUNT")
         self.assertEqual(m.safe_mounts(json.dumps([{
             "Destination": "/app/data", "Type": "bind", "Source": "/opt/porota-trading/databackup",
         }]))["runtime_data_mount"], "OTHER")
+        self.assertEqual(m.safe_mounts(json.dumps([{
+            "Destination": "/app/data/market", "Type": "bind",
+            "Source": "/opt/porota-trading/data/market",
+        }]))["runtime_data_mount"], "ABSENT")
+        self.assertEqual(m.safe_mounts(json.dumps([{
+            "Destination": "/app/data/market", "Type": "bind", "Source": "/tmp/unrelated",
+        }, {"Destination": "/app/data", "Type": "bind",
+            "Source": "/opt/porota-trading/data"}]))["runtime_data_mount"], "OTHER")
 
     def test_log_counts_only_exact_three_markers_without_payload(self):
         raw = (b"2026-11-06T14:01:00Z PPI_SCANNER_PRIMARY_RECEIPT={secret:do-not-publish}\n"
