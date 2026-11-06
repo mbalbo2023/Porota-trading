@@ -108,6 +108,7 @@ def safe_mounts(raw: str) -> dict:
         raise ValueError("MOUNTS_SHAPE")
     has_expected_root = False
     data_alias_or_conflict = False
+    seen_data_destinations: set[str] = set()
     secret = "NO_MOUNT"
     for mount in mounts:
         if not isinstance(mount, dict):
@@ -119,6 +120,10 @@ def safe_mounts(raw: str) -> dict:
             raise ValueError("MOUNT_FIELDS")
         if len(dest) > 1024 or len(source) > 1024:
             raise ValueError("MOUNT_BOUND")
+        if dest in ("/app/data", "/app/data/market"):
+            if dest in seen_data_destinations:
+                data_alias_or_conflict = True
+            seen_data_destinations.add(dest)
         if dest == "/app/data":
             # The exact root is an ownership hint, never permission to mutate it.
             # Duplicate/misordered mounts must not override a conflicting role.
@@ -256,6 +261,14 @@ def validate_receipt(obj: dict, expected_product_sha: str, expected_image_id: st
         raise ValueError("RECEIPT_STATUS")
     if not isinstance(obj["observed_at_utc"], str) or not UTC_STAMP.fullmatch(obj["observed_at_utc"]):
         raise ValueError("RECEIPT_TIME")
+    try:
+        observed = datetime.fromisoformat(obj["observed_at_utc"].replace("Z", "+00:00"))
+        age_seconds = (datetime.now(timezone.utc) - observed).total_seconds()
+    except (ValueError, OverflowError):
+        raise ValueError("RECEIPT_TIME") from None
+    # Host observation time, NOT market-data freshness. Reject false time claims.
+    if not -120 <= age_seconds <= 900:
+        raise ValueError("RECEIPT_TIME_WINDOW")
     for key in ("product_runtime_sha_attested", "image_pin_verified", "container_running",
                 "source_freshness_attested", "paper_ready", "probe_trading_db_opened"):
         if type(obj[key]) is not bool:
@@ -286,8 +299,11 @@ def validate_receipt(obj: dict, expected_product_sha: str, expected_image_id: st
     if obj["log_marker_state"] == "NO_VERIFICADO" and any(obj["marker_counts"].values()):
         raise ValueError("RECEIPT_UNVERIFIED_COUNT")
     if obj["status"] == "OBSERVED_ONLY" and not (obj["image_pin_verified"] and obj[
-        "container_running"] and obj["log_marker_state"] == "OBSERVED"):
+        "container_running"] and obj["log_marker_state"] == "OBSERVED" and
+            obj["reason"] == "OBSERVED_ONLY_NOT_PAPER_GO"):
         raise ValueError("RECEIPT_NO_IMAGE")
+    if obj["status"] == "NO_VERIFICADO" and obj["reason"] == "OBSERVED_ONLY_NOT_PAPER_GO":
+        raise ValueError("RECEIPT_STATUS_REASON")
     return obj
 
 
