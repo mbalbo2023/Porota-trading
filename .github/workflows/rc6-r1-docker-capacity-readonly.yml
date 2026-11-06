@@ -9,6 +9,11 @@ on:
         description: Exact last observed physical product SHA
         required: true
         type: string
+      inspect_rc6_timers:
+        description: Include bounded READ_ONLY evidence for 16 versioned RC6 timers
+        required: false
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
     paths: ['.github/workflows/rc6-r1-docker-capacity-readonly.yml']
@@ -38,6 +43,13 @@ jobs:
           for forbidden in ('docker prune', 'docker image rm', 'docker system prune',
                             'docker rm ', 'docker rmi ', 'docker exec', 'PPI_GET'):
               assert forbidden not in host, forbidden
+          timer=source.split('\n      - name: Inspect RC6 timer contract READ_ONLY\n',1)[1].split(
+              '\n      - name: Runner-only SSH cleanup\n',1)[0]
+          for forbidden in ('systemctl start', 'systemctl stop', 'systemctl restart',
+                            'systemctl enable', 'systemctl disable', 'daemon-reload',
+                            'docker image rm', 'docker prune', 'PPI_GET', 'journalctl'):
+              assert forbidden not in timer, forbidden
+          assert 'inspect_rc6_timers:' in source and 'porota-byma-morning-watch-rc6.timer' in timer
           print('RC6_R1_DOCKER_RO_OFFHOST=GREEN')
           PY
 
@@ -224,8 +236,138 @@ jobs:
               out.write('### RC6 R1 Docker capacity — READ_ONLY\n\n')
               out.write('```json\n'+json.dumps(data,sort_keys=True,indent=2)+'\n```\n')
           PY
+      - name: Inspect RC6 timer contract READ_ONLY
+        if: ${{ inputs.inspect_rc6_timers }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$RUNNER_TEMP/rc6_r1_capacity/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_r1_capacity/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 50 python3 -B -" \
+            > "$RUNNER_TEMP/rc6_r1_capacity/timers.json" <<'PY'
+          import hashlib, json, re, subprocess, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          # Exact ACTIVE_TIMER identifiers from product policy at 7124100b.
+          # This is physical observation, never permission to resume a timer.
+          names = (
+              'porota-runtime-evidence-rc6.timer',
+              'porota-candle-integrity-rc6.timer',
+              'porota-fast-functional-health-rc6.timer',
+              'porota-market-watch-silence-rc6.timer',
+              'porota-full-db-integrity-rc6.timer',
+              'porota-preopen-rc6.timer',
+              'porota-introspection-publish-rc6.timer',
+              'porota-introspection-rc6.timer',
+              'porota-iol-shadow-collector-rc6.timer',
+              'porota-rc6-candle-inmarket-verify.timer',
+              'porota-scheduler-export-rc6.timer',
+              'porota-snapshot-postclose-rc6.timer',
+              'porota-snapshot-preopen-rc6.timer',
+              'porota-byma-morning-watch-rc6.timer',
+              'porota-iol-oauth-health-rc6.timer',
+              'porota-local-eod-history-rc6.timer',
+          )
+          props = ('Id', 'LoadState', 'ActiveState', 'SubState', 'Result',
+                   'UnitFileState', 'ActiveEnterTimestamp',
+                   'InactiveEnterTimestamp', 'LastTriggerUSec',
+                   'NextElapseUSecRealtime', 'Unit')
+
+          def read_command(*args):
+              result = subprocess.run(args, capture_output=True, text=True,
+                                      timeout=3, check=False)
+              if len(result.stdout) > 2048 or len(result.stderr) > 2048:
+                  raise ValueError('SYSTEMCTL_RESPONSE_BOUND')
+              return result.stdout.strip(), result.returncode
+
+          def inspect(name):
+              if not re.fullmatch(r'porota-[a-z0-9-]+\.timer', name) and name != 'porota-byma-morning-watch-rc6.service':
+                  raise ValueError('UNIT_NAME_UNSAFE')
+              active, active_rc = read_command('systemctl', 'is-active', name)
+              enabled, enabled_rc = read_command('systemctl', 'is-enabled', name)
+              raw, show_rc = read_command('systemctl', 'show', name,
+                                          '--no-pager', '--property='+','.join(props))
+              state = {}
+              for line in raw.splitlines():
+                  key, sep, value = line.partition('=')
+                  if sep and key in props and len(value) <= 96 and re.fullmatch(r'[a-zA-Z0-9 .:+_/-]*', value):
+                      state[key] = value
+              return {'unit':name, 'active':active[:24] if re.fullmatch(r'[a-z-]{1,24}', active) else 'NO_VERIFICADO',
+                      'active_rc':active_rc, 'enabled':enabled[:24] if re.fullmatch(r'[a-z-]{1,24}', enabled) else 'NO_VERIFICADO',
+                      'enabled_rc':enabled_rc, 'show_rc':show_rc, 'show':state}
+
+          try:
+              if len(names) != 16 or len(set(names)) != 16:
+                  raise ValueError('POLICY_TIMER_COUNT_MISMATCH')
+              states = [inspect(name) for name in names]
+              byma_service = inspect('porota-byma-morning-watch-rc6.service')
+              root = Path('/opt/porota-trading/data/deploy')
+              receipts = []
+              if root.is_dir() and not root.is_symlink():
+                  paths = list(root.glob('scheduler-suspend-*.json'))
+                  if len(paths) > 128:
+                      raise ValueError('SCHEDULER_RECEIPT_COUNT_BOUND')
+                  if any(path.is_symlink() for path in paths):
+                      raise ValueError('SCHEDULER_RECEIPT_ALIAS')
+                  paths.sort(key=lambda path:path.stat().st_mtime, reverse=True)
+                  for path in paths[:6]:
+                      if path.is_symlink() or path.stat().st_size > 65536:
+                          raise ValueError('SCHEDULER_RECEIPT_UNSAFE')
+                      raw = path.read_bytes()
+                      data = json.loads(raw)
+                      candidate = data.get('candidate_sha')
+                      status = data.get('status')
+                      if not (isinstance(candidate,str) and re.fullmatch(r'[a-f0-9]{40}',candidate)
+                              and isinstance(status,str) and re.fullmatch(r'[A-Z_]{1,32}',status)):
+                          raise ValueError('SCHEDULER_RECEIPT_METADATA_UNSAFE')
+                      receipts.append({'candidate_sha':candidate, 'status':status,
+                          'sha256':hashlib.sha256(raw).hexdigest(),
+                          'timer_count':len(data.get('timers',[])) if isinstance(data.get('timers'),list) else -1,
+                          'attempted_count':len(data.get('attempted',[])) if isinstance(data.get('attempted'),list) else -1})
+              payload = {'schema':'rc6.r1.scheduler-physical-readonly.v1',
+                  'state':'READ_ONLY_OBSERVED', 'mutations':0, 'provider_gets':0,
+                  'policy_product_sha':'7124100b401238e70747d04399bf8054a8e278ae',
+                  'generated_at_utc':datetime.now(timezone.utc).isoformat(),
+                  'timers':states, 'byma_service':byma_service,
+                  'prior_suspend_receipts':receipts}
+              print(json.dumps(payload,sort_keys=True,separators=(',',':')))
+          except Exception as exc:
+              print(json.dumps({'schema':'rc6.r1.scheduler-physical-readonly.v1',
+                  'state':'NO_VERIFICADO', 'mutations':0, 'provider_gets':0,
+                  'reason':type(exc).__name__},sort_keys=True))
+              # The runner rejects this receipt and reports the bounded error.
+          PY
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          raw=Path(os.environ['RUNNER_TEMP'])/'rc6_r1_capacity/timers.json'
+          if raw.stat().st_size > 16384:
+              raise SystemExit('RC6_R1_SCHEDULER_RO=RED|RECEIPT_BOUND')
+          data=json.loads(raw.read_text())
+          if data.get('state')!='READ_ONLY_OBSERVED':
+              reason=data.get('reason','UNKNOWN')
+              print('RC6_R1_SCHEDULER_RO=RED|HOST_REASON='+
+                    (reason if isinstance(reason,str) and reason.isidentifier() else 'UNKNOWN'))
+              raise SystemExit(2)
+          names=[entry.get('unit') for entry in data.get('timers',[])]
+          if (data.get('schema')!='rc6.r1.scheduler-physical-readonly.v1' or
+              data.get('state')!='READ_ONLY_OBSERVED' or
+              data.get('mutations')!=0 or data.get('provider_gets')!=0 or
+              len(names)!=16 or len(set(names))!=16 or
+              'porota-byma-morning-watch-rc6.timer' not in names):
+              raise SystemExit('RC6_R1_SCHEDULER_RO=RED|RECEIPT_UNVERIFIED')
+          print(json.dumps(data,sort_keys=True))
+          print('RC6_R1_SCHEDULER_RO=GREEN|READ_ONLY_OBSERVED_NOT_DEPLOY_READY')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
+              out.write('### RC6 R1 scheduler — physical READ_ONLY (not deploy readiness)\n\n')
+              out.write('```json\n'+json.dumps(data,sort_keys=True,indent=2)+'\n```\n')
+          PY
       - name: Runner-only SSH cleanup
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts" "$RUNNER_TEMP/rc6_r1_capacity/raw.json"
+          rm -f "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts" "$RUNNER_TEMP/rc6_r1_capacity/raw.json" "$RUNNER_TEMP/rc6_r1_capacity/timers.json"
