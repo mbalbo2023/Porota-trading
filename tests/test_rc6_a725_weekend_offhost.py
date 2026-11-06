@@ -43,6 +43,15 @@ class WeekendEvidenceTests(unittest.TestCase):
                     row.update(scanner_receipt={"state": "ABSENT"},
                                native_book_journal={"state": "ABSENT"},
                                effective_ppi_lease="NO_VERIFICADO")
+                    self.put(self.artifacts / key / "a617_schedule_gate.json", {
+                        "schema": "rc6.a657.a617-schedule-gate.v1", "read_only": True,
+                        "gate": "MANUAL_READ_ONLY_FALLBACK", "active": True,
+                        "scheduled_slot_art": None, "delay_seconds": None,
+                        "observed_at_art": "2026-11-06T11:30:01-03:00",
+                        "host_probe_state": "NOT_ATTESTED_BY_GATE",
+                        "provider_gets_by_gate": 0,
+                        "order_routes_called_by_gate": False,
+                        "ppi_watch_touched_by_gate": False})
                 if key == "a724":
                     row.update(marker={"relation": "R1_LAST_GO"},
                                barrier={"status": "IDLE"},
@@ -50,7 +59,8 @@ class WeekendEvidenceTests(unittest.TestCase):
                                scheduler={"receipt_status": "SUSPENDED"},
                                unreferenced_total=2, mutations=0,
                                runtime_running_verified=False)
-                self.put(self.artifacts / key / "sanitized.json", row)
+                filename = "a617_ppi_origin_selector.json" if key == "a617" else "sanitized.json"
+                self.put(self.artifacts / key / filename, row)
         cleanup = {"schema": "POROTA_DEPLOY_FAILURE_CLEANUP_V1",
                    "candidate_sha": "a16a31c7bc4634362870c731273e084eea9d357d",
                    "status": "GREEN", "staging_removed": True, "removed_tags": [],
@@ -79,8 +89,11 @@ class WeekendEvidenceTests(unittest.TestCase):
         self.assertEqual(result["families"][0]["active_contract_gap"], None)
         self.assertEqual(result["ppi"]["lease_effective"], "NO_VERIFICADO")
         self.assertEqual(result["ppi"]["native_book_journal"], "ABSENT")
+        self.assertEqual(len(result["sources"]["a617"]["receipt_sha256"]), 64)
+        self.assertEqual(len(result["sources"]["a617"]["a617_schedule_gate_sha256"]), 64)
         self.assertEqual(result["schedules"]["due_slots"], 21)
         self.assertEqual(result["r2_failure"]["cleanup"]["retained_tags"], 2)
+        self.assertEqual(result["r2_log_integrity"], "GREEN")
         self.assertFalse(result["paper_ready_certified"])
         self.assertFalse(result["causal_pit_certified"])
         self.assertFalse(any(x["paper_readiness"] != "NO_VERIFICADO" for x in result["families"]))
@@ -127,7 +140,8 @@ class WeekendEvidenceTests(unittest.TestCase):
         )
         for key, fields, malicious in paths:
             with self.subTest(key=key, fields=fields):
-                path = self.artifacts / key / "sanitized.json"
+                filename = "a617_ppi_origin_selector.json" if key == "a617" else "sanitized.json"
+                path = self.artifacts / key / filename
                 original = json.loads(path.read_text())
                 tainted = json.loads(path.read_text())
                 node = tainted
@@ -143,7 +157,7 @@ class WeekendEvidenceTests(unittest.TestCase):
                 self.put(path, original)
 
     def test_rejected_duplicate_json_and_unbounded_input(self):
-        a617 = self.artifacts / "a617" / "sanitized.json"
+        a617 = self.artifacts / "a617" / "a617_ppi_origin_selector.json"
         a617.write_text('{"schema":"x","schema":"y"}')
         self.assertEqual(a725.consolidate(self.root)["sources"]["a617"]["reason"],
                          "DUPLICATE_JSON_KEY")
@@ -156,8 +170,71 @@ class WeekendEvidenceTests(unittest.TestCase):
             "a16a31c7bc4634362870c731273e084eea9d357d", "a" * 40))
         result = a725.consolidate(self.root)
         self.assertEqual(result["r2_failure"]["state"], "NO_VERIFICADO")
+        self.assertEqual(result["r2_log_integrity"], "NO_VERIFICADO")
+        self.assertEqual(result["artifact_integrity"], "GREEN")
+        self.assertEqual(result["state"], "OFFHOST_RECONCILED_PARTIAL")
+        self.assertEqual(result["r2_failure"]["cleanup"], "NO_VERIFICADO")
+        self.assertFalse(result["paper_ready_certified"])
+
+    def test_a617_exact_two_json_files_are_required(self):
+        primary = self.artifacts / "a617" / "a617_ppi_origin_selector.json"
+        companion = self.artifacts / "a617" / "a617_schedule_gate.json"
+        self.assertTrue(primary.is_file() and companion.is_file())
+        result = a725.consolidate(self.root)
+        self.assertEqual(result["sources"]["a617"]["source_integrity"], "GREEN")
+        companion.unlink()
+        result = a725.consolidate(self.root)
+        self.assertEqual(result["sources"]["a617"]["reason"], "ARTIFACT_COUNT_OR_PATH")
+        self.put(companion, {"schema": "x"})
+        self.put(self.artifacts / "a617" / "injected_extra.json", {"secret": "LEAK"})
+        result = a725.consolidate(self.root)
+        self.assertEqual(result["sources"]["a617"]["reason"], "ARTIFACT_COUNT_OR_PATH")
+        self.assertNotIn("LEAK", json.dumps(result))
+
+    def test_a617_companion_requires_gate_and_zero_write_contract(self):
+        companion = self.artifacts / "a617" / "a617_schedule_gate.json"
+        original = json.loads(companion.read_text())
+        malicious = "SECRET_PRIVATE_TOKEN_DO_NOT_LEAK"
+        cases = (
+            ("gate", malicious), ("active", "oops"),
+            ("host_probe_state", malicious), ("provider_gets_by_gate", True),
+            ("provider_gets_by_gate", 1), ("order_routes_called_by_gate", True),
+            ("ppi_watch_touched_by_gate", True), ("read_only", False),
+            ("observed_at_art", malicious),
+            ("observed_at_art", "2026-11-05T11:30:01-03:00"),
+        )
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                changed = dict(original)
+                changed[field] = value
+                self.put(companion, changed)
+                result = a725.consolidate(self.root)
+                self.assertEqual(result["sources"]["a617"]["source_integrity"], "NO_VERIFICADO")
+                self.assertEqual(result["artifact_integrity"], "NO_VERIFICADO")
+                self.assertFalse(result["paper_ready_certified"])
+                self.assertNotIn(malicious, json.dumps(result))
+                self.assertNotIn("oops", json.dumps(result))
+        companion.write_text("[]")
+        self.assertEqual(a725.consolidate(self.root)["sources"]["a617"]["reason"],
+                         "A617_COMPANION_GATE_UNTRUSTED")
+
+    def test_r2_log_missing_degrades_without_green_root_cause(self):
+        self.log.unlink()
+        result = a725.consolidate(self.root)
+        self.assertEqual(result["artifact_integrity"], "GREEN")
+        self.assertEqual(result["state"], "OFFHOST_RECONCILED_PARTIAL")
+        self.assertEqual(result["r2_log_integrity"], "NO_VERIFICADO")
+        self.assertEqual(result["r2_failure"]["run_conclusion"], "failure")
+        self.assertEqual(result["r2_failure"]["root_cause"], "NO_VERIFICADO")
+        self.assertEqual(result["r2_failure"]["cleanup"], "NO_VERIFICADO")
+        self.assertFalse(result["paper_ready_certified"])
+
+    def test_r2_run_metadata_missing_remains_global_no_verificado(self):
+        (self.root / "metadata" / "42260034260.json").unlink()
+        result = a725.consolidate(self.root)
+        self.assertEqual(result["artifact_integrity"], "NO_VERIFICADO")
         self.assertEqual(result["state"], "NO_VERIFICADO")
-        self.assertIn("r2_log:R2_CLEANUP_LOG_MISSING", result["holds"])
+        self.assertEqual(result["sources"]["r2"]["source_integrity"], "NO_VERIFICADO")
 
     def test_workflow_is_main_manual_no_runtime_credentials(self):
         workflow = (Path(__file__).resolve().parents[1] /
@@ -165,6 +242,8 @@ class WeekendEvidenceTests(unittest.TestCase):
         self.assertIn("  workflow_dispatch:", workflow)
         self.assertNotIn("  schedule:", workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("gh run view 42260034260", workflow)
+        self.assertIn("--job 128037233727 --log", workflow)
         self.assertIn("  actions: read", workflow)
         for forbidden in ("secrets.", "sudo ", "ssh ", "docker ", "ppi-client",
                           "rc6_history_fresh_probe", "github.event_name == 'schedule'"):

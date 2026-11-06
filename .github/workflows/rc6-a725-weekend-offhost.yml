@@ -83,9 +83,16 @@ jobs:
           ALLOWLIST
           # R2 has no uploaded artifact. A bounded GitHub Actions job log is
           # parsed in memory by a strict failure-code allowlist, never published.
-          if ! gh api 'repos/mbalbo2023/Porota-trading/actions/jobs/128037233727/logs' \
-              > "$root/logs/r2.log" 2>/dev/null; then
-            echo 'A725_R2_JOB_LOG=NO_VERIFICADO'
+          if ! timeout 45s gh api 'repos/mbalbo2023/Porota-trading/actions/jobs/128037233727/logs' \
+              > "$root/logs/r2.log" 2>/dev/null || ! test -s "$root/logs/r2.log"; then
+            # GitHub's job-log redirect can fail through gh api on runners.
+            # The alternative still reads ONLY the pinned Actions job; if
+            # neither works, preserve partial evidence instead of fake GREEN.
+            if ! timeout 50s gh run view 42260034260 \
+                --job 128037233727 --log --repo mbalbo2023/Porota-trading \
+                > "$root/logs/r2.log" 2>/dev/null || ! test -s "$root/logs/r2.log"; then
+              echo 'A725_R2_JOB_LOG=NO_VERIFICADO'
+            fi
           fi
       - name: Publish allowlisted correlations only; no READY claim
         shell: bash

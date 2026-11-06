@@ -7,6 +7,7 @@ network, Docker, SSH, SQLite, market-provider, or trading dependencies.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -32,9 +33,11 @@ MAX_ARTIFACT = 65536
 MAX_LOG = 2 * 1024 * 1024
 SCHEDULER_FINDINGS = frozenset({
     "P1_SCHEDULE_SILENT", "NO_CONFIRMED_TWO_SLOT_SILENCE", "NO_VERIFICADO"})
-SCANNER_STATES = frozenset({"ABSENT", "NO_VERIFICADO", "SCHEMA_ASSERTED"})
+SCANNER_STATES = frozenset({
+    "ABSENT", "NO_VERIFICADO", "SCHEMA_ASSERTED", "READ_ONLY_OBSERVED", "SCHEMA_HOLD"})
 JOURNAL_STATES = frozenset({
-    "ABSENT", "NO_VERIFICADO", "STRUCTURAL_HASH_CHAIN_VALIDATED"})
+    "ABSENT", "NO_VERIFICADO", "SCHEMA_ASSERTED", "READ_ONLY_OBSERVED",
+    "SCHEMA_HOLD", "STRUCTURAL_HASH_CHAIN_VALIDATED"})
 MARKER_RELATIONS = frozenset({"UNKNOWN", "R1_LAST_GO", "FAILED_R2", "OTHER_EXACT_SHA"})
 BARRIER_STATES = frozenset({"ABSENT", "IDLE", "INFLIGHT", "CONTRACT_ONLY"})
 COLD_SUCCESSORS = frozenset({
@@ -68,11 +71,17 @@ def _bounded(path: Path, limit: int):
     return path.read_bytes()
 
 
-def _receipt(folder: Path, schema: str):
+def _receipt(folder: Path, schema: str, *, source: str):
     files = list(folder.rglob("*.json")) if folder.is_dir() and not folder.is_symlink() else []
-    if len(files) != 1 or len(files[0].relative_to(folder).parts) > 3:
+    expected = ({"a617_ppi_origin_selector.json", "a617_schedule_gate.json"}
+                if source == "a617" else None)
+    if (len(files) != (2 if expected else 1)
+            or expected is not None and {p.name for p in files} != expected
+            or any(len(p.relative_to(folder).parts) > 3 for p in files)):
         raise Hold("ARTIFACT_COUNT_OR_PATH")
-    raw = _bounded(files[0], MAX_ARTIFACT)
+    by_name = {p.name: p for p in files}
+    primary = by_name["a617_ppi_origin_selector.json"] if expected else files[0]
+    raw = _bounded(primary, MAX_ARTIFACT)
     data = _json(raw)
     if type(data) is not dict or data.get("schema") != schema:
         raise Hold("ARTIFACT_SCHEMA")
@@ -82,7 +91,31 @@ def _receipt(folder: Path, schema: str):
         raise Hold("ORDERS_ROUTE_UNVERIFIED")
     if data.get("ppi_watch_touched", False) is not False:
         raise Hold("PPI_WATCH_ACCESS_UNVERIFIED")
-    return data, sha256(raw).hexdigest()
+    gate_digest = None
+    if expected:
+        companion = _bounded(by_name["a617_schedule_gate.json"], MAX_ARTIFACT)
+        gate = _json(companion)
+        if (type(gate) is not dict or gate.get("schema") != "rc6.a657.a617-schedule-gate.v1"
+                or gate.get("read_only") is not True
+                or gate.get("gate") != "MANUAL_READ_ONLY_FALLBACK"
+                or gate.get("active") is not True
+                or gate.get("scheduled_slot_art") is not None
+                or gate.get("delay_seconds") is not None
+                or gate.get("host_probe_state") != "NOT_ATTESTED_BY_GATE"
+                or type(gate.get("provider_gets_by_gate")) is not int
+                or gate["provider_gets_by_gate"] != 0
+                or gate.get("order_routes_called_by_gate") is not False
+                or gate.get("ppi_watch_touched_by_gate") is not False):
+            raise Hold("A617_COMPANION_GATE_UNTRUSTED")
+        stamp = gate.get("observed_at_art")
+        try:
+            seen = datetime.fromisoformat(stamp) if type(stamp) is str and len(stamp) <= 48 else None
+        except ValueError:
+            seen = None
+        if seen is None or seen.utcoffset() is None or seen.date().isoformat() != "2026-11-06":
+            raise Hold("A617_COMPANION_CLOCK_UNTRUSTED")
+        gate_digest = sha256(companion).hexdigest()
+    return data, sha256(raw).hexdigest(), gate_digest
 
 
 def _run(path: Path, run_id: int, expected_sha: str, *, failure=False):
@@ -157,7 +190,8 @@ def consolidate(root: Path):
             meta = _run(root / "metadata" / (str(run_id) + ".json"), run_id,
                         pin, failure=(key == "r2"))
             if schema is not None:
-                receipt, digest = _receipt(root / "artifacts" / key, schema)
+                receipt, digest, gate_digest = _receipt(root / "artifacts" / key,
+                                                       schema, source=key)
                 if (key == "a627" and receipt.get("source_status") != "VERIFIED_API"
                         or key != "a627" and key != "a724"
                         and receipt.get("state") != "READ_ONLY_OBSERVED"
@@ -207,6 +241,8 @@ def consolidate(root: Path):
                         "unreferenced_images": unreferenced}
                 loaded[key] = receipt
                 meta["receipt_sha256"] = digest
+                if gate_digest is not None:
+                    meta["a617_schedule_gate_sha256"] = gate_digest
             report["sources"][key] = {**meta, "source_integrity": "GREEN"}
         except (Hold, OSError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
             reason = str(exc) if isinstance(exc, Hold) else "INPUT_READ_OR_PARSE_HOLD"
@@ -242,17 +278,27 @@ def consolidate(root: Path):
             "state": "DIAGNOSTIC_ONLY",
             **safe_diagnostics["a724"],
             "runtime_running_certified": False}
+    r2_log_verified = False
     try:
         report["r2_failure"] = _r2_logs(root / "logs" / "r2.log")
         if len(report["r2_failure"]["confirmed_errors"]) != 2:
             raise Hold("R2_ROOT_CAUSE_LOG_MISSING")
         if report["r2_failure"]["cleanup"] == "NO_VERIFICADO":
             raise Hold("R2_CLEANUP_LOG_MISSING")
-    except (Hold, OSError, UnicodeError) as exc:
-        report["r2_failure"] = {"state": "NO_VERIFICADO"}
-        report["holds"].append("r2_log:" + (str(exc) if isinstance(exc, Hold) else "LOG_HOLD"))
+        r2_log_verified = True
+    except (Hold, OSError, UnicodeError):
+        # The independently verified R2 run metadata still says failure.
+        # Job log availability is an optional evidence channel, never a GO.
+        report["r2_failure"] = {"state": "NO_VERIFICADO",
+                                "run_conclusion": "failure" if
+                                report["sources"]["r2"]["source_integrity"] == "GREEN"
+                                else "NO_VERIFICADO",
+                                "cleanup": "NO_VERIFICADO", "root_cause": "NO_VERIFICADO"}
     report["artifact_integrity"] = "GREEN" if not report["holds"] else "NO_VERIFICADO"
-    report["state"] = "OFFHOST_RECONCILED" if not report["holds"] else "NO_VERIFICADO"
+    report["r2_log_integrity"] = "GREEN" if r2_log_verified else "NO_VERIFICADO"
+    report["state"] = ("NO_VERIFICADO" if report["holds"] else
+                       "OFFHOST_RECONCILED" if r2_log_verified else
+                       "OFFHOST_RECONCILED_PARTIAL")
     return report
 
 
@@ -265,6 +311,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print("A725_OFFHOST_INTEGRITY=" + result["artifact_integrity"])
+    print("A725_R2_LOG_INTEGRITY=" + result["r2_log_integrity"])
     print("A725_FAMILIES=10|PIT=NO_VERIFICADO|PROVIDER_GETS=0|HOST_ACCESS=0")
     return 0 if result["artifact_integrity"] == "GREEN" else 2
 
