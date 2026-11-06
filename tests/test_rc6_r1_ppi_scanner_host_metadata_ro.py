@@ -81,7 +81,8 @@ class R1ScannerMetadataTest(unittest.TestCase):
         base.update(status="OBSERVED_ONLY", reason="OBSERVED_ONLY_NOT_PAPER_GO",
                     image_pin_verified=True, container_running=True, log_marker_state="OBSERVED")
         self.assertEqual(m.validate_receipt(base, PRODUCT, IMAGE)["status"], "OBSERVED_ONLY")
-        for key, value in (("paper_ready", True), ("provider_gets", 1),
+        for key, value in (("paper_ready", True), ("probe_provider_gets", 1),
+                           ("product_runtime_sha_attested", True),
                            ("effective_runtime_policy", "APPROVED"),
                            ("reason", "secret error message"),
                            ("expected_image_id", "sha256:"+"0"*64)):
@@ -97,7 +98,8 @@ class R1ScannerMetadataTest(unittest.TestCase):
         with patch.object(m, "_docker", side_effect=[b"sha256:" + b"0" * 64 + b"\n", b"true\n"]) as docker:
             result = m.host_probe(PRODUCT, IMAGE)
         self.assertEqual(result["reason"], "IMAGE_PIN_MISMATCH")
-        self.assertEqual(result["provider_gets"], 0)
+        self.assertEqual(result["probe_provider_gets"], 0)
+        self.assertFalse(result["product_runtime_sha_attested"])
         self.assertEqual(docker.call_count, 2)
         self.assertFalse(result["image_pin_verified"])
 
@@ -117,7 +119,7 @@ class R1ScannerMetadataTest(unittest.TestCase):
         self.assertEqual(result["effective_runtime_policy"], "NO_VERIFICADO")
         self.assertEqual(result["marker_counts"][m.MARKERS[0]], 1)
         self.assertEqual(docker.call_count, 5)
-        self.assertEqual(result["ppi_watch_mutations"], 0)
+        self.assertEqual(result["probe_ppi_watch_mutations"], 0)
 
     def test_scope_is_metadata_only_and_guards_forbidden_calls(self):
         source = Path(m.__file__).read_text()
