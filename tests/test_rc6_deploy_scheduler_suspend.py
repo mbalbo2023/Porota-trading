@@ -1,5 +1,8 @@
 import base64
+import gzip
+import hashlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +14,27 @@ from scripts import rc6_deploy_quiescence as quiescence
 
 
 class SuspendTests(unittest.TestCase):
+    def test_a667_staged_operator_bounded_source_capacity(self):
+        """A667 guard must fit both A151 staging loaders without a zip bomb."""
+        source=Path(suspend.__file__).read_bytes()
+        self.assertGreater(len(source),110000)
+        self.assertLess(len(source),131072)
+        staged=base64.b64encode(gzip.compress(source,compresslevel=9,mtime=0)).decode()
+        env={'RC6_A125_CANDIDATE_SOURCE_GZIP_B64':staged,
+             'RC6_A125_CANDIDATE_SOURCE_SHA256':hashlib.sha256(source).hexdigest()}
+        with patch.dict(os.environ,env),patch.dict(os.environ,
+                {'RC6_A125_CANDIDATE_SOURCE_B64':''}):
+            module=quiescence.candidate_operator_module(require_staged=True)
+            self.assertTrue(callable(module.adopt_prior_closed_flat_hold))
+        oversized=b'#'*(128*1024)
+        env['RC6_A125_CANDIDATE_SOURCE_GZIP_B64']=base64.b64encode(
+            gzip.compress(oversized,compresslevel=9,mtime=0)).decode()
+        env['RC6_A125_CANDIDATE_SOURCE_SHA256']=hashlib.sha256(oversized).hexdigest()
+        with patch.dict(os.environ,env),patch.dict(os.environ,
+                {'RC6_A125_CANDIDATE_SOURCE_B64':''}):
+            with self.assertRaisesRegex(ValueError,'QUIESCENCE_OPERATOR_SOURCE_INVALID'):
+                quiescence.candidate_operator_module(require_staged=True)
+
     def test_open_hold_requires_exact_stopped_paper_receipt(self):
         originals = {name: {'State': {'Status': 'exited'}} for name in quiescence.OWNED}
         receipt = {'status': 'DRAINED', 'real_orders_sent': 0,
@@ -228,6 +252,128 @@ class SuspendTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'SCHEDULER_PREPAUSE_JOB_ACTIVE'):
                     suspend.run('c'*40, 'suspend', self.policy())
                 self.assertFalse((Path(directory)/('scheduler-suspend-'+'c'*40+'.json')).exists())
+
+    def test_a667_adopts_exact_closed_flat_iol_hold_without_timer_mutations(self):
+        raw=(Path(__file__).resolve().parents[1]/
+             'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
+        names=suspend.timer_policy(raw)
+        self.assertEqual(len(names),16)
+        self.assertIn(suspend.IOL_OAUTH_GUARD_TIMER,names)
+        prior_sha='a'*40
+        candidate='b'*40
+        watch=[['other-ppi-watch.service','enabled','active']]
+        prior={'candidate_sha':prior_sha,
+               'policy_sha256':suspend.hashlib.sha256(raw).hexdigest(),
+               'timers':names,'attempted':names,'status':'SUSPENDED',
+               'ppi_before':watch,
+               'preserved_iol_timer':suspend.IOL_OAUTH_GUARD_TIMER,
+               'recorded_at':'2026-11-05T21:17:53+00:00'}
+        states={name:('active','enabled') if name==suspend.IOL_OAUTH_GUARD_TIMER
+                else ('inactive','enabled') for name in names}
+        services={name.removesuffix('.timer')+'.service':'inactive' for name in names}
+        commands=[]
+        def command(*args):
+            commands.append(args)
+            if args[:2]==('systemctl','list-unit-files'):
+                return 'other-ppi-watch.service enabled\n',0
+            name=args[2]
+            if args[1]=='is-active':
+                return ('active',0) if name=='other-ppi-watch.service' else (
+                    states[name][0] if name in states else services.get(name,'inactive'),0)
+            if args[1]=='is-enabled':
+                return ('enabled',0) if name=='other-ppi-watch.service' else (states[name][1],0)
+            if args[1]=='show':
+                return name.removesuffix('.timer')+'.service',0
+            raise AssertionError('unexpected systemd mutation: '+str(args))
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            prior_path=root/('scheduler-suspend-'+prior_sha+'.json')
+            prior_path.write_text(json.dumps(prior))
+            target=root/('scheduler-suspend-'+candidate+'.json')
+            with patch.object(suspend,'ROOT',root),patch.object(suspend,'command',command), \
+                 patch.object(suspend,'require_exact_stopped_closed_flat') as closed_proof:
+                row=suspend.run(candidate,'suspend',base64.b64encode(raw).decode())
+                self.assertEqual(row['status'],'SUSPENDED')
+                self.assertTrue(row['a667_closed_flat_adopted'])
+                self.assertEqual(row['paused_from'],prior_sha)
+                self.assertEqual(row['prior_receipt_sha256'],
+                                 suspend.hashlib.sha256(prior_path.read_bytes()).hexdigest())
+                self.assertEqual(row['attempted'],names)
+                self.assertNotIn('operator_pause_timer',row)
+                closed_proof.assert_called_once_with(prior_sha)
+                self.assertEqual(suspend.run(candidate,'suspend',base64.b64encode(raw).decode()),row)
+                self.assertEqual(json.loads(target.read_text()),row)
+                self.assertFalse(any(x[1] in {'start','stop','enable','disable'} for x in commands))
+
+    def test_a667_rejects_invalid_prior_closed_hold_before_writing(self):
+        raw=(Path(__file__).resolve().parents[1]/
+             'ops/policy/host-control-plane-reconciliation-v2.json').read_bytes()
+        names=suspend.timer_policy(raw)
+        prior_sha='a'*40
+        candidate='b'*40
+        prior={'candidate_sha':prior_sha,'policy_sha256':suspend.hashlib.sha256(raw).hexdigest(),
+               'timers':names,'attempted':names,'status':'SUSPENDED','ppi_before':[],
+               'preserved_iol_timer':suspend.IOL_OAUTH_GUARD_TIMER}
+        states={name:('active','enabled') if name==suspend.IOL_OAUTH_GUARD_TIMER
+                else ('inactive','enabled') for name in names}
+        service={'state':'inactive'}
+        def command(*args):
+            if args[:2]==('systemctl','list-unit-files'):return '',0
+            name=args[2]
+            if args[1]=='is-active':return (states[name][0] if name in states else service['state'],0)
+            if args[1]=='is-enabled':return states[name][1],0
+            if args[1]=='show':return name.removesuffix('.timer')+'.service',0
+            raise AssertionError('systemd mutation forbidden')
+        encoded=base64.b64encode(raw).decode()
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            old=root/('scheduler-suspend-'+prior_sha+'.json')
+            target=root/('scheduler-suspend-'+candidate+'.json')
+            with patch.object(suspend,'ROOT',root),patch.object(suspend,'command',command), \
+                 patch.object(suspend,'require_exact_stopped_closed_flat') as closed_proof:
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_CLOSED_HOLD_PRIOR_RECEIPT_UNVERIFIED'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
+                for changed in ({**prior,'status':'RESTORED'},
+                                {**prior,'policy_sha256':'0'*64},
+                                {**prior,'attempted':[]},
+                                {**prior,'operator_pause_timer':suspend.OPERATOR_PREOPEN_TIMER},
+                                {**prior,'ppi_before':[['ppi-watch','enabled','active']]}):
+                    old.write_text(json.dumps(changed))
+                    with self.assertRaisesRegex(ValueError,'SCHEDULER_CLOSED_HOLD_PRIOR_RECEIPT_UNVERIFIED'):
+                        suspend.run(candidate,'suspend',encoded)
+                    self.assertFalse(target.exists())
+                old.write_text(json.dumps(prior))
+                extra=root/('scheduler-suspend-'+'d'*40+'.json')
+                extra.write_text(json.dumps({**prior,'candidate_sha':'d'*40}))
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_CLOSED_HOLD_PRIOR_RECEIPT_UNVERIFIED'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
+                extra.unlink()
+                extra.symlink_to(old)
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_CLOSED_HOLD_RECEIPT_INVENTORY_UNSAFE'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
+                extra.unlink()
+                extra.hardlink_to(old)
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_CLOSED_HOLD_RECEIPT_INVENTORY_UNSAFE'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
+                extra.unlink()
+                closed_proof.side_effect=ValueError('SCHEDULER_STOPPED_CLOSED_FLAT_RED')
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_STOPPED_CLOSED_FLAT_RED'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
+                closed_proof.side_effect=None
+                service['state']='active'
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_CLOSED_HOLD_TIMER_OR_JOB_CHANGED'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
+                service['state']='inactive'
+                states[suspend.IOL_OAUTH_GUARD_TIMER]=('inactive','enabled')
+                with self.assertRaisesRegex(ValueError,'SCHEDULER_EXPECTED_TIMER_NOT_ACTIVE'):
+                    suspend.run(candidate,'suspend',encoded)
+                self.assertFalse(target.exists())
 
     def test_a141_adopts_only_original_a138_operator_paused_full_timer_set(self):
         names = suspend.timer_policy(base64.b64decode(self.policy()))

@@ -114,6 +114,9 @@ FAILED_A92_RESCUE_DEPLOY = '7df3c8fb1d2e32f3eb07b9d969c5b00d16e49b21'
 
 def candidate_operator_module(*, require_staged=False):
     """Use candidate A125/A151 source, never an old host helper for A151."""
+    # A667: source grows when exact scheduler fail-closed guards are added.
+    # Keep decompression bounded; this is not the 110 KB SSH argv limit.
+    operator_source_bound = 128 * 1024
     encoded = os.environ.get('RC6_A125_CANDIDATE_SOURCE_B64')
     compressed = os.environ.get('RC6_A125_CANDIDATE_SOURCE_GZIP_B64')
     if encoded and compressed:
@@ -127,7 +130,7 @@ def candidate_operator_module(*, require_staged=False):
                 if not 0 < len(packed) < 30000:
                     raise ValueError('QUIESCENCE_OPERATOR_COMPRESSED_SIZE_RED')
                 inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
-                source = inflater.decompress(packed, 110000)
+                source = inflater.decompress(packed, operator_source_bound)
                 if (not inflater.eof or inflater.unconsumed_tail or
                         inflater.unused_data or
                         hashlib.sha256(source).hexdigest() !=
@@ -137,7 +140,7 @@ def candidate_operator_module(*, require_staged=False):
                 if len(encoded) > 150000:
                     raise ValueError('QUIESCENCE_OPERATOR_SOURCE_TOO_LARGE')
                 source = base64.b64decode(encoded, validate=True)
-            if not 0 < len(source) < 110000:
+            if not 0 < len(source) < operator_source_bound:
                 raise ValueError('QUIESCENCE_OPERATOR_SOURCE_SIZE_RED')
             module = types.ModuleType('rc6_candidate_operator_no_go')
             exec(compile(source,'candidate/rc6_deploy_scheduler_suspend.py','exec'),
