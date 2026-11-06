@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import sys
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -26,6 +27,9 @@ GRACE_MINUTES = 12
 EXPECTED_CADENCE_MINUTES = 10
 DEDUPE_PAGE_SIZE = 5
 DEDUPE_MAX_COMMENTS = 500
+# A715: tiny bounded GitHub REST pages; never lift the 512-KiB response guard.
+SCHEDULE_PAGE_SIZE = 10
+SCHEDULE_MAX_PAGES = 12
 LATE_SURVEILLANCE_START = date(2026, 11, 2)
 LATE_SURVEILLANCE_END = date(2026, 12, 31)
 SAFE_ERROR_CLASSES = frozenset({
@@ -243,6 +247,67 @@ def _get(url, token):
     return json.loads(raw)
 
 
+def fetch_schedule_runs_for_art_day(token, observed_at, *, get=None):
+    """Read only the current ART day, with bounded GitHub REST pagination.
+
+    Workflow runs have no reliable slot attribution; this collector proves only
+    API-page completeness, not execution punctuality or market data. Any moving
+    count, malformed page, boundary ambiguity or cap exhaustion is incomplete,
+    and classify() must fail closed to NO_VERIFICADO.
+    """
+    if not isinstance(observed_at, datetime) or observed_at.tzinfo is None:
+        raise A358SafeError("A358_DATE_ART_INVALID")
+    observed_at = observed_at.astimezone(timezone.utc)
+    art = observed_at.astimezone(ART)
+    start_art = datetime(art.year, art.month, art.day, tzinfo=ART)
+    start_utc = start_art.astimezone(timezone.utc)
+    end_utc = (start_art + timedelta(days=1)).astimezone(timezone.utc)
+    created = quote(
+        start_utc.strftime("%Y-%m-%dT%H:%M:%SZ") + ".." +
+        (end_utc - timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        safe="",
+    )
+    get = get or _get
+    collected = []
+    seen_ids = set()
+    expected_total = None
+    for page_number in range(1, SCHEDULE_MAX_PAGES + 1):
+        url = (f"https://api.github.com/repos/{REPO}/actions/workflows/"
+               f"{WORKFLOW_ID}/runs?event=schedule&created={created}"
+               f"&per_page={SCHEDULE_PAGE_SIZE}&page={page_number}")
+        payload = get(url, token)
+        if not isinstance(payload, dict):
+            return collected, False
+        total = payload.get("total_count")
+        rows = payload.get("workflow_runs")
+        if (type(total) is not int or total < 0
+                or total > SCHEDULE_PAGE_SIZE * SCHEDULE_MAX_PAGES
+                or not isinstance(rows, list) or len(rows) > SCHEDULE_PAGE_SIZE):
+            return collected, False
+        if expected_total is None:
+            expected_total = total
+        if total != expected_total:
+            return collected, False
+        for entry in rows:
+            if not isinstance(entry, dict):
+                return collected, False
+            run_id = entry.get("id")
+            when = parse_clock(entry.get("created_at"))
+            if (type(run_id) is not int or run_id <= 0 or run_id in seen_ids
+                    or when is None or when < start_utc
+                    or when >= end_utc or when > observed_at):
+                return collected, False
+            if entry.get("event") != "schedule":
+                return collected, False
+            seen_ids.add(run_id)
+            collected.append(entry)
+        if len(collected) == expected_total:
+            return collected, True
+        if len(rows) != SCHEDULE_PAGE_SIZE or len(collected) > expected_total:
+            return collected, False
+    return collected, False
+
+
 def _post(url, data, token):
     if url != f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments":
         raise A358SafeError("A358_INVALID_POST_TARGET")
@@ -326,13 +391,10 @@ def main(argv=None):
         state = str(meta.get("state", "NO_VERIFICADO"))
         if state not in {"active", "disabled_manually", "disabled_inactivity", "disabled_fork", "deleted", "NO_VERIFICADO"}:
             state = "NO_VERIFICADO"
-        payload = _get(root + f"/workflows/{WORKFLOW_ID}/runs?event=schedule&per_page=100", token)
-        runs = payload.get("workflow_runs")
-        if not isinstance(runs, list) or len(runs) > 100:
-            raise ValueError("A358_RUNS_SHAPE_INVALID")
         observed_at = datetime.now(timezone.utc)
+        runs, day_complete = fetch_schedule_runs_for_art_day(token, observed_at)
         result = classify(runs, observed_at, workflow_state=state,
-                          api_day_covered=api_page_covers_art_day(runs, observed_at))
+                          api_day_covered=day_complete)
         if args.notify:
             result["notification"] = dedupe_issue(result["status"], result, token)
         exit_code = 2 if result["status"].startswith("P1_") else 0
