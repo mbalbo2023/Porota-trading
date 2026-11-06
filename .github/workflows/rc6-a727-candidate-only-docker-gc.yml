@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'PLAN is READ_ONLY. APPLY needs exact prior plan_sha256.'
+        description: 'PLAN inventories without runtime/book admission; APPLY requires exact digest and full gates.'
         type: choice
         options: [plan, apply]
         required: true
@@ -21,11 +21,6 @@ on:
         type: string
         required: false
         default: ''
-      allow_book_unverified:
-        description: 'Permit ONLY SQLite read unavailability, never a readable unsafe book; exact image-only refs still mandatory'
-        type: boolean
-        required: true
-        default: false
       failed_candidate_sha:
         description: 'Exact R2 failed candidate owning retained IDLE barrier/quiescence'
         type: string
@@ -92,7 +87,6 @@ jobs:
       A727_FAILED_SHA: ${{ inputs.failed_candidate_sha }}
       A727_FAILED_RUN: ${{ inputs.failed_run_id }}
       A727_PREVIOUS_SHA: ${{ inputs.previous_deploy_sha }}
-      A727_ALLOW_BOOK_UNVERIFIED: ${{ inputs.allow_book_unverified }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -108,7 +102,6 @@ jobs:
           [[ "$A727_FAILED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$A727_PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$A727_FAILED_RUN" =~ ^[1-9][0-9]*$ ]]
-          [[ "$A727_ALLOW_BOOK_UNVERIFIED" == true || "$A727_ALLOW_BOOK_UNVERIFIED" == false ]]
           if [[ "$A727_MODE" == apply ]]; then
             [[ "$A727_EXPECTED_PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
           else
@@ -137,7 +130,7 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a727_gc/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 140 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - --mode $A727_MODE --candidate-sha $A727_CANDIDATE_SHA --failed-candidate-sha $A727_FAILED_SHA --failed-run-id $A727_FAILED_RUN --previous-deploy-sha $A727_PREVIOUS_SHA --expected-plan-sha256 ${A727_EXPECTED_PLAN_SHA256:-none} --allow-book-unverified $A727_ALLOW_BOOK_UNVERIFIED'" \
+            "sudo -n timeout 140 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - --mode $A727_MODE --candidate-sha $A727_CANDIDATE_SHA --failed-candidate-sha $A727_FAILED_SHA --failed-run-id $A727_FAILED_RUN --previous-deploy-sha $A727_PREVIOUS_SHA --expected-plan-sha256 ${A727_EXPECTED_PLAN_SHA256:-none}'" \
             < scripts/rc6_a727_candidate_image_gc.py \
             > "$RUNNER_TEMP/rc6_a727_gc/host.private.json" 2>/dev/null
           remote_rc=$?
@@ -172,11 +165,14 @@ jobs:
                   not re.fullmatch('[0-9a-f]{64}',d.get('plan_sha256','')) or
                   d.get('other_apps_touched') is not False or
                   d.get('ppi_watch_touched') is not False or
-                  d.get('book_state') not in ('VERIFIED_CLOSED_FLAT','NO_VERIFICADO_SQLITE') or
+                  d.get('apply_hold') not in ('NONE','BOOK_UNVERIFIED','MARKER_UNVERIFIED',
+                    'STOP_UNVERIFIED','BARRIER_UNVERIFIED','RUNTIME_UNVERIFIED',
+                    'WATCH_UNVERIFIED','OTHER_UNVERIFIED') or
+                  d.get('book_state') not in ('VERIFIED_CLOSED_FLAT','NO_VERIFICADO') or
                   d.get('book_closed_flat') is not (d.get('book_state')=='VERIFIED_CLOSED_FLAT') or
-                  (d['book_state']=='NO_VERIFICADO_SQLITE' and
-                   os.environ['A727_ALLOW_BOOK_UNVERIFIED']!='true') or
-                  d.get('paper_zero_receipts') is not True or
+                  d.get('paper_zero_receipts') is not (d.get('apply_hold')=='NONE') or
+                  (d['apply_hold']=='NONE' and d['book_state']!='VERIFIED_CLOSED_FLAT') or
+                  (d['apply_hold']!='NONE' and d['book_state']!='NO_VERIFICADO') or
                   type(d.get('mutations')) is not int or
                   type(d.get('removed')) is not int or
                   not 0<=d['removed']<=33*d['targets'] or
@@ -192,7 +188,8 @@ jobs:
                     d['state'] not in ('PLAN_READY','NO_TARGETS') or
                     d['mutation_count_exact'] is not True)) or
                   (d['mode']=='apply' and (d['state'] not in ('GREEN','NO_GO_PARTIAL') or
-                    d.get('plan_sha256')!=os.environ['A727_EXPECTED_PLAN_SHA256'])) or
+                    d.get('plan_sha256')!=os.environ['A727_EXPECTED_PLAN_SHA256'] or
+                    d.get('apply_hold')!='NONE')) or
                   (partial and (d['mode']!='apply' or d['mutation_count_exact'] is not False or
                     d.get('reason')!='APPLY_INCOMPLETE' or
                     os.environ.get('A727_REMOTE_EXIT_CODE')!='2')) or
@@ -205,7 +202,8 @@ jobs:
                   raise ValueError('UNVERIFIED')
               allowed={'schema','mode','state','candidate_sha','failed_candidate_sha',
                        'failed_run_id','plan_sha256','targets','size_upper_bytes',
-                       'paper_zero_receipts','book_closed_flat','book_state','other_apps_touched',
+                       'paper_zero_receipts','book_closed_flat','book_state','apply_hold',
+                       'other_apps_touched',
                        'ppi_watch_touched','mutations','removed',
                        'mutation_count_exact','inodes_free_before','inodes_free_after',
                        'disk_free_before_bytes','disk_free_after_bytes',
@@ -256,7 +254,8 @@ jobs:
                   raise ValueError('CANDIDATE_DISCOVERY_MISMATCH')
               result.write_text(json.dumps(d,sort_keys=True,indent=2)+'\n')
               print('A727_GC='+d['state']+'|mode='+d['mode']+'|targets='+str(d['targets'])+
-                    '|estimated_upper_bytes='+str(d['size_upper_bytes']))
+                    '|estimated_upper_bytes='+str(d['size_upper_bytes'])+
+                    '|apply_hold='+d['apply_hold'])
               print('A727_PLAN_SHA256='+d['plan_sha256'])
               if partial:
                   print('A727_GC_PARTIAL=RED|completed_rm_lower_bound='+str(d['removed'])+
