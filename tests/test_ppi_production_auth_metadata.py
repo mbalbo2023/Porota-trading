@@ -7,9 +7,11 @@ import pytest
 import requests
 
 from bd_ppi_readonly_guard import ProductionAuthResponseError, ProductionMarketReader
+from ppi_synthetic_budget_fixtures import SyntheticWireLease
 
 
 LOGIN = "https://clientapi.portfoliopersonal.com/api/1.0/account/loginapi"
+READ = "https://clientapi.portfoliopersonal.com/api/1.0/marketdata/current"
 SECRET = "AUTH_SECRET_DO_NOT_REPORT_0123456789"
 
 
@@ -46,20 +48,14 @@ def _reader(monkeypatch, *, status=200, media="text/html", body=None, fail=None,
             assert key == "KEY" and secret == SECRET
             if direct_error:
                 if direct_error == "after_get":
-                    requests.Session().get(
-                        "https://clientapi.portfoliopersonal.com/api/1.0/configuration/markets"
-                    )
+                    requests.Session().get(READ)
                 elif direct_error == "after_post_get":
                     requests.Session().post(LOGIN, json={"key": key, "secret": secret})
-                    requests.Session().get(
-                        "https://clientapi.portfoliopersonal.com/api/1.0/configuration/markets"
-                    ).json()
+                    requests.Session().get(READ).json()
                 elif direct_error == "after_post_failed_get":
                     requests.Session().post(LOGIN, json={"key": key, "secret": secret})
                     try:
-                        requests.Session().get(
-                            "https://clientapi.portfoliopersonal.com/api/1.0/configuration/markets"
-                        )
+                        requests.Session().get(READ)
                     except requests.ConnectionError:
                         pass
                 raise JSONDecodeError("Expecting value", "", 0)
@@ -67,7 +63,7 @@ def _reader(monkeypatch, *, status=200, media="text/html", body=None, fail=None,
 
     monkeypatch.setattr("ppi_client.ppi.PPI", FakePPI)
     reader = ProductionMarketReader("KEY", SECRET, audit=lambda *row: audits.append(row),
-                                    budget=object(), consumer="SCANNER")
+                                    budget=SyntheticWireLease(), consumer="SCANNER")
     return reader, calls, audits, len(body)
 
 
@@ -142,9 +138,9 @@ def test_unrelated_get_metadata_cannot_be_attributed_to_login(monkeypatch):
     try:
         with pytest.raises(JSONDecodeError):
             reader.login_once()
-        assert calls == [("GET", "https://clientapi.portfoliopersonal.com/api/1.0/configuration/markets")]
+        assert calls == [("GET", READ)]
         assert reader.metrics["login_calls"] == 0
-        assert audits == [("GET", "/api/1.0/configuration/markets", "ALLOWED")]
+        assert audits == [("GET", "/api/1.0/marketdata/current", "ALLOWED")]
         assert reader._ProductionMarketReader__guard._scope.login_http_metadata is None
     finally:
         reader.close()
@@ -157,7 +153,7 @@ def test_later_get_json_error_does_not_inherit_login_http_status(monkeypatch):
             reader.login_once()
         assert calls == [
             ("POST", LOGIN),
-            ("GET", "https://clientapi.portfoliopersonal.com/api/1.0/configuration/markets"),
+            ("GET", READ),
         ]
         assert reader.metrics["login_calls"] == 1
         assert [row[2] for row in audits] == ["ALLOWED", "ALLOWED"]
