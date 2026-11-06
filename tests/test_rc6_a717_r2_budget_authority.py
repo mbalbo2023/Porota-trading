@@ -113,11 +113,14 @@ def test_budget_factory_does_not_bootstrap_off_without_authority(tmp_path, monke
     assert not (artifact_root(database) / "ppi-budget/global.sqlite").exists()
 
 
-def test_static_authority_without_independent_productive_pins_cannot_activate(tmp_path):
+def test_static_authority_without_independent_productive_pins_cannot_activate(tmp_path, monkeypatch):
     clock = FakeClock()
     database = _paper(tmp_path)
-    assert budget_module.PINNED_STATIC_SHARED_SIGNER_KEY_SHA256 is None
-    assert budget_module.PINNED_EXTERNAL_PPI_CONSUMPTION_OWNER_KEY_SHA256 is None
+    # Exercise the negative contract irrespective of any *future* legitimate
+    # operator-approved source pin. This regression must not expire merely
+    # because approved runtime custody is added in a later release.
+    monkeypatch.setattr(budget_module, "PINNED_STATIC_SHARED_SIGNER_KEY_SHA256", None)
+    monkeypatch.setattr(budget_module, "PINNED_EXTERNAL_PPI_CONSUMPTION_OWNER_KEY_SHA256", None)
     assert budget_module.STATIC_WATCH_EVIDENCE_SCHEMA == (
         "RC6_PPI_EXTERNAL_WATCH_MAXIMUM_GUARANTEE_V2"
     )
