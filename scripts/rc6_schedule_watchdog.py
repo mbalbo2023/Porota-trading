@@ -14,11 +14,19 @@ import os
 from pathlib import Path
 import sys
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 REPO = "mbalbo2023/Porota-trading"
 WORKFLOW_ID = 384354765
+A670_WORKFLOW_ID = 407536423
+A670_WORKFLOW_PATH = ".github/workflows/rc6-a669-ppi-current-book-20261105.yml"
+A670_SLOTS = (("1045", "GGAL", 10, 45), ("1120", "AL30", 11, 20),
+              ("1430", "GGAL", 14, 30), ("1630", "AL30", 16, 30))
+A670_SCHEDULE_GRACE = timedelta(minutes=30)
+A670_API_PAGE_SIZE = 30
+A670_MAX_ARTIFACT_LOOKUPS = 8
 ISSUE = 732
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 MAX_REPLY = 512 * 1024
@@ -230,6 +238,189 @@ def classify(runs, now, *, workflow_state=None, grace_minutes=GRACE_MINUTES,
     return result
 
 
+def classify_a670(runs, now, *, artifacts_by_run=None, api_day_covered=True,
+                  workflow_state="NO_VERIFICADO"):
+    """Classify event delivery, never PPI health or artifact contents.
+
+    GitHub's run list has no original cron-expression ID. A post-deadline
+    creation before the next slot is merely timestamp-compatible with the
+    earlier slot, not provider or causal proof. Manual/PR runs cannot fill a
+    scheduled slot even if an artifact exists.
+    """
+    if not isinstance(now, datetime) or now.tzinfo is None:
+        raise ValueError("A670_CLOCK_NAIVE")
+    now = now.astimezone(timezone.utc)
+    art = now.astimezone(ART)
+    result = {
+        "schema": "rc6.a358.a670-schedule-delivery.v1",
+        "date_art": art.date().isoformat(),
+        "observed_at_utc": now.isoformat().replace("+00:00", "Z"),
+        "workflow_id": A670_WORKFLOW_ID,
+        "workflow_state": workflow_state,
+        "api_day_covered": bool(api_day_covered),
+        "read_only": True, "host_access": False,
+        "provider_requests_by_watchdog": 0,
+        "artifact_content_verified": False, "paper_readiness": "NO_VERIFICADO",
+        "manual_runs_today": 0, "pull_request_runs_today": 0,
+        "manual_artifact_count": 0, "schedule_alert": "NO_VERIFICADO",
+        "slots": [],
+    }
+    if not isinstance(runs, list) or len(runs) > A670_API_PAGE_SIZE:
+        result["reason"] = "A670_RUN_LIST_UNAVAILABLE"
+        return result
+    if art.weekday() >= 5:
+        result["schedule_alert"] = "NOT_APPLICABLE_CLOSED"
+        return result
+    valid = {"schedule": [], "workflow_dispatch": [], "pull_request": []}
+    seen = set()
+    for run in runs:
+        if not isinstance(run, dict) or run.get("event") not in valid:
+            continue
+        stamp = parse_clock(run.get("created_at"))
+        if (stamp is None or stamp > now or stamp.astimezone(ART).date() != art.date()
+                or run.get("run_attempt") != 1):
+            continue
+        run_id = run.get("id")
+        if type(run_id) is not int or run_id <= 0 or run_id in seen:
+            result["reason"] = "A670_RUN_ID_INVALID_OR_DUPLICATE"
+            return result
+        seen.add(run_id)
+        if run["event"] != "pull_request" and run.get("head_branch") != "main":
+            continue
+        if (run.get("workflow_id") not in (None, A670_WORKFLOW_ID)
+                or run.get("path") not in (None, A670_WORKFLOW_PATH)):
+            continue
+        valid[run["event"]].append((stamp, run_id))
+    for event in valid:
+        valid[event].sort()
+    result["manual_runs_today"] = len(valid["workflow_dispatch"])
+    result["pull_request_runs_today"] = len(valid["pull_request"])
+    artifacts_by_run = artifacts_by_run if isinstance(artifacts_by_run, dict) else {}
+
+    def receipt_present(run_id):
+        artifacts = artifacts_by_run.get(run_id)
+        if not isinstance(artifacts, list) or len(artifacts) > 30:
+            return False
+        return any(isinstance(a, dict)
+                   and a.get("name") == f"rc6-a669-ppi-current-book-{run_id}"
+                   and a.get("expired") is False for a in artifacts)
+
+    result["manual_artifact_count"] = sum(
+        receipt_present(run_id) for _, run_id in valid["workflow_dispatch"])
+    used_schedule = set()
+    late_or_missing = False
+    for i, (slot, symbol, hour, minute) in enumerate(A670_SLOTS):
+        nominal = datetime(art.year, art.month, art.day, hour, minute,
+                           tzinfo=ART).astimezone(timezone.utc)
+        deadline = nominal + A670_SCHEDULE_GRACE
+        next_slot = (datetime(art.year, art.month, art.day,
+                              A670_SLOTS[i + 1][2], A670_SLOTS[i + 1][3],
+                              tzinfo=ART).astimezone(timezone.utc)
+                     if i + 1 < len(A670_SLOTS) else
+                     datetime(art.year, art.month, art.day, 23, 59,
+                              tzinfo=ART).astimezone(timezone.utc))
+        entry = {"slot": slot, "instrument": symbol,
+                 "scheduled_at_utc": nominal.isoformat().replace("+00:00", "Z"),
+                 "deadline_at_utc": deadline.isoformat().replace("+00:00", "Z"),
+                 "status": "NOT_DUE", "event_required": "schedule",
+                 "run_id": None, "delivery_lag_seconds": None,
+                 "artifact_present": False, "artifact_content_verified": False,
+                 "cron_attribution": "NOT_ASSERTED"}
+        if now < nominal:
+            result["slots"].append(entry)
+            continue
+        matches = [(stamp, run_id) for stamp, run_id in valid["schedule"]
+                   if run_id not in used_schedule and nominal <= stamp <= deadline]
+        if matches:
+            stamp, run_id = matches[0]
+            used_schedule.add(run_id)
+            entry.update(run_id=run_id,
+                         delivery_lag_seconds=int((stamp - nominal).total_seconds()),
+                         status="RECEIPT_PRESENT" if receipt_present(run_id)
+                         else "LATE_WITHIN_30M",
+                         artifact_present=receipt_present(run_id),
+                         cron_attribution="TIME_WINDOW_COMPATIBLE_ONLY")
+        elif now <= deadline:
+            entry["status"] = "AWAITING_SCHEDULE"
+        else:
+            late = [(stamp, run_id) for stamp, run_id in valid["schedule"]
+                    if run_id not in used_schedule and deadline < stamp < next_slot]
+            if late:
+                stamp, run_id = late[0]
+                used_schedule.add(run_id)
+                entry.update(status="TOO_LATE", run_id=run_id,
+                             delivery_lag_seconds=int((stamp - nominal).total_seconds()),
+                             artifact_present=receipt_present(run_id),
+                             cron_attribution="TIMESTAMP_COMPATIBLE_NOT_CAUSAL")
+            else:
+                entry["status"] = "NO_TRIGGER"
+            late_or_missing = True
+        result["slots"].append(entry)
+    if not api_day_covered:
+        result["schedule_alert"] = "NO_VERIFICADO"
+        result["reason"] = "A670_API_DAY_INCOMPLETE"
+        # Never assert missing slots from a truncated GitHub API response.
+        for entry in result["slots"]:
+            if entry["status"] in {"NO_TRIGGER", "TOO_LATE"}:
+                entry["status"] = "NO_VERIFICADO"
+        return result
+    if workflow_state in {"disabled_manually", "disabled_inactivity", "disabled_fork", "deleted"}:
+        result["schedule_alert"] = "P1_A670_WORKFLOW_DISABLED"
+    elif late_or_missing:
+        result["schedule_alert"] = "P1_A670_SCHEDULE_DELIVERY"
+    else:
+        result["schedule_alert"] = "NO_P1_MATURE_MISSING"
+    return result
+
+
+def fetch_a670_delivery(token, now):
+    """Bounded GitHub REST metadata only; no host, SQLite, broker, or PPI."""
+    root = f"https://api.github.com/repos/{REPO}/actions"
+    meta = _get(root + f"/workflows/{A670_WORKFLOW_ID}", token)
+    state = meta.get("state", "NO_VERIFICADO")
+    if state not in {"active", "disabled_manually", "disabled_inactivity",
+                     "disabled_fork", "deleted", "NO_VERIFICADO"}:
+        state = "NO_VERIFICADO"
+    art = now.astimezone(ART)
+    start = datetime(art.year, art.month, art.day, tzinfo=ART)
+    end = start + timedelta(days=1)
+    created = (start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+               + ".." + end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    url = (root + f"/workflows/{A670_WORKFLOW_ID}/runs?created=" + quote(created)
+           + f"&per_page={A670_API_PAGE_SIZE}")
+    page = _get(url, token)
+    runs = page.get("workflow_runs")
+    if not isinstance(runs, list) or len(runs) > A670_API_PAGE_SIZE:
+        raise ValueError("A670_RUNS_SHAPE_INVALID")
+    complete = (type(page.get("total_count")) is int
+                and page["total_count"] <= len(runs)
+                and api_page_covers_art_day(runs, now, page_size=A670_API_PAGE_SIZE))
+    artifact_targets = []
+    for run in runs:
+        if not isinstance(run, dict) or run.get("event") not in {"schedule", "workflow_dispatch"}:
+            continue
+        if (run.get("head_branch") != "main" or run.get("run_attempt") != 1
+                or run.get("workflow_id") not in (None, A670_WORKFLOW_ID)):
+            continue
+        rid = run.get("id")
+        if type(rid) is int and rid > 0:
+            artifact_targets.append(rid)
+    if len(set(artifact_targets)) > A670_MAX_ARTIFACT_LOOKUPS:
+        complete = False
+        artifact_targets = []
+    artifacts_by_run = {}
+    for rid in sorted(set(artifact_targets)):
+        payload = _get(root + f"/runs/{rid}/artifacts?per_page=30", token)
+        artifacts = payload.get("artifacts")
+        if (not isinstance(artifacts, list) or len(artifacts) > 30
+                or type(payload.get("total_count")) is not int
+                or payload["total_count"] > len(artifacts)):
+            raise ValueError("A670_ARTIFACTS_SHAPE_INVALID")
+        artifacts_by_run[rid] = artifacts
+    return classify_a670(runs, now, artifacts_by_run=artifacts_by_run,
+                         api_day_covered=complete, workflow_state=state)
+
+
 def _get(url, token):
     if not url.startswith(f"https://api.github.com/repos/{REPO}/"):
         raise A358SafeError("A358_INVALID_ENDPOINT")
@@ -333,9 +524,24 @@ def main(argv=None):
         observed_at = datetime.now(timezone.utc)
         result = classify(runs, observed_at, workflow_state=state,
                           api_day_covered=api_page_covers_art_day(runs, observed_at))
+        try:
+            result["a670"] = fetch_a670_delivery(token, observed_at)
+        except (HTTPError, URLError, OSError, ValueError, KeyError, TypeError,
+                json.JSONDecodeError) as exc:
+            # A670 metadata failure must not erase independent Market Watch P1.
+            result["a670"] = {
+                "schema": "rc6.a358.a670-schedule-delivery.v1",
+                "schedule_alert": "NO_VERIFICADO",
+                "reason": "A670_METADATA_UNAVAILABLE",
+                "error_class": safe_error_class(exc),
+                "read_only": True, "host_access": False,
+                "provider_requests_by_watchdog": 0,
+                "artifact_content_verified": False,
+            }
         if args.notify:
             result["notification"] = dedupe_issue(result["status"], result, token)
-        exit_code = 2 if result["status"].startswith("P1_") else 0
+        exit_code = 2 if (result["status"].startswith("P1_") or
+                          result["a670"]["schedule_alert"].startswith("P1_")) else 0
     except (HTTPError, URLError, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         exit_code = 3
         result["notification"] = "NO_VERIFICADO"
@@ -345,10 +551,13 @@ def main(argv=None):
     target.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print("RC6_A358_STATUS=" + result["status"])
     print("RC6_A358_REASON=" + str(result["reason"]))
+    if "a670" in result:
+        print("RC6_A358_A670_ALERT=" + result["a670"]["schedule_alert"])
     return exit_code
 
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
 
