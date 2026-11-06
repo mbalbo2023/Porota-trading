@@ -167,7 +167,11 @@ jobs:
                   d.get('ppi_watch_touched') is not False or
                   d.get('apply_hold') not in ('NONE','BOOK_UNVERIFIED','MARKER_UNVERIFIED',
                     'STOP_UNVERIFIED','BARRIER_UNVERIFIED','RUNTIME_UNVERIFIED',
-                    'WATCH_UNVERIFIED','OTHER_UNVERIFIED') or
+                    'WATCH_UNVERIFIED','OTHER_UNVERIFIED',
+                    'BARRIER_FILE_UNVERIFIED','MARKER_FILE_UNVERIFIED',
+                    'STABLE_DOCKER_UNVERIFIED','OWNED_DOCKER_UNVERIFIED',
+                    'QUIESCENCE_FILE_UNVERIFIED','WATCH_READ_UNVERIFIED',
+                    'FILE_UNVERIFIED','DOCKER_UNVERIFIED') or
                   d.get('book_state') not in ('VERIFIED_CLOSED_FLAT','NO_VERIFICADO') or
                   d.get('book_closed_flat') is not (d.get('book_state')=='VERIFIED_CLOSED_FLAT') or
                   d.get('paper_zero_receipts') is not (d.get('apply_hold')=='NONE') or
