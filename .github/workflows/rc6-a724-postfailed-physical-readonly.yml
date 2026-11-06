@@ -1,0 +1,185 @@
+name: RC6 A724 Post-Failed Physical Diagnosis READ_ONLY
+
+# Operator-triggered only. This is NOT a repair, backup, resume, deploy,
+# market-data poll, or scheduler trigger. It touches no productive branch.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_previous_deploy_sha:
+        description: 'Last independently VALIDATED_RUNTIME product SHA (R1)'
+        required: true
+        type: string
+        default: 'eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f'
+      failed_deploy_sha:
+        description: 'Exact failed Deploy V2 product SHA (R2)'
+        required: true
+        type: string
+        default: '7ac6e368bd42137817e3271839c35f579bdbbbbe'
+      failed_candidate_sha:
+        description: 'Exact frozen R2 candidate SHA, NOT merge SHA'
+        required: true
+        type: string
+        default: 'a16a31c7bc4634362870c731273e084eea9d357d'
+      failed_expected_image_id:
+        description: 'R2 expected Docker image CONFIG id (not tar/digest if different)'
+        required: true
+        type: string
+        default: 'sha256:ce58f45790de6062da68c86aeb285ab8b45335e7affdfd0d82e635fa231c9462'
+      failed_run_id:
+        description: 'Failed Deploy V2 GitHub Actions run ID'
+        required: true
+        type: string
+        default: '42260034260'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a724-postfailed-physical-readonly.yml'
+      - 'scripts/rc6_a724_postfailed_physical_ro.py'
+      - 'tests/test_rc6_a724_postfailed_physical_ro.py'
+
+permissions:
+  contents: read
+
+jobs:
+  offline_contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read-only source/test contracts; no secrets or Droplet
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B -m py_compile scripts/rc6_a724_postfailed_physical_ro.py tests/test_rc6_a724_postfailed_physical_ro.py
+          python3 -B -m unittest discover -s tests -p 'test_rc6_a724_postfailed_physical_ro.py' -v
+          git diff --check
+          echo 'A724_OFFHOST_CONTRACT=GREEN|host_access=0|provider_gets=0'
+
+  bounded_host_readonly:
+    needs: offline_contracts
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main'
+    # A retained IDLE/INFLIGHT host barrier is OBSERVED, never retired.
+    # The same global GitHub gate as Deploy V2 excludes races with promotion.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      RC6_RO_PREVIOUS_SHA: ${{ inputs.expected_previous_deploy_sha }}
+      RC6_RO_FAILED_DEPLOY_SHA: ${{ inputs.failed_deploy_sha }}
+      RC6_RO_FAILED_CANDIDATE_SHA: ${{ inputs.failed_candidate_sha }}
+      RC6_RO_FAILED_IMAGE_ID: ${{ inputs.failed_expected_image_id }}
+      RC6_RO_FAILED_RUN_ID: ${{ inputs.failed_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact operator pins before any host contact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$RC6_RO_PREVIOUS_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RC6_RO_FAILED_DEPLOY_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RC6_RO_FAILED_CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RC6_RO_FAILED_IMAGE_ID" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$RC6_RO_FAILED_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$RC6_RO_PREVIOUS_SHA" != "$RC6_RO_FAILED_DEPLOY_SHA"
+          test "$RC6_RO_FAILED_CANDIDATE_SHA" != "$RC6_RO_FAILED_DEPLOY_SHA"
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/rc6_a724_ro"
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_a724_ro/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_a724_ro/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_a724_ro/key" "$RUNNER_TEMP/rc6_a724_ro/known_hosts"
+          printf '%s\n' '{"schema":"rc6.a724.postfailed-physical-readonly.v1","state":"NO_VERIFICADO"}' > "$RUNNER_TEMP/rc6_a724_ro/raw.private.json"
+      - name: Single bounded READ_ONLY host snapshot under private mount
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # No local source writes to host. The only mount is a *private*
+          # namespace read-only bind of the Porota data tree. Host binaries
+          # are not edited. Remote stdout/stderr remain PRIVATE on the runner.
+          set +e
+          timeout --signal=TERM --kill-after=4s 170s ssh \
+            -i "$RUNNER_TEMP/rc6_a724_ro/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a724_ro/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 150 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec env RC6_RO_PREVIOUS_SHA=$RC6_RO_PREVIOUS_SHA RC6_RO_FAILED_DEPLOY_SHA=$RC6_RO_FAILED_DEPLOY_SHA RC6_RO_FAILED_CANDIDATE_SHA=$RC6_RO_FAILED_CANDIDATE_SHA RC6_RO_FAILED_IMAGE_ID=$RC6_RO_FAILED_IMAGE_ID RC6_RO_FAILED_RUN_ID=$RC6_RO_FAILED_RUN_ID python3 -B - --host'" \
+            < scripts/rc6_a724_postfailed_physical_ro.py \
+            > "$RUNNER_TEMP/rc6_a724_ro/raw.private.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          echo "A724_REMOTE_RC=$remote_rc" >> "$GITHUB_ENV"
+          echo 'A724_REMOTE_CAPTURE_ATTEMPTED=1|host_mutations=0|provider_gets=0|ppi_watch_touched=false'
+      - name: Independently sanitize fixed metadata allowlist
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$RUNNER_TEMP/rc6_a724_ro"
+          printf '%s\n' '{"schema":"rc6.a724.postfailed-physical-readonly.v1","state":"NO_VERIFICADO"}' > "$RUNNER_TEMP/rc6_a724_ro/sanitized.json"
+          set +e
+          python3 -B scripts/rc6_a724_postfailed_physical_ro.py --sanitize \
+            < "$RUNNER_TEMP/rc6_a724_ro/raw.private.json" \
+            > "$RUNNER_TEMP/rc6_a724_ro/sanitized.json"
+          safe_rc=$?
+          set -e
+          python3 - "$RUNNER_TEMP/rc6_a724_ro/sanitized.json" "$A724_REMOTE_RC" "$safe_rc" <<'PY'
+          import json,sys
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          if path.stat().st_size>32768:
+              raise SystemExit('A724_PUBLIC_RECEIPT_BOUND_RED')
+          d=json.loads(path.read_text())
+          if d.get('state')!='DIAGNOSTIC_ONLY' or sys.argv[2]!='0' or sys.argv[3]!='0':
+              print('A724_PHYSICAL_RO=NO_VERIFICADO|no_repair=true|barrier_untouched=true')
+              raise SystemExit(2)
+          print('A724_PHYSICAL_RO=OBSERVED_DIAGNOSTIC_ONLY|runtime_running_verified=false')
+          print('A724_MARKER='+d['marker']['relation']+
+                '|marker_state='+d['marker']['validation_status'])
+          print('A724_BARRIER='+str(d['barrier']['status'])+
+                '|relation='+d['barrier']['relation'])
+          print('A724_COLD='+d['cold']['successor_predicate']+
+                '|pack='+d['cold']['pack_metadata'])
+          print('A724_SCHEDULER='+str(d['scheduler']['receipt_status'])+
+                '|preserved_iol_guard='+str(d['scheduler']['preserved_iol_guard']))
+          print('A724_BOOK_FLAT='+str(d['book']['exposure_flat'])+
+                '|paper_zero='+str(d['book']['orders_zero']))
+          print('A724_UNREFERENCED_IMAGES='+str(d['unreferenced_total']))
+          PY
+      - name: Preserve only bounded sanitized receipt, never raw host output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a724-postfailed-physical-readonly-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6_a724_ro/sanitized.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Destroy runner-only SSH material and raw evidence
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in key known_hosts raw.private.json; do
+            file="$RUNNER_TEMP/rc6_a724_ro/$name"
+            if test -f "$file" && ! test -L "$file"; then
+              shred -u "$file"
+            fi
+          done
