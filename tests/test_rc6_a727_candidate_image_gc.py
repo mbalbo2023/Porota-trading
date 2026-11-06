@@ -104,6 +104,16 @@ class CandidatePlan(unittest.TestCase):
         self.assertIsNone(plan["safety"])
         self.assertEqual(plan["apply_hold"], "BOOK_UNVERIFIED")
 
+    def test_plan_keeps_inventory_but_denies_apply_on_owned_diagnostic(self):
+        with patch.object(gc, "_admission", side_effect=gc.Hold(
+                "OWNED_DASHBOARD_SEMANTICS_UNVERIFIED")), \
+             patch.object(gc, "_docker_inventory", return_value=(set(), [IMAGE])), \
+             patch.object(gc, "_image_details", return_value=details()):
+            plan = gc.make_plan(CANDIDATE, FAILED, "42260034260", PREVIOUS)
+        self.assertEqual([item["id"] for item in plan["targets"]], [IMAGE])
+        self.assertIsNone(plan["safety"])
+        self.assertEqual(plan["apply_hold"], "OWNED_DASHBOARD_SEMANTICS_UNVERIFIED")
+
     def test_plan_returns_inventory_when_marker_or_stop_unverified(self):
         for code, expected in (
                 ("LAST_VALIDATED_RUNTIME_MARKER_INVALID", "MARKER_UNVERIFIED"),
@@ -186,7 +196,7 @@ class BookAdmission(unittest.TestCase):
             "barrier_file": "BARRIER_FILE_UNVERIFIED",
             "marker_file": "MARKER_FILE_UNVERIFIED",
             "stable_docker": "STABLE_DOCKER_UNVERIFIED",
-            "owned_docker": "OWNED_DOCKER_UNVERIFIED",
+            "owned_docker": "OWNED_OBSERVER_TIMEOUT_UNVERIFIED",
             "quiescence_file": "QUIESCENCE_FILE_UNVERIFIED",
             "watch": "WATCH_READ_UNVERIFIED",
         }
@@ -205,6 +215,43 @@ class BookAdmission(unittest.TestCase):
                          "FILE_UNVERIFIED")
         self.assertEqual(gc._classify_apply_hold(gc.Hold("DOCKER_OPERATION_FAILED")),
                          "DOCKER_UNVERIFIED")
+
+    def test_owned_failure_categories_for_each_allowlisted_role(self):
+        cases = (
+            (subprocess.TimeoutExpired(["docker", "secret"], 12), "TIMEOUT"),
+            (gc.Hold("DOCKER_OPERATION_FAILED"), "CLI"),
+            (gc.Hold("CONTAINER_FIELDS_INVALID"), "COUNT"),
+            (json.JSONDecodeError("private token", "private host output", 0), "JSON"),
+            (gc.Hold("CONTAINER_FIELDS_UNPROVEN"), "SEMANTICS"),
+            (OSError("private host path"), "OTHER"),
+            (gc.Hold("private unknown Docker error"), "OTHER"),
+        )
+        self.assertEqual(set(gc.OWNED_ROLE), set(gc.OWNED))
+        for name in gc.OWNED:
+            for error, kind in cases:
+                expected = f"OWNED_{gc.OWNED_ROLE[name]}_{kind}_UNVERIFIED"
+                with self.subTest(name=name, kind=kind), \
+                     patch.object(gc, "_container", side_effect=error), \
+                     self.assertRaises(gc.Hold) as caught:
+                    gc._owned_container(name)
+                self.assertEqual(str(caught.exception), expected)
+                self.assertEqual(gc._classify_apply_hold(caught.exception), expected)
+                self.assertIn(expected, gc.APPLY_HOLDS)
+                self.assertNotIn("private", str(caught.exception))
+                self.assertNotIn("secret", str(caught.exception))
+
+    def test_owned_container_actual_split_json_and_semantics_are_distinct(self):
+        valid = ('"' + '1' * 64 + '"|"' + CRITICAL + '"|"exited"|0|false|0|"ABSENT"')
+        for raw, expected in (
+                ("too|few", "COUNT"),
+                (valid.replace('"exited"', '{broken}'), "JSON"),
+                (valid.replace('"exited"', '"unknown"'), "SEMANTICS")):
+            with self.subTest(expected=expected), \
+                 patch.object(gc, "_docker", return_value=raw), \
+                 self.assertRaises(gc.Hold) as caught:
+                gc._owned_container(gc.OWNED[0])
+            self.assertEqual(str(caught.exception),
+                             f"OWNED_OBSERVER_{expected}_UNVERIFIED")
 
 
 class ApplyGates(unittest.TestCase):
@@ -375,6 +422,27 @@ class SanitizerRegressions(unittest.TestCase):
             code, data, output = self._sanitize(receipt)
             self.assertEqual(code, 0, (value, output))
             self.assertEqual(data["apply_hold"], value)
+
+    def test_sanitizer_accepts_owned_role_and_error_kind_only(self):
+        for value in sorted(gc.OWNED_HOLDS):
+            with self.subTest(value=value):
+                receipt = self._receipt()
+                receipt["apply_hold"] = value
+                code, data, output = self._sanitize(receipt)
+                self.assertEqual(code, 0, (value, output))
+                self.assertEqual(data["apply_hold"], value)
+
+    def test_sanitizer_rejects_unowned_role_and_secret_injected_reason(self):
+        for value in ("OWNED_BOCA_CLI_UNVERIFIED",
+                      "OWNED_OBSERVER_CLI_UNVERIFIED|private secret",
+                      "OWNED_OBSERVER_UNKNOWN_UNVERIFIED"):
+            with self.subTest(value=value):
+                receipt = self._receipt()
+                receipt["apply_hold"] = value
+                code, data, output = self._sanitize(receipt)
+                self.assertEqual(code, 2)
+                self.assertEqual(data["state"], "NO_VERIFICADO")
+                self.assertNotIn(value, output + json.dumps(data))
 
     def test_sanitizer_rejects_foreign_alias_without_leaking_it(self):
         receipt = self._receipt()
