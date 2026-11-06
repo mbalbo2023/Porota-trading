@@ -307,15 +307,28 @@ class ReadOnlyTransportGuard:
                 # Never attribute a later SDK JSON parse failure to an older
                 # login response from the same thread.
                 guard._scope.login_http_metadata = None
-            if budget is not None:
+            if endpoint in {"current", "book", "intraday"}:
                 from rc6_ppi_global_budget import BudgetBackpressure
-                admitted = budget.acquire(endpoint, consumer=guard.consumer,
-                    priority=getattr(guard._scope, "priority", None) or guard.priority)
+                if budget is None:
+                    guard._read_error("PPI_SHARED_BUDGET_UNAVAILABLE")
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise BudgetBackpressure("PPI_SHARED_BUDGET_UNAVAILABLE")
+                try:
+                    admitted = budget.acquire(endpoint, consumer=guard.consumer,
+                        priority=getattr(guard._scope, "priority", None) or guard.priority)
+                except BudgetBackpressure as error:
+                    guard._read_error(str(error))
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise
                 if not admitted["allowed"]:
                     guard._read_error(admitted["reason"])
                     guard._record(checked_method, checked_path, "BACKPRESSURE")
                     raise BudgetBackpressure(admitted["reason"])
                 lease = admitted["lease"]
+                if not isinstance(lease, str) or not lease:
+                    guard._read_error("PPI_BUDGET_LEASE_UNVERIFIED")
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise BudgetBackpressure("PPI_BUDGET_LEASE_UNVERIFIED")
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
             ownership = budget.wire_scope(lease) if budget is not None and hasattr(budget, "wire_scope") else nullcontext()
             # HTTPAdapter.send returns headers. Session.send would consume
