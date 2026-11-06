@@ -12,6 +12,7 @@ from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolatio
 from rc6_dynamic_universe.benchmark import run_benchmark
 from rc6_dynamic_universe.capacity import safe_capacity
 from rc6_dynamic_universe.common import digest
+from ppi_synthetic_budget_fixtures import SyntheticWireLease
 
 
 class Clock:
@@ -84,6 +85,11 @@ def wire(monkeypatch):
         return response
 
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    # A legacy capacity experiment uses a fake HTTP adapter, not real PPI.
+    # Opt into an isolated synthetic lease rather than weakening production's
+    # shared-budget fail-closed guard for unauthorised provider reads.
+    monkeypatch.setattr("rc6_ppi_global_budget.budget_from_environment",
+                        lambda *args, **kwargs: SyntheticWireLease())
     return clock, calls, behavior
 
 
