@@ -1407,6 +1407,77 @@ def adopt_a169_stopped_hold(candidate, path, names, digest, before, states):
     return receipt
 
 
+def adopt_prior_closed_flat_hold(candidate, path, names, digest, before, states):
+    """Adopt one fully proven CLOSED/flat failed deploy hold; never rearm a timer.
+
+    Unlike historical operator-preopen holds, an ordinary preopen timer that
+    was enabled before a failed deploy remains enabled while stopped. Only an
+    exact prior SUSPENDED receipt plus stopped PAPER/0 runtime can be adopted.
+    """
+    if (len(names) != 16 or IOL_OAUTH_GUARD_TIMER not in names or
+            OPERATOR_PREOPEN_TIMER not in names or
+            any(state != (('active', 'enabled') if name == IOL_OAUTH_GUARD_TIMER
+                          else ('inactive', 'enabled'))
+                for name, state in zip(names, states))):
+        raise ValueError('SCHEDULER_CLOSED_HOLD_TIMER_PATTERN_RED')
+    if ROOT.is_symlink() or not ROOT.is_dir():
+        raise ValueError('SCHEDULER_CLOSED_HOLD_ROOT_UNSAFE')
+    paths = list(ROOT.glob('scheduler-suspend-*.json'))
+    if (len(paths) > 128 or any(item.is_symlink() or not item.is_file() or
+                               item.stat().st_nlink != 1 or
+                               item.stat().st_size > 65536 for item in paths)):
+        raise ValueError('SCHEDULER_CLOSED_HOLD_RECEIPT_INVENTORY_UNSAFE')
+    eligible = []
+    for prior_path in paths:
+        prior, prior_sha = _operator_pause_json(prior_path, 65536)
+        prior_candidate = prior.get('candidate_sha')
+        if (type(prior_candidate) is str and
+                re.fullmatch(r'[0-9a-f]{40}', prior_candidate) and
+                prior_candidate != candidate and
+                prior_path.name == 'scheduler-suspend-' + prior_candidate + '.json' and
+                prior.get('status') == 'SUSPENDED' and
+                prior.get('policy_sha256') == digest and
+                prior.get('timers') == names and
+                prior.get('attempted') == names and
+                prior.get('ppi_before') == before and
+                prior.get('preserved_iol_timer') == IOL_OAUTH_GUARD_TIMER and
+                'operator_pause_timer' not in prior and
+                'operator_pause_receipt_sha256' not in prior):
+            eligible.append((prior_candidate, prior_sha, prior))
+    if len(eligible) != 1:
+        raise ValueError('SCHEDULER_CLOSED_HOLD_PRIOR_RECEIPT_UNVERIFIED')
+    prior_candidate, prior_sha, prior = eligible[0]
+    # This existing guard proves the exact stopped Docker IDs/images, clean
+    # quiescence, no carryover, DB PAPER/0 and critical admission. It is not a
+    # declaration that an old SUSPENDED receipt alone is sufficient.
+    require_exact_stopped_closed_flat(prior_candidate)
+    for name in names:
+        if name == IOL_OAUTH_GUARD_TIMER:
+            _iol_guard_status(('active', 'enabled'))
+            continue
+        state = (command('systemctl', 'is-active', name)[0],
+                 command('systemctl', 'is-enabled', name)[0])
+        service, code = command('systemctl', 'show', name, '-p', 'Unit', '--value')
+        if (state != ('inactive', 'enabled') or code or
+                service != name.removesuffix('.timer') + '.service' or
+                command('systemctl', 'is-active', service)[0] in
+                {'active', 'activating', 'reloading', 'deactivating'}):
+            raise ValueError('SCHEDULER_CLOSED_HOLD_TIMER_OR_JOB_CHANGED:' + name)
+    if ppi_snapshot() != before:
+        raise ValueError('SCHEDULER_PPI_WATCH_CHANGED')
+    receipt = dict(prior, candidate_sha=candidate,
+                   paused_from=prior_candidate,
+                   prior_receipt_sha256=prior_sha,
+                   a667_closed_flat_adopted=True,
+                   recorded_at=datetime.now(timezone.utc).isoformat())
+    persist(path, receipt)
+    print(json.dumps({'status': 'SUSPENDED', 'candidate_sha': candidate,
+                      'paused_from': prior_candidate, 'timer_count': len(names),
+                      'systemd_mutations': 0, 'ppi_watch_mutated': False,
+                      'a667_closed_flat_adopted': True}, sort_keys=True))
+    return receipt
+
+
 def persist(path, payload):
     fd, temp = tempfile.mkstemp(prefix='.scheduler-suspend-', dir=path.parent)
     try:
@@ -1608,6 +1679,12 @@ def run(candidate, action, policy_b64, *, allow_a175_intraday=False):
                               'ppi_watch_mutated':False},sort_keys=True))
             return receipt
         operator_pause_sha = None
+        if preserved == IOL_OAUTH_GUARD_TIMER and all(
+                state == (('active', 'enabled') if name == preserved
+                          else ('inactive', 'enabled'))
+                for name, state in zip(names, states)):
+            return adopt_prior_closed_flat_hold(
+                candidate, path, names, digest, before, states)
         if OPERATOR_PREOPEN_TIMER in names and all(
                 state == ('active','enabled') if name != OPERATOR_PREOPEN_TIMER
                 else state == ('inactive','disabled')
