@@ -88,15 +88,72 @@ def transport(tmp_path,monkeypatch):
     return secret,calls,responses
 
 
-def test_un_login_config_todas_familias_y_solo_tickers_devueltos(transport,capsys):
+def offline_collect(transport):
+    """Exercise the legacy public parser with in-memory values, not live GET.
+
+    R2 forbids unbudgeted Configuration/SearchInstrument and deliberately stops
+    the live public probe at its first such call. These parser-contract tests
+    must not defeat that production guard merely to regain green coverage.
+    """
+    _, calls, responses = transport
+
+    def value(name, expected):
+        status, item = responses.get(name, (200, expected))
+        if status != 200:
+            raise probe.ProbeStop('HTTP_'+str(status))
+        return item
+
+    class SyntheticReader:
+        def login_once(self):
+            calls.append(('POST','/api/1.0/Account/LoginApi',{}))
+
+        def market_configuration(self):
+            config={}
+            for item in CONFIG_PATHS:
+                calls.append(('GET','/api/1.0/Configuration/'+item,{}))
+                config[CONFIG_PATHS[item]]=value(item, CONFIG[CONFIG_PATHS[item]])
+            return config
+
+        def search_instruments(self, query, family, *, name, market):
+            assert name==query and market=='BYMA'
+            calls.append(('GET','/api/1.0/MarketData/SearchInstrument',
+                          {'ticker':[query],'type':[family]}))
+            examples = ([{'ticker':'PESOS1','type':'CAUCIONES','market':'BYMA'},
+                         {'ticker':'DOLAR1','type':'CAUCIONES','market':'BYMA'},
+                         {'ticker':'PESOS2','type':'CAUCIONES','market':'BYMA'}]
+                        if family=='CAUCIONES' else
+                        [{'ticker':'ALUA','type':'ACCIONES','market':'BYMA'}])
+            return value('searchinstrument', examples)
+
+        def book(self,ticker,family,settlement):
+            assert ticker not in {'CAUCION','PESOS','DOLAR'}
+            calls.append(('GET','/api/1.0/MarketData/Book',{'ticker':[ticker]}))
+            return value('book', {'bids':[{'price':35,'quantity':100000}],
+                                  'offers':[{'price':36,'quantity':100000}],
+                                  'accessToken':FIXTURE_TOKEN})
+
+        def current(self,ticker,family,settlement):
+            assert ticker not in {'CAUCION','PESOS','DOLAR'}
+            calls.append(('GET','/api/1.0/MarketData/Current',{'ticker':[ticker]}))
+            return value('current', {'date':'2026-08-28T14:00:00Z','price':35.5,
+                                     'apiSecret':FIXTURE_SECRET})
+
+    report=probe.report_base()
+    try:
+        probe.collect(SyntheticReader(),report)
+    except probe.ProbeStop as error:
+        report.update(status='STOPPED',reason=str(error))
+    return report
+
+
+def test_parser_sintetico_config_familias_y_solo_tickers_devueltos(transport,capsys):
     secret,calls,_=transport
     before=requests.sessions.Session.request
-    report=probe.live_report(secret)
+    report=offline_collect(transport)
     assert report['status']=='COMPLETED_OBSERVATION'
     assert report['configuration']==CONFIG
-    assert len(calls)==27 and sum(p.endswith('LoginApi') for _,p,_ in calls)==1
+    assert len(calls)==18 and sum(p.endswith('LoginApi') for _,p,_ in calls)==1
     assert len(report['quotes'])==4
-    assert report['reader_metrics']['login_calls']==1
     assert report['promotion_allowed'] is False and report['data_certified'] is False
     assert report['caucion_readiness']=='HOLD_UNVERIFIED_TERMS'
     assert requests.sessions.Session.request is before
@@ -106,11 +163,23 @@ def test_un_login_config_todas_familias_y_solo_tickers_devueltos(transport,capsy
     assert capsys.readouterr().out==''
 
 
+def test_live_probe_without_signed_configuration_quota_is_explicitly_blocked(transport):
+    secret,calls,_=transport
+    report=probe.live_report(secret)
+    assert report['status']=='STOPPED'
+    assert report['reason']=='BudgetBackpressure'
+    assert report['stage']=='CONFIGURATION'
+    assert report['promotion_allowed'] is False and report['data_certified'] is False
+    assert [method for method,_,_ in calls]==['POST']  # no Configuration/Search/Book wire GET
+    assert report['reader_metrics']['login_calls']==1
+    assert [item['status'] for item in report['http']]==[200,None]
+
+
 @pytest.mark.parametrize('status',[302,400,401,403,429,500])
 def test_rechazo_detiene_sin_refresh_reintento_o_cuerpo_de_error(transport,status):
     secret,calls,responses=transport
     responses['instrumenttypes']=(status,{'error':FIXTURE_SECRET})
-    report=probe.live_report(secret)
+    report=offline_collect(transport)
     assert report['status']=='STOPPED' and report['reason']=='HTTP_'+str(status)
     assert len(calls)==2
     assert not any('RefreshToken' in p for _,p,_ in calls)
@@ -132,31 +201,31 @@ def test_login_malformado_no_inicia_consultas(transport,value):
 def test_forma_invalida_no_se_presenta_como_dato_certificado(transport,name,value):
     secret,_,responses=transport
     responses[name]=(200,value)
-    report=probe.live_report(secret)
+    report=offline_collect(transport)
     assert report['status']=='STOPPED' and report['promotion_allowed'] is False
 
 
 def test_busqueda_vacia_no_equivale_a_familia_inhabilitada(transport):
     secret,calls,responses=transport
     responses['searchinstrument']=(200,[])
-    report=probe.live_report(secret)
+    report=offline_collect(transport)
     assert report['status']=='COMPLETED_OBSERVATION'
     assert all(r['status']=='EMPTY_FILTER_RESULT' for r in report['searches'])
-    assert report['quotes']==[] and len(calls)==19
+    assert report['quotes']==[] and len(calls)==10
 
 
 def test_identidad_incompleta_o_de_otra_familia_no_pide_book(transport):
     secret,calls,responses=transport
     responses['searchinstrument']=(200,[{'ticker':'WRONG','type':'BONOS','market':'BYMA'},
                                       {'ticker':'MISSING_TYPE'}])
-    report=probe.live_report(secret)
-    assert report['quotes']==[] and len(calls)==19
+    report=offline_collect(transport)
+    assert report['quotes']==[] and len(calls)==10
 
 
 def test_familia_no_enumerada_no_se_sondea(transport):
     secret,calls,responses=transport
     responses['instrumenttypes']=(200,['ACCIONES'])
-    report=probe.live_report(secret)
+    report=offline_collect(transport)
     assert report['searches'][0]['status']=='NOT_ENUMERATED'
     assert not any(q.get('type')==['CAUCIONES'] for _,_,q in calls)
 
@@ -164,7 +233,7 @@ def test_familia_no_enumerada_no_se_sondea(transport):
 def test_plazo_no_enumerado_no_se_inventa(transport):
     secret,_,responses=transport
     responses['settlements']=(200,['A-24HS'])
-    report=probe.live_report(secret)
+    report=offline_collect(transport)
     assert all(r['status']=='SETTLEMENT_NOT_ENUMERATED' for r in report['quotes'][:3])
 
 

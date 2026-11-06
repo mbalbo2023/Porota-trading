@@ -44,6 +44,24 @@ _GET_PATHS = {
     "/api/1.0/marketdata/bonds/estimate",
 }
 
+# Only Current/Book/Intraday have a reviewed global-rate-budget wire schema.
+# Configuration, instrument discovery, historical Search and Bonds/Estimate
+# must not borrow their lease; fail closed until their separate provider quota
+# and external Watch share are evidenced and signed. Stored data stays usable.
+_BUDGETED_MARKET_GET_PATHS = frozenset({
+    "/api/1.0/marketdata/current",
+    "/api/1.0/marketdata/book",
+    "/api/1.0/marketdata/intraday",
+})
+
+
+def _unbudgeted_get_reason(method: str, path: str) -> str | None:
+    if method != "GET" or path not in _GET_PATHS or path in _BUDGETED_MARKET_GET_PATHS:
+        return None
+    if path.startswith("/api/1.0/marketdata/"):
+        return "PPI_MARKETDATA_ENDPOINT_BUDGET_UNVERIFIED"
+    return "PPI_CONFIGURATION_ENDPOINT_BUDGET_UNVERIFIED"
+
 # PPI confirmó oficialmente que cauciones se buscan por cantidad de días y
 # ticker MONEDA+días. Estos plazos fueron probados contra producción en modo
 # GET/read-only el 2026-09-07. La lista es configurable para ampliar cobertura
@@ -283,6 +301,14 @@ class ReadOnlyTransportGuard:
                     guard.calls_blocked += 1
                 guard._record(str(method).upper(), _normal_path(url), "BLOCKED")
                 raise
+            reason = _unbudgeted_get_reason(checked_method, checked_path)
+            if reason:
+                from rc6_ppi_global_budget import BudgetBackpressure
+                guard._read_error(reason)
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(checked_method, checked_path, "BACKPRESSURE")
+                raise BudgetBackpressure(reason)
             kwargs["allow_redirects"] = False
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
             guard._record(checked_method, checked_path, "ALLOWED")
@@ -300,6 +326,14 @@ class ReadOnlyTransportGuard:
                     str(request.method).upper(), _normal_path(request.url), "BLOCKED"
                 )
                 raise
+            reason = _unbudgeted_get_reason(checked_method, checked_path)
+            if reason:
+                from rc6_ppi_global_budget import BudgetBackpressure
+                guard._read_error(reason)
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(checked_method, checked_path, "BACKPRESSURE")
+                raise BudgetBackpressure(reason)
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
             budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
             lease = None
@@ -307,15 +341,28 @@ class ReadOnlyTransportGuard:
                 # Never attribute a later SDK JSON parse failure to an older
                 # login response from the same thread.
                 guard._scope.login_http_metadata = None
-            if budget is not None:
+            if endpoint in {"current", "book", "intraday"}:
                 from rc6_ppi_global_budget import BudgetBackpressure
-                admitted = budget.acquire(endpoint, consumer=guard.consumer,
-                    priority=getattr(guard._scope, "priority", None) or guard.priority)
+                if budget is None:
+                    guard._read_error("PPI_SHARED_BUDGET_UNAVAILABLE")
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise BudgetBackpressure("PPI_SHARED_BUDGET_UNAVAILABLE")
+                try:
+                    admitted = budget.acquire(endpoint, consumer=guard.consumer,
+                        priority=getattr(guard._scope, "priority", None) or guard.priority)
+                except BudgetBackpressure as error:
+                    guard._read_error(str(error))
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise
                 if not admitted["allowed"]:
                     guard._read_error(admitted["reason"])
                     guard._record(checked_method, checked_path, "BACKPRESSURE")
                     raise BudgetBackpressure(admitted["reason"])
                 lease = admitted["lease"]
+                if not isinstance(lease, str) or not lease:
+                    guard._read_error("PPI_BUDGET_LEASE_UNVERIFIED")
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise BudgetBackpressure("PPI_BUDGET_LEASE_UNVERIFIED")
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
             ownership = budget.wire_scope(lease) if budget is not None and hasattr(budget, "wire_scope") else nullcontext()
             # HTTPAdapter.send returns headers. Session.send would consume
