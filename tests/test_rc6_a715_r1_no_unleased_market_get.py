@@ -8,7 +8,8 @@ from contextlib import contextmanager
 import pytest
 import requests
 
-from bd_ppi_readonly_guard import ReadOnlyPolicyViolation, ReadOnlyTransportGuard
+from bd_ppi_readonly_guard import (ReadOnlyPolicyViolation, ReadOnlyTransportGuard,
+    _GET_PATHS, _BUDGETED_MARKET_GET_PATHS)
 from rc6_ppi_global_budget import BudgetBackpressure
 
 
@@ -140,5 +141,38 @@ def test_r1_forbidden_real_order_route_remains_blocked(fake_wire):
         with pytest.raises(ReadOnlyPolicyViolation):
             requests.post(PPI_HOST + "/api/1.0/orders")
         assert fake_wire == []
+    finally:
+        guard.restore()
+
+
+@pytest.mark.parametrize("path", sorted(_GET_PATHS - _BUDGETED_MARKET_GET_PATHS))
+def test_r2_unmetered_catalog_history_configuration_get_never_reaches_adapter(fake_wire, path):
+    budget = BudgetStub()
+    guard = ReadOnlyTransportGuard(budget=budget, consumer="SCANNER").install()
+    try:
+        with pytest.raises(BudgetBackpressure, match="ENDPOINT_BUDGET_UNVERIFIED"):
+            requests.get(PPI_HOST + path)
+        assert fake_wire == []
+        assert guard.calls_allowed == 0
+        assert guard.calls_blocked == 1
+        assert budget.acquires == []
+    finally:
+        guard.restore()
+
+
+@pytest.mark.parametrize("path", (
+    "/api/1.0/configuration/markets",
+    "/api/1.0/marketdata/searchinstrument",
+    "/api/1.0/marketdata/search",
+    "/api/1.0/marketdata/bonds/estimate",
+))
+def test_r2_direct_adapter_cannot_bypass_unmetered_get(fake_wire, path):
+    guard = ReadOnlyTransportGuard(budget=None, consumer="SCANNER").install()
+    try:
+        request = requests.Request("GET", PPI_HOST + path).prepare()
+        with pytest.raises(BudgetBackpressure, match="ENDPOINT_BUDGET_UNVERIFIED"):
+            requests.adapters.HTTPAdapter().send(request)
+        assert fake_wire == []
+        assert guard.calls_allowed == 0
     finally:
         guard.restore()
