@@ -206,8 +206,7 @@ def _watch() -> dict[str, tuple[str, str]]:
     return states
 
 
-def _admission(candidate: str, failed: str, run_id: str, previous: str,
-               allow_book_unverified: bool = False) -> dict:
+def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
     barrier, barrier_hash = _file_json(BARRIER, owner_root=True)
     if (barrier.get("candidate") != failed or str(barrier.get("run")) != run_id or
             barrier.get("status") != "IDLE" or
@@ -261,16 +260,12 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str,
                 proof.get("classification") not in
                 {"CLEAN_EXIT", "INHERITED_OOM_FLAG_CLEAN_EXIT", "CANDIDATE_CLEAN_EXIT"}):
             raise Hold("QUIESCENCE_STOP_IDENTITY_NOT_PROVEN")
-    # Image deletion cannot execute trades or mutate the book. A SQLite schema
-    # or read availability failure can be independently tolerated *only* with
-    # the operator's explicit mode and all the exact immutable/Docker guards.
-    # A readable book reporting any unsafe state NEVER falls back.
+    # APPLY always requires an independently readable closed-flat PAPER book.
+    # PLAN separately inventories Docker even when that proof is unavailable.
     try:
         book = {"state": "VERIFIED_CLOSED_FLAT", "value": _book()}
-    except sqlite3.Error:
-        if not allow_book_unverified:
-            raise Hold("BOOK_READONLY_UNAVAILABLE")
-        book = {"state": "NO_VERIFICADO_SQLITE"}
+    except sqlite3.Error as exc:
+        raise Hold("BOOK_READONLY_UNAVAILABLE") from exc
     return {"barrier_hash": barrier_hash, "marker_hash": marker_hash,
             "quiescence_hash": qhash, "containers": containers,
             "book": book, "watch": _watch(), "candidate": candidate}
@@ -298,12 +293,45 @@ def _target(image: dict, candidate: str) -> bool:
     return _candidate_owner(image) == candidate
 
 
-def make_plan(candidate: str, failed: str, run_id: str, previous: str,
-              allow_book_unverified: bool = False) -> dict:
-    safety = _admission(candidate, failed, run_id, previous, allow_book_unverified)
+APPLY_HOLDS = frozenset({"NONE", "BOOK_UNVERIFIED", "MARKER_UNVERIFIED",
+                         "STOP_UNVERIFIED", "BARRIER_UNVERIFIED",
+                         "RUNTIME_UNVERIFIED", "WATCH_UNVERIFIED",
+                         "OTHER_UNVERIFIED"})
+
+
+def _classify_apply_hold(exc: Exception) -> str:
+    """Closed enum only: no raw path, SQLite, Docker or provider output."""
+    code = str(exc) if isinstance(exc, Hold) else ""
+    if code.startswith("BOOK_") or isinstance(exc, sqlite3.Error):
+        return "BOOK_UNVERIFIED"
+    if code in {"LAST_VALIDATED_RUNTIME_MARKER_INVALID", "STABLE_IMAGE_MARKER_MISMATCH"}:
+        return "MARKER_UNVERIFIED"
+    if code in {"QUIESCENCE_RECEIPT_UNPROVEN", "QUIESCENCE_STOP_IDENTITY_NOT_PROVEN",
+                "STOPPED_RUNTIME_STATE_MISMATCH"}:
+        return "STOP_UNVERIFIED"
+    if code in {"FAILED_ATTEMPT_BARRIER_NOT_IDLE"}:
+        return "BARRIER_UNVERIFIED"
+    if code.startswith("WATCH_"):
+        return "WATCH_UNVERIFIED"
+    if code in {"PROTECTED_RUNTIME_IDENTITY_MISMATCH", "CRITICAL_APPROVAL_NOT_HEALTHY",
+                "CONTAINER_FIELDS_INVALID", "CONTAINER_FIELDS_UNPROVEN"}:
+        return "RUNTIME_UNVERIFIED"
+    return "OTHER_UNVERIFIED"
+
+
+def _probe_apply(candidate: str, failed: str, run_id: str, previous: str) -> tuple[dict | None, str]:
+    """No mutation. Failure merely labels APPLY as held; PLAN still returns."""
+    try:
+        return _admission(candidate, failed, run_id, previous), "NONE"
+    except (OSError, Hold, ValueError, sqlite3.Error, subprocess.TimeoutExpired,
+            subprocess.SubprocessError) as exc:
+        return None, _classify_apply_hold(exc)
+
+
+def make_plan(candidate: str, failed: str, run_id: str, previous: str) -> dict:
+    # Crucial separation: exact Docker inventory is independent of ledger,
+    # marker and quiescence. These are APPLY-only proof obligations.
     references, image_ids = _docker_inventory()
-    if safety["containers"][OWNED[2]]["image"] not in references:
-        raise Hold("CRITICAL_CONTAINER_REFERENCE_MISSING")
     selected = []
     discovered = set()
     for identity in image_ids:
@@ -317,12 +345,15 @@ def make_plan(candidate: str, failed: str, run_id: str, previous: str,
             selected.append(details)
     if len(selected) > 8 or len(discovered) > 8:
         raise Hold("CANDIDATE_IMAGE_LIMIT")
+    safety, apply_hold = _probe_apply(candidate, failed, run_id, previous)
+    if safety is not None and safety["containers"][OWNED[2]]["image"] not in references:
+        safety, apply_hold = None, "RUNTIME_UNVERIFIED"
     # No Docker objects from non-candidate identities enter the plan.
     plan = {"schema": SCHEMA, "candidate_sha": candidate,
             "failed_candidate_sha": failed, "failed_run_id": run_id,
             "previous_deploy_sha": previous,
-            "allow_book_unverified": allow_book_unverified,
             "safety": safety,
+            "apply_hold": apply_hold,
             "discovered_candidate_shas": sorted(discovered),
             "targets": sorted(selected, key=lambda x: x["id"])}
     plan["plan_sha256"] = _sha(plan)
@@ -330,8 +361,7 @@ def make_plan(candidate: str, failed: str, run_id: str, previous: str,
 
 
 def perform(*, mode: str, candidate: str, failed: str, run_id: str,
-            previous: str, expected_digest: str = "",
-            allow_book_unverified: bool = False) -> dict:
+            previous: str, expected_digest: str = "") -> dict:
     if (mode not in {"plan", "apply"} or
             any(not HEX40.fullmatch(v) for v in (candidate, failed, previous)) or
             not re.fullmatch("[1-9][0-9]*", run_id) or
@@ -349,7 +379,7 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise Hold("DEPLOY_MUTEX_BUSY") from exc
-        plan = make_plan(candidate, failed, run_id, previous, allow_book_unverified)
+        plan = make_plan(candidate, failed, run_id, previous)
         targets = plan["targets"]
         disk_before = shutil.disk_usage("/").free
         inodes_before = _free_inodes()
@@ -358,10 +388,12 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
                    "plan_sha256": plan["plan_sha256"], "targets": len(targets),
                    "target_manifest": targets,
                    "discovered_candidate_shas": plan["discovered_candidate_shas"],
+                   "apply_hold": plan["apply_hold"],
                    "size_upper_bytes": sum(t["size_upper"] for t in targets),
-                   "paper_zero_receipts": True,
-                   "book_closed_flat": plan["safety"]["book"]["state"] == "VERIFIED_CLOSED_FLAT",
-                   "book_state": plan["safety"]["book"]["state"],
+                   "paper_zero_receipts": plan["safety"] is not None,
+                   "book_closed_flat": plan["safety"] is not None,
+                   "book_state": ("VERIFIED_CLOSED_FLAT" if plan["safety"] is not None
+                                  else "NO_VERIFICADO"),
                    "other_apps_touched": False, "ppi_watch_touched": False,
                    "mutations": 0, "removed": 0,
                    "disk_free_before_bytes": disk_before,
@@ -373,6 +405,8 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
         if mode == "plan":
             summary["state"] = "PLAN_READY" if targets else "NO_TARGETS"
             return summary
+        if plan["apply_hold"] != "NONE" or plan["safety"] is None:
+            raise Hold("APPLY_ADMISSION_NOT_PROVEN")
         if not targets or plan["plan_sha256"] != expected_digest:
             raise Hold("PLAN_DIGEST_MISMATCH_OR_EMPTY")
         removed = 0
@@ -380,7 +414,7 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
             for item in targets:
                 for alias in [*item["tags"], *item["digests"], item["id"]]:
                     # Recheck before each Docker mutation; no global prune.
-                    now = _admission(candidate, failed, run_id, previous, allow_book_unverified)
+                    now = _admission(candidate, failed, run_id, previous)
                     if now != plan["safety"]:
                         raise Hold("PREDELETE_SAFETY_CHANGED")
                     references, ids = _docker_inventory()
@@ -399,7 +433,7 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
                     if alias == item["id"] or alias in current["tags"] + current["digests"]:
                         _docker("image", "rm", alias)  # Never force.
                         removed += 1
-            current = _admission(candidate, failed, run_id, previous, allow_book_unverified)
+            current = _admission(candidate, failed, run_id, previous)
             if current != plan["safety"]:
                 raise Hold("POSTDELETE_SAFETY_CHANGED")
             post_references, post_ids = _docker_inventory()
@@ -436,14 +470,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--failed-run-id", required=True)
     ap.add_argument("--previous-deploy-sha", required=True)
     ap.add_argument("--expected-plan-sha256", default="")
-    ap.add_argument("--allow-book-unverified", choices=("true", "false"), default="false")
     args = ap.parse_args(argv)
     try:
         result = perform(mode=args.mode, candidate=args.candidate_sha,
                          failed=args.failed_candidate_sha, run_id=args.failed_run_id,
                          previous=args.previous_deploy_sha,
-                         expected_digest=args.expected_plan_sha256,
-                         allow_book_unverified=args.allow_book_unverified == "true")
+                         expected_digest=args.expected_plan_sha256)
     except (OSError, Hold, ValueError, sqlite3.Error, subprocess.TimeoutExpired,
             subprocess.SubprocessError) as exc:
         # Never leak Docker stderr, path contents or failed SQL text.
