@@ -1,0 +1,168 @@
+name: RC6 A726 Postfailure DB Pack Disk READ_ONLY
+
+# Manual ONLY on reviewed main. No timers, provider requests, recovery, cleanup,
+# runtime restart, deployment or host file writes. Independent from R3 predeploy.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_previous_deploy_sha:
+        description: Last independently validated runtime product SHA (R1)
+        required: true
+        type: string
+        default: eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f
+      failed_deploy_sha:
+        description: Exact failed Deploy V2 product SHA (R2)
+        required: true
+        type: string
+        default: 7ac6e368bd42137817e3271839c35f579bdbbbbe
+      failed_candidate_sha:
+        description: Exact R2 candidate SHA (not merged product SHA)
+        required: true
+        type: string
+        default: a16a31c7bc4634362870c731273e084eea9d357d
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/rc6-a726-postfailure-deep-readonly.yml
+      - scripts/rc6_a726_postfailure_deep_ro.py
+      - tests/test_rc6_a726_postfailure_deep_ro.py
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Offline contracts no host or provider
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B -m py_compile scripts/rc6_a726_postfailure_deep_ro.py tests/test_rc6_a726_postfailure_deep_ro.py
+          python3 -B -m unittest discover -s tests -p test_rc6_a726_postfailure_deep_ro.py -v
+          git diff --check
+
+  deep_host_readonly:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      RC6_RO_PREVIOUS_SHA: ${{ inputs.expected_previous_deploy_sha }}
+      RC6_RO_FAILED_DEPLOY_SHA: ${{ inputs.failed_deploy_sha }}
+      RC6_RO_FAILED_CANDIDATE_SHA: ${{ inputs.failed_candidate_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exact SHA pins and runner-only SSH material
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$RC6_RO_PREVIOUS_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RC6_RO_FAILED_DEPLOY_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RC6_RO_FAILED_CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$RC6_RO_PREVIOUS_SHA" != "$RC6_RO_FAILED_DEPLOY_SHA"
+          test "$RC6_RO_PREVIOUS_SHA" != "$RC6_RO_FAILED_CANDIDATE_SHA"
+          test "$RC6_RO_FAILED_DEPLOY_SHA" != "$RC6_RO_FAILED_CANDIDATE_SHA"
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$RUNNER_TEMP/rc6_a726_deep_ro"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_a726_deep_ro/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_a726_deep_ro/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_a726_deep_ro/key" \
+            "$RUNNER_TEMP/rc6_a726_deep_ro/known_hosts"
+          printf '%s\n' '{"schema":"rc6.a726.postfailure-deep-readonly.v1","state":"NO_VERIFICADO"}' \
+            > "$RUNNER_TEMP/rc6_a726_deep_ro/raw.private.json"
+      - name: Private readonly mount; bounded DB/pack/disk classification
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          timeout --signal=TERM --kill-after=4s 135s ssh \
+            -i "$RUNNER_TEMP/rc6_a726_deep_ro/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a726_deep_ro/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 110 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec env RC6_RO_PREVIOUS_SHA=$RC6_RO_PREVIOUS_SHA RC6_RO_FAILED_DEPLOY_SHA=$RC6_RO_FAILED_DEPLOY_SHA RC6_RO_FAILED_CANDIDATE_SHA=$RC6_RO_FAILED_CANDIDATE_SHA python3 -B - --host'" \
+            < scripts/rc6_a726_postfailure_deep_ro.py \
+            > "$RUNNER_TEMP/rc6_a726_deep_ro/raw.private.json" 2>/dev/null
+          rc=$?
+          set -e
+          echo "A726_REMOTE_RC=$rc" >> "$GITHUB_ENV"
+          echo 'A726_PRIVATE_CAPTURE_ATTEMPTED=1|host_writes=0|provider_gets=0'
+      - name: Strict runner sanitizer; no private stdout published
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$RUNNER_TEMP/rc6_a726_deep_ro"
+          printf '%s\n' '{"schema":"rc6.a726.postfailure-deep-readonly.v1","state":"NO_VERIFICADO"}' \
+            > "$RUNNER_TEMP/rc6_a726_deep_ro/sanitized.json"
+          if ! test -f "$RUNNER_TEMP/rc6_a726_deep_ro/raw.private.json"; then
+            printf '%s\n' '{"schema":"rc6.a726.postfailure-deep-readonly.v1","state":"NO_VERIFICADO"}' \
+              > "$RUNNER_TEMP/rc6_a726_deep_ro/raw.private.json"
+          fi
+          set +e
+          python3 -B scripts/rc6_a726_postfailure_deep_ro.py --sanitize \
+            < "$RUNNER_TEMP/rc6_a726_deep_ro/raw.private.json" \
+            > "$RUNNER_TEMP/rc6_a726_deep_ro/sanitized.json"
+          safe_rc=$?
+          set -e
+          A726_SAFE_RC="$safe_rc" A726_REMOTE_RC="${A726_REMOTE_RC:-255}" python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path(os.environ['RUNNER_TEMP'])/'rc6_a726_deep_ro/sanitized.json'
+          if path.stat().st_size>8192:
+              raise SystemExit('A726_PUBLIC_SANITIZER=RED_SIZE')
+          data=json.loads(path.read_text())
+          if (os.environ['A726_SAFE_RC']!='0' or os.environ['A726_REMOTE_RC']!='0' or
+                  data.get('state')!='DIAGNOSTIC_ONLY'):
+              print('A726_READONLY=NO_VERIFICADO|host_mutations=0|no_go_authority')
+              raise SystemExit(2)
+          print('A726_READONLY=DIAGNOSTIC_ONLY|no_deploy_authority|no_cleanup')
+          print('A726_BOOK='+str(data['book']['three_ledgers_flat'])+
+                '|all_four='+str(data['book']['four_ledgers_flat']))
+          print('A726_COLD='+data['cold']['phase']+
+                '|pack='+data['cold']['pack_state'])
+          print('A726_DISK_HISTORICAL_RESERVE='+
+                str(data['disk']['historical_reserve_met']))
+          PY
+      - name: Upload only strict sanitized metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a726-postfailure-deep-readonly-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6_a726_deep_ro/sanitized.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Destroy all runner-only SSH and private raw
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for item in key known_hosts raw.private.json; do
+            file="$RUNNER_TEMP/rc6_a726_deep_ro/$item"
+            if test -f "$file" && ! test -L "$file"; then
+              shred -u "$file"
+            fi
+          done
