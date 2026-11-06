@@ -1,0 +1,139 @@
+name: RC6 A729 DB and backups selective INVENTORY_ONLY
+
+# A491 is metadata-only and explicitly cannot open SQLite; A330 transfers a
+# full private offhost image. Neither reports bounded table-by-table counts
+# plus Porota-owned backup inventory. This distinct manual read-only action
+# NEVER deletes, checkpoints, vacuums, alters timers, or touches PPI Watch.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a729-db-backup-inventory-readonly.yml'
+      - 'scripts/rc6_a729_db_backup_inventory_ro.py'
+      - 'tests/test_rc6_a729_db_backup_inventory_ro.py'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Fixed inventory only; DB/backup deletions are forbidden'
+        required: true
+        type: choice
+        options: [INVENTORY_ONLY]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prove immutable read-only contract and sanitization
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_a729_db_backup_inventory_ro.py \
+            tests/test_rc6_a729_db_backup_inventory_ro.py
+          python3 -m unittest discover -s tests -p 'test_rc6_a729_db_backup_inventory_ro.py' -v
+          git diff --check
+
+  host_inventory:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'INVENTORY_ONLY'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Allocate private runner receipt
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$(mktemp -d -p "$RUNNER_TEMP" rc6-a729-private-XXXXXX)"
+          chmod 700 "$private"
+          echo "RC6_A729_DIR=$private" >> "$GITHUB_ENV"
+      - name: Host bounded immutable SQLite and backup inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$RC6_A729_DIR"
+          test -n "$DO_HOST" && test -n "$DO_USER" && \
+            test -n "$DO_SSH_KEY" && test -n "$DO_KNOWN_HOSTS" || {
+              echo '::error::A729_HOST_ACCESS_UNAVAILABLE'
+              exit 2
+            }
+          printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$private/known_hosts"
+          chmod 600 "$private/id_key" "$private/known_hosts"
+          # A bounded stdout file. Never print raw private database metadata.
+          ulimit -f 64
+          set +e
+          timeout 95 ssh -i "$private/id_key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$private/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 70 python3 -B - host-inventory' \
+            < scripts/rc6_a729_db_backup_inventory_ro.py \
+            > "$private/.raw.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          echo "RC6_A729_REMOTE_RC=$remote_rc" >> "$GITHUB_ENV"
+          test "$remote_rc" -eq 0 || echo '::warning::A729_HOST_UNAVAILABLE_SANITIZED'
+      - name: Publish ONLY strict no-delete public receipt
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A729_DIR:-}"
+          if test -z "$private" || test ! -d "$private"; then
+            echo '::error::A729_PRIVATE_DIR_UNAVAILABLE'
+            exit 2
+          fi
+          python3 -B scripts/rc6_a729_db_backup_inventory_ro.py sanitize \
+            --raw "$private/.raw.json" \
+            --out "$private/a729-public.json" \
+            --remote-rc "${RC6_A729_REMOTE_RC:-255}"
+      - name: Upload sanitized bounded metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a729-db-backup-inventory-${{ github.run_id }}
+          path: ${{ env.RC6_A729_DIR }}/a729-public.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy private runner credentials and raw receipt
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A729_DIR:-}"
+          if test -n "$private" && test -d "$private" && \
+             test "${private#"$RUNNER_TEMP"/}" != "$private" && \
+             test "$(stat -c %a "$private")" = 700; then
+            for file in "$private/id_key" "$private/known_hosts" \
+                        "$private/.raw.json" "$private/a729-public.json"; do
+              if test -f "$file" && test ! -L "$file"; then
+                shred -u -- "$file"
+              fi
+            done
+            rmdir "$private"
+          fi
