@@ -1,0 +1,127 @@
+name: RC6 R1 PPI Scanner Host Metadata READ_ONLY
+
+# A670/A516 follow-up: a deliberately non-market-data diagnostic. The only
+# runtime commands are docker inspect/logs and lstat fixed paths. No PPI GET,
+# no SQLite open, no Docker mutations and no PPI Watch invocation.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-r1-ppi-scanner-host-metadata-readonly.yml'
+      - 'scripts/rc6_r1_ppi_scanner_host_metadata_ro.py'
+      - 'tests/test_rc6_r1_ppi_scanner_host_metadata_ro.py'
+  workflow_dispatch:
+    inputs:
+      expected_product_sha:
+        description: 'R1 product HEAD verified by Deploy V2 run 42213911331'
+        required: true
+        type: string
+        default: 'eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f'
+      expected_image_id:
+        description: 'Exact immutable R1 observer image ID, including sha256 prefix'
+        required: true
+        type: string
+        default: 'sha256:fc5a974c38d5d0c434608e5c486924e37341c4a90b83bf04d53bfa6a337ced5a'
+
+permissions:
+  contents: read
+
+jobs:
+  offline_contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Negative contracts and static validation, no host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m py_compile scripts/rc6_r1_ppi_scanner_host_metadata_ro.py tests/test_rc6_r1_ppi_scanner_host_metadata_ro.py
+          python3 -B -m unittest discover -s tests -p test_rc6_r1_ppi_scanner_host_metadata_ro.py -v
+          git diff --check
+          echo 'RC6_R1_SCANNER_DIAG_OFFHOST=GREEN|host_access=0|ppi_gets=0|db_opened=0'
+
+  one_host_metadata_read:
+    needs: offline_contracts
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' }}
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      RC6_DIAG_EXPECTED_PRODUCT_SHA: ${{ inputs.expected_product_sha }}
+      RC6_DIAG_EXPECTED_IMAGE_ID: ${{ inputs.expected_image_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate strict R1 pins and prepare runner-only transport
+        shell: bash
+        env:
+          RC6_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          RC6_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RC6_DIAG_EXPECTED_PRODUCT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RC6_DIAG_EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$RC6_DIAG_EXPECTED_PRODUCT_SHA" = 'eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f'
+          test "$RC6_DIAG_EXPECTED_IMAGE_ID" = 'sha256:fc5a974c38d5d0c434608e5c486924e37341c4a90b83bf04d53bfa6a337ced5a'
+          test -n "$RC6_SSH_KEY" && test -n "$RC6_KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$RUNNER_TEMP/rc6_r1_scanner_diag"
+          printf '%s\n' "$RC6_SSH_KEY" > "$RUNNER_TEMP/rc6_r1_scanner_diag/key"
+          printf '%s\n' "$RC6_KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_r1_scanner_diag/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_r1_scanner_diag/key" "$RUNNER_TEMP/rc6_r1_scanner_diag/known_hosts"
+      - name: Bounded host metadata and three scanner marker counts only
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          set +e
+          timeout --signal=TERM --kill-after=4s 55s ssh \
+            -i "$RUNNER_TEMP/rc6_r1_scanner_diag/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_r1_scanner_diag/known_hosts" \
+            -o ConnectTimeout=8 -o ServerAliveInterval=6 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 25 env RC6_DIAG_EXPECTED_PRODUCT_SHA=$RC6_DIAG_EXPECTED_PRODUCT_SHA RC6_DIAG_EXPECTED_IMAGE_ID=$RC6_DIAG_EXPECTED_IMAGE_ID python3 -B - --host-probe" \
+            < scripts/rc6_r1_ppi_scanner_host_metadata_ro.py \
+            > "$RUNNER_TEMP/rc6_r1_scanner_diag/host.private.json" 2>/dev/null
+          rc=$?
+          set -e
+          echo "RC6_DIAG_SSH_RC=$rc" >> "$GITHUB_ENV"
+          echo 'RC6_R1_SCANNER_HOST_CAPTURE=COMPLETE|raw_stdout_private=true|ppi_gets=0|orders=0'
+      - name: Validate and preserve only sanitized enums and counts
+        if: always()
+        shell: bash
+        env:
+          RC6_DIAG_RECEIPT_PATH: ${{ runner.temp }}/rc6_r1_scanner_diag/host.private.json
+          RC6_DIAG_SANITIZED_PATH: ${{ runner.temp }}/rc6_r1_scanner_diag/sanitized.json
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$RUNNER_TEMP/rc6_r1_scanner_diag"
+          python3 -B scripts/rc6_r1_ppi_scanner_host_metadata_ro.py --validate-runner
+          test "$(wc -c < "$RC6_DIAG_SANITIZED_PATH")" -lt 4096
+      - name: Upload allowlisted receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-r1-ppi-scanner-host-metadata-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6_r1_scanner_diag/sanitized.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove runner-private SSH material and raw output
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in key known_hosts host.private.json; do
+            target="$RUNNER_TEMP/rc6_r1_scanner_diag/$name"
+            if test -f "$target"; then shred -u "$target"; fi
+          done
