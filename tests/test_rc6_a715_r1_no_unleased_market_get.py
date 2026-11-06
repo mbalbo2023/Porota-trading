@@ -176,3 +176,17 @@ def test_r2_direct_adapter_cannot_bypass_unmetered_get(fake_wire, path):
         assert guard.calls_allowed == 0
     finally:
         guard.restore()
+
+
+def test_r2_exit_critical_reader_has_no_unleased_book_wire(fake_wire):
+    # EXIT remains a protected priority, never a bypass of the actual HTTP lease.
+    guard = ReadOnlyTransportGuard(
+        budget=None, consumer="EXIT_READER", priority="EXIT_CRITICAL",
+    ).install()
+    try:
+        with pytest.raises(BudgetBackpressure, match="PPI_SHARED_BUDGET_UNAVAILABLE"):
+            requests.get(PPI_HOST + MARKET_PATH + "book")
+        assert fake_wire == []
+        assert guard.calls_allowed == 0
+    finally:
+        guard.restore()
