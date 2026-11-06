@@ -41,7 +41,7 @@ jobs:
           python3 -B -m py_compile scripts/rc6_r1_ppi_scanner_host_metadata_ro.py tests/test_rc6_r1_ppi_scanner_host_metadata_ro.py
           python3 -B -m unittest discover -s tests -p test_rc6_r1_ppi_scanner_host_metadata_ro.py -v
           git diff --check
-          echo 'RC6_R1_SCANNER_DIAG_OFFHOST=GREEN|host_access=0|ppi_gets=0|db_opened=0'
+          echo 'RC6_R1_SCANNER_DIAG_OFFHOST=GREEN|host_access=0|probe_ppi_gets=0|probe_db_opened=0'
 
   one_host_metadata_read:
     needs: offline_contracts
@@ -96,7 +96,7 @@ jobs:
           rc=$?
           set -e
           echo "RC6_DIAG_SSH_RC=$rc" >> "$GITHUB_ENV"
-          echo 'RC6_R1_SCANNER_HOST_CAPTURE=COMPLETE|raw_stdout_private=true|ppi_gets=0|orders=0'
+          echo 'RC6_R1_SCANNER_HOST_CAPTURE=COMPLETE|raw_stdout_private=true|probe_ppi_gets=0|probe_orders=0'
       - name: Validate and preserve only sanitized enums and counts
         if: always()
         shell: bash
