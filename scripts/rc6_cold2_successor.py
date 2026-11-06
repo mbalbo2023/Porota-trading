@@ -116,6 +116,10 @@ def inspect(root, *, hash_pack=True):
             (receipt.get('error_code'), receipt.get('error_phase')) not in {
                 ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_WRITE'),
                 ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_VERIFY'),
+                # cold_audit._guard() can reject the disk reserve while the
+                # streamed report is written. The failed input is still
+                # hash-bound and must remain revoked, never made COMPLETE.
+                ('SHADOW_COLD_DISK_RESERVE_BREACHED', 'REPORT_WRITE'),
                 ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'PACK_HASH'),
                 ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'REPORT_VERIFY'),
             } or
@@ -166,6 +170,8 @@ def inspect(root, *, hash_pack=True):
             raise ValueError('COLD2_SUCCESSOR_RECEIPT_CHANGED')
     return {'snapshot_id':ident,'manifest_sha256':manifest_sha,'pack_sha256':pack_sha,
             'pack_bytes':size,'cut':pointer['generation_id'],
+            'failed_error_code':receipt['error_code'],
+            'failed_error_phase':receipt['error_phase'],
             'source_names':sorted(names),'archive_names':sorted(archived),
             'archive_complete':all(n in archived for n in files+(pack_name,'quarantine.json')+
                                    ((report['name'],) if report else ())),

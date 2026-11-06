@@ -148,6 +148,97 @@ def test_memory_reserve_failed_successor_archives_with_exact_pack_binding(succes
     assert not (source/'queue.json').exists()
 
 
+def _disk_reserve_report_write_failure(source):
+    """The exact 6 Nov host A667/R2 failure pair, not a generic disk exception."""
+    path = source/('receipt-'+ID+'.json')
+    receipt = old.envelope(path, cold=True)
+    receipt['error_code'] = 'SHADOW_COLD_DISK_RESERVE_BREACHED'
+    receipt['error_phase'] = 'REPORT_WRITE'
+    put(path, receipt, cold=True)
+
+
+def test_disk_reserve_report_write_successor_is_proven_and_revoked(successor):
+    root, source, archive, raw = successor
+    _disk_reserve_report_write_failure(source)
+    before = new.inspect(root, hash_pack=True)
+    assert before['snapshot_id'] == ID
+    assert before['queue_failed'] is True
+    assert before['failed_computed_report'] is None  # REPORT_WRITE did not verify a report.
+    assert recovery.proven_distinct_failed_successor(_original_archive(root), CUT, ID)
+    result = new.quarantine(root, admission=admitted, expected_owned_ids=EXPECTED)
+    assert result['state'] == 'QUARANTINED_FAILED'
+    assert (archive/(ID+'.pack')).read_bytes() == raw
+    assert old.envelope(archive/('receipt-'+ID+'.json'), cold=True)['state'] == 'FAILED'
+    assert (source/'queue.json').exists() is False
+    assert new.inspect(root)['archive_complete'] is True
+    assert recovery.proven_distinct_failed_successor(_original_archive(root), CUT, ID)
+
+
+@pytest.mark.parametrize('stage', [
+    'archive_manifest-'+ID+'.json', 'archive_receipt-'+ID+'.json',
+    'archive_queue.json', 'pack_moved', 'source_manifest-'+ID+'.json_removed',
+    'source_receipt-'+ID+'.json_removed', 'receipt_durable', 'queue_removed',
+])
+def test_disk_reserve_report_write_crash_resume_keeps_failed_receipt(successor, stage):
+    root, source, archive, raw = successor
+    _disk_reserve_report_write_failure(source)
+    def crash(at):
+        if at == stage:
+            raise RuntimeError('crash')
+    with pytest.raises(RuntimeError, match='crash'):
+        new.quarantine(root, admission=admitted, expected_owned_ids=EXPECTED,
+                       checkpoint=crash)
+    intermediate = new.inspect(root)
+    assert intermediate['queue_failed'] or intermediate['archive_complete']
+    assert recovery.proven_distinct_failed_successor(_original_archive(root), CUT, ID)
+    assert new.quarantine(root, admission=admitted, expected_owned_ids=EXPECTED)['old_cut_revoked']
+    assert (archive/(ID+'.pack')).read_bytes() == raw
+    assert old.envelope(archive/('receipt-'+ID+'.json'), cold=True)['state'] == 'FAILED'
+
+
+@pytest.mark.parametrize('change', [
+    'pack', 'queue', 'current', 'manifest', 'status', 'orders',
+    'missing_queue', 'invalid_phase', 'expired_receipt',
+])
+def test_disk_reserve_report_write_rejects_unbound_provenance(successor, change):
+    root, source, archive, _ = successor
+    _disk_reserve_report_write_failure(source)
+    if change == 'pack':
+        with (source/(ID+'.pack')).open('r+b') as stream:
+            stream.write(b'tampered')
+    elif change == 'queue':
+        put(source/'queue.json', {'snapshot_id': ID, 'manifest_sha256': '0'*64,
+                                  'state': 'FAILED'}, cold=True)
+    elif change == 'current':
+        put(source.parent/'CURRENT.json', {'generation_id': '0'*64,
+             'file': 'cut-'+'0'*64+'.json.gz'})
+    elif change == 'manifest':
+        path = source/('manifest-'+ID+'.json')
+        manifest = old.envelope(path, cold=True)
+        manifest['pack_sha256'] = '0'*64
+        put(path, manifest, cold=True)
+    elif change == 'status':
+        put(source.parent/'status.json', {'status': 'SHADOW_OBSERVING',
+            'real_orders_sent': 0, 'real_routes': 'NOT_CALLED'})
+    elif change == 'orders':
+        put(source.parent/'status.json', {'status': 'FAIL_CLOSED',
+            'real_orders_sent': 1, 'real_routes': 'NOT_CALLED'})
+    elif change == 'missing_queue':
+        (source/'queue.json').unlink()
+    else:
+        path = source/('receipt-'+ID+'.json')
+        receipt = old.envelope(path, cold=True)
+        if change == 'invalid_phase':
+            receipt['error_phase'] = 'PACK_HASH'
+        else:
+            receipt['failed_at'] = 1792485190.2664664 + 40.0
+        put(path, receipt, cold=True)
+    assert not recovery.proven_distinct_failed_successor(_original_archive(root), CUT, ID)
+    with pytest.raises((ValueError, FileNotFoundError)):
+        new.quarantine(root, admission=admitted, expected_owned_ids=EXPECTED)
+    assert not archive.exists()
+
+
 def _report_verify_failure(source, *, add_report=True):
     path=source/('receipt-'+ID+'.json')
     receipt=old.envelope(path,cold=True)

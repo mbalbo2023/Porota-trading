@@ -117,15 +117,39 @@ class SuspendTests(unittest.TestCase):
             with patch.object(quiescence, 'ROOT', root), \
                  patch.object(quiescence, 'inspect', side_effect=lambda n: originals[n]), \
                  patch.object(quiescence, 'exact_clean_stopped') as exact, \
-                 patch.object(quiescence, 'admit', return_value='STOPPED') as admit, \
+                 patch.object(quiescence, 'admit', return_value='WAITING_MARKET') as admit, \
                  patch.object(quiescence, 'critical_admission') as critical:
                 suspend.require_exact_stopped_closed_flat(candidate)
                 exact.assert_called_once_with(row)
                 critical.assert_called_once()
                 self.assertTrue(admit.call_args.kwargs['stopped'])
                 self.assertNotIn('allow_market_open_suspend', admit.call_args.kwargs)
+                # Both documented CLOSED process states are valid only after
+                # the full Docker-identity, clean-stop and flat-ledger proof.
+                admit.return_value = 'STOPPED'
+                suspend.require_exact_stopped_closed_flat(candidate)
+                self.assertEqual(critical.call_count, 2)
+                for invalid in ('RUNNING', 'DEGRADED', 'UNKNOWN'):
+                    with self.subTest(invalid_process=invalid):
+                        admit.return_value = invalid
+                        with self.assertRaisesRegex(ValueError, 'SCHEDULER_STOPPED_CLOSED_FLAT_RED'):
+                            suspend.require_exact_stopped_closed_flat(candidate)
+                self.assertEqual(critical.call_count, 2)
+                # An actual open PAPER exposure is not a benign process-state
+                # mismatch: preserve the admission gate's precise failure.
+                admit.side_effect = ValueError('QUIESCENCE_OPEN_POSITION')
+                with self.assertRaisesRegex(ValueError, 'QUIESCENCE_OPEN_POSITION'):
+                    suspend.require_exact_stopped_closed_flat(candidate)
+                admit.side_effect = None
+                admit.return_value = 'WAITING_MARKET'
                 for field, value in [('real_orders_sent', 1),
+                                     ('ppi_watch_accessed', True),
                                      ('market_open_suspended', True),
+                                     ('open_paper_carryover', True),
+                                     ('spot_carryover', {'open_count': 1}),
+                                     ('caucion_carryover', {'open_count': 1}),
+                                     ('paused_postclose', True),
+                                     ('intraday_caucion', True),
                                      ('pending_caucion', True)]:
                     bad = {**row, field: value}
                     path.write_text(json.dumps(bad))

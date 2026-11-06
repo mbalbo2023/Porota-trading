@@ -72,6 +72,36 @@ def test_distinct_failed_successor_requires_exact_bound_current(monkeypatch, tmp
     assert not recovery.proven_distinct_failed_successor(archive,'a'*64,current)
 
 
+def test_disk_report_write_requires_exact_failure_and_complete_pack_provenance(monkeypatch, tmp_path):
+    archive = tmp_path/'data/deploy/rc6-failed-cold-original'
+    current = 'd'*32  # No historical successor ID whitelist.
+    evidence = {'snapshot_id':current, 'manifest_sha256':'7'*64,
+                'pack_sha256':'6'*64, 'pack_bytes':219680584,
+                'failed_error_code':'SHADOW_COLD_DISK_RESERVE_BREACHED',
+                'failed_error_phase':'REPORT_WRITE',
+                'failed_computed_report':None, 'cut':'a'*64,
+                'queue_failed':True, 'archive_complete':False}
+    def proved(value):
+        monkeypatch.setattr(rc6_cold2_successor, 'inspect',
+                            lambda root, hash_pack=True: value)
+        return recovery.proven_distinct_failed_successor(archive,'a'*64,current)
+    assert proved(evidence)
+    # REPORT_WRITE cannot claim a generated/verified computed report. Both a
+    # still-durable FAILED queue and a completed quarantine are admissible.
+    assert proved({**evidence, 'queue_failed':False, 'archive_complete':True})
+    assert not recovery.proven_distinct_failed_successor(archive,'b'*64,current)
+    assert not recovery.proven_distinct_failed_successor(archive,'a'*64,'e'*32)
+    for change in ({'failed_error_code':'SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED'},
+                   {'failed_error_phase':'PACK_HASH'},
+                   {'failed_error_phase':'REPORT_VERIFY'},
+                   {'failed_computed_report':{}},
+                   {'pack_sha256':'bad'}, {'pack_bytes':0},
+                   {'manifest_sha256':'bad'},
+                   {'queue_failed':False, 'archive_complete':False},
+                   {'snapshot_id':'e'*32}, {'cut':'b'*64}):
+        assert not proved({**evidence, **change})
+
+
 def test_closed_flat_clean_stop_cold_frame_cancellation_from_host_receipt():
     # The Oct 22 host had no carryover. _frame() cancelled 1.9 seconds before
     # Docker's clean exit; the archived failed cut must remain revoked.
