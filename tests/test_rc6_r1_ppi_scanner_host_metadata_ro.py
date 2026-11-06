@@ -60,6 +60,15 @@ class R1ScannerMetadataTest(unittest.TestCase):
             "Destination": "/app/data/market", "Type": "bind", "Source": "/tmp/unrelated",
         }, {"Destination": "/app/data", "Type": "bind",
             "Source": "/opt/porota-trading/data"}]))["runtime_data_mount"], "OTHER")
+        self.assertEqual(m.safe_mounts(json.dumps([{
+            "Destination": "/app/data/market", "Type": "bind",
+            "Source": "/opt/porota-trading/data/wrong-subdirectory",
+        }, {"Destination": "/app/data", "Type": "bind",
+            "Source": "/opt/porota-trading/data"}]))["runtime_data_mount"], "OTHER")
+        self.assertEqual(m.safe_mounts(json.dumps([{
+            "Destination": "/app/data", "Type": "bind", "Source": "/opt/porota-trading/data",
+        }, {"Destination": "/app/data", "Type": "bind",
+            "Source": "/opt/porota-trading/data"}]))["runtime_data_mount"], "OTHER")
 
     def test_log_counts_only_exact_three_markers_without_payload(self):
         raw = (b"2026-11-06T14:01:00Z PPI_SCANNER_PRIMARY_RECEIPT={secret:do-not-publish}\n"
@@ -96,12 +105,18 @@ class R1ScannerMetadataTest(unittest.TestCase):
                            ("product_runtime_sha_attested", True),
                            ("effective_runtime_policy", "APPROVED"),
                            ("reason", "secret error message"),
+                           ("reason", "IMAGE_PIN_MISMATCH"),
+                           ("observed_at_utc", "2001-01-01T00:00:00+00:00"),
+                           ("observed_at_utc", "2099-01-01T00:00:00+00:00"),
                            ("expected_image_id", "sha256:"+"0"*64)):
             changed = dict(base)
             changed[key] = value
             with self.assertRaises(ValueError, msg=key):
                 m.validate_receipt(changed, PRODUCT, IMAGE)
         changed = dict(base, shell_command="curl provider")
+        with self.assertRaises(ValueError):
+            m.validate_receipt(changed, PRODUCT, IMAGE)
+        changed = dict(base, status="NO_VERIFICADO")
         with self.assertRaises(ValueError):
             m.validate_receipt(changed, PRODUCT, IMAGE)
 
