@@ -125,7 +125,7 @@ class CandidatePlan(unittest.TestCase):
 
 
 class BookAdmission(unittest.TestCase):
-    def _admit(self, book_error):
+    def _admit(self, book_error, fault_stage=None):
         marker = {"deploy_sha": PREVIOUS, "validation_status": "VALIDATED_RUNTIME",
                   "mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
                   "real_order_routes": "NOT_CALLED", "image_id": CRITICAL}
@@ -144,15 +144,33 @@ class BookAdmission(unittest.TestCase):
                                     "classification": "CLEAN_EXIT"}
                                for n in gc.OWNED[:2]}}
         def json_for(path, owner_root=False):
+            if path == gc.BARRIER and fault_stage == "barrier_file":
+                raise gc.Hold("FILE_IDENTITY_UNPROVEN")
+            if path.name == "CURRENT_STATE_V2.json" and fault_stage == "marker_file":
+                raise OSError("do not publish host path")
+            if path.name.startswith("quiescence-") and fault_stage == "quiescence_file":
+                raise gc.Hold("FILE_CHANGED")
             if path == gc.BARRIER: return barrier, "a" * 64
             if path.name == "CURRENT_STATE_V2.json": return marker, "b" * 64
             if path.name.startswith("quiescence-"): return q, "c" * 64
             raise AssertionError("unexpected path")
+        def docker_for(*args):
+            if fault_stage == "stable_docker":
+                raise gc.Hold("DOCKER_OPERATION_FAILED")
+            return CRITICAL
+        def container_for(name):
+            if fault_stage == "owned_docker":
+                raise subprocess.TimeoutExpired("docker", 1)
+            return crit if name == gc.OWNED[2] else cont
+        def watch_for():
+            if fault_stage == "watch":
+                raise gc.Hold("WATCH_STATUS_INVALID")
+            return {}
         with patch.object(gc, "_file_json", side_effect=json_for), \
-             patch.object(gc, "_docker", return_value=CRITICAL), \
-             patch.object(gc, "_container", side_effect=lambda name: crit if name == gc.OWNED[2] else cont), \
+             patch.object(gc, "_docker", side_effect=docker_for), \
+             patch.object(gc, "_container", side_effect=container_for), \
              patch.object(gc, "_book", side_effect=book_error), \
-             patch.object(gc, "_watch", return_value={}):
+             patch.object(gc, "_watch", side_effect=watch_for):
             return gc._admission(CANDIDATE, FAILED, "42260034260", PREVIOUS)
 
     def test_readonly_sqlite_unavailable_always_blocks_apply(self):
@@ -162,6 +180,31 @@ class BookAdmission(unittest.TestCase):
     def test_readable_unsafe_book_always_blocks_apply(self):
         with self.assertRaisesRegex(gc.Hold, "BOOK_NOT_CLOSED_PAPER_ZERO"):
             self._admit(gc.Hold("BOOK_NOT_CLOSED_PAPER_ZERO"))
+
+    def test_each_read_error_has_exact_phase_not_other(self):
+        expected = {
+            "barrier_file": "BARRIER_FILE_UNVERIFIED",
+            "marker_file": "MARKER_FILE_UNVERIFIED",
+            "stable_docker": "STABLE_DOCKER_UNVERIFIED",
+            "owned_docker": "OWNED_DOCKER_UNVERIFIED",
+            "quiescence_file": "QUIESCENCE_FILE_UNVERIFIED",
+            "watch": "WATCH_READ_UNVERIFIED",
+        }
+        for stage, expected_code in expected.items():
+            with self.subTest(stage=stage), self.assertRaises(gc.Hold) as caught:
+                self._admit(None, fault_stage=stage)
+            self.assertEqual(str(caught.exception), expected_code)
+            self.assertEqual(gc._classify_apply_hold(caught.exception), expected_code)
+
+    def test_fallback_classifier_never_leaks_dynamic_errors(self):
+        self.assertEqual(gc._classify_apply_hold(gc.Hold("private token xyz")),
+                         "OTHER_UNVERIFIED")
+        self.assertEqual(gc._classify_apply_hold(OSError("private host path")),
+                         "OTHER_UNVERIFIED")
+        self.assertEqual(gc._classify_apply_hold(gc.Hold("FILE_CHANGED")),
+                         "FILE_UNVERIFIED")
+        self.assertEqual(gc._classify_apply_hold(gc.Hold("DOCKER_OPERATION_FAILED")),
+                         "DOCKER_UNVERIFIED")
 
 
 class ApplyGates(unittest.TestCase):
@@ -321,6 +364,17 @@ class SanitizerRegressions(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(data["apply_hold"], "BOOK_UNVERIFIED")
         self.assertEqual(data["target_manifest"][0]["id"], IMAGE)
+
+    def test_sanitizer_accepts_all_new_bounded_stage_codes(self):
+        for value in ("BARRIER_FILE_UNVERIFIED", "MARKER_FILE_UNVERIFIED",
+                      "STABLE_DOCKER_UNVERIFIED", "OWNED_DOCKER_UNVERIFIED",
+                      "QUIESCENCE_FILE_UNVERIFIED", "WATCH_READ_UNVERIFIED",
+                      "FILE_UNVERIFIED", "DOCKER_UNVERIFIED"):
+            receipt = self._receipt()
+            receipt["apply_hold"] = value
+            code, data, output = self._sanitize(receipt)
+            self.assertEqual(code, 0, (value, output))
+            self.assertEqual(data["apply_hold"], value)
 
     def test_sanitizer_rejects_foreign_alias_without_leaking_it(self):
         receipt = self._receipt()

@@ -206,13 +206,28 @@ def _watch() -> dict[str, tuple[str, str]]:
     return states
 
 
+def _stage_read(code: str, reader, *args, **kwargs):
+    """Preserve one bounded phase label, never raw host exception text.
+
+    This does not loosen any admission predicate or introduce a new probe:
+    each existing read is wrapped at its exact original callsite.
+    """
+    try:
+        return reader(*args, **kwargs)
+    except (OSError, Hold, ValueError, TypeError, sqlite3.Error,
+            subprocess.TimeoutExpired, subprocess.SubprocessError) as exc:
+        raise Hold(code) from exc
+
+
 def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
-    barrier, barrier_hash = _file_json(BARRIER, owner_root=True)
+    barrier, barrier_hash = _stage_read("BARRIER_FILE_UNVERIFIED", _file_json,
+                                        BARRIER, owner_root=True)
     if (barrier.get("candidate") != failed or str(barrier.get("run")) != run_id or
             barrier.get("status") != "IDLE" or
             set(barrier) != {"candidate", "run", "attempt", "phase", "status"}):
         raise Hold("FAILED_ATTEMPT_BARRIER_NOT_IDLE")
-    marker, marker_hash = _file_json(DEPLOY / "CURRENT_STATE_V2.json")
+    marker, marker_hash = _stage_read("MARKER_FILE_UNVERIFIED", _file_json,
+                                      DEPLOY / "CURRENT_STATE_V2.json")
     if (marker.get("deploy_sha") != previous or
             marker.get("validation_status") != "VALIDATED_RUNTIME" or
             marker.get("mode") != "PRODUCTION_PAPER" or
@@ -221,10 +236,12 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
             marker.get("real_order_routes") != "NOT_CALLED" or
             not IMAGE_ID.fullmatch(str(marker.get("image_id", "")))):
         raise Hold("LAST_VALIDATED_RUNTIME_MARKER_INVALID")
-    stable = _docker("image", "ls", "-q", "--no-trunc", STABLE).splitlines()
+    stable = _stage_read("STABLE_DOCKER_UNVERIFIED", _docker,
+                         "image", "ls", "-q", "--no-trunc", STABLE).splitlines()
     if stable != [marker["image_id"]]:
         raise Hold("STABLE_IMAGE_MARKER_MISMATCH")
-    containers = {name: _container(name) for name in OWNED}
+    containers = {name: _stage_read("OWNED_DOCKER_UNVERIFIED", _container, name)
+                  for name in OWNED}
     for name in OWNED:
         row = containers[name]
         if row["image"] != marker["image_id"] or row["oom"] or row["restarts"] != 0:
@@ -236,7 +253,8 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
     critical = containers[OWNED[2]]
     if critical["state"] != "running" or critical["health"] != "healthy":
         raise Hold("CRITICAL_APPROVAL_NOT_HEALTHY")
-    quiescence, qhash = _file_json(DEPLOY / ("quiescence-" + failed + ".json"))
+    quiescence, qhash = _stage_read("QUIESCENCE_FILE_UNVERIFIED", _file_json,
+                                    DEPLOY / ("quiescence-" + failed + ".json"))
     if (quiescence.get("candidate_sha") != failed or
             quiescence.get("status") != "FIX_FORWARD_VALIDATION_REQUIRED" or
             quiescence.get("installation_started") is not True or
@@ -266,9 +284,10 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
         book = {"state": "VERIFIED_CLOSED_FLAT", "value": _book()}
     except sqlite3.Error as exc:
         raise Hold("BOOK_READONLY_UNAVAILABLE") from exc
+    watch = _stage_read("WATCH_READ_UNVERIFIED", _watch)
     return {"barrier_hash": barrier_hash, "marker_hash": marker_hash,
             "quiescence_hash": qhash, "containers": containers,
-            "book": book, "watch": _watch(), "candidate": candidate}
+            "book": book, "watch": watch, "candidate": candidate}
 
 
 def _candidate_owner(image: dict) -> str | None:
@@ -296,12 +315,23 @@ def _target(image: dict, candidate: str) -> bool:
 APPLY_HOLDS = frozenset({"NONE", "BOOK_UNVERIFIED", "MARKER_UNVERIFIED",
                          "STOP_UNVERIFIED", "BARRIER_UNVERIFIED",
                          "RUNTIME_UNVERIFIED", "WATCH_UNVERIFIED",
+                         "BARRIER_FILE_UNVERIFIED", "MARKER_FILE_UNVERIFIED",
+                         "STABLE_DOCKER_UNVERIFIED", "OWNED_DOCKER_UNVERIFIED",
+                         "QUIESCENCE_FILE_UNVERIFIED", "WATCH_READ_UNVERIFIED",
+                         "FILE_UNVERIFIED", "DOCKER_UNVERIFIED",
                          "OTHER_UNVERIFIED"})
 
 
 def _classify_apply_hold(exc: Exception) -> str:
     """Closed enum only: no raw path, SQLite, Docker or provider output."""
     code = str(exc) if isinstance(exc, Hold) else ""
+    if code in APPLY_HOLDS:
+        return code
+    if code in {"FILE_IDENTITY_UNPROVEN", "FILE_CHANGED", "JSON_SHAPE"}:
+        return "FILE_UNVERIFIED"
+    if code in {"DOCKER_OPERATION_FAILED", "IMAGE_FIELDS_INVALID",
+                "CONTAINER_REFERENCE_INVALID"} or isinstance(exc, subprocess.TimeoutExpired):
+        return "DOCKER_UNVERIFIED"
     if code.startswith("BOOK_") or isinstance(exc, sqlite3.Error):
         return "BOOK_UNVERIFIED"
     if code in {"LAST_VALIDATED_RUNTIME_MARKER_INVALID", "STABLE_IMAGE_MARKER_MISMATCH"}:
