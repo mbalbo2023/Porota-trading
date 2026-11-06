@@ -1,0 +1,288 @@
+name: RC6 A727 Candidate-Only Docker GC (PLAN then guarded APPLY)
+
+# R2 post-failure reclamation of only exact, unreferenced Porota candidate
+# images; neither stage touches SQLite, backups, volumes, caches, PPI or units.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'PLAN is READ_ONLY. APPLY needs exact prior plan_sha256.'
+        type: choice
+        options: [plan, apply]
+        required: true
+        default: plan
+      candidate_sha:
+        description: 'Exact candidate SHA whose orphan image aliases are to be reclaimed'
+        type: string
+        required: true
+        default: 'a16a31c7bc4634362870c731273e084eea9d357d'
+      expected_plan_sha256:
+        description: 'Only for APPLY: 64-hex SHA256 returned by a prior GREEN PLAN'
+        type: string
+        required: false
+        default: ''
+      allow_book_unverified:
+        description: 'Permit ONLY SQLite read unavailability, never a readable unsafe book; exact image-only refs still mandatory'
+        type: boolean
+        required: true
+        default: false
+      failed_candidate_sha:
+        description: 'Exact R2 failed candidate owning retained IDLE barrier/quiescence'
+        type: string
+        required: true
+        default: 'a16a31c7bc4634362870c731273e084eea9d357d'
+      failed_run_id:
+        description: 'Exact R2 failed Deploy V2 run'
+        type: string
+        required: true
+        default: '42260034260'
+      previous_deploy_sha:
+        description: 'Last physically validated R1 product release SHA'
+        type: string
+        required: true
+        default: 'eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a727-candidate-only-docker-gc.yml'
+      - 'scripts/rc6_a727_candidate_image_gc.py'
+      - 'tests/test_rc6_a727_candidate_image_gc.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Offline exact-target safety tests only; no secrets or Droplet
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B -m py_compile scripts/rc6_a727_candidate_image_gc.py tests/test_rc6_a727_candidate_image_gc.py
+          python3 -B -m unittest discover -s tests -p 'test_rc6_a727_candidate_image_gc.py' -v
+          git diff --check
+          echo 'A727_GC_OFFHOST_CONTRACT=GREEN|host_access=0|mutations=0'
+
+  candidate_only_gc:
+    needs: contracts
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'mbalbo2023/Porota-trading'
+    # Same exclusive Actions group as any actual Deploy V2; never cancel a run.
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      A727_MODE: ${{ inputs.mode }}
+      A727_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      A727_EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
+      A727_FAILED_SHA: ${{ inputs.failed_candidate_sha }}
+      A727_FAILED_RUN: ${{ inputs.failed_run_id }}
+      A727_PREVIOUS_SHA: ${{ inputs.previous_deploy_sha }}
+      A727_ALLOW_BOOK_UNVERIFIED: ${{ inputs.allow_book_unverified }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify immutable operator pins before reading host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$A727_MODE" == plan || "$A727_MODE" == apply ]]
+          [[ "$A727_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$A727_FAILED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$A727_PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$A727_FAILED_RUN" =~ ^[1-9][0-9]*$ ]]
+          [[ "$A727_ALLOW_BOOK_UNVERIFIED" == true || "$A727_ALLOW_BOOK_UNVERIFIED" == false ]]
+          if [[ "$A727_MODE" == apply ]]; then
+            [[ "$A727_EXPECTED_PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          else
+            test -z "$A727_EXPECTED_PLAN_SHA256"
+          fi
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          install -m 700 -d "$RUNNER_TEMP/rc6_a727_gc"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_a727_gc/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_a727_gc/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_a727_gc/key" "$RUNNER_TEMP/rc6_a727_gc/known_hosts"
+      - name: PLAN read-only or APPLY exact immutable candidate images only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf '%s\n' '{"schema":"rc6.a727.candidate-image-gc.v1","state":"NO_GO"}' > "$RUNNER_TEMP/rc6_a727_gc/host.private.json"
+          # This namespace makes ALL Porota data read-only even during APPLY.
+          # Docker daemon operations can only be image rm (no force), after
+          # exact plan digest, barrier/lock, alias/digest and all-reference guards.
+          set +e
+          timeout --signal=TERM --kill-after=5s 165s ssh \
+            -i "$RUNNER_TEMP/rc6_a727_gc/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_a727_gc/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "sudo -n timeout 140 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - --mode $A727_MODE --candidate-sha $A727_CANDIDATE_SHA --failed-candidate-sha $A727_FAILED_SHA --failed-run-id $A727_FAILED_RUN --previous-deploy-sha $A727_PREVIOUS_SHA --expected-plan-sha256 ${A727_EXPECTED_PLAN_SHA256:-none} --allow-book-unverified $A727_ALLOW_BOOK_UNVERIFIED'" \
+            < scripts/rc6_a727_candidate_image_gc.py \
+            > "$RUNNER_TEMP/rc6_a727_gc/host.private.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          echo "A727_REMOTE_EXIT_CODE=$remote_rc" >> "$GITHUB_ENV"
+          echo 'A727_HOST_ATTEMPT=COMPLETE|data_mount=READ_ONLY|no_PPI_API=true'
+      - name: Sanitize and attest only bounded Porota-specific receipt
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json,os,re,sys
+          from pathlib import Path
+          folder=Path(os.environ['RUNNER_TEMP'])/'rc6_a727_gc'
+          raw=folder/'host.private.json'
+          result=folder/'receipt.json'
+          failure={'schema':'rc6.a727.candidate-image-gc.v1','mode':os.environ['A727_MODE'],
+                   'state':'NO_VERIFICADO','reason':'HOST_GC_RESULT_UNVERIFIED'}
+          try:
+              if raw.stat().st_size>32768: raise ValueError('OUT_BOUND')
+              d=json.loads(raw.read_text())
+              partial=d.get('state')=='NO_GO_PARTIAL' if type(d) is dict else False
+              if (type(d) is not dict or d.get('schema')!=failure['schema'] or
+                  d.get('mode')!=os.environ['A727_MODE'] or
+                  d.get('candidate_sha')!=os.environ['A727_CANDIDATE_SHA'] or
+                  d.get('failed_candidate_sha')!=os.environ['A727_FAILED_SHA'] or
+                  d.get('failed_run_id')!=os.environ['A727_FAILED_RUN'] or
+                  d.get('state') not in ('PLAN_READY','NO_TARGETS','GREEN','NO_GO_PARTIAL') or
+                  type(d.get('targets')) is not int or not 0<=d['targets']<=8 or
+                  type(d.get('size_upper_bytes')) is not int or d['size_upper_bytes']<0 or
+                  not re.fullmatch('[0-9a-f]{64}',d.get('plan_sha256','')) or
+                  d.get('other_apps_touched') is not False or
+                  d.get('ppi_watch_touched') is not False or
+                  d.get('book_state') not in ('VERIFIED_CLOSED_FLAT','NO_VERIFICADO_SQLITE') or
+                  d.get('book_closed_flat') is not (d.get('book_state')=='VERIFIED_CLOSED_FLAT') or
+                  (d['book_state']=='NO_VERIFICADO_SQLITE' and
+                   os.environ['A727_ALLOW_BOOK_UNVERIFIED']!='true') or
+                  d.get('paper_zero_receipts') is not True or
+                  type(d.get('mutations')) is not int or
+                  type(d.get('removed')) is not int or
+                  not 0<=d['removed']<=33*d['targets'] or
+                  d['mutations']!=d['removed'] or
+                  type(d.get('mutation_count_exact')) is not bool or
+                  type(d.get('disk_free_before_bytes')) is not int or
+                  type(d.get('disk_free_after_bytes')) is not int or
+                  type(d.get('disk_delta_observed_bytes')) is not int or
+                  not 0<=d['disk_free_before_bytes']<10**15 or
+                  not 0<=d['disk_free_after_bytes']<10**15 or
+                  d['disk_delta_observed_bytes']!=d['disk_free_after_bytes']-d['disk_free_before_bytes'] or
+                  (d['mode']=='plan' and (d['mutations']!=0 or
+                    d['state'] not in ('PLAN_READY','NO_TARGETS') or
+                    d['mutation_count_exact'] is not True)) or
+                  (d['mode']=='apply' and (d['state'] not in ('GREEN','NO_GO_PARTIAL') or
+                    d.get('plan_sha256')!=os.environ['A727_EXPECTED_PLAN_SHA256'])) or
+                  (partial and (d['mode']!='apply' or d['mutation_count_exact'] is not False or
+                    d.get('reason')!='APPLY_INCOMPLETE' or
+                    os.environ.get('A727_REMOTE_EXIT_CODE')!='2')) or
+                  (not partial and (d['mutation_count_exact'] is not True or
+                    os.environ.get('A727_REMOTE_EXIT_CODE')!='0')) or
+                  type(d.get('inodes_free_before')) is not int or
+                  type(d.get('inodes_free_after')) is not int or
+                  not 0<=d['inodes_free_before']<10**15 or
+                  not 0<=d['inodes_free_after']<10**15):
+                  raise ValueError('UNVERIFIED')
+              allowed={'schema','mode','state','candidate_sha','failed_candidate_sha',
+                       'failed_run_id','plan_sha256','targets','size_upper_bytes',
+                       'paper_zero_receipts','book_closed_flat','book_state','other_apps_touched',
+                       'ppi_watch_touched','mutations','removed',
+                       'mutation_count_exact','inodes_free_before','inodes_free_after',
+                       'disk_free_before_bytes','disk_free_after_bytes',
+                       'disk_delta_observed_bytes','target_manifest',
+                       'discovered_candidate_shas'}
+              if partial: allowed.add('reason')
+              if set(d)!=allowed: raise ValueError('SHAPE')
+              discovered=d['discovered_candidate_shas']
+              if (type(discovered) is not list or len(discovered)>8 or
+                  discovered!=sorted(set(discovered)) or
+                  any(type(x) is not str or re.fullmatch('[0-9a-f]{40}',x) is None
+                      for x in discovered)):
+                  raise ValueError('OTHER_CANDIDATE_SHA_INVALID')
+              entries=d['target_manifest']
+              if (type(entries) is not list or
+                  any(type(row) is not dict for row in entries) or
+                  len(entries)!=d['targets'] or
+                  entries!=sorted(entries,key=lambda row:row.get('id','')) or
+                  sum(row.get('size_upper',0) for row in entries)!=d['size_upper_bytes']):
+                  raise ValueError('TARGET_MANIFEST_INVALID')
+              candidate=d['candidate_sha']
+              seen=set()
+              for row in entries:
+                  if type(row) is not dict or set(row)!={'id','tags','digests','size_upper'}:
+                      raise ValueError('TARGET_SHAPE_INVALID')
+                  iid=row['id']
+                  if (type(iid) is not str or re.fullmatch('sha256:[0-9a-f]{64}',iid) is None or
+                      iid in seen or type(row['size_upper']) is not int or
+                      not 0<=row['size_upper']<10**12 or type(row['tags']) is not list or
+                      type(row['digests']) is not list or
+                      not 1<=len(row['tags'])<=16 or len(row['digests'])>16 or
+                      row['tags']!=sorted(set(row['tags'])) or
+                      row['digests']!=sorted(set(row['digests']))):
+                      raise ValueError('TARGET_IDENTITY_INVALID')
+                  seen.add(iid)
+                  tag_pattern=r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)'+candidate
+                  if any(type(tag) is not str or re.fullmatch(tag_pattern,tag) is None
+                         for tag in row['tags']):
+                      raise ValueError('FOREIGN_IMAGE_TAG_REDACT')
+                  repos={tag.rsplit(':',1)[0] for tag in row['tags']}
+                  for digest in row['digests']:
+                      if type(digest) is not str:
+                          raise ValueError('FOREIGN_IMAGE_DIGEST_REDACT')
+                      match=re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}',digest)
+                      if match is None or match.group(1) not in repos:
+                          raise ValueError('FOREIGN_IMAGE_DIGEST_REDACT')
+              if entries and candidate not in discovered:
+                  raise ValueError('CANDIDATE_DISCOVERY_MISMATCH')
+              result.write_text(json.dumps(d,sort_keys=True,indent=2)+'\n')
+              print('A727_GC='+d['state']+'|mode='+d['mode']+'|targets='+str(d['targets'])+
+                    '|estimated_upper_bytes='+str(d['size_upper_bytes']))
+              print('A727_PLAN_SHA256='+d['plan_sha256'])
+              if partial:
+                  print('A727_GC_PARTIAL=RED|completed_rm_lower_bound='+str(d['removed'])+
+                        '|mutation_count_exact=false|review_required=true')
+                  raise SystemExit(2)
+          except (OSError,ValueError,TypeError,KeyError):
+              result.write_text(json.dumps(failure,sort_keys=True)+'\n')
+              print('A727_GC=NO_VERIFICADO|review_private_failure|no_assumed_cleanup')
+              raise SystemExit(2)
+          PY
+      - name: Preserve bounded sanitized plan/application receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a727-candidate-only-gc-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6_a727_gc/receipt.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove runner-only credentials and private raw output
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in key known_hosts host.private.json; do
+            file="$RUNNER_TEMP/rc6_a727_gc/$name"
+            if test -f "$file" && ! test -L "$file"; then
+              shred -u "$file"
+            fi
+          done
