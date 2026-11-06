@@ -182,6 +182,9 @@ def default_receipt(expected_product_sha: str, expected_image_id: str) -> dict:
         "schema": SCHEMA, "status": "NO_VERIFICADO", "reason": "HOST_PROBE_UNAVAILABLE",
         "observed_at_utc": datetime.now(timezone.utc).isoformat(),
         "expected_product_sha": expected_product_sha, "expected_image_id": expected_image_id,
+        # Expected SHA is *input*, not a runtime SHA observation. Docker image
+        # identity is independently observable, but its source provenance is not.
+        "product_runtime_sha_attested": False,
         "image_pin_verified": False, "container_running": False,
         "launch_capacity_mode": "UNSET", "policy_path_selector": "DEFAULT",
         "ppi_secret_path_selector": "DEFAULT", "effective_runtime_policy": "NO_VERIFICADO",
@@ -190,8 +193,9 @@ def default_receipt(expected_product_sha: str, expected_image_id: str) -> dict:
         "budget_sidecar_age_band": "UNKNOWN", "scanner_receipt_age_band": "UNKNOWN",
         "log_marker_state": "NO_VERIFICADO", "marker_counts": dict.fromkeys(MARKERS, 0),
         "source_freshness_attested": False, "paper_ready": False,
-        "provider_gets": 0, "orders_sent": 0, "trading_db_opened": False,
-        "ppi_watch_mutations": 0, "docker_mutations": 0,
+        "probe_provider_gets": 0, "probe_orders_sent": 0,
+        "probe_trading_db_opened": False,
+        "probe_ppi_watch_mutations": 0, "probe_docker_mutations": 0,
     }
 
 
@@ -243,13 +247,15 @@ def validate_receipt(obj: dict, expected_product_sha: str, expected_image_id: st
         raise ValueError("RECEIPT_STATUS")
     if not isinstance(obj["observed_at_utc"], str) or not UTC_STAMP.fullmatch(obj["observed_at_utc"]):
         raise ValueError("RECEIPT_TIME")
-    for key in ("image_pin_verified", "container_running", "source_freshness_attested",
-                "paper_ready", "trading_db_opened"):
+    for key in ("product_runtime_sha_attested", "image_pin_verified", "container_running",
+                "source_freshness_attested", "paper_ready", "probe_trading_db_opened"):
         if type(obj[key]) is not bool:
             raise ValueError("RECEIPT_BOOL")
-    if obj["source_freshness_attested"] or obj["paper_ready"] or obj["trading_db_opened"]:
+    if (obj["product_runtime_sha_attested"] or obj["source_freshness_attested"] or
+            obj["paper_ready"] or obj["probe_trading_db_opened"]):
         raise ValueError("RECEIPT_UNSAFE")
-    for key in ("provider_gets", "orders_sent", "ppi_watch_mutations", "docker_mutations"):
+    for key in ("probe_provider_gets", "probe_orders_sent", "probe_ppi_watch_mutations",
+                "probe_docker_mutations"):
         if type(obj[key]) is not int or obj[key] != 0:
             raise ValueError("RECEIPT_ZERO")
     if obj["launch_capacity_mode"] not in ENV_MODES or obj["policy_path_selector"] not in (
@@ -302,7 +308,7 @@ def main() -> int:
         output = Path(os.environ["RC6_DIAG_SANITIZED_PATH"])
         output.write_text(json.dumps(reply, sort_keys=True, separators=(",", ":")) + "\n")
         print("RC6_R1_SCANNER_METADATA=" + reply["status"] + "|reason=" + reply["reason"] +
-              "|ppi_gets=0|db_opened=0|docker_mutations=0|watch_mutations=0")
+              "|probe_ppi_gets=0|probe_db_opened=0|probe_docker_mutations=0|probe_watch_mutations=0")
         return 0 if reply["status"] == "OBSERVED_ONLY" else 2
     print("RC6_R1_SCANNER_METADATA=NO_VERIFICADO|reason=INVALID_MODE")
     return 2
