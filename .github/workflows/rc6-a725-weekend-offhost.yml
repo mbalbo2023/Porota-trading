@@ -1,0 +1,103 @@
+name: RC6 A725 weekend immutable evidence OFFHOST
+
+# Explicit manual runner-only reconciliation; PRs run only synthetic contracts.
+# No schedule, host credentials,
+# market-data client, provider GET, Docker, SQLite or PPI Watch access.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-a725-weekend-offhost.yml'
+      - 'scripts/rc6_a725_weekend_offhost.py'
+      - 'tests/test_rc6_a725_weekend_offhost.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-a725-weekend-offhost-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact reviewed source without saved credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable checkout and exercise synthetic ten-family PIT contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m py_compile scripts/rc6_a725_weekend_offhost.py
+          python3 -B -m unittest discover -s tests -p test_rc6_a725_weekend_offhost.py -v
+          python3 -B -m unittest discover -s tests -p test_rc6_a311_history_pit_replay.py -v
+          python3 -B -m unittest discover -s tests -p test_rc6_a627_schedule_causality_offhost.py -q
+          git diff --check
+          echo 'A725_SYNTHETIC_PIT=GREEN|families=10|fills=0|provider_gets=0|host_access=0'
+
+  reconcile:
+    needs: contracts
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact main control-plane source without saved credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download only immutable allowlisted GitHub metadata and sanitized artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          umask 077
+          root="$RUNNER_TEMP/rc6-a725-immutable"
+          mkdir -p "$root/metadata" "$root/artifacts" "$root/logs" evidence
+          echo "A725_INPUT_ROOT=$root" >> "$GITHUB_ENV"
+          for id in 42249258042 42249370373 42249481087 42253745205 42265610943 42260034260; do
+            if ! gh api "repos/mbalbo2023/Porota-trading/actions/runs/$id" \
+                > "$root/metadata/$id.json" 2>/dev/null; then
+              echo "A725_RUN_METADATA=NO_VERIFICADO|run_id=$id"
+            fi
+          done
+          while read -r key id name; do
+            mkdir -p "$root/artifacts/$key"
+            if ! gh run download "$id" --repo mbalbo2023/Porota-trading \
+                --name "$name" --dir "$root/artifacts/$key" >/dev/null 2>&1; then
+              echo "A725_ARTIFACT=NO_VERIFICADO|source=$key"
+            fi
+          done <<'ALLOWLIST'
+          a617 42249258042 rc6-a617-ppi-origin-selector-42249258042
+          a655 42249370373 rc6-a655-gap-hist-ro-42249370373
+          a668 42249481087 rc6-a668-nonoption-fivekey-ro-42249481087
+          a627 42253745205 rc6-a627-schedule-causality-42253745205
+          a724 42265610943 rc6-a724-postfailed-physical-readonly-42265610943
+          ALLOWLIST
+          # R2 has no uploaded artifact. A bounded GitHub Actions job log is
+          # parsed in memory by a strict failure-code allowlist, never published.
+          if ! gh api 'repos/mbalbo2023/Porota-trading/actions/jobs/128037233727/logs' \
+              > "$root/logs/r2.log" 2>/dev/null; then
+            echo 'A725_R2_JOB_LOG=NO_VERIFICADO'
+          fi
+      - name: Publish allowlisted correlations only; no READY claim
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/rc6_a725_weekend_offhost.py \
+            --input-root "$A725_INPUT_ROOT" --output evidence/a725_weekend.json
+      - name: Upload sanitized diagnostic even when a source is missing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a725-weekend-offhost-${{ github.run_id }}
+          path: evidence/a725_weekend.json
+          if-no-files-found: warn
+          retention-days: 30
