@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from contextlib import closing, contextmanager, nullcontext
+from dataclasses import replace
 
 import faulthandler
 import fcntl
@@ -289,15 +290,99 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  **financial_catalog.quote_terms(metadata))
 
 
-def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
-    """Native scanner reads; exact opened identity enables bounded book reuse."""
+def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=None):
+    """Only a unique PPI-primary catalog five-key may bind diagnostic Book1.
+
+    This is a *post-read* PIT witness gate, never a precondition on the
+    existing READ_ONLY scanner request or PAPER exit path. PPI Current/Book
+    accept only three request keys, so a currency/market sibling cannot be
+    guessed from its response. A missing catalog yields HOLD, not a fallback.
+    """
+    try:
+        with store.connect() as connection:
+            rows = connection.execute("""SELECT market,currency
+              FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND settlement=?
+                AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+              LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED") from None
+    if len(rows) != 1:
+        raise ValueError("PPI_BOOK_PRIMARY_IDENTITY_AMBIGUOUS")
+    market, currency = (str(value or "").strip().upper() for value in rows[0])
+    if (not market or market == "UNKNOWN"
+            or not currency or currency == "UNKNOWN"):
+        raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED")
+    exact = (symbol, asset_class, market, currency, settlement)
+    if identity is not None:
+        if not isinstance(identity, (tuple, list)) or len(identity) != 5:
+            raise ValueError("PPI_BOOK_REQUEST_SCOPE_IDENTITY_INVALID")
+        if tuple(identity) != exact:
+            raise ValueError("PPI_BOOK_REQUEST_SCOPE_IDENTITY_MISMATCH")
+    return exact
+
+
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
+                        priority="DISCOVERY", identity=None, scanner_primary=None):
+    """Reuse the existing Current+Book GET pair for optional private PIT Book1.
+
+    The journal only records a proven-five-key *request/quote* match. It is
+    local diagnostic provenance, never a PPI provider signature or PAPER GO.
+    Ambiguous identities keep the previous quote path but cannot mint Book1.
+    """
     scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
         current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
         market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
-    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    quote = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    # A three-key opened-critical request may correspond to multiple monetary
+    # positions. Preserve PAPER exits but never bind its Book to a guessed
+    # five-key when the budget scope had no unique opened identity.
+    if scanner_primary is None or (priority == "OPENED_CRITICAL" and identity is None):
+        return quote
+    exact = None
+    try:
+        catalog_key = _ppi_native_book_identity(
+            store, symbol, asset_class, settlement, identity)
+        currency, market = quote.monetary_identity()
+        if (quote.symbol, quote.asset_class, market, currency, quote.settlement) == catalog_key:
+            exact = catalog_key
+    except (TypeError, ValueError, AttributeError):
+        # The normal three-key scanner still owns its read and exit path.
+        # Only the extra private Book1 causal witness is withheld.
+        pass
+    if exact is None:
+        return quote
+    try:
+        capture = getattr(scanner_primary, "capture_raw_book", None)
+        result = (capture(quote, raw_book=book,
+                          request=(symbol, asset_class, settlement), identity=exact,
+                          observed_at=quote.observed_at)
+                  if callable(capture) else None)
+        if isinstance(result, dict) and result.get("status") == "CAPTURED":
+            native_sha = result.get("event_sha256")
+            if (isinstance(native_sha, str) and len(native_sha) == 64
+                    and all(char in "0123456789abcdef" for char in native_sha)
+                    and not quote.time_error(now_iso(), require_trade=False)):
+                return replace(quote, ppi_book1_event_sha256=native_sha)
+        if not isinstance(result, dict) or result.get("status") not in {"CAPTURED", "DEDUPLICATED"}:
+            status = result.get("status") if isinstance(result, dict) else None
+            reason = result.get("reason") if isinstance(result, dict) else None
+            if status not in {"CAPTURE_INVALID_HOLD", "CAPTURE_CAPACITY_HOLD", "CAPTURE_INTEGRITY_HOLD"}:
+                status = "CAPTURE_UNVERIFIED_HOLD"
+            if (not isinstance(reason, str) or not 1 <= len(reason) <= 96
+                    or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in reason)):
+                reason = "PPI_BOOK_CAPTURE_REASON_UNVERIFIED"
+            store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_HOLD", status + ":" + reason)
+    except Exception as origin_error:
+        # A diagnostic journal cannot trigger retry, order admission or scanner stop.
+        try:
+            store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_ERROR", type(origin_error).__name__)
+        except Exception:
+            pass
+    return quote
 
 
 def _support_schema(store):
@@ -2449,7 +2534,8 @@ def run():
                     exact_opened = opened_identities.get(request_key, set())
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
-                        priority=priority, identity=scope_identity)
+                        priority=priority, identity=scope_identity,
+                        scanner_primary=scanner_primary)
                     try:
                         scanner_primary.capture(q, request=request_key)
                     except Exception as origin_error:
