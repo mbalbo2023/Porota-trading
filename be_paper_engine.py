@@ -501,9 +501,30 @@ class PaperStore:
         updates = {k: v for k, v in updates.items() if k in allowed}
         if not updates:
             return
+        has_counter = "real_orders_sent" in updates
+        if has_counter:
+            counter = updates["real_orders_sent"]
+            if type(counter) is not int or counter < 0:
+                raise ValueError("PAPER_REAL_ORDERS_COUNTER_INVALID")
         sql = ",".join(f"{k}=?" for k in updates)
+        params = tuple(updates.values())
+        # The heartbeat is one atomic SQLite statement. In particular, a
+        # recorded positive count cannot be overwritten by another process's
+        # routine `real_orders_sent=0` progress report. This protects the local
+        # warning, but is not physical DB/WAL provenance or external-order proof.
+        if has_counter:
+            predicate = ("id=1 AND typeof(real_orders_sent)='integer' "
+                         "AND real_orders_sent>=0 AND real_orders_sent<=?")
+            params += (counter,)
+        else:
+            predicate = "id=1"
         with self.connect() as c:
-            c.execute(f"UPDATE observer_state SET {sql} WHERE id=1", tuple(updates.values()))
+            updated = c.execute(
+                f"UPDATE observer_state SET {sql} WHERE {predicate}", params)
+            if has_counter and updated.rowcount != 1:
+                # No silent success when the current row was positive, corrupt,
+                # absent or changed concurrently; the heartbeat rolls back.
+                raise RuntimeError("PAPER_REAL_ORDERS_COUNTER_REGRESSION")
 
     def add_quote(self, q: Quote):
         # Invalid latest evidence remains a tombstone for its requested identity.
