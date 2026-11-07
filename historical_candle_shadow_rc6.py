@@ -62,6 +62,11 @@ def _trend(closes, span):
 
 def history_session_quality(days, q, at):
     """Only audited quote-market sessions; CEDEAR quotes use BYMA, not US."""
+    # A naive datetime would be interpreted in the host's timezone by
+    # astimezone(), silently shifting the ART date/EOD floor. No source day
+    # may become expected or READY from an unaudited wall-clock.
+    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+        return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
     import ak_byma_calendar as calendar
     from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
     from co_market_sessions_hf6 import (session_for, TZ,

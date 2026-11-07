@@ -123,6 +123,14 @@ def test_t1_historical_expected_session_respects_exact_close_and_eod_floor(
     assert result["state"] == "HISTORY_GAPS"  # no data/source receipt was supplied
 
 
+@pytest.mark.parametrize("settlement", ["A-24HS", "CI"])
+def test_historical_session_rejects_naive_clock_instead_of_host_tz_guess(settlement):
+    """A naive wall-clock is not an audited ART instant or provider receipt."""
+    quote = SimpleNamespace(market="BYMA", asset_class="ACCIONES", settlement=settlement)
+    result = history_session_quality([], quote, datetime(2026, 11, 11, 18, 20))
+    assert result == {"state": "HISTORY_CALENDAR_UNVERIFIED"}
+
+
 def test_ordinary_regular_paper_calendar_is_unchanged():
     day = date(2026, 11, 5)
     assert calendar.es_dia_habil_operativo(day) is True
