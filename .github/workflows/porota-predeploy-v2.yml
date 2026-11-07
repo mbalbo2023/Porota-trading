@@ -34,6 +34,24 @@ jobs:
           ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
 
+      - name: Initialize private runner staging
+        id: rc6_private_stage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Creating with no -p must FAIL on a preexisting foreign path.
+          [[ -n "$RUNNER_TEMP" && -d "$RUNNER_TEMP" && ! -L "$RUNNER_TEMP" ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          rc6_stage="$RUNNER_TEMP/porota-v2-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          if ! mkdir -m 700 -- "$rc6_stage"; then
+            echo 'POROTA_PRIVATE_STAGE=RED|exclusive_create_failed_no_foreign_cleanup'
+            exit 79
+          fi
+          rc6_stage_identity="$(stat -c '%d:%i:%u:%a' -- "$rc6_stage")"
+          [[ "$rc6_stage_identity" == *:$(id -u):700 ]]
+          printf 'RC6_TMPDIR=%s\nRC6_TMPDIR_ID=%s\n' "$rc6_stage" "$rc6_stage_identity" >> "$GITHUB_ENV"
+          echo 'POROTA_PRIVATE_STAGE=GREEN|exclusive_mode700'
+
       - name: Verify exact PR provenance before tests
         id: rc6_pr_provenance
         shell: bash
@@ -110,8 +128,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           python tests/ci_frozen_candidate_contract.py negative \
-            --evidence /tmp/porota-negative-fixtures.json
-          test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 7
+            --evidence "$RC6_TMPDIR/porota-negative-fixtures.json"
+          test "$(python -c 'import json,os; print(len(json.load(open(os.environ["RC6_TMPDIR"] + "/porota-negative-fixtures.json"))))')" -eq 7
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
 
       - name: Fast host-transition incident replay
@@ -120,6 +138,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+          # Source containment only: a valid HOLD never attests rootless custody.
+          python -m scripts.rc6_deploy_legacy_host_guard --workflow .github/workflows/porota-deploy-v2-promote.yml
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
             tests/test_rc6_deploy_quiescence.py \
             tests/test_rc6_deploy_scheduler_suspend.py \
@@ -146,6 +166,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python - <<'PY'
+          import os
           from pathlib import Path
           import yaml
 
@@ -166,23 +187,25 @@ jobs:
               assert item.get('classification') and item.get('reason') and item.get('owner')
               args.append(f'--ignore={path.as_posix()}')
               evidence.append('|'.join((path.as_posix(), item['classification'], successor.as_posix())))
-          Path('/tmp/porota-test-args.txt').write_text('\n'.join(args) + '\n', encoding='utf-8')
-          Path('/tmp/porota-test-exclusions.txt').write_text('\n'.join(evidence) + ('\n' if evidence else ''), encoding='utf-8')
+          stage = Path(os.environ['RC6_TMPDIR'])
+          (stage / 'porota-test-args.txt').write_text('\n'.join(args) + '\n', encoding='utf-8')
+          (stage / 'porota-test-exclusions.txt').write_text('\n'.join(evidence) + ('\n' if evidence else ''), encoding='utf-8')
           print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
           PY
-          mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
+          mapfile -t TEST_ARGS < "$RC6_TMPDIR/porota-test-args.txt"
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > "$RC6_TMPDIR/porota-test-collection.txt"
           set +e
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=/tmp/porota-governed-tests.xml
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml="$RC6_TMPDIR/porota-governed-tests.xml"
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
           from pathlib import Path
           import json, os, re, xml.etree.ElementTree as ET
 
-          collection = Path('/tmp/porota-test-collection.txt').read_text(encoding='utf-8')
+          stage = Path(os.environ['RC6_TMPDIR'])
+          collection = (stage / 'porota-test-collection.txt').read_text(encoding='utf-8')
           discovered = sum(int(n) for n in re.findall(r': (\d+)$', collection, re.MULTILINE))
-          suite = ET.parse('/tmp/porota-governed-tests.xml').find('.//testsuite')
+          suite = ET.parse(stage / 'porota-governed-tests.xml').find('.//testsuite')
           # pytest's summary attribute can include extra phase reports; count
           # actual executed testcase elements to compare with collection.
           tests = len(suite.findall('testcase'))
@@ -191,7 +214,7 @@ jobs:
           skipped_nodes = [node for node in suite.iter('skipped')]
           xfail = sum(node.get('type') == 'pytest.xfail' for node in skipped_nodes)
           skipped = len(skipped_nodes) - xfail
-          exclusions = [line for line in Path('/tmp/porota-test-exclusions.txt').read_text(encoding='utf-8').splitlines() if line]
+          exclusions = [line for line in (stage / 'porota-test-exclusions.txt').read_text(encoding='utf-8').splitlines() if line]
           result = {
               'schema_version': 1,
               'scope': 'repository-root automatic pytest discovery',
@@ -206,7 +229,7 @@ jobs:
               'status': 'GREEN' if (int(os.environ['TEST_RC']) == 0 and discovered > 0 and discovered == tests
                                       and failures == errors == skipped == xfail == 0) else 'RED',
           }
-          Path('/tmp/porota-governed-tests.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          (stage / 'porota-governed-tests.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(f'POROTA_TEST_DISCOVERED={discovered}')
           print(f'POROTA_TEST_EXECUTED={tests}')
           print(f'POROTA_TEST_SKIPPED={skipped}')
@@ -228,14 +251,14 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          if [ ! -f /tmp/porota-governed-tests.json ]; then
+          if [ ! -f "$RC6_TMPDIR/porota-governed-tests.json" ]; then
             echo '### Governed productive suite' >> "$GITHUB_STEP_SUMMARY"
             echo '- Status: RED — evidence file missing' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json
-          data=json.load(open('/tmp/porota-governed-tests.json',encoding='utf-8'))
+          import json, os
+          data=json.load(open(os.environ['RC6_TMPDIR'] + '/porota-governed-tests.json',encoding='utf-8'))
           print('### Governed productive suite')
           print(f'- Status: {data["status"]}')
           print(f'- Discovered: {data["discovered"]}')
@@ -287,14 +310,14 @@ jobs:
           PILOT_RECEIPT="$(python -m scripts.rc6_ci_parallel_runner \
             --source-sha "$CANDIDATE_SHA" \
             --source-tree-sha "$CANDIDATE_TREE_SHA" \
-            --repo . --shards 2 --output-junit /tmp/porota-parallel-pilot.xml)"
+            --repo . --shards 2 --output-junit "$RC6_TMPDIR/porota-parallel-pilot.xml")"
           PILOT_RECEIPT="${PILOT_RECEIPT#RC6_PARALLEL_PILOT=}"
           PILOT_RECEIPT="$PILOT_RECEIPT" python - <<'PY'
           from pathlib import Path
           import json
           import os
 
-          sequential = json.loads(Path('/tmp/porota-governed-tests.json').read_text(encoding='utf-8'))
+          sequential = json.loads((Path(os.environ['RC6_TMPDIR']) / 'porota-governed-tests.json').read_text(encoding='utf-8'))
           pilot = json.loads(os.environ['PILOT_RECEIPT'])
           assert sequential['status'] == 'GREEN'
           assert pilot['status'] == 'GREEN_QUORUM_OFFLINE_ONLY'
@@ -326,7 +349,7 @@ jobs:
           python scripts/porota_host_control_plane_inventory.py \
             --repo-root . \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
-            --json-out /tmp/porota-host-control-plane.json
+            --json-out "$RC6_TMPDIR/porota-host-control-plane.json"
 
       - name: Dependency reproducibility gate
         shell: bash
@@ -334,7 +357,7 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_dependency_repro_audit.py \
             --repo-root . \
-            --json-out /tmp/porota-dependency-repro.json \
+            --json-out "$RC6_TMPDIR/porota-dependency-repro.json" \
             --fail-on-gap
 
       - name: Host control-plane manifest V2
@@ -345,16 +368,16 @@ jobs:
             --repo-root . \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --source-sha "$CANDIDATE_SHA" \
-            --json-out /tmp/porota-host-manifest-v2.json
+            --json-out "$RC6_TMPDIR/porota-host-manifest-v2.json"
 
       - name: Host control-plane reconciliation policy
         shell: bash
         run: |
           set -Eeuo pipefail
           python scripts/porota_host_policy_v2.py \
-            --manifest /tmp/porota-host-manifest-v2.json \
+            --manifest "$RC6_TMPDIR/porota-host-manifest-v2.json" \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
-            --json-out /tmp/porota-host-policy-v2.json
+            --json-out "$RC6_TMPDIR/porota-host-policy-v2.json"
 
       - name: Resolve frozen tree for image identity
         shell: bash
@@ -399,15 +422,56 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -rf /tmp/porota-predeploy-app
-          mkdir -p /tmp/porota-predeploy-app
-          cid="$(docker create "$IMAGE")"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/app/." /tmp/porota-predeploy-app/
-          docker rm "$cid" >/dev/null
-          trap - EXIT
-          test -f /tmp/porota-predeploy-app/Dockerfile
-          echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
+          # Exclusive child under the private runner staging root; never
+          # delete a preexisting fixed-name /tmp path to make extraction fit.
+          mkdir -m 700 -- "$RC6_TMPDIR/porota-predeploy-app"
+          # docker create's returned CID, not an image/tag/name, is the only
+          # candidate for cleanup. Verify commit/scope/run labels before both
+          # reading files and deleting the stopped container (never --force).
+          rc6_extract_container_id=
+          rc6_extract_owner="|$CANDIDATE_SHA|v2|$GITHUB_RUN_ID"
+          rc6_extract_owned() {
+            [[ "$rc6_extract_container_id" =~ ^[0-9a-f]{64}$ ]] || return 1
+            rc6_extract_actual="$(docker inspect -f '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}|{{index .Config.Labels "porota.run_id"}}' "$rc6_extract_container_id" 2>/dev/null)" || return 1
+            [[ "$rc6_extract_actual" == "$rc6_extract_container_id$rc6_extract_owner" ]]
+          }
+          rc6_extract_cleanup() {
+            rc6_extract_rc=$?
+            trap - EXIT
+            if [[ -n "$rc6_extract_container_id" ]]; then
+              if ! rc6_extract_owned; then
+                echo 'POROTA_EXTRACT_CLEANUP=WARN|created_container_identity_unverified_no_delete'
+                rc6_extract_rc=79
+              elif docker rm "$rc6_extract_container_id" >/dev/null 2>&1; then
+                echo 'POROTA_EXTRACT_CLEANUP=GREEN|verified_stopped_cid_removed'
+              else
+                echo 'POROTA_EXTRACT_CLEANUP=WARN|verified_cid_delete_failed'
+                rc6_extract_rc=79
+              fi
+            fi
+            if [[ "$rc6_extract_rc" -eq 0 ]]; then
+              echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
+            else
+              echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|no_unverified_cleanup'
+            fi
+            exit "$rc6_extract_rc"
+          }
+          trap rc6_extract_cleanup EXIT
+          trap 'exit 143' INT TERM HUP
+          if rc6_new_id="$(docker create --pull never \
+            --label "porota.commit=$CANDIDATE_SHA" --label porota.predeploy=v2 \
+            --label "porota.run_id=$GITHUB_RUN_ID" "$IMAGE")"; then
+            rc6_extract_container_id="$rc6_new_id"
+          else
+            echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|docker_create_failed'
+            exit 79
+          fi
+          if ! rc6_extract_owned; then
+            echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|created_container_identity_unverified'
+            exit 79
+          fi
+          docker cp "$rc6_extract_container_id:/app/." "$RC6_TMPDIR/porota-predeploy-app/"
+          test -f "$RC6_TMPDIR/porota-predeploy-app/Dockerfile"
 
       - name: Artifact completeness and import closure
         shell: bash
@@ -417,12 +481,12 @@ jobs:
           # self-hashes and a clean build log alone cannot establish it.
           python scripts/porota_validate_deploy_artifact.py \
             --repo-root . \
-            --artifact-root /tmp/porota-predeploy-app \
+            --artifact-root "$RC6_TMPDIR/porota-predeploy-app" \
             --candidate-sha "$CANDIDATE_SHA" \
-            --manifest-out /tmp/porota-artifact-manifest.json
+            --manifest-out "$RC6_TMPDIR/porota-artifact-manifest.json"
           python - <<'PY'
           import json, os
-          p='/tmp/porota-artifact-manifest.json'
+          p=os.environ['RC6_TMPDIR']+'/porota-artifact-manifest.json'
           x=json.load(open(p,encoding='utf-8'))
           assert x['status']=='GREEN'
           assert x['source_image_provenance']['status']=='GREEN', 'GIT_BLOB_IMAGE_BYTES_NOT_PROVEN'
@@ -436,9 +500,9 @@ jobs:
           print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))
           PY
           for asset in n_instrument_watchlist.json POROTA_SECTOR_MAP_V1.csv; do
-            test -f "/tmp/porota-predeploy-app/$asset"
+            test -f "$RC6_TMPDIR/porota-predeploy-app/$asset"
             EXPECTED="$(sha256sum "$asset" | awk '{print $1}')"
-            ACTUAL="$(sha256sum "/tmp/porota-predeploy-app/$asset" | awk '{print $1}')"
+            ACTUAL="$(sha256sum "$RC6_TMPDIR/porota-predeploy-app/$asset" | awk '{print $1}')"
             test "$EXPECTED" = "$ACTUAL"
             echo "POROTA_STATIC_RUNTIME_ASSET=GREEN|$asset|$ACTUAL"
           done
@@ -447,7 +511,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker run --rm --pull never -i --entrypoint python "$IMAGE" - "$CANDIDATE_SHA" "$(git rev-parse HEAD^{tree})" <<'PY' | tee /tmp/porota-image-import-smoke.txt
+          docker run --rm --pull never -i --entrypoint python "$IMAGE" - "$CANDIDATE_SHA" "$(git rev-parse HEAD^{tree})" <<'PY' | tee "$RC6_TMPDIR/porota-image-import-smoke.txt"
           import sys
           from scripts.porota_image_source_identity import verify_source_identity
           identity = verify_source_identity(sys.argv[1], sys.argv[2])
@@ -465,53 +529,127 @@ jobs:
           import o_dashboard
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
-          grep -Fxq 'POROTA_RUNTIME_IMPORT_SMOKE=GREEN' /tmp/porota-image-import-smoke.txt
+          grep -Fxq 'POROTA_RUNTIME_IMPORT_SMOKE=GREEN' "$RC6_TMPDIR/porota-image-import-smoke.txt"
 
       - name: Exact image native sizing and generated catalog proof
         id: rc6_native_proof
         shell: bash
         run: |
           set -Eeuo pipefail
-          install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
+          install -d -m 777 "$RC6_TMPDIR/porota-native-sizing-evidence" "$RC6_TMPDIR/porota-native-sizing-evidence/tmp"
           cleanup_native_proof() {
             rc6_cleanup_rc=$?
-            docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" "porota-native-session-$GITHUB_RUN_ID" "porota-native-cadence-fresh-$GITHUB_RUN_ID" "porota-native-cadence-legacy-$GITHUB_RUN_ID" >/dev/null 2>&1 || true
+            # Each run_native_proof subshell, including background 'session',
+            # owns its successful docker-create ID and its own EXIT trap.
+            # A predictable name must NEVER be an authorization to rm -f.
             if test -n "${rc6_session_pid:-}"; then
               wait "$rc6_session_pid" || rc6_cleanup_rc=1
-              cat "$RUNNER_TEMP/porota-native-session.log"
+              cat "$RC6_TMPDIR/porota-native-session.log"
             fi
             exit "$rc6_cleanup_rc"
           }
           trap cleanup_native_proof EXIT
-          run_native_proof() {
+          # RC6_A980_NATIVE_OWNER_BEGIN
+          run_native_proof() (
+            set -Eeuo pipefail
+            rc6_container_id=
             rc6_label="$1"; shift
             rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"
+            rc6_owner_receipt="|$CANDIDATE_SHA|v2|$GITHUB_RUN_ID"
+            rc6_owned_container() {
+              [[ "$rc6_container_id" =~ ^[0-9a-f]{64}$ ]] || return 1
+              rc6_actual="$(docker inspect -f '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.native-proof"}}|{{index .Config.Labels "porota.run_id"}}' "$rc6_container_id" 2>/dev/null)" || return 1
+              [[ "$rc6_actual" == "$rc6_container_id$rc6_owner_receipt" ]]
+            }
+            rc6_cleanup_owned_native() {
+              rc6_cleanup_rc=$?
+              trap - EXIT
+              if [[ -n "$rc6_container_id" ]]; then
+                if rc6_owned_container; then
+                  # A timeout may leave our native child running. Only a
+                  # label-attested, exact CID may be stopped; remove it with
+                  # non-force Docker rm after a second owner recheck.
+                  rc6_safe_to_remove=false
+                  if rc6_running="$(docker inspect -f '{{.State.Running}}' "$rc6_container_id" 2>/dev/null)"; then
+                    if [[ "$rc6_running" == false ]]; then
+                      rc6_safe_to_remove=true
+                    elif [[ "$rc6_running" == true ]]; then
+                      if rc6_owned_container && docker stop --time 10 "$rc6_container_id" >/dev/null 2>&1; then
+                        if rc6_after_stop="$(docker inspect -f '{{.State.Running}}' "$rc6_container_id" 2>/dev/null)" && [[ "$rc6_after_stop" == false ]]; then
+                          rc6_safe_to_remove=true
+                        else
+                          echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_container_still_running_after_stop'
+                        fi
+                      else
+                        echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_running_container_stop_failed'
+                      fi
+                    else
+                      echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|container_running_state_invalid'
+                    fi
+                  else
+                    echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|container_running_state_unverified'
+                  fi
+                  if [[ "$rc6_safe_to_remove" == true ]] && rc6_owned_container; then
+                    if ! docker rm "$rc6_container_id" >/dev/null 2>&1; then
+                      echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_container_delete_failed'
+                      rc6_cleanup_rc=79
+                    fi
+                  else
+                    rc6_cleanup_rc=79
+                  fi
+                else
+                  echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|container_identity_unverified_no_delete'
+                  rc6_cleanup_rc=79
+                fi
+              fi
+              exit "$rc6_cleanup_rc"
+            }
+            trap rc6_cleanup_owned_native EXIT
+            trap 'exit 143' INT TERM HUP
             # The full session must prove the same 256 MiB cap used by the
             # Droplet stress governor. Other native sizing stages retain 512 MiB.
             rc6_memory=(--memory 512m --memory-swap 512m)
             if test "$rc6_label" = session; then
               rc6_memory=(--memory 256m --memory-swap 256m)
             fi
-            install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence/tmp/$rc6_label"
-            docker create --name "$rc6_name" --pull never "${rc6_memory[@]}" --cpus .75 \
+            install -d -m 777 "$RC6_TMPDIR/porota-native-sizing-evidence/tmp/$rc6_label"
+            if rc6_new_id="$(docker create --name "$rc6_name" \
+              --label "porota.commit=$CANDIDATE_SHA" --label porota.native-proof=v2 \
+              --label "porota.run_id=$GITHUB_RUN_ID" --pull never \
+              "${rc6_memory[@]}" --cpus .75 \
               --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
               --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
               -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e "TMPDIR=/proof/tmp/$rc6_label" \
-              -v "$RUNNER_TEMP/porota-native-sizing-evidence:/proof" "$IMAGE" "$@"
+              -v "$RC6_TMPDIR/porota-native-sizing-evidence:/proof" "$IMAGE" "$@")"; then
+              rc6_container_id="$rc6_new_id"
+            else
+              echo 'POROTA_NATIVE_PROOF=RED|docker_create_failed_no_name_cleanup'
+              exit 79
+            fi
+            if ! rc6_owned_container; then
+              echo 'POROTA_NATIVE_PROOF=RED|created_id_or_owner_unverified'
+              exit 79
+            fi
             set +e
             rc6_timeout=480
             case "$rc6_label" in
               cadence-fresh|cadence-legacy) rc6_timeout=1500 ;;
             esac
-            timeout "$rc6_timeout" docker start -a "$rc6_name"
+            timeout "$rc6_timeout" docker start -a "$rc6_container_id"
             rc6_result=$?
             set -e
-            rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_name")"
+            rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_container_id")"
             printf 'POROTA_NATIVE_SIZING_CONTAINER=%s|%s\n' "$rc6_label" "$rc6_state"
             test "$rc6_result" -eq 0
             test "$rc6_state" = '0|false'
-            docker rm "$rc6_name" >/dev/null
-          }
+            if ! rc6_owned_container; then
+              echo 'POROTA_NATIVE_PROOF=RED|post_start_owner_changed_no_delete'
+              exit 79
+            fi
+            docker rm "$rc6_container_id" >/dev/null
+            rc6_container_id=
+          )
+          # RC6_A980_NATIVE_OWNER_END
           run_native_proof cases python -m pytest -q -p no:cacheprovider \
             tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
             tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
@@ -524,7 +662,7 @@ jobs:
           # receipt and fixture. Keep fresh -> legacy ordered. Docker caps and
           # proof paths are separate; both branches must finish cleanly.
           run_native_proof session python scripts/rc6_postdeploy_stress.py \
-            --output /proof/session > "$RUNNER_TEMP/porota-native-session.log" 2>&1 &
+            --output /proof/session > "$RC6_TMPDIR/porota-native-session.log" 2>&1 &
           rc6_session_pid=$!
           # Independent processes preserve each existing additive nice10 call.
           # Every stage physically waits30s and verifies12full original audits.
@@ -536,7 +674,7 @@ jobs:
           wait "$rc6_session_pid"
           rc6_session_rc=$?
           set -e
-          cat "$RUNNER_TEMP/porota-native-session.log"
+          cat "$RC6_TMPDIR/porota-native-session.log"
           rc6_session_pid=
           test "$rc6_session_rc" -eq 0
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
@@ -563,35 +701,22 @@ jobs:
           print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
           PY
 
-      - name: Reclaim native proof evidence for artifact publication
-        if: always()
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          # UID1000 sandbox fixtures can have0700 directories. The upload
-          # glob walks directories before exclusions, so reclaim only this
-          # runner-owned output tree AFTER all sandbox processes have exited.
-          rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"
-          if test -d "$rc6_proof_root"; then
-            sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"
-          fi
-
       - name: Export frozen candidate artifacts
         shell: bash
         run: |
           set -Eeuo pipefail
           python scripts/porota_build_deploy_bundle_v2.py \
             --repo-root . \
-            --output /tmp/porota-deploy-bundle-v2.tgz \
-            --manifest-out /tmp/porota-deploy-bundle-v2-manifest.json
-          docker save "$IMAGE" | gzip -1 > /tmp/porota-predeploy-image.tar.gz
-          IMAGE_TAR_SHA="$(sha256sum /tmp/porota-predeploy-image.tar.gz | awk '{print $1}')"
+            --output "$RC6_TMPDIR/porota-deploy-bundle-v2.tgz" \
+            --manifest-out "$RC6_TMPDIR/porota-deploy-bundle-v2-manifest.json"
+          docker save "$IMAGE" | gzip -1 > "$RC6_TMPDIR/porota-predeploy-image.tar.gz"
+          IMAGE_TAR_SHA="$(sha256sum "$RC6_TMPDIR/porota-predeploy-image.tar.gz" | awk '{print $1}')"
           IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
           IMAGE_SIZE_BYTES="$(docker image inspect -f '{{.Size}}' "$IMAGE")"
           IMAGE_CONFIG_SHA="$(docker image inspect -f '{{json .Config}}' "$IMAGE" | sha256sum | awk '{print $1}')"
           TREE_SHA="$(git rev-parse HEAD^{tree})"
           python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" "$IMAGE_CONFIG_SHA" "$IMAGE_SIZE_BYTES" <<'PY'
-          import json,sys
+          import json,os,sys
           candidate,tree,image_id,image_tar_sha,image_config_sha,image_size_bytes=sys.argv[1:]
           payload={
             "schema_version":1,
@@ -606,7 +731,7 @@ jobs:
             "real_order_capability_required":"BLOCKED",
             "build_once":True,
           }
-          open("/tmp/porota-frozen-candidate.json","w",encoding="utf-8").write(
+          open(os.environ['RC6_TMPDIR'] + "/porota-frozen-candidate.json","w",encoding="utf-8").write(
               json.dumps(payload,indent=2,sort_keys=True)+"\n")
           print("POROTA_FROZEN_CANDIDATE=GREEN|"+candidate+"|"+tree+"|"+image_id)
           PY
@@ -616,9 +741,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           python tests/ci_frozen_candidate_contract.py validate \
-            --frozen /tmp/porota-frozen-candidate.json \
-            --image /tmp/porota-predeploy-image.tar.gz \
-            --manifest /tmp/porota-deploy-bundle-v2-manifest.json \
+            --frozen "$RC6_TMPDIR/porota-frozen-candidate.json" \
+            --image "$RC6_TMPDIR/porota-predeploy-image.tar.gz" \
+            --manifest "$RC6_TMPDIR/porota-deploy-bundle-v2-manifest.json" \
             --candidate-sha "$CANDIDATE_SHA" \
             --tree-sha "$(git rev-parse HEAD^{tree})"
 
@@ -631,14 +756,19 @@ jobs:
           import json, os
           from pathlib import Path
           import xml.etree.ElementTree as ET
+          import yaml
 
-          proof = Path(os.environ['RUNNER_TEMP']) / 'porota-native-sizing-evidence'
+          stage = Path(os.environ['RC6_TMPDIR'])
+          proof = stage / 'porota-native-sizing-evidence'
+          def is_aliased(path):
+              return any(parent.is_symlink() for parent in (path, *path.parents)
+                         if parent == stage or stage in parent.parents)
           required = [
-              Path('/tmp/porota-frozen-candidate.json'),
-              Path('/tmp/porota-deploy-bundle-v2.tgz'),
-              Path('/tmp/porota-deploy-bundle-v2-manifest.json'),
-              Path('/tmp/porota-predeploy-image.tar.gz'),
-              Path('/tmp/porota-governed-tests.json'),
+              stage / 'porota-frozen-candidate.json',
+              stage / 'porota-deploy-bundle-v2.tgz',
+              stage / 'porota-deploy-bundle-v2-manifest.json',
+              stage / 'porota-predeploy-image.tar.gz',
+              stage / 'porota-governed-tests.json',
               proof / 'native-bound.xml',
               *(proof / 'session' / name for name in (
                   'dashboard_auth_52.xml', 'publication_io_identity.xml',
@@ -651,7 +781,17 @@ jobs:
               proof / 'cadence/cadence-legacy.json',
           ]
           for path in required:
-              if not path.is_file() or path.stat().st_size == 0:
+              if is_aliased(path):
+                  raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_ALIASED:{path.name}')
+              # Never sudo/chown a candidate-writable proof tree. If UID1000
+              # generated mode0700 evidence the runner cannot read, HOLD79;
+              # do not substitute broad recursive permission changes.
+              if not os.access(path, os.R_OK):
+                  print(f'REQUIRED_PREDEPLOY_EVIDENCE_UNREADABLE:{path.name}')
+                  raise SystemExit(79)
+              if not path.is_file():
+                  raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_MISSING:{path.name}')
+              if path.stat().st_size == 0:
                   raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_MISSING:{path.name}')
           for path in (item for item in required if item.suffix == '.xml'):
               root = ET.parse(path).getroot()
@@ -660,7 +800,7 @@ jobs:
                       next(root.iter('error'), None) is not None or
                       next(root.iter('skipped'), None) is not None):
                   raise SystemExit(f'REQUIRED_NATIVE_JUNIT_NOT_GREEN:{path.name}')
-          governed = json.loads(Path('/tmp/porota-governed-tests.json').read_text())
+          governed = json.loads((stage / 'porota-governed-tests.json').read_text())
           if (governed['status'] != 'GREEN' or
                   any(governed[key] for key in ('failures', 'errors', 'skipped', 'xfail'))):
               raise SystemExit('REQUIRED_GOVERNED_JUNIT_NOT_GREEN')
@@ -670,34 +810,90 @@ jobs:
               data = json.loads(path.read_text())
               if data['status'] != 'GREEN' or data['production_data_mounted'] is not False:
                   raise SystemExit(f'REQUIRED_NATIVE_RECEIPT_NOT_GREEN:{path.name}')
+          # Keep the single uploader's exact-file list as the only publisher
+          # manifest. Detect newly generated receipts omitted from that list
+          # instead of falsely certifying a silently incomplete artifact.
+          workflow = yaml.safe_load(Path('.github/workflows/porota-predeploy-v2.yml').read_text())
+          upload = next(step for step in workflow['jobs']['artifact-gate']['steps']
+                        if step.get('name') == 'Upload predeploy evidence')
+          # Split expression introducers so Actions cannot interpolate them
+          # inside this Python code; we compare to the checked-in YAML text.
+          prefix = '$' + '{{ runner.temp }}/porota-v2-$' + '{{ github.run_id }}-$' + '{{ github.run_attempt }}/'
+          declared = [line.strip() for line in upload['with']['path'].splitlines() if line.strip()]
+          if not declared or len(declared) != len(set(declared)):
+              raise SystemExit('PREDEPLOY_UPLOAD_MANIFEST_DUPLICATE_OR_EMPTY')
+          native_declared = set()
+          for entry in declared:
+              if not entry.startswith(prefix) or any(ch in entry for ch in '*!'):
+                  raise SystemExit('PREDEPLOY_UPLOAD_MANIFEST_UNSAFE_PATH')
+              name = entry[len(prefix):]
+              relative = Path(name)
+              if not name or relative.is_absolute() or '..' in relative.parts:
+                  raise SystemExit('PREDEPLOY_UPLOAD_MANIFEST_UNSAFE_PATH')
+              path = stage / relative
+              # No exact allowlist name may alias a symlinked parent or a
+              # foreign file. Checked before actions/upload-artifact.
+              if is_aliased(path):
+                  raise SystemExit(f'PREDEPLOY_UPLOAD_MANIFEST_ALIASED:{name}')
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f'PREDEPLOY_UPLOAD_MANIFEST_MISSING:{name}')
+              if relative.parts[0] == 'porota-native-sizing-evidence':
+                  native_declared.add(Path(*relative.parts[1:]).as_posix())
+          native_required = {path.relative_to(proof).as_posix()
+                             for path in required if proof in path.parents}
+          if native_declared != native_required:
+              raise SystemExit('PREDEPLOY_NATIVE_ALLOWLIST_DRIFT')
+          for path in proof.rglob('*'):
+              relative = path.relative_to(proof)
+              # These are sandbox temporary and generated cadence DATA, not
+              # publishable evidence. No directory traversal/upload of them.
+              if relative.parts[0] == 'tmp' or relative.parts[:2] in (
+                      ('cadence', 'fresh'), ('cadence', 'legacy')):
+                  continue
+              if path.is_symlink():
+                  raise SystemExit(f'NATIVE_EVIDENCE_ALIASED:{relative}')
+              if path.is_file() and relative.as_posix() not in native_declared:
+                  raise SystemExit(f'NATIVE_EVIDENCE_UNDECLARED_FILE:{relative}')
           print('POROTA_REQUIRED_EVIDENCE=GREEN')
           PY
 
       - name: Upload predeploy evidence
-        if: always()
+        # Fail-closed: never publish unchecked paths or partial native trees.
+        # The separate sanitized RCA diagnostic is available on RED.
+        if: ${{ always() && steps.rc6_artifact_gate.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: porota-predeploy-v2-${{ env.CANDIDATE_SHA }}
           if-no-files-found: error
           retention-days: 7
           path: |
-            /tmp/porota-artifact-manifest.json
-            /tmp/porota-host-control-plane.json
-            /tmp/porota-dependency-repro.json
-            /tmp/porota-host-manifest-v2.json
-            /tmp/porota-host-policy-v2.json
-            /tmp/porota-deploy-bundle-v2.tgz
-            /tmp/porota-deploy-bundle-v2-manifest.json
-            /tmp/porota-predeploy-image.tar.gz
-            /tmp/porota-frozen-candidate.json
-            /tmp/porota-governed-tests.xml
-            ${{ runner.temp }}/porota-native-sizing-evidence/
-            !${{ runner.temp }}/porota-native-sizing-evidence/tmp/**
-            /tmp/porota-governed-tests.json
-            /tmp/porota-test-collection.txt
-            /tmp/porota-test-exclusions.txt
-            /tmp/porota-negative-fixtures.json
-            ${{ runner.temp }}/porota-predeploy-evidence/
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-artifact-manifest.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-host-control-plane.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-dependency-repro.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-host-manifest-v2.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-host-policy-v2.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-deploy-bundle-v2.tgz
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-deploy-bundle-v2-manifest.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-predeploy-image.tar.gz
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-frozen-candidate.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-governed-tests.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-governed-tests.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-test-collection.txt
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-test-exclusions.txt
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-negative-fixtures.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/native-bound.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/dashboard_auth_52.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/publication_io_identity.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/scalping_capacity.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/scheduler_monitor_backup.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/signals_risk_exit_ledger.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/sources_readiness_network.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/sql_shadow_wal.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/treasury_caucion.xml
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/session/stress.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/catalog/full-catalog.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/cadence/cadence-fresh.json
+            ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/cadence/cadence-legacy.json
 
       - name: Sanitized RCA phase learning (diagnostic only)
         # Observes even failed gates; uses only named step outcomes, no raw
@@ -716,7 +912,7 @@ jobs:
           set -Eeuo pipefail
           python -m scripts.rc6_ci_rca_snapshot \
             --registry ops/policy/rc6-rca-signatures-v1.json \
-            --output /tmp/porota-rca-learning.json
+            --output "$RC6_TMPDIR/porota-rca-learning.json"
 
       - name: Upload sanitized RCA diagnostic (never promotion input)
         if: ${{ always() && steps.rc6_checkout.outcome == 'success' }}
@@ -725,10 +921,82 @@ jobs:
           name: porota-ci-rca-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 7
-          path: /tmp/porota-rca-learning.json
+          path: ${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-rca-learning.json
+
+      - name: Local cleanup
+        id: rc6_local_cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Containers created above have exact-ID EXIT traps or --rm.
+          # An image ancestry match cannot authorize stopping another app's
+          # container, even on a nominally ephemeral runner.
+          # RC6_A979_OWNED_IMAGE_BEGIN
+          rc6_image_state=WARN
+          rc6_image_reason=IMAGE_IDENTITY_UNVERIFIED
+          if [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ && "$IMAGE" == "porota-predeploy-v2:$CANDIDATE_SHA" ]]; then
+            if rc6_image_receipt="$(docker image inspect --format '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}' "$IMAGE" 2>/dev/null)"; then
+              IFS='|' read -r rc6_image_id rc6_label_commit rc6_label_scope <<< "$rc6_image_receipt"
+              if [[ "$rc6_image_id" =~ ^sha256:[0-9a-f]{64}$ && "$rc6_label_commit" == "$CANDIDATE_SHA" && "$rc6_label_scope" == v2 ]]; then
+                # Read-only, ID-filtered inventory. Any container reference,
+                # including an unrelated app's, forbids even untagging.
+                if rc6_refs="$(docker container ls --all --quiet --filter "ancestor=$rc6_image_id" 2>/dev/null)"; then
+                  if [[ -z "$rc6_refs" ]]; then
+                    if rc6_image_recheck="$(docker image inspect --format '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}' "$IMAGE" 2>/dev/null)" && [[ "$rc6_image_recheck" == "$rc6_image_receipt" ]]; then
+                      if docker image rm "$IMAGE" >/dev/null 2>&1; then
+                        rc6_image_state=GREEN
+                        rc6_image_reason=OWNED_UNUSED_IMAGE_REMOVED
+                      else
+                        rc6_image_reason=IMAGE_DELETE_FAILED
+                      fi
+                    else
+                      rc6_image_reason=IMAGE_CHANGED_DURING_CLEANUP
+                    fi
+                  else
+                    rc6_image_reason=IMAGE_REFERENCED_BY_CONTAINER
+                  fi
+                else
+                  rc6_image_reason=CONTAINER_REFERENCES_UNVERIFIED
+                fi
+              fi
+            fi
+          fi
+          echo "POROTA_PREDEPLOY_IMAGE_CLEANUP=$rc6_image_state|reason=$rc6_image_reason"
+          # RC6_A979_OWNED_IMAGE_END
+          # RC6_A980_PRIVATE_STAGE_BEGIN
+          rc6_stage_state=WARN
+          rc6_stage_reason=PRIVATE_STAGE_IDENTITY_UNVERIFIED
+          rc6_expected_stage="$RUNNER_TEMP/porota-v2-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          if [[ -n "${RC6_TMPDIR:-}" && -n "${RC6_TMPDIR_ID:-}" &&
+                "$RC6_TMPDIR" == "$rc6_expected_stage" &&
+                -d "$RC6_TMPDIR" && ! -L "$RC6_TMPDIR" &&
+                -d "$RUNNER_TEMP" && ! -L "$RUNNER_TEMP" ]]; then
+            rc6_stage_identity="$(stat -c '%d:%i:%u:%a' -- "$RC6_TMPDIR" 2>/dev/null)" || rc6_stage_identity=
+            if [[ "$rc6_stage_identity" == "$RC6_TMPDIR_ID" &&
+                  "$rc6_stage_identity" == *:$(id -u):700 ]]; then
+              # This is the one exclusive, mode0700 runner-owned job directory,
+              # not an arbitrary /tmp prefix, glob, or another app's path.
+              if rm -rf -- "$RC6_TMPDIR" && [[ ! -e "$RC6_TMPDIR" && ! -L "$RC6_TMPDIR" ]]; then
+                rc6_stage_state=GREEN
+                rc6_stage_reason=PRIVATE_STAGE_REMOVED
+              else
+                rc6_stage_reason=PRIVATE_STAGE_DELETE_FAILED
+              fi
+            fi
+          fi
+          echo "POROTA_PREDEPLOY_STAGE_CLEANUP=$rc6_stage_state|reason=$rc6_stage_reason"
+          # RC6_A980_PRIVATE_STAGE_END
+          if [[ "$rc6_image_state" != GREEN || "$rc6_stage_state" != GREEN ]]; then
+            echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=WARN|image_or_stage_cleanup_unverified'
+            exit 79
+          fi
+          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
 
       - name: Predeploy summary
-        if: success()
+        # This is the terminal certificate: cleanup failure can never leave a
+        # misleading GREEN line from an earlier step in the run logs.
+        if: ${{ success() && steps.rc6_local_cleanup.outcome == 'success' }}
         shell: bash
         run: |
           {
@@ -749,17 +1017,8 @@ jobs:
             echo '- Full governed suite: GREEN (see porota-governed-tests.json)'
             echo '- Negative fail-closed fixtures: GREEN'
             echo '- PAPER safety source gate: GREEN'
+            echo '- Local runner cleanup: GREEN'
             echo '- Droplet touched: NO'
           } >> "$GITHUB_STEP_SUMMARY"
           echo 'POROTA_PREDEPLOY_V2=GREEN'
           echo 'DROPLET_TOUCHED=NO'
-
-      - name: Local cleanup
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
-          docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
-          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

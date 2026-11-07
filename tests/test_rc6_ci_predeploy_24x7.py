@@ -17,7 +17,7 @@ class TestPredeployTwentyFourSeven(unittest.TestCase):
         workflow = (REPO / ".github/workflows/porota-predeploy-v2.yml").read_text(encoding="utf-8")
         self.assertIn("pull_request:", workflow)
         self.assertIn("Governed automatic test discovery and execution", workflow)
-        self.assertIn("--junitxml=/tmp/porota-governed-tests.xml", workflow)
+        self.assertIn('--junitxml="$RC6_TMPDIR/porota-governed-tests.xml"', workflow)
         self.assertIn("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", workflow)
         # Virtual 405-minute native sessions are allowed; these forbidden
         # identifiers represent real-market or calendar-based technical vetoes.
@@ -98,8 +98,11 @@ class TestPredeployTwentyFourSeven(unittest.TestCase):
                              "build_once", "native_proof", "artifact_gate")})
         primary_upload = steps[names.index("Upload predeploy evidence")]
         diagnostic_upload = steps[names.index("Upload sanitized RCA diagnostic (never promotion input)")]
-        self.assertNotIn("/tmp/porota-rca-learning.json", primary_upload["with"]["path"])
-        self.assertEqual(diagnostic_upload["with"]["path"], "/tmp/porota-rca-learning.json")
+        self.assertNotIn("porota-rca-learning.json", primary_upload["with"]["path"])
+        self.assertEqual(
+            diagnostic_upload["with"]["path"],
+            "${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-rca-learning.json",
+        )
         self.assertLess(names.index("Upload predeploy evidence"),
                         names.index("Sanitized RCA phase learning (diagnostic only)"))
         self.assertNotIn("deploy", diagnostic["run"].lower())

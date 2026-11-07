@@ -323,23 +323,40 @@ def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, 
 
 
 
+class _OwnedPaperConnection(sqlite3.Connection):
+    """A store-created context owns its lifetime as well as its transaction.
+
+    Borrowed callers must use the connection directly, not enter its context.
+    Keep SQLite's native commit/rollback and exception behavior before closing.
+    """
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        if runtime_schema_ready:
+            from cg_paper_workspace import validate_child_ready
+            validate_child_ready(path)
+            return
         new_file = not os.path.exists(path)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         # El runtime padre migra una única vez antes de crear hijos. Repetir
         # DDL/índices grandes desde scanner, velas y salida puede bloquear SQLite.
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if new_file or not runtime_schema_ready:
-            self.init_db()
+        self.init_db()
         if new_file:
             from cg_paper_workspace import mark_new_database
             with self.connect() as c:
                 mark_new_database(c)
 
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=20)
+        conn = sqlite3.connect(self.path, timeout=20, factory=_OwnedPaperConnection)
         conn.row_factory = sqlite3.Row
         from rc6_signal_contracts import register_exact_time
         register_exact_time(conn)

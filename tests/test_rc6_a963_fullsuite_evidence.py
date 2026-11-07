@@ -169,7 +169,7 @@ def test_all_receipts_have_immutable_source_and_false_release_authority(tmp_path
         (tmp_path / "sanitized" / "junit-hashed.xml").read_bytes()).hexdigest()
 
 
-def test_existing_full_job_keeps_focal_and_full_semantics_with_private_evidence():
+def test_existing_full_job_preserves_suite_plan_behind_custody_hold():
     repo = Path(__file__).resolve().parents[1]
     path = repo / ".github/workflows/rc6-ws-tests-12-current-contract.yml"
     data = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
@@ -184,9 +184,12 @@ def test_existing_full_job_keeps_focal_and_full_semantics_with_private_evidence(
     steps = job["steps"]
     names = [step["name"] for step in steps if "name" in step]
     assert names == [
+        "BLOCKED QA execution without independent custody",
         "Verify exact candidate checkout and tree (runner-only)",
+        "Isolated bounded QA diagnostic (HOLD)",
         "Install dependencies", "Collect exact FULL nodeids privately",
-        "Full suite", "Sanitize FULL evidence", "Upload anonymized FULL evidence"]
+        "Full suite", "Sanitize FULL evidence",
+        "BLOCKED evidence publication without independent custody"]
     full = next(s for s in steps if s.get("name") == "Full suite")
     script = full["run"]
     assert "PYTHONPATH=. pytest -q" in script
@@ -194,13 +197,14 @@ def test_existing_full_job_keeps_focal_and_full_semantics_with_private_evidence(
     assert "--junitxml=" in script and "-p scripts.rc6_ci_pytest_identity" in script
     assert "-o xfail_strict=true" in script
     sanitizer = next(s for s in steps if s.get("name") == "Sanitize FULL evidence")
-    assert sanitizer["if"] == "always()"
+    assert sanitizer["if"] == (
+        "${{ always() && steps.execution_custody.outcome == 'success' "
+        "&& steps.oci_diagnostic.outcome == 'success' }}")
     assert "scripts.rc6_ci_fullsuite_evidence" in sanitizer["run"]
-    upload = next(s for s in steps if s.get("name") == "Upload anonymized FULL evidence")
-    assert upload["if"] == "always()"
-    assert upload["with"]["path"] == "${{ runner.temp }}/rc6-a963-sanitized/"
-    assert "private" not in upload["with"]["path"]
-    assert upload["with"]["if-no-files-found"] == "error"
+    gate = next(s for s in steps if s.get("id") == "publication_custody")
+    assert gate["if"] == "always()"
+    assert not any(str(s.get("uses", "")).startswith("actions/upload-artifact@")
+                   for s in steps)
 
 
 def test_real_pytest_collection_and_execution_emit_exact_hashed_properties(tmp_path):

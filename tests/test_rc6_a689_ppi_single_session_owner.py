@@ -70,6 +70,8 @@ class FakeRealtime:
 
 @pytest.fixture
 def harness(monkeypatch):
+    # Synthetic SDK/HTTP/socket fixture only, never external auth authority.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     counts = {"clients": 0, "logins": 0, "gets": 0, "connect_attempts": 0}
     native_book = {
         "date": (datetime.now(timezone.utc) - timedelta(milliseconds=100))
@@ -357,6 +359,7 @@ def test_delayed_sdk_connect_callback_revalidates_per_symbol_capacity(harness):
         assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
     finally:
         owner._stream_invoked = False  # synthetic no-socket teardown ONLY
+        owner._reader._ProductionMarketReader__stream_invoked = False
         owner.close()
 
 
@@ -385,4 +388,5 @@ def test_revocation_after_wire_subscription_denies_event_fanout(harness):
         assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
     finally:
         owner._stream_invoked = False  # fake-only no actual WS can remain open
+        owner._reader._ProductionMarketReader__stream_invoked = False
         owner.close()

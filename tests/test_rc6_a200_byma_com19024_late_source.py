@@ -182,6 +182,10 @@ class BymaLateSourceTest(unittest.TestCase):
             self.assertEqual(rpc.call_count, 1)
 
     def test_dispatcher_only_runs_optional_iol_stage_after_seventeen(self):
+        # Scheduling-only test; do not interpret as positive PAPER authority.
+        paper_gate = patch.object(dispatch, "_paper_zero", return_value=None)
+        paper_gate.start()
+        self.addCleanup(paper_gate.stop)
         calls = []
 
         def runner(command, **kwargs):
@@ -201,6 +205,10 @@ class BymaLateSourceTest(unittest.TestCase):
         self.assertFalse((self.market / "rc6_public_sources_latest.json").exists())
 
     def test_no_late_contract_and_pre_effective_date_never_call_provider(self):
+        # Scheduling-only test; real PAPER identity stays HOLD (A840).
+        paper_gate = patch.object(dispatch, "_paper_zero", return_value=None)
+        paper_gate.start()
+        self.addCleanup(paper_gate.stop)
         calls = []
 
         def not_due(command, **kwargs):

@@ -1,12 +1,14 @@
 """Continuidad PAPER v17 separada del libro anterior; nunca importa históricos."""
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+import ctypes
 import fcntl
 import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import uuid
 from _version import IMAGE
 
@@ -25,6 +27,8 @@ CAPITAL_DEFAULTS = {
 def checked_path(value):
     """Rechaza rutas/alias del libro conocido antes de abrirlo con SQLite."""
     raw = Path(value).absolute()
+    if any(member.is_symlink() for member in (raw, *raw.parents)):
+        raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
     path = raw.resolve()
     if (raw.name == 'observer_production.db' or path.name == 'observer_production.db'
             or raw.parent.name == 'observer' or path.parent.name == 'observer'):
@@ -32,6 +36,16 @@ def checked_path(value):
     # Un alias no es una base independiente: podría escribir el mismo inodo.
     if raw.is_symlink() or (path.exists() and path.stat().st_nlink != 1):
         raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
+    for suffix in ('-wal', '-shm', '-journal'):
+        member = Path(str(path) + suffix)
+        try:
+            info = member.lstat()
+        except FileNotFoundError:
+            continue
+        if not path.exists():
+            raise ValueError('PAPER_V17_ORPHAN_SIDECAR_FORBIDDEN')
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
     return path
 
 
@@ -105,6 +119,160 @@ def read_identity(path):
         return identity_from_connection(c)
 
 
+def validate_child_ready(path):
+    """Bounded local sentinels only; never migration or physical attestation."""
+    target = checked_path(path)
+    if not target.is_file():
+        raise ValueError('PAPER_V17_CHILD_DATABASE_REQUIRED')
+    with closing(sqlite3.connect(target.as_uri() + '?mode=ro', uri=True, timeout=5)) as c:
+        c.execute('PRAGMA query_only=ON')
+        if identity_from_connection(c).get('initial_capital_json') != capital_profile():
+            raise ValueError('PAPER_V17_INITIAL_CAPITAL_OR_ORIGIN_MISMATCH')
+        if c.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+            raise ValueError('PAPER_SQLITE_WAL_REQUIRED')
+        sentinels = {
+            'observer_state': {'id', 'mode', 'real_orders_sent'},
+            'paper_decisions': {'id', 'decision_key', 'features_json'},
+            'paper_positions': {'paper_id', 'status', 'quantity'},
+            'paper_fills': {'paper_id', 'side', 'quantity'},
+            'paper_causal_decision_receipts': {'decision_key'},
+        }
+        for table, columns in sentinels.items():
+            actual = {row[1] for row in c.execute('PRAGMA table_info(' + table + ')')}
+            if not columns <= actual:
+                raise ValueError('PAPER_V17_CHILD_SCHEMA_REQUIRED')
+
+
+@contextmanager
+def _parent_directory(target):
+    """Anchor namespace operations; SQLite itself still uses its pathname VFS."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open('/', flags)
+    try:
+        for component in target.parent.parts[1:]:
+            try:
+                child = os.open(component, flags, dir_fd=fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, mode=0o777, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                child = os.open(component, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        _check_parent(target, fd)
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _check_parent(target, parent_fd):
+    checked_path(target)
+    opened = os.fstat(parent_fd)
+    current = os.stat(target.parent, follow_symlinks=False)
+    if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+        raise ValueError('PAPER_V17_PARENT_CHANGED')
+
+
+@contextmanager
+def _initialization_lock(target, parent_fd):
+    """Reject aliases before flock; this is not a runtime writer lease."""
+    name = target.name + '.initialization.lock'
+    try:
+        before = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        before = None
+    if before is not None and (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1):
+        raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN')
+    try:
+        fd = os.open(name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     0o600, dir_fd=parent_fd)
+    except OSError as exc:
+        raise ValueError('PAPER_V17_LOCK_UNAVAILABLE') from exc
+    with os.fdopen(fd, 'r+') as lock:
+        opened = os.fstat(lock.fileno())
+        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+                or (before is not None and
+                    (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino))):
+            raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN')
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (not stat.S_ISREG(current.st_mode) or current.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+            raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN')
+        _check_parent(target, parent_fd)
+        yield
+
+
+def _publish_no_replace(source_fd, source_name, parent_fd, target_name):
+    """Linux atomic no-clobber rename; no unsafe overwrite fallback."""
+    rename = getattr(ctypes.CDLL(None, use_errno=True), 'renameat2', None)
+    if rename is None:
+        raise RuntimeError('PAPER_V17_ATOMIC_PUBLICATION_UNAVAILABLE')
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(source_fd, os.fsencode(source_name), parent_fd, os.fsencode(target_name), 1):
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), target_name)
+
+
+def _fresh_store(target, profile, parent_fd):
+    """Publish only a closed, checkpointed fresh schema plus capital identity.
+
+    Failed staging stays private for evidence; never delete or adopt an unknown
+    database. This is name publication atomicity, not adversarial VFS custody.
+    """
+    from be_paper_engine import PaperStore
+    stage_name = '.paper-bootstrap-' + uuid.uuid4().hex
+    os.mkdir(stage_name, mode=0o700, dir_fd=parent_fd)
+    stage_fd = os.open(stage_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                       dir_fd=parent_fd)
+    try:
+        _check_parent(target, parent_fd)
+        staged = target.parent / stage_name / target.name
+        store = PaperStore(str(staged))
+        with store.connect() as c:
+            identity_from_connection(c)
+            c.execute('UPDATE paper_workspace SET initial_capital_json=? WHERE id=1', (profile,))
+        with store.connect() as c:
+            checkpoint = c.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
+            if checkpoint[0] != 0:
+                raise RuntimeError('PAPER_V17_BOOTSTRAP_CHECKPOINT_BUSY')
+        # All owned connections have closed before the sole main file is moved.
+        if set(os.listdir(stage_fd)) != {target.name}:
+            raise ValueError('PAPER_V17_BOOTSTRAP_SIDECARS_REMAIN')
+        file_fd = os.open(target.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=stage_fd)
+        try:
+            info = os.fstat(file_fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
+            os.fsync(file_fd)
+            _check_parent(target, parent_fd)
+            _publish_no_replace(stage_fd, target.name, parent_fd, target.name)
+            # Pin the fsynced inode across rename: a late source-name swap must
+            # not report successful publication. Preserve mismatched evidence.
+            # This detects this boundary only, not hostile VFS/sidecar writes.
+            published = os.stat(target.name, dir_fd=parent_fd, follow_symlinks=False)
+            if (not stat.S_ISREG(published.st_mode) or published.st_nlink != 1
+                    or (info.st_dev, info.st_ino) != (published.st_dev, published.st_ino)):
+                raise ValueError('PAPER_V17_PUBLICATION_SOURCE_CHANGED')
+            os.fsync(parent_fd)
+        finally:
+            os.close(file_fd)
+        _check_parent(target, parent_fd)
+        # Only remove the now-empty private directory with verified identity.
+        current = os.stat(stage_name, dir_fd=parent_fd, follow_symlinks=False)
+        opened = os.fstat(stage_fd)
+        if (current.st_dev, current.st_ino) == (opened.st_dev, opened.st_ino):
+            os.rmdir(stage_name, dir_fd=parent_fd)
+        store.path = str(target)
+        return store
+    finally:
+        os.close(stage_fd)
+
+
 def runtime_store(path=None, *, environ=None):
     """Arranque coordinado de la base nueva; sólo reinicia su propio dataset.
 
@@ -115,16 +283,10 @@ def runtime_store(path=None, *, environ=None):
     from be_paper_engine import PaperStore
     target = database_path(environ) if path is None else checked_path(path)
     profile = capital_profile(environ)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with open(str(target) + '.initialization.lock', 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with _parent_directory(target) as parent_fd, _initialization_lock(target, parent_fd):
         checked_path(target)
         if target.exists():
             if read_identity(target).get('initial_capital_json') != profile:
                 raise ValueError('PAPER_V17_INITIAL_CAPITAL_OR_ORIGIN_MISMATCH')
             return PaperStore(str(target))
-        store = PaperStore(str(target))
-        with store.connect() as c:
-            identity_from_connection(c)
-            c.execute('UPDATE paper_workspace SET initial_capital_json=? WHERE id=1', (profile,))
-        return store
+        return _fresh_store(target, profile, parent_fd)

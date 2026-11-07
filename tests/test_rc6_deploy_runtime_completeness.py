@@ -50,7 +50,8 @@ def test_dashboard_bootstrap_dependencies_and_storage_cleanup_are_deploy_guards(
     assert "SAFE_PREFLIGHT_RECLAIM=" in source
     assert "CURRENT_STATE_V2=GREEN" in source
     assert "SPACE_RECOVERED=" in source
-    assert "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN" in source
+    assert "POROTA_DEPLOY_V2_RUNNER_CLEANUP=DEFERRED_UNVERIFIED" in source
+    assert "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN" not in source
 
 
 def test_dashboard_is_recreated_directly_from_verified_candidate():
@@ -135,17 +136,27 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert '--entrypoint timeout' not in source
 
 
-def test_predeploy_preserves_the_entire_native_proof_directory():
+def test_predeploy_exports_only_exact_verified_native_evidence_files():
     import yaml
     workflow=yaml.safe_load(_predeploy())
     steps=workflow['jobs']['artifact-gate']['steps']
     upload=next(step for step in steps if step.get('name')=='Upload predeploy evidence')
-    # Keep every current/future JUnit and session receipt, includingRED output,
-    # instead of a partial file list that silently drops the added405min run.
-    paths={line.strip().rstrip('/') for line in upload['with']['path'].splitlines()}
-    assert '${{ runner.temp }}/porota-native-sizing-evidence' in paths
-    assert '!${{ runner.temp }}/porota-native-sizing-evidence/tmp/**' in paths
-    assert upload['if']=='always()'
+    # No recursive upload of a writable test directory: each newly required
+    # receipt must be added to the explicit reviewer-controlled allowlist.
+    paths={line.strip() for line in upload['with']['path'].splitlines()}
+    assert paths and all(not p.endswith('/') and '*' not in p and '!' not in p for p in paths)
+    prefix='${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/'
+    required=(
+        'native-bound.xml',
+        *(f'session/{name}.xml' for name in (
+            'dashboard_auth_52', 'publication_io_identity', 'scalping_capacity',
+            'scheduler_monitor_backup', 'signals_risk_exit_ledger',
+            'sources_readiness_network', 'sql_shadow_wal', 'treasury_caucion')),
+        'session/stress.json', 'catalog/full-catalog.json',
+        'cadence/cadence-fresh.json', 'cadence/cadence-legacy.json',
+    )
+    assert all(prefix+name in paths for name in required)
+    assert upload['if']=="${{ always() && steps.rc6_artifact_gate.outcome == 'success' }}"
 
 
 def test_host_stress_and_its_second_owner_go_are_absent_from_promotion():
@@ -162,20 +173,19 @@ def test_host_stress_and_its_second_owner_go_are_absent_from_promotion():
     assert 'native-ten-generation-soak.json' in source
 
 
-def test_native_proof_ownership_is_reclaimed_after_sandbox_before_upload():
+def test_native_proof_readability_is_fail_closed_after_sandbox_before_upload():
     import yaml
     steps=yaml.safe_load(_predeploy())['jobs']['artifact-gate']['steps']
     names=[step.get('name') for step in steps]
-    name='Reclaim native proof evidence for artifact publication'
-    assert name in names, 'NATIVE_PROOF_ARTIFACT_EACCES_UNGUARDED'
     proof=names.index('Exact image native sizing and generated catalog proof')
-    reclaim=names.index(name)
+    verify=names.index('Verify required published native evidence')
     upload=names.index('Upload predeploy evidence')
-    assert proof < reclaim < upload
-    step=steps[reclaim]
-    assert step['if']=='always()'  # Preserve the forensic evidence onRED too.
-    assert 'rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"' in step['run']
-    assert 'sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"' in step['run']
+    assert proof < verify < upload
+    assert 'Reclaim native proof evidence for artifact publication' not in names
+    source='\n'.join(step.get('run','') for step in steps)
+    assert 'sudo chown' not in source
+    assert 'os.access(path, os.R_OK)' in steps[verify]['run']
+    assert steps[upload]['if']=="${{ always() && steps.rc6_artifact_gate.outcome == 'success' }}"
     sandbox=steps[proof]['run']
     assert '--user 1000:1000' in sandbox and '--read-only' in sandbox
     assert '--cap-drop ALL' in sandbox and '--security-opt no-new-privileges' in sandbox

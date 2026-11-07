@@ -378,6 +378,48 @@ class RootlessPromotionPrehostContainmentTests(unittest.TestCase):
             '\nssh -T "$DO_USER@$DO_HOST" true\n')
         self.assert_rejected(workflow, 'HOST_CONTACT_AFTER_A806')
 
+    def test_runner_cleanup_after_hold_never_removes_unowned_fixed_tmp_paths(self):
+        """A982: a job veto still runs its always() runner cleanup.
+
+        Intercept `rm` before executing the real step: executing the historical
+        literal `/tmp/porota-*` cleanup against this shared machine is unsafe.
+        A separate foreign sentinel represents data that must remain untouched.
+        """
+        workflow = self.workflow()
+        runner = workflow['jobs']['promote']['steps'][-1]
+        self.assertEqual(runner['name'], 'Runner cleanup')
+        self.assertEqual(runner['if'], 'always()')
+        shell = runner['run']
+        # Only this historically reviewed command vocabulary may be exercised
+        # in a local subprocess. An unexpected executor must fail before launch.
+        for line in shell.splitlines():
+            command = line.strip()
+            if command and not command.startswith('#'):
+                self.assertTrue(command.startswith(('rm ', 'echo ', 'set ')), command)
+
+        with tempfile.TemporaryDirectory(prefix='rc6-a982-foreign-') as temp:
+            base = Path(temp)
+            foreign = base / 'foreign-tmp' / 'porota-frozen-v2' / 'keep.txt'
+            foreign.parent.mkdir(parents=True)
+            foreign.write_text('FOREIGN_MUST_SURVIVE', encoding='utf-8')
+            fake_bin = base / 'fake-bin'
+            fake_bin.mkdir()
+            fake_rm = fake_bin / 'rm'
+            fake_rm.write_text('#!/bin/sh\nprintf "RM_ATTEMPT:%s\\n" "$*" >&2\nexit 97\n',
+                               encoding='utf-8')
+            fake_rm.chmod(0o755)
+            env = {'PATH': f'{fake_bin}:/usr/bin:/bin', 'HOME': str(base), 'LC_ALL': 'C'}
+            result = subprocess.run(['bash', '-Eeuo', 'pipefail', '-c', shell],
+                                    cwd=base, env=env, capture_output=True,
+                                    text=True, timeout=5, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn('RM_ATTEMPT:', result.stderr)
+            self.assertIn('POROTA_DEPLOY_V2_RUNNER_CLEANUP=DEFERRED_UNVERIFIED',
+                          result.stdout)
+            self.assertNotIn('RUNNER_CLEANUP=GREEN', result.stdout)
+            self.assertEqual(foreign.read_text(encoding='utf-8'),
+                             'FOREIGN_MUST_SURVIVE')
+
     def test_runner_cleanup_cannot_run_an_arbitrary_action_after_veto(self):
         workflow = self.workflow()
         cleanup = workflow['jobs']['promote']['steps'][-1]

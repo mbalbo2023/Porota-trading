@@ -320,7 +320,8 @@ class LegacyPPIBudgetTest(TestCase):
         self.assertEqual(original.calls, [])
         self.assertEqual(budget.calls, [])
 
-    def test_login_only_passes_without_market_budget_lease(self):
+    def test_login_without_auth_authority_never_spends_market_lease_or_sends(self):
+        from bd_ppi_readonly_guard import ReadOnlyPolicyViolation
         budget = FakeBudget()
         module, imports = legacy_module(lambda: budget)
         original = FakeAdapter()
@@ -328,10 +329,10 @@ class LegacyPPIBudgetTest(TestCase):
         with patch.dict(sys.modules, imports):
             module.ResilientPPIClient._install_sdk_wire_budget(object.__new__(
                 module.ResilientPPIClient), FakeSDK(rest))
-            response = rest.get_session().adapters["https://"].send(req(
-                "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi", method="POST"))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(original.calls), 1)
+            with self.assertRaisesRegex(ReadOnlyPolicyViolation, "PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+                rest.get_session().adapters["https://"].send(req(
+                    "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi", method="POST"))
+        self.assertEqual(len(original.calls), 0)
         self.assertEqual(budget.calls, [])
 
     def test_http_429_consumes_one_lease_and_reports_circuit_metadata(self):

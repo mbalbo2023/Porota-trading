@@ -85,6 +85,9 @@ def wire(monkeypatch):
         return response
 
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    # The wire is an in-memory HTTP adapter. Permit synthetic SDK login only
+    # inside this fixture; production authentication remains deny-by-default.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     # A legacy capacity experiment uses a fake HTTP adapter, not real PPI.
     # Opt into an isolated synthetic lease rather than weakening production's
     # shared-budget fail-closed guard for unauthorised provider reads.

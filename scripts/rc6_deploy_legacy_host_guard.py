@@ -29,12 +29,13 @@ _EXACT_GATE_RUN = (
     "exit 79\n"
 )
 _EXACT_RUNNER_CLEANUP = (
-    'rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json '
-    '/tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz '
-    '/tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json '
-    '/tmp/porota-host-policy-v2.json\n'
-    'rm -f "$HOME/.ssh/porota_rc6_deploy"\n'
-    'echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"\n'
+    'set -Eeuo pipefail\n'
+    '# A806 holds before artifacts/SSH credentials are staged. Never\n'
+    '# remove historical fixed /tmp names (or HOME paths) without an\n'
+    '# independent, exact runner-artifact ownership proof. Those names\n'
+    '# may belong to another attempt or tenant on a shared host.\n'
+    "echo 'POROTA_DEPLOY_V2_RUNNER_CLEANUP=DEFERRED_UNVERIFIED|"
+    "no_independent_runner_artifact_ownership|delete_attempts=0'\n"
 )
 
 _HOST_CONTACT = re.compile(
@@ -255,3 +256,35 @@ def classify_promotion_host_boundary(workflow: Mapping[str, Any]) -> dict[str, A
         'rootless_certified': False,
         'host_contact_authorized': False,
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Validate source containment only; exit zero never authorizes host access."""
+    import argparse
+    import json
+    from pathlib import Path
+
+    import yaml
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--workflow', type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        workflow = yaml.safe_load(args.workflow.read_text(encoding='utf-8'))
+        if not isinstance(workflow, Mapping):
+            raise LegacyHostBoundaryViolation('WORKFLOW_NOT_MAPPING')
+        receipt = classify_promotion_host_boundary(workflow)
+    except (OSError, UnicodeError, yaml.YAMLError, LegacyHostBoundaryViolation,
+            KeyError, TypeError, AttributeError, ValueError):
+        # Never print untrusted YAML, parser excerpts or filesystem details to
+        # public CI logs. Failure is a source rejection, not a physical receipt.
+        print(json.dumps({'status': 'BLOQUEADO', 'guard_validated': False,
+                          'host_contact_authorized': False,
+                          'reason': 'LEGACY_HOST_BOUNDARY_REJECTED'}, sort_keys=True))
+        return 2
+    print(json.dumps(receipt, sort_keys=True))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

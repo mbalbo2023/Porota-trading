@@ -238,6 +238,8 @@ class PPIRealTimeClient:
 
     # ---------------- market data ---------------- #
     def _on_market_data(self, data):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         try:
             from bs_instrument_contracts import aware_datetime, decimal_value
             msg = json.loads(data) if isinstance(data, (str, bytes)) else data
@@ -281,6 +283,8 @@ class PPIRealTimeClient:
             logger.debug("Tick de market data con formato inesperado, se ignora: %s", e)
 
     def _on_market_connect(self):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         logger.info("Stream de Market Data conectado. Suscribiendo %s instrumentos...", len(self.instruments))
         with _stats_lock:
             _stats["connected"] = True
@@ -329,6 +333,8 @@ class PPIRealTimeClient:
 
     def _suscribir(self, Instrument, lista) -> tuple:
         """Suscribe una lista y devuelve (cuántas entraron, cuáles fallaron)."""
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         ok, fallidas = 0, []
         for ticker, instrument_type, settlement in lista:
             try:
@@ -355,6 +361,8 @@ class PPIRealTimeClient:
         ORDER_NOTIFICATION: el aviso en tiempo real de que una orden cambió
         de estado (y con cuánto se ejecutó), que es justo el dato por el que
         v13.0 tenía que repreguntar en un bucle."""
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         try:
             msg = json.loads(data) if isinstance(data, (str, bytes)) else data
             tipo = msg.get("Type")
@@ -387,6 +395,8 @@ class PPIRealTimeClient:
             logger.debug("Mensaje de account data no interpretable, se ignora: %s", e)
 
     def _on_account_connect(self):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         logger.info("Stream de Account Data conectado.")
         with _stats_lock:
             _stats["account_connected"] = True
@@ -402,6 +412,8 @@ class PPIRealTimeClient:
 
     # ---------------- ciclo de vida ---------------- #
     def _run(self):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         intento = 0
         while not self._stop.is_set():
             if not getattr(self.ppi_client, "is_authenticated", lambda: False)():
@@ -507,6 +519,8 @@ class PPIRealTimeClient:
         if not STREAM_ENABLED:
             logger.info("PPI_STREAM_ENABLED=false — se usa polling HTTP para todo.")
             return
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         if (not self.ppi_client or
                 not getattr(self.ppi_client, "is_authenticated", lambda: False)()):
             logger.warning("Cliente PPI no autenticado — el stream de tiempo real no arranca.")

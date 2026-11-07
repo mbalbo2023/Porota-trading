@@ -129,6 +129,8 @@ class _BudgetedPPIAdapter:
             raise BudgetBackpressure("PPI_SDK_WIRE_HOST_UNVERIFIED")
 
         if method == "POST" and path in _PPI_SDK_WIRE_LOGIN_PATHS:
+            from bd_ppi_readonly_guard import require_ppi_authentication_authority
+            require_ppi_authentication_authority()
             return self.delegate.send(request, **kwargs)
         endpoint = _PPI_SDK_WIRE_BUDGET_PATHS.get(path) if method == "GET" else None
         if endpoint is None:
@@ -719,6 +721,8 @@ class ResilientPPIClient:
         return "CONFIGURATION_ERROR", self.AUTH_UNKNOWN_COOLDOWN_SECONDS
 
     def _login(self) -> bool:
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         now = time.time()
         if now < self._auth_blocked_until:
             return False
