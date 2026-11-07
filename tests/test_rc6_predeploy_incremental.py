@@ -64,7 +64,7 @@ elif args[0] != 'rm':
     docker.chmod(0o755)
     env = os.environ | {
         'PATH': str(fake) + os.pathsep + os.environ['PATH'],
-        'RUNNER_TEMP': str(tmp_path), 'GITHUB_RUN_ID': 'test',
+        'RUNNER_TEMP': str(tmp_path), 'RC6_TMPDIR': str(tmp_path), 'GITHUB_RUN_ID': 'test',
         'CANDIDATE_SHA': '0123456789012345678901234567890123456789',
         'IMAGE': 'synthetic:exact', 'RC6_EVENTS': str(tmp_path/'events.jsonl'),
         'RC6_FAIL_SESSION': '1' if fail_session else '0',

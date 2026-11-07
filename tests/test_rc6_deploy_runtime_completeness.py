@@ -135,17 +135,27 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert '--entrypoint timeout' not in source
 
 
-def test_predeploy_preserves_the_entire_native_proof_directory():
+def test_predeploy_exports_only_exact_verified_native_evidence_files():
     import yaml
     workflow=yaml.safe_load(_predeploy())
     steps=workflow['jobs']['artifact-gate']['steps']
     upload=next(step for step in steps if step.get('name')=='Upload predeploy evidence')
-    # Keep every current/future JUnit and session receipt, includingRED output,
-    # instead of a partial file list that silently drops the added405min run.
-    paths={line.strip().rstrip('/') for line in upload['with']['path'].splitlines()}
-    assert '${{ runner.temp }}/porota-native-sizing-evidence' in paths
-    assert '!${{ runner.temp }}/porota-native-sizing-evidence/tmp/**' in paths
-    assert upload['if']=='always()'
+    # No recursive upload of a writable test directory: each newly required
+    # receipt must be added to the explicit reviewer-controlled allowlist.
+    paths={line.strip() for line in upload['with']['path'].splitlines()}
+    assert paths and all(not p.endswith('/') and '*' not in p and '!' not in p for p in paths)
+    prefix='${{ runner.temp }}/porota-v2-${{ github.run_id }}-${{ github.run_attempt }}/porota-native-sizing-evidence/'
+    required=(
+        'native-bound.xml',
+        *(f'session/{name}.xml' for name in (
+            'dashboard_auth_52', 'publication_io_identity', 'scalping_capacity',
+            'scheduler_monitor_backup', 'signals_risk_exit_ledger',
+            'sources_readiness_network', 'sql_shadow_wal', 'treasury_caucion')),
+        'session/stress.json', 'catalog/full-catalog.json',
+        'cadence/cadence-fresh.json', 'cadence/cadence-legacy.json',
+    )
+    assert all(prefix+name in paths for name in required)
+    assert upload['if']=="${{ always() && steps.rc6_artifact_gate.outcome == 'success' }}"
 
 
 def test_host_stress_and_its_second_owner_go_are_absent_from_promotion():
@@ -174,7 +184,7 @@ def test_native_proof_ownership_is_reclaimed_after_sandbox_before_upload():
     assert proof < reclaim < upload
     step=steps[reclaim]
     assert step['if']=='always()'  # Preserve the forensic evidence onRED too.
-    assert 'rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"' in step['run']
+    assert 'rc6_proof_root="$RC6_TMPDIR/porota-native-sizing-evidence"' in step['run']
     assert 'sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"' in step['run']
     sandbox=steps[proof]['run']
     assert '--user 1000:1000' in sandbox and '--read-only' in sandbox

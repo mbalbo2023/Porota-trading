@@ -144,28 +144,26 @@ def test_governed_gate_rejects_actual_pytest_skip_and_xfail_receipts(tmp_path):
     evaluator = '\n'.join(line.removeprefix('          ')
                           for line in PREDEPLOY[start:end].splitlines())
     paths = {
-        '/tmp/porota-test-collection.txt': tmp_path / 'collection.txt',
-        '/tmp/porota-governed-tests.xml': tmp_path / 'junit.xml',
-        '/tmp/porota-test-exclusions.txt': tmp_path / 'exclusions.txt',
-        '/tmp/porota-governed-tests.json': tmp_path / 'result.json',
+        'porota-test-collection.txt': tmp_path / 'porota-test-collection.txt',
+        'porota-governed-tests.xml': tmp_path / 'porota-governed-tests.xml',
+        'porota-test-exclusions.txt': tmp_path / 'porota-test-exclusions.txt',
+        'porota-governed-tests.json': tmp_path / 'porota-governed-tests.json',
     }
-    for old, new in paths.items():
-        evaluator = evaluator.replace(old, str(new))
-    paths['/tmp/porota-test-collection.txt'].write_text('tests/test_one.py: 1\n')
-    paths['/tmp/porota-test-exclusions.txt'].write_text('')
+    paths['porota-test-collection.txt'].write_text('tests/test_one.py: 1\n')
+    paths['porota-test-exclusions.txt'].write_text('')
     for xml, expected in (
         ('', 'GREEN'),
         ('<skipped message="deliberate" />', 'RED'),
         ('<skipped type="pytest.xfail" message="expected" />', 'RED'),
     ):
-        paths['/tmp/porota-governed-tests.xml'].write_text(
+        paths['porota-governed-tests.xml'].write_text(
             '<testsuites><testsuite tests="1" failures="0" errors="0">'
             '<testcase classname="test_one" name="test_one">' + xml +
             '</testcase></testsuite></testsuites>')
         result = subprocess.run([sys.executable, '-c', evaluator],
-                                env=os.environ | {'TEST_RC': '0'},
+                                env=os.environ | {'TEST_RC': '0', 'RC6_TMPDIR': str(tmp_path)},
                                 capture_output=True, text=True, timeout=10)
-        receipt = json.loads(paths['/tmp/porota-governed-tests.json'].read_text())
+        receipt = json.loads(paths['porota-governed-tests.json'].read_text())
         assert receipt['status'] == expected
         assert (result.returncode == 0) == (expected == 'GREEN')
 
