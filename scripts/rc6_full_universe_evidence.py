@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from tempfile import NamedTemporaryFile
 from typing import Any
 
 from rc6_family_readiness import normalize_family
@@ -23,6 +22,7 @@ from rc6_ppi_scanner_provenance import (
 )
 from rc6_shadow_runtime.source_authority import native_time, receipt_time, source_rank
 from rc6_source_consolidation import consolidate, _fold_source
+from scripts.rc6_source_safe_atomic import publish_json
 
 ROOT = Path(os.getenv("POROTA_EVIDENCE_ROOT", "/opt/porota-trading/data/market"))
 DB = os.getenv("POROTA_OBSERVER_DB", "/opt/porota-trading/data/paper_v17/observer_v17.db")
@@ -61,17 +61,10 @@ def age_state(value: Any, limit: int, current: datetime) -> dict[str, Any]:
 
 
 def atomic(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
-                            prefix=".rc6-evidence-", suffix=".tmp",
-                            delete=False) as handle:
-        json.dump(payload, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-        temporary = Path(handle.name)
-    os.chmod(temporary, 0o644)
-    os.replace(temporary, path)
+    # Use the same owned, descriptor-anchored publisher as PUBLIC and IOL.
+    # Preserve the historical compact JSON + LF bytes consumed downstream.
+    publish_json(path, payload, allowed_parent=ROOT,
+                 compact=True, trailing_newline=True)
 
 
 def load_json(path: Path) -> dict[str, Any]:

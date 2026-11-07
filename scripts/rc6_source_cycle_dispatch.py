@@ -24,10 +24,12 @@ import sqlite3
 import stat
 import subprocess
 import sys
-import tempfile
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
+from scripts.rc6_source_safe_atomic import (
+    publish_json, SourceOutputUnsafe, _verified_directory, _identity, _same_parent,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,10 +56,13 @@ DEFAULT_MARKET_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trad
 DEFAULT_DB = Path(os.getenv("PAPER_V17_DB_PATH", "/opt/porota-trading/data/paper_v17/observer_v17.db"))
 DEFAULT_LOCK = Path("/var/lock/porota-rc6-source-cycle.lock")
 STAGES = (
-    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
-     "iol_shadow_latest.json"),
+    # PUBLIC refresh has a 60s TTL; IOL's child may take 110s and must not
+    # delay this independent, complementary, read-only observation stage.
+    # This changes scheduling priority, never primary PPI source precedence.
     ("public", "scripts/rc6_public_source_capture.py", 50,
      "rc6_public_sources_latest.json"),
+    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
+     "iol_shadow_latest.json"),
     ("evidence", "scripts/rc6_full_universe_evidence.py", 25,
      "rc6_instrument_evidence_latest.json"),
 )
@@ -139,31 +144,99 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
 
 
 def _paper_zero(db: Path) -> None:
-    if not db.is_absolute() or not db.is_file() or db.is_symlink():
+    if not db.is_absolute() or '..' in db.parts or not db.name:
         raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+    directory_fd = file_fd = None
     try:
+        # Pin the actual main-file inode without giving SQLite a /proc/fd
+        # alias: opening that URI would lose its filename-relative WAL/SHM.
+        directory_fd = _verified_directory(db.parent)
+        file_fd = os.open(db.name,
+            os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=directory_fd)
+        pinned = os.fstat(file_fd)
+        if not stat.S_ISREG(pinned.st_mode) or pinned.st_nlink != 1:
+            raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+        expected = (pinned.st_dev, pinned.st_ino, pinned.st_mode, pinned.st_nlink)
+
+        def still_pinned() -> bool:
+            current = os.stat(db.name, dir_fd=directory_fd, follow_symlinks=False)
+            opened = os.fstat(file_fd)
+            return (stat.S_ISREG(current.st_mode) and current.st_nlink == 1
+                    and (current.st_dev, current.st_ino,
+                         current.st_mode, current.st_nlink) == expected
+                    and _same_parent(db.parent, directory_fd)
+                    and (opened.st_dev, opened.st_ino,
+                         opened.st_mode, opened.st_nlink) == expected)
+
+        if not still_pinned():
+            raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+        # SQLite retains its original owned path for correct active WAL/SHM
+        # semantics.  A name swap during connect must fail BEFORE any SQL.
         with closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=.25)) as c:
+            if not still_pinned():
+                raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
             c.execute("PRAGMA query_only=ON")
+            if not still_pinned():
+                raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
             row = c.execute(
                 "SELECT mode,real_orders_sent FROM observer_state WHERE id=1"
             ).fetchone()
+            if not still_pinned():
+                raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+    except (OSError, SourceOutputUnsafe) as exc:
+        raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED") from exc
     except sqlite3.Error as exc:
         raise SourceCycleBlocked("PAPER_DATABASE_UNVERIFIED") from exc
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
     if row != ("PRODUCTION_PAPER", 0):
         raise SourceCycleBlocked("PAPER_ZERO_REQUIRED")
 
 
 def _state_read(path: Path, now: datetime) -> dict:
-    try:
-        meta = path.lstat()
-    except FileNotFoundError:
-        return {"schema": STATE_SCHEMA, "session_date": None,
-                "last_public_success_at": None, "last_evidence_success_at": None}
-    if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or meta.st_size > 4096:
+    if (not path.is_absolute() or '..' in path.parts
+            or path.name != "rc6_source_cycle_dispatch_state.json"):
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+    directory_fd = file_fd = None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError) as exc:
+        directory_fd = _verified_directory(path.parent)
+        try:
+            file_fd = os.open(path.name,
+                os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=directory_fd)
+        except FileNotFoundError:
+            return {"schema": STATE_SCHEMA, "session_date": None,
+                    "last_public_success_at": None, "last_evidence_success_at": None}
+        meta = os.fstat(file_fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1
+                or meta.st_size > 4096 or stat.S_IMODE(meta.st_mode) != 0o644):
+            raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+        identity = (meta.st_dev, meta.st_ino, meta.st_size,
+                    meta.st_mtime_ns, meta.st_ctime_ns)
+        if _identity(directory_fd, path.name) != identity:
+            raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+        # A bounded descriptor read cannot follow a name switched after open.
+        raw = os.read(file_fd, 4097)
+        after = os.fstat(file_fd)
+        if (len(raw) > 4096 or
+                (after.st_dev, after.st_ino, after.st_size,
+                 after.st_mtime_ns, after.st_ctime_ns) != identity or
+                _identity(directory_fd, path.name) != identity):
+            raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+    except (OSError, SourceOutputUnsafe) as exc:
+        raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE") from exc
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError) as exc:
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_INVALID") from exc
     if not isinstance(payload, dict) or payload.get("schema") != STATE_SCHEMA:
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_SCHEMA_INVALID")
@@ -192,27 +265,18 @@ def _due(state: dict, field: str, now: datetime, ttl: int) -> bool:
     return (now.astimezone(timezone.utc) - last.astimezone(timezone.utc)).total_seconds() >= ttl
 
 
-def _state_write(path: Path, data: dict) -> None:
+def _state_write(path: Path, data: dict, *, expected_parent: Path) -> None:
     if path.is_symlink():
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_ALIAS")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=".source-cycle-", dir=path.parent)
+    if path.name != "rc6_source_cycle_dispatch_state.json":
+        raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            os.fchmod(stream.fileno(), 0o644)
-            json.dump(data, stream, sort_keys=True, separators=(",", ":"))
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+        # The caller independently pins the one allowed market_root parent.
+        # No directory creation, pathname chmod, replace or cleanup anywhere.
+        publish_json(path, data, allowed_parent=expected_parent,
+                     compact=True, trailing_newline=True)
+    except SourceOutputUnsafe as exc:
+        raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE") from exc
 
 
 @contextmanager
@@ -233,13 +297,6 @@ def _exclusive_lock(path: Path):
         os.close(fd)
 
 
-def _chmod_owned(path: Path) -> None:
-    metadata = path.lstat()
-    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
-        raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_UNSAFE")
-    path.chmod(0o644)
-
-
 def _published_file_identity(path: Path) -> tuple[int, ...] | None:
     """Identify an output without following aliases or inspecting provider data.
 
@@ -256,7 +313,8 @@ def _published_file_identity(path: Path) -> tuple[int, ...] | None:
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
         raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_UNSAFE")
     return (metadata.st_dev, metadata.st_ino, metadata.st_size,
-            metadata.st_mtime_ns, metadata.st_ctime_ns)
+            metadata.st_mtime_ns, metadata.st_ctime_ns,
+            stat.S_IMODE(metadata.st_mode))
 
 
 def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
@@ -308,13 +366,22 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         # After 17:00 only the exact T+1/regular-options BYMA IOL subset may
         # be observed. Public-source sweeping and global projections keep the
         # established baseline and are not silently extended by this timer.
-        stages = STAGES[:1] if late else STAGES
+        stages = tuple(stage for stage in STAGES if stage[0] == "iol") if late else STAGES
+        # Validate every DUE output before starting any child. Without this,
+        # a later stage's alias could be detected after an earlier child had
+        # already made a provider request or published a different snapshot.
+        before_outputs = {name: _published_file_identity(market_root / output)
+                          for name, _, _, output in stages if due[name]}
         for name, relative, timeout, output in stages:
             if not due[name]:
                 results[name] = "NOT_DUE_TTL"
                 continue
             output_path = market_root / output
-            before_publication = _published_file_identity(output_path)
+            before_publication = before_outputs[name]
+            # Preserve the original per-stage guard too: a prior child or
+            # another writer must not swap this path after global preflight.
+            if _published_file_identity(output_path) != before_publication:
+                raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_CHANGED_BEFORE_CHILD")
             try:
                 result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
                                 env=child_env, capture_output=True, text=True,
@@ -345,7 +412,12 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
                     # a misleading success marker from a future code change.
                     results[name] = "OUTPUT_NOT_REPUBLISHED"
                     continue
-                _chmod_owned(output_path)
+                if after_publication[-1] != 0o644:
+                    results[name] = "OUTPUT_UNVERIFIED"
+                    continue
+                # Every allowlisted producer owns its output's 0644 mode via
+                # fchmod on its fresh staging FD. A pathname chmod here was a
+                # TOCTOU that could follow a foreign symlink after lstat.
             except (OSError, ValueError):
                 results[name] = "OUTPUT_UNVERIFIED"
                 continue
@@ -355,7 +427,7 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
                 state[f"last_{name}_success_at"] = now.astimezone(timezone.utc).isoformat()
                 changed = True
         if changed:
-            _state_write(state_path, state)
+            _state_write(state_path, state, expected_parent=market_root)
     status = ("NOT_DUE" if late and set(results.values()) == {"NOT_DUE_LATE_EXACT_CONTRACT"}
               else "COMPLETE" if all(value in {"OK", "NOT_DUE_TTL"}
                                      for value in results.values()) else "DEGRADED")

@@ -62,16 +62,16 @@ def test_cycle_iol_public_minute_shadow_parity_evidence_5m_persistent_ttl(tmp_pa
     runner.calls.clear()
     second = _cycle(tmp_path, runner, instant(minute=31))
     assert second["status"] == "COMPLETE"
-    assert runner.calls == ["rc6_iol_shadow_collect.py", "rc6_public_source_capture.py"]
+    assert runner.calls == ["rc6_public_source_capture.py", "rc6_iol_shadow_collect.py"]
     runner.calls.clear()
     third = _cycle(tmp_path, runner, instant(minute=35))
     assert third["status"] == "COMPLETE"
-    assert runner.calls == ["rc6_iol_shadow_collect.py", "rc6_public_source_capture.py",
+    assert runner.calls == ["rc6_public_source_capture.py", "rc6_iol_shadow_collect.py",
                             "rc6_full_universe_evidence.py"]
     runner.calls.clear()
     fourth = _cycle(tmp_path, runner, instant(minute=45))
     assert fourth["status"] == "COMPLETE"
-    assert runner.calls == ["rc6_iol_shadow_collect.py", "rc6_public_source_capture.py",
+    assert runner.calls == ["rc6_public_source_capture.py", "rc6_iol_shadow_collect.py",
                             "rc6_full_universe_evidence.py"]
     durable = json.loads((market / "rc6_source_cycle_dispatch_state.json").read_text())
     assert durable["schema"] == dispatch.STATE_SCHEMA
