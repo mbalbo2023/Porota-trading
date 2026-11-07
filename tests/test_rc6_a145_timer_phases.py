@@ -18,6 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
+@pytest.fixture
+def scheduler_gate_only(monkeypatch):
+    """Isolate scheduling contracts, not physical identity certification."""
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda db: None)
+
+
 def instant(day=28, hour=10, minute=30, month=10, year=2026):
     return datetime(year, month, day, hour, minute, tzinfo=ART)
 
@@ -51,7 +57,7 @@ def _cycle(tmp_path, runner, now):
         market_root=tmp_path / "market", lock=tmp_path / "source.lock", runner=runner)
 
 
-def test_cycle_iol_public_minute_shadow_parity_evidence_5m_persistent_ttl(tmp_path):
+def test_cycle_iol_public_minute_shadow_parity_evidence_5m_persistent_ttl(tmp_path, scheduler_gate_only):
     _paper_db(tmp_path / "paper.db")
     market = tmp_path / "market"
     market.mkdir()
@@ -91,7 +97,7 @@ def test_nontrading_holiday_closed_2027_never_launch_provider(tmp_path):
     assert runner.calls == []
 
 
-def test_paper_zero_and_symlink_state_fail_closed(tmp_path):
+def test_paper_zero_and_symlink_state_fail_closed(tmp_path, monkeypatch):
     _paper_db(tmp_path / "paper.db", orders=1)
     market = tmp_path / "market"
     market.mkdir()
@@ -99,6 +105,9 @@ def test_paper_zero_and_symlink_state_fail_closed(tmp_path):
     with pytest.raises(dispatch.SourceCycleBlocked, match="PAPER_ZERO_REQUIRED"):
         _cycle(tmp_path, runner, instant())
     assert runner.calls == []
+    # The remaining assertions isolate the state reader after the real
+    # negative PAPER gate above; they do not certify a positive identity.
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda db: None)
     with sqlite3.connect(tmp_path / "paper.db") as db:
         db.execute("UPDATE observer_state SET real_orders_sent=0")
     target = tmp_path / "foreign.json"
@@ -109,7 +118,7 @@ def test_paper_zero_and_symlink_state_fail_closed(tmp_path):
     assert runner.calls == []
 
 
-def test_source_lock_is_global_and_nonblocking(tmp_path):
+def test_source_lock_is_global_and_nonblocking(tmp_path, scheduler_gate_only):
     _paper_db(tmp_path / "paper.db")
     market = tmp_path / "market"
     market.mkdir()
@@ -122,7 +131,7 @@ def test_source_lock_is_global_and_nonblocking(tmp_path):
     assert runner.calls == []
 
 
-def test_legacy_collector_zero_exit_not_promoted_to_success(tmp_path):
+def test_legacy_collector_zero_exit_not_promoted_to_success(tmp_path, scheduler_gate_only):
     _paper_db(tmp_path / "paper.db")
     market = tmp_path / "market"
     market.mkdir()

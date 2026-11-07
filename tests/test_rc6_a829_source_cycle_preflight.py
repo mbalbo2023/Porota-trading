@@ -18,6 +18,12 @@ ART = ZoneInfo("America/Argentina/Buenos_Aires")
 OUTPUTS = {Path(relative).name: output for _, relative, _, output in dispatch.STAGES}
 
 
+@pytest.fixture(autouse=True)
+def scheduling_gate_only(monkeypatch):
+    """These tests isolate publication/cadence, never physical PAPER identity."""
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda db: None)
+
+
 def _fixture(tmp_path):
     db = tmp_path / "paper.db"
     with sqlite3.connect(db) as connection:

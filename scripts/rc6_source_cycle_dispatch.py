@@ -144,11 +144,17 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
 
 
 def _paper_zero(db: Path) -> None:
+    """Collect negative PAPER evidence; never certify physical DB identity.
+
+    A866 containment: the independent descriptor checks below do not bind the
+    SQLite handle or its WAL to an authenticated runtime owner. Until that
+    external trust contract exists, even a local PAPER/zero row remains HOLD.
+    """
     if not db.is_absolute() or '..' in db.parts or not db.name:
         raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
     directory_fd = file_fd = None
     try:
-        # Pin the actual main-file inode without giving SQLite a /proc/fd
+        # Pin the inspected main-file inode without giving SQLite a /proc/fd
         # alias: opening that URI would lose its filename-relative WAL/SHM.
         directory_fd = _verified_directory(db.parent)
         file_fd = os.open(db.name,
@@ -171,8 +177,8 @@ def _paper_zero(db: Path) -> None:
 
         if not still_pinned():
             raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
-        # SQLite retains its original owned path for correct active WAL/SHM
-        # semantics.  A name swap during connect must fail BEFORE any SQL.
+        # Keep ordinary WAL-aware SQLite semantics for negative evidence.
+        # These path/FD checks do not authenticate the SQLite handle itself.
         with closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=.25)) as c:
             if not still_pinned():
                 raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
@@ -195,6 +201,10 @@ def _paper_zero(db: Path) -> None:
             os.close(directory_fd)
     if row != ("PRODUCTION_PAPER", 0):
         raise SourceCycleBlocked("PAPER_ZERO_REQUIRED")
+    # No environment switch, filename, mode bit or local row can discharge
+    # this hold. Positive admission requires a separately reviewed identity
+    # authority, not another check of this independently opened descriptor.
+    raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
 
 
 def _state_read(path: Path, now: datetime) -> dict:

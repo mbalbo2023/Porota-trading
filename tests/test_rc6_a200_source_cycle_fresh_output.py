@@ -10,6 +10,7 @@ import sqlite3
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from scripts import rc6_source_cycle_dispatch as dispatch
@@ -41,6 +42,10 @@ class Collector:
 
 class SourceCyclePublicationTest(unittest.TestCase):
     def setUp(self):
+        # Publication unit boundary only; A840 exercises the real HOLD gate.
+        paper_gate = patch.object(dispatch, "_paper_zero", return_value=None)
+        paper_gate.start()
+        self.addCleanup(paper_gate.stop)
         directory = tempfile.TemporaryDirectory(prefix="porota-a200-")
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
