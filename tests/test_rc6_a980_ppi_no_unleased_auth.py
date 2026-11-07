@@ -102,6 +102,24 @@ def test_previously_bound_synthetic_stream_cannot_bypass_current_auth_hold(monke
         reader.close()
 
 
+def test_delayed_prebound_account_callback_cannot_subscribe_after_auth_hold():
+    import x_ppi_websocket as stream
+    calls = []
+    client = stream.PPIRealTimeClient(types.SimpleNamespace(
+        account_number="SYNTHETIC", client=types.SimpleNamespace(
+            realtime=types.SimpleNamespace(
+                subscribe_to_account_data=lambda *a: calls.append("SDK_ACCOUNT_SUBSCRIBE")))))
+    # A saved callback can arrive even though normal start was denied. The
+    # callback itself must reject it before its broad exception handler.
+    callback = client._on_account_connect
+    from bd_ppi_readonly_guard import require_ppi_authentication_authority
+    with pytest.raises(ReadOnlyPolicyViolation):
+        require_ppi_authentication_authority()
+    with pytest.raises(ReadOnlyPolicyViolation):
+        callback()
+    assert calls == []
+
+
 def test_offline_paper_ledger_and_explicit_stream_off_need_no_live_auth(tmp_path, monkeypatch):
     from be_paper_engine import PaperStore, PaperBroker
     from _version import MODE, EXECUTION, REAL_ORDER_CAPABILITY
