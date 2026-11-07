@@ -94,8 +94,10 @@ def _opened_private_journal_fd(path: Path, root: Path):
             next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
             os.close(directory_fd)
             directory_fd = next_fd
+        # A same-UID rename may replace the final regular file with a FIFO
+        # after precheck; O_NONBLOCK avoids an unbounded wait before fstat.
         journal_fd = os.open(relative[-1],
-                             os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
                              dir_fd=directory_fd)
         try:
             yield journal_fd

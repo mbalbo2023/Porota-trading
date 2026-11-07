@@ -248,6 +248,36 @@ class TestPpiBookOffhostRetention(unittest.TestCase):
             self.assertEqual(outside_path.read_bytes(),
                              b"external-data-must-never-be-inspected")
 
+    def test_fifo_swap_after_precheck_opens_nonblocking_and_fails_closed(self):
+        """An attacker-replaced FIFO must not indefinitely block open()."""
+        self.record(NOW - timedelta(minutes=3))
+        original_precheck = retention._private_copy_under_root
+        original_open = retention.os.open
+        checked_final_flags = []
+
+        def swap_final_to_fifo(path, root):
+            self.assertTrue(original_precheck(path, root))
+            self.path.rename(self.path.with_suffix(".before-fifo-swap"))
+            os.mkfifo(self.path, mode=0o600)
+            return True
+
+        def guard_final_open(path, flags, *args, **kwargs):
+            if path == self.path.name and kwargs.get("dir_fd") is not None:
+                checked_final_flags.append(flags)
+                # A missing nonblock flag would hang forever on the FIFO;
+                # fail the test immediately instead of actually blocking.
+                if not flags & os.O_NONBLOCK:
+                    raise AssertionError("FIFO_OPEN_CAN_BLOCK_FOREVER")
+            return original_open(path, flags, *args, **kwargs)
+
+        with (patch.object(retention, "_private_copy_under_root", swap_final_to_fifo),
+              patch.object(retention.os, "open", guard_final_open)):
+            report = self.inventory()
+        self.assertEqual(len(checked_final_flags), 1)
+        self.assertEqual(report["state"], "HOLD")
+        self.assertNotIn("journal_copy_sha256", report)
+        self.assertFalse(report["host_purge_allowed"])
+
     def test_swapped_journal_between_chain_and_digest_is_rejected(self):
         self.record(NOW - timedelta(minutes=3))
         original_validator = retention._pit_verified_rows
