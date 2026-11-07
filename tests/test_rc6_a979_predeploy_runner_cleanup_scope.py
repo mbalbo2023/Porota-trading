@@ -12,6 +12,7 @@ import yaml
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/porota-predeploy-v2.yml"
+POLICY = Path(__file__).resolve().parents[1] / "ops/policy/porota-policy.yaml"
 
 
 def _predeploy_cleanup() -> str:
@@ -125,6 +126,7 @@ def test_predeploy_containers_have_explicit_creation_cleanup() -> None:
     assert '--label "porota.commit=$CANDIDATE_SHA"' in source
     assert '--label "porota.run_id=$GITHUB_RUN_ID"' in source
     assert 'docker rm "$rc6_extract_container_id"' in source
+    assert 'docker create --pull never' in source
     assert 'docker run --rm --pull never' in source
     # A980: predictable names do not prove ownership: a failed create from an
     # existing foreign name must not let the EXIT trap erase that container.
@@ -135,6 +137,27 @@ def test_predeploy_containers_have_explicit_creation_cleanup() -> None:
     assert 'rc6_new_id="$(docker create --name "$rc6_name"' in source
     assert 'docker rm "$rc6_container_id"' in source
     assert 'trap cleanup_native_proof EXIT' in source
+
+
+def test_predeploy_enforces_no_force_delete_policy_on_shared_docker() -> None:
+    cleanup_policy = yaml.safe_load(POLICY.read_text(encoding="utf-8"))["cleanup"]
+    assert cleanup_policy["shared_docker_host"] is True
+    assert cleanup_policy["docker_prune_or_force_delete_allowed"] is False
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "docker rm -f" not in source and "docker container rm -f" not in source
+    assert "docker system prune" not in source and "docker image prune" not in source
+    assert "sudo " not in source
+
+
+def test_predeploy_native_evidence_never_privilege_reclaims_untrusted_tree() -> None:
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["artifact-gate"]["steps"]
+    assert "Reclaim native proof evidence for artifact publication" not in {s.get("name") for s in steps}
+    source = "\n".join(step.get("run", "") for step in steps)
+    assert "sudo " not in source and " chown " not in source
+    gate = next(s["run"] for s in steps if s.get("name") == "Verify required published native evidence")
+    assert "os.access(path, os.R_OK)" in gate
+    assert "REQUIRED_PREDEPLOY_EVIDENCE_UNREADABLE" in gate
+    assert "raise SystemExit(79)" in gate
 
 
 def _native_proof_shell(tmp_path: Path, case: str, stage: str = "cases") -> tuple[int, list[str], bool]:
@@ -157,17 +180,21 @@ def _native_proof_shell(tmp_path: Path, case: str, stage: str = "cases") -> tupl
         ' create)\n'
         '   if [[ "$RC6_FAKE_CASE" == "name_collision" ]]; then exit 44; fi\n'
         '   printf "b%.0s" {1..64}; echo; exit 0;;\n'
-        ' start) [[ "$RC6_FAKE_CASE" != "start_failure" && "$RC6_FAKE_CASE" != "running" && "$RC6_FAKE_CASE" != "stop_failure" ]]; exit $?;;\n'
+        ' start) [[ "$RC6_FAKE_CASE" != "start_failure" && "$RC6_FAKE_CASE" != "running" && "$RC6_FAKE_CASE" != "stop_failure" && "$RC6_FAKE_CASE" != "stop_still_running" ]]; exit $?;;\n'
         ' inspect)\n'
         '   if [[ "$3" == *State.ExitCode* ]]; then echo "0|false"; exit 0; fi\n'
         '   if [[ "$3" == *State.Running* ]]; then\n'
-        '     if [[ "$RC6_FAKE_CASE" == "running" || "$RC6_FAKE_CASE" == "stop_failure" ]]; then echo true; else echo false; fi; exit 0\n'
+        '     if [[ "$RC6_FAKE_CASE" == "running" || "$RC6_FAKE_CASE" == "stop_failure" || "$RC6_FAKE_CASE" == "stop_still_running" ]]; then\n'
+        '       if [[ "$RC6_FAKE_CASE" == "running" && -f "$RC6_STOP_SENTINEL" ]]; then echo false; else echo true; fi\n'
+        '     else echo false; fi; exit 0\n'
         '   fi\n'
         '   if [[ "$RC6_FAKE_CASE" == "wrong_owner" ]]; then\n'
         '     printf "b%.0s" {1..64}; echo "|foreign|v2|1999"; exit 0\n'
         '   fi\n'
         '   printf "b%.0s" {1..64}; echo "|0123456789012345678901234567890123456789|v2|1999"; exit 0;;\n'
-        ' stop) [[ "$RC6_FAKE_CASE" != "stop_failure" ]]; exit $?;;\n'
+        ' stop)\n'
+        '   if [[ "$RC6_FAKE_CASE" == "stop_failure" ]]; then exit 46; fi\n'
+        '   touch "$RC6_STOP_SENTINEL"; exit 0;;\n'
         ' rm)\n'
         '   for arg in "$@"; do\n'
         '     if [[ "$arg" == "porota-native-$RC6_STAGE-1999" ]]; then rm -f "$FOREIGN_MARKER"; fi\n'
@@ -181,7 +208,8 @@ def _native_proof_shell(tmp_path: Path, case: str, stage: str = "cases") -> tupl
            "CANDIDATE_SHA": "0123456789012345678901234567890123456789",
            "IMAGE": "porota-predeploy-v2:0123456789012345678901234567890123456789",
            "RC6_STAGE": stage, "RC6_FAKE_CASE": case,
-           "FOREIGN_MARKER": str(foreign), "DOCKER_TRACE": str(trace)}
+           "FOREIGN_MARKER": str(foreign), "DOCKER_TRACE": str(trace),
+           "RC6_STOP_SENTINEL": str(tmp_path / "stopped")}
     execution = 'run_native_proof "' + stage + '" true'
     if stage == "session":
         execution += ' &\nwait "$!"'
@@ -227,6 +255,7 @@ def test_native_success_uses_only_created_id(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("case,expect_stop,expect_remove", (
     ("running", True, True), ("stop_failure", True, False),
+    ("stop_still_running", True, False),
 ))
 def test_native_running_cleanup_stops_only_owned_id_then_no_force_removes(
     tmp_path: Path, case: str, expect_stop: bool, expect_remove: bool
@@ -394,6 +423,8 @@ def _exercise_native_evidence_gate(tmp_path: Path, case: str) -> tuple[int, str]
         foreign = tmp_path.parent / "foreign-native-session"
         (proof / "session").rename(foreign)
         (proof / "session").symlink_to(foreign, target_is_directory=True)
+    elif case == "unreadable":
+        (proof / "native-bound.xml").chmod(0o000)
     env = {**os.environ, "RC6_TMPDIR": str(tmp_path),
            "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]}
     done = subprocess.run(["bash", "-c", gate], cwd=WORKFLOW.parents[2],
@@ -407,6 +438,7 @@ def test_predeploy_native_publish_gate_rejects_omitted_or_aliased_receipt(tmp_pa
         ("undeclared", "NATIVE_EVIDENCE_UNDECLARED_FILE"),
         ("symlink", "REQUIRED_PREDEPLOY_EVIDENCE_ALIASED"),
         ("symlink_parent", "REQUIRED_PREDEPLOY_EVIDENCE_ALIASED"),
+        ("unreadable", "REQUIRED_PREDEPLOY_EVIDENCE_UNREADABLE"),
     ):
         case_root = tmp_path / case
         case_root.mkdir()

@@ -425,13 +425,53 @@ jobs:
           # Exclusive child under the private runner staging root; never
           # delete a preexisting fixed-name /tmp path to make extraction fit.
           mkdir -m 700 -- "$RC6_TMPDIR/porota-predeploy-app"
-          cid="$(docker create "$IMAGE")"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/app/." "$RC6_TMPDIR/porota-predeploy-app/"
-          docker rm "$cid" >/dev/null
-          trap - EXIT
+          # docker create's returned CID, not an image/tag/name, is the only
+          # candidate for cleanup. Verify commit/scope/run labels before both
+          # reading files and deleting the stopped container (never --force).
+          rc6_extract_container_id=
+          rc6_extract_owner="|$CANDIDATE_SHA|v2|$GITHUB_RUN_ID"
+          rc6_extract_owned() {
+            [[ "$rc6_extract_container_id" =~ ^[0-9a-f]{64}$ ]] || return 1
+            rc6_extract_actual="$(docker inspect -f '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}|{{index .Config.Labels "porota.run_id"}}' "$rc6_extract_container_id" 2>/dev/null)" || return 1
+            [[ "$rc6_extract_actual" == "$rc6_extract_container_id$rc6_extract_owner" ]]
+          }
+          rc6_extract_cleanup() {
+            rc6_extract_rc=$?
+            trap - EXIT
+            if [[ -n "$rc6_extract_container_id" ]]; then
+              if ! rc6_extract_owned; then
+                echo 'POROTA_EXTRACT_CLEANUP=WARN|created_container_identity_unverified_no_delete'
+                rc6_extract_rc=79
+              elif docker rm "$rc6_extract_container_id" >/dev/null 2>&1; then
+                echo 'POROTA_EXTRACT_CLEANUP=GREEN|verified_stopped_cid_removed'
+              else
+                echo 'POROTA_EXTRACT_CLEANUP=WARN|verified_cid_delete_failed'
+                rc6_extract_rc=79
+              fi
+            fi
+            if [[ "$rc6_extract_rc" -eq 0 ]]; then
+              echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
+            else
+              echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|no_unverified_cleanup'
+            fi
+            exit "$rc6_extract_rc"
+          }
+          trap rc6_extract_cleanup EXIT
+          trap 'exit 143' INT TERM HUP
+          if rc6_new_id="$(docker create --pull never \
+            --label "porota.commit=$CANDIDATE_SHA" --label porota.predeploy=v2 \
+            --label "porota.run_id=$GITHUB_RUN_ID" "$IMAGE")"; then
+            rc6_extract_container_id="$rc6_new_id"
+          else
+            echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|docker_create_failed'
+            exit 79
+          fi
+          if ! rc6_extract_owned; then
+            echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|created_container_identity_unverified'
+            exit 79
+          fi
+          docker cp "$rc6_extract_container_id:/app/." "$RC6_TMPDIR/porota-predeploy-app/"
           test -f "$RC6_TMPDIR/porota-predeploy-app/Dockerfile"
-          echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
 
       - name: Artifact completeness and import closure
         shell: bash
@@ -526,8 +566,35 @@ jobs:
               trap - EXIT
               if [[ -n "$rc6_container_id" ]]; then
                 if rc6_owned_container; then
-                  if ! docker rm -f "$rc6_container_id" >/dev/null 2>&1; then
-                    echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_container_delete_failed'
+                  # A timeout may leave our native child running. Only a
+                  # label-attested, exact CID may be stopped; remove it with
+                  # non-force Docker rm after a second owner recheck.
+                  rc6_safe_to_remove=false
+                  if rc6_running="$(docker inspect -f '{{.State.Running}}' "$rc6_container_id" 2>/dev/null)"; then
+                    if [[ "$rc6_running" == false ]]; then
+                      rc6_safe_to_remove=true
+                    elif [[ "$rc6_running" == true ]]; then
+                      if rc6_owned_container && docker stop --time 10 "$rc6_container_id" >/dev/null 2>&1; then
+                        if rc6_after_stop="$(docker inspect -f '{{.State.Running}}' "$rc6_container_id" 2>/dev/null)" && [[ "$rc6_after_stop" == false ]]; then
+                          rc6_safe_to_remove=true
+                        else
+                          echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_container_still_running_after_stop'
+                        fi
+                      else
+                        echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_running_container_stop_failed'
+                      fi
+                    else
+                      echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|container_running_state_invalid'
+                    fi
+                  else
+                    echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|container_running_state_unverified'
+                  fi
+                  if [[ "$rc6_safe_to_remove" == true ]] && rc6_owned_container; then
+                    if ! docker rm "$rc6_container_id" >/dev/null 2>&1; then
+                      echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_container_delete_failed'
+                      rc6_cleanup_rc=79
+                    fi
+                  else
                     rc6_cleanup_rc=79
                   fi
                 else
@@ -634,19 +701,6 @@ jobs:
           print('POROTA_PAPER_SAFETY_SOURCE_GATE=GREEN')
           PY
 
-      - name: Reclaim native proof evidence for artifact publication
-        if: always()
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          # UID1000 sandbox fixtures can have 0700 directories. Exact-file
-          # artifact uploads still require traversal, so reclaim only this
-          # job-private output tree AFTER all sandbox processes have exited.
-          rc6_proof_root="$RC6_TMPDIR/porota-native-sizing-evidence"
-          if test -d "$rc6_proof_root"; then
-            sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"
-          fi
-
       - name: Export frozen candidate artifacts
         shell: bash
         run: |
@@ -727,8 +781,16 @@ jobs:
               proof / 'cadence/cadence-legacy.json',
           ]
           for path in required:
-              if is_aliased(path) or not path.is_file():
+              if is_aliased(path):
                   raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_ALIASED:{path.name}')
+              # Never sudo/chown a candidate-writable proof tree. If UID1000
+              # generated mode0700 evidence the runner cannot read, HOLD79;
+              # do not substitute broad recursive permission changes.
+              if not os.access(path, os.R_OK):
+                  print(f'REQUIRED_PREDEPLOY_EVIDENCE_UNREADABLE:{path.name}')
+                  raise SystemExit(79)
+              if not path.is_file():
+                  raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_MISSING:{path.name}')
               if path.stat().st_size == 0:
                   raise SystemExit(f'REQUIRED_PREDEPLOY_EVIDENCE_MISSING:{path.name}')
           for path in (item for item in required if item.suffix == '.xml'):
