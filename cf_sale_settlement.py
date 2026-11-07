@@ -13,7 +13,7 @@ habilitarla explícitamente con PAPER_T1_FULL_DATE_RELEASE=true. Nunca autoriza
 import os
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from bs_instrument_contracts import aware_datetime
+from bs_instrument_contracts import aware_datetime, cash_currency, family_name
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
 
@@ -28,8 +28,40 @@ def t1_full_date_release_enabled():
     return False
 
 
-def modeled_sale_settlement_date(settlement, traded_at):
-    """Fecha hábil esperada, sin hora contractual inventada."""
+def _byma_special_t1_date(day, calendar, *, family=None, market=None, currency=None):
+    """Excepción 11-Nov 2026: no atribuir cash settlement sin identidad exacta.
+
+    Fuente BYMA: 06/11 se negocia T+1 sin liquidación, 09/10 sin mercado,
+    11/11 hay liquidación excepto CEDEAR y USD cable por feriado en EE.UU.
+    Para 05/06 T+1, esas clases se liquidan 12/11. Ningún otro mercado o
+    moneda implícita puede heredar la habilitación de ARS/MEP en BYMA.
+    """
+    if day != date(2026, 11, 11):
+        return day
+    if str(market or "").strip().upper() != "BYMA":
+        return None
+    try:
+        kind = family_name(family)
+        unit = cash_currency(currency)
+    except ValueError:
+        return None
+    if kind not in {"ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES"}:
+        return None
+    if kind == "CEDEARS" or unit == "USD_CCL":
+        delayed = date(2026, 11, 12)
+        return delayed if calendar.es_dia_habil_operativo(delayed) else None
+    if unit in {"ARS", "USD_MEP"}:
+        return day
+    return None
+
+
+def modeled_sale_settlement_date(settlement, traded_at, *, family=None, market=None,
+                                 currency=None):
+    """Fecha hábil esperada por contrato exacto, sin hora de broker inventada.
+
+    Ante calendario excepcional del 11/11 y falta de familia/mercado/moneda,
+    retorna None para bloquear liberaciones PAPER no demostradas.
+    """
     at=aware_datetime(traded_at).astimezone(TZ)
     if not isinstance(settlement,str): raise ValueError('Plazo de liquidación no textual')
     key=settlement.upper().strip()
@@ -40,17 +72,22 @@ def modeled_sale_settlement_date(settlement, traded_at):
     for _ in range(370):
         candidate += timedelta(days=1)
         if candidate.year not in calendar.ANIOS_AUDITADOS: return None
-        if calendar.es_dia_habil_operativo(candidate): return candidate.isoformat()
+        if calendar.es_dia_habil_operativo(candidate):
+            adjusted = _byma_special_t1_date(candidate, calendar, family=family,
+                                             market=market, currency=currency)
+            return adjusted.isoformat() if adjusted is not None else None
     return None
 
 
-def conservative_unconfirmed_availability(settlement, traded_at):
+def conservative_unconfirmed_availability(settlement, traded_at, *, family=None,
+                                          market=None, currency=None):
     """Frontera PAPER conservadora, no una hora atribuida al broker.
 
     Expresa el comienzo del día posterior a la fecha hábil esperada. El caller
     todavía debe comparar esta frontera con su ``as_of`` antes de liberar caja.
     """
-    expected=modeled_sale_settlement_date(settlement,traded_at)
+    expected=modeled_sale_settlement_date(settlement,traded_at, family=family,
+                                          market=market, currency=currency)
     if expected is None:
         return None
     boundary=date.fromisoformat(expected)+timedelta(days=1)
@@ -74,7 +111,8 @@ def modeled_sale_settlement(settlement, traded_at):
     return None
 
 
-def validated_sale_settlement(settlement, traded_at, available_at, basis):
+def validated_sale_settlement(settlement, traded_at, available_at, basis, *,
+                              family=None, market=None, currency=None):
     """Disponibilidad efectiva defendible por procedencia y política PAPER.
 
     ``PENDING_CONFIRMATION`` jamás acepta un ``available_at`` inventado. Con la
@@ -90,7 +128,9 @@ def validated_sale_settlement(settlement, traded_at, available_at, basis):
         if t1_full_date_release_enabled():
             key=str(settlement or '').upper().strip()
             if key in {'A-24HS','24HS','T+1'}:
-                return conservative_unconfirmed_availability(settlement,traded)
+                return conservative_unconfirmed_availability(
+                    settlement, traded, family=family, market=market,
+                    currency=currency)
         return None
     if basis=='PAPER_CONSERVATIVE_CALENDAR':
         modeled=modeled_sale_settlement(settlement,traded)

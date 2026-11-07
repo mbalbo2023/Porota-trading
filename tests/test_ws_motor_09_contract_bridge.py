@@ -104,7 +104,7 @@ def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_
     # Fully synthetic market/quantity rule; no claim that the real GD30 minimum
     # has been captured. Exercises production functions and a private SQLite DB.
     s=store(tmp_path)
-    primary=catalog.normalize_record({"ticker":"GD30","type":"BONOS","market":"BYMA","currency":"ARS"}, "A-24HS", NOW.isoformat(), "fixture-ppi-snapshot")
+    primary=catalog.normalize_record({"ticker":"GD30","type":"BONOS","market":"BYMA","currency":"ARS","settlement":"A-24HS"}, "A-24HS", NOW.isoformat(), "fixture-ppi-snapshot")
     with s.connect() as c: catalog.persist(c, primary)
     r=record()
     evidence.record_snapshot(s,family=r["family"],ticker=r["ticker"],market=r["market"],settlement=r["settlement"],source_class=r["source_class"],source_ref=r["source_ref"],observed_at=r["observed_at"],evidence=r["evidence"])
@@ -231,7 +231,7 @@ def test_essential_conflict_is_not_resolved_by_source_priority():
 
 
 def test_review_required_invalidates_an_existing_bridge_contract():
-    primary=catalog.normalize_record({"ticker":"GD30","type":"BONOS","market":"BYMA","currency":"ARS"},"A-24HS",NOW.isoformat(),"fixture")
+    primary=catalog.normalize_record({"ticker":"GD30","type":"BONOS","market":"BYMA","currency":"ARS","settlement":"A-24HS"},"A-24HS",NOW.isoformat(),"fixture")
     good=bridge.normalize_group([record()],now=NOW)
     ready=catalog.complete_with_complement(primary,good)
     changed=record(); changed["change_pending"]=True
@@ -263,7 +263,7 @@ def caucion_record():
 
 def test_caucion_bridge_real_paper_lifecycle_no_reuse_of_locked_cash(tmp_path):
     s=store(tmp_path)
-    primary=catalog.normalize_record({"ticker":"PESOS2","type":"CAUCIONES","market":"BYMA","currency":"ARS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
+    primary=catalog.normalize_record({"ticker":"PESOS2","type":"CAUCIONES","market":"BYMA","currency":"ARS","settlement":"A-24HS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
     with s.connect() as c: catalog.persist(c,primary)
     broker=PaperBroker(s,initial_cash="1000000",daily_loss_pct="2.5",require_supervisor=False,clock_fn=lambda:NOW.isoformat())
     r=caucion_record()
@@ -282,14 +282,14 @@ def test_caucion_bridge_real_paper_lifecycle_no_reuse_of_locked_cash(tmp_path):
 
 @pytest.mark.parametrize("field",["principal_step","quoted_at","available_principal"])
 def test_caucion_bridge_missing_essential_does_not_create_offer(field):
-    primary=catalog.normalize_record({"ticker":"PESOS2","type":"CAUCIONES","market":"BYMA","currency":"ARS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
+    primary=catalog.normalize_record({"ticker":"PESOS2","type":"CAUCIONES","market":"BYMA","currency":"ARS","settlement":"A-24HS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
     r=caucion_record();r["evidence"].pop(field);r["evidence_hash"]=evidence.evidence_hash(r["evidence"])
     with pytest.raises(ValueError,match="CAUCION_MISSING"):
         bridge.caucion_offer_from_evidence([r],primary,now=NOW)
 
 
 def test_ars_caucion_uses_existing_paper_tariff_without_duplicate_fee_evidence():
-    primary=catalog.normalize_record({"ticker":"PESOS2","type":"CAUCIONES","market":"BYMA","currency":"ARS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
+    primary=catalog.normalize_record({"ticker":"PESOS2","type":"CAUCIONES","market":"BYMA","currency":"ARS","settlement":"A-24HS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
     r=caucion_record();r["evidence"].pop("quoted_total_fees");r["evidence"].pop("fee_quote_principal")
     r["evidence_hash"]=evidence.evidence_hash(r["evidence"])
     offer=bridge.caucion_offer_from_evidence([r],primary,now=NOW)
@@ -299,7 +299,7 @@ def test_ars_caucion_uses_existing_paper_tariff_without_duplicate_fee_evidence()
 
 
 def test_usd_caucion_still_requires_explicit_fee_budget():
-    primary=catalog.normalize_record({"ticker":"USD1","type":"CAUCIONES","market":"BYMA","currency":"USD"},"A-24HS",NOW.isoformat(),"fixture-ppi")
+    primary=catalog.normalize_record({"ticker":"USD1","type":"CAUCIONES","market":"BYMA","currency":"USD","settlement":"A-24HS"},"A-24HS",NOW.isoformat(),"fixture-ppi")
     r=caucion_record();r.update(ticker="USD1")
     r["evidence"]["currency"]="USD"
     r["evidence"].pop("quoted_total_fees");r["evidence"].pop("fee_quote_principal")
@@ -393,13 +393,13 @@ def test_two_ppi_settlements_resolve_by_operation_and_consumers_agree(tmp_path):
     s=store(tmp_path)
     with s.connect() as c:
         for term in ("INMEDIATA","A-24HS"):
-            catalog.persist(c,catalog.normalize_record(dict(ticker="TEST",type="ACCIONES",market="BYMA",currency="ARS"),term,NOW.isoformat(),"fixture"))
+            catalog.persist(c,catalog.normalize_record(dict(ticker="TEST",type="ACCIONES",market="BYMA",currency="ARS",settlement=term),term,NOW.isoformat(),"fixture"))
         catalog.sync_candidate_universe(c,NOW.isoformat())
     assert set(observer._eligible_symbols(s))=={("TEST","ACCIONES","INMEDIATA"),("TEST","ACCIONES","A-24HS")}
     for term in ("INMEDIATA","A-24HS"):
         assert catalog.quote_terms(catalog.lookup(s,"TEST","ACCIONES",term),now=NOW)["opening_block_reason"]==""
     with s.connect() as c:
-        catalog.persist(c,catalog.normalize_record(dict(ticker="TEST",type="ACCIONES",market="BYMA",currency="USD"),"A-24HS",NOW.isoformat(),"fixture"))
+        catalog.persist(c,catalog.normalize_record(dict(ticker="TEST",type="ACCIONES",market="BYMA",currency="USD",settlement="A-24HS"),"A-24HS",NOW.isoformat(),"fixture"))
         catalog.sync_candidate_universe(c,NOW.isoformat())
     assert set(observer._eligible_symbols(s))=={("TEST","ACCIONES","INMEDIATA")}
     assert catalog.lookup(s,"TEST","ACCIONES","A-24HS") is None

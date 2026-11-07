@@ -54,6 +54,7 @@ import threading
 import logging
 from enum import Enum
 from typing import Optional, Dict, Any, Callable
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from ppi_client.ppi import PPI
@@ -80,6 +81,102 @@ def _persist_system_event(component: str, state: str, detail: str = ""):
 
 load_dotenv()
 logger = logging.getLogger("ppi_client_wrapper")
+
+
+_PPI_SDK_WIRE_HOSTS = frozenset({
+    "clientapi.portfoliopersonal.com",
+    "clientapisandbox.portfoliopersonal.com",
+})
+_PPI_SDK_WIRE_BUDGET_PATHS = {
+    "/api/1.0/marketdata/current": "current",
+    "/api/1.0/marketdata/book": "book",
+    "/api/1.0/marketdata/intraday": "intraday",
+}
+_PPI_SDK_WIRE_LOGIN_PATHS = frozenset({
+    "/api/1.0/account/loginapi", "/api/1.0/account/refreshtoken",
+})
+
+
+class _BudgetedPPIAdapter:
+    """Private SDK-session transport: one shared lease per physical HTTP send.
+
+    Unlike the offhost ProductionMarketReader guard, this adapter never
+    monkeypatches requests globally (the composite bot also uses other
+    providers). Unbudgeted PPI GETs and order-writing routes stay off wire.
+    """
+
+    def __init__(self, delegate):
+        self.delegate = delegate
+
+    def __getattr__(self, name):
+        return getattr(self.delegate, name)
+
+    def close(self):
+        return self.delegate.close()
+
+    def send(self, request, **kwargs):
+        from rc6_ppi_global_budget import BudgetBackpressure, budget_from_environment
+
+        parsed = urlsplit(str(getattr(request, "url", "")))
+        path = parsed.path.rstrip("/").lower()
+        method = str(getattr(request, "method", "")).upper()
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise BudgetBackpressure("PPI_SDK_WIRE_HOST_UNVERIFIED") from exc
+        if (parsed.scheme != "https" or (parsed.hostname or "").lower() not in _PPI_SDK_WIRE_HOSTS
+                or port not in (None, 443) or parsed.username or parsed.password):
+            raise BudgetBackpressure("PPI_SDK_WIRE_HOST_UNVERIFIED")
+
+        if method == "POST" and path in _PPI_SDK_WIRE_LOGIN_PATHS:
+            return self.delegate.send(request, **kwargs)
+        endpoint = _PPI_SDK_WIRE_BUDGET_PATHS.get(path) if method == "GET" else None
+        if endpoint is None:
+            # SearchInstrument/Search/BondsEstimate have no certified global
+            # capacity contract. They cannot silently spend the three-endpoint
+            # reservation or evade an upstream static PPI Watch allowance.
+            if path.startswith("/api/1.0/marketdata/"):
+                raise BudgetBackpressure("PPI_MARKETDATA_ENDPOINT_BUDGET_UNVERIFIED")
+            if path.startswith("/api/1.0/configuration/"):
+                raise BudgetBackpressure("PPI_CONFIGURATION_ENDPOINT_BUDGET_UNVERIFIED")
+            # Account/Orders GETs and writes are also outside this contract.
+            raise BudgetBackpressure("PPI_SDK_ENDPOINT_NOT_GOVERNED")
+
+        # A retry *inside* HTTPAdapter.send would consume several physical
+        # GETs under one durable lease. Do not rely on SDK-specific defaults.
+        retries = getattr(getattr(self.delegate, "max_retries", None), "total", None)
+        if type(retries) is not int or retries != 0:
+            raise BudgetBackpressure("PPI_SDK_TRANSPORT_RETRIES_UNVERIFIED")
+        if kwargs.get("stream"):
+            raise BudgetBackpressure("PPI_SDK_STREAMING_READ_UNGOVERNED")
+
+        budget = budget_from_environment()
+        if budget is None:
+            raise BudgetBackpressure("PPI_SHARED_BUDGET_UNAVAILABLE")
+        admitted = budget.acquire(endpoint, consumer="SCANNER", priority="DISCOVERY")
+        if not admitted.get("allowed"):
+            raise BudgetBackpressure(str(admitted.get("reason") or "PPI_BUDGET_BACKPRESSURE"))
+        lease = admitted.get("lease")
+        if not isinstance(lease, str) or not lease:
+            raise BudgetBackpressure("PPI_BUDGET_LEASE_UNVERIFIED")
+
+        response = None
+        with budget.wire_scope(lease):
+            try:
+                budget.start(lease)
+                response = self.delegate.send(request, **kwargs)
+                # Requests normally consumes content after adapter.send. Keep
+                # the complete physical response under the same serial lease.
+                _ = response.content
+            except Exception:
+                status = getattr(response, "status_code", None)
+                budget.finish(lease, status_code=status,
+                              error_code=f"PPI_HTTP_{status}" if type(status) is int and status >= 400
+                              else "PPI_SDK_WIRE_ERROR")
+                raise
+            else:
+                budget.finish(lease, status_code=response.status_code)
+                return response
 
 
 def _market_snapshot(data, ticker, instrument_type, settlement, *, is_book=False):
@@ -537,6 +634,31 @@ class ResilientPPIClient:
             base_url.split("/", 3)[2],
         )
 
+    def _install_sdk_wire_budget(self, candidate) -> None:
+        """Install only on this PPI SDK's sessions, before the first login.
+
+        The SDK must expose RestClient.get_session. Unknown internals are a
+        hard NO-GO, never permission to fall back to naked HTTP market reads.
+        """
+        api_client = getattr(candidate, "_PPI__apiClient", None)
+        rest_client = getattr(api_client, "get_rest_client", lambda: None)()
+        get_session = getattr(rest_client, "get_session", None)
+        if not callable(get_session):
+            raise RuntimeError("PPI_SDK_SESSION_TRANSPORT_UNVERIFIED")
+
+        def _guarded_session():
+            session = get_session()
+            mount = getattr(session, "mount", None)
+            adapters = getattr(session, "adapters", None)
+            if not callable(mount) or not adapters:
+                raise RuntimeError("PPI_SDK_SESSION_ADAPTERS_UNVERIFIED")
+            for prefix, adapter in tuple(adapters.items()):
+                if not isinstance(adapter, _BudgetedPPIAdapter):
+                    mount(prefix, _BudgetedPPIAdapter(adapter))
+            return session
+
+        rest_client.get_session = _guarded_session
+
     def _reserve_login_attempt(self) -> tuple[bool, int]:
         """Reserva en SQLite un unico POST de login dentro de la ventana.
 
@@ -625,6 +747,7 @@ class ResilientPPIClient:
             self._auth_http_diagnostic = ""
             candidate = PPI(sandbox=self.is_sandbox)
             self._configure_sandbox_sdk(candidate)
+            self._install_sdk_wire_budget(candidate)
             candidate.account.login_api(self.api_key, self.api_secret)
             self.client = candidate
             self._authenticated = True
@@ -931,6 +1054,14 @@ class ResilientPPIClient:
                 self._registrar_firma_api(label, result)  # v15.0 — vigilancia de cambios de la API
                 return result
             except Exception as e:
+                # Backpressure is a policy decision made *before* the wire.
+                # Repeating it with exponential delays cannot create a lease;
+                # it only stalls the 9,500-instrument discovery funnel.
+                from rc6_ppi_global_budget import BudgetBackpressure
+                if isinstance(e, BudgetBackpressure):
+                    logger.warning("PPI GET denegado por presupuesto compartido: %s", str(e))
+                    _persist_system_event("PPI_REST", "BUDGET_BACKPRESSURE", str(e))
+                    return None
                 error_kind = self._classify_error(e)
                 logger.warning("Intento %s/%s falló en %s [%s]: %s", attempt,
                                 len(BACKOFF_SCHEDULE_SECONDS), label, error_kind,

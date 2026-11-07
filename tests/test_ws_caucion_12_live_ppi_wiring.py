@@ -22,6 +22,7 @@ def _store(tmp_path, *, ticker="PESOS7", at=NOW):
     store=PaperStore(str(tmp_path/"observer.db"))
     observer._support_schema(store)
     raw={"ticker":ticker,"description":ticker,"currency":"Pesos",
+         "settlement":"INMEDIATA",
          "type":"CAUCIONES","market":"BYMA","nominalInPrice":1,
          "_provider_instrument_type":"CAUCIONES","_discovery_source":"PPI_PRIMARY"}
     record=catalog.normalize_record(raw,"INMEDIATA",at.isoformat(),"test")
