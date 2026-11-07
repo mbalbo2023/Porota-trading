@@ -38,7 +38,12 @@ def _catalog_fci(store, at):
             "settlement_source": "PPI_FIELD", "description": "A232 synthetic FCI fixture",
             "last_seen_at": at, "run_id": "A232_SYNTHETIC", "status": "AVAILABLE",
             "capability": "READY_PAPER_FCI_SUBSCRIPTION",
+            # R4 requires the literal five-key to be present in the native
+            # provider payload; SQL coordinates alone are not PPI attestation.
+            # This is a *synthetic offhost* PPI-shaped fixture, not live proof.
             "raw": {"_discovery_source": "PPI_PRIMARY",
+                    "ticker": terms.symbol, "type": "FCI", "market": terms.market,
+                    "currency": "ARS", "settlement": terms.settlement,
                     "paper_family_contract_v1": json.loads(json.dumps(asdict(terms), default=str))},
         })
         db.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
@@ -61,6 +66,39 @@ def _fake_caucion(day, at, maturity):
         metadata_source="CONTRACT_EVIDENCE_V2:FAKE_LABEL_NOT_PROOF",
         quoted_total_fees=Decimal("10"), fee_quote_principal=Decimal("10000"),
         paper_fill_policy="CONSERVATIVE_NOTIONAL_CAP")
+
+
+def test_synthetic_fci_exact_fivekey_passes_catalog_gate_but_request_key_never_does(
+        tmp_path, monkeypatch):
+    store, broker = _runtime(tmp_path, monkeypatch)
+    at = "2026-10-05T13:00:00-03:00"
+    terms = _catalog_fci(store, at)
+    # Native-looking synthetic five-key is enough to reach the *next* (strict)
+    # authenticated fund calendar gate; it is not PPI network evidence.
+    from bu_instrument_catalog import lookup
+    record = lookup(store, terms.symbol, "FCI", terms.settlement,
+                    market=terms.market, currency=terms.currency)
+    assert record is not None and not record.get("_admission_reason")
+    with store.connect() as db:
+        raw = json.loads(db.execute(
+            "SELECT metadata_json FROM financial_instrument_catalog WHERE ticker=?",
+            (terms.symbol,)).fetchone()[0])
+        raw.pop("settlement")
+        db.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker=?",
+                   (json.dumps(raw), terms.symbol))
+    revoked = lookup(store, terms.symbol, "FCI", terms.settlement,
+                     market=terms.market, currency=terms.currency)
+    assert revoked is not None and revoked.get("_admission_reason") == (
+        "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED")
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    with pytest.raises(ValueError, match="FCI_EXACT_CATALOG_NOT_READY"):
+        broker.family_paper.subscribe_fund(
+            terms, lifecycle_id="FCI:REQUEST_ONLY", event_id="FCI:REQUEST_ONLY",
+            amount="10000", occurred_at=at,
+            cash_guard=lambda _db: Decimal("1000000"), admission_guard=lambda _db: "")
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("day,maturity", [
@@ -143,7 +181,10 @@ def _live_ppi_fixture(store, at):
             "description": "A232 synthetic local PPI BID fixture", "last_seen_at": at,
             "run_id": "A232_SYNTHETIC", "status": "AVAILABLE",
             "capability": "READY_PAPER_CAUCION_PLACING",
-            "raw": {"_discovery_source": "PPI_PRIMARY", "paper_caucion_contract_v1": {
+            "raw": {"_discovery_source": "PPI_PRIMARY",
+                    "ticker": "PESOS3", "type": "CAUCIONES", "market": "BYMA",
+                    "currency": "ARS", "settlement": "INMEDIATA",
+                    "paper_caucion_contract_v1": {
                 "paper_fill_policy": "LIVE_PPI_BID_PARTICIPATION_CAP",
                 "fee_authority": CAUCION_PAPER_FEE_AUTHORITY,
                 "minimum_principal": "100000", "paper_principal_step": "1",

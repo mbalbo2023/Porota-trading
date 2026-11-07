@@ -7,13 +7,16 @@ module never closes an exposure or modifies the Droplet.
 """
 
 import argparse
+import ast
 import base64
-from contextlib import closing
+import binascii
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 import time
@@ -28,6 +31,27 @@ EXPOSURES = (
 MAX_OPEN_PER_FAMILY = 32
 MAX_SUPPORT_ROWS = 256
 DB = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
+COLD_ROOT = Path('/opt/porota-trading')
+COLD_SOURCES = (
+    'scripts/rc6_cold2_quarantine.py',
+    'scripts/rc6_cold2_successor.py',
+    'scripts/rc6_failed_cold_fix_forward.py',
+    'scripts/rc6_cold2_apply_guard.py',
+)
+COLD_SOURCE_BUNDLE_CONTRACT = 'RC6_A205_CANDIDATE_COLD_SOURCES_V1'
+COLD_PREADMISSION_CONTRACT = 'RC6_A205_COLD_PREADMISSION_V1'
+SHA40 = re.compile(r'[0-9a-f]{40}')
+SHA64 = re.compile(r'[0-9a-f]{64}')
+COLD_PUBLIC_ERRORS = frozenset({
+    'COLD_ARCHIVED_RECOVERY_NOT_PROVEN',
+    'COLD2_ORIGINAL_ARCHIVE_INCOMPLETE',
+    'COLD2_ORIGINAL_ARCHIVE_CHANGED',
+    'COLD2_ORIGINAL_PACK_CHANGED',
+    'COLD2_SUCCESSOR_PACK_CHANGED',
+    'COLD2_SUCCESSOR_QUEUE_UNEXPECTED',
+    'COLD2_COMPLETE_QUEUE_UNSAFE',
+    'COLD2_COMPLETE_QUEUE_BINDING',
+})
 
 
 class UnsafeBook(ValueError):
@@ -65,7 +89,10 @@ def _load_signed_candidate_ledger():
     if not (0 < len(encoded) < 120000 and len(expected) == 64 and
             all(v in '0123456789abcdef' for v in expected)):
         raise UnsafeBook('BOOK_CANDIDATE_LEDGER_BOUNDS')
-    packed = base64.b64decode(encoded, validate=True)
+    try:
+        packed = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise UnsafeBook('COLD_CANDIDATE_SOURCE_BASE64_RED') from exc
     if not 0 < len(packed) < 90000:
         raise UnsafeBook('BOOK_CANDIDATE_LEDGER_PACKED_BOUND')
     inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
@@ -79,6 +106,246 @@ def _load_signed_candidate_ledger():
     if not callable(getattr(module, 'plan_open_paper_admin_cancel', None)):
         raise UnsafeBook('BOOK_CANDIDATE_LEDGER_CONTRACT_MISSING')
     sys.modules['cd_spot_ledger'] = module
+
+
+def _read_candidate_cold_sources():
+    """Validate every exact-candidate source byte before importing in memory.
+
+    The archive inspector on the installed host may be older than this
+    candidate.  Actions transports the four hash-pinned files from its exact
+    immutable checkout; no source file is installed or written on the host.
+    """
+    encoded = os.environ.get('RC6_A205_COLD_SOURCES_GZIP_B64', '')
+    expected = os.environ.get('RC6_A205_COLD_SOURCES_SHA256', '')
+    if (not 0 < len(encoded) < 120000 or SHA64.fullmatch(expected) is None):
+        raise UnsafeBook('COLD_CANDIDATE_SOURCE_BOUNDS')
+    packed = base64.b64decode(encoded, validate=True)
+    if (not 0 < len(packed) < 90000 or
+            hashlib.sha256(packed).hexdigest() != expected):
+        raise UnsafeBook('COLD_CANDIDATE_SOURCE_HASH_RED')
+    try:
+        inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        raw = inflater.decompress(packed, 250001)
+    except zlib.error as exc:
+        raise UnsafeBook('COLD_CANDIDATE_SOURCE_UNPACK_RED') from exc
+    if (not 0 < len(raw) <= 250000 or not inflater.eof or
+            inflater.unconsumed_tail or inflater.unused_data):
+        raise UnsafeBook('COLD_CANDIDATE_SOURCE_UNPACK_RED')
+    payload = json.loads(raw)
+    if (type(payload) is not dict or set(payload) != {'schema', 'files'} or
+            payload['schema'] != COLD_SOURCE_BUNDLE_CONTRACT or
+            type(payload['files']) is not dict or
+            set(payload['files']) != set(COLD_SOURCES)):
+        raise UnsafeBook('COLD_CANDIDATE_SOURCE_MANIFEST_RED')
+    verified = {}
+    for name in COLD_SOURCES:
+        record = payload['files'][name]
+        if (type(record) is not dict or set(record) != {'sha256', 'source'} or
+                type(record['source']) is not str or
+                not 0 < len(record['source'].encode('utf-8')) <= 85000 or
+                SHA64.fullmatch(str(record['sha256'])) is None or
+                hashlib.sha256(record['source'].encode()).hexdigest() !=
+                record['sha256']):
+            raise UnsafeBook('COLD_CANDIDATE_SOURCE_FILE_RED')
+        ast.parse(record['source'], filename='candidate/' + name)
+        verified[name] = record['source']
+    return verified, expected
+
+
+@contextmanager
+def _candidate_cold_modules(sources):
+    """Use the candidate's canonical read-only inspectors, not host drift.
+
+    The four sources are already digest checked.  The apply_guard file is
+    parsed, not imported: only its established *read-only*
+    verify_complete_queue function is compiled; importing the apply module
+    would pull in deployment helpers that belong exclusively to Deploy V2.
+    """
+    import scripts
+    modules = {}
+    replacements = {}
+    for name in COLD_SOURCES[:3]:
+        short = Path(name).stem
+        full = 'scripts.' + short
+        replacements[full] = (sys.modules.get(full),
+                              getattr(scripts, short, None))
+    try:
+        for name in COLD_SOURCES[:3]:
+            parsed = ast.parse(sources[name], filename='candidate/' + name)
+            for node in parsed.body:
+                if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef,
+                                     ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) \
+                        and isinstance(node.value.value, str):
+                    continue  # module docstring
+                if isinstance(node, ast.Assign):
+                    allowed_calls = {'Path', 're.compile'}
+                    if all(ast.unparse(call.func) in allowed_calls
+                           for call in ast.walk(node.value)
+                           if isinstance(call, ast.Call)):
+                        continue
+                if isinstance(node, ast.If) and ast.unparse(node.test) == \
+                        "__name__ == '__main__'":
+                    continue  # never executed under the scripts.* module name
+                raise UnsafeBook('COLD_CANDIDATE_TOPLEVEL_NOT_DECLARATIVE')
+            short = Path(name).stem
+            full = 'scripts.' + short
+            module = types.ModuleType(full)
+            module.__package__ = 'scripts'
+            module.__file__ = 'candidate/' + name
+            sys.modules[full] = module
+            setattr(scripts, short, module)
+            exec(compile(sources[name], module.__file__, 'exec'), module.__dict__)
+            modules[short] = module
+        source = COLD_SOURCES[3]
+        parsed = ast.parse(sources[source], filename='candidate/' + source)
+        functions = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'verify_complete_queue']
+        if len(functions) != 1 or functions[0].decorator_list:
+            raise UnsafeBook('COLD_CANDIDATE_COMPLETE_INSPECTOR_MISSING')
+        mutators = {'write', 'write_text', 'write_bytes', 'unlink', 'remove',
+                    'rename', 'replace', 'mkdir', 'rmdir', 'chmod', 'chown',
+                    'fsync', 'fsync_dir', 'quarantine', 'apply', 'run',
+                    'execute', 'system', 'Popen', 'check_call', 'check_output'}
+        if any(isinstance(node, ast.Call) and
+               getattr(node.func, 'attr', getattr(node.func, 'id', None))
+               in mutators for node in ast.walk(functions[0])):
+            raise UnsafeBook('COLD_CANDIDATE_COMPLETE_INSPECTOR_NOT_READONLY')
+        # No implementation copied or forked from the canonical inspector.
+        namespace = {'cold': modules['rc6_cold2_quarantine'], 're': re}
+        selected = ast.Module(body=functions, type_ignores=[])
+        exec(compile(ast.fix_missing_locations(selected),
+                     'candidate/' + source, 'exec'), namespace)
+        yield modules, namespace['verify_complete_queue']
+    finally:
+        for full, (previous, attribute) in replacements.items():
+            short = full.split('.')[-1]
+            if previous is None:
+                sys.modules.pop(full, None)
+            else:
+                sys.modules[full] = previous
+            if attribute is None:
+                try:
+                    delattr(scripts, short)
+                except AttributeError:
+                    pass
+            else:
+                setattr(scripts, short, attribute)
+
+
+def inspect_cold(root=COLD_ROOT, *, candidate_sha, candidate_tree):
+    """Strict pre-MERGE COLD evidence; never assert future host quiescence.
+
+    A real quiescence receipt for the prospective candidate cannot exist
+    before its merge/deploy.  We therefore reject a live archived-recovery
+    state that cannot be proven *now*, then demand the canonical post-merge
+    Deploy V2 quiescence and COLD2 gate again.  This is admission, not GO.
+    """
+    if (SHA40.fullmatch(str(candidate_sha)) is None or
+            SHA40.fullmatch(str(candidate_tree)) is None):
+        raise UnsafeBook('COLD_CANDIDATE_SHA_TREE_UNVERIFIED')
+    sources, bundle_sha = _read_candidate_cold_sources()
+    root = Path(root).absolute()
+    if root.is_symlink() or not root.is_dir():
+        raise UnsafeBook('COLD_ROOT_UNVERIFIED')
+    output = {'contract': COLD_PREADMISSION_CONTRACT,
+              'read_only': True, 'host_mutations': 0,
+              'candidate_sha': candidate_sha, 'candidate_tree': candidate_tree,
+              'candidate_sources_sha256': bundle_sha,
+              'original_archive': 'NO_VERIFICADO',
+              'failed_archive': 'NO_VERIFICADO',
+              'queue': 'NO_VERIFICADO',
+              'status': 'BLOCKED_COLD',
+              'reason': 'COLD_PREADMISSION_UNVERIFIED',
+              'deploy_approved': False}
+    with _candidate_cold_modules(sources) as (modules, verify_complete_queue):
+        original = modules['rc6_cold2_quarantine']
+        successor = modules['rc6_cold2_successor']
+        failed = modules['rc6_failed_cold_fix_forward']
+        shadow = root / 'data/paper_v17/artifacts/observer_v17.db/dynamic-shadow'
+        source = shadow / 'cold-audit'
+        deploy = root / 'data/deploy'
+        archive = deploy / ('rc6-failed-cold-' + failed.IDENT)
+        try:
+            for folder in (shadow, source, deploy, archive):
+                if folder.is_symlink() or not folder.is_dir():
+                    raise ValueError('COLD_PREADMISSION_DIRECTORY_UNVERIFIED')
+            old = original.verify_original_archive(root)
+            if old.get('old_cut_revoked') is not True:
+                raise ValueError('COLD_ORIGINAL_REVOCATION_NOT_PROVEN')
+            output['original_archive'] = 'PROVEN'
+            output['original_pack_sha256'] = old['pack_sha256']
+            output['original_manifest_sha256'] = old['manifest_sha256']
+            queue_path = source / 'queue.json'
+            if queue_path.is_symlink():
+                raise ValueError('COLD_QUEUE_ALIAS')
+            if queue_path.exists():
+                queue = original.envelope(queue_path, cold=True)
+                if queue.get('state') == 'COMPLETE':
+                    complete = verify_complete_queue(root)
+                    if (complete.get('state') != 'COMPLETE_UNTOUCHED' or
+                            complete.get('old_cut_revoked') is not True):
+                        raise ValueError('COLD_COMPLETE_QUEUE_NOT_PROVEN')
+                    output['queue'] = 'COMPLETE_PROVEN'
+                    output['queue_manifest_sha256'] = complete['manifest_sha256']
+                elif (queue.get('state') == 'FAILED' and
+                      queue.get('snapshot_id') != original.IDENT):
+                    latter = successor.inspect(root, hash_pack=True)
+                    if (latter.get('queue_failed') is not True or
+                            latter.get('pack_sha256') is None):
+                        raise ValueError('COLD_FAILED_SUCCESSOR_UNVERIFIED')
+                    output['queue'] = 'FAILED_SUCCESSOR_PROVEN'
+                    output['queue_manifest_sha256'] = latter['manifest_sha256']
+                    output['queue_pack_sha256'] = latter['pack_sha256']
+                else:
+                    raise ValueError('COLD_ACTIVE_QUEUE_UNSAFE')
+            else:
+                # Original failed queue was durably moved into the archive.
+                # A completed namespace may retain manifest/receipt pairs,
+                # but not a stray pack, alias, FAILED receipt or partial
+                # pair. No synthetic empty/IDLE queue is manufactured.
+                names = {item.name for item in source.iterdir()}
+                ids = {name[9:-5] for name in names if name.startswith('manifest-')}
+                expected = {name for ident in ids for name in
+                            ('manifest-' + ident + '.json',
+                             'receipt-' + ident + '.json')}
+                if (len(names) > 128 or names != expected or
+                        any(re.fullmatch('[a-f0-9]{32}', ident) is None
+                            for ident in ids)):
+                    raise ValueError('COLD_QUEUE_ABSENT_NAMESPACE_UNVERIFIED')
+                for ident in ids:
+                    manifest = original.envelope(
+                        source / ('manifest-' + ident + '.json'), cold=True)
+                    receipt = original.envelope(
+                        source / ('receipt-' + ident + '.json'), cold=True)
+                    if (manifest.get('snapshot_id') != ident or
+                            receipt.get('snapshot_id') != ident or
+                            receipt.get('state') != 'COMPLETE' or
+                            receipt.get('manifest_sha256') != original.digest(manifest)):
+                        raise ValueError('COLD_QUEUE_ABSENT_PAIR_UNVERIFIED')
+                output['queue'] = 'ABSENT_WITH_COMPLETE_PAIRS_VERIFIED'
+                output['completed_pairs'] = len(ids)
+            if failed.original_location(source, archive) != archive:
+                raise ValueError('COLD_FAILED_ARCHIVE_NOT_SEALED')
+            evidence = failed.checked(archive, shadow, archived_recovery=True,
+                                      quiescence=None)
+            # Independent prior receipt binds the archived original, its pack
+            # and the earlier exact candidate, not a guessed next candidate.
+            prior_receipt = failed.prior_archive_receipt(deploy, archive, evidence)
+            if SHA64.fullmatch(str(prior_receipt)) is None:
+                raise ValueError('COLD_PRIOR_ARCHIVE_RECEIPT_UNVERIFIED')
+            output['failed_archive'] = 'PROVEN'
+            output['failed_pack_sha256'] = evidence['pack_sha256']
+            output['failed_manifest_sha256'] = evidence['manifest_sha256']
+            output['prior_archive_receipt_sha256'] = prior_receipt
+            output['status'] = 'GREEN'
+            output['reason'] = 'NONE'
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            reason = str(exc)
+            output['reason'] = (reason if reason in COLD_PUBLIC_ERRORS else
+                                'COLD_PREADMISSION_EVIDENCE_UNVERIFIED')
+    return output
 
 
 def open_exposure_rows(c):
@@ -283,6 +550,10 @@ def main(argv=None):
     ap.add_argument('--as-of', help='ISO-8601 fixed time for tests, never required on host')
     ap.add_argument('--host-barrier', action='store_true',
                     help='Read but never alter root-owned deploy attempt barrier')
+    ap.add_argument('--cold-precheck', action='store_true',
+                    help='Strict COLD archive and queue proof before merge; no host writes')
+    ap.add_argument('--candidate-sha', help='Exact immutable GitHub candidate HEAD')
+    ap.add_argument('--candidate-tree', help='Exact immutable GitHub candidate tree')
     args = ap.parse_args(argv)
     try:
         _load_signed_candidate_ledger()
@@ -292,8 +563,16 @@ def main(argv=None):
             record = _read_barrier(LOCK_DIR)
             barrier = {'status': record['status'] if record else 'ABSENT'}
         result = inspect_book(args.db, as_of=args.as_of, barrier=barrier)
+        if args.cold_precheck:
+            cold = inspect_cold(candidate_sha=args.candidate_sha,
+                                candidate_tree=args.candidate_tree)
+            result['cold'] = cold
+            if cold['status'] != 'GREEN':
+                result['reasons'] = sorted(set(result['reasons'] + [cold['reason']]))
+                if result['status'] in {'FLAT_GREEN', 'ADMIN_CLOSE_REQUIRED'}:
+                    result['status'] = 'BLOCKED_COLD'
     except (UnsafeBook, sqlite3.Error, OSError, OverflowError, ImportError,
-            ValueError, TypeError) as exc:
+            ValueError, TypeError, SyntaxError) as exc:
         code = str(exc) if isinstance(exc, UnsafeBook) else 'BOOK_PROBE_' + type(exc).__name__
         result = {'contract': 'RC6_A205_PAPER_DEPLOY_PREFLIGHT_V1',
                   'read_only': True, 'status': 'BLOCKED_PROBE', 'reason': code}
@@ -303,3 +582,4 @@ def main(argv=None):
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

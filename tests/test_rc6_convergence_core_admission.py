@@ -207,7 +207,7 @@ def test_u13_child_crash_health_is_observable_without_blocking_exit_clock(tmp_pa
 
 
 def test_u03_real_worker_rollback_retains_pending_attempt_and_requires_real_post_recovery_samples(tmp_path,monkeypatch):
-    from tests.test_issue465_capability_cache import Harness,payload,missing_once,DAY
+    from tests.test_issue465_capability_cache import Harness,payload,missing_once,DAY,instrument
     starts=[DAY+timedelta(minutes=m) for m in (0,15,16,30,46,47)]
     def behavior(h,request):
         if h.cycle==0:return missing_once(h,request)
@@ -215,7 +215,14 @@ def test_u03_real_worker_rollback_retains_pending_attempt_and_requires_real_post
             h.at=DAY+timedelta(seconds=100)
             return payload(h.at)
         return None
-    h=Harness(tmp_path,monkeypatch,times=starts,behavior=behavior).run()
+    # The shared Harness predates exact PPI five-key provenance. Supply a
+    # synthetic native response key so this exercises the *real worker*
+    # rollback interlock, not the empty-catalog fail-closed shortcut.
+    native_key={"ticker":"GGAL","type":"ACCIONES","market":"BYMA",
+                "currency":"ARS","settlement":"A-24HS"}
+    h=Harness(tmp_path,monkeypatch,times=starts,behavior=behavior,
+              records=[instrument(raw=native_key)]).run()
+    assert h.calls, "the real worker must exercise the provider boundary"
     pending=json.loads(h.cuts[1]['states'][0]['detail'])['capability']
     assert pending['probe_started_at']==scalping._stamp(starts[1])
     assert pending['warmup_reset_required'] is True and pending['warmup_after'] is None
