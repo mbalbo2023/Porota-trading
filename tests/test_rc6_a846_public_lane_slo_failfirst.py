@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -93,11 +94,26 @@ def _public_service_candidates():
     result = []
     for path in (REPO / "systemd").glob("*.service"):
         content = path.read_text(encoding="utf-8")
-        if any("rc6_source_cycle_dispatch.py" in command and
-               "--stage public" in command.lower()
+        if any(_selects_stage(command, "PUBLIC")
                for command in _active_directives(content, "Service", "ExecStart")):
             result.append((path, content))
     return result
+
+
+def _selects_stage(command: str, stage: str) -> bool:
+    """Recognize one explicit dispatcher lane, never a substring or shell.
+
+    This fixture supports the canonical Python/script invocation and one selector;
+    unsupported systemd/shell expansions fail closed rather than being guessed.
+    """
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return False
+    if arguments[:2] != ["/usr/bin/python3",
+                         "/opt/porota-trading/scripts/rc6_source_cycle_dispatch.py"]:
+        return False
+    return arguments[2:] in (["--stage", stage], ["--stage=" + stage])
 
 
 def _active_directives(source: str, section: str, directive: str) -> list[str]:
@@ -153,9 +169,10 @@ def _public_quality_context(result: dict) -> bool:
         value = str(result.get(key) or "").strip().upper()
         if value.startswith(("PUBLIC_", "BYMA_")) and any(code in value for code in negative):
             return True
-    # Allow multiple reasonable reporting maps without mandating a key name.
-    # Only direct PUBLIC/BYMA entries, never arbitrary nested metadata.
-    for mapping in result.values():
+    # Only named source/stage reports are authoritative. An arbitrary
+    # metadata.PUBLIC or diagnostics.PUBLIC key is not provider evidence.
+    for field in ("source_quality", "provider_quality", "stages", "sources"):
+        mapping = result.get(field)
         if isinstance(mapping, dict):
             for key, value in mapping.items():
                 if str(key).upper() in {"PUBLIC", "BYMA"} and negative_leaf(value):
@@ -202,7 +219,7 @@ def test_public_has_one_independent_minute_timer_not_iol_oneshot():
     # If the legacy one-shot still runs the combined dispatcher, adding a
     # second timer would create two PUBLIC writers, not solve cadence.
     legacy_exec = _active_directives(legacy, "Service", "ExecStart")
-    assert len(legacy_exec) == 1 and "--stage complement" in legacy_exec[0].lower(), (
+    assert len(legacy_exec) == 1 and _selects_stage(legacy_exec[0], "COMPLEMENT"), (
         "LEGACY_IOL_UNIT_STILL_RUNS_COMBINED_PUBLIC_WRITER")
     assert all("rc6_public_source_capture.py" not in command for command in legacy_exec)
 
@@ -214,7 +231,7 @@ def test_public_unit_is_not_conditioned_on_iol_oauth_bootstrap():
     _, service = candidates[0]
     assert not any("iol_mcp_oauth_bootstrap.json" in item for item in
                    _active_directives(service, "Unit", "ConditionPathExists"))
-    assert any("--stage public" in item.lower() for item in
+    assert any(_selects_stage(item, "PUBLIC") for item in
                _active_directives(service, "Service", "ExecStart"))
 
 
@@ -364,6 +381,43 @@ def test_public_ok_with_nested_iol_auth_failure_cannot_claim_public_bad_quality(
               "stages": {"public": {"status": "OK",
                                      "metadata": {"iol_oauth": "UNAVAILABLE"}}}}
     assert not _public_quality_context(forged)
+
+
+@pytest.mark.parametrize("selector, expected", [
+    ("--stage PUBLICITY", False),
+    ("--stage=PUBLICITY", False),
+    ("--stage PUBLIC --stage COMPLEMENT", False),
+    ("--STAGE PUBLIC", False),
+    ("--stage PUBLIC", True),
+    ("--stage=PUBLIC", True),
+])
+def test_public_stage_suffix_cannot_forge_an_independent_unit(tmp_path, monkeypatch, selector, expected):
+    """A substring is not the PUBLIC lane accepted by the dispatcher CLI."""
+    units = tmp_path / "systemd"
+    units.mkdir()
+    (units / "forged.service").write_text(
+        "[Service]\nExecStart=/usr/bin/python3 "
+        "/opt/porota-trading/scripts/rc6_source_cycle_dispatch.py " + selector + "\n")
+    monkeypatch.setattr(__import__(__name__), "REPO", tmp_path)
+    assert bool(_public_service_candidates()) is expected
+
+
+def test_echo_of_dispatcher_command_cannot_forge_public_unit(tmp_path, monkeypatch):
+    """A printed Python script name is not an executable PUBLIC collector."""
+    units = tmp_path / "systemd"
+    units.mkdir()
+    (units / "forged.service").write_text(
+        "[Service]\nExecStart=/bin/echo "
+        "/opt/porota-trading/scripts/rc6_source_cycle_dispatch.py --stage PUBLIC\n")
+    monkeypatch.setattr(__import__(__name__), "REPO", tmp_path)
+    assert _public_service_candidates() == []
+
+
+@pytest.mark.parametrize("container", ["metadata", "diagnostics"])
+def test_non_authoritative_public_quality_cannot_certify_source_failure(container):
+    """An arbitrary PUBLIC key is not a provider-native quality report."""
+    assert not _public_quality_context({"status": "COMPLETE",
+                                        container: {"PUBLIC": "UNAVAILABLE"}})
 
 
 def test_multiple_active_execstart_or_pre_post_cannot_duplicate_public(tmp_path, monkeypatch):
