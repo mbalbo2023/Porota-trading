@@ -323,6 +323,20 @@ def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, 
 
 
 
+class _OwnedPaperConnection(sqlite3.Connection):
+    """A store-created context owns its lifetime as well as its transaction.
+
+    Borrowed callers must use the connection directly, not enter its context.
+    Keep SQLite's native commit/rollback and exception behavior before closing.
+    """
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
@@ -342,7 +356,7 @@ class PaperStore:
                 mark_new_database(c)
 
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=20)
+        conn = sqlite3.connect(self.path, timeout=20, factory=_OwnedPaperConnection)
         conn.row_factory = sqlite3.Row
         from rc6_signal_contracts import register_exact_time
         register_exact_time(conn)
