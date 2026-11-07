@@ -143,19 +143,19 @@ def _catalog_primary_identity(conn, target):
                 "settlement", "settlement_source"}
     if not required <= columns:
         return False, "PPI_PRIMARY_SOURCE_NOT_ATTESTED"
-    # Mirror the reviewed A595 product pre-GET rule. A complementary-only
-    # IOL/BYMA sibling MUST NOT veto a unique PPI identity, but a second PPI
-    # sibling (even stale) does veto the 3-field SDK request. REQUEST_CANDIDATE
-    # is selection authority, NOT independent native source PIT attestation.
+    # A REQUEST_CANDIDATE is only a requested lookup, never provider-native
+    # 5-key evidence. Mirror R4 Book1: PPI_FIELD alone may attest PPI identity.
+    # Complementary/REQUEST siblings do not veto the uniquely native identity;
+    # multiple PPI_FIELD siblings (even stale) DO veto ambiguous SDK lookup.
     rows = conn.execute("SELECT ticker,instrument_type,market,currency,settlement,settlement_source "
         "FROM financial_instrument_catalog WHERE ticker=? AND instrument_type=? "
-        "AND settlement=? AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE') "
+        "AND settlement=? AND settlement_source='PPI_FIELD' "
         "LIMIT 3", (target[0], target[1], target[4])).fetchall()
     if not rows:
         return False, "PPI_PRIMARY_SOURCE_NOT_ATTESTED"
     if len(rows) != 1 or tuple(rows[0][:5]) != target:
         return False, "PPI_PRIMARY_FIVE_KEY_NOT_UNIQUE"
-    if rows[0][5] not in {"PPI_FIELD", "REQUEST_CANDIDATE"}:
+    if rows[0][5] != "PPI_FIELD":
         return False, "PPI_PRIMARY_SOURCE_NOT_ATTESTED"
     return True, "PPI_PRIMARY_FIVE_KEY_UNIQUE"
 

@@ -29,7 +29,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "c170531ae94f6fe7457a07d7275e758ed77377a8"
+ENGINE_GIT_BLOB = "feebe676c87a381e35b87bebd1b7bac738f5fdab"
 # R4 COM19031 source snapshot used ONLY in A796 OFFHOST contract CI.
 # This is not an observed deployed SHA or image attestation.
 PRODUCT_SHA = "e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b"

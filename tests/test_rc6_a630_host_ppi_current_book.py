@@ -605,7 +605,7 @@ class TestA630(unittest.TestCase):
             forged = {**result, **edit}
             self.assertFalse(verify_receipt(forged, TARGET), edit)
 
-    def _catalog_db(self, target, *, source="REQUEST_CANDIDATE",
+    def _catalog_db(self, target, *, source="PPI_FIELD",
                     extra=None, extra_source=None):
         temp = tempfile.TemporaryDirectory()
         path = Path(temp.name) / "observer_v17.db"
@@ -661,6 +661,29 @@ class TestA630(unittest.TestCase):
         try:
             result = host_preflight("1120", path, enforce_mount=False)
             self.assertEqual(result["state"], "IDENTITY_ONLY_NO_GET")
+        finally:
+            temp.cleanup()
+
+    def test_host_request_candidate_only_is_not_native_ppi_identity(self):
+        temp, path = self._catalog_db(TARGET, source="REQUEST_CANDIDATE")
+        try:
+            result = host_preflight("1120", path, enforce_mount=False)
+            self.assertEqual(result["state"], "NO_VERIFICADO")
+            self.assertEqual(result["reason"], "PPI_PRIMARY_SOURCE_NOT_ATTESTED")
+            self.assertIsNone(result["target"])
+            self.assertEqual(result["ppi_gets"], 0)
+        finally:
+            temp.cleanup()
+
+    def test_host_request_candidate_sibling_cannot_veto_unique_native_ppi_field(self):
+        extra = ("AL30", "BONOS", "BYMA", "USD", "A-24HS")
+        temp, path = self._catalog_db(TARGET, source="PPI_FIELD", extra=extra,
+                                      extra_source="REQUEST_CANDIDATE")
+        try:
+            result = host_preflight("1120", path, enforce_mount=False)
+            self.assertEqual(result["state"], "IDENTITY_ONLY_NO_GET")
+            self.assertEqual(result["target"], list(TARGET))
+            self.assertEqual(result["ppi_gets"], 0)
         finally:
             temp.cleanup()
 
