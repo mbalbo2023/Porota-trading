@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -154,6 +155,34 @@ class TestPpiBookOffhostRetention(unittest.TestCase):
             self.assertEqual(unsafe_root["reason"], "PRIVATE_OFFHOST_COPY_REQUIRED")
         finally:
             self.root.chmod(0o700)
+
+    def test_runner_root_symlink_ancestor_cannot_escape_to_external_copy(self):
+        """An alias above runner_root must not authorize reading outside data."""
+        self.record(NOW - timedelta(minutes=3))
+        with tempfile.TemporaryDirectory() as external_dir:
+            outside_root = Path(external_dir) / "private"
+            outside_root.mkdir(mode=0o700)
+            outside_market = outside_root / "market"
+            outside_market.mkdir(mode=0o700)
+            outside_path = outside_market / ppi.PIT_JOURNAL_FILENAME
+            outside_path.write_bytes(self.path.read_bytes())
+            outside_path.chmod(0o600)
+            outside_digest = hashlib.sha256(outside_path.read_bytes()).hexdigest()
+
+            tunnel = self.root / "escape-ancestor"
+            tunnel.symlink_to(Path(external_dir), target_is_directory=True)
+            aliased_root = tunnel / "private"  # final component is NOT a symlink
+            aliased_path = aliased_root / "market" / ppi.PIT_JOURNAL_FILENAME
+            self.assertFalse(aliased_root.is_symlink())
+            self.assertFalse(aliased_path.is_symlink())
+            report = retention.inventory_native_book_retention(
+                aliased_path, runner_root=aliased_root, as_of_utc=NOW.isoformat())
+            self.assertEqual(report["state"], "HOLD")
+            self.assertEqual(report["reason"], "PRIVATE_OFFHOST_COPY_REQUIRED")
+            self.assertFalse(report["host_purge_allowed"])
+            self.assertEqual(report["physical_host_delete_count"], 0)
+            self.assertEqual(hashlib.sha256(outside_path.read_bytes()).hexdigest(),
+                             outside_digest)
 
     def test_swapped_journal_between_chain_and_digest_is_rejected(self):
         self.record(NOW - timedelta(minutes=3))

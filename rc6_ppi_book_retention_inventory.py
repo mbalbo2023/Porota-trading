@@ -43,24 +43,25 @@ def _hold(reason: str) -> dict[str, Any]:
 
 def _private_copy_under_root(path: Path, root: Path) -> bool:
     """Reject any production path, aliases or root-wide filesystem inspection."""
-    if (not path.is_absolute() or not root.is_absolute() or root.is_symlink()
-            or not root.is_dir() or path.is_symlink() or path == root
+    if (not path.is_absolute() or not root.is_absolute() or path == root
             or root == Path("/") or root.is_relative_to(Path("/opt/porota-trading"))
             or path.is_relative_to(Path("/opt/porota-trading"))):
         return False
     try:
+        # O_NOFOLLOW protects the final file, not directory aliases. Check
+        # every lexical ancestor, including those *above* runner_root:
+        # resolving path and root together would otherwise bless an escape.
+        if any(component.is_symlink()
+               for candidate in (root, path)
+               for component in (candidate, *candidate.parents)):
+            return False
+        if not root.is_dir():
+            return False
         if root.stat().st_mode & 0o077:
             # Only a dedicated private runner directory is an acceptable root.
             return False
         if not path.resolve(strict=True).is_relative_to(root.resolve(strict=True)):
             return False
-        # O_NOFOLLOW protects the final file. Also forbid aliases through any
-        # parent component between the trusted runner root and the file.
-        for parent in path.parents:
-            if parent == root:
-                break
-            if parent.is_symlink():
-                return False
         return True
     except (OSError, RuntimeError):
         return False
