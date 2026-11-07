@@ -249,11 +249,18 @@ def _fresh_store(target, profile, parent_fd):
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
             os.fsync(file_fd)
+            _check_parent(target, parent_fd)
+            _publish_no_replace(stage_fd, target.name, parent_fd, target.name)
+            # Pin the fsynced inode across rename: a late source-name swap must
+            # not report successful publication. Preserve mismatched evidence.
+            # This detects this boundary only, not hostile VFS/sidecar writes.
+            published = os.stat(target.name, dir_fd=parent_fd, follow_symlinks=False)
+            if (not stat.S_ISREG(published.st_mode) or published.st_nlink != 1
+                    or (info.st_dev, info.st_ino) != (published.st_dev, published.st_ino)):
+                raise ValueError('PAPER_V17_PUBLICATION_SOURCE_CHANGED')
+            os.fsync(parent_fd)
         finally:
             os.close(file_fd)
-        _check_parent(target, parent_fd)
-        _publish_no_replace(stage_fd, target.name, parent_fd, target.name)
-        os.fsync(parent_fd)
         _check_parent(target, parent_fd)
         # Only remove the now-empty private directory with verified identity.
         current = os.stat(stage_name, dir_fd=parent_fd, follow_symlinks=False)

@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 import stat
+import subprocess
+import sys
 
 import pytest
 
@@ -47,6 +49,32 @@ def test_fsync_failure_never_returns_store_and_preserves_restart_contract(tmp_pa
         workspace.runtime_store(target)
     assert target.exists() == (boundary == 'parent_directory')
     monkeypatch.setattr(os, 'fsync', original)
+    restarted = workspace.runtime_store(target)
+    assert Path(restarted.path) == target
+    assert workspace.read_identity(target)['initial_capital_json'] == workspace.capital_profile()
+
+
+@pytest.mark.parametrize('boundary', ['source_file', 'parent_directory'])
+def test_process_exit_at_publication_boundary_is_restartable(tmp_path, boundary):
+    """Process-crash recovery only; not a power-loss/filesystem durability proof."""
+    target = tmp_path / 'paper.db'
+    program = '''
+import os, stat, sys
+import cg_paper_workspace as workspace
+original = os.fsync
+def exit_at_boundary(fd):
+    is_directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+    if is_directory == (sys.argv[2] == 'parent_directory'):
+        os._exit(73)
+    original(fd)
+os.fsync = exit_at_boundary
+workspace.runtime_store(sys.argv[1])
+'''
+    process = subprocess.run([sys.executable, '-c', program, str(target), boundary],
+                             cwd=Path(__file__).resolve().parents[1],
+                             capture_output=True, text=True, timeout=15)
+    assert process.returncode == 73, process.stderr
+    assert target.exists() == (boundary == 'parent_directory')
     restarted = workspace.runtime_store(target)
     assert Path(restarted.path) == target
     assert workspace.read_identity(target)['initial_capital_json'] == workspace.capital_profile()
