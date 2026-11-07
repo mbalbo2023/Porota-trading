@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from contextlib import redirect_stdout
@@ -13,6 +14,7 @@ from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import textwrap
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -64,6 +66,194 @@ class A410JoinContracts(unittest.TestCase):
 
     def inspect(self):
         return probe.inspect_files(self.catalog_path, self.byma_path, now=self.now)
+
+    def _runner_sanitize(self, untrusted):
+        """Execute the actual A410 workflow sanitizer without any host job."""
+        workflow = (PATH.parents[1] / ".github/workflows/rc6-a410-byma-catalog-join-readonly.yml").read_text(
+            encoding="utf-8")
+        start = '          REMOTE_RC="$remote_rc" python3 - <<\'PY\'\n'
+        end = '\n          PY\n'
+        self.assertEqual(workflow.count(start), 1)
+        snippet = textwrap.dedent(workflow.split(start, 1)[1].split(end, 1)[0])
+        evidence = self.folder / "evidence"
+        evidence.mkdir(exist_ok=True)
+        (evidence / ".raw.json").write_text(json.dumps(untrusted), encoding="utf-8")
+        completed = subprocess.run([sys.executable, "-B", "-c", snippet],
+                                   cwd=self.folder,
+                                   env=dict(os.environ, REMOTE_RC="0", PYTHONPATH=str(PATH.parents[1])),
+                                   capture_output=True, text=True, timeout=12, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("PRIVATE_PROVIDER", completed.stdout)
+        return json.loads((evidence / "a410_byma_catalog_join.json").read_text(encoding="utf-8"))
+
+    def test_a503_sanitizer_rejects_nested_private_code_and_boolean_count(self):
+        self.write()
+        clean = self.inspect()
+        self.assertIn("normalized_field_profile", clean)
+        from copy import deepcopy
+        hostile = deepcopy(clean)
+        hostile["normalized_field_profile"]["currency_codes"]["PRIVATE_PROVIDER_CURRENCY"] = 1
+        actual = self._runner_sanitize(hostile)
+        self.assertEqual(actual["diagnostic_status"], "NO_VERIFICADO")
+        self.assertEqual(actual["reason"], "PROBE_FAILED")
+        self.assertNotIn("PRIVATE_PROVIDER_CURRENCY", json.dumps(actual))
+        hostile = deepcopy(clean)
+        hostile["normalized_field_profile"]["currency_codes"]["ARS"] = True
+        actual = self._runner_sanitize(hostile)
+        self.assertEqual(actual["diagnostic_status"], "NO_VERIFICADO")
+        self.assertFalse(actual["normalized_field_profile"]["currency_codes"]["ARS"])
+
+    def test_a503_host_diagnostic_requires_exact_manual_owner_and_sha(self):
+        workflow = (PATH.parents[1] / ".github/workflows/rc6-a410-byma-catalog-join-readonly.yml").read_text(
+            encoding="utf-8")
+        block = workflow.split("  host_join:\n", 1)[1].split("    runs-on:", 1)[0]
+        found = re.search(r"if: \${{ (.*?) }}", block)
+        self.assertIsNotNone(found)
+        gate = found.group(1)
+        expected = ("github.event_name == 'workflow_dispatch' && "
+                    "github.ref == 'refs/heads/main' && "
+                    "github.actor == 'mbalbo2023' && "
+                    "inputs.enable_host_readonly == 'YES' && "
+                    "inputs.expected_sha == github.sha")
+        self.assertEqual(gate, expected)
+        self.assertIn("  workflow_dispatch:\n", workflow)
+        self.assertIn("      enable_host_readonly:\n", workflow)
+        self.assertIn("      expected_sha:\n", workflow)
+        self.assertIn("        default: 'NO'", workflow)
+        self.assertIn("        required: true", workflow)
+
+        cases = (
+            ("workflow_dispatch", "refs/heads/main", "mbalbo2023", "YES", "a" * 40, "a" * 40, True),
+            ("push", "refs/heads/main", "mbalbo2023", "YES", "a" * 40, "a" * 40, False),
+            ("pull_request", "refs/heads/main", "mbalbo2023", "YES", "a" * 40, "a" * 40, False),
+            ("workflow_dispatch", "refs/heads/feature", "mbalbo2023", "YES", "a" * 40, "a" * 40, False),
+            ("workflow_dispatch", "refs/heads/main", "another-user", "YES", "a" * 40, "a" * 40, False),
+            ("workflow_dispatch", "refs/heads/main", "mbalbo2023", "NO", "a" * 40, "a" * 40, False),
+            ("workflow_dispatch", "refs/heads/main", "mbalbo2023", "YES", "b" * 40, "a" * 40, False),
+            ("workflow_dispatch", "refs/heads/main", "mbalbo2023", "", "a" * 40, "a" * 40, False),
+        )
+        for event, ref, actor, enable, requested, actual, allowed in cases:
+            with self.subTest(event=event, ref=ref, actor=actor, enable=enable,
+                              requested=requested, actual=actual):
+                context = {"github.event_name": event, "github.ref": ref,
+                           "github.actor": actor, "inputs.enable_host_readonly": enable,
+                           "inputs.expected_sha": requested, "github.sha": actual}
+                expression = gate
+                for key, value in context.items():
+                    expression = expression.replace(key, repr(value))
+                expression = expression.replace("&&", " and ")
+                self.assertEqual(eval(expression, {"__builtins__": {}}, {}), allowed)
+
+    def test_a503_sanitized_histograms_never_publish_provider_values(self):
+        rows = [
+            byma_record(currency="ARS", term="T1"),
+            byma_record(currency="EXT", term="T1", settlement_code="T+1"),
+            byma_record(currency=" ", term="", settlement_code="03"),
+            byma_record(currency=1234, term=1234),
+            byma_record(currency={"ccy": "PRIVATE_RAW_CURRENCY"},
+                        term=["PRIVATE_RAW_SETTLEMENT"]),
+            byma_record(currency="UNSEENPROVIDERSECRET", term="UNSEENSETTLESECRET"),
+            byma_record(currency=9.3, term="A-24HS"),
+            byma_record(currency=False, term=None, settlement_code="INMEDIATA"),
+            byma_record(currency=None, term="T0"),
+            byma_record(currency="USD_CCL", term="T1", settlement_code="T0"),
+            byma_record(currency="", term=" ", settlement_code=""),
+            byma_record(currency="Z9M", term="A1"),
+            "PRIVATE_RAW_NON_OBJECT",
+        ]
+        self.byma["sources"][0]["records"] = rows
+        self.write()
+        receipt = self.inspect()
+        self.assertEqual(receipt["schema"], "rc6.a410.byma-catalog-join-readonly.v2")
+        self.assertEqual(receipt["diagnostic_status"], "JOIN_COUNTS_ONLY")
+        self.assertEqual(receipt["counts"]["byma_rows"], 13)
+        self.assertEqual(receipt["reject_counts"]["ROW_NOT_OBJECT"], 1)
+        self.assertEqual(receipt["reject_counts"]["SETTLEMENT_CONFLICT"], 1)
+        profile = receipt["normalized_field_profile"]
+        self.assertEqual(profile["rows_profiled"], 12)
+        self.assertEqual(profile["raw_provider_aliases"],
+                         "NOT_PRESERVED_IN_NORMALIZED_CACHE")
+        self.assertEqual(set(profile["value_types"]), set(probe.PROFILE_FIELDS))
+        for labels in profile["value_types"].values():
+            self.assertEqual(set(labels), set(probe.VALUE_TYPES))
+            self.assertEqual(sum(labels.values()), 12)
+        self.assertEqual(profile["value_types"]["settlement"]["ABSENT"], 12)
+        self.assertEqual(profile["value_types"]["currency"]["OBJECT"], 1)
+        self.assertEqual(profile["value_types"]["currency"]["BOOLEAN"], 1)
+        self.assertEqual(profile["currency_codes"]["ARS"], 1)
+        self.assertEqual(profile["currency_codes"]["EXT_UNMAPPED"], 1)
+        self.assertEqual(profile["currency_codes"]["MISSING"], 3)
+        self.assertEqual(profile["currency_codes"]["NONSTRING"], 4)
+        self.assertEqual(profile["currency_codes"]["OTHER_ALPHA"], 1)
+        self.assertEqual(profile["currency_codes"]["OTHER_TEXT"], 1)
+        self.assertEqual(profile["currency_codes"]["USD_CCL"], 1)
+        self.assertEqual(sum(profile["currency_codes"].values()), 12)
+        for key, expected in {
+                "T1_ALIAS": 2, "OTHER_NUMERIC": 1, "NONSTRING": 2,
+                "OTHER_ALPHA": 1, "OTHER_TEXT": 1,
+                "A_24HS_CANONICAL": 1, "INMEDIATA_CANONICAL": 1,
+                "T0_ALIAS": 1, "ALIAS_CONFLICT": 1, "MISSING": 1,
+        }.items():
+            self.assertEqual(profile["settlement_codes"][key], expected)
+        self.assertEqual(sum(profile["settlement_codes"].values()), 12)
+        serialized = json.dumps(receipt)
+        for sensitive in (PRIVATE, "PRIVATE_PRICE_DO_NOT_EXPORT", "03",
+                          "UNSEENPROVIDERSECRET", "UNSEENSETTLESECRET",
+                          "PRIVATE_RAW_CURRENCY", "PRIVATE_RAW_SETTLEMENT",
+                          "PRIVATE_RAW_NON_OBJECT", "Z9M", "A1"):
+            self.assertNotIn(sensitive, serialized)
+        self.assertEqual(receipt["market_readiness"], "NO_VERIFICADO")
+        self.assertFalse(receipt["source_contract_ready"])
+        self.assertFalse(receipt["causal_pit_verified"])
+
+    def test_a503_probe_failed_profile_is_zero_and_private_schema_absent(self):
+        self.byma["schema"] = "PRIVATE_MALICIOUS_PROVIDER_SCHEMA"
+        self.write()
+        receipt = self.inspect()
+        self.assertEqual(receipt["diagnostic_status"], "NO_VERIFICADO")
+        profile = receipt["normalized_field_profile"]
+        self.assertEqual(profile["rows_profiled"], 0)
+        for labels in profile["value_types"].values():
+            self.assertFalse(any(labels.values()))
+        self.assertFalse(any(profile["currency_codes"].values()))
+        self.assertFalse(any(profile["settlement_codes"].values()))
+        self.assertNotIn("PRIVATE_MALICIOUS_PROVIDER_SCHEMA", json.dumps(receipt))
+
+    def test_a503_actual_runner_sanitizer_accepts_synthetic_valid_profile(self):
+        self.write()
+        receipt = self.inspect()
+        sanitized = self._runner_sanitize(receipt)
+        self.assertEqual(sanitized, receipt)
+        self.assertEqual(sanitized["normalized_field_profile"]["rows_profiled"], 1)
+        self.assertFalse(sanitized["source_contract_ready"])
+
+    def test_a503_sanitizer_rejects_every_poisoned_profile_dimension(self):
+        from copy import deepcopy
+        self.write()
+        clean = self.inspect()
+        mutations = (
+            lambda item: item["normalized_field_profile"]["currency_codes"].update(
+                {"PRIVATE_PROVIDER_CURRENCY": 1}),
+            lambda item: item["normalized_field_profile"]["settlement_codes"].update(
+                {"T1_ALIAS": False}),
+            lambda item: item["normalized_field_profile"]["currency_codes"].update(
+                {"ARS": 0}),
+            lambda item: item["normalized_field_profile"].update(
+                {"raw_provider_aliases": "PRIVATE_PROVIDER_FIELD"}),
+            lambda item: item["normalized_field_profile"]["value_types"]["term"].update(
+                {"PRIVATE_PROVIDER_TYPE": 1}),
+            lambda item: item["normalized_field_profile"].update({"rows_profiled": 2}),
+            lambda item: item.update({"source_contract_ready": True}),
+        )
+        for number, mutation in enumerate(mutations):
+            with self.subTest(case=number):
+                hostile = deepcopy(clean)
+                mutation(hostile)
+                sanitized = self._runner_sanitize(hostile)
+                self.assertEqual(sanitized["diagnostic_status"], "NO_VERIFICADO")
+                self.assertEqual(sanitized["reason"], "PROBE_FAILED")
+                self.assertEqual(sanitized["normalized_field_profile"]["rows_profiled"], 0)
+                self.assertNotIn("PRIVATE_PROVIDER", json.dumps(sanitized))
 
     def test_alias_match_is_five_key_and_never_ready(self):
         self.byma["captured_at"] = "PRIVATE_RECEIPT_TIMESTAMP"
@@ -383,14 +573,17 @@ class A410JoinContracts(unittest.TestCase):
         self.assertEqual(report["market_readiness"], "NO_VERIFICADO")
         self.assertNotIn(PRIVATE, json.dumps(report))
 
-    def test_host_action_stays_on_main_and_never_on_pr(self):
+    def test_host_action_requires_manual_main_owner_intent(self):
         workflow = (PATH.parents[1] / ".github/workflows/rc6-a410-byma-catalog-join-readonly.yml").read_text(
             encoding="utf-8")
-        self.assertIn("if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'", workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
+        self.assertIn("github.actor == 'mbalbo2023'", workflow)
+        self.assertIn("inputs.enable_host_readonly == 'YES'", workflow)
+        self.assertIn("inputs.expected_sha == github.sha", workflow)
         self.assertIn("'sudo -n timeout 24 python3 -B - host-probe'", workflow)
         self.assertIn("retention-days: 14", workflow)
         self.assertIn("market_readiness", workflow)
-        self.assertNotIn("workflow_dispatch:\n    inputs:", workflow)
+        self.assertIn("workflow_dispatch:\n    inputs:", workflow)
 
 
 if __name__ == "__main__":
