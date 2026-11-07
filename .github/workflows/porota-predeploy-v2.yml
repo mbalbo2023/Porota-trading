@@ -760,10 +760,45 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set +e
+          set -Eeuo pipefail
           # Containers created above have exact-ID/name EXIT traps or --rm.
           # An image ancestry match cannot authorize stopping another app's
           # container, even on a nominally ephemeral runner.
-          docker image rm "$IMAGE" >/dev/null 2>&1 || true
+          # RC6_A979_OWNED_IMAGE_BEGIN
+          rc6_image_state=WARN
+          rc6_image_reason=IMAGE_IDENTITY_UNVERIFIED
+          if [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ && "$IMAGE" == "porota-predeploy-v2:$CANDIDATE_SHA" ]]; then
+            if rc6_image_receipt="$(docker image inspect --format '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}' "$IMAGE" 2>/dev/null)"; then
+              IFS='|' read -r rc6_image_id rc6_label_commit rc6_label_scope <<< "$rc6_image_receipt"
+              if [[ "$rc6_image_id" =~ ^sha256:[0-9a-f]{64}$ && "$rc6_label_commit" == "$CANDIDATE_SHA" && "$rc6_label_scope" == v2 ]]; then
+                # Read-only, ID-filtered inventory. Any container reference,
+                # including an unrelated app's, forbids even untagging.
+                if rc6_refs="$(docker container ls --all --quiet --filter "ancestor=$rc6_image_id" 2>/dev/null)"; then
+                  if [[ -z "$rc6_refs" ]]; then
+                    if rc6_image_recheck="$(docker image inspect --format '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}' "$IMAGE" 2>/dev/null)" && [[ "$rc6_image_recheck" == "$rc6_image_receipt" ]]; then
+                      if docker image rm "$IMAGE" >/dev/null 2>&1; then
+                        rc6_image_state=GREEN
+                        rc6_image_reason=OWNED_UNUSED_IMAGE_REMOVED
+                      else
+                        rc6_image_reason=IMAGE_DELETE_FAILED
+                      fi
+                    else
+                      rc6_image_reason=IMAGE_CHANGED_DURING_CLEANUP
+                    fi
+                  else
+                    rc6_image_reason=IMAGE_REFERENCED_BY_CONTAINER
+                  fi
+                else
+                  rc6_image_reason=CONTAINER_REFERENCES_UNVERIFIED
+                fi
+              fi
+            fi
+          fi
+          echo "POROTA_PREDEPLOY_IMAGE_CLEANUP=$rc6_image_state|reason=$rc6_image_reason"
+          # RC6_A979_OWNED_IMAGE_END
           rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
+          if [[ "$rc6_image_state" != GREEN ]]; then
+            echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=WARN|image_cleanup_unverified'
+            exit 79
+          fi
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

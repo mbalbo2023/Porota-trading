@@ -32,6 +32,8 @@ def test_predeploy_cleanup_never_enumerates_containers_by_shared_image() -> None
 def test_predeploy_cleanup_retains_only_no_force_candidate_tag_cleanup() -> None:
     cleanup = _predeploy_cleanup()
     assert 'docker image rm "$IMAGE"' in cleanup
+    assert 'if [[ "$rc6_image_state" != GREEN ]]; then' in cleanup
+    assert "echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=WARN|image_cleanup_unverified'\n  exit 79" in cleanup
     assert "docker image rm -f" not in cleanup
     assert "docker system prune" not in cleanup
     assert "docker image prune" not in cleanup
@@ -55,7 +57,7 @@ def _exercise_runner_docker_cleanup(tmp_path: Path, case: str) -> tuple[int, str
         'if [[ "$1 $2" == "image inspect" ]]; then\n'
         '  if [[ "$RC6_FAKE_CASE" == "inspect_failure" ]]; then exit 7; fi\n'
         '  case "$RC6_FAKE_CASE" in\n'
-        '    foreign_label) echo "sha256:$(printf x%.0s {1..64})|foreign|v2";;\n'
+        '    foreign_label) echo "sha256:$(printf a%.0s {1..64})|foreign|v2";;\n'
         '    *) echo "sha256:$(printf a%.0s {1..64})|0123456789012345678901234567890123456789|v2";;\n'
         '  esac\n'
         '  exit 0\n'
@@ -89,7 +91,9 @@ def test_predeploy_cleanup_never_untags_foreign_or_shared_image(tmp_path: Path) 
         case_dir = tmp_path / case
         case_dir.mkdir()
         code, stdout, calls, foreign_alive = _exercise_runner_docker_cleanup(case_dir, case)
-        assert code != 0
+        # The isolated snippet reports WARN; the whole workflow then exits 79
+        # after its separate fixed-path /tmp cleanup, checked structurally above.
+        assert code == 0
         assert "POROTA_PREDEPLOY_IMAGE_CLEANUP=WARN" in stdout
         assert not any("image rm" in x or x.startswith("rm ") for x in calls)
         assert foreign_alive
@@ -97,7 +101,7 @@ def test_predeploy_cleanup_never_untags_foreign_or_shared_image(tmp_path: Path) 
 
 def test_predeploy_cleanup_reports_failed_image_removal_truthfully(tmp_path: Path) -> None:
     code, stdout, calls, _ = _exercise_runner_docker_cleanup(tmp_path, "rm_failure")
-    assert code != 0
+    assert code == 0
     assert "POROTA_PREDEPLOY_IMAGE_CLEANUP=WARN" in stdout
     assert sum("image rm" in x for x in calls) == 1
 
