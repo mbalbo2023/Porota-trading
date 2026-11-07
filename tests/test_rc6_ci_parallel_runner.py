@@ -118,6 +118,35 @@ class TestParallelProofRunner(unittest.TestCase):
         self.assertNotIn("PRIVATE_SECRET_MARKER", str(failure.exception))
         self.assertIsInstance(failure.exception.diagnostic, dict)
 
+    def test_large_stdout_stderr_streams_remain_bounded_without_deadlock(self):
+        script = (
+            "import sys\n"
+            "sys.stdout.write('X' * 4_000_000 + 'STDOUT_END')\n"
+            "sys.stderr.write('Y' * 4_000_000 + 'STDERR_END')\n"
+            "sys.stdout.flush(); sys.stderr.flush()\n"
+        )
+        outcome = runner._invoke([sys.executable, "-c", script], cwd=REPO,
+                                 env=os.environ.copy(), timeout=8)
+        self.assertEqual(outcome.returncode, 0)
+        self.assertLessEqual(len(outcome.stdout.encode()), runner.OUTPUT_TAIL_LIMIT)
+        self.assertLessEqual(len(outcome.stderr.encode()), runner.OUTPUT_TAIL_LIMIT)
+        self.assertTrue(outcome.stdout.endswith("STDOUT_END"))
+        self.assertTrue(outcome.stderr.endswith("STDERR_END"))
+
+    def test_timeout_flood_keeps_trace_input_bounded(self):
+        script = "import sys,time; sys.stderr.write('SECRET'*700_000); sys.stderr.flush(); time.sleep(60)"
+        samples = []
+        original_sanitize = runner._sanitized_timeout_trace
+        def inspect_tail(raw):
+            samples.append(len(raw if isinstance(raw, bytes) else raw.encode()))
+            return original_sanitize(raw)
+        with patch.object(runner, "_sanitized_timeout_trace", side_effect=inspect_tail):
+            with self.assertRaises(runner.ParallelRunnerRed):
+                runner._invoke([sys.executable, "-c", script], cwd=REPO,
+                               env=os.environ.copy(), timeout=0.4)
+        self.assertEqual(len(samples), 1)
+        self.assertLessEqual(samples[0], runner.OUTPUT_TAIL_LIMIT)
+
     def test_cli_receipt_sanitizes_faulthandler_frames(self):
         from contextlib import redirect_stderr
         import io
