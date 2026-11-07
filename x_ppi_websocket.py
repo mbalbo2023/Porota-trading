@@ -281,6 +281,8 @@ class PPIRealTimeClient:
             logger.debug("Tick de market data con formato inesperado, se ignora: %s", e)
 
     def _on_market_connect(self):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         logger.info("Stream de Market Data conectado. Suscribiendo %s instrumentos...", len(self.instruments))
         with _stats_lock:
             _stats["connected"] = True
@@ -389,6 +391,8 @@ class PPIRealTimeClient:
             logger.debug("Mensaje de account data no interpretable, se ignora: %s", e)
 
     def _on_account_connect(self):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         logger.info("Stream de Account Data conectado.")
         with _stats_lock:
             _stats["account_connected"] = True
