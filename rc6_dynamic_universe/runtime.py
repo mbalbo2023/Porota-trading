@@ -1,9 +1,12 @@
 """Read-only bridge from existing runtime snapshots to SHADOW observation plans."""
 import sqlite3
+import time
+from contextlib import ExitStack
 import json
 from pathlib import Path
 from time import monotonic
 from .common import identity, stamp
+from rc6_shadow_runtime.source_reads import tick_reader_connection
 
 
 # The catalogue needs its full safety bound. Observation sources can carry
@@ -24,10 +27,12 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         raise ValueError("INVALID_READ_BUDGET")
     observation_limit = min(row_limit, OBSERVATION_SOURCE_CAP)
     path = Path(database).resolve(strict=True)
-    connection = sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)
-    connection.row_factory = sqlite3.Row
-    connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024**2)
+    source_scope = ExitStack()
     try:
+        connection, _ = source_scope.enter_context(tick_reader_connection(
+            path, deadline=time.monotonic() + query_budget_seconds + 2.0,
+            consumer="runtime"))
+        connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 8 * 1024**2)
         connection.execute("PRAGMA query_only=ON")
         # One WAL snapshot for all safety, catalogue and observation reads.
         # Release it before the much larger in-memory observation conversion.
@@ -232,4 +237,4 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                 "safety": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
                            "real_routes": "NOT_CALLED"}, "source_database_effect": "READ_ONLY"}
     finally:
-        connection.close()
+        source_scope.close()

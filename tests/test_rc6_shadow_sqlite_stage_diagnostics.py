@@ -69,6 +69,9 @@ class ReadStages(unittest.TestCase):
                 kwargs["factory"] = ConcurrentRead
             return original_connect(*args, **kwargs)
 
+        # Standalone diagnostics retain the incumbent single-transaction WAL
+        # semantics. Only the productive source_tick enforces cross-consumer
+        # Source verification before publication (A671 regression).
         with patch.object(runtime.sqlite3, "connect", side_effect=connect):
             data = runtime.read_runtime(self.db, as_of=AT, row_limit=3000,
                                         query_budget_seconds=2)

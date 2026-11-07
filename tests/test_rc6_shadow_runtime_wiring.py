@@ -5,6 +5,8 @@ import gzip
 import json
 from pathlib import Path
 import sqlite3
+import gc
+from contextlib import closing
 
 import pytest
 
@@ -20,6 +22,13 @@ OPEN = datetime(2026, 10, 5, 13, 30, tzinfo=timezone.utc)
 PRE = OPEN - timedelta(minutes=10)
 
 
+def _quiesce_fixture_source(path):
+    """Finish only synthetic fixture connections before the immutable tick."""
+    gc.collect()
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+
 def make_store(tmp_path, count=25):
     store = PaperStore(str(tmp_path / "paper.db"))
     _support_schema(store)
@@ -27,11 +36,45 @@ def make_store(tmp_path, count=25):
     assets = [dict(ticker=f"S{n}", instrument_type="ACCIONES", market="BYMA",
         currency="ARS", settlement="A-24HS", status="AVAILABLE", capability="READY_PAPER_SPOT")
         for n in range(count)]
-    with store.connect() as c:
-        for a in assets:
-            c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (*identity(a), "FIXTURE", "fixture", PRE.isoformat(), "test", "AVAILABLE", "READY_PAPER_SPOT", "{}"))
+    with closing(store.connect()) as c:
+        with c:
+            for a in assets:
+                c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (*identity(a), "FIXTURE", "fixture", PRE.isoformat(), "test", "AVAILABLE", "READY_PAPER_SPOT", "{}"))
+    # Test fixtures may leave SQLite connections pending finalization even
+    # after their transaction context exits. A delayed final close checkpoints
+    # main/WAL during ShadowRuntime.tick and correctly trips the new Source
+    # consistency guard. Establish a quiescent synthetic source *before* tick.
+    _quiesce_fixture_source(store.path)
     return store, assets
+
+
+def test_writer_after_preopen_read_fails_before_freeze_and_current(tmp_path, monkeypatch):
+    """OFFHOST t0/t1: no reusable freeze or CURRENT from a stale source."""
+    from rc6_audit_evidence.sqlite_snapshot import SnapshotError
+    from rc6_shadow_runtime import preopen
+
+    store, _ = make_store(tmp_path, count=3)
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    original = preopen.build_preopen_inputs
+    observed = []
+
+    def concurrent_writer(*args, **kwargs):
+        value = original(*args, **kwargs)
+        with closing(sqlite3.connect(store.path)) as writer:
+            with writer:
+                writer.execute("CREATE TABLE a677_interleaved_marker(value INTEGER)")
+                writer.execute("INSERT INTO a677_interleaved_marker VALUES(1)")
+        observed.append(True)
+        return value
+
+    monkeypatch.setattr(preopen, "build_preopen_inputs", concurrent_writer)
+    with pytest.raises(SnapshotError, match="SOURCE_SNAPSHOT_BUSY"):
+        worker.tick(PRE)
+    assert observed == [True]
+    assert not (worker.root / "CURRENT.json").exists()
+    assert not (worker.root / "preopen-2026-10-05.json.gz").exists()
+    assert not (worker.root / "status.json").exists()
 
 
 def quote(asset, at, bid="100", ask="100.2"):
@@ -91,11 +134,13 @@ def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp
     monkeypatch.setattr(live, "safe_capacity", lambda report, **kw: capacity_stub(OPEN, **kw))
     t0 = OPEN + timedelta(minutes=1)
     store.add_quote(quote(target, t0, ask="101"))
+    _quiesce_fixture_source(store.path)
     first = worker.tick(t0)
     assert next(r for r in first["engines"]["SCALPING"]["telemetry"]
                 if r["identity"][0] == target["ticker"])["state"] == "DISCOVERY"
     t1 = t0 + timedelta(minutes=5)
     store.add_quote(quote(target, t1))
+    _quiesce_fixture_source(store.path)
     promoted = worker.tick(t1)
     row = next(r for r in promoted["engines"]["SCALPING"]["telemetry"] if r["identity"][0] == target["ticker"])
     assert row["state"] == "WARM" and row["promoted_at"] == t1.isoformat()
@@ -104,11 +149,13 @@ def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp
     for minute in range(3):
         t = t1 + timedelta(minutes=minute + 1)
         store.add_quote(quote(target, t))
-        with store.connect() as c:
-            c.execute("INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (*identity(target), t.isoformat(), "100", "10", t.isoformat(), t.isoformat(), "PPI_MARKETDATA_INTRADAY"))
-            c.execute("INSERT OR REPLACE INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (*identity(target), "CONFIRMED_INTERVAL_VOLUME", 2, 5, 0, 1, t.isoformat(), t.isoformat(), "fixture"))
+        with closing(store.connect()) as c:
+            with c:
+                c.execute("INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (*identity(target), t.isoformat(), "100", "10", t.isoformat(), t.isoformat(), "PPI_MARKETDATA_INTRADAY"))
+                c.execute("INSERT OR REPLACE INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (*identity(target), "CONFIRMED_INTERVAL_VOLUME", 2, 5, 0, 1, t.isoformat(), t.isoformat(), "fixture"))
+        _quiesce_fixture_source(store.path)
         result = worker.tick(t)
     row = next(r for r in result["engines"]["SCALPING"]["telemetry"] if r["identity"][0] == target["ticker"])
     assert row["state"] == "HOT" and row["time_to_warmup_seconds"] is not None

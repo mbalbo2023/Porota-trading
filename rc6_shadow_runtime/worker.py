@@ -30,6 +30,7 @@ from .audit_spool import AuditSpool
 from . import cold_audit
 from .checkpoint_parts import CheckpointParts
 from .timing import POLL_SECONDS
+from .source_reads import SnapshotError, source_tick, tick_reader_connection
 
 LOG = logging.getLogger("dynamic_shadow")
 VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
@@ -655,9 +656,11 @@ class ShadowRuntime:
             "capacity": str(self.capacity_path)})
 
     def _metadata(self, at, since):
-        c = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=.005)
-        c.row_factory = sqlite3.Row
+        source_scope = ExitStack()
         try:
+            c, _ = source_scope.enter_context(tick_reader_connection(
+                self.database, deadline=time.monotonic() + 2.75,
+                consumer="metadata"))
             c.execute("PRAGMA query_only=ON")
             end = time.monotonic() + .75
             c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
@@ -690,7 +693,7 @@ class ShadowRuntime:
                         "source_clock_basis": "native error occurrence; no market quote", "fields": {}})
             return source_id, failures
         finally:
-            c.close()
+            source_scope.close()
 
     def _sources(self):
         reports, errors = {}, []
@@ -780,6 +783,12 @@ class ShadowRuntime:
             measured_at, measured_cpu_at = ended, cpu_ended
         at = stamp(as_of)
         with self.files as files, ExitStack() as stack:
+            # The source is captured before any native SQL consumer runs.  It
+            # must be verified and released BEFORE the new CURRENT pointer is
+            # published, otherwise interleaved WAL commits mix PIT generations.
+            source_scope = stack.enter_context(ExitStack())
+            source_capture = source_scope.enter_context(source_tick(self.database))
+            pending_frozen = None
             spool = (stack.enter_context(cold_audit.Snapshot(files, should_abort=self.shutdown_requested) if self.defer_audit else AuditSpool(files))
                      if self.spool_audit else None)
             parts = stack.enter_context(CheckpointParts(files, checkpoint_ascii_chunks)) if spool else None
@@ -831,7 +840,10 @@ class ShadowRuntime:
                 frozen = {"schema": VERSION, "source_identity": source_id,
                     "frozen": pre_report["frozen"], "quality": pre["quality"],
                     "intraday_history": pre.get("intraday_history", [])}
-                files.write(freeze_name, frozen, immutable=True)
+                # Retain this prospective freeze only in memory until the
+                # shared Source and distinct history captures verify.  A busy
+                # Source must not leave a reusable but uncommitted preopen file.
+                pending_frozen = frozen
                 del pre_report
             if frozen is not None:
                 _share_equal_frozen_rows(frozen)
@@ -980,6 +992,13 @@ class ShadowRuntime:
             # avoiding a previous tick and unused source data beside the audit.
             previous = compatible = bundle = inputs = sources = source_reports = observations = None
             capacity = frozen = checkpoint = result = base = None
+            source_scope.close()  # raises SOURCE_SNAPSHOT_BUSY before any generation publish
+            if (source_capture.receipt.get("source_unchanged") is not True or
+                    source_capture.receipt.get("private_image_unchanged") is not True or
+                    source_capture.receipt.get("cleanup_complete") is not True):
+                raise SnapshotError("SOURCE_SNAPSHOT_PUBLICATION_GUARD")
+            if pending_frozen is not None:
+                files.write(freeze_name, pending_frozen, immutable=True)
             audit = stored('computed', lambda: (
                 spool.seal(report, source_as_of=at.isoformat(), configuration=configuration)
                 if self.defer_audit else
@@ -997,6 +1016,7 @@ class ShadowRuntime:
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
             status.update(configuration_fingerprint=configuration,
+                source_capture=source_capture.receipt,
                 preopen_digests=preopen_digests,
                 catalog_ready_count=ready_count, report_digest=digest(durable),
                 computed_report_digest=audit.get("sha256"), report_projection="SELECTION_CONTRACT_V1",
