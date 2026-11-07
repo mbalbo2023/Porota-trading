@@ -33,6 +33,42 @@ def _red() -> None:
     raise ParallelRunnerRed("RC6_PARALLEL_RUNNER_RED")
 
 
+# A764: validate the native proof DAG before admitting offhost fanout.
+# Reuse this module because sharding provenance already lives here.  A valid
+# plan does not grant a runtime, CI promotion, or deploy authorization.
+def verify_native_lane_policy(policy: dict) -> dict:
+    try:
+        experiment = policy["ci_parallel_experiment"]["native_proofs"]
+        independent = experiment["independent_lanes"]
+        ordered = experiment["ordered_lanes"]
+        deps = experiment["dependencies"]
+        if not (isinstance(independent, list) and
+                isinstance(ordered, list) and isinstance(deps, list)):
+            _red()
+        if independent != ["cases", "catalog", "session"]:
+            _red()
+        if ordered != ["cadence-fresh", "cadence-legacy"]:
+            _red()
+        if deps != [["cadence-fresh", "cadence-legacy"]]:
+            _red()
+        if (len(set(independent + ordered)) != 5 or
+                experiment["source_identity"] != "exact_sha_tree_image_id" or
+                experiment["mandatory_receipts"] != "unchanged" or
+                experiment["scope"] != "OFFHOST_CANDIDATE_ONLY" or
+                experiment["automatic_go"] is not False or
+                experiment["droplet_access"] is not False):
+            _red()
+    except (KeyError, TypeError, AttributeError):
+        _red()
+    return {
+        "independent_lanes": tuple(independent),
+        "ordered_lanes": tuple(ordered),
+        "dependencies": tuple(tuple(pair) for pair in deps),
+        "automatic_go": False,
+        "droplet_access": False,
+    }
+
+
 def _invoke(argv: list[str], *, cwd: Path, env: dict,
             timeout: int = 3600) -> subprocess.CompletedProcess:
     # Captured stdout/stderr are never printed or returned: private test

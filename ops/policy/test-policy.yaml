@@ -1,4 +1,23 @@
 schema_version: 2
+# A764: experimental scheduler proof, not a change to product/Deploy V2 GO.
+# Cases, catalog and session have disjoint native outputs; cadence legacy
+# consumes the fresh receipt. All existing receipts remain blocking.
+ci_parallel_experiment:
+  native_proofs:
+    scope: OFFHOST_CANDIDATE_ONLY
+    independent_lanes:
+      - cases
+      - catalog
+      - session
+    ordered_lanes:
+      - cadence-fresh
+      - cadence-legacy
+    dependencies:
+      - [cadence-fresh, cadence-legacy]
+    source_identity: exact_sha_tree_image_id
+    mandatory_receipts: unchanged
+    automatic_go: false
+    droplet_access: false
 test_governance:
   automatic_discovery_required: true
   manual_test_file_allowlist_as_primary_ci: false

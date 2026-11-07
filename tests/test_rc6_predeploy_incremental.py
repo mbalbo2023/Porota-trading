@@ -19,7 +19,7 @@ def _native_step():
                 if step.get('name') == 'Exact image native sizing and generated catalog proof')
 
 
-def _run_step(tmp_path, *, fail_session=False):
+def _run_step(tmp_path, *, fail_session=False, fail_cases=False, fail_catalog=False):
     fake = tmp_path / 'bin'
     fake.mkdir()
     docker = fake / 'docker'
@@ -33,31 +33,41 @@ events = Path(os.environ['RC6_EVENTS'])
 def record(event):
     with events.open('a') as output:
         output.write(json.dumps([label, event, time.monotonic()]) + '\\n')
-if args[0] == 'create':
+if args[0] == 'image' and args[1] == 'inspect':
+    print('sha256:' + 'a' * 64)
+elif args[0] == 'create':
     record('create')
     print(name)
 elif args[0] == 'start':
     record('start')
     time.sleep({'session': .32, 'cadence-fresh': .22,
-                'cadence-legacy': .22}.get(label, .01))
+                'cadence-legacy': .22, 'cases': .25,
+                'catalog': .28}.get(label, .01))
     record('end')
-    if label == 'session' and os.getenv('RC6_FAIL_SESSION') == '1':
+    if label in os.getenv('RC6_FAIL_LABELS', '').split(','):
         sys.exit(7)
 elif args[0] == 'inspect':
-    print('7|true' if label == 'session' and
-          os.getenv('RC6_FAIL_SESSION') == '1' else '0|false')
+    print('7|true' if label in os.getenv('RC6_FAIL_LABELS', '').split(',')
+          else '0|false')
 elif args[0] != 'rm':
     sys.exit(9)
 ''')
     docker.chmod(0o755)
+    source_sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'],
+                                         cwd=ROOT, text=True).strip()
+    tree_sha = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'],
+                                       cwd=ROOT, text=True).strip()
     env = os.environ | {
         'PATH': str(fake) + os.pathsep + os.environ['PATH'],
         'RUNNER_TEMP': str(tmp_path), 'GITHUB_RUN_ID': 'test',
         'IMAGE': 'synthetic:exact', 'RC6_EVENTS': str(tmp_path/'events.jsonl'),
-        'RC6_FAIL_SESSION': '1' if fail_session else '0',
+        'RC6_FAIL_LABELS': ','.join(name for name, fail in (
+             ('session', fail_session), ('cases', fail_cases),
+             ('catalog', fail_catalog)) if fail),
+        'CANDIDATE_SHA': source_sha, 'CANDIDATE_TREE_SHA': tree_sha,
     }
     result = subprocess.run(['bash', '-c', _native_step()], cwd=ROOT, env=env,
-                            text=True, capture_output=True, timeout=10)
+                            text=True, capture_output=True, timeout=20)
     events = [json.loads(line) for line in (tmp_path/'events.jsonl').read_text().splitlines()]
     return result, events
 
@@ -77,3 +87,29 @@ def test_session_failure_refuses_success_even_when_cadence_passes(tmp_path):
     assert result.returncode != 0
     assert any(row[:2] == ['cadence-legacy', 'end'] for row in events)
     assert 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN' not in result.stdout
+
+
+def test_a764_independent_cases_catalog_and_session_overlap_ordered_cadence(tmp_path):
+    result, events = _run_step(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    times = {(label, event): stamp for label, event, stamp in events}
+    for label in ('cases', 'catalog', 'session'):
+        assert times[label, 'start'] < times['cadence-legacy', 'end']
+    assert times['cadence-fresh', 'end'] <= times['cadence-legacy', 'start']
+    assert 'POROTA_NATIVE_LANES_JOIN=GREEN' in result.stdout
+
+
+def test_a764_background_case_failure_never_passes(tmp_path):
+    result, events = _run_step(tmp_path, fail_cases=True)
+    assert result.returncode != 0
+    assert 'POROTA_NATIVE_LANES_JOIN=GREEN' not in result.stdout
+    assert 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN' not in result.stdout
+    assert any(row[:2] == ['cadence-legacy', 'end'] for row in events)
+
+
+def test_a764_background_catalog_failure_never_passes(tmp_path):
+    result, events = _run_step(tmp_path, fail_catalog=True)
+    assert result.returncode != 0
+    assert 'POROTA_NATIVE_LANES_JOIN=GREEN' not in result.stdout
+    assert 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN' not in result.stdout
+    assert any(row[:2] == ['cadence-legacy', 'end'] for row in events)

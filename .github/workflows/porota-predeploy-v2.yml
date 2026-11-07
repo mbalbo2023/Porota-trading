@@ -463,11 +463,16 @@ jobs:
           install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
           cleanup_native_proof() {
             rc6_cleanup_rc=$?
+            # Stop only these exact temporary containers after a failed stage.
             docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" "porota-native-session-$GITHUB_RUN_ID" "porota-native-cadence-fresh-$GITHUB_RUN_ID" "porota-native-cadence-legacy-$GITHUB_RUN_ID" >/dev/null 2>&1 || true
-            if test -n "${rc6_session_pid:-}"; then
-              wait "$rc6_session_pid" || rc6_cleanup_rc=1
-              cat "$RUNNER_TEMP/porota-native-session.log"
-            fi
+            for rc6_lane in cases catalog session; do
+              rc6_pid_var="rc6_${rc6_lane}_pid"
+              rc6_pid="${!rc6_pid_var:-}"
+              if test -n "$rc6_pid"; then
+                wait "$rc6_pid" || rc6_cleanup_rc=1
+                cat "$RUNNER_TEMP/porota-native-${rc6_lane}.log" || rc6_cleanup_rc=1
+              fi
+            done
             exit "$rc6_cleanup_rc"
           }
           trap cleanup_native_proof EXIT
@@ -500,33 +505,59 @@ jobs:
             test "$rc6_state" = '0|false'
             docker rm "$rc6_name" >/dev/null
           }
+          # A764 OFFHOST lane experiment: all lanes run the SAME frozen image.
+          # These independent proofs have disjoint output trees. Fresh -> legacy
+          # remains strictly ordered because legacy consumes fresh's receipt.
+          # No pytest shards are promoted and the required proof list is intact.
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          from scripts.rc6_ci_parallel_runner import verify_native_lane_policy
+          plan = verify_native_lane_policy(
+              yaml.safe_load(Path('ops/policy/test-policy.yaml').read_text(encoding='utf-8')))
+          assert plan['automatic_go'] is False and plan['droplet_access'] is False
+          print('POROTA_NATIVE_LANE_POLICY=GREEN|automatic_go=NO')
+          PY
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE_SHA"
+          rc6_image_id_start="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+          test -n "$rc6_image_id_start"
           run_native_proof cases python -m pytest -q -p no:cacheprovider \
             tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
             tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
-            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py tests/test_rc6_owned_funnel_details.py tests/test_rc6_physical_cadence.py --junitxml=/proof/native-bound.xml
-          # The generated catalogue runs inline without a pytest parent beside it.
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py tests/test_rc6_owned_funnel_details.py tests/test_rc6_physical_cadence.py --junitxml=/proof/native-bound.xml \
+            > "$RUNNER_TEMP/porota-native-cases.log" 2>&1 &
+          rc6_cases_pid=$!
+          # Generated catalogue remains an independent native, not pytest, proof.
           run_native_proof catalog python scripts/rc6_postdeploy_stress.py \
-            --full-catalog-check --output /proof/catalog
-          # The 405-minute virtual session and eight adversarial groups are
-          # independent of cadence, but cadence legacy consumes fresh's exact
-          # receipt and fixture. Keep fresh -> legacy ordered. Docker caps and
-          # proof paths are separate; both branches must finish cleanly.
+            --full-catalog-check --output /proof/catalog \
+            > "$RUNNER_TEMP/porota-native-catalog.log" 2>&1 &
+          rc6_catalog_pid=$!
           run_native_proof session python scripts/rc6_postdeploy_stress.py \
             --output /proof/session > "$RUNNER_TEMP/porota-native-session.log" 2>&1 &
           rc6_session_pid=$!
-          # Independent processes preserve each existing additive nice10 call.
-          # Every stage physically waits30s and verifies12full original audits.
+          # Each 30s cadence wait and all 12 audits stay intact, on the same
+          # image; legacy must consume the completed fresh receipt and fixture.
           run_native_proof cadence-fresh python scripts/rc6_postdeploy_stress.py \
             --cadence-stage fresh --output /proof/cadence
           run_native_proof cadence-legacy python scripts/rc6_postdeploy_stress.py \
             --cadence-stage legacy --output /proof/cadence
-          set +e
-          wait "$rc6_session_pid"
-          rc6_session_rc=$?
-          set -e
-          cat "$RUNNER_TEMP/porota-native-session.log"
-          rc6_session_pid=
-          test "$rc6_session_rc" -eq 0
+          # Fail closed on EVERY background lane, including hidden failures.
+          for rc6_lane in cases catalog session; do
+            rc6_pid_var="rc6_${rc6_lane}_pid"
+            rc6_pid="${!rc6_pid_var}"
+            set +e
+            wait "$rc6_pid"
+            rc6_lane_rc=$?
+            set -e
+            cat "$RUNNER_TEMP/porota-native-${rc6_lane}.log"
+            printf -v "$rc6_pid_var" '%s' ''
+            test "$rc6_lane_rc" -eq 0
+          done
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE_SHA"
+          test "$(docker image inspect -f '{{.Id}}' "$IMAGE")" = "$rc6_image_id_start"
+          echo 'POROTA_NATIVE_LANES_JOIN=GREEN|same_sha_tree_image=YES|required_proofs=UNCHANGED'
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash
