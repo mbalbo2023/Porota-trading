@@ -238,6 +238,8 @@ class PPIRealTimeClient:
 
     # ---------------- market data ---------------- #
     def _on_market_data(self, data):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         try:
             from bs_instrument_contracts import aware_datetime, decimal_value
             msg = json.loads(data) if isinstance(data, (str, bytes)) else data
@@ -359,6 +361,8 @@ class PPIRealTimeClient:
         ORDER_NOTIFICATION: el aviso en tiempo real de que una orden cambió
         de estado (y con cuánto se ejecutó), que es justo el dato por el que
         v13.0 tenía que repreguntar en un bucle."""
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         try:
             msg = json.loads(data) if isinstance(data, (str, bytes)) else data
             tipo = msg.get("Type")

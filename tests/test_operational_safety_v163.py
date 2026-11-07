@@ -216,6 +216,9 @@ def test_motor_heredado_no_supera_datos_incompletos_ni_en_scalping(monkeypatch, 
 
 @pytest.fixture
 def market_stream(monkeypatch):
+    # Synthetic parser/cache fixtures only: no SDK, socket or provider auth.
+    # Dedicated A980/A981 tests keep the real deny-by-default ingress rule.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     import x_ppi_websocket as ws
     from datetime import datetime, timezone
     clock = [datetime(2026,8,28,14,tzinfo=timezone.utc).timestamp()]
