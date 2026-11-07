@@ -1,5 +1,7 @@
 """Mocked pytest replay: global collection and truly concurrent exact shards."""
 
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,8 @@ import time
 import unittest
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
+
+import yaml
 
 from scripts import rc6_ci_parallel_runner as runner
 from scripts import rc6_ci_pytest_identity as identity
@@ -30,7 +34,7 @@ class FakePytest:
     def __init__(self, *, missing=False, skipped=False, fail_status=False,
                  mismatched_tree=False, extra_test=False, duplicate=False,
                  collection_rc=0, dirty_tree=False, require_parallel=True,
-                 failed_nodeids=None):
+                 failed_nodeids=None, timeout_nodeids=None):
         self.missing = missing
         self.skipped = skipped
         self.fail_status = fail_status
@@ -40,6 +44,7 @@ class FakePytest:
         self.collection_rc = collection_rc
         self.dirty_tree = dirty_tree
         self.failed_nodeids = set(failed_nodeids or ())
+        self.timeout_nodeids = set(timeout_nodeids or ())
         self.calls = []
         self.timeouts = []
         self.barrier = threading.Barrier(2) if require_parallel else None
@@ -68,6 +73,9 @@ class FakePytest:
         cases = argv[argv.index("--") + 1:]
         if self.barrier:
             self.barrier.wait(timeout=5)
+        if self.timeout_nodeids.intersection(cases):
+            raise runner.ParallelRunnerRed(diagnostic={"faulthandler_seen": False,
+                                                        "frames": []})
         is_one = NODES[0] in cases
         actual = cases[:-1] if self.missing and is_one else cases
         if self.duplicate and is_one:
@@ -123,6 +131,27 @@ class TestParallelProofRunner(unittest.TestCase):
                            env=os.environ.copy(), timeout=0.15)
         self.assertNotIn("PRIVATE_SECRET_MARKER", str(failure.exception))
         self.assertIsInstance(failure.exception.diagnostic, dict)
+
+    def test_timeout_classifies_parent_exit_vs_descendant_pipe_hold_without_raw_logs(self):
+        """Locate historic 45m teardown as parent/test vs descendant pipe."""
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            command = [sys.executable, "-c", (
+                "import subprocess,sys;"
+                "subprocess.Popen([sys.executable,'-c','import time;time.sleep(10)'],"
+                "stdout=sys.stdout,stderr=sys.stderr);"
+                "sys.exit(0)"
+            )]
+            with self.assertRaises(runner.ParallelRunnerRed) as failure:
+                runner._invoke(command, cwd=work, env=os.environ.copy(), timeout=0.3)
+            self.assertEqual(failure.exception.diagnostic["parent_exited_before_timeout"],
+                             True)
+            self.assertNotIn(str(work), str(failure.exception.diagnostic))
+            with self.assertRaises(runner.ParallelRunnerRed) as live_failure:
+                runner._invoke([sys.executable, "-c", "import time;time.sleep(10)"],
+                               cwd=work, env=os.environ.copy(), timeout=0.3)
+            self.assertIs(live_failure.exception.diagnostic[
+                "parent_exited_before_timeout"], False)
 
     def test_large_stdout_stderr_streams_remain_bounded_without_deadlock(self):
         script = (
@@ -331,6 +360,95 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertEqual(len(list(ET.parse(work / "sanitized/junit-sanitized.xml")
                                       .iter("skipped"))), 6)
             self.assertFalse(receipt["automatic_go"])
+
+    def test_timeout_shard_keeps_only_verified_sibling_junit_as_incomplete_red(self):
+        """The historical 720s timeout must not discard healthy-shard evidence."""
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            fake = FakePytest(timeout_nodeids={NODES[0]},
+                              failed_nodeids={NODES[6]})
+            with patch.object(runner, "_invoke", fake):
+                receipt = runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                                     output_junit=work / "normal.xml",
+                                     diagnostics_dir=work / "sanitized")
+            self.assertEqual(receipt["status"], "RED_INCOMPLETE_DIAGNOSTIC")
+            self.assertEqual((receipt["discovered"], receipt["executed"],
+                              receipt["missing"], receipt["failures"]),
+                             (12, 6, 6, 1))
+            self.assertEqual(receipt["timed_out_shards"], 1)
+            self.assertFalse(receipt["automatic_go"])
+            self.assertFalse(receipt["release_gate_activated"])
+            timeout = receipt["timeouts"][0]
+            self.assertEqual(timeout["shard_index"], 0)
+            self.assertEqual(timeout["assigned_count"], 6)
+            self.assertEqual(timeout["reason"], "PYTEST_TIMEOUT")
+            self.assertRegex(timeout["assigned_nodeids_sha256"], r"^[a-f0-9]{64}$")
+            self.assertEqual(len(list(ET.parse(work / "sanitized/junit-sanitized.xml")
+                                      .iter("testcase"))), 6)
+            published = (work / "sanitized/junit-sanitized.xml").read_text() + (
+                work / "sanitized/receipt.json").read_text()
+            for secret in ("PRIVATE_PROVIDER", "SECRET_STACK_PATH", "test_ci_stub_",
+                           "sensitive-log-not-public"):
+                self.assertNotIn(secret, published)
+            self.assertFalse((work / "normal.xml").exists())
+
+    def test_every_shard_timeout_still_publishes_sha_bound_empty_partial_red(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            with patch.object(runner, "_invoke", FakePytest(
+                    timeout_nodeids=set(NODES))):
+                receipt = runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                                     output_junit=work / "normal.xml",
+                                     diagnostics_dir=work / "sanitized")
+            self.assertEqual(receipt["status"], "RED_INCOMPLETE_DIAGNOSTIC")
+            self.assertEqual((receipt["discovered"], receipt["executed"],
+                              receipt["missing"], receipt["timed_out_shards"]),
+                             (12, 0, 12, 2))
+            self.assertFalse(receipt["automatic_go"])
+            self.assertEqual(len(list(ET.parse(work / "sanitized/junit-sanitized.xml")
+                                      .iter("testcase"))), 0)
+
+    def test_workflow_verifier_accepts_only_honest_partial_red_and_complete_red(self):
+        """Execute the actual YAML verifier offhost, including adversarial receipt edits."""
+        workflow = yaml.load((REPO / ".github/workflows/rc6-ws-tests-12-current-contract.yml")
+                             .read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        step = next(s for s in workflow["jobs"]["diagnostic-shards"]["steps"]
+                    if s.get("id") == "receipt")
+        snippet = step["run"].split("python - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+
+        def assert_verifier(work, *, expected):
+            captured = io.StringIO()
+            with (patch.dict(os.environ, {"RUNNER_TEMP": str(work), "GITHUB_SHA": SHA}),
+                  patch.object(subprocess, "check_output", return_value=TREE + "\n"),
+                  redirect_stdout(captured)):
+                exec(compile(snippet, "<a820-workflow-verifier>", "exec"),
+                     {"__name__": "__main__"})
+            self.assertIn(expected, captured.getvalue())
+
+        scenarios = [
+            (FakePytest(timeout_nodeids={NODES[0]}, failed_nodeids={NODES[6]}),
+             "INCOMPLETE_RED"),
+            (FakePytest(failed_nodeids={NODES[6]}), "COMPLETE_RED"),
+            (FakePytest(timeout_nodeids=set(NODES)), "INCOMPLETE_RED"),
+        ]
+        for fake, expected in scenarios:
+            with self.subTest(expected=expected, timeout=bool(fake.timeout_nodeids)):
+                with tempfile.TemporaryDirectory() as directory:
+                    work = Path(directory)
+                    with patch.object(runner, "_invoke", fake):
+                        runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                                   output_junit=work / "normal.xml",
+                                   diagnostics_dir=work / "rc6-a820-sanitized")
+                    assert_verifier(work, expected=expected)
+                    receipt_path = work / "rc6-a820-sanitized/receipt.json"
+                    original = json.loads(receipt_path.read_text())
+                    for key, value in (("automatic_go", True), ("missing", 999),
+                                       ("sanitized_junit_sha256", "f" * 64)):
+                        tampered = {**original, key: value}
+                        receipt_path.write_text(json.dumps(tampered), encoding="utf-8")
+                        with self.assertRaises(AssertionError):
+                            assert_verifier(work, expected=expected)
+                    receipt_path.write_text(json.dumps(original), encoding="utf-8")
 
     def test_wrong_sha_tree_shard_count_policy_or_symlink_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:

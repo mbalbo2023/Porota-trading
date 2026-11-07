@@ -136,6 +136,7 @@ def _invoke(argv: list[str], *, cwd: Path, env: dict,
 
         # Parent exit with descendant still holding pipes counts as timeout,
         # as does a live parent: both need the entire owned process group gone.
+        parent_exited_before_timeout = process.poll() is not None
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -156,7 +157,10 @@ def _invoke(argv: list[str], *, cwd: Path, env: dict,
             _red()
         if any(thread.is_alive() for thread in threads):
             _red()  # Even cleanup did not establish a bounded terminal state.
-        raise ParallelRunnerRed(diagnostic=_sanitized_timeout_trace(bytes(buffers[1])))
+        raise ParallelRunnerRed(diagnostic={
+            **_sanitized_timeout_trace(bytes(buffers[1])),
+            "parent_exited_before_timeout": parent_exited_before_timeout,
+        })
     finally:
         # If an unforeseen reader/wait error escaped, never leave the owned
         # pytest process alive in the CI runner.
@@ -234,11 +238,32 @@ def _red_diagnostic_junit(manifest: dict, groups: list[list[str]],
     clean_suite = ET.Element("testsuite", name="rc6-a820-hashed-diagnostic")
     seen = set()
     failures = errors = skipped = xfail = 0
+    timeouts = []
     for receipt in receipts:
         index = receipt.get("shard_index")
         if type(index) is not int or not 0 <= index < len(groups) or index in seen:
             _red()
         seen.add(index)
+        if receipt.get("state") == "PYTEST_TIMEOUT":
+            # A timed-out subprocess was killed as a process group by _invoke.
+            # Never trust a possibly half-written manifest/JUnit from it;
+            # retain only its deterministic assigned identity *digest*.
+            if (any(k in receipt for k in ("manifest", "junit_file", "pytest_exit_code"))
+                    or not isinstance(receipt.get("faulthandler_seen"), bool)
+                    or not isinstance(receipt.get("parent_exited_before_timeout"), bool)):
+                _red()
+            digest_input = json.dumps(
+                [nodeid_digest(node) for node in groups[index]],
+                separators=(",", ":"), sort_keys=True).encode("ascii")
+            timeouts.append({
+                "shard_index": index, "assigned_count": len(groups[index]),
+                "assigned_nodeids_sha256": hashlib.sha256(digest_input).hexdigest(),
+                "reason": "PYTEST_TIMEOUT",
+                "faulthandler_seen": receipt["faulthandler_seen"],
+                "parent_exited_before_timeout": receipt[
+                    "parent_exited_before_timeout"],
+            })
+            continue
         try:
             actual = shards._validate_manifest(receipt["manifest"])
             root, _ = junit._xml(Path(receipt["junit_file"]))
@@ -283,13 +308,15 @@ def _red_diagnostic_junit(manifest: dict, groups: list[list[str]],
         # include skip/xfail, but those must never become CI GREEN below.
         if type(rc) is not int or rc not in (0, 1) or (rc == 1) != bool(shard_failed):
             _red()
-    if len(seen) != len(groups) or len(list(clean_suite)) != manifest["discovered"]:
+    executed = len(list(clean_suite))
+    missing = sum(entry["assigned_count"] for entry in timeouts)
+    if len(seen) != len(groups) or executed + missing != manifest["discovered"]:
         _red()
     # Skipped/xfail remain visible as explicit RED evidence; they can NEVER
     # be counted as executed passing cases or grant a release quorum.
-    if failures + errors + skipped == 0:
+    if failures + errors + skipped == 0 and not timeouts:
         _red()
-    clean_suite.set("tests", str(manifest["discovered"]))
+    clean_suite.set("tests", str(executed))
     clean_suite.set("failures", str(failures))
     clean_suite.set("errors", str(errors))
     clean_suite.set("skipped", str(skipped))
@@ -304,12 +331,17 @@ def _red_diagnostic_junit(manifest: dict, groups: list[list[str]],
         if type(elapsed) is not int or elapsed < 0:
             _red()
         shard_times.append(elapsed)
-    proof = {"schema_version": 1, "status": "RED_DIAGNOSTIC_OFFLINE_ONLY",
+    proof = {"schema_version": 1,
+             "status": ("RED_INCOMPLETE_DIAGNOSTIC" if timeouts
+                        else "RED_DIAGNOSTIC_OFFLINE_ONLY"),
              "source_sha": manifest["source_sha"],
              "source_tree_sha": manifest["source_tree_sha"],
              "collection_sha256": manifest["collection_sha256"],
              "shards": len(groups), "discovered": manifest["discovered"],
-             "executed": len(list(clean_suite)), "failures": failures,
+             "executed": executed, "missing": missing,
+             "timed_out_shards": len(timeouts),
+             "timeouts": sorted(timeouts, key=lambda item: item["shard_index"]),
+             "failures": failures,
              "errors": errors, "skipped": skipped, "xfail": xfail,
              "sanitized_junit_sha256": hashlib.sha256(xml_bytes).hexdigest(),
              "phase_elapsed_ms": {**phase,
@@ -380,10 +412,19 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             xml_path = runner_dir / "junit.xml"
             isolated_base = runner_dir / "basetemp"
             env = {**env_base, "RC6_CI_MANIFEST_PATH": str(executed)}
-            result = _invoke(_pytest_argv(python, [*plugin, "-q", "--durations=20",
-                              "-o", "xfail_strict=true", f"--junitxml={xml_path}",
-                              f"--basetemp={isolated_base}", "--", *groups[i]]),
-                             cwd=repo, env=env, timeout=720)
+            try:
+                result = _invoke(_pytest_argv(python, [*plugin, "-q", "--durations=20",
+                                  "-o", "xfail_strict=true", f"--junitxml={xml_path}",
+                                  f"--basetemp={isolated_base}", "--", *groups[i]]),
+                                 cwd=repo, env=env, timeout=720)
+            except ParallelRunnerRed as exc:
+                if diagnostics_dir is None or exc.diagnostic is None:
+                    raise  # Never turn an unclassified error into evidence.
+                return {"shard_index": i, "state": "PYTEST_TIMEOUT",
+                        "faulthandler_seen": bool(exc.diagnostic.get("faulthandler_seen")),
+                        "parent_exited_before_timeout": bool(exc.diagnostic.get(
+                            "parent_exited_before_timeout")),
+                        "elapsed_ms": round((time.monotonic() - started_shard) * 1000)}
             if not executed.is_file() or executed.is_symlink():
                 _red()
             try:

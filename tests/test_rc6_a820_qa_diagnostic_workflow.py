@@ -65,6 +65,20 @@ class TestA820DiagnosticWorkflow(unittest.TestCase):
         self.assertIn("receipt.json", uploads[0]["with"]["path"])
         self.assertNotIn("continue-on-error", content)
 
+    def test_timeout_partial_receipt_is_red_bounded_and_cannot_pass_full_quorum(self):
+        """A 720s shard timeout must retain evidence, never fake complete tests."""
+        doc = self._load()
+        steps = doc["jobs"]["diagnostic-shards"]["steps"]
+        verifier = next(step["run"] for step in steps if step.get("id") == "receipt")
+        self.assertIn("RED_INCOMPLETE_DIAGNOSTIC", verifier)
+        self.assertIn("timed_out_shards", verifier)
+        self.assertIn("assigned_nodeids_sha256", verifier)
+        self.assertIn("data['executed'] + data['missing'] == data['discovered']", verifier)
+        self.assertIn("data['automatic_go'] is False", verifier)
+        self.assertIn("data['release_gate_activated'] is False", verifier)
+        hard_fail = next(s["run"] for s in steps if "Hard fail diagnostic" in s.get("name", ""))
+        self.assertIn("exit 77", hard_fail)
+
     def test_exact_push_does_not_trigger_any_foreign_workflow_or_host_job(self):
         # All repository workflow files are part of the reviewed candidate.
         # Unknown unfiltered push workflows are not assumed harmless: reject.

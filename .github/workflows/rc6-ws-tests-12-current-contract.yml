@@ -142,18 +142,50 @@ jobs:
           tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
           assert data['source_sha'] == os.environ['GITHUB_SHA']
           assert data['source_tree_sha'] == tree
-          assert data['status'] == 'RED_DIAGNOSTIC_OFFLINE_ONLY'
+          assert data['schema_version'] == 1
+          assert data['status'] in ('RED_DIAGNOSTIC_OFFLINE_ONLY',
+                                    'RED_INCOMPLETE_DIAGNOSTIC')
           assert data['automatic_go'] is False and data['runtime_authority'] is False
           assert data['release_gate_activated'] is False and data['host_written'] is False
           raw = xml_file.read_bytes()
           assert hashlib.sha256(raw).hexdigest() == data['sanitized_junit_sha256']
           root = ET.fromstring(raw)
           cases = list(root.iter('testcase'))
-          assert len(cases) == data['executed'] == data['discovered']
-          assert sum(len(list(root.iter(tag))) for tag in ('failure', 'error', 'skipped')) >= 1
+          assert len(cases) == data['executed']
+          assert data['executed'] + data['missing'] == data['discovered']
+          assert len(cases) == int(root.attrib['tests'])
+          assert data['failures'] == len(list(root.iter('failure')))
+          assert data['errors'] == len(list(root.iter('error')))
+          assert data['skipped'] == len(list(root.iter('skipped')))
           assert all(re.fullmatch('[0-9a-f]{64}', c.get('name', '')) for c in cases)
+          assert all(c.get('classname') == 'rc6.offhost.hashed'
+                     and set(c.attrib) == {'name', 'classname'} for c in cases)
           assert not any(node.tag in ('system-out', 'system-err') for node in root.iter())
-          print('RC6_A820_RECEIPT=COMPLETE_RED|same_sha_tree=YES|raw_logs=NO')
+          assert all(node.text is None or not node.text.strip() for node in root.iter())
+          assert data['timed_out_shards'] == len(data['timeouts'])
+          assert 0 <= data['timed_out_shards'] <= data['shards']
+          assert isinstance(data['timeouts'], list)
+          if data['status'] == 'RED_INCOMPLETE_DIAGNOSTIC':
+              assert 0 < data['timed_out_shards'] <= data['shards']
+              assert 0 < data['missing'] <= data['discovered']
+              assert data['missing'] == sum(t['assigned_count'] for t in data['timeouts'])
+              assert len({t['shard_index'] for t in data['timeouts']}) == len(data['timeouts'])
+              assert all(type(t['shard_index']) is int and
+                         0 <= t['shard_index'] < data['shards'] and
+                         type(t['assigned_count']) is int and t['assigned_count'] > 0 and
+                         t['reason'] == 'PYTEST_TIMEOUT' and
+                         type(t['faulthandler_seen']) is bool and
+                         type(t['parent_exited_before_timeout']) is bool and
+                         re.fullmatch('[0-9a-f]{64}', t['assigned_nodeids_sha256'])
+                         for t in data['timeouts'])
+              assert len(cases) < data['discovered']
+          else:
+              assert data['missing'] == data['timed_out_shards'] == 0
+              assert data['timeouts'] == [] and len(cases) == data['discovered']
+              assert data['failures'] + data['errors'] + data['skipped'] >= 1
+          print('RC6_A820_RECEIPT=INCOMPLETE_RED|same_sha_tree=YES|raw_logs=NO'
+                if data['timed_out_shards'] else
+                'RC6_A820_RECEIPT=COMPLETE_RED|same_sha_tree=YES|raw_logs=NO')
           PY
       - name: Upload only sanitized RED JUnit and exact-SHA receipt
         if: ${{ always() && steps.receipt.outcome == 'success' }}
