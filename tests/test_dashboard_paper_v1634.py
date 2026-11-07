@@ -95,7 +95,8 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     assert page.count("id='porota-canonical-nav'") == 1
     assert page.count("id='porota-paper-mode'") == 1
     assert "MODO SIMULACIÓN PRODUCTIVA" in page
-    assert "órdenes reales: NINGUNA" in page
+    assert "órdenes reales: NINGUNA" not in page
+    assert "NO_VERIFICADO" in page
     assert "Esperando tu autorización" not in page
     assert "Te mandé el pedido por Telegram" not in page
     assert "Telegram" in health
@@ -234,6 +235,24 @@ def test_real_order_receipt_fresh_stale_and_malformed_fail_closed():
     status, warning = _real_order_receipt({**base, "real_orders_sent": 2})
     assert "real_orders_sent=2 · ALERTA" in status
     assert "Alerta de seguridad" in warning
+
+
+def test_legacy_dashboard_zero_card_and_mode_label_cannot_forge_runtime_receipt():
+    import bg_paper_dashboard as dashboard
+
+    label, explanation = dashboard.MODE_INFO["PRODUCTION_PAPER"]
+    assert label == "MODO SIMULACIÓN PRODUCTIVA"
+    assert "órdenes reales: NINGUNA" not in explanation
+    assert "NO_VERIFICADO" in explanation
+    for value in (0, None, False, "0", -1):
+        html = dashboard._real_orders_local_card(value)
+        assert "Órdenes reales" in html
+        assert "NO_VERIFICADO" in html
+        assert "NINGUNA" not in html
+        assert "card-green" not in html
+    positive = dashboard._real_orders_local_card(2)
+    assert "real_orders_sent=2" in positive
+    assert "ALERTA" in positive and "card-red" in positive
 
 
 def test_inyeccion_del_banner_es_idempotente(monkeypatch):
