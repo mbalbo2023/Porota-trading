@@ -30,6 +30,21 @@ NODES = [f"tests/test_ci_stub_{i // 6}.py::test_case[{i}]" for i in range(12)]
 REPO = Path(__file__).resolve().parents[1]
 
 
+def _write_forged_progress(path, manifest, events):
+    """Test-only untrusted JSONL input; no reliance on producer acceptance."""
+    lines = []
+    for index, (node, phase, outcome) in enumerate(events):
+        lines.append(json.dumps({
+            "source_sha": manifest["source_sha"],
+            "source_tree_sha": manifest["source_tree_sha"],
+            "segment_sha256": manifest["collection_sha256"],
+            "sequence": index,
+            "nodeid_sha256": identity.nodeid_digest(node),
+            "phase": phase, "outcome": outcome, "elapsed_ms": 0,
+        }, sort_keys=True, separators=(",", ":")))
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 class FakePytest:
     """Writes precise private manifests and JUnit as a stand-in for pytest."""
 
@@ -600,6 +615,114 @@ class TestBoundedDiagnostic(unittest.TestCase):
                 with self.assertRaises(runner.ParallelRunnerRed):
                     runner._read_progress(path, manifest)
 
+    def test_progress_clock_is_not_affected_by_a_test_monkeypatching_global_monotonic(self):
+        """A915: another test must not rewind the diagnostic event clock."""
+        manifest = shards.manifest(SHA, TREE, [NODES[0]])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            writer = identity._ProgressWriter(path, SHA, TREE, manifest["collection_sha256"])
+            try:
+                writer.append(NODES[0], "start", "none")
+                writer.append(NODES[0], "setup", "passed")
+                # The real issue465 Harness patches scalping.time.monotonic,
+                # which is the shared Python time module also used by the hook.
+                with patch.object(identity.time, "monotonic", return_value=86_400_000.0):
+                    writer.append(NODES[0], "call", "passed")
+                writer.append(NODES[0], "teardown", "passed")
+                writer.append(NODES[0], "finish", "none")
+            finally:
+                writer.close()
+            evidence = runner._read_progress(path, manifest)
+            self.assertEqual((evidence["started"], evidence["finished"]), (1, 1))
+            elapsed = [json.loads(line)["elapsed_ms"] for line in path.read_text().splitlines()]
+            self.assertEqual(elapsed, sorted(elapsed))
+
+    def test_unittest_subtests_keep_one_execution_credit_with_repeated_call_reports(self):
+        """A915: genuine unittest subTest reports one node with many call events."""
+        # A module-local batch may have other assigned cases; the bounded
+        # per-node byte allowance still applies to the complete progress file.
+        manifest = shards.manifest(SHA, TREE, NODES[:2])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            writer = identity._ProgressWriter(path, SHA, TREE, manifest["collection_sha256"])
+            try:
+                writer.append(NODES[0], "start", "none")
+                writer.append(NODES[0], "setup", "passed")
+                for _ in range(13):  # 12 unittest.subTest reports plus final call
+                    writer.append(NODES[0], "call", "passed")
+                writer.append(NODES[0], "teardown", "passed")
+                writer.append(NODES[0], "finish", "none")
+            finally:
+                writer.close()
+            evidence = runner._read_progress(path, manifest)
+            self.assertEqual((evidence["started"], evidence["finished"]), (1, 1))
+            self.assertEqual(evidence["last_phase"], "finish")
+
+    def test_repeated_calls_cannot_change_node_or_skip_final_teardown(self):
+        """A915: duplicate subTest events never authorize cross-node credit."""
+        manifest = shards.manifest(SHA, TREE, NODES[:2])
+        sequences = (
+            [(NODES[0], "start", "none"), (NODES[0], "setup", "passed"),
+             (NODES[0], "call", "passed"), (NODES[1], "call", "passed")],
+            [(NODES[0], "start", "none"), (NODES[0], "setup", "passed"),
+             (NODES[0], "call", "passed"), (NODES[0], "finish", "none")],
+            [(NODES[0], "start", "none"), (NODES[0], "setup", "passed"),
+             (NODES[0], "call", "passed"), (NODES[0], "teardown", "passed"),
+             (NODES[0], "call", "passed")],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for index, events in enumerate(sequences):
+                with self.subTest(case=index):
+                    path = Path(directory) / f"progress-{index}.jsonl"
+                    _write_forged_progress(path, manifest, events)
+                    with self.assertRaises(runner.ParallelRunnerRed):
+                        runner._read_progress(path, manifest)
+
+    def test_unittest_subtest_call_report_count_is_bounded_not_unlimited(self):
+        """A915: duplicate reports are never additional test credit or unlimited."""
+        manifest = shards.manifest(SHA, TREE, NODES[:8])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            events = [(NODES[0], "start", "none"), (NODES[0], "setup", "passed")]
+            events.extend([(NODES[0], "call", "passed")] * 65)
+            events.extend([(NODES[0], "teardown", "passed"),
+                           (NODES[0], "finish", "none")])
+            _write_forged_progress(path, manifest, events)
+            with self.assertRaises(runner.ParallelRunnerRed):
+                runner._read_progress(path, manifest)
+
+    def test_progress_writer_rejects_subtest_amplification_before_disk_write(self):
+        """A915: reject the 65th call report at producer, not only reader."""
+        manifest = shards.manifest(SHA, TREE, [NODES[0]])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            writer = identity._ProgressWriter(path, SHA, TREE, manifest["collection_sha256"])
+            try:
+                writer.append(NODES[0], "start", "none")
+                writer.append(NODES[0], "setup", "passed")
+                for _ in range(64):
+                    writer.append(NODES[0], "call", "passed")
+                size_before = path.stat().st_size
+                with self.assertRaises(RuntimeError):
+                    writer.append(NODES[0], "call", "passed")
+                self.assertEqual(path.stat().st_size, size_before)
+            finally:
+                writer.close()
+
+    def test_progress_writer_rejects_size_quota_before_disk_write(self):
+        """A915: a malicious event cannot grow progress beyond hard 8MiB."""
+        manifest = shards.manifest(SHA, TREE, [NODES[0]])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            with patch.object(identity, "MAX_PROGRESS_BYTES", 64, create=True):
+                writer = identity._ProgressWriter(path, SHA, TREE, manifest["collection_sha256"])
+                try:
+                    with self.assertRaises(RuntimeError):
+                        writer.append(NODES[0], "start", "none")
+                    self.assertEqual(path.stat().st_size, 0)
+                finally:
+                    writer.close()
+
     def test_progress_symlink_and_bad_phase_are_rejected(self):
         self.assertTrue(hasattr(identity, "pytest_sessionstart"), "progress init absent")
         with tempfile.TemporaryDirectory() as directory:
@@ -793,6 +916,42 @@ class TestBoundedDiagnostic(unittest.TestCase):
             public = "".join(p.read_text() for p in (root / "diagnostic").rglob("*") if p.is_file())
             self.assertNotIn("PRIVATE", public)
             self.assertNotIn("test_example", public)
+
+    def test_real_unittest_subtests_generate_one_bounded_junit_credit(self):
+        """A915: verify real pytest/JUnit, not a mocked subTest assumption."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "scripts").mkdir(parents=True)
+            (repo / "scripts/__init__.py").write_text("")
+            for name in ("rc6_ci_pytest_identity.py", "rc6_ci_shard_quorum.py"):
+                shutil.copyfile(REPO / "scripts" / name, repo / "scripts" / name)
+            (repo / "ops/policy").mkdir(parents=True)
+            (repo / "ops/policy/test-policy.yaml").write_text(
+                "test_governance:\n  automatic_discovery_required: true\n"
+                "  manual_test_file_allowlist_as_primary_ci: false\n"
+                "productive_scope:\n  roots: ['.']\n  runner: pytest\n  exclusions: []\n")
+            (repo / "test_subtests.py").write_text(
+                "import unittest\n"
+                "class TestSubtests(unittest.TestCase):\n"
+                "    def test_scenarios(self):\n"
+                "        for index in range(12):\n"
+                "            with self.subTest(index=index):\n"
+                "                self.assertGreaterEqual(index, 0)\n")
+            for args in (["init", "-q"], ["add", "."], ["-c", "user.name=Fixture",
+                         "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"]):
+                subprocess.run(["git", *args], cwd=repo, check=True,
+                               capture_output=True, timeout=10)
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo,
+                                          text=True).strip()
+            tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=repo,
+                                           text=True).strip()
+            receipt = runner.run_bounded(sha, tree, repo=repo, shard_count=1,
+                shard_index=0, diagnostics_dir=root / "diagnostic", timeout_seconds=60)
+            self.assertEqual(receipt["phase"], "FINISHED")
+            self.assertEqual((receipt["completed_batches"], receipt["batches"][0]["executed"],
+                              receipt["batches"][0]["failures"]), (1, 1, 0))
+            self.assertEqual(receipt["batches"][0]["progress"]["finished"], 1)
 
 
 if __name__ == "__main__":

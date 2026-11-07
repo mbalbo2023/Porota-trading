@@ -18,6 +18,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ".github/workflows/rc6-ws-tests-12-current-contract.yml"
 BRANCH = "work/rc6-a872-offhost-qa-20261107"
+OWNED_PUSH_PATHS = [WORKFLOW_PATH, "scripts/rc6_ci_pytest_identity.py",
+                    "scripts/rc6_ci_parallel_runner.py",
+                    "tests/test_rc6_ci_parallel_runner.py"]
 
 
 def workflow():
@@ -26,10 +29,10 @@ def workflow():
     return yaml.load(raw, Loader=yaml.BaseLoader), raw
 
 
-def test_a875_is_only_push_triggered_by_owned_diagnostic_workflow_path():
+def test_a915_push_is_only_triggered_by_exact_owned_diagnostic_paths():
     data, _ = workflow()
     assert data["on"] == {"push": {
-        "branches": [BRANCH], "paths": [WORKFLOW_PATH]}}
+        "branches": [BRANCH], "paths": OWNED_PUSH_PATHS}}
     assert data["permissions"] == {"contents": "read"}
     assert list(data["jobs"]) == ["plan-offhost", "red-only-offhost", "aggregate-red"]
     planner = data["jobs"]["plan-offhost"]
@@ -421,7 +424,7 @@ def test_a883_category3_dual_denial_requires_immutable_root_owned_ancestry(
 
 def test_a875_push_has_no_other_matching_workflow_in_current_tree():
     """All workflow trigger files, not merely the edited one, are in scope."""
-    changed = [WORKFLOW_PATH, "tests/test_rc6_a875_offhost_diagnostic_workflow.py",
+    changed = [*OWNED_PUSH_PATHS, "tests/test_rc6_a875_offhost_diagnostic_workflow.py",
                "scripts/rc6_ci_bounded_matrix_quorum.py",
                "tests/test_rc6_ci_bounded_matrix_quorum.py"]
     matches = []

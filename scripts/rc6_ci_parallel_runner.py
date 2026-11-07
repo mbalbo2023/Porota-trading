@@ -29,7 +29,8 @@ import yaml
 
 from scripts import rc6_ci_shard_quorum as shards
 from scripts import rc6_ci_junit_quorum as junit
-from scripts.rc6_ci_pytest_identity import PROPERTY, nodeid_digest
+from scripts.rc6_ci_pytest_identity import (
+    PROPERTY, MAX_PROGRESS_BYTES, MAX_PROGRESS_CALL_REPORTS, nodeid_digest)
 from scripts.rc6_ci_junit_quorum import JunitQuorumRed, verify_parallel
 
 
@@ -438,9 +439,12 @@ def _read_progress(path: Path, manifest: dict) -> dict:
     allowed = {nodeid_digest(node) for node in manifest["nodeids"]}
     seen, completed = set(), set()
     active = last_phase = last_hash = None
+    calls_for_active = 0
     elapsed = 0
     try:
-        raw = _read_regular(path, len(allowed) * 5 * 1024)
+        raw = _read_regular(
+            path, min(MAX_PROGRESS_BYTES,
+                      len(allowed) * (5 + MAX_PROGRESS_CALL_REPORTS) * 512))
         for sequence, line in enumerate(raw.splitlines()):
             if len(line) > 1024:
                 _red()
@@ -459,11 +463,18 @@ def _read_progress(path: Path, manifest: dict) -> dict:
                     _red()
                 active = node
                 seen.add(node)
+                calls_for_active = 0
             else:
                 valid_next = {"start": {"setup"}, "setup": {"call", "teardown"},
-                              "call": {"teardown"}, "teardown": {"finish"}}
+                              # unittest.subTest emits additional call reports
+                              # for one logical pytest node, but one finish.
+                              "call": {"call", "teardown"}, "teardown": {"finish"}}
                 if active != node or phase not in valid_next.get(last_phase, set()):
                     _red()
+                if phase == "call":
+                    calls_for_active += 1
+                    if calls_for_active > MAX_PROGRESS_CALL_REPORTS:
+                        _red()  # bounded subTest reports cannot amplify credit
                 if (phase == "finish") != (outcome == "none"):
                     _red()
                 if phase == "finish":

@@ -4,13 +4,16 @@ run-name: A883 NO_GO 34 bounded jobs @ ${{ github.sha }}
 # The copy on this isolated evidence branch diagnoses historic 135 failures
 # and the 1,860 cases without admissible JUnit. It is NOT a replacement for
 # governed FULL, Predeploy V2, or Deploy. No matrix quorum can grant GO.
-# The triggering push is confined to one owner branch and workflow path.
+# The triggering push is confined to the owner branch and exact QA-owned paths.
 on:
   push:
     branches:
       - work/rc6-a872-offhost-qa-20261107
     paths:
       - .github/workflows/rc6-ws-tests-12-current-contract.yml
+      - scripts/rc6_ci_pytest_identity.py
+      - scripts/rc6_ci_parallel_runner.py
+      - tests/test_rc6_ci_parallel_runner.py
 
 permissions:
   contents: read

@@ -23,6 +23,10 @@ from scripts.rc6_ci_shard_quorum import manifest, _sha
 
 
 PROPERTY = "rc6_nodeid_sha256"
+# Shared producer/reader limits. A pytest node may emit multiple unittest
+# subTest call reports but never earns additional testcase credit.
+MAX_PROGRESS_CALL_REPORTS = 64
+MAX_PROGRESS_BYTES = 8 * 1024 * 1024
 _progress = None
 
 
@@ -39,25 +43,49 @@ class _ProgressWriter:
                           os.O_EXCL | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
         self.identity = os.fstat(self.fd)
         self.sequence = 0
-        self.started = time.monotonic()
+        # Freeze the actual clock function before tests begin. Patching a
+        # dependency's ``time.monotonic`` mutates Python's shared time module.
+        self._clock = time.monotonic
+        self.started = self._clock()
+        self._max_call_reports = MAX_PROGRESS_CALL_REPORTS
+        self._max_bytes = MAX_PROGRESS_BYTES
+        self._bytes_written = 0
+        self._active_node = None
+        self._calls_for_active = 0
 
     def append(self, nodeid, phase, outcome):
         if (phase not in {"start", "setup", "call", "teardown", "finish"} or
                 outcome not in {"none", "passed", "failed", "skipped"}):
             raise RuntimeError("RC6_PYTEST_PROGRESS_INVALID")
+        if phase == "start":
+            if self._active_node is not None:
+                raise RuntimeError("RC6_PYTEST_PROGRESS_OVERLAPPING_NODE")
+            self._active_node = nodeid
+            self._calls_for_active = 0
+        elif phase == "call":
+            if self._active_node != nodeid or self._calls_for_active >= self._max_call_reports:
+                raise RuntimeError("RC6_PYTEST_PROGRESS_SUBTEST_LIMIT")
+            self._calls_for_active += 1
+        elif phase == "finish":
+            if self._active_node != nodeid:
+                raise RuntimeError("RC6_PYTEST_PROGRESS_FOREIGN_FINISH")
+            self._active_node = None
         value = {**self.binding, "sequence": self.sequence,
                  "nodeid_sha256": nodeid_digest(nodeid), "phase": phase,
                  "outcome": outcome,
-                 "elapsed_ms": round((time.monotonic() - self.started) * 1000)}
+                 "elapsed_ms": round((self._clock() - self.started) * 1000)}
         current = os.stat(self.path, follow_symlinks=False)
         owned = os.fstat(self.fd)
         if (not stat.S_ISREG(current.st_mode) or current.st_nlink != 1 or owned.st_nlink != 1 or
                 (current.st_dev, current.st_ino) != (self.identity.st_dev, self.identity.st_ino)):
             raise RuntimeError("RC6_PYTEST_PROGRESS_TARGET_CHANGED")
         raw = (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
+        if self._bytes_written + len(raw) > self._max_bytes:
+            raise RuntimeError("RC6_PYTEST_PROGRESS_SIZE_LIMIT")
         if os.write(self.fd, raw) != len(raw):
             raise RuntimeError("RC6_PYTEST_PROGRESS_SHORT_WRITE")
         os.fsync(self.fd)
+        self._bytes_written += len(raw)
         self.sequence += 1
 
     def close(self):
