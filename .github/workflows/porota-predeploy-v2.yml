@@ -761,7 +761,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
+          # Containers created above have exact-ID/name EXIT traps or --rm.
+          # An image ancestry match cannot authorize stopping another app's
+          # container, even on a nominally ephemeral runner.
           docker image rm "$IMAGE" >/dev/null 2>&1 || true
           rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
