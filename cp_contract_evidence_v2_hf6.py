@@ -43,7 +43,10 @@ FAMILY_ALIASES = {
     "FCI EXTERIOR": "FCI_EXTERIOR",
     "OBLIGACIONES_NEGOCIABLES": "ON",
     "OBLIGACIONES NEGOCIABLES": "ON",
-    "OBLIGACIONES": "ON",
+    # OBLIGACIONES is the literal PPI-primary catalogue identity. Do not
+    # collapse it into legacy ON when storing Contract Evidence V2: the
+    # five-key authority join must be exact. Existing ON rows remain intact
+    # and separately addressable; this is deliberately NOT a data migration.
     "ONS": "ON",
     "ETFS": "ETF",
     "FCIS": "FCI",

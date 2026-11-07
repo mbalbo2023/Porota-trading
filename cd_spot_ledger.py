@@ -358,12 +358,21 @@ def pending(c, at, currency):
     amount = ZERO
     for row in c.execute('SELECT * FROM paper_positions WHERE currency=?',(currency,)):
         partition(c,row,at)  # valida también la concordancia del ledger
+        # The 11-Nov BYMA USD/CEDEAR settlement exception cannot be inferred
+        # from a bare T+1 label. Missing persisted contract fields fail closed.
+        fields = set(row.keys())
+        contract = {
+            'family': row['asset_class'] if 'asset_class' in fields else None,
+            'market': row['market'] if 'market' in fields else None,
+            'currency': row['currency'] if 'currency' in fields else None,
+        }
         for sale in sales(c,row['paper_id']):
             if aware_datetime(sale['filled_at']) > at:
                 continue
             value = decimal_value(sale['net_proceeds'],'producido de venta')
             available = validated_sale_settlement(row['settlement'],sale['filled_at'],
-                                                 sale['available_at'],sale['basis'])
+                                                 sale['available_at'],sale['basis'],
+                                                 **contract)
             if value > 0 and (available is None or available > at):
                 amount += value
     return amount

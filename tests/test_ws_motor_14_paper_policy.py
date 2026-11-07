@@ -39,7 +39,7 @@ def ppi_record(ticker, family, *, nominal=1, currency="ARS", market="BYMA",
                settlement="A-24HS"):
     return catalog.normalize_record({
         "ticker": ticker, "type": family, "market": market,
-        "currency": currency, "nominalInPrice": nominal,
+        "currency": currency, "settlement": settlement, "nominalInPrice": nominal,
     }, settlement, NOW.isoformat(), "WS14-PPI")
 
 
