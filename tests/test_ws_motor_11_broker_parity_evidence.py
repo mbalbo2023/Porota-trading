@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime, timezone
 
@@ -87,13 +88,33 @@ def test_legacy_iol_option_lot_and_contract_never_gain_series_authority():
 
 
 def test_iol_option_quarantine_does_not_block_independent_ppi_byma_policy(tmp_path):
+    option_raw = {"_discovery_source": "PPI_PRIMARY", "ticker": "GFGC6000OC",
+                  "type": "OPCIONES", "market": "BYMA", "currency": "ARS",
+                  "settlement": "INMEDIATA"}
     ppi = {"ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BYMA",
            "currency":"ARS","settlement":"INMEDIATA","status":"AVAILABLE",
            "capability":"NEEDS_OPTION_CONTRACT",
            "description":"Opción compra GGAL AR$ 6000 Vto. 16/10/2026",
-           "metadata_json":'{"_discovery_source":"PPI_PRIMARY"}'}
+           "settlement_source": "PPI_FIELD", "last_seen_at": NOW.isoformat(),
+           "metadata_json": json.dumps(option_raw)}
+    underlying = {"ticker": "GGAL", "instrument_type": "ACCIONES",
+                  "market": "BYMA", "currency": "ARS", "settlement": "INMEDIATA",
+                  "settlement_source": "PPI_FIELD", "status": "AVAILABLE",
+                  "last_seen_at": NOW.isoformat(),
+                  "metadata_json": json.dumps({"_discovery_source": "PPI_PRIMARY",
+                      "ticker": "GGAL", "type": "ACCIONES", "market": "BYMA",
+                      "currency": "ARS", "settlement": "INMEDIATA"})}
+    underlying_families = ppi_option.underlying_family_index([underlying])
+    assert underlying_families == {"GGAL": "ACCIONES"}
     assert ppi_option.standard_long_option_evidence(
-        ppi,{"GGAL":"ACCIONES"})["cash_multiplier"] == "100"
+        ppi, underlying_families)["cash_multiplier"] == "100"
+    # A request candidate or a literal PPI response lacking settlement
+    # cannot acquire the same policy merely because the key looks plausible.
+    assert ppi_option.standard_long_option_evidence(
+        {**ppi, "settlement_source": "REQUEST_CANDIDATE"}, underlying_families) is None
+    assert ppi_option.standard_long_option_evidence(
+        {**ppi, "metadata_json": json.dumps({k: v for k, v in option_raw.items()
+                                              if k != "settlement"})}, underlying_families) is None
     store=Store(tmp_path / "option-quarantine.db")
     iol={"schema":"rc6-iol-family-reference-v1","records":[{
         "ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BCBA",
