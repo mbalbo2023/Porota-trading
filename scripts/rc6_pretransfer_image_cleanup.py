@@ -49,10 +49,12 @@ def promotion_lock():
     # second flock: a second descriptor would deadlock against our own parent.
     # Also never mistake a missing mutex/barrier or a /tmp decoy for authority.
     raw_fd = os.environ.get(OWNER_FD, '')
-    if not re.fullmatch(r'[3-9][0-9]{0,2}', raw_fd):
+    # Linux FDs are canonical ASCII decimal. [3-9] as the first digit would
+    # wrongly reject owner descriptors 10..29 and 100..255 (A790).
+    if not re.fullmatch(r'[1-9][0-9]{0,2}', raw_fd):
         raise Rejected('GOVERNED_MUTEX_FD_MISSING')
     fd = int(raw_fd)
-    if fd > 255:
+    if not 3 <= fd <= 255:
         raise Rejected('GOVERNED_MUTEX_FD_INVALID')
     try:
         attestation = json.loads(os.environ.get(OWNER_PROOF, ''))
@@ -266,4 +268,5 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
 

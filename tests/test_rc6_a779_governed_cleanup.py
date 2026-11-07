@@ -7,6 +7,8 @@ import io
 import json
 import os
 from pathlib import Path
+import re
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -68,6 +70,77 @@ class GovernedCleanupAdversaries(unittest.TestCase):
         self._held()
         with cleanup.promotion_lock():
             pass
+
+    def test_real_governed_mutex_accepts_every_legal_decimal_fd_class(self):
+        """A790: many host wrappers have inherited FDs >=10, including 100+."""
+        self._held()
+        for target in (3, 9, 10, 13, 29, 100, 255):
+            with self.subTest(fd=target):
+                if target == self.fd:
+                    with patch.dict(os.environ, {cleanup.OWNER_FD: str(target)}):
+                        with cleanup.promotion_lock():
+                            pass
+                    continue
+                try:
+                    saved = os.dup(target)
+                except OSError:
+                    saved = None
+                os.dup2(self.fd, target)
+                try:
+                    with patch.dict(os.environ, {cleanup.OWNER_FD: str(target)}):
+                        with cleanup.promotion_lock():
+                            pass
+                finally:
+                    if saved is not None:
+                        os.dup2(saved, target)
+                        os.close(saved)
+                    else:
+                        os.close(target)
+
+    def test_malformed_or_out_of_range_fd_remains_fail_closed(self):
+        self._held()
+        for raw in ('0', '01', '-1', '2', '256', '999', 'abc'):
+            with self.subTest(fd=raw), patch.dict(os.environ, {
+                    cleanup.OWNER_FD: raw}):
+                self._assert_rejects_without_docker()
+
+    def test_closed_high_fd_and_foreign_open_description_stay_rejected(self):
+        self._held()
+        if self.fd == 220:
+            self.skipTest('unusually high base fd')
+        os.dup2(self.fd, 220)
+        os.close(220)
+        with patch.dict(os.environ, {cleanup.OWNER_FD: '220'}):
+            self._assert_rejects_without_docker()
+        outsider = os.open(self.lock, os.O_RDWR)
+        try:
+            if self.fd == 150 or outsider == 150:
+                self.skipTest('unexpected occupied target fd')
+            os.dup2(outsider, 150)
+            try:
+                with patch.dict(os.environ, {cleanup.OWNER_FD: '150'}):
+                    self._assert_rejects_without_docker('GOVERNED_MUTEX_OTHER_OWNER')
+            finally:
+                os.close(150)
+        finally:
+            os.close(outsider)
+
+    def test_both_workflow_callsite_decimal_guards_admit_real_fd_range(self):
+        workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
+        patterns = re.findall(r'\[\[ "\$RC6_GOVERNED_FD" =~ (\^[^ ]+\$) \]\]', workflow)
+        self.assertEqual(len(patterns), 2)
+        self.assertIn('test "$RC6_GOVERNED_FD" -ge 3', workflow)
+        self.assertIn('[ "$RC6_GOVERNED_FD" -ge 3 ]', workflow)
+        valid = ('3', '9', '10', '13', '29', '100', '255')
+        invalid = ('0', '01', '-1', '2', '256', '999', 'abc')
+        for pattern in patterns:
+            for raw in valid + invalid:
+                with self.subTest(pattern=pattern, fd=raw):
+                    command = f'[[ "$1" =~ {pattern} ]] && [ "$1" -ge 3 ] && [ "$1" -le 255 ]'
+                    result = subprocess.run(['bash', '-c', command, '_', raw],
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode == 0, raw in valid,
+                                     f'{raw}: {result.stderr}')
 
     def test_successful_governed_main_can_enter_bounded_cleanup(self):
         self._held()
@@ -173,3 +246,4 @@ class GovernedCleanupAdversaries(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
