@@ -8,7 +8,7 @@ from scripts import rc6_ci_shard_quorum as shards
 
 SHA = "c75d971d541ef7658ea12f844b9476fbeed239da"
 TREE = "6315fe2add325a3eaedec2334612734a439d51d1"
-NODEIDS = [f"tests/test_example.py::test_case[{i}]" for i in range(12)]
+NODEIDS = [f"tests/test_example_{i // 4}.py::test_case[{i}]" for i in range(12)]
 
 
 def fixtures(shard_count=3):
@@ -36,12 +36,43 @@ class TestShardQuorum(unittest.TestCase):
         self.assertIs(receipt["runtime_authority"], False)
 
     def test_partition_stable_across_input_order_and_balanced(self):
-        a = shards.manifest(SHA, TREE, NODEIDS)
-        b = shards.manifest(SHA, TREE, list(reversed(NODEIDS)))
+        # Twelve independent files permit five file-affine shards.
+        files = [f"tests/test_example_{i}.py::test_case" for i in range(12)]
+        a = shards.manifest(SHA, TREE, files)
+        b = shards.manifest(SHA, TREE, list(reversed(files)))
         self.assertEqual(a, b)
         self.assertEqual(shards.partition(a, 5), shards.partition(b, 5))
-        self.assertEqual(sorted(sum(shards.partition(a, 5), [])), sorted(NODEIDS))
+        self.assertEqual(sorted(sum(shards.partition(a, 5), [])), sorted(files))
         self.assertEqual([len(x) for x in shards.partition(a, 5)], [3, 3, 2, 2, 2])
+
+    def test_parametrized_tests_from_same_file_never_cross_shards(self):
+        paths = {"tests/test_alpha.py": 5, "tests/test_beta.py": 4,
+                 "tests/test_gamma.py": 3}
+        nodeids = [
+            f"{filename}::test_param[{index}]"
+            for filename, count in paths.items() for index in range(count)
+        ]
+        m = shards.manifest(SHA, TREE, nodeids)
+        pieces = shards.partition(m, 3)
+        owner_by_path = {}
+        for shard_index, piece in enumerate(pieces):
+            for nodeid in piece:
+                path = nodeid.split("::", 1)[0]
+                if path in owner_by_path:
+                    self.assertEqual(owner_by_path[path], shard_index)
+                owner_by_path[path] = shard_index
+        self.assertEqual(len(owner_by_path), 3)
+        self.assertEqual(sorted(map(len, pieces)), [3, 4, 5])
+        self.assertEqual(sorted(sum(pieces, [])), sorted(nodeids))
+
+    def test_more_shards_than_distinct_files_must_fail_closed(self):
+        nodeids = [
+            f"tests/test_legacy_{index // 5}.py::test_case[{index}]"
+            for index in range(10)
+        ]
+        m = shards.manifest(SHA, TREE, nodeids)
+        with self.assertRaises(shards.ShardQuorumRed):
+            shards.partition(m, 3)
 
     def test_source_tree_change_invalidates_collection_digest(self):
         a = shards.manifest(SHA, TREE, NODEIDS)

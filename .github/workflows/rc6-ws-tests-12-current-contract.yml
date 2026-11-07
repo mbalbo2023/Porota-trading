@@ -5,6 +5,8 @@ on:
     branches:
       - work/ws-tests-12-reconcile-current-contract-20261001
       - integration/rc6-a757-expanded-20261107
+      # A820 isolated diagnostic: never a deployment or canonical QA trigger.
+      - integration/rc6-a820-qa-diagnostic-20261107
   workflow_dispatch:
 
 permissions:
@@ -12,6 +14,7 @@ permissions:
 
 jobs:
   focal:
+    if: ${{ github.ref != 'refs/heads/integration/rc6-a820-qa-diagnostic-20261107' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -44,6 +47,7 @@ jobs:
           echo WS_TESTS_12_FOCAL=GREEN
 
   full-suite:
+    if: ${{ github.ref != 'refs/heads/integration/rc6-a820-qa-diagnostic-20261107' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -67,3 +71,121 @@ jobs:
           set -Eeuo pipefail
           PYTHONPATH=. pytest -q
           echo WS_TESTS_12_FULL_SUITE=GREEN
+
+  diagnostic-shards:
+    # GitHub default/main lacks this workflow: first invocation is by an
+    # explicitly reviewed push of this exact isolated branch, NOT dispatch.
+    if: >-
+      ${{ github.repository == 'mbalbo2023/Porota-trading' &&
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/integration/rc6-a820-qa-diagnostic-20261107' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact source and PAPER invariant on GitHub runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = "mbalbo2023/Porota-trading"
+          test "$GITHUB_REF" = "refs/heads/integration/rc6-a820-qa-diagnostic-20261107"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$(git rev-parse 'HEAD^{tree}')"
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          git diff --check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install locked offline test dependencies
+        run: python -m pip install -q -r requirements.lock.txt
+      - name: Diagnose full collected pytest suite in four exact shards (RED only)
+        id: diag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          python -m scripts.rc6_ci_parallel_runner \
+            --source-sha "$GITHUB_SHA" \
+            --source-tree-sha "$TREE_SHA" \
+            --repo . --shards 4 \
+            --output-junit "$RUNNER_TEMP/rc6-a820-unused-normal.xml" \
+            --diagnostics-dir "$RUNNER_TEMP/rc6-a820-sanitized"
+      - name: Verify complete SHA-bound sanitized RED pair before publication
+        id: receipt
+        if: ${{ always() && steps.diag.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          from xml.etree import ElementTree as ET
+
+          directory = Path(os.environ['RUNNER_TEMP']) / 'rc6-a820-sanitized'
+          receipt_file = directory / 'receipt.json'
+          xml_file = directory / 'junit-sanitized.xml'
+          assert receipt_file.is_file() and not receipt_file.is_symlink()
+          assert xml_file.is_file() and not xml_file.is_symlink()
+          assert 0 < receipt_file.stat().st_size <= 32768
+          assert 0 < xml_file.stat().st_size <= 128 * 1024 * 1024
+          data = json.loads(receipt_file.read_text(encoding='utf-8'))
+          tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+          assert data['source_sha'] == os.environ['GITHUB_SHA']
+          assert data['source_tree_sha'] == tree
+          assert data['status'] == 'RED_DIAGNOSTIC_OFFLINE_ONLY'
+          assert data['automatic_go'] is False and data['runtime_authority'] is False
+          assert data['release_gate_activated'] is False and data['host_written'] is False
+          raw = xml_file.read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == data['sanitized_junit_sha256']
+          root = ET.fromstring(raw)
+          cases = list(root.iter('testcase'))
+          assert len(cases) == data['executed'] == data['discovered']
+          assert sum(len(list(root.iter(tag))) for tag in ('failure', 'error', 'skipped')) >= 1
+          assert all(re.fullmatch('[0-9a-f]{64}', c.get('name', '')) for c in cases)
+          assert not any(node.tag in ('system-out', 'system-err') for node in root.iter())
+          print('RC6_A820_RECEIPT=COMPLETE_RED|same_sha_tree=YES|raw_logs=NO')
+          PY
+      - name: Upload only sanitized RED JUnit and exact-SHA receipt
+        if: ${{ always() && steps.receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a820-sanitized-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/rc6-a820-sanitized/junit-sanitized.xml
+            ${{ runner.temp }}/rc6-a820-sanitized/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Hard fail diagnostic job regardless of collected evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo 'RC6_A820_DIAGNOSTIC=RED|never_Go_or_predeploy'
+          exit 77
+
+  reject-manual-a820:
+    # A workflow_dispatch on this ref must not appear green with every real
+    # job skipped. The default branch currently has no WS workflow; this
+    # remains a fail-closed guard if that governance state changes later.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/integration/rc6-a820-qa-diagnostic-20261107' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions:
+      contents: read
+    steps:
+      - name: Reject misleading manual diagnostic dispatch
+        shell: bash
+        run: |
+          echo 'RC6_A820_MANUAL_DISPATCH=REJECTED|no_checks_skipped_green'
+          exit 77
