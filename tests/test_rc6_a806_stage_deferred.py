@@ -9,10 +9,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import yaml
 
 from scripts import rc6_deploy_failure_cleanup as cleanup
 
@@ -107,6 +110,56 @@ class SharedHostStagingDeferredTests(unittest.TestCase):
         self.assertNotIn("RC6_PREOPEN_SAFE_RECLAIM=GREEN", block)
         self.assertIn("RC6_PREOPEN_SAFE_RECLAIM=DEFERRED_UNVERIFIED", block)
         self.assertIn('test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"', block)
+
+    def test_provenance_no_go_precedes_every_remote_host_contact(self):
+        """A source-level RED must stop before reconcile/suspend/transfer/promote."""
+        workflow_path = (Path(__file__).parents[1] / '.github' / 'workflows' /
+                         'porota-deploy-v2-promote.yml')
+        steps = yaml.safe_load(workflow_path.read_text())['jobs']['promote']['steps']
+        names = [step.get('name', '') for step in steps]
+        gate_matches = [(idx, step) for idx, step in enumerate(steps)
+                        if step.get('id') == 'a806_staging_preadmission']
+        self.assertEqual(len(gate_matches), 1, 'Exactly one pre-host staging safety gate')
+        gate_idx, gate = gate_matches[0]
+        self.assertEqual(gate_idx, 1, 'Gate must immediately follow runner checkout')
+        self.assertIn('Checkout production promotion commit', names[0])
+        self.assertNotIn('ssh ', gate['run'])
+        self.assertNotIn('sudo ', gate['run'])
+        self.assertNotIn('docker ', gate['run'])
+        first_host = next(i for i, name in enumerate(names)
+                          if 'DigitalOcean Droplet' in name or 'host barrier' in name)
+        suspend = next(i for i, name in enumerate(names) if 'Suspend versioned' in name)
+        transfer = next(i for i, name in enumerate(names) if 'Transfer frozen artifact' in name)
+        promotion = next(i for i, name in enumerate(names) if 'Promote exact frozen' in name)
+        self.assertLess(gate_idx, min(first_host, suspend, transfer, promotion))
+
+        # Run only the early runner-local step, never downstream host writers.
+        marker = subprocess.run(['bash', '-Eeuo', 'pipefail', '-c', gate['run']],
+                                cwd=workflow_path.parents[2], capture_output=True,
+                                text=True, timeout=5, check=False)
+        self.assertEqual(marker.returncode, 79, marker.stdout + marker.stderr)
+        self.assertIn('RC6_DEPLOY_V2=NO_GO_PREMUTATION_STAGING_UNVERIFIED',
+                      marker.stdout)
+        self.assertIn('STAGING_CLEANUP=DEFERRED_UNVERIFIED', marker.stdout)
+
+    def test_early_provenance_failure_cannot_trigger_host_recovery(self):
+        workflow_path = (Path(__file__).parents[1] / '.github' / 'workflows' /
+                         'porota-deploy-v2-promote.yml')
+        steps = yaml.safe_load(workflow_path.read_text())['jobs']['promote']['steps']
+        gates = [idx for idx, step in enumerate(steps)
+                 if step.get('id') == 'a806_staging_preadmission']
+        self.assertEqual(len(gates), 1)
+        gate_idx = gates[0]
+        for step in steps[gate_idx + 1:]:
+            if step.get('id') not in ('failure_cleanup', 'failure_orphan_cleanup'):
+                continue
+            expression = step.get('if', '')
+            self.assertNotIn('steps.a806_staging_preadmission.outcome', expression)
+            if step['id'] == 'failure_cleanup':
+                self.assertIn('steps.suspend.outcome', expression)
+            if step['id'] == 'failure_orphan_cleanup':
+                self.assertIn("steps.failure_cleanup.outcome == 'success'", expression)
+            self.assertNotIn('steps.a806_staging_preadmission.conclusion', expression)
 
 
 if __name__ == "__main__":

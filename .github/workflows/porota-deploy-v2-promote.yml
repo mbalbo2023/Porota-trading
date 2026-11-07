@@ -33,6 +33,22 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
+      # A806 P0: both existing staging cleanup paths currently lack an
+      # independent root-issued owner/inode/attempt proof.  The safe DEFERRED
+      # fallback MUST be admitted before host reconcile, disk guard, suspend,
+      # transfer or promotion; a post-promotion RED is too late.  This is a
+      # deliberate hard NO_GO until a reviewed protocol and physical host
+      # permission evidence can replace this source-level unavailable proof.
+      - name: Stop before host writes when exact staging cleanup is unverified
+        id: a806_staging_preadmission
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'STAGING_CLEANUP=DEFERRED_UNVERIFIED|no_independent_root_attestation|no_host_contact'
+          echo '::error::RC6_A806_PREADMISSION_STAGING_UNVERIFIED: no root-issued stage ownership proof; forbidden to enter host promotion'
+          echo 'RC6_DEPLOY_V2=NO_GO_PREMUTATION_STAGING_UNVERIFIED|remote_mutations=0'
+          exit 79
+
       - name: Resolve exact frozen candidate
         shell: bash
         run: |
