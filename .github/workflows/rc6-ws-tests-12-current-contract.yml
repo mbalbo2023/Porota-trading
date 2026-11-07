@@ -104,11 +104,16 @@ jobs:
             --source-sha "$GITHUB_SHA" \
             --source-tree-sha "$(git rev-parse 'HEAD^{tree}')" \
             --out "$RUNNER_TEMP/rc6-a963-sanitized"
-      - name: Upload anonymized FULL evidence
+      # A976: pytest shares this runner UID and can inject files/symlinks or
+      # leave descendants. A sanitized directory name is not custody.
+      # No artifact action is permitted until ARC/SEC approve independently
+      # constrained test UID + trusted publisher + fixed attestation allowlist.
+      # Do not restore recursive upload or trust an environment "verified" flag.
+      - name: BLOCKED evidence publication without independent custody
+        id: publication_custody
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc6-a963-fullsuite-${{ github.sha }}
-          path: ${{ runner.temp }}/rc6-a963-sanitized/
-          retention-days: 7
-          if-no-files-found: error
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_EVIDENCE_PUBLICATION=BLOQUEADO|reason=INDEPENDENT_CUSTODY_UNVERIFIED|automatic_go=false'
+          exit 79
