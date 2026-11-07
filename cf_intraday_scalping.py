@@ -22,6 +22,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, family_name
+from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_signal_contracts import register_exact_time
 from co_market_sessions_hf6 import byma_paper_spot_open
 from fg_intraday_contract_policy_rc6 import classify_revision, previous_for_session
@@ -885,7 +886,10 @@ def evaluate_candidate(store, record, *, at):
     # valid-looking after-hours or holiday events into BUY_CANDIDATE evidence.
     # This is the conservative BYMA PAPER window, not COM19031's wider T+1
     # source-observation clock nor its separate PPT/SENEBI intraday segment.
-    if not _market_open(at):
+    operator_hold = paper_entry_hold_reason(record["instrument_type"])
+    if operator_hold:
+        reason = operator_hold
+    elif not _market_open(at):
         reason = "OUTSIDE_SCALPING_PAPER_SESSION"
     elif record.get("capability") not in SCALPING_PAPER_CAPABILITIES:
         reason = record.get("capability") or "CONTRACT_NOT_SIMULATABLE"
@@ -1012,6 +1016,9 @@ def promote_paper_candidate(store, record, *, at):
     mode = os.getenv("PAPER_SCALPING_MODE", "ACTIVE_OBSERVE").upper()
     if mode != "ACTIVE_PAPER":
         return "OBSERVE_ONLY"
+    operator_hold = paper_entry_hold_reason(record["instrument_type"])
+    if operator_hold:
+        return operator_hold
     # A stale candidate may have been evaluated while the market was open.
     # Fail before recording a BUY decision or constructing any broker if a
     # weekend/holiday/after-close caller tries to promote that evidence.
