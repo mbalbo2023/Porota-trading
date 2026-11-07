@@ -4,6 +4,7 @@ import os
 import json
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -313,7 +314,7 @@ def _exercise_native_evidence_gate(tmp_path: Path, case: str) -> tuple[int, str]
         (proof / "session").rename(foreign)
         (proof / "session").symlink_to(foreign, target_is_directory=True)
     env = {**os.environ, "RC6_TMPDIR": str(tmp_path),
-           "PATH": "/workspace/scratch/a97b5786029e/qa963-venv/bin" + os.pathsep + os.environ["PATH"]}
+           "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]}
     done = subprocess.run(["bash", "-c", gate], cwd=WORKFLOW.parents[2],
                           env=env, capture_output=True, text=True, timeout=10)
     return done.returncode, done.stdout + done.stderr
@@ -331,6 +332,14 @@ def test_predeploy_native_publish_gate_rejects_omitted_or_aliased_receipt(tmp_pa
         code, output = _exercise_native_evidence_gate(case_root, case)
         assert (code == 0) == (case == "valid"), (case, code, output)
         assert expected in output, (case, output)
+
+
+def test_predeploy_native_gate_fixture_inherits_python_without_session_path() -> None:
+    # This suite must remain portable on the hosted Actions runner as well as
+    # a developer's shell; never bake the transient test environment path in.
+    source = Path(__file__).read_text(encoding="utf-8")
+    assert "/workspace/" + "scratch/" not in source
+    assert "Path(sys.executable).parent" in source
 
 
 def _private_stage_bootstrap() -> str:
