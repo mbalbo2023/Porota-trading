@@ -17,12 +17,13 @@ import gc
 import json
 import os
 from pathlib import Path
+import re
 import resource
 import stat
 import sys
 
 
-SCHEMA = "rc6.a410.byma-catalog-join-readonly.v1"
+SCHEMA = "rc6.a410.byma-catalog-join-readonly.v2"
 CATALOG_SCHEMA = "rc6-full-universe-instrument-evidence-v1"
 BYMA_SCHEMA = "rc6-consolidated-source-evidence-v1"
 CATALOG_PATH = Path("/opt/porota-trading/data/market/rc6_instrument_evidence_latest.json")
@@ -82,6 +83,26 @@ REJECT_CODES = (
     "UNKNOWN_MARKET", "UNKNOWN_CURRENCY", "UNKNOWN_SETTLEMENT",
     "ROW_NOT_OBJECT",
 )
+# A503: public aggregates only.  Never include a previously unseen provider
+# code, raw alias value, ticker, quote, timestamp or sample in these enums.
+# The normalized BYMA cache does not preserve the original provider field
+# names, so these counts cannot identify which upstream alias was selected.
+PROFILE_FIELDS = ("currency", "settlement", "term", "settlement_code")
+VALUE_TYPES = (
+    "ABSENT", "NULL", "BLANK_STRING", "STRING", "INTEGER", "FLOAT",
+    "BOOLEAN", "OBJECT", "ARRAY",
+)
+CURRENCY_CLASSES = (
+    "MISSING", "ARS", "USD", "USD_MEP", "USD_CCL",
+    "EXT_UNMAPPED", "OTHER_ALPHA", "OTHER_NUMERIC", "OTHER_TEXT", "NONSTRING",
+)
+SETTLEMENT_CLASSES = (
+    "MISSING", "A_24HS_CANONICAL", "INMEDIATA_CANONICAL",
+    "T1_ALIAS", "T0_ALIAS", "OTHER_ALPHA", "OTHER_NUMERIC",
+    "OTHER_TEXT", "NONSTRING", "ALIAS_CONFLICT",
+)
+_NUMERIC_CODE = re.compile(r"[+-]?[0-9]+(?:[.,][0-9]+)?\Z")
+_ALPHA_CODE = re.compile(r"[A-Z]+\Z")
 ERROR_CODES = frozenset({
     "FILE_MISSING", "PATH_UNSAFE", "FILE_UNSAFE", "READ_UNAVAILABLE",
     "FILE_SIZE_INVALID", "FILE_CHANGED", "JSON_INVALID",
@@ -272,10 +293,97 @@ def _new_report():
         "diagnostic_status": "NO_VERIFICADO", "reason": "PROBE_FAILED",
         "counts": {name: 0 for name in COUNT_KEYS},
         "reject_counts": {name: 0 for name in REJECT_CODES},
+        "normalized_field_profile": {
+            "raw_provider_aliases": "NOT_PRESERVED_IN_NORMALIZED_CACHE",
+            "rows_profiled": 0,
+            "value_types": {name: {kind: 0 for kind in VALUE_TYPES}
+                            for name in PROFILE_FIELDS},
+            "currency_codes": {name: 0 for name in CURRENCY_CLASSES},
+            "settlement_codes": {name: 0 for name in SETTLEMENT_CLASSES},
+        },
         "byma_matched_by_family": {name: 0 for name in CANONICAL_FAMILIES},
         "catalog_mtime_age_seconds": None,
         "byma_mtime_age_seconds": None,
     }
+
+
+def _value_type(row: dict, name: str) -> str:
+    """Report only a fixed JSON type class; never coerce a provider value."""
+    if name not in row:
+        return "ABSENT"
+    value = row[name]
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "BOOLEAN"
+    if isinstance(value, str):
+        return "STRING" if value.strip() else "BLANK_STRING"
+    if isinstance(value, int):
+        return "INTEGER"
+    if isinstance(value, float):
+        return "FLOAT"
+    if isinstance(value, list):
+        return "ARRAY"
+    return "OBJECT"
+
+
+def _unknown_code_class(code: str) -> str:
+    if _NUMERIC_CODE.fullmatch(code):
+        return "OTHER_NUMERIC"
+    if _ALPHA_CODE.fullmatch(code):
+        return "OTHER_ALPHA"
+    return "OTHER_TEXT"
+
+
+def _currency_code_class(row: dict) -> str:
+    value = row.get("currency")
+    if value is None or isinstance(value, str) and not value.strip():
+        return "MISSING"
+    if not isinstance(value, str):
+        return "NONSTRING"
+    code = value.strip().upper()
+    if code in CURRENCIES:
+        return code
+    if code == "EXT":
+        # Officially documented as a code; no monetary meaning is inferred.
+        return "EXT_UNMAPPED"
+    return _unknown_code_class(code)
+
+
+def _settlement_code_class(row: dict) -> str:
+    names = ("settlement", "term", "settlement_code")
+    values = [row[name] for name in names if name in row and
+              row[name] is not None and row[name] != ""]
+    if not values or all(isinstance(value, str) and not value.strip()
+                         for value in values):
+        return "MISSING"
+    if any(not isinstance(value, str) for value in values):
+        return "NONSTRING"
+    codes = [value.strip().upper() for value in values if value.strip()]
+    if not codes:
+        return "MISSING"
+    translated = {TERMS.get(code, code) for code in codes}
+    if len(translated) != 1:
+        return "ALIAS_CONFLICT"
+    code = codes[0]
+    canonical = next(iter(translated))
+    if canonical == "A-24HS":
+        return "A_24HS_CANONICAL" if code == "A-24HS" else "T1_ALIAS"
+    if canonical == "INMEDIATA":
+        return "INMEDIATA_CANONICAL" if code == "INMEDIATA" else "T0_ALIAS"
+    return _unknown_code_class(code)
+
+
+def _profile_byma_row(row: object, report: dict) -> None:
+    """Fixed-schema type/code histograms from the already normalized cache."""
+    if not isinstance(row, dict):
+        return
+    profile = report["normalized_field_profile"]
+    profile["rows_profiled"] += 1
+    for name in PROFILE_FIELDS:
+        profile["value_types"][name][_value_type(row, name)] += 1
+    profile["currency_codes"][_currency_code_class(row)] += 1
+    profile["settlement_codes"][_settlement_code_class(row)] += 1
 
 
 def index_catalog(catalog: dict, report: dict) -> tuple[set, dict]:
@@ -338,6 +446,7 @@ def summarize_byma(byma: dict, report: dict, keys: set, by_symbol: dict) -> None
     counts["byma_rows"] = len(extracted)
     source_unique, source_symbols, matched = set(), defaultdict(set), set()
     for row, block_receipt in extracted:
+        _profile_byma_row(row, report)
         visible = row if isinstance(row, dict) else {}
         if isinstance(visible.get("quote"), dict):
             counts["byma_nested_quote_rows"] += 1
