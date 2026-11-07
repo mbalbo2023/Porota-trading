@@ -22,7 +22,7 @@ from rc6_dynamic_universe.common import digest, identity
 from rc6_dynamic_universe.orchestrator import EnginePolicy, UniverseOrchestrator
 from rc6_ppi_global_budget import RuntimePPIBudget
 from tests.test_rc6_capacity_promotion import approved, controller, shadow_selection
-from tests.test_rc6_dynamic_orchestrator import OPEN, frozen
+from tests.test_rc6_dynamic_orchestrator import OPEN, frozen, catalog as synthetic_catalog
 from tests.test_rc6_ppi_capacity_benchmark import wire
 from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 
@@ -35,11 +35,51 @@ def native_store(tmp_path, assets, at):
     with store.connect() as c:
         for a in assets:
             row = with_synthetic_volume_contract(dict(a, settlement_source="PPI_FIELD", description="isolated fixture",
-                last_seen_at=at.isoformat(), run_id="native-test", raw={"_discovery_source": "PPI_PRIMARY"})
+                last_seen_at=at.isoformat(), run_id="native-test", raw={
+                    "_discovery_source": "PPI_PRIMARY", "ticker": a["ticker"],
+                    "type": a["instrument_type"], "market": a["market"],
+                    "currency": a["currency"], "settlement": a["settlement"],
+                })
             )
             catalog_module.persist(c, row)
         catalog_module.sync_candidate_universe(c, at.isoformat())
     return store
+
+
+def test_factual_synthetic_catalog_attests_all_five_provider_identity_fields(tmp_path):
+    """An OFFHOST provider fixture is READY only with literal five-key evidence."""
+    store = native_store(tmp_path, synthetic_catalog(1), OPEN)
+    with store.connect() as c:
+        row = c.execute("SELECT can_simulate,status,detail FROM candidate_identity_v2").fetchone()
+        assert tuple(row) == (1, "AVAILABLE", "READY_PAPER_SPOT")
+    selected, _, universe = scalping.select_batch(store, limit=40)
+    assert universe == 1 and len(selected) == 1 and selected[0]["ticker"] == "S0"
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("ticker", None), ("type", None), ("market", None),
+    ("currency", None), ("settlement", None),
+    ("ticker", "OTHER"), ("type", "BONOS"), ("market", "NASDAQ"),
+    ("currency", "USD"), ("settlement", "INMEDIATA"),
+])
+def test_factual_catalog_fails_closed_for_missing_or_conflicting_provider_field(tmp_path, field, bad_value):
+    """Request/catalog coordinates cannot replace absent or conflicting provider data."""
+    store = native_store(tmp_path, synthetic_catalog(1), OPEN)
+    with store.connect() as c:
+        before = c.execute("SELECT can_simulate FROM candidate_identity_v2").fetchone()
+        assert before[0] == 1
+        original = c.execute("SELECT metadata_json FROM financial_instrument_catalog").fetchone()[0]
+        metadata = json.loads(original)
+        if bad_value is None:
+            metadata.pop(field)
+        else:
+            metadata[field] = bad_value
+        c.execute("UPDATE financial_instrument_catalog SET metadata_json=?",
+                  (json.dumps(metadata),))
+        catalog_module.sync_candidate_universe(c, OPEN.isoformat())
+        after = c.execute("SELECT can_simulate,detail FROM candidate_identity_v2").fetchone()
+    assert after[0] == 0 and "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED" in after[1]
+    assert scalping.select_batch(store, limit=40)[0] == []
 
 
 def cold_shadow(values, warm_shadow, assets, at):
