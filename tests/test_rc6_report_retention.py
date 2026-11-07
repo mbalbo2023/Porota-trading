@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import os
+import pytest
+
 import rc6_report_retention as retention
 
 
@@ -20,3 +23,78 @@ def test_compression_round_trip(tmp_path):
     assert result["restored_sha256"] == result["source_sha256"]
     assert result["verified"] is True
     assert destination.exists()
+
+
+def test_compression_rejects_source_symlink_without_creating_archive(tmp_path):
+    original = tmp_path / "original.html"
+    original.write_bytes(b"a real report")
+    alias = tmp_path / "alias.html"
+    alias.symlink_to(original)
+    destination = tmp_path / "archive.gz"
+    with pytest.raises(ValueError, match="REPORT_SOURCE_ALIAS"):
+        retention.compress_verified(alias, destination)
+    assert not destination.exists()
+    assert original.read_bytes() == b"a real report"
+
+
+def test_compression_rejects_existing_destination_without_overwrite(tmp_path):
+    original = tmp_path / "daily.html"
+    original.write_bytes(b"source")
+    destination = tmp_path / "archive.gz"
+    destination.write_bytes(b"keep existing archive")
+    with pytest.raises(ValueError, match="REPORT_DESTINATION_EXISTS"):
+        retention.compress_verified(original, destination)
+    assert destination.read_bytes() == b"keep existing archive"
+
+
+def test_compression_rejects_destination_symlink_without_overwrite(tmp_path):
+    original = tmp_path / "daily.html"
+    original.write_bytes(b"source")
+    protected = tmp_path / "protected.html"
+    protected.write_bytes(b"preserve this unrelated file")
+    destination = tmp_path / "archive.gz"
+    destination.symlink_to(protected)
+    with pytest.raises(ValueError, match="REPORT_DESTINATION_ALIAS"):
+        retention.compress_verified(original, destination)
+    assert protected.read_bytes() == b"preserve this unrelated file"
+
+
+def test_compression_rejects_same_inode_and_hardlink_source(tmp_path):
+    original = tmp_path / "daily.html"
+    original.write_bytes(b"source report must survive")
+    with pytest.raises(ValueError, match="REPORT_DESTINATION_SOURCE_ALIAS"):
+        retention.compress_verified(original, original)
+    hardlink = tmp_path / "other-name.html"
+    os.link(original, hardlink)
+    destination = tmp_path / "archive.gz"
+    with pytest.raises(ValueError, match="REPORT_SOURCE_ALIAS"):
+        retention.compress_verified(hardlink, destination)
+    assert original.read_bytes() == b"source report must survive"
+    assert not destination.exists()
+
+
+def test_compression_rejects_source_parent_symlink(tmp_path):
+    # A report path under an aliased directory is *not* confined by checking
+    # only its final component for is_symlink().
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "daily.html").write_bytes(b"outside reports root")
+    (reports / "shortcut").symlink_to(external, target_is_directory=True)
+    destination = reports / "daily.gz"
+    with pytest.raises(ValueError, match="REPORT_SOURCE_ALIAS"):
+        retention.compress_verified(reports / "shortcut" / "daily.html", destination)
+    assert not destination.exists()
+
+
+def test_compression_rejects_destination_parent_symlink(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (reports / "daily.html").write_bytes(b"report")
+    (reports / "shortcut").symlink_to(external, target_is_directory=True)
+    with pytest.raises(ValueError, match="REPORT_DESTINATION_ALIAS"):
+        retention.compress_verified(reports / "daily.html", reports / "shortcut" / "archive.gz")
+    assert not (external / "archive.gz").exists()
