@@ -1289,8 +1289,10 @@ def test_v17_senal_no_calcula_con_puntas_no_finitas(tmp_path, change):
 def test_guard_permite_solo_host_https_y_rutas_lectura():
     g = ReadOnlyTransportGuard()
     assert g.check("GET", "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Current")
-    assert g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
-                   count_login=True)
+    with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+        g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
+                count_login=True)
+    assert g.login_calls == 0
     with pytest.raises(ReadOnlyPolicyViolation):
         g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Order/Confirm")
     with pytest.raises(ReadOnlyPolicyViolation):
@@ -1304,7 +1306,10 @@ def test_guard_permite_solo_host_https_y_rutas_lectura():
                 count_login=True)
 
 
-def test_guard_permite_relogin_controlado_despues_del_cooldown():
+def test_guard_cooldown_sintetico_limita_relogin_sin_transporte(monkeypatch):
+    # Isolate the retained local cooldown algorithm, not live auth authority.
+    # No SDK or HTTP transport is created here; A980 covers the unpatched HOLD.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     clock = [1000.0]
     g = ReadOnlyTransportGuard(login_cooldown_seconds=900, clock=lambda: clock[0])
     url = "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi"
@@ -1526,13 +1531,18 @@ def test_busqueda_ppi_envia_ticker_y_name_no_vacios():
             return []
     class Client:
         marketdata = Market()
-    reader = object.__new__(ProductionMarketReader)
+    # In-memory SDK facet; preserve real transport custody and reader teardown.
+    reader = ProductionMarketReader("SYNTHETIC_KEY", "SYNTHETIC_SECRET", budget=object())
     reader._ProductionMarketReader__authenticated = True
     reader._ProductionMarketReader__client = Client()
-    assert reader.search_instruments("GGAL", "ACCIONES", market="BYMA") == []
-    assert calls == [("GGAL", "GGAL", "BYMA", "ACCIONES")]
-    with pytest.raises(ValueError):
-        reader.search_instruments("", "ACCIONES")
+    try:
+        assert reader.search_instruments("GGAL", "ACCIONES", market="BYMA") == []
+        assert calls == [("GGAL", "GGAL", "BYMA", "ACCIONES")]
+        assert reader.metrics["login_calls"] == 0
+        with pytest.raises(ValueError):
+            reader.search_instruments("", "ACCIONES")
+    finally:
+        reader.close()
 
 
 def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):

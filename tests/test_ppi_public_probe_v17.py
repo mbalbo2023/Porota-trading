@@ -1,5 +1,6 @@
 """Diagnóstico de contrato público: SDK real con transporte y Docker locales falsos."""
 import base64
+from contextlib import nullcontext
 import hashlib
 import importlib.util
 import json
@@ -88,6 +89,18 @@ def transport(tmp_path,monkeypatch):
     return secret,calls,responses
 
 
+@pytest.fixture
+def synthetic_auth_transport(transport,monkeypatch):
+    # Opt-in parser/error coverage below auth HOLD, with physical HTTP already
+    # replaced by the local fake. Never applied to live-HOLD/A980 tests.
+    monkeypatch.setattr('bd_ppi_readonly_guard.require_ppi_authentication_authority',lambda:None)
+    # The old probe's outer request wrapper replaces an already-owned hook.
+    # Do not relax custody: omit that wrapper only in these local fake-wire
+    # SDK error scenarios. Its own bounds remain tested independently below.
+    monkeypatch.setattr(probe,'bounded_transport',lambda report:nullcontext())
+    return transport
+
+
 def offline_collect(transport):
     """Exercise the legacy public parser with in-memory values, not live GET.
 
@@ -163,16 +176,27 @@ def test_parser_sintetico_config_familias_y_solo_tickers_devueltos(transport,cap
     assert capsys.readouterr().out==''
 
 
-def test_live_probe_without_signed_configuration_quota_is_explicitly_blocked(transport):
+def test_live_probe_guard_hold_stops_before_wire(transport):
     secret,calls,_=transport
     report=probe.live_report(secret)
     assert report['status']=='STOPPED'
-    assert report['reason']=='BudgetBackpressure'
-    assert report['stage']=='CONFIGURATION'
+    assert report['reason']=='ReadOnlyPolicyViolation'
+    assert report['stage']=='LOGIN'
     assert report['promotion_allowed'] is False and report['data_certified'] is False
-    assert [method for method,_,_ in calls]==['POST']  # no Configuration/Search/Book wire GET
+    assert calls==[]
+    assert report['reader_metrics']['login_calls']==0
+    assert report['reader_metrics']['authenticated'] is False
+    assert report['http']==[]
+
+
+def test_synthetic_login_cannot_authorize_unbudgeted_configuration(synthetic_auth_transport):
+    secret,calls,_=synthetic_auth_transport
+    report=probe.live_report(secret)
+    assert report['status']=='STOPPED'
+    assert report['reason']=='BudgetBackpressure' and report['stage']=='CONFIGURATION'
+    assert [method for method,_,_ in calls]==['POST']
     assert report['reader_metrics']['login_calls']==1
-    assert [item['status'] for item in report['http']]==[200,None]
+    assert report['promotion_allowed'] is False and report['data_certified'] is False
 
 
 @pytest.mark.parametrize('status',[302,400,401,403,429,500])
@@ -187,8 +211,8 @@ def test_rechazo_detiene_sin_refresh_reintento_o_cuerpo_de_error(transport,statu
 
 
 @pytest.mark.parametrize('value',[None,[],{'missing':'tokens'}])
-def test_login_malformado_no_inicia_consultas(transport,value):
-    secret,calls,responses=transport
+def test_login_malformado_no_inicia_consultas(synthetic_auth_transport,value):
+    secret,calls,responses=synthetic_auth_transport
     responses['loginapi']=(200,value)
     report=probe.live_report(secret)
     assert report['status']=='STOPPED' and len(calls)==1
@@ -294,8 +318,8 @@ def test_expiracion_total_se_reporta_y_restaura_handler(transport,monkeypatch):
     assert signal.getsignal(signal.SIGALRM) is old
 
 
-def test_timeout_http_no_expone_texto_ni_reintenta(transport,monkeypatch):
-    secret,calls,_=transport
+def test_timeout_http_no_expone_texto_ni_reintenta(synthetic_auth_transport,monkeypatch):
+    secret,calls,_=synthetic_auth_transport
     def timeout(*a,**k):
         calls.append('timeout')
         raise requests.Timeout(FIXTURE_SECRET)

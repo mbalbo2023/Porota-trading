@@ -1,5 +1,6 @@
 """Contratos oficiales de API contrastados sin login, cuentas ni órdenes."""
 from dataclasses import asdict
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -122,6 +123,7 @@ def test_sandbox_probe_no_habilita_produccion(wrapper,monkeypatch):
     assert calls==[]
 
 
+@contextmanager
 def config_reader(override=None):
     values={'instrument_types':['CAUCIONES','FCI','FUTUROS','ACCIONES'],
         'markets':['BYMA'],'settlements':['INMEDIATA'],
@@ -134,28 +136,33 @@ def config_reader(override=None):
         calls.append(name)
         return values[name]
     config=SimpleNamespace(**{'get_'+name:(lambda name=name:get(name)) for name in values})
-    reader=ProductionMarketReader.__new__(ProductionMarketReader)
+    # The SDK facet is wholly in-memory, but reader custody/lifecycle stay real.
+    reader=ProductionMarketReader('SYNTHETIC_KEY','SYNTHETIC_SECRET',budget=object())
     reader._ProductionMarketReader__authenticated=True
     reader._ProductionMarketReader__client=SimpleNamespace(configuration=config,marketdata=object())
-    return reader,values,calls
+    try:
+        yield reader,values,calls
+    finally:
+        reader.close()
 
 
 def test_enum_publicos_se_recogen_sin_cuenta_ni_login_nuevo():
-    reader,values,calls=config_reader()
-    assert reader.market_configuration()==values
-    assert calls==list(values)
+    with config_reader() as (reader,values,calls):
+        assert reader.market_configuration()==values
+        assert calls==list(values)
+        assert reader.metrics['login_calls']==0
 
 
 @pytest.mark.parametrize('value',[None,{'message':'error'},'COLOCAR-CAUCIÓN',[None],['']])
 def test_configuracion_invalida_no_se_presenta_como_lista_verificada(value):
-    reader,_,_=config_reader({'operations':value})
-    with pytest.raises(ValueError,match='INVALID_SHAPE'):
-        reader.market_configuration()
+    with config_reader({'operations':value}) as (reader,_,_):
+        with pytest.raises(ValueError,match='INVALID_SHAPE'):
+            reader.market_configuration()
 
 
 def test_configuracion_vacia_se_conserva_sin_inventar_soporte():
-    reader,_,_=config_reader({'operations':[]})
-    assert reader.market_configuration()['operations']==[]
+    with config_reader({'operations':[]}) as (reader,_,_):
+        assert reader.market_configuration()['operations']==[]
 
 
 def test_barrera_conserva_cuentas_y_ordenes_bloqueadas():

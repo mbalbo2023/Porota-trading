@@ -149,10 +149,12 @@ def test_exact_artifact_workflow_runs_two_standalone_twelve_cut_stages():
     job=workflow['jobs']['artifact-gate']
     assert job['timeout-minutes']*60>=35*60+2*1500+5*60
     native=next(step['run'] for step in job['steps'] if step.get('name')=='Exact image native sizing and generated catalog proof')
+    assert 'rc6_label="$1"' in native
+    assert 'rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"' in native
+    assert 'docker create --name "$rc6_name"' in native
     for stage in ('fresh','legacy'):
         assert 'run_native_proof cadence-'+stage+' python scripts/rc6_postdeploy_stress.py' in native
         assert '--cadence-stage '+stage+' --output /proof/cadence' in native
-        assert 'porota-native-cadence-'+stage+'-$GITHUB_RUN_ID' in native
     assert 'cadence-fresh|cadence-legacy) rc6_timeout=1500' in native
     assert 'rc6_memory=(--memory 512m --memory-swap 512m)' in native
     assert 'if test "$rc6_label" = session; then' in native

@@ -55,6 +55,7 @@ def _fake_ppi(error=None):
 
 def test_fake_sdk_exercises_real_transport_guard_without_order_routes():
     import c_ppi_client as module
+    from bd_ppi_readonly_guard import ReadOnlyPolicyViolation
     from rc6_ppi_global_budget import BudgetBackpressure
     fake, calls = _fake_ppi()
     candidate = fake()
@@ -73,8 +74,9 @@ def test_fake_sdk_exercises_real_transport_guard_without_order_routes():
         session.adapters["http://"].send(SimpleNamespace(method="POST", url=
             "http://clientapisandbox.portfoliopersonal.com/api/1.0/Orders/Confirm"))
     assert calls["login"] == 0
-    candidate.account.login_api("OFFLINE_KEY", "OFFLINE_SECRET")
-    assert calls["login"] == 1
+    with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+        candidate.account.login_api("OFFLINE_KEY", "OFFLINE_SECRET")
+    assert calls["login"] == 0
 
 
 def test_unknown_sdk_transport_is_rejected_before_any_login():
@@ -97,6 +99,9 @@ def test_ppi_rate_limit_hace_un_solo_login(monkeypatch, tmp_path):
 
     fake, calls = _fake_ppi("429 API calls quota exceeded maximum admitted 10 per 1h")
     monkeypatch.setattr(module, "PPI", fake)
+    # Local fake SDK/wire only: exercise the legacy cooldown below live HOLD.
+    # A980 keeps the unpatched authentication boundary fail-closed.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     monkeypatch.setattr(module.ResilientPPIClient, "_configure_sandbox_sdk", lambda self, candidate: None)
     client = module.ResilientPPIClient(DummyNotifier())
 
@@ -117,6 +122,8 @@ def test_ppi_login_exitoso_expone_estado_local(monkeypatch, tmp_path):
 
     fake, calls = _fake_ppi()
     monkeypatch.setattr(module, "PPI", fake)
+    # Synthetic session state, not evidence of a provider authentication lease.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     monkeypatch.setattr(module.ResilientPPIClient, "_configure_sandbox_sdk", lambda self, candidate: None)
     client = module.ResilientPPIClient(DummyNotifier())
 
@@ -153,6 +160,7 @@ def test_scalping_no_usa_yahoo_en_modo_operativo(monkeypatch):
 
 def test_websocket_no_arranca_sin_autenticacion(monkeypatch):
     import x_ppi_websocket as ws
+    from bd_ppi_readonly_guard import ReadOnlyPolicyViolation
 
     class Client:
         client = object()
@@ -162,7 +170,9 @@ def test_websocket_no_arranca_sin_autenticacion(monkeypatch):
             return False
 
     realtime = ws.PPIRealTimeClient(Client())
-    realtime.start()
+    monkeypatch.setattr(ws, "STREAM_ENABLED", True)
+    with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+        realtime.start()
     assert realtime._threads == []
 
 

@@ -1,9 +1,11 @@
 """A recent CLOSED scheduler snapshot avoids repeated host systemctl scans."""
 from datetime import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
 import subprocess
+import shlex
 
 import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import TZ, byma_paper_spot_phase
@@ -13,6 +15,14 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/porota_export_scheduler_
 
 
 def test_scheduler_snapshot_closed_skip_and_corrupt_fail_open(tmp_path):
+    # Only relocate the host lock; keep the real shell/flock/export transition.
+    # The test never needs permission to write the host's /run/lock directory.
+    lock = tmp_path / 'scheduler-export.lock'
+    lock_assignment = 'LOCK="/run/lock/porota-scheduler-export-rc6.lock"'
+    source = SCRIPT.read_text()
+    assert source.count(lock_assignment) == 1
+    script = tmp_path / SCRIPT.name
+    script.write_text(source.replace(lock_assignment, 'LOCK=' + shlex.quote(str(lock))))
     directory = tmp_path / 'scheduler'
     directory.mkdir()
     output = directory / 'systemd_timers.json'
@@ -35,7 +45,7 @@ fi
            'POROTA_SCHEDULER_DIR': str(directory), 'RC6_TEST_SYSTEMCTL_LOG': str(log)}
 
     def invoke():
-        result = subprocess.run(['bash', str(SCRIPT)], cwd=SCRIPT.parents[1],
+        result = subprocess.run(['bash', str(script)], cwd=SCRIPT.parents[1],
             env=env, capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stderr
 
@@ -52,6 +62,12 @@ fi
     output.write_text('{corrupt')
     if log.exists():
         log.unlink()
+    # Contention must still prevent any scan or replacement of corrupt evidence.
+    with lock.open('a') as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        invoke()
+        assert not log.exists()
+        assert output.read_text() == '{corrupt'
     invoke()
     assert 'list-unit-files' in log.read_text()
     assert json.loads(output.read_text())['state'] == 'OK'

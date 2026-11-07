@@ -120,6 +120,48 @@ def test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source
     assert not list((tmp_path / "shadow").glob("*.tmp"))
 
 
+def test_worker_routes_full_ten_family_catalog_without_promoting_missing_contracts(tmp_path):
+    # Regression: passing inputs['catalog'] instead of inputs['full_catalog']
+    # silently drops every non-READY instrument before family observation.
+    store, _ = make_store(tmp_path, count=0)
+    families = (
+        "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+    )
+    with closing(store.connect()) as connection:
+        with connection:
+            for family in families:
+                capability = ("READY_PAPER_SPOT" if family in families[:3]
+                              else "NEEDS_SPECIALIZED_CONTRACT")
+                connection.execute(
+                    "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"FIXTURE_{family}", family, "BYMA", "ARS", "A-24HS",
+                     "FIXTURE", "fixture", PRE.isoformat(), "test",
+                     "AVAILABLE", capability, "{}"))
+    _quiesce_fixture_source(store.path)
+    before = Path(store.path).read_bytes()
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
+    report = worker.tick(PRE)
+
+    assert all(plan["catalog_ready_count"] == 3 for plan in report["engines"].values())
+    routed = report["family_routing"]
+    assert routed["catalog_preserved"] and routed["catalog_count"] == 10
+    assert {row["family"]: row["catalog_count"] for row in routed["families"]} == {
+        family: 1 for family in families}
+    assert {tuple(row["identity"]) for row in routed["instruments"]} == {
+        (f"FIXTURE_{family}", family, "BYMA", "ARS", "A-24HS") for family in families}
+    assert all(row["status"] == "OBSERVE_ONLY" and not row["entry_authority"]
+               for row in routed["instruments"])
+    assert report["provider_requests"] == report["real_orders_sent"] == 0
+    assert report["real_routes"] == "NOT_CALLED"
+    assert routed["safety"]["lifecycle_mutations"] == 0
+    assert report["source_database_effect"] == "READ_ONLY"
+    assert Path(store.path).read_bytes() == before
+    with closing(store.connect()) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM paper_decisions").fetchone()[0] == 0
+
+
 def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp_path, monkeypatch):
     from rc6_dynamic_universe import live
     store, assets = make_store(tmp_path)

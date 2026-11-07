@@ -1,4 +1,4 @@
-"""The existing production login exposes only bounded, sanitized wire metadata."""
+"""Offline fake-wire tests of the retained login metadata sanitizer, not live auth."""
 
 from json import JSONDecodeError
 from types import SimpleNamespace
@@ -38,6 +38,9 @@ def _reader(monkeypatch, *, status=200, media="text/html", body=None, fail=None,
     # Patch before installing the allowlisted guard, so its original_send is
     # a strictly local fake. Any extra provider request is counted and fails.
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", fake_send)
+    # Exercise sanitizer branches only after replacing the physical transport.
+    # This test-local no-op is not authority; A980 tests the real live HOLD.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
 
     class FakePPI:
         def __init__(self, *, sandbox):
