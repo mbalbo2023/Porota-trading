@@ -69,7 +69,8 @@ def test_always_sanitizer_cannot_execute_candidate_after_custody_hold():
                 continue
             assert step.get('if') in (
                 None, 'success()',
-                "${{ always() && steps.execution_custody.outcome == 'success' }}",
+                "${{ always() && steps.execution_custody.outcome == 'success' "
+                "&& steps.oci_diagnostic.outcome == 'success' }}",
             ), 'candidate code must not run on execution custody failure'
 
 

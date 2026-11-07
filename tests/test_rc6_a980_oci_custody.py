@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 
 import pytest
+import yaml
 
 
 MODULE = Path(__file__).resolve().parents[1] / 'scripts/rc6_ci_oci_custody.py'
@@ -53,7 +54,7 @@ class FakeDocker:
                 'Id': CID, 'Config': {'User': '65532:65532',
                 'Labels': {'rc6.qa.custody': option('--label').split('=', 1)[1]}},
                 'HostConfig': {'Privileged': False, 'ReadonlyRootfs': True,
-                'NetworkMode': 'none', 'PidMode': '', 'IpcMode': 'none',
+                'NetworkMode': 'none', 'PidMode': '', 'IpcMode': 'none', 'CgroupnsMode': 'private',
                 'CapAdd': None, 'CapDrop': ['ALL'], 'SecurityOpt': ['no-new-privileges'],
                 'PidsLimit': 256, 'Memory': 1073741824, 'MemorySwap': 1073741824,
                 'NanoCpus': 2000000000, 'LogConfig': {'Type': 'none'},
@@ -110,7 +111,8 @@ def test_reuses_bounded_runner_with_no_host_writable_mount_or_secret(source, tmp
         'automatic_go': False, 'runtime_authority': False,
         'full_suite_certified': False, 'physical_custody_certified': False,
     }
-    assert fake.calls[-1][-2:] == ['--force', CID]
+    assert fake.calls[-1][-2:] == ['rm', CID]
+    assert not any('--force' in call for call in fake.calls)
 
 
 @pytest.mark.parametrize('mutation', [
@@ -139,7 +141,9 @@ def test_timeout_kills_only_owned_container_and_publishes_nothing(source, tmp_pa
     fake = FakeDocker(timeout=True)
     out = tmp_path / 'public'
     assert invoke(module(), source, out, fake) == 79
-    assert any(call[-3:] == ['rm', '--force', CID] for call in fake.calls)
+    assert any(call[-4:] == ['stop', '--timeout', '5', CID] for call in fake.calls)
+    assert any(call[-2:] == ['rm', CID] for call in fake.calls)
+    assert not any('--force' in call for call in fake.calls)
     assert not (out / 'attestation.json').exists()
 
 
@@ -160,9 +164,107 @@ def test_dirty_source_is_rejected_before_daemon(source, tmp_path):
     assert fake.calls == []
 
 
+@pytest.mark.parametrize('value', [None, [], 'SYNTHETIC_SECRET'])
+def test_malformed_daemon_config_is_hold_not_raw_traceback(source, tmp_path, value, capsys):
+    fake = FakeDocker(mutate=lambda c: c.update(Config=value))
+    assert invoke(module(), source, tmp_path / 'public', fake) == 79
+    assert capsys.readouterr() == ('', '')
+    assert not any('start' in c or 'rm' in c for c in fake.calls)
+
+
+@pytest.mark.parametrize('value', [None, [], 'SYNTHETIC_SECRET'])
+def test_malformed_log_config_is_hold_not_raw_traceback(source, tmp_path, value, capsys):
+    fake = FakeDocker(mutate=lambda c: c['HostConfig'].update(LogConfig=value))
+    assert invoke(module(), source, tmp_path / 'public', fake) == 79
+    assert capsys.readouterr() == ('', '')
+    assert not any('start' in c for c in fake.calls)
+
+
+@pytest.mark.parametrize('value', [None, '', 'host'])
+def test_cgroup_namespace_must_be_verified_private(source, tmp_path, value):
+    fake = FakeDocker(mutate=lambda c: c['HostConfig'].update(CgroupnsMode=value))
+    assert invoke(module(), source, tmp_path / 'public', fake) == 79
+    assert not any('start' in c for c in fake.calls)
+    assert not (tmp_path / 'public' / 'attestation.json').exists()
+
+
+@pytest.mark.parametrize('digests', [IMAGE, {IMAGE: True}, [IMAGE, 42]])
+def test_malformed_repo_digests_never_creates_candidate(source, tmp_path, digests):
+    fake = FakeDocker()
+    def transport(argv, *, timeout):
+        if 'image' in argv:
+            return json.dumps([{'RepoDigests': digests, 'Config': {'Volumes': None}}])
+        return fake(argv, timeout=timeout)
+    assert invoke(module(), source, tmp_path / 'public', transport) == 79
+    assert not any('create' in c for c in fake.calls)
+    assert not (tmp_path / 'public' / 'attestation.json').exists()
+
+
+def test_failed_cleanup_reports_fixed_unverified_status_without_raw_error(source, tmp_path):
+    fake = FakeDocker()
+    reports = []
+    def transport(argv, *, timeout):
+        if 'rm' in argv:
+            raise OSError('SYNTHETIC_SECRET_FROM_DAEMON')
+        return fake(argv, timeout=timeout)
+    repo, sha, tree = source
+    assert module().run(repo, tmp_path / 'public', image=IMAGE,
+                        source_sha=sha, source_tree_sha=tree,
+                        command=transport, report=reports.append) == 79
+    assert reports == ['TEARDOWN_UNVERIFIED']
+    assert not (tmp_path / 'public' / 'attestation.json').exists()
+
+
+def test_output_parent_swap_cannot_redirect_publication(source, tmp_path):
+    parent = tmp_path / 'original'
+    parent.mkdir()
+    foreign = tmp_path / 'foreign'
+    foreign.mkdir()
+    out = parent / 'public'
+    fake = FakeDocker()
+    def transport(argv, *, timeout):
+        result = fake(argv, timeout=timeout)
+        if 'wait' in argv:
+            parent.rename(tmp_path / 'moved')
+            parent.symlink_to(foreign, target_is_directory=True)
+        return result
+    assert invoke(module(), source, out, transport) == 79
+    assert list(foreign.iterdir()) == []
+
+
 def test_real_subprocess_scrubs_tokens_and_prints_no_raw_output(monkeypatch, capsys):
     monkeypatch.setenv('GITHUB_TOKEN', 'SYNTHETIC_GITHUB_SECRET')
     monkeypatch.setenv('ACTIONS_RUNTIME_TOKEN', 'SYNTHETIC_ACTIONS_SECRET')
     result = module()._command(['/usr/bin/env'], timeout=5)
     assert 'SYNTHETIC_' not in result
     assert capsys.readouterr() == ('', '')
+
+
+def test_ws12_never_executes_candidate_supervisor_as_docker_authority(tmp_path):
+    workflow = MODULE.parents[1] / '.github/workflows/rc6-ws-tests-12-current-contract.yml'
+    steps = yaml.safe_load(workflow.read_text())['jobs']['full-suite']['steps']
+    assert steps[0]['id'] == 'execution_custody'
+    selected = [step for step in steps if step.get('id') == 'oci_diagnostic']
+    assert len(selected) == 1, 'existing WS12 must wire the supervisor behind HOLD'
+    step = selected[0]
+    assert step.get('if') in (None, 'success()')
+    assert 'env' not in step
+    assert 'rc6_ci_oci_custody.py' not in step['run']
+    assert 'secrets.' not in step['run'] and 'pip install' not in step['run']
+    assert not any(str(s.get('uses', '')).startswith('actions/upload-artifact@') for s in steps)
+    result = subprocess.run(['bash', '-c', step['run']], cwd=tmp_path,
+                            env={'PATH': '/usr/bin:/bin', 'RC6_QA_CUSTODIAN_SHA': 'f' * 40,
+                                 'RC6_QA_IMAGE_DIGEST': IMAGE},
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 79 and result.stderr == ''
+    assert result.stdout == 'RC6_OCI_QA=BLOQUEADO|reason=TRUSTED_BOOTSTRAP_UNVERIFIED|automatic_go=false\n'
+
+
+def test_legacy_sanitizer_cannot_bypass_independent_bootstrap_hold():
+    workflow = MODULE.parents[1] / '.github/workflows/rc6-ws-tests-12-current-contract.yml'
+    steps = yaml.safe_load(workflow.read_text())['jobs']['full-suite']['steps']
+    sanitizer = next(s for s in steps if s.get('name') == 'Sanitize FULL evidence')
+    assert sanitizer['if'] == (
+        "${{ always() && steps.execution_custody.outcome == 'success' "
+        "&& steps.oci_diagnostic.outcome == 'success' }}"
+    )

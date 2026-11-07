@@ -186,6 +186,7 @@ def test_existing_full_job_preserves_suite_plan_behind_custody_hold():
     assert names == [
         "BLOCKED QA execution without independent custody",
         "Verify exact candidate checkout and tree (runner-only)",
+        "Isolated bounded QA diagnostic (HOLD)",
         "Install dependencies", "Collect exact FULL nodeids privately",
         "Full suite", "Sanitize FULL evidence",
         "BLOCKED evidence publication without independent custody"]
@@ -196,7 +197,9 @@ def test_existing_full_job_preserves_suite_plan_behind_custody_hold():
     assert "--junitxml=" in script and "-p scripts.rc6_ci_pytest_identity" in script
     assert "-o xfail_strict=true" in script
     sanitizer = next(s for s in steps if s.get("name") == "Sanitize FULL evidence")
-    assert sanitizer["if"] == "${{ always() && steps.execution_custody.outcome == 'success' }}"
+    assert sanitizer["if"] == (
+        "${{ always() && steps.execution_custody.outcome == 'success' "
+        "&& steps.oci_diagnostic.outcome == 'success' }}")
     assert "scripts.rc6_ci_fullsuite_evidence" in sanitizer["run"]
     gate = next(s for s in steps if s.get("id") == "publication_custody")
     assert gate["if"] == "always()"
