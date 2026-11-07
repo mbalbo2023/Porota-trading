@@ -18,7 +18,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from json import JSONDecodeError
-from typing import Callable, Optional
+from typing import Callable, Optional, ClassVar
 from urllib.parse import parse_qsl, urlsplit
 
 import requests
@@ -269,6 +269,10 @@ def _normal_path(value: str) -> str:
 class ReadOnlyTransportGuard:
     """Intercepta Session.request y HTTPAdapter.send con lista blanca cerrada."""
 
+    # HTTP transport custody only: reuse the existing SDK owner and budget.
+    _registry_lock: ClassVar[threading.RLock] = threading.RLock()
+    _active_guard: ClassVar[object] = None
+
     audit: Optional[Callable[[str, str, str], None]] = None
     connect_timeout: int = 10
     read_timeout: int = 30
@@ -286,6 +290,9 @@ class ReadOnlyTransportGuard:
     consumer: str = "UNSCOPED"
     priority: str = "DISCOVERY"
     _scope: threading.local = field(default_factory=threading.local)
+    _inflight: int = 0
+    _owned_request: object = None
+    _owned_send: object = None
 
     @contextmanager
     def read_scope(self, *, priority=None, identity=None):
@@ -360,6 +367,43 @@ class ReadOnlyTransportGuard:
         return method, path
 
     def install(self) -> "ReadOnlyTransportGuard":
+        with ReadOnlyTransportGuard._registry_lock:
+            if (ReadOnlyTransportGuard._active_guard is not None
+                    and ReadOnlyTransportGuard._active_guard is not self):
+                raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_ALREADY_OWNED")
+            if self._installed:
+                self._require_owned_hooks()
+                return self
+            ReadOnlyTransportGuard._active_guard = self
+            try:
+                return self._install_owned()
+            except BaseException:
+                ReadOnlyTransportGuard._active_guard = None
+                raise
+
+    def _require_owned_hooks(self):
+        if (ReadOnlyTransportGuard._active_guard is not self
+                or not self._installed
+                or requests.sessions.Session.request is not self._owned_request
+                or requests.adapters.HTTPAdapter.send is not self._owned_send):
+            raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_CUSTODY_UNVERIFIED")
+
+    def _owned_invocation(self, call):
+        def invoke(*args, **kwargs):
+            with ReadOnlyTransportGuard._registry_lock:
+                self._require_owned_hooks()
+                # Saved wrappers cannot borrow a later install's custody.
+                if self._owned_request is not invoke and self._owned_send is not invoke:
+                    raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_INSTALLATION_EXPIRED")
+                self._inflight += 1
+            try:
+                return call(*args, **kwargs)
+            finally:
+                with ReadOnlyTransportGuard._registry_lock:
+                    self._inflight -= 1
+        return invoke
+
+    def _install_owned(self) -> "ReadOnlyTransportGuard":
         if self._installed:
             return self
 
@@ -522,17 +566,24 @@ class ReadOnlyTransportGuard:
                         observed.append(receipt)
                 return response
 
-        requests.sessions.Session.request = guarded_request
-        requests.adapters.HTTPAdapter.send = guarded_send
+        self._owned_request = self._owned_invocation(guarded_request)
+        self._owned_send = self._owned_invocation(guarded_send)
+        requests.sessions.Session.request = self._owned_request
+        requests.adapters.HTTPAdapter.send = self._owned_send
         self._installed = True
         return self
 
     def restore(self) -> None:
-        if not self._installed:
-            return
-        requests.sessions.Session.request = self._original_request
-        requests.adapters.HTTPAdapter.send = self._original_send
-        self._installed = False
+        with ReadOnlyTransportGuard._registry_lock:
+            if not self._installed:
+                return
+            self._require_owned_hooks()
+            if self._inflight:
+                raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_INFLIGHT")
+            requests.sessions.Session.request = self._original_request
+            requests.adapters.HTTPAdapter.send = self._original_send
+            self._installed = False
+            ReadOnlyTransportGuard._active_guard = None
 
 
 class ProductionMarketReader:

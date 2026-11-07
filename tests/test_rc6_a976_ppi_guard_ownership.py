@@ -72,7 +72,8 @@ def test_restore_retains_guard_during_http_invocation(monkeypatch):
 
 
 @pytest.mark.parametrize("hook", ["send", "request"])
-def test_saved_callable_expires_after_restore_and_same_instance_reinstall(monkeypatch, hook):
+@pytest.mark.parametrize("reinstall", [False, True])
+def test_saved_callable_expires_after_restore_and_same_instance_reinstall(monkeypatch, hook, reinstall):
     owner = requests.adapters.HTTPAdapter if hook == "send" else requests.sessions.Session
     calls = []
     def transport(label):
@@ -93,8 +94,11 @@ def test_saved_callable_expires_after_restore_and_same_instance_reinstall(monkey
         return call(requests.Session(), "POST", request.url)
     guard.restore()
     try:
-        with pytest.raises(ReadOnlyPolicyViolation):
-            invoke(stale)
+        if not reinstall:
+            with pytest.raises(ReadOnlyPolicyViolation):
+                invoke(stale)
+            assert calls == []
+            return
         monkeypatch.setattr(owner, hook, transport("NEW_TRANSPORT"))
         guard.install()
         with pytest.raises(ReadOnlyPolicyViolation):
