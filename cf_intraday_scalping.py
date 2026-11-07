@@ -575,8 +575,10 @@ def select_batch(store, *, limit, cursor=0):
             AND c.currency<>'UNKNOWN' AND c.market<>'UNKNOWN'
           ORDER BY c.instrument_type,c.market,c.currency,c.ticker,c.settlement
         """, tuple(sorted(SCALPING_STRATEGY_FAMILIES))).fetchall()]
-        opened = {row[0] for row in connection.execute(
-            "SELECT DISTINCT symbol FROM paper_positions WHERE status='OPEN'").fetchall()}
+        opened_rows = [tuple(row) for row in connection.execute(
+            "SELECT symbol,asset_class,market,currency,settlement FROM paper_positions WHERE status='OPEN'")]
+        opened = {key[0] for key in opened_rows}
+        opened_exact = set(opened_rows)
     unique = {}
     for row in rows:
         try:
@@ -591,6 +593,11 @@ def select_batch(store, *, limit, cursor=0):
         request_key = (row["ticker"], row["instrument_type"], row["settlement"])
         unique.setdefault(request_key, []).append(row)
     rows = [values[0] for values in unique.values() if len(values) == 1]
+    # Preserve exact-key ETF OPEN inventory for EXIT; held ETF discovery
+    # cannot spend lower-priority PPI Intraday leases. Ticker alone is not
+    # enough to attest an open position's market/currency/settlement.
+    rows = [row for row in rows if not paper_entry_hold_reason(row["instrument_type"])
+            or _identity(row) in opened_exact]
     priority = [row for row in rows if row["ticker"] in opened or row["ticker"] in FOCUS]
     priority_keys = {_identity(row) for row in priority}
     rotation = [row for row in rows if _identity(row) not in priority_keys]
@@ -626,7 +633,10 @@ def select_runtime_batch(store, *, limit, cursor=0, at, controller=None):
     aliases = {}
     for row in rows:
         aliases.setdefault((row["ticker"], row["instrument_type"], row["settlement"]), []).append(row)
-    ready = {_identity(values[0]): values[0] for values in aliases.values() if len(values) == 1}
+    opened_exact = set(opened)
+    ready = {_identity(values[0]): values[0] for values in aliases.values()
+             if len(values) == 1 and (not paper_entry_hold_reason(values[0]["instrument_type"])
+                                       or _identity(values[0]) in opened_exact)}
     selected = [ready[k] for k in selection["selected"] if k in ready]
     return selected, cursor, universe, selection
 
