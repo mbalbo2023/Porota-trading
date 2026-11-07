@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
 from scripts.rc6_source_safe_atomic import (
-    publish_json, SourceOutputUnsafe, _verified_directory, _identity,
+    publish_json, SourceOutputUnsafe, _verified_directory, _identity, _same_parent,
 )
 
 
@@ -144,16 +144,55 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
 
 
 def _paper_zero(db: Path) -> None:
-    if not db.is_absolute() or not db.is_file() or db.is_symlink():
+    if not db.is_absolute() or '..' in db.parts or not db.name:
         raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+    directory_fd = file_fd = None
     try:
+        # Pin the actual main-file inode without giving SQLite a /proc/fd
+        # alias: opening that URI would lose its filename-relative WAL/SHM.
+        directory_fd = _verified_directory(db.parent)
+        file_fd = os.open(db.name,
+            os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=directory_fd)
+        pinned = os.fstat(file_fd)
+        if not stat.S_ISREG(pinned.st_mode) or pinned.st_nlink != 1:
+            raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+        expected = (pinned.st_dev, pinned.st_ino, pinned.st_mode, pinned.st_nlink)
+
+        def still_pinned() -> bool:
+            current = os.stat(db.name, dir_fd=directory_fd, follow_symlinks=False)
+            opened = os.fstat(file_fd)
+            return (stat.S_ISREG(current.st_mode) and current.st_nlink == 1
+                    and (current.st_dev, current.st_ino,
+                         current.st_mode, current.st_nlink) == expected
+                    and _same_parent(db.parent, directory_fd)
+                    and (opened.st_dev, opened.st_ino,
+                         opened.st_mode, opened.st_nlink) == expected)
+
+        if not still_pinned():
+            raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+        # SQLite retains its original owned path for correct active WAL/SHM
+        # semantics.  A name swap during connect must fail BEFORE any SQL.
         with closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=.25)) as c:
+            if not still_pinned():
+                raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
             c.execute("PRAGMA query_only=ON")
+            if not still_pinned():
+                raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
             row = c.execute(
                 "SELECT mode,real_orders_sent FROM observer_state WHERE id=1"
             ).fetchone()
+            if not still_pinned():
+                raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+    except (OSError, SourceOutputUnsafe) as exc:
+        raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED") from exc
     except sqlite3.Error as exc:
         raise SourceCycleBlocked("PAPER_DATABASE_UNVERIFIED") from exc
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
     if row != ("PRODUCTION_PAPER", 0):
         raise SourceCycleBlocked("PAPER_ZERO_REQUIRED")
 
