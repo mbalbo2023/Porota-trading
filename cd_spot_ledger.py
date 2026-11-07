@@ -265,6 +265,25 @@ def partition(c, p, at=None):
     at = aware_datetime(at) if at is not None else None
     if p['status'] == 'CANCELLED_ADMIN':
         return _admin_cancel_partition(c, p, at)
+    if p['status'] == 'CLOSED' and p['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+        from rc6_fixed_income_native_exit import terminal_at
+        terminal = terminal_at(c, p['paper_id'])
+        if terminal is None or p['exit_price'] is not None:
+            raise ValueError('FI_TERMINAL_RECEIPT_REQUIRED')
+        if (str(p['exit_cost']) != '0' or p['net_pnl'] != terminal['realized_pnl']
+                or sales(c, p['paper_id']) or c.execute(
+                    "SELECT 1 FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",
+                    (p['paper_id'],)).fetchone()):
+            raise ValueError('FI_TERMINAL_HAS_SPOT_SETTLEMENT_OR_PNL_CONFLICT')
+        opened, closed = aware_datetime(p['opened_at']), aware_datetime(terminal['closed_at'])
+        if closed < opened:
+            raise ValueError('FI_TERMINAL_CLOCK_INVALID')
+        if at is not None and at < opened:
+            return None, []
+        if at is not None and at < closed:
+            return dict(p, status='OPEN', closed_at=None, exit_price=None,
+                        exit_cost=None, gross_pnl=None, net_pnl=None, close_reason=None), []
+        return None, [p]
     start = aware_datetime(p['opened_at'])
     end = aware_datetime(p['closed_at']) if p['closed_at'] else None
     if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)

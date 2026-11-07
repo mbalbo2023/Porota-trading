@@ -164,6 +164,12 @@ class DailyRisk:
                     if opened < start and (not closed or closed >= start):
                         carry = True
                     if closed:
+                        if (p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED'
+                                and p.get('net_pnl') is None):
+                            # partition already reconciled the terminal receipt.
+                            # Foreign-currency issuer cash is not approved FX PnL.
+                            stale = True
+                            continue
                         net = decimal_value(p['net_pnl'],'PnL cerrado')
                         realized += net
                         if closed < start:
