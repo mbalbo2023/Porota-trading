@@ -4,6 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -129,3 +130,87 @@ def test_predeploy_containers_have_explicit_creation_cleanup() -> None:
     assert 'rc6_container_id="$(docker create --name "$rc6_name"' in source
     assert 'docker rm "$rc6_container_id"' in source
     assert 'trap cleanup_native_proof EXIT' in source
+
+
+def _native_proof_shell(tmp_path: Path, case: str, stage: str = "cases") -> tuple[int, list[str], bool]:
+    """Exercise only the native function with fake Docker; never call host Docker."""
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    steps = data["jobs"]["artifact-gate"]["steps"]
+    source = next(s["run"] for s in steps
+                  if s.get("name") == "Exact image native sizing and generated catalog proof")
+    assert "# RC6_A980_NATIVE_OWNER_BEGIN" in source
+    assert "# RC6_A980_NATIVE_OWNER_END" in source
+    functions = source.split("# RC6_A980_NATIVE_OWNER_BEGIN", 1)[1].split(
+        "# RC6_A980_NATIVE_OWNER_END", 1)[0]
+    trace, foreign = tmp_path / "docker.calls", tmp_path / "foreign-running"
+    foreign.write_text("foreign", encoding="utf-8")
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$*" >> "$DOCKER_TRACE"\n'
+        'case "$1" in\n'
+        ' create)\n'
+        '   if [[ "$RC6_FAKE_CASE" == "name_collision" ]]; then exit 44; fi\n'
+        '   printf "b%.0s" {1..64}; echo; exit 0;;\n'
+        ' start) [[ "$RC6_FAKE_CASE" != "start_failure" ]]; exit $?;;\n'
+        ' inspect)\n'
+        '   if [[ "$3" == *State.ExitCode* ]]; then echo "0|false"; exit 0; fi\n'
+        '   if [[ "$RC6_FAKE_CASE" == "wrong_owner" ]]; then\n'
+        '     printf "b%.0s" {1..64}; echo "|foreign|v2|1999"; exit 0\n'
+        '   fi\n'
+        '   printf "b%.0s" {1..64}; echo "|0123456789012345678901234567890123456789|v2|1999"; exit 0;;\n'
+        ' rm)\n'
+        '   for arg in "$@"; do\n'
+        '     if [[ "$arg" == "porota-native-$RC6_STAGE-1999" ]]; then rm -f "$FOREIGN_MARKER"; fi\n'
+        '   done\n'
+        '   exit 0;;\n'
+        'esac\n'
+        "exit 97\n", encoding="utf-8")
+    fake_docker.chmod(0o700)
+    env = {**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+           "RUNNER_TEMP": str(tmp_path), "GITHUB_RUN_ID": "1999",
+           "CANDIDATE_SHA": "0123456789012345678901234567890123456789",
+           "IMAGE": "porota-predeploy-v2:0123456789012345678901234567890123456789",
+           "RC6_STAGE": stage, "RC6_FAKE_CASE": case,
+           "FOREIGN_MARKER": str(foreign), "DOCKER_TRACE": str(trace)}
+    execution = 'run_native_proof "' + stage + '" true'
+    if stage == "session":
+        execution += ' &\nwait "$!"'
+    done = subprocess.run(["bash", "-c", "set -Eeuo pipefail\n" + functions + "\n" + execution],
+                          env=env, cwd=tmp_path, capture_output=True,
+                          text=True, timeout=5, check=False)
+    calls = trace.read_text(encoding="utf-8").splitlines() if trace.exists() else []
+    return done.returncode, calls, foreign.exists()
+
+
+@pytest.mark.parametrize("stage", ["cases", "session"])
+def test_native_create_name_collision_leaves_foreign_container(tmp_path: Path, stage: str) -> None:
+    code, calls, foreign_alive = _native_proof_shell(tmp_path, "name_collision", stage)
+    assert code != 0
+    assert foreign_alive
+    assert any(s.startswith("create ") for s in calls)
+    assert not any(s.startswith("rm ") for s in calls)
+
+
+@pytest.mark.parametrize("stage", ["cases", "session"])
+def test_native_failed_start_cleans_only_created_id(tmp_path: Path, stage: str) -> None:
+    code, calls, foreign_alive = _native_proof_shell(tmp_path, "start_failure", stage)
+    assert code != 0
+    assert foreign_alive
+    assert any(s.startswith("rm -f ") and s.endswith("b" * 64) for s in calls)
+    assert not any("porota-native-" in s for s in calls if s.startswith("rm "))
+
+
+def test_native_wrong_owner_never_deleted(tmp_path: Path) -> None:
+    code, calls, foreign_alive = _native_proof_shell(tmp_path, "wrong_owner")
+    assert code != 0
+    assert foreign_alive
+    assert not any(s.startswith("rm ") for s in calls)
+
+
+def test_native_success_uses_only_created_id(tmp_path: Path) -> None:
+    code, calls, foreign_alive = _native_proof_shell(tmp_path, "success")
+    assert code == 0
+    assert foreign_alive
+    assert any(s.startswith("rm ") and s.endswith("b" * 64) for s in calls)
+    assert not any("porota-native-" in s for s in calls if s.startswith("rm "))
