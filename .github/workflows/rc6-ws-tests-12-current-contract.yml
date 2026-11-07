@@ -1,9 +1,10 @@
-name: RC6 WS TESTS 12 A875 OFFHOST bounded diagnostic RED only
-run-name: A875 NO_GO bounded QA @ ${{ github.sha }}
+name: RC6 WS TESTS 12 A883 OFFHOST matrix diagnostic RED only
+run-name: A883 NO_GO 34 bounded jobs @ ${{ github.sha }}
 
-# The copy on this isolated evidence branch diagnoses the 2026-11-07 WS-12
-# timeout. It is NOT a replacement for governed FULL, Predeploy V2, or Deploy.
-# The triggering push is confined to one known owner branch and workflow path.
+# The copy on this isolated evidence branch diagnoses historic 135 failures
+# and the 1,860 cases without admissible JUnit. It is NOT a replacement for
+# governed FULL, Predeploy V2, or Deploy. No matrix quorum can grant GO.
+# The triggering push is confined to one owner branch and workflow path.
 on:
   push:
     branches:
@@ -15,16 +16,251 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc6-a875-bounded-offhost-${{ github.ref }}
+  group: rc6-a883-bounded-offhost-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  red-only-offhost:
+  plan-offhost:
+    # Separate preflight. No matrix job starts unless the exact same SHA/tree
+    # produces 265..272 module-local shard1 batches with network OFF.
+    name: PLAN DIAGNOSTIC ONLY (NOT RELEASE)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 6
+    outputs:
+      planned_batches: ${{ steps.plan.outputs.planned_batches }}
+      collection_sha256: ${{ steps.plan.outputs.collection_sha256 }}
+      ready: ${{ steps.plan.outputs.ready }}
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Attest exact preflight checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = "mbalbo2023/Porota-trading"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1)"
+          TREE_SHA="$(git rev-parse HEAD^{tree})"
+          [[ "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "TREE_SHA=$TREE_SHA" >> "$GITHUB_ENV"
+          echo "A883_PLAN_SOURCE_SHA=$GITHUB_SHA|TREE_SHA=$TREE_SHA|AUTOMATIC_GO=NO"
+
+      - name: Install locked dependencies for preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+
+      - name: Plan exact shard1 inventory in isolated namespace
+        id: plan
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/rc6-a883-preflight-sanitized"
+          # Root is used ONLY to create a namespace in this disposable VM.
+          # Drop Docker's supplemental group *before* any Python process.
+          if unshare --user --map-current-user --net -- setpriv --clear-groups --no-new-privs -- true >/dev/null 2>&1; then
+            namespace=(unshare --user --map-current-user --net -- setpriv --clear-groups --no-new-privs --)
+          elif sudo -n unshare --net -- setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs -- true >/dev/null 2>&1; then
+            namespace=(sudo -n unshare --net -- setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs --)
+          else
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_NAMESPACE_UNAVAILABLE'
+            exit 79
+          fi
+          "${namespace[@]}" env -i \
+            "PATH=$PATH" "HOME=$HOME" "GITHUB_SHA=$GITHUB_SHA" \
+            "TREE_SHA=$TREE_SHA" "RUNNER_TEMP=$RUNNER_TEMP" \
+            "GITHUB_OUTPUT=$GITHUB_OUTPUT" "LANG=C.UTF-8" \
+            "PYTHONDONTWRITEBYTECODE=1" "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1" \
+            bash -Eeuo pipefail <<'ISOLATED_PLAN'
+          if [ "$(id -u)" -eq 0 ] || [ "$(id -g)" -eq 0 ]; then
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_EUID_ZERO'
+            exit 79
+          fi
+          # NNP blocks sudo elevation; empty supplementary groups block the
+          # normally accessible Docker daemon socket outside the netns.
+          if ! grep -Eq '^NoNewPrivs:[[:space:]]*1$' /proc/self/status; then
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_NO_NEW_PRIVS_NOT_ENFORCED'
+            exit 79
+          fi
+          if [ -n "$(sed -n 's/^Groups:[[:space:]]*//p' /proc/self/status)" ]; then
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_SUPPLEMENTARY_GROUPS_PRESENT'
+            exit 79
+          fi
+          if ! command -v sudo >/dev/null || ! command -v nsenter >/dev/null; then
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_ESCAPE_PROBES_MISSING'
+            exit 79
+          fi
+          if sudo -n true >/dev/null 2>&1; then
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_SUDO_ESCALATION_POSSIBLE'
+            exit 79
+          fi
+          if nsenter -t 1 -n -- true >/dev/null 2>&1; then
+            echo 'NETWORK_ISOLATION=RED|reason=PLAN_NSENTER_ESCAPE_POSSIBLE'
+            exit 79
+          fi
+          # AF_UNIX crosses network namespaces. Docker/containerd/podman
+          # daemon sockets must not be writable OR connectable by this UID.
+          python - <<'PY'
+          import errno, os, socket, stat
+          uid = os.geteuid()
+          paths = ["/var/run/docker.sock", "/run/docker.sock",
+                   "/run/containerd/containerd.sock", "/run/podman/podman.sock",
+                   "/run/buildkit/buildkitd.sock",
+                   f"/run/user/{uid}/docker.sock", f"/run/user/{uid}/podman/podman.sock",
+                   f"/run/user/{uid}/containerd/containerd.sock",
+                   f"/run/user/{uid}/buildkit/buildkitd.sock"]
+          for path in paths:
+              try:
+                  info = os.stat(path)
+              except FileNotFoundError:
+                  continue
+              except OSError:
+                  print("NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED")
+                  raise SystemExit(79)
+              if not stat.S_ISSOCK(info.st_mode):
+                  continue
+              if os.access(path, os.W_OK):
+                  print("NETWORK_ISOLATION=RED|reason=PLAN_HOST_UNIX_SOCKET_WRITABLE")
+                  raise SystemExit(79)
+              sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+              sock.settimeout(1)
+              try:
+                  sock.connect(path)
+              except OSError as exc:
+                  if exc.errno not in {errno.EACCES, errno.EPERM,
+                                       errno.ECONNREFUSED, errno.ENOENT}:
+                      print("NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED")
+                      raise SystemExit(79)
+              else:
+                  print("NETWORK_ISOLATION=RED|reason=PLAN_HOST_SOCKET_CONNECTABLE")
+                  raise SystemExit(79)
+              finally:
+                  sock.close()
+          print("HOST_UNIX_SOCKET=BLOCKED|stage=PLAN")
+          PY
+          python - <<'PY'
+          import errno, socket
+          try:
+              socket.create_connection(("1.1.1.1", 443), timeout=1)
+          except OSError as exc:
+              if exc.errno not in {errno.ENETUNREACH, errno.ENETDOWN,
+                                   errno.EHOSTUNREACH}:
+                  print("NETWORK_ISOLATION=RED|reason=UNEXPECTED_PLAN_SOCKET_RESULT")
+                  raise SystemExit(79)
+              print("NETWORK_ISOLATION=GREEN|external_socket=NO_ROUTE|stage=PLAN")
+          else:
+              print("NETWORK_ISOLATION=RED|external_socket=OPEN|stage=PLAN")
+              raise SystemExit(79)
+          PY
+          set +e
+          python -m scripts.rc6_ci_parallel_runner \
+            --source-sha "$GITHUB_SHA" --source-tree-sha "$TREE_SHA" \
+            --repo . --shards 2 --bounded-shard-index 1 \
+            --batch-offset 0 --batch-limit 1 --timeout-seconds 90 \
+            --diagnostics-dir "$RUNNER_TEMP/rc6-a883-preflight-sanitized/diagnostic"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 2 ]; then
+            echo 'A883_PLAN=RED|reason=UNEXPECTED_BOUNDED_RUNNER_EXIT'
+            exit 79
+          fi
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "rc6-a883-preflight-sanitized" / "diagnostic"
+          proof = json.loads((root / "receipt.json").read_text(encoding="utf-8"))
+          assert proof["source_sha"] == os.environ["GITHUB_SHA"]
+          assert proof["source_tree_sha"] == os.environ["TREE_SHA"]
+          assert proof["status"] == "RED_BOUNDED_DIAGNOSTIC"
+          assert proof["phase"] == "FINISHED"
+          assert proof["shards"] == 2 and proof["shard_index"] == 1
+          assert proof["batch_offset"] == 0 and proof["batch_limit"] == 1
+          assert proof["completed_batches"] == len(proof["batches"]) == 1
+          assert all(proof[key] is False for key in (
+              "automatic_go", "runtime_authority", "release_gate_activated", "host_written"))
+          planned = proof["planned_batches"]
+          assert type(planned) is int and 265 <= planned <= 272
+          assert len(proof["segment_sha256s"]) == planned
+          collection = proof["collection_sha256"]
+          assert isinstance(collection, str) and re.fullmatch(r"[0-9a-f]{64}", collection)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"planned_batches={planned}\n")
+              out.write(f"collection_sha256={collection}\n")
+              out.write("ready=bounded_diagnostic_only\n")
+          print(f"A883_PLAN=RED_EVIDENCE_ONLY|batches={planned}|AUTOMATIC_GO=NO")
+          PY
+          ISOLATED_PLAN
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a883-preflight-red-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-a883-preflight-sanitized/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Close preflight evidence without release authority
+        if: always()
+        shell: bash
+        run: |
+          echo 'A883_PLAN=RED|AUTOMATIC_GO=NO|NOT_RELEASE_GATE'
+
+  red-only-offhost:
+    needs: plan-offhost
+    if: needs.plan-offhost.result == 'success' && needs.plan-offhost.outputs.ready == 'bounded_diagnostic_only'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        batch_offset:
+          - 0
+          - 8
+          - 16
+          - 24
+          - 32
+          - 40
+          - 48
+          - 56
+          - 64
+          - 72
+          - 80
+          - 88
+          - 96
+          - 104
+          - 112
+          - 120
+          - 128
+          - 136
+          - 144
+          - 152
+          - 160
+          - 168
+          - 176
+          - 184
+          - 192
+          - 200
+          - 208
+          - 216
+          - 224
+          - 232
+          - 240
+          - 248
+          - 256
+          - 264
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      A883_PLAN_N: ${{ needs.plan-offhost.outputs.planned_batches }}
+      A883_PLAN_COLLECTION: ${{ needs.plan-offhost.outputs.collection_sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +277,7 @@ jobs:
           TREE_SHA="$(git rev-parse HEAD^{tree})"
           [[ "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
           echo "TREE_SHA=$TREE_SHA" >> "$GITHUB_ENV"
-          echo "A875_SOURCE_SHA=$GITHUB_SHA|TREE_SHA=$TREE_SHA|AUTOMATIC_GO=NO"
+          echo "A883_SOURCE_SHA=$GITHUB_SHA|TREE_SHA=$TREE_SHA|AUTOMATIC_GO=NO"
 
       - name: Install locked dependencies for offhost tests
         shell: bash
@@ -53,36 +289,89 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          mkdir -p "$RUNNER_TEMP/rc6-a875-sanitized"
-          # `unshare` has no network, so neither collection nor test bodies
-          # can contact PPI or any other market-data source. On Ubuntu 24.04,
-          # AppArmor may forbid unprivileged namespaces. The fallback has
-          # privilege only to create a network namespace on this ephemeral
-          # GitHub-hosted VM, then DROPS back to the runner user before Python.
-          if unshare --user --map-current-user --net -- true >/dev/null 2>&1; then
-            namespace=(unshare --user --map-current-user --net --)
-          elif sudo -n unshare --net -- true >/dev/null 2>&1; then
-            namespace=(sudo -n unshare --net -- runuser --preserve-environment -u "$(id -un)" --)
+          mkdir -p "$RUNNER_TEMP/rc6-a883-sanitized"
+          # Construct a detached netns on a disposable GH runner, drop root,
+          # ALL supplemental groups (including Docker), and SUID privileges.
+          if unshare --user --map-current-user --net -- setpriv --clear-groups --no-new-privs -- true >/dev/null 2>&1; then
+            namespace=(unshare --user --map-current-user --net -- setpriv --clear-groups --no-new-privs --)
+          elif sudo -n unshare --net -- setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs -- true >/dev/null 2>&1; then
+            namespace=(sudo -n unshare --net -- setpriv --reuid "$(id -u)" --regid "$(id -g)" --clear-groups --no-new-privs --)
           else
             echo 'NETWORK_ISOLATION=RED|reason=NAMESPACE_UNAVAILABLE'
             exit 79
           fi
 
-          # The real negative socket probe and ALL pytest work execute in
-          # the SAME newly created namespace and as the same non-root UID.
-          # sudo's env_reset may discard GitHub variables. Pass ONLY these
-          # public identities and local paths as argv after uid drop; never
-          # rely on implicit inherited broker/GitHub credentials.
+          # All negative probes and pytest run within this ONE netns, with
+          # nonroot UID/GID, zero supplementary groups and no_new_privs=1.
           "${namespace[@]}" env -i \
             "PATH=$PATH" "HOME=$HOME" \
             "GITHUB_SHA=$GITHUB_SHA" "TREE_SHA=$TREE_SHA" \
             "RUNNER_TEMP=$RUNNER_TEMP" "LANG=C.UTF-8" \
+            "A883_PLAN_N=$A883_PLAN_N" "A883_PLAN_COLLECTION=$A883_PLAN_COLLECTION" \
             "PYTHONDONTWRITEBYTECODE=1" "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1" \
             bash -Eeuo pipefail <<'ISOLATED_QA'
-          if [ "$(id -u)" -eq 0 ]; then
+          if [ "$(id -u)" -eq 0 ] || [ "$(id -g)" -eq 0 ]; then
             echo 'NETWORK_ISOLATION=RED|reason=EUID_ZERO'
             exit 79
           fi
+          if ! grep -Eq '^NoNewPrivs:[[:space:]]*1$' /proc/self/status; then
+            echo 'NETWORK_ISOLATION=RED|reason=NO_NEW_PRIVS_NOT_ENFORCED'
+            exit 79
+          fi
+          if [ -n "$(sed -n 's/^Groups:[[:space:]]*//p' /proc/self/status)" ]; then
+            echo 'NETWORK_ISOLATION=RED|reason=SUPPLEMENTARY_GROUPS_PRESENT'
+            exit 79
+          fi
+          if ! command -v sudo >/dev/null || ! command -v nsenter >/dev/null; then
+            echo 'NETWORK_ISOLATION=RED|reason=ESCAPE_PROBES_MISSING'
+            exit 79
+          fi
+          if sudo -n true >/dev/null 2>&1; then
+            echo 'NETWORK_ISOLATION=RED|reason=SUDO_ESCALATION_POSSIBLE'
+            exit 79
+          fi
+          if nsenter -t 1 -n -- true >/dev/null 2>&1; then
+            echo 'NETWORK_ISOLATION=RED|reason=NSENTER_ESCAPE_POSSIBLE'
+            exit 79
+          fi
+          python - <<'PY'
+          import errno, os, socket, stat
+          uid = os.geteuid()
+          paths = ["/var/run/docker.sock", "/run/docker.sock",
+                   "/run/containerd/containerd.sock", "/run/podman/podman.sock",
+                   "/run/buildkit/buildkitd.sock",
+                   f"/run/user/{uid}/docker.sock", f"/run/user/{uid}/podman/podman.sock",
+                   f"/run/user/{uid}/containerd/containerd.sock",
+                   f"/run/user/{uid}/buildkit/buildkitd.sock"]
+          for path in paths:
+              try:
+                  info = os.stat(path)
+              except FileNotFoundError:
+                  continue
+              except OSError:
+                  print("NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED")
+                  raise SystemExit(79)
+              if not stat.S_ISSOCK(info.st_mode):
+                  continue
+              if os.access(path, os.W_OK):
+                  print("NETWORK_ISOLATION=RED|reason=HOST_UNIX_SOCKET_WRITABLE")
+                  raise SystemExit(79)
+              sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+              sock.settimeout(1)
+              try:
+                  sock.connect(path)
+              except OSError as exc:
+                  if exc.errno not in {errno.EACCES, errno.EPERM,
+                                       errno.ECONNREFUSED, errno.ENOENT}:
+                      print("NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED")
+                      raise SystemExit(79)
+              else:
+                  print("NETWORK_ISOLATION=RED|reason=HOST_SOCKET_CONNECTABLE")
+                  raise SystemExit(79)
+              finally:
+                  sock.close()
+          print("HOST_UNIX_SOCKET=BLOCKED|stage=MATRIX")
+          PY
           python - <<'PY'
           import errno, socket
           try:
@@ -102,21 +391,23 @@ jobs:
             --source-sha "$GITHUB_SHA" \
             --source-tree-sha "$TREE_SHA" \
             --repo . --shards 2 --bounded-shard-index 1 \
-            --batch-offset 0 --batch-limit 8 --timeout-seconds 90 \
-            --diagnostics-dir "$RUNNER_TEMP/rc6-a875-sanitized/diagnostic"
+            --batch-offset "${{ matrix.batch_offset }}" --batch-limit 8 --timeout-seconds 90 \
+            --diagnostics-dir "$RUNNER_TEMP/rc6-a883-sanitized/diagnostic"
           rc=$?
           set -e
           if [ "$rc" -ne 2 ]; then
-            echo 'A875_DIAGNOSTIC=RED|reason=UNEXPECTED_RUNNER_EXIT'
+            echo 'A883_DIAGNOSTIC=RED|reason=UNEXPECTED_RUNNER_EXIT'
             exit 79
           fi
           python - <<'PY'
           import json, os
           from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / "rc6-a875-sanitized" / "diagnostic"
+          root = Path(os.environ["RUNNER_TEMP"]) / "rc6-a883-sanitized" / "diagnostic"
           receipt = json.loads((root / "receipt.json").read_text(encoding="utf-8"))
           assert receipt["source_sha"] == os.environ["GITHUB_SHA"]
           assert receipt["source_tree_sha"] == os.environ["TREE_SHA"]
+          assert receipt["planned_batches"] == int(os.environ["A883_PLAN_N"])
+          assert receipt["collection_sha256"] == os.environ["A883_PLAN_COLLECTION"]
           assert receipt["automatic_go"] is False
           assert receipt["runtime_authority"] is False
           assert receipt["release_gate_activated"] is False
@@ -127,15 +418,15 @@ jobs:
               if path.is_file():
                   assert (path.name in allowed or path.name.startswith("progress-")
                           and path.name.endswith(".jsonl"))
-          print("A875_PROOF=RED|AUTOMATIC_GO=NO|network_off=YES")
+          print("A883_PROOF=RED|AUTOMATIC_GO=NO|network_off=YES")
           PY
           ISOLATED_QA
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-a875-sanitized-red-${{ github.sha }}
-          path: ${{ runner.temp }}/rc6-a875-sanitized/
+          name: rc6-a883-shard1-${{ matrix.batch_offset }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-a883-sanitized/
           retention-days: 7
           if-no-files-found: error
 
@@ -143,5 +434,90 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo 'A875_DIAGNOSTIC=RED|AUTOMATIC_GO=NO|NOT_FULL_CERTIFICATION'
+          echo 'A883_DIAGNOSTIC=RED|AUTOMATIC_GO=NO|NOT_FULL_CERTIFICATION'
+          exit 1
+
+  aggregate-red:
+    # Every matrix job ends deliberately RED. This job still runs and accounts
+    # for *all* receipts, including missing/timeout jobs. Never promote RED.
+    needs: [plan-offhost, red-only-offhost]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      A883_PLAN_N: ${{ needs.plan-offhost.outputs.planned_batches }}
+      A883_PLAN_COLLECTION: ${{ needs.plan-offhost.outputs.collection_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Attest exact aggregate checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = "mbalbo2023/Porota-trading"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1)"
+          TREE_SHA="$(git rev-parse HEAD^{tree})"
+          [[ "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "TREE_SHA=$TREE_SHA" >> "$GITHUB_ENV"
+          echo "A883_AGGREGATE_SOURCE_SHA=$GITHUB_SHA|TREE_SHA=$TREE_SHA|AUTOMATIC_GO=NO"
+
+      - name: Install only pinned reducer parser
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The reducer composes A863 receipt helpers; importing the existing
+          # parallel runner requires PyYAML, not the whole broker test stack.
+          python -m pip install --disable-pip-version-check -c requirements.lock.txt PyYAML
+
+      - name: Download exact matrix artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rc6-a883-shard1-*-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-a883-matrix/
+          merge-multiple: false
+
+      - name: Verify 34 bounded matrix receipts RED-only
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/rc6-a883-aggregate"
+          if [ -z "${TREE_SHA:-}" ]; then
+            echo 'A883_MATRIX=RED|reason=SOURCE_CHECKOUT_UNATTESTED'
+            exit 79
+          fi
+          set +e
+          python -m scripts.rc6_ci_bounded_matrix_quorum \
+            --artifacts-root "$RUNNER_TEMP/rc6-a883-matrix" \
+            --source-sha "$GITHUB_SHA" --source-tree-sha "$TREE_SHA" \
+            --expected-batches "${A883_PLAN_N:-0}" \
+            --expected-collection-sha256 "${A883_PLAN_COLLECTION:-UNKNOWN}" \
+            --output "$RUNNER_TEMP/rc6-a883-aggregate/matrix-receipt.json"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 2 ]; then
+            echo 'A883_MATRIX=RED|reason=UNEXPECTED_AGGREGATOR_EXIT'
+            exit 79
+          fi
+          test -s "$RUNNER_TEMP/rc6-a883-aggregate/matrix-receipt.json"
+          echo 'A883_MATRIX=RED|AUTOMATIC_GO=NO|NOT_FULL_CERTIFICATION'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-a883-matrix-summary-red-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-a883-aggregate/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Deliberate NO_GO even if all matrix tests passed
+        if: always()
+        shell: bash
+        run: |
+          echo 'A883_MATRIX=RED|AUTOMATIC_GO=NO|NOT_FULL_CERTIFICATION'
           exit 1
