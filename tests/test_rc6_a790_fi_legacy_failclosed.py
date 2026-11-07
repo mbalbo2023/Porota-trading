@@ -1,29 +1,30 @@
-"""OFFHOST adversarial guards: legacy FI positive writes must remain blocked.
+"""OFFHOST public-cash guards for *unverified* native FI sale/maturity.
 
-This exercises the exact R4 buy-seed reader in an in-memory PAPER SQLite
-fixture.  A future design must preserve immutable buy provenance after a
-fully reviewed maturity or an independently evidenced market sale.
+No test pins current internal error messages or forbids future verified native
+exit. The test fixture deliberately supplies no issuer review or signed book.
 """
 
 import json
 import unittest
 from dataclasses import asdict
+from decimal import Decimal
 
-from be_paper_engine import PaperStore
+from be_paper_engine import PaperBroker, PaperStore
 from bs_instrument_contracts import contract_from_metadata
-from rc6_fixed_income_event_ledger import _seed
+from rc6_fixed_income_event_ledger import _canonical, _seed
+from rc6_fixed_income_portfolio_bridge import native_exit_authorized
 
 
 OPENED = "2026-10-27T14:00:00+00:00"
 CLOSED = "2026-11-03T16:00:00+00:00"
 
 
-class LegacyNativeFIBuySeedHolds(unittest.TestCase):
+class UnverifiedNativeFITransitionsRemainHeld(unittest.TestCase):
     def setUp(self):
         import tempfile
         from pathlib import Path
 
-        self.temp = tempfile.TemporaryDirectory(prefix="a790-fi-red-")
+        self.temp = tempfile.TemporaryDirectory(prefix="a790-fi-guard-")
         self.addCleanup(self.temp.cleanup)
         self.store = PaperStore(str(Path(self.temp.name) / "fi.db"))
         contract = contract_from_metadata("AL30", "BONOS", {
@@ -50,39 +51,51 @@ class LegacyNativeFIBuySeedHolds(unittest.TestCase):
                 VALUES(?,?,?,?,?,?,?,?)""",
                 ("PAPER-AL30", "PRODUCTION_PAPER", "BUY_SIMULATED", OPENED,
                  "100", "100", "0.61", "0"))
+            seed = _seed(db, "PAPER-AL30")
+            db.execute("INSERT INTO paper_fi_lots(paper_id,seed_json,seed_sha256) VALUES(?,?,?)",
+                       ("PAPER-AL30", _canonical(seed.__dict__), seed.position_sha256))
+        self.broker = PaperBroker(self.store, initial_cash="1000")
+        self.initial_available = self.broker._cash(as_of=CLOSED)
+        self.assertGreater(self.initial_available, Decimal(0))
+        self.assertLess(self.initial_available, self.broker.initial_balances["ARS"])
 
-    def test_unreviewed_maturity_close_does_not_bypass_buy_seed_guard(self):
+    def _assert_no_unverified_native_cash_release(self):
         with self.store.connect() as db:
-            before = _seed(db, "PAPER-AL30")
+            try:
+                allowed, _ = native_exit_authorized(db, "PAPER-AL30", CLOSED)
+            except ValueError:
+                allowed = False  # malformed/unproven transition fails closed
+            self.assertIs(allowed, False)
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM paper_fi_cash_entries").fetchone()[0], 0)
+            self.assertEqual(db.execute(
+                "SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0], 0)
+        try:
+            after = self.broker._cash(as_of=CLOSED)
+        except ValueError:
+            return  # public account must not credit a malformed native exit
+        self.assertLessEqual(after, self.initial_available,
+                             "Una transición FI sin recibos no libera capital PAPER")
+
+    def test_maturity_close_without_issuer_review_cannot_release_cash(self):
+        with self.store.connect() as db:
             db.execute("""UPDATE paper_positions SET status='CLOSED',
                 closed_at=?,close_reason='FI_NATIVE_MATURITY_REVIEWED' WHERE paper_id=?""",
                 (CLOSED, "PAPER-AL30"))
-            # Native terminal integration is not implemented: do not present
-            # this legacy transition as a valid closing receipt.
-            with self.assertRaisesRegex(ValueError, "FI_LEDGER_INTACT_BUY_LOT_REQUIRED"):
-                _seed(db, "PAPER-AL30")
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM paper_fi_cash_entries").fetchone()[0], 0)
-            self.assertEqual(db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0], 0)
+        self._assert_no_unverified_native_cash_release()
 
-    def test_unreviewed_sell_fill_does_not_bypass_buy_seed_guard(self):
+    def test_sell_fill_without_causal_sale_receipt_cannot_release_cash(self):
         with self.store.connect() as db:
-            before = _seed(db, "PAPER-AL30")
             db.execute("""INSERT INTO paper_fills
                 (paper_id,source,side,filled_at,quantity,price,costs,slippage)
                 VALUES(?,?,?,?,?,?,?,?)""",
                 ("PAPER-AL30", "PRODUCTION_PAPER", "SELL_SIMULATED", CLOSED,
                  "100", "105", "0.64", "0"))
-            # A direct old-style SELL fill is not an authorized native sale.
-            with self.assertRaisesRegex(ValueError, "FI_LEDGER_INTACT_BUY_LOT_REQUIRED"):
-                _seed(db, "PAPER-AL30")
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM paper_fi_cash_entries").fetchone()[0], 0)
-            self.assertEqual(db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0], 0)
+        self._assert_no_unverified_native_cash_release()
 
-    def test_legacy_market_sale_kind_is_not_an_issuer_economic_event(self):
-        from rc6_fixed_income_event_reducer import EconomicEvent, reduce_events
+    def test_naked_market_sale_event_without_verifier_cannot_release_cash(self):
+        from rc6_fixed_income_event_reducer import EconomicEvent
 
-        with self.store.connect() as db:
-            seed = _seed(db, "PAPER-AL30")
         event = EconomicEvent(
             event_id="FI_PAPER_SALE:synthetic", obligation_id="FI_PAPER_SALE:synthetic",
             paper_id="PAPER-AL30", kind="MARKET_SALE", effective_at=CLOSED,
@@ -91,8 +104,16 @@ class LegacyNativeFIBuySeedHolds(unittest.TestCase):
             source_sha256="f" * 64, source_at=CLOSED,
             nominal_base="100", nominal_redeemed="100",
         )
-        with self.assertRaisesRegex(ValueError, "FIXED_INCOME_EVENT_KIND_UNSUPPORTED"):
-            reduce_events(seed, [event], as_of=CLOSED)
+        with self.store.connect() as db:
+            # Negative fixture: no independent provider bytes, no native sale
+            # receipt, no assigned fee/settlement source, no Book1/Book2 pair.
+            db.execute("""INSERT INTO paper_fi_economic_events
+                (paper_id,event_id,obligation_id,kind,event_json,receipt_sha256,
+                 source_sha256,booked_at,entitlement_record_at)
+                 VALUES(?,?,?,?,?,?,?,?,NULL)""",
+                 ("PAPER-AL30", event.event_id, event.obligation_id, event.kind,
+                  _canonical(asdict(event)), "f" * 64, "f" * 64, CLOSED))
+        self._assert_no_unverified_native_cash_release()
 
 
 if __name__ == "__main__":
