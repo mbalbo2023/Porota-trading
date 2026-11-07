@@ -9,8 +9,10 @@ missing lineage/PIT with newer intraday Book evidence.
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
+import json
 import os
 from pathlib import Path
 import stat
@@ -20,7 +22,7 @@ from rc6_data_retention import ART, daily_start
 from rc6_ppi_scanner_provenance import (
     PIT_EVENT_MAX_BYTES, PIT_JOURNAL_MAX_BYTES, PIT_JOURNAL_MAX_RECORDS,
     PIT_SESSION_MAX_BYTES, PIT_SESSION_MAX_RECORDS, _aware, _pit_bytes,
-    verified_native_book_journal,
+    _pit_verified_rows,
 )
 
 
@@ -67,33 +69,69 @@ def _private_copy_under_root(path: Path, root: Path) -> bool:
         return False
 
 
-def _copy_fingerprint(path: Path) -> tuple[int, str]:
-    """Independent bounded byte hash after the journal's SHA-chain check."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+@contextmanager
+def _opened_private_journal_fd(path: Path, root: Path):
+    """Walk every directory without symlinks; pin the final inode for all reads.
+
+    Path checks alone are not access authority: a parent may be swapped after
+    validation. Every open is relative to the preceding pinned directory FD.
+    """
+    if not (path.is_absolute() and root.is_absolute()
+            and path != root and path.is_relative_to(root)):
+        raise ValueError("PRIVATE_JOURNAL_PATH_HOLD")
+    relative = path.relative_to(root).parts
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    directory_fd = os.open("/", directory_flags)
     try:
-        before = os.fstat(fd)
-        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
-                or before.st_mode & 0o077
-                or not 0 < before.st_size <= MAX_PRIVATE_COPY_BYTES):
-            raise ValueError("PRIVATE_JOURNAL_PERMISSION_OR_CAPACITY_HOLD")
-        digest = hashlib.sha256()
-        received = 0
-        while True:
-            chunk = os.read(fd, 64 * 1024)
-            if not chunk:
-                break
-            received += len(chunk)
-            if received > MAX_PRIVATE_COPY_BYTES:
-                raise ValueError("PRIVATE_JOURNAL_CAPACITY_HOLD")
-            digest.update(chunk)
-        after = os.fstat(fd)
-        if (received != before.st_size or
-                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
-                != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
-            raise ValueError("PRIVATE_JOURNAL_CHANGED_DURING_HASH_HOLD")
-        return received, digest.hexdigest()
+        for component in root.parts[1:]:
+            next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        root_stat = os.fstat(directory_fd)
+        if not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_mode & 0o077:
+            raise ValueError("PRIVATE_JOURNAL_RUNNER_ROOT_PERMISSIONS_HOLD")
+        for component in relative[:-1]:
+            next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        journal_fd = os.open(relative[-1],
+                             os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             dir_fd=directory_fd)
+        try:
+            yield journal_fd
+        finally:
+            os.close(journal_fd)
     finally:
-        os.close(fd)
+        os.close(directory_fd)
+
+
+def _copy_fingerprint(fd: int, *, return_bytes: bool = False) -> tuple[int, str, bytes | None]:
+    """Bounded fingerprint of one *already pinned* inode, never a pathname."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    before = os.fstat(fd)
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or before.st_mode & 0o077
+            or not 0 < before.st_size <= MAX_PRIVATE_COPY_BYTES):
+        raise ValueError("PRIVATE_JOURNAL_PERMISSION_OR_CAPACITY_HOLD")
+    digest = hashlib.sha256()
+    received = 0
+    raw = bytearray() if return_bytes else None
+    while True:
+        chunk = os.read(fd, 64 * 1024)
+        if not chunk:
+            break
+        received += len(chunk)
+        if received > MAX_PRIVATE_COPY_BYTES:
+            raise ValueError("PRIVATE_JOURNAL_CAPACITY_HOLD")
+        digest.update(chunk)
+        if raw is not None:
+            raw.extend(chunk)
+    after = os.fstat(fd)
+    if (received != before.st_size or
+            (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+        raise ValueError("PRIVATE_JOURNAL_CHANGED_DURING_HASH_HOLD")
+    return received, digest.hexdigest(), bytes(raw) if raw is not None else None
 
 
 def inventory_native_book_retention(journal_path: Path, *, runner_root: Path,
@@ -115,17 +153,20 @@ def inventory_native_book_retention(journal_path: Path, *, runner_root: Path,
     if not _private_copy_under_root(path, root):
         return _hold("PRIVATE_OFFHOST_COPY_REQUIRED")
     try:
-        file_before = _copy_fingerprint(path)
+        with _opened_private_journal_fd(path, root) as fd:
+            file_bytes_before, digest_before, raw = _copy_fingerprint(fd, return_bytes=True)
+            try:
+                doc = json.loads(raw.decode("utf-8"))
+                rows = _pit_verified_rows(doc)
+            except (ValueError, UnicodeError, TypeError, KeyError):
+                return _hold("PPI_BOOK_JOURNAL_HOLD")
+            try:
+                file_bytes, file_digest, _ = _copy_fingerprint(fd)
+            except (OSError, ValueError):
+                return _hold("PRIVATE_JOURNAL_CHANGED_DURING_CENSUS_HOLD")
     except (OSError, ValueError):
         return _hold("PRIVATE_JOURNAL_FINGERPRINT_HOLD")
-    rows, chain = verified_native_book_journal(path)
-    if chain.get("state") != "HASH_CHAIN_VERIFIED":
-        return _hold("PPI_BOOK_JOURNAL_" + str(chain.get("state") or "UNKNOWN"))
-    try:
-        file_bytes, file_digest = _copy_fingerprint(path)
-    except (OSError, ValueError):
-        return _hold("PRIVATE_JOURNAL_FINGERPRINT_HOLD")
-    if (file_bytes, file_digest) != file_before:
+    if (file_bytes, file_digest) != (file_bytes_before, digest_before):
         return _hold("PRIVATE_JOURNAL_CHANGED_DURING_CENSUS_HOLD")
 
     cutoff = at - timedelta(days=RETENTION_DAYS)
@@ -166,7 +207,7 @@ def inventory_native_book_retention(journal_path: Path, *, runner_root: Path,
         "journal_copy_sha256": file_digest,
         "journal_copy_bytes": file_bytes,
         "journal_record_count": len(rows),
-        "journal_chain_last_event_sha256": chain.get("latest_sha256"),
+        "journal_chain_last_event_sha256": rows[-1]["event_sha256"] if rows else None,
         "native_clock_basis": "PPI_BOOK_DATE_UTC_ECONOMIC_EVENT",
         "known_at_role": "PIT_AVAILABILITY_NOT_RETENTION_REJUVENATION",
         "cutoff_utc_inclusive": cutoff.isoformat(),

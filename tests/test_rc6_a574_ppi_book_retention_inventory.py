@@ -184,23 +184,115 @@ class TestPpiBookOffhostRetention(unittest.TestCase):
             self.assertEqual(hashlib.sha256(outside_path.read_bytes()).hexdigest(),
                              outside_digest)
 
+    def test_parent_swap_after_precheck_cannot_hash_external_journal(self):
+        """A symlink installed after validation must not change the read target."""
+        self.record(NOW - timedelta(minutes=3))
+        with tempfile.TemporaryDirectory() as external_dir:
+            outside_market = Path(external_dir) / "market"
+            outside_market.mkdir(mode=0o700)
+            outside_path = outside_market / ppi.PIT_JOURNAL_FILENAME
+            outside_path.write_bytes(self.path.read_bytes())
+            outside_path.chmod(0o600)
+            outside_digest = hashlib.sha256(outside_path.read_bytes()).hexdigest()
+            original_precheck = retention._private_copy_under_root
+            original_market = self.root / "market"
+            relocated_market = self.root / "market-before-swap"
+            swaps = []
+
+            def swap_parent_after_approval(path, root):
+                self.assertTrue(original_precheck(path, root))
+                original_market.rename(relocated_market)
+                original_market.symlink_to(outside_market, target_is_directory=True)
+                swaps.append(True)
+                return True
+
+            with patch.object(retention, "_private_copy_under_root",
+                              swap_parent_after_approval):
+                report = self.inventory()
+            self.assertEqual(swaps, [True])
+            self.assertEqual(report["state"], "HOLD")
+            self.assertNotIn("journal_copy_sha256", report)
+            self.assertNotIn("cohorts", report)
+            self.assertEqual(hashlib.sha256(outside_path.read_bytes()).hexdigest(),
+                             outside_digest)
+            self.assertFalse(report["host_purge_allowed"])
+
+    def test_parent_swap_after_directory_fd_pin_reads_original_inode(self):
+        """The next component must be opened below an already pinned dirfd."""
+        self.record(NOW - timedelta(minutes=3))
+        expected_digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory() as external_dir:
+            outside_market = Path(external_dir) / "market"
+            outside_market.mkdir(mode=0o700)
+            outside_path = outside_market / ppi.PIT_JOURNAL_FILENAME
+            outside_path.write_bytes(b"external-data-must-never-be-inspected")
+            outside_path.chmod(0o600)
+            original_open = retention.os.open
+            original_market = self.root / "market"
+            swapped = []
+
+            def swap_after_dirfd_open(path, flags, *args, **kwargs):
+                fd = original_open(path, flags, *args, **kwargs)
+                if path == "market" and kwargs.get("dir_fd") is not None and not swapped:
+                    original_market.rename(self.root / "original-market-pinned")
+                    original_market.symlink_to(outside_market, target_is_directory=True)
+                    swapped.append(True)
+                return fd
+
+            with patch.object(retention.os, "open", swap_after_dirfd_open):
+                report = self.inventory()
+            self.assertEqual(swapped, [True])
+            self.assertEqual(report["state"],
+                             "OFFHOST_CHAIN_VERIFIED_RETENTION_AND_PIN_HOLD")
+            self.assertEqual(report["journal_copy_sha256"], expected_digest)
+            self.assertEqual(outside_path.read_bytes(),
+                             b"external-data-must-never-be-inspected")
+
     def test_swapped_journal_between_chain_and_digest_is_rejected(self):
         self.record(NOW - timedelta(minutes=3))
-        original_reader = retention.verified_native_book_journal
+        original_validator = retention._pit_verified_rows
 
-        def swap_after_first_verify(path):
-            rows, result = original_reader(path)
+        def swap_after_first_verify(doc):
+            rows = original_validator(doc)
             # A concurrent writer within the same private root changed the
             # path after the first fingerprint; never report that digest as
             # the verified chain snapshot.
             with self.path.open("ab") as handle:
                 handle.write(b" ")
-            return rows, result
+            return rows
 
-        with patch.object(retention, "verified_native_book_journal", swap_after_first_verify):
+        with patch.object(retention, "_pit_verified_rows", swap_after_first_verify):
             report = self.inventory()
         self.assertEqual(report["reason"], "PRIVATE_JOURNAL_CHANGED_DURING_CENSUS_HOLD")
         self.assertFalse(report["host_purge_allowed"])
+
+    def test_final_path_swap_after_open_uses_original_pinned_inode(self):
+        """A late final-file substitution cannot change the verified bytes."""
+        self.record(NOW - timedelta(minutes=3))
+        expected_digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory() as external_dir:
+            outside_path = Path(external_dir) / ppi.PIT_JOURNAL_FILENAME
+            outside_path.write_bytes(b"external-private-payload-not-a-book-journal")
+            outside_path.chmod(0o600)
+            original_validator = retention._pit_verified_rows
+            swaps = []
+
+            def swap_final_after_validation(doc):
+                rows = original_validator(doc)
+                self.path.rename(self.path.with_suffix(".pinned-original"))
+                self.path.symlink_to(outside_path)
+                swaps.append(True)
+                return rows
+
+            with patch.object(retention, "_pit_verified_rows",
+                              swap_final_after_validation):
+                report = self.inventory()
+            self.assertEqual(swaps, [True])
+            self.assertEqual(report["state"],
+                             "OFFHOST_CHAIN_VERIFIED_RETENTION_AND_PIN_HOLD")
+            self.assertEqual(report["journal_copy_sha256"], expected_digest)
+            self.assertEqual(outside_path.read_bytes(),
+                             b"external-private-payload-not-a-book-journal")
 
     def test_private_hash_and_public_aggregate_do_not_leak_prices_or_symbols(self):
         self.record(NOW - timedelta(minutes=3))
