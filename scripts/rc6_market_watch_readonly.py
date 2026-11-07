@@ -793,7 +793,7 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
         module = shadow.get("error_module")
         if isinstance(module, str) and module in {"runtime", "worker", "preopen", "promotion",
                 "stages", "families", "lab", "entry_signals", "funnel", "source_reads",
-                "read_contract", "persistence", "snapshot", "common", "live"}:
+                "read_contract", "persistence", "snapshot", "common", "live", "cold_audit"}:
             result["shadow"]["error_module"] = module
         if (shadow.get("status") == "FAIL_CLOSED" and
                 shadow.get("error_class") == "EvidencePayloadLimit"):
