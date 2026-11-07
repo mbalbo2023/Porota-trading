@@ -173,7 +173,15 @@ def test_public_has_one_independent_minute_timer_not_iol_oneshot():
     """A845-1/5: reuse one dispatcher, two timers, never duplicate PUBLIC."""
     candidates = _public_service_candidates()
     assert len(candidates) == 1, "PUBLIC_LANE_INDEPENDENT_UNIT_MISSING_OR_DUPLICATED"
-    service, _ = candidates[0]
+    service, service_body = candidates[0]
+    assert len(_active_directives(service_body, "Service", "ExecStart")) == 1, (
+        "PUBLIC_SERVICE_MULTIPLE_EXECSTART")
+    for secondary in ("ExecStartPre", "ExecStartPost"):
+        commands = _active_directives(service_body, "Service", secondary)
+        assert not any(
+            "rc6_public_source_capture.py" in command or
+            ("rc6_source_cycle_dispatch.py" in command and "--check-phase" not in command)
+            for command in commands), "PUBLIC_SERVICE_SECONDARY_WRITER"
     timer = service.with_suffix(".timer")
     assert timer.is_file(), "PUBLIC_LANE_TIMER_MISSING"
     schedule = timer.read_text(encoding="utf-8")
@@ -356,3 +364,27 @@ def test_public_ok_with_nested_iol_auth_failure_cannot_claim_public_bad_quality(
               "stages": {"public": {"status": "OK",
                                      "metadata": {"iol_oauth": "UNAVAILABLE"}}}}
     assert not _public_quality_context(forged)
+
+
+def test_multiple_active_execstart_or_pre_post_cannot_duplicate_public(tmp_path, monkeypatch):
+    """systemd oneshot permits multiple ExecStart; only one source writer."""
+    units = tmp_path / "systemd"
+    units.mkdir()
+    public = units / "porota-public-a846.service"
+    legacy = units / "porota-iol-shadow-collector-rc6.service"
+    timer = units / "porota-public-a846.timer"
+    dispatcher = "/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py"
+    legacy.write_text("[Service]\nExecStart=" + dispatcher + " --stage COMPLEMENT\n")
+    timer.write_text("[Timer]\nUnit=" + public.name + "\nOnUnitActiveSec=60s\nAccuracySec=5s\n")
+    monkeypatch.setattr(__import__(__name__), "REPO", tmp_path)
+
+    public.write_text("[Service]\nExecStart=" + dispatcher + " --stage PUBLIC\n"
+                      "ExecStart=" + dispatcher + "\n")
+    assert len(_public_service_candidates()) == 1
+    with pytest.raises(AssertionError, match="PUBLIC_SERVICE_MULTIPLE_EXECSTART"):
+        test_public_has_one_independent_minute_timer_not_iol_oneshot()
+
+    public.write_text("[Service]\nExecStart=" + dispatcher + " --stage PUBLIC\n"
+                      "ExecStartPost=" + dispatcher + "\n")
+    with pytest.raises(AssertionError, match="PUBLIC_SERVICE_SECONDARY_WRITER"):
+        test_public_has_one_independent_minute_timer_not_iol_oneshot()
