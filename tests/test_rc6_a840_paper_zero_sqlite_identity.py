@@ -51,6 +51,51 @@ def test_final_symlink_injected_at_sqlite_connect_rejected_before_foreign_result
     assert db.is_symlink()
 
 
+def test_transient_regular_file_aba_at_sqlite_open_rejects_foreign_zero(tmp_path, monkeypatch):
+    """A restored pathname must not make a foreign SQLite handle authoritative."""
+    owned = tmp_path / "owned.db"
+    foreign = tmp_path / "foreign.db"
+    saved_owned = tmp_path / "saved_owned.db"
+    _db(owned, sent=1)
+    _db(foreign, sent=0)
+    owned_inode = owned.stat().st_ino
+    foreign_inode = foreign.stat().st_ino
+    actual_connect = sqlite3.connect
+    actual_sqlite_rows = []
+
+    def transient_swap(database, *args, **kwargs):
+        if database != owned.as_uri() + "?mode=ro":
+            return actual_connect(database, *args, **kwargs)
+        owned.rename(saved_owned)
+        foreign.rename(owned)
+        try:
+            # Exercise the real SQLite xOpen while the foreign inode occupies
+            # the owned name. Restore both names BEFORE the caller reads it.
+            reader = actual_connect(database, *args, **kwargs)
+        finally:
+            owned.rename(foreign)
+            saved_owned.rename(owned)
+        actual_sqlite_rows.append(reader.execute(
+            "SELECT real_orders_sent FROM observer_state WHERE id=1"
+        ).fetchone()[0])
+        return reader
+
+    monkeypatch.setattr(sqlite3, "connect", transient_swap)
+    with pytest.raises(dispatch.SourceCycleBlocked,
+                       match="^PAPER_DATABASE_IDENTITY_UNVERIFIED$"):
+        dispatch._paper_zero(owned)
+
+    # The adapter is the real SQLite implementation, and it DID read the
+    # foreign zero. The trusted owned file still says one after the ABA.
+    assert actual_sqlite_rows == [0]
+    assert owned.stat().st_ino == owned_inode
+    assert foreign.stat().st_ino == foreign_inode
+    with closing(actual_connect(owned)) as connection:
+        assert connection.execute(
+            "SELECT real_orders_sent FROM observer_state WHERE id=1"
+        ).fetchone() == (1,)
+
+
 def test_foreign_hardlink_as_paper_db_rejected(tmp_path):
     foreign = tmp_path / "another_application.db"
     _db(foreign)
