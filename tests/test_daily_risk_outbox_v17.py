@@ -261,12 +261,21 @@ def test_resumen_fallido_viejo_se_encola_y_ack_actualiza_estado(store,monkeypatc
     class BusinessDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
-            value = cls.fromisoformat('2026-09-07T18:00:00-03:00')
+            value = cls.fromisoformat('2026-09-07T18:30:00-03:00')
             return value if tz is None else value.astimezone(tz)
     monkeypatch.setattr(services,'datetime',BusinessDateTime)
     today=services.datetime.now(services.TZ).date().isoformat()
     services._job(store,'TELEGRAM_CLOSE_'+today,'ROJO','falló')
     monkeypatch.setattr(services,'urlopen',lambda *_a,**_k:pytest.fail('El generador no envía por red'))
+    # No source-final receipt exists in R4. A prior failed Telegram job and
+    # wall-clock after the EOD floor cannot authorize a new closing summary.
+    assert services.send_closing_summary(store)==services.EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD
+    assert not [row for row in records(store,'paper_notification_outbox')
+                if row['event_key']=='TELEGRAM_CLOSE_'+today]
+
+    # Test-only branch isolation: exercise legacy outbox/ACK behavior *after*
+    # its receipt gate, without creating or claiming a real final-source proof.
+    monkeypatch.setattr(services,'_verified_final_source_receipt',lambda *_:True)
     assert services.send_closing_summary(store)=='EN_COLA'
     assert services.send_closing_summary(store)=='PENDING'
     row=records(store,'paper_notification_outbox')[0]

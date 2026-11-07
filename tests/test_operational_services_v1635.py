@@ -199,10 +199,48 @@ def _fixed_postclose_clock(monkeypatch):
     monkeypatch.setattr(services, "datetime", Clock)
 
 
+def _permit_postclose_downstream_unit_branch(monkeypatch):
+    """Isolate report error/ACK branches; this is NOT a real FINAL receipt."""
+    monkeypatch.setattr(services, "_verified_final_source_receipt",
+                        lambda *_args: True)
+
+
+def test_postclose_missing_final_source_keeps_reports_and_summary_on_hold(
+        tmp_path, monkeypatch):
+    _fixed_postclose_clock(monkeypatch)
+    now = services.datetime.now(services.TZ)
+    assert services.byma_heavy_writes_safe_now(now)
+    assert now >= services.byma_eod_publication_floor(now)
+    store = PaperStore(str(tmp_path / "paper.db"))
+    services.init_schema(store)
+    monkeypatch.setattr(services, "backups_suspended", lambda: True)
+    monkeypatch.setattr(services, "collect_sre", lambda *_: None)
+    monkeypatch.setattr(services, "refresh_financial", lambda *_: None)
+
+    def forbidden_report(*_args, **_kwargs):
+        raise AssertionError("Missing EOD FINAL proof must not generate today's report")
+
+    monkeypatch.setattr(services, "ensure_reports", forbidden_report)
+    monkeypatch.setattr(services, "send_closing_summary", forbidden_report)
+    services.service_tick(store, "CLOSED")
+    services.service_tick(store, "CLOSED")
+    with store.connect() as connection:
+        rows = {row["job_key"]: row for row in connection.execute(
+            "SELECT job_key,state,detail,last_success_at FROM operational_jobs")}
+        assert rows["CLOSING_SUMMARY_RETRY"]["state"] == "HOLD"
+        assert rows["CLOSING_SUMMARY_RETRY"]["detail"] == (
+            services.EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD)
+        assert rows["CLOSING_SUMMARY_RETRY"]["last_success_at"] is None
+        assert "REPORTS" not in rows
+        assert connection.execute("SELECT COUNT(*) FROM report_registry").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM paper_notification_outbox").fetchone()[0] == 0
+
+
 def test_invalid_caucion_fee_evidence_quarantines_postclose_report_without_restart(
         tmp_path, monkeypatch):
     """An invalid PAPER ledger cannot produce a report or crash the scanner."""
     _fixed_postclose_clock(monkeypatch)
+    _permit_postclose_downstream_unit_branch(monkeypatch)
     store = PaperStore(str(tmp_path / "paper.db"))
     services.init_schema(store)
     monkeypatch.setattr(services, "backups_suspended", lambda: True)
@@ -233,6 +271,7 @@ def test_invalid_caucion_fee_evidence_quarantines_postclose_report_without_resta
 
 def test_postclose_successful_reports_run_once_per_trading_date(tmp_path, monkeypatch):
     _fixed_postclose_clock(monkeypatch)
+    _permit_postclose_downstream_unit_branch(monkeypatch)
     store = PaperStore(str(tmp_path / "paper.db"))
     services.init_schema(store)
     monkeypatch.setattr(services, "backups_suspended", lambda: True)
@@ -258,6 +297,7 @@ def test_unrecognized_report_value_error_is_not_swallowed(tmp_path, monkeypatch)
     import pytest
 
     _fixed_postclose_clock(monkeypatch)
+    _permit_postclose_downstream_unit_branch(monkeypatch)
     store = PaperStore(str(tmp_path / "paper.db"))
     services.init_schema(store)
     monkeypatch.setattr(services, "backups_suspended", lambda: True)
