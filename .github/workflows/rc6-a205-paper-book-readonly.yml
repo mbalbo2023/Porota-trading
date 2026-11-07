@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - 'rc6-a205-paper-book-ro-v1-*'
+      - 'rc6-a874-nonroot-host-ro-v1-*'
 
 permissions:
   contents: read
@@ -16,7 +17,7 @@ concurrency:
 
 jobs:
   paper-preflight:
-    if: github.actor == 'mbalbo2023'
+    if: github.actor == 'mbalbo2023' && startsWith(github.ref_name, 'rc6-a205-paper-book-ro-v1-')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -179,6 +180,175 @@ jobs:
           set -Eeuo pipefail
           if [ -f "$HOME/.ssh/rc6_a205_ro" ]; then
             shred -u "$HOME/.ssh/rc6_a205_ro"
+          fi
+
+  # A874: metadata only, never the legacy book/COLD path above. Publishing a
+  # work/* draft cannot trigger host contact. Creating the SHA-bound diagnostic
+  # ref requires later explicit authorization and independent exact-diff review.
+  nonroot-metadata:
+    if: github.actor == 'mbalbo2023' && startsWith(github.ref_name, 'rc6-a874-nonroot-host-ro-v1-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact metadata diagnostic ref before any connection
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_REF_NAME" == "rc6-a874-nonroot-host-ro-v1-$GITHUB_SHA" ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$(git rev-parse HEAD^{tree})" =~ ^[0-9a-f]{40}$ ]]
+          # Approved source from #1039 base151f5b1e, not self-attested by the
+          # diagnostic commit. Check both tree identity and bytes actually sent.
+          PIN_GUARD_BLOB=af5997f95496d7001525db1954385531050cbab7
+          PIN_GUARD_SHA256=e7a2bfc510ef20ad330ba1b81cd37120136bf1837ec1d1336aab6b661ca38ffc
+          test "$(git rev-parse HEAD:scripts/rc6_droplet_identity_guard.py)" = "$PIN_GUARD_BLOB"
+          test -f scripts/rc6_droplet_identity_guard.py
+          test ! -L scripts/rc6_droplet_identity_guard.py
+          test "$(sha256sum scripts/rc6_droplet_identity_guard.py | cut -d' ' -f1)" = "$PIN_GUARD_SHA256"
+
+      - name: Prepare metadata-only connection
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_a874_ro"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_a874_ro" "$HOME/.ssh/known_hosts"
+          # Existing pin guard reads only the fixed link-local ID/region keys.
+          # Never publish connection errors, addresses or raw SSH diagnostics.
+          if ! timeout 20 ssh -i "$HOME/.ssh/rc6_a874_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            'python3 -I -B - --expected-id 594077619 --expected-region nyc1' \
+            < scripts/rc6_droplet_identity_guard.py > /dev/null 2>/dev/null; then
+            echo 'RC6_A874=BLOCKED|reason=CONNECTION_OR_PIN_UNAVAILABLE|deploy_approved=false'
+            exit 2
+          fi
+
+      - name: Read only explicitly configured Porota socket metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          RESULT="$(timeout 30 ssh -i "$HOME/.ssh/rc6_a874_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -I -B -' 2>/dev/null <<'HOST'
+          # RC6_A874_REMOTE_BEGIN
+          import json
+          import os
+          import stat
+          import sys
+
+          def emit(status, reason, uid, gid, socket_info=None):
+              value = {'schema': 'RC6_A874_NONROOT_METADATA_V1',
+                       'status': status, 'reason': reason,
+                       'diagnostic_only': True, 'deploy_approved': False,
+                       'exclusive_namespace_attested': False,
+                       'daemon_rootless': 'NO_VERIFICADO', 'host_mutations': 0,
+                       'uid': uid, 'gid': gid}
+              if socket_info is not None:
+                  value['socket_owner_uid'] = socket_info.st_uid
+                  value['socket_owner_gid'] = socket_info.st_gid
+                  value['socket_mode'] = socket_info.st_mode & 0o777
+              print(json.dumps(value, sort_keys=True))
+              return 2
+
+          def inspect_metadata(uid):
+              configured = os.getenv('POROTA_RC6_ROOTLESS_SOCKET', '')
+              if not configured:
+                  return 'UNCONFIGURED', 'DEDICATED_ENDPOINT_NOT_CONFIGURED', None
+              # This is an accepted *scope shape*, never a guessed endpoint.
+              # No stat until an explicit configuration exactly matches it.
+              # Ordinary rootless defaults and all other applications are OUT.
+              private_runtime = '/run/user/' + str(uid)
+              porota_runtime = private_runtime + '/porota-rc6'
+              if configured != porota_runtime + '/docker.sock':
+                  return 'BLOCKED', 'SCOPED_ENDPOINT_INVALID', None
+              for directory in (private_runtime, porota_runtime):
+                  item = os.lstat(directory)
+                  if (not stat.S_ISDIR(item.st_mode) or item.st_uid != uid or
+                          item.st_mode & 0o022):
+                      return 'BLOCKED', 'PRIVATE_PARENT_UNVERIFIED', None
+              item = os.lstat(configured)
+              if (not stat.S_ISSOCK(item.st_mode) or item.st_uid != uid or
+                      item.st_mode & 0o022):
+                  return 'BLOCKED', 'PRIVATE_SOCKET_UNVERIFIED', None
+              return 'METADATA_ONLY', 'AUTHORITY_AND_DAEMON_UNVERIFIED', item
+
+          def main():
+              uid, gid = os.geteuid(), os.getegid()
+              if uid == 0 or gid == 0 or uid != os.getuid() or gid != os.getgid():
+                  return emit('BLOCKED', 'NONROOT_IDENTITY_REQUIRED', uid, gid)
+              try:
+                  status, reason, item = inspect_metadata(uid)
+              except PermissionError:
+                  status, reason, item = 'BLOCKED', 'METADATA_PERMISSION_DENIED', None
+              except OSError:
+                  status, reason, item = 'BLOCKED', 'METADATA_UNAVAILABLE', None
+              return emit(status, reason, uid, gid, item)
+
+          if __name__ == '__main__':
+              sys.exit(main())
+          # RC6_A874_REMOTE_END
+          HOST
+          )"
+          REMOTE_RC=$?
+          set -e
+          if [ "$REMOTE_RC" -ne 2 ]; then
+            echo 'RC6_A874=BLOCKED|reason=CONNECTION_OR_RECEIPT_UNAVAILABLE|deploy_approved=false'
+            exit 2
+          fi
+          # Print only a closed, sanitized receipt schema, never raw stdout.
+          RESULT="$RESULT" python3 -I -B - <<'PY'
+          import json, os
+          try:
+              value = json.loads(os.environ['RESULT'])
+              base = {'schema', 'status', 'reason', 'diagnostic_only', 'deploy_approved',
+                      'exclusive_namespace_attested', 'daemon_rootless', 'host_mutations', 'uid', 'gid'}
+              optional = {'socket_owner_uid', 'socket_owner_gid', 'socket_mode'}
+              reasons = {'DEDICATED_ENDPOINT_NOT_CONFIGURED', 'SCOPED_ENDPOINT_INVALID',
+                         'PRIVATE_PARENT_UNVERIFIED', 'PRIVATE_SOCKET_UNVERIFIED',
+                         'AUTHORITY_AND_DAEMON_UNVERIFIED', 'NONROOT_IDENTITY_REQUIRED',
+                         'METADATA_PERMISSION_DENIED', 'METADATA_UNAVAILABLE'}
+              valid = (type(value) is dict and set(value) in (base, base | optional) and
+                       value['schema'] == 'RC6_A874_NONROOT_METADATA_V1' and
+                       value['status'] in {'BLOCKED', 'UNCONFIGURED', 'METADATA_ONLY'} and
+                       value['reason'] in reasons and value['diagnostic_only'] is True and
+                       value['deploy_approved'] is False and value['exclusive_namespace_attested'] is False and
+                       value['daemon_rootless'] == 'NO_VERIFICADO' and
+                       type(value['host_mutations']) is int and value['host_mutations'] == 0 and
+                       all(type(value[key]) is int and 0 <= value[key] < 2**32
+                           for key in {'uid', 'gid'} | (set(value) & optional)))
+          except (ValueError, TypeError, KeyError):
+              valid = False
+          if not valid:
+              raise SystemExit('RC6_A874_RECEIPT_INVALID')
+          print(json.dumps(value, sort_keys=True))
+          PY
+          # Deliberately RED even when metadata is readable: never Deploy GO.
+          exit 2
+
+      - name: Remove runner-only metadata connection material
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [ -f "$HOME/.ssh/rc6_a874_ro" ]; then
+            shred -u "$HOME/.ssh/rc6_a874_ro"
           fi
 
 
