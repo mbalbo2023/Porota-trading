@@ -24,10 +24,10 @@ import sqlite3
 import stat
 import subprocess
 import sys
-import tempfile
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
+from scripts.rc6_source_safe_atomic import publish_json, SourceOutputUnsafe
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -195,27 +195,18 @@ def _due(state: dict, field: str, now: datetime, ttl: int) -> bool:
     return (now.astimezone(timezone.utc) - last.astimezone(timezone.utc)).total_seconds() >= ttl
 
 
-def _state_write(path: Path, data: dict) -> None:
+def _state_write(path: Path, data: dict, *, expected_parent: Path) -> None:
     if path.is_symlink():
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_ALIAS")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=".source-cycle-", dir=path.parent)
+    if path.name != "rc6_source_cycle_dispatch_state.json":
+        raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            os.fchmod(stream.fileno(), 0o644)
-            json.dump(data, stream, sort_keys=True, separators=(",", ":"))
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+        # The caller independently pins the one allowed market_root parent.
+        # No directory creation, pathname chmod, replace or cleanup anywhere.
+        publish_json(path, data, allowed_parent=expected_parent,
+                     compact=True, trailing_newline=True)
+    except SourceOutputUnsafe as exc:
+        raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE") from exc
 
 
 @contextmanager
@@ -234,13 +225,6 @@ def _exclusive_lock(path: Path):
         yield
     finally:
         os.close(fd)
-
-
-def _chmod_owned(path: Path) -> None:
-    metadata = path.lstat()
-    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
-        raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_UNSAFE")
-    path.chmod(0o644)
 
 
 def _published_file_identity(path: Path) -> tuple[int, ...] | None:
@@ -357,7 +341,9 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
                     # a misleading success marker from a future code change.
                     results[name] = "OUTPUT_NOT_REPUBLISHED"
                     continue
-                _chmod_owned(output_path)
+                # Every allowlisted producer owns its output's 0644 mode via
+                # fchmod on its fresh staging FD. A pathname chmod here was a
+                # TOCTOU that could follow a foreign symlink after lstat.
             except (OSError, ValueError):
                 results[name] = "OUTPUT_UNVERIFIED"
                 continue
@@ -367,7 +353,7 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
                 state[f"last_{name}_success_at"] = now.astimezone(timezone.utc).isoformat()
                 changed = True
         if changed:
-            _state_write(state_path, state)
+            _state_write(state_path, state, expected_parent=market_root)
     status = ("NOT_DUE" if late and set(results.values()) == {"NOT_DUE_LATE_EXACT_CONTRACT"}
               else "COMPLETE" if all(value in {"OK", "NOT_DUE_TTL"}
                                      for value in results.values()) else "DEGRADED")

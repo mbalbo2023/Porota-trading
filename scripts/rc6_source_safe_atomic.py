@@ -55,7 +55,8 @@ def _same_parent(path: Path, owned_fd: int) -> bool:
         os.close(check_fd)
 
 
-def publish_json(path: Path | str, payload: dict, *, allowed_parent: Path | str) -> None:
+def publish_json(path: Path | str, payload: dict, *, allowed_parent: Path | str,
+                 compact: bool = False, trailing_newline: bool = False) -> None:
     """Atomically write JSON under exactly one existing, declared directory.
 
     O_NOFOLLOW protects every ancestor and O_EXCL creates unpredictable fresh
@@ -78,7 +79,10 @@ def publish_json(path: Path | str, payload: dict, *, allowed_parent: Path | str)
         staged = "." + destination.name + "." + secrets.token_hex(16) + ".tmp"
         staging_fd = os.open(staged, _TEMP_FLAGS, 0o600, dir_fd=directory_fd)
         with os.fdopen(staging_fd, "w", encoding="utf-8") as output:
-            json.dump(payload, output, ensure_ascii=False, sort_keys=True)
+            json.dump(payload, output, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":") if compact else None)
+            if trailing_newline:
+                output.write("\n")
             output.flush()
             os.fchmod(output.fileno(), 0o644)
             os.fsync(output.fileno())
