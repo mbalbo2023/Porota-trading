@@ -124,7 +124,29 @@ def broker_from_environment(store, **overrides):
 class ChildProcesses:
     """Reinicia sólo el hijo caído; no espera su trabajo para avanzar el reloj."""
     def __init__(self, commands, *, cooldown_seconds=30, startup_grace_seconds=25,
-                 spawn=subprocess.Popen, clock=time.monotonic):
+                 spawn=subprocess.Popen, clock=time.monotonic,
+                 gateway_name=None, gateway_ready=None, gateway_consumers=()):
+        # Future G2 cutover primitive only. The productive composition root
+        # does NOT pass these options or start another PPI SDK session. A
+        # gateway process alone is not reader parity, SDK entitlement, a
+        # Watch handshake or admission proof.
+        if gateway_name is None:
+            if gateway_ready is not None or gateway_consumers or "ppi_gateway" in commands:
+                raise ValueError("GATEWAY_ORPHANED_READINESS_CONTRACT")
+        else:
+            if (not isinstance(gateway_name, str) or gateway_name not in commands
+                    or not callable(gateway_ready)):
+                raise ValueError("GATEWAY_READINESS_MISSING")
+            if (not isinstance(gateway_consumers, (tuple, list))
+                    or not gateway_consumers
+                    or any(not isinstance(name, str) or
+                           name == gateway_name or name not in commands
+                           for name in gateway_consumers)
+                    or len(gateway_consumers) != len(set(gateway_consumers))):
+                raise ValueError("GATEWAY_CONSUMER_INVALID")
+        self.gateway_name = gateway_name
+        self.gateway_ready = gateway_ready
+        self.gateway_consumers = frozenset(gateway_consumers)
         self.commands, self.cooldown = commands, cooldown_seconds
         self.spawn, self.clock = spawn, clock
         # El scanner recibe el primer acceso a SQLite/PPI. Arrancar todos los
@@ -135,13 +157,28 @@ class ChildProcesses:
             "restarts": 0, "spawn_failures": 0, "started_at": None,
             "last_exit_at": None, "last_error": None} for name in commands}
         self.next_start = {
-            name: (started if name == "scanner" else started + startup_grace_seconds)
+            name: (started if name == (gateway_name or "scanner")
+                   else started + startup_grace_seconds)
             for name in commands
         }
 
     def poll(self):
         now = self.clock()
-        for name, command in self.commands.items():
+        # The gateway must be observed RUNNING in a *previous* poll and pass
+        # an injected verified readiness probe before consumers may spawn.
+        # A fabricated truthy callback cannot make consumers start alongside
+        # the gateway in the same first tick.
+        gateway_running_at_entry = False
+        if self.gateway_name is not None:
+            existing = self.processes.get(self.gateway_name)
+            gateway_running_at_entry = (
+                existing is not None and existing.poll() is None)
+        names = list(self.commands)
+        if self.gateway_name is not None:
+            names.remove(self.gateway_name)
+            names.insert(0, self.gateway_name)
+        for name in names:
+            command = self.commands[name]
             process = self.processes.get(name)
             if process is not None and process.poll() is not None:
                 self.processes.pop(name)
@@ -149,6 +186,23 @@ class ChildProcesses:
                 self.health[name].update(state="CRASH_BACKOFF", pid=None,
                     restarts=self.health[name]["restarts"] + 1,
                     last_exit_at=now_iso(), last_error="CHILD_EXITED")
+            if self.gateway_name is not None and name in self.gateway_consumers:
+                is_ready = False
+                if gateway_running_at_entry:
+                    try:
+                        is_ready = self.gateway_ready() is True
+                    except Exception:
+                        # The financial exit CLOCK remains independent; a
+                        # readiness probe failure blocks new feed consumers.
+                        is_ready = False
+                if not is_ready:
+                    self.health[name].update(
+                        state="WAITING_GATEWAY" if name not in self.processes
+                              else "GATEWAY_UNAVAILABLE",
+                        last_error="GATEWAY_READINESS_UNVERIFIED")
+                    continue
+                if name in self.processes:
+                    self.health[name].update(state="RUNNING", last_error=None)
             if name not in self.processes and now >= self.next_start.get(name, 0):
                 try:
                     self.processes[name] = self.spawn(command, cwd=ROOT)

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from rc6_deploy_test_assertions import assert_no_executable_rollback
+
 
 PROMOTE=Path(".github/workflows/porota-deploy-v2-promote.yml").read_text(encoding="utf-8")
 LEGACY_PATH=Path(".github/workflows/rc6-pr69-isolated-transactional-deploy-20260915.yml")
@@ -32,7 +34,7 @@ def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
     assert "PPI_WATCH_UNTOUCHED=GREEN" in PROMOTE
     assert "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED" in PROMOTE
     assert '"real_order_routes":"NOT_CALLED"' in PROMOTE
-    assert "rollback" not in PROMOTE.lower()
+    assert_no_executable_rollback(PROMOTE)
 
 
 def test_deploy_v2_materializes_exact_runtime_provenance():
@@ -106,9 +108,56 @@ def test_disk_preflight_recovers_only_verified_partial_critical_image():
     assert 'CRITICAL_PRECLEAN_COMPATIBILITY=GREEN' in preclean
     assert 'systemctl restart porota-critical-approval-rc6.service' in preclean
     assert 'CRITICAL_PRECLEAN_CAPABILITY=GREEN' in preclean
-    assert 'if [ "$OLD_IMAGE_USERS" -eq 0 ]; then' in preclean
+    assert 'RC6_PRECLEAN_OLD_CRITICAL_IMAGE_DEFERRED=$CRIT_IMAGE' in preclean
+    assert 'RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN' in preclean
+    assert 'RC6_DEPLOY_MUTEX_FD=$RC6_GOVERNED_FD' in preclean
+    assert 'RC6_DEPLOY_MUTEX_PROOF=${RC6_DEPLOY_MUTEX_PROOF:?}' in preclean
+    assert 'sudo -n -C "$((RC6_GOVERNED_FD + 1))" env' in preclean
+    assert 'docker image rm' not in preclean
     assert 'test "$PPI_AFTER" = "$PPI_BEFORE"' in preclean
     assert preclean.index('CRITICAL_PRECLEAN_COMPATIBILITY=GREEN') < preclean.index(
         'systemctl restart porota-critical-approval-rc6.service')
     assert preclean.index('test "$STATE" = "PRODUCTION_PAPER|0"') < preclean.index(
         'systemctl restart porota-critical-approval-rc6.service')
+
+
+def test_preclean_deferred_receipt_executes_and_never_implies_image_deletion():
+    """Run the real receipt command with a synthetic old critical image ID."""
+    import subprocess
+
+    preclean = PROMOTE.split('RC6_DISK_PRECLEAN=START', 1)[1].split(
+        'PRECLEAN_REMOTE\n', 1)[0]
+    line = next(line.strip() for line in preclean.splitlines() if
+                line.strip().startswith('echo "RC6_PRECLEAN_OLD_CRITICAL_IMAGE_DEFERRED='))
+    critical = 'sha256:' + 'a' * 64
+    result = subprocess.run(
+        ['bash', '-euo', 'pipefail', '-c',
+         f'CRIT_IMAGE={critical}\n{line}'],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f'RC6_PRECLEAN_OLD_CRITICAL_IMAGE_DEFERRED={critical}'
+
+
+def test_deferred_old_critical_and_foreign_alias_are_never_removed(monkeypatch):
+    """Reuse the canonical Docker fake; execute the real bounded cleanup code."""
+    from types import SimpleNamespace
+    from scripts import rc6_pretransfer_image_cleanup as clean
+    from test_rc6_pretransfer_image_cleanup import Docker, IMG, TAG
+
+    for protection in ('stopped_critical', 'foreign_alias'):
+        backend = Docker()
+        if protection == 'stopped_critical':
+            backend.refs['f' * 64] = IMG
+        else:
+            backend.images[IMG][0].append('boca:beta')
+        with monkeypatch.context() as patch:
+            patch.setattr(clean, 'docker', backend)
+            patch.setattr(clean, 'safety', lambda: ['unchanged'])
+            patch.setattr(clean.shutil, 'disk_usage',
+                          lambda _: SimpleNamespace(free=1234))
+            report = clean.cleanup()
+        assert report['status'] == 'GREEN'
+        assert report['removed_tags'] == []
+        assert TAG in backend.images[IMG][0]
+        assert not any(command[:2] == ('image', 'rm') for command in backend.calls)

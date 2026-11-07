@@ -37,8 +37,13 @@ jobs:
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_REF_NAME" == "rc6-a205-paper-book-ro-v1-$GITHUB_SHA" ]]
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$(git rev-parse HEAD^{tree})" =~ ^[0-9a-f]{40}$ ]]
           test -s scripts/rc6_paper_deploy_preflight.py
           test -s cd_spot_ledger.py
+          for source in scripts/rc6_cold2_quarantine.py scripts/rc6_cold2_successor.py \
+              scripts/rc6_failed_cold_fix_forward.py scripts/rc6_cold2_apply_guard.py; do
+            test -s "$source"
+          done
           python3 -m py_compile scripts/rc6_paper_deploy_preflight.py cd_spot_ledger.py
           echo "RC6_A205_SOURCE=GREEN|candidate=$GITHUB_SHA|host_written=NO"
 
@@ -58,7 +63,31 @@ jobs:
             'python3 -B - --expected-id 594077619 --expected-region nyc1' \
             < scripts/rc6_droplet_identity_guard.py
 
-      - name: Classify live PAPER spot caucion future and deploy barrier without writes
+      - name: Prove sudo inherited FD capability before host promotion
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # A786: the actual nested sudo image-cleanup needs closefrom_override.
+          # Probe only an inherited read-only /dev/null descriptor: no Docker,
+          # PPI, provider calls, DB/systemd mutation, or host file creation.
+          RESULT="$(timeout 30 ssh -i "$HOME/.ssh/rc6_a205_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          # RC6_A786_BEGIN_SUDO_FD_PROBE
+          set -Eeuo pipefail
+          exec {rc6_probe_fd}</dev/null
+          sudo -n -C "$((rc6_probe_fd + 1))" env \
+            "RC6_A786_FD=$rc6_probe_fd" PYTHONDONTWRITEBYTECODE=1 \
+            python3 -B -c 'import os,stat; fd=int(os.environ["RC6_A786_FD"]); assert stat.S_ISCHR(os.fstat(fd).st_mode); print("RC6_A786_SUDO_FD=GREEN|host_written=NO")'
+          exec {rc6_probe_fd}<&-
+          # RC6_A786_END_SUDO_FD_PROBE
+          HOST
+          )"
+          test "$RESULT" = 'RC6_A786_SUDO_FD=GREEN|host_written=NO'
+          echo "$RESULT"
+
+      - name: Classify PAPER book barrier and exact candidate COLD2 recovery without writes
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -66,38 +95,81 @@ jobs:
           LEDGER_SHA="$(sha256sum cd_spot_ledger.py | cut -d' ' -f1)"
           test "${#LEDGER_B64}" -gt 1 && test "${#LEDGER_B64}" -lt 120000
           [[ "$LEDGER_SHA" =~ ^[0-9a-f]{64}$ ]]
+          # Serialize the exact checkout's four existing COLD inspectors in
+          # memory; the older installed host code cannot substitute for them.
+          COLD_B64="$(python3 - <<'PY'
+          import base64,gzip,hashlib,json
+          from pathlib import Path
+          paths=('scripts/rc6_cold2_quarantine.py',
+                 'scripts/rc6_cold2_successor.py',
+                 'scripts/rc6_failed_cold_fix_forward.py',
+                 'scripts/rc6_cold2_apply_guard.py')
+          files={}
+          for name in paths:
+              target=Path(name)
+              assert target.is_file() and not target.is_symlink()
+              raw=target.read_bytes()
+              assert 0 < len(raw) <= 85000
+              files[name]={'sha256':hashlib.sha256(raw).hexdigest(),
+                           'source':raw.decode('utf-8')}
+          raw=json.dumps({'schema':'RC6_A205_CANDIDATE_COLD_SOURCES_V1',
+                          'files':files},sort_keys=True,separators=(',',':')).encode()
+          assert 0 < len(raw) <= 250000
+          print(base64.b64encode(gzip.compress(raw,compresslevel=9,mtime=0)).decode())
+          PY
+          )"
+          COLD_SHA="$(printf '%s' "$COLD_B64" | base64 -d | sha256sum | cut -d' ' -f1)"
+          TREE_SHA="$(git rev-parse HEAD^{tree})"
+          test "${#COLD_B64}" -gt 1 && test "${#COLD_B64}" -lt 120000
+          [[ "$COLD_SHA" =~ ^[0-9a-f]{64}$ && "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
           # The executable script comes from the exact candidate SHA on
           # runner stdin; the installed host's old ledger is not substituted.
           # No position IDs, prices, account details or credentials cross stdout.
           set +e
-          RESULT="$(timeout 45 ssh -i "$HOME/.ssh/rc6_a205_ro" \
+          RESULT="$(timeout 150 ssh -i "$HOME/.ssh/rc6_a205_ro" \
             -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading RC6_A205_SPOT_LEDGER_GZIP_B64='$LEDGER_B64' RC6_A205_SPOT_LEDGER_SHA256='$LEDGER_SHA' python3 -B - --host-barrier" \
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/opt/porota-trading RC6_A205_SPOT_LEDGER_GZIP_B64='$LEDGER_B64' RC6_A205_SPOT_LEDGER_SHA256='$LEDGER_SHA' RC6_A205_COLD_SOURCES_GZIP_B64='$COLD_B64' RC6_A205_COLD_SOURCES_SHA256='$COLD_SHA' python3 -B - --host-barrier --cold-precheck --candidate-sha '$GITHUB_SHA' --candidate-tree '$TREE_SHA'" \
             < scripts/rc6_paper_deploy_preflight.py)"
           RETURN_CODE=$?
           set -e
           # Exit 2 is an expected *business* block, never a hidden technical
           # exception. The diagnostic Action itself remains successful if it
           # exposed a truthful, explicit BLOCKED_RECONCILIATION receipt.
-          RESULT="$RESULT" RETURN_CODE="$RETURN_CODE" python3 - <<'PY'
+          RESULT="$RESULT" RETURN_CODE="$RETURN_CODE" TREE_SHA="$TREE_SHA" \
+            COLD_SHA="$COLD_SHA" python3 - <<'PY'
           import json,os
           rc=int(os.environ['RETURN_CODE'])
           value=json.loads(os.environ['RESULT'])
           expected={'FLAT_GREEN':0,'ADMIN_CLOSE_REQUIRED':0,
-                    'BLOCKED_RECONCILIATION':2,'BLOCKED_BARRIER':2}
+                    'BLOCKED_RECONCILIATION':2,'BLOCKED_BARRIER':2,
+                    'BLOCKED_COLD':2,'BLOCKED_PROBE':2}
           state=value.get('status')
+          cold=value.get('cold')
           if (value.get('contract')!='RC6_A205_PAPER_DEPLOY_PREFLIGHT_V1' or
                   value.get('read_only') is not True or
                   state not in expected or rc!=expected[state]):
               raise SystemExit('RC6_A205_PAPER_PREFLIGHT_PROBE_RED')
+          if state!='BLOCKED_PROBE' and (
+                  type(cold) is not dict or
+                  cold.get('contract')!='RC6_A205_COLD_PREADMISSION_V1' or
+                  cold.get('read_only') is not True or
+                  cold.get('host_mutations')!=0 or
+                  cold.get('deploy_approved') is not False or
+                  cold.get('candidate_sha')!=os.environ['GITHUB_SHA'] or
+                  cold.get('candidate_tree')!=os.environ['TREE_SHA'] or
+                  cold.get('candidate_sources_sha256')!=os.environ['COLD_SHA'] or
+                  cold.get('status') not in {'GREEN','BLOCKED_COLD'} or
+                  (state in {'FLAT_GREEN','ADMIN_CLOSE_REQUIRED'} and
+                   cold['status']!='GREEN')):
+              raise SystemExit('RC6_A205_COLD_PREADMISSION_CONTRACT_RED')
           print('RC6_A205_PAPER_PREFLIGHT=' + state)
           print(json.dumps(value,sort_keys=True))
           if state!='FLAT_GREEN':
               print('RC6_A205_PROMOTION_READY=NO|prepare_closure_before_merge')
           else:
-              print('RC6_A205_PROMOTION_READONLY_BOOK=GREEN|TOCTOU_recheck_required')
+              print('RC6_A205_PREMERGE_BOOK_COLD=GREEN|NOT_DEPLOY_GO|TOCTOU_recheck_required')
           PY
 
       - name: Remove runner-only SSH material
@@ -108,3 +180,5 @@ jobs:
           if [ -f "$HOME/.ssh/rc6_a205_ro" ]; then
             shred -u "$HOME/.ssh/rc6_a205_ro"
           fi
+
+

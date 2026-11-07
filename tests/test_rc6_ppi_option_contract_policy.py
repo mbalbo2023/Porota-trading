@@ -106,13 +106,16 @@ def test_unverified_alias_and_unstructured_option_stay_blocked():
         option("CEPC23360C", "CEPC23360C"), {"CEPU": "ACCIONES"}) is None
 
 
-def test_only_missing_contract_cohort_receives_new_rule():
+def test_missing_or_review_cohort_gets_evidence_but_ready_does_not_duplicate():
     underlying = {"YPFD": "ACCIONES"}
     review = option()
     review["capability"] = "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
     ready = option()
     ready["capability"] = "READY_PAPER_OPTION_LONG"
-    assert policy.standard_long_option_evidence(review, underlying) is None
+    # This is candidate static evidence, not PAPER admission.  Existing
+    # material/revoked/adjusted holds are enforced by the contract-v2 bridge.
+    assert policy.standard_long_option_evidence(review, underlying)["cash_multiplier"] == "100"
+    assert review["capability"] == "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
     assert policy.standard_long_option_evidence(ready, underlying) is None
 
 
@@ -155,11 +158,14 @@ def test_mass_evidence_normalizes_to_existing_long_option_contract_path():
     assert contract.option_max_loss("250", "1") == 25000
 
 
-def test_mass_rule_does_not_modify_review_or_alias_cohorts():
+def test_mass_rule_emits_review_evidence_without_modifying_review_capability():
     primary_underlying = row("YPFD", "ACCIONES")
     review = option(); review["capability"] = "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
     records, skipped, identities = mass.planned_records([primary_underlying, review])
     option_records = [r for r in records if r["ticker"] == "YPFC40500O"]
-    assert len(option_records) == 1
-    assert option_records[0]["source_class"] == "PPI_STRUCTURED_API"
+    assert len(option_records) == 2
+    assert [r["source_class"] for r in option_records] == [
+        "PPI_STRUCTURED_API", "DERIVED_OFFICIAL_RULE"]
+    assert option_records[1]["source_ref"] == policy.OPTION_DERIVED_SOURCE_REF
+    assert review["capability"] == "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
     assert "OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED" not in skipped

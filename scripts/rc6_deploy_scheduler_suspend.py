@@ -629,7 +629,12 @@ def require_exact_stopped_closed_flat(candidate):
             receipt.get('paused_postclose') is not False or
             receipt.get('intraday_caucion') is not False or
             receipt.get('pending_caucion') is not False or
-            quiescence.admit(stopped=True, stopped_receipt=receipt) not in ('RUNNING', 'STOPPED')):
+            # CLOSED can retain WAITING_MARKET in SQLite after both Docker
+            # containers exit cleanly. admit(stopped=True) explicitly permits
+            # WAITING_MARKET or STOPPED for this exact CLOSED/flat stop proof;
+            # RUNNING is not a valid CLOSED outcome and must fail closed.
+            quiescence.admit(stopped=True, stopped_receipt=receipt) not in
+                ('WAITING_MARKET', 'STOPPED')):
         raise ValueError('SCHEDULER_STOPPED_CLOSED_FLAT_RED')
     quiescence.critical_admission()
 

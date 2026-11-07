@@ -992,7 +992,35 @@ jobs:
               "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase preclean env POLICY_B64='$POLICY_B64' IMAGE_CLEANUP_B64='$IMAGE_CLEANUP_B64' HOUSEKEEPING_B64='$HOUSEKEEPING_B64' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
-          TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
+          # A690: /tmp is shared; atomically reserve a private 0700 directory.
+          # Never truncate/remove fixed-name host files or follow a symlink.
+          RC6_PRECLEAN_SCRATCH="$(mktemp -d -- /tmp/rc6-porota-preclean.XXXXXXXXXX)"
+          TMP_POLICY="$RC6_PRECLEAN_SCRATCH/policy.json"
+          TMP_HOUSEKEEPING="$RC6_PRECLEAN_SCRATCH/housekeeping.json"
+          # Include the exact device:inode, UID and mode of the just-created
+          # directory; a same-UID/mode replacement must NEVER be unlinked.
+          RC6_PRECLEAN_SCRATCH_ID="$(stat -c '%d:%i:%u:%a' -- "$RC6_PRECLEAN_SCRATCH")"
+          cleanup_preclean_scratch() {
+            local original_rc=$?
+            trap - EXIT
+            if [ -d "$RC6_PRECLEAN_SCRATCH" ] && [ ! -L "$RC6_PRECLEAN_SCRATCH" ] &&
+               [ "$(stat -c '%a:%u' "$RC6_PRECLEAN_SCRATCH")" = "700:$(id -u)" ] &&
+               [ "$(stat -c '%d:%i:%u:%a' -- "$RC6_PRECLEAN_SCRATCH")" = "$RC6_PRECLEAN_SCRATCH_ID" ]; then
+              rm -f -- "$TMP_POLICY" "$TMP_HOUSEKEEPING" || original_rc=65
+              rmdir -- "$RC6_PRECLEAN_SCRATCH" || original_rc=65
+            else
+              original_rc=65
+            fi
+            if [ "$original_rc" -eq 0 ]; then
+              echo 'RC6_DISK_PRECLEAN_REMOTE=GREEN'
+            else
+              echo '::error::RC6_DISK_PRECLEAN_REMOTE=DEFERRED_UNVERIFIED'
+            fi
+            exit "$original_rc"
+          }
+          trap cleanup_preclean_scratch EXIT
+          test ! -L "$RC6_PRECLEAN_SCRATCH"
+          test "$(stat -c '%a:%u' "$RC6_PRECLEAN_SCRATCH")" = "700:$(id -u)"
           printf '%s' "$POLICY_B64" | base64 -d > "$TMP_POLICY"
           test -f "$REPO/scripts/rc6_disk_housekeeping.py"
 
@@ -1005,10 +1033,9 @@ jobs:
           # Host-wide housekeeping is inventory only: /tmp, apt, journal, and
           # backups may have other owners, including PPI Watch. Reclaim only
           # proven-unreferenced RC6 images below, then fail closed on space.
-          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json
           printf '%s' "$HOUSEKEEPING_B64" | base64 -d | sudo -n python3 - \
             --policy "$TMP_POLICY" --mode audit --preserve-backups \
-            --json-out /tmp/porota-predeploy-housekeeping.json
+            --json-out "$TMP_HOUSEKEEPING"
           echo 'RC6_PRECLEAN_HOSTWIDE_MUTATION=SKIPPED'
           # Shared Docker images and build caches have no RC6 ownership proof.
           # The measured reserve below fails closed if owned cleanup is insufficient.
@@ -1087,34 +1114,31 @@ jobs:
             done
             test "$CRIT_READY" -eq 1
             sudo -n docker exec porota_critical_approval_rc6 python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only"; print("CRITICAL_PRECLEAN_CAPABILITY=GREEN")'
-            OLD_IMAGE_USERS=0
-            for cid in $(sudo -n docker ps -aq); do
-              if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$CRIT_IMAGE" ]; then OLD_IMAGE_USERS=1; fi
-            done
-            if [ "$OLD_IMAGE_USERS" -eq 0 ]; then
-              for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$CRIT_IMAGE" 2>/dev/null | sed '/^<none>:/d' || true); do
-                case "$tag" in
-                  "$STABLE_IMAGE") echo 'RC6_PRECLEAN_STABLE_TAG_COLLISION=RED'; exit 63 ;;
-                  porota-trading-bot:17.0.0-rc6-candidate-*) sudo -n docker image rm "$tag" ;;
-                  *) echo "RC6_PRECLEAN_PRESERVE_NONCANDIDATE_TAG=$tag" ;;
-                esac
-              done
-              sudo -n docker image rm "$CRIT_IMAGE" >/dev/null 2>&1 || true
-              echo 'RC6_UNSCOPED_DOCKER_IMAGE_PRUNE=SKIPPED'
-            fi
-            echo "RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|old_referenced=$OLD_IMAGE_USERS|image=$CURRENT_IMAGE"
+            # A681 shared Docker host: no direct image-ID removal. The next
+            # bounded helper checks OCI labels, all image aliases/digests,
+            # stopped containers and the runtime before any candidate tag rm.
+            echo "RC6_PRECLEAN_OLD_CRITICAL_IMAGE_DEFERRED=$CRIT_IMAGE"
+            echo "RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|image=$CURRENT_IMAGE"
           fi
-          # Execute only the exact checkout's bounded reference-safe cleanup.
+          # A779: exact checkout helper under the real /run/lock owner FD.
+          # Nested sudo may close inherited FDs. Preserve only the owner FD
+          # via closefrom_override (-C), or fail closed before Docker deletion.
           # This is pretransfer housekeeping, never a product installation.
-          sudo -n timeout 120 python3 -c "import base64; exec(compile(base64.b64decode('$IMAGE_CLEANUP_B64'), '<rc6-pretransfer-cleanup>', 'exec'))"
+          RC6_GOVERNED_FD="${RC6_DEPLOY_MUTEX_FD:-}"
+          [[ "$RC6_GOVERNED_FD" =~ ^[1-9][0-9]{0,2}$ ]]
+          test "$RC6_GOVERNED_FD" -ge 3
+          test "$RC6_GOVERNED_FD" -le 255
+          sudo -n -C "$((RC6_GOVERNED_FD + 1))" env \
+            "RC6_DEPLOY_MUTEX_FD=$RC6_GOVERNED_FD" \
+            "RC6_DEPLOY_MUTEX_PROOF=${RC6_DEPLOY_MUTEX_PROOF:?}" \
+            timeout 120 python3 -c "import base64; exec(compile(base64.b64decode('$IMAGE_CLEANUP_B64'), '<rc6-pretransfer-cleanup>', 'exec'))"
           PPI_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
               printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
             done
           )"
           test "$PPI_AFTER" = "$PPI_BEFORE"
-          rm -f "$TMP_POLICY"
-          echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
+          echo 'RC6_DISK_PRECLEAN_VALIDATION=GREEN_PENDING_PRIVATE_SCRATCH_RELEASE'
           PRECLEAN_REMOTE
 
             mapfile -t METRICS < <(probe_disk)
@@ -1269,9 +1293,36 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # A690: verify the runner's output channel BEFORE any remote cutover.
+          # A missing AWK/output file must not become a post-promotion failure.
+          command -v awk >/dev/null
+          : "${GITHUB_OUTPUT:?RC6_GITHUB_OUTPUT_MISSING}"
+          test ! -L "$GITHUB_OUTPUT"
+          test -d "$(dirname "$GITHUB_OUTPUT")" && test -w "$(dirname "$GITHUB_OUTPUT")"
+          : >> "$GITHUB_OUTPUT"
+          test -f "$GITHUB_OUTPUT" && test -w "$GITHUB_OUTPUT"
+          # Durable runner-side fail-closed defaults, before touching host.
+          # An AWK/output write failure after cutover must not mark promotion
+          # FAILED and accidentally invoke cleanup_recover.
+          printf 'cleanup_status=UNKNOWN\ncleanup_parser_status=UNKNOWN\n' >> "$GITHUB_OUTPUT"
+          set +e
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DO_USER@$DO_HOST" \
-            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE'
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' user --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase promotion env CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' RC6_QUIESCENCE_MODE='$RC6_QUIESCENCE_MODE' RC6_A207_OWNER_APPROVAL_ID='${RC6_A207_OWNER_APPROVAL_ID:-}' GITHUB_RUN_ID='$GITHUB_RUN_ID' GITHUB_RUN_ATTEMPT='$GITHUB_RUN_ATTEMPT' RC6_A151_OWNER_APPROVAL_ID='$RC6_A151_OWNER_APPROVAL_ID' RC6_A151_OWNER_INTRADAY_ID='${RC6_A151_OWNER_INTRADAY_ID:-}' RC6_A151_CONTINUITY_PROOF_B64='$RC6_A151_CONTINUITY_PROOF_B64' bash -s" <<'REMOTE' | awk -v status_file="$GITHUB_OUTPUT" '
+          # A690: preserve output unchanged; capture exactly one terminal
+          # cleanup marker for the later job-level NO_GO gate. Missing or
+          # duplicated lines are UNKNOWN, never implicit GREEN.
+          { print }
+          /^RC6_FINAL_HOUSEKEEPING=GREEN\|/ { green++ }
+          /^RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED\|/ { deferred++ }
+          END {
+            state = "UNKNOWN"
+            if (green == 1 && deferred == 0) state = "GREEN"
+            else if (green == 0 && deferred == 1) state = "DEFERRED_UNVERIFIED"
+            print "cleanup_status=" state >> status_file
+            if (state == "UNKNOWN") print "::error::RC6_CLEANUP_STATUS_UNKNOWN; no release claim"
+          }
+          '
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -1338,8 +1389,13 @@ jobs:
           )"
           printf 'PPI_WATCH_BEFORE=%s\n' "$PPI_WATCH_BEFORE"
 
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE"
+          # A681: each transfer has an immutable SHA/run/attempt namespace.
+          # A pre-existing stage could be a bind mount or another app's data;
+          # do not recursively delete it based only on its name.
+          test -d "$REMOTE_DIR" && test ! -L "$REMOTE_DIR"
+          ! mountpoint -q "$REMOTE_DIR"
+          test ! -e "$STAGE" && test ! -L "$STAGE"
+          mkdir -m 0700 "$STAGE"
           python3 - "$REMOTE_DIR/porota-deploy-bundle-v2.tgz" "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" <<'PY'
           import hashlib,json,sys
           bundle,manifest=sys.argv[1:]
@@ -1492,6 +1548,16 @@ jobs:
           echo "POROTA_IMAGE_TAR_VERIFY=loaded=$IMAGE_TAR_SHA|expected=$EXPECTED_TAR_SHA"
           test -n "$LOADED_IMAGE_ID"
           test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"
+          if [[ ! "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ||
+                ! "$LOADED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "POROTA_FROZEN_IMAGE_ID_GATE=RED|reason=INVALID_IMAGE_ID_FORMAT"
+            exit 42
+          fi
+          if [ "$LOADED_IMAGE_ID" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "POROTA_FROZEN_IMAGE_ID_GATE=RED|reason=IMAGE_ID_MISMATCH|expected=$EXPECTED_IMAGE_ID|loaded=$LOADED_IMAGE_ID"
+            exit 42
+          fi
+          echo "POROTA_FROZEN_IMAGE_ID_GATE=GREEN|image=$LOADED_IMAGE_ID"
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           echo "POROTA_BUILD_ONCE_MATERIALIZED=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
           if [[ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ||
@@ -2106,8 +2172,36 @@ jobs:
           # needed after immutable promotion + immediate audit. Reclaim only these
           # deploy-transient bytes before the preopen disk guard so the deploy
           # cannot fail against space it is itself temporarily consuming.
-          rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"
-          rm -rf "$STAGE"
+          sudo -n python3 - "$REPO" "$REMOTE_DIR" "$STAGE" "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
+          import os,shutil,sys
+          from pathlib import Path
+          repo,remote,stage,candidate,run,attempt=sys.argv[1:]
+          sys.path.insert(0,repo)
+          from scripts.rc6_deploy_failure_cleanup import container_inventory,host_mountpoints,overlaps
+          expected=Path('/tmp')/f'porota-deploy-v2-{candidate}-{run}-{attempt}'
+          root=Path(remote)
+          target=Path(stage)
+          if (root != expected or target != root/'stage' or root.is_symlink()
+                  or target.is_symlink() or not root.is_dir()
+                  or not target.is_dir() or root.resolve()!=root
+                  or target.resolve()!=target):
+              raise RuntimeError('RC6_STAGE_OWNERSHIP_UNVERIFIED')
+          _,mounts=container_inventory()
+          mountpoints=host_mountpoints()
+          if any(p==root or root in p.parents or p==target or target in p.parents
+                 for p in mountpoints):
+              raise RuntimeError('RC6_STAGE_HOST_MOUNT_PROTECTED')
+          if any(overlaps(target,mount) for mount in mounts):
+              raise RuntimeError('RC6_STAGE_DOCKER_BIND_PROTECTED')
+          for name in ('porota-predeploy-image.tar.gz','porota-deploy-bundle-v2.tgz'):
+              file=root/name
+              if file.is_symlink() or (file.exists() and not file.is_file()):
+                  raise RuntimeError('RC6_STAGE_FILE_UNVERIFIED')
+          for name in ('porota-predeploy-image.tar.gz','porota-deploy-bundle-v2.tgz'):
+              (root/name).unlink(missing_ok=True)
+          shutil.rmtree(target)
+          print('RC6_PREOPEN_EXACT_STAGE_RECLAIM=GREEN|FOREIGN_MOUNTS=UNTOUCHED')
+          PY
           DISK_PREOPEN_AFTER_SAFE_RECLAIM="$(df -PB1 / | awk 'NR==2 {print $4}')"
           echo "RC6_PREOPEN_SAFE_RECLAIM=GREEN|free=$DISK_PREOPEN_AFTER_SAFE_RECLAIM"
           POST_CLEANUP_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
@@ -2434,57 +2528,42 @@ jobs:
               test "$CRIT_READY" -eq 1
               sudo -n docker exec "$CRIT_CONTAINER" python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only",h; print("ISSUES_CAPABILITY_BROKER=GREEN")'
 
-              OLD_IMAGE_USERS=0
-              for cid in $(sudo -n docker ps -aq); do
-                CID_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' "$cid")"
-                if [ "$CID_IMAGE" = "$CRIT_IMAGE_BEFORE" ]; then
-                  OLD_IMAGE_USERS=1
-                  echo "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED=$cid"
-                fi
-              done
-              test "$OLD_IMAGE_USERS" -eq 0
-
-              for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$CRIT_IMAGE_BEFORE" 2>/dev/null | sed '/^<none>:/d' || true); do
-                case "$tag" in
-                  "$STABLE_IMAGE")
-                    echo "RC6_OLD_CRITICAL_IMAGE_STABLE_TAG_COLLISION=RED"
-                    exit 63
-                    ;;
-                  porota-trading-bot:17.0.0-rc6-candidate-*)
-                    sudo -n docker image rm "$tag"
-                    ;;
-                  *)
-                    echo "RC6_PRESERVE_NONCANDIDATE_IMAGE_TAG=$tag"
-                    ;;
-                esac
-              done
-              sudo -n docker image rm "$CRIT_IMAGE_BEFORE" >/dev/null 2>&1 || true
+              # A681 shared-host: no image-ID removal here. Other Docker apps,
+              # including stopped containers, can own an alias/digest. The
+              # bounded cleanup below inspects ALL refs and exact OCI labels.
+              echo "RC6_OLD_CRITICAL_IMAGE_DEFERRED_TO_PROVENANCE_CLEANUP=$CRIT_IMAGE_BEFORE"
               echo "CRITICAL_APPROVAL_IMAGE_RECONCILED=GREEN|image=$RUNTIME_IMAGE_ID"
             fi
           fi
 
-          # Remove only tagged RC6 candidate images that no container references.
-          # Other unused images remain untouched; dangling layers are handled below.
-          for image_id in $(sudo -n docker image ls -q --no-trunc | sort -u); do
-            IMAGE_IN_USE=0
-            for cid in $(sudo -n docker ps -aq); do
-              if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$image_id" ]; then
-                IMAGE_IN_USE=1
-                break
-              fi
-            done
-            if [ "$IMAGE_IN_USE" -eq 1 ]; then
-              continue
-            fi
-            for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$image_id" 2>/dev/null | sed '/^<none>:/d' || true); do
-              case "$tag" in
-                porota-trading-bot:17.0.0-rc6-candidate-*)
-                  echo "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE=$tag"
-                  sudo -n docker image rm "$tag"
-                  ;;
-              esac
-            done
-          done
+          # A681: reuse the same fail-closed helper as pretransfer. It performs
+          # image-ID + RepoTags + RepoDigests + OCI-label ownership checks and
+          # enumerates every container, including stopped foreign containers.
+          # Only immutable Porota candidate *tags* can be removed; all volumes,
+          # networks, shared layers/build cache and foreign apps are preserved.
+          RC6_GOVERNED_FD="${RC6_DEPLOY_MUTEX_FD:-}"
+          if [[ "$RC6_GOVERNED_FD" =~ ^[1-9][0-9]{0,2}$ ]] &&
+             [ "$RC6_GOVERNED_FD" -ge 3 ] &&
+             [ "$RC6_GOVERNED_FD" -le 255 ]; then
+            # If sudo closes the inherited owner FD, or rejects -C, the
+            # helper returns RED without deleting anything. No fallback.
+            set +e
+            RC6_CLEANUP_JSON="$(sudo -n -C "$((RC6_GOVERNED_FD + 1))" env \
+              "RC6_DEPLOY_MUTEX_FD=$RC6_GOVERNED_FD" \
+              "RC6_DEPLOY_MUTEX_PROOF=${RC6_DEPLOY_MUTEX_PROOF:?}" \
+              timeout 120 python3 "$REPO/scripts/rc6_pretransfer_image_cleanup.py")"
+            RC6_CLEANUP_RC=$?
+            set -e
+          else
+            RC6_CLEANUP_JSON='{"schema":"RC6_PRETRANSFER_IMAGE_CLEANUP_V1","status":"RED","reason":"GOVERNED_MUTEX_FD_MISSING"}'
+            RC6_CLEANUP_RC=2
+          fi
+          printf '%s\n' "$RC6_CLEANUP_JSON" | sudo -n tee \
+            "$REPO/data/deploy/last-deploy-candidate-cleanup.json" >/dev/null
+          echo "RC6_SHARED_HOST_CANDIDATE_CLEANUP_RC=$RC6_CLEANUP_RC"
+          if [ "$RC6_CLEANUP_RC" -ne 0 ]; then
+            echo "::warning::RC6_SHARED_HOST_CLEANUP_RED; evidence retained, no broad fallback"
+          fi
 
           # Final read-only inventory after runtime validation/provenance.
           sudo -n mkdir -p "$REPO/data/deploy"
@@ -2493,9 +2572,23 @@ jobs:
             --mode audit --preserve-backups \
             --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
           echo 'RC6_FINAL_HOSTWIDE_MUTATION=SKIPPED'
-          sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
+          echo 'RC6_FROZEN_IMAGE_TAG=RETAIN_UNLESS_EXACT_OWNERSHIP_RELEASED'
           echo 'RC6_UNSCOPED_DOCKER_PRUNE=SKIPPED'
-          rm -rf "$REMOTE_DIR"
+          # The same exact attempt/provenance guard used for failed deploys
+          # removes a successful deploy's staging. No prefix-scan or rm -rf.
+          set +e
+          RC6_STAGE_CLEANUP_JSON="$(sudo -n timeout 120 python3 \
+            "$REPO/scripts/rc6_deploy_failure_cleanup.py" \
+            --candidate-sha "$CANDIDATE_SHA" --run-id "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT")"
+          RC6_STAGE_CLEANUP_RC=$?
+          set -e
+          printf '%s\n' "$RC6_STAGE_CLEANUP_JSON" | sudo -n tee \
+            "$REPO/data/deploy/last-deploy-staging-cleanup.json" >/dev/null
+          echo "RC6_SHARED_HOST_STAGING_CLEANUP_RC=$RC6_STAGE_CLEANUP_RC"
+          if [ "$RC6_STAGE_CLEANUP_RC" -ne 0 ]; then
+            echo "::warning::RC6_SHARED_HOST_STAGING_RETAINED_UNVERIFIED"
+          fi
           mapfile -t FINAL_DISK_METRICS < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
           DISK_AFTER="${FINAL_DISK_METRICS[0]}"
           FINAL_INODE_FREE_PERCENT="${FINAL_DISK_METRICS[1]}"
@@ -2524,10 +2617,45 @@ jobs:
             done
           )"
           test "$PPI_WATCH_FINAL" = "$PPI_WATCH_BEFORE"
-          echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
-          echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
-          echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
+          # A690: a successful disk reserve does NOT certify candidate/staging
+          # cleanup. Failed or unverified cleanup is a blocking FIX-FORWARD
+          # state, never a false successful release or a broad Docker prune.
+          if [ "$RC6_CLEANUP_RC" -ne 0 ] || [ "$RC6_STAGE_CLEANUP_RC" -ne 0 ]; then
+            echo "::error::RC6_SHARED_HOST_CLEANUP_DEFERRED_UNVERIFIED; no destructive fallback"
+            echo "RC6_FINAL_HOUSEKEEPING=DEFERRED_UNVERIFIED|candidate_rc=$RC6_CLEANUP_RC|staging_rc=$RC6_STAGE_CLEANUP_RC|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
+            echo "RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID"
+            echo 'RC6_PROMOTION_OUTCOME=IMAGE_POSSIBLY_PROMOTED_CLEANUP_DEFERRED|NO_ROLLBACK|CONTINUE_RUNTIME_VALIDATION'
+          else
+            echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
+            echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
+            echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
+          fi
           REMOTE
+          # Capture PIPESTATUS IMMEDIATELY after ssh|awk. set -e/pipefail must
+          # never classify parser I/O failure as a failed remote cutover.
+          RC6_PROMOTION_PIPESTATUS=( "${PIPESTATUS[@]}" )
+          set -e
+          RC6_PROMOTION_SSH_RC="${RC6_PROMOTION_PIPESTATUS[0]:-99}"
+          RC6_PROMOTION_AWK_RC="${RC6_PROMOTION_PIPESTATUS[1]:-99}"
+          if [ "$RC6_PROMOTION_SSH_RC" -ne 0 ]; then
+            echo "::error::RC6_PROMOTION_SSH_ERROR|rc=$RC6_PROMOTION_SSH_RC|runtime_state=NO_VERIFICADO" >&2
+            # Genuine SSH failure after cutover is a separate P0 cutover-RCA,
+            # NOT covered by the cleanup-only deferred-success boundary.
+            exit "$RC6_PROMOTION_SSH_RC"
+          fi
+          if [ "$RC6_PROMOTION_AWK_RC" -ne 0 ]; then
+            echo "::warning::RC6_PROMOTION_CLEANUP_PARSER_UNVERIFIED|awk_rc=$RC6_PROMOTION_AWK_RC|NO_RECOVERY_FROM_PARSER"
+          else
+            # Parser has completed. Persist this second validation flag only
+            # after both subprocesses succeeded; missing flag remains UNKNOWN.
+            set +e
+            printf 'cleanup_parser_status=VERIFIED\n' >> "$GITHUB_OUTPUT"
+            RC6_PROMOTION_OUTPUT_RC=$?
+            set -e
+            if [ "$RC6_PROMOTION_OUTPUT_RC" -ne 0 ]; then
+              echo "::warning::RC6_PROMOTION_OUTPUT_CONFIRMATION_UNVERIFIED|NO_RECOVERY_FROM_PARSER"
+            fi
+          fi
           # A207 is a pre-install administrative state only. Once the staged
           # atomic reversal and entire promotion succeeded, downstream runtime
           # checks must use the ordinary OPEN/CLOSED contract, not a bypass.
@@ -2846,6 +2974,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          # A690 P0: promotion failure or cancellation has an UNKNOWN cutover
+          # phase. SSH may have returned nonzero AFTER the new image restarted
+          # but BEFORE a durable receipt. Never mutate runtime/schedulers or
+          # delete images on an unclassified promotion failure. This includes
+          # a failure BEFORE cutover: availability is HOLD until explicit
+          # READ_ONLY reconciliation and fix-forward, not optimistic recovery.
+          # exit 82 also prevents the later failure_orphan_cleanup (which
+          # requires failure_cleanup success).
+          if [ '${{ steps.promotion.outcome }}' = failure ] || \
+             [ '${{ steps.promotion.outcome }}' = cancelled ]; then
+            echo 'RC6_AMBIGUOUS_PROMOTION=NO_GO|NO_HOST_RECOVERY|NO_IMAGE_DELETE|FIX_FORWARD_READONLY_RECONCILIATION_REQUIRED' >&2
+            exit 82
+          fi
           # A180: an SSH/runner failure can occur AFTER the host atomically
           # writes VALIDATED_RUNTIME. Never run pending-state recovery against
           # that finalized image. Acquire the existing deploy flock directly
@@ -3184,8 +3325,8 @@ jobs:
           # Reuse the tested pretransfer helper, NOT docker prune. It verifies
           # PAPER/0, all three running containers, every image owner and tag,
           # including stopped-container refs, immediately before each removal.
-          # Lock the same root-owned host inode used by the promoter without
-          # creating another attempt record or restarting a service.
+          # Canonical host mutex directly passes its held /run/lock FD to the
+          # helper. orphan_gc requires ABSENT barrier and never creates one.
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           RECEIPT="$(timeout --signal=TERM --kill-after=10s 180s ssh -T \
             -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes \
@@ -3193,7 +3334,7 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
             -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
             "$DO_USER@$DO_HOST" \
-            'sudo -n flock -n -E 73 /run/lock/porota-rc6-deploy-v2.lock sh -c '\''test ! -e /run/lock/porota-rc6-deploy-v2-attempt.json && exec env PYTHONDONTWRITEBYTECODE=1 python3 -B -'\''' \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase orphan_gc python3 -B -" \
             < scripts/rc6_pretransfer_image_cleanup.py)"
           echo "RC6_FAILED_DEPLOY_ORPHAN_CLEANUP=$RECEIPT"
           python3 - "$RECEIPT" <<'PY'
@@ -3208,6 +3349,21 @@ jobs:
           print('RC6_FAILED_DEPLOY_POSTCLEAN=GREEN|removed_tags='+
                 str(len(proof['removed_tags']))+'|free_bytes='+str(proof['disk_after']))
           PY
+
+      # A690: cleanup-only HOLD is not a promotion/cutover failure. Let the
+      # real runtime/PAPER/worker postchecks run, then turn the job RED only
+      # AFTER failure-recovery conditions have already been evaluated. This
+      # cannot trigger cleanup_recover or timer rearming by itself.
+      - name: Mark deferred post-promotion cleanup as failed after validation
+        id: cleanup_deferred_gate
+        if: ${{ always() && steps.promotion.outcome == 'success' && (steps.promotion.outputs.cleanup_status != 'GREEN' || steps.promotion.outputs.cleanup_parser_status != 'VERIFIED') }}
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo '::error::RC6_POSTPROMOTION_CLEANUP_DEFERRED_OR_UNVERIFIED; runtime may already be promoted, no scheduler recovery or rollback'
+          echo "RC6_DEPLOY_V2=NO_GO_CLEANUP_DEFERRED|cleanup_status=${{ steps.promotion.outputs.cleanup_status }}|runtime_observed_state=NO_VERIFICADO"
+          exit 79
 
       - name: Deployment summary
         if: success()
@@ -3234,3 +3390,5 @@ jobs:
           rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
           rm -f "$HOME/.ssh/porota_rc6_deploy"
           echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"
+
+

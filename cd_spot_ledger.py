@@ -353,17 +353,62 @@ def positions_at(c, at=None):
     return opened, closed
 
 
+def _t1_identity_has_persisted_catalog_origin(row, fields):
+    """Reject migration-default identity before a PAPER T+1 cash release.
+
+    Legacy positions acquired currency=ARS and market=BYMA through schema
+    defaults, not through an observed five-key contract.  Only an explicitly
+    persisted catalog-origin marker can enter the existing date/identity
+    calculator. This structural marker is NOT PPI signature, settlement
+    authenticity, order permission or an independent READY assertion.
+    """
+    if 'currency_source' not in fields:
+        return False
+    origin = row['currency_source']
+    if (not isinstance(origin, str) or not origin.startswith('PPI_CATALOG:')
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in origin)):
+        return False
+    stamp = origin[len('PPI_CATALOG:'):].strip()
+    if not stamp:
+        return False
+    try:
+        aware_datetime(stamp)  # syntactic origin stamp only, NOT source attestation
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
 def pending(c, at, currency):
     at = aware_datetime(at)
     amount = ZERO
     for row in c.execute('SELECT * FROM paper_positions WHERE currency=?',(currency,)):
         partition(c,row,at)  # valida también la concordancia del ledger
+        # The 11-Nov BYMA USD/CEDEAR settlement exception cannot be inferred
+        # from a bare T+1 label. Missing persisted contract fields fail closed.
+        fields = set(row.keys())
+        contract = {
+            'family': row['asset_class'] if 'asset_class' in fields else None,
+            'market': row['market'] if 'market' in fields else None,
+            'currency': row['currency'] if 'currency' in fields else None,
+        }
+        source_bound = _t1_identity_has_persisted_catalog_origin(row, fields)
+        # R4 already holds if market/currency are absent for the exceptional
+        # date. Additionally, a schema-migrated BYMA/ARS default must NEVER
+        # become trusted merely because its values look plausible, including
+        # on a nonexception T+1 day.
+        if not source_bound:
+            contract['market'] = None
+            contract['currency'] = None
+        t1 = str(row['settlement'] or '').strip().upper() in {'A-24HS', '24HS', 'T+1'}
         for sale in sales(c,row['paper_id']):
             if aware_datetime(sale['filled_at']) > at:
                 continue
             value = decimal_value(sale['net_proceeds'],'producido de venta')
             available = validated_sale_settlement(row['settlement'],sale['filled_at'],
-                                                 sale['available_at'],sale['basis'])
+                                                 sale['available_at'],sale['basis'],
+                                                 **contract)
+            if t1 and not source_bound:
+                available = None  # HOLD until independent identity reconciliation
             if value > 0 and (available is None or available > at):
                 amount += value
     return amount

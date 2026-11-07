@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from contextlib import closing, contextmanager, nullcontext
+from dataclasses import replace
 
 import faulthandler
 import fcntl
@@ -30,9 +31,11 @@ from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
+from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
+from co_market_sessions_hf6 import byma_heavy_writes_safe_now
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -289,15 +292,99 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  **financial_catalog.quote_terms(metadata))
 
 
-def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
-    """Native scanner reads; exact opened identity enables bounded book reuse."""
+def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=None):
+    """Only a unique PPI-primary catalog five-key may bind diagnostic Book1.
+
+    This is a *post-read* PIT witness gate, never a precondition on the
+    existing READ_ONLY scanner request or PAPER exit path. PPI Current/Book
+    accept only three request keys, so a currency/market sibling cannot be
+    guessed from its response. A missing catalog yields HOLD, not a fallback.
+    """
+    try:
+        with store.connect() as connection:
+            rows = connection.execute("""SELECT market,currency
+              FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND settlement=?
+                AND settlement_source='PPI_FIELD'
+              LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED") from None
+    if len(rows) != 1:
+        raise ValueError("PPI_BOOK_PRIMARY_IDENTITY_AMBIGUOUS")
+    market, currency = (str(value or "").strip().upper() for value in rows[0])
+    if (not market or market == "UNKNOWN"
+            or not currency or currency == "UNKNOWN"):
+        raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED")
+    exact = (symbol, asset_class, market, currency, settlement)
+    if identity is not None:
+        if not isinstance(identity, (tuple, list)) or len(identity) != 5:
+            raise ValueError("PPI_BOOK_REQUEST_SCOPE_IDENTITY_INVALID")
+        if tuple(identity) != exact:
+            raise ValueError("PPI_BOOK_REQUEST_SCOPE_IDENTITY_MISMATCH")
+    return exact
+
+
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
+                        priority="DISCOVERY", identity=None, scanner_primary=None):
+    """Reuse the existing Current+Book GET pair for optional private PIT Book1.
+
+    The journal only records a proven-five-key *request/quote* match. It is
+    local diagnostic provenance, never a PPI provider signature or PAPER GO.
+    Ambiguous identities keep the previous quote path but cannot mint Book1.
+    """
     scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
         current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
         market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
-    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    quote = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    # A three-key opened-critical request may correspond to multiple monetary
+    # positions. Preserve PAPER exits but never bind its Book to a guessed
+    # five-key when the budget scope had no unique opened identity.
+    if scanner_primary is None or (priority == "OPENED_CRITICAL" and identity is None):
+        return quote
+    exact = None
+    try:
+        catalog_key = _ppi_native_book_identity(
+            store, symbol, asset_class, settlement, identity)
+        currency, market = quote.monetary_identity()
+        if (quote.symbol, quote.asset_class, market, currency, quote.settlement) == catalog_key:
+            exact = catalog_key
+    except (TypeError, ValueError, AttributeError):
+        # The normal three-key scanner still owns its read and exit path.
+        # Only the extra private Book1 causal witness is withheld.
+        pass
+    if exact is None:
+        return quote
+    try:
+        capture = getattr(scanner_primary, "capture_raw_book", None)
+        result = (capture(quote, raw_book=book,
+                          request=(symbol, asset_class, settlement), identity=exact,
+                          observed_at=quote.observed_at)
+                  if callable(capture) else None)
+        if isinstance(result, dict) and result.get("status") == "CAPTURED":
+            native_sha = result.get("event_sha256")
+            if (isinstance(native_sha, str) and len(native_sha) == 64
+                    and all(char in "0123456789abcdef" for char in native_sha)
+                    and not quote.time_error(now_iso(), require_trade=False)):
+                return replace(quote, ppi_book1_event_sha256=native_sha)
+        if not isinstance(result, dict) or result.get("status") not in {"CAPTURED", "DEDUPLICATED"}:
+            status = result.get("status") if isinstance(result, dict) else None
+            reason = result.get("reason") if isinstance(result, dict) else None
+            if status not in {"CAPTURE_INVALID_HOLD", "CAPTURE_CAPACITY_HOLD", "CAPTURE_INTEGRITY_HOLD"}:
+                status = "CAPTURE_UNVERIFIED_HOLD"
+            if (not isinstance(reason, str) or not 1 <= len(reason) <= 96
+                    or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in reason)):
+                reason = "PPI_BOOK_CAPTURE_REASON_UNVERIFIED"
+            store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_HOLD", status + ":" + reason)
+    except Exception as origin_error:
+        # A diagnostic journal cannot trigger retry, order admission or scanner stop.
+        try:
+            store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_ERROR", type(origin_error).__name__)
+        except Exception:
+            pass
+    return quote
 
 
 def _support_schema(store):
@@ -966,6 +1053,12 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     Existing identities retain their normal freshness and admission checks;
     missing complements remain unavailable.
     """
+    # The generic observer's 17:00 CLOSED is not the COM19031 equity T+1
+    # source close (18:00) nor EOD publication floor (18:15).  This central
+    # calendar/session gate also covers the caucion-ledger CLOSED caller.
+    # Preserve the last-completed cursor: a due pass catches up off-session.
+    if not byma_heavy_writes_safe_now(datetime.now(TZ)):
+        return last_completed
     interval = (OFFHOURS_RECONCILE_SECONDS if phase == "CLOSED"
                 else COMPLEMENTARY_RECONCILE_SECONDS)
     if phase == "OPEN" or time.time() - last_completed < interval:
@@ -975,6 +1068,35 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
         memory = _release_idle_catalog_heap()
         store.event("CLOSED_CATALOG_HEAP_RELEASE", json.dumps(memory, sort_keys=True))
     return time.time()
+
+
+def _caucion_blocked_closed_catalog_tick(store, phase, last_attempt):
+    """Keep OFFHOURS catalog reconciliation independent of PAPER caucion fees.
+
+    An invalid caucion fee ledger must still block *every* new PAPER admission.
+    However, independent catalog/evidence publication is a local SQLite task:
+    no PPI reader, provider GET, orders or broker is passed to this function.
+    During OPEN and T+1 the writer remains forbidden. A failed CLOSED attempt
+    is throttled for the normal off-hours interval, including SQLITE_INTERRUPT,
+    and the ledger gate in the caller remains unchanged.
+    """
+    if phase != "CLOSED":
+        return last_attempt
+    try:
+        return _periodic_complementary_reconcile(store, phase, last_attempt)
+    except Exception as exc:
+        # Do not start a second SQLite write storm if the DB is locked/broken.
+        # Keep evidence best-effort; the host remains fail-closed for admission.
+        reason = ("SQLITE_OPERATIONAL_ERROR" if isinstance(exc, sqlite3.OperationalError)
+                  else "CATALOG_RECONCILE_ERROR")
+        try:
+            store.event("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR", reason)
+        except Exception:
+            # DB error events may themselves fail: leave a bounded sentinel in
+            # service logs without exposing exception text, paths or symbols.
+            print("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR:" + reason,
+                  file=sys.stderr, flush=True)
+        return time.time()
 
 
 def _release_idle_catalog_heap():
@@ -1209,6 +1331,10 @@ def _cycle_plan(store, focus_candidates=None):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
     universe = list(_eligible_symbols(store))
+    # Keep the complete catalog for offline coverage, but do not spend lower
+    # Current/Book leases on ETF while operator entry authority is held.
+    # Existing OPEN ETF positions below remain EXIT priority.
+    live_universe = [key for key in universe if not paper_entry_hold_reason(key[1])]
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
     with store.connect() as c:
@@ -1223,7 +1349,7 @@ def _cycle_plan(store, focus_candidates=None):
     cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * 2 * PPI_CALL_BUDGET_SECONDS
     at = now_iso()
     symbols, before, after, plan = sampling_plan(
-        universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
+        live_universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
         limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
         required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
         now=at, cursor=row[0] if row else 0, previous=previous)
@@ -1252,9 +1378,12 @@ def _approved_equity_selection(store, selected, baseline_plan):
         aliases.setdefault((key[0], key[1], key[4]), []).append(key)
     ready = {values[0] for values in aliases.values() if len(values) == 1}
     opened = set(selected["opened_priority"])
-    keys = [tuple(k) for k in selected["selected"] if tuple(k) in ready or tuple(k) in opened]
+    keys = [tuple(k) for k in selected["selected"]
+            if (tuple(k) in ready or tuple(k) in opened)
+            and (not paper_entry_hold_reason(k[1]) or tuple(k) in opened)]
     request = lambda k: (k[0], k[1], k[4])
-    entry = [request(k) for k in keys if k in selected["entry_identities"]]
+    entry = [request(k) for k in keys if k in selected["entry_identities"]
+             and not paper_entry_hold_reason(k[1])]
     scope = []
     for k in keys:
         row = selected["rows"][k]
@@ -1919,6 +2048,10 @@ def _daily_sync(reader, store, now=None):
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
     now = now.astimezone(TZ)
+    # Shared T+1/EOD gate protects both the CLOSED tick and the first
+    # successful PPI-login callsite; neither may run a catalog/history writer.
+    if not byma_heavy_writes_safe_now(now):
+        return
     # A CLOSED scanner may remain alive across weekends/holidays.  The
     # historical backfill has a separate explicit business-day admission.
     # Do not re-fetch the previous session's catalog/history just because a
@@ -1949,6 +2082,8 @@ def _background_ingest_due(store, now=None):
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
     local_now = now.astimezone(TZ)
+    if not byma_heavy_writes_safe_now(local_now):
+        return False
     if not _business_day(local_now.date()):
         return False
     close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
@@ -2015,6 +2150,13 @@ def _run_command(store, reader, command, gemini_gate=None, login_interlock=None)
         return reader
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
+        return reader
+    # Manual control cannot bypass the same heavy-write policy.  Do not
+    # reserve a new PPI session, consume GET budget or mark source_sync here.
+    # The operator can retry once the official T+1/EOD window has elapsed.
+    if not byma_heavy_writes_safe_now(datetime.now(TZ)):
+        _finish_command(store, command_id, "DEFERRED",
+                        "BYMA_T1_EOD_HEAVY_WRITE_DEFERRED; reintentar tras ventana oficial.")
         return reader
     if reader is None:
         gate = login_interlock or ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
@@ -2150,6 +2292,31 @@ def _write_scanner_metrics(store, stage, values):
 CAUCION_LEDGER_RECHECK_SECONDS = 3600
 
 
+def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at):
+    """Reject non-trade signals without discarding an independently fresh exit Book.
+
+    The scanner requires a fresh trade for a *new* PAPER signal, while the
+    broker's spot/futures exit paths deliberately require only a fresh Book.
+    Never let a quote rejected for entry reach a decision or opening path.
+    An independently invalid Book remains fully rejected, including exits.
+    """
+    data_error = q.time_error(
+        checked_at, require_trade=True,
+        max_age_seconds=broker.quote_max_age_seconds,
+        max_trade_age_seconds=broker.trade_max_age_seconds)
+    if not data_error:
+        return ""
+    if q.time_error(checked_at, max_age_seconds=broker.quote_max_age_seconds):
+        broker.record_observation_rejection(q, data_error)
+    else:
+        broker.on_quote(
+            q, allow_new_openings=False,
+            opening_block_reason=data_error,
+            evaluate_when_blocked=False)
+    store.event("DATA_REJECTED", f"{q.symbol}: {data_error}")
+    return data_error
+
+
 def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
     """Keep an invalid PAPER caucion ledger out of the admission loop.
 
@@ -2255,6 +2422,11 @@ def run():
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
                                    "cost evidence requires reconciliation.")
+                # A caucion fee discrepancy blocks admission globally but must
+                # not starve other families' OFFHOURS local contract publication.
+                # No PPI reader, book, order route or user wallet is touched.
+                last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
+                    store, phase, last_complementary_reconcile)
                 time.sleep(max(30, COMMAND_POLL_SECONDS))
                 continue
             # Autenticación, catálogo e históricos son útiles también durante
@@ -2390,7 +2562,8 @@ def run():
                     exact_opened = opened_identities.get(request_key, set())
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
-                        priority=priority, identity=scope_identity)
+                        priority=priority, identity=scope_identity,
+                        scanner_primary=scanner_primary)
                     try:
                         scanner_primary.capture(q, request=request_key)
                     except Exception as origin_error:
@@ -2398,17 +2571,13 @@ def run():
                         # processing or create an additional provider request.
                         print("PPI_SCANNER_PRIMARY_CAPTURE_ERROR=" + type(origin_error).__name__,
                               file=sys.stderr, flush=True)
-                    # Persistir la observación sirve para trazabilidad, pero un
-                    # trade/libro stale nunca alcanza al motor ni a sus gates.
+                    # Persistir la observación da trazabilidad; un Book stale no
+                    # llega al broker. Un trade stale con Book fresco sólo
+                    # puede supervisar salidas PAPER, jamás habilitar entrada.
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
-                    data_error = q.time_error(
-                        now_iso(), require_trade=True,
-                        max_age_seconds=broker.quote_max_age_seconds,
-                        max_trade_age_seconds=broker.trade_max_age_seconds)
-                    if data_error:
-                        store.event("DATA_REJECTED", f"{symbol}: {data_error}")
-                        broker.record_observation_rejection(q, data_error)
+                    if _scanner_trade_temporal_rejection(
+                            q, broker, store, checked_at=now_iso()):
                         continue
                     allow_openings, opening_reason = _scanner_opening_capacity(
                         request_key, focus=focus, feasibility=feasibility)

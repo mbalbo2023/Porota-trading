@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import ExitStack
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal
@@ -22,6 +23,7 @@ from rc6_performance.common import canonical, digest, identity, number, stamp
 from rc6_performance.costs import FeeModel, expected_round_trip_cost, paper_fee_model
 from rc6_performance.metrics import auc, distribution
 from rc6_performance.shadow import evaluate_same_snapshot, forward_labels, usable_book
+from .source_reads import tick_reader_connection
 
 SCHEMA = "rc6.runtime-entry-signals.v1"
 NATIVE_INPUT_SCHEMA = "rc6.native-entry-signal-input.v1"
@@ -127,10 +129,11 @@ def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_li
     path = Path(database).resolve(strict=True)
     stat = path.stat()
     key = digest([str(path), stat.st_dev, stat.st_ino])
-    c = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)
-    c.row_factory = sqlite3.Row
+    source_scope = ExitStack()
     deadline = monotonic() + QUERY_SECONDS
     try:
+        c, _ = source_scope.enter_context(tick_reader_connection(
+            path, deadline=deadline + 2.0, consumer="entry_signals"))
         c.execute("PRAGMA query_only=ON")
         c.execute("PRAGMA busy_timeout=5")
         c.set_progress_handler(lambda: int(monotonic() > deadline), 200)
@@ -194,7 +197,7 @@ def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_li
                 "future_lifecycles": future_lifecycles,
                 "bootstrap": False, "truncated": truncated, "missing_tables": missing}
     finally:
-        c.close()
+        source_scope.close()
 
 
 def _native_payload(row, at, *, require_signal=True):

@@ -25,6 +25,7 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
+from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_performance.lineage import trace_spot_signal, mark as mark_lineage, native_clock
 
 # PAPER/SHADOW scope covers every known family. Specialized families
@@ -101,6 +102,8 @@ class Quote:
     book_at: Optional[str] = None
     trade_at: Optional[str] = None
     last_kind: str = "UNKNOWN"
+    # CAPTURED native Book1 witness is diagnostic; not provider signature/PAPER READY.
+    ppi_book1_event_sha256: Optional[str] = None
 
     def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
                    max_trade_age_seconds=None):
@@ -477,6 +480,9 @@ class PaperStore:
         init_risk_schema(self)
         from bl_candle_engine import init_schema as init_candle_schema
         init_candle_schema(self)
+        # A620 immutable causal freeze schema, only migration/initialization owner.
+        from rc6_paper_causal_decision_receipt import init_schema as init_causal_schema
+        init_causal_schema(self)
 
     def audit_http(self, method, path, result):
         with self.connect() as c:
@@ -648,16 +654,47 @@ class PaperStore:
 
     def record_decision(self, key: str, q: Quote, action: str, score: Decimal,
                         reason: str, features: dict) -> bool:
+        action_code = str(action or "").upper()
+        # A653: preserve the scanner's immutable Book1 event claim BEFORE the
+        # paper_decisions INSERT and its in-transaction causal freeze. A
+        # conflicting strategy-supplied feature must never override the Book
+        # bound to the actual Quote. Discard only the disputed evidence; leave
+        # PAPER decisions and their existing admission policy untouched.
+        native_book1_sha = q.ppi_book1_event_sha256
+        if native_book1_sha is not None:
+            previous_claim = features.get("ppi_book1_event_sha256")
+            if (not isinstance(native_book1_sha, str) or len(native_book1_sha) != 64
+                    or any(char not in "0123456789abcdef" for char in native_book1_sha)
+                    or previous_claim not in (None, native_book1_sha)):
+                features.pop("ppi_book1_event_sha256", None)
+                features["ppi_book1_provenance_state"] = "CLAIM_CONFLICT_HOLD"
+            else:
+                features["ppi_book1_event_sha256"] = native_book1_sha
+        elif "ppi_book1_event_sha256" in features:
+            # A caller cannot invent Book1 provenance when the scanner did
+            # not bind a freshly CAPTURED native Book to this exact Quote.
+            # Retain the PAPER decision but keep its causal freeze unbound.
+            features.pop("ppi_book1_event_sha256", None)
+            features["ppi_book1_provenance_state"] = "CLAIM_UNBOUND_HOLD"
         try:
             with self.connect() as c:
+                features_json = json.dumps(features, ensure_ascii=False)
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
                           (SOURCE, STRATEGY_VERSION, key, q.observed_at, q.symbol,
-                           action, str(score), reason, json.dumps(features, ensure_ascii=False)))
+                           action, str(score), reason, features_json))
+                # Freeze actionable decisions atomically with decision INSERT.
+                # Independent signer may only observe after SQLite COMMIT.
+                if action in {"BUY", "SELL"}:
+                    from rc6_paper_causal_decision_receipt import freeze_in_decision_transaction
+                    freeze_in_decision_transaction(
+                        c, decision_key=key, quote=q, action=action_code,
+                        score=str(score), reason=reason, features=features,
+                        features_json=features_json, source=SOURCE,
+                        strategy_version=STRATEGY_VERSION)
                 # Entry candidates receive their fuller snapshot in record_gates
                 # after their final gates are known. Every other decision is
                 # captured here with the current IOL cache as a SHADOW input.
                 # That local read cannot change the factual PAPER action.
-                action_code = str(action or "").upper()
                 if action_code not in EVIDENCE_GATE_ACTIONS:
                     evidence = _decision_evidence_payload(
                         q, key, "NOT_CANDIDATE", "NOT_USED", "NOT_EVALUATED",
@@ -1339,6 +1376,13 @@ class PaperBroker:
             family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
+        # A658: an operator HOLD is independent of scope, available capital,
+        # source capability and strategy.  Observe/EXIT without emitting BUY.
+        operator_hold = paper_entry_hold_reason(family)
+        if operator_hold:
+            return "HOLD", ZERO, operator_hold, {
+                "samples": 0, "family": family,
+                "entry_authority": False, "operator_hold": True}
         if family == "FUTUROS":
             return "HOLD", ZERO, "FUTURES_SPECIALIZED_SIGNAL_REQUIRED", {"samples": 0, "family": family}
         if family not in PAPER_SIGNAL_FAMILIES:
@@ -2338,6 +2382,11 @@ class PaperBroker:
             currency, market = q.monetary_identity()
         except ValueError as exc:
             return False, str(exc), None
+        # Direct broker callers (including scalping) cannot bypass this
+        # independent operator veto even with an already READY contract.
+        operator_hold = paper_entry_hold_reason(family)
+        if operator_hold:
+            return False, operator_hold, None
         # Contract completeness is an identity prerequisite. Check it before
         # session admission so a missing option contract cannot masquerade as
         # an expiry/session problem.

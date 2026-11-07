@@ -2,6 +2,7 @@
 from datetime import timedelta
 from pathlib import Path
 import sqlite3
+from contextlib import ExitStack
 import time
 
 from co_market_sessions_hf6 import TZ
@@ -11,6 +12,7 @@ from rc6_dynamic_universe.economics import shadow_economics
 from rc6_performance.costs import paper_fee_model
 from .read_contract import query_budget_seconds
 from .persistence import FrozenJSONDict
+from .source_reads import tick_reader_connection
 
 
 def enrich_pipeline(database, report, *, as_of, compact_missing=False):
@@ -25,10 +27,11 @@ def enrich_pipeline(database, report, *, as_of, compact_missing=False):
     if compact_missing:
         no_signal,no_economics,no_risk=map(FrozenJSONDict,(no_signal,no_economics,no_risk))
     at = stamp(as_of)
-    c = sqlite3.connect(Path(database).resolve(strict=True).as_uri() + "?mode=ro",
-                        uri=True, timeout=.005)
-    c.row_factory = sqlite3.Row
+    source_scope = ExitStack()
     try:
+        c, _ = source_scope.enter_context(tick_reader_connection(
+            database, deadline=time.monotonic() + query_budget_seconds("stages") + 2.0,
+            consumer="stages"))
         c.execute("PRAGMA query_only=ON")
         end = time.monotonic() + query_budget_seconds("stages")
         c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
@@ -102,4 +105,4 @@ def enrich_pipeline(database, report, *, as_of, compact_missing=False):
                 assert not row["entry_authority"]
         return report
     finally:
-        c.close()
+        source_scope.close()

@@ -14,6 +14,7 @@ import json
 import math
 from pathlib import Path
 import sqlite3
+from contextlib import ExitStack
 from time import monotonic
 
 from am_us_equity_calendar_rc6 import calendar_status
@@ -25,6 +26,7 @@ from rc6_dynamic_universe.routing import (
 )
 from rc6_dynamic_universe.sources import MARKETS, TERMS, SOURCE_ALIASES
 from .persistence import FrozenJSONDict
+from .source_reads import tick_reader_connection
 from .source_authority import VERSION as SOURCE_POLICY_VERSION, resolve_field
 
 MAX_ROWS = 20000
@@ -222,10 +224,12 @@ def _field(name, rows, *, at, ttl=QUOTE_TTL_SECONDS, static=False, signed=False,
 
 def _read(database, at):
     path = Path(database).resolve(strict=True)
-    connection = sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)
-    connection.row_factory = sqlite3.Row
+    source_scope = ExitStack()
     result = {"metadata": [], "quotes": [], "cash": [], "truncated": [], "errors": []}
     try:
+        connection, _ = source_scope.enter_context(tick_reader_connection(
+            path, deadline=monotonic() + QUERY_BUDGET_SECONDS + 2.0,
+            consumer="families"))
         connection.execute("PRAGMA query_only=ON")
         connection.execute("BEGIN")
         deadline = monotonic()+QUERY_BUDGET_SECONDS
@@ -275,7 +279,7 @@ def _read(database, at):
                 result[kind].append(row)
         return result
     finally:
-        connection.close()
+        source_scope.close()
 
 
 def _source_rows(sources):

@@ -394,7 +394,7 @@ jobs:
         run: rm -f "$HOME/.ssh/key"
 
   disk_cleanup:
-    name: Limpieza segura y medida de disco
+    name: Auditoría READ_ONLY de disco (host Docker compartido A681)
     needs: [runtime_dashboard, caucion, history]
     if: always()
     runs-on: ubuntu-24.04
@@ -410,7 +410,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
 
-      - name: Reclaim only Deploy V2 temporaries and safe Docker cache
+      - name: Shared-host read-only disk inventory
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -431,10 +431,11 @@ jobs:
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
           PPI_BEFORE="$(for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"; done)"
           echo "DEPLOY_TMP_BEFORE_BEGIN";find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec du -sb {} + 2>/dev/null || true;echo "DEPLOY_TMP_BEFORE_END"
-          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
-          sudo -n docker image prune -f
-          sudo -n docker builder prune -af
-          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+          # A681: this historical manual workflow has no exact run/attempt
+          # provenance. Prefix-matched /tmp paths and global Docker caches
+          # may belong to other apps (Boca, third-party services). No deletion.
+          echo "RC6_HISTORICAL_SHARED_HOST_CLEANUP=DISABLED_READ_ONLY"
+          echo "RC6_DOCKER_GLOBAL_PRUNE=FORBIDDEN"
           AFTER="$(df -PB1 / | awk 'NR==2{print $4}')"
           POST="$(python3 - "$DB" <<'PY'
           import sqlite3,sys

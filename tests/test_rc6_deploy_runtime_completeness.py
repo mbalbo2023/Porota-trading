@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from rc6_deploy_test_assertions import assert_no_executable_rollback
+
 ROOT = Path(__file__).resolve().parents[1]
 PREDEPLOY = ROOT / ".github/workflows/porota-predeploy-v2.yml"
 WORKFLOW = ROOT / ".github/workflows/porota-deploy-v2-promote.yml"
@@ -26,7 +28,7 @@ def test_runtime_dependency_is_packaged_installed_rolled_back_and_verified():
     assert 'assert src.is_file() and sha(src)==row["sha256"]' in source
     assert 'shutil.copy2(src,dst)' in source
     assert 'assert sha(dst)==row["sha256"]' in source
-    assert "rollback" not in source.lower()
+    assert_no_executable_rollback(source)
 
 
 def test_local_v2_reconciliation_is_required_even_when_remote_refresh_is_closed_only():
@@ -342,8 +344,11 @@ def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
     preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
     assert immediate < reclaim < preopen
     block = source[immediate:preopen]
-    assert 'rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"' in block
-    assert 'rm -rf "$STAGE"' in block
+    assert "from scripts.rc6_deploy_failure_cleanup import container_inventory,host_mountpoints,overlaps" in block
+    assert "RC6_STAGE_HOST_MOUNT_PROTECTED" in block
+    assert "RC6_STAGE_DOCKER_BIND_PROTECTED" in block
+    assert "shutil.rmtree(target)" in block
+    assert 'rm -rf "$STAGE"' not in block
     assert "rc6-disk-housekeeping-v1.json" in block
     assert "post_cleanup_min_free_bytes" in block
     assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"' in block

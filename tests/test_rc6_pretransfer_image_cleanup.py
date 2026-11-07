@@ -18,6 +18,7 @@ ALIAS = 'porota-trading-bot:17.0.0-rc6-candidate-' + 'd' * 40
 class Docker:
     def __init__(self):
         self.images = {IMG: ([TAG, ALIAS], []), STABLE: (['porota-trading-bot:17.0.0-rc6'], [])}
+        self.labels = {IMG: {'porota.predeploy': 'v2', 'porota.commit': 'd' * 40}, STABLE: {}}
         self.refs = {CID: STABLE}
         self.calls = []
         self.fail = None
@@ -36,7 +37,7 @@ class Docker:
             return self.refs[args[-1]]
         if args[:2] == ('image', 'inspect'):
             identity = args[-1]; tags, digests = self.images[identity]
-            return '|'.join(map(json.dumps, [identity, tags, digests]))
+            return '|'.join(map(json.dumps, [identity, tags, digests, self.labels.get(identity, {})]))
         if args[:2] == ('image', 'rm'):
             if self.before_remove: self.before_remove()
             image = next(key for key, (tags, _) in self.images.items() if args[-1] in tags)
@@ -65,6 +66,31 @@ def test_unused_multi_alias_candidate_removed_idempotently(host):
     assert clean.cleanup()['removed_tags'] == []
 
 
+def test_mixed_boca_third_app_and_stopped_containers_preserved(host):
+    boca_image = 'sha256:' + '1'*64
+    third_image = 'sha256:' + '2'*64
+    host.images[boca_image] = (['boca-socios-assistant:beta'],
+                               ['boca@sha256:' + '3'*64])
+    host.images[third_image] = (['third-system:latest'], [])
+    host.refs['4'*64] = boca_image  # stopped containers also belong to ps -aq
+    host.refs['5'*64] = third_image
+    before_foreign = (list(host.images[boca_image][0]),
+                      list(host.images[third_image][0]), dict(host.refs))
+    report = clean.cleanup()
+    assert report['status'] == 'GREEN' and report['removed_tags'] == [TAG, ALIAS]
+    assert IMG not in host.images and boca_image in host.images and third_image in host.images
+    assert (host.images[boca_image][0], host.images[third_image][0], host.refs) == before_foreign
+    assert not any('prune' in command or 'volume' in command or 'network' in command
+                   for command in host.calls)
+
+
+def test_external_tag_on_same_candidate_image_protects_external_ownership(host):
+    host.images[IMG][0].append('third-system:reuse-candidate')
+    report = clean.cleanup()
+    assert report['removed_tags'] == []
+    assert TAG in host.images[IMG][0]
+
+
 @pytest.mark.parametrize('tags,digests', [
     ([TAG, 'porota-trading-bot:17.0.0-rc6'], []),
     ([TAG, 'external:keep'], []),
@@ -81,6 +107,23 @@ def test_stopped_container_reference_preserves_candidate(host):
     host.refs['e'*64] = IMG
     assert clean.cleanup()['removed_tags'] == []
     assert ('ps', '-aq', '--no-trunc') in host.calls
+
+
+@pytest.mark.parametrize('labels', [{}, {'porota.predeploy': 'v2'},
+    {'porota.predeploy': 'legacy', 'porota.commit': 'd'*40},
+    {'porota.predeploy': 'v2', 'porota.commit': 'e'*40}])
+def test_candidate_named_image_without_exact_predeploy_oci_provenance_is_preserved(host, labels):
+    host.labels[IMG] = labels
+    report = clean.cleanup()
+    assert report['status'] == 'GREEN' and report['removed_tags'] == []
+    assert report['warnings'] == [{'image_id': IMG, 'reason': 'OWNERSHIP_LABELS_UNVERIFIED'}]
+    assert IMG in host.images
+
+
+def test_different_candidate_shas_on_same_image_are_not_proof_of_ownership(host):
+    host.images[IMG][0].append('porota-predeploy-v2:' + 'e'*40)
+    assert clean.cleanup()['removed_tags'] == []
+    assert IMG in host.images
 
 
 @pytest.mark.parametrize('failure', [('ps',), ('inspect',), ('image','inspect')])
@@ -115,12 +158,14 @@ def test_runtime_change_blocks_before_delete(host, monkeypatch):
     assert TAG in host.images[IMG][0]
 
 
-def test_live_promoter_lock_blocks_cleanup(tmp_path, host, monkeypatch, capsys):
+def test_standalone_tmp_lock_cannot_authorize_cleanup(tmp_path, host, monkeypatch, capsys):
     lock = tmp_path / 'lock'; monkeypatch.setattr(clean, 'LOCK', lock)
     with lock.open('w') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert clean.main() == 2
-    assert json.loads(capsys.readouterr().out)['reason'] == 'PROMOTION_STILL_RUNNING'
+    # An unrelated /tmp flock is never an owner certificate. The helper must
+    # reject before Docker even if that decoy lock happens to be busy.
+    assert json.loads(capsys.readouterr().out)['reason'] == 'GOVERNED_MUTEX_FD_MISSING'
     assert host.calls == []
 
 
@@ -165,6 +210,13 @@ def test_exact_workflow_wires_checkout_helper_before_final_disk_gate():
     assert subprocess.run(['bash','-n'], input=block, capture_output=True, text=True).returncode == 0
 
 
+def test_predeploy_v2_artifact_emits_exact_immutable_oci_labels():
+    source = (Path(__file__).resolve().parents[1] /
+              '.github/workflows/porota-predeploy-v2.yml').read_text()
+    assert 'porota.commit=${{ env.CANDIDATE_SHA }}' in source
+    assert 'porota.predeploy=v2' in source
+
+
 def test_partial_removal_error_keeps_inventory_and_reclaimed_measurement(host, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(clean, 'LOCK', tmp_path/'absent')
     original = host.__call__
@@ -200,3 +252,4 @@ def test_unpaired_canonical_repository_digest_still_protects_image(host):
     host.images[IMG] = ([TAG], ['porota-trading-bot@sha256:'+'f'*64])
     assert clean.cleanup()['removed_tags'] == []
     assert IMG in host.images
+

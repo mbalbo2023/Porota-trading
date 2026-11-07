@@ -63,6 +63,7 @@ def _trend(closes, span):
 def history_session_quality(days, q, at):
     """Only audited quote-market sessions; CEDEAR quotes use BYMA, not US."""
     import ak_byma_calendar as calendar
+    from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
     from co_market_sessions_hf6 import session_for, TZ
     session = session_for(q.market, q.asset_class)
     local = at.astimezone(TZ)
@@ -75,7 +76,14 @@ def history_session_quality(days, q, at):
     for _ in range(90):
         if expected.year not in calendar.ANIOS_AUDITADOS:
             return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
-        if calendar.es_dia_habil_operativo(expected):
+        # 06-Nov-2026 had BYMA T+1 negotiation with NO settlement. Its exact
+        # T+1 series still needs a historical source receipt; skipping that
+        # date would falsely certify complete 20-session history. CI/caucion
+        # and unsupported instruments must continue to exclude it.
+        source_day = estado_negociacion_fuente_byma(
+            expected, market=q.market, family=q.asset_class,
+            settlement=getattr(q, 'settlement', None))
+        if source_day in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}:
             required.append(expected.isoformat())
             if len(required) == 20:
                 break

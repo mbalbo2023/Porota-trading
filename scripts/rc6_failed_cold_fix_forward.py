@@ -63,13 +63,21 @@ def proven_distinct_failed_successor(directory, generation, current_snapshot):
         return False
     report = evidence.get('failed_computed_report')
     pack_bytes = evidence.get('pack_bytes')
-    if (not isinstance(report, dict) or
-            not isinstance(report.get('sha256'), str) or
-            re.fullmatch(r'[a-f0-9]{64}', report['sha256']) is None or
-            not isinstance(report.get('name'), str) or
-            re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', report['name']) is None or
-            type(report.get('bytes')) is not int or
-            not 0 < report['bytes'] <= successor.MAX_COMPUTED or
+    # REPORT_WRITE's disk-reserve failure occurs before a completed computed
+    # report exists. The successor inspector has already verified that *exact*
+    # FAILED receipt, its queue, CURRENT reference and the complete pack hash.
+    # Never invent an audit report or accept a missing one for any other cause.
+    disk_report_write = (report is None and
+        evidence.get('failed_error_code') == 'SHADOW_COLD_DISK_RESERVE_BREACHED' and
+        evidence.get('failed_error_phase') == 'REPORT_WRITE')
+    proven_report = (isinstance(report, dict) and
+        isinstance(report.get('sha256'), str) and
+        re.fullmatch(r'[a-f0-9]{64}', report['sha256']) is not None and
+        isinstance(report.get('name'), str) and
+        re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', report['name']) is not None and
+        type(report.get('bytes')) is int and
+        0 < report['bytes'] <= successor.MAX_COMPUTED)
+    if (not (proven_report or disk_report_write) or
             type(pack_bytes) is not int or
             not 0 < pack_bytes <= successor.MAX_PACK):
         return False

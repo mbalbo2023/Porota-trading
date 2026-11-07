@@ -44,9 +44,28 @@ def _upper(value):
     return str(value or "").strip().upper()
 
 
+def _has_recorded_observation_clock(value):
+    """Require an aware observation clock; this does not certify freshness."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return observed.tzinfo is not None and observed.utcoffset() is not None
+
+
 def underlying_family_index(rows):
-    """Map a ticker only when its current PPI underlying family is unique."""
-    families = defaultdict(set)
+    """Derive one option-eligible PPI identity; reject ticker ambiguity.
+
+    A known PPI family is insufficient: a USD or deferred-settlement record
+    cannot establish the underlying for an ARS/INMEDIATA BYMA option. This is
+    historical contract evidence, not a live quote or provider PIT attestation.
+    """
+    from bu_instrument_catalog import ppi_full_key_evidence_reason
+
+    identities = defaultdict(set)
+    invalid = set()
     for row in rows:
         raw = _raw(row)
         family = _upper(row.get("instrument_type"))
@@ -54,14 +73,23 @@ def underlying_family_index(rows):
                 or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
                 or family not in OPTION_LOT_BY_UNDERLYING_FAMILY
                 or _upper(row.get("market")) != "BYMA"
-                or not _upper(row.get("ticker"))
-                or raw.get("_contract_conflicts")):
+                or not _upper(row.get("ticker"))):
             continue
-        families[_upper(row["ticker"])].add(family)
+        ticker = _upper(row["ticker"])
+        identities[ticker].add((
+            family, _upper(row.get("currency")),
+            _upper(row.get("settlement")),
+        ))
+        if (raw.get("_contract_conflicts")
+                or ppi_full_key_evidence_reason({**row, "raw": raw})
+                or _upper(row.get("settlement_source")) != "PPI_FIELD"
+                or not _has_recorded_observation_clock(row.get("last_seen_at"))):
+            invalid.add(ticker)
     return {
-        ticker: next(iter(values))
-        for ticker, values in families.items()
-        if len(values) == 1
+        ticker: next(iter(values))[0]
+        for ticker, values in identities.items()
+        if len(values) == 1 and ticker not in invalid
+        and next(iter(values))[1:] == ("ARS", "INMEDIATA")
     }
 
 
@@ -91,15 +119,27 @@ def parse_ppi_option_description(description):
 
 
 def standard_long_option_evidence(row, underlying_families):
-    """Build exchange-backed terms for the long-premium PAPER path only."""
+    """Build option *evidence* without resolving a pending contract review.
+
+    A reviewed option may acquire exact, official-derived static terms again,
+    but that cannot turn a material change, revocation or unverified adjusted
+    series into executable PAPER.  Contract-v2's bridge must still evaluate
+    those independent fail-closed gates before any admission.
+    """
+    from bu_instrument_catalog import ppi_full_key_evidence_reason
+
     raw = _raw(row)
     if (row.get("status") != "AVAILABLE"
             or _upper(row.get("instrument_type")) != "OPCIONES"
-            or str(row.get("capability") or "") != "NEEDS_OPTION_CONTRACT"
+            or str(row.get("capability") or "") not in {
+                "NEEDS_OPTION_CONTRACT", "CONTRACT_EVIDENCE_REVIEW_REQUIRED"}
             or _upper(row.get("market")) != "BYMA"
             or _upper(row.get("currency")) != "ARS"
             or _upper(row.get("settlement")) != "INMEDIATA"
             or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
+            or _upper(row.get("settlement_source")) != "PPI_FIELD"
+            or ppi_full_key_evidence_reason({**row, "raw": raw})
+            or not _has_recorded_observation_clock(row.get("last_seen_at"))
             or raw.get("_contract_conflicts")):
         return None
     terms = parse_ppi_option_description(row.get("description"))

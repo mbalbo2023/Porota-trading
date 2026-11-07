@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import sqlite3
+from contextlib import ExitStack
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, time, timedelta
@@ -26,6 +27,7 @@ from rc6_performance.common import canonical, digest, identity, number, stamp
 from rc6_performance.costs import FeeModel, ledger_leg_cost, paper_fee_model
 from rc6_performance.replay import ExitPolicy, ExitReplay
 from rc6_performance.shadow import fit_movement, forward_labels, usable_book
+from .source_reads import tick_reader_connection
 
 SCHEMA = "rc6.runtime-shadow-lab.v1"
 # The lab is a separate SQLite reader after the universe and family stages.
@@ -107,10 +109,11 @@ def _read(database, at, previous, row_limit):
     path = Path(database).resolve(strict=True)
     stat = path.stat()
     source_key = digest([str(path), stat.st_dev, stat.st_ino])
-    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)
-    connection.row_factory = sqlite3.Row
+    source_scope = ExitStack()
     deadline = monotonic() + QUERY_SECONDS
     try:
+        connection, _ = source_scope.enter_context(tick_reader_connection(
+            path, deadline=deadline + 2.0, consumer="lab"))
         connection.execute("PRAGMA query_only=ON")
         connection.execute("PRAGMA busy_timeout=5")
         connection.set_progress_handler(lambda: int(monotonic() > deadline), 200)
@@ -153,8 +156,7 @@ def _read(database, at, previous, row_limit):
             truncated |= len(batch) > row_limit
         return source_key, tails, rows, 0, truncated
     finally:
-        connection.rollback()
-        connection.close()
+        source_scope.close()
 
 
 def _native_evidence(row, at):

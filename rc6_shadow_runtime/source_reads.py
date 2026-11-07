@@ -1,13 +1,15 @@
-"""Bounded native reads on verified private bytes; source SQLite never opens.
+"""Per-tick native reads on verified private bytes; historical standalone API.
 
 The yielded identity is always the original source. The copy is ephemeral
 derived scratch with the existing canonical byte, space and inode policies.
 """
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
+import sqlite3
 import stat
 
-from rc6_audit_evidence.sqlite_snapshot import SnapshotError, captured_source, readonly_copy
+from rc6_audit_evidence.sqlite_snapshot import (SnapshotError, captured_source,
+    readonly_copy, source_capture_active)
 from .read_contract import DEFAULT_READ_CONTRACT, activate_read_contract
 
 
@@ -44,3 +46,22 @@ def source_connection(database, *, deadline, consumer=None):
         if identity != (after.st_dev, after.st_ino, after.st_uid, after.st_gid, after.st_mode, after.st_nlink):
             raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
         yield connection, before
+
+
+@contextmanager
+def tick_reader_connection(database, *, deadline, consumer):
+    """Share the verified Source only inside a productive worker tick.
+
+    Existing standalone diagnostics retain their incumbent read-only budget
+    and behavior, but cannot claim a multi-consumer PIT receipt. A published
+    worker cut always runs under source_tick and thus cannot use this fallback.
+    """
+    if source_capture_active():
+        with source_connection(database, deadline=deadline, consumer=consumer) as value:
+            yield value
+    else:
+        path = Path(database).resolve(strict=True)
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True,
+                                     timeout=.005)) as connection:
+            connection.row_factory = sqlite3.Row
+            yield connection, path.stat()

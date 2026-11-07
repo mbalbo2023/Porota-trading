@@ -28,6 +28,7 @@ class Docker:
         }
         self.containers = {CID: (STABLE, [])}
         self.digests = {}
+        self.labels = {IMG: {'porota.commit': SHA, 'porota.predeploy': 'v2'}, STABLE: {}}
         self.images = {IMG, STABLE}
         self.calls = []
         self.failure = None
@@ -55,6 +56,7 @@ class Docker:
             value = '|'.join(json.dumps(item) for item in (
                 image, [tag for tag, identity in self.tags.items() if identity == image],
                 self.digests.get(image, []),
+                self.labels.get(image, {}),
             ))
         elif args[:2] == ['image', 'rm']:
             if args[-1] in self.images:
@@ -93,7 +95,7 @@ class FailureCleanupTests(unittest.TestCase):
         result = cleanup.cleanup(SHA)
         self.assertEqual(result['status'], 'GREEN')
         self.assertEqual(len(result['removed_tags']), 2)
-        self.assertEqual(result['removed_image_ids'], [IMG])
+        self.assertEqual(result['removed_image_ids'], [])
         self.assertEqual(result['shared_cache_action'], 'UNTOUCHED_NO_HOST_BUILD')
         self.assertIn('space_recovered', result)
         self.assertFalse(self.staging.exists())
@@ -160,6 +162,16 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertEqual(result['removed_tags'], [])
         self.assertEqual(len(result['retained_tags']), 2)
 
+    def test_candidate_image_without_provenance_labels_is_retained(self):
+        self.docker.labels[IMG] = {}
+        result = cleanup.cleanup(SHA)
+        self.assertEqual(result['status'], 'GREEN')
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(set(result['retained_reasons'].values()),
+                         {'NONCANDIDATE_ALIAS_OR_DIGEST'})
+        self.assertTrue(self.staging.exists() is False)
+        self.assertTrue(all(call[1:3] != ['image', 'rm'] for call in self.docker.calls))
+
     def test_same_repository_digest_without_attempt_provenance_is_retained(self):
         self.docker.digests[IMG] = ['porota-predeploy-v2@sha256:' + 'e' * 64]
         result = cleanup.cleanup(SHA)
@@ -192,6 +204,28 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertEqual(result['status'], 'RED')
         self.assertIn('STAGING_REFERENCED_BY_CONTAINER', result['errors'])
         self.assertTrue((source / 'keep.db').exists())
+
+    def test_shared_host_stopped_boca_mount_prevents_any_stage_removal(self):
+        boca_image = 'sha256:' + '2'*64
+        third_image = 'sha256:' + '3'*64
+        external_mount = self.staging / 'boca-persist'
+        external_mount.mkdir()
+        (external_mount / 'must-stay.db').write_bytes(b'foreign fixture')
+        self.docker.images.update((boca_image, third_image))
+        self.docker.tags.update({'boca-socios-assistant:beta': boca_image,
+                                 'third-system:current': third_image})
+        self.docker.containers['e'*12] = (boca_image, [
+            {'Type': 'bind', 'Source': str(external_mount)}])
+        self.docker.containers['f'*12] = (third_image, [])
+        report = cleanup.cleanup(SHA)
+        self.assertEqual(report['status'], 'RED')
+        self.assertIn('STAGING_REFERENCED_BY_CONTAINER', report['errors'])
+        self.assertTrue((external_mount / 'must-stay.db').exists())
+        self.assertEqual(self.docker.tags['boca-socios-assistant:beta'], boca_image)
+        self.assertEqual(self.docker.tags['third-system:current'], third_image)
+        self.assertTrue(all(not (call[1:3] == ['image', 'rm'] and
+                                call[-1] in (boca_image, third_image))
+                            for call in self.docker.calls))
 
     def test_parent_bind_mount_protects_staging(self):
         self.docker.containers[CID] = (STABLE, [{'Type': 'bind', 'Source': str(self.root)}])

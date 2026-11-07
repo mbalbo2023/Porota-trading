@@ -66,14 +66,36 @@ def run(output):
             page.set_viewport_size({"width": 800, "height": 980})
             print("BROWSER_INTERACTION_START=manual", flush=True)
             page.goto("http://terminal.test/instrumentos?currency=ARS")
-            detail_id = page.locator("details.row-detail").first.get_attribute("id")
-            page.locator("details.row-detail summary").first.click()
+            # Every row uses the native modal contract, not a legacy <details>.
+            trigger = page.locator("button.detail-trigger[data-detail-dialog]").first
+            detail_id = trigger.get_attribute("data-detail-dialog")
+            assert detail_id, "detail trigger has no dialog target"
+            dialog = page.locator("dialog.row-dialog#" + detail_id)
+            assert dialog.count() == 1, "detail dialog target unavailable"
+            assert dialog.get_attribute("aria-labelledby") == detail_id + "-title"
+            trigger.click()
+            assert dialog.evaluate("element => element.open"), "detail dialog did not open"
+            # A manual refresh requested while the modal is open must not replace it.
+            # Native showModal() blocks pointer clicks outside the top layer, so
+            # dispatch the button action directly as Voice Access may do.
+            page.evaluate("document.getElementById('refresh-data').click(); void 0")
+            assert "Cerrá el detalle" in page.locator("#refresh-status").inner_text()
+            assert dialog.evaluate("element => element.open"), "refresh closed an active modal"
+            dialog.get_by_role("button", name="Cerrar detalle").click()
+            page.wait_for_function("(id) => !document.getElementById(id).open", arg=detail_id)
+            page.wait_for_function("(id) => document.activeElement?.dataset.detailDialog === id", arg=detail_id)
+            # Escape must also close the modal and restore focus to its trigger.
+            trigger.click()
+            page.keyboard.press("Escape")
+            page.wait_for_function("(id) => !document.getElementById(id).open", arg=detail_id)
+            page.wait_for_function("(id) => document.activeElement?.dataset.detailDialog === id", arg=detail_id)
             page.evaluate("window.scrollTo(0,250)")
             page.locator("#refresh-data").focus()
             y = page.evaluate("window.scrollY")
             page.locator("#refresh-data").click()
             page.wait_for_function("document.getElementById('refresh-status').textContent.includes('Datos actualizados')")
-            assert page.locator("#" + detail_id).get_attribute("open") is not None
+            assert page.locator("dialog.row-dialog#" + detail_id).count() == 1
+            assert not page.locator("dialog.row-dialog#" + detail_id).evaluate("element => element.open")
             assert page.locator("#filter-currency").input_value() == "ARS"
             assert page.evaluate("document.activeElement.id") == "refresh-data"
             assert abs(page.evaluate("window.scrollY") - y) < 2
@@ -116,7 +138,7 @@ def run(output):
             browser.close()
     result = {"schema": "rc6.trader-terminal-browser-gate.v1", "status": "GREEN" if not findings else "RED",
               "widths": [1440, 1280, 1024, 800, 600, 360], "canonical_viewport_checks": checks,
-              "legacy_checks": len(LEGACY), "interaction_checks": ["manual focus", "scroll", "details", "filters", "deep link", "dirty inputs", "interaction during outstanding read", "auto refresh pause", "menu Escape"],
+              "legacy_checks": len(LEGACY), "interaction_checks": ["modal button", "modal close focus", "modal Escape focus", "blocked refresh while modal", "manual focus", "scroll", "filters", "deep link", "dirty inputs", "interaction during outstanding read", "auto refresh pause", "menu Escape"],
               "network": "all HTTP intercepted synthetic fixtures; provider_requests=0", "findings": findings, "renders": renders,
               "as_of": datetime.now(timezone.utc).isoformat()}
     (output / "browser-gate.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

@@ -31,6 +31,8 @@ from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import CaucionBook
 from cg_paper_workspace import artifact_root
 from rc6_backup_policy import backups_suspended
+from co_market_sessions_hf6 import (byma_eod_publication_floor,
+                                    byma_heavy_writes_safe_now)
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -53,6 +55,8 @@ DATOS_AR_SERIES = {
 }
 BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
 REPORT_SQLITE_RETRY_SECONDS = 15 * 60
+EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD = "EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD"
+EOD_FINAL_SOURCE_HOLD_RECHECK_SECONDS = 5 * 60
 
 
 def now_iso():
@@ -147,10 +151,33 @@ def _job(store, key, state, detail, success=False):
           (key, stamp, last_success, state, str(detail)[:1000]))
 
 
+def _verified_final_source_receipt(store, at):
+    """Never infer an authoritative final-source publication from wall clock.
+
+    R4 has a calendar EOD *attempt floor*, but no proved same-day final-source
+    receipt schema. Until a separately audited receipt verifier is installed,
+    the operational closing message is explicitly HOLD/NO_VERIFICADO.
+    A future verifier must validate day, source, publication time and digest;
+    a generic PPI history SUCCESS is not proof of BYMA/FCI final publication.
+    """
+    return False
+
+
 def _postclose_daily_due(store, key):
+    current = datetime.now(TZ)
+    if not byma_heavy_writes_safe_now(current):
+        return False
+    # COM19031: 18:15 is the earliest EOD attempt, not a source receipt.
+    floor = byma_eod_publication_floor(current)
+    if current < floor:
+        return False
     with store.connect() as c:
         row = c.execute("SELECT state,detail,last_run_at FROM operational_jobs "
                         "WHERE job_key=?", (key,)).fetchone()
+    if row and row[0] == "HOLD" and row[1] == EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD:
+        if _verified_final_source_receipt(store, current):
+            return True
+        return _job_due(store, key, EOD_FINAL_SOURCE_HOLD_RECHECK_SECONDS)
     if row and row[0] == "ROJO" and row[1] == "POSTCLOSE_SQLITE_FULL":
         # SQLite capacity is recoverable after cleanup: retain the bounded
         # retry contract, including after a transient outage during postclose.
@@ -161,16 +188,15 @@ def _postclose_daily_due(store, key):
             # ledger) needs at most one routine POSTCLOSE attempt per local
             # trading day. A morning/noon report is not today's closing
             # report and MUST be rebuilt once the wheel actually closes.
-            # COM18782 closes the regular PPT at 17:00 through 01-Nov-2026;
-            # COM19024 extends it to 18:00 beginning 02-Nov-2026.
+            # The previous integer-hour cutoff could freeze a daily report at
+            # 18:00, before the verified COM19031 18:15 publication floor.
             # Forced operator rechecks remain available.
             attempted = datetime.fromisoformat(row[2])
             if attempted.tzinfo is None:
                 raise ValueError("POSTCLOSE_REPORT_CLOCK_NAIVE")
             current = datetime.now(TZ)
             previous = attempted.astimezone(TZ)
-            cutoff_hour = 18 if current.date() >= date(2026, 11, 2) else 17
-            if previous.date() == current.date() and previous.hour >= cutoff_hour:
+            if previous.date() == current.date() and previous >= floor:
                 return False
         except (TypeError, ValueError):
             pass
@@ -679,6 +705,8 @@ def _observed_report_days(connection):
 
 def ensure_reports(store, include_today=False):
     """PDF diario y consolidaciones; un único paquete IA móvil de siete días."""
+    if include_today and not _verified_final_source_receipt(store, datetime.now(TZ)):
+        return EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD
     init_schema(store)
     today = datetime.now(TZ).date()
     target = today if include_today else today - timedelta(days=1)
@@ -733,6 +761,18 @@ def ensure_reports(store, include_today=False):
 
 def send_closing_summary(store):
     """Un resumen por fecha en outbox; generar no equivale a entregar."""
+    now = datetime.now(TZ)
+    if not byma_heavy_writes_safe_now(now):
+        return EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD
+    try:
+        import ak_byma_calendar as byma_calendar
+        if not byma_calendar.es_dia_habil_operativo(now.date()):
+            return "NOT_APPLICABLE_NON_TRADING_DAY"
+    except Exception:
+        return EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD
+    if (now < byma_eod_publication_floor(now)
+            or not _verified_final_source_receipt(store, now)):
+        return EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD
     from bn_telegram_bus import enqueue
     init_schema(store)
     today = datetime.now(TZ).date()
@@ -771,6 +811,12 @@ def service_tick(store, phase, force=False):
     init_schema(store)
     if force or _job_due(store, "SRE_SNAPSHOT", 300):
         collect_sre(store)
+    now = datetime.now(TZ)
+    # Preserve SRE/heartbeat and critical alerts; defer full SQLite, backup,
+    # public-network and reporting work throughout the real BYMA T+1+EOD window.
+    # The same pure source clock gates scanner catalog/history/manual paths.
+    if not byma_heavy_writes_safe_now(now):
+        return
     if not backups_suspended():
         if force or _job_due(store, "DAILY_BACKUP", 20 * 3600):
             create_backup(store, force=force)
@@ -784,8 +830,6 @@ def service_tick(store, phase, force=False):
     elif not news_enabled and (force or _job_due(store, "NEWS_REFRESH", 12 * 3600)):
         _job(store, "NEWS_REFRESH", "NO_APLICA",
              "Ingesta deshabilitada por HF5; evidencia histórica preservada", success=False)
-    now = datetime.now(TZ)
-    hour = now.hour
     # Routine close summaries only belong to an actual BYMA business day.
     # Critical infrastructure alerts use their own paths and are never suppressed here.
     try:
@@ -793,7 +837,16 @@ def service_tick(store, phase, force=False):
         business_day = bool(byma_calendar.es_dia_habil_operativo(now.date()))
     except Exception:
         business_day = False  # fail closed for routine weekend/holiday messaging
-    if phase == "CLOSED" and business_day and hour >= int(os.getenv("MARKET_CLOSE_HOUR", "17")):
+    if (phase == "CLOSED" and business_day
+            and now >= byma_eod_publication_floor(now)):
+        # Unlike the 18:15 floor, no final-source receipt has been audited in
+        # this R4 codebase. Never consume the one-time Telegram outbox key or
+        # publish a final-looking report while evidence is unverified.
+        if not _verified_final_source_receipt(store, now):
+            if force or _postclose_daily_due(store, "CLOSING_SUMMARY_RETRY"):
+                _job(store, "CLOSING_SUMMARY_RETRY", "HOLD",
+                     EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD, success=False)
+            return
         # These jobs are ancillary to PAPER admission. SQLITE_FULL caused by a
         # report query must not restart the scanner on every tick. Persist a
         # separate RED receipt and throttle the retry across process restarts;
@@ -825,7 +878,11 @@ def service_tick(store, phase, force=False):
         if not force and not _postclose_daily_due(store, "CLOSING_SUMMARY_RETRY"):
             return
         try:
-            send_closing_summary(store)
+            outcome = send_closing_summary(store)
+            if outcome == EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD:
+                _job(store, "CLOSING_SUMMARY_RETRY", "HOLD",
+                     EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD, success=False)
+                return
         except ValueError as exc:
             if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
                 raise

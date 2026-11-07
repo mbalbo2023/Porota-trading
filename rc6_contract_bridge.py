@@ -73,6 +73,13 @@ def normalize_group(records, *, now=None):
     fields, provenance, keys, errors = {}, {}, set(), []
     usable=[]
     ignored_iol_options=[]
+    # Report-bucket aliases are not proof that the native five-key identity
+    # was the canonical family. In particular, old Evidence V2 stored
+    # OBLIGACIONES as ON, and re-canonicalizing it here could make an ON-only
+    # snapshot look like an exact PPI OBLIGACIONES contract.
+    if any(str(r.get("family") or "").strip().upper() == "ON"
+           for r in records):
+        errors.append("ALIAS_ONLY_FAMILY_NOT_AUTHORITY")
     for r in sorted(records, key=lambda item: SOURCE_RANK.get(item.get("source_class"), 999)):
         if (canonical_family(r.get("family")) == "OPCIONES"
                 and r.get("source_class") == "IOL_STRUCTURED_API"):
@@ -243,6 +250,7 @@ def hard_blocked_bridge(bridge):
         "IDENTITY_", "EVIDENCE_NOT_CURRENT", "CHANGE_REVIEW_REQUIRED",
         "CONTRACT_V2_CURRENCY_MISMATCH", "CONTRACT_INVALID:",
         "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED",
+        "ALIAS_ONLY_FAMILY_NOT_AUTHORITY",
     )
     return any(str(gap).startswith(hard_prefixes)
                for gap in bridge.get("gaps", []))
@@ -271,6 +279,12 @@ def complements_from_store(store, *, now=None):
         grouped[(r["family"],r["ticker"],r["market"],r["currency"],r["settlement"])].append(r)
     result = []
     for records in grouped.values():
+        # Retain historical alias snapshots as evidence, never materialize
+        # them as a canonical-family contract or demote unrelated READY rows.
+        # A later exact PPI-primary snapshot can be recorded independently.
+        if any(str(r.get("family") or "").strip().upper() == "ON"
+               for r in records):
+            continue
         normalized = normalize_group(records, now=now)
         if normalized["ticker"]:
             result.append(normalized)
@@ -294,7 +308,9 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
     """
     from bt_caucion_paper import CaucionOffer
     from bs_instrument_contracts import aware_datetime
-    from bu_instrument_catalog import _candidate_has_ppi_primary, _candidate_timestamp_is_fresh
+    from bu_instrument_catalog import (_candidate_has_ppi_primary,
+                                       _candidate_timestamp_is_fresh,
+                                       ppi_full_key_evidence_reason)
     now = now or datetime.now(timezone.utc)
     normalized = normalize_group(records, now=now)
     errors = {gap for gap in normalized["contract_bridge"]["gaps"]
@@ -303,6 +319,11 @@ def caucion_offer_from_evidence(records, primary, *, now=None):
     pkey = tuple(primary.get(k) for k in ("ticker","instrument_type","market","currency","settlement"))
     if errors or key != pkey or key[1] != "CAUCIONES":
         raise ValueError("CAUCION_EVIDENCE_INVALID:" + ",".join(sorted(errors or {"IDENTITY_MISMATCH"})))
+    # This direct PAPER adapter bypasses quote_terms/lookup/candidate_identity.
+    # REQUEST_CANDIDATE is a scanner hint, never an executable PPI tenor.
+    provider_key_error = ppi_full_key_evidence_reason(primary)
+    if provider_key_error:
+        raise ValueError(provider_key_error)
     if (primary.get("status") != "AVAILABLE"
             or not _candidate_has_ppi_primary(primary.get("settlement_source"),json.dumps(primary.get("raw") or {}))
             or not _candidate_timestamp_is_fresh(primary.get("last_seen_at"),now.isoformat(),86400)):
