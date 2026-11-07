@@ -532,4 +532,3 @@ print('RC6_PRE_SUSPEND_DISK_FREE=4184719360')
 
 if __name__ == '__main__':
     unittest.main()
-
