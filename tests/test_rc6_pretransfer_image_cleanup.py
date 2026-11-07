@@ -158,12 +158,14 @@ def test_runtime_change_blocks_before_delete(host, monkeypatch):
     assert TAG in host.images[IMG][0]
 
 
-def test_live_promoter_lock_blocks_cleanup(tmp_path, host, monkeypatch, capsys):
+def test_standalone_tmp_lock_cannot_authorize_cleanup(tmp_path, host, monkeypatch, capsys):
     lock = tmp_path / 'lock'; monkeypatch.setattr(clean, 'LOCK', lock)
     with lock.open('w') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert clean.main() == 2
-    assert json.loads(capsys.readouterr().out)['reason'] == 'PROMOTION_STILL_RUNNING'
+    # An unrelated /tmp flock is never an owner certificate. The helper must
+    # reject before Docker even if that decoy lock happens to be busy.
+    assert json.loads(capsys.readouterr().out)['reason'] == 'GOVERNED_MUTEX_FD_MISSING'
     assert host.calls == []
 
 
@@ -250,3 +252,4 @@ def test_unpaired_canonical_repository_digest_still_protects_image(host):
     host.images[IMG] = ([TAG], ['porota-trading-bot@sha256:'+'f'*64])
     assert clean.cleanup()['removed_tags'] == []
     assert IMG in host.images
+

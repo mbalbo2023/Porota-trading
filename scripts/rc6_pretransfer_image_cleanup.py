@@ -18,7 +18,14 @@ IMAGE = re.compile(r'sha256:[0-9a-f]{64}')
 CONTAINER = re.compile(r'[0-9a-f]{12,64}')
 CANDIDATE = re.compile(r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)[0-9a-f]{40}')
 DB = Path('/opt/porota-trading/data/paper_v17/observer_v17.db')
-LOCK = Path('/tmp/porota-rc6-deploy-v2.lock')
+# The *only* Deploy V2 lock is owned by rc6_deploy_host_mutex.py.  The old
+# /tmp spelling was a different inode: an absent /tmp file previously let an
+# ungoverned helper proceed while the real promoter owned /run/lock.
+LOCK = Path('/run/lock/porota-rc6-deploy-v2.lock')
+BARRIER = Path('/run/lock/porota-rc6-deploy-v2-attempt.json')
+OWNER_PROOF = 'RC6_DEPLOY_MUTEX_PROOF'
+OWNER_FD = 'RC6_DEPLOY_MUTEX_FD'
+ROOT_UID = 0  # overridden only by unprivileged OFFHOST tests
 RUNTIME = ('porota_production_observer', 'porota_production_dashboard', 'porota_critical_approval_rc6')
 
 
@@ -37,23 +44,91 @@ def docker(*args):
 
 @contextmanager
 def promotion_lock():
+    # The true root-owned mutex is already held by the canonical wrapper and
+    # passed to its child as the SAME open file description. Never acquire a
+    # second flock: a second descriptor would deadlock against our own parent.
+    # Also never mistake a missing mutex/barrier or a /tmp decoy for authority.
+    raw_fd = os.environ.get(OWNER_FD, '')
+    if not re.fullmatch(r'[3-9][0-9]{0,2}', raw_fd):
+        raise Rejected('GOVERNED_MUTEX_FD_MISSING')
+    fd = int(raw_fd)
+    if fd > 255:
+        raise Rejected('GOVERNED_MUTEX_FD_INVALID')
     try:
-        fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW)
-    except FileNotFoundError:
-        # No live promoter can exist without the canonical lock. Do not create
-        # a root-owned replacement that would break the SSH owner later.
-        yield
-        return
+        attestation = json.loads(os.environ.get(OWNER_PROOF, ''))
+    except (ValueError, TypeError):
+        raise Rejected('GOVERNED_MUTEX_PROOF_MISSING') from None
+    if (not isinstance(attestation, dict) or set(attestation) !=
+            {'candidate', 'run', 'attempt', 'phase'} or
+            not isinstance(attestation['candidate'], str) or
+            re.fullmatch('[0-9a-f]{40}', attestation['candidate']) is None or
+            not all(isinstance(attestation[k], str) and
+                    re.fullmatch('[1-9][0-9]*', attestation[k]) is not None
+                    for k in ('run', 'attempt')) or
+            not isinstance(attestation['phase'], str) or
+            attestation['phase'] not in {'preclean', 'promotion', 'orphan_gc'}):
+        raise Rejected('GOVERNED_MUTEX_PROOF_INVALID')
+    parent = os.lstat(LOCK.parent)
+    if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != ROOT_UID or
+            (parent.st_mode & stat.S_IWOTH and
+             not parent.st_mode & stat.S_ISVTX)):
+        raise Rejected('GOVERNED_MUTEX_PARENT_UNSAFE')
+    path_stat = os.lstat(LOCK)
+    held_stat = os.fstat(fd)
+    if (not stat.S_ISREG(path_stat.st_mode) or
+            (path_stat.st_dev, path_stat.st_ino) !=
+            (held_stat.st_dev, held_stat.st_ino) or
+            path_stat.st_uid != ROOT_UID or stat.S_IMODE(path_stat.st_mode) != 0o600 or
+            path_stat.st_nlink != 1):
+        raise Rejected('GOVERNED_MUTEX_IDENTITY_RED')
+    # A fresh independent descriptor MUST observe an already-held flock. Only
+    # then reassert LOCK_EX on the inherited descriptor: a competing owner on
+    # a different open-file-description would block our inherited descriptor.
+    probe = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise Rejected('PROMOTION_LOCK_INVALID')
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass  # someone already holds the real lock
+        else:
+            fcntl.flock(probe, fcntl.LOCK_UN)
+            raise Rejected('GOVERNED_MUTEX_NOT_HELD')
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise Rejected('PROMOTION_STILL_RUNNING') from exc
-        yield
+            raise Rejected('GOVERNED_MUTEX_OTHER_OWNER') from exc
     finally:
-        os.close(fd)
+        os.close(probe)
+    # The wrapper records the exact attempt/phase before its child and retires
+    # it only after the child exits. The sole postfailure orphan-GC exception
+    # must have NO attempt barrier and uses the same inherited owner lock.
+    try:
+        barrier_fd = os.open(BARRIER, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        if attestation['phase'] != 'orphan_gc':
+            raise Rejected('GOVERNED_BARRIER_MISSING')
+    else:
+        try:
+            barrier_stat = os.fstat(barrier_fd)
+            on_path = os.lstat(BARRIER)
+            if (not stat.S_ISREG(barrier_stat.st_mode) or
+                    (barrier_stat.st_dev, barrier_stat.st_ino) !=
+                    (on_path.st_dev, on_path.st_ino) or
+                    barrier_stat.st_uid != ROOT_UID or
+                    stat.S_IMODE(barrier_stat.st_mode) != 0o600 or
+                    barrier_stat.st_nlink != 1 or barrier_stat.st_size > 1024):
+                raise Rejected('GOVERNED_BARRIER_UNSAFE')
+            barrier = json.loads(os.read(barrier_fd, 1025))
+            if (attestation['phase'] == 'orphan_gc' or
+                    not isinstance(barrier, dict) or
+                    set(barrier) !=
+                        {'candidate', 'run', 'attempt', 'phase', 'status'} or
+                    any(barrier.get(key) != attestation[key] for key in attestation) or
+                    barrier.get('status') != 'INFLIGHT'):
+                raise Rejected('GOVERNED_BARRIER_DRIFT')
+        finally:
+            os.close(barrier_fd)
+    yield
 
 
 def safety():
@@ -191,3 +266,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

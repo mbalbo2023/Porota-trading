@@ -51,6 +51,40 @@ class HostMutexTests(unittest.TestCase):
     def acquire(self):
         return mutex.open_lock(self.root, os.geteuid())
 
+    def test_a779_orphan_gc_direct_inherited_fd_no_new_barrier(self):
+        from contextlib import ExitStack
+        calls = []
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return SimpleNamespace(returncode=0, stdout='')
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex.subprocess, 'run', side_effect=fake_run))
+            self.assertEqual(mutex.run(self.args('orphan_gc',
+                ['python3', '-B', '-'])), 0)
+            self.assertFalse(self.barrier.exists())
+            owner_calls = [(cmd, kwargs) for cmd, kwargs in calls
+                           if cmd == ['python3', '-B', '-']]
+            self.assertEqual(len(owner_calls), 1)
+            proof = json.loads(owner_calls[0][1]['env']['RC6_DEPLOY_MUTEX_PROOF'])
+            self.assertEqual(proof, {'candidate': SHA, 'run': RUN,
+                                     'attempt': ATTEMPT, 'phase': 'orphan_gc'})
+            self.assertEqual(owner_calls[0][1]['pass_fds'],
+                             (int(owner_calls[0][1]['env']['RC6_DEPLOY_MUTEX_FD']),))
+
+    def test_a779_orphan_gc_requires_no_prior_barrier_and_exact_command(self):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex.subprocess, 'run'))
+            with self.assertRaisesRegex(RuntimeError, 'ORPHAN_GC_COMMAND_INVALID'):
+                mutex.run(self.args('orphan_gc', ['true']))
+            self.barrier.write_text(json.dumps({'candidate': SHA, 'run': RUN,
+                'attempt': ATTEMPT, 'phase': 'cleanup_final', 'status': 'IDLE'}))
+            self.barrier.chmod(0o600)
+            with self.assertRaisesRegex(RuntimeError, 'ORPHAN_GC_BARRIER_RETAINED'):
+                mutex.run(self.args('orphan_gc', ['python3', '-B', '-']))
+
     def test_orphan_holds_inode_after_parent_loses_fd_and_second_attempt_cannot_mutate(self):
         first = self.acquire()
         reader, writer = os.pipe()
@@ -628,7 +662,8 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 6)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 22)
+        # A779 adds the governed postfailure orphan-gc reader/writer gate.
+        self.assertEqual(len(boundaries), 23)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
@@ -646,6 +681,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('--apply-plan "$PLAN" --require-empty', by_id['backup_retire'])
         self.assertEqual(sum('--phase finalize ' in line for line in boundaries), 1)
         self.assertEqual(sum('--phase cleanup_final ' in line for line in boundaries), 1)
+        self.assertEqual(sum('--phase orphan_gc ' in line for line in boundaries), 1)
         self.assertEqual(sum('--phase cleanup_admin_resume ' in line for line in boundaries), 1)
         self.assertEqual(failure.count('--allow-contract-lifecycle'), 1)
         self.assertIn('RC6_FAILURE_CLEANUP_MUTEX_OR_WRITER=RED', failure)
@@ -661,3 +697,4 @@ class WorkflowIntegrationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
