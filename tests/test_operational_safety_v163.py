@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 import pytest
 
 
@@ -16,17 +17,68 @@ class DummyNotifier:
 def _fake_ppi(error=None):
     calls = {"login": 0}
 
-    class Account:
-        def login_api(self, _key, _secret):
+    class OfflineAdapter:
+        """Only the fake wire is replaced; the production wrapper stays real."""
+        max_retries = SimpleNamespace(total=0)
+
+        def send(self, request, **_kwargs):
+            assert request.method == "POST"
+            assert request.url == "https://clientapisandbox.portfoliopersonal.com/api/1.0/Account/LoginApi"
             calls["login"] += 1
             if error:
                 raise RuntimeError(error)
+            return SimpleNamespace(status_code=200, content=b"OFFLINE_LOGIN")
+
+    class OfflineSession:
+        def __init__(self):
+            self.adapters = {"https://": OfflineAdapter()}
+
+        def mount(self, prefix, adapter):
+            self.adapters[prefix] = adapter
+
+    session = OfflineSession()
+    rest_client = SimpleNamespace(get_session=lambda: session)
+
+    class Account:
+        def login_api(self, _key, _secret):
+            request = SimpleNamespace(method="POST", url=
+                "https://clientapisandbox.portfoliopersonal.com/api/1.0/Account/LoginApi")
+            return rest_client.get_session().adapters["https://"].send(request)
 
     class FakePPI:
         def __init__(self, sandbox=True):
             self.account = Account()
+            self._PPI__apiClient = SimpleNamespace(get_rest_client=lambda: rest_client)
 
     return FakePPI, calls
+
+
+def test_fake_sdk_exercises_real_transport_guard_without_order_routes():
+    import c_ppi_client as module
+    from rc6_ppi_global_budget import BudgetBackpressure
+    fake, calls = _fake_ppi()
+    candidate = fake()
+    client = module.ResilientPPIClient.__new__(module.ResilientPPIClient)
+    client._install_sdk_wire_budget(candidate)
+    session = candidate._PPI__apiClient.get_rest_client().get_session()
+    assert isinstance(session.adapters["https://"], module._BudgetedPPIAdapter)
+    with pytest.raises(BudgetBackpressure, match="PPI_SDK_ENDPOINT_NOT_GOVERNED"):
+        session.adapters["https://"].send(SimpleNamespace(method="POST", url=
+            "https://clientapisandbox.portfoliopersonal.com/api/1.0/Orders/Confirm"))
+    assert calls["login"] == 0
+    candidate.account.login_api("OFFLINE_KEY", "OFFLINE_SECRET")
+    assert calls["login"] == 1
+
+
+def test_unknown_sdk_transport_is_rejected_before_any_login():
+    import c_ppi_client as module
+    fake, calls = _fake_ppi()
+    candidate = fake()
+    del candidate._PPI__apiClient
+    client = module.ResilientPPIClient.__new__(module.ResilientPPIClient)
+    with pytest.raises(RuntimeError, match="PPI_SDK_SESSION_TRANSPORT_UNVERIFIED"):
+        client._install_sdk_wire_budget(candidate)
+    assert calls["login"] == 0
 
 
 def test_ppi_rate_limit_hace_un_solo_login(monkeypatch, tmp_path):

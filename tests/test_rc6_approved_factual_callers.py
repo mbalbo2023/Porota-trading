@@ -4,7 +4,7 @@ All PPI traffic uses the actual SDK over the existing fake HTTP adapter. Native
 signals, quotes, snapshots and positions live only in isolated fixture SQLite.
 """
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -35,11 +35,32 @@ def native_store(tmp_path, assets, at):
     with store.connect() as c:
         for a in assets:
             row = with_synthetic_volume_contract(dict(a, settlement_source="PPI_FIELD", description="isolated fixture",
-                last_seen_at=at.isoformat(), run_id="native-test", raw={"_discovery_source": "PPI_PRIMARY"})
+                last_seen_at=at.isoformat(), run_id="native-test", raw={
+                    "_discovery_source": "PPI_PRIMARY", "ticker": a["ticker"],
+                    "type": a["instrument_type"], "market": a["market"],
+                    "currency": a["currency"], "settlement": a["settlement"]})
             )
             catalog_module.persist(c, row)
         catalog_module.sync_candidate_universe(c, at.isoformat())
     return store
+
+
+@pytest.mark.parametrize("missing", ["ticker", "type", "market", "currency", "settlement"])
+def test_request_identity_does_not_replace_missing_literal_ppi_key(tmp_path, missing):
+    at = datetime.fromisoformat("2026-10-05T14:00:00+00:00")
+    assets = [dict(ticker="TEST0", instrument_type="ACCIONES", market="BYMA",
+                   currency="ARS", settlement="A-24HS", status="AVAILABLE",
+                   capability="READY_PAPER_SPOT")]
+    store = native_store(tmp_path, assets, at)
+    with store.connect() as c:
+        assert c.execute("SELECT can_simulate FROM candidate_identity_v2").fetchone()[0] == 1
+        raw = json.loads(c.execute("SELECT metadata_json FROM financial_instrument_catalog").fetchone()[0])
+        del raw[missing]
+        c.execute("UPDATE financial_instrument_catalog SET metadata_json=?", (json.dumps(raw),))
+        catalog_module.sync_candidate_universe(c, at.isoformat())
+        gate = c.execute("SELECT can_simulate,detail FROM candidate_identity_v2").fetchone()
+    assert gate[0] == 0 and "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED" in gate[1]
+    assert scalping.select_batch(store, limit=8)[0] == []
 
 
 def cold_shadow(values, warm_shadow, assets, at):
