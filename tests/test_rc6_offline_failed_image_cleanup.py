@@ -24,6 +24,8 @@ def test_exact_failed_image_eligibility(monkeypatch, change):
 
 
 def test_offline_cleanup_rechecks_admission_before_each_tag(tmp_path, monkeypatch):
+    # Dormant legacy algorithm with in-memory Docker; default veto tested A865.
+    monkeypatch.setattr(cleanup, 'require_exclusive_docker_namespace', lambda: None)
     root = tmp_path/'host'
     lock = root/'data/deploy/.deploy-quiescence.lock'
     lock.parent.mkdir(parents=True)
@@ -50,6 +52,7 @@ def test_offline_cleanup_rechecks_admission_before_each_tag(tmp_path, monkeypatc
 
 
 def test_offline_cleanup_preserves_image_when_admission_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(cleanup, 'require_exclusive_docker_namespace', lambda: None)
     root = tmp_path/'host'
     lock = root/'data/deploy/.deploy-quiescence.lock'
     lock.parent.mkdir(parents=True)

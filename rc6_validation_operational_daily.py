@@ -69,6 +69,7 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
         "decisions": 0,
         "fills": 0,
         "realized_by_currency": defaultdict(lambda: Decimal("0")),
+        "realized_pnl_unverified_by_currency": Counter(),
     })
     with _connect_ro(db_path) as conn:
         state = conn.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
@@ -126,7 +127,25 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
                 currency = str(row["currency"] or "").upper()
                 if not currency:
                     raise OperationalDailyEvidenceError("CLOSED_CURRENCY_UNVERIFIED")
-                by_day[closed]["realized_by_currency"][currency] += _decimal(row["net_pnl"])
+                if row["net_pnl"] is None:
+                    # A reviewed FI maturity may have no trustworthy FX basis.
+                    # Its closing receipt must pass the actual native ledger
+                    # validator; close_reason alone never grants this exception.
+                    try:
+                        full = conn.execute("SELECT * FROM paper_positions WHERE paper_id=?",
+                                            (row["paper_id"],)).fetchone()
+                        if not full or full["close_reason"] != "FI_NATIVE_MATURITY_REVIEWED":
+                            raise ValueError("NOT_A_REVIEWED_FI_MATURITY")
+                        remaining, realized = partition(conn, full, row["closed_at"])
+                        if (remaining is not None or len(realized) != 1
+                                or realized[0]["paper_id"] != row["paper_id"]
+                                or realized[0]["net_pnl"] is not None):
+                            raise ValueError("FI_NATIVE_RECEIPT_INVALID")
+                    except (ValueError, TypeError, KeyError, IndexError, sqlite3.Error) as exc:
+                        raise OperationalDailyEvidenceError("CLOSED_PNL_UNVERIFIED") from exc
+                    by_day[closed]["realized_pnl_unverified_by_currency"][currency] += 1
+                else:
+                    by_day[closed]["realized_by_currency"][currency] += _decimal(row["net_pnl"])
             elif closed:
                 raise OperationalDailyEvidenceError("UNKNOWN_POSITION_STATE_WITH_CLOSED_AT")
 
@@ -156,8 +175,16 @@ def collect(*, db_path: str = DEFAULT_DB, limit_days: int = 30, event_limit: int
             "cancelled_admin": int(slot["cancelled_admin"]),
             "decisions": int(slot["decisions"]),
             "fills": int(slot["fills"]),
-            "realized_by_currency": {currency: str(pnl) for currency,pnl in
-                                     sorted(slot["realized_by_currency"].items())},
+            # A partial known sum is not the period's PnL when even one
+            # validated close in the same currency has unknown cost basis.
+            "realized_by_currency": {
+                currency: (None if slot["realized_pnl_unverified_by_currency"][currency]
+                           else str(slot["realized_by_currency"][currency]))
+                for currency in sorted(set(slot["realized_by_currency"]) |
+                                       set(slot["realized_pnl_unverified_by_currency"]))
+            },
+            "realized_pnl_unverified_by_currency": dict(sorted(
+                slot["realized_pnl_unverified_by_currency"].items())),
         })
     return {
         "mode": "PRODUCTION_PAPER",

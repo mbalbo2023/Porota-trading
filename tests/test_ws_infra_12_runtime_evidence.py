@@ -398,6 +398,55 @@ def test_non_paper_or_real_orders_blocks_bundle(tmp_path, mode, real_orders, rea
     assert reason in payload["blockers"]
 
 
+@pytest.mark.parametrize("counter", [None, False, True, "", "0", "oops", 0.0, []])
+def test_unverified_real_orders_counter_is_not_reported_as_zero(counter):
+    safety, blockers = evidence._safety(
+        {"mode": "PRODUCTION_PAPER", "real_orders_sent": counter},
+        {"mode": "PRODUCTION_PAPER", "execution": "SIMULATED",
+         "apis": {"PPI_ORDERS": "BLOCKED"}},
+        {"real_order_routes": "NOT_CALLED"},
+    )
+    assert safety["real_orders_sent"] is None
+    assert "REAL_ORDERS_SENT_UNVERIFIED" in blockers
+    assert "REAL_ORDERS_SENT_NONZERO" not in blockers
+
+
+def test_missing_real_orders_counter_is_unverified_not_zero():
+    safety, blockers = evidence._safety(
+        {"mode": "PRODUCTION_PAPER"},
+        {"mode": "PRODUCTION_PAPER", "execution": "SIMULATED",
+         "apis": {"PPI_ORDERS": "BLOCKED"}},
+        {"real_order_routes": "NOT_CALLED"},
+    )
+    assert safety["real_orders_sent"] is None
+    assert "REAL_ORDERS_SENT_UNVERIFIED" in blockers
+
+
+@pytest.mark.parametrize("counter", [0, 1, -1])
+def test_integer_real_orders_counter_preserves_exact_safety_meaning(counter):
+    safety, blockers = evidence._safety(
+        {"mode": "PRODUCTION_PAPER", "real_orders_sent": counter},
+        {"mode": "PRODUCTION_PAPER", "execution": "SIMULATED",
+         "apis": {"PPI_ORDERS": "BLOCKED"}},
+        {"real_order_routes": "NOT_CALLED"},
+    )
+    assert safety["real_orders_sent"] == counter
+    assert ("REAL_ORDERS_SENT_NONZERO" in blockers) == (counter != 0)
+    assert "REAL_ORDERS_SENT_UNVERIFIED" not in blockers
+
+
+def test_null_counter_blocks_full_bundle_with_safety_provenance(tmp_path):
+    db, operation, deploy, frozen, manifest = inputs(tmp_path, real_orders_sent=None)
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=operation, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    assert payload["status"] == "BLOCKED"
+    assert payload["safety"]["real_orders_sent"] is None
+    assert "REAL_ORDERS_SENT_UNVERIFIED" in payload["blockers"]
+
+
 def test_missing_required_table_is_incomplete(tmp_path):
     db, operation, deploy, frozen, manifest = inputs(tmp_path)
     conn = sqlite3.connect(db)

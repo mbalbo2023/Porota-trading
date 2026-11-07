@@ -273,7 +273,9 @@ def test_deploy_waits_boundedly_for_scalping_recovery_before_immediate_audit():
     assert 'SCALPING_STABILIZATION_STARTED_AT="$(date -u' in source
     assert 'healthy_state=state in ("RUNNING","WAITING_MARKET")' in source
     assert "post_gate_heartbeat=dt >= started" in source
-    assert "healthy=(healthy_state and failed==0 and 0 <= age <= 300" in source
+    # Counter types, heartbeat age and worker failures are executed against
+    # synthetic SQLite by test_rc6_a932_scalping_stabilization_zero.py; do not
+    # freeze their conjunction spelling in this lifecycle-ordering test.
     assert "and post_gate_heartbeat" in source
     assert 'test "$OBSERVER_RESTART_NOW" = "$OBSERVER_RESTART_BASE"' in source
     assert 'test "$DASHBOARD_RESTART_NOW" = "$DASHBOARD_RESTART_BASE"' in source
@@ -338,27 +340,30 @@ def test_preopen_failure_preserves_diagnostics_before_fail_closed_exit():
 
 
 def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
+    # Historical nodeid retained for QA continuity. On a shared host without
+    # independent staging ownership, NO_DELETE is the only safe disposition.
     source = _deploy()
-    immediate = source.index('RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN')
-    reclaim = source.index('RC6_PREOPEN_SAFE_RECLAIM=GREEN')
+    immediate = source.index('echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN"')
+    reclaim = source.index('RC6_PREOPEN_EXACT_STAGE_RECLAIM=DEFERRED_UNVERIFIED|NO_DELETE|FOREIGN_UNTOUCHED', immediate)
+    measure = source.index('DISK_PREOPEN_AFTER_SAFE_RECLAIM="$(df -PB1 /', reclaim)
+    threshold = source.index('test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"', measure)
     preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
-    assert immediate < reclaim < preopen
-    block = source[immediate:preopen]
-    assert "from scripts.rc6_deploy_failure_cleanup import container_inventory,host_mountpoints,overlaps" in block
-    assert "RC6_STAGE_HOST_MOUNT_PROTECTED" in block
-    assert "RC6_STAGE_DOCKER_BIND_PROTECTED" in block
-    assert "shutil.rmtree(target)" in block
-    assert 'rm -rf "$STAGE"' not in block
+    assert immediate < reclaim < measure < threshold < preopen
+    block = source[immediate:threshold]
+    assert 'RC6_PREOPEN_SAFE_RECLAIM=DEFERRED_UNVERIFIED' in block
+    assert "shutil.rmtree" not in block
+    assert "rm -rf" not in block
+    assert "docker image rm" not in block
     assert "rc6-disk-housekeeping-v1.json" in block
     assert "post_cleanup_min_free_bytes" in block
-    assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"' in block
 
 
 def test_deploy_records_byma_source_alert_without_network_before_dry_preopen():
     source = _deploy()
+    reclaim = source.index('RC6_PREOPEN_SAFE_RECLAIM=DEFERRED_UNVERIFIED')
     refresh = source.index('RC6_BYMA_MORNING_REFRESH=AMBER')
     preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
-    assert refresh < preopen
-    block = source[source.index('RC6_PREOPEN_SAFE_RECLAIM=GREEN'):preopen]
+    assert reclaim < refresh < preopen
+    block = source[reclaim:preopen]
     assert 'PROVIDER_REFRESH_DEFERRED_TO_INDEPENDENT_TIMER' in block
     assert 'python3 "$REPO/scripts/rc6_byma_morning_pipeline.py"' not in block

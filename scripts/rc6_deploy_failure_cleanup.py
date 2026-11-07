@@ -33,23 +33,12 @@ class CleanupRejected(RuntimeError):
 
 @contextmanager
 def promotion_lock():
-    # The promoter creates the shared lock as the SSH owner. Do not create a
-    # root-owned replacement when transfer fails before promotion starts.
-    try:
-        fd = os.open(REMOTE_ROOT / 'porota-rc6-deploy-v2.lock', os.O_RDONLY | os.O_NOFOLLOW)
-    except FileNotFoundError:
-        yield
-        return
-    try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise CleanupRejected('PROMOTION_LOCK_INVALID')
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise CleanupRejected('PROMOTION_STILL_RUNNING') from exc
-        yield
-    finally:
-        os.close(fd)
+    # The legacy /tmp lock is neither the real root-owned /run/lock mutex
+    # nor an authorization for cleanup. Missing used to yield (fail open).
+    # The delegated RO 2FD protocol is under separate review and is NOT
+    # enabled until the wrapper and physical permissions are proved.
+    raise CleanupRejected('PROMOTION_MUTEX_DELEGATED_PROOF_UNAVAILABLE')
+    yield
 
 
 def docker(*args):
@@ -182,67 +171,25 @@ def cleanup(candidate_sha, run_id=None, attempt=None):
     # Never follow a substituted staging root, even if no Docker mount uses it.
     if staging.is_symlink() or staging.resolve().parent != REMOTE_ROOT.resolve():
         raise CleanupRejected('STAGING_PATH_INVALID')
+    # Shared-host fallback: there is no independent root-issued receipt
+    # attesting ownership of the current exact attempt. In particular, the
+    # path name or a DO_USER-written receipt is forgeable by another app with
+    # the same UID. Before provenance is solved, do not call Docker or delete
+    # anything, even when the candidate's tag names appear to match.
     disk_before = shutil.disk_usage('/').free
-    removed, retained, errors = [], [], []
-    retained_reasons = {}
-    # Inspection failure is blocking: an unknown Docker owner is not "unused".
-    container_inventory()
-    host_mountpoints()  # Fail before any deletion if the host inventory is unreadable.
-    for tag in owned_tags(candidate_sha):
-        try:
-            current_id = image_id(tag)
-            if current_id is None:
-                continue
-            referenced, _ = container_inventory()
-            if current_id in referenced or current_id == image_id(STABLE_IMAGE):
-                retained.append(tag)
-                retained_reasons[tag] = ('CONTAINER_REFERENCED' if current_id in referenced
-                                         else 'STABLE_IMAGE_ALIAS')
-                continue
-            if not image_aliases(current_id, candidate_sha):
-                retained.append(tag)
-                retained_reasons[tag] = 'NONCANDIDATE_ALIAS_OR_DIGEST'
-                continue
-            # No force: Docker refuses deletion if a new owner references the
-            # image between inspection and removal. Never remove a stable tag.
-            referenced, _ = container_inventory()
-            if current_id in referenced or not image_aliases(current_id, candidate_sha):
-                raise CleanupRejected('IMAGE_OWNERSHIP_CHANGED')
-            docker('image', 'rm', tag)
-            removed.append(tag)
-        except (CleanupRejected, subprocess.TimeoutExpired):
-            errors.append('IMAGE_CLEANUP_FAILED')
-    # On a shared host an image ID can have untracked foreign owners through
-    # cached layers or a reused digest. Never `docker image rm` by ID; if the
-    # last exact candidate tag was removed, Docker reclaims only what is safe.
-    try:
-        _, mounts = container_inventory()
-        # A non-Docker mount nested in staging could make rmtree traverse
-        # someone else's data.  Recheck immediately before deleting the tree.
-        points = host_mountpoints()
-        if any(point == staging or staging in point.parents for point in points):
-            errors.append('STAGING_HOST_MOUNTPOINT')
-        elif any(overlaps(staging.resolve(), mount) for mount in mounts):
-            errors.append('STAGING_REFERENCED_BY_CONTAINER')
-        elif staging.exists():
-            if not staging.is_dir():
-                raise CleanupRejected('STAGING_NOT_DIRECTORY')
-            shutil.rmtree(staging)
-    except (CleanupRejected, subprocess.TimeoutExpired, OSError):
-        errors.append('STAGING_CLEANUP_FAILED')
     disk_after = shutil.disk_usage('/').free
     return {
         'schema': 'POROTA_DEPLOY_FAILURE_CLEANUP_V1',
         'candidate_sha': candidate_sha,
-        'status': 'RED' if errors else 'GREEN',
-        'removed_tags': removed, 'retained_tags': retained,
+        'status': 'RED',
+        'removed_tags': [], 'retained_tags': [],
         'removed_image_ids': [],
-        'retained_reasons': retained_reasons,
-        'staging_removed': not staging.exists(),
+        'retained_reasons': {},
+        'staging_removed': False,
         'disk_before': disk_before, 'disk_after': disk_after,
-        'space_recovered': disk_after - disk_before,
+        'space_recovered': 0,
         'shared_cache_action': 'UNTOUCHED_NO_HOST_BUILD',
-        'errors': errors,
+        'errors': ['STAGING_CLEANUP_DEFERRED_UNVERIFIED'],
     }
 
 
@@ -262,7 +209,9 @@ def main(argv=None):
                   'errors': [str(exc) if isinstance(exc, CleanupRejected) else type(exc).__name__]}
     report['host_disk_before'] = host_disk_before
     report['host_disk_after'] = shutil.disk_usage('/').free
-    report['host_space_recovered'] = report['host_disk_after'] - host_disk_before
+    # This fail-closed helper performed no deletion. Other host activity can
+    # change disk free bytes while it exits; never attribute that to Porota.
+    report['host_space_recovered'] = 0
     print(json.dumps(report, sort_keys=True))
     return 0 if report['status'] == 'GREEN' else 2
 

@@ -19,10 +19,47 @@ import cf_intraday_scalping as scalping
 DAY = datetime.fromisoformat("2026-10-05T10:46:00-03:00")
 
 
+def synthetic_ppi_attested_raw(record):
+    """OFFHOST raw5 evidence; a request-only field cannot grant PPI readiness."""
+    return {**(record.get("raw") or {}), "_discovery_source": "PPI_PRIMARY",
+            "ticker": record["ticker"], "type": record["instrument_type"],
+            "market": record["market"], "currency": record["currency"],
+            "settlement": record["settlement"]}
+
+
 def instrument(ticker="GGAL", **changes):
-    return with_synthetic_volume_contract({"ticker": ticker, "instrument_type": "ACCIONES", "market": "BYMA",
-            "currency": "ARS", "settlement": "A-24HS", "capability": "READY_PAPER_SPOT",
-            "status": "AVAILABLE", **changes})
+    record = {"ticker": ticker, "instrument_type": "ACCIONES", "market": "BYMA",
+              "currency": "ARS", "settlement": "A-24HS", "capability": "READY_PAPER_SPOT",
+              "status": "AVAILABLE", **changes}
+    return with_synthetic_volume_contract({**record, "raw": synthetic_ppi_attested_raw(record)})
+
+
+@pytest.mark.parametrize("source,missing_raw,reason", [
+    ("PPI_FIELD", True, "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"),
+    ("REQUEST_CANDIDATE", False, "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"),
+])
+def test_unattested_request_or_missing_raw_fivekey_is_not_scanner_ready(
+        tmp_path, source, missing_raw, reason):
+    record = instrument()
+    raw = dict(record["raw"])
+    if missing_raw:
+        raw.pop("settlement")
+    store = PaperStore(str(tmp_path / "negative-paper.db"))
+    observer._support_schema(store)
+    catalog.init_schema(store)
+    scalping.init_schema(store)
+    with store.connect() as connection:
+        catalog.persist(connection, {**record, "settlement_source": source,
+            "description": "offline negative fixture", "last_seen_at": DAY.isoformat(),
+            "run_id": "issue465-negative", "raw": raw})
+        catalog.sync_candidate_universe(connection, DAY.isoformat())
+        gate = connection.execute("""SELECT can_simulate,detail FROM candidate_identity_v2
+            WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
+            (record["ticker"], record["instrument_type"], record["market"],
+             record["currency"], record["settlement"])).fetchone()
+    assert gate[0] == 0 and reason in gate[1]
+    selected, _, _ = scalping.select_batch(store, limit=8)
+    assert selected == []
 
 
 def payload(at):
@@ -54,7 +91,7 @@ class Harness:
             for row in self.records:
                 catalog.persist(c, {**row, "settlement_source": "PPI_FIELD",
                     "description": "offline F-02 fixture", "last_seen_at": self.at.isoformat(),
-                    "run_id": "issue465", "raw": {**row.get("raw", {}), "_discovery_source": "PPI_PRIMARY"}})
+                    "run_id": "issue465", "raw": synthetic_ppi_attested_raw(row)})
             catalog.sync_candidate_universe(c, self.at.isoformat())
         harness = self
 
@@ -565,7 +602,7 @@ def test_catalog_rebind_of_same_wire_request_requires_readonly_fresh_warmup(tmp_
         with worker.store.connect() as c:
             c.execute("UPDATE financial_instrument_catalog SET status='RETIRED'")
             catalog.persist(c, {**replacement, "settlement_source": "PPI_FIELD", "description": "catalog rebind",
-                "last_seen_at": worker.at.isoformat(), "run_id": "issue465-rebind", "raw": {"_discovery_source": "PPI_PRIMARY"}})
+                "last_seen_at": worker.at.isoformat(), "run_id": "issue465-rebind", "raw": synthetic_ppi_attested_raw(replacement)})
             catalog.sync_candidate_universe(c, worker.at.isoformat())
         worker.records = [replacement]
     h.before_cycle = rebind
@@ -786,7 +823,7 @@ def test_empty_native_response_then_catalog_rebind_preserves_same_wire_recovery_
         with worker.store.connect() as c:
             c.execute("UPDATE financial_instrument_catalog SET status='RETIRED'")
             catalog.persist(c, {**replacement, "settlement_source": "PPI_FIELD", "description": "empty then rebind",
-                "last_seen_at": worker.at.isoformat(), "run_id": "issue465-empty-rebind", "raw": {"_discovery_source": "PPI_PRIMARY"}})
+                "last_seen_at": worker.at.isoformat(), "run_id": "issue465-empty-rebind", "raw": synthetic_ppi_attested_raw(replacement)})
             catalog.sync_candidate_universe(c, worker.at.isoformat())
         worker.records = [replacement]
     h.before_cycle = rebind
@@ -854,7 +891,7 @@ def test_process_death_after_durable_probe_start_renews_cooldown_without_double_
         with h.store.connect() as c:
             c.execute("UPDATE financial_instrument_catalog SET status='RETIRED'")
             catalog.persist(c, {**replacement, "settlement_source": "PPI_FIELD", "description": "crash rebind",
-                "last_seen_at": probe_at.isoformat(), "run_id": "issue465-crash-rebind", "raw": {"_discovery_source": "PPI_PRIMARY"}})
+                "last_seen_at": probe_at.isoformat(), "run_id": "issue465-crash-rebind", "raw": synthetic_ppi_attested_raw(replacement)})
             catalog.sync_candidate_universe(c, probe_at.isoformat())
         h.records = [replacement]
     def interrupted(_worker, _request):

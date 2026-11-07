@@ -39,7 +39,9 @@ def runtime_truth() -> dict:
     process = str(row.get("process_state") or "UNKNOWN").upper()
     session = str(row.get("session_state") or "UNKNOWN").upper()
     ppi_auth = str(row.get("ppi_auth") or "UNKNOWN").upper()
-    real_orders = int(row.get("real_orders_sent") or 0)
+    # Canonical projection retains missing/invalid evidence as None. Do not
+    # reconstruct a false zero even if a caller supplies a malformed row.
+    real_orders = projection.verified_order_counter(row.get("real_orders_sent"))
     truth = {
         "source": "observer_state",
         "mode": mode,
@@ -88,12 +90,14 @@ def _truth_banner() -> str:
     else:
         session_label = "MERCADO CERRADO / SIN EJECUCIÓN DE MERCADO"
     css = "paper-notice" if truth["real_orders_sent"] == 0 else "paper-warning"
+    counter_label = (str(truth["real_orders_sent"])
+                     if truth["real_orders_sent"] is not None else "NO_VERIFICADO")
     return (
         f"<div id='porota-runtime-truth' class='{css}'>"
         f"<b>Verdad runtime:</b> modo {bg._e(truth['mode'])} · ejecución {bg._e(truth['execution'])} · "
         f"proceso {bg._e(truth['process_state'])} · sesión {bg._e(truth['session_state'])} ({session_label}) · "
         f"PPI auth {bg._e(truth['ppi_auth'])} · posiciones abiertas {truth['open_positions']} · "
-        f"órdenes reales observadas <b>{truth['real_orders_sent']}</b>. "
+        f"órdenes reales observadas <b>{bg._e(counter_label)}</b>. "
         f"<span class='paper-muted'>Fuente: observer_state · pulso {bg._local_time(truth['heartbeat_at'])}.</span>"
         "</div>"
     )

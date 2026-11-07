@@ -8,6 +8,14 @@ WORKFLOWS = REPO / ".github" / "workflows"
 CANONICAL = WORKFLOWS / "porota-deploy-v2-promote.yml"
 
 
+def _final_housekeeping_green_echo_index(text: str) -> int:
+    # The earlier promotion log parser also contains this marker as an AWK
+    # regex. Locate the actual final success echo, not that regex.
+    marker = 'echo "RC6_FINAL_HOUSEKEEPING=GREEN|'
+    assert text.count(marker) == 1
+    return text.index(marker)
+
+
 def test_canonical_deploy_checks_disk_before_frozen_artifact_transfer() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
     guard = text.index("- name: Dynamic pre-transfer disk guard and conditional safe cleanup")
@@ -80,9 +88,11 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
 def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
     native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
-    cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
-    final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
-    assert native < cleanup < final
+    compatibility = text.index('print("CRITICAL_IMAGE_COMPATIBILITY=GREEN")', native)
+    audit = text.index('sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py"', compatibility)
+    cleanup = _final_housekeeping_green_echo_index(text)
+    final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'", cleanup)
+    assert native < compatibility < audit < cleanup < final
     tail = text[native:cleanup + 200]
     assert "--mode audit --preserve-backups" in tail
     assert "--mode cleanup" not in tail
@@ -107,7 +117,7 @@ def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> N
 def test_final_cleanup_reconciles_critical_approval_and_uses_provenance_guard() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
     native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
-    cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
+    cleanup = _final_housekeeping_green_echo_index(text)
     tail = text[native:cleanup + 400]
 
     assert "CRITICAL_IMAGE_COMPATIBILITY=GREEN" in tail

@@ -108,8 +108,17 @@ def _action4_section():
     except (OSError, ValueError, json.JSONDecodeError):
         return ("<section class='paper-card'><h2>Action 4 — auditoría diaria de la rueda</h2>"
                 "<p class='paper-warning'>Aún no hay una auditoría Action 4 publicada. Se mostrará al finalizar la próxima corrida diaria; no se completan datos con supuestos.</p></section>")
-    report = payload.get("dashboard_daily_report") if isinstance(payload.get("dashboard_daily_report"), dict) else {}
-    separation = payload.get("separation") if isinstance(payload.get("separation"), dict) else {}
+    separation = payload.get("separation") if isinstance(payload, dict) else None
+    report = payload.get("dashboard_daily_report") if isinstance(payload, dict) else None
+    counts = (separation.get("executed_closed"), separation.get("opened_simulated")) \
+        if isinstance(separation, dict) else ()
+    if (not isinstance(payload, dict) or payload.get("status") != "PAPER_READ_ONLY"
+            or not action4_audit.published_audit_is_safe(payload)
+            or not isinstance(report, dict) or not counts
+            or any(type(value) is not int or value < 0 for value in counts)):
+        return ("<section class='paper-card'><h2>Action 4 — auditoría diaria de la rueda</h2>"
+                "<p class='paper-warning'><b>NO_VERIFICADO:</b> la auditoría publicada no acredita "
+                "PAPER/0 o sus conteos; no se exhiben indicadores verdes de esa fuente.</p></section>")
     safety = payload.get("safety") if isinstance(payload.get("safety"), dict) else {}
     lessons = report.get("lessons") if isinstance(report.get("lessons"), list) else []
     cards = (

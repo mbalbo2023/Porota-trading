@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tarfile
 import tempfile
 from types import SimpleNamespace
@@ -39,6 +40,9 @@ class HostMutexTests(unittest.TestCase):
         read_barrier = mutex._read_barrier
         open_lock = mutex.open_lock
         return (patch.object(mutex.os, 'geteuid', return_value=0),
+                # Legacy lifecycle algorithm coverage ONLY. Default entry
+                # veto is exercised separately by A865ContainmentTests.
+                patch.object(mutex, 'require_migrated_consumer_protocol'),
                 patch.object(mutex.pwd, 'getpwnam', return_value=fake_user),
                 patch.object(mutex, '_enable_subreaper'),
                 patch.object(mutex, '_drain_children'),
@@ -51,7 +55,7 @@ class HostMutexTests(unittest.TestCase):
     def acquire(self):
         return mutex.open_lock(self.root, os.geteuid())
 
-    def test_a779_orphan_gc_direct_inherited_fd_no_new_barrier(self):
+    def test_dormant_orphan_algorithm_never_delegates_owner_or_ambient_claims(self):
         from contextlib import ExitStack
         calls = []
         def fake_run(cmd, **kwargs):
@@ -66,11 +70,46 @@ class HostMutexTests(unittest.TestCase):
             owner_calls = [(cmd, kwargs) for cmd, kwargs in calls
                            if cmd == ['python3', '-B', '-']]
             self.assertEqual(len(owner_calls), 1)
-            proof = json.loads(owner_calls[0][1]['env']['RC6_DEPLOY_MUTEX_PROOF'])
-            self.assertEqual(proof, {'candidate': SHA, 'run': RUN,
-                                     'attempt': ATTEMPT, 'phase': 'orphan_gc'})
-            self.assertEqual(owner_calls[0][1]['pass_fds'],
-                             (int(owner_calls[0][1]['env']['RC6_DEPLOY_MUTEX_FD']),))
+            self.assertNotIn('RC6_DEPLOY_MUTEX_PROOF', owner_calls[0][1]['env'])
+            self.assertNotIn('RC6_DEPLOY_MUTEX_FD', owner_calls[0][1]['env'])
+            self.assertEqual(owner_calls[0][1]['pass_fds'], ())
+
+    def test_real_child_cannot_unlock_private_owner_even_if_veto_later_migrates(self):
+        from contextlib import ExitStack
+        owner = self.acquire()
+        output = self.root / 'child-observation.json'
+        code = '''import fcntl,json,os,sys
+slot=int(os.environ['A865_TEST_OWNER_SLOT'])
+try:
+ fcntl.flock(slot,fcntl.LOCK_UN); usable=True
+except OSError:
+ usable=False
+probe=os.open(sys.argv[1],os.O_RDONLY)
+try:
+ try:
+  fcntl.flock(probe,fcntl.LOCK_EX|fcntl.LOCK_NB); acquired=True
+ except BlockingIOError:
+  acquired=False
+finally:
+ os.close(probe)
+with open(sys.argv[2],'w') as handle:
+ json.dump({'owner_usable':usable,'probe_acquired':acquired,
+            'legacy_fd':'RC6_DEPLOY_MUTEX_FD' in os.environ,
+            'legacy_proof':'RC6_DEPLOY_MUTEX_PROOF' in os.environ},handle)
+'''
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex, 'open_lock', return_value=owner))
+            stack.enter_context(patch.object(mutex, '_contract_writers', return_value=set()))
+            stack.enter_context(patch.dict(os.environ, {
+                'A865_TEST_OWNER_SLOT': str(owner),
+                'RC6_DEPLOY_MUTEX_FD': str(owner),
+                'RC6_DEPLOY_MUTEX_PROOF': 'untrusted ambient claim'}))
+            self.assertEqual(mutex.run(self.args('classify',
+                [sys.executable, '-B', '-c', code, str(self.lock), str(output)])), 0)
+        self.assertEqual(json.loads(output.read_text()), {
+            'owner_usable': False, 'probe_acquired': False,
+            'legacy_fd': False, 'legacy_proof': False})
 
     def test_a779_orphan_gc_requires_no_prior_barrier_and_exact_command(self):
         from contextlib import ExitStack
@@ -693,6 +732,147 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertNotIn("rm -rf '$REMOTE_DIR'", by_id['transfer'])
         self.assertIn('$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT', by_id['promotion'])
         self.assertNotIn("! -path \"$REMOTE_DIR\" -exec rm -rf", by_id['promotion'])
+
+
+class A865ContainmentTests(unittest.TestCase):
+    """Default executable boundaries deny legacy capabilities, without host I/O."""
+
+    def test_unmigrated_wrapper_never_opens_lock_or_launches_child(self):
+        # Removing the entry veto would re-expose every arbitrary child to an
+        # inherited owner OFD. No real root/lock/child is used in this test.
+        with patch.object(mutex.os, 'geteuid', return_value=0), \
+             patch.object(mutex, 'open_lock', side_effect=AssertionError(
+                 'UNMIGRATED_WRAPPER_OPENED_PHYSICAL_LOCK')) as acquire, \
+             patch.object(mutex.subprocess, 'run') as child:
+            for phase in sorted(mutex.PHASES):
+                with self.subTest(phase=phase):
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'MUTEX_CONSUMER_PROTOCOL_UNMIGRATED'):
+                        mutex.run(['nobody', 'root', '--attempt', SHA, RUN,
+                                   ATTEMPT, '--phase', phase, 'true'])
+            self.assertEqual(acquire.call_count, 0)
+            self.assertEqual(child.call_count, 0)
+
+    def test_pretransfer_default_returns_deferred_without_query_or_delete(self):
+        from scripts import rc6_pretransfer_image_cleanup as clean
+        with patch.object(clean, 'safety', return_value=[]), \
+             patch.object(clean, 'docker', return_value='') as docker:
+            record = clean.cleanup()
+        self.assertEqual(record['status'], 'RED')
+        self.assertEqual(record['reason'], 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+        self.assertEqual(record['removed_tags'], [])
+        self.assertEqual(record['space_recovered'], 0)
+        self.assertEqual(docker.call_count, 0)
+
+    def test_last_window_retarget_adversary_never_reaches_remove(self):
+        from scripts import rc6_pretransfer_image_cleanup as clean
+        image = 'sha256:' + '1' * 64
+        foreign = 'sha256:' + '2' * 64
+        tag = 'porota-predeploy-v2:' + SHA
+        target = {tag: image}
+        removed = []
+        def daemon(*args):
+            if args == ('image', 'ls', '-aq', '--no-trunc'):
+                return image
+            if args == ('ps', '-aq', '--no-trunc'):
+                return ''
+            if args[:2] == ('image', 'inspect'):
+                return '|'.join(map(json.dumps, [image, [tag], [], {
+                    'porota.predeploy': 'v2', 'porota.commit': SHA}]))
+            if args == ('image', 'rm', tag):
+                # Scheduled second-client retarget immediately before rm(TAG).
+                target[tag] = foreign
+                removed.append(target.pop(tag))
+                return tag
+            raise AssertionError(args)
+        with patch.object(clean, 'safety', return_value=[]), \
+             patch.object(clean, 'docker', side_effect=daemon):
+            record = clean.cleanup()
+        self.assertEqual(record['status'], 'RED')
+        self.assertEqual(removed, [])
+        self.assertEqual(target, {tag: image})
+
+    def test_offline_entries_deny_before_filesystem_or_docker(self):
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        for clean in (current, failed):
+            with self.subTest(module=clean.__name__), \
+                 patch.object(clean, 'ROOT', Path('/nonexistent-a865-offhost')), \
+                 patch.object(clean, 'docker') as docker:
+                with self.assertRaisesRegex(
+                        RuntimeError, 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED'):
+                    clean.cleanup()
+                self.assertEqual(docker.call_count, 0)
+
+    def test_direct_docker_wrappers_reject_mutators_before_subprocess(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        commands = [('image', 'rm', 'porota-predeploy-v2:' + SHA),
+                    ('tag', 'old', 'new'), ('system', 'prune'),
+                    ('rm', 'foreign-container'), ('volume', 'rm', 'foreign'),
+                    ('network', 'rm', 'foreign'), ('exec', 'foreign', 'true')]
+        for clean in (pretransfer, current, failed):
+            for command in commands:
+                with self.subTest(module=clean.__name__, command=command), \
+                     patch.object(clean.subprocess, 'run', return_value=
+                                  SimpleNamespace(returncode=0, stdout='')) as process:
+                    with self.assertRaisesRegex(
+                            (RuntimeError, ValueError), 'DOCKER_MUTATION_UNAUTHORIZED'):
+                        clean.docker(*command)
+                    self.assertEqual(process.call_count, 0)
+
+    def test_same_repository_digest_without_exact_receipt_is_protected(self):
+        from scripts import rc6_pretransfer_image_cleanup as clean
+        image = 'sha256:' + '1' * 64
+        with patch.object(clean, 'references', return_value=set()), \
+             patch.object(clean, 'inspect_image', return_value=(
+                 ['porota-predeploy-v2:' + SHA],
+                 ['porota-predeploy-v2@sha256:' + 'f' * 64],
+                 {'porota.predeploy': 'v2', 'porota.commit': SHA})):
+            self.assertEqual(clean.eligibility(image)[1],
+                             'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED')
+
+    def test_offline_inspectors_do_not_attest_unbound_repository_digests(self):
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        record = {'Id': failed.IMAGE, 'RepoTags': list(failed.TAGS),
+                  'RepoDigests': ['porota-predeploy-v2@sha256:' + 'f' * 64],
+                  'Config': {'Labels': {'porota.predeploy': 'v2',
+                                        'porota.commit': failed.FAILED}}}
+        with self.subTest(consumer='failed'), \
+             patch.object(failed, 'docker', return_value=json.dumps([record])), \
+             patch.object(failed, 'references', return_value=set()):
+            with self.assertRaisesRegex(ValueError, 'ALIASED'):
+                failed.eligible_tags()
+        with self.subTest(consumer='current'):
+            with self.assertRaisesRegex(ValueError, 'OWNERSHIP_UNVERIFIED'):
+                current._require_candidate_oci(record, failed.FAILED)
+
+    def test_finalizer_old_protocol_denies_before_reading_supplied_fd(self):
+        from scripts import porota_apply_host_control_plane_v2 as host
+        with patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': '9'}), \
+             patch.object(host.os, 'fstat') as inspect_fd:
+            with self.assertRaisesRegex(
+                    RuntimeError, 'MUTEX_CONSUMER_PROTOCOL_UNMIGRATED'):
+                host._require_inherited_finalizer_mutex()
+            self.assertEqual(inspect_fd.call_count, 0)
+
+    def test_helper_cli_launch_forms_emit_red_receipt_and_nonzero_exit(self):
+        for name, args in (
+                ('scripts.rc6_offline_current_image_cleanup', ['2147483648']),
+                ('scripts.rc6_offline_failed_image_cleanup', []),
+                ('scripts.rc6_pretransfer_image_cleanup', [])):
+            for launch in (['-m', name], [name.replace('.', '/') + '.py']):
+                with self.subTest(module=name, launch=launch):
+                    result = subprocess.run([sys.executable, '-B', *launch, *args],
+                        cwd=Path(__file__).resolve().parents[1],
+                        capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    record = json.loads(result.stdout)
+                    self.assertEqual(record['status'], 'RED')
+                    self.assertEqual(record['removed_tags'], [])
+                    self.assertEqual(record['space_recovered'], 0)
 
 
 if __name__ == '__main__':

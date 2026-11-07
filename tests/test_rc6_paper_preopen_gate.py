@@ -288,6 +288,52 @@ def test_preopen_runtime_has_no_global_scalping_minimum_for_other_families():
     assert preopen.runtime_contracts(db, DAY)["state"] == "RED"  # Worker safety.
 
 
+@pytest.mark.parametrize(("counter", "expected"), [
+    pytest.param(0, "GREEN", id="sqlite-integer-zero"),
+    pytest.param(1, "RED", id="sqlite-integer-nonzero"),
+    pytest.param(None, "RED", id="sqlite-null"),
+    pytest.param("0", "RED", id="sqlite-text-zero"),
+    pytest.param(0.0, "RED", id="sqlite-real-zero"),
+    pytest.param(False, "RED", id="python-bool-false"),
+    pytest.param("invalid", "RED", id="sqlite-invalid-text"),
+])
+def test_preopen_caucion_runtime_accepts_only_real_order_integer_zero(counter, expected):
+    import rc6_preopen as preopen
+
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE candidate_identity_v2(instrument_type TEXT,status TEXT,can_simulate INTEGER)")
+    db.execute("INSERT INTO candidate_identity_v2 VALUES('FUTUROS','AVAILABLE',1)")
+    for table in ("paper_positions", "paper_cauciones"):
+        db.execute(f"CREATE TABLE {table}(id INTEGER)")
+    for table in ("intraday_scalping_worker_state", "paper_caucion_cash_sweep_state",
+                  "paper_supervisor_state"):
+        # BLOB affinity preserves SQLite's storage class rather than coercing
+        # TEXT '0' or REAL 0.0 into an INTEGER zero on INSERT.
+        db.execute(f"CREATE TABLE {table}(id INTEGER PRIMARY KEY,heartbeat_at TEXT,"
+                   "state TEXT,real_orders_sent BLOB,routes_json TEXT)")
+        value = counter if table == "paper_caucion_cash_sweep_state" else 0
+        state = "WAITING_WINDOW" if table == "paper_caucion_cash_sweep_state" else "RUNNING"
+        db.execute(f"INSERT INTO {table} VALUES(1,?,?,?,'[]')",
+                   (DAY.isoformat(), state, value))
+    if counter is False:
+        # SQLite stores Python booleans as INTEGER. Inject the bool only at
+        # the Python row boundary to cover adapters/foreign SQLite wrappers.
+        def typed_row(cursor, raw):
+            names = [column[0] for column in cursor.description]
+            if ("real_orders_sent" in names and "state" in names
+                    and raw[names.index("state")] == "WAITING_WINDOW"):
+                index = names.index("real_orders_sent")
+                raw = (*raw[:index], False, *raw[index + 1:])
+            return sqlite3.Row(cursor, raw)
+        db.row_factory = typed_row
+    report = preopen.runtime_contracts(db, DAY)
+    assert report["workers"]["caucion_cash_sweep"]["state"] == expected
+    assert report["state"] == expected
+    assert report["workers"]["scalping"]["state"] == "GREEN"
+    assert report["workers"]["supervisor"]["state"] == "GREEN"
+
+
 def test_preopen_catalog_advisory_amber_does_not_enter_global_red_checks(monkeypatch, capsys):
     import rc6_preopen as preopen
     from types import SimpleNamespace

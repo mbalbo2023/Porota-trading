@@ -446,7 +446,7 @@ def _health(store, component, state, detail, source, success=False):
         try:
             from rc6_operational_alerts import enqueue_transition
             row=c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
-            enqueue_transition(c,component=component,previous_state=previous_state,state=state,detail=detail,checked_at=checked,last_success_at=last_success,source=source,real_orders_sent=(row[0] if row else 0))
+            enqueue_transition(c,component=component,previous_state=previous_state,state=state,detail=detail,checked_at=checked,last_success_at=last_success,source=source,real_orders_sent=(row[0] if row else None))
         except Exception as exc:
             c.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) VALUES(?,?,?,?,?)",(checked,'OPERATIONAL_ALERT_BRIDGE','OPERATIONAL_ALERT_ERROR',None,type(exc).__name__))
 

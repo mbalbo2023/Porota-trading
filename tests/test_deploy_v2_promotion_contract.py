@@ -140,10 +140,12 @@ def test_preclean_deferred_receipt_executes_and_never_implies_image_deletion():
 
 
 def test_deferred_old_critical_and_foreign_alias_are_never_removed(monkeypatch):
-    """Reuse the canonical Docker fake; execute the real bounded cleanup code."""
-    from types import SimpleNamespace
+    """Unproven Docker exclusivity blocks cleanup before any Docker access."""
     from scripts import rc6_pretransfer_image_cleanup as clean
     from test_rc6_pretransfer_image_cleanup import Docker, IMG, TAG
+
+    def forbidden_inventory(*_args):
+        raise AssertionError('DOCKER_INVENTORY_BEFORE_EXCLUSIVE_NAMESPACE')
 
     for protection in ('stopped_critical', 'foreign_alias'):
         backend = Docker()
@@ -153,11 +155,12 @@ def test_deferred_old_critical_and_foreign_alias_are_never_removed(monkeypatch):
             backend.images[IMG][0].append('boca:beta')
         with monkeypatch.context() as patch:
             patch.setattr(clean, 'docker', backend)
-            patch.setattr(clean, 'safety', lambda: ['unchanged'])
-            patch.setattr(clean.shutil, 'disk_usage',
-                          lambda _: SimpleNamespace(free=1234))
+            patch.setattr(clean, 'safety', forbidden_inventory)
+            patch.setattr(clean.shutil, 'disk_usage', forbidden_inventory)
             report = clean.cleanup()
-        assert report['status'] == 'GREEN'
+        assert report['status'] == 'RED'
+        assert report['reason'] == 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED'
         assert report['removed_tags'] == []
+        assert report['space_recovered'] == 0
         assert TAG in backend.images[IMG][0]
-        assert not any(command[:2] == ('image', 'rm') for command in backend.calls)
+        assert backend.calls == []

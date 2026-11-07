@@ -54,6 +54,9 @@ def host(monkeypatch):
     backend = Docker()
     monkeypatch.setattr(clean, 'docker', backend)
     monkeypatch.setattr(clean, 'safety', lambda: ['unchanged'])
+    # Dormant algorithm/identity coverage, not a namespace authority fixture.
+    # Default containment is independently exercised by stdlib A865 tests.
+    monkeypatch.setattr(clean, 'require_exclusive_docker_namespace', lambda: None)
     monkeypatch.setattr(clean.shutil, 'disk_usage', lambda _: SimpleNamespace(free=1234))
     return backend
 
@@ -165,7 +168,7 @@ def test_standalone_tmp_lock_cannot_authorize_cleanup(tmp_path, host, monkeypatc
         assert clean.main() == 2
     # An unrelated /tmp flock is never an owner certificate. The helper must
     # reject before Docker even if that decoy lock happens to be busy.
-    assert json.loads(capsys.readouterr().out)['reason'] == 'GOVERNED_MUTEX_FD_MISSING'
+    assert json.loads(capsys.readouterr().out)['reason'] == 'MUTEX_CONSUMER_PROTOCOL_UNMIGRATED'
     assert host.calls == []
 
 
@@ -204,8 +207,9 @@ def test_exact_workflow_wires_checkout_helper_before_final_disk_gate():
     steps = yaml.safe_load(workflow.read_text())['jobs']['promote']['steps']
     block = next(step['run'] for step in steps if step.get('id') == 'diskguard')
     assert 'base64 -w0 scripts/rc6_pretransfer_image_cleanup.py' in block
-    assert 'sudo -n timeout 120 python3 -c' in block
-    assert block.index('sudo -n timeout 120 python3 -c') < block.index('RC6_DISK_PRETRANSFER_GATE=GREEN')
+    assert 'sudo -n -C "$((RC6_GOVERNED_FD + 1))" env' in block
+    assert 'timeout 120 python3 -c' in block
+    assert block.index('timeout 120 python3 -c') < block.index('RC6_DISK_PRETRANSFER_GATE=GREEN')
     assert 'docker system prune' not in block and 'docker image prune -af' not in block
     assert subprocess.run(['bash','-n'], input=block, capture_output=True, text=True).returncode == 0
 
@@ -217,7 +221,7 @@ def test_predeploy_v2_artifact_emits_exact_immutable_oci_labels():
     assert 'porota.predeploy=v2' in source
 
 
-def test_partial_removal_error_keeps_inventory_and_reclaimed_measurement(host, monkeypatch, tmp_path, capsys):
+def test_default_cli_protocol_veto_prevents_even_partial_removal(host, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(clean, 'LOCK', tmp_path/'absent')
     original = host.__call__
     def command(*args):
@@ -226,8 +230,10 @@ def test_partial_removal_error_keeps_inventory_and_reclaimed_measurement(host, m
     monkeypatch.setattr(clean, 'docker', command)
     assert clean.main() == 2
     report = json.loads(capsys.readouterr().out)
-    assert report['removed_tags'] == [TAG] and report['inventory']
-    assert report['disk_before'] == report['disk_after'] and report['status'] == 'RED'
+    assert report['removed_tags'] == [] and report['status'] == 'RED'
+    assert report['space_recovered'] == 0
+    assert report['reason'] == 'MUTEX_CONSUMER_PROTOCOL_UNMIGRATED'
+    assert TAG in host.images[IMG][0]
 
 
 def test_new_external_alias_between_inspections_blocks(host, monkeypatch):
@@ -242,10 +248,11 @@ def test_new_external_alias_between_inspections_blocks(host, monkeypatch):
     assert TAG in host.images[IMG][0]
 
 
-def test_same_repository_digest_does_not_make_unused_candidate_immortal(host):
+def test_same_repository_digest_without_attempt_provenance_is_retained(host):
     host.images[IMG] = ([TAG], ['porota-predeploy-v2@sha256:'+'f'*64])
     result = clean.cleanup()
-    assert result['removed_tags'] == [TAG] and IMG not in host.images
+    assert result['removed_tags'] == [] and IMG in host.images
+    assert result['inventory'][0]['reason'] == 'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED'
 
 
 def test_unpaired_canonical_repository_digest_still_protects_image(host):

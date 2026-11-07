@@ -34,6 +34,11 @@ def parse(value):
         return None
 
 
+def _paper_zero_counter(value) -> bool:
+    """Only a SQLite integer zero is affirmative PAPER safety evidence."""
+    return type(value) is int and value == 0
+
+
 def main() -> int:
     now = datetime.now(TZ)
     base = {
@@ -63,7 +68,8 @@ def main() -> int:
     with store.connect() as c:
         runtime=c.execute('SELECT mode,session_state,real_orders_sent FROM observer_state WHERE id=1').fetchone()
     if (not runtime or str(runtime[0]) != 'PRODUCTION_PAPER'
-            or str(runtime[1]) != 'MARKET_CLOSED' or int(runtime[2] or 0) != 0):
+            or str(runtime[1]) != 'MARKET_CLOSED'
+            or not _paper_zero_counter(runtime[2])):
         print(json.dumps(base | {'status':'BLOCKED','reason':'RUNTIME_NOT_CLOSED_PAPER_SAFE'},sort_keys=True))
         return 2
     if not _history_cutoff_repair_complete():
@@ -91,15 +97,21 @@ def main() -> int:
             recent = c.execute('''SELECT state,COUNT(*) n FROM production_history_attempts
                                   WHERE julianday(attempted_at)>=julianday(?) GROUP BY state''',
                                ((now - timedelta(minutes=30)).isoformat(),)).fetchall()
-            orders = c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0]
+            safety_row = c.execute('''SELECT mode,session_state,real_orders_sent
+                                      FROM observer_state WHERE id=1''').fetchone()
             sync=c.execute("SELECT status FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'").fetchone()
+        orders = safety_row[2] if safety_row else None
+        paper_safe_after = (safety_row is not None
+                            and safety_row[0] == 'PRODUCTION_PAPER'
+                            and safety_row[1] == 'MARKET_CLOSED'
+                            and _paper_zero_counter(orders))
         sync_state=str(sync[0]) if sync else 'NO_SYNC_EVIDENCE'
         result = base | {
-            'status': ('RED' if int(orders or 0) != 0 or any(str(r[0]) == 'ERROR' for r in recent)
+            'status': ('RED' if not paper_safe_after or any(str(r[0]) == 'ERROR' for r in recent)
                        else 'GREEN' if sync_state == 'VERDE' else 'PARTIAL'),
             'recent_attempt_states': {str(r[0]): int(r[1]) for r in recent},
             'source_sync_state': sync_state,
-            'real_orders_sent': int(orders or 0),
+            'real_orders_sent': orders if type(orders) is int else None,
         }
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0 if result['status'] == 'GREEN' else 2

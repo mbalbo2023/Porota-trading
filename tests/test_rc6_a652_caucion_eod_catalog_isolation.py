@@ -8,8 +8,13 @@ import json
 import sqlite3
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from unittest.mock import Mock, patch
+
+import pytest
+from co_market_sessions_hf6 import byma_heavy_writes_safe_now
 
 
 # Compile only these two local, side-effect-free functions; importing the full
@@ -19,6 +24,8 @@ SOURCE = Path(__file__).resolve().parents[1] / "bf_production_paper_observer.py"
 TREE = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
 DECLARATIONS = {n.name: n for n in TREE.body if isinstance(n, ast.FunctionDef)}
 ENV = {"time": time, "json": json, "sqlite3": sqlite3, "sys": sys,
+       "TZ": ZoneInfo("America/Argentina/Buenos_Aires"),
+       "byma_heavy_writes_safe_now": byma_heavy_writes_safe_now,
        "OFFHOURS_RECONCILE_SECONDS": 3600,
        "COMPLEMENTARY_RECONCILE_SECONDS": 300}
 for name in ("_periodic_complementary_reconcile", "_caucion_blocked_closed_catalog_tick"):
@@ -101,11 +108,49 @@ def test_real_periodic_called_without_reader_or_provider_catches_only_local_tool
     store = Mock()
     reconcile = Mock(return_value=0)
     release = Mock(return_value={})
+    after_floor = Mock(now=Mock(return_value=datetime(
+        2026, 11, 11, 18, 20, tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))))
     with (patch.dict(ENV, {"_reconcile_complementary_catalog": reconcile,
-                           "_release_idle_catalog_heap": release}),
+                           "_release_idle_catalog_heap": release,
+                           "datetime": after_floor}),
           patch.object(time, "time", return_value=1740000100.0)):
         assert tick(store, "CLOSED", 0.0) == 1740000100.0
     reconcile.assert_called_once_with(store)
     release.assert_called_once_with()
     store.event.assert_called_once()
     assert store.event.call_args.args[0] == "CLOSED_CATALOG_HEAP_RELEASE"
+
+
+@pytest.mark.parametrize("day,hour,minute,can_reconcile", [
+    (6, 17, 30, False),  # 06-Nov negotiated T+1; observer CLOSED is premature
+    (6, 18, 14, False),
+    (11, 17, 30, False),  # ordinary T+1 source session
+    (11, 18, 14, False),
+    (11, 18, 15, True),
+    (9, 17, 30, True),   # audited holiday may catch up technical catalog
+    (10, 17, 30, True),
+    (11, 18, 20, True),
+])
+def test_closed_catalog_defers_during_t1_but_catches_up_when_safe(
+        day, hour, minute, can_reconcile):
+    store = Mock()
+    reconcile = Mock(return_value=0)
+    release = Mock(return_value={})
+    frozen = Mock(now=Mock(return_value=datetime(
+        2026, 11, day, hour, minute,
+        tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))))
+    with (patch.dict(ENV, {"_reconcile_complementary_catalog": reconcile,
+                           "_release_idle_catalog_heap": release,
+                           "datetime": frozen}),
+          patch.object(time, "time", return_value=1740000100.0)):
+        result = tick(store, "CLOSED", 0.0)
+    if can_reconcile:
+        assert result == 1740000100.0
+        reconcile.assert_called_once_with(store)
+        release.assert_called_once_with()
+        store.event.assert_called_once()
+    else:
+        assert result == 0.0  # pending due cursor retained for catch-up
+        reconcile.assert_not_called()
+        release.assert_not_called()
+        store.event.assert_not_called()

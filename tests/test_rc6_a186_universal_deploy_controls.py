@@ -110,6 +110,12 @@ def test_byma_refresh_is_owned_by_external_producer_not_deploy():
 
 
 def test_failed_deploy_always_attempts_exact_orphan_gc_after_safe_recovery():
+    """The workflow must enter the governed orphan-GC phase, not bypass it.
+
+    The root-owned lock and ABSENT-barrier checks belong to the encoded host
+    mutex, whose actual behavior is covered by test_rc6_deploy_host_mutex.
+    Neither a shell pathname check nor a successful test is host authority.
+    """
     rows = steps()
     recovery = next(row for row in rows if row.get('id') == 'failure_cleanup')
     garbage = next(row for row in rows if row.get('id') == 'failure_orphan_cleanup')
@@ -117,10 +123,12 @@ def test_failed_deploy_always_attempts_exact_orphan_gc_after_safe_recovery():
     assert "steps.failure_cleanup.outcome == 'success'" in str(garbage.get('if'))
     block = garbage['run']
     assert 'rc6-unified-paper-deploy' not in block  # workflow's own mutex already owns the group
-    assert '/run/lock/porota-rc6-deploy-v2.lock' in block
-    assert 'test ! -e /run/lock/porota-rc6-deploy-v2-attempt.json' in block
+    assert '$RC6_MUTEX_B64' in block
+    assert "'$DO_USER' root --attempt '$CANDIDATE_SHA'" in block
+    assert '--phase orphan_gc python3 -B -' in block
     assert '< scripts/rc6_pretransfer_image_cleanup.py' in block
     assert "proof.get('runtime_unchanged') is True" in block
+    assert 'sudo -n docker' not in block and 'docker image rm' not in block
     assert 'docker image prune' not in block and 'docker system prune' not in block
     assert subprocess.run(['bash', '-n'], input=block, capture_output=True, text=True).returncode == 0
     assert subprocess.run(['bash', '-n'], input=recovery['run'], capture_output=True, text=True).returncode == 0

@@ -97,7 +97,16 @@ def test_active_deploy_candidate_cleanup_stays_bounded_and_auditable():
     diskguard = next(step['run'] for step in steps if step.get('id') == 'diskguard')
     assert 'base64 -w0 scripts/rc6_pretransfer_image_cleanup.py' in diskguard
     assert 'RC6_PRECLEAN_OLD_CRITICAL_IMAGE_DEFERRED=' in diskguard
-    assert 'sudo -n timeout 120 python3 -c' in diskguard
+    # A865b: test the admitted behavior, not the obsolete sudo argv spelling.
+    # Only this runner-local denial step executes; no downstream SSH/Docker.
+    admission = next(step for step in steps
+                     if step.get('id') == 'a806_staging_preadmission')
+    assert steps.index(admission) < next(i for i, step in enumerate(steps)
+                                        if step.get('id') == 'diskguard')
+    denial = subprocess.run(['bash', '-Eeuo', 'pipefail', '-c', admission['run']],
+                            capture_output=True, text=True, timeout=5)
+    assert denial.returncode == 79, denial.stdout + denial.stderr
+    assert 'NO_GO_PREMUTATION_STAGING_UNVERIFIED|remote_mutations=0' in denial.stdout
     assert 'RC6_SHARED_HOST_CANDIDATE_CLEANUP_RC' in source
     assert 'last-deploy-candidate-cleanup.json' in source
     assert '--mode audit --preserve-backups' in source

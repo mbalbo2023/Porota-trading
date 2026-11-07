@@ -2,6 +2,7 @@ import ast
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 import ay_dashboard_auth as auth
 import bg_paper_dashboard as bg
@@ -168,6 +169,104 @@ def test_truth_endpoint_payload_includes_the_full_canonical_projection(monkeypat
     assert result["readiness"]["ready"] == 5558
     assert result["catalog"]["source"] == "financial_instrument_catalog"
     assert result["history"]["governs_readiness"] is False
+
+
+@pytest.mark.parametrize("unsafe", [None, False, "0", "oops", 0.0, -1])
+def test_missing_or_malformed_observer_counter_never_becomes_zero_in_projection(unsafe):
+    """A missing or non-integral safety counter must not become green evidence."""
+    def query(sql, params=()):
+        if "FROM observer_state" in sql:
+            return [{"mode": "PRODUCTION_PAPER", "real_orders_sent": unsafe}]
+        return []
+
+    canonical = projection.build(
+        query, lambda name: name == "observer_state",
+        quote_payload={}, family_payload={},
+    )
+    assert canonical["runtime"]["real_orders_sent"] is None
+    assert canonical["scalping"]["real_orders_sent"] is None
+
+
+def test_absent_observer_counter_field_is_not_zero_evidence():
+    def query(sql, params=()):
+        return [{"mode": "PRODUCTION_PAPER"}] if "FROM observer_state" in sql else []
+
+    canonical = projection.build(
+        query, lambda name: name == "observer_state",
+        quote_payload={}, family_payload={},
+    )
+    assert canonical["runtime"]["real_orders_sent"] is None
+    assert canonical["scalping"]["real_orders_sent"] is None
+
+
+def test_absent_scalping_worker_counter_is_unknown_not_invented_zero():
+    def query(sql, params=()):
+        return [{"mode": "PRODUCTION_PAPER", "real_orders_sent": 0}] \
+            if "FROM observer_state" in sql else []
+
+    canonical = projection.build(
+        query, lambda name: name == "observer_state",
+        quote_payload={}, family_payload={},
+    )
+    assert canonical["runtime"]["real_orders_sent"] == 0
+    assert canonical["scalping"]["worker_real_orders_sent"] is None
+
+
+@pytest.mark.parametrize("verified", [0, 2])
+def test_integral_observer_counter_preserves_exact_value(verified):
+    def query(sql, params=()):
+        return [{"mode": "PRODUCTION_PAPER", "real_orders_sent": verified}] \
+            if "FROM observer_state" in sql else []
+
+    canonical = projection.build(
+        query, lambda name: name == "observer_state",
+        quote_payload={}, family_payload={},
+    )
+    assert canonical["runtime"]["real_orders_sent"] == verified
+    assert canonical["scalping"]["real_orders_sent"] == verified
+
+
+@pytest.mark.parametrize("counter,display,css", [
+    (None, "NO_VERIFICADO", "paper-warning"),
+    (False, "NO_VERIFICADO", "paper-warning"),
+    ("0", "NO_VERIFICADO", "paper-warning"),
+    (0, "0", "paper-notice"),
+    (1, "1", "paper-warning"),
+])
+def test_truth_banner_shows_only_verified_real_order_counts(monkeypatch, counter, display, css):
+    canonical = _truth()
+    canonical["runtime"]["real_orders_sent"] = counter
+    monkeypatch.setattr(truth_layer.projection, "build", lambda *_args, **_kwargs: canonical)
+    monkeypatch.setattr(truth_layer.bg, "_table", lambda _name: False)
+
+    runtime = truth_layer.runtime_truth()
+    assert runtime["real_orders_sent"] == (counter if type(counter) is int else None)
+    banner = truth_layer._truth_banner()
+    assert f"class='{css}'" in banner
+    assert f"órdenes reales observadas <b>{display}</b>" in banner
+
+
+def test_truth_http_api_reports_counter_unknown_as_invariant_false(tmp_path, monkeypatch):
+    canonical = _truth()
+    canonical["runtime"]["real_orders_sent"] = None
+    monkeypatch.setattr(truth_layer.projection, "build", lambda *_args, **_kwargs: canonical)
+    monkeypatch.setattr(truth_layer.bg, "_table", lambda _name: False)
+
+    token = "V" * 40
+    monkeypatch.setattr(auth, "TOKEN_BEARER", token)
+    monkeypatch.setattr(auth, "ENTORNO", "SANDBOX")
+    monkeypatch.setattr(auth, "SESSION_STORE_PATH", str(tmp_path / "sessions.json"))
+    monkeypatch.setattr(auth, "_sesiones", {})
+    monkeypatch.setattr(o_dashboard, "DASHBOARD_ACCESS_TOKEN", token)
+
+    with TestClient(o_dashboard.app) as client:
+        entry = client.get("/?token=" + token, follow_redirects=False)
+        assert entry.status_code == 303
+        response = client.get("/api/dashboard/truth")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["real_orders_sent"] is None
+    assert payload["invariants"]["real_orders_zero"] is False
 
 
 def test_iol_live_cache_fresh_cache_stale_and_unavailable_are_distinct():

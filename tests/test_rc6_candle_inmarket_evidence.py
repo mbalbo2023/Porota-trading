@@ -21,11 +21,11 @@ def _scope_store(path):
           CREATE TABLE candle_worker_state(id INTEGER PRIMARY KEY,cursor INTEGER,heartbeat_at TEXT,state TEXT);
           CREATE TABLE candle_dirty(series_id TEXT,bar_start TEXT,bar_end TEXT);
           CREATE INDEX dirty_end ON candle_dirty(bar_end);
-          CREATE TABLE observer_state(id INTEGER PRIMARY KEY,real_orders_sent INTEGER,session_state TEXT);
+          CREATE TABLE observer_state(id INTEGER PRIMARY KEY,mode TEXT,real_orders_sent INTEGER,session_state TEXT);
           CREATE TABLE unrelated_history(id INTEGER PRIMARY KEY,payload TEXT NOT NULL);
           INSERT INTO candle_worker_state VALUES(1,118741,'2026-09-17T14:30:00+00:00','RUNNING');
           INSERT INTO candle_dirty VALUES('x','2026-09-17T14:30:00+00:00','2026-09-17T14:31:00+00:00');
-          INSERT INTO observer_state VALUES(1,0,'MARKET_CLOSED');
+          INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,'MARKET_CLOSED');
         """)
         conn.executemany('INSERT INTO unrelated_history(payload) VALUES(?)', [('unrelated'*16,)]*50000)
 
@@ -77,12 +77,24 @@ class CandleIntegrityScopeRegressionTests(unittest.TestCase):
     def test_unrelated_corruption_remains_the_full_integrity_owners_failure(self):
         from rc6_full_db_integrity import probe
         with tempfile.TemporaryDirectory() as directory:
-            db=Path(directory)/'unrelated.db';_scope_store(db);_corrupt_root(db,'unrelated_history')
+            db=Path(directory)/'unrelated.db';_scope_store(db)
+            pristine=probe(str(db))
+            self.assertEqual(pristine['status'],'GREEN')
+            self.assertEqual(pristine['quick_check'],'ok')
+            _corrupt_root(db,'unrelated_history')
             value=collect_inputs(db_path=str(db),observed_at='2026-09-17T14:30:30+00:00')
             result=build_summary(baseline_cursor=118740,observed_at='2026-09-17T14:30:30+00:00',**value)
             self.assertEqual(result['status'],'GREEN')
             self.assertEqual(result['sqlite_quick_check'],'DELEGATED_TO_RC6_FULL_DB_INTEGRITY')
-            self.assertEqual(probe(str(db))['status'],'RED')
+            full=probe(str(db))
+            self.assertEqual(full['status'],'RED')
+            self.assertNotIn('no such column: mode',str(full.get('error','')))
+            if full.get('state')=='ERROR':
+                self.assertTrue(any(token in full.get('error','').lower()
+                                    for token in ('malformed','corrupt','integrity')))
+            else:
+                self.assertEqual(full['state'],'COMPLETED')
+                self.assertNotEqual(full['quick_check'],'ok')
 
     def test_bad_or_incomplete_partial_results_cannot_produce_green(self):
         for values in ({},{'candle_dirty':'ok'},{'candle_dirty':'bad page','candle_worker_state':'ok'}):

@@ -219,7 +219,11 @@ def _paper_safety() -> dict:
     if not row:
         raise RuntimeError("OBSERVER_STATE_MISSING")
     out = dict(row)
-    if out["mode"] != "PRODUCTION_PAPER" or int(out["real_orders_sent"] or 0) != 0:
+    # NULL, missing or coerced values cannot attest zero real orders. SQLite
+    # must return the actual integer zero before any OAuth/state side effect.
+    if (out.get("mode") != "PRODUCTION_PAPER"
+            or type(out.get("real_orders_sent")) is not int
+            or out["real_orders_sent"] != 0):
         raise RuntimeError("PAPER_SAFETY_INVARIANT_FAILED")
     return out
 
@@ -324,7 +328,7 @@ def main() -> int:
         "before": before,
         "paper_safety": {
             "mode": safety["mode"],
-            "real_orders_sent": int(safety["real_orders_sent"] or 0),
+            "real_orders_sent": safety["real_orders_sent"],
         },
     }
 

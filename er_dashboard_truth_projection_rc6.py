@@ -55,6 +55,15 @@ def _int(value: Any) -> int:
         return 0
 
 
+def verified_order_counter(value: Any) -> int | None:
+    """Preserve absent/corrupt PAPER safety evidence instead of inventing zero.
+
+    SQLite's INTEGER counter must be an exact, nonnegative Python int.
+    Booleans, numeric text, floats and missing rows are not evidence.
+    """
+    return value if type(value) is int and value >= 0 else None
+
+
 def _json(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -322,7 +331,7 @@ def build(query: Callable[..., list[dict[str, Any]]],
             "process_state": str(observer.get("process_state") or "UNKNOWN").upper(),
             "session_state": str(observer.get("session_state") or "UNKNOWN").upper(),
             "ppi_auth": str(observer.get("ppi_auth") or "UNKNOWN").upper(),
-            "real_orders_sent": _int(observer.get("real_orders_sent")),
+            "real_orders_sent": verified_order_counter(observer.get("real_orders_sent")),
             "heartbeat_at": observer.get("heartbeat_at"),
             "last_market_data_at": observer.get("last_market_data_at"),
             "detail": observer.get("detail"),
@@ -376,8 +385,8 @@ def build(query: Callable[..., list[dict[str, Any]]],
             "exit_supervisor_heartbeat_at": exit_supervisor.get("heartbeat_at"),
             "max_hold_minutes": _int(os.getenv("PAPER_SCALPING_MAX_HOLD_MINUTES", "30")),
             "eod_policy": "SUPERVISOR_SESSION_POLICY",
-            "real_orders_sent": _int(observer.get("real_orders_sent")),
-            "worker_real_orders_sent": _int(scalping_worker.get("real_orders_sent")),
+            "real_orders_sent": verified_order_counter(observer.get("real_orders_sent")),
+            "worker_real_orders_sent": verified_order_counter(scalping_worker.get("real_orders_sent")),
             "detail": scalping_worker.get("detail"),
         },
         "caucion": {

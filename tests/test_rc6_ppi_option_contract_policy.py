@@ -31,6 +31,13 @@ def row(ticker, family, *, description="", capability="READY_PAPER_SPOT",
             "_discovery_source": discovery,
             "_provider_instrument_type": family,
             "nominalInPrice": 1,
+            # Synthetic fixture: explicit five-key provider RAW identity.
+            # Runtime cannot infer these from request/catalog coordinates.
+            "ticker": ticker,
+            "type": family,
+            "market": market,
+            "currency": currency,
+            "settlement": settlement,
         }),
     }
 
@@ -169,3 +176,76 @@ def test_mass_rule_emits_review_evidence_without_modifying_review_capability():
     assert option_records[1]["source_ref"] == policy.OPTION_DERIVED_SOURCE_REF
     assert review["capability"] == "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
     assert "OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED" not in skipped
+
+
+def test_only_usd_deferred_ppi_underlying_cannot_derive_ars_option_contract():
+    foreign = row("AAPL", "CEDEARS", currency="USD_MEP", settlement="A-24HS")
+    option_row = option("APLC14000O", "Opción compra AAPL AR$ 14000.00 Vto. 16/10/2026")
+    assert policy.underlying_family_index([foreign]) == {}
+    records, skipped, identities = mass.planned_records([foreign, option_row])
+    assert identities == {"CEDEARS": 1, "OPCIONES": 1}
+    assert skipped["OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED"] == 1
+    assert not any(record["source_class"] == "DERIVED_OFFICIAL_RULE"
+                   and record["ticker"] == "APLC14000O" for record in records)
+
+
+def test_multi_currency_or_different_settlement_underlying_is_ambiguous():
+    ars = row("AAPL", "CEDEARS")
+    usd = row("AAPL", "CEDEARS", currency="USD_MEP", settlement="A-24HS")
+    deferred = row("YPFD", "ACCIONES", settlement="A-24HS")
+    assert policy.underlying_family_index([ars, usd, deferred]) == {}
+    assert policy.underlying_family_index([ars, ars.copy()]) == {"AAPL": "CEDEARS"}
+
+
+def test_underlying_needs_ppi_settlement_and_recorded_observation_clock():
+    valid = row("YPFD", "ACCIONES")
+    request_only = row("REQ", "ACCIONES")
+    request_only["settlement_source"] = "REQUEST_CANDIDATE"
+    unclocked = row("NOCLK", "ACCIONES")
+    unclocked["last_seen_at"] = "2026-10-03T01:36:06"
+    invalid_clock = row("BADCLK", "ACCIONES")
+    invalid_clock["last_seen_at"] = "NOT_A_TIMESTAMP"
+    iol_only = row("IOL", "ACCIONES", discovery="IOL_COMPLEMENTARY")
+    not_available = row("STALE", "ACCIONES", status="STALE")
+    result = policy.underlying_family_index([
+        valid, request_only, unclocked, invalid_clock, iol_only, not_available,
+    ])
+    assert result == {"YPFD": "ACCIONES"}
+
+
+def test_option_itself_requires_provider_settlement_not_request_candidate():
+    underlying = {"YPFD": "ACCIONES"}
+    inferred = option()
+    inferred["settlement_source"] = "REQUEST_CANDIDATE"
+    # Match documented SearchInstrument semantics: no provider settlement.
+    raw = json.loads(inferred["metadata_json"])
+    raw.pop("settlement")
+    inferred["metadata_json"] = json.dumps(raw)
+    assert policy.standard_long_option_evidence(inferred, underlying) is None
+    records, skipped, identities = mass.planned_records([
+        row("YPFD", "ACCIONES"), inferred,
+    ])
+    assert identities == {"ACCIONES": 1}
+    assert skipped["PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"] == 1
+    assert not any(record["source_class"] == "DERIVED_OFFICIAL_RULE"
+                   and record["ticker"] == "YPFC40500O" for record in records)
+
+
+def test_option_mass_never_promotes_contradictory_synthetic_full_key():
+    contradictory = option()
+    raw = json.loads(contradictory["metadata_json"])
+    raw["market"] = "ROFEX"
+    contradictory["metadata_json"] = json.dumps(raw)
+    records, skipped, identities = mass.planned_records([contradictory])
+    assert records == []
+    assert identities == {}
+    assert skipped["PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"] == 1
+
+
+def test_option_itself_requires_aware_observation_clock_without_claiming_pit():
+    underlying = {"YPFD": "ACCIONES"}
+    for known_at in (None, "2026-10-03T01:36:06", "INVALID_TIMESTAMP"):
+        unclocked = option()
+        unclocked["last_seen_at"] = known_at
+        assert policy.standard_long_option_evidence(unclocked, underlying) is None
+    assert policy.standard_long_option_evidence(option(), underlying) is not None

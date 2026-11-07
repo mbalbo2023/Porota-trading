@@ -51,10 +51,14 @@ SCRIPT = r"""
 <script id="porota-rc6-responsive-tablet-script">
 (function(){
   function stateFor(card){
-    const text=(card.innerText||"").toUpperCase();
-    if(/BLOCKED|ERROR|NO DISPONIBLE|SIN CIERRES|NO SE PUDO/.test(text)) return "red";
-    if(/PENDING|PENDIENTE|INSUFFICIENT|FALTA|NO EMITIDA|MIXTA|DEBIL|DEGRAD/.test(text)) return "yellow";
-    if(/GREEN|READY|VERIFIED|FAVORABLE|COMPLETA|OK/.test(text)) return "green";
+    // Only the dedicated metric value can certify a colored state. Titles,
+    // provider prose and arbitrary words (BOOK/BROKER contain "OK") cannot.
+    const metric=card.querySelector(".analysis-value");
+    if(!metric) return "gray";
+    const state=(metric.innerText||metric.textContent||"").trim().toUpperCase();
+    if(/^(?:RED|ROJO|ERROR|FAILED|FAILURE|BLOCKED(?:_[A-Z0-9]+)*|NO DISPONIBLE|NO SE PUDO)$/.test(state)) return "red";
+    if(/^(?:YELLOW|AMARILLO|PENDING|PENDIENTE|INSUFFICIENT_EVIDENCE|NO_VERIFICADO|UNVERIFIED|SIN DATOS|NO_DATA|NO EMITIDA|MIXTA|DEBIL|DEGRADADO|READY_SHADOW_PARTIAL|READY_SHADOW_COMPLEMENTED)$/.test(state)) return "yellow";
+    if(/^(?:GREEN|VERDE|READY|READY_SHADOW|VERIFIED|FAVORABLE|COMPLETA|OK)$/.test(state)) return "green";
     return "gray";
   }
   function installQuickNav(){
@@ -96,9 +100,12 @@ SCRIPT = r"""
     document.querySelectorAll(".analysis-grid>.paper-card").forEach(function(card){
       if(card.querySelector(".porota-semaphore")) return;
       const dot=document.createElement("span");
-      dot.className="porota-semaphore "+stateFor(card);
-      dot.setAttribute("aria-label","Estado "+dot.className.split(" ").pop());
-      dot.title="Estado "+dot.className.split(" ").pop();
+      const state=stateFor(card);
+      const label={green:"verde",yellow:"amarillo",red:"rojo",gray:"no verificado"}[state];
+      dot.className="porota-semaphore "+state;
+      dot.setAttribute("role","img");
+      dot.setAttribute("aria-label","Indicador visual "+label+" de esta tarjeta; no acredita operaciones PAPER");
+      dot.title="Indicador visual "+label;
       card.appendChild(dot);
     });
   }

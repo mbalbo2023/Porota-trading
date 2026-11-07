@@ -35,12 +35,9 @@ con j_main.py) — ver Documento Maestro v8.0 para el servicio systemd.
 Requiere: pip install fastapi uvicorn
 """
 
-import hmac
-import hashlib
 import json
 import os
 import sqlite3
-import time
 from datetime import date, datetime, timedelta
 from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response, RedirectResponse
@@ -85,9 +82,6 @@ STARTUP_STATE_PATH = os.getenv("STARTUP_STATE_PATH", "data/startup_state.json")
 # Fuente única de la versión. El endpoint /health devolvía "15.0" mientras la
 # portada del documento decía otra cosa: la inconsistencia de inventario fue
 # un hallazgo de la auditoría anterior y se corrige teniendo un solo lugar.
-# NUEVO EN v10.5 — auditorías 2 y 3, hallazgo "Exposición de token en
-# URL": vigencia del token CSRF de /config, en segundos.
-CSRF_TOKEN_MAX_AGE_SECONDS = int(os.getenv("CSRF_TOKEN_MAX_AGE_SECONDS", "900"))
 
 app = FastAPI(title="Dashboard — Bot de Trading (solo lectura)")
 
@@ -204,32 +198,6 @@ def _check_auth(token: str, authorization: Optional[str], sesion: Optional[str] 
 def _check_token(token: str):
     # Alias retrocompatible — algunas rutas viejas solo tenían query token.
     _check_auth(token, None)
-
-
-def _csrf_token() -> str:
-    """
-    NUEVO EN v10.5 — auditorías 2 y 3, hallazgo "CSRF en POST /config":
-    token anti-falsificación con vencimiento, firmado con el propio
-    DASHBOARD_ACCESS_TOKEN como clave HMAC. No necesita guardarse en el
-    servidor (no hay sesión ni base de datos de por medio) porque
-    incluye su propio timestamp firmado — se verifica que la firma sea
-    válida Y que no haya vencido en _verify_csrf_token().
-    """
-    ts = str(int(time.time()))
-    sig = hmac.new((DASHBOARD_ACCESS_TOKEN or "sin-token").encode(), ts.encode(), hashlib.sha256).hexdigest()
-    return f"{ts}.{sig}"
-
-
-def _verify_csrf_token(value: str) -> bool:
-    try:
-        ts_str, sig = value.split(".", 1)
-        ts = int(ts_str)
-    except (ValueError, AttributeError):
-        return False
-    if time.time() - ts > CSRF_TOKEN_MAX_AGE_SECONDS:
-        return False
-    expected = hmac.new((DASHBOARD_ACCESS_TOKEN or "sin-token").encode(), ts_str.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, expected)
 
 
 def _day_summary(day: str) -> dict:
@@ -803,27 +771,11 @@ def download_weekly_report(token: str = Query(default=""), days: int = Query(def
 
 
 # ============================================================================
-# EDITOR VISUAL DE CONFIGURACIÓN (nuevo en v10.4)
+# CUARENTENA DEL ANTIGUO EDITOR DE CONFIGURACIÓN (A948)
 # ============================================================================
-# Pedido explícito: poder configurar las variables del .env desde una
-# página web, en vez de editar el archivo a mano en la terminal.
-#
-# DECISIONES DE SEGURIDAD DE ESTE EDITOR (léelas antes de usarlo):
-#   1. Los campos sensibles (API keys, tokens) NUNCA se muestran completos
-#      en la página — se ven los últimos 4 caracteres, y el campo queda
-#      vacío para escribir: si lo dejás vacío y guardás, ese valor NO se
-#      toca (se conserva el que ya estaba). Esto es para que un valor
-#      secreto no quede visible en el HTML de la página ni en capturas
-#      de pantalla.
-#   2. Guardar acá reescribe el archivo .env del servidor, pero NO
-#      reinicia el bot solo. Después de guardar, tenés que reiniciarlo a
-#      mano (systemctl restart trading_bot) o pedírmelo en el chat. No se
-#      automatizó el reinicio a propósito: darle a un proceso web la
-#      capacidad de reiniciar servicios del sistema es un salto de
-#      privilegios que no se justifica para esta funcionalidad.
-#   3. Protegido por el mismo DASHBOARD_ACCESS_TOKEN que el resto del
-#      panel — si no lo configuraste, este editor queda tan expuesto
-#      como el resto del dashboard.
+# La versión v10.4 permitía escribir .env desde el dashboard. RC6 PAPER/0
+# lo prohíbe: cambios y reinicios sólo por GitHub Actions/Deploy V2. La vista
+# canónica ya es de sólo lectura; los handlers legacy quedan inocuos también.
 # ---------------------------------------------------------------------- #
 # NUEVO EN v14.0 — CARGA DE CONFIGURACIÓN ANTES QUE CUALQUIER OTRA COSA
 # ---------------------------------------------------------------------- #
@@ -840,299 +792,58 @@ def download_weekly_report(token: str = Query(default=""), days: int = Query(def
 from dotenv import load_dotenv
 load_dotenv()
 
-import aa_env_guard as env_guard
-
-try:
-    from v_config_metadata import CONFIG_METADATA
-except ImportError:
-    CONFIG_METADATA = []
-
-ENV_FILE_PATH = os.getenv("ENV_FILE_PATH", ".env")
-
-
-def _read_env_raw() -> str:
-    if os.path.exists(ENV_FILE_PATH):
-        with open(ENV_FILE_PATH, encoding="utf-8") as f:
-            return f.read()
-    return ""
-
-
-def _parse_env_values(raw: str) -> dict:
-    values = {}
-    for line in raw.splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            values[k.strip()] = v.strip()
-    return values
-
-
-def _mask(value: str) -> str:
-    if not value:
-        return ""
-    return f"(termina en ...{value[-4:]})" if len(value) > 4 else "(configurado)"
-
-
+# RC6 A948 — los cambios de configuración y los reinicios pertenecen al
+# plano de control GitHub Actions/Deploy V2. La vista del panel es informativa;
+# estos handlers legacy no leen ni escriben .env ni generan confirmaciones.
+# La capa canónica (bg_paper_dashboard + bc_dashboard_v163) conserva su GET
+# read-only y el POST /config=405; esta cuarentena protege el origen si en
+# el futuro cambia el orden de los middlewares.
 @app.get("/config", response_class=HTMLResponse)
 def config_editor(token: str = Query(default=""), authorization: Optional[str] = Header(default=None)):
     _check_auth(token, authorization)
-    csrf = _csrf_token()
-    raw = _read_env_raw()
-    current = _parse_env_values(raw)
+    return """<!doctype html>
+<html lang="es-AR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Configuración · solo lectura · Porota RC6</title>
+  </head>
+  <body>
+    <main id="contenido" role="main">
+      <h1>Configuración · solo lectura</h1>
+      <p role="status" aria-live="polite">
+        Porota RC6 admite cambios de configuración y reinicios únicamente
+        mediante GitHub Actions y su despliegue unificado. El panel no puede
+        guardar cambios de entorno, credenciales ni órdenes.
+      </p>
+      <p><a href="/">Volver al dashboard</a></p>
+    </main>
+  </body>
+</html>"""
 
-    sections = {}
-    for var, section, desc, example, sensitive in CONFIG_METADATA:
-        sections.setdefault(section, []).append((var, desc, example, sensitive))
 
-    body = ""
-    for section, rows in sections.items():
-        body += f"<h2>{section}</h2><table style='width:100%;border-collapse:collapse;margin-bottom:20px;'>"
-        body += ("<tr style='background:#eee;'><th style='text-align:left;padding:6px;'>Variable</th>"
-                 "<th style='text-align:left;padding:6px;'>Qué es</th>"
-                 "<th style='text-align:left;padding:6px;'>Valor</th></tr>")
-        for var, desc, example, sensitive in rows:
-            current_val = current.get(var, "")
-            if sensitive:
-                display_val = ""
-                placeholder = _mask(current_val) or f"ej: {example}"
-            else:
-                display_val = current_val
-                placeholder = f"ej: {example}"
-            # NUEVO EN v14.0 — marca visual de variable crítica (Instrucción 1):
-            # que el propio panel diga cuáles son las que ameritan tratarse
-            # como un tema de seguridad, en vez de que haya que saberlo de memoria.
-            critica = " ⚠️" if var in env_guard.CRITICAL_VARS else ""
-            estilo_fila = " style='background:#fff7ed;'" if critica else ""
-            body += (
-                f"<tr{estilo_fila}><td style='padding:6px;font-family:monospace;'>{var}{critica}</td>"
-                f"<td style='padding:6px;font-size:0.9em;color:#555;'>{desc}</td>"
-                f"<td style='padding:6px;'><input type='text' name='{var}' value='{display_val}' "
-                f"placeholder='{placeholder}' style='width:95%;padding:4px;'></td></tr>"
-            )
-        body += "</table>"
-
-    # ------------------------------------------------------------------ #
-    # NUEVO EN v14.0 — Instrucción 1: la opción de reinicio SOLO aparece si
-    # hubo un cambio real y reciente. No es un botón permanente.
-    # ------------------------------------------------------------------ #
-    pendiente = env_guard.get_recent_saved_change()
-    bloque_reinicio = ""
-    if pendiente:
-        idle, motivo = env_guard.is_system_idle(
-            require_no_open_positions=bool(pendiente.get("env_switch"))
-        )
-        estado_sistema = (
-            "<span style='color:#16a34a;'>✅ El sistema está desocupado: el reinicio se aplicaría "
-            "de inmediato tras tu confirmación.</span>"
-            if idle else
-            f"<span style='color:#d97706;'>⏳ El sistema está ocupado ({motivo}). Podés confirmar "
-            "igual: el reinicio queda agendado y se ejecuta solo cuando quede libre.</span>"
-        )
-        aviso_env = ""
-        if pendiente.get("env_switch"):
-            aviso_env = (
-                "<p style='background:#fef2f2;border-left:4px solid #dc2626;padding:10px;'>"
-                "<b>🔐 Cambio de ENVIRONMENT detectado.</b> Estás por cambiar el ambiente "
-                "(SANDBOX ↔ PRODUCTION): es la variable que decide si las órdenes se colocan con "
-                "dinero real. Por seguridad, este cambio además exige que no haya <b>ninguna "
-                "posición abierta</b> antes de aplicarse.</p>"
-            )
-        bloque_reinicio = f"""
-      <div style="border:2px solid #2563eb;border-radius:10px;padding:16px;margin-top:26px;background:#f8fafc;">
-        <h2 style="margin-top:0;">♻️ Aplicar los cambios (requiere reinicio)</h2>
-        <p>Se guardaron cambios en: <code>{pendiente['changed_vars']}</code></p>
-        <p><b>Los valores nuevos todavía NO están en uso.</b> El bot sigue corriendo con la
-        configuración con la que arrancó; recién toma los valores nuevos cuando se reinicia.</p>
-        {aviso_env}
-        <p>{estado_sistema}</p>
-        <p style="font-size:0.9em;color:#555;">Al pedir el reinicio te va a llegar un mensaje a
-        Telegram con dos botones. El bot <b>no se reinicia hasta que confirmes ahí</b>, y nunca
-        mientras haya una operación en curso.</p>
-        <form method="post" action="/restart-request">
-          <input type="hidden" name="csrf_token" value="{csrf}">
-          <input type="hidden" name="request_id" value="{pendiente['id']}">
-          <button type="submit" style="padding:10px 20px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;">
-            Pedir reinicio (confirmación por Telegram)
-          </button>
-        </form>
-      </div>"""
-
-    historial = env_guard.get_history(limit=8)
-    filas_hist = "".join(
-        f"<tr><td>{h['created_at']}</td><td><code>{h['changed_vars']}</code></td><td>{h['status']}</td></tr>"
-        for h in historial
-    ) or "<tr><td colspan='3'><em>Sin cambios de configuración registrados.</em></td></tr>"
-
-    return f"""
-    <html>
-    <head><title>Configuración — Bot de Trading</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <style>body {{ font-family: -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 12px; }}
-      h1 {{ font-size: 1.4em; }} h2 {{ font-size: 1.05em; margin-top: 24px; color: #2563eb; }}
-      table {{ font-size: 0.95em; }} code {{ background:#f1f5f9; padding:1px 4px; border-radius:3px; }}</style>
-    </head>
-    <body>
-      <h1>⚙️ Configuración del bot</h1>
-      <p style="background:#eff6ff;border-left:4px solid #2563eb;padding:10px;">
-      <b>Cómo funciona (v14.0):</b> guardar acá escribe el archivo <code>.env</code> del servidor,
-      pero <b>no cambia nada en el bot que está corriendo</b>. Después de guardar vas a ver, en esta
-      misma página, la opción de pedir el reinicio — que requiere tu confirmación por Telegram y
-      espera a que no haya operaciones en curso. Esa opción aparece únicamente después de un cambio
-      real y desaparece sola a los {env_guard.ENV_CHANGE_REQUEST_WINDOW_MINUTES} minutos.</p>
-      <p>Las variables marcadas con ⚠️ son <b>críticas</b>: tocan credenciales, ambiente, modo de
-      ejecución o límites de riesgo.</p>
-      <p>Los campos sensibles se muestran vacíos por seguridad; si los dejás vacíos y guardás, no se
-      tocan (se conserva el valor que ya estaba). Solo escribí ahí si querés CAMBIAR ese dato.</p>
-      {bloque_reinicio}
-      <form method="post" action="/config">
-        <input type="hidden" name="csrf_token" value="{csrf}">
-        {body}
-        <button type="submit" style="padding:10px 20px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;">Guardar cambios</button>
-      </form>
-
-      <h2>Historial de cambios de configuración</h2>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr style="background:#eee;"><th style="text-align:left;padding:6px;">Cuándo</th>
-        <th style="text-align:left;padding:6px;">Variables</th>
-        <th style="text-align:left;padding:6px;">Estado</th></tr>
-        {filas_hist}
-      </table>
-      <p><a href="/">← Volver al dashboard</a></p>
-    </body>
-    </html>
-    """
+def _reject_legacy_admin_mutation() -> None:
+    raise HTTPException(
+        status_code=403,
+        detail="RC6_ADMIN_MUTATIONS_GITHUB_ACTIONS_ONLY: configuracion y reinicios solo mediante GitHub Actions.",
+    )
 
 
 @app.post("/config", response_class=HTMLResponse)
 async def config_save(request: Request, token: str = Query(default=""),
-                       authorization: Optional[str] = Header(default=None)):
+                      authorization: Optional[str] = Header(default=None)):
     _check_auth(token, authorization)
-    form = await request.form()
-    # Se rechaza el guardado si falta o venció el token CSRF (ver
-    # _csrf_token()/_verify_csrf_token()). Esto es ADEMÁS de la autenticación
-    # por token/header: un atacante que ya tiene el token de acceso no
-    # necesita CSRF, pero si el token se filtró vía Referer/logs, esta capa
-    # evita que un formulario de otro sitio con un token viejo siga siendo válido.
-    submitted_csrf = form.get("csrf_token", "")
-    if not _verify_csrf_token(submitted_csrf):
-        raise HTTPException(status_code=403, detail="Token CSRF inválido o vencido — volvé a abrir /config y reintentá.")
-    raw = _read_env_raw()
-    current = _parse_env_values(raw)
-
-    sensitive_vars = {var for var, _, _, _, sensitive in CONFIG_METADATA if sensitive}
-    updated = dict(current)
-    # NUEVO EN v14.0 — se comparan los valores viejos contra los nuevos, uno
-    # por uno. Sólo se considera "hubo un cambio" si algo cambió DE VERDAD:
-    # apretar "Guardar" sin tocar nada no puede habilitar un reinicio. Es la
-    # llave 2 de la cadena de seguridad de la Instrucción 1.
-    changed_vars = []
-    for var, _, _, _, _ in CONFIG_METADATA:
-        new_val = form.get(var, "")
-        if var in sensitive_vars and new_val == "":
-            continue  # campo sensible vacío = no tocar el valor existente
-        if updated.get(var, "") != new_val:
-            changed_vars.append(var)
-        updated[var] = new_val
-
-    # Reescribe el .env preservando el orden/comentarios originales línea por
-    # línea; si una variable no existía en el archivo, se agrega al final.
-    lines = raw.splitlines()
-    seen = set()
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in stripped:
-            k = stripped.split("=", 1)[0].strip()
-            if k in updated:
-                new_lines.append(f"{k}={updated[k]}")
-                seen.add(k)
-                continue
-        new_lines.append(line)
-    for k, v in updated.items():
-        if k not in seen:
-            new_lines.append(f"{k}={v}")
-
-    with open(ENV_FILE_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(new_lines) + "\n")
-
-    env_switch = "ENVIRONMENT" in changed_vars
-    request_id = env_guard.register_change(changed_vars, env_switch) if changed_vars else None
-
-    if not changed_vars:
-        cuerpo = ("<h2>Sin cambios</h2><p>No se modificó ninguna variable, así que no hace falta "
-                  "reiniciar nada.</p>")
-    else:
-        criticas = [v for v in changed_vars if v in env_guard.CRITICAL_VARS]
-        aviso = ""
-        if criticas:
-            aviso = ("<p style='background:#fef2f2;border-left:4px solid #dc2626;padding:10px;'>"
-                     f"<b>⚠️ Cambiaste variables críticas:</b> <code>{', '.join(criticas)}</code>. "
-                     "El reinicio va a pedirte confirmación explícita por Telegram.</p>")
-        cuerpo = f"""
-          <h2>✅ Configuración guardada</h2>
-          <p>Variables modificadas: <code>{', '.join(changed_vars)}</code></p>
-          {aviso}
-          <p><b>Todavía falta un paso:</b> los valores nuevos no están en uso hasta que el bot se
-          reinicie. Volvé al editor y vas a ver la opción para pedir el reinicio (te va a llegar
-          una confirmación a Telegram).</p>"""
-
-    return f"""
-    <html><body style="font-family:-apple-system,sans-serif;max-width:640px;margin:40px auto;">
-      {cuerpo}
-      <p style="margin-top:20px;"><a href="/config">← Volver al editor</a></p>
-    </body></html>
-    """
+    # Rechazar ANTES de inspeccionar el formulario, .env, SQLite o Telegram.
+    _reject_legacy_admin_mutation()
 
 
-# ============================================================================
-# NUEVO EN v14.0 — Instrucción 1: solicitud de reinicio.
-#
-# ESTE ENDPOINT NO REINICIA NADA. Lo único que hace es mandar la
-# confirmación por Telegram y dejar la solicitud grabada. El reinicio real
-# lo decide y lo ejecuta el propio proceso del bot (j_main.
-# process_restart_requests_job), que es el dueño de su ciclo de vida.
-#
-# Se mantiene así a propósito, respetando la regla de seguridad que este
-# proyecto tiene desde v8.0: el proceso web NUNCA ejecuta comandos del
-# sistema operativo ni mata procesos. Un panel web comprometido no puede
-# reiniciar el bot por su cuenta — como mucho puede mandarte un Telegram
-# pidiéndotelo, y vos decidís.
-# ============================================================================
 @app.post("/restart-request", response_class=HTMLResponse)
 async def restart_request(request: Request, token: str = Query(default=""),
-                           authorization: Optional[str] = Header(default=None)):
+                          authorization: Optional[str] = Header(default=None)):
     _check_auth(token, authorization)
-    form = await request.form()
-    if not _verify_csrf_token(form.get("csrf_token", "")):
-        raise HTTPException(status_code=403, detail="Token CSRF inválido o vencido.")
-
-    request_id = form.get("request_id", "")
-    # Revalidación del lado del servidor: aunque el formulario venga con un
-    # request_id, se vuelve a chequear contra la base que ese cambio exista,
-    # esté en estado SAVED y siga dentro de la ventana de tiempo. Confiar en
-    # el id que manda el navegador sería confiar en el cliente.
-    vigente = env_guard.get_recent_saved_change()
-    if not vigente or vigente["id"] != request_id:
-        mensaje = ("<h2>⛔ No hay ningún cambio pendiente de aplicar</h2>"
-                   "<p>La opción de reinicio solo está disponible durante los "
-                   f"{env_guard.ENV_CHANGE_REQUEST_WINDOW_MINUTES} minutos posteriores a un cambio "
-                   "real de configuración. Volvé a guardar los cambios y reintentá.</p>")
-    else:
-        from b_notifiers import MultiChannelNotifier
-        ok, detalle = env_guard.request_restart_confirmation(request_id, MultiChannelNotifier())
-        icono = "📲" if ok else "⛔"
-        mensaje = f"<h2>{icono} {detalle}</h2>"
-        if ok:
-            mensaje += ("<p>Buscá el mensaje en Telegram y tocá <b>Confirmar reinicio</b>. "
-                        "Si no confirmás, no pasa nada: el bot sigue corriendo con la configuración "
-                        "anterior.</p>")
-
-    return f"""
-    <html><body style="font-family:-apple-system,sans-serif;max-width:640px;margin:40px auto;">
-      {mensaje}
-      <p style="margin-top:20px;"><a href="/config">← Volver al editor</a></p>
-    </body></html>
-    """
+    # Evita el camino legacy: request_restart_confirmation -> ENVOK ->
+    # process_restart_requests_job -> apagado/reinicio fuera de Deploy V2.
+    _reject_legacy_admin_mutation()
 
 
 # ============================================================================

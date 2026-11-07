@@ -18,13 +18,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import rc6_ppi_global_budget as budget_module
 from bd_ppi_readonly_guard import ReadOnlyTransportGuard
-from rc6_dynamic_universe.promotion import (
-    DEFAULT_POLICY, RuntimeCapacityController, build_recommendation,
-)
+from rc6_dynamic_universe.promotion import DEFAULT_POLICY, RuntimeCapacityController
 from rc6_ppi_global_budget import (
     BudgetBackpressure, RuntimePPIBudget, budget_from_environment,
 )
-from tests.test_rc6_ppi_capacity_benchmark import wire, measure
+from tests.test_rc6_ppi_capacity_benchmark import wire
 
 
 BOOK_URL = "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book"
@@ -219,31 +217,43 @@ def test_off_shadow_with_absent_shared_budget_never_sends_market_get(
         direct_guard.restore()
 
 
-def test_a772_fake_wire_without_open_evidence_does_not_gain_dynamic_lease(wire, tmp_path):
-    """A benchmark's synthetic samples alone cannot authorize a live lease.
+def test_a772_fake_wire_without_open_evidence_does_not_gain_dynamic_lease(
+    wire, tmp_path, monkeypatch,
+):
+    """A fake OPEN benchmark plus self-hash approval cannot grant live PPI GET.
 
-    R4 intentionally requires genuine OPEN_READONLY evidence before building a
-    dynamic recommendation. Durable positive STATIC leases are covered by the
-    two-reader test below; this negative guard must never perform a PPI GET.
+    SHADOW capacity math is intentionally testable with an in-memory SDK wire.
+    Neither those samples nor a self-declared reviewer authenticate an OPEN
+    provider observation or independently governed PPI Watch quota. The runtime
+    must deny even after an otherwise valid synthetic APPROVED configuration.
     """
     from be_paper_engine import PaperStore
+    from tests.test_rc6_capacity_promotion import approved
 
     clock, provider_calls, _ = wire
-    report = measure(wire, cadence_seconds=30)  # in-memory SDK wire only
-    recommendation = build_recommendation(
-        report, policy=deepcopy(DEFAULT_POLICY), as_of=clock.now())
-    assert recommendation["status"] == "NO_VERIFICADO"
-    assert "OPEN_READONLY_EVIDENCE_REQUIRED" in recommendation["reason_codes"]
+    policy, recommendation, report, approval, at = approved(wire)
+    # A missing optional SDK dependency must not make a no-wire RED report
+    # pass this negative test vacuously. Exercise completed fake measurements.
+    assert report["status"] == "OPEN_OBSERVATIONS_RECORDED"
+    assert report["wire_metrics"]["requests"] == 181
+    assert len(provider_calls) == 181
+    assert recommendation["status"] == "SHADOW_RECOMMENDATION"
     store = PaperStore(str(tmp_path / "paper.sqlite"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
-    policy = deepcopy(DEFAULT_POLICY)
-    policy["mode"] = "APPROVED"
-    authority = RuntimeCapacityController(
-        environ={}, policy=policy, recommendation=recommendation, report=report)
+    monkeypatch.setattr(budget_module, "PINNED_STATIC_SHARED_SIGNER_KEY_SHA256", None)
+    authority = RuntimeCapacityController(database=store.path, environ={},
+        policy=policy, recommendation=recommendation, report=report, approval=approval)
     runtime = RuntimePPIBudget(store.path, authority, clock=clock.now)
     assert not runtime.path.exists()
 
     provider_calls.clear()  # exclude synthetic benchmark observations
+    admission = runtime.acquire("book", consumer="SCANNER", priority="DISCOVERY")
+    assert admission == {"allowed": False,
+                         "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
+    assert not runtime.path.exists()
+    state = authority.state(at)
+    assert state["status"] == "BASELINE_FAIL_CLOSED"
+    assert state["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
     guard = ReadOnlyTransportGuard(budget=runtime, consumer="EXIT_READER").install()
     try:
         with guard.read_scope(priority="EXIT_CRITICAL"):

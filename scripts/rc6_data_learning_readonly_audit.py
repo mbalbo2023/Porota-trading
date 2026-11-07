@@ -65,8 +65,22 @@ def generic_matching_tables(c, names):
     return result
 
 
+def counter_evidence(value):
+    """Classify the SQLite value without mistaking missing/false for zero.
+
+    This labels evidence observed in one read-only DB query; it does not
+    establish the physical host/runtime invariant independently.
+    """
+    if type(value) is not int:
+        return 'NO_VERIFICADO'
+    return 'SQLITE_INTEGER_ZERO' if value == 0 else 'NONZERO'
+
+
 def audit_observer():
-    result = {'path': str(OBSERVER_DB), 'exists': OBSERVER_DB.exists()}
+    result = {
+        'path': str(OBSERVER_DB), 'exists': OBSERVER_DB.exists(),
+        'real_orders_evidence': 'NO_VERIFICADO',
+    }
     if not OBSERVER_DB.exists():
         result['state'] = 'RED'; return result
     try:
@@ -136,8 +150,12 @@ def audit_observer():
                     'latest_complete': scalar(c, 'SELECT MAX(completed_at) FROM history_attempt_ledger_v2'),
                 }
             result['matching_tables'] = generic_matching_tables(c, ts)
-            real_orders = int((result.get('observer_state') or {}).get('real_orders_sent') or 0)
-            result['state'] = 'GREEN' if qc == 'ok' and real_orders == 0 else 'RED'
+            observer_state = result.get('observer_state') or {}
+            result['real_orders_evidence'] = counter_evidence(observer_state.get('real_orders_sent'))
+            result['state'] = 'GREEN' if (
+                qc == 'ok' and observer_state.get('mode') == 'PRODUCTION_PAPER'
+                and result['real_orders_evidence'] == 'SQLITE_INTEGER_ZERO'
+            ) else 'RED'
     except Exception as exc:
         result['state'] = 'RED'; result['error'] = f'{type(exc).__name__}:{exc}'
     return result

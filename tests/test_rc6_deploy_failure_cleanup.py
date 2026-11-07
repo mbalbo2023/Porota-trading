@@ -91,15 +91,22 @@ class FailureCleanupTests(unittest.TestCase):
         root_patch.start(); process_patch.start()
         self.addCleanup(root_patch.stop); self.addCleanup(process_patch.stop)
 
+    def assert_deferred_without_mutation(self, result):
+        """Safety baseline while no root-attested staging receipt exists."""
+        self.assertEqual(result['status'], 'RED')
+        self.assertIn('STAGING_CLEANUP_DEFERRED_UNVERIFIED', result['errors'])
+        self.assertEqual(result['removed_tags'], [])
+        self.assertEqual(result['removed_image_ids'], [])
+        self.assertEqual(result['space_recovered'], 0)
+        self.assertTrue(self.staging.exists(), 'No candidate data may be removed')
+        self.assertTrue((self.unrelated / 'keep').exists(), 'Other attempts must survive')
+        self.assertEqual(self.docker.calls, [], 'Not even Docker inspection or mutation')
+
     def test_unused_owned_tags_and_staging_removed_other_attempt_preserved(self):
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(len(result['removed_tags']), 2)
-        self.assertEqual(result['removed_image_ids'], [])
+        self.assert_deferred_without_mutation(result)
         self.assertEqual(result['shared_cache_action'], 'UNTOUCHED_NO_HOST_BUILD')
         self.assertIn('space_recovered', result)
-        self.assertFalse(self.staging.exists())
-        self.assertTrue((self.unrelated / 'keep').exists())
         self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], STABLE)
 
     def test_failed_transfer_before_image_load_only_removes_exact_stage(self):
@@ -107,81 +114,59 @@ class FailureCleanupTests(unittest.TestCase):
             self.docker.tags.pop(tag)
         self.docker.images.remove(IMG)
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(result['removed_image_ids'], [])
-        self.assertFalse(self.staging.exists())
-        self.assertTrue((self.unrelated / 'keep').exists())
+        self.assert_deferred_without_mutation(result)
         self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], STABLE)
 
     def test_running_or_stopped_owner_protects_image(self):
         # ps -aq, not ps -q, includes stopped owners as well.
         self.docker.containers['f' * 12] = (IMG, [])
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(len(result['retained_tags']), 2)
+        self.assert_deferred_without_mutation(result)
+        self.assertIn(IMG, self.docker.images)
         self.assertTrue(all(call[:3] != ['docker', 'image', 'rm'] for call in self.docker.calls))
 
     def test_stable_alias_protected_even_without_container_reference(self):
         self.docker.tags[cleanup.STABLE_IMAGE] = IMG
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(len(result['retained_tags']), 2)
+        self.assert_deferred_without_mutation(result)
+        self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], IMG)
 
     def test_running_candidate_keeps_image_but_reclaims_exact_upload(self):
         self.docker.tags[cleanup.STABLE_IMAGE] = IMG
         self.docker.containers[CID] = (IMG, [])
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(result['removed_image_ids'], [])
-        self.assertEqual(set(result['retained_reasons'].values()),
-                         {'CONTAINER_REFERENCED'})
-        self.assertFalse(self.staging.exists())
-        self.assertTrue((self.unrelated / 'keep').exists())
+        self.assert_deferred_without_mutation(result)
         self.assertEqual(self.docker.tags[cleanup.STABLE_IMAGE], IMG)
         self.assertIsInstance(result['disk_before'], int)
         self.assertIsInstance(result['disk_after'], int)
-        self.assertEqual(result['space_recovered'],
-                         result['disk_after'] - result['disk_before'])
+        self.assertEqual(result['space_recovered'], 0)
 
     def test_external_alias_or_digest_preserves_image_and_reports_why(self):
         self.docker.tags['ppi-watch:current'] = IMG
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(set(result['retained_reasons'].values()),
-                         {'NONCANDIDATE_ALIAS_OR_DIGEST'})
+        self.assert_deferred_without_mutation(result)
+        self.assertEqual(self.docker.tags['ppi-watch:current'], IMG)
         self.assertTrue(all(call[:3] != ['docker', 'image', 'rm']
                             for call in self.docker.calls))
         self.docker.tags.pop('ppi-watch:current')
         self.docker.digests[IMG] = ['foreign@sha256:' + 'e' * 64]
         self.docker.calls.clear()
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(len(result['retained_tags']), 2)
+        self.assert_deferred_without_mutation(result)
+        self.assertEqual(self.docker.digests[IMG], ['foreign@sha256:' + 'e' * 64])
 
     def test_candidate_image_without_provenance_labels_is_retained(self):
         self.docker.labels[IMG] = {}
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(set(result['retained_reasons'].values()),
-                         {'NONCANDIDATE_ALIAS_OR_DIGEST'})
-        self.assertTrue(self.staging.exists() is False)
+        self.assert_deferred_without_mutation(result)
+        self.assertIn(IMG, self.docker.images)
         self.assertTrue(all(call[1:3] != ['image', 'rm'] for call in self.docker.calls))
 
     def test_same_repository_digest_without_attempt_provenance_is_retained(self):
         self.docker.digests[IMG] = ['porota-predeploy-v2@sha256:' + 'e' * 64]
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(result['removed_image_ids'], [])
-        self.assertEqual(set(result['retained_reasons'].values()),
-                         {'NONCANDIDATE_ALIAS_OR_DIGEST'})
+        self.assert_deferred_without_mutation(result)
         self.assertIn(IMG, self.docker.images)
-        self.assertFalse(self.staging.exists())
 
     def test_malformed_image_alias_inventory_fails_closed(self):
         original = self.docker.run
@@ -190,10 +175,12 @@ class FailureCleanupTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout='invalid')
             return original(command, **kwargs)
         with patch.object(cleanup.subprocess, 'run', side_effect=malformed):
-            result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'RED')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertEqual(len(result['errors']), 2)
+            # Preserve parser coverage independently of an unsafe cleanup
+            # admission: malformed Docker evidence must remain explicitly RED.
+            with self.assertRaisesRegex(cleanup.CleanupRejected, 'IMAGE_ALIASES_INVALID'):
+                cleanup.image_aliases(IMG, SHA)
+        self.docker.calls.clear()
+        self.assert_deferred_without_mutation(cleanup.cleanup(SHA))
 
     def test_bind_mount_protects_staging_and_nested_data(self):
         source = self.staging / 'data'
@@ -201,8 +188,7 @@ class FailureCleanupTests(unittest.TestCase):
         (source / 'keep.db').write_bytes(b'opaque synthetic data')
         self.docker.containers[CID] = (STABLE, [{'Type': 'bind', 'Source': str(source)}])
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'RED')
-        self.assertIn('STAGING_REFERENCED_BY_CONTAINER', result['errors'])
+        self.assert_deferred_without_mutation(result)
         self.assertTrue((source / 'keep.db').exists())
 
     def test_shared_host_stopped_boca_mount_prevents_any_stage_removal(self):
@@ -218,8 +204,7 @@ class FailureCleanupTests(unittest.TestCase):
             {'Type': 'bind', 'Source': str(external_mount)}])
         self.docker.containers['f'*12] = (third_image, [])
         report = cleanup.cleanup(SHA)
-        self.assertEqual(report['status'], 'RED')
-        self.assertIn('STAGING_REFERENCED_BY_CONTAINER', report['errors'])
+        self.assert_deferred_without_mutation(report)
         self.assertTrue((external_mount / 'must-stay.db').exists())
         self.assertEqual(self.docker.tags['boca-socios-assistant:beta'], boca_image)
         self.assertEqual(self.docker.tags['third-system:current'], third_image)
@@ -240,8 +225,7 @@ class FailureCleanupTests(unittest.TestCase):
         with patch.object(cleanup, 'host_mountpoints',
                           return_value=[Path('/'), nested]):
             result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'RED')
-        self.assertIn('STAGING_HOST_MOUNTPOINT', result['errors'])
+        self.assert_deferred_without_mutation(result)
         self.assertEqual((nested / 'backup.db').read_bytes(), b'preserve')
         self.assertTrue((self.unrelated / 'keep').exists())
 
@@ -254,7 +238,7 @@ class FailureCleanupTests(unittest.TestCase):
         with patch.object(cleanup.Path, 'read_text', return_value=raw.replace('\\040', '\\bad')):
             with self.assertRaisesRegex(cleanup.CleanupRejected,
                                         'HOST_MOUNT_INVENTORY_INVALID'):
-                cleanup.cleanup(SHA)
+                cleanup.host_mountpoints()
         self.assertTrue(self.staging.exists())
         self.assertIn('porota-predeploy-v2:' + SHA, self.docker.tags)
         self.assertFalse(any(call[:3] == ['docker', 'image', 'rm']
@@ -262,19 +246,25 @@ class FailureCleanupTests(unittest.TestCase):
         with patch.object(cleanup.Path, 'read_text', side_effect=OSError('proc unavailable')):
             with self.assertRaisesRegex(cleanup.CleanupRejected,
                                         'HOST_MOUNT_INVENTORY_FAILED'):
-                cleanup.cleanup(SHA)
+                cleanup.host_mountpoints()
         self.assertTrue(self.staging.exists())
 
     def test_tmpfs_has_no_host_source_and_does_not_disable_cleanup(self):
         self.docker.containers[CID] = (STABLE, [{'Type': 'tmpfs', 'Source': ''}])
+        # The parser must still correctly ignore an unbacked tmpfs, but that
+        # is not authorization to delete an unverified staging tree.
+        _, mounts = cleanup.container_inventory()
+        self.assertEqual(mounts, [])
+        self.docker.calls.clear()
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertFalse(self.staging.exists())
+        self.assert_deferred_without_mutation(result)
 
     def test_inventory_failure_is_not_interpreted_as_unreferenced(self):
         self.docker.failure = ['ps', '-aq']
         with self.assertRaises(cleanup.CleanupRejected):
-            cleanup.cleanup(SHA)
+            cleanup.container_inventory()
+        self.docker.calls.clear()
+        self.assert_deferred_without_mutation(cleanup.cleanup(SHA))
         self.assertTrue(self.staging.exists())
         self.assertIn('porota-predeploy-v2:' + SHA, self.docker.tags)
 
@@ -283,16 +273,16 @@ class FailureCleanupTests(unittest.TestCase):
                        [{'Type': 'unknown', 'Source': '/somewhere'}]):
             self.docker.containers[CID] = (STABLE, mounts)
             with self.assertRaises(cleanup.CleanupRejected):
-                cleanup.cleanup(SHA)
+                cleanup.container_inventory()
+            self.docker.calls.clear()
+            self.assert_deferred_without_mutation(cleanup.cleanup(SHA))
             self.assertTrue(self.staging.exists())
             self.assertIn('porota-predeploy-v2:' + SHA, self.docker.tags)
 
     def test_docker_removal_race_remains_nonforced_and_reports_red(self):
         self.docker.failure = ['image', 'rm']
         result = cleanup.cleanup(SHA)
-        self.assertEqual(result['status'], 'RED')
-        self.assertEqual(result['removed_tags'], [])
-        self.assertFalse(self.staging.exists())
+        self.assert_deferred_without_mutation(result)
         self.assertIn('porota-predeploy-v2:' + SHA, self.docker.tags)
 
     def test_symlink_root_and_malformed_sha_cannot_expand_scope(self):
@@ -325,7 +315,9 @@ class FailureCleanupTests(unittest.TestCase):
             with patch('builtins.print') as output:
                 self.assertEqual(cleanup.main(['--candidate-sha', SHA]), 2)
         report = json.loads(output.call_args.args[0])
-        self.assertIn('PROMOTION_STILL_RUNNING', report['errors'])
+        # The old /tmp lock, even if flocked by another process, is never
+        # authority for Docker/stage mutation. Require root delegation.
+        self.assertIn('PROMOTION_MUTEX_DELEGATED_PROOF_UNAVAILABLE', report['errors'])
         self.assertEqual(report['candidate_sha'], SHA)
         self.assertTrue(self.staging.exists())
         self.assertEqual(self.docker.calls, [])
@@ -334,10 +326,13 @@ class FailureCleanupTests(unittest.TestCase):
         lock = self.root / 'porota-rc6-deploy-v2.lock'
         lock.write_text('')
         inode = lock.stat().st_ino
-        with patch('builtins.print'):
-            self.assertEqual(cleanup.main(['--candidate-sha', SHA]), 0)
+        with patch('builtins.print') as output:
+            self.assertEqual(cleanup.main(['--candidate-sha', SHA]), 2)
+        report = json.loads(output.call_args.args[0])
+        self.assertIn('PROMOTION_MUTEX_DELEGATED_PROOF_UNAVAILABLE', report['errors'])
         self.assertEqual(lock.stat().st_ino, inode)
-        self.assertFalse(self.staging.exists())
+        self.assertTrue(self.staging.exists())
+        self.assertEqual(self.docker.calls, [])
 
     def test_cleanup_selects_exact_run_attempt_and_preserves_same_sha_other_attempt(self):
         first = self.root / f'porota-deploy-v2-{SHA}-1234-1'
@@ -345,8 +340,10 @@ class FailureCleanupTests(unittest.TestCase):
         first.mkdir(); other.mkdir()
         (other / 'keep').write_text('different attempt')
         result = cleanup.cleanup(SHA, '1234', '1')
-        self.assertEqual(result['status'], 'GREEN')
-        self.assertFalse(first.exists())
+        self.assertEqual(result['status'], 'RED')
+        self.assertIn('STAGING_CLEANUP_DEFERRED_UNVERIFIED', result['errors'])
+        self.assertTrue(first.exists())
+        self.assertEqual(self.docker.calls, [])
         self.assertEqual((other / 'keep').read_text(), 'different attempt')
         with self.assertRaisesRegex(cleanup.CleanupRejected, 'ATTEMPT_IDENTITY_INVALID'):
             cleanup.cleanup(SHA, '../', '1')

@@ -13,7 +13,7 @@ from scripts import rc6_ci_shard_quorum as shards
 
 SHA = "a" * 40
 TREE = "b" * 40
-NODES = [f"tests/test_provenance.py::test_case[{i}]" for i in range(11)]
+NODES = [f"tests/test_provenance_{i // 6}.py::test_case[{i}]" for i in range(11)]
 
 
 def xml_for(path, nodeids, *, status=None, bad_hash=False, missing_property=False,

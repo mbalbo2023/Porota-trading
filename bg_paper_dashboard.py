@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import math
 from collections import Counter
 import json
 import os
@@ -39,7 +40,9 @@ import er_dashboard_truth_projection_rc6 as dashboard_truth_projection
 from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
 # HF6_V2_HISTORY_DASHBOARD_PATCH
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
-from dg_dashboard_daily_result_ux_hf6 import daily_results_html, report_cards_html, RESPONSIVE_CSS
+from dg_dashboard_daily_result_ux_hf6 import (daily_results_html, report_cards_html,
+    report_has_content_provenance, LEGACY_REPORT_PROVENANCE_MISSING, RESPONSIVE_CSS)
+from rc6_trader_dashboard.projection import decimal_amount
 from dh_dashboard_compact_lists_hf6 import COMPACT_CSS, pager_html
 from ei_dashboard_table_accessibility_rc5 import TABLE_A11Y_CSS, TABLE_A11Y_SCRIPT
 import eb_dashboard_live_policy_hf2 as live_policy
@@ -97,7 +100,8 @@ box-shadow:0 3px 14px #14213d0c;margin:12px 0;overflow:hidden;min-width:0}.paper
 .paper-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;font-size:.86rem}.paper-table th{background:#e7edf4}
 .paper-table th,.paper-table td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
 .paper-muted{color:var(--muted);font-size:.86rem}.paper-action{display:inline-block;background:var(--blue);color:#fff!important;
-border:0;border-radius:8px;padding:9px 13px;text-decoration:none;font-weight:700;cursor:pointer;margin:2px}
+border:0;border-radius:8px;padding:9px 13px;min-height:44px;text-decoration:none;font-weight:700;cursor:pointer;margin:2px}
+.paper-actions{max-width:1280px;margin:3px auto 0;padding:0 18px}
 .paper-status{display:inline-block;border-radius:999px;padding:3px 8px;font-weight:750;color:#fff;white-space:normal;max-width:100%;line-height:1.15;text-align:center}
 .s-verde{background:var(--green)}.s-amarillo{background:var(--yellow)}.s-rojo{background:var(--red)}.s-gris{background:var(--gray)}
 .paper-notice{padding:11px 14px;border:1px solid #c9d4e3;background:#eef3f8;border-radius:9px;margin:10px 0}
@@ -127,7 +131,7 @@ code{white-space:normal;overflow-wrap:anywhere}.legacy-shell{background:transpar
 </style>"""
 
 MODE_INFO = {
-    "PRODUCTION_PAPER": ("MODO SIMULACIÓN PRODUCTIVA", "PPI Producción solo lectura; compras y ventas simuladas; órdenes reales: NINGUNA."),
+    "PRODUCTION_PAPER": ("MODO SIMULACIÓN PRODUCTIVA", "PPI Producción solo lectura; compras y ventas simuladas; órdenes reales: estado actual NO_VERIFICADO sin recibo externo vinculado."),
     "SANDBOX": ("MODO SANDBOX", "PPI Sandbox; únicamente operaciones del entorno de pruebas."),
     "PRODUCTION_REAL": ("ESTADO INVÁLIDO — PRODUCCIÓN REAL BLOQUEADA", "Por política permanente, Porota nunca puede enviar órdenes con dinero real."),
     "DETENIDO": ("PLATAFORMA DETENIDA", "Dashboard disponible; ningún motor de trading está activo."),
@@ -314,6 +318,16 @@ def _card(title, value, detail, state="gray", value_class=""):
     return f"<div class='paper-card card-{state}'>{_e(title)}<br><b class='metric {value_class}'>{_e(visible_value)}</b><br><span class='paper-muted'>{_e(detail)}</span></div>"
 
 
+def _real_orders_local_card(value):
+    """Reuse the trader-terminal guard; SQLite zero is not a runtime receipt."""
+    from rc6_trader_dashboard.shell import _real_order_receipt
+
+    status, alert = _real_order_receipt({"real_orders_sent": value})
+    return _card("Órdenes reales", status,
+                 alert or "Lectura de BD local; no acredita órdenes reales externas ni runtime.",
+                 "red" if alert else "yellow")
+
+
 def _fresh(value, seconds=180):
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -328,7 +342,7 @@ def mode_banner():
     dataset = (' Dataset PAPER v17 independiente: una migración verificada puede conservar catálogo e históricos; '
                'nunca traslada posiciones, saldos ni aprendizaje operativo.'
                if mode in {'PRODUCTION_PAPER', 'DETENIDO'} else '')
-    refresh_text = (f"Actualización parcial: cada {REFRESH_SECONDS} s; conserva detalles y foco."
+    refresh_text = (f"Actualización parcial: cada {REFRESH_SECONDS} s; pausable para lectura asistida."
                     if REFRESH_SECONDS else
                     "Actualización visual única y manual; no interrumpe la lectura por voz.")
     warning = (f" Configuración del contenedor={CONFIGURED_MODE}; manifiesto/runtime={mode}. "
@@ -356,44 +370,131 @@ def _document(title, body, refresh=REFRESH_SECONDS):
     if interval:
         script = f"""<script>(function(){{
         const seconds={interval};
-        async function refreshPorota(){{
+        const toggle=document.getElementById('porota-auto-refresh-toggle');
+        const status=document.getElementById('porota-auto-refresh-status');
+        const pauseKey='porota-auto-refresh-paused';
+        let saved=null;
+        try{{saved=sessionStorage.getItem(pauseKey)}}catch(_error){{}}
+        const reducedMotion=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        let paused=saved==='1' || (saved===null && !!reducedMotion);
+        let refreshUnknown=false;
+        function showPauseState(){{
+          if(toggle){{
+            toggle.setAttribute('aria-pressed',String(paused));
+            toggle.textContent=paused?'Reanudar actualización automática':'Pausar actualización automática';
+          }}
+          const message=refreshUnknown
+            ?'NO_VERIFICADO: no fue posible renovar la vista. Use Actualizar página para reintentar.'
+            :paused
+              ?'Vista pausada para lectura; el aviso de modo sigue actualizándose.'
+              :'Vista con actualización automática; puede pausarla por voz.';
+          if(status&&status.textContent!==message)status.textContent=message;
+        }}
+        function failClosedRefresh(){{
+          refreshUnknown=true;
+          let banner=document.querySelector('#porota-paper-mode');
+          if(!banner){{
+            // Re-establish the stable, outside-main alarm if another script
+            // removed it; never treat a partial page as proof without it.
+            banner=document.createElement('div');
+            banner.id="porota-paper-mode";
+            const controls=document.querySelector('.paper-actions');
+            if(controls)controls.before(banner);
+            else document.body.prepend(banner);
+          }}
+          const warning='<strong role="alert">NO_VERIFICADO: no se pudo confirmar la actualización.</strong>'+
+            '<small>El estado mostrado anteriormente puede estar vencido. '+
+            'No interpretar colores anteriores como evidencia actual; reintente con Actualizar página.</small>';
+          if(banner&&banner.innerHTML!==warning)banner.innerHTML=warning;
+          showPauseState();
+        }}
+        function readingMain(){{
           const active=document.activeElement;
-          if(document.hidden || document.querySelector('dialog[open]') ||
-             active?.matches('a,button,input,select,textarea,summary') ||
-             active?.closest('.trade-body,.porota-progressive-controls,.compact-pager')) return;
+          const current=document.querySelector('main.paper-page');
+          const external=active?.id==='porota-auto-refresh-toggle' || active?.id==='actualizar-pagina';
+          const interactive=!external && (
+            active?.matches('a,button,input,select,textarea,summary') ||
+            active?.closest('.trade-body,.porota-progressive-controls,.compact-pager'));
+          const selection=window.getSelection?.()?.toString().trim();
+          return !!selection || !!interactive || !!(current&&current.contains(active));
+        }}
+        function pauseOnInteraction(event){{
+          const current=document.querySelector('main.paper-page');
+          if(event.type==='selectionchange'){{
+            if(!window.getSelection?.()?.toString().trim()) return;
+          }}else if(!current?.contains(event.target)) return;
+          if(!paused){{paused=true;showPauseState();}}
+        }}
+        ['focusin','pointerdown','keydown','selectionchange'].forEach(name=>
+          document.addEventListener(name,pauseOnInteraction,{{passive:true}}));
+        toggle?.addEventListener('click',()=>{{
+          paused=!paused;
+          try{{sessionStorage.setItem(pauseKey,paused?'1':'0')}}catch(_error){{}}
+          showPauseState();
+        }});
+        showPauseState();
+        let latestRefresh=0;
+        async function refreshPorota(force=false){{
+          if(document.hidden) return;
+          const request=++latestRefresh;
+          const active=document.activeElement;
           const opened=[...document.querySelectorAll('details.paper-trade[open]')]
             .map(x=>x.querySelector('[data-trade-id]')?.dataset.tradeId).filter(Boolean);
           const y=window.scrollY;
           const activeId=active?.id || '';
           try{{
             const response=await fetch(location.href,{{headers:{{'X-Porota-Partial':'1'}},cache:'no-store'}});
-            if(!response.ok) return;
-            const parsed=new DOMParser().parseFromString(await response.text(),'text/html');
+            if(request!==latestRefresh) return; // ignore stale out-of-order receipt
+            if(!response.ok){{failClosedRefresh();return;}}
+            const html=await response.text();
+            if(request!==latestRefresh) return;
+            const parsed=new DOMParser().parseFromString(html,'text/html');
             const next=parsed.querySelector('main.paper-page');
             const current=document.querySelector('main.paper-page');
             const banner=parsed.querySelector('#porota-paper-mode');
-            if(next&&current) current.replaceWith(next);
-            window.porotaDecorateDetails?.();
-            if(banner&&document.querySelector('#porota-paper-mode'))
-              document.querySelector('#porota-paper-mode').replaceWith(banner);
-            opened.forEach(id=>{{
-              const node=[...document.querySelectorAll('details.paper-trade')]
-                .find(x=>x.querySelector(`[data-trade-id="${{CSS.escape(id)}}"]`));
-              if(node)node.open=true;
-            }});
-            window.scrollTo(0,y);
-            if(activeId){{
-              const replacement=document.getElementById(activeId);
-              if(replacement) replacement.focus({{preventScroll:true}});
+            // A login page, malformed partial or missing safety banner is NOT
+            // a successful refresh even when HTTP says 200.
+            if(!next||!current||!banner||!banner.innerHTML.trim()){{
+              failClosedRefresh();return;
             }}
-          }}catch(_error){{}}
+            const currentBanner=document.querySelector('#porota-paper-mode');
+            if(!currentBanner){{failClosedRefresh();return;}}
+            refreshUnknown=false;
+            if(currentBanner.innerHTML!==banner.innerHTML)
+              currentBanner.innerHTML=banner.innerHTML;
+            showPauseState();
+            // A fresh safety banner still arrives while the reading view is held.
+            // Recheck after await: voice/touch selection can start during fetch.
+            if(!force && (document.querySelector('dialog[open]') || readingMain())){{
+              paused=true;
+              showPauseState();
+            }}
+            if(next&&current&&(force||!paused)){{
+              current.replaceWith(next);
+              window.porotaDecorateDetails?.();
+              opened.forEach(id=>{{
+                const node=[...document.querySelectorAll('details.paper-trade')]
+                  .find(x=>x.querySelector(`[data-trade-id="${{CSS.escape(id)}}"]`));
+                if(node)node.open=true;
+              }});
+              window.scrollTo(0,y);
+              if(activeId){{
+                const replacement=document.getElementById(activeId);
+                if(replacement) replacement.focus({{preventScroll:true}});
+              }}
+            }}
+          }}catch(_error){{if(request===latestRefresh)failClosedRefresh();}}
         }}
         window.setInterval(refreshPorota,seconds*1000);
         window.refreshPorota=refreshPorota;
         }})();</script>"""
     controls = ("<div class='paper-actions'><a class='paper-action' "
-                "href='javascript:window.refreshPorota?window.refreshPorota():location.reload()' id='actualizar-pagina'>"
-                "🔄 Actualizar página</a></div>")
+                "href='javascript:window.refreshPorota?window.refreshPorota(true):location.reload()' id='actualizar-pagina'>"
+                "🔄 Actualizar página</a>"
+                + ("<button type='button' class='paper-action' id='porota-auto-refresh-toggle' "
+                   "aria-pressed='false' aria-controls='porota-main-content'>Pausar actualización automática</button>"
+                   "<span id='porota-auto-refresh-status' role='status' aria-live='polite' "
+                   "aria-atomic='true' class='paper-sr-only'></span>" if interval else "") + "</div>")
     detail_popup = """<script>(function(){
       const dialog=document.createElement('dialog');
       dialog.className='paper-detail-dialog';
@@ -435,8 +536,8 @@ def _document(title, body, refresh=REFRESH_SECONDS):
       });
     })();</script>"""
     return ("<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            f"<title>{_e(title)}</title>{THEME}{RESPONSIVE_CSS}{COMPACT_CSS}{TABLE_A11Y_CSS}</head><body id='top'>{_nav()}{mode_banner()}"
-            f"<main class='paper-page'>{controls}{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{detail_popup}{TABLE_A11Y_SCRIPT}</body></html>")
+            f"<title>{_e(title)}</title>{THEME}{RESPONSIVE_CSS}{COMPACT_CSS}{TABLE_A11Y_CSS}</head><body id='top'>{_nav()}{mode_banner()}{controls}"
+            f"<main id='porota-main-content' class='paper-page'>{body}</main><footer class='paper-footer'><a class='up-link' href='#top'>↑ Ir al principio</a></footer>{script}{detail_popup}{TABLE_A11Y_SCRIPT}</body></html>")
 
 
 def _canonicalize(content, path=""):
@@ -1072,7 +1173,6 @@ def home_page():
             f"Patrimonio paper {currency}", _amount(value, currency) if ready else "s/d",
             f"Capital ficticio inicial {_amount(initial,currency)}; caja independiente",
             "gray" if not ready else "green" if value >= initial else "red"))
-    real_orders = int(state.get("real_orders_sent") or 0)
     cards = "".join((
         _card("Estado general", overall_label,
               ((f"{red} fuentes en rojo; {pending} pendientes/degradadas. " + pending_detail)
@@ -1090,8 +1190,7 @@ def home_page():
               "green" if state.get("ppi_auth") == "OK" else "yellow"
               if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
         *balance_cards,
-        _card("Órdenes reales", real_orders, "Debe permanecer siempre en cero",
-              "green" if real_orders == 0 else "red"),
+        _real_orders_local_card(state.get("real_orders_sent")),
     ))
     body = (f"<h1>Panel ejecutivo — Porota Trading {VERSION}</h1>"
             "<div class='paper-warning'><b>Ejecución exclusivamente simulada.</b> "
@@ -1276,7 +1375,7 @@ def scalping_page():
       _card("EOD / Max Hold",scalping_truth.get('exit_supervisor_state','NOT_STARTED'),
             f"{scalping_truth.get('eod_policy')} · Max Hold {scalping_truth.get('max_hold_minutes',0)} min · {_local_time(scalping_truth.get('exit_supervisor_heartbeat_at'))}",
             "green" if scalping_truth.get('exit_supervisor_state')=='RUNNING' else "yellow"),
-      _card("Órdenes reales",canonical_truth['runtime'].get("real_orders_sent",0),"Autoridad: observer_state; debe ser siempre cero","green" if canonical_truth['runtime'].get("real_orders_sent",0)==0 else "red"),
+      _real_orders_local_card(canonical_truth['runtime'].get("real_orders_sent")),
     ))
     scalp_rows="".join(f"<tr><td>{_local_time(p['opened_at'])}</td><td>{_e(p['symbol'])}</td><td>{_e(p['currency'])}</td><td>{_status(p['status'])}</td><td>{_e(p['quantity'])}</td><td>{_result_amount(p.get('net_pnl'), p.get('currency'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in scalp_positions) or "<tr><td colspan='7'>Todavía no hubo fills scalping PAPER.</td></tr>"
     execution_notice=("<div class='paper-warning'><b>DESACTIVADO:</b> scalping no está disponible con el universo READY actual. No se generan candidatos ni fills scalping.</div>"
@@ -2039,19 +2138,47 @@ def financial_page():
     latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date WHERE upper(COALESCE(f.source,'')) <> 'BCRA' ORDER BY f.source,f.indicator""") if _table("financial_series") else []
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
     try:
-        monthly=_rows("""SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
-                                CAST(SUM(CAST(net_pnl AS REAL)) AS TEXT) pnl
-                         FROM paper_positions
-                         WHERE upper(status)='CLOSED' AND COALESCE(currency,'ARS')='ARS'
-                         GROUP BY substr(date(datetime(closed_at,'-3 hours')),1,7)
-                         ORDER BY month DESC LIMIT 24""") if _table("paper_positions") else []
+        raw_monthly=_rows("""WITH closed_ars AS (
+                             SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
+                                    net_pnl FROM paper_positions
+                             WHERE upper(status)='CLOSED' AND COALESCE(currency,'ARS')='ARS'
+                         ), recent_months AS (
+                             SELECT month FROM closed_ars GROUP BY month
+                             ORDER BY month DESC LIMIT 24
+                         ) SELECT c.month,c.net_pnl FROM closed_ars c
+                         JOIN recent_months m ON c.month IS m.month
+                         ORDER BY c.month DESC""") if _table("paper_positions") else []
+        # SQLite CAST silently turns 'oops' and numeric prefixes into numbers.
+        # Validate every raw ledger value before aggregating; one bad close
+        # invalidates the WHOLE month, never merely the partial subtotal.
+        monthly_totals = {}
+        for row in raw_monthly:
+            month = row["month"]
+            current = monthly_totals.setdefault(month, Decimal("0"))
+            if month is None:
+                monthly_totals[month] = None
+                continue
+            if current is None:
+                continue
+            try:
+                amount = decimal_amount(row["net_pnl"])
+                if amount is None or not math.isfinite(float(amount)):
+                    raise ValueError("unverified ledger PnL")
+                total = current + amount
+                if not total.is_finite() or not math.isfinite(float(total)):
+                    raise ValueError("non-finite monthly PnL")
+                monthly_totals[month] = total
+            except (InvalidOperation, ValueError, TypeError, OverflowError):
+                monthly_totals[month] = None
+        monthly = [{"month": month, "pnl": str(total) if total is not None else None}
+                   for month, total in monthly_totals.items()]
         spot_state="READY"
     except Exception:
         monthly=[]
         spot_state="UNAVAILABLE"
     ipc=_rows("SELECT substr(observed_date,1,7) month,value FROM financial_series WHERE indicator='IPC mensual INDEC' ORDER BY observed_date DESC LIMIT 24") if _table("financial_series") else []
     ipc_map={r['month']:r['value'] for r in ipc}
-    compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
+    compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{'NO_VERIFICADO' if r['pnl'] is None else _money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
     proxy = _porota_leaders_proxy()
     proxy_value = "s/d" if proxy["average"] is None else ("+" if proxy["average"]>0 else "")+_locale_number(proxy['average'],2)+"%"
     median_value = "s/d" if proxy["average"] is None else ("+" if proxy["median"]>0 else "")+_locale_number(proxy['median'],2)+"%"
@@ -2437,7 +2564,7 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
       _card('Operaciones abiertas',len(positions),'Lo primero de /vivo: dinero PAPER y marks actuales','green' if positions else 'gray'),
       _card('Cerradas hoy',closed_total,f'{closed_total} disponibles; 10 visibles por tanda','green' if closed_total else 'gray'),
       _card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
-      _card('Órdenes reales',state.get('real_orders_sent',0),'Invariante permanente: cero','green' if state.get('real_orders_sent',0)==0 else 'red'),
+      _real_orders_local_card(state.get('real_orders_sent')),
     ))
     freshness=("<div class='paper-notice' aria-label='Freshness de En vivo'><b>Timestamps y freshness:</b> "
                f"vista generada {_local_time(now.isoformat())} · heartbeat {_local_time(state.get('heartbeat_at'))} · "
@@ -2966,8 +3093,7 @@ def introspection_content():
               "Ledger PAPER · rueda ART", "gray"),
         _card("PnL neto hoy · ARS", _amount(trading['net_pnl_today'],'ARS') if trading.get('net_pnl_today') is not None else "—",
               "Resultado PAPER · moneda ARS", _result_card_state(trading.get('net_pnl_today'))),
-        _card("Órdenes reales", observer.get("real_orders_sent",0), "Invariante permanente: cero",
-              "green" if int(observer.get("real_orders_sent") or 0)==0 else "red"),
+        _real_orders_local_card(observer.get("real_orders_sent")),
         _card("Históricos", f"{ingestion.get('instruments',0)} instrumentos / {ingestion.get('rows',0)} filas",
               f"Última descarga {_local_time(ingestion.get('last_download'))}", "yellow" if int(ingestion.get('instruments') or 0)<243 else "green"),
         _card("Disco", f"{storage.get('filesystem_used_pct','—')}% usado",
@@ -3423,7 +3549,10 @@ def install(app,check_auth):
     def report_download(report_id:int,kind:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
         if kind not in {"pdf","ai"}: raise HTTPException(404,"Tipo no disponible")
-        rows=_rows("SELECT pdf_path,ai_path FROM report_registry WHERE id=?",(report_id,)); path=Path(rows[0]["pdf_path" if kind=="pdf" else "ai_path"]) if rows and rows[0].get("pdf_path" if kind=="pdf" else "ai_path") else None
+        rows=_rows("SELECT pdf_path,ai_path,state,detail FROM report_registry WHERE id=?",(report_id,))
+        if rows and not report_has_content_provenance(rows[0]):
+            raise HTTPException(409,LEGACY_REPORT_PROVENANCE_MISSING)
+        path=Path(rows[0]["pdf_path" if kind=="pdf" else "ai_path"]) if rows and rows[0].get("pdf_path" if kind=="pdf" else "ai_path") else None
         root=(artifact_root(DB_PATH) / 'reports').resolve()
         if not path or not path.resolve().is_relative_to(root) or not path.exists(): raise HTTPException(404,"Informe no disponible")
         return FileResponse(path,media_type="application/pdf" if kind=="pdf" else "application/json",filename=path.name)

@@ -41,6 +41,10 @@ def _setup(tmp_path, *, symbol, family):
         (ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text()
     )["records"] if item["ticker"] == symbol)
     assert raw["type"] == family and raw["currency"] == "Pesos"
+    # The historical catalog diagnostic has no provider settlement field.  The
+    # positive native PAPER case must synthesize that missing *raw* coordinate
+    # explicitly, rather than treating its query hint as PPI evidence.
+    raw = dict(raw, settlement="A-24HS")
     store = PaperStore(str(tmp_path / "equity-native.db"))
     catalog.init_schema(store)
     observed_at = AT.isoformat()
@@ -77,6 +81,23 @@ def _signal(store, broker, symbol, family, terms):
         quote = _quote(symbol, family, terms, price, minute)
         store.add_quote(quote)
         broker.on_quote(quote)
+
+
+@pytest.mark.parametrize("availability_marker", [None, "PPI_PRIMARY"])
+def test_request_candidate_or_missing_raw_settlement_never_attests_native_identity(
+        availability_marker):
+    raw = next(item for item in json.loads(
+        (ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text()
+    )["records"] if item["ticker"] == "ALUA")
+    raw = dict(raw)  # historical provider diagnostic omits settlement
+    if availability_marker:
+        raw["_availability_source"] = availability_marker
+    record = catalog.normalize_record(raw, "A-24HS", AT.isoformat(), "SYNTHETIC_HOLD_ONLY")
+    assert record["settlement"] == "A-24HS"
+    assert record["settlement_source"] == "REQUEST_CANDIDATE"
+    assert catalog.ppi_full_key_evidence_reason(record) == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+    assert catalog.quote_terms(record, now=AT)["opening_block_reason"] == (
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED")
 
 
 @pytest.mark.parametrize("symbol,family", [("ALUA", "ACCIONES"), ("AAPL", "CEDEARS")])

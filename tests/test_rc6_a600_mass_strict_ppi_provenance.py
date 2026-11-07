@@ -99,7 +99,31 @@ class MassContractProvenanceA600Tests(unittest.TestCase):
         records, skipped, identities = mass.planned_records(candidates)
         self.assertEqual(records, [])
         self.assertEqual(identities, {})
-        self.assertEqual(skipped, {"NOT_PPI_PRIMARY": 2, "NOT_AVAILABLE": 1})
+        # The current settlement guard identifies a non-PPI fifth key
+        # separately from a missing PPI discovery witness (A651 contract).
+        self.assertEqual(skipped, {
+            "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1,
+            "NOT_PPI_PRIMARY": 1,
+            "NOT_AVAILABLE": 1,
+        })
+
+    def test_stale_provider_raw5_never_mints_native_or_derived_snapshot(self):
+        records, skipped, identities = mass.planned_records([
+            row("PPI_PRIMARY", status="STALE"),
+        ])
+        self.assertEqual(records, [])
+        self.assertEqual(identities, {})
+        self.assertEqual(skipped, {"NOT_AVAILABLE": 1})
+
+    def test_available_status_casefold_matches_sql_catalog_filter(self):
+        records, skipped, identities = mass.planned_records([
+            row("PPI_PRIMARY", status="available"),
+        ])
+        self.assertEqual(skipped, {})
+        self.assertEqual(identities, {"ACCIONES": 1})
+        self.assertEqual([item["source_class"] for item in records], [
+            "PPI_STRUCTURED_API", "DERIVED_OFFICIAL_RULE",
+        ])
 
     def test_sqlite_mass_collection_does_not_publish_non_ppi_snapshots(self):
         with tempfile.TemporaryDirectory(prefix="rc6-a600-mass-") as temp:

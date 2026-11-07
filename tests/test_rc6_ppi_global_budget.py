@@ -12,7 +12,10 @@ import pytest
 import requests
 
 from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation, ReadOnlyTransportGuard, retry_read
-from rc6_ppi_global_budget import (BudgetBackpressure, GlobalPPIBudget, RuntimePPIBudget, budget_policy, SCHEMA)
+from rc6_ppi_global_budget import (
+    BudgetBackpressure, GlobalPPIBudget, RuntimePPIBudget,
+    baseline_budget_policy, budget_policy, SCHEMA,
+)
 from tests.test_rc6_ppi_capacity_benchmark import Clock, wire
 from tests.test_rc6_capacity_promotion import approved, controller
 
@@ -143,10 +146,24 @@ def test_clock_rollback_and_expired_capacity_deny_off_wire(tmp_path):
     assert not blocked["allowed"] and "EXPIRED" in blocked["reason"]
 
 
-def test_approved_envelope_reserves_actual_opened_demand_once(wire):
+def test_pure_shadow_envelope_math_reserves_opened_demand_without_runtime_approval(wire):
     values = approved(wire)
     state = controller(values).state(values[-1])
-    config = budget_policy(state, opened_count=2, planned_reservations={"SCALPING_HOT": {"book": 3, "intraday": 3}})
+    assert state["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    with pytest.raises(ValueError, match="PPI_BUDGET_APPROVED_CAPACITY_REQUIRED"):
+        budget_policy(state, opened_count=2)
+    # A pure unit envelope can exercise the quota arithmetic without creating
+    # an approved controller, live runtime lease or sidecar. This local state
+    # is deliberately NOT an independently authenticated PPI/Watch authority.
+    policy_value, recommendation, _, _, _ = values
+    math_only = {"status": "APPROVED_DYNAMIC",
+        "global_budget": recommendation["global_budget"],
+        "budget_settings": policy_value["budget"],
+        "recommendation_digest": recommendation["recommendation_digest"],
+        "configuration_fingerprint": recommendation["runtime_policy_fingerprint"],
+        "expires_at": recommendation["expires_at"]}
+    config = budget_policy(math_only, opened_count=2,
+        planned_reservations={"SCALPING_HOT": {"book": 3, "intraday": 3}})
     assert config["priority_reserves"]["EXIT_CRITICAL"] == {"current": 0, "book": 12, "intraday": 0}
     assert config["priority_reserves"]["OPENED_CRITICAL"] == {"current": 2, "book": 2, "intraday": 2}
     assert config["global_limit"] == 45 and config["max_parallel_requests"] == 1
@@ -572,7 +589,14 @@ def test_previously_active_budget_falls_back_and_exit_reader_remains_live(wire, 
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     ctl = controller(values)
     runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
-    assert use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    # The persisted debt is a synthetic previously committed FACTUAL baseline,
+    # not an activation from a forged dynamic report. Only existing EXIT is
+    # entitled to continuity when later configuration becomes invalid.
+    prior = baseline_budget_policy(policy(clock), opened_count=0,
+        as_of=clock.now(), environ={})
+    historical = GlobalPPIBudget(runtime.path, prior, clock=clock.now)
+    assert use(historical, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    assert ctl.state(clock.now())["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
     if invalid == "expired":
         clock.advance(2800)
     elif invalid == "approval_corrupt":
@@ -604,9 +628,14 @@ def test_invalid_approval_and_restart_cannot_erase_prior_global_circuit(wire, tm
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     ctl = controller(values)
     runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
-    result = runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
-    runtime.start(result["lease"])
-    runtime.finish(result["lease"], status_code=429)
+    # Construct a prior synthetic FACTUAL baseline as historical debt. A fake
+    # self-hash dynamic approval never owns this durable sidecar or 429 circuit.
+    historical = GlobalPPIBudget(runtime.path, baseline_budget_policy(
+        policy(clock), opened_count=0, as_of=clock.now(), environ={}), clock=clock.now)
+    result = historical.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    assert result["allowed"]
+    historical.start(result["lease"])
+    historical.finish(result["lease"], status_code=429)
     ctl.inputs["approval"]["approved"] = False
     restored = RuntimePPIBudget(store.path, ctl, clock=clock.now)
     assert not restored.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]

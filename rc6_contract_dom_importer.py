@@ -59,7 +59,10 @@ def main() -> int:
         return fail("UNSUPPORTED_CAPTURE_SCHEMA")
     if raw.get("auth_status") != "AUTHENTICATED_TRUSTED_DEVICE":
         return fail("AUTH_NOT_TRUSTED")
-    if int(raw.get("real_orders_sent") or 0) != 0:
+    # A missing, null, boolean or coerced value is not a valid capture claim.
+    # JSON integer zero is admissible here, but does not attest runtime PAPER/0.
+    sent = raw.get("real_orders_sent")
+    if type(sent) is not int or sent != 0:
         return fail("REAL_ORDER_SAFETY_INVARIANT")
     if raw.get("blocked_nonread"):
         return fail("SUSPICIOUS_FIRST_PARTY_MUTATION")

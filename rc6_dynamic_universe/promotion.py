@@ -1,8 +1,10 @@
 """Explicit, read-only promotion of measured PPI capacity.
 
-The benchmark produces evidence and recommendations. Only a separately
-reviewed configuration can enable selection; neither file grants entry or
-concurrency authority. The shipped mode is OFF and preserves the 20/40 path.
+The benchmark produces SHADOW measurements and recommendations. A separately
+reviewed configuration is necessary but not sufficient for runtime dynamic
+selection: independent provider OPEN provenance and shared quota-owner proof
+are not yet authenticated, so activation is fail-closed. The shipped mode is
+OFF and preserves the 20/40 selection baseline without granting PPI GETs.
 """
 from __future__ import annotations
 
@@ -119,7 +121,7 @@ def build_recommendation(report, *, policy=None, as_of=None):
 
 
 def resolve_capacity_policy(policy, recommendation=None, report=None, approval=None, *, as_of=None):
-    """Revalidate at consumption time, including the independently pinned hash."""
+    """Revalidate configuration; never activate without external provenance."""
     at = stamp(as_of or datetime.now(timezone.utc))
     result = {"status": "BASELINE_FAIL_CLOSED", "mode": "OFF", "reason_codes": [],
         "baseline_limits": deepcopy(DEFAULT_POLICY["baseline_limits"]), "engine_profiles": {},
@@ -157,14 +159,17 @@ def resolve_capacity_policy(policy, recommendation=None, report=None, approval=N
             raise ValueError("CAPACITY_EXPLICIT_APPROVAL_INVALID")
         if not created <= stamp(approval["reviewed_at"]) <= at:
             raise ValueError("CAPACITY_APPROVAL_CLOCK_INVALID")
-        # The configured digest is a review control, not part of the measured
-        # profile fingerprint; otherwise approving a digest would recurse.
-        return result | {"status": "APPROVED_DYNAMIC", "reason_codes": [],
-            "recommendation_digest": recommendation["recommendation_digest"],
-            "engine_profiles": deepcopy(recommendation["engines"]),
-            "global_budget": deepcopy(recommendation["global_budget"]),
-            "expires_at": recommendation["expires_at"], "budget_settings": deepcopy(policy["budget"]),
-            "production_limits_modified": True}
+        # Hashes, benchmark source labels and a reviewer string only attest
+        # that these *local inputs* agree. A synthetic in-memory SDK wire can
+        # satisfy every check above, including the self-hashed approval.
+        # No independently authenticated production OPEN transport evidence
+        # and no externally governed shared PPI/Watch quota contract are
+        # consumed by this dynamic path today. Consequently no such inputs
+        # may authorize a runtime selector or provider-budget lease.
+        # Keep SHADOW recommendations usable as descriptive math; dynamic
+        # activation remains fail-closed until a separately certified verifier
+        # is implemented. STATIC_SHARED has its own external-owner validation.
+        raise ValueError("CAPACITY_PROVENANCE_UNVERIFIED")
     except (ValueError, KeyError, TypeError, OverflowError) as error:
         code = str(error)
         return result | {"reason_codes": [code if code.startswith("CAPACITY_") and len(code) < 100 else "CAPACITY_CONFIGURATION_INVALID"]}

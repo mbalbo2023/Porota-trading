@@ -1,4 +1,90 @@
+import json
+
+import pytest
+
 import en_validation_project_dashboard_rc6 as dashboard
+
+
+def _published_action4(tmp_path, monkeypatch, payload):
+    reports = tmp_path / "reports"
+    reports.mkdir(exist_ok=True)
+    (reports / dashboard.action4_audit.FILENAME).write_text(
+        json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(dashboard, "database_path", lambda: tmp_path / "paper.db")
+    monkeypatch.setattr(dashboard, "artifact_root", lambda _: tmp_path)
+    return dashboard._action4_section()
+
+
+def _paper_audit():
+    return {
+        "schema_version": 1, "status": "PAPER_READ_ONLY",
+        "dashboard_daily_report": {"periodo": "2026-11-07", "lessons": []},
+        "separation": {"executed_closed": 2, "opened_simulated": 1},
+        "safety": {"observer_mode": "PRODUCTION_PAPER", "sqlite": "READ_ONLY",
+                   "real_orders_sent": 0, "broker_routes_called": False},
+    }
+
+
+def test_published_action4_ui_uses_verified_paper_zero_not_a_default(monkeypatch, tmp_path):
+    payload = _paper_audit()
+    assert dashboard.action4_audit.published_audit_is_safe(payload)
+    html = _published_action4(tmp_path, monkeypatch, payload)
+    assert "READ_ONLY · 0 reales" in html
+    assert "card-green" in html
+    assert "2026-11-07" in html
+
+
+@pytest.mark.parametrize("field,value", [
+    ("real_orders_sent", False), ("real_orders_sent", 0.0),
+    ("real_orders_sent", "0"), ("real_orders_sent", None),
+    ("real_orders_sent", 1), ("real_orders_sent", -1),
+    ("observer_mode", "PRODUCTION_REAL"), ("observer_mode", None),
+    ("sqlite", "READ_WRITE"), ("broker_routes_called", True),
+    ("broker_routes_called", None),
+])
+def test_published_action4_ui_quarantines_unverified_safety(monkeypatch, tmp_path, field, value):
+    payload = _paper_audit()
+    payload["safety"][field] = value
+    assert not dashboard.action4_audit.published_audit_is_safe(payload)
+    html = _published_action4(tmp_path, monkeypatch, payload)
+    assert "NO_VERIFICADO" in html
+    assert "READ_ONLY · 0 reales" not in html
+    assert "card-green" not in html
+
+
+@pytest.mark.parametrize("invalid", [None, [], {"status": "PAPER_READ_ONLY"},
+                                             {"status": "SUCCESS", "safety": {"real_orders_sent": 0}}])
+def test_published_action4_ui_rejects_malformed_or_wrong_envelope(monkeypatch, tmp_path, invalid):
+    assert not dashboard.action4_audit.published_audit_is_safe(invalid)
+    html = _published_action4(tmp_path, monkeypatch, invalid)
+    assert "NO_VERIFICADO" in html
+    assert "card-green" not in html
+
+
+@pytest.mark.parametrize("missing", ["separation", "dashboard_daily_report"])
+def test_published_action4_ui_never_invents_missing_daily_totals(monkeypatch, tmp_path, missing):
+    payload = _paper_audit()
+    payload.pop(missing)
+    # The shared safety predicate proves PAPER/0 only; the view additionally
+    # requires its own daily-report shape before certifying any counts.
+    assert dashboard.action4_audit.published_audit_is_safe(payload)
+    html = _published_action4(tmp_path, monkeypatch, payload)
+    assert "NO_VERIFICADO" in html
+    assert "card-green" not in html
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("executed_closed", None), ("executed_closed", False),
+    ("executed_closed", 0.0), ("opened_simulated", "0"),
+    ("opened_simulated", -1),
+])
+def test_published_action4_ui_requires_integer_simulated_counts(monkeypatch, tmp_path, field, bad):
+    payload = _paper_audit()
+    payload["separation"][field] = bad
+    assert dashboard.action4_audit.published_audit_is_safe(payload)
+    html = _published_action4(tmp_path, monkeypatch, payload)
+    assert "NO_VERIFICADO" in html
+    assert "card-green" not in html
 
 
 def test_operational_daily_section_has_real_headers_and_keeps_campaign_separate(monkeypatch):

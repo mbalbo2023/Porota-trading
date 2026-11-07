@@ -25,6 +25,19 @@ CANONICAL_NAV = (
     "/", "/en-vivo", "/trading", "/scalping", "/validacion", "/instrumentos",
     "/historicos", "/aprendizaje", "/reportes", "/sistema",
 )
+SAFE_SESSION_LABELS = frozenset({
+    "MARKET_OPEN", "MARKET_CLOSED", "PREOPEN", "WAITING_MARKET",
+    "BOOT_CALENDAR", "CHECKING", "STARTING", "UNKNOWN",
+})
+SAFE_PROCESS_LABELS = frozenset({
+    "READY", "RUNNING", "STOPPED", "WAITING_MARKET", "PAUSED",
+    "DEGRADED", "ERROR", "UNKNOWN", "STARTING",
+})
+
+
+def _public_label(value: object, accepted: frozenset[str]) -> str:
+    """Never echo arbitrary runtime strings into a public diagnostic log."""
+    return value if type(value) is str and value in accepted else "NO_VERIFICADO"
 
 
 def fetch(path: str) -> tuple[int, str]:
@@ -68,9 +81,22 @@ def main() -> int:
     except json.JSONDecodeError:
         print("DASHBOARD_TRUTH_JSON=INVALID")
         return 3
+    if not isinstance(truth, dict):
+        print("DASHBOARD_TRUTH_SCHEMA=INVALID")
+        return 3
 
     failures = []
-    if int(truth.get("real_orders_sent") or 0) != 0:
+    if truth.get("mode") != "PRODUCTION_PAPER":
+        failures.append("NON_PAPER_MODE")
+    if truth.get("execution") != "SIMULATED":
+        failures.append("NON_SIMULATED_EXECUTION")
+    orders = truth.get("real_orders_sent")
+    # Only an actual, nonnegative integer is safety evidence. Missing, JSON
+    # null, false, numeric text or floats cannot certify PAPER/zero.
+    counter_verified = type(orders) is int and orders >= 0
+    if not counter_verified:
+        failures.append("REAL_ORDERS_UNVERIFIED")
+    elif orders != 0:
         failures.append("REAL_ORDERS_NONZERO")
     for path in EXPECTED_ROUTES:
         status, html = fetch(path)
@@ -81,11 +107,11 @@ def main() -> int:
             failures.append(f"{path}:{error}")
 
     print("POROTA RC6 — DASHBOARD CONSISTENCY")
-    print("MODE=" + str(truth.get("mode")))
-    print("EXECUTION=" + str(truth.get("execution")))
-    print("SESSION=" + str(truth.get("session_state")))
-    print("PROCESS=" + str(truth.get("process_state")))
-    print("REAL_ORDERS_SENT=" + str(truth.get("real_orders_sent")))
+    print("MODE=" + _public_label(truth.get("mode"), frozenset({"PRODUCTION_PAPER"})))
+    print("EXECUTION=" + _public_label(truth.get("execution"), frozenset({"SIMULATED"})))
+    print("SESSION=" + _public_label(truth.get("session_state"), SAFE_SESSION_LABELS))
+    print("PROCESS=" + _public_label(truth.get("process_state"), SAFE_PROCESS_LABELS))
+    print("REAL_ORDERS_SENT=" + (str(orders) if counter_verified else "NO_VERIFICADO"))
     print("ROUTES_CHECKED=" + str(len(EXPECTED_ROUTES)))
     if failures:
         for item in failures:

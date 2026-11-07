@@ -106,8 +106,9 @@ def build_legacy_retire_plan(policy: dict) -> list[str]:
 
 
 def _require_inherited_finalizer_mutex():
-    """Trust only the actual root-owned lock FD passed by Deploy V2."""
+    """Block legacy finalization pending a reviewed owner-private protocol."""
     from scripts import rc6_deploy_host_mutex as mutex
+    mutex.require_migrated_consumer_protocol()
     fd_raw = os.environ.get('RC6_DEPLOY_MUTEX_FD', '')
     if not re.fullmatch(r'[0-9]{1,8}', fd_raw):
         raise RuntimeError('POSTFINAL_OPERATOR_TIMER_MUTEX_REQUIRED')

@@ -472,6 +472,12 @@ class PaperStore:
         # economic ledger; no hot-path DDL or issuer-data ingestion is allowed.
         from rc6_fixed_income_event_ledger import init_schema as init_fi_event_schema
         init_fi_event_schema(self)
+        from rc6_fixed_income_native_redemption import init_schema as init_fi_review_schema
+        from rc6_fixed_income_native_exit import init_schema as init_fi_terminal_schema
+        from rc6_fixed_income_native_exit_contract import init_schema as init_fi_preflight_schema
+        init_fi_review_schema(self)
+        init_fi_terminal_schema(self)
+        init_fi_preflight_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -501,9 +507,30 @@ class PaperStore:
         updates = {k: v for k, v in updates.items() if k in allowed}
         if not updates:
             return
+        has_counter = "real_orders_sent" in updates
+        if has_counter:
+            counter = updates["real_orders_sent"]
+            if type(counter) is not int or counter < 0:
+                raise ValueError("PAPER_REAL_ORDERS_COUNTER_INVALID")
         sql = ",".join(f"{k}=?" for k in updates)
+        params = tuple(updates.values())
+        # The heartbeat is one atomic SQLite statement. In particular, a
+        # recorded positive count cannot be overwritten by another process's
+        # routine `real_orders_sent=0` progress report. This protects the local
+        # warning, but is not physical DB/WAL provenance or external-order proof.
+        if has_counter:
+            predicate = ("id=1 AND typeof(real_orders_sent)='integer' "
+                         "AND real_orders_sent>=0 AND real_orders_sent<=?")
+            params += (counter,)
+        else:
+            predicate = "id=1"
         with self.connect() as c:
-            c.execute(f"UPDATE observer_state SET {sql} WHERE id=1", tuple(updates.values()))
+            updated = c.execute(
+                f"UPDATE observer_state SET {sql} WHERE {predicate}", params)
+            if has_counter and updated.rowcount != 1:
+                # No silent success when the current row was positive, corrupt,
+                # absent or changed concurrently; the heartbeat rolls back.
+                raise RuntimeError("PAPER_REAL_ORDERS_COUNTER_REGRESSION")
 
     def add_quote(self, q: Quote):
         # Invalid latest evidence remains a tombstone for its requested identity.
@@ -1018,11 +1045,15 @@ class PaperBroker:
                 LIMIT 1""", (currency, at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
-        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed if p['currency']==currency), ZERO)
+        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed
+                        if p['currency']==currency and
+                        p.get('close_reason') != 'FI_NATIVE_MATURITY_REVIEWED'), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
-                         for p in opened if p['currency']==currency), ZERO)
+                         for p in opened + [p for p in closed
+                             if p.get('close_reason')=='FI_NATIVE_MATURITY_REVIEWED']
+                         if p['currency']==currency), ZERO)
         from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
         funds = fund_cash_effect(self.store, currency, at, connection=connection)
@@ -2805,17 +2836,13 @@ class PaperBroker:
             root = dict(root)
             if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
                 return False
+            # A BONOS/LETRAS/OBLIGACIONES PAPER sale must have its own atomic
+            # native FI ledger. The generic spot writer is never its executor:
+            # a lot may have no FI economic-event row yet, and a future native
+            # authorizer must not accidentally grant generic SELL cash credit.
+            if family_name(root['asset_class']) in {'BONOS', 'LETRAS', 'OBLIGACIONES'}:
+                return False
             current, prior = spot_ledger.partition(c,root)
-            # A redeemed FI lot cannot be sold through the generic equity
-            # close path: that would credit principal a second time and label
-            # an issuer redemption as an exchange fill. Native FI sale and
-            # maturity-close ledgers need their own separately certified owner.
-            fi_view = self._fi_position_at(c, root, at)
-            if fi_view is not None:
-                from rc6_fixed_income_portfolio_bridge import native_exit_authorized
-                allowed, _ = native_exit_authorized(c, root['paper_id'], at)
-                if not allowed:
-                    return False
             # Snapshot viejo: no consumir otra porción con un reintento ciego.
             if not current or any(current[k]!=p[k] for k in ('quantity','entry_cost','entry_price')):
                 return False
@@ -2971,6 +2998,12 @@ class PaperBroker:
                     qty = D(p["quantity"]) * self._position_multiplier(p)
                     exposure += mark * qty
                     unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
+            # A reconciled foreign-currency issuer payment is not an FX PnL.
+            # Keep valuation quality unknown rather than presenting zero as
+            # measured performance after the native maturity closes the lot.
+            stale += sum(1 for p in closed if p['currency'] == currency and
+                         p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED' and
+                         p.get('net_pnl') is None)
             realized = (fi_realized + sum((D(p.get("net_pnl")) for p in closed
                                           if p["currency"] == currency), ZERO))
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)

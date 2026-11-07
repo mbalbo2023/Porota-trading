@@ -1,10 +1,7 @@
 """A report-side SQLITE_FULL must not restart the PAPER scanner each tick."""
 
 import sqlite3
-import sys
-import types
 from datetime import datetime, timedelta
-from unittest.mock import patch
 
 import pytest
 
@@ -44,10 +41,16 @@ def postclose(monkeypatch, tmp_path):
             return fixed if tz is None else fixed.astimezone(tz)
 
     monkeypatch.setattr(services, "datetime", FixedDateTime)
-    calendar = types.ModuleType("ak_byma_calendar")
-    calendar.es_dia_habil_operativo = lambda _day: True
-    with patch.dict(sys.modules, {"ak_byma_calendar": calendar}):
-        yield store
+    # Real audited calendar supplies ANIOS_AUDITADOS/motivo_no_operativo to
+    # the R4 heavy-write gate; a partial stub silently turns CLOSED into HOLD.
+    yield store
+
+
+@pytest.fixture
+def verified_final_source(postclose, monkeypatch):
+    """Synthetic authorization for SQLite retry tests only, NEVER production."""
+    monkeypatch.setattr(services, "_verified_final_source_receipt", lambda *_a: True)
+    return postclose
 
 
 def status(store, key):
@@ -63,8 +66,42 @@ def allow_retry(store, key):
         conn.execute("UPDATE operational_jobs SET last_run_at=? WHERE job_key=?", (older, key))
 
 
-def test_report_full_is_red_and_bounded_without_faking_summary(postclose, monkeypatch):
-    store = postclose
+def test_without_final_source_receipt_postclose_holds_and_never_consumes_outbox(
+        postclose, monkeypatch):
+    """A publication clock is not a same-day PPI/CAFCI final receipt."""
+    reports, summaries = [], []
+    monkeypatch.setattr(services, "ensure_reports", lambda *_a, **_k: reports.append(1))
+    monkeypatch.setattr(services, "send_closing_summary", lambda *_a: summaries.append(1))
+    services.service_tick(postclose, "CLOSED")
+    services.service_tick(postclose, "CLOSED")
+    assert reports == [] and summaries == []
+    marker = status(postclose, "CLOSING_SUMMARY_RETRY")
+    assert marker[0] == "HOLD"
+    assert marker[2] is None
+    assert marker[3] == services.EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD
+    with postclose.connect() as conn:
+        assert conn.execute("SELECT name FROM sqlite_master "
+                            "WHERE type='table' AND name='paper_notification_outbox'").fetchone() is None
+
+
+def test_final_receipt_absent_before_nov11_eod_floor_never_starts_report(
+        postclose, monkeypatch):
+    class PreEod(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            at = datetime(2026, 11, 11, 18, 10, tzinfo=services.TZ)
+            return at if tz is None else at.astimezone(tz)
+
+    monkeypatch.setattr(services, "datetime", PreEod)
+    reports = []
+    monkeypatch.setattr(services, "ensure_reports", lambda *_a, **_k: reports.append(1))
+    services.service_tick(postclose, "CLOSED")
+    assert reports == []
+    assert status(postclose, "CLOSING_SUMMARY_RETRY") is None
+
+
+def test_report_full_is_red_and_bounded_without_faking_summary(verified_final_source, monkeypatch):
+    store = verified_final_source
     services._job(store, "REPORTS", "VERDE", "prior completed report", success=True)
     prior_success = status(store, "REPORTS")[2]
     with store.connect() as conn:
@@ -98,8 +135,8 @@ def test_report_full_is_red_and_bounded_without_faking_summary(postclose, monkey
     assert status(store, "REPORTS")[0] == "VERDE"
 
 
-def test_2026_november_extended_close_rebuilds_preclose_report_once(postclose, monkeypatch):
-    store = postclose
+def test_2026_november_extended_close_rebuilds_preclose_report_once(verified_final_source, monkeypatch):
+    store = verified_final_source
 
     class NovemberClose(datetime):
         @classmethod
@@ -129,8 +166,8 @@ def test_2026_november_extended_close_rebuilds_preclose_report_once(postclose, m
     assert calls == {"reports": 1, "summary": 1}
 
 
-def test_summary_full_has_separate_retry_without_delivery_claim(postclose, monkeypatch):
-    store = postclose
+def test_summary_full_has_separate_retry_without_delivery_claim(verified_final_source, monkeypatch):
+    store = verified_final_source
     services._job(store, "REPORTS", "VERDE", "prior report", success=True)
     attempts = []
 
@@ -154,15 +191,15 @@ def test_summary_full_has_separate_retry_without_delivery_claim(postclose, monke
 
 
 @pytest.mark.parametrize("code", [sqlite3.SQLITE_LOCKED, sqlite3.SQLITE_IOERR])
-def test_other_sqlite_errors_still_propagate(postclose, monkeypatch, code):
+def test_other_sqlite_errors_still_propagate(verified_final_source, monkeypatch, code):
     monkeypatch.setattr(services, "ensure_reports", lambda *_args, **_kwargs:
                         (_ for _ in ()).throw(sqlite_error(code)))
     with pytest.raises(sqlite3.OperationalError):
-        services.service_tick(postclose, "CLOSED")
-    assert status(postclose, "REPORTS") is None
+        services.service_tick(verified_final_source, "CLOSED")
+    assert status(verified_final_source, "REPORTS") is None
 
 
-def test_full_main_db_cannot_be_silenced_by_failed_receipt(postclose, monkeypatch):
+def test_full_main_db_cannot_be_silenced_by_failed_receipt(verified_final_source, monkeypatch):
     monkeypatch.setattr(services, "ensure_reports", lambda *_args, **_kwargs:
                         (_ for _ in ()).throw(sqlite_error(sqlite3.SQLITE_FULL)))
     original_job = services._job
@@ -174,7 +211,7 @@ def test_full_main_db_cannot_be_silenced_by_failed_receipt(postclose, monkeypatc
 
     monkeypatch.setattr(services, "_job", reject_receipt)
     with pytest.raises(sqlite3.OperationalError):
-        services.service_tick(postclose, "CLOSED")
+        services.service_tick(verified_final_source, "CLOSED")
 
 
 def test_report_decision_order_keeps_legacy_offsets_without_sql_temp_sort(tmp_path):

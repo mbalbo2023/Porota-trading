@@ -1,4 +1,4 @@
-"""Reviewed OPEN capacity can be consumed without a later programming phase."""
+"""SHADOW capacity math, explicit config and fail-closed runtime authority."""
 from copy import deepcopy
 from datetime import timedelta
 import json
@@ -68,18 +68,24 @@ def test_shipped_policy_off_has_stable_fingerprint_and_no_activation(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_open_recommendation_requires_explicit_separate_review_and_exact_config(wire):
+def test_open_recommendation_is_descriptive_but_self_hash_review_cannot_activate(wire):
     values = approved(wire)
     policy, rec, report, approval, at = values
     original = deepcopy((report, rec, approval))
     state = resolve_capacity_policy(policy, rec, report, approval, as_of=at)
-    assert state["status"] == "APPROVED_DYNAMIC"
-    assert state["global_budget"]["endpoint_limits"] == {"current": 15, "book": 15, "intraday": 15}
-    assert state["global_budget"]["global_limit"] == 45
-    assert all(e["capacity"]["safe_limit"] == 15 for e in state["engine_profiles"].values())
+    # These are legitimate SHADOW calculations, not authenticated provider
+    # OPEN measurements or permission to spend the PPI/Watch shared quota.
+    assert rec["global_budget"]["endpoint_limits"] == {"current": 15, "book": 15, "intraday": 15}
+    assert rec["global_budget"]["global_limit"] == 45
+    assert all(e["capacity"]["safe_limit"] == 15 for e in rec["engines"].values())
     assert rec["automatic_activation"] is False and rec["production_limit_modified"] is False
+    assert state["status"] == "BASELINE_FAIL_CLOSED"
+    assert state["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert state["production_limits_modified"] is False
+    assert state["baseline_limits"] == {"EQUITY_SPOT": 20, "SCALPING": 40}
     assert (report, rec, approval) == original
-    assert controller(values).validated_report(at) == report
+    with pytest.raises(ValueError, match="CAPACITY_APPROVED_STATE_CHANGED"):
+        controller(values).validated_report(at)
     assert controller(values).state(at + timedelta(seconds=1))["fingerprint"] == controller(values).state(at)["fingerprint"]
     assert runtime_policy_fingerprint(policy) == runtime_policy_fingerprint(DEFAULT_POLICY)
 
@@ -117,14 +123,18 @@ def test_shadow_mode_retains_baseline_even_with_approved_evidence(wire):
     assert controller(values).selection("SCALPING", [1, 2], as_of=values[-1])["selected"] == [1, 2]
 
 
-def test_approved_selector_consumes_real_planner_limit_cadence_without_entry_authority(wire):
+def test_synthetic_shadow_planner_cannot_activate_dynamic_selector(wire):
     values = approved(wire)
     shadow, assets, at = shadow_selection(values)
     ctl = controller(values, shadow=shadow)
     selected = ctl.selection("SCALPING", ["legacy"], as_of=at)
-    assert selected["dynamic"] and selected["limit"] == 15 and selected["cadence_seconds"] == 30
-    assert len(selected["selected"]) <= 15 and selected["entry_identities"]
-    assert all(k in selected["selected"] for k in selected["entry_identities"])
+    assert selected["status"] == "BASELINE_FAIL_CLOSED"
+    assert selected["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert not selected["dynamic"] and selected["limit"] == 40
+    assert selected["selected"] == ["legacy"] and selected["entry_identities"] == []
+    # Keep the full synthetic plan as SHADOW telemetry, never entry authority.
+    assert all(p["capacity"]["safe_limit"] == 15 for p in shadow["engines"].values())
+    assert all(p["selected"] for p in shadow["engines"].values())
     assert all(not r["entry_authority"] for r in shadow["engines"]["SCALPING"]["telemetry"])
     assert shadow["engines"]["SCALPING"]["catalog_ready_count"] == len(assets)
     stale = ctl.selection("SCALPING", ["legacy"], as_of=at + timedelta(seconds=31))

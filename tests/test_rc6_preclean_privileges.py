@@ -1,12 +1,8 @@
-"""The SSH user must clear a previous owner's receipt through its privilege boundary."""
+"""A shared-host preclean must leave every non-owned receipt untouched."""
 import os
 from pathlib import Path
 import shlex
-import shutil
 import subprocess
-import tempfile
-import threading
-import time
 
 from scripts import rc6_deploy_quiescence as quiescence
 
@@ -14,71 +10,39 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / '.github/workflows/porota-deploy-v2-promote.yml'
 
 
-def test_canonical_preclean_clears_retained_receipt_as_unprivileged_user(record_testsuite_property):
-    # The governed Ubuntu runner MUST exercise different real UIDs. A local
-    # capability-restricted sandbox uses an explicitly labelled permission
-    # model; that result is never reported as the native OS proof.
-    with tempfile.TemporaryDirectory(prefix='rc6-preclean-sticky-') as folder:
-        root = Path(folder); root.chmod(0o1777)
-        receipt = root / 'retained-root-receipt.json'
-        receipt.write_text('OLD_RECEIPT'); receipt.chmod(0o644)
-        bin_dir = root / 'bin'; bin_dir.mkdir(mode=0o755)
-        request, ack = root / 'request', root / 'ack'
-        stop = threading.Event(); calls = []; failures = []
-        def owner():
-            while not stop.is_set():
-                if request.exists() and request.read_text() == 'CLEAR_EXACT_FIXTURE':
-                    try:
-                        receipt.unlink(); calls.append('EXACT_FIXTURE_REMOVED')
-                        pending = root / 'ack.tmp'; pending.write_text('OK'); pending.replace(ack)
-                    except OSError as exc: failures.append(type(exc).__name__)
-                    break
-                stop.wait(.01)
-        thread = threading.Thread(target=owner); thread.start()
-        sudo = bin_dir / 'sudo'
-        sudo.write_text('#!/usr/bin/python3\nfrom pathlib import Path\nimport sys,time\n'
-            + 'assert sys.argv[1:] == ' + repr(['-n','rm','-f',str(receipt)]) + '\n'
-            + 'request=Path(' + repr(str(request)) + ');ack=Path(' + repr(str(ack)) + ')\n'
-            + "request.write_text('CLEAR_EXACT_FIXTURE');deadline=time.monotonic()+5\n"
-            + 'while not ack.exists() and time.monotonic()<deadline:time.sleep(.01)\n'
-            + "assert ack.read_text()=='OK'\n")
-        sudo.chmod(0o755)
-        target = '/tmp/porota-predeploy-housekeeping.json'
-        line = next(x.strip() for x in WORKFLOW.read_text().splitlines()
-                    if x.strip().endswith('rm -f ' + target))
-        command = line.replace(target, shlex.quote(str(receipt)))
-        env = {'PATH': str(bin_dir) + ':/usr/bin:/bin'}
-        capabilities = next(line.split()[1] for line in Path('/proc/self/status').read_text().splitlines()
-                            if line.startswith('CapEff:'))
-        root_drop = os.geteuid() == 0 and bool(int(capabilities,16) & (1 << 7))
-        privilege = shutil.which('sudo') if os.geteuid() != 0 else None
-        can_sudo = bool(privilege and subprocess.run([privilege,'-n','true'],
-            capture_output=True, timeout=5).returncode == 0)
-        mode = 'OS_DIFFERENT_UID' if root_drop or can_sudo else 'LOCAL_PERMISSION_MODEL'
-        if os.environ.get('GITHUB_ACTIONS') == 'true':
-            assert mode == 'OS_DIFFERENT_UID', 'NATIVE_PRIVILEGE_PROOF_REQUIRED'
-        record_testsuite_property('RC6_PRECLEAN_PRIVILEGE_BOUNDARY', mode)
-        if mode == 'LOCAL_PERMISSION_MODEL':
-            # No setuid/IPC permission is requested from the local sandbox.
-            # The native gate is required to replace this model with OS proof.
-            rm = bin_dir / 'rm'
-            rm.write_text('#!/bin/bash\nexit 1\n'); rm.chmod(0o755)
-        def launch(text):
-            args = ['/bin/bash','-c',text]; identity = {}
-            if root_drop:
-                identity = {'user': 65534, 'group': 65534}
-            elif can_sudo:
-                args = [privilege,'-n','-u','nobody','--','/usr/bin/env','PATH='+env['PATH'],*args]
-            return subprocess.run(args,env=env,cwd='/tmp',capture_output=True,text=True,timeout=10,**identity)
-        try:
-            negative = launch('rm -f ' + shlex.quote(str(receipt)))
-            assert negative.returncode != 0 and receipt.exists()
-            result = launch(command)
-        finally:
-            stop.set(); thread.join(timeout=2)
-        assert result.returncode == 0, result.stderr
-        assert not receipt.exists()
-        assert calls == ['EXACT_FIXTURE_REMOVED'] and not failures
+def test_canonical_preclean_clears_retained_receipt_as_unprivileged_user(
+        tmp_path, record_testsuite_property):
+    # Legacy nodeid retained. A690 removed the old sudo rm of a shared /tmp
+    # receipt: only a newly allocated private 0700 scratch may be removed.
+    shared = tmp_path / 'shared-sticky-directory'
+    shared.mkdir(mode=0o1777)
+    shared.chmod(0o1777)
+    assert shared.stat().st_mode & 0o7777 == 0o1777
+    foreign_receipt = shared / 'other-application-receipt.json'
+    foreign_receipt.write_text('FOREIGN_MUST_SURVIVE')
+    foreign_receipt.chmod(0o444)
+    original = foreign_receipt.read_bytes()
+
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    start = workflow.index('          # A690: /tmp is shared')
+    end = workflow.index('          printf \'%s\' "$POLICY_B64" | base64 -d > "$TMP_POLICY"', start)
+    script = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
+    template = '/tmp/rc6-porota-preclean.XXXXXXXXXX'
+    script = script.replace(template,
+                            shlex.quote(str(shared / 'rc6-porota-preclean.XXXXXXXXXX')))
+    assert '/tmp/porota-predeploy-housekeeping.json' not in workflow
+    assert 'sudo ' not in script and 'docker ' not in script
+    assert 'rm -rf' not in script
+    assert 'trap cleanup_preclean_scratch EXIT' in script
+    record_testsuite_property('RC6_PRECLEAN_PRIVILEGE_BOUNDARY', 'PRIVATE_SCRATCH_NO_SUDO')
+
+    result = subprocess.run(['/bin/bash', '-Eeuo', 'pipefail', '-c', script],
+                            cwd=shared, env=dict(os.environ),
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert 'RC6_DISK_PRECLEAN_REMOTE=GREEN' in result.stdout
+    assert foreign_receipt.read_bytes() == original
+    assert list(shared.glob('rc6-porota-preclean.*')) == []
 
 
 def test_pretransfer_failure_uses_readonly_accounting_before_any_timer_suspend():

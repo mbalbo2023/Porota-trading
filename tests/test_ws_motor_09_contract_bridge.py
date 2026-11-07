@@ -134,10 +134,30 @@ def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_
     later=NOW+timedelta(minutes=1)
     broker.clock_fn=lambda:later.isoformat()
     close=replace(q,observed_at=later.isoformat(),book_at=later.isoformat(),trade_at=later.isoformat(),bid=D(88000),ask=D(88100),last=D(88050))
-    assert broker._close(s.open_positions()[0],close,"FIXTURE_CLOSE",as_of=later.isoformat())
+    before_cash=broker._cash(as_of=later.isoformat())
     with s.connect() as c:
-        assert [r[0] for r in c.execute("SELECT side FROM paper_fills WHERE paper_id=? ORDER BY id",(paper_id,))]==["BUY_SIMULATED","SELL_SIMULATED"]
+        before_position=tuple(c.execute(
+            "SELECT status,quantity,entry_price,entry_cost,closed_at,exit_price FROM paper_positions WHERE paper_id=?",
+            (paper_id,)).fetchone())
+        before_fills=[tuple(r) for r in c.execute(
+            "SELECT id,side,quantity,price,costs FROM paper_fills WHERE paper_id=? ORDER BY id",
+            (paper_id,))]
+        assert c.execute("SELECT COUNT(*) FROM paper_spot_sales WHERE paper_id=?",(paper_id,)).fetchone()[0]==0
+    # A fully evidenced BONOS BUY is legitimate PAPER, but generic spot SELL
+    # must not bypass the separate, still-unverified FI-native sale ledger.
+    assert broker._close(s.open_positions()[0],close,"FIXTURE_CLOSE",as_of=later.isoformat()) is False
+    with s.connect() as c:
+        assert [r[0] for r in c.execute("SELECT side FROM paper_fills WHERE paper_id=? ORDER BY id",(paper_id,))]==["BUY_SIMULATED"]
+        assert [tuple(r) for r in c.execute(
+            "SELECT id,side,quantity,price,costs FROM paper_fills WHERE paper_id=? ORDER BY id",
+            (paper_id,))]==before_fills
+        assert tuple(c.execute(
+            "SELECT status,quantity,entry_price,entry_cost,closed_at,exit_price FROM paper_positions WHERE paper_id=?",
+            (paper_id,)).fetchone())==before_position
+        assert c.execute("SELECT COUNT(*) FROM paper_spot_sales WHERE paper_id=?",(paper_id,)).fetchone()[0]==0
+        assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0]==0
         assert c.execute("SELECT COUNT(*) FROM complementary_contract_retry WHERE ticker='GD30'").fetchone()[0]==0
+    assert broker._cash(as_of=later.isoformat())==before_cash
 
 
 def test_runtime_reconciler_ingests_iol_mcp_cache_into_evidence_v2(tmp_path, monkeypatch):

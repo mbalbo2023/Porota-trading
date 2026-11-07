@@ -719,11 +719,15 @@ def _safety(observer: dict[str, Any], mode: dict[str, Any], deploy: dict[str, An
     api = mode.get("apis") if isinstance(mode.get("apis"), dict) else {}
     route_capability = str(api.get("PPI_ORDERS") or deploy.get("real_order_capability") or "NO_VERIFICADO").upper()
     route_calls = str(deploy.get("real_order_routes") or "NO_VERIFICADO").upper()
+    # SQLite NULL and missing/boolean/string values are not positive proof of
+    # zero real orders. Only the actual integer column value can attest it.
+    observed_count = observer.get("real_orders_sent")
+    count_verified = type(observed_count) is int
     safety = {
         "mode": safe_text(observer.get("mode")),
         "operation_mode": safe_text(mode.get("mode")),
         "execution": safe_text(mode.get("execution")),
-        "real_orders_sent": int(observer.get("real_orders_sent") or 0),
+        "real_orders_sent": observed_count if count_verified else None,
         "real_order_route_capability": safe_text(route_capability),
         "real_order_routes": safe_text(route_calls),
         "paper_shadow_only": True,
@@ -733,7 +737,9 @@ def _safety(observer: dict[str, Any], mode: dict[str, Any], deploy: dict[str, An
         blockers.append("NON_PAPER_MODE")
     if safety["execution"] != "SIMULATED":
         blockers.append("NON_SIMULATED_EXECUTION")
-    if safety["real_orders_sent"] != 0:
+    if not count_verified:
+        blockers.append("REAL_ORDERS_SENT_UNVERIFIED")
+    elif safety["real_orders_sent"] != 0:
         blockers.append("REAL_ORDERS_SENT_NONZERO")
     if safety["real_order_route_capability"] != "BLOCKED":
         blockers.append("REAL_ROUTE_NOT_BLOCKED")

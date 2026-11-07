@@ -60,10 +60,18 @@ class Book1DecisionWiring(unittest.TestCase):
         self.journal = self.recorder.path.with_name(PIT_JOURNAL_FILENAME)
         self._catalog("ARS")
 
-    def _catalog(self, currency):
+    def _catalog(self, currency, *, provider_settlement=True):
+        # Book1 may only claim a native PPI five-key when the simulated raw
+        # provider response itself attests settlement. The request alone does
+        # not upgrade REQUEST_CANDIDATE to PPI_FIELD.
+        provider_raw = {"ticker": "GGAL", "type": "ACCIONES", "market": "BYMA",
+                        "currency": currency}
+        if provider_settlement:
+            provider_raw["settlement"] = "A-24HS"
         record = catalog.normalize_record(
-            {"ticker": "GGAL", "type": "ACCIONES", "market": "BYMA",
-             "currency": currency}, "A-24HS", KNOWN_AT, "a653-offhost")
+            provider_raw, "A-24HS", KNOWN_AT, "a653-offhost")
+        self.assertEqual(record["settlement_source"],
+                         "PPI_FIELD" if provider_settlement else "REQUEST_CANDIDATE")
         with self.store.connect() as connection:
             catalog.persist(connection, record)
 
@@ -130,6 +138,15 @@ class Book1DecisionWiring(unittest.TestCase):
         self.assertIsNone(quote.ppi_book1_event_sha256)
         self.assertEqual(reader.calls, [("current", REQUEST), ("book", REQUEST)])
         self.assertFalse(self.journal.exists())
+
+    def test_request_only_settlement_keeps_book1_fail_closed_without_false_journal(self):
+        # Distinguish the positive raw5 witness from a SearchInstrument
+        # settlement that came solely from the request parameters.
+        self._catalog("ARS", provider_settlement=False)
+        quote, reader = self._read(Reader())
+        self.assertIsNone(quote.ppi_book1_event_sha256)
+        self.assertFalse(self.journal.exists())
+        self.assertEqual(reader.calls, [("current", REQUEST), ("book", REQUEST)])
 
     def test_malformed_writer_hash_never_becomes_a_book1_claim(self):
         with patch.object(self.recorder, "capture_raw_book", return_value={

@@ -152,6 +152,89 @@ def _alert_rows(db):
                          'ORDER BY rowid').fetchall()
 
 
+def _offline_paper_state(tmp_path, monkeypatch, *, affinity='INTEGER',
+                         count=None, mode='PRODUCTION_PAPER', insert=True):
+    """Use a real isolated SQLite read; OAuth and production are never reached."""
+    db=tmp_path/'observer-only.db'
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            f'CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent {affinity},'
+            'process_state TEXT,session_state TEXT)')
+        if insert:
+            connection.execute(
+                'INSERT INTO observer_state VALUES(1,?,?,?,?)',
+                (mode,count,'WAITING_MARKET','MARKET_CLOSED'))
+    monkeypatch.setattr(guardian,'DB',str(db))
+    monkeypatch.setattr(guardian,'STATE_FILE',tmp_path/'guardian-state.json')
+    monkeypatch.setattr(guardian,'DEFAULT_STORE',tmp_path/'missing-oauth.json')
+    return db
+
+
+@pytest.mark.parametrize('affinity,count',[
+    ('INTEGER',None), ('INTEGER',1), ('INTEGER',-1),
+    ('TEXT','0'), ('TEXT','oops'), ('TEXT',''),
+    ('REAL',0.0), ('BLOB',b'0'),
+], ids=['null','one-real-order','negative-count','text-zero','text-invalid',
+        'text-empty','float-zero','bytes-zero'])
+def test_unverified_counter_blocks_iol_guardian_before_any_oauth_or_state_write(
+        tmp_path,monkeypatch,affinity,count):
+    _offline_paper_state(tmp_path,monkeypatch,affinity=affinity,count=count)
+    with pytest.raises(RuntimeError,match='^PAPER_SAFETY_INVARIANT_FAILED$'):
+        guardian.main()
+    assert not (tmp_path/'guardian-state.json').exists()
+    assert not (tmp_path/'missing-oauth.json').exists()
+
+
+def test_missing_observer_row_remains_blocking_before_oauth(tmp_path,monkeypatch):
+    _offline_paper_state(tmp_path,monkeypatch,insert=False)
+    with pytest.raises(RuntimeError,match='^OBSERVER_STATE_MISSING$'):
+        guardian.main()
+    assert not (tmp_path/'guardian-state.json').exists()
+
+
+def test_wrong_mode_with_exact_zero_never_passes_oauth_gate(tmp_path,monkeypatch):
+    _offline_paper_state(tmp_path,monkeypatch,mode='REAL',count=0)
+    with pytest.raises(RuntimeError,match='^PAPER_SAFETY_INVARIANT_FAILED$'):
+        guardian.main()
+    assert not (tmp_path/'guardian-state.json').exists()
+
+
+def test_actual_sqlite_integer_zero_is_the_only_admissible_paper_counter(
+        tmp_path,monkeypatch):
+    _offline_paper_state(tmp_path,monkeypatch,count=0)
+    safety=guardian._paper_safety()
+    assert safety['mode']=='PRODUCTION_PAPER'
+    assert type(safety['real_orders_sent']) is int
+    assert safety['real_orders_sent']==0
+
+
+def test_verified_zero_projects_exact_value_without_oauth_network(
+        tmp_path,monkeypatch,capsys):
+    _offline_paper_state(tmp_path,monkeypatch,count=0)
+    assert guardian.main()==2  # OAuth store genuinely absent in this fixture.
+    result=json.loads(capsys.readouterr().out)
+    assert result['paper_safety']=={'mode':'PRODUCTION_PAPER','real_orders_sent':0}
+    assert result['state']=='REAUTH_REQUIRED'
+
+
+def test_boolean_from_unverified_reader_never_counts_as_integer_zero(monkeypatch):
+    # SQLite normally persists bool as INTEGER. This focuses on a malformed
+    # substituted row reaching the same production guard after query execution.
+    class FakeCursor:
+        def fetchone(self):
+            return {'mode':'PRODUCTION_PAPER','real_orders_sent':False,
+                    'process_state':'WAITING_MARKET','session_state':'MARKET_CLOSED'}
+    class FakeConnection:
+        row_factory=None
+        def execute(self,sql):
+            return FakeCursor()
+        def close(self):
+            pass
+    monkeypatch.setattr(guardian.sqlite3,'connect',lambda *_a,**_k:FakeConnection())
+    with pytest.raises(RuntimeError,match='^PAPER_SAFETY_INVARIANT_FAILED$'):
+        guardian._paper_safety()
+
+
 def test_transient_503_refresh_recovers_once_without_false_reauth(
         isolated_guardian,monkeypatch,capsys):
     store,db,market=isolated_guardian

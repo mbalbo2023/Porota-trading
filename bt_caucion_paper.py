@@ -131,6 +131,14 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
         (cash_currency(currency),)).fetchall()
     pending = spot_ledger.pending(connection,at,currency)
     for row in rows:
+        if row['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+            # Issuer principal is already booked in its payment currency.
+            # A terminal maturity is not a sale receivable; validate its
+            # immutable receipt instead of manufacturing a SELL or cash leg.
+            from rc6_fixed_income_native_exit import terminal_at
+            if terminal_at(connection, row['paper_id']) is None or row['receipt_id'] is not None:
+                raise ValueError('FI_TERMINAL_HAS_SPOT_SETTLEMENT_OR_RECEIPT_CONFLICT')
+            continue
         if spot_ledger.sales(connection,row['paper_id']):
             continue
         if aware_datetime(row['closed_at']) > at:

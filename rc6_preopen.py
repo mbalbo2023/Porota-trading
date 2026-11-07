@@ -330,8 +330,8 @@ def runtime_contracts(connection, now):
                 routes = json.loads(row.get('routes_json') or 'null')
             except (TypeError,ValueError):
                 routes = None
-            worker_ok = (worker_ok and row.get('real_orders_sent') is not None
-                         and int(row['real_orders_sent']) == 0
+            worker_ok = (worker_ok and type(row.get('real_orders_sent')) is int
+                         and row['real_orders_sent'] == 0
                          and routes == [])
         workers[name] = {'state':'GREEN' if worker_ok else 'RED',
                          'runtime_state':row.get('state'),
