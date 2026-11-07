@@ -1,10 +1,12 @@
-name: RC6 A670 evergreen BYMA PPI Current Book bounded READ_ONLY
+name: RC6 A796 PPI Current Book OFFHOST contracts; provider HOLD
 
 # Evergreen on audited BYMA business sessions; retained A669 workflow filename
 # avoids a second live scheduler. Each UTC clock, ART slot and audited holiday
 # gate runs BEFORE SSH, PPI SDK or any shared budget ledger access.
-# GitHub schedule is best-effort and may be delayed/dropped: manual fallback
-# uses the same exact-day session, 60-minute slot and signed quota gates.
+# A796 integration keeps evergreen OFFHOST contract tests but disables the
+# legacy provider job on every schedule, push and manual dispatch. Activation
+# requires a separate reviewed source/artifact binding, physical budget sidecar
+# plus PPI Watch independence attestation; code alone is not a quota lease.
 on:
   schedule:
     - cron: '45 10 * * 1-5'
@@ -22,12 +24,28 @@ on:
         type: choice
         required: true
         options: ['1045', '1120', '1430', '1630']
+      capture_mode:
+        description: 'A796 permits OFFHOST contracts only; no provider GET'
+        type: choice
+        required: true
+        default: OFFHOST_CONTRACTS_ONLY
+        options: ['OFFHOST_CONTRACTS_ONLY']
+      expected_source_sha:
+        description: 'Future reviewed exact source SHA (ignored while A796 HOLD)'
+        type: string
+        required: false
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/rc6-a669-ppi-current-book-20261105.yml'
       - 'scripts/rc6_a669_ppi_day_slot_guard.py'
       - 'tests/test_rc6_a669_ppi_day_slot_guard.py'
+      - 'scripts/rc6_a630_host_ppi_current_book.py'
+      - 'scripts/rc6_a689_slot_cas.py'
+      - 'scripts/rc6_a708_budget_sidecar_mount_preflight.py'
+      - 'tests/test_rc6_a689_slot_cas.py'
+      - 'tests/test_rc6_a708_budget_sidecar_mount_preflight.py'
+      - 'tests/test_rc6_a796_ppi_control_offhost.py'
 
 permissions:
   contents: read
@@ -38,10 +56,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Checkout immutable product 2026 BYMA holiday/spot calendar for OFFHOST regressions
+      - name: Checkout immutable R4 COM19031 calendar SOURCE (not deployed attestation)
         uses: actions/checkout@v4
         with:
-          ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          ref: e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b
           path: _audited_product_calendar
           sparse-checkout: |
             ak_byma_calendar.py
@@ -52,10 +70,26 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_a669_ppi_day_slot_guard.py \
+            scripts/rc6_a689_slot_cas.py \
+            scripts/rc6_a708_budget_sidecar_mount_preflight.py \
             scripts/rc6_a630_host_ppi_current_book.py \
-            tests/test_rc6_a669_ppi_day_slot_guard.py
+            tests/test_rc6_a669_ppi_day_slot_guard.py \
+            tests/test_rc6_a689_slot_cas.py \
+            tests/test_rc6_a708_budget_sidecar_mount_preflight.py \
+            tests/test_rc6_a796_ppi_control_offhost.py
           python3 -m unittest discover -s tests -p test_rc6_a669_ppi_day_slot_guard.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a689_slot_cas.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a708_budget_sidecar_mount_preflight.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a796_ppi_control_offhost.py -v
           python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v
+          python3 -B - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import A689_HELPER_SHA256
+          raw=Path('scripts/rc6_a689_slot_cas.py').read_bytes()
+          assert sha256(raw).hexdigest()==A689_HELPER_SHA256,'A689_PINNED_HELPER_MISMATCH'
+          print('A689_HELPER_OFFHOST_PIN=PASS')
+          PY
           python3 -B - <<'PY'
           from datetime import datetime,timezone
           from scripts.rc6_a669_ppi_day_slot_guard import (
@@ -74,9 +108,13 @@ jobs:
   sample_main_only:
     needs: contracts
     if: >-
+      false &&
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      github.event_name == 'workflow_dispatch' &&
+      inputs.capture_mode == 'GUARDED_CURRENT_BOOK' &&
+      inputs.expected_source_sha == 'e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b' &&
+      github.sha == 'e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b'
     # A diagnostic must never race the single governed Deploy V2.
     concurrency:
       group: rc6-unified-paper-deploy
@@ -86,8 +124,8 @@ jobs:
     env:
       RC6_A669_SCHEDULE: ${{ github.event.schedule }}
       RC6_A669_MANUAL_SLOT: ${{ inputs.slot }}
-      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
-      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      RC6_EXPECTED_PRODUCT_SHA: UNBOUND_A796_OFFHOST
+      RC6_EXPECTED_IMAGE_ID: UNBOUND_A796_OFFHOST
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,7 +135,7 @@ jobs:
       - name: Checkout product-pinned OFFHOST audited BYMA calendar; never moving ref
         uses: actions/checkout@v4
         with:
-          ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+          ref: e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b
           path: _audited_product_calendar
           sparse-checkout: |
             ak_byma_calendar.py

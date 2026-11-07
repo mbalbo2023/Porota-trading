@@ -29,11 +29,13 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "6aeefcd76f34fd23c5fbe118dc440c14357c623c"
-PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
+ENGINE_GIT_BLOB = "c170531ae94f6fe7457a07d7275e758ed77377a8"
+# R4 COM19031 source snapshot used ONLY in A796 OFFHOST contract CI.
+# This is not an observed deployed SHA or image attestation.
+PRODUCT_SHA = "e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
-SESSIONS_GIT_BLOB = "bfcaf3909b5afde2a3e0e2f56b3aeaefc047d422"
+SESSIONS_GIT_BLOB = "cda5b9f83333a084078fd4384f2aff53898a3234"
 BYMA_OFFICIAL_CALENDAR_SOURCE = "https://www.byma.com.ar/mercado/calendario-bursatil"
 CALENDAR_AUDIT_MAX_AGE_DAYS = 60  # same bounded freshness policy as RC6 Market Watch
 # Exact historical product calendar reasons corresponding to BYMA footnote (3):

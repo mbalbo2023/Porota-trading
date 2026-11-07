@@ -32,9 +32,15 @@ SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
 PER_GET_CLOCK_FIELDS = frozenset({
     "current_received_at_utc", "book_received_at_utc", "pair_completed_at_utc",
 })
-PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
+# Reviewed R4 COM19031 source snapshot, NOT a deployed-runtime attestation.
+# The A796 workflow keeps provider capture on HOLD until a matching immutable
+# artifact/image and Watch-independent budget receipt are physically attested.
+PRODUCT_SHA = "e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 PPI_HOST = "clientapi.portfoliopersonal.com"
+# A689 arrives from the same immutable control checkout as this streamed engine.
+# Before any future provider path it must be byte-pinned and durably claimed.
+A689_HELPER_SHA256 = "89b3a3c686e5754566f1945033edb1ace5fe34954b1ebf20b19b0790d3744aac"
 MAX_BODY = 128 * 1024
 MAX_LEVELS = 200
 MAX_AGE_MS = 120_000
@@ -63,6 +69,7 @@ REASONS = frozenset({
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
     "PPI_NATIVE_CLOCK_STALE_OR_FUTURE", "BODY_BUDGET_OR_DIGEST_INVALID",
     "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT", "RECEIPT_INVALID",
+    "A689_DURABLE_SLOT_CAS_HOLD",
 })
 
 
@@ -527,6 +534,42 @@ def unverified_transport_receipt(reason="HOST_PREFLIGHT_OR_RUNTIME_HOLD"):
             "source_pit_verified": False}
 
 
+def _claim_a689_before_provider(target):
+    """Durably claim the ART day-slot in the same process as any future GET.
+
+    The source is passed in memory from the exact Actions control checkout.
+    Missing, substituted or already-consumed claims deny BEFORE SDK import.
+    This helper is OFFHOST-tested only in A796; runtime remains disabled.
+    """
+    slot = os.environ.get("RC6_A689_SLOT", "")
+    if slot not in SLOTS or target != SLOTS[slot]:
+        raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+    encoded = os.environ.get("RC6_A689_SOURCE_B64", "")
+    if not isinstance(encoded, str) or not 1 <= len(encoded) <= 48_000:
+        raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+    try:
+        source = base64.b64decode(encoded, validate=True)
+        if len(source) > 36_000 or sha256(source).hexdigest() != A689_HELPER_SHA256:
+            raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+        module = {"__name__": "rc6_a689_slot_cas"}
+        exec(compile(source, "<pinned-A689-module>", "exec"), module)
+        claim_once = module["claim_once"]
+        result = claim_once(
+            art_date=os.environ.get("RC6_A689_ART_DATE", ""),
+            slot=slot,
+            run_id=os.environ.get("RC6_A689_RUN_ID", ""),
+            run_attempt=os.environ.get("RC6_A689_RUN_ATTEMPT", ""),
+            control_sha=os.environ.get("RC6_A689_CONTROL_SHA", ""),
+            repository=os.environ.get("RC6_A689_REPOSITORY", ""),
+            control_ref=os.environ.get("RC6_A689_CONTROL_REF", ""),
+            event_name=os.environ.get("RC6_A689_EVENT_NAME", ""),
+        )
+        if result["state"] != "CLAIMED_DURABLE":
+            raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+    except Exception as exc:
+        raise ValueError("A689_DURABLE_SLOT_CAS_HOLD") from exc
+
+
 def capture_two(target, credentials, shared_budget, reader_factory,
                 *, clock=None, http_limiter=None, adapter_guard=None,
                 budget_reason=None):
@@ -728,11 +771,19 @@ def container_main():
             budget, budget_reason = (_existing_shared_budget() if credentials is not None
                                      else (None, "PPI_KEYPAIR_UNAVAILABLE"))
             if credentials and budget:
-                from bd_ppi_readonly_guard import ProductionMarketReader
+                try:
+                    _claim_a689_before_provider(target)
+                except Exception:
+                    receipt = _base_receipt(target)
+                    receipt["reason"] = "A689_DURABLE_SLOT_CAS_HOLD"
+                else:
+                    from bd_ppi_readonly_guard import ProductionMarketReader
+                    receipt = capture_two(target, credentials, budget,
+                                          ProductionMarketReader,
+                                          budget_reason=budget_reason)
             else:
-                ProductionMarketReader = None
-            receipt = capture_two(target, credentials, budget, ProductionMarketReader,
-                                  budget_reason=budget_reason)
+                receipt = capture_two(target, credentials, budget, None,
+                                      budget_reason=budget_reason)
         if not verify_receipt(receipt, target):
             raise ValueError("RECEIPT_INVALID")
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))

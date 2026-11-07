@@ -191,7 +191,7 @@ class A669GuardTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", code)
         self.assertIn("github.event_name == 'workflow_dispatch'", code)
         self.assertIn("python3 -B scripts/rc6_a669_ppi_day_slot_guard.py", code)
-        self.assertIn("ref: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145", code)
+        self.assertIn("ref: e2e56e85aa98b4f7e45268e2a8a21f61f6d1c05b", code)
         self.assertIn("sparse-checkout:", code)
         self.assertIn("group: rc6-unified-paper-deploy", code)
         self.assertIn("cancel-in-progress: false", code)
