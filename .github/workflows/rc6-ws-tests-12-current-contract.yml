@@ -125,6 +125,40 @@ jobs:
               except FileNotFoundError:
                   continue
               except OSError as exc:
+                  # EACCES/EPERM on stat alone proves too little. Require an
+                  # independently denied AF_UNIX connect with same UID+NNP.
+                  if exc.errno in {errno.EACCES, errno.EPERM} and category == 3:
+                      # Only the observed protected system socket qualifies.
+                      # Rootless caller-owned parents could be chmod'ed later
+                      # by pytest to defeat a temporary permission denial.
+                      ancestors = ("/run", "/run/podman")
+                      try:
+                          info_chain = [os.lstat(parent) for parent in ancestors]
+                      except OSError as ancestor_error:
+                          code = ancestor_error.errno if ancestor_error.errno in safe_codes else -1
+                          print(f"NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED|stage=ancestry|category={category}|errno={code}")
+                          raise SystemExit(79)
+                      if any(not stat.S_ISDIR(item.st_mode) or item.st_uid != 0 or
+                             os.access(parent, os.W_OK)
+                             for parent, item in zip(ancestors, info_chain)):
+                          print(f"NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED|stage=ancestry|category={category}|errno=0")
+                          raise SystemExit(79)
+                      denied_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                      denied_socket.settimeout(1)
+                      try:
+                          denied_socket.connect(path)
+                      except OSError as denied:
+                          if denied.errno in {errno.EACCES, errno.EPERM}:
+                              print(f"HOST_UNIX_SOCKET=DENIED|category={category}|stage=stat_and_connect")
+                              continue
+                          code = denied.errno if denied.errno in safe_codes else -1
+                          print(f"NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED|stage=connect|category={category}|errno={code}")
+                          raise SystemExit(79)
+                      else:
+                          print(f"NETWORK_ISOLATION=RED|reason=PLAN_HOST_SOCKET_CONNECTABLE|stage=connect|category={category}|errno=0")
+                          raise SystemExit(79)
+                      finally:
+                          denied_socket.close()
                   code = exc.errno if exc.errno in safe_codes else -1
                   print(f"NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED|stage=stat|category={category}|errno={code}")
                   raise SystemExit(79)
@@ -357,6 +391,35 @@ jobs:
               except FileNotFoundError:
                   continue
               except OSError as exc:
+                  if exc.errno in {errno.EACCES, errno.EPERM} and category == 3:
+                      ancestors = ("/run", "/run/podman")
+                      try:
+                          info_chain = [os.lstat(parent) for parent in ancestors]
+                      except OSError as ancestor_error:
+                          code = ancestor_error.errno if ancestor_error.errno in safe_codes else -1
+                          print(f"NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED|stage=ancestry|category={category}|errno={code}")
+                          raise SystemExit(79)
+                      if any(not stat.S_ISDIR(item.st_mode) or item.st_uid != 0 or
+                             os.access(parent, os.W_OK)
+                             for parent, item in zip(ancestors, info_chain)):
+                          print(f"NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED|stage=ancestry|category={category}|errno=0")
+                          raise SystemExit(79)
+                      denied_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                      denied_socket.settimeout(1)
+                      try:
+                          denied_socket.connect(path)
+                      except OSError as denied:
+                          if denied.errno in {errno.EACCES, errno.EPERM}:
+                              print(f"HOST_UNIX_SOCKET=DENIED|category={category}|stage=stat_and_connect")
+                              continue
+                          code = denied.errno if denied.errno in safe_codes else -1
+                          print(f"NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED|stage=connect|category={category}|errno={code}")
+                          raise SystemExit(79)
+                      else:
+                          print(f"NETWORK_ISOLATION=RED|reason=HOST_SOCKET_CONNECTABLE|stage=connect|category={category}|errno=0")
+                          raise SystemExit(79)
+                      finally:
+                          denied_socket.close()
                   code = exc.errno if exc.errno in safe_codes else -1
                   print(f"NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED|stage=stat|category={category}|errno={code}")
                   raise SystemExit(79)

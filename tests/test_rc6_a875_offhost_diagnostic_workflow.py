@@ -305,13 +305,18 @@ def test_a883_local_nnp_process_attests_linux_kernel_bit():
     assert process.stdout.strip().split() == ["NoNewPrivs:", "1"]
 
 
-@pytest.mark.parametrize("scenario,reason", [
-    ("writable", "stage=writability|category=0|errno=0"),
-    ("connectable", "stage=connect|category=0|errno=0"),
-    ("stat_eacces", "stage=stat|category=0|errno=13"),
-    ("stat_unknown", "stage=stat|category=0|errno=-1"),
-    ("connect_eagain", "stage=connect|category=0|errno=11")])
-def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(scenario, reason):
+@pytest.mark.parametrize("scenario,returncode,reason", [
+    ("writable", 79, "stage=writability|category=0|errno=0"),
+    ("connectable", 79, "stage=connect|category=0|errno=0"),
+    ("stat_eacces_connectable", 79, "stage=stat|category=0|errno=13"),
+    ("stat_eacces_denied", 79, "stage=stat|category=0|errno=13"),
+    ("stat_eperm_denied", 79, "stage=stat|category=0|errno=1"),
+    ("stat_eacces_refused", 79, "stage=stat|category=0|errno=13"),
+    ("stat_eacces_eagain", 79, "stage=stat|category=0|errno=13"),
+    ("stat_unknown", 79, "stage=stat|category=0|errno=-1"),
+    ("connect_eagain", 79, "stage=connect|category=0|errno=11")])
+def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(
+        scenario, returncode, reason):
     """Exercise exact YAML guard with simulated daemon, no actual socket/network."""
     data, _ = workflow()
     for job_name, step_name in (("plan-offhost",
@@ -327,15 +332,24 @@ def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(scenario, rea
         stub = ("\nclass FakeInfo: st_mode = stat.S_IFSOCK | 0o777\n"
                 "def fake_stat(path):\n"
                 + ("    raise OSError(errno.EACCES, 'denied')\n"
-                   if scenario == "stat_eacces" else
+                   if scenario.startswith("stat_eacces") else
+                   "    raise OSError(errno.EPERM, 'denied')\n"
+                   if scenario == "stat_eperm_denied" else
                    "    raise OSError(5678, '/private/fake/path')\n"
                    if scenario == "stat_unknown" else "    return FakeInfo()\n") +
                 "os.stat = fake_stat\n"
                 f"os.access = lambda path, mode: {scenario == 'writable'}\n"
                 "class FakeSock:\n"
                 "    def settimeout(self, timeout): pass\n"
-                + ("    def connect(self, path): raise OSError(errno.EAGAIN, 'busy')\n"
-                   if scenario == "connect_eagain" else "    def connect(self, path): pass\n") +
+                + ("    def connect(self, path): raise OSError(errno.EACCES, 'denied')\n"
+                   if scenario == "stat_eacces_denied" else
+                   "    def connect(self, path): raise OSError(errno.EPERM, 'denied')\n"
+                   if scenario == "stat_eperm_denied" else
+                   "    def connect(self, path): raise OSError(errno.ECONNREFUSED, 'refused')\n"
+                   if scenario == "stat_eacces_refused" else
+                   "    def connect(self, path): raise OSError(errno.EAGAIN, 'busy')\n"
+                   if scenario in ("connect_eagain", "stat_eacces_eagain") else
+                   "    def connect(self, path): pass\n") +
                 "    def close(self): pass\n"
                 "socket.socket = lambda *args: FakeSock()\n")
         block = (block[:start] + "paths = [" + json.dumps("/emulated/daemon.sock") +
@@ -343,10 +357,66 @@ def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(scenario, rea
         result = subprocess.run(["python", "-c", block], cwd=ROOT,
                                 capture_output=True, text=True, check=False,
                                 timeout=5)
-        assert result.returncode == 79, (job_name, result.stdout, result.stderr)
+        assert result.returncode == returncode, (job_name, result.stdout, result.stderr)
         assert reason in result.stdout
         assert "/private" not in result.stdout
         assert "/emulated" not in result.stdout
+
+
+@pytest.mark.parametrize("ancestor,connect_mode,returncode,reason", [
+    ("root_owned", "denied", 0, "HOST_UNIX_SOCKET=BLOCKED"),
+    ("same_uid", "denied", 79, "stage=ancestry|category=3"),
+    ("writable", "denied", 79, "stage=ancestry|category=3"),
+    ("symlink", "denied", 79, "stage=ancestry|category=3"),
+    ("root_owned", "connectable", 79, "stage=connect|category=3|errno=0"),
+    ("root_owned", "eagain", 79, "stage=connect|category=3|errno=11")])
+def test_a883_category3_dual_denial_requires_immutable_root_owned_ancestry(
+        ancestor, connect_mode, returncode, reason):
+    """Same-UID chmod to own mode000 parent must not become a bypass."""
+    data, _ = workflow()
+    for job_name, step_name in (("plan-offhost",
+                                 "Plan exact shard1 inventory in isolated namespace"),
+                                ("red-only-offhost",
+                                 "Run isolated bounded hash-only diagnostic")):
+        script = next(s["run"] for s in data["jobs"][job_name]["steps"]
+                      if s.get("name") == step_name)
+        block = script.split("python - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        start, end = block.index("paths = ["), block.index("\nsafe_codes = {")
+        prelude = (
+            "paths = ['/absent0', '/absent1', '/absent2', '/run/podman/podman.sock']\n"
+            "class FakeInfo:\n"
+            "    def __init__(self, uid, mode):\n"
+            "        self.st_uid, self.st_mode = uid, mode\n"
+            "def fake_stat(path):\n"
+            "    if path != '/run/podman/podman.sock':\n"
+            "        raise FileNotFoundError(errno.ENOENT, 'missing')\n"
+            "    raise OSError(errno.EACCES, 'denied')\n"
+            "os.stat = fake_stat\n"
+            "def fake_lstat(path):\n"
+            "    if path == '/run': return FakeInfo(0, stat.S_IFDIR | 0o755)\n"
+            + ("    return FakeInfo(os.geteuid(), stat.S_IFDIR | 0o700)\n"
+               if ancestor == "same_uid" else
+               "    return FakeInfo(0, stat.S_IFLNK | 0o777)\n"
+               if ancestor == "symlink" else
+               "    return FakeInfo(0, stat.S_IFDIR | 0o700)\n") +
+            "os.lstat = fake_lstat\n"
+            f"os.access = lambda path, mode: {ancestor == 'writable'} and path == '/run/podman'\n"
+            "class FakeSock:\n"
+            "    def settimeout(self, timeout): pass\n"
+            + ("    def connect(self, path): pass\n"
+               if connect_mode == "connectable" else
+               "    def connect(self, path): raise OSError(errno.EAGAIN, 'busy')\n"
+               if connect_mode == "eagain" else
+               "    def connect(self, path): raise OSError(errno.EACCES, 'denied')\n") +
+            "    def close(self): pass\n"
+            "socket.socket = lambda *args: FakeSock()\n")
+        block = block[:start] + prelude + block[end:]
+        result = subprocess.run(["python", "-c", block], cwd=ROOT,
+                                capture_output=True, text=True, check=False,
+                                timeout=5)
+        assert result.returncode == returncode, (job_name, result.stdout, result.stderr)
+        assert reason in result.stdout
+        assert "/run/" not in result.stdout
 
 
 def test_a875_push_has_no_other_matching_workflow_in_current_tree():
