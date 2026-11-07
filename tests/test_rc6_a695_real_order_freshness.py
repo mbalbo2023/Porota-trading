@@ -36,9 +36,12 @@ class RealOrdersReadoutTests(unittest.TestCase):
         destination = DESTINATIONS[0]
         return render(destination, destination.tabs[0][0], projection, "<p>Prueba</p>")
 
-    def test_fresh_verified_zero_can_show_no_real_orders_observed(self):
+    def test_fresh_unbound_zero_cannot_certify_no_real_orders(self):
         html = self._html()
-        self.assertIn("real_orders_sent=0 · órdenes reales: NINGUNA observada", html)
+        self.assertIn("real_orders_sent=0 (último valor almacenado)", html)
+        self.assertIn("BD local", html)
+        self.assertIn("estado actual NO_VERIFICADO", html)
+        self.assertNotIn("órdenes reales: NINGUNA", html)
         self.assertIn("role='status' aria-live='polite'", html)
         self.assertNotIn("Alerta de seguridad: contador", html)
 
@@ -46,6 +49,7 @@ class RealOrdersReadoutTests(unittest.TestCase):
         html = self._html(heartbeat_age=180.0, heartbeat_freshness="STALE")
         self.assertIn("real_orders_sent=0 (último valor almacenado)", html)
         self.assertIn("observación histórica", html)
+        self.assertIn("BD local", html)
         self.assertIn("estado actual NO_VERIFICADO", html)
         self.assertNotIn("órdenes reales: NINGUNA", html)
 

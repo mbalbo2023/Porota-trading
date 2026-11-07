@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 import pytest
 
@@ -150,7 +151,11 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         assert vivo.text.count("id='porota-canonical-nav'") == 1
         assert vivo.text.count("id='porota-paper-mode'") == 1
         assert "MODO SIMULACIÓN PRODUCTIVA" in vivo.text
-        assert "órdenes reales: NINGUNA" in vivo.text
+        # A newly created DB stores the default zero but has no observer
+        # heartbeat. This is historical data, NOT a fresh safety attestation.
+        assert "real_orders_sent=0 (último valor almacenado)" in vivo.text
+        assert "estado actual NO_VERIFICADO" in vivo.text
+        assert "órdenes reales: NINGUNA" not in vivo.text
         assert "R" * 40 not in vivo.text
         for path in ("/observacion", "/testing"):
             respuesta = cliente.get(path)
@@ -159,9 +164,26 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
             assert respuesta.text.count("id='porota-canonical-nav'") == 1
             assert respuesta.text.count("id='porota-paper-mode'") == 1
             assert "MODO SIMULACIÓN PRODUCTIVA" in respuesta.text
-            assert "órdenes reales: NINGUNA" in respuesta.text
+            assert "real_orders_sent=0 (último valor almacenado)" in respuesta.text
+            assert "estado actual NO_VERIFICADO" in respuesta.text
+            assert "órdenes reales: NINGUNA" not in respuesta.text
             assert "R" * 40 not in respuesta.text
             assert "Esperando tu autorización" not in respuesta.text
+
+        # Adversarial end-to-end proof: freshness is not provenance. A local
+        # SQLite write may forge a recent observer heartbeat while retaining
+        # zero real orders; it MUST NOT certify an external runtime fact.
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE observer_state SET heartbeat_at=?, real_orders_sent=0 WHERE id=1",
+                         (datetime.now(timezone.utc).isoformat(),))
+        for path in ("/vivo", "/observacion", "/testing"):
+            fresh = cliente.get(path)
+            assert fresh.status_code == 200
+            assert "real_orders_sent=0 (último valor almacenado)" in fresh.text
+            assert "BD local" in fresh.text
+            assert "estado actual NO_VERIFICADO" in fresh.text
+            assert "órdenes reales: NINGUNA" not in fresh.text
+            assert "R" * 40 not in fresh.text
         history = cliente.get('/api/paper/caucion-allocations')
         assert history.status_code == 200
         assert history.json()['state'] == 'EMPTY'
@@ -189,6 +211,29 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
     # /vivo y /testing usan el renderer canónico directamente después de
     # autenticación; no ejecutan el handler legacy sólo para descartar su HTML.
     assert consultas == []
+
+
+def test_real_order_receipt_fresh_stale_and_malformed_fail_closed():
+    from rc6_trader_dashboard.shell import _real_order_receipt
+
+    base = dict(real_orders_sent=0, heartbeat_at="2026-11-06T15:00:00Z",
+                heartbeat_age=1.0, heartbeat_budget_seconds=75,
+                heartbeat_freshness="FRESH")
+    for variants in ({}, {"heartbeat_freshness": "STALE", "heartbeat_age": 130},
+                     {"heartbeat_at": None, "heartbeat_age": None},
+                     {"heartbeat_freshness": "FRESH", "heartbeat_age": -1}):
+        status, warning = _real_order_receipt({**base, **variants})
+        assert "real_orders_sent=0 (último valor almacenado)" in status
+        assert "BD local" in status and "NO_VERIFICADO" in status
+        assert "NINGUNA" not in status
+        assert warning == ""
+    for bad in (None, False, "0", -1):
+        status, _ = _real_order_receipt({**base, "real_orders_sent": bad})
+        assert "real_orders_sent=NO_VERIFICADO" in status
+        assert "NINGUNA" not in status
+    status, warning = _real_order_receipt({**base, "real_orders_sent": 2})
+    assert "real_orders_sent=2 · ALERTA" in status
+    assert "Alerta de seguridad" in warning
 
 
 def test_inyeccion_del_banner_es_idempotente(monkeypatch):

@@ -7,7 +7,12 @@ from urllib.parse import urlencode
 
 
 def _real_order_receipt(state):
-    """Never turn a persisted zero into a current safety assertion without liveness."""
+    """A mutable local SQLite counter never attests an external runtime fact.
+
+    In particular, a locally forged fresh heartbeat does not establish the
+    identity of the writer or bind the observation to a deployed image/SHA.
+    This projection has no cryptographically bound runtime receipt yet.
+    """
     value = state.get("real_orders_sent")
     if type(value) is not int or value < 0:
         # SQLite can expose malformed or unavailable facts. False and "0"
@@ -15,22 +20,11 @@ def _real_order_receipt(state):
         return ("real_orders_sent=NO_VERIFICADO · estado actual NO_VERIFICADO",
                 "Alerta de integridad: contador de órdenes reales no verificable." if value is not None else "")
     if value > 0:
-        return (f"real_orders_sent={value} · ALERTA: valor registrado",
+        return (f"real_orders_sent={value} · ALERTA: valor registrado en BD local",
                 "Alerta de seguridad: contador de órdenes reales distinto de cero.")
-    heartbeat_age = state.get("heartbeat_age")
-    heartbeat_budget = state.get("heartbeat_budget_seconds")
-    observer_fresh = (
-        state.get("heartbeat_freshness") == "FRESH"
-        and bool(state.get("heartbeat_at"))
-        and type(heartbeat_age) in (int, float)
-        and type(heartbeat_budget) in (int, float)
-        and 0 <= heartbeat_age <= heartbeat_budget
-    )
-    if observer_fresh:
-        return (f"real_orders_sent=0 · órdenes reales: NINGUNA observada"
-                f" (heartbeat {clock(state.get('heartbeat_at'))})", "")
     return (f"real_orders_sent=0 (último valor almacenado) · observación histórica"
-            f" ({clock(state.get('heartbeat_at'))}) · estado actual NO_VERIFICADO", "")
+            f" · BD local (heartbeat {clock(state.get('heartbeat_at'))})"
+            " · origen/runtime no acreditado · estado actual NO_VERIFICADO", "")
 
 
 def render(destination, tab, projection, content):
