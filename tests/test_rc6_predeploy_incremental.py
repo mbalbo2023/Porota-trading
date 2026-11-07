@@ -24,18 +24,27 @@ def _run_step(tmp_path, *, fail_session=False):
     fake.mkdir()
     docker = fake / 'docker'
     docker.write_text('''#!''' + sys.executable + '''
-import json, os, sys, time
+import hashlib, json, os, sys, time
 from pathlib import Path
 args = sys.argv[1:]
-name = next((arg for arg in args if arg.startswith('porota-native-')), 'unknown')
-label = name.removeprefix('porota-native-').removesuffix('-test')
+names = {stage: 'porota-native-' + stage + '-test' for stage in
+         ('cases', 'catalog', 'session', 'cadence-fresh', 'cadence-legacy')}
+ids = {hashlib.sha256(name.encode()).hexdigest(): stage
+       for stage, name in names.items()}
+if args[0] == 'create':
+    name = args[args.index('--name') + 1]
+    label = name.removeprefix('porota-native-').removesuffix('-test')
+    identity = hashlib.sha256(name.encode()).hexdigest()
+else:
+    identity = next((arg for arg in args if arg in ids), '')
+    label = ids.get(identity, 'unknown')
 events = Path(os.environ['RC6_EVENTS'])
 def record(event):
     with events.open('a') as output:
         output.write(json.dumps([label, event, time.monotonic()]) + '\\n')
 if args[0] == 'create':
     record('create')
-    print(name)
+    print(identity)
 elif args[0] == 'start':
     record('start')
     time.sleep({'session': .32, 'cadence-fresh': .22,
@@ -44,8 +53,11 @@ elif args[0] == 'start':
     if label == 'session' and os.getenv('RC6_FAIL_SESSION') == '1':
         sys.exit(7)
 elif args[0] == 'inspect':
-    print('7|true' if label == 'session' and
-          os.getenv('RC6_FAIL_SESSION') == '1' else '0|false')
+    if 'Config.Labels' in ' '.join(args):
+        print(identity + '|' + os.environ['CANDIDATE_SHA'] + '|v2|test')
+    else:
+        print('7|true' if label == 'session' and
+              os.getenv('RC6_FAIL_SESSION') == '1' else '0|false')
 elif args[0] != 'rm':
     sys.exit(9)
 ''')
@@ -53,6 +65,7 @@ elif args[0] != 'rm':
     env = os.environ | {
         'PATH': str(fake) + os.pathsep + os.environ['PATH'],
         'RUNNER_TEMP': str(tmp_path), 'GITHUB_RUN_ID': 'test',
+        'CANDIDATE_SHA': '0123456789012345678901234567890123456789',
         'IMAGE': 'synthetic:exact', 'RC6_EVENTS': str(tmp_path/'events.jsonl'),
         'RC6_FAIL_SESSION': '1' if fail_session else '0',
     }

@@ -127,7 +127,7 @@ def test_predeploy_containers_have_explicit_creation_cleanup() -> None:
     assert 'docker rm "$rc6_name"' not in source
     assert 'docker start -a "$rc6_name"' not in source
     assert 'docker inspect -f \'{{.State.ExitCode}}|{{.State.OOMKilled}}\' "$rc6_name"' not in source
-    assert 'rc6_container_id="$(docker create --name "$rc6_name"' in source
+    assert 'rc6_new_id="$(docker create --name "$rc6_name"' in source
     assert 'docker rm "$rc6_container_id"' in source
     assert 'trap cleanup_native_proof EXIT' in source
 

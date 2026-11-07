@@ -477,7 +477,9 @@ jobs:
           install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
           cleanup_native_proof() {
             rc6_cleanup_rc=$?
-            docker rm -f "porota-native-cases-$GITHUB_RUN_ID" "porota-native-catalog-$GITHUB_RUN_ID" "porota-native-session-$GITHUB_RUN_ID" "porota-native-cadence-fresh-$GITHUB_RUN_ID" "porota-native-cadence-legacy-$GITHUB_RUN_ID" >/dev/null 2>&1 || true
+            # Each run_native_proof subshell, including background 'session',
+            # owns its successful docker-create ID and its own EXIT trap.
+            # A predictable name must NEVER be an authorization to rm -f.
             if test -n "${rc6_session_pid:-}"; then
               wait "$rc6_session_pid" || rc6_cleanup_rc=1
               cat "$RUNNER_TEMP/porota-native-session.log"
@@ -485,9 +487,36 @@ jobs:
             exit "$rc6_cleanup_rc"
           }
           trap cleanup_native_proof EXIT
-          run_native_proof() {
+          # RC6_A980_NATIVE_OWNER_BEGIN
+          run_native_proof() (
+            set -Eeuo pipefail
+            rc6_container_id=
             rc6_label="$1"; shift
             rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"
+            rc6_owner_receipt="|$CANDIDATE_SHA|v2|$GITHUB_RUN_ID"
+            rc6_owned_container() {
+              [[ "$rc6_container_id" =~ ^[0-9a-f]{64}$ ]] || return 1
+              rc6_actual="$(docker inspect -f '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.native-proof"}}|{{index .Config.Labels "porota.run_id"}}' "$rc6_container_id" 2>/dev/null)" || return 1
+              [[ "$rc6_actual" == "$rc6_container_id$rc6_owner_receipt" ]]
+            }
+            rc6_cleanup_owned_native() {
+              rc6_cleanup_rc=$?
+              trap - EXIT
+              if [[ -n "$rc6_container_id" ]]; then
+                if rc6_owned_container; then
+                  if ! docker rm -f "$rc6_container_id" >/dev/null 2>&1; then
+                    echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|owned_container_delete_failed'
+                    rc6_cleanup_rc=79
+                  fi
+                else
+                  echo 'POROTA_NATIVE_PROOF_CLEANUP=WARN|container_identity_unverified_no_delete'
+                  rc6_cleanup_rc=79
+                fi
+              fi
+              exit "$rc6_cleanup_rc"
+            }
+            trap rc6_cleanup_owned_native EXIT
+            trap 'exit 143' INT TERM HUP
             # The full session must prove the same 256 MiB cap used by the
             # Droplet stress governor. Other native sizing stages retain 512 MiB.
             rc6_memory=(--memory 512m --memory-swap 512m)
@@ -495,25 +524,43 @@ jobs:
               rc6_memory=(--memory 256m --memory-swap 256m)
             fi
             install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence/tmp/$rc6_label"
-            docker create --name "$rc6_name" --pull never "${rc6_memory[@]}" --cpus .75 \
+            if rc6_new_id="$(docker create --name "$rc6_name" \
+              --label "porota.commit=$CANDIDATE_SHA" --label porota.native-proof=v2 \
+              --label "porota.run_id=$GITHUB_RUN_ID" --pull never \
+              "${rc6_memory[@]}" --cpus .75 \
               --network none --no-healthcheck --read-only --user 1000:1000 --workdir /app \
               --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
               -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e "TMPDIR=/proof/tmp/$rc6_label" \
-              -v "$RUNNER_TEMP/porota-native-sizing-evidence:/proof" "$IMAGE" "$@"
+              -v "$RUNNER_TEMP/porota-native-sizing-evidence:/proof" "$IMAGE" "$@")"; then
+              rc6_container_id="$rc6_new_id"
+            else
+              echo 'POROTA_NATIVE_PROOF=RED|docker_create_failed_no_name_cleanup'
+              exit 79
+            fi
+            if ! rc6_owned_container; then
+              echo 'POROTA_NATIVE_PROOF=RED|created_id_or_owner_unverified'
+              exit 79
+            fi
             set +e
             rc6_timeout=480
             case "$rc6_label" in
               cadence-fresh|cadence-legacy) rc6_timeout=1500 ;;
             esac
-            timeout "$rc6_timeout" docker start -a "$rc6_name"
+            timeout "$rc6_timeout" docker start -a "$rc6_container_id"
             rc6_result=$?
             set -e
-            rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_name")"
+            rc6_state="$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$rc6_container_id")"
             printf 'POROTA_NATIVE_SIZING_CONTAINER=%s|%s\n' "$rc6_label" "$rc6_state"
             test "$rc6_result" -eq 0
             test "$rc6_state" = '0|false'
-            docker rm "$rc6_name" >/dev/null
-          }
+            if ! rc6_owned_container; then
+              echo 'POROTA_NATIVE_PROOF=RED|post_start_owner_changed_no_delete'
+              exit 79
+            fi
+            docker rm "$rc6_container_id" >/dev/null
+            rc6_container_id=
+          )
+          # RC6_A980_NATIVE_OWNER_END
           run_native_proof cases python -m pytest -q -p no:cacheprovider \
             tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
             tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
