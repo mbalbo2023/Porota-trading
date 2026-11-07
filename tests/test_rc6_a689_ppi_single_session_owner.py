@@ -357,6 +357,7 @@ def test_delayed_sdk_connect_callback_revalidates_per_symbol_capacity(harness):
         assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
     finally:
         owner._stream_invoked = False  # synthetic no-socket teardown ONLY
+        owner._reader._ProductionMarketReader__stream_invoked = False
         owner.close()
 
 
@@ -385,4 +386,5 @@ def test_revocation_after_wire_subscription_denies_event_fanout(harness):
         assert harness.counts["gets"] == harness.counts["connect_attempts"] == 0
     finally:
         owner._stream_invoked = False  # fake-only no actual WS can remain open
+        owner._reader._ProductionMarketReader__stream_invoked = False
         owner.close()

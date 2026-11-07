@@ -60,6 +60,18 @@ def test_closed_reader_and_saved_transport_do_not_reenter_sdk(sdk):
             call()
 
 
+def test_missing_realtime_method_cannot_be_disguised_by_custody_proxy(sdk):
+    from rc6_ppi_shared_producer import ProducerBlocked
+    reader = ProductionMarketReader("FAKE", "FAKE", budget=SyntheticWireLease())
+    try:
+        reader.login_once()
+        del reader._ProductionMarketReader__client.realtime.start_connections
+        with pytest.raises(ProducerBlocked):
+            reader.market_only_sdk_transport(instrument_factory=lambda *a: a)
+    finally:
+        reader.close()
+
+
 @pytest.mark.parametrize("method", ["connect", "subscribe", "start"])
 @pytest.mark.parametrize("raises", [False, True])
 def test_uncertain_sdk_stream_invocation_retains_guard_even_on_exception(sdk, method, raises):

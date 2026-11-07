@@ -586,6 +586,31 @@ class ReadOnlyTransportGuard:
             ReadOnlyTransportGuard._active_guard = None
 
 
+class _ReaderSDKFacet:
+    """Keep SDK calls under the reader's existing transport custody.
+
+    A callback-based stream may outlive its synchronous SDK invocation; mark
+    that uncertainty before calling it, including when the SDK raises.
+    """
+
+    def __init__(self, reader, facet, *, stream=False):
+        self.__reader = reader
+        self.__facet = facet
+        self.__stream = stream
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        with self.__reader._sdk_scope():
+            method = getattr(self.__facet, name)
+            if not callable(method):
+                raise AttributeError(name)
+        def invoke(*args, **kwargs):
+            with self.__reader._sdk_scope(stream=self.__stream):
+                return method(*args, **kwargs)
+        return invoke
+
+
 class ProductionMarketReader:
     """Fachada sin atributo de ordenes, cuentas, transferencias ni cancelacion."""
 
@@ -603,6 +628,26 @@ class ProductionMarketReader:
             consumer=consumer, priority=priority).install()
         self.__client = None
         self.__authenticated = False
+        self.__closed = False
+        self.__stream_invoked = False
+
+    @contextmanager
+    def _sdk_scope(self, *, stream=False):
+        guard = self.__guard
+        with ReadOnlyTransportGuard._registry_lock:
+            guard._require_owned_hooks()
+            if self.__closed:
+                raise ReadOnlyPolicyViolation("PPI_READER_CLOSED")
+            if stream:
+                self.__stream_invoked = True
+            # Reuse HTTP custody, so restore cannot release it between SDK
+            # preparation/parsing and the actual guarded HTTP wire call.
+            guard._inflight += 1
+        try:
+            yield
+        finally:
+            with ReadOnlyTransportGuard._registry_lock:
+                guard._inflight -= 1
 
     @property
     def metrics(self) -> dict:
@@ -636,6 +681,10 @@ class ProductionMarketReader:
         return getattr(self.__guard._scope, "read_error_code", None)
 
     def login_once(self) -> None:
+        with self._sdk_scope():
+            self._login_once()
+
+    def _login_once(self) -> None:
         if self.__authenticated:
             return
         from ppi_client.ppi import PPI
@@ -661,9 +710,11 @@ class ProductionMarketReader:
         self.__authenticated = True
 
     def _market(self):
+        if self.__closed:
+            raise ReadOnlyPolicyViolation("PPI_READER_CLOSED")
         if not self.__authenticated or self.__client is None:
             raise RuntimeError("El lector no esta autenticado.")
-        return self.__client.marketdata
+        return _ReaderSDKFacet(self, self.__client.marketdata)
 
     def market_only_sdk_transport(self, *, instrument_factory):
         """Bind the documented MARKET realtime methods to this logged-in PPI.
@@ -681,7 +732,8 @@ class ProductionMarketReader:
         from rc6_ppi_shared_producer import MarketOnlySDKTransport
         realtime = getattr(self.__client, "realtime", None)
         return MarketOnlySDKTransport(
-            realtime=realtime, instrument_factory=instrument_factory)
+            realtime=_ReaderSDKFacet(self, realtime, stream=True),
+            instrument_factory=instrument_factory)
 
     def current(self, ticker: str, instrument_type: str, settlement: str):
         return self._read("current", ticker, instrument_type, settlement)
@@ -795,7 +847,7 @@ class ProductionMarketReader:
     def market_configuration(self):
         """Enums públicos documentados; misma sesión y ninguna cuenta/orden."""
         self._market()  # exige la misma sesión; no intenta otro login
-        configuration = self.__client.configuration
+        configuration = _ReaderSDKFacet(self, self.__client.configuration)
         values = {"instrument_types": configuration.get_instrument_types(),
                 "markets": configuration.get_markets(),
                 "settlements": configuration.get_settlements(),
@@ -870,4 +922,12 @@ class ProductionMarketReader:
         return self._read("intraday", ticker, instrument_type, settlement)
 
     def close(self) -> None:
-        self.__guard.restore()
+        with ReadOnlyTransportGuard._registry_lock:
+            if self.__closed:
+                return
+            if self.__stream_invoked:
+                raise ReadOnlyPolicyViolation("PPI_MARKET_STREAM_SAFE_STOP_UNVERIFIED")
+            self.__guard.restore()
+            self.__closed = True
+            self.__authenticated = False
+            self.__client = None
