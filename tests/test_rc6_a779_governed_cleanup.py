@@ -108,22 +108,71 @@ class GovernedCleanupAdversaries(unittest.TestCase):
         self._held()
         if self.fd == 220:
             self.skipTest('unusually high base fd')
+        # Tests run beside other jobs; never close a preexisting foreign FD.
+        try:
+            saved_220 = os.dup(220)
+        except OSError:
+            saved_220 = None
         os.dup2(self.fd, 220)
-        os.close(220)
-        with patch.dict(os.environ, {cleanup.OWNER_FD: '220'}):
-            self._assert_rejects_without_docker()
+        try:
+            os.close(220)
+            with patch.dict(os.environ, {cleanup.OWNER_FD: '220'}):
+                self._assert_rejects_without_docker()
+        finally:
+            if saved_220 is not None:
+                os.dup2(saved_220, 220)
+                os.close(saved_220)
         outsider = os.open(self.lock, os.O_RDWR)
         try:
             if self.fd == 150 or outsider == 150:
                 self.skipTest('unexpected occupied target fd')
+            try:
+                saved_150 = os.dup(150)
+            except OSError:
+                saved_150 = None
             os.dup2(outsider, 150)
             try:
                 with patch.dict(os.environ, {cleanup.OWNER_FD: '150'}):
                     self._assert_rejects_without_docker('GOVERNED_MUTEX_OTHER_OWNER')
             finally:
-                os.close(150)
+                if saved_150 is None:
+                    os.close(150)
+                else:
+                    os.dup2(saved_150, 150)
+                    os.close(saved_150)
         finally:
             os.close(outsider)
+
+    def test_negative_fd_adversaries_preserve_preexisting_unrelated_fds(self):
+        """A790 QA: nested tests may run with unrelated FD 150/220 open."""
+        self._held()
+        with tempfile.TemporaryFile() as sentinel_150, \
+             tempfile.TemporaryFile() as sentinel_220:
+            targets = {150: sentinel_150, 220: sentinel_220}
+            saved = {}
+            for fd, sentinel in targets.items():
+                try:
+                    saved[fd] = os.dup(fd)
+                except OSError:
+                    saved[fd] = None
+                os.dup2(sentinel.fileno(), fd)
+            try:
+                before = {fd: (os.fstat(fd).st_dev, os.fstat(fd).st_ino)
+                          for fd in targets}
+                self.test_closed_high_fd_and_foreign_open_description_stay_rejected()
+                for fd in targets:
+                    actual = os.fstat(fd)
+                    self.assertEqual((actual.st_dev, actual.st_ino), before[fd])
+            finally:
+                for fd, original in saved.items():
+                    if original is None:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                    else:
+                        os.dup2(original, fd)
+                        os.close(original)
 
     def test_both_workflow_callsite_decimal_guards_admit_real_fd_range(self):
         workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
@@ -246,4 +295,5 @@ class GovernedCleanupAdversaries(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
