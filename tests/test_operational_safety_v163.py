@@ -1,5 +1,8 @@
 import time
 import pytest
+from types import SimpleNamespace
+
+from test_rc6_legacy_ppi_wire_budget import FakeAdapter, FakeRest, FakeSession
 
 
 class DummyNotifier:
@@ -25,8 +28,27 @@ def _fake_ppi(error=None):
     class FakePPI:
         def __init__(self, sandbox=True):
             self.account = Account()
+            # Reuse the existing OFFHOST SDK transport fixture. The real
+            # budget guard can install before the simulated, no-HTTP login.
+            rest = FakeRest(FakeSession(FakeAdapter()))
+            self._PPI__apiClient = SimpleNamespace(get_rest_client=lambda: rest)
 
     return FakePPI, calls
+
+
+def test_fake_ppi_offhost_transport_is_wrapped_by_real_sdk_budget_guard():
+    """The synthetic SDK must allow real wire-guard installation before login."""
+    import c_ppi_client as module
+
+    fake, _calls = _fake_ppi()
+    candidate = fake()
+    client = module.ResilientPPIClient.__new__(module.ResilientPPIClient)
+    client._install_sdk_wire_budget(candidate)
+    rest = candidate._PPI__apiClient.get_rest_client()
+    session = rest.get_session()
+    assert session.adapters
+    assert all(isinstance(adapter, module._BudgetedPPIAdapter)
+               for adapter in session.adapters.values())
 
 
 def test_ppi_rate_limit_hace_un_solo_login(monkeypatch, tmp_path):
