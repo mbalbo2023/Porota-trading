@@ -6,6 +6,7 @@ from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY, ADMIN_CANCEL_REASON
 from cd_spot_ledger import ADMIN_CANCEL_AUTHORITY_A207, cancel_open_paper_position
 from test_production_paper_v1634 import partial_spot
 from test_rc6_paper_deploy_preflight import pending_eod
+from test_operational_services_v1635 import _add_known_ars_close, _reviewed_unknown_fx_maturity
 
 
 def _db(path: Path):
@@ -130,3 +131,44 @@ def test_unknown_closed_state_still_fails_closed(tmp_path):
     except m.OperationalDailyEvidenceError as exc:
         assert 'UNKNOWN_POSITION_STATE_WITH_CLOSED_AT' in str(exc)
     else:raise AssertionError('unknown ledger state must fail closed')
+
+
+def test_reviewed_native_maturity_unknown_fx_remains_visible_without_zero_pnl():
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        result = m.collect(db_path=str(fixture.store.path))
+        day = {row["date_ar"]: row for row in result["days"]}["2026-10-30"]
+        assert day["closed"] == 1
+        assert day["realized_by_currency"] == {"ARS": None}
+        assert day["realized_pnl_unverified_by_currency"] == {"ARS": 1}
+    finally:
+        fixture.doCleanups()
+
+
+def test_daily_unknown_fi_and_verified_spot_same_currency_is_not_partial_sum():
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        _add_known_ars_close(fixture.store)
+        result = m.collect(db_path=str(fixture.store.path))
+        day = {row["date_ar"]: row for row in result["days"]}["2026-10-30"]
+        assert day["closed"] == 2
+        assert day["realized_by_currency"] == {"ARS": None}
+        assert day["realized_pnl_unverified_by_currency"] == {"ARS": 1}
+    finally:
+        fixture.doCleanups()
+
+
+def test_daily_rejects_unknown_pnl_with_modified_native_maturity_receipt():
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        with fixture.store.connect() as connection:
+            connection.execute("DROP TRIGGER paper_fi_native_maturity_no_update")
+            connection.execute("UPDATE paper_fi_native_maturities SET result_json='{}'")
+        try:
+            m.collect(db_path=str(fixture.store.path))
+        except m.OperationalDailyEvidenceError as exc:
+            assert str(exc) == "CLOSED_PNL_UNVERIFIED"
+        else:
+            raise AssertionError("a forged native maturity receipt must not gain PnL authority")
+    finally:
+        fixture.doCleanups()
