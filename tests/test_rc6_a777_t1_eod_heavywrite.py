@@ -247,7 +247,19 @@ def test_closing_outbox_never_consumes_unique_key_before_final_receipt():
                                     "decisions": []},
         "now_iso": lambda: current["at"].isoformat(),
     }
-    fn = production_fn("bi_operational_services.py", "send_closing_summary", ns)
+    # The caller gained a real formatter and an explicitly unverified orders
+    # status in A877. Extract both from production; do not stub the message.
+    filename = "bi_operational_services.py"
+    module = ast.parse(ROOT.joinpath(filename).read_text(encoding="utf-8"), filename)
+    orders_status = next(
+        node for node in module.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "REAL_ORDERS_STATUS_UNVERIFIED"
+                for target in node.targets)
+    )
+    ns["REAL_ORDERS_STATUS_UNVERIFIED"] = ast.literal_eval(orders_status.value)
+    production_fn(filename, "_closing_summary_text", ns)
+    fn = production_fn(filename, "send_closing_summary", ns)
     with patch.dict(sys.modules, {"bn_telegram_bus": telegram, "ak_byma_calendar": byma}):
         assert fn(store) == "EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD"  # 18:14
         current["at"] = stamp("2026-11-11", "18:15")
@@ -257,6 +269,7 @@ def test_closing_outbox_never_consumes_unique_key_before_final_receipt():
         assert fn(store) == "EN_COLA"
         assert len(message_count) == 1
         assert message_count[0][0] == "TELEGRAM_CLOSE_2026-11-11"
+        assert "Órdenes reales: NO_VERIFICADO" in message_count[0][2]
         current["at"] = stamp("2026-11-11", "18:16")
         assert fn(store) == "EN_COLA"  # existing key, no duplicate enqueue
         assert len(message_count) == 1
