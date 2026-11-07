@@ -19,12 +19,16 @@ import signal
 import subprocess
 import sys
 import tempfile
+from threading import Thread
 import time
 
 import yaml
 
 from scripts import rc6_ci_shard_quorum as shards
 from scripts.rc6_ci_junit_quorum import JunitQuorumRed, verify_parallel
+
+
+OUTPUT_TAIL_LIMIT = 128 * 1024  # Per stream, per process; never spool unbounded test logs.
 
 
 class ParallelRunnerRed(ValueError):
@@ -78,46 +82,89 @@ def _pytest_argv(python: str, args: list[str], *,
 
 def _invoke(argv: list[str], *, cwd: Path, env: dict,
             timeout: int = 3600) -> subprocess.CompletedProcess:
-    # Captured stdout/stderr are never printed or returned: private test
-    # failures may accidentally contain identifiers or host-sensitive values.
+    # Drain both OS pipes concurrently into bounded in-memory tails. PIPE +
+    # communicate() captures unbounded pytest output in RAM, potentially OOM
+    # before the subprocess timeout ever fires. Never print raw private logs.
     try:
         process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True,
+                                   stderr=subprocess.PIPE,
                                    start_new_session=True)
     except OSError:
         _red()
+    buffers = [bytearray(), bytearray()]
+    read_errors = []
+
+    def drain(stream, tail: bytearray) -> None:
+        try:
+            while True:
+                chunk = stream.read(65536)
+                if not chunk:
+                    break
+                tail.extend(chunk)
+                if len(tail) > OUTPUT_TAIL_LIMIT:
+                    del tail[:-OUTPUT_TAIL_LIMIT]
+        except OSError:
+            read_errors.append(True)
+        finally:
+            stream.close()
+
+    threads = [Thread(target=drain, args=(stream, tail), daemon=True)
+               for stream, tail in zip((process.stdout, process.stderr), buffers)]
+    for thread in threads:
+        thread.start()
+    deadline = time.monotonic() + timeout
+    timed_out = False
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
-    except subprocess.TimeoutExpired as expired:
-        # TimeoutExpired may contain bytes even when Popen(text=True), and
-        # the resumed communicate() result already includes earlier output.
-        raw_stderr = expired.stderr
+        try:
+            process.wait(timeout=max(0, deadline - time.monotonic()))
+            for thread in threads:
+                thread.join(timeout=max(0, deadline - time.monotonic()))
+            timed_out = any(thread.is_alive() for thread in threads)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        if not timed_out:
+            if read_errors:
+                _red()
+            return subprocess.CompletedProcess(
+                argv, process.returncode,
+                buffers[0].decode("utf-8", errors="replace"),
+                buffers[1].decode("utf-8", errors="replace"))
+
+        # Parent exit with descendant still holding pipes counts as timeout,
+        # as does a live parent: both need the entire owned process group gone.
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
         try:
-            _, remaining = process.communicate(timeout=1)
-            if remaining is not None:
-                raw_stderr = remaining
-        except subprocess.TimeoutExpired as later:
-            if later.stderr is not None:
-                raw_stderr = later.stderr
-        finally:
-            # A descendant may have closed both pipes or ignored TERM even
-            # after its parent exits. Always terminate the owned process group.
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        for thread in threads:
+            thread.join(timeout=2)
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            _red()
+        if any(thread.is_alive() for thread in threads):
+            _red()  # Even cleanup did not establish a bounded terminal state.
+        raise ParallelRunnerRed(diagnostic=_sanitized_timeout_trace(bytes(buffers[1])))
+    finally:
+        # If an unforeseen reader/wait error escaped, never leave the owned
+        # pytest process alive in the CI runner.
+        if process.poll() is None:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             try:
-                _, remaining = process.communicate(timeout=2)
-                if remaining is not None:
-                    raw_stderr = remaining
+                process.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                _red()
-        raise ParallelRunnerRed(diagnostic=_sanitized_timeout_trace(raw_stderr))
+                pass
 
 
 def _verify_checkout(repo: Path, candidate_sha: str, source_tree_sha: str) -> None:
