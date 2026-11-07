@@ -15,9 +15,11 @@ these tests cover the orchestration gaps without pretending to certify them.
 """
 
 from datetime import datetime, timedelta, timezone
+import inspect
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -67,9 +69,22 @@ class _ObservedCollector:
                                stdout="IOL_SHADOW_COLLECTION=COMPLETE READY=0 OBSERVED=1\n")
 
 
-def _run(db, market, lock, collector, *, at=START):
-    return dispatch.run_cycle(now=at, db=db, market_root=market,
-                              lock=lock, runner=collector)
+def _run(db, market, lock, collector, *, at=START, stage=None):
+    """Use an explicit lane if supported; legacy fallback proves RED baseline.
+
+    Avoid pinning the future function's internal parameter spelling: only the
+    CLI spelling `--stage` is specified by A845.  The R4 baseline predates
+    either internal selector, so its actual global-lock failure is observable.
+    """
+    kwargs = {"now": at, "db": db, "market_root": market,
+              "lock": lock, "runner": collector}
+    if stage is not None:
+        parameters = inspect.signature(dispatch.run_cycle).parameters
+        if "stage" in parameters:
+            kwargs["stage"] = stage
+        elif "lane" in parameters:
+            kwargs["lane"] = stage
+    return dispatch.run_cycle(**kwargs)
 
 
 def _public_service_candidates():
@@ -91,9 +106,19 @@ def test_public_has_one_independent_minute_timer_not_iol_oneshot():
     assert timer.is_file(), "PUBLIC_LANE_TIMER_MISSING"
     schedule = timer.read_text(encoding="utf-8")
     assert "Unit=" + service.name in schedule
-    assert "OnCalendar=" in schedule and "AccuracySec=" in schedule
+    # Check a *minute cadence*, not merely presence of an annual OnCalendar.
+    minute_interval = bool(re.search(r"^OnUnitActiveSec=(60s|1min|1m)$", schedule, re.M))
+    market_minute_calendar = (
+        "10:30..59:00" in schedule and "11..16:*:00" in schedule)
+    assert minute_interval or market_minute_calendar, "PUBLIC_MINUTE_CADENCE_NOT_PROVEN"
     # Systemd's same-unit oneshot must not be shared with 110s IOL.
     assert "porota-iol-shadow-collector-rc6.service" != service.name
+    legacy = (REPO / "systemd/porota-iol-shadow-collector-rc6.service").read_text()
+    # If the legacy one-shot still runs the combined dispatcher, adding a
+    # second timer would create two PUBLIC writers, not solve cadence.
+    assert ("--stage COMPLEMENT" in legacy or "--stage complement" in legacy), (
+        "LEGACY_IOL_UNIT_STILL_RUNS_COMBINED_PUBLIC_WRITER")
+    assert "rc6_public_source_capture.py" not in legacy
 
 
 def test_public_unit_is_not_conditioned_on_iol_oauth_bootstrap():
@@ -138,7 +163,7 @@ def test_public_due_at_plus_60_is_not_blocked_by_inflight_iol(tmp_path):
 
     def first_cycle():
         try:
-            _run(db, market, lock, first)
+            _run(db, market, lock, first, stage="COMPLEMENT")
         except Exception as exc:  # retain actual failure while releasing fixture
             errors.append(exc)
 
@@ -147,7 +172,7 @@ def test_public_due_at_plus_60_is_not_blocked_by_inflight_iol(tmp_path):
     assert iol_entered.wait(timeout=3), "FIXTURE_IOL_STAGE_NOT_ENTERED"
     try:
         second_result = _run(db, market, lock, second,
-                             at=START + timedelta(seconds=60))
+                             at=START + timedelta(seconds=60), stage="PUBLIC")
     finally:
         release_iol.set()
         worker.join(timeout=3)
@@ -159,7 +184,7 @@ def test_public_due_at_plus_60_is_not_blocked_by_inflight_iol(tmp_path):
 
 
 def test_public_ttl_success_is_stamped_after_actual_publication(tmp_path, monkeypatch):
-    """A845-2: caller start time is not a SLI for atomic commit time."""
+    """A845-2: TTL counts from publication, regardless of state filename."""
     db, market, lock = _fixture(tmp_path)
     end = START + timedelta(seconds=40)
 
@@ -169,11 +194,18 @@ def test_public_ttl_success_is_stamped_after_actual_publication(tmp_path, monkey
             return end.astimezone(tz or timezone.utc)
 
     monkeypatch.setattr(dispatch, "datetime", AfterPublicationClock)
-    result = _run(db, market, lock, _ObservedCollector(market))
+    first = _ObservedCollector(market)
+    result = _run(db, market, lock, first, stage="PUBLIC")
     assert result["status"] == "COMPLETE"
-    state = json.loads((market / "rc6_source_cycle_dispatch_state.json").read_text())
-    committed_at = datetime.fromisoformat(state["last_public_success_at"])
-    assert committed_at >= end, "PUBLIC_SUCCESS_TIMESTAMP_IS_PRE_CHILD_NOT_POST_COMMIT"
+    assert "rc6_public_source_capture.py" in first.calls
+    # At t0+60 only 20 seconds elapsed since the t0+40 publication; a correct
+    # commit-relative TTL cannot schedule another PUBLIC capture.  We inspect
+    # behavior, not legacy state path or proposed new state schema.
+    second = _ObservedCollector(market)
+    _run(db, market, lock, second,
+         at=START + timedelta(seconds=60), stage="PUBLIC")
+    assert "rc6_public_source_capture.py" not in second.calls, (
+        "PUBLIC_TTL_USES_PRE_CHILD_T0_NOT_POST_COMMIT")
 
 
 def test_public_unavailable_provider_is_not_reported_as_useful_source(tmp_path):
@@ -182,6 +214,9 @@ def test_public_unavailable_provider_is_not_reported_as_useful_source(tmp_path):
     result = _run(db, market, lock,
                   _ObservedCollector(market, public_quality="UNAVAILABLE"))
     assert result["status"] in {"DEGRADED", "COMPLETE"}
-    quality = result.get("source_quality", {}).get("public")
-    assert quality in {"UNAVAILABLE", "REFERENCE_ONLY", "SOURCE_STALE"}, (
+    # Keep publication success separate from provider-native availability,
+    # without freezing the eventual quality field's internal name/schema.
+    represented = json.dumps(result, ensure_ascii=False).upper()
+    assert result["status"] != "COMPLETE" or "UNAVAILABLE" in represented or (
+        "REFERENCE_ONLY" in represented or "SOURCE_STALE" in represented), (
         "PUBLIC_NATIVE_QUALITY_UNVERIFIED_BUT_REPUBLISH_WAS_TREATED_AS_FRESH")
