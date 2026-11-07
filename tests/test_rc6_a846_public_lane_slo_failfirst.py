@@ -19,11 +19,12 @@ import inspect
 import json
 import os
 from pathlib import Path
-import re
 import sqlite3
 import threading
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from scripts import rc6_source_cycle_dispatch as dispatch
 
@@ -91,10 +92,44 @@ def _public_service_candidates():
     result = []
     for path in (REPO / "systemd").glob("*.service"):
         content = path.read_text(encoding="utf-8")
-        if ("rc6_source_cycle_dispatch.py" in content and
-                ("--stage PUBLIC" in content or "--stage public" in content)):
+        if any("rc6_source_cycle_dispatch.py" in command and
+               "--stage public" in command.lower()
+               for command in _active_directives(content, "ExecStart")):
             result.append((path, content))
     return result
+
+
+def _active_directives(source: str, directive: str) -> list[str]:
+    """Comments and other keys cannot stand in for live systemd directives."""
+    return [line.strip().split("=", 1)[1].strip()
+            for line in source.splitlines()
+            if line.strip().startswith(directive + "=")]
+
+
+def _public_quality_context(result: dict) -> bool:
+    """A quality reason must belong to PUBLIC/BYMA, not an unrelated IOL."""
+    negative = ("UNAVAILABLE", "REFERENCE_ONLY", "SOURCE_STALE")
+
+    def bad(value):
+        encoded = json.dumps(value, ensure_ascii=False).upper()
+        return any(code in encoded for code in negative)
+
+    def descend(value):
+        if isinstance(value, dict):
+            label = str(value.get("source") or value.get("provider") or "").upper()
+            if label in {"PUBLIC", "BYMA"} and bad(value):
+                return True
+            for key, nested in value.items():
+                if ("PUBLIC" in str(key).upper() or str(key).upper() == "BYMA") and bad(nested):
+                    return True
+                if descend(nested):
+                    return True
+        if isinstance(value, list):
+            return any(descend(item) for item in value)
+        return False
+
+    reason = str(result.get("reason") or "").upper()
+    return descend(result) or ("PUBLIC" in reason and any(code in reason for code in negative))
 
 
 def test_public_has_one_independent_minute_timer_not_iol_oneshot():
@@ -105,20 +140,23 @@ def test_public_has_one_independent_minute_timer_not_iol_oneshot():
     timer = service.with_suffix(".timer")
     assert timer.is_file(), "PUBLIC_LANE_TIMER_MISSING"
     schedule = timer.read_text(encoding="utf-8")
-    assert "Unit=" + service.name in schedule
     # Check a *minute cadence*, not merely presence of an annual OnCalendar.
-    minute_interval = bool(re.search(r"^OnUnitActiveSec=(60s|1min|1m)$", schedule, re.M))
-    market_minute_calendar = (
-        "10:30..59:00" in schedule and "11..16:*:00" in schedule)
+    active_sec = _active_directives(schedule, "OnUnitActiveSec")
+    active_cal = _active_directives(schedule, "OnCalendar")
+    minute_interval = any(value in {"60s", "1min", "1m"} for value in active_sec)
+    market_minute_calendar = (any("10:30..59:00" in value for value in active_cal)
+                              and any("11..16:*:00" in value for value in active_cal))
     assert minute_interval or market_minute_calendar, "PUBLIC_MINUTE_CADENCE_NOT_PROVEN"
+    assert _active_directives(schedule, "Unit") == [service.name]
     # Systemd's same-unit oneshot must not be shared with 110s IOL.
     assert "porota-iol-shadow-collector-rc6.service" != service.name
     legacy = (REPO / "systemd/porota-iol-shadow-collector-rc6.service").read_text()
     # If the legacy one-shot still runs the combined dispatcher, adding a
     # second timer would create two PUBLIC writers, not solve cadence.
-    assert ("--stage COMPLEMENT" in legacy or "--stage complement" in legacy), (
+    legacy_exec = _active_directives(legacy, "ExecStart")
+    assert len(legacy_exec) == 1 and "--stage complement" in legacy_exec[0].lower(), (
         "LEGACY_IOL_UNIT_STILL_RUNS_COMBINED_PUBLIC_WRITER")
-    assert "rc6_public_source_capture.py" not in legacy
+    assert all("rc6_public_source_capture.py" not in command for command in legacy_exec)
 
 
 def test_public_unit_is_not_conditioned_on_iol_oauth_bootstrap():
@@ -126,8 +164,10 @@ def test_public_unit_is_not_conditioned_on_iol_oauth_bootstrap():
     candidates = _public_service_candidates()
     assert len(candidates) == 1, "PUBLIC_LANE_UNIT_MISSING"
     _, service = candidates[0]
-    assert "iol_mcp_oauth_bootstrap.json" not in service
-    assert "--stage" in service
+    assert not any("iol_mcp_oauth_bootstrap.json" in item for item in
+                   _active_directives(service, "ConditionPathExists"))
+    assert any("--stage public" in item.lower() for item in
+               _active_directives(service, "ExecStart"))
 
 
 def test_dispatcher_cli_accepts_single_public_lane_without_running_providers(monkeypatch):
@@ -178,6 +218,8 @@ def test_public_due_at_plus_60_is_not_blocked_by_inflight_iol(tmp_path):
         worker.join(timeout=3)
     assert not worker.is_alive(), "FIXTURE_ORPHAN_THREAD"
     assert not errors, repr(errors)
+    assert "rc6_public_source_capture.py" not in first.calls, (
+        "COMPLEMENT_LANE_MUST_NOT_DUPLICATE_PUBLIC_WRITER")
     assert "rc6_public_source_capture.py" in second.calls
     assert second_result["stages"]["public"] == "OK"
     assert "rc6_iol_shadow_collect.py" not in second.calls
@@ -216,7 +258,37 @@ def test_public_unavailable_provider_is_not_reported_as_useful_source(tmp_path):
     assert result["status"] in {"DEGRADED", "COMPLETE"}
     # Keep publication success separate from provider-native availability,
     # without freezing the eventual quality field's internal name/schema.
-    represented = json.dumps(result, ensure_ascii=False).upper()
-    assert result["status"] != "COMPLETE" or "UNAVAILABLE" in represented or (
-        "REFERENCE_ONLY" in represented or "SOURCE_STALE" in represented), (
+    assert _public_quality_context(result), (
         "PUBLIC_NATIVE_QUALITY_UNVERIFIED_BUT_REPUBLISH_WAS_TREATED_AS_FRESH")
+
+
+def test_contract_helpers_reject_commented_systemd_and_unrelated_iol_quality():
+    """Adversarial negative control of the test harness itself, not source."""
+    assert _active_directives("# ExecStart=--stage PUBLIC\nExecCondition=true", "ExecStart") == []
+    assert _active_directives("#OnCalendar=11..16:*:00\nOnCalendar=*-*-01 12:00", "OnCalendar") == ["*-*-01 12:00"]
+    assert not _public_quality_context({"status": "COMPLETE",
+                                        "stages": {"public": "OK", "iol": "UNAVAILABLE"}})
+    assert _public_quality_context({"status": "COMPLETE",
+                                    "source_quality": {"public": "UNAVAILABLE"}})
+
+
+def test_commented_stage_cannot_forge_public_unit_or_legacy_split(tmp_path, monkeypatch):
+    """The EOD peer's false-GREEN config must be rejected deterministically."""
+    units = tmp_path / "systemd"
+    units.mkdir()
+    public = units / "porota-public-a846.service"
+    legacy = units / "porota-iol-shadow-collector-rc6.service"
+    timer = units / "porota-public-a846.timer"
+    combined = "ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py\n"
+    public.write_text("[Service]\n" + combined + "# --stage PUBLIC\n", encoding="utf-8")
+    legacy.write_text("[Service]\n" + combined + "# --stage COMPLEMENT\n", encoding="utf-8")
+    timer.write_text("[Timer]\nOnUnitActiveSec=60s\nUnit=" + public.name + "\n", encoding="utf-8")
+    monkeypatch.setattr(__import__(__name__), "REPO", tmp_path)
+    assert _public_service_candidates() == []
+    with pytest.raises(AssertionError, match="PUBLIC_LANE_INDEPENDENT_UNIT_MISSING"):
+        test_public_has_one_independent_minute_timer_not_iol_oneshot()
+
+    public.write_text("[Service]\n" + combined.rstrip() + " --stage PUBLIC\n", encoding="utf-8")
+    assert len(_public_service_candidates()) == 1
+    with pytest.raises(AssertionError, match="LEGACY_IOL_UNIT_STILL_RUNS_COMBINED"):
+        test_public_has_one_independent_minute_timer_not_iol_oneshot()
