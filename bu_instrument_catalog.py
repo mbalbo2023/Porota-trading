@@ -532,12 +532,79 @@ def _candidate_retry_ambiguities(connection):
     required = {"ticker", "instrument_type", "market", "currency", "settlement", "reason"}
     if not required.issubset(columns):
         return set()
-    return {
-        tuple(str(value or "").strip().upper() for value in row[:5])
-        for row in connection.execute("""SELECT ticker,instrument_type,market,currency,
-          settlement,reason FROM complementary_contract_retry""").fetchall()
-        if "AMBIG" in str(row[5] or "").upper()
-    }
+    # Keep source attribution: a weak IOL option chain cannot be promoted to
+    # contract authority, but its ambiguous *complement* is not by itself a
+    # veto over an independently validated PPI five-key + V2 option contract.
+    # Legacy tables without `source` remain strictly blocking.
+    has_source = "source" in columns
+    sql = ("SELECT ticker,instrument_type,market,currency,settlement,reason"
+           + (",source" if has_source else "") + " FROM complementary_contract_retry")
+    result = {}
+    for row in connection.execute(sql):
+        reason = str(row[5] or "").strip().upper()
+        if "AMBIG" not in reason:
+            continue
+        key = tuple(str(value or "").strip().upper() for value in row[:5])
+        source = str(row[6] or "").strip().upper() if has_source else "UNKNOWN"
+        result.setdefault(key, []).append((source, reason))
+    return result
+
+
+def _verified_ppi_option_ignores_weak_iol_retry(row, retry_entries, full_key_reason):
+    """Advisory IOL ambiguity cannot defeat a fully proven PPI option.
+
+    This exemption requires a separate, already READY, literal PPI full key
+    and an exact V2-normalized option contract with official-derived terms.
+    It cannot recover a REVIEW, an unbound option, a stale/malformed contract,
+    or a genuine material conflict. The short-key legacy projection still
+    closes whenever more than one full-key primary identity is READY.
+    """
+    marker = "COMPLEMENTARY_IDENTITY_AMBIGUOUS:MATCHES="
+    if (not retry_entries or row[1] != "OPCIONES" or row[6] != "AVAILABLE"
+            or row[7] != "READY_PAPER_OPTION_LONG" or full_key_reason
+            or any(source != "IOL_COMPLEMENTARY" or not reason.startswith(marker)
+                   or not reason[len(marker):].isdigit()
+                   or not 1 <= len(reason[len(marker):]) <= 5
+                   or int(reason[len(marker):]) < 2
+                   for source, reason in retry_entries)):
+        return False
+    try:
+        raw = json.loads(row[9] or "{}")
+        if not isinstance(raw, dict) or raw.get("_contract_conflicts"):
+            return False
+        if any(raw.get(k) is False for k in ("operable", "isActive", "isTradable")):
+            return False
+        if _option_iol_contract_unverified(raw):
+            return False
+        bridge = raw.get("_contract_bridge")
+        if (not isinstance(bridge, dict) or bridge.get("status") != "NORMALIZED"
+                or bridge.get("gaps") != []):
+            return False
+        contract = raw.get("financial_contract_v17")
+        if (not isinstance(contract, dict)
+                or contract.get("metadata_source") != "CONTRACT_EVIDENCE_V2_BOUND"):
+            return False
+        proof = contract.get("field_provenance")
+        required_terms = {"cash_multiplier", "quantity_step", "minimum_quantity",
+                          "expires_at", "underlying", "strike", "option_right"}
+        if not isinstance(proof, dict) or not required_terms <= proof.keys():
+            return False
+        sources = set()
+        for item in proof.values():
+            if not isinstance(item, dict):
+                return False
+            source = str(item.get("source_class") or "").strip().upper()
+            digest = str(item.get("evidence_hash") or "")
+            if (not source or not item.get("source_ref") or not item.get("observed_at")
+                    or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest)):
+                return False
+            sources.add(source)
+        if "DERIVED_OFFICIAL_RULE" not in sources or "IOL_STRUCTURED_API" in sources:
+            return False
+        contract_spec = contract_from_metadata(row[0], row[1], contract)
+        return contract_spec.key == tuple(str(value or "").strip().upper() for value in row[:5])
+    except (TypeError, ValueError, KeyError, ArithmeticError, OverflowError):
+        return False
 
 
 def sync_candidate_universe(connection, checked_at, *,
@@ -608,7 +675,9 @@ def sync_candidate_universe(connection, checked_at, *,
                 stored_raw={}
             if _option_iol_contract_unverified(stored_raw):
                 reasons.append("OPTION_IOL_SERIES_CONTRACT_UNVERIFIED")
-        if identity_key in retry_ambiguities:
+        if (identity_key in retry_ambiguities
+                and not _verified_ppi_option_ignores_weak_iol_retry(
+                    row, retry_ambiguities[identity_key], full_key_reason)):
             reasons.append("RETRY_IDENTITY_AMBIGUOUS")
         return list(dict.fromkeys(reasons))
 
