@@ -111,15 +111,20 @@ def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path):
     assert observer._background_ingest_due(
         store, now=datetime(2026, 9, 29, 16, 59, tzinfo=observer.TZ)
     ) is False
+    # Historical dates precede COM19031's 02-Nov T+1 18:15 floor.  The
+    # existing conservative postclose floor was 17:15, never 17:01.
     assert observer._background_ingest_due(
-        store, now=datetime(2026, 9, 29, 17, 1, tzinfo=observer.TZ)
+        store, now=datetime(2026, 9, 29, 17, 14, tzinfo=observer.TZ)
+    ) is False
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 29, 17, 15, tzinfo=observer.TZ)
     ) is True
 
 
 def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
         tmp_path, monkeypatch):
     due = observer._background_ingest_due
-    stamp = "2026-09-29T20:05:00+00:00"  # 17:05 ART
+    stamp = "2026-09-29T20:20:00+00:00"  # 17:20 ART, after the old 17:15 floor
     monkeypatch.setattr(observer, "now_iso", lambda: stamp)
     monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: True)
     for failure in (False, True):
@@ -146,7 +151,8 @@ def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
         assert source == "2026-09-25T20:00:00+00:00"
         assert due(store, now=datetime(2026, 9, 29, 23, 30, tzinfo=observer.TZ)) is False
         assert due(store, now=datetime(2026, 9, 30, 16, 59, tzinfo=observer.TZ)) is False
-        assert due(store, now=datetime(2026, 9, 30, 17, 1, tzinfo=observer.TZ)) is True
+        assert due(store, now=datetime(2026, 9, 30, 17, 14, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 30, 17, 15, tzinfo=observer.TZ)) is True
 
 
 def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypatch):
