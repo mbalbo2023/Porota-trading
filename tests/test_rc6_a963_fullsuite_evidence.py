@@ -169,7 +169,7 @@ def test_all_receipts_have_immutable_source_and_false_release_authority(tmp_path
         (tmp_path / "sanitized" / "junit-hashed.xml").read_bytes()).hexdigest()
 
 
-def test_existing_full_job_keeps_focal_and_full_semantics_with_private_evidence():
+def test_existing_full_job_preserves_suite_plan_behind_custody_hold():
     repo = Path(__file__).resolve().parents[1]
     path = repo / ".github/workflows/rc6-ws-tests-12-current-contract.yml"
     data = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
@@ -184,6 +184,7 @@ def test_existing_full_job_keeps_focal_and_full_semantics_with_private_evidence(
     steps = job["steps"]
     names = [step["name"] for step in steps if "name" in step]
     assert names == [
+        "BLOCKED QA execution without independent custody",
         "Verify exact candidate checkout and tree (runner-only)",
         "Install dependencies", "Collect exact FULL nodeids privately",
         "Full suite", "Sanitize FULL evidence",
@@ -195,7 +196,7 @@ def test_existing_full_job_keeps_focal_and_full_semantics_with_private_evidence(
     assert "--junitxml=" in script and "-p scripts.rc6_ci_pytest_identity" in script
     assert "-o xfail_strict=true" in script
     sanitizer = next(s for s in steps if s.get("name") == "Sanitize FULL evidence")
-    assert sanitizer["if"] == "always()"
+    assert sanitizer["if"] == "${{ always() && steps.execution_custody.outcome == 'success' }}"
     assert "scripts.rc6_ci_fullsuite_evidence" in sanitizer["run"]
     gate = next(s for s in steps if s.get("id") == "publication_custody")
     assert gate["if"] == "always()"

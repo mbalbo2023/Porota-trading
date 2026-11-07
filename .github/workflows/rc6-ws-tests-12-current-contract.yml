@@ -15,7 +15,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      # A979: pip hooks, collection and tests are arbitrary code. Publication
+      # HOLD alone cannot protect runner credentials or public Actions logs.
+      # Keep this before checkout and all candidate execution until separately
+      # constrained test UID/sandbox custody has been proved in real Actions.
+      - name: BLOCKED QA execution without independent custody
+        id: execution_custody
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_QA_EXECUTION=BLOQUEADO|reason=INDEPENDENT_CUSTODY_UNVERIFIED|automatic_go=false'
+          exit 79
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Verify exact candidate checkout and tree (runner-only)
         shell: bash
         run: |
@@ -47,7 +61,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
+      # Same entry HOLD as focal: never execute untrusted dependency hooks,
+      # collection, pytest or the repository sanitizer under the runner UID.
+      # An environment flag or a candidate-written receipt is not custody.
+      - name: BLOCKED QA execution without independent custody
+        id: execution_custody
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_QA_EXECUTION=BLOQUEADO|reason=INDEPENDENT_CUSTODY_UNVERIFIED|automatic_go=false'
+          exit 79
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Verify exact candidate checkout and tree (runner-only)
         shell: bash
         run: |
@@ -91,7 +118,7 @@ jobs:
           if [ "$rc" -ne 0 ]; then exit "$rc"; fi
           echo WS_TESTS_12_FULL_SUITE=GREEN
       - name: Sanitize FULL evidence
-        if: always()
+        if: ${{ always() && steps.execution_custody.outcome == 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
