@@ -19,6 +19,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -94,42 +95,78 @@ def _public_service_candidates():
         content = path.read_text(encoding="utf-8")
         if any("rc6_source_cycle_dispatch.py" in command and
                "--stage public" in command.lower()
-               for command in _active_directives(content, "ExecStart")):
+               for command in _active_directives(content, "Service", "ExecStart")):
             result.append((path, content))
     return result
 
 
-def _active_directives(source: str, directive: str) -> list[str]:
-    """Comments and other keys cannot stand in for live systemd directives."""
-    return [line.strip().split("=", 1)[1].strip()
-            for line in source.splitlines()
-            if line.strip().startswith(directive + "=")]
+def _active_directives(source: str, section: str, directive: str) -> list[str]:
+    """Read only live keys of the right systemd section; preserve repeats.
+
+    systemd supports multiple OnCalendar values in one [Timer], so a generic
+    strict INI reader would reject valid schedules.  This bounded parser
+    intentionally fails closed on unrelated sections and commented entries.
+    """
+    active, current = [], None
+    for raw in source.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            current = line[1:-1].strip()
+            continue
+        if current == section and "=" in line:
+            key, value = line.split("=", 1)
+            if key.strip() == directive:
+                active.append(value.strip())
+    return active
+
+
+def _duration_seconds(value: str) -> float | None:
+    matched = re.fullmatch(r"(\d+(?:\.\d+)?)(us|ms|s|min|h)?", value.strip())
+    if not matched:
+        return None
+    unit = {None: 1, "us": .000001, "ms": .001, "s": 1,
+            "min": 60, "h": 3600}[matched.group(2)]
+    return float(matched.group(1)) * unit
 
 
 def _public_quality_context(result: dict) -> bool:
     """A quality reason must belong to PUBLIC/BYMA, not an unrelated IOL."""
     negative = ("UNAVAILABLE", "REFERENCE_ONLY", "SOURCE_STALE")
 
-    def bad(value):
-        encoded = json.dumps(value, ensure_ascii=False).upper()
-        return any(code in encoded for code in negative)
-
-    def descend(value):
+    def negative_leaf(value):
+        if isinstance(value, str):
+            state = value.strip().upper()
+            return (state in negative or
+                    (state.startswith(("PUBLIC_", "BYMA_"))
+                     and any(code in state for code in negative)))
         if isinstance(value, dict):
-            label = str(value.get("source") or value.get("provider") or "").upper()
-            if label in {"PUBLIC", "BYMA"} and bad(value):
-                return True
-            for key, nested in value.items():
-                if ("PUBLIC" in str(key).upper() or str(key).upper() == "BYMA") and bad(nested):
-                    return True
-                if descend(nested):
-                    return True
-        if isinstance(value, list):
-            return any(descend(item) for item in value)
+            # Do not descend into metadata, diagnostics or an IOL child; only
+            # the PUBLIC node's own status/quality/availability can certify it.
+            return any(negative_leaf(value.get(key)) for key in (
+                "status", "state", "quality", "availability", "reason",
+                "source_quality", "provider_quality") if key in value)
         return False
 
-    reason = str(result.get("reason") or "").upper()
-    return descend(result) or ("PUBLIC" in reason and any(code in reason for code in negative))
+    for key in ("reason", "status"):
+        value = str(result.get(key) or "").strip().upper()
+        if value.startswith(("PUBLIC_", "BYMA_")) and any(code in value for code in negative):
+            return True
+    # Allow multiple reasonable reporting maps without mandating a key name.
+    # Only direct PUBLIC/BYMA entries, never arbitrary nested metadata.
+    for mapping in result.values():
+        if isinstance(mapping, dict):
+            for key, value in mapping.items():
+                if str(key).upper() in {"PUBLIC", "BYMA"} and negative_leaf(value):
+                    return True
+        elif isinstance(mapping, list):
+            for record in mapping:
+                if (isinstance(record, dict) and
+                        str(record.get("source") or record.get("provider") or "").upper()
+                        in {"PUBLIC", "BYMA"} and negative_leaf(record)):
+                    return True
+    return False
 
 
 def test_public_has_one_independent_minute_timer_not_iol_oneshot():
@@ -141,19 +178,22 @@ def test_public_has_one_independent_minute_timer_not_iol_oneshot():
     assert timer.is_file(), "PUBLIC_LANE_TIMER_MISSING"
     schedule = timer.read_text(encoding="utf-8")
     # Check a *minute cadence*, not merely presence of an annual OnCalendar.
-    active_sec = _active_directives(schedule, "OnUnitActiveSec")
-    active_cal = _active_directives(schedule, "OnCalendar")
+    active_sec = _active_directives(schedule, "Timer", "OnUnitActiveSec")
+    active_cal = _active_directives(schedule, "Timer", "OnCalendar")
     minute_interval = any(value in {"60s", "1min", "1m"} for value in active_sec)
     market_minute_calendar = (any("10:30..59:00" in value for value in active_cal)
                               and any("11..16:*:00" in value for value in active_cal))
     assert minute_interval or market_minute_calendar, "PUBLIC_MINUTE_CADENCE_NOT_PROVEN"
-    assert _active_directives(schedule, "Unit") == [service.name]
+    assert _active_directives(schedule, "Timer", "Unit") == [service.name]
+    accuracy = _active_directives(schedule, "Timer", "AccuracySec")
+    assert len(accuracy) == 1 and _duration_seconds(accuracy[0]) is not None
+    assert _duration_seconds(accuracy[0]) <= 5, "PUBLIC_TIMER_ACCURACY_DEFAULT_JITTER_TOO_LARGE"
     # Systemd's same-unit oneshot must not be shared with 110s IOL.
     assert "porota-iol-shadow-collector-rc6.service" != service.name
     legacy = (REPO / "systemd/porota-iol-shadow-collector-rc6.service").read_text()
     # If the legacy one-shot still runs the combined dispatcher, adding a
     # second timer would create two PUBLIC writers, not solve cadence.
-    legacy_exec = _active_directives(legacy, "ExecStart")
+    legacy_exec = _active_directives(legacy, "Service", "ExecStart")
     assert len(legacy_exec) == 1 and "--stage complement" in legacy_exec[0].lower(), (
         "LEGACY_IOL_UNIT_STILL_RUNS_COMBINED_PUBLIC_WRITER")
     assert all("rc6_public_source_capture.py" not in command for command in legacy_exec)
@@ -165,9 +205,9 @@ def test_public_unit_is_not_conditioned_on_iol_oauth_bootstrap():
     assert len(candidates) == 1, "PUBLIC_LANE_UNIT_MISSING"
     _, service = candidates[0]
     assert not any("iol_mcp_oauth_bootstrap.json" in item for item in
-                   _active_directives(service, "ConditionPathExists"))
+                   _active_directives(service, "Unit", "ConditionPathExists"))
     assert any("--stage public" in item.lower() for item in
-               _active_directives(service, "ExecStart"))
+               _active_directives(service, "Service", "ExecStart"))
 
 
 def test_dispatcher_cli_accepts_single_public_lane_without_running_providers(monkeypatch):
@@ -264,8 +304,8 @@ def test_public_unavailable_provider_is_not_reported_as_useful_source(tmp_path):
 
 def test_contract_helpers_reject_commented_systemd_and_unrelated_iol_quality():
     """Adversarial negative control of the test harness itself, not source."""
-    assert _active_directives("# ExecStart=--stage PUBLIC\nExecCondition=true", "ExecStart") == []
-    assert _active_directives("#OnCalendar=11..16:*:00\nOnCalendar=*-*-01 12:00", "OnCalendar") == ["*-*-01 12:00"]
+    assert _active_directives("[Service]\n# ExecStart=--stage PUBLIC\nExecCondition=true", "Service", "ExecStart") == []
+    assert _active_directives("[Unit]\nOnCalendar=11..16:*:00\n[Timer]\n#OnCalendar=11..16:*:00\nOnCalendar=*-*-01 12:00", "Timer", "OnCalendar") == ["*-*-01 12:00"]
     assert not _public_quality_context({"status": "COMPLETE",
                                         "stages": {"public": "OK", "iol": "UNAVAILABLE"}})
     assert _public_quality_context({"status": "COMPLETE",
@@ -282,7 +322,7 @@ def test_commented_stage_cannot_forge_public_unit_or_legacy_split(tmp_path, monk
     combined = "ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py\n"
     public.write_text("[Service]\n" + combined + "# --stage PUBLIC\n", encoding="utf-8")
     legacy.write_text("[Service]\n" + combined + "# --stage COMPLEMENT\n", encoding="utf-8")
-    timer.write_text("[Timer]\nOnUnitActiveSec=60s\nUnit=" + public.name + "\n", encoding="utf-8")
+    timer.write_text("[Timer]\nOnUnitActiveSec=60s\nAccuracySec=5s\nUnit=" + public.name + "\n", encoding="utf-8")
     monkeypatch.setattr(__import__(__name__), "REPO", tmp_path)
     assert _public_service_candidates() == []
     with pytest.raises(AssertionError, match="PUBLIC_LANE_INDEPENDENT_UNIT_MISSING"):
@@ -292,3 +332,27 @@ def test_commented_stage_cannot_forge_public_unit_or_legacy_split(tmp_path, monk
     assert len(_public_service_candidates()) == 1
     with pytest.raises(AssertionError, match="LEGACY_IOL_UNIT_STILL_RUNS_COMBINED"):
         test_public_has_one_independent_minute_timer_not_iol_oneshot()
+
+
+def test_wrong_systemd_section_and_default_accuracy_cannot_mint_public_lane(tmp_path, monkeypatch):
+    """Live-looking keys under [Unit] are inert; default jitter is 60s."""
+    units = tmp_path / "systemd"
+    units.mkdir()
+    public = units / "porota-public-a846.service"
+    timer = units / "porota-public-a846.timer"
+    legacy = units / "porota-iol-shadow-collector-rc6.service"
+    command = "ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_source_cycle_dispatch.py"
+    public.write_text("[Unit]\n" + command + " --stage PUBLIC\n[Service]\nType=oneshot\n")
+    legacy.write_text("[Unit]\n" + command + " --stage COMPLEMENT\n[Service]\nType=oneshot\n")
+    timer.write_text("[Unit]\nUnit=" + public.name + "\nOnUnitActiveSec=60s\n[Timer]\nPersistent=false\n")
+    monkeypatch.setattr(__import__(__name__), "REPO", tmp_path)
+    with pytest.raises(AssertionError):
+        test_public_has_one_independent_minute_timer_not_iol_oneshot()
+
+
+def test_public_ok_with_nested_iol_auth_failure_cannot_claim_public_bad_quality():
+    """A foreign IOL error below PUBLIC metadata cannot satisfy PUBLIC SLI."""
+    forged = {"status": "COMPLETE",
+              "stages": {"public": {"status": "OK",
+                                     "metadata": {"iol_oauth": "UNAVAILABLE"}}}}
+    assert not _public_quality_context(forged)
