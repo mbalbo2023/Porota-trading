@@ -209,20 +209,20 @@ def orchestrator_namespace(patcher):
                             ("EnginePolicy", "UniverseOrchestrator"), env)
 
 
-def test_assets(keys):
+def synthetic_assets(keys):
     return [dict(zip(("ticker", "instrument_type", "market", "currency",
                       "settlement"), key), capability="READY_PAPER_SPOT",
                  status="AVAILABLE") for key in keys]
 
 
-def test_frozen():
+def synthetic_frozen():
     payload = {"frozen_at": (OPEN-timedelta(minutes=10)).isoformat(),
                "cutoff": (OPEN-timedelta(minutes=5)).isoformat(),
                "session_open": OPEN.isoformat(), "rows": []}
     return {"payload": payload, "digest": hash_content(payload)}
 
 
-def test_capacity(limit=3):
+def synthetic_capacity(limit=3):
     return {"status": "SHADOW_RECOMMENDATION", "safe_limit": limit,
             "generated_at": (OPEN-timedelta(minutes=1)).isoformat(),
             "expires_at": (OPEN+timedelta(minutes=30)).isoformat()}
@@ -294,16 +294,16 @@ class A789EtfPpiBudgetSelection(TestCase):
 
     def test_orchestrator_skips_held_etf_but_open_exit_survives(self):
         ns = orchestrator_namespace(self.modules)
-        orch = ns["UniverseOrchestrator"](test_assets([ETF]))
+        orch = ns["UniverseOrchestrator"](synthetic_assets([ETF]))
         without = orch.plan(at=OPEN, session_open=OPEN,
-                            frozen=test_frozen(), capacity=test_capacity())
+                            frozen=synthetic_frozen(), capacity=synthetic_capacity())
         self.assertEqual(without["catalog_ready_count"], 1)
         self.assertEqual(without["strategy_eligible_count"], 0)
         self.assertNotIn(ETF, [tuple(key) for key in without["selected"]])
         self.assertIn("ETF_OPERATOR_HOLD", without["telemetry"][0]["rejection_reason"])
         self.assertIsNone(without["discovery"]["touched_fraction_since_open"])
         with_open = orch.plan(at=OPEN, session_open=OPEN, opened=[ETF],
-                              frozen=test_frozen(), capacity={"status": "NO_VERIFICADO", "safe_limit": 0})
+                              frozen=synthetic_frozen(), capacity={"status": "NO_VERIFICADO", "safe_limit": 0})
         self.assertEqual(with_open["opened_priority"], [ETF])
         self.assertIn(ETF, [tuple(key) for key in with_open["selected"]])
         self.assertEqual(with_open["real_orders_sent"], 0)
