@@ -33,6 +33,8 @@ def _mode(path):
 
 
 def test_dispatcher_never_chmods_external_sentinel_after_lstat(tmp_path, monkeypatch):
+    # Isolate publication behavior, not physical PAPER identity admission.
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda db: None)
     market = tmp_path / "market"
     market.mkdir()
     db = tmp_path / "paper.db"

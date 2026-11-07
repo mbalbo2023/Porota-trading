@@ -120,7 +120,9 @@ def test_oversize_state_rejected_before_bounded_decode(tmp_path):
         dispatch._state_read(state, NOW)
 
 
-def test_dispatcher_does_not_mark_0600_child_output_published(tmp_path):
+def test_dispatcher_does_not_mark_0600_child_output_published(tmp_path, monkeypatch):
+    # Isolate publication mode contract; the real PAPER gate remains HOLD.
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda db: None)
     db = tmp_path / "paper.db"
     with sqlite3.connect(db) as connection:
         connection.execute("CREATE TABLE observer_state(id INT, mode TEXT, real_orders_sent INT)")
