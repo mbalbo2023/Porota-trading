@@ -75,6 +75,12 @@ def planned_records(rows):
     identities = Counter()
     option_underlyings = option_policy.underlying_family_index(rows)
     for row in rows:
+        # `_catalog_rows` prefilters AVAILABLE in SQL, but callers of this
+        # planner can supply rows directly. Never mint PPI or derived evidence
+        # from stale catalog data and then label it provider AVAILABLE.
+        if str(row.get("status") or "").upper() != "AVAILABLE":
+            skipped["NOT_AVAILABLE"] += 1
+            continue
         raw = _raw(row)
         # Only provider-observed literal PPI five-keys may create PPI_* v2
         # evidence. A scanner request settlement remains discovery/SHADOW.
