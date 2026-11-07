@@ -253,6 +253,8 @@ def run_benchmark(candidates, *, api_key="", api_secret="", batches=BATCHES,
                 if budget is None:
                     raise BenchmarkReadError("PPI_SHARED_BUDGET_UNAVAILABLE")
                 reader = reader_factory(api_key, api_secret, budget=budget)
+                if reader is None:
+                    raise BenchmarkReadError("PPI_SHARED_BUDGET_UNAVAILABLE")
                 with _wire_gate(max_requests=max_requests, deadline=deadline, monotonic=monotonic) as wire:
                     try:
                         reader.login_once()

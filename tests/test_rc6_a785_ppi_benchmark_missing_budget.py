@@ -193,6 +193,16 @@ def _check_budget_backpressure_is_terminal_and_sanitized(monkeypatch):
     assert "PPI_BUDGET_LEASE_UNVERIFIED" not in json.dumps(result)
 
 
+def _check_budgeted_factory_must_return_real_reader(monkeypatch):
+    """A fake/no-op factory is not permission to record successful measurement."""
+    budget_module(monkeypatch, object())
+    ns, clock = production_functions(), SyntheticClock()
+    result = benchmark(ns, lambda *_args, **_kwargs: None, clock)
+    assert result["stop_reason"] == "PPI_SHARED_BUDGET_UNAVAILABLE"
+    assert result["status"] == "NO_VERIFICADO"
+    assert result["real_orders_sent"] == 0
+
+
 def _check_closed_session_never_reads_ledger_or_reader(monkeypatch):
     """Existing market calendar veto takes precedence over credentials/budget."""
     mod = ModuleType("rc6_ppi_global_budget")
@@ -237,6 +247,9 @@ class BenchmarkBudgetTests(unittest.TestCase):
 
     def test_budget_backpressure_is_terminal_and_sanitized(self):
         _check_budget_backpressure_is_terminal_and_sanitized(self.patcher)
+
+    def test_budgeted_factory_must_return_real_reader(self):
+        _check_budgeted_factory_must_return_real_reader(self.patcher)
 
     def test_closed_session_never_reads_ledger_or_reader(self):
         _check_closed_session_never_reads_ledger_or_reader(self.patcher)
