@@ -1,0 +1,182 @@
+name: RC6 exact identity historical day census read-only
+
+# PR runs only eight offhost unit tests. A separate manual main job reads one
+# identity/day; no provider call, full-history scan, DB write, timer, trading
+# route, or product Deploy. Publish only a sanitized receipt.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/rc6-history-identity-day-readonly.yml
+      - scripts/rc6_history_identity_day_census.py
+      - tests/test_rc6_history_identity_day_census.py
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: Exact ticker
+        required: true
+        type: string
+      family:
+        description: Canonical RC6 family
+        required: true
+        type: string
+      market:
+        description: Exact market
+        required: true
+        type: string
+      currency:
+        description: Exact currency
+        required: true
+        type: string
+      settlement:
+        description: Exact settlement
+        required: true
+        type: string
+      trading_day:
+        description: One ART day in October, no later than 30/10/2026
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  offhost-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test exact identity/day helper without host or secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m unittest discover -s tests -p test_rc6_history_identity_day_census.py -v
+          echo 'RC6_HISTORY_IDENTITY_DAY_OFFHOST_TESTS=GREEN'
+
+  exact-day:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      # Deploy V2 #41267349231 proved this installed observer image for 7e1.
+      # A later release requires a reviewed new workflow pin before host read.
+      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
+      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      RC6_SYMBOL: ${{ inputs.symbol }}
+      RC6_FAMILY: ${{ inputs.family }}
+      RC6_MARKET: ${{ inputs.market }}
+      RC6_CURRENCY: ${{ inputs.currency }}
+      RC6_SETTLEMENT: ${{ inputs.settlement }}
+      RC6_DAY: ${{ inputs.trading_day }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Pin exact workflow code and validate one target before SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = refs/heads/main
+          python -m unittest discover -s tests -p test_rc6_history_identity_day_census.py -q
+          target_b64="$(python - <<'PY'
+          import base64,json,os
+          from scripts.rc6_history_identity_day_census import target_from_base64
+          target=[os.environ[name] for name in ('RC6_SYMBOL','RC6_FAMILY','RC6_MARKET',
+                   'RC6_CURRENCY','RC6_SETTLEMENT','RC6_DAY')]
+          encoded=base64.b64encode(json.dumps(target,separators=(',',':')).encode()).decode()
+          target_from_base64(encoded)
+          print(encoded)
+          PY
+          )"
+          echo "RC6_TARGET_B64=$target_b64" >> "$GITHUB_ENV"
+          echo "CENSUS_CODE=GREEN|workflow_sha=$GITHUB_SHA|source_sha256=$(sha256sum scripts/rc6_history_identity_day_census.py | cut -d' ' -f1)"
+
+      - name: Read bounded host SQLite through pinned SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_history_census"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_history_census" "$HOME/.ssh/known_hosts"
+          set +e
+          timeout --signal=TERM --kill-after=5s 45s ssh \
+            -i "$HOME/.ssh/rc6_history_census" -o BatchMode=yes \
+            -o ConnectTimeout=8 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
+            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\\n' \"\$image\"; sudo -n timeout 20 docker exec -i -e RC6_CENSUS_TARGET_B64=$RC6_TARGET_B64 -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -" \
+            < scripts/rc6_history_identity_day_census.py \
+            > "$RUNNER_TEMP/rc6-census-stdout.private" \
+            2> "$RUNNER_TEMP/rc6-census-stderr.private"
+          remote_rc=$?
+          set -e
+          export RC6_CENSUS_REMOTE_RC="$remote_rc"
+          python - <<'PY'
+          import hashlib,json,os,re
+          from pathlib import Path
+          from scripts.rc6_history_identity_day_census import target_from_base64
+          root=Path(os.environ['RUNNER_TEMP'])
+          raw=(root/'rc6-census-stdout.private').read_text(errors='replace').splitlines()
+          rc=int(os.environ['RC6_CENSUS_REMOTE_RC'])
+          expected=list(target_from_base64(os.environ['RC6_TARGET_B64']))
+          receipt={'schema':'rc6.history.identity_day.action.v1',
+                   'run_id':os.environ['GITHUB_RUN_ID'],
+                   'workflow_sha':os.environ['GITHUB_SHA'],
+                   'expected_product_sha':os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+                   'expected_runtime_image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
+                   'source_sha256':hashlib.sha256(Path('scripts/rc6_history_identity_day_census.py').read_bytes()).hexdigest(),
+                   'identity':expected,'state':'NO_VERIFICADO',
+                   'history_v2_writes':0,'ready_implication':'NONE',
+                   'host_access':'READ_ONLY_DIAGNOSTIC'}
+          if rc==0 and len(raw)==2 and raw[0].startswith('RUNTIME_IMAGE_ID='):
+              image=raw[0].split('=',1)[1]
+              try: result=json.loads(raw[1])
+              except (ValueError,TypeError): result={}
+              if (image==os.environ['RC6_EXPECTED_IMAGE_ID']
+                      and result.get('schema')=='rc6.history.identity_day.readonly.v1'
+                      and result.get('identity')==expected
+                      and result.get('state') in {'EXACT_V2_READ_ONLY','EMPTY_EXACT_V2_ONLY'}
+                      and result.get('paper_mode')=='PRODUCTION_PAPER'
+                      and result.get('real_orders_sent')==0
+                      and result.get('history_v2_writes')==0
+                      and result.get('ready_implication')=='NONE'
+                      and result.get('host_sql')=='SELECT_ONLY_INDEXED_BOUNDED'
+                      and all(type(result.get(k)) is int and 0<=result[k]<=limit for k,limit in [('versions',64),('canonical',16)])
+                      and all(re.fullmatch(r'[0-9a-f]{64}',str(result.get(k,''))) for k in ('versions_sha256','canonical_sha256'))):
+                  receipt.update(result)
+                  receipt['runtime_image_id']=image
+          evidence=Path('evidence');evidence.mkdir(exist_ok=True)
+          (evidence/'rc6-history-identity-day.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print('HISTORY_IDENTITY_DAY_ACTION='+receipt['state']+'|versions='+str(receipt.get('versions','NO_VERIFICADO'))+
+                '|canonical='+str(receipt.get('canonical','NO_VERIFICADO'))+'|history_v2_writes=0|real_orders_sent='+
+                str(receipt.get('real_orders_sent','NO_VERIFICADO')))
+          if receipt['state']=='NO_VERIFICADO': raise SystemExit(2)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-history-identity-day-sanitized
+          path: evidence/rc6-history-identity-day.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Remove runner private material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/rc6_history_census" "$RUNNER_TEMP/rc6-census-stdout.private" "$RUNNER_TEMP/rc6-census-stderr.private"
