@@ -6,8 +6,7 @@ https://www.byma.com.ar/mercado/calendario-bursatil
 La fuente puede cambiar por disposiciones oficiales. Por seguridad, este módulo
 no intenta deducir que un día desconocido está abierto: fuera de los años
 auditados devuelve cerrado (fail closed). Las jornadas con negociación pero sin
-liquidación también se bloquean para PAPER y settlement; una consulta separada
-puede clasificar sólo la ventana de observación de contratos T+1 explícitos.
+liquidación también se bloquean para Porota, porque no son una rueda normal.
 """
 
 from datetime import date
@@ -50,16 +49,6 @@ DIAS_NO_OPERATIVOS_2026 = {
 
 DIAS_NO_OPERATIVOS = dict(DIAS_NO_OPERATIVOS_2026)
 
-# BYMA 06-Nov-2026: jornada con NEGOCIACION y SIN LIQUIDACION, según nota (3)
-# del calendario oficial. No transforma esa jornada en una sesión PAPER ni en
-# una fecha de liquidación. Sólo contratos T+1 BYMA conocidos pueden utilizar
-# este diagnóstico; ETF/opciones/futuros/FCI/otros mercados quedan en HOLD.
-BYMA_T1_SOURCE_ONLY_LIMITED_DAYS = frozenset({date(2026, 11, 6)})
-BYMA_T1_SOURCE_ONLY_FAMILIES = frozenset({
-    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
-})
-BYMA_T1_EXACT_SETTLEMENTS = frozenset({"A-24HS", "24HS", "T1"})
-
 
 def motivo_no_operativo(dia: date) -> Optional[str]:
     """Devuelve el motivo de bloqueo o None si el día es operativo."""
@@ -75,25 +64,3 @@ def es_dia_habil_operativo(dia: date) -> bool:
     """Verdadero únicamente para una rueda normal incluida en el calendario."""
 
     return motivo_no_operativo(dia) is None
-
-
-def estado_negociacion_fuente_byma(dia: date, *, market: str,
-                                   family: str, settlement: str) -> str:
-    """Reloj de fuente; nunca certifica PAPER, SETTLEMENT, cuota ni PIT.
-
-    ``REGULAR`` es el día ordinario; ``LIMITED_T1_SOURCE_ONLY`` permite sólo
-    diagnóstico por contrato exacto durante la rueda limitada del 06/11.
-    Fechas/mercados desconocidos permanecen ``CLOSED``. Ningún consumidor debe
-    usar este estado como permiso de orden o de llamada al broker.
-    """
-    if type(dia) is not date or str(market or "").strip().upper() != "BYMA":
-        return "CLOSED"
-    if dia.year not in ANIOS_AUDITADOS:
-        return "CLOSED"
-    if es_dia_habil_operativo(dia):
-        return "REGULAR"
-    if (dia in BYMA_T1_SOURCE_ONLY_LIMITED_DAYS
-            and str(family or "").strip().upper() in BYMA_T1_SOURCE_ONLY_FAMILIES
-            and str(settlement or "").strip().upper() in BYMA_T1_EXACT_SETTLEMENTS):
-        return "LIMITED_T1_SOURCE_ONLY"
-    return "CLOSED"

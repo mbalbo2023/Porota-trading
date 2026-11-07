@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import ak_byma_calendar as calendar
+from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
 import co_market_sessions_hf6 as sessions
 from historical_candle_shadow_rc6 import history_session_quality
 from scripts import rc6_source_cycle_dispatch as dispatch
@@ -30,7 +31,7 @@ def test_official_nov6_negotiation_is_source_only(family, settlement):
     day = date(2026, 11, 6)
     instant = datetime(2026, 11, 6, 11, 20, tzinfo=ART)
     assert calendar.es_dia_habil_operativo(day) is False  # PAPER/settlement HOLD
-    assert calendar.estado_negociacion_fuente_byma(
+    assert estado_negociacion_fuente_byma(
         day, market="BYMA", family=family, settlement=settlement
     ) == "LIMITED_T1_SOURCE_ONLY"
     assert sessions.byma_source_only_limited_phase(
@@ -69,7 +70,7 @@ def test_nov6_other_or_unverified_contracts_remain_closed(family, settlement):
 ])
 def test_later_holidays_weekends_and_unaudited_year_fail_closed(day):
     instant = datetime(day.year, day.month, day.day, 11, 20, tzinfo=ART)
-    assert calendar.estado_negociacion_fuente_byma(
+    assert estado_negociacion_fuente_byma(
         day, market="BYMA", family="ACCIONES", settlement="A-24HS"
     ) == "CLOSED"
     assert sessions.byma_source_only_limited_phase(
@@ -83,7 +84,7 @@ def test_limited_nov6_requires_byma_and_intraday_window():
         assert sessions.byma_source_only_limited_phase(
             "BYMA", "ACCIONES", "A-24HS", instant
         ) == "CLOSED"
-    assert calendar.estado_negociacion_fuente_byma(
+    assert estado_negociacion_fuente_byma(
         date(2026, 11, 6), market="A3", family="ACCIONES", settlement="A-24HS"
     ) == "CLOSED"
     assert sessions.byma_source_only_limited_phase(
@@ -104,7 +105,7 @@ def test_history_requires_nov6_t1_without_inventing_c1_session():
 def test_ordinary_regular_paper_calendar_is_unchanged():
     day = date(2026, 11, 5)
     assert calendar.es_dia_habil_operativo(day) is True
-    assert calendar.estado_negociacion_fuente_byma(
+    assert estado_negociacion_fuente_byma(
         day, market="BYMA", family="ACCIONES", settlement="A-24HS"
     ) == "REGULAR"
     assert sessions.byma_paper_instrument_phase(

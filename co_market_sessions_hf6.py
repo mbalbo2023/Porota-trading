@@ -220,16 +220,46 @@ def byma_source_only_limited_phase(market: str, family: str, settlement: str,
         return "CLOSED"
     local = now.astimezone(TZ)
     try:
-        import ak_byma_calendar as calendar
-        state = calendar.estado_negociacion_fuente_byma(
+        from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
+        state = estado_negociacion_fuente_byma(
             local.date(), market=market, family=family, settlement=settlement)
-    except (AttributeError, KeyError, TypeError, ValueError, OSError):
+    except (AttributeError, ImportError, KeyError, TypeError, ValueError, OSError):
         return "CLOSED"
     if state != "LIMITED_T1_SOURCE_ONLY":
         return "CLOSED"
     segment = session_for(market, family, settlement, as_of=local)
     return ("SOURCE_ONLY_OPEN" if phase_for(segment, local) == "OPEN"
             else "CLOSED")
+
+
+def byma_heavy_writes_safe_now(at: datetime) -> bool:
+    """Conservative clock for *technical* heavy writes; no source receipt.
+
+    Known BYMA ordinary and 06-Nov negotiated source-only sessions hold heavy
+    writes from 10:30 until the 18:15 ART EOD floor. Audited closed days and
+    other hours are eligible for the separate data/ownership/safety gates.
+    Unknown calendar/timezone/imports fail closed. This is NOT a PAPER/market
+    permission, nor proof that closing data has been published.
+    """
+    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+        return False
+    try:
+        import ak_byma_calendar as calendar
+        from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
+        local = at.astimezone(TZ)
+        if local.year not in calendar.ANIOS_AUDITADOS:
+            return False
+        state = estado_negociacion_fuente_byma(
+            local.date(), market="BYMA", family="ACCIONES", settlement="A-24HS")
+        if state in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}:
+            clock = local.time().replace(tzinfo=None)
+            return not (time(10, 30) <= clock < byma_eod_publication_floor(local).time())
+        if state == "CLOSED" and calendar.motivo_no_operativo(local.date()) is not None:
+            return True
+        return False
+    except Exception:
+        # Operational writers must not inherit authority from a failed clock.
+        return False
 
 
 def byma_eod_publication_floor(at: datetime | date) -> datetime:
