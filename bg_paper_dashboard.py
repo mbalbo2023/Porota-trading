@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import math
 from collections import Counter
 import json
 import os
@@ -41,6 +42,7 @@ from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
 from dg_dashboard_daily_result_ux_hf6 import (daily_results_html, report_cards_html,
     report_has_content_provenance, LEGACY_REPORT_PROVENANCE_MISSING, RESPONSIVE_CSS)
+from rc6_trader_dashboard.projection import decimal_amount
 from dh_dashboard_compact_lists_hf6 import COMPACT_CSS, pager_html
 from ei_dashboard_table_accessibility_rc5 import TABLE_A11Y_CSS, TABLE_A11Y_SCRIPT
 import eb_dashboard_live_policy_hf2 as live_policy
@@ -2048,15 +2050,40 @@ def financial_page():
     latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date WHERE upper(COALESCE(f.source,'')) <> 'BCRA' ORDER BY f.source,f.indicator""") if _table("financial_series") else []
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
     try:
-        monthly=_rows("""SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
-                                CASE WHEN SUM(CASE WHEN net_pnl IS NULL OR TRIM(net_pnl)=''
-                                                   THEN 1 ELSE 0 END) > 0
-                                     THEN NULL ELSE CAST(SUM(CAST(net_pnl AS REAL)) AS TEXT)
-                                END pnl
-                         FROM paper_positions
-                         WHERE upper(status)='CLOSED' AND COALESCE(currency,'ARS')='ARS'
-                         GROUP BY substr(date(datetime(closed_at,'-3 hours')),1,7)
-                         ORDER BY month DESC LIMIT 24""") if _table("paper_positions") else []
+        raw_monthly=_rows("""WITH closed_ars AS (
+                             SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
+                                    net_pnl FROM paper_positions
+                             WHERE upper(status)='CLOSED' AND COALESCE(currency,'ARS')='ARS'
+                         ), recent_months AS (
+                             SELECT month FROM closed_ars GROUP BY month
+                             ORDER BY month DESC LIMIT 24
+                         ) SELECT c.month,c.net_pnl FROM closed_ars c
+                         JOIN recent_months m ON c.month IS m.month
+                         ORDER BY c.month DESC""") if _table("paper_positions") else []
+        # SQLite CAST silently turns 'oops' and numeric prefixes into numbers.
+        # Validate every raw ledger value before aggregating; one bad close
+        # invalidates the WHOLE month, never merely the partial subtotal.
+        monthly_totals = {}
+        for row in raw_monthly:
+            month = row["month"]
+            current = monthly_totals.setdefault(month, Decimal("0"))
+            if month is None:
+                monthly_totals[month] = None
+                continue
+            if current is None:
+                continue
+            try:
+                amount = decimal_amount(row["net_pnl"])
+                if amount is None or not math.isfinite(float(amount)):
+                    raise ValueError("unverified ledger PnL")
+                total = current + amount
+                if not total.is_finite() or not math.isfinite(float(total)):
+                    raise ValueError("non-finite monthly PnL")
+                monthly_totals[month] = total
+            except (InvalidOperation, ValueError, TypeError, OverflowError):
+                monthly_totals[month] = None
+        monthly = [{"month": month, "pnl": str(total) if total is not None else None}
+                   for month, total in monthly_totals.items()]
         spot_state="READY"
     except Exception:
         monthly=[]
