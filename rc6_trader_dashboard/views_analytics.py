@@ -1,6 +1,7 @@
 """Economics, samples, factual exits and explicitly limited experiments."""
 import re
 from cg_paper_workspace import artifact_root
+from dg_dashboard_daily_result_ux_hf6 import public_report_row
 from rc6_action4_audit import published_audit_is_safe
 from .components import fields, funnel, metric, notice, e, clock, badge, sanitized
 from .datasets import shadow_rows, artifact
@@ -143,6 +144,7 @@ def render(p, destination, tab):
                                            note="No-trade baseline y late/missed requieren evidencia causal. Se conservan moneda y atribución; no se reconstruyen oportunidades perdidas por intuición.")
     page = p.store.page("report_registry", order="id DESC" if "id" in p.store.columns("report_registry") else "", offset=p.offset)
     for row in page.rows:
+        row.update(public_report_row(row))
         row["download"] = f"/api/reports/{row['id']}/pdf" if row.get("pdf_path") and row.get("id") else None
         row["report_type"] = row.get("report_type") or row.get("period_type")
     result = render_table(p, destination, tab, page, "Reportes versionados",
