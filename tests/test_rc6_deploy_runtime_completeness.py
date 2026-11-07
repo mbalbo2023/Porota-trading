@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from rc6_deploy_test_assertions import assert_no_executable_rollback
+
 ROOT = Path(__file__).resolve().parents[1]
 PREDEPLOY = ROOT / ".github/workflows/porota-predeploy-v2.yml"
 WORKFLOW = ROOT / ".github/workflows/porota-deploy-v2-promote.yml"
@@ -26,7 +28,7 @@ def test_runtime_dependency_is_packaged_installed_rolled_back_and_verified():
     assert 'assert src.is_file() and sha(src)==row["sha256"]' in source
     assert 'shutil.copy2(src,dst)' in source
     assert 'assert sha(dst)==row["sha256"]' in source
-    assert "rollback" not in source.lower()
+    assert_no_executable_rollback(source)
 
 
 def test_local_v2_reconciliation_is_required_even_when_remote_refresh_is_closed_only():
