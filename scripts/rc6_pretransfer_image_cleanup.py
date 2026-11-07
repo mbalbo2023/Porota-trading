@@ -14,6 +14,20 @@ import stat
 import subprocess
 import time
 
+try:
+    from scripts.rc6_deploy_host_mutex import (
+        require_exclusive_docker_namespace, require_migrated_consumer_protocol,
+        require_readonly_docker_command,
+    )
+except ModuleNotFoundError as error:
+    if error.name != 'scripts':
+        raise
+    # Direct `python scripts/helper.py`: sibling from the same checkout.
+    from rc6_deploy_host_mutex import (
+        require_exclusive_docker_namespace, require_migrated_consumer_protocol,
+        require_readonly_docker_command,
+    )
+
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}')
 CONTAINER = re.compile(r'[0-9a-f]{12,64}')
 CANDIDATE = re.compile(r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)[0-9a-f]{40}')
@@ -34,6 +48,7 @@ class Rejected(RuntimeError):
 
 
 def docker(*args):
+    require_readonly_docker_command(args)
     result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=10)
     if result.returncode:
         raise Rejected('DOCKER_' + args[0].upper() + '_FAILED')
@@ -44,8 +59,11 @@ def docker(*args):
 
 @contextmanager
 def promotion_lock():
-    # The true root-owned mutex is already held by the canonical wrapper and
-    # passed to its child as the SAME open file description. Never acquire a
+    """Block the withdrawn legacy same-OFD validator until a safe migration."""
+    # The former same-OFD check did not prevent a child unlocking its parent.
+    require_migrated_consumer_protocol()
+    # Dormant legacy validation below assumed the canonical wrapper passed
+    # the SAME open file description. Never reuse this as authority or acquire a
     # second flock: a second descriptor would deadlock against our own parent.
     # Also never mistake a missing mutex/barrier or a /tmp decoy for authority.
     raw_fd = os.environ.get(OWNER_FD, '')
@@ -198,20 +216,23 @@ def eligibility(image):
             or labels.get('porota.predeploy') != 'v2'
             or labels.get('porota.commit') not in commits):
         return tags, 'OWNERSHIP_LABELS_UNVERIFIED'
-    # Docker load on the target engine retains a canonical RepoDigest alongside
-    # its candidate tag. That immutable spelling is the same repository owner,
-    # not an external alias. Unknown or unpaired repositories remain protected.
-    repositories = {tag.split(':', 1)[0] for tag in tags}
-    for digest in digests:
-        match = re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}', digest)
-        if match is None or match.group(1) not in repositories:
-            return tags, 'PROTECTED_OR_UNPAIRED_DIGEST'
+    # A matching repository spelling is not an artifact/attempt digest receipt.
+    # Keep every digest until independent exact provenance is implemented.
+    if digests:
+        return tags, 'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED'
     return tags, 'UNREFERENCED_CANDIDATE_ONLY'
 
 
 def cleanup(report=None):
     report = report if report is not None else {}
     report.update(schema='RC6_PRETRANSFER_IMAGE_CLEANUP_V1', status='RED', removed_tags=[])
+    try:
+        require_exclusive_docker_namespace()
+    except RuntimeError as error:
+        # A label/path/UID or a last-second inspect is not a daemon-wide
+        # exclusion guarantee. No queries/deletes or claimed reclaimed bytes.
+        report.update(reason=str(error), space_recovered=0)
+        return report
     before = safety()
     free_before = shutil.disk_usage('/').free
     report['disk_before'] = free_before
@@ -253,12 +274,13 @@ def cleanup(report=None):
 
 
 def main():
-    report = {'schema': 'RC6_PRETRANSFER_IMAGE_CLEANUP_V1', 'status': 'RED'}
+    report = {'schema': 'RC6_PRETRANSFER_IMAGE_CLEANUP_V1', 'status': 'RED',
+              'removed_tags': [], 'space_recovered': 0}
     try:
         with promotion_lock():
             cleanup(report)
-    except (Rejected, subprocess.TimeoutExpired, OSError, ValueError, TypeError, sqlite3.Error) as exc:
-        report.update(status='RED', reason=str(exc) if isinstance(exc, Rejected) else type(exc).__name__)
+    except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError, TypeError, sqlite3.Error) as exc:
+        report.update(status='RED', reason=str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__)
         if 'disk_before' in report:
             report['disk_after'] = shutil.disk_usage('/').free
             report['space_recovered'] = report['disk_after'] - report['disk_before']

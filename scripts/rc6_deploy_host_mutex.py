@@ -3,9 +3,9 @@
 
 The workflow sends this exact source via a base64 Python -c argument before
 installing a candidate.  It is a short-lived part of that operation, not a
-background daemon.  Nested sudo may close inherited descriptors.  A durable
-attempt barrier therefore remains INFLIGHT if this wrapper dies before it
-observes the immediate child exit, including when SSH disappears.
+background daemon. The owner OFD is private and existing child launches are
+blocked pending protocol migration. The dormant lifecycle algorithm retains
+an INFLIGHT barrier on uncertain exits, including loss of SSH.
 """
 from __future__ import annotations
 
@@ -46,6 +46,29 @@ FAILED_A138_RUN = '40592426296'
 FAILED_A138_ATTEMPT = '2'
 FAILED_A138_SOURCE_SHA256 = 'dcb0ed996a6be9aefb0a609139285f6160248909ccde92f189a24b77fb617662'
 FAILED_A92_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
+
+
+def require_migrated_consumer_protocol() -> None:
+    """A865 containment: the inherited-owner protocol has been withdrawn.
+
+    No environment value, tag or extra inspect can enable this protocol.
+    Recovery requires a separately reviewed owner-private capability design.
+    """
+    raise RuntimeError('MUTEX_CONSUMER_PROTOCOL_UNMIGRATED')
+
+
+def require_exclusive_docker_namespace() -> None:
+    """No physical, independently enforced exclusive namespace is attested."""
+    raise RuntimeError('DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+
+
+def require_readonly_docker_command(args: tuple) -> None:
+    """Permit inventory only; exec/run/tag/delete/prune are not observations."""
+    if args and (args[0] in {'ps', 'inspect'} or
+                 args[:2] in {('image', 'inspect'), ('image', 'ls'),
+                              ('system', 'df')}):
+        return
+    raise RuntimeError('DOCKER_MUTATION_UNAUTHORIZED')
 
 
 def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
@@ -180,7 +203,7 @@ def _contract_only(directory_path: Path, identity: tuple[str, str, str], phase: 
 
 
 def _enable_subreaper() -> None:
-    # An inherited flock is insufficient across nested sudo. Reparent orphaned
+    # A private owner flock cannot outlive a killed wrapper. Reparent orphaned
     # grandchildren here while this root wrapper lives, including after their
     # immediate shell exits; a lost wrapper leaves the INFLIGHT barrier.
     libc = ctypes.CDLL(None, use_errno=True)
@@ -314,6 +337,10 @@ def run(argv: list[str]) -> int:
             argv[7] not in PHASES):
         raise RuntimeError('MUTEX_ATTEMPT_INVALID')
     phase = argv[7]
+    # Before even opening/creating the physical lock: every existing child
+    # protocol depended on an owner OFD that a child can unlock. Do not start
+    # an arbitrary phase/command under a protocol not yet safely migrated.
+    require_migrated_consumer_protocol()
     observe = phase == 'classify'
     reconcile = phase == 'reconcile'
     presuspend = phase == 'cleanup_presuspend'
@@ -373,11 +400,10 @@ def run(argv: list[str]) -> int:
         if not observe and not orphan_gc and not (presuspend and existing is None):
             _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
-        env['RC6_DEPLOY_MUTEX_FD'] = str(fd)
-        env['RC6_DEPLOY_MUTEX_PROOF'] = json.dumps({
-            'candidate': identity[0], 'run': identity[1],
-            'attempt': identity[2], 'phase': phase},
-            sort_keys=True, separators=(',', ':'))
+        # Defense in depth even if the source-level veto is later migrated:
+        # owner OFD stays private; inherited ambient legacy claims are scrubbed.
+        env.pop('RC6_DEPLOY_MUTEX_FD', None)
+        env.pop('RC6_DEPLOY_MUTEX_PROOF', None)
         if argv[1] == 'user':
             env.update(HOME=user.pw_dir, USER=user.pw_name, LOGNAME=user.pw_name)
         def drop_privileges() -> None:
@@ -388,7 +414,7 @@ def run(argv: list[str]) -> int:
         # The classification step captures stdout as one exact OPEN/CLOSED
         # token. Operational lock evidence must not change child stdout.
         print('RC6_DEPLOY_HOST_MUTEX=HELD', file=sys.stderr, flush=True)
-        result = subprocess.run(command, check=False, env=env, pass_fds=(fd,),
+        result = subprocess.run(command, check=False, env=env, pass_fds=(),
                                 preexec_fn=drop_privileges)
         _drain_children()
         writers = _contract_writers()

@@ -16,6 +16,17 @@ import sqlite3
 import stat
 import subprocess
 
+try:
+    from scripts.rc6_deploy_host_mutex import (
+        require_exclusive_docker_namespace, require_readonly_docker_command,
+    )
+except ModuleNotFoundError as error:
+    if error.name != 'scripts':
+        raise
+    from rc6_deploy_host_mutex import (
+        require_exclusive_docker_namespace, require_readonly_docker_command,
+    )
+
 ROOT = Path('/opt/porota-trading')
 STABLE = 'porota-trading-bot:17.0.0-rc6'
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
@@ -37,6 +48,7 @@ def command(*args):
 
 
 def docker(*args):
+    require_readonly_docker_command(args)
     return command('docker', *args)
 
 
@@ -73,8 +85,7 @@ def _require_candidate_oci(record, commit_sha):
     digests = record.get('RepoDigests') if type(record) is dict else None
     if (type(tags) is not list or not tags or
             any(type(tag) is not str for tag in tags) or
-            (digests is not None and (type(digests) is not list or
-                                      any(type(digest) is not str for digest in digests))) or
+            (digests is not None and (type(digests) is not list or digests)) or
             type(commit_sha) is not str or re.fullmatch('[0-9a-f]{40}', commit_sha) is None
             or type(labels) is not dict or
             any(type(key) is not str or type(value) is not str
@@ -256,6 +267,8 @@ def admission():
 
 
 def cleanup(required_free_bytes=None):
+    # No retag/delete before independently enforced namespace exclusivity.
+    require_exclusive_docker_namespace()
     if (required_free_bytes is not None and
             (type(required_free_bytes) is not int or
              not 1024**3 <= required_free_bytes <= 16*1024**3)):
@@ -359,7 +372,19 @@ def cleanup(required_free_bytes=None):
                 'real_orders_sent':0,'ppi_watch_changed':False}
 
 
-if __name__=='__main__':
-    if len(sys.argv)!=2 or not re.fullmatch('[0-9]{10,11}',sys.argv[1]):
-        raise ValueError('OFFLINE_CURRENT_REQUIRED_SPACE_ARGUMENT')
-    print(json.dumps(cleanup(int(sys.argv[1])),sort_keys=True))
+def main(argv=None):
+    args = sys.argv[1:] if argv is None else argv
+    try:
+        if len(args) != 1 or not re.fullmatch('[0-9]{10,11}', args[0]):
+            raise ValueError('OFFLINE_CURRENT_REQUIRED_SPACE_ARGUMENT')
+        report = cleanup(int(args[0]))
+    except (RuntimeError, ValueError, OSError, sqlite3.Error,
+            subprocess.TimeoutExpired) as error:
+        report = {'status': 'RED', 'reason': str(error), 'removed_tags': [],
+                  'space_recovered': 0, 'mutation_authorized': False}
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report.get('status') == 'GREEN' else 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

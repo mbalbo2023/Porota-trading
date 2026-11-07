@@ -34,6 +34,9 @@ class GovernedCleanupAdversaries(unittest.TestCase):
         self.stack.enter_context(patch.object(cleanup, 'LOCK', self.lock))
         self.stack.enter_context(patch.object(cleanup, 'BARRIER', self.barrier))
         self.stack.enter_context(patch.object(cleanup, 'ROOT_UID', os.getuid()))
+        # Exercise the dormant legacy validator with simulated Docker only.
+        # A865's default-entry tests do NOT patch this unconditional veto.
+        self.stack.enter_context(patch.object(cleanup, 'require_migrated_consumer_protocol'))
         self.fd = os.open(self.lock, os.O_CREAT | os.O_RDWR, 0o600)
         self.addCleanup(os.close, self.fd)
         self._set_proof(PROOF)
@@ -277,7 +280,7 @@ class GovernedCleanupAdversaries(unittest.TestCase):
              patch.object(cleanup, 'inspect_image',
                           return_value=([TAG], ['boca@sha256:' + 'c' * 64], labels)):
             self.assertEqual(cleanup.eligibility(IMAGE)[1],
-                             'PROTECTED_OR_UNPAIRED_DIGEST')
+                             'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED')
 
     def test_canonical_path_and_workflow_guards(self):
         src = (ROOT / 'scripts/rc6_deploy_host_mutex.py').read_text()
@@ -285,8 +288,8 @@ class GovernedCleanupAdversaries(unittest.TestCase):
         helper = (ROOT / 'scripts/rc6_pretransfer_image_cleanup.py').read_text()
         self.assertIn("LOCK_PATH = LOCK_DIR / 'porota-rc6-deploy-v2.lock'", src)
         self.assertIn("LOCK = Path('/run/lock/porota-rc6-deploy-v2.lock')", helper)
-        self.assertIn("env['RC6_DEPLOY_MUTEX_PROOF']", src)
-        self.assertIn("pass_fds=(fd,)", src)
+        # Actual non-delegation is exercised with a real child in A865 tests,
+        # not inferred from the spelling of pass_fds or environment assignments.
         self.assertIn("orphan_gc = phase == 'orphan_gc'", src)
         self.assertIn("--phase orphan_gc python3 -B -", workflow)
         self.assertGreaterEqual(workflow.count('RC6_DEPLOY_MUTEX_PROOF='), 2)
