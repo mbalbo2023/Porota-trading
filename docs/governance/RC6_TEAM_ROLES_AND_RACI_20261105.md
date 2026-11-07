@@ -1,7 +1,7 @@
 # Porota RC6 — Equipo de especialidades, responsabilidades y revisión cruzada
 
-**Versión:** 1.0-propuesta · **Fecha:** 2026-11-05 ART  
-**Origen:** [RFC #980](https://github.com/mbalbo2023/Porota-trading/issues/980)  
+**Versión:** 1.1-propuesta · **Origen:** 2026-11-05 ART · **Revisión de unanimidad:** 2026-11-07 ART
+**RFC:** [#980](https://github.com/mbalbo2023/Porota-trading/issues/980)
 **Estado de este contrato:** PROPUESTO hasta integración y validación; la presencia de este archivo en una rama o PR no equivale a CI aplicado, a aprobación independiente, a equipo persistente ni a Deploy.
 **Continuidad operativa:** [#732](https://github.com/mbalbo2023/Porota-trading/issues/732), [#909](https://github.com/mbalbo2023/Porota-trading/issues/909), [#485](https://github.com/mbalbo2023/Porota-trading/issues/485) (histórico de gobernanza). Prevalecen AGENTS.md, ops/policy/porota-policy.yaml y evidencia de GitHub/Actions/runtime vigente.
 
@@ -11,7 +11,7 @@ Doce personajes de especialidad representan perspectivas técnicas y funcionales
 
 **Sponsor/product owner:** Tincho; define visión y prioridades. **Coordinación:** Federico (PM) asegura un DRI de especialidad por tarea, dueño real, no duplicación y un candidato único. La independencia de criterio se consigue con revisión cruzada basada en evidencia, no fingiendo doce aprobaciones GitHub independientes.
 
-Toda especialidad participa en el ciclo de vida mediante matriz de impacto documentada. Una tarea rutinaria no requiere doce aprobaciones: DRI + especialistas realmente afectados + QA. Decisiones transversales de mercado, PPI, riesgo, arquitectura y Deploy tienen un consenso técnico reforzado y disensos registrados.
+**Toda decisión de trabajo de Porota, incluso rutinaria, requiere una conclusión unánime de las doce perspectivas técnicas IA** (FIN, ARC, PY, OPS, UX, PM, API, ENG, QA, DATA, RISK, SEC), con razón y evidencia comprobable por perspectiva. También toda respuesta sustantiva a Tincho debe distinguir hechos verificados de valoraciones consensuadas; nunca presentar una opinión individual como dictamen del grupo. La profundidad del análisis se ajusta al impacto: una decisión acotada usa una ronda compacta, no doce revisiones de código duplicadas. El DRI y los especialistas afectados realizan el trabajo; la ronda de doce posiciones precede a la decisión. Si aparece cualquier disenso, la propuesta queda **BLOQUEADA para decidir o ejecutar**, se revisan sus premisas y evidencias y el grupo vuelve a deliberar cuantas veces sea necesario. No hay voto por mayoría, excepción por urgencia ni consenso supuesto; si no se alcanza unanimidad, se registra la falta de decisión y se continúa el análisis. El protocolo no constituye doce aprobaciones GitHub, identidades humanas distintas ni facultades de escritura adicionales.
 
 ## 2. Directorio de personajes
 
@@ -50,6 +50,9 @@ linked_issue: numero
 linked_adr: URL-o-no-aplica
 acceptance_tests: [tests-reproducibles]
 evidence: [sha-run-artifact-runtime-segun-corresponda]
+committee_minutes: URL-issue-ronda-y-evidencia
+committee_positions: [FIN, ARC, PY, OPS, UX, PM, API, ENG, QA, DATA, RISK, SEC]
+committee_unanimity: NO_VERIFICADO # sólo declarar 12/12 con doce posturas explícitas
 status: PROPUESTO
 ```
 
@@ -58,6 +61,8 @@ Los estados de implementación/operación siguen siendo exclusivamente: `PROPUES
 Toda tarea tiene **un** DRI y **un** owner de escritura real para rutas definidas. `READ_ONLY` de los demás es libre; nunca crear un segundo writer o un segundo DEPLOY_OWNER. Si se cruzan ámbitos, el coordinador detiene sólo la escritura conflictiva y registra dependencia/traspaso.
 
 ## 4. Matriz de revisión cruzada
+
+Esta matriz identifica a quienes deben estudiar el cambio en profundidad y ejecutar revisiones técnicas; **no reduce el requisito de las doce perspectivas para tomar decisiones**. Los informes de roles pueden ser breves cuando la evidencia es directa. Cada postura debe explicitar alternativa, argumento y enlace/resultado comprobable, sin inventar estudios externos ni opiniones humanas independientes.
 
 | Clase de cambio | DRI | Participación para diseño/revisión | QA |
 |---|---|---|---|
@@ -70,15 +75,15 @@ Toda tarea tiene **un** DRI y **un** owner de escritura real para rutas definida
 | Contratos/decisión arquitectónica transversal | ARC | todos los dominios afectados + ENG | QA |
 | Plan, integración, PR/handoff | PM + ENG | owner de componente y revisión real | QA |
 
-**Consenso:** para cambio P0, autorizaciones/órdenes, presupuesto de PPI, identidad y temporalidad, riesgo transversal o despliegue, se publica un ADR compacto: problema, opciones, impacto/costos, evidencia, parecer de FIN/ARC/DATA/RISK/API/OPS/SEC según aplique, objeciones, decisión y responsable. Discordancias técnicas no se ocultan; escalar sólo una decisión de negocio o ampliación de autoridad a Tincho. No transformar la matriz de IA en falsa auditoría externa.
+**Unanimidad obligatoria 12/12 en cada decisión:** PM solicita una ronda individual de FIN/ARC/PY/OPS/UX/PM/API/ENG/QA/DATA/RISK/SEC. Se publica en el issue un acta única con problema, opciones, beneficio, impactos, evidencias/SHAs, opinión motivada de los doce roles, objeciones, iteraciones, resolución unánime, DRI y owner real. Si una postura objeta, **no hay decisión aprobada**: se vuelve a examinar la evidencia, se ajusta o descarta la propuesta y se realiza nueva ronda de los doce hasta converger. Sin unanimidad, estado BLOQUEADO y no ejecutar el cambio controvertido; otras tareas independientes y autorizadas siguen en paralelo. La imposibilidad verificable de resolver el conflicto se informa a Tincho con sus causas, sin falsificar una votación ni traspasar a él una aprobación técnica inexistente. Para negocio o nueva autoridad sí se le pide su decisión. Ninguna acta de personajes IA suplanta controles de GitHub, CI, permisos o revisión humana exigida por ruleset.
 
 ## 5. Protocolo a lo largo del ciclo de vida
 
 1. **Intake/triage (PM + FIN/ARC):** recuperar último #732/#909, branch/SHA, PRs/Actions/ownership actuales; deduplicar con issues existentes; documentar beneficio, problema y DRI. Ningún chat toma tareas de otro.
-2. **Diseño (DRI + ARC y afectados):** contratos por componente, ADR para cambios transversales, riesgos, criterios medibles, errores anteriores y superficie de impacto. Mantener fuente PPI primaria y complementarias separadas.
+2. **Diseño (DRI + ARC y afectados):** contratos por componente, ADR para cambios transversales, riesgos, criterios medibles, errores anteriores y superficie de impacto. Antes de adoptar cualquier decisión, ronda documentada 12/12 y nueva deliberación ante objeciones. Mantener fuente PPI primaria y complementarias separadas.
 3. **Desarrollo (WRITE_OWNER específico):** rama aislada, code review de rutas afectadas, tests focales. Error significativo exige `ERROR → RCA → FIX → GUARD → TEST/CI/PREFLIGHT → EVIDENCIA`.
 4. **Verificación (QA + revisores):** tests positivos y negativos, regresiones, fixtures PIT sin look-ahead, accesibilidad y métricas de recursos sin estrés. Citar denominador y SHA.
-5. **Integración (PM + ENG + ARC):** conciliar cada PR abierto con código/rama, seleccionar IN/OUT con causa/owner, candidato único y artefactos trazables.
+5. **Integración (PM + ENG + ARC):** conciliar cada PR abierto con código/rama, elevar cada IN/OUT a decisión motivada unánime 12/12 con causa/owner, candidato único y artefactos trazables. Un desacuerdo mantiene sólo esa decisión en BLOQUEADO.
 6. **Release (OPS + QA + SEC + owner autorizado):** sólo Deploy V2 gobernado, build-once, same immutable artifact, digest, preflight, POST, guardas PAPER, cleanup Docker seguro tras éxito/fallo. La documentación NO es disparador de producto.
 7. **Seguimiento (QA + DATA + FIN + PM):** runtime distinto de CI; issues, lecciones, discrepancias y handoff en GitHub. Liberar ownership. Sin supervisores permanentes nuevos por este documento.
 
@@ -98,9 +103,9 @@ Toda tarea tiene **un** DRI y **un** owner de escritura real para rutas definida
 
 **Se mide el proceso de equipo, NO la cobertura READY o trading de Porota.** Todos estos gates deben tener recibo en GitHub:
 
-- **T1 — Descubrimiento:** rol registry y RACI versionados en rama canónica no productiva y enlazados desde entrypoint de agentes, sin trigger de Deploy.
+- **T1 — Descubrimiento:** rol registry y RACI versionados en una rama aislada y enlazados desde el entrypoint de agentes mediante integración gobernada, sin que un commit sólo documental dispare Deploy.
 - **T2 — Asignación:** tres pilotos con `workstream_id`, owner real, DRI, reviewers de especialidad, paths/SHA y criterios; cero tareas piloto sin dueño o con overlap.
-- **T3 — Revisión:** tres pilotos con matriz de impacto, registro de disenso/consenso (ADR si aplica) y QA reproducible.
+- **T3 — Unanimidad demostrable:** tres pilotos con matriz de impacto, las doce posturas motivadas, acta 12/12 explícita por cada decisión, nueva ronda ante todo disenso hasta unanimidad (o BLOQUEADO), y QA reproducible. No equivale a doce aprobaciones GitHub ni a revisores humanos.
 - **T4 — Guard automatizado:** una comprobación de metadata probada con fixture completo PASS e incompleto FAIL, iniciada como informativa y elevada a required sólo después de probar no falsos bloqueos y permisos efectivos.
 - **T5 — No interferencia:** evidencia que los cambios documentales no dispararon Deploy/alteración de producto; sin nuevos supervisores ni cambios PPI Watch, host o candidato ajeno.
 - **T6 — Continuidad:** un nuevo chat puede recuperar versión de roles, estado actual, backlog, responsables y handoff sólo desde GitHub y sin depender de este chat.
@@ -113,12 +118,12 @@ Cada Tn se marca PROPUESTO/NO_VERIFICADO hasta que exista recibo exacto. Una fus
 2. Admisión PAPER de instrumentos y PIT de diez familias: FIN/DATA/RISK/PY/QA.
 3. Dashboard del operador y Deploy V2: UX/FIN/QA junto a OPS/ENG/SEC en los ámbitos que correspondan.
 
-Estos son **pilotos de protocolo y lectura de evidencia**, no permisos para duplicar PRs #778 o trabajos activos en #732/#909. Revalidar refs, SHA, owners y alcance inmediatamente antes de cualquier escritura.
+Estos son **pilotos de protocolo y lectura de evidencia**, no permisos para duplicar PRs ya absorbidos por el candidato vigente ni trabajos activos en #732/#909. Revalidar refs, SHA, owners y alcance inmediatamente antes de cualquier escritura.
 
 ## 9. Implementación gradual de controles
 
-- **Fase A (este documento):** contrato documental en rama aislada y PR en borrador a main; no código runtime.
-- **Fase B:** tras integrar A, enlazarlo de forma mínima desde entrypoint sin cambiar política de producto; evitar triggers de deploy.
+- **Fase A (este documento):** contrato documental en rama aislada, revisión de vínculos y acta de evidencia; sin código runtime ni necesidad de abrir un PR adicional si existe candidato único.
+- **Fase B:** integrar sólo por el flujo de ownership/candidato autorizado y enlazarlo de forma mínima desde el entrypoint sin cambiar política de producto; una modificación exclusivamente documental jamás autoriza ni debe disparar Deploy.
 - **Fase C:** extender plantilla PR existente / metadata sólo con owner, tests y mecanismo de compatibilidad verificados; no duplicar archivos de plantilla ni CODEOWNERS. CI primero advisory.
 - **Fase D:** aplicar tres pilotos, medir T1–T6, documentar lecciones y declarar operativo sólo si los seis gates poseen recibo.
 
