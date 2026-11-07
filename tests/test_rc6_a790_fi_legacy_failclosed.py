@@ -8,8 +8,9 @@ import json
 import unittest
 from dataclasses import asdict
 from decimal import Decimal
+from unittest.mock import patch
 
-from be_paper_engine import PaperBroker, PaperStore
+from be_paper_engine import PaperBroker, PaperStore, Quote
 from bs_instrument_contracts import contract_from_metadata
 from rc6_fixed_income_event_ledger import _canonical, _seed
 from rc6_fixed_income_portfolio_bridge import native_exit_authorized
@@ -77,6 +78,19 @@ class UnverifiedNativeFITransitionsRemainHeld(unittest.TestCase):
         self.assertLessEqual(after, self.initial_available,
                              "Una transición FI sin recibos no libera capital PAPER")
 
+    @staticmethod
+    def _synthetic_exit_quote():
+        contract = contract_from_metadata("AL30", "BONOS", {
+            "market": "BYMA", "currency": "ARS", "settlement": "A-24HS",
+            "cash_multiplier": "0.01", "quantity_step": "1",
+            "minimum_quantity": "1", "metadata_source": "SYNTHETIC_PPI_EXACT_CONTRACT",
+        })
+        return Quote("AL30", "BONOS", "A-24HS", Decimal("106"),
+                     Decimal("105"), Decimal("106"), Decimal("1000"),
+                     Decimal("1000"), CLOSED, contract=contract,
+                     currency="ARS", market="BYMA", book_at=CLOSED,
+                     metadata_source="SYNTHETIC_OFFHOST")
+
     def test_maturity_close_without_issuer_review_cannot_release_cash(self):
         with self.store.connect() as db:
             db.execute("""UPDATE paper_positions SET status='CLOSED',
@@ -92,6 +106,46 @@ class UnverifiedNativeFITransitionsRemainHeld(unittest.TestCase):
                 ("PAPER-AL30", "PRODUCTION_PAPER", "SELL_SIMULATED", CLOSED,
                  "100", "105", "0.64", "0"))
         self._assert_no_unverified_native_cash_release()
+
+    def test_unseeded_bond_cannot_fall_through_to_generic_spot_sell(self):
+        # A legitimate PAPER BUY may precede the first imported FI economic
+        # event, so absence of paper_fi_lots must not grant exit authority.
+        with self.store.connect() as db:
+            db.execute("DELETE FROM paper_fi_lots WHERE paper_id='PAPER-AL30'")
+            root = dict(db.execute(
+                "SELECT * FROM paper_positions WHERE paper_id='PAPER-AL30'").fetchone())
+        quote = self._synthetic_exit_quote()
+
+        self.assertIs(self.broker._close(
+            root, quote, "UNVERIFIED_NATIVE_FI_EXIT", as_of=CLOSED), False)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0], 0)
+            self.assertEqual(db.execute(
+                "SELECT status FROM paper_positions WHERE paper_id='PAPER-AL30'").fetchone()[0],
+                "OPEN")
+            self.assertEqual(db.execute(
+                "SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0], 0)
+        self.assertEqual(self.broker._cash(as_of=CLOSED), self.initial_available)
+
+    def test_native_exit_authority_never_authorizes_generic_spot_sell(self):
+        # Native FI authority, if added later, must belong to its own atomic
+        # ledger path; it may not unlock the equity/spot close implementation.
+        with self.store.connect() as db:
+            root = dict(db.execute(
+                "SELECT * FROM paper_positions WHERE paper_id='PAPER-AL30'").fetchone())
+        quote = self._synthetic_exit_quote()
+        with patch("rc6_fixed_income_portfolio_bridge.native_exit_authorized",
+                   return_value=(True, "SYNTHETIC_FUTURE_NATIVE_OWNER")):
+            self.assertIs(self.broker._close(
+                root, quote, "MUST_USE_NATIVE_FI_SALE", as_of=CLOSED), False)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0], 0)
+            self.assertEqual(db.execute(
+                "SELECT status FROM paper_positions WHERE paper_id='PAPER-AL30'").fetchone()[0],
+                "OPEN")
+        self.assertEqual(self.broker._cash(as_of=CLOSED), self.initial_available)
 
     def test_naked_market_sale_event_without_verifier_cannot_release_cash(self):
         from rc6_fixed_income_event_reducer import EconomicEvent

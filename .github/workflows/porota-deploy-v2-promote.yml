@@ -33,6 +33,22 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
+      # A806 P0: both existing staging cleanup paths currently lack an
+      # independent root-issued owner/inode/attempt proof.  The safe DEFERRED
+      # fallback MUST be admitted before host reconcile, disk guard, suspend,
+      # transfer or promotion; a post-promotion RED is too late.  This is a
+      # deliberate hard NO_GO until a reviewed protocol and physical host
+      # permission evidence can replace this source-level unavailable proof.
+      - name: Stop before host writes when exact staging cleanup is unverified
+        id: a806_staging_preadmission
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'STAGING_CLEANUP=DEFERRED_UNVERIFIED|no_independent_root_attestation|no_host_contact'
+          echo '::error::RC6_A806_PREADMISSION_STAGING_UNVERIFIED: no root-issued stage ownership proof; forbidden to enter host promotion'
+          echo 'RC6_DEPLOY_V2=NO_GO_PREMUTATION_STAGING_UNVERIFIED|remote_mutations=0'
+          exit 79
+
       - name: Resolve exact frozen candidate
         shell: bash
         run: |
@@ -2168,42 +2184,13 @@ jobs:
           fi
           echo "RC6_ZERO_KNOWN_ERROR_IMMEDIATE=GREEN"
 
-          # The compressed frozen image/bundle and extracted stage are no longer
-          # needed after immutable promotion + immediate audit. Reclaim only these
-          # deploy-transient bytes before the preopen disk guard so the deploy
-          # cannot fail against space it is itself temporarily consuming.
-          sudo -n python3 - "$REPO" "$REMOTE_DIR" "$STAGE" "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
-          import os,shutil,sys
-          from pathlib import Path
-          repo,remote,stage,candidate,run,attempt=sys.argv[1:]
-          sys.path.insert(0,repo)
-          from scripts.rc6_deploy_failure_cleanup import container_inventory,host_mountpoints,overlaps
-          expected=Path('/tmp')/f'porota-deploy-v2-{candidate}-{run}-{attempt}'
-          root=Path(remote)
-          target=Path(stage)
-          if (root != expected or target != root/'stage' or root.is_symlink()
-                  or target.is_symlink() or not root.is_dir()
-                  or not target.is_dir() or root.resolve()!=root
-                  or target.resolve()!=target):
-              raise RuntimeError('RC6_STAGE_OWNERSHIP_UNVERIFIED')
-          _,mounts=container_inventory()
-          mountpoints=host_mountpoints()
-          if any(p==root or root in p.parents or p==target or target in p.parents
-                 for p in mountpoints):
-              raise RuntimeError('RC6_STAGE_HOST_MOUNT_PROTECTED')
-          if any(overlaps(target,mount) for mount in mounts):
-              raise RuntimeError('RC6_STAGE_DOCKER_BIND_PROTECTED')
-          for name in ('porota-predeploy-image.tar.gz','porota-deploy-bundle-v2.tgz'):
-              file=root/name
-              if file.is_symlink() or (file.exists() and not file.is_file()):
-                  raise RuntimeError('RC6_STAGE_FILE_UNVERIFIED')
-          for name in ('porota-predeploy-image.tar.gz','porota-deploy-bundle-v2.tgz'):
-              (root/name).unlink(missing_ok=True)
-          shutil.rmtree(target)
-          print('RC6_PREOPEN_EXACT_STAGE_RECLAIM=GREEN|FOREIGN_MOUNTS=UNTOUCHED')
-          PY
+          # Shared-host fallback: this DO_USER staging tree has no independent
+          # root-issued provenance. A matching path, manifest or self-receipt
+          # cannot authorize delete on a host with other applications. Keep
+          # the exact bytes and measure the *actual* free space below.
+          echo 'RC6_PREOPEN_EXACT_STAGE_RECLAIM=DEFERRED_UNVERIFIED|NO_DELETE|FOREIGN_UNTOUCHED'
           DISK_PREOPEN_AFTER_SAFE_RECLAIM="$(df -PB1 / | awk 'NR==2 {print $4}')"
-          echo "RC6_PREOPEN_SAFE_RECLAIM=GREEN|free=$DISK_PREOPEN_AFTER_SAFE_RECLAIM"
+          echo "RC6_PREOPEN_SAFE_RECLAIM=DEFERRED_UNVERIFIED|free=$DISK_PREOPEN_AFTER_SAFE_RECLAIM|NO_DELETE"
           POST_CLEANUP_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
           echo "RC6_DISK_POST_CLEANUP_MIN_FREE=$POST_CLEANUP_MIN_FREE"
           test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"
@@ -3390,5 +3377,6 @@ jobs:
           rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
           rm -f "$HOME/.ssh/porota_rc6_deploy"
           echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"
+
 
 

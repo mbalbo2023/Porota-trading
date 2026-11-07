@@ -14,9 +14,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 from pathlib import Path
+import re
+import signal
 import subprocess
 import sys
 import tempfile
+from threading import Thread
 import time
 
 import yaml
@@ -25,23 +28,143 @@ from scripts import rc6_ci_shard_quorum as shards
 from scripts.rc6_ci_junit_quorum import JunitQuorumRed, verify_parallel
 
 
+OUTPUT_TAIL_LIMIT = 128 * 1024  # Per stream, per process; never spool unbounded test logs.
+
+
 class ParallelRunnerRed(ValueError):
     """Missing, inconsistent or unsuccessful offline pytest evidence."""
+
+    def __init__(self, message: str = "RC6_PARALLEL_RUNNER_RED",
+                 diagnostic: dict | None = None):
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 def _red() -> None:
     raise ParallelRunnerRed("RC6_PARALLEL_RUNNER_RED")
 
 
+def _sanitized_timeout_trace(raw: str | bytes | None) -> dict:
+    """Retain bounded source frame labels, never runner paths or test output."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        raw = ""
+    frames = []
+    for match in re.finditer(r'File "([^"\n]+)", line ([0-9]{1,7}) in ([A-Za-z_<>][A-Za-z0-9_<>]{0,79})',
+                             raw):
+        path = match.group(1).replace("\\", "/")
+        filename = path.rsplit("/", 1)[-1]
+        if (not any(segment in path for segment in ("/tests/", "/scripts/")) or
+                re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}[.]py", filename) is None):
+            filename = "external.py"
+        frames.append({"file": filename, "line": int(match.group(2)),
+                       "function": match.group(3)})
+        if len(frames) >= 16:
+            break
+    return {"faulthandler_seen": "Timeout (" in raw, "frames": frames}
+
+
+def _pytest_argv(python: str, args: list[str], *,
+                 trace_after: int | float = 420) -> list[str]:
+    """Run pytest via its normal main() with a bounded stack-only timer."""
+    if (not isinstance(trace_after, (int, float)) or
+            not 0 < trace_after <= 3600):
+        _red()
+    bootstrap = (
+        "import faulthandler,sys;"
+        f"faulthandler.dump_traceback_later({trace_after!r},repeat=False,file=sys.stderr);"
+        "import pytest;"
+        "raise SystemExit(pytest.main(sys.argv[1:]))"
+    )
+    return [python, "-c", bootstrap, *args]
+
+
 def _invoke(argv: list[str], *, cwd: Path, env: dict,
             timeout: int = 3600) -> subprocess.CompletedProcess:
-    # Captured stdout/stderr are never printed or returned: private test
-    # failures may accidentally contain identifiers or host-sensitive values.
+    # Drain both OS pipes concurrently into bounded in-memory tails. PIPE +
+    # communicate() captures unbounded pytest output in RAM, potentially OOM
+    # before the subprocess timeout ever fires. Never print raw private logs.
     try:
-        return subprocess.run(argv, cwd=cwd, env=env, capture_output=True,
-                              text=True, timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+        process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   start_new_session=True)
+    except OSError:
         _red()
+    buffers = [bytearray(), bytearray()]
+    read_errors = []
+
+    def drain(stream, tail: bytearray) -> None:
+        try:
+            while True:
+                chunk = stream.read(65536)
+                if not chunk:
+                    break
+                tail.extend(chunk)
+                if len(tail) > OUTPUT_TAIL_LIMIT:
+                    del tail[:-OUTPUT_TAIL_LIMIT]
+        except OSError:
+            read_errors.append(True)
+        finally:
+            stream.close()
+
+    threads = [Thread(target=drain, args=(stream, tail), daemon=True)
+               for stream, tail in zip((process.stdout, process.stderr), buffers)]
+    for thread in threads:
+        thread.start()
+    deadline = time.monotonic() + timeout
+    timed_out = False
+    try:
+        try:
+            process.wait(timeout=max(0, deadline - time.monotonic()))
+            for thread in threads:
+                thread.join(timeout=max(0, deadline - time.monotonic()))
+            timed_out = any(thread.is_alive() for thread in threads)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        if not timed_out:
+            if read_errors:
+                _red()
+            return subprocess.CompletedProcess(
+                argv, process.returncode,
+                buffers[0].decode("utf-8", errors="replace"),
+                buffers[1].decode("utf-8", errors="replace"))
+
+        # Parent exit with descendant still holding pipes counts as timeout,
+        # as does a live parent: both need the entire owned process group gone.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        for thread in threads:
+            thread.join(timeout=2)
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            _red()
+        if any(thread.is_alive() for thread in threads):
+            _red()  # Even cleanup did not establish a bounded terminal state.
+        raise ParallelRunnerRed(diagnostic=_sanitized_timeout_trace(bytes(buffers[1])))
+    finally:
+        # If an unforeseen reader/wait error escaped, never leave the owned
+        # pytest process alive in the CI runner.
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
 
 
 def _verify_checkout(repo: Path, candidate_sha: str, source_tree_sha: str) -> None:
@@ -114,9 +237,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         temp_dir = Path(temp)
         collected = temp_dir / "collected.json"
         collect_env = {**env_base, "RC6_CI_MANIFEST_PATH": str(collected)}
-        collect = _invoke([python, "-m", "pytest", *plugin,
-                           "--collect-only", "-q", *args],
-                          cwd=repo, env=collect_env)
+        collect = _invoke(_pytest_argv(python, [*plugin, "--collect-only", "-q", *args]),
+                          cwd=repo, env=collect_env, timeout=180)
         if collect.returncode != 0 or not collected.is_file() or collected.is_symlink():
             _red()
         try:
@@ -137,10 +259,10 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             xml_path = runner_dir / "junit.xml"
             isolated_base = runner_dir / "basetemp"
             env = {**env_base, "RC6_CI_MANIFEST_PATH": str(executed)}
-            result = _invoke([python, "-m", "pytest", *plugin, "-q",
-                              "-o", "xfail_strict=true",
-                              f"--junitxml={xml_path}", f"--basetemp={isolated_base}",
-                              "--", *groups[i]], cwd=repo, env=env)
+            result = _invoke(_pytest_argv(python, [*plugin, "-q", "--durations=20",
+                              "-o", "xfail_strict=true", f"--junitxml={xml_path}",
+                              f"--basetemp={isolated_base}", "--", *groups[i]]),
+                             cwd=repo, env=env, timeout=720)
             if not executed.is_file() or executed.is_symlink():
                 _red()
             try:
@@ -181,7 +303,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         proof = run(args.source_sha, args.source_tree_sha, repo=args.repo,
                     shard_count=args.shards, output_junit=args.output_junit)
-    except (ParallelRunnerRed, OSError, ValueError):
+    except ParallelRunnerRed as exc:
+        if exc.diagnostic is not None:
+            print("RC6_PARALLEL_TIMEOUT_DIAG=" + json.dumps(
+                exc.diagnostic, separators=(",", ":"), sort_keys=True), file=sys.stderr)
+        print("RC6_PARALLEL_PILOT=RED|automatic_go=NO", file=sys.stderr)
+        return 2
+    except (OSError, ValueError):
         print("RC6_PARALLEL_PILOT=RED|automatic_go=NO", file=sys.stderr)
         return 2
     print("RC6_PARALLEL_PILOT=" + json.dumps(proof, separators=(",", ":"), sort_keys=True))

@@ -127,7 +127,7 @@ code{white-space:normal;overflow-wrap:anywhere}.legacy-shell{background:transpar
 </style>"""
 
 MODE_INFO = {
-    "PRODUCTION_PAPER": ("MODO SIMULACIÓN PRODUCTIVA", "PPI Producción solo lectura; compras y ventas simuladas; órdenes reales: NINGUNA."),
+    "PRODUCTION_PAPER": ("MODO SIMULACIÓN PRODUCTIVA", "PPI Producción solo lectura; compras y ventas simuladas; órdenes reales: estado actual NO_VERIFICADO sin recibo externo vinculado."),
     "SANDBOX": ("MODO SANDBOX", "PPI Sandbox; únicamente operaciones del entorno de pruebas."),
     "PRODUCTION_REAL": ("ESTADO INVÁLIDO — PRODUCCIÓN REAL BLOQUEADA", "Por política permanente, Porota nunca puede enviar órdenes con dinero real."),
     "DETENIDO": ("PLATAFORMA DETENIDA", "Dashboard disponible; ningún motor de trading está activo."),
@@ -312,6 +312,16 @@ def _card(title, value, detail, state="gray", value_class=""):
     state = state if state in {"green","red","yellow","gray"} else "gray"
     visible_value = _locale_number(value, 0) if isinstance(value, int) and not isinstance(value, bool) else value
     return f"<div class='paper-card card-{state}'>{_e(title)}<br><b class='metric {value_class}'>{_e(visible_value)}</b><br><span class='paper-muted'>{_e(detail)}</span></div>"
+
+
+def _real_orders_local_card(value):
+    """Reuse the trader-terminal guard; SQLite zero is not a runtime receipt."""
+    from rc6_trader_dashboard.shell import _real_order_receipt
+
+    status, alert = _real_order_receipt({"real_orders_sent": value})
+    return _card("Órdenes reales", status,
+                 alert or "Lectura de BD local; no acredita órdenes reales externas ni runtime.",
+                 "red" if alert else "yellow")
 
 
 def _fresh(value, seconds=180):
@@ -1072,7 +1082,6 @@ def home_page():
             f"Patrimonio paper {currency}", _amount(value, currency) if ready else "s/d",
             f"Capital ficticio inicial {_amount(initial,currency)}; caja independiente",
             "gray" if not ready else "green" if value >= initial else "red"))
-    real_orders = int(state.get("real_orders_sent") or 0)
     cards = "".join((
         _card("Estado general", overall_label,
               ((f"{red} fuentes en rojo; {pending} pendientes/degradadas. " + pending_detail)
@@ -1090,8 +1099,7 @@ def home_page():
               "green" if state.get("ppi_auth") == "OK" else "yellow"
               if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
         *balance_cards,
-        _card("Órdenes reales", real_orders, "Debe permanecer siempre en cero",
-              "green" if real_orders == 0 else "red"),
+        _real_orders_local_card(state.get("real_orders_sent")),
     ))
     body = (f"<h1>Panel ejecutivo — Porota Trading {VERSION}</h1>"
             "<div class='paper-warning'><b>Ejecución exclusivamente simulada.</b> "
@@ -1276,7 +1284,7 @@ def scalping_page():
       _card("EOD / Max Hold",scalping_truth.get('exit_supervisor_state','NOT_STARTED'),
             f"{scalping_truth.get('eod_policy')} · Max Hold {scalping_truth.get('max_hold_minutes',0)} min · {_local_time(scalping_truth.get('exit_supervisor_heartbeat_at'))}",
             "green" if scalping_truth.get('exit_supervisor_state')=='RUNNING' else "yellow"),
-      _card("Órdenes reales",canonical_truth['runtime'].get("real_orders_sent",0),"Autoridad: observer_state; debe ser siempre cero","green" if canonical_truth['runtime'].get("real_orders_sent",0)==0 else "red"),
+      _real_orders_local_card(canonical_truth['runtime'].get("real_orders_sent")),
     ))
     scalp_rows="".join(f"<tr><td>{_local_time(p['opened_at'])}</td><td>{_e(p['symbol'])}</td><td>{_e(p['currency'])}</td><td>{_status(p['status'])}</td><td>{_e(p['quantity'])}</td><td>{_result_amount(p.get('net_pnl'), p.get('currency'))}</td><td>{_e(p.get('close_reason'))}</td></tr>" for p in scalp_positions) or "<tr><td colspan='7'>Todavía no hubo fills scalping PAPER.</td></tr>"
     execution_notice=("<div class='paper-warning'><b>DESACTIVADO:</b> scalping no está disponible con el universo READY actual. No se generan candidatos ni fills scalping.</div>"
@@ -2437,7 +2445,7 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
       _card('Operaciones abiertas',len(positions),'Lo primero de /vivo: dinero PAPER y marks actuales','green' if positions else 'gray'),
       _card('Cerradas hoy',closed_total,f'{closed_total} disponibles; 10 visibles por tanda','green' if closed_total else 'gray'),
       _card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
-      _card('Órdenes reales',state.get('real_orders_sent',0),'Invariante permanente: cero','green' if state.get('real_orders_sent',0)==0 else 'red'),
+      _real_orders_local_card(state.get('real_orders_sent')),
     ))
     freshness=("<div class='paper-notice' aria-label='Freshness de En vivo'><b>Timestamps y freshness:</b> "
                f"vista generada {_local_time(now.isoformat())} · heartbeat {_local_time(state.get('heartbeat_at'))} · "
@@ -2966,8 +2974,7 @@ def introspection_content():
               "Ledger PAPER · rueda ART", "gray"),
         _card("PnL neto hoy · ARS", _amount(trading['net_pnl_today'],'ARS') if trading.get('net_pnl_today') is not None else "—",
               "Resultado PAPER · moneda ARS", _result_card_state(trading.get('net_pnl_today'))),
-        _card("Órdenes reales", observer.get("real_orders_sent",0), "Invariante permanente: cero",
-              "green" if int(observer.get("real_orders_sent") or 0)==0 else "red"),
+        _real_orders_local_card(observer.get("real_orders_sent")),
         _card("Históricos", f"{ingestion.get('instruments',0)} instrumentos / {ingestion.get('rows',0)} filas",
               f"Última descarga {_local_time(ingestion.get('last_download'))}", "yellow" if int(ingestion.get('instruments') or 0)<243 else "green"),
         _card("Disco", f"{storage.get('filesystem_used_pct','—')}% usado",

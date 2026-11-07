@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 import pytest
 
@@ -84,7 +85,7 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
-    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.paper_page(compact=True)
@@ -94,13 +95,22 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     assert page.count("id='porota-canonical-nav'") == 1
     assert page.count("id='porota-paper-mode'") == 1
     assert "MODO SIMULACIÓN PRODUCTIVA" in page
-    assert "órdenes reales: NINGUNA" in page
+    assert "órdenes reales: NINGUNA" not in page
+    assert "NO_VERIFICADO" in page
     assert "Esperando tu autorización" not in page
     assert "Te mandé el pedido por Telegram" not in page
     assert "Telegram" in health
     assert "Último reporte" in health
     assert "PPI Sandbox" in health
     assert "OPENBYMADATA" in health
+    with store.connect() as connection:
+        connection.execute("UPDATE observer_state SET real_orders_sent=2 WHERE id=1")
+    # The home-page card (not paper_page's mode-only banner) owns the
+    # canonical local counter; it must show a nonzero counter as critical.
+    with_positive = bg_paper_dashboard.home_page()
+    assert "real_orders_sent=2 · ALERTA" in with_positive
+    assert "card-red" in with_positive
+    assert "órdenes reales: NINGUNA" not in with_positive
 
 
 def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
@@ -150,7 +160,11 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         assert vivo.text.count("id='porota-canonical-nav'") == 1
         assert vivo.text.count("id='porota-paper-mode'") == 1
         assert "MODO SIMULACIÓN PRODUCTIVA" in vivo.text
-        assert "órdenes reales: NINGUNA" in vivo.text
+        # A newly created DB stores the default zero but has no observer
+        # heartbeat. This is historical data, NOT a fresh safety attestation.
+        assert "real_orders_sent=0 (último valor almacenado)" in vivo.text
+        assert "estado actual NO_VERIFICADO" in vivo.text
+        assert "órdenes reales: NINGUNA" not in vivo.text
         assert "R" * 40 not in vivo.text
         for path in ("/observacion", "/testing"):
             respuesta = cliente.get(path)
@@ -159,9 +173,39 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
             assert respuesta.text.count("id='porota-canonical-nav'") == 1
             assert respuesta.text.count("id='porota-paper-mode'") == 1
             assert "MODO SIMULACIÓN PRODUCTIVA" in respuesta.text
-            assert "órdenes reales: NINGUNA" in respuesta.text
+            assert "real_orders_sent=0 (último valor almacenado)" in respuesta.text
+            assert "estado actual NO_VERIFICADO" in respuesta.text
+            assert "órdenes reales: NINGUNA" not in respuesta.text
             assert "R" * 40 not in respuesta.text
             assert "Esperando tu autorización" not in respuesta.text
+
+        # Adversarial end-to-end proof: freshness is not provenance. A local
+        # SQLite write may forge a recent observer heartbeat while retaining
+        # zero real orders; it MUST NOT certify an external runtime fact.
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE observer_state SET heartbeat_at=?, real_orders_sent=0 WHERE id=1",
+                         (datetime.now(timezone.utc).isoformat(),))
+        for path in ("/vivo", "/observacion", "/testing"):
+            fresh = cliente.get(path)
+            assert fresh.status_code == 200
+            assert "real_orders_sent=0 (último valor almacenado)" in fresh.text
+            assert "BD local" in fresh.text
+            assert "estado actual NO_VERIFICADO" in fresh.text
+            assert "órdenes reales: NINGUNA" not in fresh.text
+            assert "R" * 40 not in fresh.text
+        # An observed local value >0 remains critical even with the same
+        # synthetic fresh heartbeat; never hide it behind the mode banner.
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE observer_state SET real_orders_sent=2 WHERE id=1")
+        for path in ("/vivo", "/observacion", "/testing"):
+            alert = cliente.get(path)
+            assert alert.status_code == 200
+            assert "real_orders_sent=2 · ALERTA" in alert.text
+            assert "contador de órdenes reales distinto de cero" in alert.text
+            assert "órdenes reales: NINGUNA" not in alert.text
+            assert "R" * 40 not in alert.text
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE observer_state SET real_orders_sent=0 WHERE id=1")
         history = cliente.get('/api/paper/caucion-allocations')
         assert history.status_code == 200
         assert history.json()['state'] == 'EMPTY'
@@ -189,6 +233,47 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
     # /vivo y /testing usan el renderer canónico directamente después de
     # autenticación; no ejecutan el handler legacy sólo para descartar su HTML.
     assert consultas == []
+
+
+def test_real_order_receipt_fresh_stale_and_malformed_fail_closed():
+    from rc6_trader_dashboard.shell import _real_order_receipt
+
+    base = dict(real_orders_sent=0, heartbeat_at="2026-11-06T15:00:00Z",
+                heartbeat_age=1.0, heartbeat_budget_seconds=75,
+                heartbeat_freshness="FRESH")
+    for variants in ({}, {"heartbeat_freshness": "STALE", "heartbeat_age": 130},
+                     {"heartbeat_at": None, "heartbeat_age": None},
+                     {"heartbeat_freshness": "FRESH", "heartbeat_age": -1}):
+        status, warning = _real_order_receipt({**base, **variants})
+        assert "real_orders_sent=0 (último valor almacenado)" in status
+        assert "BD local" in status and "NO_VERIFICADO" in status
+        assert "NINGUNA" not in status
+        assert warning == ""
+    for bad in (None, False, "0", -1):
+        status, _ = _real_order_receipt({**base, "real_orders_sent": bad})
+        assert "real_orders_sent=NO_VERIFICADO" in status
+        assert "NINGUNA" not in status
+    status, warning = _real_order_receipt({**base, "real_orders_sent": 2})
+    assert "real_orders_sent=2 · ALERTA" in status
+    assert "Alerta de seguridad" in warning
+
+
+def test_legacy_dashboard_zero_card_and_mode_label_cannot_forge_runtime_receipt():
+    import bg_paper_dashboard as dashboard
+
+    label, explanation = dashboard.MODE_INFO["PRODUCTION_PAPER"]
+    assert label == "MODO SIMULACIÓN PRODUCTIVA"
+    assert "órdenes reales: NINGUNA" not in explanation
+    assert "NO_VERIFICADO" in explanation
+    for value in (0, None, False, "0", -1):
+        html = dashboard._real_orders_local_card(value)
+        assert "Órdenes reales" in html
+        assert "NO_VERIFICADO" in html
+        assert "NINGUNA" not in html
+        assert "card-green" not in html
+    positive = dashboard._real_orders_local_card(2)
+    assert "real_orders_sent=2" in positive
+    assert "ALERTA" in positive and "card-red" in positive
 
 
 def test_inyeccion_del_banner_es_idempotente(monkeypatch):

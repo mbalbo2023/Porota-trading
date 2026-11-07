@@ -62,15 +62,27 @@ def _trend(closes, span):
 
 def history_session_quality(days, q, at):
     """Only audited quote-market sessions; CEDEAR quotes use BYMA, not US."""
+    # A naive datetime would be interpreted in the host's timezone by
+    # astimezone(), silently shifting the ART date/EOD floor. No source day
+    # may become expected or READY from an unaudited wall-clock.
+    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+        return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
     import ak_byma_calendar as calendar
     from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
-    from co_market_sessions_hf6 import session_for, TZ
-    session = session_for(q.market, q.asset_class)
+    from co_market_sessions_hf6 import (session_for, TZ,
+                                        byma_eod_publication_floor)
+    # The generic BYMA session closes at 17:00, but exact equity T+1
+    # continues through 18:00.  Never infer the clock from family alone.
+    session = session_for(q.market, q.asset_class,
+                          getattr(q, "settlement", None), as_of=at)
     local = at.astimezone(TZ)
     if q.market != "BYMA" or session is None or local.year not in calendar.ANIOS_AUDITADOS:
         return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
     expected = local.date()
-    if local.time().replace(tzinfo=None) < session.regular_close:
+    # A trading close is not proof a daily source row was published.  Use the
+    # audited common floor, even on 06-Nov T+1 SOURCE_ONLY (no settlement),
+    # and leave actual provider evidence to separate readiness checks.
+    if local < byma_eod_publication_floor(local):
         expected -= timedelta(days=1)
     required = []
     for _ in range(90):

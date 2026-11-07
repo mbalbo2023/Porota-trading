@@ -98,13 +98,26 @@ def partition(data: dict, count: int) -> list[list[str]]:
     m = _validate_manifest(data)
     if type(count) is not int or not 1 <= count <= min(16, m["discovered"]):
         _red()
-    # Stable hashing spreads expensive files while round-robin guarantees no
-    # empty shard.  Nodeid test costs are unknown until measured in Actions.
-    ordered = sorted(m["nodeids"], key=lambda item:
-                     (hashlib.sha256(item.encode("utf-8")).digest(), item))
+    # Keep every parameterized case from one test module in the same process:
+    # spreading node IDs across workers can race shared module/SQLite state.
+    # Load-balancing is by collected case count; runtime costs remain unknown
+    # until measured in Actions. Never invent empty shard receipts.
+    by_file: dict[str, list[str]] = {}
+    for nodeid in m["nodeids"]:
+        path = nodeid.split("::", 1)[0]
+        by_file.setdefault(path, []).append(nodeid)
+    if len(by_file) < count:
+        _red()
+    ordered_files = sorted(
+        by_file.items(),
+        key=lambda pair: (-len(pair[1]),
+                          hashlib.sha256(pair[0].encode("utf-8")).digest(),
+                          pair[0]),
+    )
     groups = [[] for _ in range(count)]
-    for index, item in enumerate(ordered):
-        groups[index % count].append(item)
+    for _, nodeids in ordered_files:
+        shard_index = min(range(count), key=lambda index: (len(groups[index]), index))
+        groups[shard_index].extend(nodeids)
     return [sorted(part) for part in groups]
 
 

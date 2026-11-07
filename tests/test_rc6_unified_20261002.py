@@ -20,12 +20,16 @@ from be_paper_engine import PaperBroker, PaperStore
 NOW = datetime(2026, 10, 2, 16, 45, tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
 
 
-def ready_store(tmp_path, monkeypatch):
+def ready_store(tmp_path, monkeypatch, *, provider_settlement=True):
     store = PaperStore(str(tmp_path / "synthetic-unified.db"))
     observer._support_schema(store)
     raw = {"ticker": "PESOS7", "description": "SYNTHETIC PESOS 7", "currency": "Pesos",
            "type": "CAUCIONES", "market": "BYMA", "nominalInPrice": 1,
            "_provider_instrument_type": "CAUCIONES", "_discovery_source": "PPI_PRIMARY"}
+    if provider_settlement:
+        # A request settlement hint is not a provider-attested fifth key.
+        # The positive PAPER fixture must make this literal provider data.
+        raw["settlement"] = "INMEDIATA"
     primary = catalog.normalize_record(raw, "INMEDIATA", NOW.isoformat(), "fixture-only")
     with store.connect() as connection:
         catalog.persist(connection, primary)
@@ -50,8 +54,23 @@ def ready_store(tmp_path, monkeypatch):
     result = live.refresh(ReadOnlyFixture(), store, now=NOW, clock_fn=lambda: NOW)
     assert result["ready"] == 1 and result["real_routes"] == []
     offers, errors = sweep.offers_from_store(store, now=NOW)
-    assert len(offers) == 1 and not errors
+    if provider_settlement:
+        assert len(offers) == 1 and not errors
+    else:
+        assert offers == [] and errors == ["PESOS7:CAUCION_STATIC_POLICY_NOT_READY"]
     return store
+
+
+def test_request_only_settlement_cannot_mint_ready_paper_caucion(tmp_path, monkeypatch):
+    # The dynamic bid may be fresh, but it cannot upgrade an unbound PPI
+    # identity just because SearchInstrument was called with INMEDIATA.
+    store = ready_store(tmp_path, monkeypatch, provider_settlement=False)
+    with store.connect() as connection:
+        record = connection.execute(
+            "SELECT settlement_source,capability FROM financial_instrument_catalog "
+            "WHERE ticker='PESOS7'").fetchone()
+    assert record["settlement_source"] == "REQUEST_CANDIDATE"
+    assert record["capability"] == "NEEDS_CAUCION_TERMS"
 
 
 def append_change(store, *, material):
