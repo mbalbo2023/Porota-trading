@@ -10,6 +10,9 @@ from ppi_synthetic_budget_fixtures import SyntheticWireLease
 
 @pytest.fixture
 def sdk(monkeypatch):
+    # These injected in-memory SDKs never authenticate/connect a provider.
+    # Keep lifecycle tests independent of the live authentication HOLD.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     state = {"calls": [], "login": lambda: None, "current": lambda: 42,
              "stream": lambda: None}
     class FakePPI:

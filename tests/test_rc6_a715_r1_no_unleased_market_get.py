@@ -124,13 +124,13 @@ def test_r1_backpressure_never_reaches_provider_adapter(fake_wire, allowed, erro
         guard.restore()
 
 
-def test_r1_login_route_remains_readonly_auth_post_without_budget(fake_wire):
+def test_r1_login_route_without_auth_authority_never_reaches_wire(fake_wire):
     guard = ReadOnlyTransportGuard(budget=None, consumer="SCANNER").install()
     try:
-        response = requests.post(PPI_HOST + "/api/1.0/account/loginapi")
-        assert response.status_code == 200
-        assert fake_wire == [("POST", PPI_HOST + "/api/1.0/account/loginapi")]
-        assert guard.login_calls == 1
+        with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+            requests.post(PPI_HOST + "/api/1.0/account/loginapi")
+        assert fake_wire == []
+        assert guard.login_calls == 0
     finally:
         guard.restore()
 

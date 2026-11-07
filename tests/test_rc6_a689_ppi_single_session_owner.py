@@ -70,6 +70,8 @@ class FakeRealtime:
 
 @pytest.fixture
 def harness(monkeypatch):
+    # Synthetic SDK/HTTP/socket fixture only, never external auth authority.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
     counts = {"clients": 0, "logins": 0, "gets": 0, "connect_attempts": 0}
     native_book = {
         "date": (datetime.now(timezone.utc) - timedelta(milliseconds=100))

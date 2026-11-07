@@ -1,7 +1,7 @@
 """Barrera HTTP fail-closed para observacion de mercado PPI Produccion.
 
-Este modulo no conoce ordenes ni cuentas. Solo permite autenticacion y datos
-de mercado contra el host productivo exacto. Cualquier ruta no enumerada se
+Este modulo no conoce ordenes ni cuentas. Los datos de mercado requieren su
+lease; autenticacion queda HOLD hasta autoridad independiente. Toda otra ruta se
 rechaza antes de que requests entregue el paquete al adaptador de red.
 """
 
@@ -147,6 +147,17 @@ def caucion_discovery_days(raw: str | None = None) -> tuple[int, ...]:
 
 class ReadOnlyPolicyViolation(RuntimeError):
     """La solicitud fue bloqueada localmente; no salio a la red."""
+
+
+def require_ppi_authentication_authority():
+    """Fail closed: no independently verified authentication lease exists.
+
+    Login/refresh and websocket token factories are not Current/Book/Intraday.
+    The existing market budget and local cooldown cannot authorize them.
+    No environment switch or arbitrary injected boolean unlocks this gate.
+    Offline PAPER calculation/storage does not invoke this live-SDK boundary.
+    """
+    raise ReadOnlyPolicyViolation("PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED")
 
 
 class ProductionAuthResponseError(RuntimeError):
@@ -353,6 +364,9 @@ class ReadOnlyTransportGuard:
             raise ReadOnlyPolicyViolation(
                 f"Ruta bloqueada por politica de solo lectura: {method} {path}"
             )
+
+        if method == "POST" and path in _POST_PATHS:
+            require_ppi_authentication_authority()
 
         with self._lock:
             if count_login and path == "/api/1.0/account/loginapi":
@@ -639,6 +653,7 @@ class ProductionMarketReader:
             if self.__closed:
                 raise ReadOnlyPolicyViolation("PPI_READER_CLOSED")
             if stream:
+                require_ppi_authentication_authority()
                 self.__stream_invoked = True
             # Reuse HTTP custody, so restore cannot release it between SDK
             # preparation/parsing and the actual guarded HTTP wire call.
@@ -685,6 +700,7 @@ class ProductionMarketReader:
             self._login_once()
 
     def _login_once(self) -> None:
+        require_ppi_authentication_authority()
         if self.__authenticated:
             return
         from ppi_client.ppi import PPI

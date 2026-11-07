@@ -7,6 +7,13 @@ import requests
 from bd_ppi_readonly_guard import ReadOnlyTransportGuard, ReadOnlyPolicyViolation
 
 
+@pytest.fixture(autouse=True)
+def synthetic_http_only(monkeypatch):
+    # All allowed transports in this file are in-memory fakes. This does not
+    # attest an external auth lease and cannot enable the live application.
+    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
+
+
 @pytest.mark.parametrize("child_first", [False, True])
 def test_second_guard_cannot_replace_global_hooks(child_first):
     class Child(ReadOnlyTransportGuard):

@@ -329,6 +329,8 @@ class PPIRealTimeClient:
 
     def _suscribir(self, Instrument, lista) -> tuple:
         """Suscribe una lista y devuelve (cuántas entraron, cuáles fallaron)."""
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         ok, fallidas = 0, []
         for ticker, instrument_type, settlement in lista:
             try:
@@ -402,6 +404,8 @@ class PPIRealTimeClient:
 
     # ---------------- ciclo de vida ---------------- #
     def _run(self):
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         intento = 0
         while not self._stop.is_set():
             if not getattr(self.ppi_client, "is_authenticated", lambda: False)():
@@ -507,6 +511,8 @@ class PPIRealTimeClient:
         if not STREAM_ENABLED:
             logger.info("PPI_STREAM_ENABLED=false — se usa polling HTTP para todo.")
             return
+        from bd_ppi_readonly_guard import require_ppi_authentication_authority
+        require_ppi_authentication_authority()
         if (not self.ppi_client or
                 not getattr(self.ppi_client, "is_authenticated", lambda: False)()):
             logger.warning("Cliente PPI no autenticado — el stream de tiempo real no arranca.")
