@@ -102,6 +102,27 @@ def test_history_requires_nov6_t1_without_inventing_c1_session():
     assert "2026-11-06" not in required_ci
 
 
+@pytest.mark.parametrize("day,hour,minute,expected", [
+    (6, 17, 30, "2026-11-05"),
+    (6, 18, 10, "2026-11-05"),
+    (6, 18, 15, "2026-11-06"),
+    (9, 12, 0, "2026-11-06"),
+    (10, 12, 0, "2026-11-06"),
+    (11, 17, 0, "2026-11-06"),
+    (11, 17, 30, "2026-11-06"),
+    (11, 18, 10, "2026-11-06"),
+    (11, 18, 15, "2026-11-11"),
+])
+def test_t1_historical_expected_session_respects_exact_close_and_eod_floor(
+        day, hour, minute, expected):
+    """The EOD time is only a minimum, not a verified provider receipt."""
+    at = datetime(2026, 11, day, hour, minute, tzinfo=ART)
+    t1 = SimpleNamespace(market="BYMA", asset_class="ACCIONES", settlement="A-24HS")
+    result = history_session_quality([], t1, at)
+    assert result["expected_last_session"] == expected
+    assert result["state"] == "HISTORY_GAPS"  # no data/source receipt was supplied
+
+
 def test_ordinary_regular_paper_calendar_is_unchanged():
     day = date(2026, 11, 5)
     assert calendar.es_dia_habil_operativo(day) is True
