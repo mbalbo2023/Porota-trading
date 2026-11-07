@@ -544,6 +544,12 @@ class SanitizerRegressions(unittest.TestCase):
                 receipt = self._receipt()
                 receipt["oci_provenance_unverified_count"] = count
                 receipt["apply_hold"] = hold
+                if hold == "NONE":
+                    # Isolate the new OCI consistency guard: all unrelated
+                    # book/PAPER evidence is otherwise valid.
+                    receipt["book_state"] = "VERIFIED_CLOSED_FLAT"
+                    receipt["book_closed_flat"] = True
+                    receipt["paper_zero_receipts"] = True
                 code, data, output = self._sanitize(receipt)
                 self.assertEqual(code, 2)
                 self.assertEqual(data["state"], "NO_VERIFICADO")
