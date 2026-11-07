@@ -413,12 +413,24 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python scripts/porota_validate_deploy_artifact.py             --repo-root .             --artifact-root /tmp/porota-predeploy-app             --manifest-out /tmp/porota-artifact-manifest.json
+          # Committed Git blobs are the image byte authority; labels, image
+          # self-hashes and a clean build log alone cannot establish it.
+          python scripts/porota_validate_deploy_artifact.py \
+            --repo-root . \
+            --artifact-root /tmp/porota-predeploy-app \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --manifest-out /tmp/porota-artifact-manifest.json
           python - <<'PY'
-          import json
+          import json, os
           p='/tmp/porota-artifact-manifest.json'
           x=json.load(open(p,encoding='utf-8'))
           assert x['status']=='GREEN'
+          assert x['source_image_provenance']['status']=='GREEN', 'GIT_BLOB_IMAGE_BYTES_NOT_PROVEN'
+          assert x['source_image_provenance']['candidate_sha'] == os.environ['CANDIDATE_SHA']
+          assert x['source_image_provenance']['verified_tracked_image_files'] > 0
+          print('POROTA_IMAGE_GIT_BLOB_PROVENANCE=GREEN|' +
+                x['source_image_provenance']['candidate_sha'] + '|' +
+                str(x['source_image_provenance']['verified_tracked_image_files']))
           print('POROTA_ARTIFACT_FILES=' + str(x['artifact_runtime_files']))
           print('POROTA_ARTIFACT_MISSING=' + str(len(x['missing_runtime_files'])))
           print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))
