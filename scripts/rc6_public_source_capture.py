@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from rc6_source_consolidation import collect_public_sources
+from scripts.rc6_source_safe_atomic import publish_json
 
 
 def capture(output: str | Path) -> dict:
@@ -24,14 +25,8 @@ def capture(output: str | Path) -> dict:
     """
     result = collect_public_sources()
     target = Path(output)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(target.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(result, ensure_ascii=False, sort_keys=True),
-        encoding="utf-8",
-    )
-    os.chmod(temporary, 0o644)
-    temporary.replace(target)
+    publish_json(target, result, allowed_parent=Path(os.getenv(
+        "POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market")))
     return result
 
 

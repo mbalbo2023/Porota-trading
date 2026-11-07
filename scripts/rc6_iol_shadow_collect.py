@@ -22,6 +22,7 @@ from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call
                                       is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
 from rc6_source_consolidation import consolidate
+from scripts.rc6_source_safe_atomic import publish_json
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
@@ -69,11 +70,7 @@ class LateNoOAuthRefreshMCP(OAuthStoreReadOnlyMCP):
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    os.chmod(temporary, 0o644)
-    temporary.replace(path)
+    publish_json(path, value, allowed_parent=DEFAULT_ROOT)
 
 
 AUDIT_FAMILIES = frozenset({
