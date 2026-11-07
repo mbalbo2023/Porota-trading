@@ -67,6 +67,25 @@ class SourceCycleBlocked(ValueError):
     """An unproven clock, state, identity or safety condition fails closed."""
 
 
+def source_t1_diagnostic_status(instant: datetime, *, market: str,
+                                family: str, settlement: str) -> tuple[bool, str]:
+    """Opt-in calendar guard, not wired to the existing broad source cycle.
+
+    The old cycle has no exact instrument identity; relaxing its blanket
+    calendar check on a no-settlement day could accidentally fetch CI, caucion
+    or unsupported markets. This pure guard authorizes no provider request.
+    """
+    try:
+        from co_market_sessions_hf6 import byma_source_only_limited_phase
+        state = byma_source_only_limited_phase(
+            market, family, settlement, instant)
+    except (AttributeError, KeyError, TypeError, ValueError, OSError):
+        state = "CLOSED"
+    if state == "SOURCE_ONLY_OPEN":
+        return True, "LIMITED_T1_SOURCE_ONLY"
+    return False, "LIMITED_T1_NOT_ELIGIBLE"
+
+
 def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
     """Check an audited Argentine trading day before scheduling external work.
 
