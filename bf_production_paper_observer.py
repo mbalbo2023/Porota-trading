@@ -31,6 +31,7 @@ from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
 from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
 from rc6_paper_admission_gate import paper_admission_guard
+from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
@@ -1330,6 +1331,10 @@ def _cycle_plan(store, focus_candidates=None):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
     universe = list(_eligible_symbols(store))
+    # Keep the complete catalog for offline coverage, but do not spend lower
+    # Current/Book leases on ETF while operator entry authority is held.
+    # Existing OPEN ETF positions below remain EXIT priority.
+    live_universe = [key for key in universe if not paper_entry_hold_reason(key[1])]
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
     with store.connect() as c:
@@ -1344,7 +1349,7 @@ def _cycle_plan(store, focus_candidates=None):
     cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * 2 * PPI_CALL_BUDGET_SECONDS
     at = now_iso()
     symbols, before, after, plan = sampling_plan(
-        universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
+        live_universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
         limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
         required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
         now=at, cursor=row[0] if row else 0, previous=previous)
@@ -1373,9 +1378,12 @@ def _approved_equity_selection(store, selected, baseline_plan):
         aliases.setdefault((key[0], key[1], key[4]), []).append(key)
     ready = {values[0] for values in aliases.values() if len(values) == 1}
     opened = set(selected["opened_priority"])
-    keys = [tuple(k) for k in selected["selected"] if tuple(k) in ready or tuple(k) in opened]
+    keys = [tuple(k) for k in selected["selected"]
+            if (tuple(k) in ready or tuple(k) in opened)
+            and (not paper_entry_hold_reason(k[1]) or tuple(k) in opened)]
     request = lambda k: (k[0], k[1], k[4])
-    entry = [request(k) for k in keys if k in selected["entry_identities"]]
+    entry = [request(k) for k in keys if k in selected["entry_identities"]
+             and not paper_entry_hold_reason(k[1])]
     scope = []
     for k in keys:
         row = selected["rows"][k]
