@@ -7,6 +7,10 @@ permissions:
   contents: write
 jobs:
   materialize:
+    # A681 shared-host freeze: historical materializer would write a script
+    # containing global `docker builder prune -f` to a legacy branch.
+    # Retain source for forensic evidence, but never execute or republish it.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

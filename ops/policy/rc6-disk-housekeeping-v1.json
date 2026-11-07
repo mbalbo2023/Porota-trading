@@ -23,11 +23,16 @@
   },
   "tmp": {
     "root": "/tmp",
-    "prefixes": [
-      "porota",
-      "rc6"
-    ],
+    "prefixes": [],
     "min_age_days": 7
+  },
+  "shared_host": {
+    "enabled": true,
+    "policy": "POROTA_ONLY_EXACT_MANIFEST",
+    "disk_housekeeping_destructive_cleanup_enabled": false,
+    "hostwide_apt_cleanup_allowed": false,
+    "hostwide_journal_vacuum_allowed": false,
+    "docker_cleanup": "EXACT_OWNED_CANDIDATE_TAGS_ONLY_WITH_ALL_CONTAINER_GUARD"
   },
   "backups": {
     "general": {
@@ -49,11 +54,12 @@
     "suspended": true
   },
   "journal": {
-    "max_bytes": 536870912
+    "max_bytes": 536870912,
+    "vacuum_enabled": false
   },
   "apt": {
-    "clean_cache": true,
-    "clean_lists": true
+    "clean_cache": false,
+    "clean_lists": false
   },
   "docker": {
     "cleanup_mode": "OBSERVE_ONLY",
@@ -71,8 +77,8 @@
     "swap_must_remain_untouched": true
   },
   "schedule": {
-    "daily_auto_utc": "30 23 * * *",
     "weekly_cleanup_utc": "00 14 * * 0",
-    "timezone_note": "America/Argentina/Buenos_Aires (ART = UTC-3)"
+    "timezone_note": "America/Argentina/Buenos_Aires (ART = UTC-3)",
+    "execution": "DISABLED_SHARED_HOST; historical UTC expressions do not create cron jobs"
   }
 }
