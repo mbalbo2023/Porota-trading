@@ -223,7 +223,7 @@ def full_catalog_replay(folder, *, required_generations=2, database=None, legacy
     from be_paper_engine import PaperStore
     from bf_production_paper_observer import _support_schema
     from cf_intraday_scalping import init_schema
-    from tests.test_rc6_shadow_runtime_wiring import PRE
+    from tests.test_rc6_shadow_runtime_wiring import PRE,_quiesce_fixture_source
     from rc6_shadow_runtime import worker as runtime
     from rc6_shadow_runtime.persistence import read_committed_generation
     from rc6_shadow_runtime.timing import generation_budget
@@ -247,7 +247,10 @@ def full_catalog_replay(folder, *, required_generations=2, database=None, legacy
                     'READY_PAPER_SPOT' if n<ready else 'NO_VERIFICADO','{}'))
         with store.connect() as connection:
             connection.executemany('INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',rows)
+        connection.close()  # Context manager commits but does not close sqlite3.Connection.
         del rows,store
+        # Finish only the disposable catalog seed before its source is frozen.
+        _quiesce_fixture_source(database)
     database=Path(database)
     if database.is_symlink() or database.stat().st_nlink!=1:raise ValueError('CADENCE_FIXTURE_IDENTITY_INVALID')
     database=database.resolve()
@@ -374,7 +377,7 @@ def session_replay(folder, *, minutes=405):
     from rc6_shadow_runtime.worker import ShadowRuntime
     from rc6_trader_dashboard.navigation import CANONICAL_PATHS
     from rc6_trader_dashboard.routes import build_page
-    from tests.test_rc6_shadow_runtime_wiring import make_store,quote,OPEN,PRE
+    from tests.test_rc6_shadow_runtime_wiring import make_store,quote,OPEN,PRE,_quiesce_fixture_source
     from bn_telegram_bus import OutboxWorker
     import bv_paper_runtime as runtime
     store,assets=make_store(folder,count=32)
@@ -393,6 +396,7 @@ def session_replay(folder, *, minutes=405):
         session_policy=broker.session_policy,max_hold_minutes=30)
     candles=SampleMaterializer(store)
     shadow=ShadowRuntime(store.path,evidence_root=folder/'shadow',source_roots=[],spool_audit=True)
+    _quiesce_fixture_source(store.path)
     shadow.tick(PRE)
     deliveries=[]
     def captured_transport(body):
@@ -430,6 +434,7 @@ def session_replay(folder, *, minutes=405):
             assert broker.allocate_conservative_caucion([],window,key,as_of=clock())==attempt
             treasury.append({'minute':minute,'status':attempt['status'],'code':attempt.get('code')})
         if minute%30==0:
+            _quiesce_fixture_source(store.path)
             cut=shadow.tick(now[0]+timedelta(seconds=1));cuts+=1
             assert cut['real_orders_sent']==0 and cut['real_routes']=='NOT_CALLED'
         if minute and minute%120==0:
@@ -465,6 +470,7 @@ def session_replay(folder, *, minutes=405):
     assert batches[-1]=='LOCAL_EOD_READY',batches[-1]
     repeated=consolidate(store.path,folder/'history.db',as_of=closed+timedelta(seconds=1),free_bytes=RESERVE)
     assert repeated['imported']==0
+    _quiesce_fixture_source(store.path)
     shadow.tick(closed+timedelta(seconds=1));shadow.tick(closed+timedelta(seconds=2));cuts+=2
     routes=[]
     for path in sorted(CANONICAL_PATHS):

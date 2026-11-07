@@ -323,7 +323,7 @@ def test_batched_checkpoint_uses_actual_bounded_records_and_exact_utf8(monkeypat
 
 
 def test_public_and_consumed_private_cuts_match_open_warmup_and_adverse_books(tmp_path, monkeypatch):
-    from tests.test_rc6_shadow_runtime_wiring import PRE, OPEN, make_store, quote, capacity_stub
+    from tests.test_rc6_shadow_runtime_wiring import PRE, OPEN, make_store, quote, capacity_stub, _quiesce_fixture_source
     from rc6_shadow_runtime.worker import ShadowRuntime
     from rc6_dynamic_universe import live
     from rc6_dynamic_universe.common import identity
@@ -336,6 +336,9 @@ def test_public_and_consumed_private_cuts_match_open_warmup_and_adverse_books(tm
     target = assets[-1]
     states = []
     def compare(at):
+        # Synthetic writers have finished; release their WAL handles before
+        # the immutable source snapshot (not a production-side checkpoint).
+        _quiesce_fixture_source(store.path)
         before, after = public.tick(at), private.tick(at)
         assert before['operational_funnel'] == after['operational_funnel']
         with public.files as a, private.files as b:
