@@ -63,6 +63,96 @@ jobs:
             'python3 -B - --expected-id 594077619 --expected-region nyc1' \
             < scripts/rc6_droplet_identity_guard.py
 
+      - name: Read only exact host UID Docker and stage capability flags
+        id: a205_host_scope_ro
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # No host mutation or privilege change. Never log UID, socket,
+          # image IDs, stage basename, mount paths or other apps' metadata.
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]{1,20}$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]{1,4}$ ]]
+          RESULT="$(timeout 40 ssh -i "$HOME/.ssh/rc6_a205_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "env RC6_A205_PROBE_SHA='$GITHUB_SHA' RC6_A205_PROBE_RUN='$GITHUB_RUN_ID' RC6_A205_PROBE_ATTEMPT='$GITHUB_RUN_ATTEMPT' python3 -B -" <<'A205_HOST_SCOPE_PY'
+          import json, os, re, stat, subprocess
+
+          sha = os.environ.get('RC6_A205_PROBE_SHA', '')
+          run_id = os.environ.get('RC6_A205_PROBE_RUN', '')
+          attempt = os.environ.get('RC6_A205_PROBE_ATTEMPT', '')
+          if (not re.fullmatch(r'[0-9a-f]{40}', sha) or
+                  not re.fullmatch(r'[0-9]{1,20}', run_id) or
+                  not re.fullmatch(r'[0-9]{1,4}', attempt)):
+              raise SystemExit('RC6_A205_HOST_SCOPE_INPUT_RED')
+
+          def readonly_docker_command(argv):
+              # `docker info` makes no image/container/volume change. Output
+              # is suppressed, including any foreign app/socket details.
+              try:
+                  result = subprocess.run(argv, stdin=subprocess.DEVNULL,
+                                          stdout=subprocess.DEVNULL,
+                                          stderr=subprocess.DEVNULL,
+                                          timeout=7, check=False)
+                  return 'YES' if result.returncode == 0 else 'UNKNOWN'
+              except (OSError, subprocess.TimeoutExpired):
+                  return 'UNKNOWN'
+
+          result = {
+              'contract': 'RC6_A205_HOST_SCOPE_READONLY_V1',
+              'read_only': True,
+              'host_mutations': 0,
+              'ssh_uid_nonroot': 'YES' if os.geteuid() != 0 else 'NO',
+              'tmp_root_sticky': 'UNKNOWN',
+              'do_user_docker_read': readonly_docker_command(['docker', 'info']),
+              # A readable daemon is NOT proof it is owned by Porota; never
+              # elevate privileges or inspect other apps to infer ownership.
+              'docker_daemon_owner_proven': 'UNKNOWN',
+              'exact_stage': 'UNKNOWN',
+              'same_uid_stage': 'UNKNOWN',
+              'root_attested_stage': 'UNKNOWN',
+              'docker_mutation_authorized': False,
+          }
+          try:
+              tmp = os.lstat('/tmp')
+              result['tmp_root_sticky'] = (
+                  'YES' if stat.S_ISDIR(tmp.st_mode) and tmp.st_uid == 0 and
+                      bool(tmp.st_mode & stat.S_ISVTX) else 'NO')
+          except OSError:
+              pass
+
+          # Only the exact Porota candidate attempt is inspected. Nothing
+          # under Boca, any other Docker app, or an unrelated /tmp basename.
+          stage = '/tmp/porota-deploy-v2-' + sha + '-' + run_id + '-' + attempt
+          try:
+              found = os.lstat(stage)  # no symlink traversal
+              result['exact_stage'] = 'PRESENT_UNVERIFIED'
+              result['same_uid_stage'] = ('YES' if found.st_uid == os.geteuid()
+                                          else 'NO')
+          except FileNotFoundError:
+              result['exact_stage'] = 'ABSENT'
+          except OSError:
+              pass
+          print(json.dumps(result, sort_keys=True, separators=(',', ':')))
+          A205_HOST_SCOPE_PY
+          )"
+          RESULT="$RESULT" python3 - <<'PY'
+          import json, os
+          value = json.loads(os.environ['RESULT'])
+          assert value['contract'] == 'RC6_A205_HOST_SCOPE_READONLY_V1'
+          assert value['read_only'] is True and value['host_mutations'] == 0
+          assert value['docker_mutation_authorized'] is False
+          assert value['root_attested_stage'] == 'UNKNOWN'
+          assert all(value[k] in {'YES','NO','UNKNOWN'} for k in (
+              'ssh_uid_nonroot','tmp_root_sticky','do_user_docker_read',
+              'docker_daemon_owner_proven','same_uid_stage'))
+          assert value['exact_stage'] in {'ABSENT','PRESENT_UNVERIFIED','UNKNOWN'}
+          print('RC6_A205_HOST_SCOPE_RO='+json.dumps(value,sort_keys=True,
+                                                    separators=(',',':')))
+          PY
+
       - name: Prove sudo inherited FD capability before host promotion
         shell: bash
         run: |
