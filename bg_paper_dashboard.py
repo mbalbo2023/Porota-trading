@@ -39,7 +39,8 @@ import er_dashboard_truth_projection_rc6 as dashboard_truth_projection
 from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
 # HF6_V2_HISTORY_DASHBOARD_PATCH
 from df_daily_operation_summary_hf6 import summarize as daily_operation_summaries
-from dg_dashboard_daily_result_ux_hf6 import daily_results_html, report_cards_html, RESPONSIVE_CSS
+from dg_dashboard_daily_result_ux_hf6 import (daily_results_html, report_cards_html,
+    report_has_content_provenance, LEGACY_REPORT_PROVENANCE_MISSING, RESPONSIVE_CSS)
 from dh_dashboard_compact_lists_hf6 import COMPACT_CSS, pager_html
 from ei_dashboard_table_accessibility_rc5 import TABLE_A11Y_CSS, TABLE_A11Y_SCRIPT
 import eb_dashboard_live_policy_hf2 as live_policy
@@ -2048,7 +2049,10 @@ def financial_page():
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
     try:
         monthly=_rows("""SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
-                                CAST(SUM(CAST(net_pnl AS REAL)) AS TEXT) pnl
+                                CASE WHEN SUM(CASE WHEN net_pnl IS NULL OR TRIM(net_pnl)=''
+                                                   THEN 1 ELSE 0 END) > 0
+                                     THEN NULL ELSE CAST(SUM(CAST(net_pnl AS REAL)) AS TEXT)
+                                END pnl
                          FROM paper_positions
                          WHERE upper(status)='CLOSED' AND COALESCE(currency,'ARS')='ARS'
                          GROUP BY substr(date(datetime(closed_at,'-3 hours')),1,7)
@@ -2059,7 +2063,7 @@ def financial_page():
         spot_state="UNAVAILABLE"
     ipc=_rows("SELECT substr(observed_date,1,7) month,value FROM financial_series WHERE indicator='IPC mensual INDEC' ORDER BY observed_date DESC LIMIT 24") if _table("financial_series") else []
     ipc_map={r['month']:r['value'] for r in ipc}
-    compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
+    compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{'NO_VERIFICADO' if r['pnl'] is None else _money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
     proxy = _porota_leaders_proxy()
     proxy_value = "s/d" if proxy["average"] is None else ("+" if proxy["average"]>0 else "")+_locale_number(proxy['average'],2)+"%"
     median_value = "s/d" if proxy["average"] is None else ("+" if proxy["median"]>0 else "")+_locale_number(proxy['median'],2)+"%"
@@ -3430,7 +3434,10 @@ def install(app,check_auth):
     def report_download(report_id:int,kind:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
         if kind not in {"pdf","ai"}: raise HTTPException(404,"Tipo no disponible")
-        rows=_rows("SELECT pdf_path,ai_path FROM report_registry WHERE id=?",(report_id,)); path=Path(rows[0]["pdf_path" if kind=="pdf" else "ai_path"]) if rows and rows[0].get("pdf_path" if kind=="pdf" else "ai_path") else None
+        rows=_rows("SELECT pdf_path,ai_path,state,detail FROM report_registry WHERE id=?",(report_id,))
+        if rows and not report_has_content_provenance(rows[0]):
+            raise HTTPException(409,LEGACY_REPORT_PROVENANCE_MISSING)
+        path=Path(rows[0]["pdf_path" if kind=="pdf" else "ai_path"]) if rows and rows[0].get("pdf_path" if kind=="pdf" else "ai_path") else None
         root=(artifact_root(DB_PATH) / 'reports').resolve()
         if not path or not path.resolve().is_relative_to(root) or not path.exists(): raise HTTPException(404,"Informe no disponible")
         return FileResponse(path,media_type="application/pdf" if kind=="pdf" else "application/json",filename=path.name)
