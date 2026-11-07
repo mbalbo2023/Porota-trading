@@ -85,7 +85,7 @@ def test_backup_plan_preserves_explicit_pin_beyond_three(tmp_path: Path) -> None
     assert pinned not in {Path(x.path).name for x in delete}
 
 
-def test_tmp_candidates_require_prefix_and_age(tmp_path: Path) -> None:
+def test_shared_host_rejects_prefix_only_tmp_ownership_even_when_aged(tmp_path: Path) -> None:
     import os
     now = time.time()
     old_porota = tmp_path / "porota-old"
@@ -104,7 +104,8 @@ def test_tmp_candidates_require_prefix_and_age(tmp_path: Path) -> None:
     p = json.loads(json.dumps(p))
     p["tmp"]["root"] = str(tmp_path)
     selected = {Path(x.path).name for x in tmp_candidates(p, now=now)}
-    assert selected == {"porota-old", "rc6-old"}
+    assert selected == set()
+    assert old_porota.exists() and old_rc6.exists()
 
 
 def test_disk_band_boundaries() -> None:

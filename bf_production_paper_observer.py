@@ -977,6 +977,35 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     return time.time()
 
 
+def _caucion_blocked_closed_catalog_tick(store, phase, last_attempt):
+    """Keep OFFHOURS catalog reconciliation independent of PAPER caucion fees.
+
+    An invalid caucion fee ledger must still block *every* new PAPER admission.
+    However, independent catalog/evidence publication is a local SQLite task:
+    no PPI reader, provider GET, orders or broker is passed to this function.
+    During OPEN and T+1 the writer remains forbidden. A failed CLOSED attempt
+    is throttled for the normal off-hours interval, including SQLITE_INTERRUPT,
+    and the ledger gate in the caller remains unchanged.
+    """
+    if phase != "CLOSED":
+        return last_attempt
+    try:
+        return _periodic_complementary_reconcile(store, phase, last_attempt)
+    except Exception as exc:
+        # Do not start a second SQLite write storm if the DB is locked/broken.
+        # Keep evidence best-effort; the host remains fail-closed for admission.
+        reason = ("SQLITE_OPERATIONAL_ERROR" if isinstance(exc, sqlite3.OperationalError)
+                  else "CATALOG_RECONCILE_ERROR")
+        try:
+            store.event("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR", reason)
+        except Exception:
+            # DB error events may themselves fail: leave a bounded sentinel in
+            # service logs without exposing exception text, paths or symbols.
+            print("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR:" + reason,
+                  file=sys.stderr, flush=True)
+        return time.time()
+
+
 def _release_idle_catalog_heap():
     """Return free catalog allocations to Linux after the closed-session pass.
 
@@ -2150,6 +2179,31 @@ def _write_scanner_metrics(store, stage, values):
 CAUCION_LEDGER_RECHECK_SECONDS = 3600
 
 
+def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at):
+    """Reject non-trade signals without discarding an independently fresh exit Book.
+
+    The scanner requires a fresh trade for a *new* PAPER signal, while the
+    broker's spot/futures exit paths deliberately require only a fresh Book.
+    Never let a quote rejected for entry reach a decision or opening path.
+    An independently invalid Book remains fully rejected, including exits.
+    """
+    data_error = q.time_error(
+        checked_at, require_trade=True,
+        max_age_seconds=broker.quote_max_age_seconds,
+        max_trade_age_seconds=broker.trade_max_age_seconds)
+    if not data_error:
+        return ""
+    if q.time_error(checked_at, max_age_seconds=broker.quote_max_age_seconds):
+        broker.record_observation_rejection(q, data_error)
+    else:
+        broker.on_quote(
+            q, allow_new_openings=False,
+            opening_block_reason=data_error,
+            evaluate_when_blocked=False)
+    store.event("DATA_REJECTED", f"{q.symbol}: {data_error}")
+    return data_error
+
+
 def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
     """Keep an invalid PAPER caucion ledger out of the admission loop.
 
@@ -2255,6 +2309,11 @@ def run():
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
                                    "cost evidence requires reconciliation.")
+                # A caucion fee discrepancy blocks admission globally but must
+                # not starve other families' OFFHOURS local contract publication.
+                # No PPI reader, book, order route or user wallet is touched.
+                last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
+                    store, phase, last_complementary_reconcile)
                 time.sleep(max(30, COMMAND_POLL_SECONDS))
                 continue
             # Autenticación, catálogo e históricos son útiles también durante
@@ -2398,17 +2457,13 @@ def run():
                         # processing or create an additional provider request.
                         print("PPI_SCANNER_PRIMARY_CAPTURE_ERROR=" + type(origin_error).__name__,
                               file=sys.stderr, flush=True)
-                    # Persistir la observación sirve para trazabilidad, pero un
-                    # trade/libro stale nunca alcanza al motor ni a sus gates.
+                    # Persistir la observación da trazabilidad; un Book stale no
+                    # llega al broker. Un trade stale con Book fresco sólo
+                    # puede supervisar salidas PAPER, jamás habilitar entrada.
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
-                    data_error = q.time_error(
-                        now_iso(), require_trade=True,
-                        max_age_seconds=broker.quote_max_age_seconds,
-                        max_trade_age_seconds=broker.trade_max_age_seconds)
-                    if data_error:
-                        store.event("DATA_REJECTED", f"{symbol}: {data_error}")
-                        broker.record_observation_rejection(q, data_error)
+                    if _scanner_trade_temporal_rejection(
+                            q, broker, store, checked_at=now_iso()):
                         continue
                     allow_openings, opening_reason = _scanner_opening_capacity(
                         request_key, focus=focus, feasibility=feasibility)

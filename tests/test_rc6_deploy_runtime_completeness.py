@@ -342,8 +342,11 @@ def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
     preopen = source.index('for phase in T_MINUS_45 T_MINUS_10; do')
     assert immediate < reclaim < preopen
     block = source[immediate:preopen]
-    assert 'rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"' in block
-    assert 'rm -rf "$STAGE"' in block
+    assert "from scripts.rc6_deploy_failure_cleanup import container_inventory,host_mountpoints,overlaps" in block
+    assert "RC6_STAGE_HOST_MOUNT_PROTECTED" in block
+    assert "RC6_STAGE_DOCKER_BIND_PROTECTED" in block
+    assert "shutil.rmtree(target)" in block
+    assert 'rm -rf "$STAGE"' not in block
     assert "rc6-disk-housekeeping-v1.json" in block
     assert "post_cleanup_min_free_bytes" in block
     assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"' in block

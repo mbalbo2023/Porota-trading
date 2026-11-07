@@ -128,6 +128,17 @@ failure_learning:
   fix_forward_required: true
 
 cleanup:
+  shared_docker_host: true
+  exclusive_project_ownership_required: true
+  unknown_ownership_must_fail_closed_and_alert: true
+  candidate_oci_label_provenance_required:
+    porota.predeploy: v2
+    porota.commit: exact_candidate_sha
+  all_containers_including_stopped_must_be_inspected: true
+  preserve_foreign_images_layers_build_cache_volumes_networks: true
+  never_remove_image_by_id_after_deploy: true
+  hostwide_apt_journal_mutation_allowed: false
+  prefix_only_tmp_cleanup_allowed: false
   required_after_success: true
   required_after_failure_when_safe: true
   failed_attempt_owned_artifacts_cleanup_required: true
@@ -140,7 +151,7 @@ cleanup:
   docker_prune_or_force_delete_allowed: false
   maximize_safe_space_recovery: true
   report_before_after: true
-  periodic_housekeeping_required: true
+  periodic_housekeeping_required: true  # READ_ONLY audit until exact ownership manifest
   disk_housekeeping_policy: ops/policy/rc6-disk-housekeeping-v1.json
   backups_suspended_by_operator: true
   paper_backup_keep_newest: 0
@@ -149,16 +160,8 @@ cleanup:
   journal_max_bytes: 536870912
   tmp_min_age_days: 7
   allowed_targets:
-    - unreferenced_candidate_images
-    - dangling_images
-    - safe_build_cache
-    - safe_buildkit_cache
-    - deploy_staging_directories
-    - deploy_tarballs
-    - stopped_deploy_containers
-    - stale_porota_tmp_older_than_policy
-    - apt_cache_and_lists
-    - journal_above_policy_cap
+    - proven_porota_candidate_tags_without_any_container_refs
+    - exact_sha_run_attempt_manifest_staging_without_mount_refs
   forbidden_targets:
     - active_containers
     - referenced_runtime_images
@@ -166,6 +169,17 @@ cleanup:
     - sqlite_databases
     - bind_mounted_data
     - ppi_watch
+    - foreign_containers_running_or_stopped
+    - foreign_or_shared_image_tags_or_digests
+    - unverified_oci_image_provenance
+    - image_id_deletion
+    - dangling_or_unlabelled_images
+    - global_docker_prune
+    - global_docker_volume_network_and_build_cache_prune
+    - root_tmp_prefix_glob
+    - hostwide_apt_cache_or_package_lists
+    - hostwide_journal_vacuum
+    - image_or_backup_evidence_without_exclusive_manifest
 
 workflow_governance:
   prefer_parameterized_control_plane: true

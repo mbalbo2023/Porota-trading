@@ -60,6 +60,29 @@ def image(id_or_tag):
         raise ValueError('OFFLINE_CURRENT_IMAGE_SHAPE')
     return rows[0]
 
+def _require_candidate_oci(record, commit_sha):
+    """Deny mutation unless this exact *image* carries immutable Porota OCI proof.
+
+    Repository names and candidate tags alone are untrusted on a shared Docker
+    host.  The owner labels must agree with the SHA encoded in every candidate
+    alias; unlabeled legacy images remain untouched until provenance is proven.
+    """
+    config = record.get('Config') if type(record) is dict else None
+    labels = config.get('Labels') if type(config) is dict else None
+    tags = record.get('RepoTags') if type(record) is dict else None
+    digests = record.get('RepoDigests') if type(record) is dict else None
+    if (type(tags) is not list or not tags or
+            any(type(tag) is not str for tag in tags) or
+            (digests is not None and (type(digests) is not list or
+                                      any(type(digest) is not str for digest in digests))) or
+            type(commit_sha) is not str or re.fullmatch('[0-9a-f]{40}', commit_sha) is None
+            or type(labels) is not dict or
+            any(type(key) is not str or type(value) is not str
+                for key, value in labels.items()) or
+            labels.get('porota.predeploy') != 'v2' or
+            labels.get('porota.commit') != commit_sha):
+        raise ValueError('OFFLINE_CURRENT_OCI_OWNERSHIP_UNVERIFIED')
+
 
 def ppi_units():
     lines=command('systemctl','list-unit-files','--no-legend').splitlines()
@@ -256,16 +279,36 @@ def cleanup(required_free_bytes=None):
         repos={tag.split(':',1)[0] for tag in tags}
         stale_shas={tag.rsplit(':',1)[-1].removeprefix('17.0.0-rc6-candidate-')
                     for tag in candidate_tags}
+        current_record=image(current)
         if (STABLE not in tags or not candidate_tags or
                 any(CANDIDATE_TAG.fullmatch(tag) is None for tag in candidate_tags) or
                 len(stale_shas)!=1 or before['candidate_sha'] in stale_shas or
                 any(re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',d) is None
                     or d.split('@',1)[0] not in repos for d in digests) or
                 stale_id in references() or current not in references() or
-                image(current)['Id']!=current):
+                current_record['Id']!=current):
             raise ValueError('OFFLINE_CURRENT_STALE_NOT_EXCLUSIVE')
+        # Both images are affected by the STABLE pointer transfer: stale loses
+        # its alias, current acquires it. Verify each independent OCI identity
+        # before any Docker mutation, including the running image.
+        stale_sha=next(iter(stale_shas))
+        _require_candidate_oci(stale, stale_sha)
+        _require_candidate_oci(current_record, before['candidate_sha'])
+        current_tags=current_record.get('RepoTags')
+        current_digests=current_record.get('RepoDigests') or []
+        current_repos={tag.split(':',1)[0] for tag in current_tags or []}
+        if (type(current_tags) is not list or not current_tags or
+                any(type(tag) is not str or CANDIDATE_TAG.fullmatch(tag) is None
+                    or tag[-40:]!=before['candidate_sha'] for tag in current_tags) or
+                type(current_digests) is not list or
+                any(type(digest) is not str or
+                    re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',digest) is None
+                    or digest.split('@',1)[0] not in current_repos
+                    for digest in current_digests)):
+            raise ValueError('OFFLINE_CURRENT_RUNTIME_IMAGE_ALIAS_UNVERIFIED')
         free_before=shutil.disk_usage('/').free
-        if admission()!=before or stale_id in references():
+        if (admission()!=before or stale_id in references() or
+                image(STABLE)['Id']!=stale_id):
             raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
         # Retagging is an atomic pointer change in Docker metadata. The exact
         # already-owned current image exists; no image build or service restart.
@@ -274,9 +317,17 @@ def cleanup(required_free_bytes=None):
             raise ValueError('OFFLINE_CURRENT_TAG_NOT_RECONCILED')
         removed=[]
         for tag in candidate_tags:
+            # Recheck the actual tag target, not only whether the old image
+            # still advertises that spelling. A retargeted foreign tag is HOLD.
+            latest_stale=image(stale_id)
+            tag_target=image(tag)
             if (admission()!=before or stale_id in references() or
-                    tag not in (image(stale_id).get('RepoTags') or [])):
+                    image(STABLE)['Id']!=current or
+                    tag not in (latest_stale.get('RepoTags') or []) or
+                    tag_target['Id']!=stale_id):
                 raise ValueError('OFFLINE_CURRENT_IMAGE_OWNERSHIP_CHANGED')
+            _require_candidate_oci(latest_stale, stale_sha)
+            _require_candidate_oci(tag_target, stale_sha)
             docker('image','rm',tag)
             removed.append(tag)
         if admission()!=before or image(STABLE)['Id']!=current:
@@ -291,8 +342,13 @@ def cleanup(required_free_bytes=None):
             if (old['Id'] in {current,stale_id} or old['Id'] in references() or
                     old.get('RepoTags') != [tag] or old.get('RepoDigests')):
                 raise ValueError('OFFLINE_CURRENT_HISTORICAL_IMAGE_UNSAFE')
+            _require_candidate_oci(old, tag.rsplit(':', 1)[1])
             if admission()!=before or image(STABLE)['Id']!=current:
                 raise ValueError('OFFLINE_CURRENT_ADMISSION_CHANGED')
+            latest_old=image(tag)
+            if latest_old['Id']!=old['Id']:
+                raise ValueError('OFFLINE_CURRENT_HISTORICAL_TAG_RETARGETED')
+            _require_candidate_oci(latest_old, tag.rsplit(':', 1)[1])
             docker('image','rm',tag)
             removed.append(tag)
             if admission()!=before or image(STABLE)['Id']!=current:
