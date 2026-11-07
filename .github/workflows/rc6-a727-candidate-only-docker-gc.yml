@@ -166,12 +166,16 @@ jobs:
                   d.get('state') not in ('PLAN_READY','NO_TARGETS','GREEN','NO_GO_PARTIAL') or
                   type(d.get('targets')) is not int or not 0<=d['targets']<=8 or
                   type(d.get('size_upper_bytes')) is not int or d['size_upper_bytes']<0 or
+                  type(d.get('oci_provenance_unverified_count')) is not int or
+                  not 0<=d['oci_provenance_unverified_count']<=8 or
+                  (d['oci_provenance_unverified_count']>0 and d['apply_hold']=='NONE') or
                   not re.fullmatch('[0-9a-f]{64}',d.get('plan_sha256','')) or
                   d.get('other_apps_touched') is not False or
                   d.get('ppi_watch_touched') is not False or
                   (d.get('apply_hold') not in ('NONE','BOOK_UNVERIFIED','MARKER_UNVERIFIED',
                     'STOP_UNVERIFIED','BARRIER_UNVERIFIED','RUNTIME_UNVERIFIED',
-                    'WATCH_UNVERIFIED','OTHER_UNVERIFIED',
+                    'WATCH_UNVERIFIED','OTHER_UNVERIFIED','OCI_LABEL_UNVERIFIED',
+                    'BARRIER_ABSENT_POSTBOOT_UNVERIFIED',
                     'BARRIER_FILE_UNVERIFIED','MARKER_FILE_UNVERIFIED',
                     'STABLE_DOCKER_UNVERIFIED','OWNED_DOCKER_UNVERIFIED',
                     'QUIESCENCE_FILE_UNVERIFIED','WATCH_READ_UNVERIFIED',
@@ -216,6 +220,7 @@ jobs:
                        'mutation_count_exact','inodes_free_before','inodes_free_after',
                        'disk_free_before_bytes','disk_free_after_bytes',
                        'disk_delta_observed_bytes','target_manifest',
+                       'oci_provenance_unverified_count',
                        'discovered_candidate_shas'}
               if partial: allowed.add('reason')
               if set(d)!=allowed: raise ValueError('SHAPE')
@@ -263,7 +268,8 @@ jobs:
               result.write_text(json.dumps(d,sort_keys=True,indent=2)+'\n')
               print('A727_GC='+d['state']+'|mode='+d['mode']+'|targets='+str(d['targets'])+
                     '|estimated_upper_bytes='+str(d['size_upper_bytes'])+
-                    '|apply_hold='+d['apply_hold'])
+                    '|apply_hold='+d['apply_hold']+
+                    '|oci_unverified='+str(d['oci_provenance_unverified_count']))
               print('A727_PLAN_SHA256='+d['plan_sha256'])
               if partial:
                   print('A727_GC_PARTIAL=RED|completed_rm_lower_bound='+str(d['removed'])+

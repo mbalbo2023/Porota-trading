@@ -30,10 +30,16 @@ DIGESTS = ["porota-predeploy-v2@sha256:" + "f" * 64]
 WORKFLOW = SCRIPT.parents[1] / ".github/workflows/rc6-a727-candidate-only-docker-gc.yml"
 
 
-def details(tags=None, digests=None, iid=IMAGE):
+def details(tags=None, digests=None, iid=IMAGE, *,
+            oci_commit=CANDIDATE, oci_predeploy="v2"):
     return {"id": iid, "tags": list(TAGS if tags is None else tags),
             "digests": list(DIGESTS if digests is None else digests),
-            "size_upper": 1000}
+            "size_upper": 1000,
+            "_oci_commit": oci_commit, "_oci_predeploy": oci_predeploy}
+
+
+def manifest_details(**kwargs):
+    return gc._public_image(details(**kwargs))
 
 
 class CandidateClassification(unittest.TestCase):
@@ -66,6 +72,47 @@ class CandidateClassification(unittest.TestCase):
         self.assertEqual(gc._candidate_owner(details()), CANDIDATE)
         self.assertIsNone(gc._candidate_owner(details(tags=["boca:current"])))
 
+    def test_reject_tag_spoof_without_exact_oci_provenance(self):
+        for value in (None, FAILED, "secret", ""):
+            with self.subTest(commit=value):
+                self.assertFalse(gc._target(details(oci_commit=value), CANDIDATE))
+        for value in (None, "v1", "latest"):
+            with self.subTest(predeploy=value):
+                self.assertFalse(gc._target(details(oci_predeploy=value), CANDIDATE))
+        self.assertEqual(gc._tag_claim(details(oci_commit=None)), CANDIDATE)
+        self.assertIsNone(gc._candidate_owner(details(oci_commit=None)))
+
+    def test_public_manifest_drops_oci_and_other_private_labels(self):
+        public = gc._public_image(details())
+        self.assertEqual(set(public), {"id", "tags", "digests", "size_upper"})
+        self.assertNotIn("_oci_commit", public)
+
+
+class ImageInspectProvenance(unittest.TestCase):
+    def test_docker_queries_only_two_allowlisted_provenance_labels(self):
+        raw = "|".join(map(json.dumps, (IMAGE, TAGS, DIGESTS, 1000,
+                                        CANDIDATE, "v2")))
+        with patch.object(gc, "_docker", return_value=raw) as docker:
+            image = gc._image_details(IMAGE)
+        self.assertEqual(gc._candidate_owner(image), CANDIDATE)
+        self.assertEqual(set(image) - set(gc._public_image(image)),
+                         {"_oci_commit", "_oci_predeploy"})
+        formatter = docker.call_args.args[3]
+        self.assertIn('index .Config.Labels "porota.commit"', formatter)
+        self.assertIn('index .Config.Labels "porota.predeploy"', formatter)
+        self.assertNotIn("{{json .Config.Labels}}", formatter)
+
+    def test_missing_oci_labels_are_held_without_exposing_foreign_content(self):
+        for pair in ((None, None), (FAILED, "v2"), ("boca-secret", "v2"),
+                     (CANDIDATE, "untrusted")):
+            with self.subTest(labels=pair):
+                raw = "|".join(map(json.dumps, (IMAGE, TAGS, DIGESTS, 1000,
+                                                *pair)))
+                with patch.object(gc, "_docker", return_value=raw):
+                    image = gc._image_details(IMAGE)
+                self.assertIsNone(gc._candidate_owner(image))
+                self.assertNotIn("boca-secret", json.dumps(gc._public_image(image)))
+
 
 class CandidatePlan(unittest.TestCase):
     def setUp(self):
@@ -88,6 +135,31 @@ class CandidatePlan(unittest.TestCase):
         self.assertEqual(plan["discovered_candidate_shas"], [CANDIDATE])
         digest = plan.pop("plan_sha256")
         self.assertEqual(gc._sha(plan), digest)
+
+    def test_candidate_alias_without_oci_is_not_removable_and_reported(self):
+        with patch.object(gc, "_admission", return_value=self.safety), \
+             patch.object(gc, "_docker_inventory", return_value=({CRITICAL}, [IMAGE, CRITICAL])), \
+             patch.object(gc, "_image_details", side_effect=lambda iid: (
+                 details(oci_commit=None) if iid == IMAGE
+                 else details(tags=["boca:main"], iid=iid))):
+            plan = gc.make_plan(CANDIDATE, FAILED, "42260034260", PREVIOUS)
+        self.assertEqual(plan["targets"], [])
+        self.assertEqual(plan["discovered_candidate_shas"], [CANDIDATE])
+        self.assertEqual(plan["oci_provenance_unverified_count"], 1)
+        self.assertEqual(plan["apply_hold"], "OCI_LABEL_UNVERIFIED")
+        self.assertIsNone(plan["safety"])
+
+    def test_missing_postboot_barrier_remains_independent_of_oci_hold(self):
+        with patch.object(gc, "_admission", side_effect=gc.Hold(
+                "BARRIER_ABSENT_POSTBOOT_UNVERIFIED")), \
+             patch.object(gc, "_docker_inventory", return_value=(set(), [IMAGE])), \
+             patch.object(gc, "_image_details", return_value=details(oci_predeploy=None)):
+            plan = gc.make_plan(CANDIDATE, FAILED, "42260034260", PREVIOUS)
+        self.assertEqual(plan["targets"], [])
+        self.assertEqual(plan["oci_provenance_unverified_count"], 1)
+        self.assertEqual(plan["apply_hold"], "BARRIER_ABSENT_POSTBOOT_UNVERIFIED")
+        self.assertIsNone(plan["safety"])
+
 
     def test_referenced_candidate_never_selected(self):
         with patch.object(gc, "_admission", return_value=self.safety), \
@@ -154,6 +226,8 @@ class BookAdmission(unittest.TestCase):
                                     "classification": "CLEAN_EXIT"}
                                for n in gc.OWNED[:2]}}
         def json_for(path, owner_root=False):
+            if path == gc.BARRIER and fault_stage == "barrier_absent":
+                raise FileNotFoundError("postboot volatile barrier missing")
             if path == gc.BARRIER and fault_stage == "barrier_file":
                 raise gc.Hold("FILE_IDENTITY_UNPROVEN")
             if path.name == "CURRENT_STATE_V2.json" and fault_stage == "marker_file":
@@ -193,6 +267,7 @@ class BookAdmission(unittest.TestCase):
 
     def test_each_read_error_has_exact_phase_not_other(self):
         expected = {
+            "barrier_absent": "BARRIER_ABSENT_POSTBOOT_UNVERIFIED",
             "barrier_file": "BARRIER_FILE_UNVERIFIED",
             "marker_file": "MARKER_FILE_UNVERIFIED",
             "stable_docker": "STABLE_DOCKER_UNVERIFIED",
@@ -265,11 +340,13 @@ class ApplyGates(unittest.TestCase):
         self.plan = {"schema": gc.SCHEMA, "candidate_sha": CANDIDATE,
                      "failed_candidate_sha": FAILED, "failed_run_id": "42260034260",
                      "previous_deploy_sha": PREVIOUS,
-                     "safety": self.safety, "apply_hold": "NONE", "targets": [details()],
+                     "safety": self.safety, "apply_hold": "NONE", "targets": [manifest_details()],
+                     "oci_provenance_unverified_count": 0,
                      "discovered_candidate_shas": [CANDIDATE]}
         self.plan["plan_sha256"] = gc._sha(self.plan)
 
-    def _perform(self, mode="apply", digest=None, fail_on_remove_n=None):
+    def _perform(self, mode="apply", digest=None, fail_on_remove_n=None,
+                 image_details_override=None):
         with tempfile.TemporaryDirectory() as directory:
             lock = Path(directory) / "lock"
             lock.touch()
@@ -294,7 +371,9 @@ class ApplyGates(unittest.TestCase):
                  patch.object(gc, "make_plan", return_value=self.plan), \
                  patch.object(gc, "_admission", return_value=self.safety), \
                  patch.object(gc, "_docker_inventory", side_effect=fake_inventory), \
-                 patch.object(gc, "_image_details", return_value=details()), \
+                 patch.object(gc, "_image_details", return_value=(
+                     image_details_override if image_details_override is not None
+                     else details())), \
                  patch.object(gc, "_docker", side_effect=fake_docker) as docker:
                 result = gc.perform(mode=mode, candidate=CANDIDATE, failed=FAILED,
                                     run_id="42260034260", previous=PREVIOUS,
@@ -324,6 +403,16 @@ class ApplyGates(unittest.TestCase):
             self.assertEqual(item.args[:2], ("image", "rm"))
             self.assertIn(item.args[2], TAGS + DIGESTS + [IMAGE])
             self.assertNotIn("-f", item.args)
+
+    def test_apply_rechecks_oci_before_any_image_remove(self):
+        for bad in (details(oci_commit=FAILED), details(oci_predeploy=None)):
+            with self.subTest(label=bad.get("_oci_predeploy")):
+                result, calls = self._perform(image_details_override=bad)
+                self.assertEqual(result["state"], "NO_GO_PARTIAL")
+                self.assertEqual(result["removed"], 0)
+                self.assertFalse(result["mutation_count_exact"])
+                self.assertEqual(calls, [])
+
 
     def test_partial_docker_failure_preserves_bounded_lower_bound(self):
         result, calls = self._perform(fail_on_remove_n=2)
@@ -395,7 +484,8 @@ class SanitizerRegressions(unittest.TestCase):
         return {"schema": gc.SCHEMA, "mode": "plan", "state": "PLAN_READY",
                 "candidate_sha": CANDIDATE, "failed_candidate_sha": FAILED,
                 "failed_run_id": "42260034260", "plan_sha256": "a" * 64,
-                "targets": 1, "target_manifest": [details()],
+                "targets": 1, "target_manifest": [manifest_details()],
+                "oci_provenance_unverified_count": 0,
                 "discovered_candidate_shas": [CANDIDATE],
                 "size_upper_bytes": 1000, "paper_zero_receipts": False,
                 "book_closed_flat": False, "book_state": "NO_VERIFICADO",
@@ -413,7 +503,8 @@ class SanitizerRegressions(unittest.TestCase):
         self.assertEqual(data["target_manifest"][0]["id"], IMAGE)
 
     def test_sanitizer_accepts_all_new_bounded_stage_codes(self):
-        for value in ("BARRIER_FILE_UNVERIFIED", "MARKER_FILE_UNVERIFIED",
+        for value in ("BARRIER_FILE_UNVERIFIED", "BARRIER_ABSENT_POSTBOOT_UNVERIFIED",
+                      "OCI_LABEL_UNVERIFIED", "MARKER_FILE_UNVERIFIED",
                       "STABLE_DOCKER_UNVERIFIED", "OWNED_DOCKER_UNVERIFIED",
                       "QUIESCENCE_FILE_UNVERIFIED", "WATCH_READ_UNVERIFIED",
                       "FILE_UNVERIFIED", "DOCKER_UNVERIFIED"):
@@ -431,6 +522,32 @@ class SanitizerRegressions(unittest.TestCase):
                 code, data, output = self._sanitize(receipt)
                 self.assertEqual(code, 0, (value, output))
                 self.assertEqual(data["apply_hold"], value)
+
+    def test_sanitizer_preserves_only_bounded_oci_count_and_barrier_hold(self):
+        for hold in ("OCI_LABEL_UNVERIFIED",
+                     "BARRIER_ABSENT_POSTBOOT_UNVERIFIED"):
+            receipt = self._receipt()
+            receipt["apply_hold"] = hold
+            receipt["oci_provenance_unverified_count"] = 1
+            code, data, output = self._sanitize(receipt)
+            self.assertEqual(code, 0, output)
+            self.assertEqual(data["oci_provenance_unverified_count"], 1)
+            self.assertIn("oci_unverified=1", output)
+            self.assertNotIn("_oci_commit", output + json.dumps(data))
+
+    def test_sanitizer_rejects_forged_oci_count(self):
+        for count, hold in ((9, "OCI_LABEL_UNVERIFIED"),
+                            (-1, "OCI_LABEL_UNVERIFIED"),
+                            (True, "OCI_LABEL_UNVERIFIED"),
+                            (1, "NONE")):
+            with self.subTest(count=count, hold=hold):
+                receipt = self._receipt()
+                receipt["oci_provenance_unverified_count"] = count
+                receipt["apply_hold"] = hold
+                code, data, output = self._sanitize(receipt)
+                self.assertEqual(code, 2)
+                self.assertEqual(data["state"], "NO_VERIFICADO")
+
 
     def test_sanitizer_rejects_unowned_role_and_secret_injected_reason(self):
         for value in ("OWNED_BOCA_CLI_UNVERIFIED",
