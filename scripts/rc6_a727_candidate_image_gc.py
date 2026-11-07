@@ -36,6 +36,12 @@ DB = ROOT / "data/paper_v17/observer_v17.db"
 DEPLOY = ROOT / "data/deploy"
 OWNED = ("porota_production_observer", "porota_production_dashboard",
          "porota_critical_approval_rc6")
+# Bounded diagnostics only. These names are the existing A727 allowlist;
+# neither this map nor its output grants deletion rights to any container.
+OWNED_ROLE = dict(zip(OWNED, ("OBSERVER", "DASHBOARD", "APPROVAL")))
+OWNED_FAILURES = ("TIMEOUT", "CLI", "COUNT", "JSON", "SEMANTICS", "OTHER")
+OWNED_HOLDS = frozenset(f"OWNED_{role}_{kind}_UNVERIFIED"
+                        for role in OWNED_ROLE.values() for kind in OWNED_FAILURES)
 STABLE = "porota-trading-bot:17.0.0-rc6"
 HEX40 = re.compile(r"[0-9a-f]{40}")
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -96,12 +102,16 @@ def _docker(*args: str) -> str:
 
 
 def _image_details(identity: str) -> dict:
+    # Inspect ONLY two known OCI provenance labels. Never read or publish
+    # arbitrary labels from Porota/Boca/other co-resident Docker images.
+    format_fields = ('{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|'
+                     '{{json .Size}}|{{json (index .Config.Labels "porota.commit")}}|'
+                     '{{json (index .Config.Labels "porota.predeploy")}}')
     fields = _docker("image", "inspect", "--format",
-                     "{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Size}}",
-                     identity).split("|")
-    if len(fields) != 4:
+                     format_fields, identity).split("|")
+    if len(fields) != 6:
         raise Hold("IMAGE_FIELDS_INVALID")
-    iid, tags, digests, size = map(json.loads, fields)
+    iid, tags, digests, size, commit_label, predeploy_label = map(json.loads, fields)
     if (iid != identity or not IMAGE_ID.fullmatch(iid) or
             tags is not None and type(tags) is not list or
             digests is not None and type(digests) is not list or
@@ -112,7 +122,14 @@ def _image_details(identity: str) -> dict:
             any(type(x) is not str or len(x) > 255 for x in tags + digests) or
             len(tags) != len(set(tags)) or len(digests) != len(set(digests))):
         raise Hold("IMAGE_ALIAS_BOUNDS")
-    return {"id": iid, "tags": sorted(tags), "digests": sorted(digests), "size_upper": size}
+    # Private fields are never copied into the sanitized target manifest.
+    # Absent/malformed labels simply cannot establish candidate ownership.
+    commit = (commit_label if type(commit_label) is str and
+              HEX40.fullmatch(commit_label) else None)
+    predeploy = "v2" if predeploy_label == "v2" else None
+    return {"id": iid, "tags": sorted(tags), "digests": sorted(digests),
+            "size_upper": size, "_oci_commit": commit,
+            "_oci_predeploy": predeploy}
 
 
 def _docker_inventory() -> tuple[set[str], list[str]]:
@@ -219,9 +236,37 @@ def _stage_read(code: str, reader, *args, **kwargs):
         raise Hold(code) from exc
 
 
+def _owned_container(name: str) -> dict:
+    """Identify only allowlisted role and bounded failure category, never host output.
+
+    Retains the existing single Docker inspect per container and the original
+    fail-closed admission predicates. Unknown failures cannot escape verbatim.
+    """
+    role = OWNED_ROLE[name]
+    try:
+        return _container(name)
+    except subprocess.TimeoutExpired:
+        kind = "TIMEOUT"
+    except json.JSONDecodeError:
+        kind = "JSON"
+    except Hold as exc:
+        kind = {"DOCKER_OPERATION_FAILED": "CLI",
+                "CONTAINER_FIELDS_INVALID": "COUNT",
+                "CONTAINER_FIELDS_UNPROVEN": "SEMANTICS"}.get(str(exc), "OTHER")
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        kind = "OTHER"
+    raise Hold(f"OWNED_{role}_{kind}_UNVERIFIED") from None
+
+
 def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
-    barrier, barrier_hash = _stage_read("BARRIER_FILE_UNVERIFIED", _file_json,
-                                        BARRIER, owner_root=True)
+    # A reboot can remove the volatile attempt barrier. Record that specific
+    # uncertainty; NEVER synthesize IDLE or weaken APPLY admission.
+    try:
+        barrier, barrier_hash = _file_json(BARRIER, owner_root=True)
+    except FileNotFoundError:
+        raise Hold("BARRIER_ABSENT_POSTBOOT_UNVERIFIED") from None
+    except (OSError, Hold, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise Hold("BARRIER_FILE_UNVERIFIED") from exc
     if (barrier.get("candidate") != failed or str(barrier.get("run")) != run_id or
             barrier.get("status") != "IDLE" or
             set(barrier) != {"candidate", "run", "attempt", "phase", "status"}):
@@ -240,8 +285,7 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
                          "image", "ls", "-q", "--no-trunc", STABLE).splitlines()
     if stable != [marker["image_id"]]:
         raise Hold("STABLE_IMAGE_MARKER_MISMATCH")
-    containers = {name: _stage_read("OWNED_DOCKER_UNVERIFIED", _container, name)
-                  for name in OWNED}
+    containers = {name: _owned_container(name) for name in OWNED}
     for name in OWNED:
         row = containers[name]
         if row["image"] != marker["image_id"] or row["oom"] or row["restarts"] != 0:
@@ -290,9 +334,9 @@ def _admission(candidate: str, failed: str, run_id: str, previous: str) -> dict:
             "book": book, "watch": watch, "candidate": candidate}
 
 
-def _candidate_owner(image: dict) -> str | None:
+def _tag_claim(image: dict) -> str | None:
+    """Classify a candidate-looking alias WITHOUT treating it as ownership."""
     tags, digests = image["tags"], image["digests"]
-    # A tag from ANY other candidate or foreign application is a hard NO_GO.
     candidates = []
     for value in tags:
         match = TAG.fullmatch(value)
@@ -308,18 +352,35 @@ def _candidate_owner(image: dict) -> str | None:
     return candidates[0]
 
 
+def _candidate_owner(image: dict) -> str | None:
+    """Require both alias isolation AND immutable OCI build provenance."""
+    claimed = _tag_claim(image)
+    if claimed is None:
+        return None
+    if (image.get("_oci_commit") != claimed or
+            image.get("_oci_predeploy") != "v2"):
+        return None
+    return claimed
+
+
+def _public_image(image: dict) -> dict:
+    """Never emit labels, even the two inspected private provenance fields."""
+    return {key: image[key] for key in ("id", "tags", "digests", "size_upper")}
+
+
 def _target(image: dict, candidate: str) -> bool:
     return _candidate_owner(image) == candidate
 
 
 APPLY_HOLDS = frozenset({"NONE", "BOOK_UNVERIFIED", "MARKER_UNVERIFIED",
+                         "OCI_LABEL_UNVERIFIED", "BARRIER_ABSENT_POSTBOOT_UNVERIFIED",
                          "STOP_UNVERIFIED", "BARRIER_UNVERIFIED",
                          "RUNTIME_UNVERIFIED", "WATCH_UNVERIFIED",
                          "BARRIER_FILE_UNVERIFIED", "MARKER_FILE_UNVERIFIED",
                          "STABLE_DOCKER_UNVERIFIED", "OWNED_DOCKER_UNVERIFIED",
                          "QUIESCENCE_FILE_UNVERIFIED", "WATCH_READ_UNVERIFIED",
                          "FILE_UNVERIFIED", "DOCKER_UNVERIFIED",
-                         "OTHER_UNVERIFIED"})
+                         "OTHER_UNVERIFIED"}) | OWNED_HOLDS
 
 
 def _classify_apply_hold(exc: Exception) -> str:
@@ -364,26 +425,41 @@ def make_plan(candidate: str, failed: str, run_id: str, previous: str) -> dict:
     references, image_ids = _docker_inventory()
     selected = []
     discovered = set()
+    provenance_unverified = 0
     for identity in image_ids:
         if identity in references:
             continue
         details = _image_details(identity)
+        # A candidate-looking tag is not deletion authority. Count only
+        # *bounded* mismatches; never expose the label contents or foreign
+        # object identities in this diagnostic.
+        claimed = _tag_claim(details)
         owner = _candidate_owner(details)
-        if owner is not None:
-            discovered.add(owner)
+        if claimed is not None:
+            discovered.add(claimed)
+        if claimed == candidate and owner is None:
+            provenance_unverified += 1
         if owner == candidate:
-            selected.append(details)
-    if len(selected) > 8 or len(discovered) > 8:
+            selected.append(_public_image(details))
+    if (len(selected) > 8 or len(discovered) > 8 or
+            provenance_unverified > 8):
         raise Hold("CANDIDATE_IMAGE_LIMIT")
     safety, apply_hold = _probe_apply(candidate, failed, run_id, previous)
     if safety is not None and safety["containers"][OWNED[2]]["image"] not in references:
         safety, apply_hold = None, "RUNTIME_UNVERIFIED"
-    # No Docker objects from non-candidate identities enter the plan.
+    # Keep the host's real admission cause if already blocked (e.g. absent
+    # postboot barrier), while counting independent OCI uncertainty.
+    if provenance_unverified:
+        if apply_hold == "NONE":
+            apply_hold = "OCI_LABEL_UNVERIFIED"
+        safety = None
+    # No Docker objects or provenance labels of other applications enter plan.
     plan = {"schema": SCHEMA, "candidate_sha": candidate,
             "failed_candidate_sha": failed, "failed_run_id": run_id,
             "previous_deploy_sha": previous,
             "safety": safety,
             "apply_hold": apply_hold,
+            "oci_provenance_unverified_count": provenance_unverified,
             "discovered_candidate_shas": sorted(discovered),
             "targets": sorted(selected, key=lambda x: x["id"])}
     plan["plan_sha256"] = _sha(plan)
@@ -419,6 +495,8 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
                    "target_manifest": targets,
                    "discovered_candidate_shas": plan["discovered_candidate_shas"],
                    "apply_hold": plan["apply_hold"],
+                   "oci_provenance_unverified_count":
+                       plan.get("oci_provenance_unverified_count", 0),
                    "size_upper_bytes": sum(t["size_upper"] for t in targets),
                    "paper_zero_receipts": plan["safety"] is not None,
                    "book_closed_flat": plan["safety"] is not None,
@@ -453,7 +531,9 @@ def perform(*, mode: str, candidate: str, failed: str, run_id: str,
                     if item["id"] not in ids:
                         break  # Already fully collected by an earlier untag.
                     current = _image_details(item["id"])
-                    if (not set(current["tags"]) <= set(item["tags"]) or
+                    if (current.get("_oci_commit") != candidate or
+                            current.get("_oci_predeploy") != "v2" or
+                            not set(current["tags"]) <= set(item["tags"]) or
                             not set(current["digests"]) <= set(item["digests"]) or
                             current["size_upper"] != item["size_upper"] or
                             any(not TAG.fullmatch(t) or not t.endswith(candidate)
