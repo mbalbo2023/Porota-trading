@@ -33,6 +33,11 @@ def fixture(family='OPCIONES'):
         description='Synthetic offline fixture',last_seen_at=NOW,run_id='offline',status='AVAILABLE',
         capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED',raw={'_discovery_source':'PPI_PRIMARY',
             '_provider_instrument_type':'ON' if family=='OBLIGACIONES' else family,
+            # Synthetic provider RAW is explicit; SQL/request identity alone
+            # is never proof of a PPI full five-key financial contract.
+            'ticker':'TESTOPT' if family=='OPCIONES' else 'TESTON',
+            'type':'ON' if family=='OBLIGACIONES' else family,
+            'market':'BYMA','currency':'ARS','settlement':'INMEDIATA',
             'isin':'ARTEST000001','cajaValoresCode':'123','nominalInPrice':100,
             '_contract_bridge':{'status':'BLOCKED','gaps':['CHANGE_REVIEW_REQUIRED']}})
     contract=dict(family=family,market='BYMA',currency='ARS',settlement='INMEDIATA',
@@ -199,6 +204,24 @@ class IntegrationTests(unittest.TestCase):
         with self.store.connect() as con:
             result=con.execute('SELECT status,can_simulate FROM candidate_identity_v2').fetchone()
         self.assertEqual(tuple(result),('AVAILABLE',1))
+
+    def test_request_candidate_settlement_never_rearms_a_simulated_contract(self):
+        p,c=fixture();p['settlement_source']='REQUEST_CANDIDATE'
+        self.persist(p)
+        self.run_complements([c])
+        with self.store.connect() as con:
+            can_simulate=con.execute(
+                'SELECT can_simulate FROM candidate_identity_v2').fetchone()[0]
+        self.assertEqual(can_simulate,0)
+
+    def test_contradictory_literal_ppi_raw_key_never_rearms_a_simulated_contract(self):
+        p,c=fixture();p['raw']['currency']='USD_MEP'
+        self.persist(p)
+        self.run_complements([c])
+        with self.store.connect() as con:
+            can_simulate=con.execute(
+                'SELECT can_simulate FROM candidate_identity_v2').fetchone()[0]
+        self.assertEqual(can_simulate,0)
 
     def test_real_material_review_stays_closed_in_real_reconciler(self):
         p,c=fixture();c['financial_contract_v17']=None;c['contract_bridge'].update(status='BLOCKED',gaps=['CHANGE_REVIEW_REQUIRED'])
