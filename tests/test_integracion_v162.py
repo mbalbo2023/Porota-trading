@@ -89,6 +89,42 @@ def _arbol(nombre):
     return ast.parse((RAIZ / nombre).read_text(encoding="utf-8"), filename=nombre)
 
 
+def _assert_candidate_only_image_tags(source):
+    """Inspect actual shell retag commands, not negative diagnostic wording."""
+    tags = []
+    for line in source.splitlines():
+        if "docker" not in line or "tag" not in line:
+            continue
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        commands, current = [], []
+        for word in lexer:
+            if word in {";", "&&", "||", "|", "&", "(", ")"}:
+                commands.append(current)
+                current = []
+            else:
+                current.append(word)
+        commands.append(current)
+        for words in commands:
+            if not words or words[0] in {"echo", "printf"}:
+                continue
+            positions = [i for i, word in enumerate(words) if Path(word).name == "docker"]
+            if not positions:
+                continue
+            at = positions[0]
+            if "tag" not in words[at + 1:]:
+                continue
+            # Unknown executable paths/global options must not hide a retag.
+            # This bounded grammar is not a general shell safety proof.
+            assert words[at:at + 2] == ["docker", "tag"]
+            assert words[:at] in ([], ["sudo", "-n"])
+            assert len(words[at:]) == 4
+            tags.append(tuple(words[at + 2:]))
+    expected = {("$FROZEN_IMAGE", "$CANDIDATE_IMAGE"),
+                ("$FROZEN_IMAGE", "$STABLE_IMAGE")}
+    assert set(tags) == expected
+
+
 def _llamadas_en(nombre):
     """Nombres de todas las funciones y métodos invocados en un archivo."""
     nombres = set()
@@ -601,7 +637,24 @@ class TestPipeline:
         assert "strategy: FIX_FORWARD_ONLY" in policy
         assert "rollback_allowed: false" in policy
         assert "FIX-FORWARD ONLY" in deploy
-        assert "rollback" not in deploy.lower()
+        _assert_candidate_only_image_tags(deploy)
+
+    def test_el_guard_de_promocion_no_confunde_mensajes_con_retag_anterior(self):
+        valid = ('sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"\n'
+                 'sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"\n'
+                 "echo 'NO_ROLLBACK; no scheduler recovery or rollback'\n")
+        _assert_candidate_only_image_tags(valid)
+        with pytest.raises(AssertionError):
+            _assert_candidate_only_image_tags(valid +
+                'sudo -n docker tag "$PREVIOUS_IMAGE" "$STABLE_IMAGE"\n')
+        with pytest.raises(AssertionError):
+            _assert_candidate_only_image_tags(valid +
+                'echo safe; docker tag "$PREVIOUS_IMAGE" "$STABLE_IMAGE"\n')
+        for invocation in ('sudo -n /usr/bin/docker tag',
+                           'docker --host unix:///var/run/docker.sock tag'):
+            with pytest.raises(AssertionError):
+                _assert_candidate_only_image_tags(valid + invocation +
+                    ' "$PREVIOUS_IMAGE" "$STABLE_IMAGE"\n')
 
     def test_el_barrido_de_secretos_cubre_todo_el_arbol(self):
         ci = self._wf("ci.yml")
