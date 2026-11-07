@@ -326,13 +326,16 @@ def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, 
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        if runtime_schema_ready:
+            from cg_paper_workspace import validate_child_ready
+            validate_child_ready(path)
+            return
         new_file = not os.path.exists(path)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         # El runtime padre migra una única vez antes de crear hijos. Repetir
         # DDL/índices grandes desde scanner, velas y salida puede bloquear SQLite.
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if new_file or not runtime_schema_ready:
-            self.init_db()
+        self.init_db()
         if new_file:
             from cg_paper_workspace import mark_new_database
             with self.connect() as c:

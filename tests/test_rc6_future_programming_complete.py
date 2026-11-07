@@ -201,6 +201,12 @@ def test_runtime_child_without_parent_bootstrap_fails_closed_and_creates_no_sche
 
 
 def test_paper_store_bootstrap_precedes_broker_daily_risk_and_child_restart(tmp_path, monkeypatch):
+    # A real runtime child requires the parent's workspace/capital bootstrap;
+    # a standalone PaperStore intentionally has no runtime capital identity.
+    from cg_paper_workspace import runtime_store
+    monkeypatch.setenv('PAPER_INITIAL_CAPITAL_ARS', '10000000')
+    monkeypatch.setenv('PAPER_INITIAL_CAPITAL_USD', '1000')
+    runtime_store(tmp_path / 'paper.sqlite')
     clock = [OPEN_AT]
     b = broker(tmp_path, clock)
     assert b.daily_risk.evaluate(OPEN_AT)["ARS"]["state"] == "READY"
