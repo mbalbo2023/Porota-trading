@@ -1,10 +1,14 @@
 """Mocked pytest replay: global collection and truly concurrent exact shards."""
 
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
@@ -16,7 +20,7 @@ from scripts import rc6_ci_shard_quorum as shards
 
 SHA = "a" * 40
 TREE = "b" * 40
-NODES = [f"tests/test_ci_stub.py::test_case[{i}]" for i in range(12)]
+NODES = [f"tests/test_ci_stub_{i // 6}.py::test_case[{i}]" for i in range(12)]
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -35,10 +39,12 @@ class FakePytest:
         self.collection_rc = collection_rc
         self.dirty_tree = dirty_tree
         self.calls = []
+        self.timeouts = []
         self.barrier = threading.Barrier(2) if require_parallel else None
 
     def __call__(self, argv, *, cwd, env, timeout=3600):
         self.calls.append(argv)
+        self.timeouts.append((argv, timeout))
         if argv[:3] == ["git", "rev-parse", "HEAD"]:
             return subprocess.CompletedProcess(argv, 0, SHA + "\n", "")
         if argv[:3] == ["git", "rev-parse", "HEAD^{tree}"]:
@@ -85,6 +91,107 @@ class FakePytest:
 
 
 class TestParallelProofRunner(unittest.TestCase):
+    def test_child_pytest_bootstrap_arms_faulthandler_without_leaking_payload(self):
+        self.assertTrue(hasattr(runner, "_pytest_argv"))
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            # The executor may not have pytest. A local pytest stub exercises
+            # the actual interpreter/bootstrap/trace path without network pip.
+            (work / "pytest.py").write_text(
+                "def main(args):\n    import time\n    time.sleep(0.6)\n    return 0\n",
+                encoding="utf-8",
+            )
+            command = runner._pytest_argv(sys.executable, ["-q"], trace_after=0.1)
+            env = {**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                   "PYTHONPATH": str(work)}
+            outcome = runner._invoke(command, cwd=work, env=env, timeout=5)
+            self.assertEqual(outcome.returncode, 0, outcome.stderr[-400:])
+            diag = runner._sanitized_timeout_trace(outcome.stderr)
+            self.assertTrue(diag["faulthandler_seen"])
+            self.assertNotIn(str(work), str(diag))
+
+    def test_timeout_with_nonempty_stderr_bytes_is_fail_closed(self):
+        script = "import sys,time; print('PRIVATE_SECRET_MARKER', file=sys.stderr, flush=True); time.sleep(5)"
+        with self.assertRaises(runner.ParallelRunnerRed) as failure:
+            runner._invoke([sys.executable, "-c", script], cwd=REPO,
+                           env=os.environ.copy(), timeout=0.15)
+        self.assertNotIn("PRIVATE_SECRET_MARKER", str(failure.exception))
+        self.assertIsInstance(failure.exception.diagnostic, dict)
+
+    def test_cli_receipt_sanitizes_faulthandler_frames(self):
+        from contextlib import redirect_stderr
+        import io
+
+        raw_path = "/home/runner/private-SECRETS/tests/test_auth_cookie.py"
+        diag = {"faulthandler_seen": True,
+                "frames": [{"file": "test_auth_cookie.py", "line": 91,
+                            "function": "test_session"}]}
+        with patch.object(runner, "run", side_effect=runner.ParallelRunnerRed(
+                diagnostic=diag)):
+            output = io.StringIO()
+            with redirect_stderr(output):
+                rc = runner.main(["--source-sha", SHA, "--source-tree-sha", TREE,
+                                  "--repo", str(REPO), "--shards", "2",
+                                  "--output-junit", "offline.xml"])
+        self.assertEqual(rc, 2)
+        self.assertIn("RC6_PARALLEL_PILOT=RED|automatic_go=NO", output.getvalue())
+        self.assertIn("RC6_PARALLEL_TIMEOUT_DIAG=", output.getvalue())
+        self.assertIn("test_auth_cookie.py", output.getvalue())
+        self.assertNotIn(raw_path, output.getvalue())
+
+    def test_timeout_terminates_descendant_process_group_not_only_parent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            child_pid = work / "child.pid"
+            heartbeat = work / "heartbeat.txt"
+            child = (
+                "import os,signal,sys,time\n"
+                "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
+                "open(sys.argv[1],'w').write(str(os.getpid()))\n"
+                "while True:\n"
+                "  with open(sys.argv[2],'a') as out: out.write('x')\n"
+                "  time.sleep(0.03)\n"
+            )
+            parent = (
+                "import subprocess,sys,time\n"
+                f"subprocess.Popen([sys.executable,'-c',{child!r},sys.argv[1],sys.argv[2]])\n"
+                "print('PRIVATE_SECRET_MARKER',flush=True)\n"
+                "time.sleep(120)\n"
+            )
+            try:
+                with self.assertRaises(runner.ParallelRunnerRed) as failure:
+                    runner._invoke([sys.executable, "-c", parent,
+                                    str(child_pid), str(heartbeat)],
+                                   cwd=work, env=os.environ.copy(), timeout=1)
+                self.assertTrue(child_pid.exists(), "descendant must actually start")
+                self.assertTrue(heartbeat.exists(), "descendant must actually run")
+                after_timeout = heartbeat.stat().st_size
+                time.sleep(0.25)
+                self.assertEqual(heartbeat.stat().st_size, after_timeout,
+                                 "timed-out descendant must stop writing")
+                self.assertNotIn("PRIVATE_SECRET_MARKER", str(failure.exception))
+            finally:
+                if child_pid.exists():
+                    try:
+                        os.kill(int(child_pid.read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+    def test_sanitized_timeout_trace_keeps_module_not_private_path(self):
+        self.assertTrue(hasattr(runner, "_sanitized_timeout_trace"))
+        raw = (
+            "PRIVATE_SECRET_MARKER\nTimeout (0:07:00)!\n"
+            "  File \"/home/runner/PRIVATE_SECRET_MARKER/tests/test_dashboard_session.py\", "
+            "line 82 in test_auth_cookie\n"
+        )
+        result = runner._sanitized_timeout_trace(raw)
+        self.assertEqual(result, {"faulthandler_seen": True,
+                                  "frames": [{"file": "test_dashboard_session.py",
+                                              "line": 82, "function": "test_auth_cookie"}]})
+        self.assertNotIn("PRIVATE_SECRET_MARKER", str(result))
+        self.assertEqual(runner._sanitized_timeout_trace("PRIVATE_SECRET_MARKER"),
+                         {"faulthandler_seen": False, "frames": []})
+
     def test_automatic_global_discovery_then_exact_parallel_shards(self):
         fake = FakePytest()
         with tempfile.TemporaryDirectory() as directory:
@@ -103,6 +210,12 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertEqual(len([c for c in fake.calls if "--junitxml=" in " ".join(c)]), 2)
             self.assertEqual(len([c for c in fake.calls if c[:2] == ["git", "rev-parse"]]), 2)
             self.assertNotIn("sensitive-log-not-public", str(receipt))
+            collected = [timeout for argv, timeout in fake.timeouts if "--collect-only" in argv]
+            shards_only = [timeout for argv, timeout in fake.timeouts if "--junitxml=" in " ".join(argv)]
+            self.assertEqual(collected, [180])
+            self.assertEqual(shards_only, [720, 720])
+            self.assertTrue(all("--durations=20" in argv for argv, _ in fake.timeouts
+                                if "--junitxml=" in " ".join(argv)))
 
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
