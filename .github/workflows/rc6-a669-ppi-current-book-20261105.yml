@@ -28,6 +28,8 @@ on:
       - '.github/workflows/rc6-a669-ppi-current-book-20261105.yml'
       - 'scripts/rc6_a669_ppi_day_slot_guard.py'
       - 'tests/test_rc6_a669_ppi_day_slot_guard.py'
+      - 'scripts/rc6_a685_slot_claim.py'
+      - 'tests/test_rc6_a685_slot_claim.py'
 
 permissions:
   contents: read
@@ -52,9 +54,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m py_compile scripts/rc6_a669_ppi_day_slot_guard.py \
+            scripts/rc6_a685_slot_claim.py \
             scripts/rc6_a630_host_ppi_current_book.py \
-            tests/test_rc6_a669_ppi_day_slot_guard.py
+            tests/test_rc6_a669_ppi_day_slot_guard.py \
+            tests/test_rc6_a685_slot_claim.py
           python3 -m unittest discover -s tests -p test_rc6_a669_ppi_day_slot_guard.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a685_slot_claim.py -v
           python3 -m unittest discover -s tests -p test_rc6_a630_host_ppi_current_book.py -v
           python3 -B - <<'PY'
           from datetime import datetime,timezone
@@ -77,6 +82,11 @@ jobs:
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # The workflow may inspect only previous Actions run/claim metadata.
+    # Upload uses actions/upload-artifact's runner token, not actions:write.
+    permissions:
+      contents: read
+      actions: read
     # A diagnostic must never race the single governed Deploy V2.
     concurrency:
       group: rc6-unified-paper-deploy
@@ -110,6 +120,23 @@ jobs:
           set -Eeuo pipefail
           python3 -B scripts/rc6_a669_ppi_day_slot_guard.py
           echo 'A670_PROVIDER_GETS_BY_CALENDAR_GATE=0'
+
+      - name: A685 no-prior-attempt guard and staged exact ART slot claim BEFORE SSH
+        id: a670_claim
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/rc6_a685_slot_claim.py
+
+      - name: Persist immutable exact ART slot attempt BEFORE SSH and PPI GET
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.a670_claim.outputs.artifact_name }}
+          path: evidence/a670_slot_claim.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Private RO host preflight; PPI native five-key request selection; ZERO GET
         shell: bash
@@ -290,3 +317,4 @@ jobs:
           rm -f "$HOME/.ssh/rc6_a669_readonly" \
             "$RUNNER_TEMP/rc6-a669-host.private" \
             "$RUNNER_TEMP/rc6-a669-capture.private"
+
