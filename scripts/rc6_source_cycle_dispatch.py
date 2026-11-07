@@ -27,7 +27,9 @@ import sys
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
-from scripts.rc6_source_safe_atomic import publish_json, SourceOutputUnsafe
+from scripts.rc6_source_safe_atomic import (
+    publish_json, SourceOutputUnsafe, _verified_directory, _identity,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -157,16 +159,45 @@ def _paper_zero(db: Path) -> None:
 
 
 def _state_read(path: Path, now: datetime) -> dict:
-    try:
-        meta = path.lstat()
-    except FileNotFoundError:
-        return {"schema": STATE_SCHEMA, "session_date": None,
-                "last_public_success_at": None, "last_evidence_success_at": None}
-    if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or meta.st_size > 4096:
+    if (not path.is_absolute() or '..' in path.parts
+            or path.name != "rc6_source_cycle_dispatch_state.json"):
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+    directory_fd = file_fd = None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError) as exc:
+        directory_fd = _verified_directory(path.parent)
+        try:
+            file_fd = os.open(path.name,
+                os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=directory_fd)
+        except FileNotFoundError:
+            return {"schema": STATE_SCHEMA, "session_date": None,
+                    "last_public_success_at": None, "last_evidence_success_at": None}
+        meta = os.fstat(file_fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1
+                or meta.st_size > 4096 or stat.S_IMODE(meta.st_mode) != 0o644):
+            raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+        identity = (meta.st_dev, meta.st_ino, meta.st_size,
+                    meta.st_mtime_ns, meta.st_ctime_ns)
+        if _identity(directory_fd, path.name) != identity:
+            raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+        # A bounded descriptor read cannot follow a name switched after open.
+        raw = os.read(file_fd, 4097)
+        after = os.fstat(file_fd)
+        if (len(raw) > 4096 or
+                (after.st_dev, after.st_ino, after.st_size,
+                 after.st_mtime_ns, after.st_ctime_ns) != identity or
+                _identity(directory_fd, path.name) != identity):
+            raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE")
+    except (OSError, SourceOutputUnsafe) as exc:
+        raise SourceCycleBlocked("SOURCE_CYCLE_STATE_UNSAFE") from exc
+    finally:
+        if file_fd is not None:
+            os.close(file_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError) as exc:
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_INVALID") from exc
     if not isinstance(payload, dict) or payload.get("schema") != STATE_SCHEMA:
         raise SourceCycleBlocked("SOURCE_CYCLE_STATE_SCHEMA_INVALID")
@@ -243,7 +274,8 @@ def _published_file_identity(path: Path) -> tuple[int, ...] | None:
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
         raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_UNSAFE")
     return (metadata.st_dev, metadata.st_ino, metadata.st_size,
-            metadata.st_mtime_ns, metadata.st_ctime_ns)
+            metadata.st_mtime_ns, metadata.st_ctime_ns,
+            stat.S_IMODE(metadata.st_mode))
 
 
 def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
@@ -340,6 +372,9 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
                     # This also protects IOL when an old output coexists with
                     # a misleading success marker from a future code change.
                     results[name] = "OUTPUT_NOT_REPUBLISHED"
+                    continue
+                if after_publication[-1] != 0o644:
+                    results[name] = "OUTPUT_UNVERIFIED"
                     continue
                 # Every allowlisted producer owns its output's 0644 mode via
                 # fchmod on its fresh staging FD. A pathname chmod here was a
