@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - work/ws-tests-12-reconcile-current-contract-20261001
+      - integration/rc6-a757-expanded-20261107
   workflow_dispatch:
 
 permissions:
@@ -15,6 +16,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Verify exact candidate checkout and tree (runner-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = "mbalbo2023/Porota-trading"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          [[ "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "RC6_PREARTIFACT_QA_SOURCE=GREEN|sha=$GITHUB_SHA|tree=$TREE_SHA|host_written=NO|artifact=NONE"
       - name: PAPER guards
         shell: bash
         run: |
@@ -38,6 +48,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Verify exact candidate checkout and tree (runner-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = "mbalbo2023/Porota-trading"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          [[ "$TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "RC6_PREARTIFACT_QA_SOURCE=GREEN|sha=$GITHUB_SHA|tree=$TREE_SHA|host_written=NO|artifact=NONE"
       - name: Install dependencies
         run: |
           python -m pip install -q -r requirements.txt
