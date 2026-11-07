@@ -1547,6 +1547,16 @@ jobs:
           echo "POROTA_IMAGE_TAR_VERIFY=loaded=$IMAGE_TAR_SHA|expected=$EXPECTED_TAR_SHA"
           test -n "$LOADED_IMAGE_ID"
           test "$IMAGE_TAR_SHA" = "$EXPECTED_TAR_SHA"
+          if [[ ! "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ||
+                ! "$LOADED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "POROTA_FROZEN_IMAGE_ID_GATE=RED|reason=INVALID_IMAGE_ID_FORMAT"
+            exit 42
+          fi
+          if [ "$LOADED_IMAGE_ID" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "POROTA_FROZEN_IMAGE_ID_GATE=RED|reason=IMAGE_ID_MISMATCH|expected=$EXPECTED_IMAGE_ID|loaded=$LOADED_IMAGE_ID"
+            exit 42
+          fi
+          echo "POROTA_FROZEN_IMAGE_ID_GATE=GREEN|image=$LOADED_IMAGE_ID"
           sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"
           echo "POROTA_BUILD_ONCE_MATERIALIZED=GREEN|expected_image=$EXPECTED_IMAGE_ID|loaded_image=$RUNTIME_IMAGE_ID"
           if [[ "$RC6_QUIESCENCE_MODE" = DEGRADED_CLOSED_20261026 ||
