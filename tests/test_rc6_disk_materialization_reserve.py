@@ -94,28 +94,60 @@ def test_preclean_hostwide_audit_never_accepts_error_as_cleanup_success(tmp_path
     import os
     import shlex
     workflow = (ROOT / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    start = workflow.index('          sudo -n rm -f /tmp/porota-predeploy-housekeeping.json')
+    # A690 replaced the old fixed-name /tmp receipt with a private scratch
+    # directory. Exercise the actual workflow (including its cleanup trap),
+    # but relocate the scratch to pytest's private directory and fake the
+    # audit command. No host-wide cleanup, sudo or Docker may run in this test.
+    scratch_template = '/tmp/rc6-porota-preclean.XXXXXXXXXX'
+    start = workflow.index(f'          RC6_PRECLEAN_SCRATCH="$(mktemp -d -- {scratch_template})"')
     end = workflow.index('          # Shared Docker images and build caches', start)
     block = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
+    block = block.replace(scratch_template, shlex.quote(str(tmp_path / 'rc6-porota-preclean.XXXXXXXXXX')))
+    assert 'RC6_PRECLEAN_SCRATCH_ID="$(stat -c' in block
+    assert 'trap cleanup_preclean_scratch EXIT' in block
+    assert 'rm -f -- "$TMP_POLICY" "$TMP_HOUSEKEEPING"' in block
+    assert 'rm -rf' not in block
+    assert 'docker ' not in block
     assert '--mode audit --preserve-backups' in block
     assert '--mode cleanup' not in block
-    receipt = tmp_path / 'housekeeping.json'
-    block = block.replace('/tmp/porota-predeploy-housekeeping.json', shlex.quote(str(receipt)))
-    stub = tmp_path / 'sudo'
+    assert 'RC6_PRECLEAN_HOSTWIDE_MUTATION=SKIPPED' in block
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    stub = bin_dir / 'sudo'
+    systemctl_stub = bin_dir / 'systemctl'
     supplied = tmp_path / 'supplied-helper.py'
+    sudo_args = tmp_path / 'sudo-args.txt'
     helper = (ROOT / 'scripts/rc6_disk_housekeeping.py').read_bytes()
     data = json.dumps({'status': status, 'effective_mode': 'audit'})
-    stub.write_text('#!/bin/bash\nset -eu\nshift\nif [ "$1" = rm ]; then shift; exec rm "$@"; fi\n'
-                    + '[ "$1" = python3 ]\n[ "$2" = - ]\n'
-                    + 'cat > ' + shlex.quote(str(supplied)) + '\n'
-                    + "printf '%s' " + shlex.quote(data) + ' > ' + shlex.quote(str(receipt))
-                    + '\nexit ' + str(audit_rc) + '\n')
+    stub.write_text('#!/bin/bash\nset -Eeuo pipefail\n'
+                    + 'printf "%s\\n" "$@" > "$RC6_TEST_SUDO_ARGS"\n'
+                    + '[ "$#" -eq 10 ]\n[ "$1" = -n ]\n[ "$2" = python3 ]\n'
+                    + '[ "$3" = - ]\n[ "$4" = --policy ]\n'
+                    + '[ -f "$5" ]\n[ "$6" = --mode ]\n'
+                    + '[ "$7" = audit ]\n[ "$8" = --preserve-backups ]\n'
+                    + '[ "$9" = --json-out ]\n'
+                    + 'cat > "$RC6_TEST_SUPPLIED"\n'
+                    + "printf '%s' " + shlex.quote(data) + ' > "${10}"\n'
+                    + 'exit "$RC6_TEST_AUDIT_RC"\n')
     stub.chmod(0o700)
-    env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ['PATH'],
-               REPO=str(ROOT), TMP_POLICY=str(POLICY),
-               HOUSEKEEPING_B64=base64.b64encode(helper).decode('ascii'))
+    systemctl_stub.write_text('#!/bin/bash\n# No real host/PPI Watch probing during off-host tests.\nexit 0\n')
+    systemctl_stub.chmod(0o700)
+    policy = POLICY.read_bytes()
+    env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
+               REPO=str(ROOT), POLICY_B64=base64.b64encode(policy).decode('ascii'),
+               HOUSEKEEPING_B64=base64.b64encode(helper).decode('ascii'),
+               RC6_TEST_SUPPLIED=str(supplied), RC6_TEST_SUDO_ARGS=str(sudo_args),
+               RC6_TEST_AUDIT_RC=str(audit_rc))
     result = subprocess.run(['bash', '-c', 'set -Eeuo pipefail\n' + block + '\necho REACHED_OWNED_CLEANUP'],
                             env=env, capture_output=True, text=True, timeout=10)
     assert result.returncode == expected, result.stderr + result.stdout
     assert supplied.read_bytes() == helper
+    args = sudo_args.read_text().splitlines()
+    assert args[:4] == ['-n', 'python3', '-', '--policy']
+    assert args[5:9] == ['--mode', 'audit', '--preserve-backups', '--json-out']
+    scratch = Path(args[4]).parent
+    assert scratch.parent == tmp_path and scratch.name.startswith('rc6-porota-preclean.')
+    assert args[9] == str(scratch / 'housekeeping.json')
+    assert not scratch.exists(), 'workflow trap must remove only its private scratch'
     assert ('REACHED_OWNED_CLEANUP' in result.stdout) == (expected == 0)
+    assert ('RC6_DISK_PRECLEAN_REMOTE=GREEN' in result.stdout) == (expected == 0)
