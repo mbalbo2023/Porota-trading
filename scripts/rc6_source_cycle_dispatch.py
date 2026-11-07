@@ -54,10 +54,13 @@ DEFAULT_MARKET_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trad
 DEFAULT_DB = Path(os.getenv("PAPER_V17_DB_PATH", "/opt/porota-trading/data/paper_v17/observer_v17.db"))
 DEFAULT_LOCK = Path("/var/lock/porota-rc6-source-cycle.lock")
 STAGES = (
-    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
-     "iol_shadow_latest.json"),
+    # PUBLIC refresh has a 60s TTL; IOL's child may take 110s and must not
+    # delay this independent, complementary, read-only observation stage.
+    # This changes scheduling priority, never primary PPI source precedence.
     ("public", "scripts/rc6_public_source_capture.py", 50,
      "rc6_public_sources_latest.json"),
+    ("iol", "scripts/rc6_iol_shadow_collect.py", 110,
+     "iol_shadow_latest.json"),
     ("evidence", "scripts/rc6_full_universe_evidence.py", 25,
      "rc6_instrument_evidence_latest.json"),
 )
@@ -308,13 +311,22 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         # After 17:00 only the exact T+1/regular-options BYMA IOL subset may
         # be observed. Public-source sweeping and global projections keep the
         # established baseline and are not silently extended by this timer.
-        stages = STAGES[:1] if late else STAGES
+        stages = tuple(stage for stage in STAGES if stage[0] == "iol") if late else STAGES
+        # Validate every DUE output before starting any child. Without this,
+        # a later stage's alias could be detected after an earlier child had
+        # already made a provider request or published a different snapshot.
+        before_outputs = {name: _published_file_identity(market_root / output)
+                          for name, _, _, output in stages if due[name]}
         for name, relative, timeout, output in stages:
             if not due[name]:
                 results[name] = "NOT_DUE_TTL"
                 continue
             output_path = market_root / output
-            before_publication = _published_file_identity(output_path)
+            before_publication = before_outputs[name]
+            # Preserve the original per-stage guard too: a prior child or
+            # another writer must not swap this path after global preflight.
+            if _published_file_identity(output_path) != before_publication:
+                raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_CHANGED_BEFORE_CHILD")
             try:
                 result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
                                 env=child_env, capture_output=True, text=True,
