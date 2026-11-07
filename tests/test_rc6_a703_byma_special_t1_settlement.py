@@ -91,10 +91,13 @@ def test_spot_pending_cash_keeps_cedear_receivable_through_nov12(monkeypatch):
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     db.execute("""CREATE TABLE paper_positions (
-        paper_id TEXT, asset_class TEXT, market TEXT, currency TEXT, settlement TEXT)""")
-    db.executemany("INSERT INTO paper_positions VALUES(?,?,?,?,?)", [
-        ("A", "ACCIONES", "BYMA", "ARS", "A-24HS"),
-        ("C", "CEDEARS", "BYMA", "ARS", "A-24HS"),
+        paper_id TEXT, asset_class TEXT, market TEXT, currency TEXT,
+        settlement TEXT, currency_source TEXT)""")
+    db.executemany("INSERT INTO paper_positions VALUES(?,?,?,?,?,?)", [
+        ("A", "ACCIONES", "BYMA", "ARS", "A-24HS",
+         "PPI_CATALOG:2026-11-05T19:00:00+00:00"),
+        ("C", "CEDEARS", "BYMA", "ARS", "A-24HS",
+         "PPI_CATALOG:2026-11-05T19:00:00+00:00"),
     ])
     monkeypatch.setattr(spot, "partition", lambda *_: None)
     monkeypatch.setattr(spot, "sales", lambda _db, _pid: [
@@ -104,3 +107,63 @@ def test_spot_pending_cash_keeps_cedear_receivable_through_nov12(monkeypatch):
     assert spot.pending(db, "2026-11-13T00:00:00-03:00", "ARS") == 0
 
 
+
+
+@pytest.mark.parametrize("origin", [
+    "LEGACY_ASSUMED_ARS", None, "", "UNKNOWN", "EXPLICIT_QUOTE",
+    "PPI_CATALOG:", "PPI_CATALOG:\n2026-11-05",
+    "PPI_CATALOG:not-a-time", "PPI_CATALOG:2026-11-05T15:00:00",
+])
+def test_migration_default_byma_ars_never_launders_t1_cash(monkeypatch, origin):
+    """The migration's BYMA/ARS defaults are not a real five-key source."""
+    import cd_spot_ledger as spot
+
+    monkeypatch.setenv("PAPER_T1_FULL_DATE_RELEASE", "true")
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("""CREATE TABLE paper_positions (
+        paper_id TEXT, asset_class TEXT, market TEXT, currency TEXT,
+        settlement TEXT, currency_source TEXT)""")
+    db.execute("INSERT INTO paper_positions VALUES(?,?,?,?,?,?)",
+               ("L", "ACCIONES", "BYMA", "ARS", "A-24HS", origin))
+    monkeypatch.setattr(spot, "partition", lambda *_: None)
+    monkeypatch.setattr(spot, "sales", lambda _db, _pid: [
+        dict(filled_at="2026-11-05T16:45:00-03:00", net_proceeds="100",
+             available_at=None, basis="PENDING_CONFIRMATION")])
+    assert spot.pending(db, "2026-11-12T00:00:00-03:00", "ARS") == 100
+    assert spot.pending(db, "2026-11-13T00:00:00-03:00", "ARS") == 100
+
+
+def test_t1_missing_currency_source_column_cannot_inherit_ars_default(monkeypatch):
+    import cd_spot_ledger as spot
+
+    monkeypatch.setenv("PAPER_T1_FULL_DATE_RELEASE", "true")
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("""CREATE TABLE paper_positions (
+        paper_id TEXT, asset_class TEXT, market TEXT, currency TEXT, settlement TEXT)""")
+    db.execute("INSERT INTO paper_positions VALUES(?,?,?,?,?)",
+               ("L", "ACCIONES", "BYMA", "ARS", "A-24HS"))
+    monkeypatch.setattr(spot, "partition", lambda *_: None)
+    monkeypatch.setattr(spot, "sales", lambda _db, _pid: [
+        dict(filled_at="2026-11-05T16:45:00-03:00", net_proceeds="100",
+             available_at=None, basis="PENDING_CONFIRMATION")])
+    assert spot.pending(db, "2026-11-13T00:00:00-03:00", "ARS") == 100
+
+
+def test_t1_legacy_origin_holds_even_outside_special_calendar(monkeypatch):
+    import cd_spot_ledger as spot
+
+    monkeypatch.setenv("PAPER_T1_FULL_DATE_RELEASE", "true")
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("""CREATE TABLE paper_positions (
+        paper_id TEXT, asset_class TEXT, market TEXT, currency TEXT,
+        settlement TEXT, currency_source TEXT)""")
+    db.execute("INSERT INTO paper_positions VALUES(?,?,?,?,?,?)",
+               ("L", "ACCIONES", "BYMA", "ARS", "A-24HS", "LEGACY_ASSUMED_ARS"))
+    monkeypatch.setattr(spot, "partition", lambda *_: None)
+    monkeypatch.setattr(spot, "sales", lambda _db, _pid: [
+        dict(filled_at="2026-11-02T15:00:00-03:00", net_proceeds="100",
+             available_at=None, basis="PENDING_CONFIRMATION")])
+    assert spot.pending(db, "2026-11-06T00:00:00-03:00", "ARS") == 100
