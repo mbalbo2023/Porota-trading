@@ -57,6 +57,7 @@ BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
 REPORT_SQLITE_RETRY_SECONDS = 15 * 60
 EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD = "EOD_FINAL_SOURCE_NO_VERIFICADO_HOLD"
 EOD_FINAL_SOURCE_HOLD_RECHECK_SECONDS = 5 * 60
+REAL_ORDERS_STATUS_UNVERIFIED = "NO_VERIFICADO"  # No physical SQLite/host attestation here.
 
 
 def now_iso():
@@ -507,9 +508,18 @@ def _period_data(store, start, end):
         except sqlite3.Error:
             gates = []
     pnl_by_currency = {}
+    unverified_by_currency = {}
     for p in realizations:
         currency = p.get("currency", "ARS")
-        pnl_by_currency[currency] = pnl_by_currency.get(currency, Decimal(0)) + Decimal(p.get("net_pnl") or "0")
+        if p.get("net_pnl") is None:
+            # positions_at() already checked the immutable native FI terminal
+            # receipt. A missing FX basis is neither a loss nor zero PnL.
+            if p.get("close_reason") != "FI_NATIVE_MATURITY_REVIEWED":
+                raise ValueError("PERIOD_CLOSED_PNL_UNVERIFIED")
+            unverified_by_currency[currency] = unverified_by_currency.get(currency, 0) + 1
+        else:
+            pnl_by_currency[currency] = (pnl_by_currency.get(currency, Decimal(0))
+                                         + Decimal(p["net_pnl"]))
     for p in cauciones:
         currency = p["currency"]
         pnl_by_currency[currency] = pnl_by_currency.get(currency, Decimal(0)) + Decimal(p["gross_interest"]) - Decimal(p["total_fees"])
@@ -519,13 +529,19 @@ def _period_data(store, start, end):
             p["status"] = "OPEN"
             for key in ("closed_at", "exit_price", "exit_cost", "gross_pnl", "net_pnl", "close_reason"):
                 p[key] = None
-    pnl = float(pnl_by_currency.get("ARS", 0))
-    wins = sum(1 for p in closed if float(p.get("net_pnl") or 0) > 0)
+    pnl = None if unverified_by_currency.get("ARS") else float(pnl_by_currency.get("ARS", 0))
+    # An incomplete PnL cohort cannot have a verified all-close win rate.
+    wins = (None if any(p.get("net_pnl") is None for p in closed)
+            else sum(1 for p in closed if float(p["net_pnl"]) > 0))
+    currencies = set(pnl_by_currency) | set(unverified_by_currency)
     return {"positions": positions, "closed": closed, "realizations": realizations, "decisions": decisions,
             "news": news, "gates": gates, "pnl": pnl, "wins": wins,
-            "pnl_by_currency": {key: str(value) for key, value in sorted(pnl_by_currency.items())},
+            "pnl_by_currency": {key: (None if unverified_by_currency.get(key)
+                                      else str(pnl_by_currency.get(key, Decimal(0))))
+                                for key in sorted(currencies)},
+            "unverified_closed_by_currency": dict(sorted(unverified_by_currency.items())),
             "cauciones_matured": cauciones,
-            "win_rate": wins / len(closed) * 100 if closed else None}
+            "win_rate": wins / len(closed) * 100 if closed and wins is not None else None}
 
 
 def _lesson(position):
@@ -553,11 +569,13 @@ def _report_story(title, period, data):
         })
     return {
         "titulo": title, "periodo": period, "generado_en": now_iso(),
-        "modo": "SIMULACIÓN PRODUCTIVA", "ordenes_reales": 0,
+        "modo": "SIMULACIÓN PRODUCTIVA", "ordenes_reales": REAL_ORDERS_STATUS_UNVERIFIED,
         "resumen": {"operaciones": len(data["positions"]), "cerradas": len(data["closed"]),
                     "ganadoras": data["wins"], "win_rate_pct": data["win_rate"],
-                    "pnl_neto_ars": round(data["pnl"], 2), "decisiones": len(data["decisions"]),
+                    "pnl_neto_ars": (round(data["pnl"], 2) if data["pnl"] is not None else None),
+                    "decisiones": len(data["decisions"]),
                     "pnl_por_moneda": data.get("pnl_by_currency", {}),
+                    "pnl_no_verificado_por_moneda": data.get("unverified_closed_by_currency", {}),
                     "cauciones_vencidas": len(data.get("cauciones_matured", [])),
                     "bloqueos_finales": sum(1 for g in data["gates"] if g.get("final_result") == "BLOCKED")},
         "operaciones": operations, "secuencia_de_portones": data["gates"],
@@ -573,6 +591,18 @@ def _report_story(title, period, data):
         "decisiones": data["decisions"], "noticias_relevantes": data["news"],
         "nota": "Archivo preparado para discusión de lecciones aprendidas con una IA; no contiene secretos ni datos de cuenta.",
     }
+
+
+def _report_pnl_label(value):
+    if value is None:
+        return "NO_VERIFICADO"
+    try:
+        amount = Decimal(str(value))
+        if amount.is_finite():
+            return f"{amount:,.2f}"
+    except (ValueError, TypeError, ArithmeticError):
+        pass
+    return "NO_VERIFICADO"
 
 
 def _pdf(story, path):
@@ -599,13 +629,16 @@ def _pdf(story, path):
                             topMargin=14*mm, bottomMargin=14*mm,
                             title=story["titulo"], author="Porota Trading")
     blocks = [Paragraph(html.escape(story["titulo"]), styles["Title"]),
-              Paragraph(f"{html.escape(story['periodo'])} · Modo SIMULACIÓN PRODUCTIVA · órdenes reales: 0", styles["Normal"]),
+              Paragraph(f"{html.escape(story['periodo'])} · Modo SIMULACIÓN PRODUCTIVA · "
+                        f"órdenes reales: {html.escape(str(story['ordenes_reales']))}", styles["Normal"]),
               Spacer(1, 8)]
     summary = story["resumen"]
     table = Table([["Operaciones", "Cerradas", "Ganadoras", "Win rate", "PnL neto ARS"],
-                   [summary["operaciones"], summary["cerradas"], summary["ganadoras"],
+                   [summary["operaciones"], summary["cerradas"],
+                    "s/d" if summary["ganadoras"] is None else summary["ganadoras"],
                     "s/d" if summary["win_rate_pct"] is None else f"{summary['win_rate_pct']:.1f}%",
-                    f"$ {summary['pnl_neto_ars']:,.2f}"]], repeatRows=1)
+                    ("NO_VERIFICADO" if summary["pnl_neto_ars"] is None
+                     else f"$ {summary['pnl_neto_ars']:,.2f}")]], repeatRows=1)
     table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#14213d")),
                                ("TEXTCOLOR", (0,0), (-1,0), colors.white),
                                ("GRID", (0,0), (-1,-1), .3, colors.grey),
@@ -614,7 +647,8 @@ def _pdf(story, path):
                                ("FONTSIZE", (0,0), (-1,-1), 8)]))
     blocks += [table, Spacer(1, 8), Paragraph("Resultados realizados por moneda/plaza (sin conversión ni suma entre monedas)", styles["Heading3"])]
     for currency, pnl in summary.get("pnl_por_moneda", {}).items():
-        blocks.append(Paragraph(html.escape(f"{currency}: {Decimal(pnl):,.2f}"), styles["Normal"]))
+        value = "NO_VERIFICADO" if pnl is None else f"{Decimal(pnl):,.2f}"
+        blocks.append(Paragraph(html.escape(f"{currency}: {value}"), styles["Normal"]))
     if story.get("cauciones_vencidas"):
         blocks.append(Paragraph("Cauciones colocadoras acreditadas", styles["Heading2"]))
         for item in story["cauciones_vencidas"]:
@@ -626,8 +660,10 @@ def _pdf(story, path):
     if not story["operaciones"]:
         blocks.append(Paragraph("No hubo operaciones de compraventa simuladas en este período.", styles["Normal"]))
     for op in story["operaciones"]:
-        color = "#16833b" if float(op.get("pnl_neto") or 0) > 0 else "#c62828" if float(op.get("pnl_neto") or 0) < 0 else "#667085"
-        blocks += [Paragraph(f"<font color='{color}'><b>{html.escape(str(op['instrumento']))} · {html.escape(str(op['estado']))} · PnL {html.escape(op.get('moneda_plaza', 'ARS'))} {float(op.get('pnl_neto') or 0):,.2f}</b></font>", styles["Heading3"]),
+        pnl_label = _report_pnl_label(op.get("pnl_neto"))
+        pnl = Decimal(str(op["pnl_neto"])) if pnl_label != "NO_VERIFICADO" else None
+        color = "#16833b" if pnl is not None and pnl > 0 else "#c62828" if pnl is not None and pnl < 0 else "#667085"
+        blocks += [Paragraph(f"<font color='{color}'><b>{html.escape(str(op['instrumento']))} · {html.escape(str(op['estado']))} · PnL {html.escape(op.get('moneda_plaza', 'ARS'))} {pnl_label}</b></font>", styles["Heading3"]),
                    Paragraph(html.escape(op["leccion"]), styles["BodyText"]), Spacer(1, 5)]
     blocks += [PageBreak()]
     if story["noticias_relevantes"]:
@@ -661,12 +697,19 @@ def generate_report(store, period_type, period_key, start, end):
         _pdf(story, pdf_path)
         ai_path.write_text(json.dumps(story, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         os.chmod(pdf_path, 0o640); os.chmod(ai_path, 0o640)
+        content_unverified = (
+            story["ordenes_reales"] == REAL_ORDERS_STATUS_UNVERIFIED
+            or bool(story["resumen"].get("pnl_no_verificado_por_moneda"))
+        )
+        report_state = "AMARILLO" if content_unverified else "VERDE"
+        quality = ("CONTENIDO_NO_VERIFICADO: ordenes_reales/FX/ledger runtime no acreditados"
+                   if content_unverified else "CONTENIDO_ACREDITADO")
         with store.connect() as c:
             c.execute("""INSERT OR REPLACE INTO report_registry
               (period_type,period_key,created_at,pdf_path,ai_path,state,detail)
               VALUES(?,?,?,?,?,?,?)""",
-              (period_type, period_key, now_iso(), str(pdf_path), str(ai_path), "VERDE",
-               f"{len(data['positions'])} operaciones; {len(data['news'])} noticias"))
+              (period_type, period_key, now_iso(), str(pdf_path), str(ai_path), report_state,
+               f"{len(data['positions'])} operaciones; {len(data['news'])} noticias; {quality}"))
         return str(pdf_path), str(ai_path)
     except Exception as exc:
         with store.connect() as c:
@@ -759,6 +802,23 @@ def ensure_reports(store, include_today=False):
     _job(store, "REPORTS", "VERDE", "Informes actualizados", success=True)
 
 
+def _closing_summary_text(day, data):
+    """Format an EOD note without turning unknown FX/PnL into zero."""
+    win = "s/d" if data["win_rate"] is None else f"{data['win_rate']:.1f}%"
+    pnl = ("NO_VERIFICADO (FX/costo)" if data["pnl"] is None
+           else f"$ {data['pnl']:,.2f}")
+    return ("📊 POROTA — CIERRE SIMULACIÓN PRODUCTIVA\n"
+            f"Fecha: {day}\nOperaciones cerradas: {len(data['closed'])}\n"
+            f"Win rate: {win}\nPnL paper neto ARS: {pnl}\n"
+            f"Por moneda/plaza: {json.dumps(data.get('pnl_by_currency', {}), ensure_ascii=False)}\n"
+            f"PnL NO_VERIFICADO por moneda: "
+            f"{json.dumps(data.get('unverified_closed_by_currency', {}), ensure_ascii=False)}\n"
+            f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
+            f"Decisiones evaluadas: {len(data['decisions'])}\n"
+            f"Órdenes reales: {REAL_ORDERS_STATUS_UNVERIFIED}\n"
+            "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
+
+
 def send_closing_summary(store):
     """Un resumen por fecha en outbox; generar no equivale a entregar."""
     now = datetime.now(TZ)
@@ -787,14 +847,7 @@ def send_closing_summary(store):
     start = datetime.combine(today, datetime.min.time(), TZ).isoformat()
     end = datetime.combine(today + timedelta(days=1), datetime.min.time(), TZ).isoformat()
     data = _period_data(store, start, end)
-    win = "s/d" if data["win_rate"] is None else f"{data['win_rate']:.1f}%"
-    text = ("📊 POROTA — CIERRE SIMULACIÓN PRODUCTIVA\n"
-            f"Fecha: {today.isoformat()}\nOperaciones cerradas: {len(data['closed'])}\n"
-            f"Win rate: {win}\nPnL paper neto ARS: $ {data['pnl']:,.2f}\n"
-            f"Por moneda/plaza: {json.dumps(data.get('pnl_by_currency', {}), ensure_ascii=False)}\n"
-            f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
-            f"Decisiones evaluadas: {len(data['decisions'])}\nÓrdenes reales: 0\n"
-            "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
+    text = _closing_summary_text(today.isoformat(), data)
     at = now_iso()
     with store.connect() as c:
         c.execute('BEGIN IMMEDIATE')

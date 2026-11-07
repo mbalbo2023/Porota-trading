@@ -15,6 +15,144 @@ from bt_caucion_paper import record_sale
 import bi_operational_services as services
 
 
+def _reviewed_unknown_fx_maturity():
+    """Real synthetic FI ledger/terminal, not issuer or PPI authority."""
+    from tests import test_rc6_fixed_income_native_redemption as fi_fixture
+    from rc6_fixed_income_native_exit import apply_reviewed_maturity
+
+    fixture = fi_fixture.NativeRedemptionReviewTest(
+        "test_bond_full_redemption_review_is_idempotent_and_never_pays_or_closes"
+    )
+    fixture.setUp()
+    paid = fixture._economic_receipt()
+    paid["event"]["payment_currency"] = "USD"
+    fixture._book(economic=paid)
+    schedule = fixture._review()
+    schedule["issuer_schedule"]["principal_currency"] = "USD"
+    schedule["issuer_schedule"]["obligations"][0]["payment_currency"] = "USD"
+    schedule["expected_principal_by_currency"] = [["USD", "100"]]
+    schedule["expected_cash_by_currency"] = [["USD", "100"]]
+    review = fixture._apply(schedule)
+    result = apply_reviewed_maturity(
+        fixture.store, paper_id="PAPER-AL30", request_id="report-fx-unknown",
+        approved_review_receipt_sha256=review["receipt_sha256"],
+        applied_at="2026-10-30T16:00:00+00:00",
+    )
+    assert result["pnl_quality"] == "FI_CROSS_CURRENCY_PNL_UNVERIFIED"
+    return fixture
+
+
+def _add_known_ars_close(store):
+    """Separate, fully reconciled synthetic spot fill in the same paper DB."""
+    opened, closed = "2026-10-29T14:00:00+00:00", "2026-10-30T17:00:00+00:00"
+    with store.connect() as connection:
+        connection.execute("""INSERT INTO paper_positions
+            (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
+             quantity,entry_price,entry_cost,stop_price,target_price,opened_at,closed_at,
+             exit_price,exit_cost,gross_pnl,net_pnl,features_json,currency)
+            VALUES('PAPER-KNOWN','PRODUCTION_PAPER','fixture','TEST','ACCIONES',
+             'INMEDIATA','CLOSED','1','100','1','98','110',?,?,
+             '105','1','5','3','{}','ARS')""", (opened, closed))
+        for side, instant, price in (
+                ("BUY_SIMULATED", opened, "100"), ("SELL_SIMULATED", closed, "105")):
+            connection.execute("""INSERT INTO paper_fills
+              (paper_id,source,side,filled_at,quantity,price,costs,slippage)
+              VALUES('PAPER-KNOWN','PRODUCTION_PAPER',?,?,'1',?,'1','0')""",
+              (side, instant, price))
+        record_sale(connection, "PAPER-KNOWN", "INMEDIATA", closed,
+                    services.Decimal("104"), currency="ARS")
+
+
+def test_valid_native_maturity_with_unknown_fx_never_creates_zero_in_period_pdf_or_summary(tmp_path):
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        services.init_schema(fixture.store)
+        data = services._period_data(
+            fixture.store, "2026-10-30T00:00:00-03:00", "2026-10-31T00:00:00-03:00"
+        )
+        assert len(data["closed"]) == 1
+        assert data["pnl"] is None
+        assert data["pnl_by_currency"] == {"ARS": None}
+        assert data["unverified_closed_by_currency"] == {"ARS": 1}
+        assert data["win_rate"] is None
+        story = services._report_story("Synthetic FI maturity", "2026-10-30", data)
+        assert story["ordenes_reales"] == "NO_VERIFICADO"
+        assert story["resumen"]["pnl_neto_ars"] is None
+        assert story["resumen"]["pnl_por_moneda"] == {"ARS": None}
+        assert story["resumen"]["pnl_no_verificado_por_moneda"] == {"ARS": 1}
+        assert services._report_pnl_label(None) == "NO_VERIFICADO"
+        assert services._report_pnl_label("0") == "0.00"
+        services._pdf(story, tmp_path / "report_unknown_fx.pdf")
+        assert (tmp_path / "report_unknown_fx.pdf").stat().st_size > 100
+        message = services._closing_summary_text("2026-10-30", data)
+        assert "NO_VERIFICADO" in message
+        assert "ARS: null" in message or '"ARS": null' in message
+        assert "PnL paper neto ARS: $ 0.00" not in message
+    finally:
+        fixture.doCleanups()
+
+
+def test_report_does_not_invent_zero_real_orders_when_database_says_one():
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        with fixture.store.connect() as connection:
+            connection.execute("UPDATE observer_state SET real_orders_sent=1 WHERE id=1")
+        services.init_schema(fixture.store)
+        data = services._period_data(
+            fixture.store, "2026-10-30T00:00:00-03:00", "2026-10-31T00:00:00-03:00"
+        )
+        story = services._report_story("Unsafe sample", "2026-10-30", data)
+        assert story["ordenes_reales"] == "NO_VERIFICADO"
+        assert "Órdenes reales: NO_VERIFICADO" in services._closing_summary_text(
+            "2026-10-30", data
+        )
+        assert "Órdenes reales: 0" not in services._closing_summary_text(
+            "2026-10-30", data
+        )
+    finally:
+        fixture.doCleanups()
+
+
+def test_native_unknown_fx_report_is_generated_but_not_marked_content_green(tmp_path, monkeypatch):
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        monkeypatch.setattr(services, "REPORT_DIR", tmp_path)
+        pdf, ai = services.generate_report(
+            fixture.store, "DIARIO", "2026-10-30",
+            "2026-10-30T00:00:00-03:00", "2026-10-31T00:00:00-03:00",
+        )
+        assert Path(pdf).read_bytes().startswith(b"%PDF")
+        assert Path(ai).exists()
+        with fixture.store.connect() as connection:
+            record = connection.execute(
+                "SELECT * FROM report_registry WHERE period_type='DIARIO' AND period_key='2026-10-30'"
+            ).fetchone()
+        assert record["state"] == "AMARILLO"
+        assert "CONTENIDO_NO_VERIFICADO" in record["detail"]
+        from dg_dashboard_daily_result_ux_hf6 import report_cards_html
+        rendered = report_cards_html([dict(record)])
+        assert "Estado:</b> AMARILLO" in rendered
+        assert "CONTENIDO_NO_VERIFICADO" in rendered
+    finally:
+        fixture.doCleanups()
+
+
+def test_unknown_and_known_ars_closures_do_not_publish_partial_total_or_win_rate():
+    fixture = _reviewed_unknown_fx_maturity()
+    try:
+        services.init_schema(fixture.store)
+        _add_known_ars_close(fixture.store)
+        data = services._period_data(
+            fixture.store, "2026-10-30T00:00:00-03:00", "2026-10-31T00:00:00-03:00"
+        )
+        assert len(data["closed"]) == 2
+        assert data["pnl_by_currency"] == {"ARS": None}  # never show known 3 as the full sum
+        assert data["unverified_closed_by_currency"] == {"ARS": 1}
+        assert data["wins"] is None and data["win_rate"] is None
+    finally:
+        fixture.doCleanups()
+
+
 def test_resultado_del_periodo_usa_fecha_cierre_y_separa_monedas(tmp_path):
     store = PaperStore(str(tmp_path / "paper.db"))
     services.init_schema(store)
@@ -163,7 +301,12 @@ def test_reporte_pdf_y_paquete_ia_sin_secretos(tmp_path, monkeypatch):
                                         start.isoformat(), end.isoformat())
     assert Path(pdf).read_bytes().startswith(b"%PDF")
     payload = json.loads(Path(ai).read_text(encoding="utf-8"))
-    assert payload["ordenes_reales"] == 0
+    # A synthetic PAPER DB has no physical SQLite/runtime attestation.
+    assert payload["ordenes_reales"] == "NO_VERIFICADO"
+    with store.connect() as connection:
+        quality = connection.execute("SELECT state,detail FROM report_registry WHERE period_type='DIARIO'").fetchone()
+    assert quality["state"] == "AMARILLO"
+    assert "CONTENIDO_NO_VERIFICADO" in quality["detail"]
     assert payload["operaciones"][0]["leccion"]
     assert "api_secret" not in Path(ai).read_text(encoding="utf-8").lower()
 
