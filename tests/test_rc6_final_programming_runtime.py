@@ -11,7 +11,8 @@ import pytest
 from be_paper_engine import D, NativeSignalPrices, PaperBroker
 from bq_exit_policy import PaperSessionPolicy
 from rc6_shadow_runtime.worker import ShadowRuntime
-from tests.test_rc6_shadow_runtime_wiring import make_store, quote, PRE, OPEN
+from tests.test_rc6_shadow_runtime_wiring import (
+    make_store, quote, PRE, OPEN, _quiesce_fixture_source)
 from tests.test_rc6_future_programming_complete import broker as future_broker, quote as future_quote, OPEN_AT
 from tests.test_rc6_ppi_capacity_benchmark import wire
 from tests.test_rc6_capacity_promotion import approved
@@ -111,6 +112,7 @@ def test_canonical_worker_prospectively_runs_entries_labels_and_native_net_funne
         store.add_quote(q)
     b.on_quote(q)
     assert len(store.open_positions()) == 1
+    _quiesce_fixture_source(store.path)
     current = worker.tick(tick[0] + timedelta(seconds=1))
     lab = current["entry_signal_lab"]
     assert lab["registered"] == 1 and lab["native_decisions_observed"] == 1
@@ -121,6 +123,7 @@ def test_canonical_worker_prospectively_runs_entries_labels_and_native_net_funne
     for seconds in (301, 901):
         future_at = tick[0] + timedelta(seconds=seconds)
         store.add_quote(quote(assets[0], future_at, bid="103", ask="103.01"))
+        _quiesce_fixture_source(store.path)
         current = worker.tick(future_at)
     matured = current["entry_signal_lab"]["experiments"][0]["labels"]
     assert {label["horizon_seconds"] for label in matured} == {300, 900}
@@ -133,6 +136,7 @@ def test_canonical_worker_prospectively_runs_entries_labels_and_native_net_funne
     assert b._close(store.open_positions()[0], exit_quote, "PROGRAMMING_ACCEPTANCE")
     with store.connect() as connection:
         native_net = D(connection.execute("SELECT net_pnl FROM paper_positions").fetchone()[0])
+    _quiesce_fixture_source(store.path)
     terminal = worker.tick(tick[0] + timedelta(seconds=1))
     funnel = terminal["operational_funnel"]
     assert {"CATALOG_READY", "SIGNAL_EVALUATED", "SIGNAL_CANDIDATE", "PAPER_OPENED", "EXIT_REASON", "NET_PNL"} <= {
@@ -140,8 +144,7 @@ def test_canonical_worker_prospectively_runs_entries_labels_and_native_net_funne
     nets = [row for row in funnel["lineage"] if row["stage"] == "NET_PNL"]
     assert len(nets) == 1 and D(nets[0]["detail"]["net"]) == native_net
     assert nets[0]["currency"] == "ARS" and funnel["currencies_added_together"] is False
-    with store.connect() as connection:
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    _quiesce_fixture_source(store.path)
     before = Path(store.path).read_bytes()
     restarted = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
     replay = restarted.tick(tick[0] + timedelta(seconds=2))
@@ -196,6 +199,7 @@ def test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without
     for index in range(20):
         cut = at + timedelta(seconds=30 * (index + 1))
         store.add_quote(quote(assets[0], cut, bid=str(100 + index), ask=str(D(100 + index) + D(".01"))))
+        _quiesce_fixture_source(store.path)
         report = worker.tick(cut)
     for engine, plan in report["engines"].items():
         expected = recommendation["engines"][engine]["capacity"]
@@ -214,6 +218,7 @@ def test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without
     assert store.open_positions() == [] and store.active_future_positions() == []
     approval["approval_digest"] = "0" * 64
     inputs["APPROVAL"].write_text(json.dumps(approval))
+    _quiesce_fixture_source(store.path)
     restarted = ShadowRuntime(store.path, evidence_root=root, source_roots=[])
     invalid = restarted.tick(cut + timedelta(seconds=1))
     assert invalid["capacity_policy"]["status"] == "BASELINE_FAIL_CLOSED"
