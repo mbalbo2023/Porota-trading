@@ -255,3 +255,35 @@ def classify_promotion_host_boundary(workflow: Mapping[str, Any]) -> dict[str, A
         'rootless_certified': False,
         'host_contact_authorized': False,
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Validate source containment only; exit zero never authorizes host access."""
+    import argparse
+    import json
+    from pathlib import Path
+
+    import yaml
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--workflow', type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        workflow = yaml.safe_load(args.workflow.read_text(encoding='utf-8'))
+        if not isinstance(workflow, Mapping):
+            raise LegacyHostBoundaryViolation('WORKFLOW_NOT_MAPPING')
+        receipt = classify_promotion_host_boundary(workflow)
+    except (OSError, UnicodeError, yaml.YAMLError, LegacyHostBoundaryViolation,
+            KeyError, TypeError, AttributeError, ValueError):
+        # Never print untrusted YAML, parser excerpts or filesystem details to
+        # public CI logs. Failure is a source rejection, not a physical receipt.
+        print(json.dumps({'status': 'BLOQUEADO', 'guard_validated': False,
+                          'host_contact_authorized': False,
+                          'reason': 'LEGACY_HOST_BOUNDARY_REJECTED'}, sort_keys=True))
+        return 2
+    print(json.dumps(receipt, sort_keys=True))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

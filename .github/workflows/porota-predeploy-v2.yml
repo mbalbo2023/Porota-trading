@@ -120,6 +120,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+          # Source containment only: a valid HOLD never attests rootless custody.
+          python -m scripts.rc6_deploy_legacy_host_guard --workflow .github/workflows/porota-deploy-v2-promote.yml
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
             tests/test_rc6_deploy_quiescence.py \
             tests/test_rc6_deploy_scheduler_suspend.py \
