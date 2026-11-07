@@ -18,7 +18,8 @@ TREE = "b" * 40
 
 
 def items():
-    return [SimpleNamespace(nodeid=f"tests/test_x.py::test_case[{i}]", user_properties=[])
+    return [SimpleNamespace(nodeid=f"tests/test_x.py::test_case[{i}]", user_properties=[],
+                            iter_markers=lambda name: iter(()))
             for i in range(4)]
 
 

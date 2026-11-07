@@ -61,9 +61,54 @@ jobs:
         run: |
           python -m pip install -q -r requirements.txt
           python -m pip install -q pytest
+      - name: Collect exact FULL nodeids privately
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -m 700 -p "$RUNNER_TEMP/rc6-a963-private" "$RUNNER_TEMP/rc6-a963-sanitized"
+          export RC6_CI_IDENTITY_PROOF=1
+          export RC6_CI_SOURCE_SHA="$GITHUB_SHA"
+          export RC6_CI_SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          export RC6_CI_MANIFEST_PATH="$RUNNER_TEMP/rc6-a963-private/collected.json"
+          # Node IDs may encode fixture inputs; never print/upload raw inventory.
+          PYTHONPATH=. pytest -q --collect-only -p scripts.rc6_ci_pytest_identity >/dev/null 2>&1
+          test -s "$RC6_CI_MANIFEST_PATH"
+          echo 'RC6_FULLSUITE_COLLECTION=CAPTURED_PRIVATE'
       - name: Full suite
         shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=. pytest -q
+          export RC6_CI_IDENTITY_PROOF=1
+          export RC6_CI_SOURCE_SHA="$GITHUB_SHA"
+          export RC6_CI_SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          export RC6_CI_MANIFEST_PATH="$RUNNER_TEMP/rc6-a963-private/executed.json"
+          set +e
+          PYTHONPATH=. pytest -q -p scripts.rc6_ci_pytest_identity -o xfail_strict=true \
+            --junitxml="$RUNNER_TEMP/rc6-a963-private/junit.xml"
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/rc6-a963-private/pytest.rc"
+          if [ "$rc" -ne 0 ]; then exit "$rc"; fi
           echo WS_TESTS_12_FULL_SUITE=GREEN
+      - name: Sanitize FULL evidence
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -d "$RUNNER_TEMP/rc6-a963-sanitized"
+          PYTHONPATH=. python -m scripts.rc6_ci_fullsuite_evidence \
+            --collected "$RUNNER_TEMP/rc6-a963-private/collected.json" \
+            --executed "$RUNNER_TEMP/rc6-a963-private/executed.json" \
+            --junit "$RUNNER_TEMP/rc6-a963-private/junit.xml" \
+            --pytest-rc "$RUNNER_TEMP/rc6-a963-private/pytest.rc" \
+            --source-sha "$GITHUB_SHA" \
+            --source-tree-sha "$(git rev-parse 'HEAD^{tree}')" \
+            --out "$RUNNER_TEMP/rc6-a963-sanitized"
+      - name: Upload anonymized FULL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a963-fullsuite-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-a963-sanitized/
+          retention-days: 7
+          if-no-files-found: error

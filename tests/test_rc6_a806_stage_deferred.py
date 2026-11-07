@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -160,6 +161,242 @@ class SharedHostStagingDeferredTests(unittest.TestCase):
             if step['id'] == 'failure_orphan_cleanup':
                 self.assertIn("steps.failure_cleanup.outcome == 'success'", expression)
             self.assertNotIn('steps.a806_staging_preadmission.conclusion', expression)
+
+
+class RootlessPromotionPrehostContainmentTests(unittest.TestCase):
+    """A954: legacy rootful source can only remain behind an actual job veto.
+
+    The positive expected outcome is a protected HOLD, never rootless approval.
+    All mutations are isolated in memory; no host/Docker/Action is contacted.
+    """
+
+    @staticmethod
+    def workflow():
+        source = Path(__file__).parents[1] / '.github' / 'workflows' / 'porota-deploy-v2-promote.yml'
+        return yaml.safe_load(source.read_text(encoding='utf-8'))
+
+    @staticmethod
+    def check(workflow):
+        from scripts.rc6_deploy_legacy_host_guard import classify_promotion_host_boundary
+
+        return classify_promotion_host_boundary(workflow)
+
+    def assert_rejected(self, workflow, reason):
+        from scripts.rc6_deploy_legacy_host_guard import LegacyHostBoundaryViolation
+
+        with self.assertRaisesRegex(LegacyHostBoundaryViolation, reason):
+            self.check(workflow)
+
+    def test_existing_rootful_lifecycle_is_held_offhost_not_approved(self):
+        contract = self.check(self.workflow())
+        self.assertEqual(contract['status'], 'BLOQUEADO')
+        self.assertEqual(contract['prehost_exit'], 79)
+        self.assertGreaterEqual(contract['rootful_docker_references'], 71)
+        self.assertFalse(contract['rootless_certified'])
+        self.assertFalse(contract['host_contact_authorized'])
+
+    def test_missing_early_gate_cannot_turn_legacy_deploy_green(self):
+        workflow = self.workflow()
+        del workflow['jobs']['promote']['steps'][1]
+        self.assert_rejected(workflow, 'A806_GATE')
+
+    def test_unreviewed_checkout_variant_cannot_replace_first_action(self):
+        workflow = self.workflow()
+        workflow['jobs']['promote']['steps'][0]['uses'] = 'actions/checkout@v4-unknown'
+        self.assert_rejected(workflow, 'UNSAFE_PROMOTION_CHECKOUT')
+
+    def test_checkout_cannot_expand_prehost_network_or_executable_scope(self):
+        for field, value in (
+            ('ssh-key', '${{ secrets.DO_SSH_KEY }}'),
+            ('submodules', 'recursive'),
+            ('repository', 'attacker/alternative'),
+        ):
+            with self.subTest(field=field):
+                workflow = self.workflow()
+                workflow['jobs']['promote']['steps'][0]['with'][field] = value
+                self.assert_rejected(workflow, 'UNSAFE_PROMOTION_CHECKOUT')
+        workflow = self.workflow()
+        workflow['jobs']['promote']['steps'][0]['run'] = 'ssh -T "$DO_USER@$DO_HOST" true'
+        self.assert_rejected(workflow, 'UNSAFE_PROMOTION_CHECKOUT')
+
+    def test_workflow_and_job_envelopes_cannot_add_prehost_execution_surfaces(self):
+        for scope in ('workflow_defaults', 'job_defaults', 'self_hosted', 'services',
+                      'container', 'job_shell'):
+            with self.subTest(scope=scope):
+                workflow = self.workflow()
+                job = workflow['jobs']['promote']
+                if scope == 'workflow_defaults':
+                    workflow['defaults'] = {'run': {'working-directory': '../'}}
+                    error = 'UNSAFE_PROMOTION_WORKFLOW'
+                else:
+                    error = 'UNSAFE_PROMOTION_JOB'
+                    if scope == 'job_defaults':
+                        job['defaults'] = {'run': {'working-directory': '../'}}
+                    elif scope == 'self_hosted':
+                        job['runs-on'] = 'self-hosted'
+                    elif scope == 'services':
+                        job['services'] = {'daemon': {'image': 'docker:latest'}}
+                    elif scope == 'container':
+                        job['container'] = 'ubuntu:latest'
+                    else:
+                        job['shell'] = 'sh'
+                self.assert_rejected(workflow, error)
+
+    def test_duplicate_gate_cannot_hide_late_unprotected_path(self):
+        workflow = self.workflow()
+        steps = workflow['jobs']['promote']['steps']
+        steps.insert(3, deepcopy(steps[1]))
+        self.assert_rejected(workflow, 'A806_GATE')
+
+    def test_early_gate_cannot_be_conditional_or_continued(self):
+        for mutation in ('if', 'continue-on-error', 'shell', 'env'):
+            with self.subTest(mutation=mutation):
+                workflow = self.workflow()
+                gate = workflow['jobs']['promote']['steps'][1]
+                gate[mutation] = ('${{ false }}' if mutation == 'if' else
+                                  True if mutation == 'continue-on-error' else
+                                  'sh' if mutation == 'shell' else {'BASH_ENV': '/tmp/injected'})
+                self.assert_rejected(workflow, 'A806_GATE')
+
+    def test_job_level_failure_suppression_cannot_make_false_green(self):
+        workflow = self.workflow()
+        workflow['jobs']['promote']['continue-on-error'] = True
+        self.assert_rejected(workflow, 'JOB_FAILURE_SUPPRESSION')
+
+    def test_second_job_cannot_bypass_promotion_prehost_veto(self):
+        workflow = self.workflow()
+        workflow['jobs']['new-host-job'] = {
+            'runs-on': 'ubuntu-24.04',
+            'if': '${{ always() }}',
+            'steps': [{'name': 'Bypass protected deploy job',
+                       'run': 'ssh -T "$DO_USER@$DO_HOST" true'}],
+        }
+        self.assert_rejected(workflow, 'UNREVIEWED_PROMOTION_JOB')
+
+    def test_inherited_shell_startup_env_cannot_run_before_prehost_veto(self):
+        for scope in ('workflow', 'job', 'checkout'):
+            for variable in ('BASH_ENV', 'ENV', 'SHELLOPTS', 'BASHOPTS'):
+                with self.subTest(scope=scope, variable=variable):
+                    workflow = self.workflow()
+                    if scope == 'workflow':
+                        environment = workflow.setdefault('env', {})
+                    elif scope == 'job':
+                        environment = workflow['jobs']['promote'].setdefault('env', {})
+                    else:
+                        environment = workflow['jobs']['promote']['steps'][0].setdefault('env', {})
+                    environment[variable] = '/tmp/hidden-shell-startup'
+                    self.assert_rejected(workflow, 'UNTRUSTED_SHELL_ENV_BEFORE_A806')
+
+    def test_early_gate_must_not_accept_echo_or_exit_zero(self):
+        for body in ('set -Eeuo pipefail\necho exit 79\nexit 0\n',
+                     'set -Eeuo pipefail\nexit 0\nexit 79\n'):
+            with self.subTest(body=body):
+                workflow = self.workflow()
+                workflow['jobs']['promote']['steps'][1]['run'] = body
+                self.assert_rejected(workflow, 'A806_GATE')
+
+    def test_early_gate_must_not_execute_host_commands_before_veto(self):
+        workflow = self.workflow()
+        workflow['jobs']['promote']['steps'][1]['run'] = (
+            'ssh -T "$DO_USER@$DO_HOST" true\n'
+            + workflow['jobs']['promote']['steps'][1]['run'])
+        self.assert_rejected(workflow, 'A806_GATE')
+
+    def test_failure_orphan_cleanup_cannot_run_on_prehost_stop(self):
+        workflow = self.workflow()
+        next(step for step in workflow['jobs']['promote']['steps']
+             if step.get('id') == 'failure_orphan_cleanup')['if'] = '${{ always() }}'
+        self.assert_rejected(workflow, 'HOST_CONTACT_AFTER_A806')
+
+    def test_reconcile_cannot_get_always_override(self):
+        workflow = self.workflow()
+        next(step for step in workflow['jobs']['promote']['steps']
+             if step.get('id') == 'host_reconcile')['if'] = '${{ always() }}'
+        self.assert_rejected(workflow, 'HOST_CONTACT_AFTER_A806')
+
+    def test_reconcile_cannot_run_from_gate_failure_status(self):
+        workflow = self.workflow()
+        next(step for step in workflow['jobs']['promote']['steps']
+             if step.get('id') == 'host_reconcile')['if'] = (
+                 "${{ always() && steps.a806_staging_preadmission.outcome == 'failure' }}")
+        self.assert_rejected(workflow, 'HOST_CONTACT_AFTER_A806')
+
+    def test_reconcile_failure_status_cannot_run_host(self):
+        workflow = self.workflow()
+        next(step for step in workflow['jobs']['promote']['steps']
+             if step.get('id') == 'host_reconcile')['if'] = '${{ failure() }}'
+        self.assert_rejected(workflow, 'HOST_CONTACT_AFTER_A806')
+
+    def test_intermediary_always_or_failure_step_cannot_unlock_later_host_step(self):
+        for condition in ('${{ always() }}', '${{ failure() }}'):
+            with self.subTest(condition=condition):
+                workflow = self.workflow()
+                workflow['jobs']['promote']['steps'].insert(2, {
+                    'id': 'intermediary_step', 'name': 'Runs despite the veto',
+                    'if': condition, 'run': 'exit 1',
+                })
+                self.assert_rejected(workflow, 'POST_A806_NONTERMINAL_EXECUTION')
+
+    def test_indirect_network_after_gate_is_forbidden_without_command_blacklist(self):
+        commands = (
+            'curl --fail https://$DO_HOST/health',
+            "python3 -c 'import socket,os;socket.create_connection((os.environ[\"DO_HOST\"],22))'",
+            'docker --host tcp://$DO_HOST:2375 ps',
+            "bash -c 'exec 3<>/dev/tcp/$DO_HOST/22'",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                workflow = self.workflow()
+                step = next(s for s in workflow['jobs']['promote']['steps']
+                            if s.get('id') == 'pre_suspend_account')
+                step['if'], step['run'] = '${{ always() }}', command
+                self.assert_rejected(workflow, 'POST_A806_NONTERMINAL_EXECUTION')
+
+    def test_missing_env_and_cancelled_status_cannot_fool_static_skip_model(self):
+        # GitHub resolves missing env vars to empty strings; a single
+        # synthetic NONEMPTY value would falsely classify this as skipped.
+        for condition in ("${{ always() && env.UNKNOWN == '' }}", '${{ cancelled() }}'):
+            with self.subTest(condition=condition):
+                workflow = self.workflow()
+                step = next(s for s in workflow['jobs']['promote']['steps']
+                            if s.get('id') == 'pre_suspend_account')
+                step['if'] = condition
+                step['run'] = 'python3 -c "import socket;socket.socket()"'
+                self.assert_rejected(workflow, 'UNREVIEWED_POST_A806_STATUS_CONDITION')
+
+    def test_runner_cleanup_must_be_terminal_after_prehost_veto(self):
+        workflow = self.workflow()
+        workflow['jobs']['promote']['steps'].append({
+            'name': 'Later unexpected step', 'if': '${{ always() }}',
+            'run': 'echo unexpected',
+        })
+        self.assert_rejected(workflow, 'POST_A806_NONTERMINAL_EXECUTION')
+
+    def test_runner_cleanup_cannot_be_repurposed_to_contact_host(self):
+        workflow = self.workflow()
+        workflow['jobs']['promote']['steps'][-1]['run'] += (
+            '\nssh -T "$DO_USER@$DO_HOST" true\n')
+        self.assert_rejected(workflow, 'HOST_CONTACT_AFTER_A806')
+
+    def test_runner_cleanup_cannot_run_an_arbitrary_action_after_veto(self):
+        workflow = self.workflow()
+        cleanup = workflow['jobs']['promote']['steps'][-1]
+        del cleanup['run']
+        cleanup['uses'] = 'some-remote-user/host-automation@v1'
+        self.assert_rejected(workflow, 'UNREVIEWED_ALWAYS_ACTION_AFTER_A806')
+
+    def test_always_runner_cleanup_cannot_add_indirect_python_host_call(self):
+        workflow = self.workflow()
+        workflow['jobs']['promote']['steps'][-1]['run'] += (
+            "python -c 'import urllib.request; urllib.request.urlopen(\"https://example.invalid\")'\n")
+        self.assert_rejected(workflow, 'UNREVIEWED_ALWAYS_TERMINAL')
+
+    def test_rootless_string_rewrite_alone_does_not_certify_daemon(self):
+        workflow = self.workflow()
+        for step in workflow['jobs']['promote']['steps']:
+            if 'run' in step:
+                step['run'] = step['run'].replace('sudo -n docker', 'docker')
+        self.assert_rejected(workflow, 'NO_INDEPENDENT_ROOTLESS_ATTESTATION')
 
 
 if __name__ == "__main__":

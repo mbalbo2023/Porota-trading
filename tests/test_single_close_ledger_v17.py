@@ -1,5 +1,6 @@
 """Un cierre simple debe conciliar con su fill y su recibo antes de dar caja."""
 from dataclasses import replace
+import json
 from pathlib import Path
 import sys
 
@@ -140,6 +141,11 @@ def test_recibo_pendiente_sin_confirmacion_no_inventa_fecha(closed):
 
 @pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
 def test_cierre_unico_respeta_nominal_por_cien(tmp_path,family):
+    """Un precio por VN100 no autoriza al ledger spot a vender renta fija.
+
+    La salida FI requiere un recibo económico nativo y verificable; una punta
+    sintética de cierre no crea ni un fill ni un crédito en caja PAPER.
+    """
     from bs_instrument_contracts import InstrumentContract
     b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
     cut = '2026-10-26T19:12:01Z' if family in {'LETRAS','ON'} else AT
@@ -150,10 +156,25 @@ def test_cierre_unico_respeta_nominal_por_cien(tmp_path,family):
     q=replace(q,contract=contract)
     assert b._open(q,D('.8'),{})[0]
     p=b.store.open_positions()[0]
-    assert b._close(p,replace(q,bid=D(110),ask=D(111),observed_at=close,book_at=close),'TEST')
-    row=b.store.recent_closed()[0]
-    assert D(row['gross_pnl'])==D(1)
-    assert b._cash(later)==10000+D(row['net_pnl'])
+    entry_cost = D(p['entry_cost'])
+    invested = D(p['entry_price']) * D(p['quantity']) * D('.01')
+    assert D(json.loads(p['features_json'])['contract_cash_multiplier']) == D('.01')
+    assert b._cash(cut) == D('10000') - invested - entry_cost
+    available_before = b._cash(later)
+
+    exit_quote = replace(q,bid=D(110),ask=D(111),observed_at=close,book_at=close)
+    assert b._close(p,exit_quote,'TEST') is False
+    assert b._cash(later) == available_before
+    with b.store.connect() as c:
+        assert c.execute('SELECT status FROM paper_positions WHERE paper_id=?',
+                         (p['paper_id'],)).fetchone()[0] == 'OPEN'
+        assert c.execute("SELECT count(*) FROM paper_fills WHERE paper_id=? "
+                         "AND side='SELL_SIMULATED'",(p['paper_id'],)).fetchone()[0] == 0
+        assert c.execute('SELECT count(*) FROM paper_sale_receivables WHERE paper_id=?',
+                         (p['paper_id'],)).fetchone()[0] == 0
+        assert c.execute('SELECT count(*) FROM paper_fi_cash_entries WHERE paper_id=?',
+                         (p['paper_id'],)).fetchone()[0] == 0
+        assert c.execute('SELECT real_orders_sent FROM observer_state WHERE id=1').fetchone()[0] == 0
 
 
 def test_cierre_inconsistente_no_detiene_stop_de_otra_posicion(closed):

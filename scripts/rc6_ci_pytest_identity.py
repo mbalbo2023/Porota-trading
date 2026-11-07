@@ -24,6 +24,7 @@ from scripts.rc6_ci_shard_quorum import manifest, _sha
 
 PROPERTY = "rc6_nodeid_sha256"
 _progress = None
+_unexpected_xpass = False
 
 
 class _ProgressWriter:
@@ -70,10 +71,11 @@ class _ProgressWriter:
 
 
 def pytest_sessionstart(session):
-    global _progress
+    global _progress, _unexpected_xpass
     if _progress is not None:
         _progress.close()
     _progress = None
+    _unexpected_xpass = False
     path = os.environ.get("RC6_CI_PROGRESS_PATH")
     if _enabled() and path and os.environ.get("RC6_CI_PROGRESS_PID") == str(os.getpid()):
         _progress = _ProgressWriter(path, os.environ.get("RC6_CI_SOURCE_SHA", ""),
@@ -86,6 +88,11 @@ def pytest_sessionfinish(session, exitstatus):
     if _progress is not None:
         _progress.close()
         _progress = None
+    # The marker's strict=False overrides pytest's global xfail_strict=true.
+    # If any other reporter consumed the original XPASS before our hook, the
+    # session still cannot return zero and turn an XPASS into a GREEN receipt.
+    if _enabled() and _unexpected_xpass and session.exitstatus == 0:
+        session.exitstatus = 1
 
 
 def pytest_runtest_logstart(nodeid, location):
@@ -94,6 +101,16 @@ def pytest_runtest_logstart(nodeid, location):
 
 
 def pytest_runtest_logreport(report):
+    global _unexpected_xpass
+    if (_enabled() and getattr(report, "when", None) == "call" and
+            getattr(report, "passed", False) and hasattr(report, "wasxfail")):
+        # xfail(strict=False) may produce PASSED+wasxfail with pytest rc=0.
+        # Reclassify the *real* pytest TestReport before JUnit/terminal sinks;
+        # never emit the original exception, node ID or fixture content.
+        report.outcome = "failed"
+        report.longrepr = "RC6_CI_UNEXPECTED_XPASS"
+        del report.wasxfail
+        _unexpected_xpass = True
     if _progress is not None:
         _progress.append(report.nodeid, report.when, report.outcome)
 
@@ -107,6 +124,38 @@ def _enabled() -> bool:
     return os.environ.get("RC6_CI_IDENTITY_PROOF") == "1"
 
 
+def pytest_configure(config):
+    """Guard TestReport before other reporters can mistake XPASS for PASS.
+
+    Import pytest only inside its own hook, retaining this module's existing
+    no-pytest import contract for receipt reducers without test dependencies.
+    """
+    if not _enabled():
+        return
+    import pytest
+    # --runxfail can arrive from PYTEST_ADDOPTS and suppress both JUnit xfail
+    # and TestReport.wasxfail. Refuse that process before collecting anything.
+    if getattr(config.option, "runxfail", False):
+        raise pytest.UsageError("RC6_CI_RUNXFAIL_FORBIDDEN")
+    if config.pluginmanager.hasplugin("rc6-ci-xpass-guard"):
+        return
+
+    class XPassGuard:
+        @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+        def pytest_runtest_makereport(self, item, call):
+            global _unexpected_xpass
+            result = yield
+            report = result.get_result()
+            if (report.when == "call" and report.passed and
+                    hasattr(report, "wasxfail")):
+                report.outcome = "failed"
+                report.longrepr = "RC6_CI_UNEXPECTED_XPASS"
+                del report.wasxfail
+                _unexpected_xpass = True
+
+    config.pluginmanager.register(XPassGuard(), name="rc6-ci-xpass-guard")
+
+
 def nodeid_digest(nodeid: str) -> str:
     return hashlib.sha256(nodeid.encode("utf-8")).hexdigest()
 
@@ -115,6 +164,13 @@ def pytest_collection_modifyitems(session, config, items):
     if not _enabled():
         return
     for item in items:
+        # The governed FULL suite requires every test to execute normally.
+        # xfail(strict=False) overrides global strictness, and --runxfail
+        # suppresses evidence entirely. The latter is denied at configure;
+        # static xfail markings (including strict=False) are denied here.
+        if any(item.iter_markers(name="xfail")):
+            import pytest
+            raise pytest.UsageError("RC6_CI_XFAIL_MARKER_FORBIDDEN")
         digest = nodeid_digest(item.nodeid)
         present = [value for name, value in item.user_properties if name == PROPERTY]
         if present:
