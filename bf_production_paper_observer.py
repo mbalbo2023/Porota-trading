@@ -34,6 +34,7 @@ from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
+from co_market_sessions_hf6 import byma_heavy_writes_safe_now
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -303,7 +304,7 @@ def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=N
             rows = connection.execute("""SELECT market,currency
               FROM financial_instrument_catalog
               WHERE ticker=? AND instrument_type=? AND settlement=?
-                AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                AND settlement_source='PPI_FIELD'
               LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
     except (sqlite3.Error, OSError, ValueError, TypeError):
         raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED") from None
@@ -1051,6 +1052,12 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
     Existing identities retain their normal freshness and admission checks;
     missing complements remain unavailable.
     """
+    # The generic observer's 17:00 CLOSED is not the COM19031 equity T+1
+    # source close (18:00) nor EOD publication floor (18:15).  This central
+    # calendar/session gate also covers the caucion-ledger CLOSED caller.
+    # Preserve the last-completed cursor: a due pass catches up off-session.
+    if not byma_heavy_writes_safe_now(datetime.now(TZ)):
+        return last_completed
     interval = (OFFHOURS_RECONCILE_SECONDS if phase == "CLOSED"
                 else COMPLEMENTARY_RECONCILE_SECONDS)
     if phase == "OPEN" or time.time() - last_completed < interval:
@@ -2033,6 +2040,10 @@ def _daily_sync(reader, store, now=None):
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
     now = now.astimezone(TZ)
+    # Shared T+1/EOD gate protects both the CLOSED tick and the first
+    # successful PPI-login callsite; neither may run a catalog/history writer.
+    if not byma_heavy_writes_safe_now(now):
+        return
     # A CLOSED scanner may remain alive across weekends/holidays.  The
     # historical backfill has a separate explicit business-day admission.
     # Do not re-fetch the previous session's catalog/history just because a
@@ -2063,6 +2074,8 @@ def _background_ingest_due(store, now=None):
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
     local_now = now.astimezone(TZ)
+    if not byma_heavy_writes_safe_now(local_now):
+        return False
     if not _business_day(local_now.date()):
         return False
     close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
@@ -2129,6 +2142,13 @@ def _run_command(store, reader, command, gemini_gate=None, login_interlock=None)
         return reader
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
+        return reader
+    # Manual control cannot bypass the same heavy-write policy.  Do not
+    # reserve a new PPI session, consume GET budget or mark source_sync here.
+    # The operator can retry once the official T+1/EOD window has elapsed.
+    if not byma_heavy_writes_safe_now(datetime.now(TZ)):
+        _finish_command(store, command_id, "DEFERRED",
+                        "BYMA_T1_EOD_HEAVY_WRITE_DEFERRED; reintentar tras ventana oficial.")
         return reader
     if reader is None:
         gate = login_interlock or ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
